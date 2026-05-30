@@ -118,7 +118,7 @@ openhis-pro-ui/
 
 ## 二、后端（whale-sever / health+emr）
 
-本段为**业务源码**（`whale-health`）。**Whale Framework 不提供源码**，请从 [Releases](https://github.com/YOUR_ORG/YOUR_REPO/releases) 下载与当前版本一致的 `framework-maven-repo-*.zip`。
+本段为**业务源码**（`whale-health`）。**Whale Framework、`whale-emr 不提供源码**，请从 [Releases](https://github.com/YOUR_ORG/YOUR_REPO/releases) 下载与当前版本一致的 `framework-maven-repo-*.zip`。
 
 ### 简介
 
