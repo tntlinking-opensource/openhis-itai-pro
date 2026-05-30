@@ -1,0 +1,82 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.domain.workflow.activitydefinition.repository;
+
+import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * 诊疗项目定义仓储。
+ *
+ * <p>约束：禁止使用 {@code @Query}，所有过滤条件（含软删）必须在方法签名中下推到数据库侧完成。</p>
+ */
+public interface ActivityDefinitionRepository extends JpaRepository<ActivityDefinition, Long>, JpaSpecificationExecutor<ActivityDefinition> {
+
+    /**
+     * 按主键加载未删除记录。
+     *
+     * @param id 主键
+     * @return 聚合根
+     */
+    Optional<ActivityDefinition> findById(Long id);
+
+    /**
+     * 批量加载未删除记录。
+     *
+     * @param ids 主键集合
+     * @return 聚合根集合
+     */
+    List<ActivityDefinition> findByIdIn(List<Long> ids);
+
+    /**
+     * 业务编码唯一性校验（默认在未删除记录范围内约束）。
+     *
+     * @param busNo 业务编码
+     * @return 是否已存在
+     */
+    boolean existsByBusNo(String busNo);
+
+    /**
+     * 批量查询业务编码对应的未删除记录，用于批量导入与批量唯一性校验。
+     *
+     * @param busNos 业务编码集合
+     * @return 已存在记录集合
+     */
+    List<ActivityDefinition> findByBusNoIn(List<String> busNos);
+
+    /**
+     * 按业务编码加载未删除记录。
+     *
+     * @param busNo 业务编码
+     * @return 聚合根
+     */
+    Optional<ActivityDefinition> findByBusNo(String busNo);
+
+    /**
+     * 查询所有未删除记录（导出等场景）。
+     *
+     * <p>注意：返回集合可能较大，调用方需评估规模风险。</p>
+     *
+     * @return 未删除记录集合
+     */
+    List<ActivityDefinition> findAllBy();
+}

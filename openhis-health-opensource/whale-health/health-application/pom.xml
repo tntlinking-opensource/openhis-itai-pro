@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    
+    <parent>
+        <groupId>com.openhis</groupId>
+        <artifactId>whale-health</artifactId>
+        <version>2.0.0-SNAPSHOT</version>
+    </parent>
+    
+    <artifactId>health-application</artifactId>
+    <packaging>jar</packaging>
+    
+    <name>Health Application</name>
+    <description>健康应用层（AppService）</description>
+    
+    <dependencies>
+        <!-- Health Domain -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>health-domain</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        
+        <!-- Health Domain Shared (for CodeSystemStatus enum) -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>health-domain-shared</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        
+        <!-- Health Infrastructure -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>health-infrastructure</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        
+        <!-- Whale Core -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>whale-core</artifactId>
+        </dependency>
+        <!-- Whale Setting（配置项定义与取值） -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>whale-setting</artifactId>
+            <version>${whale.framework.version}</version>
+        </dependency>
+        <!-- Whale Identity（科室与 OU 事务同步） -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>whale-identity</artifactId>
+        </dependency>
+        
+        <!-- Spring Boot Starter (含 validation，供 DTO/Request 校验) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- MapStruct -->
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+        </dependency>
+        
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        
+        <!-- Test Dependencies -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    
+    <build>
+        <plugins>
+            <!-- Maven Compiler Plugin - 显式配置以确保 MapStruct 注解处理器正确执行 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                    <encoding>${project.build.sourceEncoding}</encoding>
+                    <!-- 关键：注解处理器路径配置，顺序很重要 -->
+                    <annotationProcessorPaths>
+                        <!-- Lombok -->
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                        <!-- MapStruct 已移除：TerminologyMapper 改用手动实现，避免 IDE 编译兼容性问题 -->
+                    </annotationProcessorPaths>
+                    <!-- 关键：禁用增量编译，确保所有类都在同一轮编译中 -->
+                    <useIncrementalCompilation>false</useIncrementalCompilation>
+                    <!-- 关键：确保生成的源代码目录被正确识别 -->
+                    <generatedSourcesDirectory>${project.build.directory}/generated-sources/annotations</generatedSourcesDirectory>
+                    <!-- 使用独立进程编译，避免与 IDE/DevTools 的类加载器冲突 -->
+                    <fork>true</fork>
+                </configuration>
+            </plugin>
+            
+            <!-- Build Helper Maven Plugin - 确保生成的源代码目录被添加到编译路径 -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>add-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${project.build.directory}/generated-sources/annotations</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+

@@ -1,0 +1,201 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.domain.administration.practitioner.service;
+
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.domain.share.utils.SearchCodeUtil;
+import com.openhis.health.domain.administration.practitioner.repository.PractitionerRepository;
+import com.openhis.health.domain.share.enums.PractitionerStatus;
+import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 医务人员读侧查询服务。
+ *
+ * <p>职责：为挂号、人员维护等提供在职人员列表、分页检索与按主键加载。</p>
+ *
+ * <p>边界：只读；列表默认过滤 {@link PractitionerStatus#ACTIVE}；{@code orgId} 为空时返回全院在职人员。</p>
+ */
+@Service
+@RequiredArgsConstructor
+public class PractitionerQueryService {
+
+    private final PractitionerRepository practitionerRepository;
+
+    /**
+     * 门诊挂号可选医生列表：在职状态，可按科室过滤。
+     *
+     * @param orgId 科室机构标识；{@code null} 表示不限科室
+     * @return 医务人员列表
+     */
+    public List<Practitioner> listPractitionersForOutpatientRegistration(Long orgId) {
+        if (orgId == null) {
+            return practitionerRepository.findAllByStatusEnum(PractitionerStatus.ACTIVE.getCode());
+        }
+        return practitionerRepository.findAllByStatusEnumAndOrgId(PractitionerStatus.ACTIVE.getCode(), orgId);
+    }
+
+    /**
+     * 分页浏览医务人员（条件下推至数据库分页）。
+     *
+     * @param pageNum  页码（0-based，与 Spring Data {@link PageRequest} 一致）
+     * @param pageSize 每页条数
+     * @return 分页结果
+     */
+    public Page<Practitioner> searchPractitionersPaged(int pageNum, int pageSize) {
+        return practitionerRepository.findAllBy(PageRequest.of(pageNum, pageSize));
+    }
+
+    /**
+     * 岗位管理菜单：在职医务人员分页。
+     * <p>{@code businessRoleCode==1}（医生）时不按岗位分配过滤；{@code 2..4} 时仅保留拥有对应激活 {@code adm_pr_assign.role_code} 的人员。</p>
+     *
+     * @param businessRoleCode 业务角色码 1-4，不得为 null
+     * @param searchKey          关键字，空白则不分词检索
+     * @param pageable           分页与排序（建议按 id 升序）
+     * @return 分页结果
+     */
+    public Page<Practitioner> pageActivePractitionersForPosition(int businessRoleCode, String searchKey, Pageable pageable) {
+        return pageActivePractitionersForPosition(businessRoleCode, searchKey, pageable, false);
+    }
+
+    /**
+     * 岗位管理菜单：在职医务人员分页（扩展版本，支持系统用户绑定过滤）。
+     *
+     * <p>{@code businessRoleCode==1}（医生）时不按岗位分配过滤；{@code 2..4} 时仅保留拥有对应激活 {@code adm_pr_assign.role_code} 的人员。</p>
+     *
+     * @param businessRoleCode 业务角色码 1-4，不得为 null
+     * @param searchKey          关键字，空白则不分词检索
+     * @param pageable           分页与排序（建议按 id 升序）
+     * @param requireBoundSystemUser {@code true} 时仅保留已绑定系统用户的医务人员（{@code user_id IS NOT NULL}），用于「按人」Tab
+     * @return 分页结果
+     */
+    public Page<Practitioner> pageActivePractitionersForPosition(
+        int businessRoleCode,
+        String searchKey,
+        Pageable pageable,
+        boolean requireBoundSystemUser) {
+        String status = PractitionerStatus.ACTIVE.getCode();
+        String searchPattern = null;
+        if (StringUtils.isNotBlank(searchKey)) {
+            searchPattern = SearchCodeUtil.toCaseInsensitiveLikePattern(searchKey.trim());
+        }
+        Integer roleFilter = null;
+        if (businessRoleCode != 1) {
+            roleFilter = businessRoleCode;
+        }
+        Specification<Practitioner> specification =
+            PractitionerPageQuerySupport.activePractitioners(status, searchPattern, requireBoundSystemUser, roleFilter);
+        return practitionerRepository.findAll(specification, pageable);
+    }
+
+    /**
+     * 按主键加载医务人员；不存在返回 {@code null}。
+     *
+     * @param practitionerId 医务人员主键
+     * @return 实体或 {@code null}
+     */
+    public Practitioner findById(Long practitionerId) {
+        return practitionerRepository.findById(practitionerId).orElse(null);
+    }
+
+    /**
+     * 按绑定的系统用户主键加载医务人员主档；未绑定或已删除则返回 {@code null}。
+     *
+     * @param userId 系统用户主键
+     * @return 医务人员实体或 {@code null}
+     */
+    public Practitioner findByUserId(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        return practitionerRepository.findFirstByUserIdAndIsDeletedFalseOrderByIdAsc(userId).orElse(null);
+    }
+
+    /**
+     * 批量解析流水经办人展示名（{@code entererId} 可能为系统用户 ID 或医务人员主键）。
+     *
+     * @param entererIds 支付头 {@code enterer_id} 集合
+     * @return entererId → 姓名；未命中则不写入该键
+     */
+    public Map<Long, String> mapDisplayNameByEntererIds(java.util.Collection<Long> entererIds) {
+        if (entererIds == null || entererIds.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+        java.util.LinkedHashSet<Long> distinct = new java.util.LinkedHashSet<>();
+        for (Long entererId : entererIds) {
+            if (entererId != null) {
+                distinct.add(entererId);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+        java.util.Map<Long, String> nameByEntererId = new java.util.HashMap<>(distinct.size() * 2);
+        java.util.List<Practitioner> byUserId =
+            practitionerRepository.findAllByUserIdInAndIsDeletedFalse(distinct);
+        for (Practitioner practitioner : byUserId) {
+            if (practitioner == null || practitioner.getUserId() == null) {
+                continue;
+            }
+            if (StringUtils.isNotBlank(practitioner.getName())) {
+                nameByEntererId.put(practitioner.getUserId(), practitioner.getName());
+            }
+        }
+        java.util.List<Long> unresolved = new java.util.ArrayList<>();
+        for (Long entererId : distinct) {
+            if (!nameByEntererId.containsKey(entererId)) {
+                unresolved.add(entererId);
+            }
+        }
+        if (!unresolved.isEmpty()) {
+            for (Practitioner practitioner : practitionerRepository.findAllById(unresolved)) {
+                if (practitioner == null || practitioner.getId() == null) {
+                    continue;
+                }
+                if (StringUtils.isNotBlank(practitioner.getName())) {
+                    nameByEntererId.put(practitioner.getId(), practitioner.getName());
+                }
+            }
+        }
+        return nameByEntererId;
+    }
+
+    /**
+     * 按主键集合批量加载医务人员（列表装配等场景避免 N+1）。
+     *
+     * @param ids 医务人员主键集合
+     * @return 命中实体列表；入参为空时返回空列表
+     */
+    public List<Practitioner> findAllByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return practitionerRepository.findAllById(ids);
+    }
+}

@@ -1,0 +1,36 @@
+-- cln_allergy_intolerance（建表）
+-- Flyway V24
+
+CREATE TABLE IF NOT EXISTS "public"."cln_allergy_intolerance" (
+    "id" int8 NOT NULL,
+    "tenant_id" int8,
+    "created_at" timestamptz(6) NOT NULL,
+    "updated_at" timestamptz(6),
+    "created_by" int8,
+    "updated_by" int8,
+    "is_deleted" bool NOT NULL DEFAULT false,
+    "deleted_at" timestamptz(6),
+    "deleted_by" int8,
+    "version" int4 NOT NULL DEFAULT 0,
+    "request_id" int8 NOT NULL,
+    "encounter_id" int8 NOT NULL,
+    "patient_id" int8 NOT NULL,
+    "medication_id" int8,
+    "lot_number" varchar(255),
+    "clinical_status_enum" varchar(255) NOT NULL,
+    "verification_status_enum" varchar(255) NOT NULL,
+    "type_enum" varchar(255),
+    "category_code" varchar(255),
+    "criticality_enum" varchar(255),
+    "code" varchar(255),
+    "description" varchar(255),
+    "severity_enum" varchar(255),
+    "onset_date_time" timestamptz(6),
+    "recorded_date" timestamptz(6),
+    "last_reaction_occurrence" timestamptz(6),
+    "exposure_route" varchar(255),
+    "practitioner_id" int8,
+    "check_practitioner_id" int8,
+    "note" varchar(255),
+    CONSTRAINT "cln_allergy_intolerance_pkey" PRIMARY KEY ("id")
+);

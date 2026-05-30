@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.7</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.openhis</groupId>
+    <artifactId>whale</artifactId>
+    <version>2.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>OpenHIS All</name>
+    <description>OpenHIS 项目聚合 - 统一管理 Whale 框架和 Whale Health 应用</description>
+
+    <properties>
+        <java.version>17</java.version>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- 统一版本管理：与根 project.version 保持一致 -->
+        <whale.framework.version>${project.version}</whale.framework.version>
+        <whale.health.version>${project.version}</whale.health.version>
+        <whale.emr.version>${project.version}</whale.emr.version>
+        <whale.mrms.version>${project.version}</whale.mrms.version>
+        <whale.chs.version>${project.version}</whale.chs.version>
+
+        <lombok.version>1.18.30</lombok.version>
+        <mapstruct.version>1.5.5.Final</mapstruct.version>
+    </properties>
+
+    <!-- 默认构建 framework + health + emr/mrms/chs（与 health-app 扩展依赖默认启用一致）；仅 HIS 核心用 -Popensource -->
+    <modules>
+        <module>whale-health</module>
+        <module>whale-emr</module>
+        <module>whale-mrms</module>
+    </modules>
+
+    <profiles>
+<!-- 开源仓：仅 HIS 核心（无扩展模块） -->
+        <profile>
+            <id>opensource</id>
+    <modules>
+        <module>whale-health</module>
+        <module>whale-emr</module>
+        <module>whale-mrms</module>
+    </modules>
+        </profile>
+    </profiles>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.11.0</version>
+                    <configuration>
+                        <source>${java.version}</source>
+                        <target>${java.version}</target>
+                        <encoding>${project.build.sourceEncoding}</encoding>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

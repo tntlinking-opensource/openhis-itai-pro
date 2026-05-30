@@ -1,0 +1,86 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.whale.emr.domain.entity;
+
+import com.openhis.whale.core.domain.BaseAuditedEntity;
+import com.openhis.whale.core.domain.IMultiTenant;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+import jakarta.validation.constraints.Size;
+import lombok.Getter;
+import lombok.Setter;
+
+/**
+ * 电子病历文书实体。表 emr_document。
+ */
+@Getter
+@Setter
+@Entity
+@Table(name = "emr_document")
+public class Document extends BaseAuditedEntity implements IMultiTenant {
+
+    /**
+     * 患者 ID（HIS 患者标识），varchar(64)
+     */
+    @Size(max = 64)
+    @Column(name = "patient_id", length = 64)
+    private String patientId;
+
+    /**
+     * 就诊 ID（HIS 就诊标识），varchar(64)
+     */
+    @Size(max = 64)
+    @Column(name = "encounter_id", length = 64)
+    private String encounterId;
+
+    /**
+     * 文书类型编码，如入院记录、病程记录等
+     */
+    @Size(max = 32)
+    @Column(name = "document_type_code", length = 32)
+    private String documentTypeCode;
+
+    /**
+     * 文档标题（可选），例如“入院记录-2025-03-15”
+     */
+    @Size(max = 256)
+    @Column(name = "title", length = 256)
+    private String title;
+
+    /**
+     * 文档正文内容，Tiptap/ProseMirror JSON。
+     * PostgreSQL 建议使用 JSONB 或 TEXT 存储。
+     */
+    @Column(name = "content", columnDefinition = "TEXT")
+    private String content;
+
+    /**
+     * 文档状态：DRAFT / SUBMITTED / LOCKED / ARCHIVED 等
+     */
+    @Size(max = 32)
+    @Column(name = "status", length = 32)
+    private String status;
+
+    /**
+     * 创建文书时使用的模板 ID（如首次病程 PN_FIRST 溯源与唯一性校验）
+     */
+    @Column(name = "source_template_id")
+    private Long sourceTemplateId;
+}
+

@@ -1,0 +1,64 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.domain.share.events.workflow.devicedispense;
+
+import com.openhis.health.domain.share.constants.AggregateTypeConstants;
+import com.openhis.whale.core.domain.event.DomainEvent;
+import lombok.Getter;
+import lombok.Setter;
+
+/**
+ * DeviceDispensePendingRefundCreatedEvent 领域事件。
+ */
+@Getter
+@Setter
+public class DeviceDispensePendingRefundCreatedEvent extends DomainEvent {
+
+    /** 业务单号。 */
+    private String busNo;
+
+    /** 原发放标识。 */
+    private Long sourceDispenseId;
+
+    /** 退耗材数量。 */
+    private java.math.BigDecimal refundQuantity;
+
+    /** 操作人标识。 */
+    private Long operatorId;
+
+    /**
+     * 处理逻辑。
+     * @return 返回结果
+     */
+    public DeviceDispensePendingRefundCreatedEvent() {
+        super();
+    }
+
+    public DeviceDispensePendingRefundCreatedEvent(
+        Long aggregateId,
+        String busNo,
+        Long sourceDispenseId,
+        java.math.BigDecimal refundQuantity,
+        Long operatorId) {
+        super(aggregateId, AggregateTypeConstants.DEVICE_DISPENSE);
+        this.busNo = busNo;
+        this.sourceDispenseId = sourceDispenseId;
+        this.refundQuantity = refundQuantity;
+        this.operatorId = operatorId;
+    }
+}

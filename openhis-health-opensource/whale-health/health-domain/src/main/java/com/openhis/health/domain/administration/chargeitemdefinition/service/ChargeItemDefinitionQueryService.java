@@ -1,0 +1,425 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.domain.administration.chargeitemdefinition.service;
+
+import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
+import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionLotBatchKey;
+import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
+import com.openhis.health.domain.administration.chargeitemdefinition.repository.ChargeItemDefinitionRepository;
+import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.enums.PriceType;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import lombok.RequiredArgsConstructor;
+
+/**
+ * 收费项定义读侧查询服务。
+ *
+ * <p>职责：按实例（药品/项目等）与 {@link PriceType} 持久化码解析定价行；销售侧零售价统一为 {@link PriceType#SALE}（不再使用 {@code UNIT}）。</p>
+ *
+ * <p>边界：只读；{@code instanceTable} 有值时走表+实例联合键，否则仅按实例标识查询。</p>
+ */
+@Service
+@RequiredArgsConstructor
+public class ChargeItemDefinitionQueryService {
+    private final ChargeItemDefinitionRepository repository;
+
+    /**
+     * 查询销售侧定价行：仅 {@link PriceType#SALE}（零售价持久化码）。
+     *
+     * @param cmd 查询命令（{@code instanceId} 必填；{@code instanceTable} 可选）
+     * @return 命中的定价行列表，可能为空
+     */
+    public List<ChargeItemDefinition> findSaleItemByInstanceId(ChargeItemDefinitionQueryCommand cmd) {
+        String saleCode = PriceType.SALE.getCode();
+        if (cmd.getInstanceTable() != null) {
+            return repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCode(
+                cmd.getInstanceTable(), cmd.getInstanceId(), saleCode);
+        }
+        return repository.findAllByInstanceIdAndPriceTypeCode(cmd.getInstanceId(), saleCode);
+    }
+
+    /**
+     * 查询采购侧定价行（{@link PriceType#PURCHASE}）。
+     *
+     * @param cmd 查询命令
+     * @return 采购定价行列表
+     */
+    public List<ChargeItemDefinition> findPurchaseItemByInstanceId(ChargeItemDefinitionQueryCommand cmd) {
+        String purchaseCode = PriceType.PURCHASE.getCode();
+        if (cmd.getInstanceTable() != null) {
+            return repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCode(
+                cmd.getInstanceTable(), cmd.getInstanceId(), purchaseCode);
+        }
+        return repository.findAllByInstanceIdAndPriceTypeCode(cmd.getInstanceId(), purchaseCode);
+    }
+
+    /**
+     * 按批号查询销售定价：仅 {@link PriceType#SALE}。
+     *
+     * @param cmd 查询命令（含 {@code lotNo}）
+     * @return 命中的定价行列表
+     */
+    public List<ChargeItemDefinition> findSalePriceByInstanceIdAndLot(ChargeItemDefinitionQueryCommand cmd) {
+        String saleCode = PriceType.SALE.getCode();
+        if (cmd.getInstanceTable() != null) {
+            return repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
+                cmd.getInstanceTable(), cmd.getInstanceId(), saleCode, cmd.getLotNo());
+        }
+        return repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(
+            cmd.getInstanceId(), saleCode, cmd.getLotNo());
+    }
+
+    /**
+     * 按批号查询采购定价（{@link PriceType#PURCHASE}）。
+     *
+     * @param cmd 查询命令（含 {@code lotNo}）
+     * @return 采购定价行列表
+     */
+    public List<ChargeItemDefinition> findPurchasePriceByInstanceIdAndLot(ChargeItemDefinitionQueryCommand cmd) {
+        String purchaseCode = PriceType.PURCHASE.getCode();
+        if (cmd.getInstanceTable() != null) {
+            return repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
+                cmd.getInstanceTable(), cmd.getInstanceId(), purchaseCode, cmd.getLotNo());
+        }
+        return repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(
+            cmd.getInstanceId(), purchaseCode, cmd.getLotNo());
+    }
+
+    /**
+     * 按批号查询批号维进价定价行（{@link PriceType#LOT_NUMBER_COST}）。
+     *
+     * <p>用于药库出库、药房入库选品等「价随批号」展示；入参 {@code lotNo} 须非空白，否则调用方应直接跳过查询。业务上同一物品实例+批号应至多一条有效进价行；若数据层返回多行，调用侧宜按定价行主键升序稳定择首个非空 {@code price_value}。</p>
+     *
+     * @param cmd 查询命令（{@code instanceId}、非空白 {@code lotNo} 必填；{@code instanceTable} 有值时与表名联合键查询）
+     * @return 命中的定价行列表，可能为空
+     */
+    public List<ChargeItemDefinition> findLotNumberCostByInstanceIdAndLot(ChargeItemDefinitionQueryCommand cmd) {
+        String costCode = PriceType.LOT_NUMBER_COST.getCode();
+        if (cmd.getInstanceTable() != null) {
+            return repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
+                cmd.getInstanceTable(), cmd.getInstanceId(), costCode, cmd.getLotNo());
+        }
+        return repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(cmd.getInstanceId(), costCode, cmd.getLotNo());
+    }
+
+    /**
+     * 按批号查询批号维销售定价行（{@link PriceType#LOT_NUMBER_PRICE}）。
+     *
+     * <p>与 {@link #findLotNumberCostByInstanceIdAndLot(ChargeItemDefinitionQueryCommand)} 同构，仅价类码不同（AS-INV-WHS-004 INV-DTL-SDD-R-001）。</p>
+     *
+     * @param cmd 查询命令（{@code instanceId}、非空白 {@code lotNo} 必填；{@code instanceTable} 有值时与表名联合键查询）
+     * @return 命中的定价行列表，可能为空
+     */
+    public List<ChargeItemDefinition> findLotNumberPriceByInstanceIdAndLot(ChargeItemDefinitionQueryCommand cmd) {
+        String priceCode = PriceType.LOT_NUMBER_PRICE.getCode();
+        if (cmd.getInstanceTable() != null) {
+            return repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
+                cmd.getInstanceTable(), cmd.getInstanceId(), priceCode, cmd.getLotNo());
+        }
+        return repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(cmd.getInstanceId(), priceCode, cmd.getLotNo());
+    }
+
+    /**
+     * 批量加载批号进价定价行并按 {@link ChargeItemDefinitionLotBatchKey#compositeKey()} 分组（一次或多次规格查询下推，禁止调用方在循环内逐条仓储访问）。
+     *
+     * @param keys 键集合，允许含 null 或重复（内部去重）
+     * @return 复合键 → 命中行列表；无键时返回空映射
+     */
+    public Map<String, List<ChargeItemDefinition>> findLotNumberCostLinesGroupedByLotBatchKey(
+        Collection<ChargeItemDefinitionLotBatchKey> keys
+    ) {
+        return this.findLotNumberLinesGroupedByLotBatchKey(keys, PriceType.LOT_NUMBER_COST.getCode());
+    }
+
+    /**
+     * 解析定价表 {@link com.openhis.health.domain.share.enums.PriceType#PURCHASE} 首个稳定非空单价（每<strong>包装单位</strong>）。
+     *
+     * <p>库房单据读路径两档锚价之一（无批号时）；与 {@link #resolveFirstLotNumberCostPriceValue} 成对使用，<strong>禁止</strong>在库房选品/详情槽价路径取 {@code SALE}。</p>
+     *
+     * @param instanceTable 物品物理表名
+     * @param instanceId    物品定义主键
+     * @return 每包装单位进价；参数不全或无命中时为 {@code null}
+     */
+    public BigDecimal resolveFirstPurchasePriceValue(String instanceTable, Long instanceId) {
+        if (StringUtils.isBlank(instanceTable) || instanceId == null) {
+            return null;
+        }
+        ChargeItemDefinitionQueryCommand priceCmd = new ChargeItemDefinitionQueryCommand();
+        priceCmd.setInstanceTable(instanceTable.trim());
+        priceCmd.setInstanceId(instanceId);
+        return selectFirstNonNullPriceValueStable(this.findPurchaseItemByInstanceId(priceCmd));
+    }
+
+    /**
+     * 解析定价表 {@link com.openhis.health.domain.share.enums.PriceType#SALE} 首个稳定非空单价（每<strong>包装单位</strong>）。
+     *
+     * @param instanceTable 物品物理表名
+     * @param instanceId    物品定义主键
+     * @return 每包装单位售价；参数不全或无命中时为 {@code null}
+     */
+    public BigDecimal resolveFirstSalePriceValue(String instanceTable, Long instanceId) {
+        if (StringUtils.isBlank(instanceTable) || instanceId == null) {
+            return null;
+        }
+        ChargeItemDefinitionQueryCommand priceCmd = new ChargeItemDefinitionQueryCommand();
+        priceCmd.setInstanceTable(instanceTable.trim());
+        priceCmd.setInstanceId(instanceId);
+        return selectFirstNonNullPriceValueStable(this.findSaleItemByInstanceId(priceCmd));
+    }
+
+    /**
+     * 解析实例+批号维 {@link PriceType#LOT_NUMBER_COST} 首个稳定非空单价（价随批号展示，不做实例维回落）。
+     *
+     * <p>库房单据读路径两档锚价之二（有批号时）；{@link PriceType#LOT_NUMBER_PRICE} 不参与库房读路径。</p>
+     *
+     * @param instanceTable 物品物理表名
+     * @param instanceId    物品定义主键
+     * @param lotNumber     批号
+     * @return 首个非空批号进价；参数不全、批号空白或无命中时为 {@code null}
+     */
+    public BigDecimal resolveFirstLotNumberCostPriceValue(String instanceTable, Long instanceId, String lotNumber) {
+        if (StringUtils.isBlank(instanceTable) || instanceId == null || StringUtils.isBlank(lotNumber)) {
+            return null;
+        }
+        ChargeItemDefinitionQueryCommand priceCmd = new ChargeItemDefinitionQueryCommand();
+        priceCmd.setInstanceTable(instanceTable.trim());
+        priceCmd.setInstanceId(instanceId);
+        priceCmd.setLotNo(lotNumber.trim());
+        return selectFirstNonNullPriceValueStable(this.findLotNumberCostByInstanceIdAndLot(priceCmd));
+    }
+
+    /**
+     * 批量加载批号售价定价行并按复合键分组（价类为 {@link PriceType#LOT_NUMBER_PRICE}，其余同 {@link #findLotNumberCostLinesGroupedByLotBatchKey}）。
+     *
+     * @param keys 键集合
+     * @return 复合键 → 命中行列表
+     */
+    public Map<String, List<ChargeItemDefinition>> findLotNumberPriceLinesGroupedByLotBatchKey(
+        Collection<ChargeItemDefinitionLotBatchKey> keys
+    ) {
+        return this.findLotNumberLinesGroupedByLotBatchKey(keys, PriceType.LOT_NUMBER_PRICE.getCode());
+    }
+
+    /**
+     * 判断实例+批号维度是否已存在任一条「批号进价」或「批号售价」定价行（用于进货同意路径批号维定价去重，WHS-IN-SDD-R-006）。
+     *
+     * @param cmd 查询命令；{@code instanceTable}、{@code instanceId}、非空白 {@code lotNo} 须已由调用方保证
+     * @return 已存在任一条 {@link PriceType#LOT_NUMBER_COST} 或 {@link PriceType#LOT_NUMBER_PRICE} 且批号一致时为 true
+     */
+    public boolean existsLotNumberCostOrLotNumberPriceForInstanceAndLot(ChargeItemDefinitionQueryCommand cmd) {
+        if (cmd == null || cmd.getInstanceId() == null || StringUtils.isBlank(cmd.getLotNo())) {
+            return false;
+        }
+        String lotTrimmed = cmd.getLotNo().trim();
+        String costCode = PriceType.LOT_NUMBER_COST.getCode();
+        String saleCode = PriceType.LOT_NUMBER_PRICE.getCode();
+        if (StringUtils.isNotBlank(cmd.getInstanceTable())) {
+            if (!repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
+                cmd.getInstanceTable().trim(), cmd.getInstanceId(), costCode, lotTrimmed).isEmpty()) {
+                return true;
+            }
+            return !repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
+                cmd.getInstanceTable().trim(), cmd.getInstanceId(), saleCode, lotTrimmed).isEmpty();
+        }
+        if (!repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(cmd.getInstanceId(), costCode, lotTrimmed).isEmpty()) {
+            return true;
+        }
+        return !repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(cmd.getInstanceId(), saleCode, lotTrimmed).isEmpty();
+    }
+
+    /**
+     * 批量按实例主键集合加载定价行（用于组套/多项目一次取价）。
+     *
+     * @param cmd 查询命令（{@code instanceIds} 必填）
+     * @return 定价行列表
+     */
+    public List<ChargeItemDefinition> findPriceLinesByProjects(ChargeItemDefinitionQueryCommand cmd) {
+        // 批量取价：有表维度时用 IN 查询限定在同表多实例，防止跨业务表 id 碰撞。
+        if (cmd.getInstanceTable() != null) {
+            return repository.findAllByInstanceTableAndInstanceIdIn(cmd.getInstanceTable(), cmd.getInstanceIds());
+        }
+        return repository.findAllByInstanceIdIn(cmd.getInstanceIds());
+    }
+
+    /**
+     * 挂号场景取单条销售定价行：在 {@link #findSaleItemByInstanceId(ChargeItemDefinitionQueryCommand)} 结果上取首条。
+     *
+     * @param cmd 查询命令
+     * @return 首条定价行；无命中时 {@code null}
+     */
+    public ChargeItemDefinition findSaleLineForHealthcareServiceRegistration(ChargeItemDefinitionQueryCommand cmd) {
+        List<ChargeItemDefinition> rows = this.findSaleItemByInstanceId(cmd);
+        if (rows.isEmpty()) {
+            return null;
+        }
+        return rows.get(0);
+    }
+
+    /**
+     * 按收费项定义主键批量加载，供收费明细列表、预结算预览等一次性解析 {@code charge_name}。
+     *
+     * @param definitionIds 定价定义主键集合，允许含 {@code null}（忽略）
+     * @return 以定义主键为键的映射；入参为空时返回空映射
+     */
+    public Map<Long, ChargeItemDefinition> findAllDefinitionsByIdIn(Collection<Long> definitionIds) {
+        if (definitionIds == null || definitionIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<Long> unique = new LinkedHashSet<>();
+        for (Long definitionId : definitionIds) {
+            if (definitionId != null) {
+                unique.add(definitionId);
+            }
+        }
+        if (unique.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<ChargeItemDefinition> list = repository.findAllById(unique);
+        Map<Long, ChargeItemDefinition> map = new HashMap<>(list.size() * 2);
+        for (ChargeItemDefinition row : list) {
+            map.put(row.getId(), row);
+        }
+        return map;
+    }
+
+    /**
+     * 内部：按价类码与一批实例+批号键装载批号维定价行，分段 OR 查询避免单条 SQL 过长。
+     *
+     * @param keys            键集合
+     * @param priceTypeCode   {@link PriceType#getCode()} 持久化串
+     * @return 复合键 → 行列表
+     */
+    private Map<String, List<ChargeItemDefinition>> findLotNumberLinesGroupedByLotBatchKey(
+        Collection<ChargeItemDefinitionLotBatchKey> keys,
+        String priceTypeCode
+    ) {
+        if (keys == null || keys.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<ChargeItemDefinitionLotBatchKey> unique = new LinkedHashSet<>();
+        for (ChargeItemDefinitionLotBatchKey key : keys) {
+            if (key != null) {
+                unique.add(key);
+            }
+        }
+        if (unique.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<ChargeItemDefinitionLotBatchKey> asList = new ArrayList<>(unique);
+        List<ChargeItemDefinition> loaded = new ArrayList<>();
+        int chunkSize = 200;
+        int fromIndex = 0;
+        while (fromIndex < asList.size()) {
+            int toIndex = Math.min(fromIndex + chunkSize, asList.size());
+            List<ChargeItemDefinitionLotBatchKey> chunk = asList.subList(fromIndex, toIndex);
+            Specification<ChargeItemDefinition> spec = this.buildLotBatchOrSpecification(chunk, priceTypeCode);
+            loaded.addAll(this.repository.findAll(spec));
+            fromIndex = toIndex;
+        }
+        return this.groupLotLinesByCompositeKey(loaded);
+    }
+
+    /**
+     * 构造「软删 + 价类 + 多组 (表,实例,批号) OR」规格。
+     *
+     * @param chunk           单段键列表，调用方保证非空
+     * @param priceTypeCode   价类持久化码
+     * @return 规格
+     */
+    private Specification<ChargeItemDefinition> buildLotBatchOrSpecification(
+        List<ChargeItemDefinitionLotBatchKey> chunk,
+        String priceTypeCode
+    ) {
+        return (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> andPredicates = new ArrayList<>();
+            andPredicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            andPredicates.add(cb.equal(root.get(FieldNameConstants.PRICE_TYPE_CODE), priceTypeCode));
+            List<jakarta.persistence.criteria.Predicate> orPredicates = new ArrayList<>();
+            for (ChargeItemDefinitionLotBatchKey key : chunk) {
+                jakarta.persistence.criteria.Predicate rowMatch = cb.and(
+                    cb.equal(root.get(FieldNameConstants.INSTANCE_TABLE), key.getInstanceTable()),
+                    cb.equal(root.get(FieldNameConstants.INSTANCE_ID), key.getInstanceId()),
+                    cb.equal(root.get(FieldNameConstants.LOT_NO), key.getLotNo())
+                );
+                orPredicates.add(rowMatch);
+            }
+            andPredicates.add(cb.or(orPredicates.toArray(new jakarta.persistence.criteria.Predicate[0])));
+            return cb.and(andPredicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+    }
+
+    private static BigDecimal selectFirstNonNullPriceValueStable(List<ChargeItemDefinition> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return null;
+        }
+        List<ChargeItemDefinition> ordered = new ArrayList<>(lines);
+        ordered.sort(Comparator.comparing(ChargeItemDefinition::getId, Comparator.nullsLast(Long::compareTo)));
+        for (ChargeItemDefinition line : ordered) {
+            if (line == null) {
+                continue;
+            }
+            BigDecimal price = line.getPriceValue();
+            if (price != null) {
+                return price;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 将定价行按 {@link ChargeItemDefinitionLotBatchKey#compositeKey()} 分组，供应用层 O(1) 命中。
+     *
+     * @param lines 仓储返回行
+     * @return 分组映射
+     */
+    private Map<String, List<ChargeItemDefinition>> groupLotLinesByCompositeKey(List<ChargeItemDefinition> lines) {
+        Map<String, List<ChargeItemDefinition>> map = new HashMap<>();
+        if (lines == null || lines.isEmpty()) {
+            return map;
+        }
+        for (ChargeItemDefinition line : lines) {
+            if (line == null) {
+                continue;
+            }
+            if (StringUtils.isBlank(line.getInstanceTable()) || line.getInstanceId() == null || StringUtils.isBlank(line.getLotNo())) {
+                continue;
+            }
+            ChargeItemDefinitionLotBatchKey key = new ChargeItemDefinitionLotBatchKey(
+                line.getInstanceTable().trim(),
+                line.getInstanceId(),
+                line.getLotNo().trim()
+            );
+            String composite = key.compositeKey();
+            List<ChargeItemDefinition> bucket = map.computeIfAbsent(composite, k -> new ArrayList<>());
+            bucket.add(line);
+        }
+        return map;
+    }
+}

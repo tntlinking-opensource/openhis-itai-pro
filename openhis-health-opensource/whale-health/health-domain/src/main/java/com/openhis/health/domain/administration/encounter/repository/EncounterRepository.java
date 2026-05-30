@@ -1,0 +1,97 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.domain.administration.encounter.repository;
+
+import com.openhis.health.domain.administration.encounter.entity.Encounter;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * 就诊聚合仓储。
+ */
+public interface EncounterRepository extends JpaRepository<Encounter, Long>, JpaSpecificationExecutor<Encounter> {
+
+    /**
+     * 按主键查询未删除记录。
+     *
+     * @param id 就诊标识
+     * @return 就诊实体
+     */
+    Optional<Encounter> findById(Long id);
+
+    /**
+     * 按主键与就诊类别查询未删除记录（住院/门诊挂号等场景须与 {@code classEnum} 隔离）。
+     *
+     * @param id 就诊标识
+     * @param classEnum 就诊类别编码（如 {@code IMP}、{@code AMB}）
+     * @return 命中时返回实体，否则 empty
+     */
+    Optional<Encounter> findByIdAndClassEnum(Long id, String classEnum);
+
+    /**
+     * 批量按主键与就诊类别查询未删除记录。
+     *
+     * @param ids 就诊标识集合
+     * @param classEnum 就诊类别编码
+     * @return 命中集合（不保证与入参顺序一致）
+     */
+    List<Encounter> findAllByIdInAndClassEnum(Collection<Long> ids, String classEnum);
+
+    /**
+     * 按业务号查询未删除记录。
+     *
+     * @param busNo 就诊业务号
+     * @return 就诊实体
+     */
+    Optional<Encounter> findByBusNo(String busNo);
+
+    /**
+     * 判断业务号是否存在。
+     *
+     * @param busNo 就诊业务号
+     * @return 存在返回 true
+     */
+    boolean existsByBusNo(String busNo);
+
+    /**
+     * 批量查询未删除就诊记录。
+     *
+     * @param ids 就诊标识集合
+     * @return 就诊集合
+     */
+    List<Encounter> findAllByIdIn(Collection<Long> ids);
+
+    /**
+     * 按门诊/急诊锚点取最新一条未处于排除状态集合中的住院线就诊。
+     *
+     * <p>用于住院申请防重：同一 {@code ambEncounterId} 在 {@code IMP} 下仅允许一条未取消住院线。</p>
+     *
+     * @param ambEncounterId 源门诊或急诊就诊标识
+     * @param classEnum 就诊类别（住院为 {@code IMP}）
+     * @param excludedStatusEnums 排除的状态码集合（通常仅 {@code CANCELLED}）
+     * @return 命中时返回最新一条，否则 empty
+     */
+    Optional<Encounter> findTopByAmbEncounterIdAndClassEnumAndStatusEnumNotInOrderByCreatedAtDesc(
+        Long ambEncounterId,
+        String classEnum,
+        Collection<String> excludedStatusEnums);
+}
+

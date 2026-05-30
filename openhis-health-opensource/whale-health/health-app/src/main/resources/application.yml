@@ -1,0 +1,235 @@
+spring:
+  application:
+    name: whale-health
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  main:
+    allow-bean-definition-overriding: true  # 允许应用层配置覆盖框架配置，避免 Repository 重复注册
+  
+  datasource:
+    url: jdbc:postgresql://localhost:5432/whale
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:root}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 2  # 优化：减少初始连接数，按需创建，加快启动速度
+      connection-timeout: 10000  # 优化：减少连接超时时间（10秒）
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      initialization-fail-timeout: 1  # 优化：启动失败快速失败
+      connection-test-query: SELECT 1  # 优化：连接测试查询
+  
+  jpa:
+    hibernate:
+      # 合并后 V1 未包含 adm_account/adm_practitioner 等表，用 update 让 Hibernate 自动建缺失表；待 DDL 补全到 Flyway 后可改回 validate
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        # dialect 无需显式指定，Hibernate 会根据 JDBC 驱动自动检测 PostgreSQL
+        format_sql: true
+        use_sql_comments: true
+    open-in-view: false
+  
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
+  flyway:
+    # 由 ModularFlywayConfiguration 按模块独立 history 表执行（见 openhis.flyway.modular）
+    enabled: false
+    baseline-on-migrate: true
+    baseline-version: 0
+    out-of-order: false
+    schemas: public
+    # 使用纯数字版本 V1..V6，满足 Flyway 11 文件名约定（避免 1_W1 等被判定为不符合约定）
+    sql-migration-prefix: V
+    sql-migration-separator: __
+    sql-migration-suffixes: .sql
+    validate-on-migrate: false  # 开发环境临时禁用校验和验证（修改迁移脚本后需要修复）
+    clean-disabled: true
+  
+  # DevTools（依赖仍在 health-app；关闭类路径自动重启与 LiveReload）
+  devtools:
+    restart:
+      enabled: false
+      exclude: static/**,public/**,templates/**,META-INF/maven/**,META-INF/resources/**
+    livereload:
+      enabled: false
+  
+  # Quartz 自动配置
+  quartz:
+    job-store-type: jdbc  # 使用数据库持久化
+    jdbc:
+      initialize-schema: never  # 使用 Flyway 管理表结构，不自动初始化
+    properties:
+      org:
+        quartz:
+          scheduler:
+            instanceName: WhaleScheduler
+            instanceId: AUTO
+          threadPool:
+            class: org.quartz.simpl.SimpleThreadPool
+            threadCount: 10
+            threadPriority: 5
+          jobStore:
+            # 只配置必要的属性，不设置 class 和 dataSource，让 Spring Boot 自动配置
+            driverDelegateClass: org.quartz.impl.jdbcjobstore.PostgreSQLDelegate
+            tablePrefix: WHALE_QRTZ_  # 使用 whale_qrtz_ 前缀的表
+            isClustered: false
+            useProperties: true
+  
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: 8081
+  servlet:
+    context-path: /
+
+# Whale Framework配置
+app:
+  version: 1.0.0-SNAPSHOT
+  jwt:
+    secret: ${JWT_SECRET:whale-health-secret-key-32-characters-long}
+    access-token-expiration: 7200000  # 2小时，单位：毫秒
+    refresh-token-expiration: 604800000  # 7天，单位：毫秒
+  
+  cache:
+    permission:
+      expire-after-write: 5m
+      maximum-size: 5000
+    setting:
+      expire-after-write: 10m
+      maximum-size: 1000
+    tenant:
+      expire-after-write: 30m
+      maximum-size: 100
+    user:
+      expire-after-write: 15m
+      maximum-size: 2000
+  
+  rate-limit:
+    enabled: false  # 是否启用限流（生产环境建议启用）
+    max-requests-per-minute: 100  # 每分钟最大请求数
+  
+  quartz:
+    enabled: true
+
+  # CA证书登录配置
+  ca:
+    coss:
+      base-url: ${COSS_BASE_URL:http://localhost:8080/coss}
+      app-id: ${COSS_APP_ID:}
+      secure-code: ${COSS_SECURE_CODE:}
+      version: "1.0"
+      enabled: ${COSS_ENABLED:false}  # COSS未部署时为false，走本地验签
+      connect-timeout: 5000
+      read-timeout: 10000
+    challenge:
+      ttl: 300          # 挑战值有效期（秒），默认5分钟
+      nonce-length: 32  # nonce长度
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.openhis.whale: DEBUG  # 框架代码使用 DEBUG，便于开发调试
+    com.openhis.health: DEBUG
+    org.springframework.boot: WARN  # Spring Boot 自动配置日志改为 WARN，减少启动日志噪音
+    org.springframework.jdbc: WARN  # JDBC 日志改为 WARN
+    org.flywaydb: INFO  # Flyway 日志改为 INFO，只显示关键信息
+    org.hibernate: WARN  # Hibernate 日志改为 WARN，减少 SQL 日志输出
+    org.hibernate.orm.connections.pooling: ERROR  # 隐藏连接池信息日志（那些 unknown 信息）
+    org.hibernate.engine.jdbc.env.internal: WARN  # 减少数据库环境信息日志
+    org.hibernate.SQL: DEBUG # 打印SQL
+    org.hibernate.orm.jdbc.bind: TRACE # Hibernate 6+ 打印SQL绑定参数
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE # 打印SQL参数（若有）
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{requestId}] [%X{tenantId}] [%X{userId}] %logger{36} - %msg%n"
+  file:
+    name: logs/whale-health.log
+    max-size: 100MB
+    max-history: 30
+
+# Actuator配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# SpringDoc OpenAPI配置
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    config-url: /v3/api-docs/swagger-config
+    try-it-out-enabled: true
+    filter: true
+    disable-swagger-default-url: true  # 禁用默认的 Petstore URL
+  show-actuator: false
+  use-management-port: false
+openhis:
+  framework:
+    runtime:
+      # 院端上报中心时使用；令牌通过环境变量注入，勿提交仓库
+      sync-token: ${OPENHIS_FRAMEWORK_RUNTIME_SYNC_TOKEN:}
+  flyway:
+    modular:
+      enabled: true
+  # 扩展模块唯一运行时开关（改后重启；jar 由 health-app pom 打入，无需再配 extensions-* profile）
+  modules:
+    emr:
+      enabled: false
+    mrms:
+      enabled: true
+    chs:
+      enabled: false
+
+whale:
+  cache:
+    concept:
+      init-on-startup: true  # 生产环境可以设为 true，开发环境设为 false
+
+# BJCA DSVS签名验证服务配置
+ca:
+  dsvs:
+    enabled: true
+    app-name: SVSDefault
+    config-path: C:\BJCAROOT
+  signature:
+    # 验证模式: dsvs(BJCA官方SDK) / bc(BouncyCastle) / skip(跳过SM2验签，前端已验证)
+    # SM2签名因服务端无法确定BJCA使用的ID，BC验证始终失败，DSVS需部署SVS服务
+    # skip模式：前端SOF_VerifySignedData已做客户端签名验证，服务端跳过SM2验签
+    verify-mode: skip
+
+---
+# 生产：关闭 Swagger
+spring:
+  config:
+    activate:
+      on-profile: prod
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+# 生产禁止跳过 CA 服务端验签（见 CaSignaturePolicyEnforcer）
+ca:
+  signature:
+    verify-mode: dsvs

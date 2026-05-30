@@ -1,0 +1,36 @@
+-- adm_patient_student（建表）
+-- Flyway V19
+
+CREATE TABLE IF NOT EXISTS "public"."adm_patient_student" (
+    "id" int8 NOT NULL,
+    "tenant_id" int8,
+    "created_at" timestamptz(6) NOT NULL,
+    "updated_at" timestamptz(6),
+    "created_by" int8,
+    "updated_by" int8,
+    "is_deleted" bool NOT NULL DEFAULT false,
+    "deleted_at" timestamptz(6),
+    "deleted_by" int8,
+    "version" int4 NOT NULL DEFAULT 0,
+    "name" varchar(255) NOT NULL,
+    "py_str" varchar(255),
+    "wb_str" varchar(255),
+    "gender_enum" varchar(255),
+    "age" int4,
+    "student_no" varchar(255) NOT NULL,
+    "id_card" varchar(255),
+    "phone" varchar(255),
+    "college" varchar(255),
+    "major" varchar(255),
+    "edu_level" int4,
+    "enroll_time" timestamptz(6),
+    "leave_time" timestamptz(6),
+    "grade" varchar(255),
+    "study_type" int4,
+    "school_status" int4,
+    "physical_exam_result" int4,
+    "counselor" varchar(255),
+    "counselor_phone" varchar(255),
+    "patient_id" int8 NOT NULL,
+    CONSTRAINT "adm_patient_student_pkey" PRIMARY KEY ("id")
+);

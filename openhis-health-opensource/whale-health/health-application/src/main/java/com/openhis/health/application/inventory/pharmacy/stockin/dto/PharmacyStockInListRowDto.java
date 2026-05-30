@@ -1,0 +1,79 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.application.inventory.pharmacy.stockin.dto;
+
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.experimental.Accessors;
+
+import java.time.LocalDateTime;
+
+/**
+ * 药房入库单列表聚合行（IF-PHA-IN-02：每 bus_no 一行，突出来源位置「从哪入」）。
+ *
+ * <p>类型、状态等为持久化 {@code code}（B.10.8.1）；{@code statusEnumText} 与来源展示名由列表查询后在应用层装配。</p>
+ */
+@Getter
+@Setter
+@Accessors(chain = true)
+@Schema(description = "药房入库单列表聚合行")
+public class PharmacyStockInListRowDto {
+
+    @Schema(description = "业务单号")
+    private String busNo;
+
+    @Schema(description = "供应类型持久化码，固定为 PHARMACY_STOCK_IN")
+    private String typeEnum;
+
+    @Schema(description = "单据状态持久化码 SupplyStatus#getCode")
+    private String statusEnum;
+
+    @Schema(description = "单据状态中文展示（SupplyStatus#getDisplay）")
+    private String statusEnumText;
+
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "来源药库主键（从哪入）")
+    private Long sourceLocationId;
+
+    @Schema(description = "来源位置展示名")
+    private String sourceLocationName;
+
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "目的药房主键")
+    private Long purposeLocationId;
+
+    @Schema(description = "申请时间")
+    private LocalDateTime applyTime;
+
+    @Schema(description = "审批时间")
+    private LocalDateTime approvalTime;
+
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "申请人主键")
+    private Long applicantId;
+
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "审批人主键")
+    private Long approverId;
+
+    @Schema(description = "关联上游业务单号（系统生成时展示出库单号）")
+    private String originalBusNo;
+}

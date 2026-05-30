@@ -1,0 +1,68 @@
+-- adm_device_definition（建表 + 种子数据）
+-- Flyway V5
+
+CREATE TABLE IF NOT EXISTS "public"."adm_device_definition" (
+    "id" int8 NOT NULL,
+    "tenant_id" int8,
+    "created_at" timestamptz(6) NOT NULL,
+    "updated_at" timestamptz(6),
+    "created_by" int8,
+    "updated_by" int8,
+    "is_deleted" bool NOT NULL DEFAULT false,
+    "deleted_at" timestamptz(6),
+    "deleted_by" int8,
+    "version" int4 NOT NULL DEFAULT 0,
+    "name" varchar(255) NOT NULL,
+    "bus_no" varchar(255),
+    "py_str" varchar(255),
+    "wb_str" varchar(255),
+    "category_code" varchar(255),
+    "type_code" varchar(255),
+    "purchase_unit_code" varchar(255),
+    "total_volume" varchar(255),
+    "item_min_quantity" numeric(18,2),
+    "item_max_quantity" numeric(18,2),
+    "split_unit_code" varchar(255),
+    "merchandise_name" varchar(255),
+    "merchandise_py_str" varchar(255),
+    "merchandise_wb_str" varchar(255),
+    "def_encounter_unit_code" varchar(255),
+    "def_inhospital_unit_code" varchar(255),
+    "org_id" int8,
+    "location_id" int8,
+    "model_number" varchar(255),
+    "hvcm_flag" bool,
+    "dose_unit_code" varchar(255),
+    "package_unit_code" varchar(255),
+    "stock_unit_code" varchar(255),
+    "approval_number" varchar(255),
+    "manufacturer_id" int8,
+    "manufacturer_text" varchar(255),
+    "supply_id" int8,
+    "description" varchar(255),
+    "jurisdiction" varchar(255),
+    "device_version" varchar(255),
+    "substance_text" varchar(255),
+    "allergen_flag" bool,
+    "rx_flag" bool,
+    "yb_flag" bool,
+    "yb_no" varchar(255),
+    "yb_org_no" varchar(255),
+    "yb_match_flag" bool,
+    "chrgitm_lv" int4,
+    "status_enum" varchar(255) NOT NULL,
+    "active_flag" bool NOT NULL,
+    "yb_mapping_code" varchar(255),
+    "dose_unit_ratio" numeric(18,6),
+    "purchase_unit_ratio" numeric(18,6),
+    "stock_unit_ratio" numeric(18,6),
+    "package_unit_ratio" numeric(18,6),
+    CONSTRAINT "adm_device_definition_pkey" PRIMARY KEY ("id")
+);
+
+-- seed: adm_device_definition
+INSERT INTO "adm_device_definition" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "name", "bus_no", "py_str", "wb_str", "category_code", "type_code", "purchase_unit_code", "total_volume", "item_min_quantity", "item_max_quantity", "split_unit_code", "org_id", "location_id", "model_number", "hvcm_flag", "dose_unit_code", "package_unit_code", "stock_unit_code", "approval_number", "manufacturer_id", "manufacturer_text", "supply_id", "description", "jurisdiction", "device_version", "substance_text", "allergen_flag", "rx_flag", "yb_flag", "yb_no", "yb_org_no", "yb_match_flag", "chrgitm_lv", "status_enum", "active_flag", "yb_mapping_code", "dose_unit_ratio", "purchase_unit_ratio", "stock_unit_ratio", "package_unit_ratio", "merchandise_name", "merchandise_py_str", "merchandise_wb_str", "def_encounter_unit_code", "def_inhospital_unit_code")
+VALUES
+(318617136047591424, 1, '2026-05-29 05:10:44.853+00', '2026-05-29 05:10:44.853+00', 1, 1, false, NULL, NULL, 0, '一次性使用无菌注射器', 'DD0005', 'YCXSYWJZSQ', 'GUNWEFAITK', 11, 1, 7, '5ml', NULL, NULL, 9, NULL, NULL, NULL, false, 3, 9, 9, NULL, NULL, 1111, NULL, NULL, NULL, NULL, NULL, false, NULL, false, NULL, NULL, false, NULL, 'ACTIVE', true, NULL, 5.000000, 100.000000, 1.000000, 1.000000, '一次性使用无菌注射器', 'YCXSYWJZSQ', 'GUNWEFAITK', NULL, NULL),
+(318619026458677248, 1, '2026-05-29 05:18:15.563+00', '2026-05-29 05:18:15.563+00', 1, 1, false, NULL, NULL, 0, '(蓝）一次性真空采血管', 'DD0006', '(L）YCXZKCXG', '(A）GUNFPETT', 11, NULL, 7, '5ml', NULL, NULL, 9, NULL, NULL, NULL, false, 9, 9, 9, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, false, NULL, false, NULL, NULL, false, NULL, 'ACTIVE', true, NULL, 1.000000, 100.000000, 1.000000, 1.000000, '(蓝）一次性真空采血管', '(L）YCXZKCXG', '(A）GUNFPETT', NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;

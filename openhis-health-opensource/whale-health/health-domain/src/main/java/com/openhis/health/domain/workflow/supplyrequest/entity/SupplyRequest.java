@@ -1,0 +1,558 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.domain.workflow.supplyrequest.entity;
+
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.enums.SupplyStatus;
+import com.openhis.health.domain.share.enums.SupplyType;
+import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.whale.core.domain.BaseAuditedEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.List;
+
+/**
+ * 供应请求聚合根（同表多行：同一 {@code bus_no} 聚合多行明细，共享审批状态）。
+ *
+ * <p>边界：本聚合只维护单据行与审批流转；发放与库存变动由应用层编排（SupplyDelivery / InventoryItem）承接。</p>
+ *
+ * <p>凡 {@code type_enum}/{@code status_enum}/{@code category_enum} 等与领域枚举对应的列，持久化值均为各枚举
+ * {@link com.openhis.health.domain.share.enums.SupplyType#getCode()}、{@link com.openhis.health.domain.share.enums.SupplyStatus#getCode()} 等
+ * 字符串（B.10.8.1）；实体方法内比对禁止使用排序号整型。</p>
+ */
+@Getter
+@Setter
+@Entity
+@Table(name = "wkf_supply_request")
+public class SupplyRequest extends BaseAuditedEntity {
+
+    /** 业务单号；同号多行共享审批生命周期。 */
+    @Column(name = "bus_no", nullable = false)
+    private String busNo;
+
+    /** 来源业务单号（如进货关联订货）；可空。 */
+    @Column(name = "original_bus_no")
+    private String originalBusNo;
+
+    /** 供应类型持久化码（{@link SupplyType#getCode()}，B.10.8.1）。 */
+    @Column(name = "type_enum", nullable = false)
+    private String typeEnum;
+
+    /** 供应状态持久化码（{@link SupplyStatus#getCode()}，B.10.8.1）。 */
+    @Column(name = "status_enum", nullable = false)
+    private String statusEnum;
+
+    @Column(name = "intent_enum")
+    private String intentEnum;
+
+    /** 供应类别持久化码（与 {@link com.openhis.health.domain.share.enums.SupplyCategory#getCode()} 对齐，B.10.8.1）。 */
+    @Column(name = "category_enum", nullable = false)
+    private String categoryEnum;
+
+    @Column(name = "priority_enum")
+    private String priorityEnum;
+
+    @Column(name = "summary_id")
+    private Long summaryId;
+
+    @Column(name = "deliver_id")
+    private Long deliverId;
+
+    @Column(name = "patient_id")
+    private Long patientId;
+
+    @Column(name = "item_table", nullable = false)
+    private String itemTable;
+
+    /**
+     * 行数量：入出库等为执行数量（拆零、正数）；盘点/损益等为盈亏数量（拆零，可正可负可零）。
+     */
+    @Column(name = "item_quantity", nullable = false)
+    private BigDecimal itemQuantity;
+
+    /**
+     * 合计/实盘数量：盘点场景存实盘数量（拆零、≥0）；其它单据按业务口径使用。
+     */
+    @Column(name = "total_quantity")
+    private BigDecimal totalQuantity;
+
+    @Column(name = "item_id", nullable = false)
+    private Long itemId;
+
+    @Column(name = "unit_code", nullable = false)
+    private String unitCode;
+
+    @Column(name = "occurrence_time")
+    private LocalDateTime occurrenceTime;
+
+    /** 效期区间起点（与 {@code end_time} 成对；可空表示未维护）。 */
+    @Column(name = "start_time")
+    private LocalDateTime startTime;
+
+    /** 效期区间止点（入库入账时可用于库存项有效期等编排）。 */
+    @Column(name = "end_time")
+    private LocalDateTime endTime;
+
+    @Column(name = "practitioner_id")
+    private Long practitionerId;
+
+    @Column(name = "supplier_id")
+    private Long supplierId;
+
+    @Column(name = "reason")
+    private String reason;
+
+    /** 药库订货单等业务可无来源位置，允许为空。 */
+    @Column(name = "source_type_enum")
+    private String sourceTypeEnum;
+
+    /** 药库订货单采购场景通常仅维护 purpose（入库位置），来源可为空。 */
+    @Column(name = "source_location_id")
+    private Long sourceLocationId;
+
+    @Column(name = "purpose_type_enum", nullable = false)
+    private String purposeTypeEnum;
+
+    @Column(name = "purpose_location_id", nullable = false)
+    private Long purposeLocationId;
+
+    @Column(name = "approver_id")
+    private Long approverId;
+
+    @Column(name = "approval_time")
+    private LocalDateTime approvalTime;
+
+    @Column(name = "applicant_id", nullable = false)
+    private Long applicantId;
+
+    /** 提交审批时的申请时刻；草稿阶段可为空，提交时由服务端写入当前时间。 */
+    @Column(name = "apply_time")
+    private LocalDateTime applyTime;
+
+    @Column(name = "lot_number")
+    private String lotNumber;
+
+    @Column(name = "trace_no", length = 50000)
+    private String traceNo;
+
+    @Column(name = "price")
+    private BigDecimal price;
+
+    @Column(name = "total_price")
+    private BigDecimal totalPrice;
+
+    /** 盘点盈亏金额：盘盈为正、盘亏为负；非盘点类型可空。 */
+    @Column(name = "profit_loss_price")
+    private BigDecimal profitLossPrice;
+
+    @Column(name = "remake")
+    private String remake;
+
+    /** 乐观锁版本（与表 {@code version} 列对齐）。 */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Integer version;
+
+    /**
+     * 最小建单断言（BR-SR-001）。
+     *
+     * @throws BusinessException 参数非法
+     */
+    public void assertCreatableMinimumFields() {
+        if (this.busNo == null || this.busNo.trim().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "busNo 不能为空");
+        }
+        if (this.typeEnum == null) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "typeEnum 不能为空");
+        }
+        if (this.itemTable == null || this.itemTable.trim().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "itemTable 不能为空");
+        }
+        if (this.itemId == null) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "itemId 不能为空");
+        }
+        if (SupplyType.isStocktakeTypeCode(this.typeEnum)) {
+            if (this.itemQuantity == null) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "盘点盈亏数量不能为空");
+            }
+            if (this.totalQuantity != null && this.totalQuantity.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "盘点实盘数量不能为负");
+            }
+            if (this.purposeTypeEnum == null || this.purposeTypeEnum.trim().isEmpty()) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "盘点库房类型不能为空");
+            }
+            if (this.purposeLocationId == null) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "盘点库房不能为空");
+            }
+        } else if (this.itemQuantity == null || this.itemQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "itemQuantity 必须大于 0");
+        }
+        if (this.unitCode == null || this.unitCode.trim().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "unitCode 不能为空");
+        }
+
+        // 白名单校验：typeEnum 必须在 SupplyType 1~28 范围内。
+        boolean allowed = false;
+        for (SupplyType supplyType : SupplyType.values()) {
+            if (supplyType.getCode().equals(this.typeEnum)) {
+                allowed = true;
+                break;
+            }
+        }
+        if (!allowed) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "typeEnum 不在白名单范围内: " + this.typeEnum);
+        }
+    }
+
+    /**
+     * 提交审批状态断言（BR-SR-002/BR-SR-013）。
+     *
+     * @throws BusinessException 状态不允许
+     */
+    public void assertSubmittable() {
+        if (this.statusEnum == null) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "statusEnum 不能为空");
+        }
+        if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(this.statusEnum)
+            && !SupplyStatus.WITHDRAW.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/已撤回状态允许提交审批");
+        }
+    }
+
+    /**
+     * 进入「审核中」状态，可选写入申请时间。
+     *
+     * @param applyTime 申请/提交时间，可为 {@code null} 表示不覆盖
+     */
+    public void toApproval(LocalDateTime applyTime) {
+        this.statusEnum = SupplyStatus.APPROVAL.getCode();
+        if (applyTime != null) {
+            this.applyTime = applyTime;
+        }
+    }
+
+    /**
+     * 撤回审批状态断言。
+     *
+     * @throws BusinessException 状态不允许
+     */
+    public void assertWithdrawable() {
+        if (this.statusEnum == null) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "statusEnum 不能为空");
+        }
+        if (!SupplyStatus.APPROVAL.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅审核中状态允许撤回");
+        }
+    }
+
+    /**
+     * 撤回审批后的状态流转（{@code status_enum} 置为 {@link SupplyStatus#WITHDRAW} 的持久化 {@code getCode()}）。
+     */
+    public void toWithdraw() {
+        this.statusEnum = SupplyStatus.WITHDRAW.getCode();
+    }
+
+    /**
+     * 同意状态断言。
+     *
+     * @throws BusinessException 状态不允许
+     */
+    public void assertApprovable() {
+        if (this.statusEnum == null) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "statusEnum 不能为空");
+        }
+        if (!SupplyStatus.APPROVAL.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅审核中状态允许同意");
+        }
+    }
+
+    /**
+     * 审批同意：迁至已通过，并记录审批人与审批时间。
+     *
+     * @param approverId 审批人主键
+     * @param approvalTime 审批时间
+     */
+    public void approvalToAgree(Long approverId, LocalDateTime approvalTime) {
+        this.statusEnum = SupplyStatus.AGREE.getCode();
+        this.approverId = approverId;
+        this.approvalTime = approvalTime;
+    }
+
+    /**
+     * 驳回状态断言。
+     *
+     * @throws BusinessException 状态不允许
+     */
+    public void assertRejectable() {
+        if (this.statusEnum == null) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "statusEnum 不能为空");
+        }
+        if (!SupplyStatus.APPROVAL.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅审核中状态允许驳回");
+        }
+    }
+
+    /**
+     * 按业务单号逻辑删除前的状态断言（DM-WKF-006 §6.1.16；不变式 BR-SR-011）。
+     *
+     * <p>业务含义：已进入审批中、已同意或已产生下游事实的单据不得整单逻辑删除；仅终局前可撤销态允许删除。</p>
+     *
+     * @throws BusinessException 状态不允许删除
+     */
+    public void assertRemovableForSoftDelete() {
+        if (this.statusEnum == null) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "statusEnum 不能为空");
+        }
+        // 业务含义：待审核——建单后未提交或提交前可删单清理。
+        if (SupplyStatus.PENDING_APPROVAL.getCode().equals(this.statusEnum)) {
+            return;
+        }
+        // 业务含义：驳回——审批终局拒绝，允许删单重建。
+        if (SupplyStatus.REJECT.getCode().equals(this.statusEnum)) {
+            return;
+        }
+        // 业务含义：已撤回——从审核中主动撤回，回到可删态。
+        if (SupplyStatus.WITHDRAW.getCode().equals(this.statusEnum)) {
+            return;
+        }
+        throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核、驳回、已撤回状态允许删除单据");
+    }
+
+    /**
+     * 门控：药库订货单同号下全量修订（软删旧行后重插）所要求的不变式（BR-SR-003 可编辑态 / 类型白名单）。
+     *
+     * <p>服务层不内联状态比较，统一经本方法委托。</p>
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     * @throws BusinessException 非药库订货单或存在非待审核行
+     */
+    public static void assertPurchaseOrderLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "订货单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.CABINET_PURCHASE_ORDER.getCode().equals(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药库订货单不可按同号全量修订");
+            }
+            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订订货明细");
+            }
+        }
+    }
+
+    /**
+     * 门控：药库进货单同号下全量修订（软删旧行后重插）所要求的不变式（BR-SR-003 可编辑态 / 类型白名单）。
+     *
+     * <p>{@code type_enum}、{@code status_enum} 与枚举比对时一律使用 {@link com.openhis.health.domain.share.enums.SupplyType#getCode()} /
+     * {@link com.openhis.health.domain.share.enums.SupplyStatus#getCode()} 持久化字符串（B.10.8.1），禁止排序号或数字串中转。</p>
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     * @throws BusinessException 非药库进货单或存在非待审核行
+     */
+    public static void assertInboundReceiptLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "进货单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.CABINET_INBOUND_RECEIPT.getCode().equals(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药库进货单不可按同号全量修订");
+            }
+            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订进货明细");
+            }
+        }
+    }
+
+    /**
+     * 门控：药库退货单（向供应商退货）同号下全量修订所要求的不变式。
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     */
+    public static void assertReturnToSupplierLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "退货单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.CABINET_RETURN_TO_SUPPLIER.getCode().equals(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药库退货单不可按同号全量修订");
+            }
+            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订退货明细");
+            }
+        }
+    }
+
+    /**
+     * 门控：药房请领单同号下全量修订（软删旧行后重插）所要求的不变式（PHA-QL-SDD-R-002 / BR-SR-003）。
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     */
+    public static void assertPharmacyRequisitionLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "请领单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.PHARMACY_REQUISITION.getCode().equals(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药房请领单不可按同号全量修订");
+            }
+            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订请领明细");
+            }
+        }
+    }
+
+    /**
+     * 门控：药房入库执行单（type 13）同号全量修订（PHA-IN-SDD-R-001）。
+     */
+    public static void assertPharmacyStockInLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "药房入库单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.PHARMACY_STOCK_IN.getCode().equals(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药房入库单不可按同号全量修订");
+            }
+            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订药房入库明细");
+            }
+        }
+    }
+
+    /**
+     * 门控：药房退库单（退回药库，type 14）同号全量修订。
+     */
+    public static void assertPharmacyReturnUpstreamLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "药房退库单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.PHARMACY_RETURN_TO_UPSTREAM.getCode().equals(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药房退库单不可按同号全量修订");
+            }
+            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订药房退库明细");
+            }
+        }
+    }
+
+    /**
+     * 门控：盘点执行单（药库/药房/科室盘点类 {@link SupplyType#isStocktakeTypeCode(String)}）同号全量修订。
+     *
+     * <p>与药库出库、订货修订一致：仅待审核态允许软删旧行后按命令全量重插；禁止混用非盘点类型单号。</p>
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     * @throws BusinessException 单号不存在、非盘点类型或存在非待审核行
+     */
+    public static void assertStocktakeLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "盘点单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.isStocktakeTypeCode(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "非盘点单不可按同号全量修订");
+            }
+            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "仅待审核状态允许修订盘点明细");
+            }
+        }
+    }
+
+    /**
+     * 门控：药库出库执行单（{@link com.openhis.health.domain.share.enums.SupplyType#CABINET_STOCK_OUT}）同号全量修订（WHS-SO-SDD-R-003）。
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     */
+    public static void assertCabinetStockOutLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "出库单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.CABINET_STOCK_OUT.getCode().equals(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药库出库单不可按同号全量修订");
+            }
+            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订出库明细");
+            }
+        }
+    }
+
+    /**
+     * 门控：药库退库单（下游退回，type 5）同号全量修订。
+     */
+    public static void assertCabinetReturnFromDownstreamLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "药库退库单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.CABINET_RETURN_FROM_DOWNSTREAM.getCode().equals(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药库退库单不可按同号全量修订");
+            }
+            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订药库退库明细");
+            }
+        }
+    }
+
+    /**
+     * 审批驳回：迁至已驳回，并记录审批人与审批时间。
+     *
+     * @param approverId 审批人主键
+     * @param approvalTime 审批时间
+     */
+    public void approvalToReject(Long approverId, LocalDateTime approvalTime) {
+        this.statusEnum = SupplyStatus.REJECT.getCode();
+        this.approverId = approverId;
+        this.approvalTime = approvalTime;
+    }
+}

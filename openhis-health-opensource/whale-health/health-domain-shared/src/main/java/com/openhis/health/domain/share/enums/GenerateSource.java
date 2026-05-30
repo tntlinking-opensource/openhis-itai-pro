@@ -1,0 +1,63 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.domain.share.enums;
+
+import lombok.Getter;
+
+/**
+ * 医嘱生成来源枚举。
+ *
+ * <p>标识医嘱请求（药品/服务/器械）及收费明细由何种业务场景产生，对应库表字段
+ * {@code generate_source_enum}。持久化与事件载荷身份一律使用 {@link #getCode()} 英文编码
+ *（与 DM-MED-003 §4.5 约定一致，禁止数字串作身份）。</p>
+ *
+ * <p>{@link #getSortOrder()} 仅用于展示排序，不得作为库表或业务分支的身份依据。</p>
+ */
+@Getter
+public enum GenerateSource implements EnumInterface {
+
+    /** 医生在医生站等业务端开立医嘱。 */
+    DOCTOR_PRESCRIPTION(0L, "doctor-prescription", "医生开立", "医生开立医嘱或处方。", 1L),
+
+    /** 护士站划价产生。 */
+    NURSE_PRICING(0L, "nurse-pricing", "护士划价", "护士站划价录入产生。", 2L),
+
+    /** 挂号登记时自动产生。 */
+    REGISTRATION_REGISTER(0L, "registration", "挂号登记", "挂号登记流程自动带出。", 3L),
+
+    /** 医嘱执行环节产生。 */
+    ORDER_EXECUTE(0L, "order-execute", "医嘱执行", "医嘱执行、补记等执行侧产生。", 4L),
+
+    /** 住院自动滚费产生。 */
+    AUTO_ROLL_FEES(0L, "auto-roll-fees", "自动滚费", "住院自动滚费任务产生。", 5L);
+
+    private final Long codeSystemId;
+    private final String code;
+    private final String display;
+    private final String definition;
+    private final Long sortOrder;
+
+    GenerateSource(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
+        this.codeSystemId = codeSystemId;
+        this.code = code;
+        this.display = display;
+        this.definition = definition;
+        this.sortOrder = sortOrder;
+    }
+
+}

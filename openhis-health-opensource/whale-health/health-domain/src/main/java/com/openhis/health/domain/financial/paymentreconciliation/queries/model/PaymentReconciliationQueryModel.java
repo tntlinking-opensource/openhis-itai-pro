@@ -1,0 +1,81 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.domain.financial.paymentreconciliation.queries.model;
+
+import lombok.Getter;
+import lombok.Setter;
+
+import com.openhis.health.domain.share.enums.PaymentKind;
+import com.openhis.health.domain.share.enums.PaymentStatus;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+/**
+ * 支付对账头读模型：支付单全貌（状态、金额、就诊、发票与医保结算串等）。
+ */
+@Getter
+@Setter
+public class PaymentReconciliationQueryModel {
+    /** 支付单主键。 */
+    private Long id;
+    /** 支付状态。 */
+    private PaymentStatus statusEnum;
+    /** 与结算或订单的关联主键。 */
+    private Long relationId;
+    /** 支付业务单号。 */
+    private String paymentNo;
+    /** 支付渠道枚举编码。 */
+    private String paymentEnum;
+    /** 支付大类（门诊/住院等）。 */
+    private PaymentKind kindEnum;
+    /** 经办人主键。 */
+    private Long entererId;
+    /** 患者主键。 */
+    private Long patientId;
+    /** 开单医师主键（可空）。 */
+    private Long practitionerId;
+    /** 业务结果枚举编码。 */
+    private String outcomeEnum;
+    /** 收费地点主键。 */
+    private Long locationId;
+    /** 实收金额。 */
+    private BigDecimal tenderedAmount;
+    /** 已退金额。 */
+    private BigDecimal returnedAmount;
+    /** 展示金额。 */
+    private BigDecimal displayAmount;
+    /** 合同号。 */
+    private String contractNo;
+    /** 费用明细 ID 集合序列化串。 */
+    private String chargeItemIds;
+    /** 就诊主键。 */
+    private Long encounterId;
+    /** 账单日期。 */
+    private LocalDateTime billDate;
+    /** 发票主键。 */
+    private Long invoiceId;
+    /** 账户主键。 */
+    private Long accountId;
+    /** 医保结算 ID 列表序列化串。 */
+    private String ybSettleIds;
+    /** 是否已完成医保清算标记。 */
+    private Boolean ybClearFlag;
+    /** 票据打印次数。 */
+    private Integer printCount;
+}

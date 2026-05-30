@@ -1,0 +1,87 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.application.basic.department.dto;
+
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import lombok.Data;
+
+import java.util.List;
+
+/**
+ * 科室列表/树节点 DTO。
+ *
+ * <p>同时承载平铺字段与树结构字段（children），用于列表页树表展示。</p>
+ */
+@Data
+public class DepartmentDto {
+    /** 科室主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long id;
+    /** 科室业务编号。 */
+    private String busNo;
+    /** 科室名称。 */
+    private String name;
+    /** 启停标识（旧版页面兼容值，1-启用，2-停用）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Integer activeFlag;
+    /** 启停标识展示文案。 */
+    private String activeFlag_dictText;
+    /** 类型枚举排序值（旧版页面兼容）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Integer typeEnum;
+    /** 类型展示文案。 */
+    private String typeEnum_dictText;
+    /** 分类枚举排序值（旧版页面兼容）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Integer classEnum;
+    /** 分类展示文案。 */
+    private String classEnum_dictText;
+    /** 拼音码。 */
+    private String pyStr;
+    /** 五笔码。 */
+    private String wbStr;
+    /** 默认医师 ID。 */
+    private Long defDoctorId;
+    /** 医保机构编码。 */
+    private String ybNo;
+    /** 医保机构名称。 */
+    private String ybName;
+    /** 医保医药机构标识。 */
+    private String medinsId;
+    /** 医保行政区划。 */
+    private String medinsAdmdvs;
+    /** 医保医药机构类型。 */
+    private String medinsType;
+    /** 医保医药机构等级。 */
+    private String medinsLv;
+    /** 科别。 */
+    private String caty;
+    /** 显示顺序。 */
+    private Integer displayOrder;
+    /** 上级科室 ID。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long parentId;
+    /** 组织单元 ID（identity 侧）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long ouId;
+    /** 电子票据科室编码。 */
+    private String eleInvoiceDeptCode;
+    /** 子科室节点。 */
+    private List<DepartmentDto> children;
+}

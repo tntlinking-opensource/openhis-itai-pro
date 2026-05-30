@@ -1,0 +1,116 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.domain.medication.medicationrequest.repository;
+
+import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.Collection;
+
+/**
+ * 药品申请仓储。
+ */
+public interface MedicationRequestRepository extends JpaRepository<MedicationRequest, Long>,
+    JpaSpecificationExecutor<MedicationRequest> {
+    /**
+     * 按主键查询未删除药品申请。
+     *
+     * @param id 主键
+     * @return 药品申请
+     */
+    Optional<MedicationRequest> findById(Long id);
+
+    /**
+     * 按就诊查询未删除药品申请。
+     *
+     * @param encounterId 就诊标识
+     * @return 申请集合
+     */
+    List<MedicationRequest> findByEncounterId(Long encounterId);
+
+    /**
+     * 按就诊与生成来源过滤药品申请（门诊医生站医嘱列表 BR-ORD-010）。
+     *
+     * @param encounterId 就诊标识
+     * @param generateSourceEnum 生成来源持久化码
+     * @return 申请集合
+     */
+    List<MedicationRequest> findByEncounterIdAndGenerateSourceEnum(Long encounterId, String generateSourceEnum);
+
+    /**
+     * 按患者查询未删除药品申请。
+     *
+     * @param patientId 患者标识
+     * @return 申请集合
+     */
+    List<MedicationRequest> findByPatientId(Long patientId);
+
+    /**
+     * 校验业务号是否已存在。
+     *
+     * @param busNo 业务号
+     * @return 是否存在
+     */
+    boolean existsByBusNo(String busNo);
+
+    /**
+     * 按主键集合查询未删除药品申请。
+     *
+     * @param ids 主键集合
+     * @return 药品申请集合
+     */
+    List<MedicationRequest> findByIdIn(Collection<Long> ids);
+
+    /**
+     * 按患者并排除当前就诊查询历史药品申请。
+     *
+     * @param patientId 患者标识
+     * @param encounterId 当前就诊标识
+     * @return 历史申请集合
+     */
+    List<MedicationRequest> findByPatientIdAndEncounterIdNot(Long patientId, Long encounterId);
+
+    /**
+     * 判断药品是否存在有效医嘱引用。
+     *
+     * @param medicationId 药品标识
+     * @return 是否存在引用
+     */
+    boolean existsByMedicationId(Long medicationId);
+
+    /**
+     * 按原药品申请主键集合查询关联退药/负向申请行（refund_medicine_id 命中）。
+     *
+     * @param refundMedicineIds 原药品申请主键集合
+     * @return 退药关联申请集合
+     */
+    List<MedicationRequest> findByRefundMedicineIdIn(Collection<Long> refundMedicineIds);
+
+    /**
+     * 按就诊主键集合与请求状态批量查询（护士站待校对计数等）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @param statusEnum     请求状态 code
+     * @return 药品申请集合
+     */
+    List<MedicationRequest> findByEncounterIdInAndStatusEnum(Collection<Long> encounterIds, String statusEnum);
+}
+

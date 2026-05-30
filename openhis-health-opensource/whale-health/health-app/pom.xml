@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    
+    <parent>
+        <groupId>com.openhis</groupId>
+        <artifactId>whale-health</artifactId>
+        <version>2.0.0-SNAPSHOT</version>
+    </parent>
+    
+    <artifactId>health-app</artifactId>
+    <packaging>jar</packaging>
+    
+    <name>Health App</name>
+    <description>健康应用启动模块</description>
+
+    <properties>
+        <skip.license.bundle>false</skip.license.bundle>
+    </properties>
+    
+    <dependencies>
+        <!-- Health Application -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>health-application</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        
+        <!-- Health Infrastructure -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>health-infrastructure</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Whale Framework 核心模块 -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>whale-core</artifactId>
+            <version>${whale.framework.version}</version>
+        </dependency>
+        
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>whale-identity</artifactId>
+            <version>${whale.framework.version}</version>
+        </dependency>
+        
+        <!-- Whale Audit (审计日志，实现 IAuditingStore) -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>whale-audit</artifactId>
+            <version>${whale.framework.version}</version>
+        </dependency>
+
+        <!-- Whale Runtime (框架运行时同步) -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>whale-runtime</artifactId>
+            <version>${whale.framework.version}</version>
+        </dependency>
+        
+        <!-- Whale Web (包含框架核心功能) -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>whale-web</artifactId>
+            <version>${whale.framework.version}</version>
+        </dependency>
+
+        <!-- Spring Boot Starter -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        
+        <!-- Spring Boot Starter Web -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        
+        <!-- Spring Boot Starter Security -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        
+        <!-- Spring Boot Starter Actuator -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Spring Boot DevTools (开发工具，支持热重载) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+        
+        <!-- Flyway Database Migration -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+        
+        <!-- PostgreSQL Driver -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+
+        <!-- Fastjson2 (health-domain 的 FrequencyManager 等依赖，需显式引入确保运行时可用) -->
+        <dependency>
+            <groupId>com.alibaba.fastjson2</groupId>
+            <artifactId>fastjson2</artifactId>
+            <version>2.0.58</version>
+        </dependency>
+    </dependencies>
+    <profiles>
+        <profile>
+            <id>with-emr</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>health-bridge-emr</artifactId>
+                </dependency>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>emr-application</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-mrms</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>health-bridge-mrms</artifactId>
+                </dependency>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>mrms-application</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
+    
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>bundle-runtime-resource</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${skip.license.bundle}</skip>
+                            <target>
+                                <property name="openhis.lic.source"
+                                          value="${project.basedir}/../../local-secrets/license/openhis.lic"/>
+                                <property name="openhis.export.marker"
+                                          value="${project.basedir}/src/main/resources/license/.openhis-export-build"/>
+                                <condition property="license.bundle.ok">
+                                    <or>
+                                        <available file="${openhis.lic.source}"/>
+                                        <available file="${openhis.export.marker}"/>
+                                    </or>
+                                </condition>
+                                <fail unless="license.bundle.ok"
+                                      message="缺少运行时资源标记或内置资源"/>
+                                <mkdir dir="${project.build.outputDirectory}/license"/>
+                                <copy file="${openhis.lic.source}"
+                                      tofile="${project.build.outputDirectory}/license/openhis.lic"
+                                      overwrite="true"
+                                      failonerror="false"/>
+                                <available file="${openhis.export.marker}" property="openhis.export.build"/>
+                                <available file="${project.build.outputDirectory}/license/openhis-default.lic"
+                                             property="openhis.default.lic.present"/>
+                                <fail message="运行时资源配置冲突"
+                                      if="openhis.default.lic.present"
+                                      unless="openhis.export.build"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!-- 启动类仅在 health-app 模块；显式写出避免多模块工程下自动探测落空 -->
+                    <mainClass>com.openhis.health.HealthApplication</mainClass>
+                </configuration>
+            </plugin>
+            <!-- Flyway Maven 插件，用于修复校验和 -->
+            <plugin>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-maven-plugin</artifactId>
+                <configuration>
+                    <url>jdbc:postgresql://localhost:5432/whale_health_db</url>
+                    <user>${DB_USERNAME:postgres}</user>
+                    <password>${DB_PASSWORD:root}</password>
+                    <locations>
+                        <location>classpath:db/migration/health</location>
+                    </locations>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+

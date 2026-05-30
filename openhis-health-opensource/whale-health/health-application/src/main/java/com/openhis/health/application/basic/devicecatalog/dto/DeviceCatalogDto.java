@@ -1,0 +1,213 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.application.basic.devicecatalog.dto;
+
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import lombok.Data;
+
+import java.math.BigDecimal;
+
+/**
+ * 耗材（器材）目录行 DTO（列表与详情共用扁平形状）。
+ *
+ * <p>字段名中带 {@code _dictText} / {@code _enumText} 后缀的为前端展示用冗余文案。</p>
+ */
+@Data
+public class DeviceCatalogDto {
+
+    /** 主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long id;
+
+    /** 业务编号。 */
+    private String busNo;
+    /** 耗材名称。 */
+    private String name;
+    /** 拼音检索码（器材名称维度）。 */
+    private String pyStr;
+    /** 五笔检索码（器材名称维度）。 */
+    private String wbStr;
+    /** 商品名称。 */
+    private String merchandiseName;
+
+    /** 分类编码。 */
+    private String categoryCode;
+    /** 分类展示文案。 */
+    private String categoryCode_dictText;
+
+    /** 类型编码。 */
+    private String typeCode;
+    /** 类型字典展示文案。 */
+    private String typeCode_dictText;
+
+    /** 采购单位编码（持久化 {@code purchase_unit_code}）。 */
+    private String purchaseUnitCode;
+    /** 采购单位字典展示文案。 */
+    private String purchaseUnitCode_dictText;
+
+    /**
+     * 采购单位历史字段名（与 {@link #purchaseUnitCode} 同值，兼容旧前端）。
+     */
+    private String unitCode;
+    /**
+     * 采购单位历史展示字段（与 {@link #purchaseUnitCode_dictText} 同值）。
+     */
+    private String unitCode_dictText;
+
+    /** 包装规格。 */
+    private String totalVolume;
+
+    /** 商品名拼音检索码。 */
+    private String merchandisePyStr;
+
+    /** 商品名五笔检索码。 */
+    private String merchandiseWbStr;
+
+    /** 默认门诊/就诊单位编码。 */
+    private String defEncounterUnitCode;
+
+    /** 默认住院单位编码。 */
+    private String defInhospitalUnitCode;
+
+    /** 剂量单位编码。 */
+    private String doseUnitCode;
+    /** 剂量单位字典展示文案。 */
+    private String doseUnitCode_dictText;
+    /** 剂量→拆零倍数。 */
+    private BigDecimal doseUnitRatio;
+    /** 采购→拆零倍数。 */
+    private BigDecimal purchaseUnitRatio;
+    /** 库存→拆零倍数。 */
+    private BigDecimal stockUnitRatio;
+    /** 销售→拆零倍数。 */
+    private BigDecimal packageUnitRatio;
+
+    /** 拆零单位编码（持久化 {@code split_unit_code}）。 */
+    private String splitUnitCode;
+    /** 拆零单位字典展示文案。 */
+    private String splitUnitCode_dictText;
+
+    /**
+     * 拆零单位历史字段名（与 {@link #splitUnitCode} 同值，兼容旧前端）。
+     */
+    private String minUnitCode;
+    /**
+     * 拆零单位历史展示字段（与 {@link #splitUnitCode_dictText} 同值）。
+     */
+    private String minUnitCode_dictText;
+
+    /** 销售单位编码。 */
+    private String packageUnitCode;
+    /** 销售单位字典展示文案。 */
+    private String packageUnitCode_dictText;
+
+    /** 库存单位编码。 */
+    private String stockUnitCode;
+    /** 库存单位字典展示文案。 */
+    private String stockUnitCode_dictText;
+
+    /** 管理机构 ID。 */
+    private Long orgId;
+    /** 管理机构名称冗余展示。 */
+    private String orgId_dictText;
+
+    /** 存放位置 ID。 */
+    private Long locationId;
+    /** 存放点位名称冗余展示。 */
+    private String locationId_dictText;
+
+    /** 型号。 */
+    private String modelNumber;
+
+    /** 是否高值耗材。 */
+    private Boolean hvcmFlag;
+    /** 高值耗材标识枚举中文说明。 */
+    private String hvcmFlag_enumText;
+
+    /** 批准文号。 */
+    private String approvalNumber;
+
+    /** 是否医保相关（字典语义）。 */
+    private Boolean ybFlag;
+    /** 医保码。 */
+    private String ybNo;
+    /** 医保机构码。 */
+    private String ybOrgNo;
+    /** 医保是否已对码。 */
+    private Boolean ybMatchFlag;
+    /** 医保收费等级。 */
+    private Integer chrgitmLv;
+
+    /** 成分说明。 */
+    private String substanceText;
+
+    /** 生产厂家 ID。 */
+    private Long manufacturerId;
+    /** 厂家名称文本。 */
+    private String manufacturerText;
+
+    /** 供应商 ID。 */
+    private Long supplyId;
+    /** 供应商名称冗余展示。 */
+    private String supplyId_dictText;
+
+    /** 是否过敏原相关。 */
+    private Boolean allergenFlag;
+
+    /** 财务分类编码。 */
+    private String itemTypeCode;
+    /** 财务分类字典展示文案。 */
+    private String itemTypeCode_dictText;
+
+    /** 医保类别编码。 */
+    private String ybType;
+    /** 医保类别字典展示文案。 */
+    private String ybType_dictText;
+
+    /** 管辖范围说明。 */
+    private String jurisdiction;
+
+    /** 采购价（元）。 */
+    private BigDecimal purchasePrice;
+    /** 零售价（元）。 */
+    private BigDecimal retailPrice;
+    /** 限价（元）。 */
+    private BigDecimal maximumRetailPrice;
+
+    /** 单次最小用量等业务限量（依前端口径）。 */
+    private BigDecimal itemMinQuantity;
+    /** 单次或库存维度最大用量/限量上限。 */
+    private BigDecimal itemMaxQuantity;
+
+    /** 描述。 */
+    private String description;
+
+    /** 编辑业务码（更新请求必填；详情加载时由应用层填入默认可编辑口径）。 */
+    private String editabilityCode;
+
+    /** 耗材定义生命周期状态（PublicationStatus 编码）。 */
+    private String statusEnum;
+    /** 生命周期状态中文展示。 */
+    private String statusEnum_enumText;
+
+    /** 目录启用标记（读模型）。 */
+    private Boolean activeFlag;
+    /** 目录启用中文标签。 */
+    private String activeFlagText;
+}

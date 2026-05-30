@@ -1,0 +1,87 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.domain.share.enums;
+
+import com.openhis.health.domain.share.utils.EnumUtil;
+import lombok.Getter;
+
+/**
+ * 支付渠道（{@code fin_payment_rec_detail.pay_enum} 持久化身份）。
+ *
+ * <p>用户收银可选：{@link #CASH}、{@link #ALIPAY}、{@link #WECHAT}、{@link #BANK_CARD}；
+ * {@link #CASHIER} 仅门诊收费内部草稿落库，不可作为前端 {@code payChannelCode} 入参。</p>
+ */
+@Getter
+public enum PaymentChannel implements EnumInterface {
+
+    /** 现金。 */
+    CASH(0L, "CASH", "现金", "", 1L, true),
+
+    /** 支付宝。 */
+    ALIPAY(0L, "ALIPAY", "支付宝", "", 2L, true),
+
+    /** 微信。 */
+    WECHAT(0L, "WECHAT", "微信", "", 3L, true),
+
+    /** 银行卡。 */
+    BANK_CARD(0L, "BANK_CARD", "银行卡", "", 4L, true),
+
+    /** 门诊收银台内部渠道（支付草稿明细默认渠道，非用户单选）。 */
+    CASHIER(0L, "CASHIER", "收银台", "", 5L, false);
+
+    private final Long codeSystemId;
+    private final String code;
+    private final String display;
+    private final String definition;
+    private final Long sortOrder;
+    private final boolean userSelectable;
+
+    PaymentChannel(
+        Long codeSystemId,
+        String code,
+        String display,
+        String definition,
+        Long sortOrder,
+        boolean userSelectable) {
+        this.codeSystemId = codeSystemId;
+        this.code = code;
+        this.display = display;
+        this.definition = definition;
+        this.sortOrder = sortOrder;
+        this.userSelectable = userSelectable;
+    }
+
+    /**
+     * 是否允许用户在前端选择并作为 {@code payChannelCode} 提交。
+     *
+     * @return 用户可选为 true
+     */
+    public boolean isUserSelectable() {
+        return this.userSelectable;
+    }
+
+    /**
+     * 按持久化 code 解析；未命中返回 {@code null}。
+     *
+     * @param code {@code pay_enum} 值
+     * @return 枚举项或 null
+     */
+    public static PaymentChannel fromCode(String code) {
+        return EnumUtil.fromCode(PaymentChannel.class, code);
+    }
+}

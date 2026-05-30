@@ -1,0 +1,660 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.domain.workflow.servicerequest.service;
+
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.enums.GenerateSource;
+import com.openhis.health.domain.share.enums.RequestStatus;
+import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.OffsetVerificationModel;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestHistoryModel;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestQueryModel;
+import com.openhis.health.domain.workflow.servicerequest.repository.ServiceRequestRepository;
+import com.openhis.whale.core.application.exception.BusinessException;
+import jakarta.persistence.criteria.Predicate;
+import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 服务申请读侧查询服务。
+ *
+ * <p>职责：按就诊、患者、诊疗项目等维度查询检查/治疗等服务申请，并提供冲销余额、重复转科出院门控等只读编排；不写库。</p>
+ */
+@Service
+@RequiredArgsConstructor
+public class ServiceRequestQueryService {
+
+    private final ServiceRequestRepository serviceRequestRepository;
+
+
+    /**
+     * 按主键尝试加载服务申请；不存在返回 null（与强制加载区分，供展示型接口）。
+     *
+     * @param id 服务申请主键
+     * @return 读模型或 null
+     */
+    public ServiceRequestQueryModel loadServiceRequestById(Long id) {
+        ServiceRequest request = serviceRequestRepository.findById(id).orElse(null);
+        if (request == null) {
+            return null;
+        }
+        return this.toQueryModel(request);
+    }
+
+    /**
+     * 解析服务申请关联的诊疗项目 id（展示预热，不存在时返回 null）。
+     *
+     * @param serviceRequestId 服务申请主键
+     * @return 诊疗项目 activity_id 或 null
+     */
+    public Long resolveActivityIdByServiceRequestId(Long serviceRequestId) {
+        if (serviceRequestId == null) {
+            return null;
+        }
+        ServiceRequestListModel row = this.mapListModelsByIds(List.of(serviceRequestId)).get(serviceRequestId);
+        if (row == null) {
+            return null;
+        }
+        return row.getActivityId();
+    }
+
+    /**
+     * 按主键批量加载服务申请列表行（护士站已划价列表等产品名/数量回源）。
+     *
+     * @param serviceRequestIds 服务申请主键集合
+     * @return 主键 → 列表行
+     */
+    public Map<Long, ServiceRequestListModel> mapListModelsByIds(Collection<Long> serviceRequestIds) {
+        if (serviceRequestIds == null || serviceRequestIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long id : serviceRequestIds) {
+            if (id != null) {
+                distinctIds.add(id);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<ServiceRequest> rows = serviceRequestRepository.findAllById(distinctIds);
+        Map<Long, ServiceRequestListModel> map = new HashMap<>();
+        for (ServiceRequest request : rows) {
+            if (request == null || request.getId() == null || Boolean.TRUE.equals(request.getIsDeleted())) {
+                continue;
+            }
+            map.put(request.getId(), this.toListModel(request));
+        }
+        return map;
+    }
+
+    /**
+     * 按主键强制加载服务申请。
+     *
+     * @param id 服务申请主键
+     * @return 读模型
+     * @throws BusinessException 申请不存在
+     */
+    public ServiceRequestQueryModel mustGetServiceRequest(Long id) {
+        ServiceRequest request = serviceRequestRepository.findById(id).orElseThrow(
+            () -> new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_NOT_FOUND, "服务申请不存在"));
+        return this.toQueryModel(request);
+    }
+
+    /**
+     * 按就诊列出全部服务申请摘要。
+     *
+     * @param encounterId 就诊标识
+     * @return 列表
+     * @throws BusinessException 就诊标识为空
+     */
+    public List<ServiceRequestListModel> listServiceRequestsByEncounter(Long encounterId) {
+        if (encounterId == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "按就诊查询服务申请时 encounterId 不能为空");
+        }
+        List<ServiceRequest> requests = serviceRequestRepository.findByEncounterId(encounterId);
+        List<ServiceRequestListModel> models = new ArrayList<>();
+        for (ServiceRequest request : requests) {
+            models.add(this.toListModel(request));
+        }
+        return models;
+    }
+
+    /**
+     * 计时诊疗累计用量（吸氧/心电等）：按就诊 + 活动定义汇总 {@code quantity}（小时数）。
+     *
+     * <p>{@code occurrenceDate} 非空时仅统计该自然日（优先 {@code occurrence_start_time}，否则 {@code authored_time}）。</p>
+     *
+     * @param encounterId 就诊标识
+     * @param activityId  诊疗活动定义主键
+     * @param occurrenceDate 发生自然日过滤，可空表示在院全量累计
+     * @return 已累计小时数（quantity 之和向下取整）
+     */
+    public long sumQuantityHoursByEncounterAndActivity(
+        Long encounterId,
+        Long activityId,
+        LocalDate occurrenceDate) {
+        if (encounterId == null || activityId == null) {
+            return 0L;
+        }
+        List<ServiceRequest> requests = serviceRequestRepository.findByEncounterId(encounterId);
+        BigDecimal total = BigDecimal.ZERO;
+        for (ServiceRequest request : requests) {
+            if (request == null || Boolean.TRUE.equals(request.getIsDeleted())) {
+                continue;
+            }
+            if (!activityId.equals(request.getActivityId())) {
+                continue;
+            }
+            if (occurrenceDate != null && !this.matchesTimedServiceOccurrenceDate(request, occurrenceDate)) {
+                continue;
+            }
+            if (request.getQuantity() != null) {
+                total = total.add(request.getQuantity());
+            }
+        }
+        return total.longValue();
+    }
+
+    /**
+     * 查询患者历史服务申请并排除当前就诊，用于既往史侧栏。
+     *
+     * @param patientId 患者标识
+     * @param excludeEncounterId 当前就诊标识（排除）
+     * @return 历史列表
+     * @throws BusinessException 入参不完整
+     */
+    public List<ServiceRequestHistoryModel> listServiceRequestHistoryByPatient(Long patientId, Long excludeEncounterId) {
+        if (patientId == null || excludeEncounterId == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "查询患者历史服务申请时 patientId/excludeEncounterId 不能为空");
+        }
+        List<ServiceRequest> requests = serviceRequestRepository.findByPatientIdAndEncounterIdNot(patientId, excludeEncounterId);
+        List<ServiceRequestHistoryModel> models = new ArrayList<>();
+        for (ServiceRequest request : requests) {
+            ServiceRequestHistoryModel model = new ServiceRequestHistoryModel();
+            model.setId(request.getId());
+            model.setPatientId(request.getPatientId());
+            model.setEncounterId(request.getEncounterId());
+            models.add(model);
+        }
+        return models;
+    }
+
+    /**
+     * 门控：仅草稿态（持久化值等于 {@link RequestStatus#DRAFT} 的 {@link RequestStatus#getCode()}）。
+     *
+     * @param id 服务申请主键
+     * @return 可删除时为 true
+     * @throws BusinessException 记录不存在
+     */
+    public Boolean validateServiceRequestDeletable(Long id) {
+        ServiceRequest request = serviceRequestRepository.findById(id).orElseThrow(
+            () -> new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_NOT_FOUND, "服务申请不存在"));
+        return request.getStatusEnum() != null && request.getStatusEnum().equals(RequestStatus.DRAFT.getCode());
+    }
+
+    /**
+     * 门控：仅已发送态（持久化值等于 {@link RequestStatus#ACTIVE} 的 {@link RequestStatus#getCode()}）允许撤回类操作。
+     *
+     * @param id 服务申请主键
+     * @return 可撤回时为 true
+     * @throws BusinessException 记录不存在
+     */
+    public Boolean validateServiceRequestWithdrawable(Long id) {
+        ServiceRequest request = serviceRequestRepository.findById(id).orElseThrow(
+            () -> new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_NOT_FOUND, "服务申请不存在"));
+        return request.getStatusEnum() != null && request.getStatusEnum().equals(RequestStatus.ACTIVE.getCode());
+    }
+
+    /**
+     * 冲销校验：汇总 refund 指向本单且数量为负的各行绝对值，与源单数量及本单拟冲数量求剩余可冲额度。
+     *
+     * @param sourceId 原服务申请主键
+     * @param preOffset 本单拟冲数量，null 视为 0
+     * @return 剩余数量等结果
+     */
+    public OffsetVerificationModel assertOffsetVerification(Long sourceId, BigDecimal preOffset) {
+        if (sourceId == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "冲销校验 sourceId 不能为空");
+        }
+        if (preOffset == null) {
+            preOffset = BigDecimal.ZERO;
+        }
+        ServiceRequest source = serviceRequestRepository.findById(sourceId).orElseThrow(
+            () -> new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_NOT_FOUND, "原服务申请不存在"));
+        if (source.getQuantity() == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "原服务申请 quantity 不能为空");
+        }
+
+        List<ServiceRequest> negativeRows = serviceRequestRepository.findByRefundServiceIdAndQuantityLessThan(
+            sourceId, BigDecimal.ZERO);
+        BigDecimal offset = BigDecimal.ZERO;
+        for (ServiceRequest row : negativeRows) {
+            if (row.getQuantity() == null) {
+                continue;
+            }
+            offset = offset.add(row.getQuantity().abs());
+        }
+
+        BigDecimal remaining = source.getQuantity().subtract(offset).subtract(preOffset);
+        OffsetVerificationModel model = new OffsetVerificationModel();
+        model.setSourceId(sourceId);
+        model.setRemaining(remaining);
+        return model;
+    }
+
+    /**
+     * 按就诊与治疗时长类型过滤服务申请。
+     *
+     * @param encounterId 就诊标识
+     * @param therapyEnum 治疗时长类型编码
+     * @return 列表
+     * @throws BusinessException 入参不完整
+     */
+    public List<ServiceRequestListModel> listServiceRequestsByTherapyType(Long encounterId, String therapyEnum) {
+        if (encounterId == null || therapyEnum == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "按治疗时长类型查询时 encounterId/therapyEnum 不能为空");
+        }
+        List<ServiceRequest> requests = serviceRequestRepository.findByEncounterIdAndTherapyEnum(encounterId, therapyEnum);
+        List<ServiceRequestListModel> models = new ArrayList<>();
+        for (ServiceRequest request : requests) {
+            models.add(this.toListModel(request));
+        }
+        return models;
+    }
+
+    /**
+     * 按就诊与生成来源枚举过滤服务申请。
+     *
+     * @param encounterId 就诊标识
+     * @param sourceEnum 生成来源编码
+     * @return 列表
+     * @throws BusinessException 入参不完整
+     */
+    public List<ServiceRequestListModel> listServiceRequestsByGenerateSource(Long encounterId, String sourceEnum) {
+        if (encounterId == null || sourceEnum == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "按生成来源查询时 encounterId/sourceEnum 不能为空");
+        }
+        List<ServiceRequest> requests = serviceRequestRepository.findByEncounterIdAndGenerateSourceEnum(encounterId, sourceEnum);
+        List<ServiceRequestListModel> models = new ArrayList<>();
+        for (ServiceRequest request : requests) {
+            models.add(this.toListModel(request));
+        }
+        return models;
+    }
+
+    /**
+     * 按诊疗项目定义主键查询已开立的服务申请。
+     *
+     * @param activityId 诊疗定义主键
+     * @return 列表
+     * @throws BusinessException activityId 为空
+     */
+    public List<ServiceRequestListModel> getServiceRequestByActivityId(Long activityId) {
+        if (activityId == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "按诊疗定义查询时 activityId 不能为空");
+        }
+        List<ServiceRequest> requests = serviceRequestRepository.findByActivityId(activityId);
+        List<ServiceRequestListModel> models = new ArrayList<>();
+        for (ServiceRequest request : requests) {
+            models.add(this.toListModel(request));
+        }
+        return models;
+    }
+
+    /**
+     * 就诊维度下是否已存在未完结的转科或出院类申请（类别 32/34 且状态为草稿或进行中）。
+     *
+     * @param encounterId 就诊标识
+     * @return 存在则为 true
+     * @throws BusinessException 就诊标识为空
+     */
+    public Boolean checkDuplicateTransferOrDischargeRequest(Long encounterId) {
+        if (encounterId == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "校验转科/出院重复时 encounterId 不能为空");
+        }
+        List<String> categories = new ArrayList<>();
+        categories.add("32");
+        categories.add("34");
+        List<ServiceRequest> requests = serviceRequestRepository.findByEncounterIdAndCategoryEnumIn(encounterId, categories);
+        for (ServiceRequest request : requests) {
+            if (request.getStatusEnum() == null) {
+                continue;
+            }
+            // 草稿/已发送视为仍占用流程，禁止重复发起同类申请
+            if (request.getStatusEnum().equals(RequestStatus.DRAFT.getCode())
+                || request.getStatusEnum().equals(RequestStatus.ACTIVE.getCode())) {
+                return Boolean.TRUE;
+            }
+        }
+        return Boolean.FALSE;
+    }
+
+    /**
+     * 按就诊主键集合与请求状态批量查询诊疗申请（只读；供应用层批量计数等编排）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @param statusEnum   请求状态 {@link RequestStatus#getCode()}
+     * @return 诊疗申请列表；入参为空时返回空列表
+     * @throws BusinessException statusEnum 为空
+     */
+    public List<ServiceRequest> listByEncounterIdsAndStatusEnum(
+        Collection<Long> encounterIds,
+        String statusEnum) {
+        Collection<Long> idSet = this.distinctNonNullEncounterIds(encounterIds);
+        if (idSet.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (StringUtils.isBlank(statusEnum)) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "按就诊批量查询时 statusEnum 不能为空");
+        }
+        return serviceRequestRepository.findByEncounterIdInAndStatusEnum(idSet, statusEnum.trim());
+    }
+
+    /**
+     * 住院医生站诊疗医嘱列表（替代 OrderInfo RM Q-ORD-007 诊疗子集）。
+     */
+    public List<ServiceRequestListModel> listInpatientDoctorStationOrders(Long encounterId, String therapyEnum) {
+        if (encounterId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "住院医生站诊疗医嘱列表查询时 encounterId 不能为空");
+        }
+        return this.mapListModels(this.findInpatientDoctorPrescriptionOrders(encounterId, List.of(encounterId), null, therapyEnum));
+    }
+
+    /**
+     * 住院护士站校对诊疗医嘱列表（替代 OrderInfo RM Q-IP-AUD-001 诊疗子集）。
+     */
+    public List<ServiceRequestListModel> listInpatientNurseStationAuditOrders(
+        List<Long> encounterIds, List<String> statusEnumIn, String therapyEnum) {
+        this.validateEncounterIdsAndStatusIn(encounterIds, statusEnumIn, "住院护士站诊疗校对列表");
+        return this.mapListModels(this.findInpatientDoctorPrescriptionOrders(null, encounterIds, statusEnumIn, therapyEnum));
+    }
+
+    /**
+     * 住院护士站执行诊疗医嘱列表（替代 OrderInfo RM Q-IP-EXE-001 诊疗子集）。
+     *
+     * <p>状态含 {@link RequestStatus#VERIFIED}、{@link RequestStatus#STOPPED}（停嘱后仍在执行列表展示）。</p>
+     */
+    public List<ServiceRequestListModel> listInpatientNurseStationExecuteOrders(
+        List<Long> encounterIds, String therapyEnum) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "住院护士站诊疗执行列表查询时 encounterIds 不能为空");
+        }
+        List<String> executeStatuses = List.of(
+            RequestStatus.VERIFIED.getCode(),
+            RequestStatus.STOPPED.getCode());
+        return this.mapListModels(this.findInpatientDoctorPrescriptionOrders(null, encounterIds, executeStatuses, therapyEnum));
+    }
+
+    /**
+     * 住院护士站补费父诊疗医嘱列表（替代 OrderInfo RM Q-IP-PRC-002 诊疗子集）。
+     */
+    public List<ServiceRequestListModel> listInpatientNurseStationSupplementOrders(
+        List<Long> encounterIds, String therapyEnum) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "住院护士站补费父诊疗列表查询时 encounterIds 不能为空");
+        }
+        List<String> parentStatuses = List.of(RequestStatus.VERIFIED.getCode(), RequestStatus.STOPPED.getCode());
+        return this.mapListModels(this.findInpatientDoctorPrescriptionOrders(null, encounterIds, parentStatuses, therapyEnum));
+    }
+
+    /**
+     * 住院护士站已划价诊疗医嘱列表（替代 OrderInfo RM Q-IP-PRC-001 诊疗子集）。
+     */
+    public List<ServiceRequestListModel> listInpatientNurseStationPricedOrders(
+        List<Long> encounterIds,
+        LocalDateTime pricedTimeFrom,
+        LocalDateTime pricedTimeTo,
+        Long parentBasedOnId) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "住院护士站已划价诊疗列表查询时 encounterIds 不能为空");
+        }
+        return this.mapListModels(this.findInpatientNursePricingOrders(encounterIds, pricedTimeFrom, pricedTimeTo, parentBasedOnId));
+    }
+
+    /**
+     * 按主键加载诊疗申请列表行（供按表路由）。
+     */
+    public ServiceRequestListModel getListModelById(Long id) {
+        if (id == null) {
+            return null;
+        }
+        ServiceRequest request = serviceRequestRepository.findById(id).orElse(null);
+        if (request == null || Boolean.TRUE.equals(request.getIsDeleted())) {
+            return null;
+        }
+        return this.toListModel(request);
+    }
+
+    /**
+     * 按主键强制加载诊疗申请列表行。
+     */
+    public ServiceRequestListModel mustGetListModelById(Long id) {
+        return this.toListModel(this.mustGetEntity(id));
+    }
+
+    private ServiceRequest mustGetEntity(Long id) {
+        return serviceRequestRepository.findById(id).orElseThrow(
+            () -> new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_NOT_FOUND, "服务申请不存在"));
+    }
+
+    private List<ServiceRequest> findInpatientDoctorPrescriptionOrders(
+        Long singleEncounterId,
+        List<Long> encounterIds,
+        List<String> statusEnumIn,
+        String therapyEnum) {
+        Specification<ServiceRequest> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(
+                root.get(FieldNameConstants.GENERATE_SOURCE_ENUM),
+                GenerateSource.DOCTOR_PRESCRIPTION.getCode()));
+            if (singleEncounterId != null) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.ENCOUNTER_ID), singleEncounterId));
+            } else if (encounterIds != null && !encounterIds.isEmpty()) {
+                predicates.add(root.get(FieldNameConstants.ENCOUNTER_ID).in(encounterIds));
+            }
+            if (statusEnumIn != null && !statusEnumIn.isEmpty()) {
+                predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(statusEnumIn));
+            }
+            if (StringUtils.isNotBlank(therapyEnum)) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.THERAPY_ENUM), therapyEnum));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        Sort sort = Sort.by(Sort.Order.desc(FieldNameConstants.CREATED_AT));
+        return serviceRequestRepository.findAll(specification, sort);
+    }
+
+    private List<ServiceRequest> findInpatientNursePricingOrders(
+        List<Long> encounterIds,
+        LocalDateTime pricedTimeFrom,
+        LocalDateTime pricedTimeTo,
+        Long parentBasedOnId) {
+        Specification<ServiceRequest> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(root.get(FieldNameConstants.ENCOUNTER_ID).in(encounterIds));
+            predicates.add(cb.equal(
+                root.get(FieldNameConstants.GENERATE_SOURCE_ENUM),
+                GenerateSource.NURSE_PRICING.getCode()));
+            if (pricedTimeFrom != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.CREATED_AT), pricedTimeFrom));
+            }
+            if (pricedTimeTo != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.CREATED_AT), pricedTimeTo));
+            }
+            if (parentBasedOnId != null) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.BASED_ON_ID), parentBasedOnId));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        Sort sort = Sort.by(Sort.Order.desc(FieldNameConstants.CREATED_AT));
+        return serviceRequestRepository.findAll(specification, sort);
+    }
+
+    private List<ServiceRequestListModel> mapListModels(List<ServiceRequest> requests) {
+        List<ServiceRequestListModel> models = new ArrayList<>();
+        for (ServiceRequest request : requests) {
+            models.add(this.toListModel(request));
+        }
+        return models;
+    }
+
+    private void validateEncounterIdsAndStatusIn(
+        List<Long> encounterIds, List<String> statusEnumIn, String sceneLabel) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                sceneLabel + "查询时 encounterIds 不能为空");
+        }
+        if (statusEnumIn == null || statusEnumIn.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                sceneLabel + "查询时 statusEnumIn 不能为空");
+        }
+    }
+
+    /**
+     * 就诊主键去重（批量查询入参归一化）。
+     *
+     * @param encounterIds 原始就诊主键集合
+     * @return 非空去重集合
+     */
+    private Collection<Long> distinctNonNullEncounterIds(Collection<Long> encounterIds) {
+        LinkedHashSet<Long> idSet = new LinkedHashSet<>();
+        if (encounterIds == null) {
+            return idSet;
+        }
+        for (Long encounterId : encounterIds) {
+            if (encounterId != null) {
+                idSet.add(encounterId);
+            }
+        }
+        return idSet;
+    }
+
+    /**
+     * 统计基于某业务主表行派生的服务申请条数（basedOnTable 空时按空串计）。
+     *
+     * @param basedOnTable 来源表名，可为 null
+     * @param basedOnId 来源主键
+     * @return 条数
+     * @throws BusinessException basedOnId 为空
+     */
+    public Long countServiceRequestByBasedOnId(String basedOnTable, Long basedOnId) {
+        if (basedOnId == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "统计派生步次时 basedOnId 不能为空");
+        }
+        if (basedOnTable == null) {
+            basedOnTable = "";
+        }
+        return serviceRequestRepository.countByBasedOnTableAndBasedOnId(basedOnTable, basedOnId);
+    }
+
+    /**
+     * 详情读模型映射（状态与类别等头字段）。
+     *
+     * @param request 实体
+     * @return 查询模型
+     */
+    private ServiceRequestQueryModel toQueryModel(ServiceRequest request) {
+        ServiceRequestQueryModel model = new ServiceRequestQueryModel();
+        model.setId(request.getId());
+        model.setStatusEnum(request.getStatusEnum());
+        model.setCategoryEnum(request.getCategoryEnum());
+        return model;
+    }
+
+    /**
+     * 列表行映射。
+     *
+     * @param request 实体
+     * @return 列表模型
+     */
+    private ServiceRequestListModel toListModel(ServiceRequest request) {
+        ServiceRequestListModel model = new ServiceRequestListModel();
+        model.setId(request.getId());
+        model.setEncounterId(request.getEncounterId());
+        model.setTherapyEnum(request.getTherapyEnum());
+        model.setPatientId(request.getPatientId());
+        model.setStatusEnum(request.getStatusEnum());
+        model.setRefundServiceId(request.getRefundServiceId());
+        model.setActivityId(request.getActivityId());
+        model.setCategoryEnum(request.getCategoryEnum());
+        model.setGenerateSourceEnum(request.getGenerateSourceEnum());
+        model.setReasonText(request.getReasonText());
+        model.setOccurrenceStartTime(request.getOccurrenceStartTime());
+        model.setRequesterId(request.getRequesterId());
+        model.setReqAuthoredTime(request.getAuthoredTime());
+        model.setSortNumber(request.getSortNumber());
+        model.setQuantity(request.getQuantity());
+        model.setUnitCode(request.getUnitCode());
+        model.setExecutionCount(request.getExecutionCount());
+        model.setContentJson(request.getContentJson());
+        model.setRemark(request.getRemark());
+        model.setEntrustContent(request.getEntrustContent());
+        model.setLocationId(request.getLocationId());
+        model.setOrgId(request.getOrgId());
+        model.setContractId(request.getContractId());
+        model.setRateCode(request.getRateCode());
+        model.setBasedOnTable(request.getBasedOnTable());
+        model.setBasedOnId(request.getBasedOnId());
+        model.setParentId(request.getParentId());
+        model.setOccurrenceEndTime(request.getOccurrenceEndTime());
+        model.setConditionDefinitionId(request.getConditionDefinitionId());
+        return model;
+    }
+
+    private boolean matchesTimedServiceOccurrenceDate(ServiceRequest request, LocalDate filterDate) {
+        LocalDateTime anchor = request.getOccurrenceStartTime();
+        if (anchor == null) {
+            anchor = request.getAuthoredTime();
+        }
+        if (anchor == null) {
+            anchor = request.getCreatedAt();
+        }
+        return anchor != null && filterDate.equals(anchor.toLocalDate());
+    }
+}

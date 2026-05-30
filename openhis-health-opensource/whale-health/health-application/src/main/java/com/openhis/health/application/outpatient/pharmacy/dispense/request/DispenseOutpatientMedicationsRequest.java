@@ -1,0 +1,57 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.application.outpatient.pharmacy.dispense.request;
+
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.application.outpatient.pharmacy.dispense.dto.DispenseMedicationLineSubmitDto;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+import lombok.experimental.Accessors;
+
+import java.util.List;
+
+/**
+ * 门诊核发（发药扣库）请求（IF-OPP-05）。
+ *
+ * <p>领域推进发放完成并触发库存最小单位扣减；医保上传为可选协作。</p>
+ */
+@Data
+@Accessors(chain = true)
+@Schema(description = "门诊核发请求")
+public class DispenseOutpatientMedicationsRequest {
+
+    /** 就诊上下文主键。 */
+    @NotNull(message = "就诊不能为空")
+    @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long encounterId;
+
+    /** {@code true} 时在本地事务成功后尝试医保等外协上传（失败仅合并提示，不回滚发药事实）。 */
+    @Schema(description = "是否在事务成功后尝试医保/进销存上传")
+    private Boolean medicareUploadEnabled;
+
+    /** 用户勾选的待发药完成行（仅须发放单 id，数量以领域实体为准）。 */
+    @NotEmpty(message = "提交行不能为空")
+    @Valid
+    @Schema(description = "勾选发放行", requiredMode = Schema.RequiredMode.REQUIRED)
+    private List<DispenseMedicationLineSubmitDto> lines;
+}

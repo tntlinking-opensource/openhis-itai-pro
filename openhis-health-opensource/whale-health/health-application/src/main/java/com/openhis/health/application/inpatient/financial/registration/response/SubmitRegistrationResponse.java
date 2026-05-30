@@ -1,0 +1,50 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.application.inpatient.financial.registration.response;
+
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Data;
+import lombok.experimental.Accessors;
+
+/**
+ * 提交住院登记响应。
+ */
+@Data
+@Accessors(chain = true)
+@Schema(description = "提交住院登记结果")
+public class SubmitRegistrationResponse {
+
+    @Schema(description = "住院就诊 ID")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long encounterId;
+
+    @Schema(description = "住院号")
+    private String encounterBusNo;
+
+    @Schema(description = "登记后状态 code（REGISTERED，待护士分床）")
+    private String statusEnum;
+
+    @Schema(description = "预交金支付单 ID；未收款为 null")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long paymentId;
+
+    @Schema(description = "是否本次新开账户")
+    private Boolean accountOpened;
+}

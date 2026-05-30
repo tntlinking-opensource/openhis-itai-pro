@@ -1,0 +1,621 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.domain.workflow.devicedispense.entity;
+
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.enums.DispenseStatus;
+import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.whale.core.domain.BaseAuditedEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+/**
+ * 耗材发放聚合根。
+ *
+ * <p>对应表：wkf_device_dispense。</p>
+ *
+ * <p>边界：本聚合只维护发放事实与状态迁移；库存扣减/回补、追溯轨迹、收费联动由应用层编排。</p>
+ */
+@Getter
+@Setter
+@Entity
+@Table(name = "wkf_device_dispense")
+public class DeviceDispense extends BaseAuditedEntity {
+
+    @Column(name = "bus_no", nullable = false)
+    private String busNo;
+
+    @Column(name = "device_req_id", nullable = false)
+    private Long deviceReqId;
+
+    @Column(name = "status_enum", nullable = false)
+    private String statusEnum;
+
+    @Column(name = "based_on_table")
+    private String basedOnTable;
+
+    @Column(name = "based_on_id")
+    private Long basedOnId;
+
+    @Column(name = "not_performed_reason_enum")
+    private String notPerformedReasonEnum;
+
+    @Column(name = "dispense_category_enum")
+    private String dispenseCategoryEnum;
+
+    @Column(name = "quantity", nullable = false)
+    private BigDecimal quantity;
+
+    @Column(name = "unit_code", nullable = false)
+    private String unitCode;
+
+    @Column(name = "lot_number")
+    private String lotNumber;
+
+    @Column(name = "device_def_id", nullable = false)
+    private Long deviceDefId;
+
+    @Column(name = "patient_id", nullable = false)
+    private Long patientId;
+
+    @Column(name = "encounter_id", nullable = false)
+    private Long encounterId;
+
+    @Column(name = "performer_id")
+    private Long performerId;
+
+    @Column(name = "location_id")
+    private Long locationId;
+
+    @Column(name = "part_type_code")
+    private String partTypeCode;
+
+    @Column(name = "dispense_quantity")
+    private BigDecimal dispenseQuantity;
+
+    @Column(name = "preparer_id")
+    private Long preparerId;
+
+    @Column(name = "prepare_time")
+    private LocalDateTime prepareTime;
+
+    @Column(name = "dispense_time")
+    private LocalDateTime dispenseTime;
+
+    @Column(name = "limit_time")
+    private LocalDateTime limitTime;
+
+    @Column(name = "planned_dispense_time")
+    private LocalDateTime plannedDispenseTime;
+
+    @Column(name = "des_location_id")
+    private String desLocationId;
+
+    @Column(name = "rec_practitioner_id")
+    private String recPractitionerId;
+
+    @Column(name = "support_info")
+    private String supportInfo;
+
+    @Column(name = "usage_instruction")
+    private String usageInstruction;
+
+    @Column(name = "dispense_frequency_code")
+    private String dispenseFrequencyCode;
+
+    @Column(name = "trace_no", length = 50000)
+    private String traceNo;
+
+    @Column(name = "procedure_id")
+    private Long procedureId;
+
+    /**
+     * 私有方法：statusEquals。
+     */
+    private boolean statusEquals(DispenseStatus status) {
+        return status.getCode().equals(this.statusEnum);
+    }
+
+    /**
+     * 临时路径生成草稿前置（BR-DD-001）。
+     */
+    public void assertTemporaryGenerateAllowed() {
+        if (this.quantity == null || this.quantity.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "quantity 必须大于 0");
+        }
+    }
+
+    /**
+     * 草稿初始化。
+     */
+    public void initDraft() {
+        this.statusEnum = DispenseStatus.DRAFT.getCode();
+    }
+
+    /**
+     * 批量推进待发前置（DRAFT → PREPARATION）。
+     */
+    public void assertPromotable() {
+        if (!statusEquals(DispenseStatus.DRAFT)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "仅草稿状态允许推进为待发");
+        }
+    }
+
+    /**
+     * 草稿 → 待发。
+     */
+    public void draftToPreparation() {
+        assertPromotable();
+        this.statusEnum = DispenseStatus.PREPARATION.getCode();
+    }
+
+    /**
+     * 执行路径生成前置：由调用方保证同请求上下文已存在可拷贝行。
+     */
+    public void assertExecutionGenerateAllowed() {
+        if (this.deviceReqId == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "deviceReqId 不能为空");
+        }
+    }
+
+    /**
+     * 执行路径初始化（待发）。
+     */
+    public void initPreparation() {
+        this.statusEnum = DispenseStatus.PREPARATION.getCode();
+    }
+
+    /**
+     * 直发前置。
+     */
+    public void assertDirectIssueAllowed() {
+        if (this.quantity == null || this.quantity.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "quantity 必须大于 0");
+        }
+        if (this.unitCode == null || this.unitCode.trim().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "unitCode 不能为空");
+        }
+        if (this.deviceDefId == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "deviceDefId 不能为空");
+        }
+    }
+
+    /**
+     * 直发初始化（已发放）。
+     */
+    public void initCompleted(Long performerId, BigDecimal dispenseQuantity, LocalDateTime now) {
+        this.performerId = performerId;
+        this.dispenseTime = now;
+        this.dispenseQuantity = dispenseQuantity;
+        this.statusEnum = DispenseStatus.COMPLETED.getCode();
+    }
+
+    /**
+     * 待退记录创建前置（源单需已发放）。
+     */
+    public void assertPendingRefundCreatable(BigDecimal refundQuantity) {
+        if (!statusEquals(DispenseStatus.COMPLETED) && !statusEquals(DispenseStatus.PART_COMPLETED)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "仅已发放/部分发放允许创建待退记录");
+        }
+        if (this.dispenseQuantity == null || this.dispenseQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "源单已发数量无效");
+        }
+        if (refundQuantity == null || refundQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "refundQuantity 必须大于 0");
+        }
+        if (refundQuantity.compareTo(this.dispenseQuantity) > 0) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_RULE_CONFLICT, "退耗材数量不能大于已发数量");
+        }
+    }
+
+    /**
+     * 新行进入待退状态（由领域服务复制字段后调用）。
+     */
+    public void toPendingRefund(BigDecimal refundQuantity) {
+        this.quantity = refundQuantity;
+        this.dispenseQuantity = null;
+        this.lotNumber = null;
+        this.traceNo = null;
+        this.prepareTime = null;
+        this.dispenseTime = null;
+        this.performerId = null;
+        this.preparerId = null;
+        this.statusEnum = DispenseStatus.PENDING_REFUND.getCode();
+    }
+
+    /**
+     * 拣配前置（BR-DD-001）。
+     */
+    public void assertPreparable() {
+        if (this.statusEnum == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "statusEnum 不能为空");
+        }
+        if (!statusEquals(DispenseStatus.PREPARATION)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "仅待发状态允许拣配");
+        }
+        if (this.quantity == null || this.quantity.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "quantity 必须大于 0");
+        }
+    }
+
+    /**
+     * 待发拣配 → 已配药（或待发中，默认已配药）。
+     */
+    public void preparationToPreparedOrInProgress(Long preparerId, String lotNumber, String traceNo, BigDecimal quantity, LocalDateTime now) {
+        this.preparerId = preparerId;
+        this.lotNumber = lotNumber;
+        this.traceNo = traceNo;
+        if (quantity != null) {
+            this.quantity = quantity;
+        }
+        this.prepareTime = now;
+        this.statusEnum = DispenseStatus.PREPARED.getCode();
+    }
+
+    /**
+     * 发放前置（BR-DD-001/004）。
+     */
+    public void assertDispensable() {
+        if (this.statusEnum == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "statusEnum 不能为空");
+        }
+        if (!statusEquals(DispenseStatus.PREPARED) && !statusEquals(DispenseStatus.IN_PROGRESS)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "仅已配药/待发中状态允许发放");
+        }
+        if (this.deviceDefId == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "deviceDefId 不能为空");
+        }
+        if (this.unitCode == null || this.unitCode.trim().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "unitCode 不能为空");
+        }
+    }
+
+    /**
+     * 核对发放 → 已发放/部分发放。
+     */
+    public void toCompletedOrPartCompleted(Long performerId, BigDecimal dispenseQuantity, LocalDateTime now) {
+        this.performerId = performerId;
+        this.dispenseTime = now;
+        this.dispenseQuantity = dispenseQuantity;
+        if (dispenseQuantity != null && this.quantity != null && dispenseQuantity.compareTo(this.quantity) < 0) {
+            this.statusEnum = DispenseStatus.PART_COMPLETED.getCode();
+        } else {
+            this.statusEnum = DispenseStatus.COMPLETED.getCode();
+        }
+    }
+
+    /**
+     * 未发放作废前置。
+     */
+    public void assertCancellableUndispensed() {
+        if (statusEquals(DispenseStatus.COMPLETED)
+            || statusEquals(DispenseStatus.PART_COMPLETED)
+            || statusEquals(DispenseStatus.REFUNDED)
+            || statusEquals(DispenseStatus.DECLINED)
+            || statusEquals(DispenseStatus.CANCELLED)
+            || statusEquals(DispenseStatus.PENDING_REFUND)
+            || statusEquals(DispenseStatus.SUMMARIZED)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "当前状态不允许作废");
+        }
+    }
+
+    /**
+     * 未发放作废 → 拒绝。
+     */
+    public void toDeclined(String notPerformedReasonEnum) {
+        assertCancellableUndispensed();
+        this.notPerformedReasonEnum = notPerformedReasonEnum;
+        this.statusEnum = DispenseStatus.DECLINED.getCode();
+    }
+
+    /**
+     * 退耗材确认前置（待退行）。
+     */
+    public void assertRefundableAndIdempotent() {
+        if (!statusEquals(DispenseStatus.PENDING_REFUND)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "仅待退状态允许确认退费");
+        }
+    }
+
+    /**
+     * 待退 → 已退费。
+     */
+    public void pendingRefundToRefunded() {
+        assertRefundableAndIdempotent();
+        this.statusEnum = DispenseStatus.REFUNDED.getCode();
+    }
+
+    /**
+     * 待退药拒绝：终态已拒绝，记录原因与操作人时刻。
+     *
+     * @param declineReasonText 拒绝原因
+     * @param practitionerId    药师主键
+     * @param now               操作时间
+     */
+    public void pendingRefundToDeclined(String declineReasonText, Long practitionerId, LocalDateTime now) {
+        assertRefundableAndIdempotent();
+        if (declineReasonText == null || declineReasonText.trim().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "拒绝退药须填写原因");
+        }
+        this.notPerformedReasonEnum = declineReasonText.trim();
+        this.performerId = practitionerId;
+        this.dispenseTime = now;
+        this.statusEnum = DispenseStatus.DECLINED.getCode();
+    }
+
+    /**
+     * 待退确认并回写执行人与可选原因文本。
+     *
+     * @param practitionerId 执行人
+     * @param now              操作时间
+     * @param reasonText       可选退药原因
+     */
+    public void pendingRefundToRefundedWithAudit(Long practitionerId, LocalDateTime now, String reasonText) {
+        assertRefundableAndIdempotent();
+        this.performerId = practitionerId;
+        this.dispenseTime = now;
+        if (reasonText != null && !reasonText.trim().isEmpty()) {
+            this.supportInfo = reasonText.trim();
+        }
+        this.statusEnum = DispenseStatus.REFUNDED.getCode();
+    }
+
+    /**
+     * 预减释放前置。
+     */
+    public void assertReservableReleased() {
+        if (!statusEquals(DispenseStatus.PREPARATION) && !statusEquals(DispenseStatus.DRAFT) && !statusEquals(DispenseStatus.PREPARED)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "当前状态不允许释放预减");
+        }
+    }
+
+    /**
+     * 预减释放 → 停发。
+     */
+    public void toStoppedOrDeleted(String notPerformedReasonEnum) {
+        assertReservableReleased();
+        this.notPerformedReasonEnum = notPerformedReasonEnum;
+        this.statusEnum = DispenseStatus.STOPPED.getCode();
+    }
+
+    /**
+     * 批号匹配前置。
+     */
+    public void assertLotMatchable() {
+        if (!statusEquals(DispenseStatus.PREPARATION)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "仅待发状态允许批号匹配门控");
+        }
+    }
+
+    /**
+     * 批号匹配不改变状态（占位：库存/FEFO 由应用编排）。
+     */
+    public void keepPreparation() {
+        assertLotMatchable();
+    }
+
+    /**
+     * 汇总落账前置。
+     */
+    public void assertSummarizable() {
+        if (!statusEquals(DispenseStatus.COMPLETED) && !statusEquals(DispenseStatus.PART_COMPLETED)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "仅已发放/部分发放允许汇总");
+        }
+    }
+
+    /**
+     * → 已汇总。
+     */
+    public void toSummarized(String summaryAnchor) {
+        assertSummarizable();
+        this.supportInfo = summaryAnchor;
+        this.statusEnum = DispenseStatus.SUMMARIZED.getCode();
+    }
+
+    /**
+     * 汇总完成回写前置。
+     */
+    public void assertSummaryCompletable() {
+        if (!statusEquals(DispenseStatus.SUMMARIZED)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "仅已汇总状态允许回写完成");
+        }
+    }
+
+    /**
+     * 已汇总 → 已发放。
+     */
+    public void summarizedToCompleted() {
+        assertSummaryCompletable();
+        this.statusEnum = DispenseStatus.COMPLETED.getCode();
+    }
+
+    /**
+     * 汇总取消前置。
+     */
+    public void assertSummaryCancellable() {
+        if (!statusEquals(DispenseStatus.SUMMARIZED)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "仅已汇总状态允许取消汇总");
+        }
+    }
+
+    /**
+     * 已汇总 → 待发。
+     */
+    public void summarizedToPreparation() {
+        assertSummaryCancellable();
+        this.supportInfo = null;
+        this.statusEnum = DispenseStatus.PREPARATION.getCode();
+    }
+
+    /**
+     * 未发放回退前置。
+     */
+    public void assertRollbackableUndispensed() {
+        if (!statusEquals(DispenseStatus.PREPARATION)
+            && !statusEquals(DispenseStatus.PREPARED)
+            && !statusEquals(DispenseStatus.IN_PROGRESS)
+            && !statusEquals(DispenseStatus.ON_HOLD)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "当前状态不允许回退为草稿");
+        }
+    }
+
+    /**
+     * → 草稿。
+     */
+    public void toDraft() {
+        assertRollbackableUndispensed();
+        this.lotNumber = null;
+        this.traceNo = null;
+        this.prepareTime = null;
+        this.preparerId = null;
+        this.statusEnum = DispenseStatus.DRAFT.getCode();
+    }
+
+    /**
+     * 未发放删除前置。
+     */
+    public void assertRemovableUndispensed() {
+        if (statusEquals(DispenseStatus.COMPLETED)
+            || statusEquals(DispenseStatus.PART_COMPLETED)
+            || statusEquals(DispenseStatus.REFUNDED)
+            || statusEquals(DispenseStatus.SUMMARIZED)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "已发放或已汇总记录不可删除");
+        }
+    }
+
+    /**
+     * 逻辑删除。
+     */
+    public void logicalDelete() {
+        assertRemovableUndispensed();
+        this.setIsDeleted(true);
+    }
+
+    /**
+     * 停发前置。
+     */
+    public void assertStoppableUndispensed() {
+        if (statusEquals(DispenseStatus.COMPLETED)
+            || statusEquals(DispenseStatus.PART_COMPLETED)
+            || statusEquals(DispenseStatus.REFUNDED)
+            || statusEquals(DispenseStatus.DECLINED)
+            || statusEquals(DispenseStatus.CANCELLED)
+            || statusEquals(DispenseStatus.STOPPED)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "当前状态不允许停发");
+        }
+    }
+
+    /**
+     * → 停发。
+     */
+    public void toStopped(String notPerformedReasonEnum) {
+        assertStoppableUndispensed();
+        this.notPerformedReasonEnum = notPerformedReasonEnum;
+        this.statusEnum = DispenseStatus.STOPPED.getCode();
+    }
+
+    /**
+     * 挂起前置。
+     */
+    public void assertHoldable() {
+        if (!statusEquals(DispenseStatus.PREPARATION) && !statusEquals(DispenseStatus.PREPARED) && !statusEquals(DispenseStatus.IN_PROGRESS)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "当前状态不允许挂起");
+        }
+    }
+
+    /**
+     * → 挂起。
+     */
+    public void toOnHold(String reason) {
+        assertHoldable();
+        if (reason != null && !reason.isBlank()) {
+            this.supportInfo = reason;
+        }
+        this.statusEnum = DispenseStatus.ON_HOLD.getCode();
+    }
+
+    /**
+     * 撤回已发放前置。
+     */
+    public void assertRecallable() {
+        if (!statusEquals(DispenseStatus.COMPLETED) && !statusEquals(DispenseStatus.PART_COMPLETED)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "仅已发放/部分发放允许撤回");
+        }
+    }
+
+    /**
+     * 已发放 → 作废（撤回）。
+     */
+    public void completedToCancelled(String reason) {
+        assertRecallable();
+        if (reason != null && !reason.isBlank()) {
+            this.supportInfo = reason;
+        }
+        this.statusEnum = DispenseStatus.CANCELLED.getCode();
+    }
+
+    /**
+     * 分次追加前置。
+     */
+    public void assertStepAppendable(String childBusNo) {
+        if (!statusEquals(DispenseStatus.COMPLETED) && !statusEquals(DispenseStatus.PART_COMPLETED)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "父单状态不允许追加分次");
+        }
+        if (childBusNo == null || childBusNo.isBlank()) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "子业务号不能为空");
+        }
+    }
+
+    /**
+     * 分次累计：父单由“整单已发”降为“部分发放”。
+     */
+    public void partCompletedAccumulate() {
+        if (statusEquals(DispenseStatus.COMPLETED)) {
+            this.statusEnum = DispenseStatus.PART_COMPLETED.getCode();
+        }
+    }
+
+    /**
+     * 批量回退已发放 → 待发前置。
+     */
+    public void assertCompletedBatchRevertable() {
+        if (!statusEquals(DispenseStatus.COMPLETED) && !statusEquals(DispenseStatus.PART_COMPLETED)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "仅已发放/部分发放允许回退为待发");
+        }
+    }
+
+    /**
+     * 已发放 → 待发并清空追溯字段（BR-DD-009）。
+     */
+    public void completedToPreparation() {
+        assertCompletedBatchRevertable();
+        this.lotNumber = null;
+        this.traceNo = null;
+        this.dispenseQuantity = null;
+        this.dispenseTime = null;
+        this.performerId = null;
+        this.statusEnum = DispenseStatus.PREPARATION.getCode();
+    }
+}
+

@@ -1,0 +1,56 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.application.inpatient.nursestation.inpatientbilling.response;
+
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Data;
+import lombok.experimental.Accessors;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * IF-IP-PRC-02：直接划价确认响应。
+ *
+ * <p>整批成功或整批回滚；id 列表含套餐展开产生的子诊疗请求。</p>
+ */
+@Data
+@Accessors(chain = true)
+@Schema(description = "直接划价确认响应")
+public class ConfirmDirectNurseStationPricingResponse {
+
+    /** 本批是否全部成功落库。 */
+    @Schema(description = "整批成功")
+    private Boolean success;
+
+    /** 成功处理的写行数（与请求 items 条数一致）。 */
+    @Schema(description = "成功行数")
+    private Integer processedCount;
+
+    /** 本批新建的 wkf_service_request id（含套餐子项）。 */
+    @Schema(description = "新建诊疗请求 id")
+    @JsonSerialize(contentUsing = ToStringSerializer.class)
+    private List<Long> createdServiceRequestIds = new ArrayList<>();
+
+    /** 本批新建的 wkf_device_request id。 */
+    @Schema(description = "新建耗材请求 id")
+    @JsonSerialize(contentUsing = ToStringSerializer.class)
+    private List<Long> createdDeviceRequestIds = new ArrayList<>();
+}

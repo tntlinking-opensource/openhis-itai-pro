@@ -1,0 +1,62 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.domain.administration.patient.command;
+
+import lombok.Getter;
+import lombok.Setter;
+import com.openhis.health.domain.share.enums.IdentifierState;
+
+import java.time.LocalDateTime;
+
+/**
+ * 患者非身份证证件子命令。
+ */
+@Getter
+@Setter
+public class PatientIdentifierItemCommand {
+
+    /**
+     * 子实体标识。
+     */
+    private Long id;
+
+    /**
+     * 证件类型编码。
+     */
+    private String typeCode;
+
+    /**
+     * 证件号码。
+     */
+    private String identifierNo;
+
+    /**
+     * 标识状态编码。
+     */
+    private IdentifierState stateEnum;
+
+    /**
+     * 有效开始时间。
+     */
+    private LocalDateTime startTime;
+
+    /**
+     * 有效结束时间。
+     */
+    private LocalDateTime endTime;
+}
