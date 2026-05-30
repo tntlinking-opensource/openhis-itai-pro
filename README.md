@@ -1,4 +1,3 @@
-# openhis-itai1
 
 # 平台介绍
 
