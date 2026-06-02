@@ -1,0 +1,28 @@
+import { createInpatientDoctorStationAdviceHttpClient } from './inpatient-doctor-station-advice-api-client';
+
+const inpatientAdviceHttp = createInpatientDoctorStationAdviceHttpClient();
+
+export const httpInitInpatientDoctorStationAdvice =
+  inpatientAdviceHttp.httpInitInpatientDoctorStationAdvice;
+export const httpComputeInpatientMedicationFrequencyExecutions =
+  inpatientAdviceHttp.httpComputeMedicationFrequencyExecutions;
+export const httpListInpatientDoctorStationAdvice =
+  inpatientAdviceHttp.httpListInpatientDoctorStationAdvice;
+export const httpPageInpatientDoctorStationAdviceCatalog =
+  inpatientAdviceHttp.httpPageInpatientDoctorStationAdviceCatalog;
+export const httpGetInpatientDoctorStationAdviceOrderBindInfo =
+  inpatientAdviceHttp.httpGetInpatientDoctorStationAdviceOrderBindInfo;
+export const httpSaveInpatientDoctorStationAdviceDraftBatch =
+  inpatientAdviceHttp.httpSaveInpatientDoctorStationAdviceDraftBatch;
+export const httpSignInpatientDoctorStationAdviceBatch =
+  inpatientAdviceHttp.httpSignInpatientDoctorStationAdviceBatch;
+export const httpWithdrawInpatientDoctorStationAdviceBatch =
+  inpatientAdviceHttp.httpWithdrawInpatientDoctorStationAdviceBatch;
+export const httpUpdateInpatientDoctorStationMedicationAdviceGroups =
+  inpatientAdviceHttp.httpUpdateInpatientDoctorStationMedicationAdviceGroups;
+export const httpListInpatientActivityExecutionLocations =
+  inpatientAdviceHttp.httpListActivityExecutionLocations;
+export const httpStopLongTermInpatientDoctorStationAdvice =
+  inpatientAdviceHttp.httpStopLongTermInpatientDoctorStationAdvice;
+export const httpCreateDischargeInpatientDoctorStationAdvice =
+  inpatientAdviceHttp.httpCreateDischargeInpatientDoctorStationAdvice;

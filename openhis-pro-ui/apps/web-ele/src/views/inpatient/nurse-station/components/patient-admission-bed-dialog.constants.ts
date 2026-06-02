@@ -1,0 +1,8 @@
+/** 入科选床弹窗：参与者角色 code（DM-ADM-002 §3.2.1） */
+export const NURSE_STATION_PARTICIPANT_ROLE = {
+  /** 住院医生（接诊医师） */
+  INPATIENT_DOCTOR: 'ADMITTER',
+  ATTENDING_DOCTOR: 'ATTENDING_DOCTOR',
+  CHIEF_DOCTOR: 'CHIEF_DOCTOR',
+  PRIMARY_NURSE: 'PRIMARY_NURSE',
+} as const;

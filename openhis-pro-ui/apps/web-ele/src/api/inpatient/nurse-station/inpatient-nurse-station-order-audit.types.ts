@@ -1,0 +1,78 @@
+/** 医嘱校对 Tab：未校对 / 已校对 / 已停止 / 已作废 */
+export type NurseStationOrderAuditTab = 'pending' | 'passed' | 'stopped' | 'suspended';
+
+/** 长临筛选：全部 / 长期 / 临时 */
+export type NurseStationOrderAuditTherapyFilter = 'all' | 'long' | 'temp';
+
+/** 写操作锚点：药品申请 / 诊疗申请 */
+export type NurseStationOrderAuditOrderType = 'MED_REQUEST' | 'SERVICE_REQUEST';
+
+/** 医嘱校对列表查询 */
+export interface ListNurseStationOrderAuditRequest {
+  encounterIds: string[];
+  auditTab: NurseStationOrderAuditTab;
+  therapyType?: NurseStationOrderAuditTherapyFilter;
+}
+
+/** 列表行（与后端 NurseStationOrderAuditRowDto 对齐） */
+export interface NurseStationOrderAuditRowDto {
+  listRowKey?: string;
+  requestId?: string;
+  orderType?: NurseStationOrderAuditOrderType | string;
+  encounterId?: string;
+  patientId?: string;
+  statusEnum?: string;
+  statusDisplay?: string;
+  therapyEnum?: string;
+  therapyDisplay?: string;
+  adviceDisplayName?: string;
+  specificationText?: string;
+  dosageDisplay?: string;
+  usageDisplay?: string;
+  frequencyDisplay?: string;
+  authoredTime?: string;
+  stopTime?: string;
+  requesterName?: string;
+  performerLocationDisplay?: string;
+  categoryEnum?: string;
+  groupNo?: number;
+  sortNumber?: number;
+}
+
+/** 按就诊分组的医嘱列表 */
+export interface NurseStationOrderAuditPatientGroupDto {
+  encounterId?: string;
+  orders?: NurseStationOrderAuditRowDto[];
+}
+
+/** 医嘱校对列表响应 */
+export interface ListNurseStationOrderAuditResponse {
+  groups?: NurseStationOrderAuditPatientGroupDto[];
+}
+
+/** 批量写操作单行 */
+export interface NurseStationOrderAuditWriteItemDto {
+  orderType: NurseStationOrderAuditOrderType;
+  requestId: string;
+}
+
+/** 批量校对通过 */
+export interface VerifyNurseStationOrdersRequest {
+  items: NurseStationOrderAuditWriteItemDto[];
+}
+
+export interface VerifyNurseStationOrdersResponse {
+  success?: boolean;
+  processedCount?: number;
+}
+
+/** 批量退回 */
+export interface RejectNurseStationOrdersRequest {
+  items: NurseStationOrderAuditWriteItemDto[];
+  reason?: string;
+}
+
+export interface RejectNurseStationOrdersResponse {
+  success?: boolean;
+  processedCount?: number;
+}

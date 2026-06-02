@@ -1,0 +1,24 @@
+import { createDoctorStationAdviceHttpClient } from './advice-api-client';
+
+const outpatientAdviceHttp = createDoctorStationAdviceHttpClient('/doctorStationAdvice');
+
+export const httpInitDoctorStationAdvice = outpatientAdviceHttp.httpInitDoctorStationAdvice;
+export const httpComputeMedicationFrequencyExecutions =
+  outpatientAdviceHttp.httpComputeMedicationFrequencyExecutions;
+export const httpListDoctorStationAdvice = outpatientAdviceHttp.httpListDoctorStationAdvice;
+export const httpPageDoctorStationAdviceCatalog =
+  outpatientAdviceHttp.httpPageDoctorStationAdviceCatalog;
+export const httpGetDoctorStationAdviceOrderBindInfo =
+  outpatientAdviceHttp.httpGetDoctorStationAdviceOrderBindInfo;
+export const httpGetEncounterAdviceDefaultContract =
+  outpatientAdviceHttp.httpGetEncounterAdviceDefaultContract;
+export const httpSaveDoctorStationAdviceDraftBatch =
+  outpatientAdviceHttp.httpSaveDoctorStationAdviceDraftBatch;
+export const httpSignDoctorStationAdviceBatch =
+  outpatientAdviceHttp.httpSignDoctorStationAdviceBatch;
+export const httpWithdrawDoctorStationAdviceBatch =
+  outpatientAdviceHttp.httpWithdrawDoctorStationAdviceBatch;
+export const httpUpdateDoctorStationMedicationAdviceGroups =
+  outpatientAdviceHttp.httpUpdateDoctorStationMedicationAdviceGroups;
+export const httpListActivityExecutionLocations =
+  outpatientAdviceHttp.httpListActivityExecutionLocations;

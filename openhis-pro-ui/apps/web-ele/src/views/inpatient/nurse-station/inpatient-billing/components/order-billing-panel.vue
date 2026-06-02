@@ -1,0 +1,602 @@
+<script setup lang="ts">
+import type { TagProps } from 'element-plus';
+import type { TableInstance } from 'element-plus/es/components/table';
+
+import type {
+  OrderBillingCategory,
+  OrderBillingTableRow,
+} from '../services/map-nurse-station-inpatient-billing';
+
+import { adviceTherapyTypeClass } from '../../../doctor-station/advice/services/advice-list';
+import { computed, nextTick, ref, watch } from 'vue';
+
+interface SelectOptionItem {
+  label: string;
+  value: string;
+}
+
+interface Props {
+  category?: OrderBillingCategory;
+  dept?: string;
+  deptOptions?: SelectOptionItem[];
+  filteredRows?: OrderBillingTableRow[];
+  keyword?: string;
+  loading?: boolean;
+}
+
+defineOptions({
+  name: 'OrderBillingPanel',
+});
+
+const props = withDefaults(defineProps<Props>(), {
+  category: 'all',
+  dept: '',
+  deptOptions: () => [],
+  filteredRows: () => [],
+  keyword: '',
+  loading: false,
+});
+
+const emit = defineEmits<{
+  onChargeDetailClick: [row: OrderBillingTableRow];
+  onQuery: [];
+  onSupplementFeeClick: [row: OrderBillingTableRow];
+  'update:category': [value: OrderBillingCategory];
+  'update:dept': [value: string];
+  'update:keyword': [value: string];
+}>();
+
+const tableRef = ref<TableInstance>();
+
+const categoryModel = computed({
+  get: () => props.category,
+  set: (value: OrderBillingCategory) => emit('update:category', value),
+});
+const keywordModel = computed({
+  get: () => props.keyword,
+  set: (value: string) => emit('update:keyword', value),
+});
+const deptModel = computed({
+  get: () => props.dept,
+  set: (value: string) => emit('update:dept', value),
+});
+
+const EXPAND_CHILD_SCROLL_THRESHOLD = 4;
+
+/** 补费类型展示文案（过长时缩短为「补费」） */
+function resolveSupplementCategoryDisplay(categoryText: string | undefined) {
+  const text = String(categoryText ?? '').trim();
+  if (!text || text.includes('补费')) {
+    return '补费';
+  }
+  return text;
+}
+
+/** 补费明细超过阈值时启用滚动 */
+function shouldExpandChildScroll(childCount = 0) {
+  return childCount > EXPAND_CHILD_SCROLL_THRESHOLD;
+}
+
+/** 父行样式类名，无子项时隐藏展开按钮 */
+function resolveOrderBillingRowClassName({ row }: { row: OrderBillingTableRow }) {
+  const classes = ['order-billing-table__row--parent'];
+  if (!row.children?.length) {
+    classes.push('order-billing-table__row--no-children');
+  }
+  return classes.join(' ');
+}
+
+/** 长临医嘱文字样式 class（与住院医生站一致） */
+function resolveOrderBillingTherapyClass(category: OrderBillingTableRow['category']) {
+  if (category === 'long') {
+    return adviceTherapyTypeClass('LONG_TERM');
+  }
+  if (category === 'temp') {
+    return adviceTherapyTypeClass('TEMPORARY');
+  }
+  return '';
+}
+
+/** 结算状态 → Tag 类型 */
+function resolveChargeStatusTagType(status: string): TagProps['type'] {
+  if (status.includes('待')) {
+    return 'warning';
+  }
+  if (status.includes('已') || status.includes('结')) {
+    return 'success';
+  }
+  return 'info';
+}
+
+/** 将时间文案拆分为日期与时间两行展示 */
+function splitDateTimeDisplay(value: string) {
+  const text = String(value ?? '').trim();
+  if (!text || text === '—') {
+    return { date: '—', time: '' };
+  }
+  const [date, time] = text.split(' ');
+  return { date: date || text, time: time ?? '' };
+}
+
+/** 默认展开全部含子项的父医嘱 */
+async function expandAllParentRows() {
+  await nextTick();
+  const table = tableRef.value;
+  if (!table) {
+    return;
+  }
+  for (const row of props.filteredRows) {
+    if (row.children?.length) {
+      table.toggleRowExpansion(row, true);
+    }
+  }
+}
+
+watch(
+  () => props.filteredRows,
+  () => {
+    void expandAllParentRows();
+  },
+  { deep: true, immediate: true },
+);
+</script>
+
+<template>
+  <div class="billing-list-card order-billing-page">
+    <div class="billing-list-card__toolbar order-billing-toolbar">
+      <div class="billing-list-card__query-actions order-billing-toolbar__query-actions">
+        <ElRadioGroup v-model="categoryModel">
+          <ElRadioButton label="all">全部</ElRadioButton>
+          <ElRadioButton label="long">长期</ElRadioButton>
+          <ElRadioButton label="temp">临时</ElRadioButton>
+        </ElRadioGroup>
+        <ElInput
+          v-model="keywordModel"
+          clearable
+          placeholder="医嘱名称"
+          class="order-billing-toolbar__input"
+          @keyup.enter="emit('onQuery')"
+        />
+        <ElSelect
+          v-model="deptModel"
+          clearable
+          placeholder="开方科室"
+          class="order-billing-toolbar__select"
+        >
+          <ElOption
+            v-for="item in deptOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </ElSelect>
+        <ElButton type="primary" :loading="loading" @click="emit('onQuery')">查询</ElButton>
+      </div>
+    </div>
+
+    <section class="order-billing-table">
+      <ElTable
+        ref="tableRef"
+        v-loading="loading"
+        :data="filteredRows"
+        border
+        height="100%"
+        row-key="id"
+        class="order-billing-table__el-table"
+        :row-class-name="resolveOrderBillingRowClassName"
+      >
+        <ElTableColumn
+          type="expand"
+          width="48"
+          align="center"
+          class-name="order-billing-table__expand-column"
+        >
+          <template #default="{ row }">
+            <div v-if="row.children?.length" class="order-billing-table__expand-panel">
+              <div
+                class="order-billing-table__expand-body"
+                :class="{
+                  'order-billing-table__expand-body--scroll': shouldExpandChildScroll(
+                    row.children.length,
+                  ),
+                }"
+              >
+                <div
+                  v-for="(child, childIndex) in row.children"
+                  :key="child.id"
+                  class="order-billing-table__expand-row"
+                  :class="{
+                    'order-billing-table__expand-row--divider': childIndex > 0,
+                  }"
+                >
+                  <span
+                    class="order-billing-table__expand-cell order-billing-table__expand-cell--type"
+                  >
+                    <ElTag effect="light" type="info" class="order-billing-table__compact-tag">
+                      {{ resolveSupplementCategoryDisplay(child.categoryText) }}
+                    </ElTag>
+                  </span>
+                  <div class="order-billing-table__expand-detail" :title="child.content">
+                    <span class="order-billing-table__expand-detail-name">
+                      {{ child.content }}
+                    </span>
+                    <span class="order-billing-table__expand-detail-meta">
+                      <span class="order-billing-table__expand-detail-qty">{{ child.dosage }}</span>
+                      <span
+                        class="order-billing-table__expand-detail-status"
+                        :class="`is-${resolveChargeStatusTagType(child.executionCount)}`"
+                      >
+                        {{ child.executionCount }}
+                      </span>
+                      <span class="order-billing-table__expand-detail-time">
+                        {{ child.startStopAt }}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn
+          label="类型"
+          width="96"
+          align="center"
+          header-align="center"
+          class-name="order-billing-table__type-column"
+        >
+          <template #default="{ row }">
+            <span
+              class="ip-advice-therapy-text"
+              :class="resolveOrderBillingTherapyClass(row.category)"
+            >
+              {{ row.category === 'long' ? '长期' : '临时' }}
+            </span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="医嘱/项目" min-width="240" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="order-billing-table__content order-billing-table__content--parent">
+              {{ row.content }}
+            </span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn prop="dosage" label="剂量/数量" width="112" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="order-billing-table__dosage--parent">{{ row.dosage }}</span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="频次/状态" width="108" align="center">
+          <template #default="{ row }">
+            <span class="order-billing-table__frequency">{{ row.executionCount }}</span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="时间" width="156" align="center">
+          <template #default="{ row }">
+            <div class="order-billing-table__time">
+              <span class="order-billing-table__time-date">
+                {{ splitDateTimeDisplay(row.startStopAt).date }}
+              </span>
+              <span
+                v-if="splitDateTimeDisplay(row.startStopAt).time"
+                class="order-billing-table__time-clock"
+              >
+                {{ splitDateTimeDisplay(row.startStopAt).time }}
+              </span>
+            </div>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn
+          label="操作"
+          width="168"
+          align="center"
+          fixed="right"
+          class-name="order-billing-table__action-column"
+        >
+          <template #default="{ row }">
+            <div class="order-billing-table__actions">
+              <ElButton link type="primary" @click="emit('onChargeDetailClick', row)">
+                费用明细
+              </ElButton>
+              <span class="order-billing-table__action-divider" aria-hidden="true">|</span>
+              <ElButton link type="primary" @click="emit('onSupplementFeeClick', row)">
+                补费
+              </ElButton>
+            </div>
+          </template>
+        </ElTableColumn>
+      </ElTable>
+    </section>
+  </div>
+</template>
+
+<style scoped>
+.order-billing-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.order-billing-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.order-billing-toolbar__query-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.order-billing-toolbar__input {
+  width: 160px;
+}
+
+.order-billing-toolbar__select {
+  width: 160px;
+}
+
+.order-billing-table {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.order-billing-table__content--parent {
+  color: var(--el-text-color-primary);
+  font-weight: 500;
+}
+
+.order-billing-table__dosage--parent {
+  color: var(--el-text-color-primary);
+}
+
+.order-billing-table__frequency {
+  color: var(--el-text-color-regular);
+}
+
+.order-billing-table__time {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.3;
+}
+
+.order-billing-table__time-date {
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+}
+
+.order-billing-table__time-clock {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.order-billing-table__actions {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 2px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.order-billing-table__action-divider {
+  color: var(--el-border-color);
+  user-select: none;
+}
+
+.ip-advice-therapy-text {
+  display: inline-block;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: center;
+  width: 100%;
+}
+
+.ip-advice-therapy-text--long {
+  color: #a6745c;
+  font-weight: 500;
+}
+
+.ip-advice-therapy-text--temp {
+  color: #3787a5;
+  font-weight: 500;
+}
+
+.order-billing-page :deep(.order-billing-table__type-column.el-table__cell) {
+  padding: 0 !important;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.order-billing-page :deep(.order-billing-table__type-column .cell) {
+  display: block;
+  padding: 0 !important;
+  text-align: center;
+  width: 100%;
+}
+
+.order-billing-page :deep(.order-billing-table__type-column .cell .el-table__indent),
+.order-billing-page :deep(.order-billing-table__type-column .cell .el-table__placeholder) {
+  display: none;
+  width: 0 !important;
+}
+
+.order-billing-table__expand-panel {
+  margin: 8px 12px 10px 56px;
+  width: auto;
+}
+
+.order-billing-table__expand-body {
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.order-billing-table__expand-body--scroll {
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.order-billing-table__expand-row {
+  align-items: center;
+  box-sizing: border-box;
+  column-gap: 8px;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  min-height: 32px;
+  padding: 4px 12px;
+  width: 100%;
+}
+
+.order-billing-table__expand-row--divider {
+  border-top: 1px solid var(--el-border-color-extra-light);
+}
+
+.order-billing-table__expand-cell--type {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.order-billing-table__expand-detail {
+  align-items: center;
+  display: flex;
+  font-size: 14px;
+  gap: 16px;
+  min-width: 0;
+  width: 100%;
+}
+
+.order-billing-table__expand-detail-name {
+  color: var(--el-text-color-primary);
+  flex: 0 0 350px;
+  font-size: 14px;
+  max-width: 350px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 350px;
+}
+
+.order-billing-table__expand-detail-meta {
+  align-items: center;
+  color: var(--el-text-color-secondary);
+  display: flex;
+  flex: 0 0 auto;
+  font-size: 14px;
+  gap: 8px;
+}
+
+.order-billing-table__expand-detail-qty {
+  color: var(--el-text-color-regular);
+  flex: 0 0 56px;
+  font-weight: 500;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 56px;
+}
+
+.order-billing-table__expand-detail-status {
+  flex: 0 0 72px;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 72px;
+}
+
+.order-billing-table__expand-detail-status.is-warning {
+  color: var(--el-color-warning);
+}
+
+.order-billing-table__expand-detail-status.is-success {
+  color: var(--el-color-success);
+}
+
+.order-billing-table__expand-detail-status.is-info {
+  color: var(--el-text-color-secondary);
+}
+
+.order-billing-table__expand-detail-time {
+  color: var(--el-text-color-secondary);
+  flex: 0 0 156px;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 156px;
+}
+
+.order-billing-table__compact-tag {
+  vertical-align: middle;
+}
+
+.order-billing-page :deep(.order-billing-table__compact-tag.el-tag) {
+  font-size: 14px;
+  height: 22px;
+  padding: 0 6px;
+}
+
+.order-billing-page :deep(.order-billing-table__action-column .cell) {
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.order-billing-page :deep(.order-billing-table__expand-column.el-table__cell) {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.order-billing-page :deep(.order-billing-table__expand-column .cell) {
+  align-items: center;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  padding: 0;
+}
+
+.order-billing-page :deep(.order-billing-table__expand-column .el-table__expand-icon) {
+  align-items: center;
+  display: inline-flex;
+  height: 24px;
+  justify-content: center;
+  margin: 0;
+  width: 24px;
+}
+
+.order-billing-page :deep(.order-billing-table__row--no-children .el-table__expand-icon) {
+  cursor: default;
+  visibility: hidden;
+}
+
+.order-billing-page :deep(.el-table__expanded-cell) {
+  background: var(--el-fill-color-lighter);
+  padding: 4px 0;
+}
+
+.order-billing-page :deep(.el-table__expanded-cell:hover) {
+  background: var(--el-fill-color-lighter) !important;
+}
+
+.order-billing-page :deep(.el-table__header th.el-table__cell) {
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+
+.order-billing-page :deep(.el-table__header-wrapper) {
+  border-bottom: 1px solid var(--el-border-color-light);
+}
+</style>

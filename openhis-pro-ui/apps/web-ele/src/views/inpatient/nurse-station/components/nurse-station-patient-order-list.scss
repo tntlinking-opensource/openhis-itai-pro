@@ -1,0 +1,124 @@
+/* 医嘱校对 / 医嘱执行：患者折叠卡片 + 内嵌表格共用样式 */
+
+.patient-collapse {
+  border-top: none;
+  border-bottom: none;
+}
+
+.patient-order-card {
+  border: 2px solid #e4e7ed !important;
+  border-radius: 14px !important;
+}
+
+.patient-collapse :deep(.el-collapse-item__header) {
+  min-height: 42px;
+  border-bottom: none;
+  background: var(--el-fill-color-blank);
+  line-height: normal;
+  align-items: center;
+}
+
+.patient-collapse :deep(.el-collapse-item__arrow) {
+  order: -1;
+  margin-right: 6px;
+  margin-left: 10px;
+  align-self: center;
+}
+
+.patient-collapse :deep(.el-collapse-item__wrap) {
+  border-bottom: none;
+}
+
+.patient-collapse :deep(.el-collapse-item__content) {
+  padding-bottom: 0;
+}
+
+.card-head {
+  min-height: 42px;
+  width: 100%;
+  padding: 0 10px 0 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.patient-meta,
+.balance-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+
+.bed-tag {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.risk-pill {
+  height: 22px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 11px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+}
+
+.diag-text {
+  color: var(--el-text-color-secondary);
+}
+
+.money-item {
+  color: var(--el-text-color-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.money-amount {
+  color: #d98b4e;
+}
+
+.order-table {
+  width: 100%;
+}
+
+.card-table-wrap {
+  padding: 8px 10px 10px;
+}
+
+.order-table :deep(.el-table__header th.el-table__cell) {
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+  font-weight: 600;
+  background: #eef9fd;
+  padding: 4px 0;
+}
+
+.order-table :deep(.el-table__header th.el-table__cell .cell) {
+  line-height: 18px;
+  padding: 0 8px;
+}
+
+.order-table :deep(.el-table__row td.el-table__cell) {
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  padding: 8px 0;
+  vertical-align: middle;
+}
+
+/* 仅保留横向分隔线，去掉列间竖线 */
+.order-table--horizontal-only :deep(.el-table__header th.el-table__cell),
+.order-table--horizontal-only :deep(.el-table__body td.el-table__cell) {
+  border-right: none;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.order-table--horizontal-only :deep(.el-table__inner-wrapper::before),
+.order-table--horizontal-only :deep(.el-table__inner-wrapper::after) {
+  display: none;
+}
