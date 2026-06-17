@@ -94,5 +94,10 @@ public interface MedicationCommonConstants {
      */
     String OUTPATIENT_PHARMACY_RETURN_DECLINE_SUCCESS_MESSAGE = "退药已拒绝";
 
+    /**
+     * 住院药房退药（AS-IP-PHA-003）：确认退药成功时返回给前端的提示文案（EX-IPR-410）。
+     */
+    String INPATIENT_PHARMACY_RETURN_CONFIRM_SUCCESS_MESSAGE = "退药成功";
+
     // 表名常量已集中到 TableNameConstants。
 }

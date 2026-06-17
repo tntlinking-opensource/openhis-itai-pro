@@ -25,17 +25,10 @@ import lombok.Setter;
  */
 @Getter
 @Setter
-/**
- * UpdatePurchaseOrderResponse。
- */
 public class UpdatePurchaseOrderResponse {
 
-    /**
-     * busNo。
-     */
+    /** 修订后订货单业务单号。 */
     private String busNo;
-    /**
-     * statusEnum。
-     */
+    /** 提交后展示用状态序列号（SupplyStatus.sortOrder）。 */
     private Integer statusEnum;
 }

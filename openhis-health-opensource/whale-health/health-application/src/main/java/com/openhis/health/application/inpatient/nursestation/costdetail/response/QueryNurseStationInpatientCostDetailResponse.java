@@ -17,8 +17,8 @@
 
 package com.openhis.health.application.inpatient.nursestation.costdetail.response;
 
-import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostDetailLineDto;
-import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostDetailTotalsDto;
+import com.openhis.health.module.querysupport.financial.dto.NurseStationCostDetailLineDto;
+import com.openhis.health.module.querysupport.financial.dto.NurseStationCostDetailTotalsDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostSummaryLineDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -31,14 +31,13 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 住院护士站费用明细查询响应。 */
 @Schema(description = "住院护士站费用明细查询响应")
 public class QueryNurseStationInpatientCostDetailResponse {
 
-    /** 回显请求展示模式。 */
     @Schema(description = "展示模式")
     private String presentationMode;
 
-    /** 明细行；SUMMARY 模式为空列表。 */
     @Schema(description = "明细行列表")
     private List<NurseStationCostDetailLineDto> detailLines;
 

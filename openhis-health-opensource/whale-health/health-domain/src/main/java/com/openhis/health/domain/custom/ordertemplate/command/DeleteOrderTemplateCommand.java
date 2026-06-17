@@ -21,7 +21,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 逻辑删除医嘱组套模板命令。
+ * 逻辑删除组套模板命令。
  */
 @Getter
 @Setter

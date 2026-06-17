@@ -20,14 +20,16 @@ package com.openhis.health.application.inventory.warehouse.stockout.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -36,6 +38,7 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 药库出库单详情明细行。 */
 @Schema(description = "药库出库单详情明细行")
 public class StockOutDetailLineDto {
 
@@ -50,6 +53,7 @@ public class StockOutDetailLineDto {
 
     /** 物品定义主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 物品定义主键。 */
     @Schema(description = "物品定义主键")
     private Long itemId;
 
@@ -83,11 +87,13 @@ public class StockOutDetailLineDto {
 
     /** 效期区间起点。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 效期起点。 */
     @Schema(description = "效期起点")
     private LocalDateTime startTime;
 
     /** 效期区间止点。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 效期止点。 */
     @Schema(description = "效期止点")
     private LocalDateTime endTime;
 
@@ -109,6 +115,7 @@ public class StockOutDetailLineDto {
 
     /** 业务发生时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 业务发生时间。 */
     @Schema(description = "业务发生时间")
     private LocalDateTime occurrenceTime;
 

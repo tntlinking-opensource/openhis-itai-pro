@@ -26,9 +26,6 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-/**
- * UpdateWarehouseRequest。
- */
 public class UpdateWarehouseRequest extends CreateWarehouseRequest {
     /** 位置主键。 */
     @NotNull(message = "ID不能为空")

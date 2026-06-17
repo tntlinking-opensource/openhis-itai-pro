@@ -26,18 +26,21 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 挂号支付响应。 */
 @Schema(description = "挂号支付响应")
 public class PayRegisterFeeResponse {
 
-    /** 支付 ID。 */
     @Schema(description = "支付ID")
+    /** 支付ID（业务字段）。 */
     private Long paymentId;
 
     /** 发票 ID。 */
     @Schema(description = "发票ID")
+    /** 发票ID（业务字段）。 */
     private Long invoiceId;
 
     /** 支付状态。 */
     @Schema(description = "状态")
+    /** 状态（业务字段）。 */
     private String status;
 }

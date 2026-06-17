@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.outpatient.pharmacy.returnmedicine.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -29,12 +29,12 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
+/** 分页查询退药患者队列请求。 */
 @Schema(description = "分页查询退药患者队列请求")
 public class PageReturnPatientRequest extends PageQueryBinder.AbstractHealthPageRequest {
 
     private static final long serialVersionUID = 1L;
 
-    /** 科室过滤（与门诊信息读模型 organization_id 对齐）。 */
     @Schema(description = "科室过滤（门诊信息 organization_id）")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long departmentId;

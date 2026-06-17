@@ -31,6 +31,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 住院护士站费用明细页初始化响应。 */
 @Schema(description = "住院护士站费用明细页初始化响应")
 public class LoadNurseStationCostDetailPageInitResponse {
 
@@ -41,6 +42,7 @@ public class LoadNurseStationCostDetailPageInitResponse {
 
     /** 默认查询结束日期（当日）。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    /** 默认业务日期上界。 */
     @Schema(description = "默认业务日期上界")
     private LocalDate dateTo;
 

@@ -28,6 +28,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 患者信息维护响应。 */
 @Schema(description = "患者信息维护响应")
 public class SavePatientInfoResponse {
 
@@ -35,6 +36,7 @@ public class SavePatientInfoResponse {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;
 
+    /** 是否保存成功。 */
     @Schema(description = "是否保存成功")
     private Boolean saved;
 }

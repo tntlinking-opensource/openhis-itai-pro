@@ -28,6 +28,7 @@ import java.util.List;
  * 确认或拒绝退药响应（IF-PHA-02-04）。
  */
 @Data
+/** 确认或拒绝退药响应。 */
 @Schema(description = "确认或拒绝退药响应")
 public class ConfirmMedicineReturnResponse implements Serializable {
 
@@ -36,9 +37,11 @@ public class ConfirmMedicineReturnResponse implements Serializable {
     @Schema(description = "是否成功", requiredMode = Schema.RequiredMode.REQUIRED)
     private Boolean success;
 
+    /** 提示信息。 */
     @Schema(description = "提示信息", requiredMode = Schema.RequiredMode.REQUIRED)
     private String message;
 
+    /** 失败项列表。 */
     @Schema(description = "失败项列表")
     private List<FailedReturnItemDto> failedItems;
 }

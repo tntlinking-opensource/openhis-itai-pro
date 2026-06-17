@@ -20,7 +20,7 @@ package com.openhis.health.application.outpatient.doctorstation.advice.request;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.PrepickedProductKeyDto;
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -38,28 +38,33 @@ import java.util.List;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 医生站-医嘱开立-分页检索可开立医嘱项目目录请求。 */
 @Schema(description = "医生站-医嘱开立-分页检索可开立医嘱项目目录请求")
 public class PageDoctorStationAdviceCatalogRequest extends AbstractHealthPageRequest {
 
     /** 就诊标识（预减同就诊占用、读侧一致性）。 */
     @NotNull(message = "就诊标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 就诊标识。 */
     @Schema(description = "就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long encounterId;
 
     /** 患者标识。 */
     @NotNull(message = "患者标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者标识。 */
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
     /** 机构单元解析入口。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 机构单元解析入口；为空则仅依赖当前登录科室。 */
     @Schema(description = "机构单元解析入口；为空则仅依赖当前登录科室")
     private Long organizationUnitId;
 
     /** 可选药房/库房 id。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 可选药房/库房 id。 */
     @Schema(description = "可选药房/库房 id，用于收窄库存维度")
     private Long pharmacyLocationId;
 
@@ -67,19 +72,28 @@ public class PageDoctorStationAdviceCatalogRequest extends AbstractHealthPageReq
     @Schema(description = "收窄 product_table_name 集合；空表示三表全量")
     private List<String> productTableNames;
 
-    /** 医嘱定价来源码。 */
-    @Schema(description = "医嘱定价来源码；空则回落默认零售价口径")
-    private String pricingSourceCode;
+    /**
+     * 排除药品目录 categoryCode（如开立西药医嘱排除中草药 {@code 4}）。
+     * 仅作用于 {@code med_medication_definition} 检索；与 {@link #categoryEnum} 无关。
+     */
+    @Schema(description = "排除药品 med_category_code 集合（如开立西药医嘱传 [\"4\"] 排除中草药）")
+    private List<String> excludeMedicationCategoryCodes;
 
     /** 划价标记。 */
     @Schema(description = "划价标记；为 1 时不返回药品行")
     private Integer pricingFlag;
 
-    /** 预选产品键集合。 */
+    /**
+     * 组套/历史医嘱/处方行 ids 收窄目录（与 IF-08 预览结构配合）。
+     * 与 {@link #keyword} OR 组合；价与 {@code defaultDispenseLocationId} 由本 IF 读侧返回。
+     */
     @Schema(description = "预选产品键集合")
     private List<PrepickedProductKeyDto> prepickedProductKeys;
 
-    /** 关键字排序模式。 */
     @Schema(description = "关键字排序模式")
     private String sortMode;
+
+    /** 申请单选品：按诊疗类别过滤（ActivityDefCategory code 或 TREATMENT/PROOF/TEST）。 */
+    @Schema(description = "申请单选品类别过滤（检查 TEST/23、检验 PROOF/22、治疗 TREATMENT/21）")
+    private String categoryEnum;
 }

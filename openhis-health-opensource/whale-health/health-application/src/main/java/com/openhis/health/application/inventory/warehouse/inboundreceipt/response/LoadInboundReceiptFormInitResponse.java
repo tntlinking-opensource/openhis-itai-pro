@@ -18,10 +18,16 @@
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.response;
 
 import com.openhis.whale.core.application.dto.OptionDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Setter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -36,14 +42,31 @@ import java.util.List;
 @Setter
 public class LoadInboundReceiptFormInitResponse {
 
+    /** 药房库位下拉选项。 */
+
+    @Schema(description = "药房选项 pharmacyLocationOptions")
     private List<OptionDto> pharmacyLocationOptions;
 
+    /** 药库库位下拉选项。 */
+
+    /** 药库选项 warehouseLocationOptions。 */
+    @Schema(description = "药库选项 warehouseLocationOptions")
     private List<OptionDto> warehouseLocationOptions;
 
+    /** 供应商下拉选项。 */
+    @Schema(description = "供应商选项 supplierOptions")
     private List<OptionDto> supplierOptions;
 
+    /** 药师下拉选项。 */
+
+    /** 药师选项 pharmacistOptions。 */
+    @Schema(description = "药师选项 pharmacistOptions")
     private List<OptionDto> pharmacistOptions;
 
+    /** 库管员下拉选项。 */
+
+    /** 库管员选项 warehouseKeeperOptions。 */
+    @Schema(description = "库管员选项 warehouseKeeperOptions")
     private List<OptionDto> warehouseKeeperOptions;
 
     /**
@@ -51,5 +74,6 @@ public class LoadInboundReceiptFormInitResponse {
      */
     private List<OptionDto> inboundItemTableTypeOptions;
 
+    /** 单据状态下拉选项。 */
     private List<OptionDto> statusOptions;
 }

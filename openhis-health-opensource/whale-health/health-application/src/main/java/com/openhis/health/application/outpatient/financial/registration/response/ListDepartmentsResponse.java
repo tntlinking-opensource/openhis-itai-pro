@@ -29,13 +29,11 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 科室列表响应。 */
 @Schema(description = "科室列表响应")
-/**
- * ListDepartmentsResponse。
- */
 public class ListDepartmentsResponse {
 
-    /** 科室选项列表。 */
     @Schema(description = "科室选项")
+    /** 科室选项（业务字段）。 */
     private List<OptionDto> departmentOptions;
 }

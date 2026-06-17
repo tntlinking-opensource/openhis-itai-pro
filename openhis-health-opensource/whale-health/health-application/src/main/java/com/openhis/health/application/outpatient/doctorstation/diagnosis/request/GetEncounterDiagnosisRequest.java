@@ -29,27 +29,20 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-查询就诊诊断信息请求。 */
 @Schema(description = "医生站-查询就诊诊断信息请求")
-/**
- * GetEncounterDiagnosisRequest。
- */
 public class GetEncounterDiagnosisRequest {
 
     /** 就诊主键。 */
     @NotNull(message = "就诊标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
-    /**
-     * encounterId。
-     */
     private Long encounterId;
 
     /** 患者主键（与读模型快照比对，防止串患者）。 */
     @NotNull(message = "患者标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者标识。 */
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
-    /**
-     * patientId。
-     */
     private Long patientId;
 }

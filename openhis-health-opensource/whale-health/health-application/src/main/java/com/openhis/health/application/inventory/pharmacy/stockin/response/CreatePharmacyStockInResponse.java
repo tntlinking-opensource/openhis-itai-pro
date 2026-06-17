@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 新建药房入库单响应（IF-PHA-IN-04）。
@@ -28,6 +29,7 @@ import lombok.experimental.Accessors;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 新建药房入库单 IF-PHA-IN-04。 */
 @Schema(description = "新建药房入库单 IF-PHA-IN-04")
 public class CreatePharmacyStockInResponse {
 

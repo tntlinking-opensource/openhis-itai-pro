@@ -29,6 +29,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 出院前待发退药列表请求。 */
 @Schema(description = "出院前待发退药列表请求", requiredProperties = {"encounterId"})
 public class ListDischargePendingMedicationsRequest {
 

@@ -28,10 +28,12 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 按科室查询病区列表请求。 */
 @Schema(description = "按科室查询病区列表请求")
 public class ListWardsByDepartmentRequest {
 
     @Schema(description = "住院科室 ID", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 住院科室 ID（业务字段）。 */
     private Long organizationId;
 }

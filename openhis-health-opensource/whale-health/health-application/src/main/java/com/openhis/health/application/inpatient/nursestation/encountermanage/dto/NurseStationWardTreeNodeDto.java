@@ -30,10 +30,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 病区树节点。 */
 @Schema(description = "病区树节点")
 public class NurseStationWardTreeNodeDto {
 
-    /** 病区位置主键。 */
     @Schema(description = "病区位置主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long locationId;

@@ -31,15 +31,18 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 就诊待执行退费明细响应。 */
 @Schema(description = "就诊待执行退费明细响应")
 public class LoadOutpatientRefundExecutionDetailResponse {
 
     /** 就诊主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊主键")
+    /** 就诊主键（业务字段）。 */
     private Long encounterId;
 
     /** 按原支付分组的拟退/保留明细。 */
     @Schema(description = "按原支付分组的明细")
+    /** 按原支付分组的明细（业务字段）。 */
     private List<OutpatientRefundPaymentGroupDto> paymentGroups;
 }

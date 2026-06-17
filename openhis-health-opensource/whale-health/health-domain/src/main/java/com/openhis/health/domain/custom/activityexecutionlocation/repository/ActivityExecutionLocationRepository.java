@@ -63,31 +63,6 @@ public interface ActivityExecutionLocationRepository extends JpaRepository<Activ
     );
 
     /**
-     * 按锚点查询候选规则（收费项定义维度）。
-     *
-     * @param executionOrgId 执行科室标识
-     * @param activityCategoryCode 活动类别编码
-     * @param chargeItemDefinitionId 收费项定义标识
-     * @return 候选规则
-     */
-    List<ActivityExecutionLocation> findAllByExecutionOrgIdAndActivityCategoryCodeAndChargeItemDefinitionId(
-        Long executionOrgId, String activityCategoryCode, Long chargeItemDefinitionId);
-
-    /**
-     * 批量按锚点查询候选规则（收费项定义维度）。
-     *
-     * @param executionOrgId 执行科室标识
-     * @param activityCategoryCode 活动类别编码
-     * @param chargeItemDefinitionIds 收费项定义标识集合
-     * @return 候选规则
-     */
-    List<ActivityExecutionLocation> findAllByExecutionOrgIdAndActivityCategoryCodeAndChargeItemDefinitionIdIn(
-        Long executionOrgId,
-        String activityCategoryCode,
-        Collection<Long> chargeItemDefinitionIds
-    );
-
-    /**
      * 按诊疗定义查询规则列表。
      *
      * @param activityDefinitionId 诊疗定义标识
@@ -96,28 +71,12 @@ public interface ActivityExecutionLocationRepository extends JpaRepository<Activ
     List<ActivityExecutionLocation> findAllByActivityDefinitionId(Long activityDefinitionId);
 
     /**
-     * 按收费项定义查询规则列表。
-     *
-     * @param chargeItemDefinitionId 收费项定义标识
-     * @return 规则列表
-     */
-    List<ActivityExecutionLocation> findAllByChargeItemDefinitionId(Long chargeItemDefinitionId);
-
-    /**
      * 批量按诊疗定义查询规则列表。
      *
      * @param activityDefinitionIds 诊疗定义标识集合
      * @return 规则列表
      */
     List<ActivityExecutionLocation> findAllByActivityDefinitionIdIn(Collection<Long> activityDefinitionIds);
-
-    /**
-     * 批量按收费项定义查询规则列表。
-     *
-     * @param chargeItemDefinitionIds 收费项定义标识集合
-     * @return 规则列表
-     */
-    List<ActivityExecutionLocation> findAllByChargeItemDefinitionIdIn(Collection<Long> chargeItemDefinitionIds);
 
     /**
      * 按执行科室查询规则列表。
@@ -136,6 +95,28 @@ public interface ActivityExecutionLocationRepository extends JpaRepository<Activ
      */
     List<ActivityExecutionLocation> findAllByExecutionOrgIdAndActivityCategoryCode(
         Long executionOrgId,
+        String activityCategoryCode
+    );
+
+    /**
+     * 按执行科室 + 活动类别查询大类默认规则（未绑定具体诊疗项目）。
+     *
+     * @param executionOrgId 执行科室标识
+     * @param activityCategoryCode 活动类别编码
+     * @return 大类级候选规则
+     */
+    List<ActivityExecutionLocation> findAllByExecutionOrgIdAndActivityCategoryCodeAndActivityDefinitionIdIsNull(
+        Long executionOrgId,
+        String activityCategoryCode
+    );
+
+    /**
+     * 按活动类别查询全院大类默认规则（未绑定具体诊疗项目）。
+     *
+     * @param activityCategoryCode 活动类别编码
+     * @return 大类级规则列表
+     */
+    List<ActivityExecutionLocation> findAllByActivityCategoryCodeAndActivityDefinitionIdIsNull(
         String activityCategoryCode
     );
 }

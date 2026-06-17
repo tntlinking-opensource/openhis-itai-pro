@@ -30,15 +30,18 @@ import java.util.List;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 患者全景详情。 */
 @Schema(description = "患者全景详情")
 public class PatientDetailDto extends PatientQueueItemDto {
 
     @Schema(description = "联系电话")
     private String patientPhone;
 
+    /** 证件号。 */
     @Schema(description = "证件号（展示脱敏）")
     private String idCardNo;
 
+    /** 参与者全角色列表。 */
     @Schema(description = "参与者全角色列表")
     private List<ParticipantDto> participants;
 }

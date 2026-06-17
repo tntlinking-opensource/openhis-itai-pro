@@ -76,7 +76,7 @@ public class Template extends BaseAuditedEntity implements IMultiTenant {
     private Long organizationId;
 
     /**
-     * 适用就诊类别（与 health EncounterClass.code 一致）：AMB / IMP / EMER 等。
+     * 适用就诊类别（与 health EncounterClass.code 一致）：AMB / IMP / OBSENC 等。
      */
     @Size(max = 16)
     @Column(name = "encounter_class_code", length = 16)

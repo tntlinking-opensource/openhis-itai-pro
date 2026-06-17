@@ -27,11 +27,9 @@ import lombok.Data;
 @Schema(description = "新增疾病目录请求")
 public class CreateDiagnosisCatalogRequest {
 
-    /** 疾病来源/分类业务码（必填，与初始化下拉一致）。 */
     @Schema(description = "所属分类编码")
     private String sourceEnum;
 
-    /** 疾病/条件编码。 */
     @Schema(description = "疾病编码")
     private String conditionCode;
 

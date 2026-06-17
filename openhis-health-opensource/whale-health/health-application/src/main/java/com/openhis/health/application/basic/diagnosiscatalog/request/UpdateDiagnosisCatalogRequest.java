@@ -27,12 +27,8 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Schema(description = "更新疾病目录请求")
-/**
- * UpdateDiagnosisCatalogRequest。
- */
 public class UpdateDiagnosisCatalogRequest extends CreateDiagnosisCatalogRequest {
 
-    /** 条件定义（疾病目录项）主键。 */
     @Schema(description = "主键ID")
     private Long id;
 }

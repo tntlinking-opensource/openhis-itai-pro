@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 审批驳回药房入库响应（IF-PHA-IN-09）。
@@ -28,6 +29,7 @@ import lombok.experimental.Accessors;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 审批驳回药房入库 IF-PHA-IN-09。 */
 @Schema(description = "审批驳回药房入库 IF-PHA-IN-09")
 public class RejectPharmacyStockInResponse {
 

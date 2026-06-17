@@ -22,7 +22,7 @@ import com.openhis.health.application.basic.medicationcatalog.dto.MedicationDto;
 import com.openhis.health.application.basic.medicationcatalog.dto.MedicationManageInitDto;
 import com.openhis.health.application.basic.medicationcatalog.request.CreateMedicationCatalogRequest;
 import com.openhis.health.application.basic.medicationcatalog.request.UpdateMedicationCatalogRequest;
-import com.openhis.health.application.common.assembler.command.BatchCommandItemAssembler;
+import com.openhis.health.module.common.assembler.command.BatchCommandItemAssembler;
 import com.openhis.health.domain.medication.medicationdefinition.command.ActivateMedicationDefinitionsCommand;
 import com.openhis.health.domain.medication.medicationdefinition.command.CreateMedicationDefinitionCommand;
 import com.openhis.health.domain.medication.medicationdefinition.command.DiscardMedicationDefinitionCommand;
@@ -416,6 +416,8 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         dto.setRestrictedFlag(Boolean.TRUE.equals(model.getRestrictedFlag()));
         dto.setRestrictedScope(model.getRestrictedScope());
         dto.setCharacteristic(model.getCharacteristic());
+        dto.setPharmacologyCategoryCode(model.getPharmacologyCategoryCode());
+        dto.setDrug69Code(model.getDrug69Code());
         if (model.getActiveFlag() != null) {
             // 启用标志统一映射为前端 1/2 整型及中文文案
             CatalogPresentationUtil.fillEnableDisableLabels(

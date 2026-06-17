@@ -35,9 +35,9 @@ public class ModifyFrequencyCommand {
      */
     private String name;
     /**
-     * 周期类型枚举值（可空；非空则覆盖）。
+     * 周期类型 code（可空；非空则覆盖）。
      */
-    private Integer cycleType;
+    private String cycleType;
     /**
      * 日计数（可空；非空则覆盖）。
      */
@@ -71,9 +71,9 @@ public class ModifyFrequencyCommand {
      */
     private String applicableScenes;
     /**
-     * 允许跨日选项枚举值（可空；非空则覆盖）。
+     * 允许跨日选项 code（可空；非空则覆盖）。
      */
-    private Integer allowCrossDay;
+    private String allowCrossDay;
     /**
      * 排序号（可空；非空则覆盖）。
      */

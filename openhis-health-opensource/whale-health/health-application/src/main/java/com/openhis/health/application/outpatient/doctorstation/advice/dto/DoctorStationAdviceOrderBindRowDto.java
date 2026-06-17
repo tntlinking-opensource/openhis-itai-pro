@@ -30,15 +30,16 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站医嘱绑定明细行。 */
 @Schema(description = "医生站医嘱绑定明细行")
 public class DoctorStationAdviceOrderBindRowDto {
 
-    /** 绑定类型回显。 */
     @Schema(description = "绑定类型回显")
     private String bindType;
 
-    /** 源定义主键。 */
+    /** 源定义主键；用法绑定场景为空，诊疗绑定为活动定义主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 源定义主键。 */
     @Schema(description = "源定义主键")
     private Long sourceItemId;
 
@@ -48,6 +49,7 @@ public class DoctorStationAdviceOrderBindRowDto {
 
     /** 目标定义主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 目标定义主键。 */
     @Schema(description = "目标定义主键")
     private Long targetItemId;
 

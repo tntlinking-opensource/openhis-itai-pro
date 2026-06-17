@@ -29,13 +29,11 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生列表响应。 */
 @Schema(description = "医生列表响应")
-/**
- * ListPractitionersResponse。
- */
 public class ListPractitionersResponse {
 
-    /** 医生选项列表。 */
     @Schema(description = "医生选项")
+    /** 医生选项（业务字段）。 */
     private List<OptionDto> practitionerOptions;
 }

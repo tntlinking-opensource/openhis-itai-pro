@@ -23,8 +23,8 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dt
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.PageNurseStationPricingCatalogRequest;
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
-import com.openhis.health.application.querysupport.order.dto.InpatientOrderListSkeleton;
-import com.openhis.health.application.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.workflow.devicerequest.command.CreateExecutedDeviceOrderCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.GenerateDeviceDispenseFromTemporaryPathCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateFromNursePricingCommand;

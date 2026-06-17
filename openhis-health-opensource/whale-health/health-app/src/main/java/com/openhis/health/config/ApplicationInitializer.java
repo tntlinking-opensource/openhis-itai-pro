@@ -24,7 +24,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
 import org.springframework.context.ApplicationContext;
-import com.openhis.whale.core.config.InitializationCompletedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.annotation.Async;
@@ -32,14 +31,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 /**
- * 应用初始化器
- * 在应用启动后执行初始化操作，输出服务地址和 Swagger 地址等信息
- * 使用 ApplicationReadyEvent + 延迟执行，确保在所有异步初始化完成后最后显示
+ * 应用启动信息输出器。
+ *
+ * <p>监听 {@link ApplicationReadyEvent}，在异步初始化完成后输出服务地址、Swagger 与健康检查入口；
+ * 使用 {@code @Order(Integer.MAX_VALUE)} 确保日志位于启动流程末尾。</p>
  */
 @Component
 public class ApplicationInitializer {
@@ -66,66 +63,23 @@ public class ApplicationInitializer {
     
     // 标记是否已经显示过启动信息
     private volatile boolean startupInfoDisplayed = false;
-    
-    // 用于超时保护的调度器
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread t = new Thread(r, "startup-info-scheduler");
-        t.setDaemon(true);
-        return t;
-    });
-    
+
     /**
-     * 监听应用就绪事件
-     * 检查是否存在异步初始化任务（如 PermissionDefinitionProvider）
-     * 如果不存在，立即显示启动信息；如果存在，等待 InitializationCompletedEvent
+     * 监听应用就绪事件，异步输出启动摘要（仅执行一次）。
+     *
+     * @param event Spring 应用就绪事件
      */
     @EventListener(ApplicationReadyEvent.class)
     @Order(Integer.MAX_VALUE)
     @Async
     public void onApplicationReady(ApplicationReadyEvent event) {
-        try {
-            // 检查是否存在 PermissionDefinitionProvider（主要的异步初始化任务）
-            boolean hasAsyncInit = !applicationContext.getBeansOfType(
-                com.openhis.whale.permission.domain.service.PermissionDefinitionProvider.class
-            ).isEmpty();
-            
-            if (!hasAsyncInit) {
-                // 如果没有异步初始化任务，立即显示启动信息
-                if (!startupInfoDisplayed) {
-                    displayStartupInfo();
-                }
-            } else {
-                // 如果有异步初始化任务，等待 InitializationCompletedEvent
-                // 设置一个超时保护（3秒），确保即使事件未发布也能显示
-                scheduler.schedule(() -> {
-                    if (!startupInfoDisplayed) {
-                        logger.warn("等待异步初始化完成超时，现在显示启动信息");
-                        displayStartupInfo();
-                    }
-                }, 3, TimeUnit.SECONDS);
-            }
-        } catch (Exception e) {
-            // 如果检查过程中出错，立即显示启动信息
-            logger.warn("检查异步初始化任务时出错，立即显示启动信息: {}", e.getMessage());
-            if (!startupInfoDisplayed) {
-                displayStartupInfo();
-            }
-        }
-    }
-    
-    /**
-     * 监听初始化完成事件，在所有异步初始化完成后立即显示启动信息
-     * 这是主要的触发方式，确保在异步任务完成后立即显示
-     */
-    @EventListener(InitializationCompletedEvent.class)
-    public void onInitializationCompleted(InitializationCompletedEvent event) {
         if (!startupInfoDisplayed) {
             displayStartupInfo();
         }
     }
     
     /**
-     * 显示启动信息
+     * 组装并打印启动摘要：基础 URL、Swagger、AppService 计数与健康检查地址。
      */
     private void displayStartupInfo() {
         startupInfoDisplayed = true;
@@ -172,7 +126,9 @@ public class ApplicationInitializer {
     }
     
     /**
-     * 获取实际运行的端口
+     * 获取实际监听端口（随机端口场景优先读 WebServer，失败时回退配置值）。
+     *
+     * @return 实际或配置的 HTTP 端口
      */
     private int getActualPort() {
         try {
@@ -187,7 +143,10 @@ public class ApplicationInitializer {
     }
     
     /**
-     * 构建基础 URL
+     * 构建对外访问基础 URL（含 context-path 规范化）。
+     *
+     * @param port HTTP 端口
+     * @return 形如 {@code http://localhost:8081[/context]} 的基础地址
      */
     private String buildBaseUrl(int port) {
         String path = contextPath;

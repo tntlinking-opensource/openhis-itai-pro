@@ -33,7 +33,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -157,6 +159,80 @@ public class TraceNumberRecordQueryService {
                 ErrorCodeConstants.EX_OPP_201_TRACE_CODE_ALREADY_OUTBOUND,
                 "追溯码已出库，不能重复出库"
             );
+        }
+    }
+
+    /**
+     * 断言同一请求内追溯码不重复（BR-INV-TRC-003）。
+     */
+    public void assertNoDuplicateTraceCodes(Collection<String> traceCodes) {
+        if (traceCodes == null || traceCodes.isEmpty()) {
+            return;
+        }
+        Set<String> seen = new HashSet<>();
+        for (String code : traceCodes) {
+            if (code == null || code.trim().isEmpty()) {
+                continue;
+            }
+            String normalized = code.trim();
+            if (seen.contains(normalized)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.TRACE_NUMBER_RECORD_DUPLICATE_IN_REQUEST,
+                    "同一请求内追溯码重复"
+                );
+            }
+            seen.add(normalized);
+        }
+    }
+
+    /**
+     * 按发放行四维校验追溯码净在库 &gt; 0（BR-INV-TRC-002）。
+     */
+    public void assertCodesInNetStockForDispenseLine(
+        String itemTable,
+        Long itemId,
+        String lotNumber,
+        Long locationId,
+        Collection<String> traceCodes
+    ) {
+        if (traceCodes == null || traceCodes.isEmpty()) {
+            return;
+        }
+        if (itemId == null || locationId == null || itemTable == null || itemTable.trim().isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.TRACE_NUMBER_RECORD_INVALID_ARGUMENT,
+                "追溯码校验缺少物品或库房维度"
+            );
+        }
+        String normalizedLot = lotNumber == null ? "" : lotNumber.trim();
+        List<TraceNumberRecord> dimensionRows = repository.findAllByItemTableAndItemIdAndLotNumberAndLocationId(
+            itemTable,
+            itemId,
+            normalizedLot,
+            locationId
+        );
+        for (String code : traceCodes) {
+            if (code == null || code.trim().isEmpty()) {
+                continue;
+            }
+            String normalizedCode = code.trim();
+            int net = 0;
+            for (TraceNumberRecord row : dimensionRows) {
+                if (row == null || !normalizedCode.equals(row.getTraceNo())) {
+                    continue;
+                }
+                if (TraceDirection.IN.getCode().equals(row.getStatusEnum())) {
+                    net++;
+                } else if (TraceDirection.OUT.getCode().equals(row.getStatusEnum())) {
+                    net--;
+                }
+            }
+            if (net <= 0) {
+                throw new BusinessException(
+                    ErrorCodeConstants.TRACE_NUMBER_RECORD_NOT_IN_STOCK_OR_MISMATCH,
+                    "追溯码不在库或与药品、批号、库房不匹配"
+                );
+            }
         }
     }
 }

@@ -20,20 +20,20 @@ package com.openhis.health.application.inventory.pharmacy.stocktake.response;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 撤回盘点审批出参（IF-PHA-ST-07）。
  */
 @Data
 @Accessors(chain = true)
+/** 撤回盘点审批 IF-PHA-ST-07。 */
 @Schema(description = "撤回盘点审批 IF-PHA-ST-07")
 public class WithdrawPharmacyStocktakeApprovalResponse {
 
-    /** 是否成功。 */
     @Schema(description = "是否成功 success")
     private Boolean success;
 
-    /** 撤回后状态 code。 */
     @Schema(description = "状态 statusEnum")
     private String statusEnum;
 }

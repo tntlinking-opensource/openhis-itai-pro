@@ -22,33 +22,45 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 挂号初始化响应。
  */
 @Data
 @Accessors(chain = true)
+/** 挂号初始化响应。 */
 @Schema(description = "挂号初始化响应")
 public class LoadRegisterFormInitResponse {
 
-    /** 科室选项。 */
     @Schema(description = "科室选项")
+    /** 科室选项（业务字段）。 */
     private List<OptionDto> departmentOptions;
 
     /** 医生选项。 */
     @Schema(description = "医生选项")
+    /** 医生选项（业务字段）。 */
     private List<OptionDto> practitionerOptions;
 
     /** 费用性质选项。 */
     @Schema(description = "费用性质选项")
+    /** 费用性质选项（业务字段）。 */
     private List<OptionDto> contractOptions;
 
     /** 号源类型选项。 */
     @Schema(description = "号源类型选项")
+    /** 号源类型选项（业务字段）。 */
     private List<OptionDto> serviceTypeOptions;
+
+    /** 号源类型主键（String）→ 挂号费销售价（元）。 */
+    @Schema(description = "号源类型挂号费（元）")
+    /** 号源类型挂号费（元）（业务字段）。 */
+    private Map<String, BigDecimal> serviceTypeFeeById;
 
     /** 性别选项（与患者主档 AdministrativeGender 枚举编码一致）。 */
     @Schema(description = "性别选项")
+    /** 性别选项（业务字段）。 */
     private List<OptionDto> genderOptions;
 }

@@ -40,7 +40,6 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 库房映射实现：前端 16/17 与领域 {@link LocationForm} 编码互认，DTO 侧补齐枚举展示文案。
@@ -134,6 +133,8 @@ public class WarehouseMapperImpl implements WarehouseMapper {
         item.setTypeJson("{}");
         item.setOrganizationId(organizationId);
         item.setDisplayOrder(0);
+        // 库房/药房为扁平主数据，登记即启用，无草稿态与层级子节点。
+        item.setRegisterAsActive(Boolean.TRUE);
         command.setItems(Collections.singletonList(item));
         return command;
     }

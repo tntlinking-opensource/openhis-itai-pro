@@ -31,6 +31,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-就诊诊断行。 */
 @Schema(description = "医生站-就诊诊断行")
 public class EncounterDiagnosisRowDto {
 
@@ -132,4 +133,16 @@ public class EncounterDiagnosisRowDto {
      */
     @Schema(description = "医保诊断编码")
     private String ybNo;
+
+    /**
+     * 中医病证组号：同组病名与证候事实共用，用于列表合并展示与中医 Tab 绑定。
+     */
+    @Schema(description = "中医病证组号")
+    private String tcmSyndromeGroup;
+
+    /**
+     * 诊断定义目录来源码（如 {@code tcm_dx}/{@code tcm_syndrome}），用于前端区分病名/证候行。
+     */
+    @Schema(description = "诊断定义来源分类码")
+    private String sourceEnum;
 }

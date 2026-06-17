@@ -17,8 +17,8 @@
 
 package com.openhis.health.application.inpatient.nursestation.costdetail.mapper;
 
-import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostDetailLineDto;
-import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostDetailTotalsDto;
+import com.openhis.health.module.querysupport.financial.dto.NurseStationCostDetailLineDto;
+import com.openhis.health.module.querysupport.financial.dto.NurseStationCostDetailTotalsDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostSummaryLineDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.request.QueryNurseStationInpatientCostDetailRequest;
 import com.openhis.health.application.inpatient.nursestation.costdetail.response.LoadNurseStationCostDetailPageInitResponse;

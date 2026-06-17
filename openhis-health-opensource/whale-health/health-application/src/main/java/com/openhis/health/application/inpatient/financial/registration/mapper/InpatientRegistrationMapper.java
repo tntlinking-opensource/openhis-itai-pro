@@ -37,7 +37,7 @@ import com.openhis.health.domain.administration.patient.command.ModifyPatientPro
 import com.openhis.health.domain.administration.patient.command.RegisterPatientCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CollectAdvanceDepositCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.SettleInpatientPaymentCommand;
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
@@ -57,12 +57,14 @@ public interface InpatientRegistrationMapper {
      *
      * @param rows                          住院上下文行；调用方保证非 null
      * @param ambEncounterIdByEncounterId 住院就诊 ID → 源门诊就诊 ID；可空
+     * @param inWayLabelByCode            入院方式 code → 展示文案；可空
      * @return 列表行 DTO
      */
     List<RegistrationQueueItemDto> toRegistrationQueueItemDtoList(
         List<InpatientEncounterContextQueryModel> rows,
         Map<Long, Long> ambEncounterIdByEncounterId,
-        Map<Long, InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay> displayOverlayByEncounterId);
+        Map<Long, InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay> displayOverlayByEncounterId,
+        Map<String, String> inWayLabelByCode);
 
     /**
      * 列表行 + Spring 分页壳 → 分页响应（经 PagedResultBuilder）。
@@ -80,14 +82,20 @@ public interface InpatientRegistrationMapper {
      *
      * @param patient         患者 DTO，可 null
      * @param encounter       就诊 DTO，可 null
-     * @param contractOptions 费用性质下拉
-     * @param readOnly        是否只读查看
+     * @param contractOptions     费用性质下拉
+     * @param organizationOptions 入院科室下拉
+     * @param inWayCodeOptions    入院方式下拉
+     * @param admitSourceCodeOptions 入院类型下拉
+     * @param readOnly            是否只读查看
      * @return 上下文响应
      */
     LoadRegistrationContextResponse toLoadRegistrationContextResponse(
         RegistrationPatientDto patient,
         RegistrationEncounterDto encounter,
         List<OptionDto> contractOptions,
+        List<OptionDto> organizationOptions,
+        List<OptionDto> inWayCodeOptions,
+        List<OptionDto> admitSourceCodeOptions,
         boolean readOnly);
 
     /**
@@ -114,11 +122,15 @@ public interface InpatientRegistrationMapper {
      *
      * @param row           上下文行；调用方保证非 null
      * @param encounterHead 就诊主档（补 busNo/入院来源/优先级/ambEncounterId）；可 null
+     * @param inWayLabelByCode 入院方式 code → 展示文案；可 null
+     * @param admitSourceLabelByCode 入院类型 code → 展示文案；可 null
      * @return 就诊 DTO
      */
     RegistrationEncounterDto toRegistrationEncounterDto(
         InpatientEncounterContextQueryModel row,
-        EncounterDetailQueryModel encounterHead);
+        EncounterDetailQueryModel encounterHead,
+        Map<String, String> inWayLabelByCode,
+        Map<String, String> admitSourceLabelByCode);
 
     /**
      * 费用性质列表 → 下拉选项（与门诊挂号口径一致）。
@@ -190,13 +202,15 @@ public interface InpatientRegistrationMapper {
      * @param busNo         住院号
      * @param paymentId     支付单 ID，可 null
      * @param accountOpened 是否新开账户
+     * @param ybMdtrtId     医保就诊 ID；无医保时为 null
      * @return 提交响应
      */
     SubmitRegistrationResponse toSubmitRegistrationResponse(
         Long encounterId,
         String busNo,
         Long paymentId,
-        boolean accountOpened);
+        boolean accountOpened,
+        String ybMdtrtId);
 
     /**
      * 取消请求 → 取消住院登记命令。

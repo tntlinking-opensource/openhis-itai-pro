@@ -28,14 +28,13 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 住院发药响应。 */
 @Schema(description = "住院发药响应")
 public class DispenseInpatientMedicationsResponse {
 
-    /** 核发与库存扣减是否全部成功。 */
     @Schema(description = "是否成功")
     private Boolean success;
 
-    /** 面向用户的提示或错误摘要。 */
     @Schema(description = "提示文案")
     private String message;
 

@@ -25,14 +25,8 @@ import lombok.Setter;
  */
 @Getter
 @Setter
-/**
- * LoadPurchaseOrderFormInitRequest。
- */
 public class LoadPurchaseOrderFormInitRequest {
 
     /** 机构标识；缺省时取当前会话组织单元。 */
-    /**
-     * organizationId。
-     */
     private Long organizationId;
 }

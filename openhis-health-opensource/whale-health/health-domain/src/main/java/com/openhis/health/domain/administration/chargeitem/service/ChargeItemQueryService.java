@@ -21,14 +21,10 @@ import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientChargeQueueEncounterQuery;
 import com.openhis.health.domain.administration.chargeitem.repository.ChargeItemRepository;
-import com.openhis.health.domain.administration.encounter.entity.Encounter;
-import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
-import com.openhis.health.domain.share.enums.EncounterClass;
-import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
 import jakarta.persistence.criteria.CriteriaBuilder;
@@ -90,6 +86,28 @@ public class ChargeItemQueryService {
      */
     public List<ChargeItem> listChargeItemsByServiceIds(ChargeItemQueryCommand cmd) {
         return repository.findAllByServiceIdIn(cmd.getServiceIds());
+    }
+
+    /**
+     * 按执行记录主键集合批量查询收费明细（取消执行 Gate 与回退定位，DM-ADM-011 §6.2.23）。
+     *
+     * @param procedureIds 执行记录主键集合
+     * @return 收费明细列表；空入参返回空列表
+     */
+    public List<ChargeItem> listChargeItemsByProcedureIds(Collection<Long> procedureIds) {
+        if (procedureIds == null || procedureIds.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long procedureId : procedureIds) {
+            if (procedureId != null) {
+                distinctIds.add(procedureId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return List.of();
+        }
+        return repository.findAllByProcedureIdIn(distinctIds);
     }
 
     /**
@@ -338,6 +356,8 @@ public class ChargeItemQueryService {
      *
      * <p>状态口径：草稿/待收费/已结算/退款中/已退款均纳入——签发前后迁移、医生站拟退（{@code REFUNDING}）、
      * 收费窗退费完成（{@code REFUNDED}）时均需回显金额（门诊退药明细、发药 slip 等同源）。</p>
+     * <p>住院护士执行后汇总/发药定价由 {@code module.querysupport.pharmacy.InpatientMedicationDispenseChargePricingLoader}
+     * 调用 {@link #listPendingSettlementChargeItemsForMedicationDispensePricing}（仅 {@code PENDING_SETTLEMENT}）。</p>
      *
      * @param encounterId 就诊标识
      * @param dispenseIds 发放单主键集合
@@ -367,6 +387,36 @@ public class ChargeItemQueryService {
             TableNameConstants.MED_MEDICATION_DISPENSE,
             distinct,
             statuses);
+    }
+
+    /**
+     * 住院汇总领药/住院发药：按就诊与药品发放锚点批量加载<strong>待结算</strong>收费明细（锚点：{@code dispense_table}+{@code dispense_id}）。
+     *
+     * <p>仅 {@code PENDING_SETTLEMENT}：护士执行入账后、日结/出院结算前的在院累计费用。</p>
+     *
+     * @param encounterId 就诊标识
+     * @param dispenseIds 发放单主键集合
+     * @return 平铺明细；入参非法或集合为空时返回空表、不落库
+     */
+    public List<ChargeItem> listPendingSettlementChargeItemsForMedicationDispensePricing(
+        Long encounterId, Collection<Long> dispenseIds) {
+        if (encounterId == null || dispenseIds == null || dispenseIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        LinkedHashSet<Long> distinct = new LinkedHashSet<>();
+        for (Long dispenseId : dispenseIds) {
+            if (dispenseId != null) {
+                distinct.add(dispenseId);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return new ArrayList<>();
+        }
+        return repository.findAllByEncounterIdAndDispenseTableAndDispenseIdInAndStatusEnumIn(
+            encounterId,
+            TableNameConstants.MED_MEDICATION_DISPENSE,
+            distinct,
+            List.of(ChargeItemStatus.PENDING_SETTLEMENT.getCode()));
     }
 
     /**
@@ -540,7 +590,7 @@ public class ChargeItemQueryService {
     }
 
     /**
-     * 费用明细视图查询（DM-ADM-011 §6.2.4；门急诊场景）。
+     * 费用明细视图查询（DM-ADM-011 §6.2.4；门诊场景）。
      *
      * <p>当前唯一调用方为门诊收银 IF-OPC-03；与 {@link #listChargeItemsByEncounterId} 共用就诊维度规格过滤。</p>
      *
@@ -832,15 +882,13 @@ public class ChargeItemQueryService {
     /**
      * 门诊收银/退费队列：分页返回存在指定状态收费事实（排除挂号锚点）的就诊主键。
      *
-     * @param query                       查询入参
+     * @param query                       查询入参（须含 {@code resolvedEncounterScope}，由应用层 Loader 预解析）
      * @param statusCodes                 收费状态持久化码子集
-     * @param sessionOrganizationUnitId   会话机构主键；{@code null} 时不按机构收窄
      * @return 就诊主键分页（按本就诊下命中收费行的最近 {@code occurrence_time} 倒序）
      */
     public Page<Long> pageEncounterIdsForOutpatientChargeQueue(
         OutpatientChargeQueueEncounterQuery query,
-        List<String> statusCodes,
-        Long sessionOrganizationUnitId) {
+        List<String> statusCodes) {
         if (query == null || query.getExcludedServiceTable() == null || query.getExcludedServiceTable().trim().isEmpty()) {
             throw new IllegalArgumentException("outpatient encounter queue requires excludedServiceTable");
         }
@@ -858,10 +906,14 @@ public class ChargeItemQueryService {
         CriteriaQuery<Long> countCq = cb.createQuery(Long.class);
         Root<ChargeItem> countRoot = countCq.from(ChargeItem.class);
         Predicate chargeFacts = this.chargeItemMatchesOutpatientQueueFacts(countRoot, cb, query, statusCodes);
-        Predicate outpatientRow = this.outpatientEncounterExistsForCashierQueue(
-            countRoot, countCq, cb, query, sessionOrganizationUnitId);
+        List<Long> encounterScope = query.getResolvedEncounterScope();
+        if (encounterScope != null && encounterScope.isEmpty()) {
+            PageRequest pageable = PageRequest.of(pageNo, pageSize);
+            return new PageImpl<>(Collections.emptyList(), pageable, 0L);
+        }
+        Predicate encounterScopePredicate = this.buildEncounterScopePredicate(countRoot, cb, encounterScope);
         countCq.select(cb.countDistinct(countRoot.get(FieldNameConstants.ENCOUNTER_ID)));
-        countCq.where(cb.and(chargeFacts, outpatientRow));
+        countCq.where(cb.and(chargeFacts, encounterScopePredicate));
         Long totalRow = this.entityManager.createQuery(countCq).getSingleResult();
         long total = 0L;
         if (totalRow != null) {
@@ -870,10 +922,9 @@ public class ChargeItemQueryService {
         CriteriaQuery<Long> dataCq = cb.createQuery(Long.class);
         Root<ChargeItem> ci = dataCq.from(ChargeItem.class);
         Predicate dataChargeFacts = this.chargeItemMatchesOutpatientQueueFacts(ci, cb, query, statusCodes);
-        Predicate dataOutpatientRow = this.outpatientEncounterExistsForCashierQueue(
-            ci, dataCq, cb, query, sessionOrganizationUnitId);
+        Predicate dataEncounterScopePredicate = this.buildEncounterScopePredicate(ci, cb, encounterScope);
         dataCq.select(ci.get(FieldNameConstants.ENCOUNTER_ID));
-        dataCq.where(cb.and(dataChargeFacts, dataOutpatientRow));
+        dataCq.where(cb.and(dataChargeFacts, dataEncounterScopePredicate));
         dataCq.groupBy(ci.get(FieldNameConstants.ENCOUNTER_ID));
         dataCq.orderBy(cb.desc(cb.max(ci.get(FieldNameConstants.OCCURRENCE_TIME))));
         TypedQuery<Long> typed = this.entityManager.createQuery(dataCq);
@@ -896,59 +947,13 @@ public class ChargeItemQueryService {
         );
     }
 
-    private Predicate outpatientEncounterExistsForCashierQueue(
+    private Predicate buildEncounterScopePredicate(
         Root<ChargeItem> ci,
-        CriteriaQuery<?> cq,
         CriteriaBuilder cb,
-        OutpatientChargeQueueEncounterQuery q,
-        Long sessionOrganizationUnitId) {
-        Subquery<Integer> sq = cq.subquery(Integer.class);
-        Root<Encounter> encounterRoot = sq.from(Encounter.class);
-        List<Predicate> subPredicates = new ArrayList<>();
-        subPredicates.add(cb.isFalse(encounterRoot.get(FieldNameConstants.IS_DELETED)));
-        subPredicates.add(cb.equal(encounterRoot.get(FieldNameConstants.ID), ci.get(FieldNameConstants.ENCOUNTER_ID)));
-        subPredicates.add(encounterRoot.get(FieldNameConstants.CLASS_ENUM).in(
-            EncounterClass.AMB.getCode(),
-            EncounterClass.EMER.getCode()));
-        if (sessionOrganizationUnitId != null) {
-            subPredicates.add(cb.equal(
-                encounterRoot.get(FieldNameConstants.ORGANIZATION_ID), sessionOrganizationUnitId));
+        List<Long> resolvedEncounterScope) {
+        if (resolvedEncounterScope == null || resolvedEncounterScope.isEmpty()) {
+            return cb.equal(cb.literal(1), cb.literal(0));
         }
-        if (StringUtils.isNotBlank(q.getKeyword())) {
-            String pattern = SearchCodeUtil.toCaseInsensitiveLikePattern(q.getKeyword().trim());
-            Predicate busNoLike = cb.like(cb.lower(encounterRoot.get(FieldNameConstants.BUS_NO)), pattern);
-            subPredicates.add(cb.or(
-                busNoLike,
-                this.existsOutpatientPatientKeyword(encounterRoot, cb, cq, pattern)));
-        }
-        if (q.getStartDate() != null) {
-            subPredicates.add(cb.greaterThanOrEqualTo(
-                encounterRoot.get(FieldNameConstants.START_TIME), q.getStartDate()));
-        }
-        if (q.getEndDate() != null) {
-            subPredicates.add(cb.lessThanOrEqualTo(
-                encounterRoot.get(FieldNameConstants.START_TIME), q.getEndDate()));
-        }
-        sq.select(cb.literal(1));
-        sq.where(cb.and(subPredicates.toArray(new Predicate[0])));
-        return cb.exists(sq);
-    }
-
-    private Predicate existsOutpatientPatientKeyword(
-        Root<Encounter> encounterRoot,
-        CriteriaBuilder cb,
-        CriteriaQuery<?> owningQuery,
-        String pattern) {
-        Subquery<Long> patientSq = owningQuery.subquery(Long.class);
-        Root<Patient> patientRoot = patientSq.from(Patient.class);
-        patientSq.select(patientRoot.get(FieldNameConstants.ID));
-        patientSq.where(cb.and(
-            cb.equal(patientRoot.get(FieldNameConstants.ID), encounterRoot.get(FieldNameConstants.PATIENT_ID)),
-            cb.isFalse(patientRoot.get(FieldNameConstants.IS_DELETED)),
-            cb.or(
-                cb.like(cb.lower(patientRoot.get(FieldNameConstants.NAME)), pattern),
-                cb.like(cb.lower(patientRoot.get(FieldNameConstants.PY_STR)), pattern),
-                cb.like(cb.lower(patientRoot.get(FieldNameConstants.WB_STR)), pattern))));
-        return cb.exists(patientSq);
+        return ci.get(FieldNameConstants.ENCOUNTER_ID).in(resolvedEncounterScope);
     }
 }

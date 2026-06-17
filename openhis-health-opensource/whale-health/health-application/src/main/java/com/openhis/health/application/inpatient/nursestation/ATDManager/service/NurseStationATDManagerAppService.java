@@ -1,8 +1,9 @@
 package com.openhis.health.application.inpatient.nursestation.ATDManager.service;
 
-import com.openhis.health.application.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardItemDto;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardLocationBlockDto;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardOccupantDto;
@@ -32,7 +33,7 @@ import com.openhis.health.domain.administration.encounter.command.SwapInpatientB
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.domain.administration.location.command.OccupyBedCommand;
 import com.openhis.health.domain.administration.location.command.ReleaseBedCommand;
 import com.openhis.health.domain.administration.location.entity.Location;
@@ -66,7 +67,6 @@ import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDef
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -108,8 +108,8 @@ public class NurseStationATDManagerAppService {
     /** 写路径操作人门控（B.6.1）。 */
     private final CurrentOperatorResolver currentOperatorResolver;
 
-    /** 当前登录用户：解析 practitionerId、管理病区（BR-IP-NUR-003）。 */
-    private final ICurrentUser currentUser;
+    /** 当前登录者管辖病区解析（BR-IP-NUR-003）。 */
+    private final CurrentManagedWardLocationIdsResolver managedWardLocationIdsResolver;
 
     /** 位置读侧：床位主数据与目标床预检。 */
     private final LocationQueryService locationQueryService;
@@ -169,7 +169,6 @@ public class NurseStationATDManagerAppService {
             }
             // Gate：panel 须为 admission/discharge（BR-IP-ATD-010）。
             String resolvedPanel = this.requireValidBedBoardPanel(panel);
-            Long practitionerId = currentUser.getCurrentPractitionerId();
             Long wardId = null;
             Long houseId = null;
             if (request != null) {
@@ -199,10 +198,7 @@ public class NurseStationATDManagerAppService {
                 }
             } else {
                 // Pre：未选树节点时，管理病区并集（空则全院启用病区，BR-IP-NUR-003）。
-                List<Location> wards = locationQueryService.listManagedWardsForPractitioner(practitionerId);
-                if (wards == null || wards.isEmpty()) {
-                    wards = locationQueryService.listAllActiveWards();
-                }
+                List<Location> wards = managedWardLocationIdsResolver.listManagedActiveWardsOrEmpty();
                 for (Location ward : wards) {
                     if (ward == null || ward.getId() == null) {
                         continue;
@@ -238,12 +234,25 @@ public class NurseStationATDManagerAppService {
                     bedIds.add(bed.getId());
                 }
             }
-            // Pre：批量反查活动床位级 adm_encounter_location（BR-IP-ATD-009）。
+            // Pre：批量反查活动床位级 adm_encounter_location（BR-IP-ATD-009；一床一患反查）。
             Map<Long, Long> encounterIdByBedId =
                 encounterQueryService.mapActiveBedEncounterIdByLocationIds(bedIds);
+            Map<Long, Location> bedById = new HashMap<>();
+            for (Location bed : beds) {
+                if (bed != null && bed.getId() != null) {
+                    bedById.put(bed.getId(), bed);
+                }
+            }
+            // Pre：仅 IN_USE 床位的占床就诊进入批量读模型，空床不得仅凭活动位置行加载患者块（BR-IP-ATD-001）。
             Set<Long> occupiedEncounterIds = new LinkedHashSet<>();
-            for (Long encounterId : encounterIdByBedId.values()) {
-                if (encounterId != null) {
+            for (Map.Entry<Long, Long> bedEncounterEntry : encounterIdByBedId.entrySet()) {
+                Long bedId = bedEncounterEntry.getKey();
+                Long encounterId = bedEncounterEntry.getValue();
+                if (bedId == null || encounterId == null) {
+                    continue;
+                }
+                Location mappedBed = bedById.get(bedId);
+                if (mappedBed != null && this.isLocationBedInUse(mappedBed)) {
                     occupiedEncounterIds.add(encounterId);
                 }
             }
@@ -268,6 +277,7 @@ public class NurseStationATDManagerAppService {
                 encounterQueryService.mapPriorityEnumByEncounterIds(occupiedEncounterIds);
             Map<Long, BigDecimal> chargedOccupancyByEncounterId =
                 chargeItemQueryService.mapInpatientChargedOccupancyTotalPriceByEncounterIds(occupiedEncounterIds);
+            // Asm：逐床合并位置块与占床块；空床/占床以 location.operational_enum 为准（BR-IP-ATD-001）。
             List<BedBoardItemDto> items = new ArrayList<>();
             for (Location bed : beds) {
                 if (bed == null || bed.getId() == null) {
@@ -280,11 +290,11 @@ public class NurseStationATDManagerAppService {
                 BedBoardLocationBlockDto locationBlock =
                     nurseStationATDManagerMapper.toBedBoardLocationBlock(bed, houseName);
                 BedBoardOccupantDto occupant = null;
-                String operationalCode = bed.getOperationalEnum();
-                if (LocationOperational.IN_USE.getCode().equals(operationalCode)) {
-                    Long encounterId = encounterIdByBedId.get(bed.getId());
+                Long encounterId = encounterIdByBedId.get(bed.getId());
+                if (this.isLocationBedInUse(bed)) {
+                    // Asm：IN_USE 床才允许挂载占床患者块；反查 encounter 仅作一床一患组装输入。
                     if (encounterId == null) {
-                        // BR-IP-ATD-009：床态占床但无活动位置时告警，仍返回位置块。
+                        // BR-IP-ATD-009：床态占床但无活动位置时告警，仍返回位置块且 occupant 为空。
                         log.warn(
                             "床位 operational=IN_USE 但无活动 adm_encounter_location，bedId={}",
                             bed.getId());
@@ -317,6 +327,12 @@ public class NurseStationATDManagerAppService {
                             }
                         }
                     }
+                } else if (encounterId != null) {
+                    // BR-IP-ATD-001/009：空床以 operational 为准；活动位置残留须告警且 occupant 强制为空。
+                    log.warn(
+                        "床位 operational=NOT_IN_USE 但仍有活动 adm_encounter_location，bedId={} encounterId={}",
+                        bed.getId(),
+                        encounterId);
                 }
                 BedBoardItemDto item = new BedBoardItemDto();
                 item.setLocation(locationBlock);
@@ -634,8 +650,8 @@ public class NurseStationATDManagerAppService {
                 serviceRequestQueryService.listServiceRequestsByEncounter(encounterId);
             List<Procedure> procedures =
                 procedureQueryService.listByEncounterIds(Collections.singleton(encounterId));
-            Map<String, Procedure> latestProcedureByRequestKey =
-                this.buildLatestProcedureByRequestKey(procedures);
+            Map<String, List<Procedure>> proceduresByRequestKey =
+                this.buildProceduresByRequestKey(procedures);
             Set<Long> medicationIds = new LinkedHashSet<>();
             Set<Long> activityIds = new LinkedHashSet<>();
             for (MedicationRequestListQueryModel row : medicationRequests) {
@@ -660,7 +676,7 @@ public class NurseStationATDManagerAppService {
                     row.getStatusEnum(),
                     TableNameConstants.MED_MEDICATION_REQUEST,
                     row.getId(),
-                    latestProcedureByRequestKey);
+                    proceduresByRequestKey);
                 if (blockingReason == null) {
                     continue;
                 }
@@ -682,7 +698,7 @@ public class NurseStationATDManagerAppService {
                     row.getStatusEnum(),
                     TableNameConstants.WKF_SERVICE_REQUEST,
                     row.getId(),
-                    latestProcedureByRequestKey);
+                    proceduresByRequestKey);
                 if (blockingReason == null) {
                     continue;
                 }
@@ -946,6 +962,19 @@ public class NurseStationATDManagerAppService {
     }
 
     /**
+     * 判断床位 Location 是否处于占床运营态（BR-IP-ATD-001；空床判定以 {@code operational_enum} 为准）。
+     *
+     * @param bed 床位 Location；可 null
+     * @return {@code true} 表示 {@code operational_enum=IN_USE}
+     */
+    private boolean isLocationBedInUse(Location bed) {
+        if (bed == null) {
+            return false;
+        }
+        return LocationOperational.IN_USE.getCode().equals(bed.getOperationalEnum());
+    }
+
+    /**
      * 按 panel 判断占床患者块是否展示（BR-IP-ATD-010）。
      *
      * @param panel 面板 code
@@ -1059,8 +1088,8 @@ public class NurseStationATDManagerAppService {
             serviceRequestQueryService.listServiceRequestsByEncounter(encounterId);
         List<Procedure> procedures =
             procedureQueryService.listByEncounterIds(Collections.singleton(encounterId));
-        Map<String, Procedure> latestProcedureByRequestKey =
-            this.buildLatestProcedureByRequestKey(procedures);
+        Map<String, List<Procedure>> proceduresByRequestKey =
+            this.buildProceduresByRequestKey(procedures);
         for (MedicationRequestListQueryModel row : medicationRequests) {
             if (row == null || !this.isDischargeGateRequestCandidate(row.getStatusEnum())) {
                 continue;
@@ -1078,7 +1107,7 @@ public class NurseStationATDManagerAppService {
                 row.getTherapyEnum(),
                 TableNameConstants.MED_MEDICATION_REQUEST,
                 row.getId(),
-                latestProcedureByRequestKey)) {
+                proceduresByRequestKey)) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_ATD_302,
                     "存在未执行或未完成的临时医嘱，请先执行");
@@ -1106,7 +1135,7 @@ public class NurseStationATDManagerAppService {
                 row.getTherapyEnum(),
                 TableNameConstants.WKF_SERVICE_REQUEST,
                 row.getId(),
-                latestProcedureByRequestKey)) {
+                proceduresByRequestKey)) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_ATD_302,
                     "存在未执行或未完成的临时医嘱，请先执行");
@@ -1221,7 +1250,7 @@ public class NurseStationATDManagerAppService {
      * @param statusEnum  状态 code
      * @param requestTable 来源表
      * @param requestId   请求主键
-     * @param latestProcedureByRequestKey 末次执行索引
+     * @param proceduresByRequestKey 按 requestTable+requestId 分组的执行记录
      * @return 阻塞原因码；无须展示时 null
      */
     private String resolveDischargeListBlockingReason(
@@ -1229,11 +1258,11 @@ public class NurseStationATDManagerAppService {
         String statusEnum,
         String requestTable,
         Long requestId,
-        Map<String, Procedure> latestProcedureByRequestKey) {
+        Map<String, List<Procedure>> proceduresByRequestKey) {
         if (this.isLongTermNotStopped(therapyEnum, statusEnum)) {
             return InpatientNurseStationConstants.DISCHARGE_BLOCKING_LONG_NOT_STOPPED;
         }
-        if (this.isTemporaryNotCompleted(therapyEnum, requestTable, requestId, latestProcedureByRequestKey)) {
+        if (this.isTemporaryNotCompleted(therapyEnum, requestTable, requestId, proceduresByRequestKey)) {
             return InpatientNurseStationConstants.DISCHARGE_BLOCKING_TEMP_NOT_COMPLETED;
         }
         return null;
@@ -1257,19 +1286,22 @@ public class NurseStationATDManagerAppService {
     }
 
     /**
-     * 临时医嘱末次执行未完结（无 Procedure 或末次非 COMPLETED/STOPPED）。
+     * 临时医嘱净态未完结（与 AS-IP-NUR-004 BR-IP-EXE-006/008 同源）。
+     *
+     * <p>仅当整单净态仍为 pending（无 Procedure、或末态为 PREPARATION/IN_PROGRESS 等非终态）时返回 true；
+     * 净 COMPLETED、STOPPED（不执行）、CANCEL 或 COMPLETED 已被 CANCEL 对冲均视为已完结，不阻塞出院。</p>
      *
      * @param therapyEnum 长临 code
      * @param requestTable 来源表
      * @param requestId   请求主键
-     * @param latestProcedureByRequestKey 末次执行索引
+     * @param proceduresByRequestKey 按 requestTable+requestId 分组的执行记录
      * @return true 表示临时未完结
      */
     private boolean isTemporaryNotCompleted(
         String therapyEnum,
         String requestTable,
         Long requestId,
-        Map<String, Procedure> latestProcedureByRequestKey) {
+        Map<String, List<Procedure>> proceduresByRequestKey) {
         if (!TherapyType.TEMPORARY.getCode().equals(therapyEnum)) {
             return false;
         }
@@ -1277,18 +1309,134 @@ public class NurseStationATDManagerAppService {
             return true;
         }
         String key = this.buildRequestKey(requestTable, requestId);
-        Procedure latest = latestProcedureByRequestKey.get(key);
-        if (latest == null) {
+        List<Procedure> procedures = proceduresByRequestKey.get(key);
+        if (procedures == null || procedures.isEmpty()) {
+            // 临时嘱尚无执行记录 → 待执行，阻塞出院
             return true;
         }
-        String latestStatus = latest.getStatusEnum();
-        if (EventStatus.COMPLETED.getCode().equals(latestStatus)) {
+        return this.isTemporaryProcedureNetPending(procedures);
+    }
+
+    /**
+     * 临时嘱整单净态是否为 pending（BR-IP-EXE-006/008，与医嘱执行列表读侧同口径）。
+     *
+     * @param procedures 同一 request 下全部 Procedure
+     * @return true 表示净态仍为待执行
+     */
+    private boolean isTemporaryProcedureNetPending(List<Procedure> procedures) {
+        if (this.pickLastNetCompletedProcedure(procedures) != null) {
+            // 存在未被 CANCEL 对冲的净 COMPLETED → 已执行完毕
             return false;
         }
-        if (EventStatus.STOPPED.getCode().equals(latestStatus)) {
+        Procedure netFinal = this.pickNetFinalProcedureRecord(procedures);
+        if (netFinal == null) {
+            return true;
+        }
+        String status = netFinal.getStatusEnum();
+        if (EventStatus.STOPPED.getCode().equals(status)) {
+            // 不执行（STOPPED）视为终态
             return false;
         }
+        if (EventStatus.isCancelExecutionStatusCode(status)) {
+            // 取消执行（CANCEL）为终态，执行-发药-取消-退药全链路结束后不阻塞出院
+            return false;
+        }
+        if (EventStatus.COMPLETED.getCode().equals(status)) {
+            if (this.isProcedureOffsetByCancel(procedures, netFinal.getId())) {
+                // COMPLETED 已被 CANCEL 对冲 → 取消执行终态
+                return false;
+            }
+            return false;
+        }
+        // PREPARATION/IN_PROGRESS 等非终态 → 仍待执行
         return true;
+    }
+
+    /**
+     * COMPLETED 是否已被 CANCEL 对冲（BR-IP-EXE-008，与 AS-IP-NUR-004 读侧同构）。
+     *
+     * @param procedures 同一 request 下全部 Procedure
+     * @param completedProcedureId 待判定的 COMPLETED 主键
+     * @return 若存在 CANCEL.refund_id 指向该 COMPLETED 则 true
+     */
+    private boolean isProcedureOffsetByCancel(List<Procedure> procedures, Long completedProcedureId) {
+        if (procedures == null || completedProcedureId == null) {
+            return false;
+        }
+        for (Procedure sibling : procedures) {
+            if (sibling == null) {
+                continue;
+            }
+            if (!EventStatus.isCancelExecutionStatusCode(sibling.getStatusEnum())) {
+                continue;
+            }
+            if (completedProcedureId.equals(sibling.getRefundId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 临时嘱：取 id 最大的一条 Procedure 作为整单末态（BR-IP-EXE-007 临时口径）。
+     *
+     * @param procedures 该 request 下全部 Procedure
+     * @return 末态记录；无记录时 null
+     */
+    private Procedure pickNetFinalProcedureRecord(List<Procedure> procedures) {
+        if (procedures == null || procedures.isEmpty()) {
+            return null;
+        }
+        Procedure netFinal = null;
+        for (Procedure row : procedures) {
+            if (row == null) {
+                continue;
+            }
+            if (netFinal == null) {
+                netFinal = row;
+                continue;
+            }
+            Long rowId = row.getId();
+            Long finalId = netFinal.getId();
+            if (rowId != null && (finalId == null || rowId.compareTo(finalId) > 0)) {
+                netFinal = row;
+            }
+        }
+        return netFinal;
+    }
+
+    /**
+     * 临时嘱：取最后一条未被 CANCEL 对冲的 COMPLETED 记录（净执行）。
+     *
+     * @param procedures 该 request 下全部 Procedure
+     * @return 净 COMPLETED；不存在时 null
+     */
+    private Procedure pickLastNetCompletedProcedure(List<Procedure> procedures) {
+        if (procedures == null || procedures.isEmpty()) {
+            return null;
+        }
+        Procedure lastNet = null;
+        for (Procedure row : procedures) {
+            if (row == null) {
+                continue;
+            }
+            if (!EventStatus.COMPLETED.getCode().equals(row.getStatusEnum())) {
+                continue;
+            }
+            if (this.isProcedureOffsetByCancel(procedures, row.getId())) {
+                continue;
+            }
+            if (lastNet == null) {
+                lastNet = row;
+                continue;
+            }
+            Long rowId = row.getId();
+            Long lastId = lastNet.getId();
+            if (rowId != null && (lastId == null || rowId.compareTo(lastId) > 0)) {
+                lastNet = row;
+            }
+        }
+        return lastNet;
     }
 
     /**
@@ -1370,15 +1518,15 @@ public class NurseStationATDManagerAppService {
     }
 
     /**
-     * 按 requestTable+requestId 构建末次 Procedure 索引（created_at 最大）。
+     * 按 requestTable+requestId 分组全部 Procedure（出院门禁净态判定用）。
      *
      * @param procedures 执行记录列表
-     * @return 请求键 → 末次 Procedure
+     * @return 请求键 → 该请求下全部 Procedure
      */
-    private Map<String, Procedure> buildLatestProcedureByRequestKey(List<Procedure> procedures) {
-        Map<String, Procedure> latestByKey = new HashMap<>();
+    private Map<String, List<Procedure>> buildProceduresByRequestKey(List<Procedure> procedures) {
+        Map<String, List<Procedure>> grouped = new HashMap<>();
         if (procedures == null) {
-            return latestByKey;
+            return grouped;
         }
         for (Procedure procedure : procedures) {
             if (procedure == null || procedure.getRequestId() == null
@@ -1386,22 +1534,14 @@ public class NurseStationATDManagerAppService {
                 continue;
             }
             String key = this.buildRequestKey(procedure.getRequestTable(), procedure.getRequestId());
-            Procedure existing = latestByKey.get(key);
-            if (existing == null) {
-                latestByKey.put(key, procedure);
-                continue;
+            List<Procedure> bucket = grouped.get(key);
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                grouped.put(key, bucket);
             }
-            LocalDateTime existingTime = existing.getCreatedAt();
-            LocalDateTime candidateTime = procedure.getCreatedAt();
-            if (existingTime == null) {
-                latestByKey.put(key, procedure);
-                continue;
-            }
-            if (candidateTime != null && candidateTime.isAfter(existingTime)) {
-                latestByKey.put(key, procedure);
-            }
+            bucket.add(procedure);
         }
-        return latestByKey;
+        return grouped;
     }
 
     /**

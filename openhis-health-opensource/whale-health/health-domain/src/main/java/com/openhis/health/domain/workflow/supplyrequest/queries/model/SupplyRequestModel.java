@@ -102,6 +102,8 @@ public class SupplyRequestModel {
     private String originalBusNo;
     /** 汇总编号。 */
     private Long summaryId;
+    /** 患者主键（汇总领药行；与 {@code wkf_supply_request.patient_id} 对齐）。 */
+    private Long patientId;
     /** JPA 乐观锁版本（{@code wkf_supply_request.version}）。 */
     private Integer version;
 }

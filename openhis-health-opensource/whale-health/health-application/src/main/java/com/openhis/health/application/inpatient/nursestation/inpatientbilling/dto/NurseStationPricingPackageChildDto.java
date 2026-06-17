@@ -30,10 +30,10 @@ import java.math.BigDecimal;
  */
 @Getter
 @Setter
+/** 诊疗套餐子项。 */
 @Schema(description = "诊疗套餐子项")
 public class NurseStationPricingPackageChildDto {
 
-    /** 子项诊疗项目定义 id（children_id）。 */
     @Schema(description = "子项诊疗项目 id")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long childrenId;

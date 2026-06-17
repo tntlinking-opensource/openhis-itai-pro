@@ -58,6 +58,12 @@ public class CreateMedicationOrderDraftCommand {
      * 绑定诊断定义主键（医生站 {@code medicationPayload.conditionDefinitionId}，列 {@code condition_definition_id}）。
      */
     private Long conditionDefinitionId;
+    /**
+     * 就诊诊断主键（医生站 {@code medicationPayload.encounterDiagnosisId}，列 {@code encounter_diagnosis_id}）。
+     */
+    private Long encounterDiagnosisId;
+    /** 费用性质/合同覆盖（列 {@code contract_id}；可空表示走患者默认）。 */
+    private Long contractId;
     /** 药品成组号。 */
     private Long groupId;
     /** 首日量。 */

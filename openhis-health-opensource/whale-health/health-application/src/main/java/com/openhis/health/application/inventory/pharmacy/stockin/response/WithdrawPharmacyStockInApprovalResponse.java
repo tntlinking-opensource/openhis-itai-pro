@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 撤回药房入库审批响应（IF-PHA-IN-07）。
@@ -28,12 +29,14 @@ import lombok.experimental.Accessors;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 撤回药房入库审批 IF-PHA-IN-07。 */
 @Schema(description = "撤回药房入库审批 IF-PHA-IN-07")
 public class WithdrawPharmacyStockInApprovalResponse {
 
     @Schema(description = "是否成功")
     private Boolean success;
 
+    /** 撤回后状态 SupplyStatus#getCode。 */
     @Schema(description = "撤回后状态 SupplyStatus#getCode")
     private String statusEnum;
 }

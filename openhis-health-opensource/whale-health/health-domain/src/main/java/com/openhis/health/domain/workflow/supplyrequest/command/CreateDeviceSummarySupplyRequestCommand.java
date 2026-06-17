@@ -56,10 +56,10 @@ public class CreateDeviceSummarySupplyRequestCommand extends BatchCommand<Create
         private String unitCode;
         /** 供应类别持久化码。 */
         private String categoryEnum;
-        /** 源位置类型持久化码。 */
-        private String sourceTypeEnum;
-        /** 源位置主键。 */
-        private Long sourceLocationId;
+        /** 库房类型持久化码。 */
+        private String purposeTypeEnum;
+        /** 库房主键。 */
+        private Long purposeLocationId;
         /** 业务发生时间。 */
         private LocalDateTime occurrenceTime;
         /** 申请人主键。 */

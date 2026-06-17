@@ -29,18 +29,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-查询诊断常用分类数据请求。 */
 @Schema(description = "医生站-查询诊断常用分类数据请求")
-/**
- * GetCommonDiagnosesRequest。
- */
 public class GetCommonDiagnosesRequest {
 
     /** 患者主键（病人历史诊断维度）。 */
     @NotNull(message = "患者标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
-    /**
-     * patientId。
-     */
     private Long patientId;
 }

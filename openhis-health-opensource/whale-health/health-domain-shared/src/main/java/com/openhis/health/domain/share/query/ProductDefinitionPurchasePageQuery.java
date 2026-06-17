@@ -37,6 +37,9 @@ public class ProductDefinitionPurchasePageQuery extends AbstractPageQuery {
     /** 分类编码。 */
     private String categoryCode;
 
+    /** 排除药品目录 categoryCode。 */
+    private List<String> excludeMedicationCategoryCodes;
+
     /** 启用标志。 */
     private Boolean activeFlag;
 

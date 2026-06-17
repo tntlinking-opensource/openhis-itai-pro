@@ -34,14 +34,13 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
+/** 已划价列表行。 */
 @Schema(description = "已划价列表行")
 public class NurseStationPricedOrderRowDto {
 
-    /** 稳定行键：orderId + 分隔符 + orderType。 */
     @Schema(description = "稳定行键")
     private String listRowKey;
 
-    /** 护士划价产生的 service_request / device_request 主键。 */
     @Schema(description = "OrderInfo/请求主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long orderId;

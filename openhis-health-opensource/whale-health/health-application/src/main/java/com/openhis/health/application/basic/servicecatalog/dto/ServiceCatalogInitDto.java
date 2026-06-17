@@ -42,7 +42,7 @@ public class ServiceCatalogInitDto {
     private List<OptionDto> typeEnumOptions;
     /** 诊疗活动大类（activity_category_code 术语）。 */
     private List<OptionDto> diagnosisCategoryOptions;
-    /** 是否类通用选项（如是否急诊等，来自 Whether 枚举）。 */
+    /** 是否类通用选项（等，来自 Whether 枚举）。 */
     private List<OptionDto> statusWeatherOption;
     /** 预留：位置/执行地点候选。 */
     private List<OptionDto> locationOptions;

@@ -17,10 +17,8 @@
 
 package com.openhis.health.domain.custom.servicedevicetemplate.entity;
 
-import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
-import com.openhis.health.domain.share.enums.ServiceDeviceTemplateTypeCode;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.BaseAuditedEntity;
 import jakarta.persistence.Column;
@@ -141,17 +139,6 @@ public class ServiceDeviceTemplate extends BaseAuditedEntity {
     }
 
     /**
-     * 断言号源绑定的目标表合法（BR-SDT-005）。
-     */
-    public void assertTargetAllowedForType() {
-        if (ServiceDeviceTemplateTypeCode.SLOT.getCode().equals(this.typeCode)) {
-            if (!TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(this.devActTable)) {
-                throw new BusinessException(ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "号源绑定目标仅允许诊疗定义");
-            }
-        }
-    }
-
-    /**
      * 断言允许启用（retired -> active）。
      */
     public void assertActivatable() {
@@ -182,7 +169,7 @@ public class ServiceDeviceTemplate extends BaseAuditedEntity {
      */
     public void deactivate() {
         this.assertDeactivatable();
-        this.statusEnum = PublicationStatus.RETIRED.getCode();
+        this.statusEnum = PublicationStatus.INACTIVE.getCode();
     }
 
     /**

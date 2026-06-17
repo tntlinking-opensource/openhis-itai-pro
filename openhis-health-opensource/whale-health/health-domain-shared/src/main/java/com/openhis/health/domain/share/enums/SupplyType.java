@@ -195,4 +195,47 @@ public enum SupplyType implements EnumInterface {
         }
         return false;
     }
+
+    /**
+     * 单库房单据：仅写目的侧 {@code purpose_location_id} / {@code purpose_type_enum}（DM-WKF-006 §3.1.1）。
+     *
+     * <p>涵盖订货、盘点、损益、药品汇总、科室耗材盘点等；落库时 {@code source_*} 保持空，禁止双写。</p>
+     *
+     * @param typeEnumCode 持久化 {@link #getCode()}
+     * @return 命中时为 {@code true}
+     */
+    public static boolean isPurposeOnlyLocationTypeCode(String typeEnumCode) {
+        if (typeEnumCode == null || typeEnumCode.isBlank()) {
+            return false;
+        }
+        String trimmed = typeEnumCode.trim();
+        if (CABINET_PURCHASE_ORDER.code.equals(trimmed)) {
+            return true;
+        }
+        if (CABINET_STOCKTAKE.code.equals(trimmed)) {
+            return true;
+        }
+        if (PHARMACY_STOCKTAKE.code.equals(trimmed)) {
+            return true;
+        }
+        if (DEPT_STOCKTAKE.code.equals(trimmed)) {
+            return true;
+        }
+        if (CABINET_GAIN_LOSS.code.equals(trimmed)) {
+            return true;
+        }
+        if (PHARMACY_GAIN_LOSS.code.equals(trimmed)) {
+            return true;
+        }
+        if (DEPT_GAIN_LOSS.code.equals(trimmed)) {
+            return true;
+        }
+        if (MEDICATION_SUMMARY_ORDER.code.equals(trimmed)) {
+            return true;
+        }
+        if (DEPT_DEVICE_STOCKTAKE.code.equals(trimmed)) {
+            return true;
+        }
+        return false;
+    }
 }

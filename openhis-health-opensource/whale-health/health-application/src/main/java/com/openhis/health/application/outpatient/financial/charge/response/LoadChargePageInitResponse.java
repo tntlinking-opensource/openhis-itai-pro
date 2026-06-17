@@ -29,8 +29,7 @@ import java.util.List;
 @Data
 @Accessors(chain = true)
 public class LoadChargePageInitResponse {
-    /**
-     * chargeItemStatusOptions。
-     */
+
+    /** 收费项状态下拉选项。 */
     private List<OptionDto> chargeItemStatusOptions;
 }

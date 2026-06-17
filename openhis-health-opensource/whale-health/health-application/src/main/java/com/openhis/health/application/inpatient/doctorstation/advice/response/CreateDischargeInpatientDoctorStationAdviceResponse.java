@@ -28,6 +28,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 住院医生站-开立出院医嘱响应。 */
 @Schema(description = "住院医生站-开立出院医嘱响应")
 public class CreateDischargeInpatientDoctorStationAdviceResponse {
 
@@ -38,6 +39,7 @@ public class CreateDischargeInpatientDoctorStationAdviceResponse {
 
     /** 同事务写入的 {@code EncounterHistory} 离院里程碑记录主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 离院里程碑主键。 */
     @Schema(description = "离院里程碑主键")
     private Long encounterHistoryId;
 

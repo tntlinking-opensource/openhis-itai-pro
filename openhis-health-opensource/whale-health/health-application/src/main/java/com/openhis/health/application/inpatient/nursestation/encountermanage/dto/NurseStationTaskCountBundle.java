@@ -26,14 +26,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 护士站任务计数。 */
 @Schema(description = "护士站任务计数")
 public class NurseStationTaskCountBundle {
 
-    /** 待校对条数（药品+诊疗 ACTIVE 行数之和）。 */
     @Schema(description = "待校对条数")
     private Integer pendingAuditCount;
 
-    /** 待执行条数（VERIFIED 且当日净执行=0）。 */
     @Schema(description = "待执行条数")
     private Integer pendingExecuteCount;
 }

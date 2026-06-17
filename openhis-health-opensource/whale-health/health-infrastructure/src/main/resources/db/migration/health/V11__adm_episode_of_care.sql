@@ -25,10 +25,26 @@ CREATE TABLE IF NOT EXISTS "public"."adm_episode_of_care" (
     CONSTRAINT "adm_episode_of_care_pkey" PRIMARY KEY ("id")
 );
 
--- DM-ADM-013：治疗周期 status_enum 由历史数字串迁移为语义 code（PLANNED/ACTIVE/…）
-UPDATE adm_episode_of_care SET status_enum = 'PLANNED' WHERE status_enum = '1';
-UPDATE adm_episode_of_care SET status_enum = 'ACTIVE' WHERE status_enum = '2';
-UPDATE adm_episode_of_care SET status_enum = 'ON_HOLD' WHERE status_enum = '3';
-UPDATE adm_episode_of_care SET status_enum = 'COMPLETED' WHERE status_enum = '4';
-UPDATE adm_episode_of_care SET status_enum = 'CANCELLED' WHERE status_enum = '5';
-UPDATE adm_episode_of_care SET status_enum = 'ENTERED_IN_ERROR' WHERE status_enum = '9';
+COMMENT ON TABLE adm_episode_of_care IS '管理域 episode of care';
+
+COMMENT ON COLUMN adm_episode_of_care.id IS '主键';
+COMMENT ON COLUMN adm_episode_of_care.tenant_id IS '租户标识';
+COMMENT ON COLUMN adm_episode_of_care.created_at IS '创建时间';
+COMMENT ON COLUMN adm_episode_of_care.updated_at IS '最后更新时间';
+COMMENT ON COLUMN adm_episode_of_care.created_by IS '创建人';
+COMMENT ON COLUMN adm_episode_of_care.updated_by IS '最后更新人';
+COMMENT ON COLUMN adm_episode_of_care.is_deleted IS '软删标记';
+COMMENT ON COLUMN adm_episode_of_care.deleted_at IS '删除时间';
+COMMENT ON COLUMN adm_episode_of_care.deleted_by IS '删除人';
+COMMENT ON COLUMN adm_episode_of_care.version IS '乐观锁版本号';
+COMMENT ON COLUMN adm_episode_of_care.patient_id IS 'patient 标识';
+COMMENT ON COLUMN adm_episode_of_care.organization_id IS 'organization 标识';
+COMMENT ON COLUMN adm_episode_of_care.bus_no IS 'bus 编号';
+COMMENT ON COLUMN adm_episode_of_care.care_team_id IS 'careTeam 标识';
+COMMENT ON COLUMN adm_episode_of_care.care_type IS 'careType';
+COMMENT ON COLUMN adm_episode_of_care.care_goal IS 'careGoal';
+COMMENT ON COLUMN adm_episode_of_care.status_enum IS 'status 枚举值';
+COMMENT ON COLUMN adm_episode_of_care.active_flag IS 'active 标志位';
+COMMENT ON COLUMN adm_episode_of_care.start_time IS 'start 时间';
+COMMENT ON COLUMN adm_episode_of_care.end_time IS 'end 时间';
+

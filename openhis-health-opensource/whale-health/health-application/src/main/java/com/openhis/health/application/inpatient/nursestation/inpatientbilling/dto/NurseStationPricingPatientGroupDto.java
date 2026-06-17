@@ -33,10 +33,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 护士划价按就诊分组。 */
 @Schema(description = "护士划价按就诊分组")
 public class NurseStationPricingPatientGroupDto {
 
-    /** 就诊主键。 */
     @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;

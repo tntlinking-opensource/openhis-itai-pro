@@ -1,0 +1,6 @@
+{
+  "moduleId": "booking",
+  "enabledProperty": "openhis.modules.booking.enabled",
+  "locations": "classpath:db/migration/booking",
+  "historyTable": "flyway_schema_history_booking"
+}

@@ -33,6 +33,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-保存就诊诊断请求。 */
 @Schema(description = "医生站-保存就诊诊断请求")
 public class SaveEncounterDiagnosisRequest {
 
@@ -45,12 +46,14 @@ public class SaveEncounterDiagnosisRequest {
     /** 患者主键。 */
     @NotNull(message = "患者标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者标识。 */
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
     /** 诊断批次（完整列表）。 */
     @NotEmpty(message = "诊断批次不能为空")
     @Valid
+    /** 诊断批次列表。 */
     @Schema(description = "诊断批次列表", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<SaveEncounterDiagnosisChildRequest> diagnosisChildList;
 }

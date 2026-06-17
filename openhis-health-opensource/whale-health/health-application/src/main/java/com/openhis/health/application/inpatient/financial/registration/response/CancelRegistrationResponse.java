@@ -28,16 +28,22 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 取消住院登记结果。 */
 @Schema(description = "取消住院登记结果")
 public class CancelRegistrationResponse {
 
     @Schema(description = "住院就诊 ID")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 住院就诊 ID（业务字段）。 */
     private Long encounterId;
 
+    /** 取消后状态 code。 */
     @Schema(description = "取消后状态 code（CANCELLED）")
+    /** 取消后状态 code（CANCELLED）（业务字段）。 */
     private String statusEnum;
 
+    /** 是否成功。 */
     @Schema(description = "是否成功")
+    /** 是否成功（业务字段）。 */
     private Boolean success;
 }

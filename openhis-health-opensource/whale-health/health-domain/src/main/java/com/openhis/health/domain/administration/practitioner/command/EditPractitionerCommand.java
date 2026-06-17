@@ -42,6 +42,8 @@ public class EditPractitionerCommand extends BatchCommand<EditPractitionerComman
         private Long practitionerId;
         /** 人员姓名。 */
         private String name;
+        /** 行政性别 code（{@link com.openhis.health.domain.share.enums.AdministrativeGender}）。 */
+        private String genderEnum;
         /** 联系电话。 */
         private String phone;
         /** 联系地址命令对象（结构化地址）。 */

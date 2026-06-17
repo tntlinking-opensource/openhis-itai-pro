@@ -26,14 +26,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 费用明细展示模式选项。 */
 @Schema(description = "费用明细展示模式选项")
 public class NurseStationCostDetailPresentationOptionDto {
 
-    /** 模式 code：DETAIL / SUMMARY。 */
     @Schema(description = "展示模式 code")
     private String code;
 
-    /** 模式展示名：明细 / 汇总。 */
     @Schema(description = "展示模式名称")
     private String display;
 }

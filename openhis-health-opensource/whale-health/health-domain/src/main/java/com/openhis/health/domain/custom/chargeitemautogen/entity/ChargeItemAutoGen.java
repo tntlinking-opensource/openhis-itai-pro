@@ -145,17 +145,17 @@ public class ChargeItemAutoGen extends BaseAuditedEntity {
     }
 
     /**
-     * 断言允许启用（retired -> active）。
+     * 断言允许启用（INACTIVE -> ACTIVE）。
      */
     public void assertActivatable() {
         this.assertEditable();
-        if (!PublicationStatus.RETIRED.getCode().equals(this.statusEnum)) {
+        if (!PublicationStatus.INACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_INVALID_STATUS, "当前状态不允许启用");
         }
     }
 
     /**
-     * 断言允许停用（active -> retired）。
+     * 断言允许停用（ACTIVE -> INACTIVE）。
      */
     public void assertSuspendable() {
         this.assertEditable();
@@ -177,7 +177,7 @@ public class ChargeItemAutoGen extends BaseAuditedEntity {
      */
     public void suspend() {
         this.assertSuspendable();
-        this.statusEnum = PublicationStatus.RETIRED.getCode();
+        this.statusEnum = PublicationStatus.INACTIVE.getCode();
     }
 
     /**

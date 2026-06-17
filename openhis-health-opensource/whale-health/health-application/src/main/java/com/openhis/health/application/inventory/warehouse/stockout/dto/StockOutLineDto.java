@@ -24,9 +24,11 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -35,15 +37,16 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 药库出库单明细行。 */
 @Schema(description = "药库出库单明细行（写）")
 public class StockOutLineDto {
 
-    /** 物品定义物理表名（与库存五元组、产品复合键一致）。 */
     @Schema(description = "物品来源表名")
     private String itemTable;
 
     /** 物品定义主键，与 {@link #itemTable} 组成复合引用。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 物品定义主键。 */
     @Schema(description = "物品定义主键")
     private Long itemId;
 
@@ -66,11 +69,9 @@ public class StockOutLineDto {
     @Schema(description = "库存项主键（选品 inventoryItemId，可选）")
     private Long inventoryItemId;
 
-    /** 追溯码串；宽限校验见应用服务。 */
     @Schema(description = "追溯码")
     private String traceNo;
 
-    /** 行展示或计价单价。 */
     @Schema(description = "单价")
     private BigDecimal price;
 
@@ -84,6 +85,7 @@ public class StockOutLineDto {
 
     /** 业务发生时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 业务发生时间。 */
     @Schema(description = "业务发生时间")
     private LocalDateTime occurrenceTime;
 }

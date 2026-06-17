@@ -32,11 +32,9 @@ import java.util.List;
 @Schema(description = "疾病目录初始化数据")
 public class DiagnosisCatalogInitDto {
 
-    /** 疾病来源/分类（条件定义 source）下拉，码值对齐术语集 {@code CONDITION_DEFINITION_SOURCE}。 */
     @Schema(description = "疾病分类")
     private List<OptionDto> diseaseCategoryList;
 
-    /** 发布状态下拉（草稿/生效等），与列表 statusEnum 展示一致。 */
     @Schema(description = "状态选项")
     private List<OptionDto> statusFlagOptions;
 

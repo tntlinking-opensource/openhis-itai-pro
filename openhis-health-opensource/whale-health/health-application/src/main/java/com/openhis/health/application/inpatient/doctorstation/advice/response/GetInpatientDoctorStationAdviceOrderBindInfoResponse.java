@@ -31,10 +31,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-医嘱开立-查询医嘱绑定信息响应。 */
 @Schema(description = "医生站-医嘱开立-查询医嘱绑定信息响应")
 public class GetInpatientDoctorStationAdviceOrderBindInfoResponse {
 
-    /** 绑定明细。 */
     @Schema(description = "绑定明细")
     private List<InpatientDoctorStationAdviceOrderBindRowDto> bindRows;
 }

@@ -22,8 +22,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -34,11 +36,9 @@ import java.util.List;
 @Accessors(chain = true)
 public class UpdateStockOutRequest {
 
-    /** 既有出库业务单号。 */
     @Schema(description = "业务单号", requiredMode = Schema.RequiredMode.REQUIRED)
     private String busNo;
 
-    /** 修订后源药库位置主键。 */
     @Schema(description = "源药库", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long sourceLocationId;
 

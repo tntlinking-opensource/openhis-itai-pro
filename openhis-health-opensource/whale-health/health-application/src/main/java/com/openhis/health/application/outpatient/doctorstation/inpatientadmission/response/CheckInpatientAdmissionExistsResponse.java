@@ -28,15 +28,16 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊医生站-住院申请-查询是否已存在住院申请响应。 */
 @Schema(description = "门诊医生站-住院申请-查询是否已存在住院申请响应")
 public class CheckInpatientAdmissionExistsResponse {
 
-    /** 是否已有关联未取消住院线。 */
     @Schema(description = "是否已存在未取消的住院就诊")
     private boolean exists;
 
     /** 住院就诊主键；不存在时为 null。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 住院就诊主键；不存在时为空。 */
     @Schema(description = "住院就诊主键；不存在时为空")
     private Long inpatientEncounterId;
 

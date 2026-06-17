@@ -20,7 +20,7 @@ package com.openhis.health.domain.administration.practitioner.service;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.administration.practitioner.repository.PractitionerRepository;
-import com.openhis.health.domain.share.enums.PractitionerStatus;
+import com.openhis.health.domain.share.enums.PublicationStatus;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
@@ -39,7 +39,7 @@ import java.util.Map;
  *
  * <p>职责：为挂号、人员维护等提供在职人员列表、分页检索与按主键加载。</p>
  *
- * <p>边界：只读；列表默认过滤 {@link PractitionerStatus#ACTIVE}；{@code orgId} 为空时返回全院在职人员。</p>
+ * <p>边界：只读；列表默认过滤 {@link PublicationStatus#ACTIVE}；按岗位收窄须由应用层 {@code PractitionerRoleScopeLoader} 预解析主键后传入。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -48,16 +48,19 @@ public class PractitionerQueryService {
     private final PractitionerRepository practitionerRepository;
 
     /**
-     * 门诊挂号可选医生列表：在职状态，可按科室过滤。
+     * 门诊挂号可选医生列表：在职且主键落在应用层预解析的岗位人员集合内。
      *
-     * @param orgId 科室机构标识；{@code null} 表示不限科室
+     * @param resolvedPractitionerIdsForRole 由 {@code PractitionerRoleScopeLoader} 预解析；空集合时返回空列表
      * @return 医务人员列表
      */
-    public List<Practitioner> listPractitionersForOutpatientRegistration(Long orgId) {
-        if (orgId == null) {
-            return practitionerRepository.findAllByStatusEnum(PractitionerStatus.ACTIVE.getCode());
+    public List<Practitioner> listActivePractitionersByResolvedRoleScope(Collection<Long> resolvedPractitionerIdsForRole) {
+        if (resolvedPractitionerIdsForRole == null || resolvedPractitionerIdsForRole.isEmpty()) {
+            return Collections.emptyList();
         }
-        return practitionerRepository.findAllByStatusEnumAndOrgId(PractitionerStatus.ACTIVE.getCode(), orgId);
+        Specification<Practitioner> specification = PractitionerPageQuerySupport.activeOutpatientRegistrationDoctors(
+            PublicationStatus.ACTIVE.getCode(),
+            resolvedPractitionerIdsForRole);
+        return practitionerRepository.findAll(specification);
     }
 
     /**
@@ -72,45 +75,33 @@ public class PractitionerQueryService {
     }
 
     /**
-     * 岗位管理菜单：在职医务人员分页。
-     * <p>{@code businessRoleCode==1}（医生）时不按岗位分配过滤；{@code 2..4} 时仅保留拥有对应激活 {@code adm_pr_assign.role_code} 的人员。</p>
-     *
-     * @param businessRoleCode 业务角色码 1-4，不得为 null
-     * @param searchKey          关键字，空白则不分词检索
-     * @param pageable           分页与排序（建议按 id 升序）
-     * @return 分页结果
+     * 岗位相关场景：在职医务人员分页；{@code resolvedPractitionerIdsForRole} 为 {@code null} 时不按岗位过滤。
      */
-    public Page<Practitioner> pageActivePractitionersForPosition(int businessRoleCode, String searchKey, Pageable pageable) {
-        return pageActivePractitionersForPosition(businessRoleCode, searchKey, pageable, false);
+    public Page<Practitioner> pageActivePractitionersForPosition(
+        Collection<Long> resolvedPractitionerIdsForRole,
+        String searchKey,
+        Pageable pageable) {
+        return pageActivePractitionersForPosition(resolvedPractitionerIdsForRole, searchKey, pageable, false);
     }
 
     /**
-     * 岗位管理菜单：在职医务人员分页（扩展版本，支持系统用户绑定过滤）。
+     * 岗位相关场景：在职医务人员分页（可要求已绑定系统用户）。
      *
-     * <p>{@code businessRoleCode==1}（医生）时不按岗位分配过滤；{@code 2..4} 时仅保留拥有对应激活 {@code adm_pr_assign.role_code} 的人员。</p>
-     *
-     * @param businessRoleCode 业务角色码 1-4，不得为 null
-     * @param searchKey          关键字，空白则不分词检索
-     * @param pageable           分页与排序（建议按 id 升序）
-     * @param requireBoundSystemUser {@code true} 时仅保留已绑定系统用户的医务人员（{@code user_id IS NOT NULL}），用于「按人」Tab
-     * @return 分页结果
+     * @param resolvedPractitionerIdsForRole 应用层预解析的岗位人员主键；{@code null} 表示不按岗位过滤；空集合表示无命中
      */
     public Page<Practitioner> pageActivePractitionersForPosition(
-        int businessRoleCode,
+        Collection<Long> resolvedPractitionerIdsForRole,
         String searchKey,
         Pageable pageable,
         boolean requireBoundSystemUser) {
-        String status = PractitionerStatus.ACTIVE.getCode();
+        String status = PublicationStatus.ACTIVE.getCode();
         String searchPattern = null;
         if (StringUtils.isNotBlank(searchKey)) {
             searchPattern = SearchCodeUtil.toCaseInsensitiveLikePattern(searchKey.trim());
         }
-        Integer roleFilter = null;
-        if (businessRoleCode != 1) {
-            roleFilter = businessRoleCode;
-        }
         Specification<Practitioner> specification =
-            PractitionerPageQuerySupport.activePractitioners(status, searchPattern, requireBoundSystemUser, roleFilter);
+            PractitionerPageQuerySupport.activePractitioners(
+                status, searchPattern, requireBoundSystemUser, resolvedPractitionerIdsForRole);
         return practitionerRepository.findAll(specification, pageable);
     }
 

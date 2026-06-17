@@ -23,9 +23,6 @@ import com.openhis.health.application.inpatient.doctorstation.advice.request.Cre
 import com.openhis.health.application.inpatient.doctorstation.advice.request.PageInpatientDoctorStationAdviceCatalogRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.SaveInpatientDoctorStationAdviceDraftBatchRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.CreateDischargeInpatientDoctorStationAdviceResponse;
-import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
-import com.openhis.health.domain.administration.chargeitem.command.VoidUnbilledDraftChargeItemsByServiceAnchorCommand;
-import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.custom.encounterhistory.command.RecordDischargeMilestoneCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.AdjustMedicationOrderGroupCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.ChangeMedicationOrderDraftCommand;
@@ -35,8 +32,7 @@ import com.openhis.health.domain.medication.medicationrequest.command.SignMedica
 import com.openhis.health.domain.medication.medicationrequest.command.SignOffMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.StopLongTermMedicationOrderCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateDischargeRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateServiceRequestDraftCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.ModifyServiceRequestDraftCommand;
@@ -44,6 +40,7 @@ import com.openhis.health.domain.workflow.servicerequest.command.RemoveServiceRe
 import com.openhis.health.domain.workflow.servicerequest.command.SignServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.StopServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.WithdrawSignedServiceRequestCommand;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -172,138 +169,14 @@ public interface InpatientDoctorStationAdviceMapper {
     RemoveServiceRequestDraftCommand toRemoveServiceRequestDraftCommand(Long requestId, Long operatorId);
 
     /**
-     * 装配「按服务锚点作废未计费草稿费用」命令。
-     *
-     * @param encounterId  就诊主键
-     * @param serviceTable 服务物理表名
-     * @param serviceId    服务主键
-     * @param operatorId   操作人
-     * @return 领域命令
-     */
-    VoidUnbilledDraftChargeItemsByServiceAnchorCommand toVoidDraftChargeAnchor(
-        Long encounterId,
-        String serviceTable,
-        Long serviceId,
-        Long operatorId
-    );
-
-    /**
-     * 装配「由医嘱申请生成就诊费用草稿」命令（仅临时医嘱路径）。
-     *
-     * @param encounterId   就诊
-     * @param patientId     患者
-     * @param accountId     自费账户
-     * @param orgId         机构
-     * @param operatorId    操作人
-     * @param requestId              医嘱申请主键
-     * @param serviceTable           医嘱申请表名
-     * @param productDefinitionTable 产品定义表名（三大目录之一），写入 {@code product_table}
-     * @param productDefinitionId    产品定义主键，写入 {@code product_id}
-     * @param priceLine              定价行
-     * @param quantity               计价数量（须 &gt; 0）
-     * @param quantityUnit           计价单位 code
-     * @param productRow             产品定义读模型
-     * @return 领域命令
-     */
-    CreateChargeItemCommand toCreateChargeItemDraftFromOrder(
-        Long encounterId,
-        Long patientId,
-        Long accountId,
-        Long orgId,
-        Long operatorId,
-        Long requestId,
-        String serviceTable,
-        String productDefinitionTable,
-        Long productDefinitionId,
-        ChargeItemDefinition priceLine,
-        BigDecimal quantity,
-        String quantityUnit,
-        ProductDefinitionDisplayDto productRow
-    );
-
-    /**
-     * 装配单条「医嘱锚点费用草稿」命令项（与 {@link #toCreateChargeItemDraftFromOrder} 金额与上下文口径一致），供签发 FIFO 多段合并为一次领域写入。
-     *
-     * @param encounterId  就诊主键
-     * @param patientId    患者主键
-     * @param accountId    自费账户主键
-     * @param orgId        机构主键
-     * @param serviceId              上游业务主键（暂存草稿多为医嘱请求 id；签发 FIFO 分段路径请改用 {@link #toCreateChargeItemDraftItemForFifoDispenseSegment}）
-     * @param serviceTable           上游物理表名（与 {@code service_id} 同行一致）
-     * @param productDefinitionTable 产品定义表名（三大目录之一），写入 {@code product_table}
-     * @param productDefinitionId    产品定义主键，写入 {@code product_id}
-     * @param priceLine              定价行，不得为 {@code null}
-     * @param quantity               计价数量（须 &gt; 0）
-     * @param quantityUnit           计价单位 code
-     * @param productRow             产品定义读模型
-     * @return 费用创建项
-     * @throws com.openhis.whale.core.application.exception.BusinessException 定价行为 {@code null} 时抛出
-     */
-    CreateChargeItemCommand.Item toCreateChargeItemDraftItemFromOrder(
-        Long encounterId,
-        Long patientId,
-        Long accountId,
-        Long orgId,
-        Long serviceId,
-        String serviceTable,
-        String productDefinitionTable,
-        Long productDefinitionId,
-        ChargeItemDefinition priceLine,
-        BigDecimal quantity,
-        String quantityUnit,
-        ProductDefinitionDisplayDto productRow
-    );
-
-    /**
-     * 装配签发 FIFO 单段费用草稿命令项（DM-ADM-011：{@code service} 锚医嘱请求，{@code product} 锚定义，{@code dispense} 锚发放分段）。
-     *
-     * <p>在 {@link #toCreateChargeItemDraftItemFromOrder} 的金额与上下文口径基础上，写入 {@code product_*} 与 {@code dispense_*}，
-     * {@code service_*} 仍为医嘱请求表名与申请主键。</p>
-     *
-     * @param encounterId            就诊主键
-     * @param patientId              患者主键
-     * @param accountId              账户主键
-     * @param orgId                  机构主键
-     * @param requestId              药品申请主键
-     * @param requestServiceTable    请求表名
-     * @param productDefinitionTable 定义表名
-     * @param productDefinitionId    定义主键
-     * @param dispenseTable          发放表名
-     * @param dispenseId             发放主键
-     * @param priceLine              定价行
-     * @param quantity               数量（须 &gt; 0）
-     * @param quantityUnit           计价单位 code
-     * @param productRow             产品定义读模型
-     * @return 费用创建项
-     * @throws com.openhis.whale.core.application.exception.BusinessException 定价行为空等与 {@link #toCreateChargeItemDraftItemFromOrder} 一致
-     */
-    CreateChargeItemCommand.Item toCreateChargeItemDraftItemForFifoDispenseSegment(
-        Long encounterId,
-        Long patientId,
-        Long accountId,
-        Long orgId,
-        Long requestId,
-        String requestServiceTable,
-        String productDefinitionTable,
-        Long productDefinitionId,
-        String dispenseTable,
-        Long dispenseId,
-        ChargeItemDefinition priceLine,
-        BigDecimal quantity,
-        String quantityUnit,
-        ProductDefinitionDisplayDto productRow
-    );
-
-    /**
      * 装配药品医嘱「签发」命令。
      *
      * @param id             药品申请主键
-     * @param signCode       签发批次号
      * @param prescriptionNo 处方号
      * @param operatorId     操作人
      * @return 领域命令
      */
-    SignMedicationOrderCommand toSignMedicationOrderCommand(Long id, String signCode, String prescriptionNo, Long operatorId);
+    SignMedicationOrderCommand toSignMedicationOrderCommand(Long id, String prescriptionNo, Long operatorId);
 
     /**
      * 装配药品医嘱「签退」命令。
@@ -318,11 +191,10 @@ public interface InpatientDoctorStationAdviceMapper {
      * 装配诊疗申请「签发」命令。
      *
      * @param id         诊疗申请主键
-     * @param signCode   签发批次号
      * @param operatorId 操作人
      * @return 领域命令
      */
-    SignServiceRequestCommand toSignServiceRequestCommand(Long id, String signCode, Long operatorId);
+    SignServiceRequestCommand toSignServiceRequestCommand(Long id, Long operatorId);
 
     /**
      * 装配诊疗申请「签退已签发」命令。
@@ -403,11 +275,16 @@ public interface InpatientDoctorStationAdviceMapper {
     );
 
     /**
-     * 解析医嘱绑定查询用的项目主键。
+     * 解析医嘱绑定查询用的来源项键（与 {@code cus_service_device_template.item_id} 精确匹配）。
      *
-     * @param itemNo 业务号
-     * @param itemId 数字主键，优先
-     * @return 非空主键
+     * <p>用法绑定：{@code itemNo} 为 {@code method_code} 术语 code；诊疗绑定：{@code itemId} 或数字形态
+     * {@code itemNo} 为活动定义主键字符串。</p>
+     *
+     * @param bindType 绑定类型业务码
+     * @param itemNo   用法 code 或诊疗主键字符串
+     * @param itemId   诊疗活动定义主键（诊疗绑定时可与 {@code itemNo} 二选一）
+     * @return 非空来源项键
      */
-    Long parseOrderBindItemId(String itemNo, Long itemId);
+    String resolveOrderBindSourceItemKey(String bindType, String itemNo, Long itemId);
+
 }

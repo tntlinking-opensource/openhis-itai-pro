@@ -30,6 +30,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-保存就诊诊断响应。 */
 @Schema(description = "医生站-保存就诊诊断响应")
 public class SaveEncounterDiagnosisResponse {
 

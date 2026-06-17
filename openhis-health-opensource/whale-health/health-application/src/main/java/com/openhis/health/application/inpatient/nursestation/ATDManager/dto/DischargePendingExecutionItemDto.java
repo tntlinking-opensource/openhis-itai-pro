@@ -31,10 +31,10 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
+/** 出院前待执行医嘱行。 */
 @Schema(description = "出院前待执行医嘱行")
 public class DischargePendingExecutionItemDto {
 
-    /** 药品/诊疗请求主键。 */
     @Schema(description = "药品或诊疗请求主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long requestId;

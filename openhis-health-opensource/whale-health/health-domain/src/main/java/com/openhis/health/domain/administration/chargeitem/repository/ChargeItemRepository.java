@@ -61,7 +61,7 @@ public interface ChargeItemRepository extends JpaRepository<ChargeItem, Long>, J
     /**
      * 按就诊标识与收费上下文查询收费明细（DM-ADM-011 §6.2.4）。
      *
-     * <p>区分门急诊/住院等不同收费上下文。</p>
+     * <p>区分门诊/住院等不同收费上下文。</p>
      *
      * @param encounterId 就诊标识
      * @param contextEnum 收费上下文枚举值
@@ -169,4 +169,23 @@ public interface ChargeItemRepository extends JpaRepository<ChargeItem, Long>, J
      * @return 再生行列表；{@code refundIds} 为空时返回空列表
      */
     List<ChargeItem> findAllByRefundIdIn(Collection<Long> refundIds);
+
+    /**
+     * 按执行记录主键集合批量查询收费明细（取消执行 Gate 与回退定位，DM-ADM-011 §6.2.10）。
+     *
+     * @param procedureIds 执行记录主键集合
+     * @return 收费明细列表；{@code procedureIds} 为空时返回空列表
+     */
+    List<ChargeItem> findAllByProcedureIdIn(Collection<Long> procedureIds);
+
+    /**
+     * 按执行记录、收费状态与生成来源复合查询（长期执行新建账单逻辑删除，DM-ADM-011 §6.1.5a）。
+     *
+     * @param procedureIds         执行记录主键集合
+     * @param statusEnum           收费状态持久化码
+     * @param generateSourceEnum   生成来源持久化码
+     * @return 收费明细列表
+     */
+    List<ChargeItem> findAllByProcedureIdInAndStatusEnumAndGenerateSourceEnum(
+        Collection<Long> procedureIds, String statusEnum, String generateSourceEnum);
 }

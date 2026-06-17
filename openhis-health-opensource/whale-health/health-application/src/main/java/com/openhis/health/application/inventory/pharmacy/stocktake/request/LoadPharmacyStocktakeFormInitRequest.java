@@ -22,12 +22,14 @@ import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 药房盘点页初始化入参（IF-PHA-ST-01）。
  */
 @Data
 @Accessors(chain = true)
+/** 盘点页初始化 IF-PHA-ST-01。 */
 @Schema(description = "盘点页初始化 IF-PHA-ST-01")
 public class LoadPharmacyStocktakeFormInitRequest {
 

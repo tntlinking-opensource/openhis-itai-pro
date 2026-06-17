@@ -1,5 +1,7 @@
 # OpenHIS Health（源码使用说明）
 
+> **文档**：架构/模块设计在 **[whale-doc](../whale-doc/)**（入口 [文档地图](../whale-doc/文档地图.md)）。
+
 本仓库为**业务源码**（`whale-health`、`whale-emr`、`whale-mrms`）。**Whale Framework 不提供源码**，已以预编译 JAR 形式内置在 **`dist/framework-maven-repo/`**，clone 后无需额外下载。
 
 ## 简介
@@ -100,7 +102,7 @@ mvn clean package -Pbinary-framework -pl whale-health/health-app -am -DskipTests
 产物路径：
 
 ```text
-whale-health/health-app/target/health-app-2.0.0-SNAPSHOT.jar
+whale-health/health-app/target/health-app-2.0.1-SNAPSHOT.jar
 ```
 
 ### 仅修改业务代码时的快速编译
@@ -133,6 +135,9 @@ set SPRING_PROFILES_ACTIVE=dev
 首次启动会执行 **Flyway** 迁移，脚本来自（按 classpath 合并）：
 
 - `classpath:db/migration/health` — 框架 `whale_*` 与业务表（V1 起合并维护）
+- 扩展模块（booking / chs / emr / report / mrms）各自 `db/migration/{module}`，独立 `flyway_schema_history_*` 表
+
+**表/列注释规范**：所有建表脚本须在同一版本内写 PostgreSQL `COMMENT ON TABLE/COLUMN`（含审计字段，简体中文）。工具与审计字段标准文案见 [`scripts/flyway-comment-gen/README.md`](scripts/flyway-comment-gen/README.md)；health 模块见 [`whale-health/.../db/migration/health/README.md`](whale-health/health-infrastructure/src/main/resources/db/migration/health/README.md)。
 
 ### 2.2 访问地址（默认配置）
 
@@ -158,8 +163,6 @@ set SPRING_PROFILES_ACTIVE=dev
 
 ### 2.4 命令行运行
 
-Windows 可双击仓库根目录 **`run-dev.bat`**，或：
-
 ```bash
 mvn spring-boot:run -Pbinary-framework -pl whale-health/health-app -DskipTests
 ```
@@ -167,7 +170,7 @@ mvn spring-boot:run -Pbinary-framework -pl whale-health/health-app -DskipTests
 打包后：
 
 ```bash
-java -jar whale-health/health-app/target/health-app-2.0.0-SNAPSHOT.jar
+java -jar whale-health/health-app/target/health-app-2.0.1-SNAPSHOT.jar
 ```
 
 ### 2.5 日志
@@ -178,7 +181,7 @@ java -jar whale-health/health-app/target/health-app-2.0.0-SNAPSHOT.jar
 
 ## 3. 打包部署（服务器）
 
-1. 在构建机执行第 1 节，得到 `health-app-2.0.0-SNAPSHOT.jar`。
+1. 在构建机执行第 1 节，得到 `health-app-2.0.1-SNAPSHOT.jar`。
 2. 将 JAR 与生产配置发到服务器，例如：
 
 ```text
@@ -238,7 +241,7 @@ Framework 实现细节在预编译 JAR 中，本仓库不提供其源码。
 | 属性 | 含义 |
 |------|------|
 | `whale.framework.version` | 须与 `dist/framework-maven-repo` 内 JAR 版本一致 |
-| 各模块版本 | 一般为 `2.0.0-SNAPSHOT`，发版时以 tag 说明为准 |
+| 各模块版本 | 一般为 `2.0.1-SNAPSHOT`，发版时以 tag 说明为准 |
 
 ---
 

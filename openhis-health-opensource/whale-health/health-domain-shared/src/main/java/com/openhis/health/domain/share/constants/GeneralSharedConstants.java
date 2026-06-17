@@ -94,7 +94,7 @@ public interface GeneralSharedConstants {
     String ID_CARD_TYPE_CODE = "ID_CARD";
 
     /**
-     * 证件类型：急诊预检分配的三无临时分诊号（存 {@code adm_patient_identifier}，号码为 identifier_no；IF-EMG-03 identifierItems）。
+     * 证件类型：预检分配的三无临时分诊号（存 {@code adm_patient_identifier}，号码为 identifier_no）。
      */
     String PROVISIONAL_TRIAGE_NO_TYPE_CODE = "PROVISIONAL_TRIAGE_NO";
 
@@ -173,6 +173,21 @@ public interface GeneralSharedConstants {
      * <p>禁止在业务代码中散落 {@code return ""} / {@code setXxx("")}；统一引用本常量（B.10.3）。</p>
      */
     String EMPTY_STRING = "";
+
+    /**
+     * 零
+     */
+    String ZERO = "0";
+
+    /**
+     * {@code whale_settings} 开关型配置开启值（如自动扣库、学生开关等）。
+     */
+    String WHALE_SETTING_SWITCH_ON = "1";
+
+    /**
+     * 皮试检查诊疗项目名称（与主数据 {@code ActivityDefinition.name} 精确匹配；对齐初版 {@code SKIN_TEST_INSPECTION}）。
+     */
+    String SKIN_TEST_INSPECTION_ACTIVITY_NAME = "皮试检查";
 
 }
 

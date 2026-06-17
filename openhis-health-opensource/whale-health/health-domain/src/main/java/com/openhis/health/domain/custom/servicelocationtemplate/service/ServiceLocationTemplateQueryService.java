@@ -82,13 +82,14 @@ public class ServiceLocationTemplateQueryService {
     }
 
     /**
-     * 列出在指定时刻、接诊/开立科室与物品维度下**候选发药库位**（模板 {@code def_location_id}）的稳定有序列表：
-     * 先按 {@code display_order}（空视为最大）、{@code priority}、{@code id} 排序模板行，再对库位去重保持首次出现顺序。
-     * 供医生站 IF-DOR-11 与物理库存求交（AS {@code BR-ORD-011} / {@code DM-CUS-006}）。
+     * 列出在指定时刻、开立科室与物品表 + 类别维度下**全部生效模板行**对应的候选发药库位（不做具体项/用法 calcScore 过滤）：
+     * 先按 {@code display_order}（空视为最大）、{@code priority}、{@code id} 排序模板行，再对 {@code def_location_id} 去重保持首次出现顺序。
+     * 供运维降级、护士执行等仅需「科室内该类别全部库位」的场景（AS {@code DM-CUS-006}）。
      *
      * @param organizationId 开立或接诊科室（与 {@code cus_service_location_template.organization_id} 一致）
      * @param itemTable 物品主表名（如 {@code med_medication_definition}）
-     * @param distributionCategoryCode 发放类别编码（与模板行一致；目录装配侧由药品/耗材分类映射传入）
+     * @param distributionCategoryCode 模板 {@code distribution_category_code}，须与产品目录 {@code categoryCode} 一致
+     *        （药品 {@code med_category_code} / 耗材 {@code device_category_code}，按 {@code itemTable} 区分码表）
      * @param atTime 判定时段；空则当前时刻
      * @return 候选库房标识列表；参数不全时返回空列表
      */
@@ -102,34 +103,47 @@ public class ServiceLocationTemplateQueryService {
             return List.of();
         }
         LocalTime effectiveTime = this.resolveTemplateEffectiveTime(atTime);
-        List<ServiceLocationTemplate> rows = repository.findAllByOrganizationId(organizationId);
-        List<ServiceLocationTemplate> effective = new ArrayList<>();
-        for (ServiceLocationTemplate row : rows) {
-            if (Boolean.TRUE.equals(row.getIsDeleted())) {
-                continue;
-            }
-            if (!row.isEffectiveAt(effectiveTime)) {
-                continue;
-            }
-            if (!itemTable.equals(row.getItemTable())) {
-                continue;
-            }
-            if (!distributionCategoryCode.equals(row.getDistributionCategoryCode())) {
-                continue;
-            }
-            effective.add(row);
+        List<ServiceLocationTemplate> effective = this.collectEffectiveTemplateRows(
+            organizationId, itemTable, distributionCategoryCode, effectiveTime);
+        return this.extractOrderedDefLocationIds(effective);
+    }
+
+    /**
+     * 列出在指定时刻、开立科室与物品表 + 类别维度下、对<strong>具体物品定义与用法</strong>适用（{@link #calcScore}≥0）
+     * 的候选发药库位有序列表；排序键与 {@link #listCandidateDistributionLocationIds} 一致。
+     * 供医生站 IF-DOR-11 目录、签发 FIFO 与定价 FIFO 与物理库存求交（AS {@code BR-ORD-011} / {@code DM-CUS-006} §4.3）。
+     *
+     * @param organizationId 开立或接诊科室标识
+     * @param itemTable 物品主表名
+     * @param distributionCategoryCode 模板 {@code distribution_category_code}，须与产品目录 {@code categoryCode} 一致
+     *        （药品 {@code med_category_code} / 耗材 {@code device_category_code}）
+     * @param itemDefinitionId 具体药品/耗材定义主键；模板通配行在 calcScore 中与之匹配
+     * @param methodCode 给药途径等用法编码；耗材场景通常为 null，模板 {@code method_code} 通配行仍可命中
+     * @param atTime 判定时段；空则当前时刻
+     * @return 适用库位标识列表；参数不全时返回空列表
+     */
+    public List<Long> listApplicableDistributionLocationIds(
+        Long organizationId,
+        String itemTable,
+        String distributionCategoryCode,
+        Long itemDefinitionId,
+        String methodCode,
+        LocalTime atTime
+    ) {
+        if (organizationId == null || StringUtils.isBlank(itemTable) || StringUtils.isBlank(distributionCategoryCode)) {
+            return List.of();
         }
-        effective.sort(Comparator
-            .comparing(ServiceLocationTemplateQueryService::displayOrderSortKey)
-            .thenComparing(ServiceLocationTemplate::getPriority)
-            .thenComparing(ServiceLocationTemplate::getId));
-        LinkedHashSet<Long> ordered = new LinkedHashSet<>();
+        LocalTime effectiveTime = this.resolveTemplateEffectiveTime(atTime);
+        List<ServiceLocationTemplate> effective = this.collectEffectiveTemplateRows(
+            organizationId, itemTable, distributionCategoryCode, effectiveTime);
+        List<ServiceLocationTemplate> applicable = new ArrayList<>();
         for (ServiceLocationTemplate row : effective) {
-            if (row.getDefLocationId() != null) {
-                ordered.add(row.getDefLocationId());
+            int score = this.calcScore(row, itemDefinitionId, methodCode);
+            if (score >= 0) {
+                applicable.add(row);
             }
         }
-        return new ArrayList<>(ordered);
+        return this.extractOrderedDefLocationIds(applicable);
     }
 
     /**
@@ -137,7 +151,7 @@ public class ServiceLocationTemplateQueryService {
      *
      * @param organizationId 开立或接诊科室标识
      * @param itemTable 物品主表名
-     * @param distributionCategoryCode 发放类别编码
+     * @param distributionCategoryCode 模板 {@code distribution_category_code}，须与产品目录 {@code categoryCode} 一致
      * @param atTime 判定时段；空则当前时刻
      * @return 模板读模型行列表
      */
@@ -151,27 +165,8 @@ public class ServiceLocationTemplateQueryService {
             return List.of();
         }
         LocalTime effectiveTime = this.resolveTemplateEffectiveTime(atTime);
-        List<ServiceLocationTemplate> rows = repository.findAllByOrganizationId(organizationId);
-        List<ServiceLocationTemplate> effective = new ArrayList<>();
-        for (ServiceLocationTemplate row : rows) {
-            if (Boolean.TRUE.equals(row.getIsDeleted())) {
-                continue;
-            }
-            if (!row.isEffectiveAt(effectiveTime)) {
-                continue;
-            }
-            if (!itemTable.equals(row.getItemTable())) {
-                continue;
-            }
-            if (!distributionCategoryCode.equals(row.getDistributionCategoryCode())) {
-                continue;
-            }
-            effective.add(row);
-        }
-        effective.sort(Comparator
-            .comparing(ServiceLocationTemplateQueryService::displayOrderSortKey)
-            .thenComparing(ServiceLocationTemplate::getPriority)
-            .thenComparing(ServiceLocationTemplate::getId));
+        List<ServiceLocationTemplate> effective = this.collectEffectiveTemplateRows(
+            organizationId, itemTable, distributionCategoryCode, effectiveTime);
         List<ServiceLocationTemplateQueryModel> result = new ArrayList<>();
         for (ServiceLocationTemplate row : effective) {
             result.add(this.toQueryModel(row));
@@ -184,9 +179,10 @@ public class ServiceLocationTemplateQueryService {
      *
      * @param organizationId 开立/接诊科室标识
      * @param itemTable 物品主表名
-     * @param distributionCategoryCode 发放类别（如口服/注射等维度）
-     * @param itemDefinitionId 具体物品定义，可为空表示通配
-     * @param methodCode 给药途径等细化条件，可为空表示通配
+     * @param distributionCategoryCode 模板 {@code distribution_category_code}，须与产品目录 {@code categoryCode} 一致
+     *        （药品 {@code med_category_code} / 耗材 {@code device_category_code}）
+     * @param itemDefinitionId 具体物品定义，可为空表示请求侧不约束具体项（仅匹配模板通配行）
+     * @param methodCode 给药途径等细化条件，可为空表示请求侧不约束用法（仅匹配模板通配行）
      * @param atTime 判定生效时段的时刻；为空则取当前时刻
      * @return 默认发药库位标识；无适用规则时为 null
      */
@@ -206,34 +202,13 @@ public class ServiceLocationTemplateQueryService {
         if (itemTable == null || itemTable.trim().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "物品表名不能为空");
         }
-        // 发放类别决定走哪条业务分支（与模板行过滤一致）
+        // 类别编码须与目录 categoryCode 对齐，缺失则无法与模板行过滤
         if (distributionCategoryCode == null || distributionCategoryCode.trim().isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "发放类别编码不能为空");
+            throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "药品/耗材类别编码不能为空");
         }
-        // 未传时刻则按「当前」判断是否落在模板的起止时段内
-        if (atTime == null) {
-            atTime = LocalTime.now();
-        }
-        List<ServiceLocationTemplate> rows = repository.findAllByOrganizationId(organizationId);
-        List<ServiceLocationTemplate> candidates = new ArrayList<>();
-        for (ServiceLocationTemplate row : rows) {
-            if (Boolean.TRUE.equals(row.getIsDeleted())) {
-                continue;
-            }
-            // 规则未在该时刻生效则跳过（如夜间不开放的发药窗口）
-            if (!row.isEffectiveAt(atTime)) {
-                continue;
-            }
-            // 物品主表不一致则本行不适用
-            if (!itemTable.equals(row.getItemTable())) {
-                continue;
-            }
-            // 发放类别不一致则本行不适用
-            if (!distributionCategoryCode.equals(row.getDistributionCategoryCode())) {
-                continue;
-            }
-            candidates.add(row);
-        }
+        LocalTime effectiveTime = this.resolveTemplateEffectiveTime(atTime);
+        List<ServiceLocationTemplate> candidates = this.collectEffectiveTemplateRows(
+            organizationId, itemTable, distributionCategoryCode, effectiveTime);
         ServiceLocationTemplate best = this.pickBest(candidates, itemDefinitionId, methodCode);
         // 无任何候选命中时调用方需自行降级（如提示人工选库位）
         if (best == null) {
@@ -336,6 +311,61 @@ public class ServiceLocationTemplateQueryService {
         model.setDisplayOrder(row.getDisplayOrder());
         model.setRemark(row.getRemark());
         return model;
+    }
+
+    /**
+     * 按开立科室、物品表、类别与生效时段过滤模板行，并按 display_order → priority → id 排序。
+     *
+     * @param organizationId 开立科室标识
+     * @param itemTable 物品主表名
+     * @param distributionCategoryCode 模板 distribution_category_code（= 目录 categoryCode）
+     * @param effectiveTime 非空判定时刻
+     * @return 生效模板行列表（已排序，可写）
+     */
+    private List<ServiceLocationTemplate> collectEffectiveTemplateRows(
+        Long organizationId,
+        String itemTable,
+        String distributionCategoryCode,
+        LocalTime effectiveTime
+    ) {
+        List<ServiceLocationTemplate> rows = repository.findAllByOrganizationId(organizationId);
+        List<ServiceLocationTemplate> effective = new ArrayList<>();
+        for (ServiceLocationTemplate row : rows) {
+            if (Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            if (!row.isEffectiveAt(effectiveTime)) {
+                continue;
+            }
+            if (!itemTable.equals(row.getItemTable())) {
+                continue;
+            }
+            if (!distributionCategoryCode.equals(row.getDistributionCategoryCode())) {
+                continue;
+            }
+            effective.add(row);
+        }
+        effective.sort(Comparator
+            .comparing(ServiceLocationTemplateQueryService::displayOrderSortKey)
+            .thenComparing(ServiceLocationTemplate::getPriority)
+            .thenComparing(ServiceLocationTemplate::getId));
+        return effective;
+    }
+
+    /**
+     * 从已排序模板行提取 def_location_id 有序去重列表。
+     *
+     * @param orderedRows 已按 display_order → priority → id 排序的模板行
+     * @return 库位 id 列表
+     */
+    private List<Long> extractOrderedDefLocationIds(List<ServiceLocationTemplate> orderedRows) {
+        LinkedHashSet<Long> ordered = new LinkedHashSet<>();
+        for (ServiceLocationTemplate row : orderedRows) {
+            if (row.getDefLocationId() != null) {
+                ordered.add(row.getDefLocationId());
+            }
+        }
+        return new ArrayList<>(ordered);
     }
 
     /**

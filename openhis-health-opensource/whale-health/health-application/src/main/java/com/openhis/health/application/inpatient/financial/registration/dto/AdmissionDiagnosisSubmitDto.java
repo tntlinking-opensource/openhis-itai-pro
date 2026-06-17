@@ -28,20 +28,28 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 入院诊断提交行。 */
 @Schema(description = "入院诊断提交行")
 public class AdmissionDiagnosisSubmitDto {
 
     @Schema(description = "已有诊断事实 ID")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 已有诊断事实 ID（业务字段）。 */
     private Long conditionId;
 
+    /** 诊断定义 ID。 */
     @Schema(description = "诊断定义 ID（新开时必填）")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 诊断定义 ID（新开时必填）（业务字段）。 */
     private Long conditionDefinitionId;
 
+    /** 是否主诊断。 */
     @Schema(description = "是否主诊断", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 是否主诊断（业务字段）。 */
     private Boolean primaryFlag;
 
+    /** 诊断说明。 */
     @Schema(description = "诊断说明")
+    /** 诊断说明（业务字段）。 */
     private String description;
 }

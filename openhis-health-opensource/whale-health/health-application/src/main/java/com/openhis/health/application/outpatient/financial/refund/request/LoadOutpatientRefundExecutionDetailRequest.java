@@ -29,6 +29,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 加载就诊待执行退费明细请求。 */
 @Schema(description = "加载就诊待执行退费明细请求")
 public class LoadOutpatientRefundExecutionDetailRequest {
 
@@ -36,6 +37,7 @@ public class LoadOutpatientRefundExecutionDetailRequest {
     @NotNull(message = "encounterId 不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 就诊主键（业务字段）。 */
     private Long encounterId;
 
     /**
@@ -45,5 +47,6 @@ public class LoadOutpatientRefundExecutionDetailRequest {
      * {@code ALL}：二者合并；空则按 {@code PENDING}。</p>
      */
     @Schema(description = "明细展示口径 PENDING/SETTLED/ALL，空则 PENDING")
+    /** 明细展示口径 PENDING/SETTLED/ALL，空则 PENDING（业务字段）。 */
     private String detailViewCode;
 }

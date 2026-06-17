@@ -34,6 +34,8 @@ public class ProductDefinitionCatalogPageQuery extends AbstractPageQuery {
     private String productTableName;
     private List<String> productTableNames;
     private String categoryCode;
+    /** 排除药品 med_category_code（开立西药医嘱排除中草药等）。 */
+    private List<String> excludeMedicationCategoryCodes;
     private Boolean activeFlag;
     private Long supplierId;
     private String manufacturer;

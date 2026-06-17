@@ -28,15 +28,9 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-/**
- * UpdateWardBedRequest。
- */
 public class UpdateWardBedRequest extends CreateWardBedRequest {
     /** 待编辑位置主键。 */
     @NotNull(message = "ID不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
-    /**
-     * id。
-     */
     private Long id;
 }

@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inventory.pharmacy.stockin.mapper;
 
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.PharmacyStockInDetailLineDto;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.PharmacyStockInListRowDto;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.ProductDefinitionItemDto;
@@ -25,7 +25,7 @@ import com.openhis.health.application.inventory.pharmacy.stockin.request.*;
 import com.openhis.health.application.inventory.pharmacy.stockin.response.*;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.supplydelivery.command.CreateSupplyDeliveryCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.AgreeRequestCommand;
@@ -217,6 +217,13 @@ public interface InventoryPharmacyStockInMapper {
      */
     WithdrawPharmacyStockInApprovalResponse toWithdrawPharmacyStockInApprovalResponse(com.openhis.health.domain.share.enums.SupplyStatus status);
 
+    /**
+     * 将同意请求装配为领域 AgreeRequestCommand。
+     *
+     * @param request    同意请求
+     * @param operatorId 操作人
+     * @return 领域写命令
+     */
     AgreeRequestCommand toAgreeRequestCommand(AgreePharmacyStockInRequest request, Long operatorId);
 
     /**

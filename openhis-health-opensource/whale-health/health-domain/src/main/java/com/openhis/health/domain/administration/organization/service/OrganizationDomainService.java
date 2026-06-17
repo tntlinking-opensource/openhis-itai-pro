@@ -19,11 +19,12 @@ package com.openhis.health.domain.administration.organization.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.administration.organization.command.*;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.repository.OrganizationRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
-import com.openhis.health.domain.share.enums.OrganizationStatus;
+import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.events.administration.organization.*;
 import com.openhis.health.domain.share.utils.CommandBatchUtil;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -43,9 +44,7 @@ import java.util.*;
 public class OrganizationDomainService {
 
     private final OrganizationRepository organizationRepository;
-    private final OrganizationQueryService organizationQueryService;
     private final IDomainEventPublisher domainEventPublisher;
-    /** 机构树形 busNo 末段：{@link AggregateTypeConstants#ORGANIZATION} 序号去前缀后的数字段（宽度 {@link BusinessSequenceConstants#BUS_NO_SEQ_LENGTH}）。 */
     private final BusinessSequenceService businessSequenceService;
 
     /**
@@ -53,6 +52,7 @@ public class OrganizationDomainService {
      */
     public Long createOrganization(CreateOrganizationCommand cmd) {
         List<CreateOrganizationCommand.CreateOrganizationItemCommand> items = cmd.resolveItems();
+        Map<Long, Organization> parentMap = this.loadParentMapForBusNo(items);
         List<Organization> toSave = new ArrayList<>();
         for (CreateOrganizationCommand.CreateOrganizationItemCommand item : items) {
             this.assertNameUnique(item.getParentId(), item.getName(), null);
@@ -66,10 +66,10 @@ public class OrganizationDomainService {
             entity.setCaty(item.getCaty());
             this.fillInputCode(entity, item.getInputCode());
             this.fillInsurance(entity, item.getInsuranceInfo());
-            entity.initAsDraft();
+            entity.initAsActive();
             entity.assertCreateAllowed();
             if (StringUtils.isBlank(item.getBusNo())) {
-                entity.setBusNo(this.buildBusNo(item.getParentId(), item.getDisplayOrder()));
+                entity.setBusNo(this.buildBusNo(item.getParentId(), parentMap));
             } else {
                 entity.setBusNo(item.getBusNo());
             }
@@ -142,7 +142,9 @@ public class OrganizationDomainService {
     public void relocateOrganization(RelocateOrganizationCommand cmd) {
         List<RelocateOrganizationCommand.RelocateOrganizationItemCommand> items = cmd.resolveItems();
         Map<Long, Organization> map = this.loadOrganizationMap(CommandBatchUtil.extractIds(items, RelocateOrganizationCommand.RelocateOrganizationItemCommand::getOrganizationId));
-        List<Organization> toSave = new ArrayList<>();
+        Map<Long, Organization> parentMap = this.loadParentMapForRelocate(items);
+        Map<Long, Organization> toSaveById = new LinkedHashMap<>();
+        List<OrganizationHierarchyChangedEvent> hierarchyEvents = new ArrayList<>();
         for (RelocateOrganizationCommand.RelocateOrganizationItemCommand item : items) {
             Organization entity = this.requireOrganization(map, item.getOrganizationId());
             entity.assertRelocateAllowed();
@@ -152,13 +154,34 @@ public class OrganizationDomainService {
             }
             this.assertNotCycle(item.getOrganizationId(), item.getNewParentId());
             Long oldParentId = entity.getParentId();
+            String oldBusNo = entity.getBusNo();
+            String localSegment;
+            int lastDotIndex = oldBusNo.lastIndexOf(GeneralSharedConstants.POINT);
+            if (lastDotIndex < 0) {
+                localSegment = oldBusNo;
+            } else {
+                localSegment = oldBusNo.substring(lastDotIndex + 1);
+            }
+            String newBusNo = this.buildRelocatedBusNo(item.getNewParentId(), localSegment, parentMap);
             entity.setParentId(item.getNewParentId());
-            entity.setBusNo(this.buildBusNo(item.getNewParentId(), entity.getDisplayOrder()));
-            toSave.add(entity);
-            domainEventPublisher.publish(new OrganizationHierarchyChangedEvent(
-                entity.getId(), oldParentId, item.getNewParentId(), entity.getBusNo()));
+            entity.setBusNo(newBusNo);
+            toSaveById.put(entity.getId(), entity);
+            // 后代 busNo 前缀随本节点迁移，保持本级末段不变（BR-ORG-002）。
+            String oldPrefix = oldBusNo + GeneralSharedConstants.POINT;
+            List<Organization> descendants = organizationRepository.findAllByBusNoStartingWith(oldPrefix);
+            for (Organization descendant : descendants) {
+                String descendantBusNo = descendant.getBusNo();
+                String suffix = descendantBusNo.substring(oldBusNo.length());
+                descendant.setBusNo(newBusNo + suffix);
+                toSaveById.put(descendant.getId(), descendant);
+            }
+            hierarchyEvents.add(new OrganizationHierarchyChangedEvent(
+                entity.getId(), oldParentId, item.getNewParentId(), newBusNo));
         }
-        organizationRepository.saveAll(toSave);
+        organizationRepository.saveAll(new ArrayList<>(toSaveById.values()));
+        for (OrganizationHierarchyChangedEvent event : hierarchyEvents) {
+            domainEventPublisher.publish(event);
+        }
     }
 
     /**
@@ -170,12 +193,12 @@ public class OrganizationDomainService {
         List<Organization> toSave = new ArrayList<>();
         for (RetireOrganizationCommand.RetireOrganizationItemCommand item : items) {
             Organization entity = this.requireOrganization(map, item.getOrganizationId());
-            entity.assertRetireAllowed();
-            // 业务分支处理。
-            if (organizationRepository.existsByParentIdAndStatusEnum(entity.getId(), OrganizationStatus.ACTIVE.getCode())) {
+            entity.assertDeactivatable();
+            // 存在启用子节点时不允许停用上级机构。
+            if (organizationRepository.existsByParentIdAndStatusEnum(entity.getId(), PublicationStatus.ACTIVE.getCode())) {
                 throw new BusinessException(ErrorCodeConstants.ORGANIZATION_RULE_CONFLICT, "存在启用子节点，机构不可停用");
             }
-            entity.transitToRetired();
+            entity.transitToInactive();
             toSave.add(entity);
         }
         organizationRepository.saveAll(toSave);
@@ -193,7 +216,7 @@ public class OrganizationDomainService {
         List<Organization> toSave = new ArrayList<>();
         for (ReactivateOrganizationCommand.ReactivateOrganizationItemCommand item : items) {
             Organization entity = this.requireOrganization(map, item.getOrganizationId());
-            entity.assertReactivateAllowed();
+            entity.assertActivatable();
             this.assertParentActive(entity.getParentId());
             entity.transitToActive();
             toSave.add(entity);
@@ -214,8 +237,9 @@ public class OrganizationDomainService {
         for (AbolishOrganizationCommand.AbolishOrganizationItemCommand item : items) {
             Organization entity = this.requireOrganization(map, item.getOrganizationId());
             entity.assertAbolishAllowed();
-            // 业务分支处理。
-            if (!organizationQueryService.checkOrganizationAbolishable(item.getOrganizationId())) {
+            // 业务分支处理：仍存在启用子机构时禁止废弃（仅本聚合仓储判定）。
+            if (organizationRepository.existsByParentIdAndStatusEnum(
+                item.getOrganizationId(), PublicationStatus.ACTIVE.getCode())) {
                 throw new BusinessException(ErrorCodeConstants.ORGANIZATION_RULE_CONFLICT, "机构仍被活跃业务引用，禁止废弃");
             }
             entity.transitToDeleted(cmd.getOperatorId());
@@ -309,25 +333,91 @@ public class OrganizationDomainService {
     }
 
     /**
-     * 私有方法：buildBusNo。
+     * 生成机构层级 busNo：顶级为 {@link AggregateTypeConstants#ORGANIZATION} 采番段，子级为「父 busNo + . + 本段」。
+     *
+     * @param parentId  父机构主键，根节点为 null
+     * @param parentMap 已加载的父机构映射
+     * @return 层级编码
      */
-    private String buildBusNo(Long parentId, Integer displayOrder) {
-        // 顶级机构无上级 ID，用 ROOT 占位；无排序号时用 0 兜底。
-        String parentSegment;
+    private String buildBusNo(Long parentId, Map<Long, Organization> parentMap) {
+        String segment = this.allocateOrganizationBusNoSegment();
         if (parentId == null) {
-            parentSegment = "ROOT";
-        } else {
-            parentSegment = String.valueOf(parentId);
+            return segment;
         }
-        String orderSegment;
-        if (displayOrder == null) {
-            orderSegment = "0";
-        } else {
-            orderSegment = String.valueOf(displayOrder);
+        Organization parent = parentMap.get(parentId);
+        if (parent == null) {
+            throw new BusinessException(ErrorCodeConstants.ORGANIZATION_NOT_FOUND, "上级机构不存在");
         }
+        return parent.getBusNo() + GeneralSharedConstants.POINT + segment;
+    }
+
+    /**
+     * 调整上级时按新父级 busNo 与本节点末段拼接新编码。
+     *
+     * @param newParentId  新上级机构主键，根节点为 null
+     * @param localSegment 本节点 busNo 末段
+     * @param parentMap    新上级机构映射
+     * @return 迁移后的层级编码
+     */
+    private String buildRelocatedBusNo(Long newParentId, String localSegment, Map<Long, Organization> parentMap) {
+        if (newParentId == null) {
+            return localSegment;
+        }
+        Organization parent = parentMap.get(newParentId);
+        if (parent == null) {
+            throw new BusinessException(ErrorCodeConstants.ORGANIZATION_NOT_FOUND, "上级机构不存在");
+        }
+        return parent.getBusNo() + GeneralSharedConstants.POINT + localSegment;
+    }
+
+    /**
+     * 取机构业务序号段（含聚合前缀，如 OR0010）。
+     *
+     * @return 本节点 busNo 末段
+     */
+    private String allocateOrganizationBusNoSegment() {
         String prefix = AggregateTypeConstants.ORGANIZATION;
-        String full = businessSequenceService.getSeq(prefix, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
-        return parentSegment + "." + orderSegment + "." + full.substring(prefix.length());
+        return businessSequenceService.getSeq(prefix, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
+    }
+
+    /**
+     * 批量创建前预加载父级机构，供层级 busNo 拼接。
+     *
+     * @param items 创建项
+     * @return 父级 id → 机构
+     */
+    private Map<Long, Organization> loadParentMapForBusNo(
+        List<CreateOrganizationCommand.CreateOrganizationItemCommand> items) {
+        List<Long> parentIds = new ArrayList<>();
+        for (CreateOrganizationCommand.CreateOrganizationItemCommand item : items) {
+            if (item.getParentId() != null) {
+                parentIds.add(item.getParentId());
+            }
+        }
+        if (parentIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return this.loadOrganizationMap(parentIds);
+    }
+
+    /**
+     * 批量调整上级前预加载新上级机构，供层级 busNo 重算。
+     *
+     * @param items 调整项
+     * @return 新上级 id → 机构
+     */
+    private Map<Long, Organization> loadParentMapForRelocate(
+        List<RelocateOrganizationCommand.RelocateOrganizationItemCommand> items) {
+        List<Long> parentIds = new ArrayList<>();
+        for (RelocateOrganizationCommand.RelocateOrganizationItemCommand item : items) {
+            if (item.getNewParentId() != null) {
+                parentIds.add(item.getNewParentId());
+            }
+        }
+        if (parentIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return this.loadOrganizationMap(parentIds);
     }
 
     /**

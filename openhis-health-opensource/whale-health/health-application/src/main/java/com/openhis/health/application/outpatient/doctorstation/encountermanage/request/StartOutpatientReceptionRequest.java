@@ -32,6 +32,7 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-门诊接诊请求。 */
 @Schema(description = "医生站-门诊接诊请求")
 public class StartOutpatientReceptionRequest {
 
@@ -44,11 +45,13 @@ public class StartOutpatientReceptionRequest {
     /** 接诊医师主键。 */
     @NotNull(message = "接诊医师不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 接诊医师主键。 */
     @Schema(description = "接诊医师主键（通常取当前登录医师）", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long doctorId;
 
     /** 接诊时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 接诊时间。 */
     @Schema(description = "接诊时间，空则服务端取当前时间")
     private LocalDateTime receptionTime;
 
@@ -59,6 +62,7 @@ public class StartOutpatientReceptionRequest {
     /** 操作人主键。 */
     @NotNull(message = "操作人不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 操作人主键。 */
     @Schema(description = "操作人主键", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long operatorId;
 }

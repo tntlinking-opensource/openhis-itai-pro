@@ -41,8 +41,6 @@ public class SignServiceRequestCommand extends BatchCommand<SignServiceRequestCo
     public static class SignServiceRequestItemCommand {
         /** 主键。 */
         private Long id;
-        /** 签署编码。 */
-        private String signCode;
         /** signer主键。 */
         private Long signerId;
         /** 签署时间。 */

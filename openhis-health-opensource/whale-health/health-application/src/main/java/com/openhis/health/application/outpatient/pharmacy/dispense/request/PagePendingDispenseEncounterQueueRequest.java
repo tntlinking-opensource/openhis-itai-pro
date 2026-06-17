@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.outpatient.pharmacy.dispense.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -34,6 +34,7 @@ import java.util.List;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 门诊发药就诊队列分页请求。 */
 @Schema(description = "门诊发药就诊队列分页请求")
 public class PagePendingDispenseEncounterQueueRequest extends AbstractHealthPageRequest {
 

@@ -69,7 +69,10 @@ public final class TemplateScopeValidator {
 
     public static String normalizeScopeLevel(String raw) {
         TemplateScopeLevel level = TemplateScopeLevel.fromCode(raw);
-        return level != null ? level.getCode() : null;
+        if (level != null) {
+            return level.getCode();
+        }
+        return null;
     }
 
     public static String normalizeEncounterClassCode(String raw) {

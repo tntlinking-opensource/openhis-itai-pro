@@ -29,6 +29,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 清床离院请求。 */
 @Schema(description = "清床离院请求", requiredProperties = {"encounterId"})
 public class ClearDischargedBedRequest {
 

@@ -25,7 +25,8 @@ import com.openhis.health.application.outpatient.pharmacy.dispense.response.Load
 import com.openhis.health.application.outpatient.pharmacy.dispense.response.PageEncounterMedicationDispenseSlipsResponse;
 import com.openhis.health.application.outpatient.pharmacy.dispense.response.PagePendingDispenseEncounterQueueResponse;
 import com.openhis.health.application.outpatient.pharmacy.dispense.response.SavePrepareOutpatientMedicationDispenseResponse;
-import com.openhis.health.domain.administration.organization.entity.Organization;
+import com.openhis.health.module.querysupport.pharmacy.dto.MedicationDispenseSlipPageResult;
+import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.medication.medicationdispense.command.CancelMedicationDispenseCommand;
 import com.openhis.health.domain.medication.medicationdispense.command.DispenseMedicationCommand;
@@ -34,7 +35,7 @@ import com.openhis.health.domain.medication.medicationdispense.entity.Medication
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
 
@@ -52,7 +53,7 @@ public interface OutpatientPharmacyDispenseMapper {
     /**
      * IF-OPP-01：装配初始化响应。
      *
-     * @param pharmacies                  药房机构树
+     * @param pharmacies                  可操作药房位置列表（adm_location）
      * @param dispenseStatusOptions       发放状态下拉
      * @param encounterClassOptions       就诊类别下拉
      * @param notPerformedReasonOptions   未发药原因下拉（可为空）
@@ -60,7 +61,7 @@ public interface OutpatientPharmacyDispenseMapper {
      * @return 初始化响应
      */
     LoadPharmacyDispensePageInitResponse toLoadInitResponse(
-        List<Organization> pharmacies,
+        List<Location> pharmacies,
         List<OptionDto> dispenseStatusOptions,
         List<OptionDto> encounterClassOptions,
         List<OptionDto> notPerformedReasonOptions,
@@ -86,8 +87,8 @@ public interface OutpatientPharmacyDispenseMapper {
      * @param reqByMedReqId                    医嘱列表模型映射
      * @param productByMedicationId            药品定义读模型（按 medicationId）；行内 {@code manufacturerName} 直取 {@code manufacturer} 文本，无额外解析
      * @param inventoryDetailListByDispenseId  候选库存明细（按发放单）
-     * @param tcmOnly                          契约保留；当前装配不做中药维度行过滤（与 AS-OP-PHA-001-SDD §8 说明一致）
-     * @param westernOnly                      契约保留；当前装配不做非中药维度行过滤
+     * @param tcmOnly                          {@code true} 仅中药饮片行
+     * @param westernOnly                      {@code true} 仅西药中成药行
      * @param dispensingPractitionerNameByDispenseId 发药人姓名（按发放单）
      * @param encounterBusNo                   就诊业务号
      * @param orderingDepartmentNameByOrgId      开立科室名称（按科室机构 id）
@@ -121,10 +122,16 @@ public interface OutpatientPharmacyDispenseMapper {
         Map<Long, String> traceNoEffectiveByDispenseId,
         Map<String, String> rateCodeLabelMap,
         Map<String, String> methodCodeLabelMap,
+        Map<String, String> tcmMethodCodeLabelMap,
         Map<String, String> doseUnitLabelMap,
         Map<String, String> businessUnitLabelMap,
         Map<String, String> rxFlagLabelMap,
         Map<String, String> partAttributeLabelMap);
+
+    /**
+     * 将 querysupport slip 分页结果包装为 IF-OPP-03 响应。
+     */
+    PageEncounterMedicationDispenseSlipsResponse toSlipPageResponse(MedicationDispenseSlipPageResult result);
 
     /**
      * IF-OPP-04：装配保存配药命令。

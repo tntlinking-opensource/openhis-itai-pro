@@ -5,14 +5,6 @@
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.openhis.health.domain.administration.practitionerrole.repository;
@@ -21,45 +13,63 @@ import com.openhis.health.domain.administration.practitionerrole.entity.Practiti
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * 医疗卫生人员角色（岗位）仓储。
- * <p>
- * 维护人员在机构、科室下的角色授权，支持唯一性校验与按人员/机构/激活状态查询。
+ * 岗位分配（{@code adm_pr_assign}）仓储。
  */
 public interface PractitionerRoleRepository extends JpaRepository<PractitionerRole, Long>, JpaSpecificationExecutor<PractitionerRole> {
-    /** 按主键查询人员角色。 */
+
     Optional<PractitionerRole> findById(Long id);
 
-    /**
-     * 判断指定人员、角色编码、机构、地点的组合是否已存在（用于新增前唯一性校验）。
-     */
-    boolean existsByPractitionerIdAndRoleCodeAndOrgIdAndLocationId(
-        Long practitionerId, Integer roleCode, Long orgId, Long locationId);
+    boolean existsByPractitionerIdAndRoleIdAndOrgIdAndLocationId(
+        Long practitionerId, Long roleId, Long orgId, Long locationId);
 
-    /**
-     * 判断除指定主键外是否存在相同人员、角色、机构、地点组合（用于编辑时唯一性校验）。
-     */
-    boolean existsByPractitionerIdAndRoleCodeAndOrgIdAndLocationIdAndIdNot(
-        Long practitionerId, Integer roleCode, Long orgId, Long locationId, Long id);
+    boolean existsByPractitionerIdAndRoleIdAndOrgIdAndLocationIdAndIdNot(
+        Long practitionerId, Long roleId, Long orgId, Long locationId, Long id);
 
-    /** 查询指定人员的全部角色记录。 */
     List<PractitionerRole> findAllByPractitionerId(Long practitionerId);
 
-    /** 查询指定人员下仍处于激活状态的全部角色。 */
     List<PractitionerRole> findAllByPractitionerIdAndActiveFlagTrue(Long practitionerId);
 
-    /** 按人员与角色编码查询角色列表。 */
-    List<PractitionerRole> findAllByPractitionerIdAndRoleCode(Long practitionerId, Integer roleCode);
+    List<PractitionerRole> findAllByPractitionerIdAndRoleId(Long practitionerId, Long roleId);
 
-    /** 按人员与机构查询角色列表。 */
     List<PractitionerRole> findAllByPractitionerIdAndOrgId(Long practitionerId, Long orgId);
 
-    /** 按人员与机构查询仍处于激活状态的角色列表。 */
     List<PractitionerRole> findAllByPractitionerIdAndOrgIdAndActiveFlagTrue(Long practitionerId, Long orgId);
 
-    /** 按角色编码查询仍处于激活状态的岗位分配（用于岗位菜单下列表一次性解析人员 ID，避免 N 次按人查询）。 */
-    List<PractitionerRole> findAllByRoleCodeAndActiveFlagTrue(Integer roleCode);
+    List<PractitionerRole> findAllByRoleIdAndActiveFlagTrue(Long roleId);
+
+    List<PractitionerRole> findAllByRoleIdAndOrgIdAndActiveFlagTrue(Long roleId, Long orgId);
+
+    /**
+     * 按平台角色与病区位置收窄激活岗位（住院护士站责任护士下拉）。
+     *
+     * @param roleId     平台角色主键
+     * @param locationId 病区位置主键
+     * @return 岗位分配行
+     */
+    List<PractitionerRole> findAllByRoleIdAndLocationIdAndActiveFlagTrue(Long roleId, Long locationId);
+
+    /**
+     * 批量按机构收窄激活岗位（门诊挂号等场景：限定在门诊科室集合内有医师岗）。
+     *
+     * @param roleId 平台角色主键
+     * @param orgIds 机构主键集合
+     * @return 岗位分配行
+     */
+    List<PractitionerRole> findAllByRoleIdAndOrgIdInAndActiveFlagTrue(Long roleId, Collection<Long> orgIds);
+
+    /**
+     * 批量按药房/库位收窄激活岗位（发药调配药师下拉：{@code adm_pr_assign.location_id}）。
+     *
+     * @param roleId      平台角色主键
+     * @param locationIds 药房等位置主键集合
+     * @return 岗位分配行
+     */
+    List<PractitionerRole> findAllByRoleIdAndLocationIdInAndActiveFlagTrue(Long roleId, Collection<Long> locationIds);
+
+    long countByPractitionerIdAndRoleIdAndActiveFlagTrueAndIsDeletedFalse(Long practitionerId, Long roleId);
 }

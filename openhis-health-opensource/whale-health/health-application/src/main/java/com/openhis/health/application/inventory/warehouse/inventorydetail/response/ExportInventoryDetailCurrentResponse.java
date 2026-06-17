@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 现库导出 Excel 出参（IF-INV-DTL-06）。
@@ -30,15 +31,18 @@ import lombok.experimental.Accessors;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 现库库存明细导出 IF-INV-DTL-06。 */
 @Schema(description = "现库库存明细导出 IF-INV-DTL-06")
 public class ExportInventoryDetailCurrentResponse {
 
     @Schema(description = "下载文件名")
     private String fileName;
 
+    /** 内容类型。 */
     @Schema(description = "内容类型")
     private String contentType;
 
+    /** 工作簿字节流。 */
     @Schema(description = "工作簿字节流")
     private byte[] body;
 

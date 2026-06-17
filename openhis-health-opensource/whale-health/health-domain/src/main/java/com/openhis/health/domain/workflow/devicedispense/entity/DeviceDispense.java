@@ -597,6 +597,27 @@ public class DeviceDispense extends BaseAuditedEntity {
     }
 
     /**
+     * 批量回退已配药 → 待发前置。
+     */
+    public void assertPreparedBatchRevertable() {
+        if (!statusEquals(DispenseStatus.PREPARED)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "仅已配药状态允许回退为待发");
+        }
+    }
+
+    /**
+     * 已配药 → 待发并清空拣配追溯字段（护士取消执行与 IF-NUR-04 已配药分支对称）。
+     */
+    public void preparedToPreparation() {
+        this.assertPreparedBatchRevertable();
+        this.lotNumber = null;
+        this.traceNo = null;
+        this.prepareTime = null;
+        this.preparerId = null;
+        this.statusEnum = DispenseStatus.PREPARATION.getCode();
+    }
+
+    /**
      * 批量回退已发放 → 待发前置。
      */
     public void assertCompletedBatchRevertable() {

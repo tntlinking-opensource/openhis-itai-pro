@@ -21,6 +21,8 @@ import com.openhis.health.domain.clinical.allergyintolerance.entity.AllergyIntol
 import com.openhis.health.domain.clinical.allergyintolerance.queries.model.AllergyHistoryFlagQueryModel;
 import com.openhis.health.domain.clinical.allergyintolerance.queries.model.AllergyIntoleranceRecordQueryModel;
 import com.openhis.health.domain.clinical.allergyintolerance.repository.AllergyIntoleranceRepository;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -53,21 +55,50 @@ public class AllergyIntoleranceQueryService {
         List<AllergyIntolerance> entities = repository.findByEncounterId(encounterId);
         List<AllergyIntoleranceRecordQueryModel> models = new ArrayList<>();
         for (AllergyIntolerance entity : entities) {
-            AllergyIntoleranceRecordQueryModel model = new AllergyIntoleranceRecordQueryModel();
-            model.setId(entity.getId());
-            model.setRequestId(entity.getRequestId());
-            model.setEncounterId(entity.getEncounterId());
-            model.setPatientId(entity.getPatientId());
-            model.setMedicationId(entity.getMedicationId());
-            model.setLotNumber(entity.getLotNumber());
-            model.setClinicalStatusEnum(entity.getClinicalStatusEnum());
-            model.setVerificationStatusEnum(entity.getVerificationStatusEnum());
-            model.setCriticalityEnum(entity.getCriticalityEnum());
-            model.setSeverityEnum(entity.getSeverityEnum());
-            model.setRecordedDate(entity.getRecordedDate());
-            models.add(model);
+            if (entity == null || Boolean.TRUE.equals(entity.getIsDeleted())) {
+                continue;
+            }
+            models.add(this.toRecordModel(entity));
         }
         return models;
+    }
+
+    /**
+     * 按主键加载单条过敏记录读模型（皮试删除/更新门控）。
+     *
+     * @param recordId 过敏记录主键
+     * @return 读模型
+     * @throws BusinessException 记录不存在或已删除
+     */
+    public AllergyIntoleranceRecordQueryModel mustGetRecordById(Long recordId) {
+        if (recordId == null) {
+            throw new BusinessException(ErrorCodeConstants.ALLERGY_INTOLERANCE_INVALID_ARGUMENT, "过敏记录标识不能为空");
+        }
+        AllergyIntolerance entity = repository.findById(recordId).orElseThrow(
+            () -> new BusinessException(ErrorCodeConstants.ALLERGY_INTOLERANCE_NOT_FOUND, "过敏记录不存在"));
+        if (Boolean.TRUE.equals(entity.getIsDeleted())) {
+            throw new BusinessException(ErrorCodeConstants.ALLERGY_INTOLERANCE_NOT_FOUND, "过敏记录不存在");
+        }
+        return this.toRecordModel(entity);
+    }
+
+    private AllergyIntoleranceRecordQueryModel toRecordModel(AllergyIntolerance entity) {
+        AllergyIntoleranceRecordQueryModel model = new AllergyIntoleranceRecordQueryModel();
+        model.setId(entity.getId());
+        model.setRequestId(entity.getRequestId());
+        model.setEncounterId(entity.getEncounterId());
+        model.setPatientId(entity.getPatientId());
+        model.setMedicationId(entity.getMedicationId());
+        model.setLotNumber(entity.getLotNumber());
+        model.setClinicalStatusEnum(entity.getClinicalStatusEnum());
+        model.setVerificationStatusEnum(entity.getVerificationStatusEnum());
+        model.setCriticalityEnum(entity.getCriticalityEnum());
+        model.setSeverityEnum(entity.getSeverityEnum());
+        model.setRecordedDate(entity.getRecordedDate());
+        model.setDescription(entity.getDescription());
+        model.setPractitionerId(entity.getPractitionerId());
+        model.setCheckPractitionerId(entity.getCheckPractitionerId());
+        return model;
     }
 
     /**

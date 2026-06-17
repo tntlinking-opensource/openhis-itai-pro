@@ -124,18 +124,20 @@ public class SupplyRequest extends BaseAuditedEntity {
     @Column(name = "reason")
     private String reason;
 
-    /** 药库订货单等业务可无来源位置，允许为空。 */
+    /** 单库房单据为空；双端点单据必填（出方）。 */
     @Column(name = "source_type_enum")
     private String sourceTypeEnum;
 
-    /** 药库订货单采购场景通常仅维护 purpose（入库位置），来源可为空。 */
+    /** 单库房单据为空；双端点单据必填（出方）。 */
     @Column(name = "source_location_id")
     private Long sourceLocationId;
 
-    @Column(name = "purpose_type_enum", nullable = false)
+    /** 单库房单据必填；双端点单据必填。 */
+    @Column(name = "purpose_type_enum")
     private String purposeTypeEnum;
 
-    @Column(name = "purpose_location_id", nullable = false)
+    /** 单库房就是目的；双端点为进方。 */
+    @Column(name = "purpose_location_id")
     private Long purposeLocationId;
 
     @Column(name = "approver_id")
@@ -205,6 +207,16 @@ public class SupplyRequest extends BaseAuditedEntity {
             }
             if (this.purposeLocationId == null) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "盘点库房不能为空");
+            }
+        } else if (SupplyType.isPurposeOnlyLocationTypeCode(this.typeEnum)) {
+            if (this.purposeTypeEnum == null || this.purposeTypeEnum.trim().isEmpty()) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "库房类型不能为空");
+            }
+            if (this.purposeLocationId == null) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "库房不能为空");
+            }
+            if (this.itemQuantity == null || this.itemQuantity.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "itemQuantity 必须大于 0");
             }
         } else if (this.itemQuantity == null || this.itemQuantity.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "itemQuantity 必须大于 0");

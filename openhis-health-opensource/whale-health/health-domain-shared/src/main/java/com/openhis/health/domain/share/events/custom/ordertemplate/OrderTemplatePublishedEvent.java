@@ -21,7 +21,7 @@ import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.whale.core.domain.event.DomainEvent;
 
 /**
- * 医嘱组套模板已发布事件。
+ * 组套模板已发布事件。
  */
 public class OrderTemplatePublishedEvent extends DomainEvent {
     private Long operatorId;

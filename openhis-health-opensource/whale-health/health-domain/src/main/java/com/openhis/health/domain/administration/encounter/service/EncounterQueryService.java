@@ -23,7 +23,6 @@ import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.encounter.entity.EncounterDiagnosis;
 import com.openhis.health.domain.administration.encounter.entity.EncounterLocation;
 import com.openhis.health.domain.administration.encounter.entity.EncounterParticipant;
-import com.openhis.health.domain.administration.encounter.queries.EmergencyEncounterDoctorListQuery;
 import com.openhis.health.domain.administration.encounter.queries.EncounterProjectionQuery;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientDuplicateCheckQuery;
@@ -117,6 +116,36 @@ public class EncounterQueryService {
      */
     public EncounterDetailQueryModel mustGetEncounter(Long encounterId) {
         return this.loadEncounterById(encounterId);
+    }
+
+    /**
+     * 按主键加载就诊实体（Port/bridge 读路径）；不存在或已软删时 empty。
+     *
+     * @param encounterId 就诊标识
+     * @return 就诊实体
+     */
+    public Optional<Encounter> findOptionalEncounterEntityById(Long encounterId) {
+        if (encounterId == null) {
+            return Optional.empty();
+        }
+        return encounterRepository.findById(encounterId)
+            .filter(row -> !Boolean.TRUE.equals(row.getIsDeleted()));
+    }
+
+    /**
+     * 统计某次就诊之前该患者的住院（IMP）次数，供 MRMS 病案「第几次住院」。
+     *
+     * @param patientId          患者标识
+     * @param beforeEncounterId  当前就诊标识（不含）
+     * @return 住院次数
+     */
+    public int countInpatientAdmissionsBefore(long patientId, long beforeEncounterId) {
+        Specification<Encounter> spec = (root, query, cb) -> cb.and(
+            cb.equal(root.get(FieldNameConstants.PATIENT_ID), patientId),
+            cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.IMP.getCode()),
+            cb.lessThan(root.get(FieldNameConstants.ID), beforeEncounterId),
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+        return (int) encounterRepository.count(spec);
     }
 
     /**
@@ -222,6 +251,211 @@ public class EncounterQueryService {
             }
         }
         return ids;
+    }
+
+    /**
+     * 门诊收银/退费队列：按 AMB、会话机构与就诊开始时段收敛就诊主键（不含患者文本关键字）。
+     *
+     * @param organizationId 会话机构；{@code null} 时不按机构收窄
+     * @param startDate      就诊开始下界；{@code null} 忽略
+     * @param endDate        就诊开始上界；{@code null} 忽略
+     * @return 命中就诊主键；无匹配时空列表
+     */
+    public List<Long> listOutpatientAmbEncounterIdsForCashierScope(
+        Long organizationId,
+        LocalDateTime startDate,
+        LocalDateTime endDate) {
+        Specification<Encounter> specification = (root, criteriaQuery, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.AMB.getCode()));
+            if (organizationId != null) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), organizationId));
+            }
+            if (startDate != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.START_TIME), startDate));
+            }
+            if (endDate != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.START_TIME), endDate));
+            }
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        return this.collectEncounterIds(this.encounterRepository.findAll(specification));
+    }
+
+    /**
+     * 门诊发药/退药：按科室（机构）收窄 AMB 就诊主键。
+     *
+     * @param organizationId 科室主键
+     * @return 命中就诊主键；{@code organizationId} 为空时返回空列表
+     */
+    public List<Long> listOutpatientAmbEncounterIdsByOrganization(Long organizationId) {
+        if (organizationId == null) {
+            return Collections.emptyList();
+        }
+        Specification<Encounter> specification = (root, criteriaQuery, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.AMB.getCode()),
+            cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), organizationId));
+        return this.collectEncounterIds(this.encounterRepository.findAll(specification));
+    }
+
+    /**
+     * 住院发药队列：在院 IMP 就诊主键，可选按病区（激活 WARD 或病区下床位）收窄。
+     *
+     * @param wardId           病区主键；{@code null} 不按病区过滤
+     * @param bedIdsUnderWard  病区下启用床位主键；{@code wardId} 非空时由应用层经 Location 聚合解析
+     * @return 命中就诊主键
+     */
+    public List<Long> listInpatientInHospitalEncounterIds(Long wardId, Collection<Long> bedIdsUnderWard) {
+        Specification<Encounter> baseSpec = (root, criteriaQuery, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.IMP.getCode()),
+            root.get(FieldNameConstants.STATUS_ENUM).in(
+                EncounterStatus.IN_PROGRESS.getCode(),
+                EncounterStatus.ON_HOLD.getCode()));
+        List<Encounter> baseRows = this.encounterRepository.findAll(baseSpec);
+        if (baseRows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (wardId == null) {
+            return this.collectEncounterIds(baseRows);
+        }
+        LinkedHashSet<Long> wardScoped = new LinkedHashSet<>();
+        LinkedHashSet<Long> bedIds = new LinkedHashSet<>();
+        if (bedIdsUnderWard != null) {
+            for (Long bedId : bedIdsUnderWard) {
+                if (bedId != null) {
+                    bedIds.add(bedId);
+                }
+            }
+        }
+        List<EncounterLocation> wardAssignments = this.locationRepository.findAllByLocationIdInAndFormEnumAndStatusEnum(
+            List.of(wardId), LocationForm.WARD.getCode(), EncounterActivityStatus.ACTIVE.getCode());
+        LinkedHashSet<Long> wardEncounterIds = new LinkedHashSet<>();
+        for (EncounterLocation row : wardAssignments) {
+            if (row != null && row.getEncounterId() != null) {
+                wardEncounterIds.add(row.getEncounterId());
+            }
+        }
+        LinkedHashSet<Long> bedEncounterIds = new LinkedHashSet<>();
+        if (!bedIds.isEmpty()) {
+            List<EncounterLocation> bedAssignments = this.locationRepository.findAllByLocationIdInAndFormEnumAndStatusEnum(
+                bedIds, LocationForm.BED.getCode(), EncounterActivityStatus.ACTIVE.getCode());
+            for (EncounterLocation row : bedAssignments) {
+                if (row != null && row.getEncounterId() != null) {
+                    bedEncounterIds.add(row.getEncounterId());
+                }
+            }
+        }
+        for (Encounter encounter : baseRows) {
+            if (encounter == null || encounter.getId() == null) {
+                continue;
+            }
+            Long encounterId = encounter.getId();
+            if (wardEncounterIds.contains(encounterId) || bedEncounterIds.contains(encounterId)) {
+                wardScoped.add(encounterId);
+            }
+        }
+        return new ArrayList<>(wardScoped);
+    }
+
+    /**
+     * 住院发药关键字：按激活床位 location 反查在院 IMP 就诊主键。
+     *
+     * @param bedLocationIds 床位 location 主键
+     * @return 命中就诊主键；入参空时返回空列表
+     */
+    public List<Long> listInpatientInHospitalEncounterIdsByActiveBedLocationIds(Collection<Long> bedLocationIds) {
+        if (bedLocationIds == null || bedLocationIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> distinctBeds = new LinkedHashSet<>();
+        for (Long bedId : bedLocationIds) {
+            if (bedId != null) {
+                distinctBeds.add(bedId);
+            }
+        }
+        if (distinctBeds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<EncounterLocation> bedAssignments = this.locationRepository.findAllByLocationIdInAndFormEnumAndStatusEnum(
+            distinctBeds, LocationForm.BED.getCode(), EncounterActivityStatus.ACTIVE.getCode());
+        LinkedHashSet<Long> candidateEncounterIds = new LinkedHashSet<>();
+        for (EncounterLocation row : bedAssignments) {
+            if (row != null && row.getEncounterId() != null) {
+                candidateEncounterIds.add(row.getEncounterId());
+            }
+        }
+        if (candidateEncounterIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return this.filterInpatientInHospitalEncounterIds(candidateEncounterIds);
+    }
+
+    /**
+     * 保留 AMB 未删就诊主键（关键字 union 后的二次过滤）。
+     *
+     * @param encounterIds 候选就诊主键
+     * @return 过滤后列表
+     */
+    public List<Long> filterOutpatientAmbEncounterIds(Collection<Long> encounterIds) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> distinct = new LinkedHashSet<>();
+        for (Long id : encounterIds) {
+            if (id != null) {
+                distinct.add(id);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Encounter> rows = this.encounterRepository.findAllByIdInAndClassEnum(distinct, EncounterClass.AMB.getCode());
+        return this.collectEncounterIds(rows);
+    }
+
+    /**
+     * 保留在院 IMP 就诊主键（关键字 union 后的二次过滤）。
+     *
+     * @param encounterIds 候选就诊主键
+     * @return 过滤后列表
+     */
+    public List<Long> filterInpatientInHospitalEncounterIds(Collection<Long> encounterIds) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> distinct = new LinkedHashSet<>();
+        for (Long id : encounterIds) {
+            if (id != null) {
+                distinct.add(id);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Specification<Encounter> specification = (root, criteriaQuery, cb) -> cb.and(
+            root.get(FieldNameConstants.ID).in(distinct),
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.IMP.getCode()),
+            root.get(FieldNameConstants.STATUS_ENUM).in(
+                EncounterStatus.IN_PROGRESS.getCode(),
+                EncounterStatus.ON_HOLD.getCode()));
+        return this.collectEncounterIds(this.encounterRepository.findAll(specification));
+    }
+
+    private List<Long> collectEncounterIds(Collection<Encounter> rows) {
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        if (rows == null) {
+            return Collections.emptyList();
+        }
+        for (Encounter row : rows) {
+            if (row != null && row.getId() != null && !Boolean.TRUE.equals(row.getIsDeleted())) {
+                ids.add(row.getId());
+            }
+        }
+        return new ArrayList<>(ids);
     }
 
     /**
@@ -347,6 +581,86 @@ public class EncounterQueryService {
             model.setDescription(row.getDescription());
             model.setDiagTypeCode(row.getDiagTypeCode());
             model.setMedType(row.getMedType());
+            model.setTcmSyndromeGroup(row.getTcmSyndromeGroup());
+            model.setTcmFlag(row.getTcmFlag());
+            models.add(model);
+        }
+        return models;
+    }
+
+    /**
+     * 列出就诊下有效中医诊断关联（{@code tcm_flag=true}），供中医 Tab 病证组聚合读侧使用。
+     *
+     * @param encounterId 就诊标识
+     * @return 中医关联行；无数据时返回空列表
+     */
+    public List<com.openhis.health.domain.administration.encounter.queries.model.TcmEncounterDiagnosisAssociationQueryModel>
+        listTcmEncounterDiagnosisAssociations(Long encounterId) {
+        if (encounterId == null) {
+            return List.of();
+        }
+        List<EncounterDiagnosis> rows = diagnosisRepository.findAllByEncounterId(encounterId);
+        List<com.openhis.health.domain.administration.encounter.queries.model.TcmEncounterDiagnosisAssociationQueryModel> models =
+            new ArrayList<>();
+        // Loop：仅保留未软删且标记为中医的就诊诊断关联行。
+        for (EncounterDiagnosis row : rows) {
+            if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            if (!Boolean.TRUE.equals(row.getTcmFlag())) {
+                continue;
+            }
+            com.openhis.health.domain.administration.encounter.queries.model.TcmEncounterDiagnosisAssociationQueryModel model =
+                new com.openhis.health.domain.administration.encounter.queries.model.TcmEncounterDiagnosisAssociationQueryModel();
+            model.setEncounterDiagnosisId(row.getId());
+            model.setConditionId(row.getConditionId());
+            model.setTcmSyndromeGroup(row.getTcmSyndromeGroup());
+            model.setPrimaryFlag(row.getPrimaryFlag());
+            model.setRank(row.getRank());
+            model.setMedType(row.getMedType());
+            model.setDescription(row.getDescription());
+            models.add(model);
+        }
+        return models;
+    }
+
+    /**
+     * 按病情事实主键批量加载未软删的就诊诊断关联（患者历史中医病证组反查）。
+     *
+     * @param conditionIds 病情事实主键集合
+     * @return 关联读模型列表；无命中时返回空列表
+     */
+    public List<EncounterDiagnosisQueryModel> listActiveAssociationsByConditionIds(Collection<Long> conditionIds) {
+        if (conditionIds == null || conditionIds.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<Long> unique = new LinkedHashSet<>();
+        for (Long conditionId : conditionIds) {
+            if (conditionId != null) {
+                unique.add(conditionId);
+            }
+        }
+        if (unique.isEmpty()) {
+            return List.of();
+        }
+        List<EncounterDiagnosis> rows = diagnosisRepository.findAllByConditionIdIn(unique);
+        List<EncounterDiagnosisQueryModel> models = new ArrayList<>();
+        for (EncounterDiagnosis row : rows) {
+            // 过滤软删关联，供历史病证组反查仅见有效行
+            if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            EncounterDiagnosisQueryModel model = new EncounterDiagnosisQueryModel();
+            model.setDiagnosisId(row.getId());
+            model.setEncounterId(row.getEncounterId());
+            model.setConditionId(row.getConditionId());
+            model.setPrimaryFlag(row.getPrimaryFlag());
+            model.setRank(row.getRank());
+            model.setDescription(row.getDescription());
+            model.setDiagTypeCode(row.getDiagTypeCode());
+            model.setMedType(row.getMedType());
+            model.setTcmSyndromeGroup(row.getTcmSyndromeGroup());
+            model.setTcmFlag(row.getTcmFlag());
             models.add(model);
         }
         return models;
@@ -435,62 +749,6 @@ public class EncounterQueryService {
     }
 
     /**
-     * 急诊医生站：分页查询 {@link EncounterClass#EMER} 就诊主数据（不经门诊信息读模型）。
-     *
-     * @param query 查询入参；{@code statusEnumIn} 应由应用层保证非空，否则结果集无状态谓词约束
-     * @param keywordMatchedPatientIds 关键字经 {@code PatientQueryService} 预解析的患者主键；无关键字匹配患者时可为空列表
-     * @return 分页实体页
-     */
-    public Page<Encounter> pageEmergencyEncountersForDoctorStation(
-        EmergencyEncounterDoctorListQuery query,
-        Collection<Long> keywordMatchedPatientIds) {
-        int pageNo = 0;
-        int pageSize = 20;
-        if (query != null && query.getPageNo() != null && query.getPageNo() > 0) {
-            pageNo = query.getPageNo() - 1;
-        }
-        if (query != null && query.getPageSize() != null && query.getPageSize() > 0) {
-            pageSize = Math.min(query.getPageSize(), 1000);
-        }
-        Pageable pageable = PageRequest.of(
-            pageNo,
-            pageSize,
-            Sort.by(Sort.Order.desc(FieldNameConstants.START_TIME), Sort.Order.desc(FieldNameConstants.ID))
-        );
-        Specification<Encounter> specification = (root, criteriaQuery, cb) -> {
-            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
-            predicates.add(cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.EMER.getCode()));
-            if (query != null) {
-                if (query.getOrganizationId() != null) {
-                    predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), query.getOrganizationId()));
-                }
-                if (query.getStartTimeFrom() != null) {
-                    predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.START_TIME), query.getStartTimeFrom()));
-                }
-                if (query.getStartTimeTo() != null) {
-                    predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.START_TIME), query.getStartTimeTo()));
-                }
-                if (query.getStatusEnumIn() != null && !query.getStatusEnumIn().isEmpty()) {
-                    predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(query.getStatusEnumIn()));
-                }
-                if (StringUtils.isNotBlank(query.getKeyword())) {
-                    String trimmed = query.getKeyword().trim();
-                    String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
-                    List<jakarta.persistence.criteria.Predicate> keywordOr = new ArrayList<>();
-                    keywordOr.add(cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc));
-                    if (keywordMatchedPatientIds != null && !keywordMatchedPatientIds.isEmpty()) {
-                        keywordOr.add(root.get(FieldNameConstants.PATIENT_ID).in(keywordMatchedPatientIds));
-                    }
-                    predicates.add(cb.or(keywordOr.toArray(new jakarta.persistence.criteria.Predicate[0])));
-                }
-            }
-            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
-        };
-        return encounterRepository.findAll(specification, pageable);
-    }
-
-    /**
      * 校验门诊是否可完诊。
      *
      * @param encounterId 就诊标识
@@ -556,7 +814,7 @@ public class EncounterQueryService {
             EncounterStatus.DISCHARGED.getCode(),
             EncounterStatus.COMPLETED.getCode()
         );
-        List<String> outpatientClasses = Arrays.asList(EncounterClass.AMB.getCode(), EncounterClass.EMER.getCode());
+        List<String> outpatientClasses = Collections.singletonList(EncounterClass.AMB.getCode());
         boolean duplicated = existsPaidOutpatientEncounterForDepartmentOnCalendarDay(
             query.getPatientId(),
             query.getOrganizationId(),
@@ -590,36 +848,6 @@ public class EncounterQueryService {
         }
         model.setEncounterIds(Collections.emptyList());
         return model;
-    }
-
-    /**
-     * 急诊分诊保存：查找该患者、科室、号源类型下最近一条尚未终结的急诊就诊，用于复用（禁止并行多条未结束急诊就诊）。
-     *
-     * @param patientId 患者标识
-     * @param organizationId 与分诊行一致的挂号科室
-     * @param serviceTypeId 号源类型（当前急诊开立固定为 1）
-     * @return 可复用的就诊主键；不存在则 empty
-     */
-    public Optional<Long> findLatestActiveEmergencyEncounterId(
-            Long patientId, Long organizationId, Long serviceTypeId) {
-        if (patientId == null || organizationId == null || serviceTypeId == null) {
-            return Optional.empty();
-        }
-        List<String> terminalStatuses =
-                Arrays.asList(
-                        EncounterStatus.DISCHARGED.getCode(),
-                        EncounterStatus.COMPLETED.getCode(),
-                        EncounterStatus.CANCELLED.getCode(),
-                        EncounterStatus.ENTERED_IN_ERROR.getCode());
-        Specification<Encounter> specification =
-            buildLatestNonTerminalEmergencyEncounterSpec(
-                patientId, organizationId, serviceTypeId, EncounterClass.EMER.getCode(), terminalStatuses);
-        Page<Encounter> page =
-            encounterRepository.findAll(specification, PageRequest.of(0, 1, Sort.by(Sort.Direction.DESC, "id")));
-        if (page.isEmpty()) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(page.getContent().get(0).getId());
     }
 
     /**
@@ -666,26 +894,9 @@ public class EncounterQueryService {
     }
 
     /**
-     * 构造「患者+科室+号源下最近一条未终结急诊就诊」的 JPA 规约（分诊复用就诊）。
-     */
-    private static Specification<Encounter> buildLatestNonTerminalEmergencyEncounterSpec(
-        Long patientId,
-        Long organizationId,
-        Long serviceTypeId,
-        String classEnum,
-        Collection<String> excludedStatuses) {
-        return (root, query, cb) -> cb.and(
-            cb.equal(root.get(FieldNameConstants.PATIENT_ID), patientId),
-            cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), organizationId),
-            cb.equal(root.get(FieldNameConstants.SERVICE_TYPE_ID), serviceTypeId),
-            cb.equal(root.get(FieldNameConstants.CLASS_ENUM), classEnum),
-            cb.not(root.get(FieldNameConstants.STATUS_ENUM).in(excludedStatuses)));
-    }
-
-    /**
-     * 按门诊/急诊锚点查询未取消的住院线（最新一条）。
+     * 按门诊锚点查询未取消的住院线（最新一条）。
      *
-     * @param ambEncounterId 源门诊或急诊就诊标识
+     * @param ambEncounterId 源门诊就诊标识
      * @return 查询结果；无命中时 {@link OpenInpatientLineQuery#isExists()} 为 false
      */
     public OpenInpatientLineQuery findOpenInpatientLine(Long ambEncounterId) {
@@ -709,7 +920,7 @@ public class EncounterQueryService {
     }
 
     /**
-     * 判断门诊/急诊锚点下是否已有未取消住院线。
+     * 判断门诊锚点下是否已有未取消住院线。
      *
      * @param ambEncounterId 源就诊标识
      * @return 已存在未取消住院线时 true
@@ -719,16 +930,16 @@ public class EncounterQueryService {
     }
 
     /**
-     * 断言源就诊可从门急诊发起住院申请（BR-IP-REQ-001）。
+     * 断言源就诊可从门诊发起住院申请（BR-IP-REQ-001）。
      *
-     * @param ambEncounterId 源门诊或急诊就诊标识
+     * @param ambEncounterId 源门诊就诊标识
      * @throws BusinessException 就诊不存在、类别不符、已终态或状态不允许
      */
     public void assertAmbForInpatientReq(Long ambEncounterId) {
         Encounter amb = this.mustGetEncounterEntity(ambEncounterId);
         String classCode = amb.getClassEnum();
-        if (!EncounterClass.AMB.getCode().equals(classCode) && !EncounterClass.EMER.getCode().equals(classCode)) {
-            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "仅门诊或急诊就诊可发起住院申请");
+        if (!EncounterClass.AMB.getCode().equals(classCode)) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "仅门诊就诊可发起住院申请");
         }
         EncounterStatus current = EnumUtil.fromCode(EncounterStatus.class, amb.getStatusEnum());
         if (current.isTerminal()) {
@@ -781,7 +992,7 @@ public class EncounterQueryService {
     }
 
     /**
-     * 批量解析住院就诊主键 → 源门诊/急诊就诊主键（{@code amb_encounter_id}）。
+     * 批量解析住院就诊主键 → 源门诊就诊主键（{@code amb_encounter_id}）。
      *
      * <p>用于登记列表/弹窗展示：有医生申请转住院时须带回门诊锚点，无申请直登则无映射项。</p>
      *

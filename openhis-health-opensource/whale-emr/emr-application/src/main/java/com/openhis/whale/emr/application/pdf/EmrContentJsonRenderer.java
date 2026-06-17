@@ -203,7 +203,12 @@ public class EmrContentJsonRenderer {
     private void renderDataElementBlock(JsonNode node) throws Exception {
         String label = firstNonBlank(attrText(node, "labelSnapshot"), attrText(node, "title"), attrText(node, "name"));
         String value = extractDataElementValue(node);
-        String line = StringUtils.hasText(label) ? label + "：" + nullToEmpty(value) : nullToEmpty(value);
+        String line;
+        if (StringUtils.hasText(label)) {
+            line = label + "：" + nullToEmpty(value);
+        } else {
+            line = nullToEmpty(value);
+        }
         if (!StringUtils.hasText(line)) {
             return;
         }
@@ -350,7 +355,12 @@ public class EmrContentJsonRenderer {
                 continue;
             }
             for (JsonNode block : itemContent) {
-                String prefix = "orderedlist".equals(type) ? (index + ". ") : "• ";
+                String prefix;
+                if ("orderedlist".equals(type)) {
+                    prefix = index + ". ";
+                } else {
+                    prefix = "• ";
+                }
                 Paragraph p = buildParagraphFromBlockContent(block, prefix);
                 if (p != null) {
                     document.add(p);
@@ -497,7 +507,10 @@ public class EmrContentJsonRenderer {
         if (!renderOptions.isPreviewMode()) {
             return false;
         }
-        int max = renderOptions.getPreviewMaxPages() > 0 ? renderOptions.getPreviewMaxPages() : 20;
+        int max = 20;
+        if (renderOptions.getPreviewMaxPages() > 0) {
+            max = renderOptions.getPreviewMaxPages();
+        }
         int current = writer.getPageNumber();
         if (current > max) {
             previewTruncated = true;
@@ -608,6 +621,9 @@ public class EmrContentJsonRenderer {
     }
 
     private static String nullToEmpty(String s) {
-        return s != null ? s : "";
+        if (s != null) {
+            return s;
+        }
+        return "";
     }
 }

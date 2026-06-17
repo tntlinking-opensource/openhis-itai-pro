@@ -9,7 +9,7 @@ import com.openhis.whale.mrms.application.dto.ProcedureLineDto;
 import com.openhis.whale.mrms.domain.entity.CaseRecordHomepage;
 import com.openhis.whale.mrms.domain.entity.HomepageDiagnosis;
 import com.openhis.whale.mrms.domain.entity.HomepageProcedure;
-import com.openhis.whale.mrms.domain.port.model.IcdItemSnapshot;
+import com.openhis.whale.mrms.port.model.IcdItemSnapshot;
 import com.openhis.whale.mrms.domain.service.FieldSourcesJsonHelper;
 import org.springframework.stereotype.Component;
 

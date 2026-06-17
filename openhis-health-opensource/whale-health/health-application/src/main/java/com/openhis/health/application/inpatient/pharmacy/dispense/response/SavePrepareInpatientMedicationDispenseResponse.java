@@ -28,14 +28,13 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 住院保存配药响应。 */
 @Schema(description = "住院保存配药响应")
 public class SavePrepareInpatientMedicationDispenseResponse {
 
-    /** 领域与库存门禁是否全部通过。 */
     @Schema(description = "是否成功")
     private Boolean success;
 
-    /** 面向用户的提示或错误摘要。 */
     @Schema(description = "提示文案")
     private String message;
 

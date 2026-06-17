@@ -26,14 +26,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊医生站-申请退费-耗材执行门禁响应。 */
 @Schema(description = "门诊医生站-申请退费-耗材执行门禁响应")
 public class VerifyConsumableExecutionBeforeRefundResponse {
 
-    /** 是否允许继续申请。 */
     @Schema(description = "true 表示通过门禁")
     private boolean allowed;
 
-    /** 拒绝语义码。 */
     @Schema(description = "若不通过，填充稳定语义码（如 EX-DRA-201）")
     private String rejectReasonCode;
 }

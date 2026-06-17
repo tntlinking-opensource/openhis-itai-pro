@@ -17,9 +17,10 @@
 
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import lombok.Getter;
 import lombok.Setter;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -28,7 +29,7 @@ import lombok.Setter;
  *
  * <p>读模型查询由 Mapper
  * {@link com.openhis.health.application.inventory.warehouse.inboundreceipt.mapper.InventoryWarehouseInboundReceiptMapper#toProductDefinitionPageQuery}
- * 转为 {@link com.openhis.health.application.querysupport.product.ProductDefinitionPageQuery}；返回行再经
+ * 转为 {@link com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery}；返回行再经
  * {@link com.openhis.health.application.inventory.warehouse.inboundreceipt.mapper.InventoryWarehouseInboundReceiptMapper#toPageProductsForInboundReceiptResponse}
  * 装配为 {@link com.openhis.health.application.inventory.warehouse.inboundreceipt.response.PageProductsForInboundReceiptResponse}。
  * 应用层在分页返回前对 {@link com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.ProductDefinitionItemDto} 二次写入<strong>实例维采购进价</strong>（
@@ -42,6 +43,10 @@ import lombok.Setter;
 @Setter
 public class PageProductsForInboundReceiptRequest extends AbstractHealthPageRequest {
 
+    /** 目的药库位置主键。 */
+
+    /** 目的药库 purposeLocationId。 */
+    @Schema(description = "目的药库 purposeLocationId")
     private Long purposeLocationId;
 
     /** 物品来源表名过滤（与产品定义读模型 {@code item_table} 语义一致）。 */

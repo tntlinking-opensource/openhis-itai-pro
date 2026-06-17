@@ -49,6 +49,8 @@ public interface TerminologyCodeSystemNameConstants {
     String MED_CHRGITM_TYPE = "med_chrgitm_type";
     /** 给药途径/用法术语。 */
     String METHOD_CODE = "method_code";
+    /** 中药处方用法术语。 */
+    String TCM_METHOD_CODE = "tcm_method_code";
     /** 财务类型编码（药品与耗材共用）。 */
     String FIN_TYPE_CODE = "fin_type_code";
     /** 抗生素分级类型等。 */
@@ -63,8 +65,6 @@ public interface TerminologyCodeSystemNameConstants {
     String DOSAGE_INSTRUCTION = "dosage_instruction";
     /** 计量单位术语（包装/剂量等单位下拉）。 */
     String UNIT_CODE = "unit_code";
-    /** 用药频次术语。 */
-    String RATE_CODE = "rate_code";
     /**
      * 疾病目录来源分类（编码体系名 {@code condition_definition_source}）。
      * <p>种子见 {@code health-infrastructure/src/main/resources/db/migration/health/V1__Init.sql}
@@ -93,4 +93,8 @@ public interface TerminologyCodeSystemNameConstants {
     String DEVICE_TYPE_CODE = "device_type_code";
     /** 器材分类术语（与 {@code adm_device_definition.category_code} 对齐）。 */
     String DEVICE_CATEGORY_CODE = "device_category_code";
+    /** 入院方式（与 {@code adm_encounter.in_way_code} 对齐）。 */
+    String IN_WAY_CODE = "in_way_code";
+    /** 入院类型（与 {@code adm_encounter.admit_source_code} 对齐）。 */
+    String ADMIT_SOURCE_CODE = "admit_source_code";
 }

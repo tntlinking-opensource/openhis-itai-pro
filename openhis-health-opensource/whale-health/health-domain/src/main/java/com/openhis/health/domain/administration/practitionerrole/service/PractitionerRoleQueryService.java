@@ -5,73 +5,51 @@
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.openhis.health.domain.administration.practitionerrole.service;
 
-import com.openhis.health.domain.administration.practitionerrole.entity.PractitionerRoleServiceItem;
 import com.openhis.health.domain.administration.practitionerrole.entity.PractitionerRole;
+import com.openhis.health.domain.administration.practitionerrole.entity.PractitionerRoleServiceItem;
 import com.openhis.health.domain.administration.practitionerrole.queries.model.PractitionerHealthcareServiceQueryModel;
 import com.openhis.health.domain.administration.practitionerrole.queries.model.PractitionerOrgIdQueryModel;
 import com.openhis.health.domain.administration.practitionerrole.queries.model.PractitionerRoleAssignmentQueryModel;
 import com.openhis.health.domain.administration.practitionerrole.repository.PractitionerRoleRepository;
 import com.openhis.health.domain.administration.practitionerrole.repository.PractitionerRoleServiceItemRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import lombok.RequiredArgsConstructor;
 
 /**
- * 执业角色读侧查询服务，提供医务人员岗位分配的只读查询能力。
- *
- * <p>对应 DM-ADM-006 §6.2 读侧方法集。</p>
+ * 岗位分配读侧查询服务（{@code adm_pr_assign}）。
  */
 @Service
 @RequiredArgsConstructor
 public class PractitionerRoleQueryService {
+
     private final PractitionerRoleRepository repository;
     private final PractitionerRoleServiceItemRepository serviceItemRepository;
 
-    /**
-     * 查询指定医务人员当前处于激活状态的执业角色列表。
-     *
-     * @param practitionerId 医务人员主键
-     * @return 岗位分配查询模型列表，无则返回空列表
-     */
-    /**
-     * 查询指定医务人员当前处于激活状态的执业角色列表。
-     *
-     * @param practitionerId 医务人员主键
-     * @return 岗位分配查询模型列表，无则返回空列表
-     */
     public List<PractitionerRoleAssignmentQueryModel> listAssignmentsByPractitioner(Long practitionerId) {
         List<PractitionerRole> roles = repository.findAllByPractitionerIdAndActiveFlagTrue(practitionerId);
         if (roles.isEmpty()) {
             return new ArrayList<>();
         }
 
-        // Loop：收集岗位分配ID列表，用于批量查询服务项
         List<Long> assignmentIds = new ArrayList<>();
         for (PractitionerRole role : roles) {
             assignmentIds.add(role.getId());
         }
 
         List<PractitionerRoleServiceItem> serviceItems = serviceItemRepository.findAllByAssignmentIdIn(assignmentIds);
-        // Loop：按assignmentId分组聚合服务项ID
         Map<Long, List<Long>> serviceIdsByAssignmentId = new LinkedHashMap<>();
         for (PractitionerRoleServiceItem row : serviceItems) {
             List<Long> list = serviceIdsByAssignmentId.get(row.getAssignmentId());
@@ -82,12 +60,11 @@ public class PractitionerRoleQueryService {
             list.add(row.getHealthcareServiceId());
         }
 
-        // Loop：组装岗位分配查询模型列表
         List<PractitionerRoleAssignmentQueryModel> result = new ArrayList<>();
         for (PractitionerRole role : roles) {
             PractitionerRoleAssignmentQueryModel model = new PractitionerRoleAssignmentQueryModel();
             model.setAssignmentId(role.getId());
-            model.setRoleCode(role.getRoleCode());
+            model.setRoleId(role.getRoleId());
             model.setOrgId(role.getOrgId());
             model.setLocationId(role.getLocationId());
             model.setServiceIds(serviceIdsByAssignmentId.get(role.getId()));
@@ -97,64 +74,115 @@ public class PractitionerRoleQueryService {
     }
 
     /**
-     * 拥有指定激活角色编码的全部医务人员主键（去重，插入顺序稳定）。
+     * 拥有指定平台角色且岗位仍激活的医务人员主键集合。
      *
-     * <p>替代「对每个在职人员调用 {@link #listAssignmentsByPractitioner(Long)}」的 O(N) 次读放大。</p>
-     *
-     * @param roleCode 角色编码（与左侧岗位菜单映射一致，如护士=2）
-     * @return 无匹配时返回空集（不可变）
+     * @param roleId 平台角色主键
+     * @param orgId  科室主键；{@code null} 时不按 {@code org_id} 收窄
      */
-    /**
-     * 拥有指定激活角色编码的全部医务人员主键（去重，插入顺序稳定）。
-     *
-     * <p>替代「对每个在职人员调用 {@link #listAssignmentsByPractitioner(Long)}」的 O(N) 次读放大。</p>
-     *
-     * @param roleCode 角色编码（与左侧岗位菜单映射一致，如护士=2）
-     * @return 无匹配时返回空集（不可变）
-     */
-    public Set<Long> listPractitionerIdsWithActiveRole(Integer roleCode) {
-        if (roleCode == null) {
+    public Set<Long> listPractitionerIdsWithActiveRoleId(Long roleId, Long orgId) {
+        if (roleId == null) {
             return Collections.emptySet();
         }
-        List<PractitionerRole> rows = repository.findAllByRoleCodeAndActiveFlagTrue(roleCode);
-        if (rows.isEmpty()) {
-            return Collections.emptySet();
+        List<PractitionerRole> rows;
+        if (orgId != null) {
+            rows = repository.findAllByRoleIdAndOrgIdAndActiveFlagTrue(roleId, orgId);
+        } else {
+            rows = repository.findAllByRoleIdAndActiveFlagTrue(roleId);
         }
-        // Loop：遍历岗位列表，提取医务人员主键并去重（LinkedHashSet保持插入顺序）
-        Set<Long> ids = new LinkedHashSet<>();
-        for (PractitionerRole row : rows) {
-            if (row.getPractitionerId() != null) {
-                ids.add(row.getPractitionerId());
-            }
-        }
-        return ids;
+        return this.extractActivePractitionerIds(rows);
     }
 
     /**
-     * 查询指定医务人员当前激活岗位所覆盖的科室 ID 去重列表。
+     * 拥有指定平台角色、岗位仍激活且挂在给定病区位置的医务人员主键集合。
      *
-     * <p>多个岗位可能属于同一科室，通过 LinkedHashSet 去重并保持插入顺序。</p>
-     *
-     * @param practitionerId 医务人员主键
-     * @return 科室查询模型去重列表（保持顺序），无则返回空列表
+     * @param roleId     平台角色主键
+     * @param locationId 病区位置主键（{@code form_enum=WARD}）
+     * @return 医务人员主键集合
      */
+    public Set<Long> listPractitionerIdsWithActiveRoleIdAtLocation(Long roleId, Long locationId) {
+        if (roleId == null || locationId == null) {
+            return Collections.emptySet();
+        }
+        List<PractitionerRole> rows =
+            repository.findAllByRoleIdAndLocationIdAndActiveFlagTrue(roleId, locationId);
+        return this.extractActivePractitionerIds(rows);
+    }
+
     /**
-     * 查询指定医务人员当前激活岗位所覆盖的科室ID去重列表。
+     * 拥有指定平台角色、岗位仍激活且机构落在给定集合内的医务人员主键集合。
      *
-     * <p>多个岗位可能属于同一科室，通过 LinkedHashSet 去重并保持插入顺序。</p>
+     * <p>供门诊挂号等场景：未指定科室时仍须限定在门诊科室范围内有医师岗，排除仅挂住院科室岗的医师。</p>
      *
-     * @param practitionerId 医务人员主键
-     * @return 科室查询模型去重列表（保持顺序），无则返回空列表
+     * @param roleId 平台角色主键
+     * @param orgIds 机构主键集合；空时返回空集合
+     * @return 医务人员主键集合
      */
+    public Set<Long> listPractitionerIdsWithActiveRoleIdInOrganizations(Long roleId, Collection<Long> orgIds) {
+        if (roleId == null || orgIds == null || orgIds.isEmpty()) {
+            return Collections.emptySet();
+        }
+        LinkedHashSet<Long> distinctOrgIds = new LinkedHashSet<>();
+        for (Long orgId : orgIds) {
+            if (orgId != null) {
+                distinctOrgIds.add(orgId);
+            }
+        }
+        if (distinctOrgIds.isEmpty()) {
+            return Collections.emptySet();
+        }
+        List<PractitionerRole> rows =
+            repository.findAllByRoleIdAndOrgIdInAndActiveFlagTrue(roleId, distinctOrgIds);
+        return this.extractActivePractitionerIds(rows);
+    }
+
+    /**
+     * 拥有指定平台角色、岗位仍激活且挂在给定药房/库位上的医务人员主键集合。
+     *
+     * <p>发药调配药师候选：药师岗 {@code adm_pr_assign.location_id} 须落在目标药房 Location 集合内。</p>
+     *
+     * @param roleId      平台角色主键
+     * @param locationIds 药房等位置主键集合；空时返回空集合
+     * @return 医务人员主键集合
+     */
+    public Set<Long> listPractitionerIdsWithActiveRoleIdInLocations(Long roleId, Collection<Long> locationIds) {
+        if (roleId == null || locationIds == null || locationIds.isEmpty()) {
+            return Collections.emptySet();
+        }
+        LinkedHashSet<Long> distinctLocationIds = new LinkedHashSet<>();
+        for (Long locationId : locationIds) {
+            if (locationId != null) {
+                distinctLocationIds.add(locationId);
+            }
+        }
+        if (distinctLocationIds.isEmpty()) {
+            return Collections.emptySet();
+        }
+        List<PractitionerRole> rows =
+            repository.findAllByRoleIdAndLocationIdInAndActiveFlagTrue(roleId, distinctLocationIds);
+        return this.extractActivePractitionerIds(rows);
+    }
+
+    public boolean hasActiveAssignmentForRole(Long practitionerId, Long roleId) {
+        if (practitionerId == null || roleId == null) {
+            return false;
+        }
+        return repository.countByPractitionerIdAndRoleIdAndActiveFlagTrueAndIsDeletedFalse(practitionerId, roleId) > 0;
+    }
+
+    public Long findRoleIdByAssignmentId(Long assignmentId) {
+        if (assignmentId == null) {
+            return null;
+        }
+        return repository.findById(assignmentId).map(PractitionerRole::getRoleId).orElse(null);
+    }
+
     public List<PractitionerOrgIdQueryModel> listOrganizationIdsByPractitioner(Long practitionerId) {
         Set<Long> ids = new LinkedHashSet<>();
-        // Loop：遍历医务人员激活岗位，提取科室ID并去重
         for (PractitionerRoleAssignmentQueryModel row : this.listAssignmentsByPractitioner(practitionerId)) {
             if (row.getOrgId() != null) {
                 ids.add(row.getOrgId());
             }
         }
-        // Loop：将去重后的科室ID转换为查询模型列表
         List<PractitionerOrgIdQueryModel> result = new ArrayList<>();
         for (Long orgId : ids) {
             PractitionerOrgIdQueryModel model = new PractitionerOrgIdQueryModel();
@@ -165,38 +193,20 @@ public class PractitionerRoleQueryService {
         return result;
     }
 
-    /**
-     * 查询指定医务人员在特定科室下激活岗位所绑定的医疗服务 ID 列表。
-     *
-     * <p>当前为轻量占位实现，待 readmodel 投影器上线后替换为结构化 JSON 解析逻辑。</p>
-     *
-     * @param practitionerId 医务人员主键
-     * @param orgId          科室主键
-     * @return 人员+科室下的就诊类型查询模型列表，无则返回空列表
-     */
-    /**
-     * 查询指定医务人员在特定科室下激活岗位所绑定的医疗服务ID列表。
-     *
-     * <p>当前为轻量占位实现，待 readmodel 投影器上线后替换为结构化 JSON 解析逻辑。</p>
-     *
-     * @param practitionerId 医务人员主键
-     * @param orgId          科室主键
-     * @return 人员+科室下的就诊类型查询模型列表，无则返回空列表
-     */
-    public List<PractitionerHealthcareServiceQueryModel> listHealthcareServiceIdsByPractitionerAndOrg(Long practitionerId, Long orgId) {
+    public List<PractitionerHealthcareServiceQueryModel> listHealthcareServiceIdsByPractitionerAndOrg(
+        Long practitionerId,
+        Long orgId) {
         List<PractitionerRole> roles = repository.findAllByPractitionerIdAndOrgIdAndActiveFlagTrue(practitionerId, orgId);
         if (roles.isEmpty()) {
             return new ArrayList<>();
         }
 
-        // Loop：收集岗位分配ID列表
         List<Long> assignmentIds = new ArrayList<>();
         for (PractitionerRole role : roles) {
             assignmentIds.add(role.getId());
         }
 
         List<PractitionerRoleServiceItem> serviceItems = serviceItemRepository.findAllByAssignmentIdIn(assignmentIds);
-        // Loop：组装医疗服务查询模型列表
         List<PractitionerHealthcareServiceQueryModel> result = new ArrayList<>();
         for (PractitionerRoleServiceItem row : serviceItems) {
             PractitionerHealthcareServiceQueryModel model = new PractitionerHealthcareServiceQueryModel();
@@ -208,16 +218,48 @@ public class PractitionerRoleQueryService {
         return result;
     }
 
-    /**
-     * 列出指定医务人员全部岗位分配行（含停用，供岗位管理工作台列表）。
-     *
-     * @param practitionerId 医务人员主键
-     * @return 岗位分配实体列表；无记录时返回空列表
-     */
     public List<PractitionerRole> listAllRolesByPractitioner(Long practitionerId) {
         if (practitionerId == null) {
             return Collections.emptyList();
         }
         return repository.findAllByPractitionerId(practitionerId);
+    }
+
+    /**
+     * 收集登录可选科室主键（仅 org_id，不含 location 形态分类）。
+     */
+    public List<Long> collectLoginOrganizationUnitIds(Long practitionerId) {
+        LinkedHashSet<Long> orgIds = new LinkedHashSet<>();
+        for (PractitionerRoleAssignmentQueryModel row : this.listAssignmentsByPractitioner(practitionerId)) {
+            if (row != null && row.getOrgId() != null) {
+                orgIds.add(row.getOrgId());
+            }
+        }
+        return new ArrayList<>(orgIds);
+    }
+
+    public Long findPractitionerIdByAssignmentId(Long assignmentId) {
+        if (assignmentId == null) {
+            return null;
+        }
+        return repository.findById(assignmentId)
+            .map(PractitionerRole::getPractitionerId)
+            .orElse(null);
+    }
+
+    private Set<Long> extractActivePractitionerIds(List<PractitionerRole> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<Long> ids = new LinkedHashSet<>();
+        for (PractitionerRole row : rows) {
+            if (Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            if (row.getPractitionerId() != null) {
+                ids.add(row.getPractitionerId());
+            }
+        }
+        return ids;
     }
 }

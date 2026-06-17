@@ -17,11 +17,12 @@
 
 package com.openhis.health.application.inventory.warehouse.stockout.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -32,7 +33,6 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 public class PageLinkableRequisitionsRequest extends AbstractHealthPageRequest {
 
-    /** 当前出库源药库位置主键，用于与请领明细目的库等条件对齐。 */
     @Schema(description = "本药库位置", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long sourceLocationId;
 }

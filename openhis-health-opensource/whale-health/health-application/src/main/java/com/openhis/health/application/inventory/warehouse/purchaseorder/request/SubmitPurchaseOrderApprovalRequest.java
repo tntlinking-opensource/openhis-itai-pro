@@ -27,19 +27,10 @@ import java.time.LocalDateTime;
  */
 @Getter
 @Setter
-/**
- * SubmitPurchaseOrderApprovalRequest。
- */
 public class SubmitPurchaseOrderApprovalRequest {
 
-    /** 单据号。 */
-    /**
-     * busNo。
-     */
+    /** 订货单业务单号。 */
     private String busNo;
-    /** 申请时间。 */
-    /**
-     * applyClock。
-     */
+    /** 提交审批时的申请时间（缺省由服务端取当前时刻）。 */
     private LocalDateTime applyClock;
 }

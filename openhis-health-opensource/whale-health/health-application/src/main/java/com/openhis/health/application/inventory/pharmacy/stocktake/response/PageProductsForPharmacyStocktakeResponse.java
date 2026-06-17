@@ -23,6 +23,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 盘点选品分页出参（IF-PHA-ST-11）。
@@ -30,6 +31,7 @@ import lombok.experimental.Accessors;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 盘点选品 IF-PHA-ST-11。 */
 @Schema(description = "盘点选品 IF-PHA-ST-11")
 public class PageProductsForPharmacyStocktakeResponse extends PagedResult<ProductDefinitionItemDto> {
 }

@@ -87,4 +87,8 @@ public class ServiceRequestListModel {
     private LocalDateTime occurrenceEndTime;
     /** 诊断定义主键（持久化 {@code wkf_service_request.condition_definition_id}）。 */
     private Long conditionDefinitionId;
+    /** 就诊诊断主键（持久化 {@code wkf_service_request.encounter_diagnosis_id}）。 */
+    private Long encounterDiagnosisId;
+    /** 处方/申请单号（持久化 {@code wkf_service_request.prescription_no}）。 */
+    private String prescriptionNo;
 }

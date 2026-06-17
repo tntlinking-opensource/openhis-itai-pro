@@ -61,7 +61,7 @@ public class ChargeItemQueryCommand {
     /**
      * 收费上下文枚举（可选）。
      *
-     * <p>区分门急诊/住院收费上下文；用于 queryCostDetails/queryInpatientCostDetails 等场景。</p>
+     * <p>区分门诊/住院收费上下文；用于 queryCostDetails/queryInpatientCostDetails 等场景。</p>
      */
     private String contextEnum;
 

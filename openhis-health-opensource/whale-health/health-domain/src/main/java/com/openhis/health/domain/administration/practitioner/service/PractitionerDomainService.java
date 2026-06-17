@@ -19,7 +19,6 @@ package com.openhis.health.domain.administration.practitioner.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
-import com.openhis.health.domain.administration.organization.repository.OrganizationRepository;
 import com.openhis.health.domain.administration.practitioner.command.*;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.repository.PractitionerRepository;
@@ -43,7 +42,6 @@ import lombok.RequiredArgsConstructor;
 public class PractitionerDomainService {
 
     private final PractitionerRepository practitionerRepository;
-    private final OrganizationRepository organizationRepository;
     private final IDomainEventPublisher domainEventPublisher;
     /** 工号 busNo：主数据全局递增，前缀 {@link AggregateTypeConstants#PRACTITIONER}；入参非空时沿用外部工号。 */
     private final BusinessSequenceService businessSequenceService;
@@ -66,8 +64,11 @@ public class PractitionerDomainService {
         int allocIdx = 0;
         List<Practitioner> toSave = new ArrayList<>();
         for (CreatePractitionerCommand.CreatePractitionerItemCommand item : items) {
-            // 业务分支处理。
-            if (practitionerRepository.existsByUserId(item.getUserId())) {
+            if (item.getUserId() == null) {
+                throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "用户标识不能为空");
+            }
+            // 业务分支处理（含软删记录，避免误判为可新建）。
+            if (practitionerRepository.findFirstByUserIdOrderByIdAsc(item.getUserId()).isPresent()) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_RULE_CONFLICT, "用户已绑定医务人员");
             }
             String busNo = item.getBusNo();
@@ -80,7 +81,7 @@ public class PractitionerDomainService {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_BUS_NO_CONFLICT, "工号已存在");
             }
             Practitioner p = new Practitioner();
-            p.setUserId(item.getUserId());
+            p.bindUser(item.getUserId());
             p.setName(item.getName());
             p.setGenderEnum(item.getGenderEnum());
             p.setBusNo(busNo);
@@ -113,6 +114,12 @@ public class PractitionerDomainService {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_BUS_NO_CONFLICT, "工号已存在");
             }
             p.setName(item.getName());
+            if (item.getGenderEnum() != null) {
+                if (StringUtils.isBlank(item.getGenderEnum())) {
+                    throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "人员性别不能为空");
+                }
+                p.setGenderEnum(item.getGenderEnum().trim());
+            }
             p.setPhone(item.getPhone());
             p.setBusNo(item.getBusNo());
             p.setSignature(item.getSignature());
@@ -211,7 +218,7 @@ public class PractitionerDomainService {
     /**
      * 批量切换医务人员所属组织/科室，校验目标机构存在并发切换事件。
      *
-     * @param cmd 切换命令（目标机构主键等）
+     * @param cmd 切换命令（目标机构主键等；目标机构存在性由应用层前置校验）
      */
     public void switchOrganization(SwitchOrganizationCommand cmd) {
         List<SwitchOrganizationCommand.SwitchOrganizationItemCommand> items = cmd.resolveItems();
@@ -220,10 +227,6 @@ public class PractitionerDomainService {
         for (SwitchOrganizationCommand.SwitchOrganizationItemCommand item : items) {
             Practitioner p = this.require(map, item.getPractitionerId());
             p.assertSwitchOrgAllowed();
-            // 业务分支处理。
-            if (!organizationRepository.findById(item.getTargetOrgId()).isPresent()) {
-                throw new BusinessException(ErrorCodeConstants.ORGANIZATION_NOT_FOUND, "目标科室不存在");
-            }
             Long oldOrgId = p.getOrgId();
             p.setOrgId(item.getTargetOrgId());
             toSave.add(p);

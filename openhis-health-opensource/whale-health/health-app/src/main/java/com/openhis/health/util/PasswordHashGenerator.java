@@ -20,11 +20,17 @@ package com.openhis.health.util;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 /**
- * 密码哈希生成工具
- * 用于生成BCrypt密码哈希，用于数据库种子数据
+ * 密码哈希生成工具。
+ *
+ * <p>独立 main 入口，用于生成 BCrypt 哈希写入数据库种子脚本（如 V2__Seed_data.sql）。</p>
  */
 public class PasswordHashGenerator {
-    
+
+    /**
+     * 生成默认管理员密码 {@code Admin@123456} 的 BCrypt 哈希并打印验证结果。
+     *
+     * @param args 未使用
+     */
     public static void main(String[] args) {
         BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(10);
         String password = "Admin@123456";

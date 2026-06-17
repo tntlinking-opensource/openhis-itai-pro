@@ -1,10 +1,15 @@
--- V1: whale_* 框架表（建表 + 种子数据）
--- 由 reorganize-flyway-migrations.mjs 从旧版 V1–V21 合并生成
+-- =============================================================================
+-- 建库脚本（Flyway 迁移前，在 psql 中连接 postgres 库后手动执行一次）
+-- 库名须与 application.yml 中 spring.datasource.url 一致（默认 whale）
+-- =============================================================================
+-- CREATE DATABASE whale
+--     ENCODING 'UTF8'
+--     TEMPLATE template0;
 
 -- ========== whale_users ==========
 CREATE TABLE IF NOT EXISTS whale_users (
     id BIGINT PRIMARY KEY,
-    user_name VARCHAR(256) NOT NULL UNIQUE,
+    user_name VARCHAR(256) NOT NULL,
     email VARCHAR(256),
     phone_number VARCHAR(32),
     password_hash VARCHAR(256) NOT NULL,
@@ -21,12 +26,16 @@ CREATE TABLE IF NOT EXISTS whale_users (
     updated_by BIGINT,
     is_deleted BOOLEAN NOT NULL DEFAULT false,
     deleted_at TIMESTAMP,
-    deleted_by BIGINT
+    deleted_by BIGINT,
+    ukey_id VARCHAR(128),
+    ukey_src_id VARCHAR(128)
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON whale_users(email);
 
-CREATE UNIQUE INDEX idx_users_email_unique ON whale_users(email) WHERE email IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_user_name_unique ON whale_users(user_name) WHERE is_deleted = false;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON whale_users(email) WHERE email IS NOT NULL AND is_deleted = false;
 
 CREATE INDEX IF NOT EXISTS idx_whale_users_is_deleted ON whale_users(is_deleted);
 
@@ -36,26 +45,24 @@ CREATE INDEX IF NOT EXISTS idx_whale_users_is_locked_out ON whale_users(is_locke
 
 CREATE INDEX IF NOT EXISTS idx_whale_users_created_at ON whale_users(created_at DESC);
 
-ALTER TABLE whale_users ADD COLUMN IF NOT EXISTS ukey_id VARCHAR(128);
-
-ALTER TABLE whale_users ADD COLUMN IF NOT EXISTS ukey_src_id VARCHAR(128);
-
 CREATE INDEX IF NOT EXISTS idx_users_ukey_id ON whale_users(ukey_id);
 
 CREATE INDEX IF NOT EXISTS idx_users_ukey_src_id ON whale_users(ukey_src_id);
 
+
+
 -- seed: whale_users
 INSERT INTO "whale_users" ("id", "user_name", "email", "phone_number", "password_hash", "name", "surname", "is_active", "is_locked_out", "lockout_end", "access_failed_count", "extra_properties", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "ukey_id", "ukey_src_id")
 VALUES
-(1, 'admin', 'admin@example.com', NULL, '$2a$10$ywn6Rm2sbAwnc/lEDLFWd.AqUkltBaKI4qNsuvyrHFMrgBT.I0vke', NULL, NULL, true, false, NULL, 0, NULL, '2026-05-03 06:07:04.503+00', '2026-05-30 02:20:21.934+00', NULL, NULL, false, NULL, NULL, NULL, NULL),
-(2, 'zhangsan', 'zhangsan@example.com', 13800001001, '$2a$10$mAWgcvulgwoZjHCZkfLd7uQtU5E2TlFTofP2qYqn7PSG3ail2Vf0e', '张', '三', true, false, NULL, 0, NULL, '2026-05-03 06:07:04.503+00', '2026-05-03 06:15:49.336+00', 1, 1, false, NULL, NULL, NULL, NULL),
-(3, 'lisi', 'lisi@example.com', 13800001002, '$2a$10$N9qo8uLOickgx2MRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', '李', '四', true, false, NULL, 0, NULL, '2026-05-03 06:07:04.503+00', '2026-05-03 06:07:04.503+00', 1, NULL, false, NULL, NULL, NULL, NULL),
-(4, 'wangwu', 'wangwu@example.com', 13800001003, '$2a$10$N9qo8uLOickgx2MRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', '王', '五', true, false, NULL, 0, NULL, '2026-05-03 06:07:04.503+00', '2026-05-03 06:07:04.503+00', 1, NULL, false, NULL, NULL, NULL, NULL),
-(5, 'zhaoliu', 'zhaoliu@example.com', 13800001004, '$2a$10$N9qo8uLOickgx2MRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', '赵', '六', true, false, NULL, 0, NULL, '2026-05-03 06:07:04.503+00', '2026-05-03 06:07:04.503+00', 1, NULL, false, NULL, NULL, NULL, NULL),
-(315330627751645184, 'test', NULL, NULL, '$2a$10$cLaXGOTmxDNkaXIvEP5uoubB2ozirs5lV7P8RdpkxBYecNhpyMqDm', '测试', NULL, true, false, NULL, 0, NULL, '2026-05-20 03:31:20.215+00', '2026-05-20 03:31:20.215+00', 1, 1, false, NULL, NULL, NULL, NULL),
-(318594694756438016, 'zwh', NULL, NULL, '$2a$10$.Eoeg8cWGQ5e7Kaxtd3pOOu4JEHjn.Dz9h5LfVaZlBzKqswyyHlOG', '', NULL, true, false, NULL, 0, NULL, '2026-05-29 03:41:34.433+00', '2026-05-29 03:41:34.433+00', 1, 1, false, NULL, NULL, NULL, NULL)
+('1', 'admin', 'admin@example.com', NULL, '$2a$10$7H11xZICXxBlwxh2/hBRzuB0TC7wEduR4Fs2x4s7yFOn4fjrOIMuK', 'admin', NULL, true, false, NULL, 0, NULL, '2026-05-02 22:07:04.503+00', '2026-06-10 08:49:49.813+00', NULL, NULL, false, NULL, NULL, NULL, NULL),
+('322932010666430464', 'yaofang', NULL, NULL, '$2a$10$fgewpcSdDLz1V8hz5mGJs.VI/AQSxgh15vCqQXv3uExk3MQQXeNq6', '药房', NULL, true, false, NULL, 0, NULL, '2026-06-10 02:56:31.129+00', '2026-06-10 02:56:31.129+00', '1', '1', false, NULL, NULL, NULL, NULL),
+('322932096091820032', 'kuguan', NULL, NULL, '$2a$10$xmtLIpu./wIOtQvtOCasN.CxUuSv0Z27KYkoK/KsmR0862gtZd2ne', '库管', NULL, true, false, NULL, 0, NULL, '2026-06-10 02:56:51.496+00', '2026-06-10 02:57:30.134+00', '1', '1', false, NULL, NULL, NULL, NULL),
+('322932211309350912', 'shoufei', NULL, NULL, '$2a$10$aUBhg.2LPcQaoaZJcqQSZusUsUxb52Sr9oPVhfE8.M6c40RPNs4di', '收费', NULL, true, false, NULL, 0, NULL, '2026-06-10 02:57:18.966+00', '2026-06-10 02:57:18.966+00', '1', '1', false, NULL, NULL, NULL, NULL),
+('322935698131259392', 'zyyisheng', NULL, NULL, '$2a$10$WLfRePjxQHwBcz5v/qpsPejS3I.bZU1PUKocrAL5rzn.fWGoDrvey', '住院医生', NULL, true, false, NULL, 0, NULL, '2026-06-10 03:11:10.289+00', '2026-06-10 03:11:10.289+00', '1', '1', false, NULL, NULL, NULL, NULL),
+('322963602154721280', 'yisheng', NULL, NULL, '$2a$10$40qkQYyXUxyemhox33jLMOaNht/hJnwdpA8ERsbdKN2lbXWUV0vBK', '门诊医生', NULL, true, false, NULL, 0, NULL, '2026-06-10 05:02:03.127+00', '2026-06-10 05:02:03.127+00', '1', '1', false, NULL, NULL, NULL, NULL),
+('322965022853566464', 'hushi', NULL, NULL, '$2a$10$L0qwEnhMmYg/UfpMnNGA1eaEy5NhM1LogeA8ehGQBSiO86ebOpsBm', '护士', NULL, true, false, NULL, 0, NULL, '2026-06-10 05:07:41.848+00', '2026-06-10 05:08:11.113+00', '1', '1', false, NULL, NULL, NULL, NULL),
+('323022664197214208', 'xinxike', NULL, NULL, '$2a$10$yUUyPkFp8YrLgFHB3ydovuoBwaqe6mF6dcs7PMpyImY4obRTFMSMS', '信息科', NULL, true, false, NULL, 0, NULL, '2026-06-10 08:56:44.615+00', '2026-06-10 08:56:44.615+00', '1', '1', false, NULL, NULL, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
-
 
 -- ========== whale_roles ==========
 CREATE TABLE IF NOT EXISTS whale_roles (
@@ -88,18 +95,19 @@ CREATE INDEX IF NOT EXISTS idx_whale_roles_is_static ON whale_roles(is_static) W
 
 CREATE INDEX IF NOT EXISTS idx_whale_roles_created_at ON whale_roles(created_at DESC);
 
+
+
 -- seed: whale_roles
 INSERT INTO "whale_roles" ("id", "name", "display_name", "code", "description", "is_default", "is_static", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
 VALUES
-(1, 'admin', '系统管理员', 'ROLE_ADMIN', '系统管理员，拥有所有权限', false, true, NULL, '2026-05-03 06:07:04.508+00', NULL, NULL, NULL, false, NULL, NULL),
-(2, 'user', '普通用户', 'USER', '普通用户角色', true, false, NULL, '2026-05-03 06:07:04.508+00', NULL, NULL, NULL, false, NULL, NULL),
-(10, 'doctor', '医生', 'ROLE_DOCTOR', '医生角色，负责诊疗相关工作', true, true, NULL, '2026-05-03 06:07:04.508+00', NULL, NULL, NULL, false, NULL, NULL),
-(11, 'nurse', '护士', 'ROLE_NURSE', '护士角色，负责护理相关工作', true, true, NULL, '2026-05-03 06:07:04.508+00', NULL, NULL, NULL, false, NULL, NULL),
-(12, 'pharmacist', '药师', 'ROLE_PHARMACIST', '药师角色，负责药房药品管理', true, true, NULL, '2026-05-03 06:07:04.508+00', NULL, NULL, NULL, false, NULL, NULL),
-(13, 'warehouse_keeper', '库管', 'ROLE_WAREHOUSE', '库管角色，负责库存物资管理', true, true, NULL, '2026-05-03 06:07:04.508+00', NULL, NULL, NULL, false, NULL, NULL),
-(14, 'accountant', '财务', 'ROLE_ACCOUNTANT', '财务角色，负责财务收费管理', true, true, NULL, '2026-05-03 06:07:04.508+00', NULL, NULL, NULL, false, NULL, NULL)
+('1', 'admin', '系统管理员', 'ROLE_ADMIN', '系统管理员，拥有所有权限', false, true, NULL, '2026-05-02 22:07:04.508+00', NULL, NULL, NULL, false, NULL, NULL),
+('10', 'doctor', '医生', 'ROLE_DOCTOR', '医生角色，负责诊疗相关工作', true, true, NULL, '2026-06-09 12:07:51.267+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('11', 'nurse', '护士', 'ROLE_NURSE', '护士角色，负责护理相关工作', true, true, NULL, '2026-06-09 12:07:51.267+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('12', 'pharmacist', '药师', 'ROLE_PHARMACIST', '药师角色，负责药房药品管理', true, true, NULL, '2026-06-09 12:07:51.267+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('13', 'warehouse_keeper', '库管', 'ROLE_WAREHOUSE', '库管角色，负责库存物资管理', true, true, NULL, '2026-06-09 12:07:51.267+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('14', 'accountant', '财务', 'ROLE_ACCOUNTANT', '财务角色，负责财务收费管理', true, true, NULL, '2026-06-09 12:07:51.267+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('323022177255297024', 'custom_role_6da58f2e', '信息科', 'ROLE_CUSTOM_6DA58F2E', '', true, true, '1', '2026-06-10 08:54:48.519+00', '2026-06-10 08:54:48.519+00', '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
-
 
 -- ========== whale_user_roles ==========
 CREATE TABLE IF NOT EXISTS whale_user_roles (
@@ -123,18 +131,26 @@ CREATE INDEX IF NOT EXISTS idx_whale_user_roles_tenant_id ON whale_user_roles(te
 
 CREATE INDEX IF NOT EXISTS idx_whale_user_roles_is_deleted ON whale_user_roles(is_deleted);
 
+
+
 -- seed: whale_user_roles
 INSERT INTO "whale_user_roles" ("id", "user_id", "role_id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
 VALUES
-(1, 1, 1, NULL, '2026-05-03 06:07:04.512+00', NULL, NULL, NULL, false, NULL, NULL),
-(2, 2, 10, 1, '2026-05-03 06:07:04.512+00', NULL, NULL, NULL, false, NULL, NULL),
-(3, 3, 11, 1, '2026-05-03 06:07:04.512+00', NULL, NULL, NULL, false, NULL, NULL),
-(4, 4, 2, 1, '2026-05-03 06:07:04.512+00', NULL, NULL, NULL, false, NULL, NULL),
-(5, 5, 14, 2, '2026-05-03 06:07:04.512+00', NULL, NULL, NULL, false, NULL, NULL),
-(315330627848114176, 315330627751645184, 1, 1, '2026-05-20 03:31:20.238+00', '2026-05-20 03:31:20.238+00', 1, 1, false, NULL, NULL),
-(318594694873878528, 318594694756438016, 1, 1, '2026-05-29 03:41:34.461+00', '2026-05-29 03:41:34.461+00', 1, 1, false, NULL, NULL)
+('1', '1', '1', NULL, '2026-05-02 22:07:04.512+00', NULL, NULL, NULL, false, NULL, NULL),
+('322932010733539328', '322932010666430464', '12', '1', '2026-06-10 02:56:31.145+00', '2026-06-10 02:56:31.145+00', '1', '1', false, NULL, NULL),
+('322932096154734592', '322932096091820032', '13', '1', '2026-06-10 02:56:51.511+00', '2026-06-10 02:56:51.511+00', '1', '1', false, NULL, NULL),
+('322932211372265472', '322932211309350912', '14', '1', '2026-06-10 02:57:18.981+00', '2026-06-10 02:57:18.981+00', '1', '1', false, NULL, NULL),
+('322935698261282816', '322935698131259392', '10', '1', '2026-06-10 03:11:10.320+00', '2026-06-10 03:11:10.320+00', '1', '1', false, NULL, NULL),
+('322963602620289024', '322963602154721280', '10', '1', '2026-06-10 05:02:03.238+00', '2026-06-10 05:02:03.238+00', '1', '1', false, NULL, NULL),
+('322965022908092416', '322965022853566464', '11', '1', '2026-06-10 05:07:41.861+00', '2026-06-10 05:07:41.861+00', '1', '1', false, NULL, NULL),
+('322965878780989440', '1', '14', '1', '2026-06-10 05:11:05.917+00', '2026-06-10 05:11:05.917+00', '1', '1', false, NULL, NULL),
+('322965878881652736', '1', '10', '1', '2026-06-10 05:11:05.941+00', '2026-06-10 05:11:05.941+00', '1', '1', false, NULL, NULL),
+('322965878919401472', '1', '13', '1', '2026-06-10 05:11:05.950+00', '2026-06-10 05:11:05.950+00', '1', '1', false, NULL, NULL),
+('322965878990704640', '1', '12', '1', '2026-06-10 05:11:05.967+00', '2026-06-10 05:11:05.967+00', '1', '1', false, NULL, NULL),
+('322965879020064768', '1', '11', '1', '2026-06-10 05:11:05.974+00', '2026-06-10 05:11:05.974+00', '1', '1', false, NULL, NULL),
+('323021900313792512', '322965022853566464', '13', '1', '2026-06-10 08:53:42.491+00', '2026-06-10 08:53:42.491+00', '1', '1', false, NULL, NULL),
+('323022664272711680', '323022664197214208', '323022177255297024', '1', '2026-06-10 08:56:44.633+00', '2026-06-10 08:56:44.633+00', '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
-
 
 -- ========== whale_permissions ==========
 CREATE TABLE IF NOT EXISTS whale_permissions (
@@ -159,80 +175,98 @@ CREATE INDEX IF NOT EXISTS idx_whale_permissions_tenant_id ON whale_permissions(
 
 CREATE INDEX IF NOT EXISTS idx_whale_permissions_is_deleted ON whale_permissions(is_deleted);
 
+
+
 -- seed: whale_permissions
 INSERT INTO "whale_permissions" ("id", "name", "display_name", "parent_name", "description", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
 VALUES
-(100, 'Identity.Users', '用户管理', NULL, '用户管理模块', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(101, 'Identity.Users.Create', '创建用户', 'Identity.Users', '创建用户权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(102, 'Identity.Users.Update', '更新用户', 'Identity.Users', '更新用户权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(103, 'Identity.Users.Delete', '删除用户', 'Identity.Users', '删除用户权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(104, 'Identity.Users.View', '查看用户', 'Identity.Users', '查看用户权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(200, 'Identity.Roles', '角色管理', NULL, '角色管理模块', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(201, 'Identity.Roles.Create', '创建角色', 'Identity.Roles', '创建角色权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(202, 'Identity.Roles.Update', '更新角色', 'Identity.Roles', '更新角色权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(203, 'Identity.Roles.Delete', '删除角色', 'Identity.Roles', '删除角色权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(204, 'Identity.Roles.View', '查看角色', 'Identity.Roles', '查看角色权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(300, 'Identity.Permissions', '权限管理', NULL, '权限管理模块', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(301, 'Identity.Permissions.Grant', '授予权限', 'Identity.Permissions', '授予权限权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(302, 'Identity.Permissions.Revoke', '撤销权限', 'Identity.Permissions', '撤销权限权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(303, 'Identity.Permissions.View', '查看权限', 'Identity.Permissions', '查看权限权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(400, 'Identity.OrganizationUnits', '组织单元管理', NULL, '组织单元管理模块', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(401, 'Identity.OrganizationUnits.Create', '创建组织单元', 'Identity.OrganizationUnits', '创建组织单元权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(402, 'Identity.OrganizationUnits.Update', '更新组织单元', 'Identity.OrganizationUnits', '更新组织单元权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(403, 'Identity.OrganizationUnits.Delete', '删除组织单元', 'Identity.OrganizationUnits', '删除组织单元权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(404, 'Identity.OrganizationUnits.View', '查看组织单元', 'Identity.OrganizationUnits', '查看组织单元权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(500, 'Identity.Users.Impersonate', '代理登录', 'Identity.Users', '代理登录权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(600, 'TenantManagement.Tenants', '租户管理', NULL, '租户管理模块', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(601, 'TenantManagement.Tenants.Create', '创建租户', 'TenantManagement.Tenants', '创建租户权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(602, 'TenantManagement.Tenants.Update', '更新租户', 'TenantManagement.Tenants', '更新租户权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(603, 'TenantManagement.Tenants.Delete', '删除租户', 'TenantManagement.Tenants', '删除租户权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(604, 'TenantManagement.Tenants.View', '查看租户', 'TenantManagement.Tenants', '查看租户权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(700, 'SettingManagement.Settings', '设置管理', NULL, '设置管理模块', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(701, 'SettingManagement.Settings.Create', '创建设置', 'SettingManagement.Settings', '创建设置权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(702, 'SettingManagement.Settings.Update', '更新设置', 'SettingManagement.Settings', '更新设置权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(703, 'SettingManagement.Settings.Delete', '删除设置', 'SettingManagement.Settings', '删除设置权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(704, 'SettingManagement.Settings.View', '查看设置', 'SettingManagement.Settings', '查看设置权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(800, 'Menu.Menus', '菜单管理', NULL, '菜单管理模块', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(801, 'Menu.Menus.Create', '创建菜单', 'Menu.Menus', '创建菜单权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(802, 'Menu.Menus.Update', '更新菜单', 'Menu.Menus', '更新菜单权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(803, 'Menu.Menus.Delete', '删除菜单', 'Menu.Menus', '删除菜单权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(804, 'Menu.Menus.View', '查看菜单', 'Menu.Menus', '查看菜单权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(850, 'Auditing.AuditLogs', '审计日志', NULL, '审计日志模块', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(851, 'Auditing.AuditLogs.View', '查看审计日志', 'Auditing.AuditLogs', '查看审计日志权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(900, 'Terminology.CodeSystems', '编码系统管理', NULL, '编码系统管理模块', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(901, 'Terminology.CodeSystems.Create', '创建编码系统', 'Terminology.CodeSystems', '创建编码系统权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(902, 'Terminology.CodeSystems.Update', '更新编码系统', 'Terminology.CodeSystems', '更新编码系统权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(903, 'Terminology.CodeSystems.Delete', '删除编码系统', 'Terminology.CodeSystems', '删除编码系统权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(904, 'Terminology.CodeSystems.View', '查看编码系统', 'Terminology.CodeSystems', '查看编码系统权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(910, 'Administration.BodyStructures', '部位管理', NULL, '部位管理模块', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(911, 'Administration.BodyStructures.Create', '创建部位', 'Administration.BodyStructures', '创建部位权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(912, 'Administration.BodyStructures.Update', '更新部位', 'Administration.BodyStructures', '更新部位权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(913, 'Administration.BodyStructures.Delete', '删除部位', 'Administration.BodyStructures', '删除部位权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(914, 'Administration.BodyStructures.View', '查看部位', 'Administration.BodyStructures', '查看部位权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(920, 'Administration.Locations', '位置管理', NULL, '位置管理模块（FHIR Location）', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(921, 'Administration.Locations.Create', '创建位置', 'Administration.Locations', '创建位置权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(922, 'Administration.Locations.Update', '更新位置', 'Administration.Locations', '更新位置权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(923, 'Administration.Locations.Delete', '删除位置', 'Administration.Locations', '删除位置权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(924, 'Administration.Locations.View', '查看位置', 'Administration.Locations', '查看位置权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(925, 'Administration.WardLocations', '病区病房', NULL, '病区/病房位置查看', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(926, 'Administration.WardLocations.View', '查看病区病房', 'Administration.WardLocations', '查看病区病房权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(930, 'Administration.Patients', '患者管理', NULL, '患者管理模块（FHIR Patient）', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(931, 'Administration.Patients.View', '查看患者', 'Administration.Patients', '查看患者权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(932, 'Administration.Patients.Create', '创建患者', 'Administration.Patients', '创建患者权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(933, 'Administration.Patients.Update', '更新患者', 'Administration.Patients', '更新患者权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(934, 'Administration.Patients.Delete', '删除患者', 'Administration.Patients', '删除患者权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(935, 'Administration.Positions', '岗位管理', NULL, '岗位管理（医生/护士/药师/库管）', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(936, 'Administration.Positions.View', '查看岗位', 'Administration.Positions', '查看岗位管理', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(937, 'Administration.Organizations', '科室管理', NULL, '科室管理模块（健康域，与 OU 同步）', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(938, 'Administration.Organizations.View', '查看科室', 'Administration.Organizations', '查看科室管理', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(939, 'Administration.HealthcareServices', '挂号类型管理', NULL, '挂号类型管理模块（HealthcareService）', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(940, 'Administration.HealthcareServices.View', '查看挂号类型', 'Administration.HealthcareServices', '查看挂号类型', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(941, 'ChargeManagement.OutpatientRegistration', '门诊挂号', NULL, '收费管理-门诊挂号', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(942, 'ChargeManagement.OutpatientRegistration.View', '查看门诊挂号', 'ChargeManagement.OutpatientRegistration', '查看门诊挂号权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(943, 'ChargeManagement.OutpatientDoctorStation', '门诊医生站', NULL, '收费管理-门诊医生站', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL),
-(944, 'ChargeManagement.OutpatientDoctorStation.View', '查看门诊医生站', 'ChargeManagement.OutpatientDoctorStation', '查看门诊医生站权限', NULL, '2026-05-03 06:07:04.519+00', NULL, NULL, NULL, false, NULL, NULL)
+('1', 'Navigation', '导航菜单', NULL, '由业务菜单自动生成的入口权限分组', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('2', 'Navigation.UserManagement', '用户管理', 'Navigation', '菜单入口: user_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('3', 'Navigation.RoleManagement', '角色管理', 'Navigation', '菜单入口: role_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('4', 'Navigation.PermissionManagement', '权限管理', 'Navigation', '菜单入口: permission_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('5', 'Navigation.TenantManagement', '租户管理', 'Navigation', '菜单入口: tenant_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('6', 'Navigation.MenuManagement', '菜单管理', 'Navigation', '菜单入口: menu_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('7', 'Navigation.SettingManagement', '设置管理', 'Navigation', '菜单入口: setting_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('8', 'Navigation.CodesystemManagement', '编码管理', 'Navigation', '菜单入口: codesystem_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('9', 'Navigation.BodystructureManagement', '部位管理', 'Navigation', '菜单入口: bodystructure_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10', 'Navigation.WarehouseManagement', '库房药房', 'Navigation', '菜单入口: warehouse_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('11', 'Navigation.WardLocationManagement', '病区病房', 'Navigation', '菜单入口: ward_location_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('12', 'Navigation.PatientManagement', '患者管理', 'Navigation', '菜单入口: patient_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('14', 'Navigation.DeptManagement', '科室管理', 'Navigation', '菜单入口: dept_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('15', 'Navigation.HealthcareServiceManagement', '挂号类型管理', 'Navigation', '菜单入口: healthcare_service_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('16', 'Navigation.ContractManagement', '费用性质管理', 'Navigation', '菜单入口: contract_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('17', 'Navigation.Analytics', '概览', 'Navigation', '菜单入口: Analytics', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('18', 'Navigation.Frequency', '频次管理', 'Navigation', '菜单入口: Frequency', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('19', 'Navigation.Supplier', '供应商管理', 'Navigation', '菜单入口: Supplier', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('20', 'Navigation.Medicine', '药品管理', 'Navigation', '菜单入口: Medicine', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('21', 'Navigation.Device', '器材管理', 'Navigation', '菜单入口: Device', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('22', 'Navigation.Diagnosistreatment', '诊疗管理', 'Navigation', '菜单入口: Diagnosistreatment', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('23', 'Navigation.Disease', '诊断', 'Navigation', '菜单入口: Disease', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('25', 'Navigation.Outpatientnursestation', '门诊护士站', 'Navigation', '菜单入口: OutpatientNurseStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('26', 'Navigation.Inpatientnursestation', '住院护士站', 'Navigation', '菜单入口: InpatientNurseStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('27', 'Navigation.Reportfinance', '财务报表', 'Navigation', '菜单入口: ReportFinance', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('28', 'Navigation.Chargeopregister', '门诊挂号', 'Navigation', '菜单入口: ChargeOpRegister', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('29', 'Navigation.Chargeopcharge', '门诊收费', 'Navigation', '菜单入口: ChargeOpCharge', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('30', 'Navigation.Chargeoprefund', '门诊退费', 'Navigation', '菜单入口: ChargeOpRefund', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('31', 'Navigation.Chargeopdayclose', '门诊日结', 'Navigation', '菜单入口: ChargeOpDayClose', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('32', 'Navigation.Chargeipregister', '住院登记', 'Navigation', '菜单入口: ChargeIpRegister', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('33', 'Navigation.Chargeipsettle', '住院结算', 'Navigation', '菜单入口: ChargeIpSettle', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('34', 'Navigation.Chargeipprepay', '预交金管理', 'Navigation', '菜单入口: ChargeIpPrepay', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('35', 'Navigation.Chargeipfee', '住院费用管理', 'Navigation', '菜单入口: ChargeIpFee', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('36', 'Navigation.Outpatientdoctorstation', '门诊医生站', 'Navigation', '菜单入口: OutpatientDoctorStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('37', 'Navigation.Inpatientdoctorstation', '住院医生站', 'Navigation', '菜单入口: InpatientDoctorStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('38', 'Navigation.Dispenseop', '门诊发药', 'Navigation', '菜单入口: DispenseOp', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('39', 'Navigation.Dispenseip', '住院发药', 'Navigation', '菜单入口: DispenseIp', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('40', 'Navigation.Dispensedoc', '发药单据', 'Navigation', '菜单入口: DispenseDoc', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('41', 'Navigation.Whpurchaseorder', '药库订货单', 'Navigation', '菜单入口: WhPurchaseOrder', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('42', 'Navigation.Reporthome', '首页', 'Navigation', '菜单入口: ReportHome', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('43', 'Navigation.Reportdean', '院长', 'Navigation', '菜单入口: ReportDean', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('44', 'Navigation.Reportclinical', '临床报表', 'Navigation', '菜单入口: ReportClinical', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('45', 'Navigation.Whpurchaseinbound', '药库进货单', 'Navigation', '菜单入口: WhPurchaseInbound', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('46', 'Navigation.Whstockout', '药库出库单', 'Navigation', '菜单入口: WhStockOut', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('47', 'Navigation.Phstockin', '药房入库单', 'Navigation', '菜单入口: PhStockIn', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('48', 'Navigation.Invstocklist', '库存明细', 'Navigation', '菜单入口: InvStockList', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('49', 'Navigation.Medicinereturnop', '门诊退药', 'Navigation', '菜单入口: MedicineReturnOp', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('53', 'Navigation.Medicinereturnip', '住院退药', 'Navigation', '菜单入口: MedicineReturnIp', NULL, '2026-06-11 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('50', 'Navigation.Emrtemplate', '病历模版', 'Navigation', '菜单入口: EmrTemplate', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('51', 'Navigation.Whstocktakeorder', '药库盘点单', 'Navigation', '菜单入口: WhStocktakeOrder', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('52', 'Navigation.Phstocktakeorder', '药房盘点单', 'Navigation', '菜单入口: PhStocktakeOrder', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('54', 'Navigation.ActivityDeviceBinding', '耗材绑定', 'Navigation', '菜单入口: activity_device_binding', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('55', 'Navigation.Executelocation', '执行地点', 'Navigation', '菜单入口: ExecuteLocation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('56', 'Navigation.OrderTemplate', '医嘱组套', 'Navigation', '菜单入口: order_template', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('57', 'Navigation.ServiceLocation', '取药科室', 'Navigation', '菜单入口: service_location', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('322589916090863616', 'Identity.Users', '用户管理', NULL, NULL, NULL, '2026-06-09 04:17:09.426+00', '2026-06-09 04:17:09.426+00', NULL, NULL, false, NULL, NULL),
+('322589916120223744', 'Identity.Users.Create', '创建用户', 'Identity.Users', NULL, NULL, '2026-06-09 04:17:09.433+00', '2026-06-09 04:17:09.433+00', NULL, NULL, false, NULL, NULL),
+('322589916137000960', 'Identity.Users.Update', '更新用户', 'Identity.Users', NULL, NULL, '2026-06-09 04:17:09.437+00', '2026-06-09 04:17:09.437+00', NULL, NULL, false, NULL, NULL),
+('322589916157972480', 'Identity.Users.Delete', '删除用户', 'Identity.Users', NULL, NULL, '2026-06-09 04:17:09.442+00', '2026-06-09 04:17:09.442+00', NULL, NULL, false, NULL, NULL),
+('322589916174749696', 'Identity.Users.View', '查看用户', 'Identity.Users', NULL, NULL, '2026-06-09 04:17:09.446+00', '2026-06-09 04:17:09.446+00', NULL, NULL, false, NULL, NULL),
+('322589916199915520', 'Identity.Roles', '角色管理', NULL, NULL, NULL, '2026-06-09 04:17:09.452+00', '2026-06-09 04:17:09.452+00', NULL, NULL, false, NULL, NULL),
+('322589916216692736', 'Identity.Roles.Create', '创建角色', 'Identity.Roles', NULL, NULL, '2026-06-09 04:17:09.456+00', '2026-06-09 04:17:09.456+00', NULL, NULL, false, NULL, NULL),
+('322589916229275648', 'Identity.Roles.Update', '更新角色', 'Identity.Roles', NULL, NULL, '2026-06-09 04:17:09.459+00', '2026-06-09 04:17:09.459+00', NULL, NULL, false, NULL, NULL),
+('322589916246052864', 'Identity.Roles.Delete', '删除角色', 'Identity.Roles', NULL, NULL, '2026-06-09 04:17:09.463+00', '2026-06-09 04:17:09.463+00', NULL, NULL, false, NULL, NULL),
+('322589916254441472', 'Identity.Roles.View', '查看角色', 'Identity.Roles', NULL, NULL, '2026-06-09 04:17:09.465+00', '2026-06-09 04:17:09.465+00', NULL, NULL, false, NULL, NULL),
+('322589916267024384', 'Identity.Permissions', '权限管理', NULL, NULL, NULL, '2026-06-09 04:17:09.468+00', '2026-06-09 04:17:09.468+00', NULL, NULL, false, NULL, NULL),
+('322589916287995904', 'Identity.Permissions.Grant', '授予权限', 'Identity.Permissions', NULL, NULL, '2026-06-09 04:17:09.473+00', '2026-06-09 04:17:09.473+00', NULL, NULL, false, NULL, NULL),
+('322589916304773120', 'Identity.Permissions.Revoke', '撤销权限', 'Identity.Permissions', NULL, NULL, '2026-06-09 04:17:09.477+00', '2026-06-09 04:17:09.477+00', NULL, NULL, false, NULL, NULL),
+('322589916325744640', 'Identity.Permissions.View', '查看权限', 'Identity.Permissions', NULL, NULL, '2026-06-09 04:17:09.482+00', '2026-06-09 04:17:09.482+00', NULL, NULL, false, NULL, NULL),
+('322589916338327552', 'Identity.OrganizationUnits', '组织单元管理', NULL, NULL, NULL, '2026-06-09 04:17:09.485+00', '2026-06-09 04:17:09.485+00', NULL, NULL, false, NULL, NULL),
+('322589916355104768', 'Identity.OrganizationUnits.Create', '创建组织单元', 'Identity.OrganizationUnits', NULL, NULL, '2026-06-09 04:17:09.489+00', '2026-06-09 04:17:09.489+00', NULL, NULL, false, NULL, NULL),
+('322589916380270592', 'Identity.OrganizationUnits.Update', '更新组织单元', 'Identity.OrganizationUnits', NULL, NULL, '2026-06-09 04:17:09.495+00', '2026-06-09 04:17:09.495+00', NULL, NULL, false, NULL, NULL),
+('322589916397047808', 'Identity.OrganizationUnits.Delete', '删除组织单元', 'Identity.OrganizationUnits', NULL, NULL, '2026-06-09 04:17:09.499+00', '2026-06-09 04:17:09.499+00', NULL, NULL, false, NULL, NULL),
+('322589916413825024', 'Identity.OrganizationUnits.View', '查看组织单元', 'Identity.OrganizationUnits', NULL, NULL, '2026-06-09 04:17:09.503+00', '2026-06-09 04:17:09.503+00', NULL, NULL, false, NULL, NULL),
+('322589916430602240', 'Identity.Users.Impersonate', '代理登录', 'Identity.Users', NULL, NULL, '2026-06-09 04:17:09.507+00', '2026-06-09 04:17:09.507+00', NULL, NULL, false, NULL, NULL),
+('322589916443185152', 'TenantManagement.Tenants', '租户管理', NULL, NULL, NULL, '2026-06-09 04:17:09.510+00', '2026-06-09 04:17:09.510+00', NULL, NULL, false, NULL, NULL),
+('322589916459962368', 'TenantManagement.Tenants.Create', '创建租户', 'TenantManagement.Tenants', NULL, NULL, '2026-06-09 04:17:09.514+00', '2026-06-09 04:17:09.514+00', NULL, NULL, false, NULL, NULL),
+('322589916476739584', 'TenantManagement.Tenants.Update', '更新租户', 'TenantManagement.Tenants', NULL, NULL, '2026-06-09 04:17:09.518+00', '2026-06-09 04:17:09.518+00', NULL, NULL, false, NULL, NULL),
+('322589916497711104', 'TenantManagement.Tenants.Delete', '删除租户', 'TenantManagement.Tenants', NULL, NULL, '2026-06-09 04:17:09.523+00', '2026-06-09 04:17:09.523+00', NULL, NULL, false, NULL, NULL),
+('322589916510294016', 'TenantManagement.Tenants.View', '查看租户', 'TenantManagement.Tenants', NULL, NULL, '2026-06-09 04:17:09.526+00', '2026-06-09 04:17:09.526+00', NULL, NULL, false, NULL, NULL),
+('322589916527071232', 'SettingManagement.Settings', '设置管理', NULL, NULL, NULL, '2026-06-09 04:17:09.530+00', '2026-06-09 04:17:09.530+00', NULL, NULL, false, NULL, NULL),
+('322589916548042752', 'SettingManagement.Settings.Create', '创建设置', 'SettingManagement.Settings', NULL, NULL, '2026-06-09 04:17:09.535+00', '2026-06-09 04:17:09.535+00', NULL, NULL, false, NULL, NULL),
+('322589916564819968', 'SettingManagement.Settings.Update', '更新设置', 'SettingManagement.Settings', NULL, NULL, '2026-06-09 04:17:09.539+00', '2026-06-09 04:17:09.539+00', NULL, NULL, false, NULL, NULL),
+('322589916577402880', 'SettingManagement.Settings.Delete', '删除设置', 'SettingManagement.Settings', NULL, NULL, '2026-06-09 04:17:09.542+00', '2026-06-09 04:17:09.542+00', NULL, NULL, false, NULL, NULL),
+('322589916594180096', 'SettingManagement.Settings.View', '查看设置', 'SettingManagement.Settings', NULL, NULL, '2026-06-09 04:17:09.546+00', '2026-06-09 04:17:09.546+00', NULL, NULL, false, NULL, NULL),
+('322970151327633408', 'Navigation.Reporttemplatedesigner', '打印模板设计', 'Navigation', '菜单入口: ReportTemplateDesigner', '1', '2026-06-10 05:28:04.571+00', '2026-06-10 05:28:04.571+00', '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
-
 
 -- ========== whale_permission_grants ==========
 CREATE TABLE IF NOT EXISTS whale_permission_grants (
@@ -259,80 +293,131 @@ CREATE INDEX IF NOT EXISTS idx_whale_permission_grants_is_deleted ON whale_permi
 
 CREATE INDEX IF NOT EXISTS idx_whale_permission_grants_provider_lookup ON whale_permission_grants(provider_name, provider_key, permission_name);
 
+
+
 -- seed: whale_permission_grants
 INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
 VALUES
-(1001, 'Identity.Users', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1002, 'Identity.Users.Create', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1003, 'Identity.Users.Update', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1004, 'Identity.Users.Delete', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1005, 'Identity.Users.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1006, 'Identity.Users.Impersonate', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1007, 'Identity.Roles', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1008, 'Identity.Roles.Create', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1009, 'Identity.Roles.Update', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1010, 'Identity.Roles.Delete', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1011, 'Identity.Roles.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1012, 'Identity.Permissions', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1013, 'Identity.Permissions.Grant', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1014, 'Identity.Permissions.Revoke', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1015, 'Identity.Permissions.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1016, 'Identity.OrganizationUnits', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1017, 'Identity.OrganizationUnits.Create', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1018, 'Identity.OrganizationUnits.Update', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1019, 'Identity.OrganizationUnits.Delete', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(1020, 'Identity.OrganizationUnits.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(2001, 'TenantManagement.Tenants', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(2002, 'TenantManagement.Tenants.Create', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(2003, 'TenantManagement.Tenants.Update', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(2004, 'TenantManagement.Tenants.Delete', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(2005, 'TenantManagement.Tenants.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(3001, 'SettingManagement.Settings', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(3002, 'SettingManagement.Settings.Create', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(3003, 'SettingManagement.Settings.Update', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(3004, 'SettingManagement.Settings.Delete', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(3005, 'SettingManagement.Settings.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(4001, 'Menu.Menus', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(4002, 'Menu.Menus.Create', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(4003, 'Menu.Menus.Update', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(4004, 'Menu.Menus.Delete', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(4005, 'Menu.Menus.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(4501, 'Auditing.AuditLogs', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(4502, 'Auditing.AuditLogs.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(5001, 'Terminology.CodeSystems', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(5002, 'Terminology.CodeSystems.Create', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(5003, 'Terminology.CodeSystems.Update', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(5004, 'Terminology.CodeSystems.Delete', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(5005, 'Terminology.CodeSystems.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6001, 'Administration.BodyStructures', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6002, 'Administration.BodyStructures.Create', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6003, 'Administration.BodyStructures.Update', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6004, 'Administration.BodyStructures.Delete', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6005, 'Administration.BodyStructures.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6101, 'Administration.Locations', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6102, 'Administration.Locations.Create', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6103, 'Administration.Locations.Update', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6104, 'Administration.Locations.Delete', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6105, 'Administration.Locations.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6201, 'Administration.WardLocations', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6202, 'Administration.WardLocations.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6301, 'Administration.Patients', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6302, 'Administration.Patients.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6303, 'Administration.Patients.Create', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6304, 'Administration.Patients.Update', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6305, 'Administration.Patients.Delete', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6351, 'Administration.Positions', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6352, 'Administration.Positions.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6361, 'Administration.Organizations', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6362, 'Administration.Organizations.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6371, 'Administration.HealthcareServices', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6372, 'Administration.HealthcareServices.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6381, 'ChargeManagement.OutpatientRegistration', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6382, 'ChargeManagement.OutpatientRegistration.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6391, 'ChargeManagement.OutpatientDoctorStation', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL),
-(6392, 'ChargeManagement.OutpatientDoctorStation.View', 'R', 1, NULL, '2026-05-03 06:07:04.528+00', NULL, NULL, NULL, false, NULL, NULL)
+('10001', 'Navigation.ActivityDeviceBinding', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10002', 'Navigation.Analytics', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10003', 'Navigation.BodystructureManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10004', 'Navigation.Chargeipfee', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10005', 'Navigation.Chargeipprepay', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10006', 'Navigation.Chargeipregister', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10007', 'Navigation.Chargeipsettle', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10008', 'Navigation.Chargeopcharge', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10009', 'Navigation.Chargeopdayclose', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10010', 'Navigation.Chargeoprefund', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10011', 'Navigation.Chargeopregister', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10012', 'Navigation.CodesystemManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10013', 'Navigation.ContractManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10014', 'Navigation.DeptManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10015', 'Navigation.Device', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10017', 'Navigation.Diagnosistreatment', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10018', 'Navigation.Disease', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10019', 'Navigation.Dispensedoc', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10020', 'Navigation.Dispenseip', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10021', 'Navigation.Dispenseop', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10022', 'Navigation.Emrtemplate', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10023', 'Navigation.Executelocation', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10024', 'Navigation.Frequency', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10025', 'Navigation.HealthcareServiceManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10026', 'Navigation.Inpatientdoctorstation', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10027', 'Navigation.Inpatientnursestation', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10028', 'Navigation.Invstocklist', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10029', 'Navigation.Medicine', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10031', 'Navigation.Medicinereturnop', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10032', 'Navigation.MenuManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10033', 'Navigation.OrderTemplate', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10034', 'Navigation.Outpatientdoctorstation', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10035', 'Navigation.Outpatientnursestation', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10036', 'Navigation.PatientManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10037', 'Navigation.PermissionManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10038', 'Navigation.Phstockin', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10039', 'Navigation.Phstocktakeorder', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10041', 'Navigation.Reportclinical', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10042', 'Navigation.Reportdean', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10043', 'Navigation.Reportfinance', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10044', 'Navigation.Reporthome', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10045', 'Navigation.RoleManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10046', 'Navigation.ServiceLocation', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10047', 'Navigation.SettingManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10048', 'Navigation.Supplier', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10049', 'Navigation.TenantManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10050', 'Navigation.UserManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10051', 'Navigation.WardLocationManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10052', 'Navigation.WarehouseManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10053', 'Navigation.Whpurchaseinbound', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10054', 'Navigation.Whpurchaseorder', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10055', 'Navigation.Whstockout', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10056', 'Navigation.Whstocktakeorder', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('322733268284215296', 'Navigation.Inpatientdoctorstation', 'R', '10', '1', '2026-06-09 13:46:47.253+00', '2026-06-09 13:46:47.253+00', '1', '1', false, NULL, NULL),
+('322733268309381120', 'Navigation.Outpatientdoctorstation', 'R', '10', '1', '2026-06-09 13:46:47.259+00', '2026-06-09 13:46:47.259+00', '1', '1', false, NULL, NULL),
+('322733323334455296', 'Navigation.Outpatientnursestation', 'R', '11', '1', '2026-06-09 13:47:00.379+00', '2026-06-09 13:47:00.379+00', '1', '1', false, NULL, NULL),
+('322733323347038208', 'Navigation.Inpatientnursestation', 'R', '11', '1', '2026-06-09 13:47:00.381+00', '2026-06-09 13:47:00.381+00', '1', '1', false, NULL, NULL),
+('322733438140944384', 'Navigation.Dispenseip', 'R', '12', '1', '2026-06-09 13:47:27.750+00', '2026-06-09 13:47:27.750+00', '1', '1', false, NULL, NULL),
+('322733438157721600', 'Navigation.Dispenseop', 'R', '12', '1', '2026-06-09 13:47:27.754+00', '2026-06-09 13:47:27.754+00', '1', '1', false, NULL, NULL),
+('322733438174498816', 'Navigation.Device', 'R', '12', '1', '2026-06-09 13:47:27.758+00', '2026-06-09 13:47:27.758+00', '1', '1', false, NULL, NULL),
+('322733438187081728', 'Navigation.Dispensedoc', 'R', '12', '1', '2026-06-09 13:47:27.761+00', '2026-06-09 13:47:27.761+00', '1', '1', false, NULL, NULL),
+('322733438203858944', 'Navigation.Medicine', 'R', '12', '1', '2026-06-09 13:47:27.765+00', '2026-06-09 13:47:27.765+00', '1', '1', false, NULL, NULL),
+('322733438216441856', 'Navigation.Medicinereturnop', 'R', '12', '1', '2026-06-09 13:47:27.768+00', '2026-06-09 13:47:27.768+00', '1', '1', false, NULL, NULL),
+('322733572107014144', 'Navigation.Invstocklist', 'R', '13', '1', '2026-06-09 13:47:59.690+00', '2026-06-09 13:47:59.690+00', '1', '1', false, NULL, NULL),
+('322733572119597056', 'Navigation.Whpurchaseinbound', 'R', '13', '1', '2026-06-09 13:47:59.693+00', '2026-06-09 13:47:59.693+00', '1', '1', false, NULL, NULL),
+('322733572136374272', 'Navigation.Whpurchaseorder', 'R', '13', '1', '2026-06-09 13:47:59.697+00', '2026-06-09 13:47:59.697+00', '1', '1', false, NULL, NULL),
+('322733572153151488', 'Navigation.Phstockin', 'R', '13', '1', '2026-06-09 13:47:59.701+00', '2026-06-09 13:47:59.701+00', '1', '1', false, NULL, NULL),
+('322733572165734400', 'Navigation.Device', 'R', '13', '1', '2026-06-09 13:47:59.704+00', '2026-06-09 13:47:59.704+00', '1', '1', false, NULL, NULL),
+('322733572182511616', 'Navigation.Whstockout', 'R', '13', '1', '2026-06-09 13:47:59.708+00', '2026-06-09 13:47:59.708+00', '1', '1', false, NULL, NULL),
+('322733572199288832', 'Navigation.Phstocktakeorder', 'R', '13', '1', '2026-06-09 13:47:59.712+00', '2026-06-09 13:47:59.712+00', '1', '1', false, NULL, NULL),
+('322733572207677440', 'Navigation.Medicine', 'R', '13', '1', '2026-06-09 13:47:59.714+00', '2026-06-09 13:47:59.714+00', '1', '1', false, NULL, NULL),
+('322733572220260352', 'Navigation.Whstocktakeorder', 'R', '13', '1', '2026-06-09 13:47:59.717+00', '2026-06-09 13:47:59.717+00', '1', '1', false, NULL, NULL),
+('322733614511427584', 'Navigation.Reportclinical', 'R', '14', '1', '2026-06-09 13:48:09.800+00', '2026-06-09 13:48:09.800+00', '1', '1', false, NULL, NULL),
+('322733614519816192', 'Navigation.Chargeipfee', 'R', '14', '1', '2026-06-09 13:48:09.802+00', '2026-06-09 13:48:09.802+00', '1', '1', false, NULL, NULL),
+('322733614528204800', 'Navigation.Chargeipprepay', 'R', '14', '1', '2026-06-09 13:48:09.804+00', '2026-06-09 13:48:09.804+00', '1', '1', false, NULL, NULL),
+('322733614544982016', 'Navigation.Chargeoprefund', 'R', '14', '1', '2026-06-09 13:48:09.808+00', '2026-06-09 13:48:09.808+00', '1', '1', false, NULL, NULL),
+('322733614553370624', 'Navigation.Reporthome', 'R', '14', '1', '2026-06-09 13:48:09.810+00', '2026-06-09 13:48:09.810+00', '1', '1', false, NULL, NULL),
+('322733614561759232', 'Navigation.Chargeopdayclose', 'R', '14', '1', '2026-06-09 13:48:09.812+00', '2026-06-09 13:48:09.812+00', '1', '1', false, NULL, NULL),
+('322733614574342144', 'Navigation.Chargeipregister', 'R', '14', '1', '2026-06-09 13:48:09.815+00', '2026-06-09 13:48:09.815+00', '1', '1', false, NULL, NULL),
+('322733614582730752', 'Navigation.Chargeopregister', 'R', '14', '1', '2026-06-09 13:48:09.817+00', '2026-06-09 13:48:09.817+00', '1', '1', false, NULL, NULL),
+('322733614586925056', 'Navigation.Chargeopcharge', 'R', '14', '1', '2026-06-09 13:48:09.818+00', '2026-06-09 13:48:09.818+00', '1', '1', false, NULL, NULL),
+('322733614599507968', 'Navigation.Reportdean', 'R', '14', '1', '2026-06-09 13:48:09.821+00', '2026-06-09 13:48:09.821+00', '1', '1', false, NULL, NULL),
+('322733614612090880', 'Navigation.Chargeipsettle', 'R', '14', '1', '2026-06-09 13:48:09.824+00', '2026-06-09 13:48:09.824+00', '1', '1', false, NULL, NULL),
+('322733614620479488', 'Navigation.Reportfinance', 'R', '14', '1', '2026-06-09 13:48:09.826+00', '2026-06-09 13:48:09.826+00', '1', '1', false, NULL, NULL),
+('322973244809809920', 'Navigation.Analytics', 'R', '10', '1', '2026-06-10 05:40:22.115+00', '2026-06-10 05:40:22.115+00', '1', '1', false, NULL, NULL),
+('322973259494068224', 'Navigation.Analytics', 'R', '11', '1', '2026-06-10 05:40:25.616+00', '2026-06-10 05:40:25.616+00', '1', '1', false, NULL, NULL),
+('322973270965489664', 'Navigation.Analytics', 'R', '12', '1', '2026-06-10 05:40:28.351+00', '2026-06-10 05:40:28.351+00', '1', '1', false, NULL, NULL),
+('322973282835369984', 'Navigation.Analytics', 'R', '13', '1', '2026-06-10 05:40:31.181+00', '2026-06-10 05:40:31.181+00', '1', '1', false, NULL, NULL),
+('322973294264848384', 'Navigation.Analytics', 'R', '14', '1', '2026-06-10 05:40:33.906+00', '2026-06-10 05:40:33.906+00', '1', '1', false, NULL, NULL),
+('323005257756971008', 'Navigation.Phstockin', 'R', '12', '1', '2026-06-10 07:47:34.596+00', '2026-06-10 07:47:34.596+00', '1', '1', false, NULL, NULL),
+('323005257777942528', 'Navigation.Phstocktakeorder', 'R', '12', '1', '2026-06-10 07:47:34.601+00', '2026-06-10 07:47:34.601+00', '1', '1', false, NULL, NULL),
+('323022177444040704', 'Navigation.WarehouseManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.564+00', '2026-06-10 08:54:48.564+00', '1', '1', false, NULL, NULL),
+('323022177465012224', 'Navigation.PatientManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.569+00', '2026-06-10 08:54:48.569+00', '1', '1', false, NULL, NULL),
+('323022177477595136', 'Navigation.Disease', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.572+00', '2026-06-10 08:54:48.572+00', '1', '1', false, NULL, NULL),
+('323022177490178048', 'Navigation.Diagnosistreatment', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.575+00', '2026-06-10 08:54:48.575+00', '1', '1', false, NULL, NULL),
+('323022177502760960', 'Navigation.DeptManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.578+00', '2026-06-10 08:54:48.578+00', '1', '1', false, NULL, NULL),
+('323022177511149568', 'Navigation.CodesystemManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.580+00', '2026-06-10 08:54:48.580+00', '1', '1', false, NULL, NULL),
+('323022177519538176', 'Navigation.Reporttemplatedesigner', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.582+00', '2026-06-10 08:54:48.582+00', '1', '1', false, NULL, NULL),
+('323022177532121088', 'Navigation.Executelocation', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.585+00', '2026-06-10 08:54:48.585+00', '1', '1', false, NULL, NULL),
+('323022177540509696', 'Navigation.OrderTemplate', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.587+00', '2026-06-10 08:54:48.587+00', '1', '1', false, NULL, NULL),
+('323022177553092608', 'Navigation.ServiceLocation', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.590+00', '2026-06-10 08:54:48.590+00', '1', '1', false, NULL, NULL),
+('323022177565675520', 'Navigation.BodystructureManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.593+00', '2026-06-10 08:54:48.593+00', '1', '1', false, NULL, NULL),
+('323022177574064128', 'Navigation.WardLocationManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.595+00', '2026-06-10 08:54:48.595+00', '1', '1', false, NULL, NULL),
+('323022177586647040', 'Navigation.HealthcareServiceManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.598+00', '2026-06-10 08:54:48.598+00', '1', '1', false, NULL, NULL),
+('323022177595035648', 'Navigation.Device', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.600+00', '2026-06-10 08:54:48.600+00', '1', '1', false, NULL, NULL),
+('323022177603424256', 'Navigation.Medicine', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.602+00', '2026-06-10 08:54:48.602+00', '1', '1', false, NULL, NULL),
+('323022177620201472', 'Navigation.ContractManagement', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.606+00', '2026-06-10 08:54:48.606+00', '1', '1', false, NULL, NULL),
+('323022177632784384', 'Navigation.Supplier', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.609+00', '2026-06-10 08:54:48.609+00', '1', '1', false, NULL, NULL),
+('323022177645367296', 'Navigation.Frequency', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.612+00', '2026-06-10 08:54:48.612+00', '1', '1', false, NULL, NULL),
+('323022177653755904', 'Navigation.Emrtemplate', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.614+00', '2026-06-10 08:54:48.614+00', '1', '1', false, NULL, NULL),
+('323022177662144512', 'Navigation.ActivityDeviceBinding', 'R', '323022177255297024', '1', '2026-06-10 08:54:48.616+00', '2026-06-10 08:54:48.616+00', '1', '1', false, NULL, NULL),
+('323022431488839680', 'Navigation.Reportclinical', 'R', '323022177255297024', '1', '2026-06-10 08:55:49.133+00', '2026-06-10 08:55:49.133+00', '1', '1', false, NULL, NULL),
+('323022431501422592', 'Navigation.RoleManagement', 'R', '323022177255297024', '1', '2026-06-10 08:55:49.136+00', '2026-06-10 08:55:49.136+00', '1', '1', false, NULL, NULL),
+('323022431514005504', 'Navigation.Reportfinance', 'R', '323022177255297024', '1', '2026-06-10 08:55:49.139+00', '2026-06-10 08:55:49.139+00', '1', '1', false, NULL, NULL),
+('323022431522394112', 'Navigation.UserManagement', 'R', '323022177255297024', '1', '2026-06-10 08:55:49.141+00', '2026-06-10 08:55:49.141+00', '1', '1', false, NULL, NULL),
+('323022431534977024', 'Navigation.Reporthome', 'R', '323022177255297024', '1', '2026-06-10 08:55:49.144+00', '2026-06-10 08:55:49.144+00', '1', '1', false, NULL, NULL),
+('323022431547559936', 'Navigation.Reportdean', 'R', '323022177255297024', '1', '2026-06-10 08:55:49.147+00', '2026-06-10 08:55:49.147+00', '1', '1', false, NULL, NULL),
+('323022431560142848', 'Navigation.SettingManagement', 'R', '323022177255297024', '1', '2026-06-10 08:55:49.150+00', '2026-06-10 08:55:49.150+00', '1', '1', false, NULL, NULL),
+('323023014815862784', 'Navigation.Analytics', 'R', '323022177255297024', '1', '2026-06-10 08:58:08.209+00', '2026-06-10 08:58:08.209+00', '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
-
 
 -- ========== whale_security_logs ==========
 CREATE TABLE IF NOT EXISTS whale_security_logs (
@@ -367,597 +452,7 @@ CREATE INDEX IF NOT EXISTS idx_whale_security_logs_user_action ON whale_security
 
 CREATE INDEX IF NOT EXISTS idx_whale_security_logs_result ON whale_security_logs(result) WHERE result = 'FAILED';
 
--- seed: whale_security_logs
-INSERT INTO "whale_security_logs" ("id", "user_id", "user_name", "action", "client_ip", "user_agent", "result", "failure_reason", "tenant_id", "extra_properties", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES
-(309211172049522688, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 06:14:48.282+00', '2026-05-03 06:14:48.282+00', NULL, NULL, false, NULL, NULL),
-(309211354795347968, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 06:15:31.852+00', '2026-05-03 06:15:31.852+00', NULL, NULL, false, NULL, NULL),
-(309211458268827648, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 06:15:56.522+00', '2026-05-03 06:15:56.522+00', NULL, NULL, false, NULL, NULL),
-(309211481907924992, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 06:16:02.158+00', '2026-05-03 06:16:02.158+00', NULL, NULL, false, NULL, NULL),
-(309211487024975872, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 06:16:03.378+00', '2026-05-03 06:16:03.378+00', NULL, NULL, false, NULL, NULL),
-(309211524463333376, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 06:16:12.304+00', '2026-05-03 06:16:12.304+00', NULL, NULL, false, NULL, NULL),
-(309211942660608000, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 06:17:52.010+00', '2026-05-03 06:17:52.010+00', NULL, NULL, false, NULL, NULL),
-(309211946733277184, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 06:17:52.981+00', '2026-05-03 06:17:52.981+00', NULL, NULL, false, NULL, NULL),
-(309215076577447936, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 06:30:19.194+00', '2026-05-03 06:30:19.194+00', NULL, NULL, false, NULL, NULL),
-(309215082206203904, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 06:30:20.536+00', '2026-05-03 06:30:20.536+00', NULL, NULL, false, NULL, NULL),
-(309234544707899392, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 07:47:40.758+00', '2026-05-03 07:47:40.758+00', NULL, NULL, false, NULL, NULL),
-(309234563364163584, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 07:47:45.206+00', '2026-05-03 07:47:45.206+00', NULL, NULL, false, NULL, NULL),
-(309234641160114176, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 07:48:03.754+00', '2026-05-03 07:48:03.754+00', NULL, NULL, false, NULL, NULL),
-(309234712287121408, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 07:48:20.712+00', '2026-05-03 07:48:20.712+00', NULL, NULL, false, NULL, NULL),
-(309265941803831296, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 09:52:26.409+00', '2026-05-03 09:52:26.409+00', NULL, NULL, false, NULL, NULL),
-(309265948179173376, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 09:52:27.929+00', '2026-05-03 09:52:27.929+00', NULL, NULL, false, NULL, NULL),
-(309299045954228224, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 12:03:59.053+00', '2026-05-03 12:03:59.053+00', NULL, NULL, false, NULL, NULL),
-(309302975731863552, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 12:19:35.985+00', '2026-05-03 12:19:35.985+00', NULL, NULL, false, NULL, NULL),
-(309306336633425920, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 12:32:57.287+00', '2026-05-03 12:32:57.287+00', NULL, NULL, false, NULL, NULL),
-(309307913951776768, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 12:39:13.349+00', '2026-05-03 12:39:13.349+00', NULL, NULL, false, NULL, NULL),
-(309307930934513664, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 12:39:17.398+00', '2026-05-03 12:39:17.398+00', NULL, NULL, false, NULL, NULL),
-(309309948516372480, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 12:47:18.427+00', '2026-05-03 12:47:18.427+00', NULL, NULL, false, NULL, NULL),
-(309309953352404992, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 12:47:19.580+00', '2026-05-03 12:47:19.580+00', NULL, NULL, false, NULL, NULL),
-(309316142606323712, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 13:11:55.214+00', '2026-05-03 13:11:55.214+00', NULL, NULL, false, NULL, NULL),
-(309316147916312576, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-03 13:11:56.479+00', '2026-05-03 13:11:56.479+00', NULL, NULL, false, NULL, NULL),
-(309524091320668160, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 02:58:14.050+00', '2026-05-04 02:58:14.050+00', NULL, NULL, false, NULL, NULL),
-(309524102565597184, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 02:58:16.731+00', '2026-05-04 02:58:16.731+00', NULL, NULL, false, NULL, NULL),
-(309540562640834560, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 04:03:41.119+00', '2026-05-04 04:03:41.119+00', NULL, NULL, false, NULL, NULL),
-(309540566902247424, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 04:03:42.135+00', '2026-05-04 04:03:42.135+00', NULL, NULL, false, NULL, NULL),
-(309570906286985216, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 06:04:15.608+00', '2026-05-04 06:04:15.608+00', NULL, NULL, false, NULL, NULL),
-(309570915271184384, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 06:04:17.750+00', '2026-05-04 06:04:17.750+00', NULL, NULL, false, NULL, NULL),
-(309603170209763328, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 08:12:27.926+00', '2026-05-04 08:12:27.926+00', NULL, NULL, false, NULL, NULL),
-(309603210680602624, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 08:12:37.575+00', '2026-05-04 08:12:37.575+00', NULL, NULL, false, NULL, NULL),
-(309623185103917056, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 09:31:59.849+00', '2026-05-04 09:31:59.849+00', NULL, NULL, false, NULL, NULL),
-(309623197682634752, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 09:32:02.848+00', '2026-05-04 09:32:02.848+00', NULL, NULL, false, NULL, NULL),
-(309654034989977600, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:34:35.035+00', '2026-05-04 11:34:35.035+00', NULL, NULL, false, NULL, NULL),
-(309654146092896256, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:35:01.524+00', '2026-05-04 11:35:01.524+00', NULL, NULL, false, NULL, NULL),
-(309654146092896257, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:35:01.524+00', '2026-05-04 11:35:01.524+00', NULL, NULL, false, NULL, NULL),
-(309654402666860544, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:36:02.696+00', '2026-05-04 11:36:02.696+00', NULL, NULL, false, NULL, NULL),
-(309654402666860545, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:36:02.696+00', '2026-05-04 11:36:02.696+00', NULL, NULL, false, NULL, NULL),
-(309654427337756672, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:36:08.578+00', '2026-05-04 11:36:08.578+00', NULL, NULL, false, NULL, NULL),
-(309654427341950976, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:36:08.579+00', '2026-05-04 11:36:08.579+00', NULL, NULL, false, NULL, NULL),
-(309654527686479872, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:36:32.503+00', '2026-05-04 11:36:32.503+00', NULL, NULL, false, NULL, NULL),
-(309654527686479873, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:36:32.503+00', '2026-05-04 11:36:32.503+00', NULL, NULL, false, NULL, NULL),
-(309654533642391552, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:36:33.923+00', '2026-05-04 11:36:33.923+00', NULL, NULL, false, NULL, NULL),
-(309654533642391553, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:36:33.923+00', '2026-05-04 11:36:33.923+00', NULL, NULL, false, NULL, NULL),
-(309654533835329536, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:36:33.969+00', '2026-05-04 11:36:33.969+00', NULL, NULL, false, NULL, NULL),
-(309654533835329537, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:36:33.969+00', '2026-05-04 11:36:33.969+00', NULL, NULL, false, NULL, NULL),
-(309654687674011648, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:37:10.647+00', '2026-05-04 11:37:10.647+00', NULL, NULL, false, NULL, NULL),
-(309654687678205952, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:37:10.648+00', '2026-05-04 11:37:10.648+00', NULL, NULL, false, NULL, NULL),
-(309655179963666432, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-04 11:39:08.018+00', '2026-05-04 11:39:08.018+00', NULL, NULL, false, NULL, NULL),
-(309891216954626048, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 03:17:03.622+00', '2026-05-05 03:17:03.622+00', NULL, NULL, false, NULL, NULL),
-(309891236923707392, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 03:17:08.383+00', '2026-05-05 03:17:08.383+00', NULL, NULL, false, NULL, NULL),
-(309892034571276288, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 03:20:18.557+00', '2026-05-05 03:20:18.557+00', NULL, NULL, false, NULL, NULL),
-(309892040241975296, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 03:20:19.909+00', '2026-05-05 03:20:19.909+00', NULL, NULL, false, NULL, NULL),
-(309926580838207488, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:35.029+00', '2026-05-05 05:37:35.029+00', NULL, NULL, false, NULL, NULL),
-(309926580842401792, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:35.030+00', '2026-05-05 05:37:35.030+00', NULL, NULL, false, NULL, NULL),
-(309926586253053952, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:36.320+00', '2026-05-05 05:37:36.320+00', NULL, NULL, false, NULL, NULL),
-(309926586257248256, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:36.321+00', '2026-05-05 05:37:36.321+00', NULL, NULL, false, NULL, NULL),
-(309926591923752960, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:37.672+00', '2026-05-05 05:37:37.672+00', NULL, NULL, false, NULL, NULL),
-(309926591923752961, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:37.672+00', '2026-05-05 05:37:37.672+00', NULL, NULL, false, NULL, NULL),
-(309926598450089984, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:39.228+00', '2026-05-05 05:37:39.228+00', NULL, NULL, false, NULL, NULL),
-(309926598450089985, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:39.228+00', '2026-05-05 05:37:39.228+00', NULL, NULL, false, NULL, NULL),
-(309926608625471488, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:41.654+00', '2026-05-05 05:37:41.654+00', NULL, NULL, false, NULL, NULL),
-(309926608625471489, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:41.654+00', '2026-05-05 05:37:41.654+00', NULL, NULL, false, NULL, NULL),
-(309926617722916864, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:43.823+00', '2026-05-05 05:37:43.823+00', NULL, NULL, false, NULL, NULL),
-(309926617722916865, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:43.824+00', '2026-05-05 05:37:43.824+00', NULL, NULL, false, NULL, NULL),
-(309926621736865792, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:44.780+00', '2026-05-05 05:37:44.780+00', NULL, NULL, false, NULL, NULL),
-(309926621736865793, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:44.780+00', '2026-05-05 05:37:44.780+00', NULL, NULL, false, NULL, NULL),
-(309926652753743872, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:52.175+00', '2026-05-05 05:37:52.175+00', NULL, NULL, false, NULL, NULL),
-(309926652753743873, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:37:52.175+00', '2026-05-05 05:37:52.175+00', NULL, NULL, false, NULL, NULL),
-(309927121379659776, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:39:43.904+00', '2026-05-05 05:39:43.904+00', NULL, NULL, false, NULL, NULL),
-(309927142577672192, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 05:39:48.958+00', '2026-05-05 05:39:48.958+00', NULL, NULL, false, NULL, NULL),
-(309957348942680064, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 07:39:50.717+00', '2026-05-05 07:39:50.717+00', NULL, NULL, false, NULL, NULL),
-(309957348942680065, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 07:39:50.717+00', '2026-05-05 07:39:50.717+00', NULL, NULL, false, NULL, NULL),
-(309957348976234496, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 07:39:50.725+00', '2026-05-05 07:39:50.725+00', NULL, NULL, false, NULL, NULL),
-(309957374448242688, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 07:39:56.798+00', '2026-05-05 07:39:56.798+00', NULL, NULL, false, NULL, NULL),
-(309957390319489024, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 07:40:00.582+00', '2026-05-05 07:40:00.582+00', NULL, NULL, false, NULL, NULL),
-(309981299089084416, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 09:15:00.876+00', '2026-05-05 09:15:00.876+00', NULL, NULL, false, NULL, NULL),
-(309981304260661248, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 09:15:02.109+00', '2026-05-05 09:15:02.109+00', NULL, NULL, false, NULL, NULL),
-(310027801519984640, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-05 12:19:47.920+00', '2026-05-05 12:19:47.920+00', NULL, NULL, false, NULL, NULL),
-(311000462178914304, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-08 04:44:48.292+00', '2026-05-08 04:44:48.292+00', NULL, NULL, false, NULL, NULL),
-(311000618567733248, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-08 04:45:25.578+00', '2026-05-08 04:45:25.578+00', NULL, NULL, false, NULL, NULL),
-(311002720526405632, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-08 04:53:46.724+00', '2026-05-08 04:53:46.724+00', NULL, NULL, false, NULL, NULL),
-(311045190677172224, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-08 07:42:32.397+00', '2026-05-08 07:42:32.397+00', NULL, NULL, false, NULL, NULL),
-(311045197266423808, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-08 07:42:33.968+00', '2026-05-08 07:42:33.968+00', NULL, NULL, false, NULL, NULL),
-(311089610241871872, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-08 10:39:02.848+00', '2026-05-08 10:39:02.848+00', NULL, NULL, false, NULL, NULL),
-(311090031953973248, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-08 10:40:43.391+00', '2026-05-08 10:40:43.391+00', NULL, NULL, false, NULL, NULL),
-(311107837417754624, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-08 11:51:28.544+00', '2026-05-08 11:51:28.544+00', NULL, NULL, false, NULL, NULL),
-(311107853565825024, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-08 11:51:32.394+00', '2026-05-08 11:51:32.394+00', NULL, NULL, false, NULL, NULL),
-(311112718796984320, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-08 12:10:52.356+00', '2026-05-08 12:10:52.356+00', NULL, NULL, false, NULL, NULL),
-(311112723695931392, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-08 12:10:53.524+00', '2026-05-08 12:10:53.524+00', NULL, NULL, false, NULL, NULL),
-(311327695821082624, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 02:25:06.872+00', '2026-05-09 02:25:06.872+00', NULL, NULL, false, NULL, NULL),
-(311327745787826176, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 02:25:18.785+00', '2026-05-09 02:25:18.785+00', NULL, NULL, false, NULL, NULL),
-(311328155181256704, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 02:26:56.392+00', '2026-05-09 02:26:56.392+00', NULL, NULL, false, NULL, NULL),
-(311343446271463424, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:27:42.072+00', '2026-05-09 03:27:42.072+00', NULL, NULL, false, NULL, NULL),
-(311343459395440640, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:27:45.201+00', '2026-05-09 03:27:45.201+00', NULL, NULL, false, NULL, NULL),
-(311343791986970624, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:29:04.497+00', '2026-05-09 03:29:04.497+00', NULL, NULL, false, NULL, NULL),
-(311345782624620544, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:36:59.102+00', '2026-05-09 03:36:59.102+00', NULL, NULL, false, NULL, NULL),
-(311345788618280960, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:37:00.531+00', '2026-05-09 03:37:00.531+00', NULL, NULL, false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_security_logs" ("id", "user_id", "user_name", "action", "client_ip", "user_agent", "result", "failure_reason", "tenant_id", "extra_properties", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES
-(311345871812300800, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:37:20.366+00', '2026-05-09 03:37:20.366+00', NULL, NULL, false, NULL, NULL),
-(311345876954517504, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:37:21.592+00', '2026-05-09 03:37:21.592+00', NULL, NULL, false, NULL, NULL),
-(311345970525245440, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:37:43.902+00', '2026-05-09 03:37:43.902+00', NULL, NULL, false, NULL, NULL),
-(311345975449358336, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:37:45.075+00', '2026-05-09 03:37:45.075+00', NULL, NULL, false, NULL, NULL),
-(311346261379256320, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:38:53.246+00', '2026-05-09 03:38:53.246+00', NULL, NULL, false, NULL, NULL),
-(311346265565171712, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:38:54.244+00', '2026-05-09 03:38:54.244+00', NULL, NULL, false, NULL, NULL),
-(311346428778123264, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.0.8377.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:39:33.157+00', '2026-05-09 03:39:33.157+00', NULL, NULL, false, NULL, NULL),
-(311346435518369792, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.0.8377.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:39:34.764+00', '2026-05-09 03:39:34.764+00', NULL, NULL, false, NULL, NULL),
-(311346658294632448, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:40:27.878+00', '2026-05-09 03:40:27.878+00', NULL, NULL, false, NULL, NULL),
-(311347516080132096, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:43:52.390+00', '2026-05-09 03:43:52.390+00', NULL, NULL, false, NULL, NULL),
-(311347520731615232, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:43:53.499+00', '2026-05-09 03:43:53.499+00', NULL, NULL, false, NULL, NULL),
-(311348699314262016, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:48:34.495+00', '2026-05-09 03:48:34.495+00', NULL, NULL, false, NULL, NULL),
-(311348709808410624, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:48:36.997+00', '2026-05-09 03:48:36.997+00', NULL, NULL, false, NULL, NULL),
-(311348770206388224, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 03:48:51.397+00', '2026-05-09 03:48:51.397+00', NULL, NULL, false, NULL, NULL),
-(311358594960855040, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 04:27:53.801+00', '2026-05-09 04:27:53.801+00', NULL, NULL, false, NULL, NULL),
-(311358598052057088, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 04:27:54.538+00', '2026-05-09 04:27:54.538+00', NULL, NULL, false, NULL, NULL),
-(311382411347234816, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 06:02:32.070+00', '2026-05-09 06:02:32.070+00', NULL, NULL, false, NULL, NULL),
-(311382411380789248, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 06:02:32.079+00', '2026-05-09 06:02:32.079+00', NULL, NULL, false, NULL, NULL),
-(311382418892787712, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 06:02:33.869+00', '2026-05-09 06:02:33.869+00', NULL, NULL, false, NULL, NULL),
-(311415320460398592, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 08:13:18.214+00', '2026-05-09 08:13:18.214+00', NULL, NULL, false, NULL, NULL),
-(311415320485564416, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 08:13:18.220+00', '2026-05-09 08:13:18.220+00', NULL, NULL, false, NULL, NULL),
-(311415320493953024, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 08:13:18.222+00', '2026-05-09 08:13:18.222+00', NULL, NULL, false, NULL, NULL),
-(311419021702991872, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 08:28:00.659+00', '2026-05-09 08:28:00.659+00', NULL, NULL, false, NULL, NULL),
-(311453203704057856, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 10:43:50.283+00', '2026-05-09 10:43:50.283+00', NULL, NULL, false, NULL, NULL),
-(311453219168456704, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 10:43:53.970+00', '2026-05-09 10:43:53.970+00', NULL, NULL, false, NULL, NULL),
-(311453239452110848, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 10:43:58.806+00', '2026-05-09 10:43:58.806+00', NULL, NULL, false, NULL, NULL),
-(311477446749720576, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 12:20:10.276+00', '2026-05-09 12:20:10.276+00', NULL, NULL, false, NULL, NULL),
-(311477472632770560, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-09 12:20:16.447+00', '2026-05-09 12:20:16.447+00', NULL, NULL, false, NULL, NULL),
-(311694437910581248, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 02:42:25.000+00', '2026-05-10 02:42:25.000+00', NULL, NULL, false, NULL, NULL),
-(311694438409703424, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 02:42:25.119+00', '2026-05-10 02:42:25.119+00', NULL, NULL, false, NULL, NULL),
-(311694444541775872, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 02:42:26.581+00', '2026-05-10 02:42:26.581+00', NULL, NULL, false, NULL, NULL),
-(311695468664983552, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 02:46:30.751+00', '2026-05-10 02:46:30.751+00', NULL, NULL, false, NULL, NULL),
-(311695719840878592, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 02:47:30.636+00', '2026-05-10 02:47:30.636+00', NULL, NULL, false, NULL, NULL),
-(311695734994898944, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 02:47:34.249+00', '2026-05-10 02:47:34.249+00', NULL, NULL, false, NULL, NULL),
-(311696207042842624, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 02:49:26.794+00', '2026-05-10 02:49:26.794+00', NULL, NULL, false, NULL, NULL),
-(311696626636820480, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 02:51:06.833+00', '2026-05-10 02:51:06.833+00', NULL, NULL, false, NULL, NULL),
-(311697359780188160, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 02:54:01.628+00', '2026-05-10 02:54:01.628+00', NULL, NULL, false, NULL, NULL),
-(311697368516923392, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 02:54:03.711+00', '2026-05-10 02:54:03.711+00', NULL, NULL, false, NULL, NULL),
-(311700366974521344, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 03:05:58.599+00', '2026-05-10 03:05:58.599+00', NULL, NULL, false, NULL, NULL),
-(311708142547243008, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.0.8377.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 03:36:52.440+00', '2026-05-10 03:36:52.440+00', NULL, NULL, false, NULL, NULL),
-(311708147337138176, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.0.8377.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 03:36:53.582+00', '2026-05-10 03:36:53.582+00', NULL, NULL, false, NULL, NULL),
-(311708184188293120, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.0.8377.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 03:37:02.368+00', '2026-05-10 03:37:02.368+00', NULL, NULL, false, NULL, NULL),
-(311708188084801536, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.0.8377.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 03:37:03.297+00', '2026-05-10 03:37:03.297+00', NULL, NULL, false, NULL, NULL),
-(311708246469513216, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.0.8377.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 03:37:17.217+00', '2026-05-10 03:37:17.217+00', NULL, NULL, false, NULL, NULL),
-(311708251108413440, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.0.8377.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 03:37:18.323+00', '2026-05-10 03:37:18.323+00', NULL, NULL, false, NULL, NULL),
-(311708355907293184, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.0.8377.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 03:37:43.309+00', '2026-05-10 03:37:43.309+00', NULL, NULL, false, NULL, NULL),
-(311708530239344640, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.0.8377.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 03:38:24.873+00', '2026-05-10 03:38:24.873+00', NULL, NULL, false, NULL, NULL),
-(311708534030995456, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.0.8377.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 03:38:25.777+00', '2026-05-10 03:38:25.777+00', NULL, NULL, false, NULL, NULL),
-(311708557229690880, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.0.8377.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 03:38:31.308+00', '2026-05-10 03:38:31.308+00', NULL, NULL, false, NULL, NULL),
-(311708560991981568, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.0.8377.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 03:38:32.205+00', '2026-05-10 03:38:32.205+00', NULL, NULL, false, NULL, NULL),
-(311708793427726336, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 03:39:27.623+00', '2026-05-10 03:39:27.623+00', NULL, NULL, false, NULL, NULL),
-(311724845998018560, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 04:43:14.854+00', '2026-05-10 04:43:14.854+00', NULL, NULL, false, NULL, NULL),
-(311724846501335040, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 04:43:14.973+00', '2026-05-10 04:43:14.973+00', NULL, NULL, false, NULL, NULL),
-(311724855602974720, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 04:43:17.143+00', '2026-05-10 04:43:17.143+00', NULL, NULL, false, NULL, NULL),
-(311725031147180032, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 04:43:58.997+00', '2026-05-10 04:43:58.997+00', NULL, NULL, false, NULL, NULL),
-(311733363857690624, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 05:17:05.669+00', '2026-05-10 05:17:05.669+00', NULL, NULL, false, NULL, NULL),
-(311741163648323584, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 05:48:05.284+00', '2026-05-10 05:48:05.284+00', NULL, NULL, false, NULL, NULL),
-(311741167830044672, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 05:48:06.281+00', '2026-05-10 05:48:06.281+00', NULL, NULL, false, NULL, NULL),
-(311749174296580096, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 06:19:55.171+00', '2026-05-10 06:19:55.171+00', NULL, NULL, false, NULL, NULL),
-(311749179816284160, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 06:19:56.487+00', '2026-05-10 06:19:56.487+00', NULL, NULL, false, NULL, NULL),
-(311779481516773376, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 08:20:20.976+00', '2026-05-10 08:20:20.976+00', NULL, NULL, false, NULL, NULL),
-(311779481520967680, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 08:20:20.977+00', '2026-05-10 08:20:20.977+00', NULL, NULL, false, NULL, NULL),
-(311779504409284608, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 08:20:26.434+00', '2026-05-10 08:20:26.434+00', NULL, NULL, false, NULL, NULL),
-(311779529147289600, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 08:20:32.332+00', '2026-05-10 08:20:32.332+00', NULL, NULL, false, NULL, NULL),
-(311809750021967872, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 10:20:37.550+00', '2026-05-10 10:20:37.550+00', NULL, NULL, false, NULL, NULL),
-(311809750059716608, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 10:20:37.559+00', '2026-05-10 10:20:37.559+00', NULL, NULL, false, NULL, NULL),
-(311809798000611328, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 10:20:48.989+00', '2026-05-10 10:20:48.989+00', NULL, NULL, false, NULL, NULL),
-(311811779057422336, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 10:28:41.310+00', '2026-05-10 10:28:41.310+00', NULL, NULL, false, NULL, NULL),
-(311811789631262720, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 10:28:43.831+00', '2026-05-10 10:28:43.831+00', NULL, NULL, false, NULL, NULL),
-(311838610150133760, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-10 12:15:18.341+00', '2026-05-10 12:15:18.341+00', NULL, NULL, false, NULL, NULL),
-(312091378211360768, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-11 04:59:42.943+00', '2026-05-11 04:59:42.943+00', NULL, NULL, false, NULL, NULL),
-(312091386721603584, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-11 04:59:44.972+00', '2026-05-11 04:59:44.972+00', NULL, NULL, false, NULL, NULL),
-(312121991639339008, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-11 07:01:21.753+00', '2026-05-11 07:01:21.753+00', NULL, NULL, false, NULL, NULL),
-(312121998891290624, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-11 07:01:23.482+00', '2026-05-11 07:01:23.482+00', NULL, NULL, false, NULL, NULL),
-(312153720932536320, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-11 09:07:26.607+00', '2026-05-11 09:07:26.607+00', NULL, NULL, false, NULL, NULL),
-(312153734354309120, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-11 09:07:29.806+00', '2026-05-11 09:07:29.806+00', NULL, NULL, false, NULL, NULL),
-(312818679061417984, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-13 05:09:44.978+00', '2026-05-13 05:09:44.978+00', NULL, NULL, false, NULL, NULL),
-(312859041587007488, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-13 07:50:08.155+00', '2026-05-13 07:50:08.155+00', NULL, NULL, false, NULL, NULL),
-(312859049728151552, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-13 07:50:10.095+00', '2026-05-13 07:50:10.095+00', NULL, NULL, false, NULL, NULL),
-(312906038033518592, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-13 10:56:52.980+00', '2026-05-13 10:56:52.980+00', NULL, NULL, false, NULL, NULL),
-(312906046686367744, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-13 10:56:55.043+00', '2026-05-13 10:56:55.043+00', NULL, NULL, false, NULL, NULL),
-(312920599326887936, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-13 11:54:44.663+00', '2026-05-13 11:54:44.663+00', NULL, NULL, false, NULL, NULL),
-(312920605609955328, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-13 11:54:46.161+00', '2026-05-13 11:54:46.161+00', NULL, NULL, false, NULL, NULL),
-(312923905776947200, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-13 12:07:52.982+00', '2026-05-13 12:07:52.982+00', NULL, NULL, false, NULL, NULL),
-(312923910654922752, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-13 12:07:54.145+00', '2026-05-13 12:07:54.145+00', NULL, NULL, false, NULL, NULL),
-(312927373626445824, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-13 12:21:39.782+00', '2026-05-13 12:21:39.782+00', NULL, NULL, false, NULL, NULL),
-(312927378517004288, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-13 12:21:40.948+00', '2026-05-13 12:21:40.948+00', NULL, NULL, false, NULL, NULL),
-(312936432182235136, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-13 12:57:39.510+00', '2026-05-13 12:57:39.510+00', NULL, NULL, false, NULL, NULL),
-(312936436477202432, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-13 12:57:40.534+00', '2026-05-13 12:57:40.534+00', NULL, NULL, false, NULL, NULL),
-(313155005283569664, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-14 03:26:11.398+00', '2026-05-14 03:26:11.398+00', NULL, NULL, false, NULL, NULL),
-(313155311232880640, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-14 03:27:24.342+00', '2026-05-14 03:27:24.342+00', NULL, NULL, false, NULL, NULL),
-(313185530178179072, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-14 05:27:29.100+00', '2026-05-14 05:27:29.100+00', NULL, NULL, false, NULL, NULL),
-(313185536184422400, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-14 05:27:30.532+00', '2026-05-14 05:27:30.532+00', NULL, NULL, false, NULL, NULL),
-(313205796138651648, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-14 06:48:00.881+00', '2026-05-14 06:48:00.881+00', NULL, NULL, false, NULL, NULL),
-(313205801226342400, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-14 06:48:02.094+00', '2026-05-14 06:48:02.094+00', NULL, NULL, false, NULL, NULL),
-(313205823284187136, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-14 06:48:07.353+00', '2026-05-14 06:48:07.353+00', NULL, NULL, false, NULL, NULL),
-(313205828371877888, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-14 06:48:08.566+00', '2026-05-14 06:48:08.566+00', NULL, NULL, false, NULL, NULL),
-(313238471780077568, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-14 08:57:51.362+00', '2026-05-14 08:57:51.362+00', NULL, NULL, false, NULL, NULL),
-(313238479061389312, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-14 08:57:53.097+00', '2026-05-14 08:57:53.097+00', NULL, NULL, false, NULL, NULL),
-(313269427102027776, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-14 11:00:51.685+00', '2026-05-14 11:00:51.685+00', NULL, NULL, false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_security_logs" ("id", "user_id", "user_name", "action", "client_ip", "user_agent", "result", "failure_reason", "tenant_id", "extra_properties", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES
-(313269450330083328, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-14 11:00:57.223+00', '2026-05-14 11:00:57.223+00', NULL, NULL, false, NULL, NULL),
-(313275166103703552, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-14 11:23:39.970+00', '2026-05-14 11:23:39.970+00', NULL, NULL, false, NULL, NULL),
-(313275170671300608, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-14 11:23:41.059+00', '2026-05-14 11:23:41.059+00', NULL, NULL, false, NULL, NULL),
-(313563105205424128, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 06:27:50.001+00', '2026-05-15 06:27:50.001+00', NULL, NULL, false, NULL, NULL),
-(313563111454937088, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 06:27:51.491+00', '2026-05-15 06:27:51.491+00', NULL, NULL, false, NULL, NULL),
-(313575163261620224, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 07:15:44.866+00', '2026-05-15 07:15:44.866+00', NULL, NULL, false, NULL, NULL),
-(313575167359455232, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 07:15:45.843+00', '2026-05-15 07:15:45.843+00', NULL, NULL, false, NULL, NULL),
-(313578054997774336, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 07:27:14.310+00', '2026-05-15 07:27:14.310+00', NULL, NULL, false, NULL, NULL),
-(313578082420133888, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 07:27:20.848+00', '2026-05-15 07:27:20.848+00', NULL, NULL, false, NULL, NULL),
-(313581122194247680, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 07:39:25.586+00', '2026-05-15 07:39:25.586+00', NULL, NULL, false, NULL, NULL),
-(313586124233117696, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 07:59:18.165+00', '2026-05-15 07:59:18.165+00', NULL, NULL, false, NULL, NULL),
-(313586129283059712, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 07:59:19.369+00', '2026-05-15 07:59:19.369+00', NULL, NULL, false, NULL, NULL),
-(313622490322571264, 1, 'admin', 'LOGIN', NULL, NULL, 'SUCCESS', NULL, NULL, NULL, '2026-05-15 10:23:48.517+00', '2026-05-15 10:23:48.517+00', NULL, NULL, false, NULL, NULL),
-(313623659530948608, 1, 'admin', 'LOGIN', NULL, NULL, 'SUCCESS', NULL, NULL, NULL, '2026-05-15 10:28:27.278+00', '2026-05-15 10:28:27.278+00', NULL, NULL, false, NULL, NULL),
-(313623732969017344, 1, 'admin', 'LOGIN', NULL, NULL, 'SUCCESS', NULL, NULL, NULL, '2026-05-15 10:28:44.787+00', '2026-05-15 10:28:44.787+00', NULL, NULL, false, NULL, NULL),
-(313625453321523200, 1, 'admin', 'LOGIN', NULL, NULL, 'SUCCESS', NULL, NULL, NULL, '2026-05-15 10:35:34.951+00', '2026-05-15 10:35:34.951+00', NULL, NULL, false, NULL, NULL),
-(313628740541747200, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 10:48:38.685+00', '2026-05-15 10:48:38.685+00', NULL, NULL, false, NULL, NULL),
-(313639786271739904, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 11:32:32.192+00', '2026-05-15 11:32:32.192+00', NULL, NULL, false, NULL, NULL),
-(313652635819839488, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 12:23:35.763+00', '2026-05-15 12:23:35.763+00', NULL, NULL, false, NULL, NULL),
-(313652782247186432, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 12:24:10.674+00', '2026-05-15 12:24:10.674+00', NULL, NULL, false, NULL, NULL),
-(313667016351813632, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 13:20:44.349+00', '2026-05-15 13:20:44.349+00', NULL, NULL, false, NULL, NULL),
-(313667022253199360, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 13:20:45.756+00', '2026-05-15 13:20:45.756+00', NULL, NULL, false, NULL, NULL),
-(313670888117506048, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-15 13:36:07.450+00', '2026-05-15 13:36:07.450+00', NULL, NULL, false, NULL, NULL),
-(313928172938203136, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-16 06:38:28.931+00', '2026-05-16 06:38:28.931+00', NULL, NULL, false, NULL, NULL),
-(313958935762046976, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-16 08:40:43.360+00', '2026-05-16 08:40:43.360+00', NULL, NULL, false, NULL, NULL),
-(313958936252780544, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-16 08:40:43.477+00', '2026-05-16 08:40:43.477+00', NULL, NULL, false, NULL, NULL),
-(313958942179332096, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-16 08:40:44.890+00', '2026-05-16 08:40:44.890+00', NULL, NULL, false, NULL, NULL),
-(313962861248909312, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-16 08:56:19.269+00', '2026-05-16 08:56:19.269+00', NULL, NULL, false, NULL, NULL),
-(313973111289548800, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-16 09:37:03.069+00', '2026-05-16 09:37:03.069+00', NULL, NULL, false, NULL, NULL),
-(313973131715809280, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-16 09:37:07.939+00', '2026-05-16 09:37:07.939+00', NULL, NULL, false, NULL, NULL),
-(314006667575431168, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-16 11:50:23.511+00', '2026-05-16 11:50:23.511+00', NULL, NULL, false, NULL, NULL),
-(314007507300257792, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-16 11:53:43.717+00', '2026-05-16 11:53:43.717+00', NULL, NULL, false, NULL, NULL),
-(314613552070529024, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-18 04:01:56.050+00', '2026-05-18 04:01:56.050+00', NULL, NULL, false, NULL, NULL),
-(314613558743666688, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-18 04:01:57.641+00', '2026-05-18 04:01:57.641+00', NULL, NULL, false, NULL, NULL),
-(314654493255405568, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-18 06:44:37.189+00', '2026-05-18 06:44:37.189+00', NULL, NULL, false, NULL, NULL),
-(314654520262529024, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-18 06:44:43.628+00', '2026-05-18 06:44:43.628+00', NULL, NULL, false, NULL, NULL),
-(314656823098478592, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-18 06:53:52.667+00', '2026-05-18 06:53:52.667+00', NULL, NULL, false, NULL, NULL),
-(314656830274932736, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-18 06:53:54.378+00', '2026-05-18 06:53:54.378+00', NULL, NULL, false, NULL, NULL),
-(314976369290252288, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-19 04:03:38.417+00', '2026-05-19 04:03:38.417+00', NULL, NULL, false, NULL, NULL),
-(314980954021040128, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-19 04:21:51.501+00', '2026-05-19 04:21:51.501+00', NULL, NULL, false, NULL, NULL),
-(315002299329024000, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-19 05:46:40.619+00', '2026-05-19 05:46:40.619+00', NULL, NULL, false, NULL, NULL),
-(315012656430321664, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-19 06:27:49.946+00', '2026-05-19 06:27:49.946+00', NULL, NULL, false, NULL, NULL),
-(315016540804616192, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-19 06:43:16.052+00', '2026-05-19 06:43:16.052+00', NULL, NULL, false, NULL, NULL),
-(315016562988290048, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-19 06:43:21.341+00', '2026-05-19 06:43:21.341+00', NULL, NULL, false, NULL, NULL),
-(315038056177995776, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-19 08:08:45.716+00', '2026-05-19 08:08:45.716+00', NULL, NULL, false, NULL, NULL),
-(315038070212136960, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-19 08:08:49.062+00', '2026-05-19 08:08:49.062+00', NULL, NULL, false, NULL, NULL),
-(315063042167541760, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-19 09:48:02.841+00', '2026-05-19 09:48:02.841+00', NULL, NULL, false, NULL, NULL),
-(315063069384380416, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-19 09:48:09.330+00', '2026-05-19 09:48:09.330+00', NULL, NULL, false, NULL, NULL),
-(315068637811052544, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-19 10:10:16.946+00', '2026-05-19 10:10:16.946+00', NULL, NULL, false, NULL, NULL),
-(315068651803250688, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-19 10:10:20.282+00', '2026-05-19 10:10:20.282+00', NULL, NULL, false, NULL, NULL),
-(315321093172760576, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 02:53:26.995+00', '2026-05-20 02:53:26.995+00', NULL, NULL, false, NULL, NULL),
-(315321175112683520, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 02:53:46.531+00', '2026-05-20 02:53:46.531+00', NULL, NULL, false, NULL, NULL),
-(315322167925411840, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 02:57:43.236+00', '2026-05-20 02:57:43.236+00', NULL, NULL, false, NULL, NULL),
-(315322185566654464, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 02:57:47.442+00', '2026-05-20 02:57:47.442+00', NULL, NULL, false, NULL, NULL),
-(315322199584018432, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 02:57:50.784+00', '2026-05-20 02:57:50.784+00', NULL, NULL, false, NULL, NULL),
-(315329424590376960, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 SLBrowser/9.0.7.12011 SLBChan/10 SLBVPV/64-bit', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 03:26:33.359+00', '2026-05-20 03:26:33.359+00', NULL, NULL, false, NULL, NULL),
-(315331021283266560, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 SLBrowser/9.0.7.12011 SLBChan/10 SLBVPV/64-bit', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 03:32:54.041+00', '2026-05-20 03:32:54.041+00', NULL, NULL, false, NULL, NULL),
-(315331094910078976, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 SLBrowser/9.0.7.12011 SLBChan/10 SLBVPV/64-bit', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 03:33:11.595+00', '2026-05-20 03:33:11.595+00', NULL, NULL, false, NULL, NULL),
-(315331132491042816, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 SLBrowser/9.0.7.12011 SLBChan/10 SLBVPV/64-bit', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 03:33:20.555+00', '2026-05-20 03:33:20.555+00', NULL, NULL, false, NULL, NULL),
-(315339705543561216, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 04:07:24.530+00', '2026-05-20 04:07:24.530+00', NULL, NULL, false, NULL, NULL),
-(315349851912540160, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 04:47:43.612+00', '2026-05-20 04:47:43.612+00', NULL, NULL, false, NULL, NULL),
-(315349870858211328, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 04:47:48.129+00', '2026-05-20 04:47:48.129+00', NULL, NULL, false, NULL, NULL),
-(315354537302429696, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 05:06:20.696+00', '2026-05-20 05:06:20.696+00', NULL, NULL, false, NULL, NULL),
-(315354546429235200, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 05:06:22.872+00', '2026-05-20 05:06:22.872+00', NULL, NULL, false, NULL, NULL),
-(315354546471178240, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 05:06:22.882+00', '2026-05-20 05:06:22.882+00', NULL, NULL, false, NULL, NULL),
-(315354551210741760, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 05:06:24.012+00', '2026-05-20 05:06:24.012+00', NULL, NULL, false, NULL, NULL),
-(315354551210741761, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 05:06:24.012+00', '2026-05-20 05:06:24.012+00', NULL, NULL, false, NULL, NULL),
-(315354554893340672, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 05:06:24.890+00', '2026-05-20 05:06:24.890+00', NULL, NULL, false, NULL, NULL),
-(315354554893340673, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 05:06:24.890+00', '2026-05-20 05:06:24.890+00', NULL, NULL, false, NULL, NULL),
-(315354557065990144, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 05:06:25.408+00', '2026-05-20 05:06:25.408+00', NULL, NULL, false, NULL, NULL),
-(315354557065990145, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 05:06:25.408+00', '2026-05-20 05:06:25.408+00', NULL, NULL, false, NULL, NULL),
-(315354575881637888, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 05:06:29.894+00', '2026-05-20 05:06:29.894+00', NULL, NULL, false, NULL, NULL),
-(315354575881637889, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 05:06:29.894+00', '2026-05-20 05:06:29.894+00', NULL, NULL, false, NULL, NULL),
-(315354577269952512, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 05:06:30.225+00', '2026-05-20 05:06:30.225+00', NULL, NULL, false, NULL, NULL),
-(315354577269952513, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 05:06:30.225+00', '2026-05-20 05:06:30.225+00', NULL, NULL, false, NULL, NULL),
-(315354592197480448, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 05:06:33.784+00', '2026-05-20 05:06:33.784+00', NULL, NULL, false, NULL, NULL),
-(315370825242382336, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 SLBrowser/9.0.7.12011 SLBChan/10 SLBVPV/64-bit', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 06:11:04.044+00', '2026-05-20 06:11:04.044+00', NULL, NULL, false, NULL, NULL),
-(315370834222387200, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 SLBrowser/9.0.7.12011 SLBChan/10 SLBVPV/64-bit', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 06:11:06.185+00', '2026-05-20 06:11:06.185+00', NULL, NULL, false, NULL, NULL),
-(315371856076476416, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 06:15:09.814+00', '2026-05-20 06:15:09.814+00', NULL, NULL, false, NULL, NULL),
-(315372040399360000, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 06:15:53.760+00', '2026-05-20 06:15:53.760+00', NULL, NULL, false, NULL, NULL),
-(315372052680282112, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 06:15:56.688+00', '2026-05-20 06:15:56.688+00', NULL, NULL, false, NULL, NULL),
-(315405195463364608, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 08:27:38.543+00', '2026-05-20 08:27:38.543+00', NULL, NULL, false, NULL, NULL),
-(315405195538862080, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 08:27:38.561+00', '2026-05-20 08:27:38.561+00', NULL, NULL, false, NULL, NULL),
-(315405232520040448, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 08:27:47.378+00', '2026-05-20 08:27:47.378+00', NULL, NULL, false, NULL, NULL),
-(315406969995268096, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 SLBrowser/9.0.7.12011 SLBChan/10 SLBVPV/64-bit', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 08:34:41.626+00', '2026-05-20 08:34:41.626+00', NULL, NULL, false, NULL, NULL),
-(315411818261516288, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 08:53:57.541+00', '2026-05-20 08:53:57.541+00', NULL, NULL, false, NULL, NULL),
-(315411834627690496, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 08:54:01.443+00', '2026-05-20 08:54:01.443+00', NULL, NULL, false, NULL, NULL),
-(315419729882779648, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 09:25:23.819+00', '2026-05-20 09:25:23.819+00', NULL, NULL, false, NULL, NULL),
-(315422494305030144, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 09:36:22.908+00', '2026-05-20 09:36:22.908+00', NULL, NULL, false, NULL, NULL),
-(315422506875359232, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 09:36:25.905+00', '2026-05-20 09:36:25.905+00', NULL, NULL, false, NULL, NULL),
-(315431183552876544, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 10:10:54.587+00', '2026-05-20 10:10:54.587+00', NULL, NULL, false, NULL, NULL),
-(315435398486560768, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 10:27:39.505+00', '2026-05-20 10:27:39.505+00', NULL, NULL, false, NULL, NULL),
-(315435411107221504, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 10:27:42.514+00', '2026-05-20 10:27:42.514+00', NULL, NULL, false, NULL, NULL),
-(315465628446625792, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 12:27:46.889+00', '2026-05-20 12:27:46.889+00', NULL, NULL, false, NULL, NULL),
-(315465628455014400, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 12:27:46.891+00', '2026-05-20 12:27:46.891+00', NULL, NULL, false, NULL, NULL),
-(315465628777975808, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 12:27:46.968+00', '2026-05-20 12:27:46.968+00', NULL, NULL, false, NULL, NULL),
-(315465648717697024, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 12:27:51.722+00', '2026-05-20 12:27:51.722+00', NULL, NULL, false, NULL, NULL),
-(315469479887245312, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 12:43:05.144+00', '2026-05-20 12:43:05.144+00', NULL, NULL, false, NULL, NULL),
-(315469497440407552, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-20 12:43:09.329+00', '2026-05-20 12:43:09.329+00', NULL, NULL, false, NULL, NULL),
-(315690011765248000, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 03:19:24.042+00', '2026-05-21 03:19:24.042+00', NULL, NULL, false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_security_logs" ("id", "user_id", "user_name", "action", "client_ip", "user_agent", "result", "failure_reason", "tenant_id", "extra_properties", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES
-(315740044691771392, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 06:38:12.820+00', '2026-05-21 06:38:12.820+00', NULL, NULL, false, NULL, NULL),
-(315765681145516032, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 08:20:05.027+00', '2026-05-21 08:20:05.027+00', NULL, NULL, false, NULL, NULL),
-(315765691832602624, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 08:20:07.575+00', '2026-05-21 08:20:07.575+00', NULL, NULL, false, NULL, NULL),
-(315796947001675776, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 10:24:19.388+00', '2026-05-21 10:24:19.388+00', NULL, NULL, false, NULL, NULL),
-(315796947010064384, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 10:24:19.390+00', '2026-05-21 10:24:19.390+00', NULL, NULL, false, NULL, NULL),
-(315797143005696000, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 10:25:06.119+00', '2026-05-21 10:25:06.119+00', NULL, NULL, false, NULL, NULL),
-(315807415028682752, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 11:05:55.160+00', '2026-05-21 11:05:55.160+00', NULL, NULL, false, NULL, NULL),
-(315807428848914432, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 11:05:58.455+00', '2026-05-21 11:05:58.455+00', NULL, NULL, false, NULL, NULL),
-(315815384995860480, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 11:37:35.349+00', '2026-05-21 11:37:35.349+00', NULL, NULL, false, NULL, NULL),
-(315815395695529984, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 11:37:37.900+00', '2026-05-21 11:37:37.900+00', NULL, NULL, false, NULL, NULL),
-(315820558900531200, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 11:58:08.904+00', '2026-05-21 11:58:08.904+00', NULL, NULL, false, NULL, NULL),
-(315820565976322048, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 11:58:10.591+00', '2026-05-21 11:58:10.591+00', NULL, NULL, false, NULL, NULL),
-(315826439553814528, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 12:21:30.961+00', '2026-05-21 12:21:30.961+00', NULL, NULL, false, NULL, NULL),
-(315826450467393536, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 12:21:33.563+00', '2026-05-21 12:21:33.563+00', NULL, NULL, false, NULL, NULL),
-(315831607118794752, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-21 12:42:03.004+00', '2026-05-21 12:42:03.004+00', NULL, NULL, false, NULL, NULL),
-(316055721234403328, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 03:32:35.973+00', '2026-05-22 03:32:35.973+00', NULL, NULL, false, NULL, NULL),
-(316056293186473984, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 03:34:52.337+00', '2026-05-22 03:34:52.337+00', NULL, NULL, false, NULL, NULL),
-(316099163163463680, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 06:25:13.336+00', '2026-05-22 06:25:13.336+00', NULL, NULL, false, NULL, NULL),
-(316099163205406720, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 06:25:13.346+00', '2026-05-22 06:25:13.346+00', NULL, NULL, false, NULL, NULL),
-(316099163209601024, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 06:25:13.347+00', '2026-05-22 06:25:13.347+00', NULL, NULL, false, NULL, NULL),
-(316101840950792192, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 06:35:51.770+00', '2026-05-22 06:35:51.770+00', NULL, NULL, false, NULL, NULL),
-(316121752075243520, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 07:54:58.952+00', '2026-05-22 07:54:58.952+00', NULL, NULL, false, NULL, NULL),
-(316121764607823872, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 07:55:01.940+00', '2026-05-22 07:55:01.940+00', NULL, NULL, false, NULL, NULL),
-(316126067376001024, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 08:12:07.800+00', '2026-05-22 08:12:07.800+00', NULL, NULL, false, NULL, NULL),
-(316126083817672704, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 08:12:11.720+00', '2026-05-22 08:12:11.720+00', NULL, NULL, false, NULL, NULL),
-(316139874934067200, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 09:06:59.779+00', '2026-05-22 09:06:59.779+00', NULL, NULL, false, NULL, NULL),
-(316139890151002112, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 09:07:03.407+00', '2026-05-22 09:07:03.407+00', NULL, NULL, false, NULL, NULL),
-(316144711820120064, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 09:26:12.982+00', '2026-05-22 09:26:12.982+00', NULL, NULL, false, NULL, NULL),
-(316144728781885440, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 09:26:17.027+00', '2026-05-22 09:26:17.027+00', NULL, NULL, false, NULL, NULL),
-(316173181651521536, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 11:19:20.719+00', '2026-05-22 11:19:20.719+00', NULL, NULL, false, NULL, NULL),
-(316178858045345792, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 11:41:54.077+00', '2026-05-22 11:41:54.077+00', NULL, NULL, false, NULL, NULL),
-(316178867306369024, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 11:41:56.285+00', '2026-05-22 11:41:56.285+00', NULL, NULL, false, NULL, NULL),
-(316187155621744640, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 12:14:52.373+00', '2026-05-22 12:14:52.373+00', NULL, NULL, false, NULL, NULL),
-(316187165058928640, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 12:14:54.623+00', '2026-05-22 12:14:54.623+00', NULL, NULL, false, NULL, NULL),
-(316189159556386816, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 12:22:50.148+00', '2026-05-22 12:22:50.148+00', NULL, NULL, false, NULL, NULL),
-(316190777717821440, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 12:29:15.948+00', '2026-05-22 12:29:15.948+00', NULL, NULL, false, NULL, NULL),
-(316190791387058176, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 12:29:19.207+00', '2026-05-22 12:29:19.207+00', NULL, NULL, false, NULL, NULL),
-(316192939949690880, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 12:37:51.464+00', '2026-05-22 12:37:51.464+00', NULL, NULL, false, NULL, NULL),
-(316192954969493504, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 12:37:55.045+00', '2026-05-22 12:37:55.045+00', NULL, NULL, false, NULL, NULL),
-(316194250163752960, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 12:43:03.844+00', '2026-05-22 12:43:03.844+00', NULL, NULL, false, NULL, NULL),
-(316194261970718720, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-22 12:43:06.659+00', '2026-05-22 12:43:06.659+00', NULL, NULL, false, NULL, NULL),
-(316753554253549568, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 01:45:32.330+00', '2026-05-24 01:45:32.330+00', NULL, NULL, false, NULL, NULL),
-(316753562356944896, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 01:45:34.262+00', '2026-05-24 01:45:34.262+00', NULL, NULL, false, NULL, NULL),
-(316791812446490624, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 04:17:33.795+00', '2026-05-24 04:17:33.795+00', NULL, NULL, false, NULL, NULL),
-(316791834059739136, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 04:17:38.947+00', '2026-05-24 04:17:38.947+00', NULL, NULL, false, NULL, NULL),
-(316798703156858880, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 04:44:56.667+00', '2026-05-24 04:44:56.667+00', NULL, NULL, false, NULL, NULL),
-(316801751634153472, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 04:57:03.482+00', '2026-05-24 04:57:03.482+00', NULL, NULL, false, NULL, NULL),
-(316801760333139968, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 04:57:05.555+00', '2026-05-24 04:57:05.555+00', NULL, NULL, false, NULL, NULL),
-(316813834919088128, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 05:45:04.361+00', '2026-05-24 05:45:04.361+00', NULL, NULL, false, NULL, NULL),
-(316813851163627520, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 05:45:08.234+00', '2026-05-24 05:45:08.234+00', NULL, NULL, false, NULL, NULL),
-(316829879810134016, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 06:48:49.761+00', '2026-05-24 06:48:49.761+00', NULL, NULL, false, NULL, NULL),
-(316830001008742400, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 06:49:18.657+00', '2026-05-24 06:49:18.657+00', NULL, NULL, false, NULL, NULL),
-(316840674746437632, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 SLBrowser/9.0.7.12011 SLBChan/10 SLBVPV/64-bit', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 07:31:43.474+00', '2026-05-24 07:31:43.474+00', NULL, NULL, false, NULL, NULL),
-(316840681755119616, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 07:31:45.145+00', '2026-05-24 07:31:45.145+00', NULL, NULL, false, NULL, NULL),
-(316852228361555968, NULL, NULL, 'LOGIN', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 08:17:38.071+00', '2026-05-24 08:17:38.071+00', NULL, NULL, false, NULL, NULL),
-(316864155231981568, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 09:05:01.658+00', '2026-05-24 09:05:01.658+00', NULL, NULL, false, NULL, NULL),
-(316865211594182656, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 09:09:13.515+00', '2026-05-24 09:09:13.515+00', NULL, NULL, false, NULL, NULL),
-(316865225439580160, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 09:09:16.816+00', '2026-05-24 09:09:16.816+00', NULL, NULL, false, NULL, NULL),
-(316879688306790400, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:06:45.032+00', '2026-05-24 10:06:45.032+00', NULL, NULL, false, NULL, NULL),
-(316879701300744192, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:06:48.130+00', '2026-05-24 10:06:48.130+00', NULL, NULL, false, NULL, NULL),
-(316884385383583744, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:25:24.902+00', '2026-05-24 10:25:24.902+00', NULL, NULL, false, NULL, NULL),
-(316884389837934592, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:25:25.964+00', '2026-05-24 10:25:25.964+00', NULL, NULL, false, NULL, NULL),
-(316884399077986304, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:25:28.167+00', '2026-05-24 10:25:28.167+00', NULL, NULL, false, NULL, NULL),
-(316884417272877056, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:25:32.505+00', '2026-05-24 10:25:32.505+00', NULL, NULL, false, NULL, NULL),
-(316884424268976128, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:25:34.173+00', '2026-05-24 10:25:34.173+00', NULL, NULL, false, NULL, NULL),
-(316884432657584128, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:25:36.173+00', '2026-05-24 10:25:36.173+00', NULL, NULL, false, NULL, NULL),
-(316884433592913920, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:25:36.396+00', '2026-05-24 10:25:36.396+00', NULL, NULL, false, NULL, NULL),
-(316884442782633984, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:25:38.587+00', '2026-05-24 10:25:38.587+00', NULL, NULL, false, NULL, NULL),
-(316884446767222784, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:25:39.537+00', '2026-05-24 10:25:39.537+00', NULL, NULL, false, NULL, NULL),
-(316885572568748032, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:30:07.953+00', '2026-05-24 10:30:07.953+00', NULL, NULL, false, NULL, NULL),
-(316885572673605632, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:30:07.975+00', '2026-05-24 10:30:07.975+00', NULL, NULL, false, NULL, NULL),
-(316886395805765632, NULL, NULL, 'LOGIN', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:33:24.250+00', '2026-05-24 10:33:24.250+00', NULL, NULL, false, NULL, NULL),
-(316886439946620928, NULL, NULL, 'LOGIN', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:33:34.748+00', '2026-05-24 10:33:34.748+00', NULL, NULL, false, NULL, NULL),
-(316886879360258048, NULL, NULL, 'LOGIN', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:35:19.513+00', '2026-05-24 10:35:19.513+00', NULL, NULL, false, NULL, NULL),
-(316887757551046656, NULL, NULL, 'LOGIN', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:38:48.892+00', '2026-05-24 10:38:48.892+00', NULL, NULL, false, NULL, NULL),
-(316888861210841088, NULL, NULL, 'LOGIN', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:43:12.023+00', '2026-05-24 10:43:12.023+00', NULL, NULL, false, NULL, NULL),
-(316890286364037120, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:48:51.806+00', '2026-05-24 10:48:51.806+00', NULL, NULL, false, NULL, NULL),
-(316890338130137088, NULL, NULL, 'LOGIN', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 10:49:04.148+00', '2026-05-24 10:49:04.148+00', NULL, NULL, false, NULL, NULL),
-(316903085977899008, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 11:39:43.471+00', '2026-05-24 11:39:43.471+00', NULL, NULL, false, NULL, NULL),
-(316903120060813312, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 11:39:51.597+00', '2026-05-24 11:39:51.597+00', NULL, NULL, false, NULL, NULL),
-(316919417926062080, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 12:44:37.311+00', '2026-05-24 12:44:37.311+00', NULL, NULL, false, NULL, NULL),
-(316919439098908672, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 12:44:42.359+00', '2026-05-24 12:44:42.359+00', NULL, NULL, false, NULL, NULL),
-(316921794825555968, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 12:54:04.008+00', '2026-05-24 12:54:04.008+00', NULL, NULL, false, NULL, NULL),
-(316921808389935104, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 12:54:07.242+00', '2026-05-24 12:54:07.242+00', NULL, NULL, false, NULL, NULL),
-(316923204265316352, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 12:59:40.045+00', '2026-05-24 12:59:40.045+00', NULL, NULL, false, NULL, NULL),
-(316923215472496640, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 12:59:42.717+00', '2026-05-24 12:59:42.717+00', NULL, NULL, false, NULL, NULL),
-(316924834872299520, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 13:06:08.819+00', '2026-05-24 13:06:08.819+00', NULL, NULL, false, NULL, NULL),
-(316924834872299521, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 13:06:08.819+00', '2026-05-24 13:06:08.819+00', NULL, NULL, false, NULL, NULL),
-(316924834884882432, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 13:06:08.819+00', '2026-05-24 13:06:08.819+00', NULL, NULL, false, NULL, NULL),
-(316924835321090048, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 13:06:08.919+00', '2026-05-24 13:06:08.919+00', NULL, NULL, false, NULL, NULL),
-(316924835438530560, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 13:06:08.947+00', '2026-05-24 13:06:08.947+00', NULL, NULL, false, NULL, NULL),
-(316924835438530561, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 13:06:08.947+00', '2026-05-24 13:06:08.947+00', NULL, NULL, false, NULL, NULL),
-(316936175595556864, NULL, NULL, 'LOGIN', '127.0.0.1', NULL, 'SUCCESS', NULL, NULL, NULL, '2026-05-24 13:51:12.651+00', '2026-05-24 13:51:12.651+00', NULL, NULL, false, NULL, NULL),
-(316936808557973504, NULL, NULL, 'LOGIN', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.1.8663.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-24 13:53:43.561+00', '2026-05-24 13:53:43.561+00', NULL, NULL, false, NULL, NULL),
-(317170093031690240, NULL, NULL, 'LOGOUT', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.1.8663.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-25 05:20:42.915+00', '2026-05-25 05:20:42.915+00', NULL, NULL, false, NULL, NULL),
-(317170466031144960, NULL, NULL, 'LOGIN', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 QQBrowser/21.1.8663.400', 'SUCCESS', NULL, NULL, NULL, '2026-05-25 05:22:11.844+00', '2026-05-25 05:22:11.844+00', NULL, NULL, false, NULL, NULL),
-(317554518856830976, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-26 06:48:17.173+00', '2026-05-26 06:48:17.173+00', NULL, NULL, false, NULL, NULL),
-(317554562548895744, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-26 06:48:27.590+00', '2026-05-26 06:48:27.590+00', NULL, NULL, false, NULL, NULL),
-(317585000126484480, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-26 08:49:24.474+00', '2026-05-26 08:49:24.474+00', NULL, NULL, false, NULL, NULL),
-(317585007244218368, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-26 08:49:26.171+00', '2026-05-26 08:49:26.171+00', NULL, NULL, false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_security_logs" ("id", "user_id", "user_name", "action", "client_ip", "user_agent", "result", "failure_reason", "tenant_id", "extra_properties", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES
-(317598828475715584, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-26 09:44:21.409+00', '2026-05-26 09:44:21.409+00', NULL, NULL, false, NULL, NULL),
-(317630972620181504, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-26 11:52:05.170+00', '2026-05-26 11:52:05.170+00', NULL, NULL, false, NULL, NULL),
-(317630979825995776, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-26 11:52:06.888+00', '2026-05-26 11:52:06.888+00', NULL, NULL, false, NULL, NULL),
-(317875464875020288, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 04:03:36.666+00', '2026-05-27 04:03:36.666+00', NULL, NULL, false, NULL, NULL),
-(317875464912769024, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 04:03:36.675+00', '2026-05-27 04:03:36.675+00', NULL, NULL, false, NULL, NULL),
-(317875464933740544, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 04:03:36.680+00', '2026-05-27 04:03:36.680+00', NULL, NULL, false, NULL, NULL),
-(317875480419110912, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 04:03:40.372+00', '2026-05-27 04:03:40.372+00', NULL, NULL, false, NULL, NULL),
-(317877139060822016, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 04:10:15.823+00', '2026-05-27 04:10:15.823+00', NULL, NULL, false, NULL, NULL),
-(317878503392415744, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 04:15:41.105+00', '2026-05-27 04:15:41.105+00', NULL, NULL, false, NULL, NULL),
-(317878513672654848, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 04:15:43.556+00', '2026-05-27 04:15:43.556+00', NULL, NULL, false, NULL, NULL),
-(317880888743432192, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 04:25:09.817+00', '2026-05-27 04:25:09.817+00', NULL, NULL, false, NULL, NULL),
-(317893338238816256, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:14:38.008+00', '2026-05-27 05:14:38.008+00', NULL, NULL, false, NULL, NULL),
-(317893372183318528, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:14:46.101+00', '2026-05-27 05:14:46.101+00', NULL, NULL, false, NULL, NULL),
-(317893394773839872, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:14:51.487+00', '2026-05-27 05:14:51.487+00', NULL, NULL, false, NULL, NULL),
-(317893469990293504, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:15:09.421+00', '2026-05-27 05:15:09.421+00', NULL, NULL, false, NULL, NULL),
-(317893692724613120, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 SLBrowser/9.0.7.12011 SLBChan/10 SLBVPV/64-bit', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:16:02.524+00', '2026-05-27 05:16:02.524+00', NULL, NULL, false, NULL, NULL),
-(317893701805281280, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 SLBrowser/9.0.7.12011 SLBChan/10 SLBVPV/64-bit', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:16:04.689+00', '2026-05-27 05:16:04.689+00', NULL, NULL, false, NULL, NULL),
-(317894238890102784, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:18:12.740+00', '2026-05-27 05:18:12.740+00', NULL, NULL, false, NULL, NULL),
-(317894251523346432, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:18:15.752+00', '2026-05-27 05:18:15.752+00', NULL, NULL, false, NULL, NULL),
-(317894756844703744, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:20:16.230+00', '2026-05-27 05:20:16.230+00', NULL, NULL, false, NULL, NULL),
-(317894761366163456, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:20:17.308+00', '2026-05-27 05:20:17.308+00', NULL, NULL, false, NULL, NULL),
-(317894810246582272, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:20:28.962+00', '2026-05-27 05:20:28.962+00', NULL, NULL, false, NULL, NULL),
-(317894813409087488, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:20:29.716+00', '2026-05-27 05:20:29.716+00', NULL, NULL, false, NULL, NULL),
-(317895211520888832, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:22:04.634+00', '2026-05-27 05:22:04.634+00', NULL, NULL, false, NULL, NULL),
-(317895312414871552, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:22:28.689+00', '2026-05-27 05:22:28.689+00', NULL, NULL, false, NULL, NULL),
-(317895327413702656, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:22:32.265+00', '2026-05-27 05:22:32.265+00', NULL, NULL, false, NULL, NULL),
-(317896867390164992, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:28:39.424+00', '2026-05-27 05:28:39.424+00', NULL, NULL, false, NULL, NULL),
-(317896873421574144, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:28:40.862+00', '2026-05-27 05:28:40.862+00', NULL, NULL, false, NULL, NULL),
-(317901130791129088, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 SLBrowser/9.0.7.12011 SLBChan/10 SLBVPV/64-bit', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:45:35.898+00', '2026-05-27 05:45:35.898+00', NULL, NULL, false, NULL, NULL),
-(317903283274387456, NULL, NULL, 'LOGIN', '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 05:54:09.091+00', '2026-05-27 05:54:09.091+00', NULL, NULL, false, NULL, NULL),
-(317907227979550720, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 06:09:49.581+00', '2026-05-27 06:09:49.581+00', NULL, NULL, false, NULL, NULL),
-(317907375040237568, NULL, NULL, 'LOGIN', '192.168.31.159', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 06:10:24.643+00', '2026-05-27 06:10:24.643+00', NULL, NULL, false, NULL, NULL),
-(317907885683642368, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 06:12:26.389+00', '2026-05-27 06:12:26.389+00', NULL, NULL, false, NULL, NULL),
-(317908915456577536, NULL, NULL, 'LOGIN', '192.168.31.150', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 SLBrowser/9.0.7.12011 SLBChan/10 SLBVPV/64-bit', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 06:16:31.906+00', '2026-05-27 06:16:31.906+00', NULL, NULL, false, NULL, NULL),
-(317915176512262144, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 06:41:24.658+00', '2026-05-27 06:41:24.658+00', NULL, NULL, false, NULL, NULL),
-(317915181809668096, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 06:41:25.921+00', '2026-05-27 06:41:25.921+00', NULL, NULL, false, NULL, NULL),
-(317930671995621376, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 07:42:59.070+00', '2026-05-27 07:42:59.070+00', NULL, NULL, false, NULL, NULL),
-(317930680040296448, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 07:43:00.988+00', '2026-05-27 07:43:00.988+00', NULL, NULL, false, NULL, NULL),
-(317934305898663936, NULL, NULL, 'LOGOUT', '192.168.31.150', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 SLBrowser/9.0.7.12011 SLBChan/10 SLBVPV/64-bit', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 07:57:25.460+00', '2026-05-27 07:57:25.460+00', NULL, NULL, false, NULL, NULL),
-(317942363886456832, NULL, NULL, 'LOGIN', '192.168.31.150', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 SLBrowser/9.0.7.12011 SLBChan/10 SLBVPV/64-bit', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 08:29:26.634+00', '2026-05-27 08:29:26.634+00', NULL, NULL, false, NULL, NULL),
-(317963015490113536, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 09:51:30.360+00', '2026-05-27 09:51:30.360+00', NULL, NULL, false, NULL, NULL),
-(317963033328488448, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 09:51:34.613+00', '2026-05-27 09:51:34.613+00', NULL, NULL, false, NULL, NULL),
-(317970917332357120, NULL, NULL, 'LOGOUT', '192.168.31.159', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 10:22:54.306+00', '2026-05-27 10:22:54.306+00', NULL, NULL, false, NULL, NULL),
-(317970922973696000, NULL, NULL, 'LOGIN', '192.168.31.159', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 10:22:55.651+00', '2026-05-27 10:22:55.651+00', NULL, NULL, false, NULL, NULL),
-(317986509267406848, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 11:24:51.713+00', '2026-05-27 11:24:51.713+00', NULL, NULL, false, NULL, NULL),
-(317986529177767936, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-27 11:24:56.460+00', '2026-05-27 11:24:56.460+00', NULL, NULL, false, NULL, NULL),
-(318228370703781888, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 03:25:55.973+00', '2026-05-28 03:25:55.973+00', NULL, NULL, false, NULL, NULL),
-(318228370703781889, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 03:25:55.973+00', '2026-05-28 03:25:55.973+00', NULL, NULL, false, NULL, NULL),
-(318228370703781890, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 03:25:55.973+00', '2026-05-28 03:25:55.973+00', NULL, NULL, false, NULL, NULL),
-(318228392107315200, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 03:26:01.076+00', '2026-05-28 03:26:01.076+00', NULL, NULL, false, NULL, NULL),
-(318228392124092416, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 03:26:01.080+00', '2026-05-28 03:26:01.080+00', NULL, NULL, false, NULL, NULL),
-(318228395706028032, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 03:26:01.934+00', '2026-05-28 03:26:01.934+00', NULL, NULL, false, NULL, NULL),
-(318228395706028033, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 03:26:01.934+00', '2026-05-28 03:26:01.934+00', NULL, NULL, false, NULL, NULL),
-(318228411334004736, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 03:26:05.660+00', '2026-05-28 03:26:05.660+00', NULL, NULL, false, NULL, NULL),
-(318228411334004737, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 03:26:05.660+00', '2026-05-28 03:26:05.660+00', NULL, NULL, false, NULL, NULL),
-(318228421782016000, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 03:26:08.151+00', '2026-05-28 03:26:08.151+00', NULL, NULL, false, NULL, NULL),
-(318228421782016001, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 03:26:08.151+00', '2026-05-28 03:26:08.151+00', NULL, NULL, false, NULL, NULL),
-(318228421786210304, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 03:26:08.152+00', '2026-05-28 03:26:08.152+00', NULL, NULL, false, NULL, NULL),
-(318228507240960000, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 03:26:28.526+00', '2026-05-28 03:26:28.526+00', NULL, NULL, false, NULL, NULL),
-(318266218953838592, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 05:56:19.699+00', '2026-05-28 05:56:19.699+00', NULL, NULL, false, NULL, NULL),
-(318266227434721280, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 05:56:21.721+00', '2026-05-28 05:56:21.721+00', NULL, NULL, false, NULL, NULL),
-(318268453180936192, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 06:05:12.380+00', '2026-05-28 06:05:12.380+00', NULL, NULL, false, NULL, NULL),
-(318268475217809408, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 06:05:17.634+00', '2026-05-28 06:05:17.634+00', NULL, NULL, false, NULL, NULL),
-(318270117821026304, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 06:11:49.261+00', '2026-05-28 06:11:49.261+00', NULL, NULL, false, NULL, NULL),
-(318270138444419072, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 06:11:54.178+00', '2026-05-28 06:11:54.178+00', NULL, NULL, false, NULL, NULL),
-(318275737297620992, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 06:34:09.049+00', '2026-05-28 06:34:09.049+00', NULL, NULL, false, NULL, NULL),
-(318275750270603264, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 06:34:12.143+00', '2026-05-28 06:34:12.143+00', NULL, NULL, false, NULL, NULL),
-(318280190977380352, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 06:51:50.889+00', '2026-05-28 06:51:50.889+00', NULL, NULL, false, NULL, NULL),
-(318280203468017664, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 06:51:53.867+00', '2026-05-28 06:51:53.867+00', NULL, NULL, false, NULL, NULL),
-(318281093616242688, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 06:55:26.094+00', '2026-05-28 06:55:26.094+00', NULL, NULL, false, NULL, NULL),
-(318281106203348992, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 06:55:29.095+00', '2026-05-28 06:55:29.095+00', NULL, NULL, false, NULL, NULL),
-(318281129393655808, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 06:55:34.624+00', '2026-05-28 06:55:34.624+00', NULL, NULL, false, NULL, NULL),
-(318281278803677184, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 06:56:10.247+00', '2026-05-28 06:56:10.247+00', NULL, NULL, false, NULL, NULL),
-(318281289159413760, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 06:56:12.716+00', '2026-05-28 06:56:12.716+00', NULL, NULL, false, NULL, NULL),
-(318282673732718592, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:01:42.824+00', '2026-05-28 07:01:42.824+00', NULL, NULL, false, NULL, NULL),
-(318283295508926464, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:04:11.067+00', '2026-05-28 07:04:11.067+00', NULL, NULL, false, NULL, NULL),
-(318283336545996800, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:04:20.851+00', '2026-05-28 07:04:20.851+00', NULL, NULL, false, NULL, NULL),
-(318283734128267264, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:05:55.642+00', '2026-05-28 07:05:55.642+00', NULL, NULL, false, NULL, NULL),
-(318284762588385280, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:10:00.846+00', '2026-05-28 07:10:00.846+00', NULL, NULL, false, NULL, NULL),
-(318284788089753600, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:10:06.926+00', '2026-05-28 07:10:06.926+00', NULL, NULL, false, NULL, NULL),
-(318284798630039552, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:10:09.439+00', '2026-05-28 07:10:09.439+00', NULL, NULL, false, NULL, NULL),
-(318285117672919040, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:11:25.504+00', '2026-05-28 07:11:25.504+00', NULL, NULL, false, NULL, NULL),
-(318285121909166080, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:11:26.514+00', '2026-05-28 07:11:26.514+00', NULL, NULL, false, NULL, NULL),
-(318285721250041856, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:13:49.408+00', '2026-05-28 07:13:49.408+00', NULL, NULL, false, NULL, NULL),
-(318290796655153152, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:33:59.479+00', '2026-05-28 07:33:59.479+00', NULL, NULL, false, NULL, NULL),
-(318290827466510336, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:34:06.825+00', '2026-05-28 07:34:06.825+00', NULL, NULL, false, NULL, NULL),
-(318290833229484032, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:34:08.199+00', '2026-05-28 07:34:08.199+00', NULL, NULL, false, NULL, NULL),
-(318291309468061696, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:36:01.743+00', '2026-05-28 07:36:01.743+00', NULL, NULL, false, NULL, NULL),
-(318291314518003712, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:36:02.947+00', '2026-05-28 07:36:02.947+00', NULL, NULL, false, NULL, NULL),
-(318291502410240000, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:36:47.744+00', '2026-05-28 07:36:47.744+00', NULL, NULL, false, NULL, NULL),
-(318291509414727680, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:36:49.414+00', '2026-05-28 07:36:49.414+00', NULL, NULL, false, NULL, NULL),
-(318291509691551744, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:36:49.480+00', '2026-05-28 07:36:49.480+00', NULL, NULL, false, NULL, NULL),
-(318291520072454144, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:36:51.955+00', '2026-05-28 07:36:51.955+00', NULL, NULL, false, NULL, NULL),
-(318291816165150720, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:38:02.549+00', '2026-05-28 07:38:02.549+00', NULL, NULL, false, NULL, NULL),
-(318291820011327488, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:38:03.466+00', '2026-05-28 07:38:03.466+00', NULL, NULL, false, NULL, NULL),
-(318291893147406336, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:38:20.903+00', '2026-05-28 07:38:20.903+00', NULL, NULL, false, NULL, NULL),
-(318291900340637696, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:38:22.618+00', '2026-05-28 07:38:22.618+00', NULL, NULL, false, NULL, NULL),
-(318292993380454400, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:42:43.219+00', '2026-05-28 07:42:43.219+00', NULL, NULL, false, NULL, NULL),
-(318293080605200384, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:43:04.015+00', '2026-05-28 07:43:04.015+00', NULL, NULL, false, NULL, NULL),
-(318293084614955008, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:43:04.971+00', '2026-05-28 07:43:04.971+00', NULL, NULL, false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_security_logs" ("id", "user_id", "user_name", "action", "client_ip", "user_agent", "result", "failure_reason", "tenant_id", "extra_properties", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES
-(318293570833879040, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:45:00.895+00', '2026-05-28 07:45:00.895+00', NULL, NULL, false, NULL, NULL),
-(318293575611191296, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:45:02.034+00', '2026-05-28 07:45:02.034+00', NULL, NULL, false, NULL, NULL),
-(318293863457886208, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:46:10.662+00', '2026-05-28 07:46:10.662+00', NULL, NULL, false, NULL, NULL),
-(318295453182464000, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:52:29.682+00', '2026-05-28 07:52:29.682+00', NULL, NULL, false, NULL, NULL),
-(318295473206071296, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:52:34.456+00', '2026-05-28 07:52:34.456+00', NULL, NULL, false, NULL, NULL),
-(318295492290154496, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:52:39.006+00', '2026-05-28 07:52:39.006+00', NULL, NULL, false, NULL, NULL),
-(318295985225732096, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:54:36.531+00', '2026-05-28 07:54:36.531+00', NULL, NULL, false, NULL, NULL),
-(318295992226025472, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 07:54:38.200+00', '2026-05-28 07:54:38.200+00', NULL, NULL, false, NULL, NULL),
-(318298458510331904, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 08:04:26.208+00', '2026-05-28 08:04:26.208+00', NULL, NULL, false, NULL, NULL),
-(318298481331539968, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 08:04:31.649+00', '2026-05-28 08:04:31.649+00', NULL, NULL, false, NULL, NULL),
-(318298486184349696, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 08:04:32.806+00', '2026-05-28 08:04:32.806+00', NULL, NULL, false, NULL, NULL),
-(318301968672493568, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 08:18:23.096+00', '2026-05-28 08:18:23.096+00', NULL, NULL, false, NULL, NULL),
-(318301973982482432, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 08:18:24.362+00', '2026-05-28 08:18:24.362+00', NULL, NULL, false, NULL, NULL),
-(318302095181090816, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 08:18:53.258+00', '2026-05-28 08:18:53.258+00', NULL, NULL, false, NULL, NULL),
-(318310487247294464, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 08:52:14.082+00', '2026-05-28 08:52:14.082+00', NULL, NULL, false, NULL, NULL),
-(318310595389034496, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 08:52:39.865+00', '2026-05-28 08:52:39.865+00', NULL, NULL, false, NULL, NULL),
-(318310814742745088, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 08:53:32.163+00', '2026-05-28 08:53:32.163+00', NULL, NULL, false, NULL, NULL),
-(318310818630864896, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 08:53:33.090+00', '2026-05-28 08:53:33.090+00', NULL, NULL, false, NULL, NULL),
-(318314058958770176, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 09:06:25.645+00', '2026-05-28 09:06:25.645+00', NULL, NULL, false, NULL, NULL),
-(318314063568310272, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 09:06:26.744+00', '2026-05-28 09:06:26.744+00', NULL, NULL, false, NULL, NULL),
-(318316535674834944, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 09:16:16.140+00', '2026-05-28 09:16:16.140+00', NULL, NULL, false, NULL, NULL),
-(318316540355678208, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 09:16:17.256+00', '2026-05-28 09:16:17.256+00', NULL, NULL, false, NULL, NULL),
-(318336736218845184, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 10:36:32.325+00', '2026-05-28 10:36:32.325+00', NULL, NULL, false, NULL, NULL),
-(318337388361814016, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-28 10:39:07.808+00', '2026-05-28 10:39:07.808+00', NULL, NULL, false, NULL, NULL),
-(318588840363692032, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:18:18.638+00', '2026-05-29 03:18:18.638+00', NULL, NULL, false, NULL, NULL),
-(318588852002885632, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:18:21.412+00', '2026-05-29 03:18:21.412+00', NULL, NULL, false, NULL, NULL),
-(318590738756014080, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:25:51.249+00', '2026-05-29 03:25:51.249+00', NULL, NULL, false, NULL, NULL),
-(318590745768890368, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:25:52.921+00', '2026-05-29 03:25:52.921+00', NULL, NULL, false, NULL, NULL),
-(318590785853853696, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:26:02.478+00', '2026-05-29 03:26:02.478+00', NULL, NULL, false, NULL, NULL),
-(318590794460565504, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:26:04.530+00', '2026-05-29 03:26:04.530+00', NULL, NULL, false, NULL, NULL),
-(318591108613935104, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:27:19.430+00', '2026-05-29 03:27:19.430+00', NULL, NULL, false, NULL, NULL),
-(318594366396960768, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:40:16.146+00', '2026-05-29 03:40:16.146+00', NULL, NULL, false, NULL, NULL),
-(318594377574780928, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:40:18.811+00', '2026-05-29 03:40:18.811+00', NULL, NULL, false, NULL, NULL),
-(318594957433114624, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:42:37.060+00', '2026-05-29 03:42:37.060+00', NULL, NULL, false, NULL, NULL),
-(318594967507832832, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:42:39.462+00', '2026-05-29 03:42:39.462+00', NULL, NULL, false, NULL, NULL),
-(318595008704286720, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:42:49.284+00', '2026-05-29 03:42:49.284+00', NULL, NULL, false, NULL, NULL),
-(318595028077776896, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:42:53.903+00', '2026-05-29 03:42:53.903+00', NULL, NULL, false, NULL, NULL),
-(318595095442493440, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:43:09.964+00', '2026-05-29 03:43:09.964+00', NULL, NULL, false, NULL, NULL),
-(318595105546571776, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:43:12.373+00', '2026-05-29 03:43:12.373+00', NULL, NULL, false, NULL, NULL),
-(318596600987914240, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:49:08.914+00', '2026-05-29 03:49:08.914+00', NULL, NULL, false, NULL, NULL),
-(318596613239476224, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:49:11.835+00', '2026-05-29 03:49:11.835+00', NULL, NULL, false, NULL, NULL),
-(318596661905985536, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:49:23.438+00', '2026-05-29 03:49:23.438+00', NULL, NULL, false, NULL, NULL),
-(318596681975730176, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 03:49:28.223+00', '2026-05-29 03:49:28.223+00', NULL, NULL, false, NULL, NULL),
-(318606733759483904, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 04:29:24.755+00', '2026-05-29 04:29:24.755+00', NULL, NULL, false, NULL, NULL),
-(318606741250510848, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 04:29:26.541+00', '2026-05-29 04:29:26.541+00', NULL, NULL, false, NULL, NULL),
-(318613894488133632, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 04:57:52.005+00', '2026-05-29 04:57:52.005+00', NULL, NULL, false, NULL, NULL),
-(318614072838328320, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 04:58:34.527+00', '2026-05-29 04:58:34.527+00', NULL, NULL, false, NULL, NULL),
-(318614081847693312, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 04:58:36.675+00', '2026-05-29 04:58:36.675+00', NULL, NULL, false, NULL, NULL),
-(318618710409482240, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 05:17:00.211+00', '2026-05-29 05:17:00.211+00', NULL, NULL, false, NULL, NULL),
-(318618718798090240, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 05:17:02.211+00', '2026-05-29 05:17:02.211+00', NULL, NULL, false, NULL, NULL),
-(318622371588608000, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 05:31:33.104+00', '2026-05-29 05:31:33.104+00', NULL, NULL, false, NULL, NULL),
-(318622382770622464, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 05:31:35.770+00', '2026-05-29 05:31:35.770+00', NULL, NULL, false, NULL, NULL),
-(318627064787243008, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 05:50:12.049+00', '2026-05-29 05:50:12.049+00', NULL, NULL, false, NULL, NULL),
-(318627076279635968, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 05:50:14.789+00', '2026-05-29 05:50:14.789+00', NULL, NULL, false, NULL, NULL),
-(318644623672086528, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 06:59:58.414+00', '2026-05-29 06:59:58.414+00', NULL, NULL, false, NULL, NULL),
-(318644623927939072, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 06:59:58.475+00', '2026-05-29 06:59:58.475+00', NULL, NULL, false, NULL, NULL),
-(318644633331568640, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 07:00:00.717+00', '2026-05-29 07:00:00.717+00', NULL, NULL, false, NULL, NULL),
-(318644634627608576, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 07:00:01.026+00', '2026-05-29 07:00:01.026+00', NULL, NULL, false, NULL, NULL),
-(318651296987484160, NULL, NULL, 'LOGOUT', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 07:26:29.456+00', '2026-05-29 07:26:29.456+00', NULL, NULL, false, NULL, NULL),
-(318651310484754432, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 07:26:32.674+00', '2026-05-29 07:26:32.674+00', NULL, NULL, false, NULL, NULL),
-(318661994281439232, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 08:08:59.890+00', '2026-05-29 08:08:59.890+00', NULL, NULL, false, NULL, NULL),
-(318662008558850048, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 08:09:03.294+00', '2026-05-29 08:09:03.294+00', NULL, NULL, false, NULL, NULL),
-(318666079508369408, NULL, NULL, 'LOGOUT', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 08:25:13.884+00', '2026-05-29 08:25:13.884+00', NULL, NULL, false, NULL, NULL),
-(318666091965452288, NULL, NULL, 'LOGIN', '0:0:0:0:0:0:0:1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 08:25:16.854+00', '2026-05-29 08:25:16.854+00', NULL, NULL, false, NULL, NULL),
-(318670632043679744, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-29 08:43:19.293+00', '2026-05-29 08:43:19.293+00', NULL, NULL, false, NULL, NULL),
-(318936674883604480, NULL, NULL, 'LOGIN', '192.168.31.245', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36', 'SUCCESS', NULL, NULL, NULL, '2026-05-30 02:20:28.849+00', '2026-05-30 02:20:28.849+00', NULL, NULL, false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
+-- (empty) no rows in whale_security_logs
 
 -- ========== whale_organization_units ==========
 CREATE TABLE IF NOT EXISTS whale_organization_units (
@@ -983,14 +478,18 @@ CREATE INDEX IF NOT EXISTS idx_whale_ou_parent_id ON whale_organization_units(pa
 
 CREATE INDEX IF NOT EXISTS idx_whale_ou_tenant_id ON whale_organization_units(tenant_id);
 
+
+
 -- seed: whale_organization_units
 INSERT INTO "whale_organization_units" ("id", "code", "display_name", "parent_id", "sort_order", "is_enabled", "remark", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
 VALUES
-(1, 'ROOT', '总部', NULL, 0, true, '根组织单元', 1, '2026-05-03 06:07:04.560+00', '2026-05-03 06:07:04.560+00', 1, 1, false, NULL, NULL),
-(6, 'DEPT_OUTPATIENT', '门诊部', NULL, 1, true, '第二分院-门诊部', 1, '2026-05-03 06:07:04.560+00', '2026-05-03 06:07:04.560+00', 1, 1, false, NULL, NULL),
-(7, 'DEPT_PHARMACY', '药房', NULL, 2, true, '第二分院-药房', 1, '2026-05-03 06:07:04.560+00', '2026-05-03 06:07:04.560+00', 1, 1, false, NULL, NULL)
+('322663105157926912', 'OR0007', '测试医院', NULL, 0, true, NULL, '1', '2026-06-09 09:07:59.060+00', '2026-06-09 09:07:59.060+00', '1', '1', false, NULL, NULL),
+('322663218286694400', 'OR0007.OR0008', '门诊内科', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:08:26.032+00', '2026-06-09 09:08:26.032+00', '1', '1', false, NULL, NULL),
+('322663308824940544', 'OR0007.OR0009', '住院内科', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:08:47.618+00', '2026-06-09 09:08:47.618+00', '1', '1', false, NULL, NULL),
+('322663606398226432', 'OR0007.OR0010', '处置室', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:09:58.565+00', '2026-06-09 09:09:58.565+00', '1', '1', false, NULL, NULL),
+('322663652535570432', 'OR0007.OR0011', '护理站', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:10:09.565+00', '2026-06-09 09:10:09.565+00', '1', '1', false, NULL, NULL),
+('322663815438143488', 'OR0007.OR0012', '挂号收费处', '322663105157926912', 0, true, NULL, '1', '2026-06-09 09:10:48.405+00', '2026-06-09 09:10:48.405+00', '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
-
 
 -- ========== whale_user_organization_units ==========
 CREATE TABLE IF NOT EXISTS whale_user_organization_units (
@@ -1014,15 +513,21 @@ CREATE INDEX IF NOT EXISTS idx_whale_uou_ou_id ON whale_user_organization_units(
 
 CREATE INDEX IF NOT EXISTS idx_whale_uou_tenant_id ON whale_user_organization_units(tenant_id);
 
+
+
 -- seed: whale_user_organization_units
 INSERT INTO "whale_user_organization_units" ("id", "user_id", "organization_unit_id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
 VALUES
-(3, 4, 6, 1, '2026-05-03 06:07:04.567+00', '2026-05-03 06:07:04.567+00', 1, NULL, false, NULL, NULL),
-(5, 1, 1, 1, '2026-05-03 06:07:04.567+00', '2026-05-03 06:07:04.567+00', 1, NULL, false, NULL, NULL),
-(10, 1, 6, 1, '2026-05-03 06:07:04.567+00', '2026-05-03 06:07:04.567+00', 1, NULL, false, NULL, NULL),
-(11, 1, 7, 1, '2026-05-03 06:07:04.567+00', '2026-05-03 06:07:04.567+00', 1, NULL, false, NULL, NULL)
+('322961416313114624', '322935698131259392', '322663308824940544', '1', '2026-06-10 04:53:21.982+00', '2026-06-10 04:53:21.982+00', '1', '1', false, NULL, NULL),
+('322963602691592192', '322963602154721280', '322663218286694400', '1', '2026-06-10 05:02:03.255+00', '2026-06-10 05:02:03.255+00', '1', '1', false, NULL, NULL),
+('322965879032647680', '1', '322663218286694400', '1', '2026-06-10 05:11:05.977+00', '2026-06-10 05:11:05.977+00', '1', '1', false, NULL, NULL),
+('322965879032647681', '1', '322663308824940544', '1', '2026-06-10 05:11:05.977+00', '2026-06-10 05:11:05.977+00', '1', '1', false, NULL, NULL),
+('322972327045238784', '322965022853566464', '322663652535570432', '1', '2026-06-10 05:36:43.303+00', '2026-06-10 05:36:43.303+00', '1', '1', false, NULL, NULL),
+('322972706579943424', '322932211309350912', '322663815438143488', '1', '2026-06-10 05:38:13.791+00', '2026-06-10 05:38:13.791+00', '1', '1', false, NULL, NULL),
+('323005938243997696', '322932010666430464', '322663105157926912', '1', '2026-06-10 07:50:16.837+00', '2026-06-10 07:50:16.837+00', '322932010666430464', '322932010666430464', false, NULL, NULL),
+('323022941348433920', '323022664197214208', '322663105157926912', '1', '2026-06-10 08:57:50.693+00', '2026-06-10 08:57:50.693+00', '323022664197214208', '323022664197214208', false, NULL, NULL),
+('323023779286487040', '322932096091820032', '322663105157926912', '1', '2026-06-10 09:01:10.473+00', '2026-06-10 09:01:10.473+00', '322932096091820032', '322932096091820032', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
-
 
 -- ========== whale_user_claims ==========
 CREATE TABLE IF NOT EXISTS whale_user_claims (
@@ -1046,10 +551,6 @@ CREATE INDEX IF NOT EXISTS idx_whale_uc_claim_type ON whale_user_claims(claim_ty
 
 CREATE INDEX IF NOT EXISTS idx_whale_uc_tenant_id ON whale_user_claims(tenant_id);
 
--- seed: whale_user_claims
--- (empty) no rows in whale_user_claims
-
-
 -- ========== whale_role_claims ==========
 CREATE TABLE IF NOT EXISTS whale_role_claims (
     id BIGINT PRIMARY KEY,
@@ -1072,9 +573,33 @@ CREATE INDEX IF NOT EXISTS idx_whale_rc_claim_type ON whale_role_claims(claim_ty
 
 CREATE INDEX IF NOT EXISTS idx_whale_rc_tenant_id ON whale_role_claims(tenant_id);
 
--- seed: whale_role_claims
--- (empty) no rows in whale_role_claims
 
+
+-- seed: whale_role_claims
+INSERT INTO "whale_role_claims" ("id", "role_id", "claim_type", "claim_value", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('105001', '10', 'AssignmentScope', 'ORG', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105002', '10', 'StaffScope', 'DOCTOR_VISIT_ORG', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105004', '11', 'AssignmentScope', 'WARD', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105006', '11', 'StaffScope', 'NURSE_WARD_LOCATION', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105007', '12', 'AssignmentScope', 'PHARMACY', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105008', '12', 'StaffScope', 'PHARMACY_LOCATION', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105009', '13', 'AssignmentScope', 'WAREHOUSE', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105010', '13', 'StaffScope', 'WAREHOUSE_LOCATION', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105011', '14', 'AssignmentScope', 'ORG', NULL, '2026-06-09 12:18:57.404+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105013', '1', 'AssignmentScope', 'GLOBAL', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105015', '1', 'StaffScope', 'DOCTOR_VISIT_ORG', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105016', '1', 'StaffScope', 'WAREHOUSE_LOCATION', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105017', '1', 'StaffScope', 'PHARMACY_LOCATION', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105018', '1', 'StaffScope', 'NURSE_ORG', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105019', '1', 'StaffScope', 'NURSE_WARD_LOCATION', NULL, '2026-06-09 12:03:45.933+00', '2026-06-09 12:18:57.404+00', NULL, NULL, false, NULL, NULL),
+('105021', '13', 'AssignmentScope', 'PHARMACY', NULL, '2026-06-10 03:51:26.617+00', '2026-06-10 03:51:26.617+00', NULL, NULL, false, NULL, NULL),
+('105022', '13', 'StaffScope', 'PHARMACY_LOCATION', NULL, '2026-06-10 03:51:26.617+00', '2026-06-10 03:51:26.617+00', NULL, NULL, false, NULL, NULL),
+('323022177729253376', '323022177255297024', 'StaffScope', 'DOCTOR_VISIT_ORG', '1', '2026-06-10 08:54:48.632+00', '2026-06-10 08:54:48.632+00', '1', '1', false, NULL, NULL),
+('323022177729253378', '323022177255297024', 'StaffScope', 'WAREHOUSE_LOCATION', '1', '2026-06-10 08:54:48.632+00', '2026-06-10 08:54:48.632+00', '1', '1', false, NULL, NULL),
+('323022177729253379', '323022177255297024', 'StaffScope', 'PHARMACY_LOCATION', '1', '2026-06-10 08:54:48.632+00', '2026-06-10 08:54:48.632+00', '1', '1', false, NULL, NULL),
+('323022177733447680', '323022177255297024', 'StaffScope', 'NURSE_WARD_LOCATION', '1', '2026-06-10 08:54:48.633+00', '2026-06-10 08:54:48.633+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
 
 -- ========== whale_qrtz_locks ==========
 CREATE TABLE IF NOT EXISTS whale_qrtz_locks (
@@ -1083,12 +608,13 @@ CREATE TABLE IF NOT EXISTS whale_qrtz_locks (
     PRIMARY KEY (sched_name, lock_name)
 );
 
+
+
 -- seed: whale_qrtz_locks
 INSERT INTO "whale_qrtz_locks" ("sched_name", "lock_name")
 VALUES
 ('WhaleScheduler', 'TRIGGER_ACCESS')
 ON CONFLICT ("sched_name", "lock_name") DO NOTHING;
-
 
 -- ========== whale_qrtz_job_details ==========
 CREATE TABLE IF NOT EXISTS whale_qrtz_job_details (
@@ -1106,10 +632,6 @@ CREATE TABLE IF NOT EXISTS whale_qrtz_job_details (
 );
 
 CREATE INDEX IF NOT EXISTS idx_whale_qrtz_j_grp ON whale_qrtz_job_details(sched_name, job_group);
-
--- seed: whale_qrtz_job_details
--- (empty) no rows in whale_qrtz_job_details
-
 
 -- ========== whale_qrtz_triggers ==========
 CREATE TABLE IF NOT EXISTS whale_qrtz_triggers (
@@ -1156,10 +678,6 @@ CREATE INDEX IF NOT EXISTS idx_whale_qrtz_t_nft_misfire ON whale_qrtz_triggers(s
 
 CREATE INDEX IF NOT EXISTS idx_whale_qrtz_t_nft_st_misfire ON whale_qrtz_triggers(sched_name, misfire_instr, next_fire_time, trigger_state);
 
--- seed: whale_qrtz_triggers
--- (empty) no rows in whale_qrtz_triggers
-
-
 -- ========== whale_qrtz_cron_triggers ==========
 CREATE TABLE IF NOT EXISTS whale_qrtz_cron_triggers (
     sched_name VARCHAR(120) NOT NULL,
@@ -1171,10 +689,6 @@ CREATE TABLE IF NOT EXISTS whale_qrtz_cron_triggers (
     FOREIGN KEY (sched_name, trigger_name, trigger_group)
         REFERENCES whale_qrtz_triggers(sched_name, trigger_name, trigger_group)
 );
-
--- seed: whale_qrtz_cron_triggers
--- (empty) no rows in whale_qrtz_cron_triggers
-
 
 -- ========== whale_qrtz_simple_triggers ==========
 CREATE TABLE IF NOT EXISTS whale_qrtz_simple_triggers (
@@ -1189,10 +703,6 @@ CREATE TABLE IF NOT EXISTS whale_qrtz_simple_triggers (
         REFERENCES whale_qrtz_triggers(sched_name, trigger_name, trigger_group)
 );
 
--- seed: whale_qrtz_simple_triggers
--- (empty) no rows in whale_qrtz_simple_triggers
-
-
 -- ========== whale_qrtz_blob_triggers ==========
 CREATE TABLE IF NOT EXISTS whale_qrtz_blob_triggers (
     sched_name VARCHAR(120) NOT NULL,
@@ -1204,10 +714,6 @@ CREATE TABLE IF NOT EXISTS whale_qrtz_blob_triggers (
         REFERENCES whale_qrtz_triggers(sched_name, trigger_name, trigger_group)
 );
 
--- seed: whale_qrtz_blob_triggers
--- (empty) no rows in whale_qrtz_blob_triggers
-
-
 -- ========== whale_qrtz_calendars ==========
 CREATE TABLE IF NOT EXISTS whale_qrtz_calendars (
     sched_name VARCHAR(120) NOT NULL,
@@ -1216,20 +722,12 @@ CREATE TABLE IF NOT EXISTS whale_qrtz_calendars (
     PRIMARY KEY (sched_name, calendar_name)
 );
 
--- seed: whale_qrtz_calendars
--- (empty) no rows in whale_qrtz_calendars
-
-
 -- ========== whale_qrtz_paused_trigger_grps ==========
 CREATE TABLE IF NOT EXISTS whale_qrtz_paused_trigger_grps (
     sched_name VARCHAR(120) NOT NULL,
     trigger_group VARCHAR(200) NOT NULL,
     PRIMARY KEY (sched_name, trigger_group)
 );
-
--- seed: whale_qrtz_paused_trigger_grps
--- (empty) no rows in whale_qrtz_paused_trigger_grps
-
 
 -- ========== whale_qrtz_scheduler_state ==========
 CREATE TABLE IF NOT EXISTS whale_qrtz_scheduler_state (
@@ -1239,10 +737,6 @@ CREATE TABLE IF NOT EXISTS whale_qrtz_scheduler_state (
     checkin_interval BIGINT NOT NULL,
     PRIMARY KEY (sched_name, instance_name)
 );
-
--- seed: whale_qrtz_scheduler_state
--- (empty) no rows in whale_qrtz_scheduler_state
-
 
 -- ========== whale_qrtz_fired_triggers ==========
 CREATE TABLE IF NOT EXISTS whale_qrtz_fired_triggers (
@@ -1274,10 +768,6 @@ CREATE INDEX IF NOT EXISTS idx_whale_qrtz_ft_t_g ON whale_qrtz_fired_triggers(sc
 
 CREATE INDEX IF NOT EXISTS idx_whale_qrtz_ft_tg ON whale_qrtz_fired_triggers(sched_name, trigger_group);
 
--- seed: whale_qrtz_fired_triggers
--- (empty) no rows in whale_qrtz_fired_triggers
-
-
 -- ========== whale_tenants ==========
 CREATE TABLE IF NOT EXISTS whale_tenants (
     id BIGINT PRIMARY KEY,
@@ -1303,13 +793,13 @@ CREATE INDEX IF NOT EXISTS idx_whale_tenants_created_at ON whale_tenants(created
 
 CREATE INDEX IF NOT EXISTS idx_whale_tenants_is_deleted ON whale_tenants(is_deleted);
 
+
+
 -- seed: whale_tenants
 INSERT INTO "whale_tenants" ("id", "name", "code", "description", "is_active", "extra_properties", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
 VALUES
-(1, '默认租户', 'DEFAULT', '系统默认租户，用于单租户或主租户场景', true, NULL, '2026-05-03 06:07:04.556+00', '2026-05-03 06:07:04.556+00', 1, 1, false, NULL, NULL),
-(318594536438239232, '测试租户', 'A001', '', true, NULL, '2026-05-29 03:40:56.687+00', '2026-05-29 03:40:56.687+00', 1, 1, false, NULL, NULL)
+('1', '默认租户', 'DEFAULT', '系统默认租户，用于单租户或主租户场景', true, NULL, '2026-05-02 22:07:04.556+00', '2026-05-02 22:07:04.556+00', '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
-
 
 -- ========== whale_user_tenants ==========
 CREATE TABLE IF NOT EXISTS whale_user_tenants (
@@ -1332,22 +822,19 @@ CREATE INDEX IF NOT EXISTS idx_whale_user_tenants_tenant_id ON whale_user_tenant
 
 CREATE INDEX IF NOT EXISTS idx_whale_user_tenants_is_deleted ON whale_user_tenants(is_deleted);
 
+
+
 -- seed: whale_user_tenants
 INSERT INTO "whale_user_tenants" ("id", "user_id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
 VALUES
-(1, 2, 1, '2026-05-03 06:07:04.564+00', '2026-05-03 06:07:04.564+00', 1, NULL, false, NULL, NULL),
-(2, 3, 1, '2026-05-03 06:07:04.564+00', '2026-05-03 06:07:04.564+00', 1, NULL, false, NULL, NULL),
-(3, 4, 1, '2026-05-03 06:07:04.564+00', '2026-05-03 06:07:04.564+00', 1, NULL, false, NULL, NULL),
-(4, 5, 2, '2026-05-03 06:07:04.564+00', '2026-05-03 06:07:04.564+00', 1, NULL, false, NULL, NULL),
-(5, 1, 1, '2026-05-03 06:07:04.564+00', '2026-05-03 06:07:04.564+00', 1, NULL, false, NULL, NULL),
-(6, 1, 2, '2026-05-03 06:07:04.564+00', '2026-05-03 06:07:04.564+00', 1, NULL, false, NULL, NULL),
-(7, 1, 3, '2026-05-03 06:07:04.564+00', '2026-05-03 06:07:04.564+00', 1, NULL, false, NULL, NULL),
-(315330703718879232, 315330627751645184, 315329920793317376, '2026-05-20 03:31:38.327+00', '2026-05-20 03:31:38.327+00', 1, 1, false, NULL, NULL),
-(315330951192252416, 1, 315329920793317376, '2026-05-20 03:32:37.330+00', '2026-05-20 03:32:37.330+00', 1, 1, false, NULL, NULL),
-(318594939435356160, 318594694756438016, 318594536438239232, '2026-05-29 03:42:32.769+00', '2026-05-29 03:42:32.769+00', 1, 1, false, NULL, NULL),
-(318595075771207680, 1, 318594536438239232, '2026-05-29 03:43:05.274+00', '2026-05-29 03:43:05.274+00', 1, 1, false, NULL, NULL)
+('5', '1', '1', '2026-05-02 22:07:04.564+00', '2026-05-02 22:07:04.564+00', '1', NULL, false, NULL, NULL),
+('322934748440170496', '322932211309350912', '1', '2026-06-10 03:07:23.865+00', '2026-06-10 03:07:23.865+00', '1', '1', false, NULL, NULL),
+('322934748461142016', '322932096091820032', '1', '2026-06-10 03:07:23.870+00', '2026-06-10 03:07:23.870+00', '1', '1', false, NULL, NULL),
+('322934748473724928', '322932010666430464', '1', '2026-06-10 03:07:23.873+00', '2026-06-10 03:07:23.873+00', '1', '1', false, NULL, NULL),
+('322963602188275712', '322963602154721280', '1', '2026-06-10 05:02:03.135+00', '2026-06-10 05:02:03.135+00', '1', '1', false, NULL, NULL),
+('322965022861955072', '322965022853566464', '1', '2026-06-10 05:07:41.850+00', '2026-06-10 05:07:41.850+00', '1', '1', false, NULL, NULL),
+('323022664205602816', '323022664197214208', '1', '2026-06-10 08:56:44.617+00', '2026-06-10 08:56:44.617+00', '1', '1', false, NULL, NULL)
 ON CONFLICT ("id") DO NOTHING;
-
 
 -- ========== whale_settings ==========
 CREATE TABLE IF NOT EXISTS whale_settings (
@@ -1377,9 +864,14 @@ CREATE INDEX IF NOT EXISTS idx_whale_settings_created_at ON whale_settings(creat
 
 CREATE INDEX IF NOT EXISTS idx_whale_settings_is_deleted ON whale_settings(is_deleted);
 
--- seed: whale_settings
--- (empty) no rows in whale_settings
 
+
+-- seed: whale_settings
+INSERT INTO "whale_settings" ("id", "name", "value", "provider_name", "provider_key", "tenant_id", "description", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES
+('322347974589943808', 'ybSwich', '0', 'G', NULL, '1', '医保开关', '2026-06-08 12:15:46.078+00', '2026-06-10 07:14:45.901+00', '1', '1', false, NULL, NULL),
+('322983522708492288', 'deviceAutoInventoryDeductSwich', '1', 'G', NULL, '1', '耗材是否自动扣库', '2026-06-10 06:21:12.557+00', '2026-06-10 06:21:12.557+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
 
 -- ========== whale_menus ==========
 CREATE TABLE IF NOT EXISTS whale_menus (
@@ -1419,72 +911,81 @@ CREATE INDEX IF NOT EXISTS idx_whale_menus_menu_type ON whale_menus(menu_type);
 
 CREATE INDEX IF NOT EXISTS idx_whale_menus_is_enabled ON whale_menus(is_enabled);
 
+
+
 -- seed: whale_menus
 INSERT INTO "whale_menus" ("id", "code", "name", "display_name", "icon", "path", "component", "permission_name", "parent_id", "sort_order", "is_enabled", "is_hidden", "is_external", "external_url", "menu_type", "remark", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "keep_alive")
 VALUES
-(1000, 'system_management', 'SystemManagement', '系统管理', 'lucide:folder-tree', '/system', '', '', NULL, 1, true, false, false, '', 'directory', '系统管理目录', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(1001, 'user_management', 'UserManagement', '用户管理', 'lucide:user', '/system/user', '/system/user/index', 'Identity.Users.View', 1000, 1, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(1002, 'role_management', 'RoleManagement', '角色管理', 'lucide:shield-check', '/system/user/role', '/system/user/role/index', 'Identity.Roles.View', 1000, 2, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(1004, 'permission_management', 'PermissionManagement', '权限管理', 'lucide:fingerprint-pattern', '/system/user/permission', '/system/user/permission/index', 'Identity.Permissions.View', 1000, 3, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(1005, 'tenant_management', 'TenantManagement', '租户管理', 'lucide:square-user-round', '/system/tenant', '/system/tenant/index', 'TenantManagement.Tenants.View', 1000, 4, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(1006, 'menu_management', 'MenuManagement', '菜单管理', 'lucide:square-menu', '/system/menu', '/system/menu/index', 'Menu.Menus.View', 1000, 5, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(1007, 'setting_management', 'SettingManagement', '设置管理', 'lucide:settings', '/system/settings', '/system/settings/index', 'SettingManagement.Settings.View', 1000, 6, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(2000, 'basic_data', 'BasicData', '基础数据', 'lucide:database', '/basic', '', '', NULL, 2, true, false, false, '', 'directory', '基础数据目录', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(2001, 'codesystem_management', 'CodeSystemManagement', '编码管理', 'lucide:message-circle-code', '/basic/code', '/basic/code/index', 'Terminology.CodeSystems.View', 2000, 2, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(2002, 'bodystructure_management', 'BodyStructureManagement', '部位管理', 'lucide:person-standing', '/basic/body', '/basic/body/index', 'Administration.BodyStructures.View', 2000, 5, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(2003, 'warehouse_management', 'WarehouseManagement', '库房药房', 'lucide:map-pinned', '/basic/warehouse', '/basic/warehouse/index', 'Administration.Locations.View', 2000, 7, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(2004, 'ward_location_management', 'WardLocationManagement', '病区病房', 'lucide:circle-pile', '/basic/wardbed', '/basic/wardbed/index', 'Administration.WardLocations.View', 2000, 6, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(2005, 'patient_management', 'PatientManagement', '患者管理', 'lucide:file-user', '/basic/patient', '/basic/patient/index', 'Administration.Patients.View', 2000, 3, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(2006, 'position_management', 'PositionManagement', '岗位管理', 'lucide:briefcase-business', '/basic/position', '/basic/position/index', 'Administration.Positions.View', 2000, 4, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(2007, 'dept_management', 'DeptManagement', '科室管理', 'lucide:building', '/basic/department', '/basic/department/index', 'Administration.Organizations.View', 2000, 1, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(2008, 'healthcare_service_management', 'HealthcareServiceManagement', '挂号类型管理', 'lucide:clipboard-list', '/basic/registrationtype', '/basic/registrationtype/index', 'Administration.HealthcareServices.View', 2000, 11, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(2010, 'contract_management', 'ContractManagement', '费用性质管理', 'lucide:credit-card', '/basic/chargetype', '/basic/chargetype/index', 'Financial.Contract.View', 2000, 10, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(279418897187213312, 'Analytics', 'Analytics', '概览', 'lucide:chart-line', '/analytics', '/_core/analytics/index', '', NULL, 0, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(284501743746682880, 'Frequency', 'Frequency', '频次管理', 'lucide:alarm-clock', '/basic/frequency', '/basic/frequency/index', '', 2000, 9, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(284502213630365696, 'Supplier', 'Supplier', '供应商管理', 'lucide:truck', '/basic/supplier', '/basic/supplier/index', '', 2000, 8, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(284503862625177600, 'Warehouse', 'Warehouse', '库房管理', 'lucide:warehouse', '/inventory', '', '', NULL, 9, true, false, false, '', 'directory', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(284517877903003648, 'Medicine', 'Medicine', '药品管理', 'lucide:pill', '/basic/medicationcatalog', '/basic/medicationcatalog/index', '', 2000, 13, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(284518561658441728, 'Device', 'Device', '器材管理', 'lucide:syringe', '/basic/devicecatalog', '/basic/devicecatalog/index', '', 2000, 16, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(284519152342274048, 'Diagnosistreatment', 'Diagnosistreatment', '诊疗管理', 'lucide:square-activity', '/basic/servicecatalog', '/basic/servicecatalog/index', '', 2000, 15, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(284519592148602880, 'Disease', 'Disease', '诊断', 'lucide:heart-pulse', '/basic/diagnosiscatalog', '/basic/diagnosiscatalog/index', '', 2000, 12, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(284523631498235904, 'MedicineCatalogDetail', 'MedicineCatalogDetail', '药品详情', 'lucide:tablets', '/basic/medicationcatalog/:id', 'basic/medicationcatalog/[id]/index', '', 2000, 14, true, true, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(301665359451131904, 'OutpatientNurseStation', 'OutpatientNurseStation', '门诊护士站', 'lucide:clipboard-list', '/outpatient/nurse-station', '/outpatient/nurse-station/index', '', NULL, 6, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(301666596158443520, 'InpatientNurseStation', 'InpatientNurseStation', '住院护士站', 'lucide:bed-double', '/inpatient/nurse-station', '/inpatient/nurse-station/index', '', NULL, 7, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(301696493912330240, 'Pharmacy', 'Pharmacy', '药房管理', 'lucide:store', '/pharmacy', '', '', NULL, 10, true, false, false, '', 'directory', '', 1, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(301699662818054144, 'ReportFinance', 'ReportFinance', '财务报表', 'lucide:receipt-text', '/reports/finance', '/reports/finance/index', '', 310400000000000100, 4, true, false, false, '', 'menu', '', 1, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000001, 'ChargeStation', 'ChargeStation', '收费工作站', 'lucide:banknote', '/charge', '', '', NULL, 3, true, false, false, '', 'directory', 'HIS清单-收费工作站', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000002, 'ChargeOpRegister', 'ChargeOpRegister', '门诊挂号', 'lucide:calendar-plus', '/outpatient/charge/register', '/outpatient/charge/register/index', '', 310400000000000001, 1, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000003, 'ChargeOpCharge', 'ChargeOpCharge', '门诊收费', 'lucide:circle-dollar-sign', '/outpatient/charge/charge', '/outpatient/charge/charge/index', '', 310400000000000001, 2, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000004, 'ChargeOpRefund', 'ChargeOpRefund', '门诊退费', 'lucide:undo-2', '/outpatient/charge/refund', '/outpatient/charge/refund/index', '', 310400000000000001, 3, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000005, 'ChargeOpDayClose', 'ChargeOpDayClose', '门诊日结', 'lucide:calendar-check', '/outpatient/charge/daily-settlement', '/outpatient/charge/daily-settlement/index', '', 310400000000000001, 4, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000006, 'ChargeIpRegister', 'ChargeIpRegister', '住院登记', 'lucide:bed-single', '/inpatient/charge/register', '/inpatient/charge/register/index', '', 310400000000000001, 5, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000007, 'ChargeIpSettle', 'ChargeIpSettle', '住院结算', 'lucide:wallet', '/inpatient/charge/settle', '/inpatient/charge/settle/index', '', 310400000000000001, 6, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000008, 'ChargeIpPrepay', 'ChargeIpPrepay', '预交金管理', 'lucide:coins', '/inpatient/charge/prepay', '/inpatient/charge/prepay/index', '', 310400000000000001, 7, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000009, 'ChargeIpFee', 'ChargeIpFee', '住院费用管理', 'lucide:list-todo', '/inpatient/charge/fee', '/inpatient/charge/fee/index', '', 310400000000000001, 8, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000020, 'OutpatientDoctorStation', 'OutpatientDoctorStation', '门诊医生站', 'lucide:user-round-pen', '/outpatient/doctor-station', '/outpatient/doctor-station/index', '', NULL, 4, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000040, 'InpatientDoctorStation', 'InpatientDoctorStation', '住院医生站', 'lucide:hospital', '/inpatient/doctor-station', '/inpatient/doctor-station/index', '', NULL, 5, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000060, 'MedicationDispense', 'MedicationDispense', '发药管理', 'lucide:pill-bottle', '/pharmacy/dispense', '', '', NULL, 8, true, false, false, '', 'directory', 'HIS清单-发药管理', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000061, 'DispenseOp', 'DispenseOp', '门诊发药', 'lucide:package-open', '/pharmacy/dispense/outpatient', '/pharmacy/dispense/outpatient/index', '', 310400000000000060, 1, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000062, 'DispenseIp', 'DispenseIp', '住院发药', 'lucide:truck', '/pharmacy/dispense/inpatient', '/pharmacy/dispense/inpatient/index', '', 310400000000000060, 2, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000063, 'DispenseDoc', 'DispenseDoc', '发药单据', 'lucide:file-box', '/pharmacy/dispense/documents', '/pharmacy/dispense/documents/index', '', 310400000000000060, 3, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000081, 'WhPurchaseOrder', 'WhPurchaseOrder', '药库订货单', 'lucide:file-spreadsheet', '/inventory/warehouse/purchase-order', '/inventory/warehouse/purchase-order/index', '', 284503862625177600, 1, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000100, 'ReportCenter', 'ReportCenter', '报表管理', 'lucide:layout-dashboard', '/reports', '', '', NULL, 11, true, false, false, '', 'directory', 'HIS清单-报表管理', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000101, 'ReportHome', 'ReportHome', '首页', 'lucide:home', '/reports/home', '/reports/home/index', '', 310400000000000100, 1, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000102, 'ReportDean', 'ReportDean', '院长', 'lucide:building-2', '/reports/dean', '/reports/dean/index', '', 310400000000000100, 2, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(310400000000000103, 'ReportClinical', 'ReportClinical', '临床报表', 'lucide:activity', '/reports/clinical', '/reports/clinical/index', '', 310400000000000100, 3, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(312881978679496704, 'WhPurchaseInbound', 'WhPurchaseInbound', '药库进货单', 'lucide:package-check', '/inventory/warehouse/purchase-inbound', '/inventory/warehouse/purchase-inbound/index', '', 284503862625177600, 2, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(313234941086273536, 'WhStockOut', 'WhStockOut', '药库出库单', 'lucide:package-minus', '/inventory/warehouse/stock-out', '/inventory/warehouse/stock-out/index', '', 284503862625177600, 3, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(313295483593297921, 'PhStockIn', 'PhStockIn', '药房入库单', 'lucide:package-plus', '/inventory/pharmacy/stock-in', '/inventory/pharmacy/stock-in/index', '', 301696493912330240, 1, true, false, false, '', 'menu', '', 1, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(313570119616827392, 'InvStockList', 'InvStockList', '库存明细', 'lucide:rows-3', '/inventory/stock-list', '/inventory/stock-list/index', '', 284503862625177600, 5, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(313945127476793344, 'MedicineReturnOp', 'MedicineReturnOp', '门诊退药', 'lucide:truck', '/pharmacy/return-medicine/outpatient', '/pharmacy/return-medicine/outpatient/index', '', 310400000000000060, 4, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 05:13:33.351+00', 1, 1, false, NULL, NULL, true),
-(315372803691384832, 'EmrTemplate', 'EmrTemplate', '病历模版', 'lucide:file-text', '/basic/emr-template', '/basic/emr-template/index', '', 2000, 18, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(316800463887929340, 'WhStocktakeOrder', 'WhStocktakeOrder', '药库盘点单', 'lucide:clipboard-list', '/inventory/warehouse/stocktake', '/inventory/warehouse/stocktake/index', '', 284503862625177600, 4, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(316800463887929341, 'PhStocktakeOrder', 'PhStocktakeOrder', '药房盘点单', 'lucide:clipboard-check', '/inventory/pharmacy/stocktake', '/inventory/pharmacy/stocktake/index', '', 301696493912330240, 2, true, false, false, '', 'menu', '', 1, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(316900463887929345, 'DeviceCatalogDetail', 'DeviceCatalogDetail', '器材详情', 'lucide:package', '/basic/devicecatalog/:id', 'basic/devicecatalog/[id]/index', '', 2000, 17, true, true, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(316900463887929346, 'OrderBinding', 'OrderBinding', '医嘱绑定', 'lucide:link-2', '/basic/orderbinding', '/basic/orderbinding/index', '', 2000, 19, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true),
-(316900463887929347, 'ExecuteLocation', 'ExecuteLocation', '执行地点', 'lucide:map-pin', '/basic/executelocation', '/basic/executelocation/index', '', 2000, 20, true, false, false, '', 'menu', '', NULL, '2026-05-27 04:00:00.000+00', '2026-05-27 04:00:00.000+00', 1, 1, false, NULL, NULL, true)
+('1000', 'system_management', 'SystemManagement', '系统管理', 'lucide:folder-tree', '/system', '', NULL, NULL, 1, true, false, false, '', 'directory', '系统管理目录', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('1001', 'user_management', 'UserManagement', '用户管理', 'lucide:user', '/system/user', '/system/user/index', 'Navigation.UserManagement', '1000', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('1002', 'role_management', 'RoleManagement', '角色管理', 'lucide:shield-check', '/system/user/role', '/system/user/role/index', 'Navigation.RoleManagement', '1000', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('1004', 'permission_management', 'PermissionManagement', '权限管理', 'lucide:fingerprint-pattern', '/system/user/permission', '/system/user/permission/index', 'Navigation.PermissionManagement', '1000', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('1005', 'tenant_management', 'TenantManagement', '租户管理', 'lucide:square-user-round', '/system/tenant', '/system/tenant/index', 'Navigation.TenantManagement', '1000', 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('1006', 'menu_management', 'MenuManagement', '菜单管理', 'lucide:square-menu', '/system/menu', '/system/menu/index', 'Navigation.MenuManagement', '1000', 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('1007', 'setting_management', 'SettingManagement', '设置管理', 'lucide:settings', '/system/settings', '/system/settings/index', 'Navigation.SettingManagement', '1000', 6, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2000', 'basic_data', 'BasicData', '基础数据', 'lucide:database', '/basic', '', NULL, NULL, 2, true, false, false, '', 'directory', '基础数据目录', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2001', 'codesystem_management', 'CodeSystemManagement', '编码管理', 'lucide:message-circle-code', '/basic/code', '/basic/code/index', 'Navigation.CodesystemManagement', '2000', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2002', 'bodystructure_management', 'BodyStructureManagement', '部位管理', 'lucide:person-standing', '/basic/body', '/basic/body/index', 'Navigation.BodystructureManagement', '2000', 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2003', 'warehouse_management', 'WarehouseManagement', '库房药房', 'lucide:map-pinned', '/basic/warehouse', '/basic/warehouse/index', 'Navigation.WarehouseManagement', '2000', 7, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2004', 'ward_location_management', 'WardLocationManagement', '病区病房', 'lucide:circle-pile', '/basic/wardbed', '/basic/wardbed/index', 'Navigation.WardLocationManagement', '2000', 6, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2005', 'patient_management', 'PatientManagement', '患者管理', 'lucide:file-user', '/basic/patient', '/basic/patient/index', 'Navigation.PatientManagement', '2000', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2007', 'dept_management', 'DeptManagement', '科室管理', 'lucide:building', '/basic/department', '/basic/department/index', 'Navigation.DeptManagement', '2000', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2008', 'healthcare_service_management', 'HealthcareServiceManagement', '挂号类型管理', 'lucide:clipboard-list', '/basic/registrationtype', '/basic/registrationtype/index', 'Navigation.HealthcareServiceManagement', '2000', 11, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('2010', 'contract_management', 'ContractManagement', '费用性质管理', 'lucide:credit-card', '/basic/chargetype', '/basic/chargetype/index', 'Navigation.ContractManagement', '2000', 10, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('279418897187213312', 'Analytics', 'Analytics', '概览', 'lucide:chart-line', '/analytics', '/_core/analytics/index', 'Navigation.Analytics', NULL, 0, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284501743746682880', 'Frequency', 'Frequency', '频次管理', 'lucide:alarm-clock', '/basic/frequency', '/basic/frequency/index', 'Navigation.Frequency', '2000', 9, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284502213630365696', 'Supplier', 'Supplier', '供应商管理', 'lucide:truck', '/basic/supplier', '/basic/supplier/index', 'Navigation.Supplier', '2000', 8, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284503862625177600', 'Warehouse', 'Warehouse', '库房管理', 'lucide:warehouse', '/inventory', '', NULL, NULL, 9, true, false, false, '', 'directory', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284517877903003648', 'Medicine', 'Medicine', '药品管理', 'lucide:pill', '/basic/medicationcatalog', '/basic/medicationcatalog/index', 'Navigation.Medicine', '2000', 13, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284518561658441728', 'Device', 'Device', '器材管理', 'lucide:syringe', '/basic/devicecatalog', '/basic/devicecatalog/index', 'Navigation.Device', '2000', 16, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284519152342274048', 'Diagnosistreatment', 'Diagnosistreatment', '诊疗管理', 'lucide:square-activity', '/basic/servicecatalog', '/basic/servicecatalog/index', 'Navigation.Diagnosistreatment', '2000', 15, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('284519592148602880', 'Disease', 'Disease', '诊断', 'lucide:heart-pulse', '/basic/diagnosiscatalog', '/basic/diagnosiscatalog/index', 'Navigation.Disease', '2000', 12, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('301665359451131904', 'OutpatientNurseStation', 'OutpatientNurseStation', '门诊护士站', 'lucide:clipboard-list', '/outpatient/nurse-station', '/outpatient/nurse-station/index', 'Navigation.Outpatientnursestation', NULL, 6, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('301666596158443520', 'InpatientNurseStation', 'InpatientNurseStation', '住院护士站', 'lucide:bed-double', '/inpatient/nurse-station', '/inpatient/nurse-station/index', 'Navigation.Inpatientnursestation', NULL, 7, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('301696493912330240', 'Pharmacy', 'Pharmacy', '药房管理', 'lucide:store', '/pharmacy', '', NULL, NULL, 10, true, false, false, '', 'directory', '', '1', '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('301699662818054144', 'ReportFinance', 'ReportFinance', '财务报表', 'lucide:receipt-text', '/reports/finance', '/reports/finance/index', 'Navigation.Reportfinance', '310400000000000100', 4, true, false, false, '', 'menu', '', '1', '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000001', 'ChargeStation', 'ChargeStation', '收费工作站', 'lucide:banknote', '/charge', '', NULL, NULL, 3, true, false, false, '', 'directory', 'HIS清单-收费工作站', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000002', 'ChargeOpRegister', 'ChargeOpRegister', '门诊挂号', 'lucide:calendar-plus', '/outpatient/charge/register', '/outpatient/charge/register/index', 'Navigation.Chargeopregister', '310400000000000001', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000003', 'ChargeOpCharge', 'ChargeOpCharge', '门诊收费', 'lucide:circle-dollar-sign', '/outpatient/charge/charge', '/outpatient/charge/charge/index', 'Navigation.Chargeopcharge', '310400000000000001', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000004', 'ChargeOpRefund', 'ChargeOpRefund', '门诊退费', 'lucide:undo-2', '/outpatient/charge/refund', '/outpatient/charge/refund/index', 'Navigation.Chargeoprefund', '310400000000000001', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000005', 'ChargeOpDayClose', 'ChargeOpDayClose', '门诊日结', 'lucide:calendar-check', '/outpatient/charge/daily-settlement', '/outpatient/charge/daily-settlement/index', 'Navigation.Chargeopdayclose', '310400000000000001', 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000006', 'ChargeIpRegister', 'ChargeIpRegister', '住院登记', 'lucide:bed-single', '/inpatient/charge/register', '/inpatient/charge/register/index', 'Navigation.Chargeipregister', '310400000000000001', 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000007', 'ChargeIpSettle', 'ChargeIpSettle', '住院结算', 'lucide:wallet', '/inpatient/charge/settle', '/inpatient/charge/settle/index', 'Navigation.Chargeipsettle', '310400000000000001', 6, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000008', 'ChargeIpPrepay', 'ChargeIpPrepay', '预交金管理', 'lucide:coins', '/inpatient/charge/prepay', '/inpatient/charge/prepay/index', 'Navigation.Chargeipprepay', '310400000000000001', 7, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000009', 'ChargeIpFee', 'ChargeIpFee', '住院费用管理', 'lucide:list-todo', '/inpatient/charge/fee', '/inpatient/charge/fee/index', 'Navigation.Chargeipfee', '310400000000000001', 8, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000020', 'OutpatientDoctorStation', 'OutpatientDoctorStation', '门诊医生站', 'lucide:user-round-pen', '/outpatient/doctor-station', '/outpatient/doctor-station/index', 'Navigation.Outpatientdoctorstation', NULL, 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000040', 'InpatientDoctorStation', 'InpatientDoctorStation', '住院医生站', 'lucide:hospital', '/inpatient/doctor-station', '/inpatient/doctor-station/index', 'Navigation.Inpatientdoctorstation', NULL, 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000060', 'MedicationDispense', 'MedicationDispense', '发药管理', 'lucide:pill-bottle', '/pharmacy/dispense', '', NULL, NULL, 8, true, false, false, '', 'directory', 'HIS清单-发药管理', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000061', 'DispenseOp', 'DispenseOp', '门诊发药', 'lucide:package-open', '/pharmacy/dispense/outpatient', '/pharmacy/dispense/outpatient/index', 'Navigation.Dispenseop', '310400000000000060', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000062', 'DispenseIp', 'DispenseIp', '住院发药', 'lucide:truck', '/pharmacy/dispense/inpatient', '/pharmacy/dispense/inpatient/index', 'Navigation.Dispenseip', '310400000000000060', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000063', 'DispenseDoc', 'DispenseDoc', '发药单据', 'lucide:file-box', '/pharmacy/dispense/documents', '/pharmacy/dispense/documents/index', 'Navigation.Dispensedoc', '310400000000000060', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000081', 'WhPurchaseOrder', 'WhPurchaseOrder', '药库订货单', 'lucide:file-spreadsheet', '/inventory/warehouse/purchase-order', '/inventory/warehouse/purchase-order/index', 'Navigation.Whpurchaseorder', '284503862625177600', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000100', 'ReportCenter', 'ReportCenter', '报表管理', 'lucide:layout-dashboard', '/reports', '', NULL, NULL, 11, true, false, false, '', 'directory', 'HIS清单-报表管理', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000101', 'ReportHome', 'ReportHome', '首页', 'lucide:home', '/reports/home', '/reports/home/index', 'Navigation.Reporthome', '310400000000000100', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000102', 'ReportDean', 'ReportDean', '院长', 'lucide:building-2', '/reports/dean', '/reports/dean/index', 'Navigation.Reportdean', '310400000000000100', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000103', 'ReportClinical', 'ReportClinical', '临床报表', 'lucide:activity', '/reports/clinical', '/reports/clinical/index', 'Navigation.Reportclinical', '310400000000000100', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310500000000000100', 'ChsManagement', 'ChsManagement', '医保管理', 'lucide:shield', '/chs', '', '', NULL, 12, true, false, false, '', 'directory', 'CHS 医保扩展菜单', NULL, '2026-06-01 16:00:00.000+00', '2026-06-01 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310500000000000101', 'ChsNationalCatalog', 'ChsNationalCatalog', '国家目录查询', 'lucide:book-open', '/chs/national-catalog', '/chs/national-catalog/index', 'Navigation.Chsnationalcatalog', '310500000000000100', 1, true, false, false, '', 'menu', '1312/1301 国家医保目录查询与下载', NULL, '2026-06-01 16:00:00.000+00', '2026-06-01 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310500000000000102', 'ChsCatalogDownload', 'ChsCatalogDownload', '目录文件下载', 'lucide:download', '/chs/catalog-download', '/chs/catalog-download/index', 'Navigation.Chscatalogdownload', '310500000000000100', 2, true, false, false, '', 'menu', '1301/1305/1306 + 9102 文件下载解压入库', NULL, '2026-06-01 16:00:00.000+00', '2026-06-01 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310600000000000101', 'ReportPrintTemplate', 'ReportPrintTemplate', '打印模板', 'lucide:printer', '/basic/report-template', '/basic/report-template/index', 'Report.Templates.View', '2000', 21, true, false, false, '', 'menu', 'Layout 设计器 L1：flow/roll/overlay 模板列表（whale-report）', NULL, '2026-06-03 16:00:00.000+00', '2026-06-03 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310600000000000102', 'ReportTemplateDesigner', 'ReportTemplateDesigner', '打印模板设计', 'lucide:layout-template', '/basic/report-template/designer', '/basic/report-template/designer/index', 'Navigation.Reporttemplatedesigner', '2000', 22, true, false, false, '', 'menu', '', NULL, '2026-06-03 16:00:00.000+00', '2026-06-10 05:28:04.572+00', '1', '1', false, NULL, NULL, false),
+('310600000000000103', 'ReportPrintLog', 'ReportPrintLog', '打印日志', 'lucide:scroll-text', '/basic/print-log', '/basic/print-log/index', 'Report.PrintLog.View', '2000', 23, true, false, false, '', 'menu', '打印事件明细 rpt_print_event_log（P2 查询页）', NULL, '2026-06-03 16:00:00.000+00', '2026-06-03 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310600000000000111', 'WhaleReportLoaderCenter', 'WhaleReportLoaderCenter', '动态报表', 'lucide:table', '/reports/whale-center', '/report/center/index', 'Report.Center.View', '310400000000000100', 5, true, false, false, '', 'menu', 'whale-report C 类 ReportLoader 报表中心（P2），挂在 V1 报表管理下', NULL, '2026-06-03 16:00:00.000+00', '2026-06-03 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('312881978679496704', 'WhPurchaseInbound', 'WhPurchaseInbound', '药库进货单', 'lucide:package-check', '/inventory/warehouse/purchase-inbound', '/inventory/warehouse/purchase-inbound/index', 'Navigation.Whpurchaseinbound', '284503862625177600', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('313234941086273536', 'WhStockOut', 'WhStockOut', '药库出库单', 'lucide:package-minus', '/inventory/warehouse/stock-out', '/inventory/warehouse/stock-out/index', 'Navigation.Whstockout', '284503862625177600', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('313295483593297921', 'PhStockIn', 'PhStockIn', '药房入库单', 'lucide:package-plus', '/inventory/pharmacy/stock-in', '/inventory/pharmacy/stock-in/index', 'Navigation.Phstockin', '301696493912330240', 1, true, false, false, '', 'menu', '', '1', '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('313570119616827392', 'InvStockList', 'InvStockList', '库存明细', 'lucide:rows-3', '/inventory/stock-list', '/inventory/stock-list/index', 'Navigation.Invstocklist', '284503862625177600', 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('313945127476793344', 'MedicineReturnOp', 'MedicineReturnOp', '门诊退药', 'lucide:truck', '/pharmacy/return-medicine/outpatient', '/pharmacy/return-medicine/outpatient/index', 'Navigation.Medicinereturnop', '310400000000000060', 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000064', 'MedicineReturnIp', 'MedicineReturnIp', '住院退药', 'lucide:undo-2', '/pharmacy/return-medicine/inpatient', '/pharmacy/return-medicine/inpatient/index', 'Navigation.Medicinereturnip', '310400000000000060', 5, true, false, false, '', 'menu', '', NULL, '2026-06-11 00:00:00.000+00', '2026-06-11 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('315372803691384832', 'EmrTemplate', 'EmrTemplate', '病历模版', 'lucide:file-text', '/basic/emr-template', '/basic/emr-template/index', 'Navigation.Emrtemplate', '2000', 18, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('316800463887929340', 'WhStocktakeOrder', 'WhStocktakeOrder', '药库盘点单', 'lucide:clipboard-list', '/inventory/warehouse/stocktake', '/inventory/warehouse/stocktake/index', 'Navigation.Whstocktakeorder', '284503862625177600', 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('316800463887929341', 'PhStocktakeOrder', 'PhStocktakeOrder', '药房盘点单', 'lucide:clipboard-check', '/inventory/pharmacy/stocktake', '/inventory/pharmacy/stocktake/index', 'Navigation.Phstocktakeorder', '301696493912330240', 2, true, false, false, '', 'menu', '', '1', '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('316900463887929346', 'ServiceDeviceBinding', 'ServiceDeviceBinding', '诊疗耗材绑定', 'lucide:link-2', '/basic/servicedevicebinding', '/basic/servicedevicebinding/index', 'Navigation.ActivityDeviceBinding', '2000', 23, true, false, false, '', 'menu', '基础数据-诊疗耗材绑定', NULL, '2026-05-26 20:00:00.000+00', '2026-06-04 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('316900463887929347', 'ExecuteLocation', 'ExecuteLocation', '执行地点', 'lucide:map-pin', '/basic/executelocation', '/basic/executelocation/index', 'Navigation.Executelocation', '2000', 20, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('316900463887929348', 'order_template', 'OrderTemplate', '医嘱组套', 'lucide:layers', '/basic/ordertemplate', '/basic/ordertemplate/index', 'Navigation.OrderTemplate', '2000', 21, true, false, false, '', 'menu', '基础数据-医嘱组套模板', NULL, '2026-06-02 09:46:21.106+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('316900463887929349', 'service_location', 'ServiceLocation', '取药科室', 'lucide:pill-bottle', '/basic/servicelocation', '/basic/servicelocation/index', 'Navigation.ServiceLocation', '2000', 22, true, false, false, '', 'menu', '基础数据-取药科室配置', NULL, '2026-06-02 09:46:21.106+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('317000463887929350', 'specimen_definition', 'SpecimenDefinition', '样本管理', 'lucide:test-tubes', '/basic/specimendefinition', '/basic/specimendefinition/index', 'Navigation.SpecimenDefinition', '2000', 24, true, false, false, '', 'menu', '基础数据-样本定义维护（SpecimenDefinitionAppService）', NULL, '2026-06-12 08:18:12.580+00', '2026-06-12 08:18:12.580+00', '1', '1', false, NULL, NULL, true)
 ON CONFLICT ("id") DO NOTHING;
-
 
 -- ========== whale_sequence ==========
 CREATE TABLE IF NOT EXISTS whale_sequence (
@@ -1495,171 +996,7 @@ CREATE TABLE IF NOT EXISTS whale_sequence (
 
 CREATE INDEX IF NOT EXISTS idx_whale_sequence_updated_at ON whale_sequence(updated_at);
 
-COMMENT ON TABLE whale_sequence IS '业务序号表，按 key 记录当前序号';
-
-COMMENT ON COLUMN whale_sequence.seq_key IS '序号键（如 ORDER、PATIENT、或 ORDER:2025-01-30 表示按天）';
-
-COMMENT ON COLUMN whale_sequence.current_value IS '当前序号值（递增后返回）';
-
-COMMENT ON COLUMN whale_sequence.updated_at IS '最后更新时间';
-
--- seed: whale_sequence
-INSERT INTO "whale_sequence" ("seq_key", "current_value", "updated_at")
-VALUES
-('1:AC:2026-05-03', 1, '2026-05-03 06:31:45.342+00'),
-('1:AC:2026-05-04', 1, '2026-05-04 09:32:24.679+00'),
-('1:AC:2026-05-05', 1, '2026-05-05 05:41:00.299+00'),
-('1:AC:2026-05-08', 2, '2026-05-08 12:11:33.842+00'),
-('1:AC:2026-05-09', 2, '2026-05-09 12:20:44.174+00'),
-('1:AC:2026-05-10', 4, '2026-05-10 11:18:15.499+00'),
-('1:AC:2026-05-15', 2, '2026-05-15 11:54:56.548+00'),
-('1:AC:2026-05-16', 1, '2026-05-16 08:51:40.557+00'),
-('1:AC:2026-05-19', 5, '2026-05-19 11:30:37.957+00'),
-('1:AC:2026-05-20', 18, '2026-05-20 12:54:52.499+00'),
-('1:AC:2026-05-22', 5, '2026-05-22 09:11:53.852+00'),
-('1:AC:2026-05-24', 9, '2026-05-24 13:55:24.237+00'),
-('1:AC:2026-05-27', 7, '2026-05-27 11:34:57.986+00'),
-('1:AC:2026-05-28', 5, '2026-05-28 10:39:49.731+00'),
-('1:AC:2026-05-29', 3, '2026-05-29 07:59:16.296+00'),
-('1:AD', 10, '2026-05-29 05:07:19.618+00'),
-('1:CD:2026-05-03', 22, '2026-05-03 12:51:35.129+00'),
-('1:CD:2026-05-04', 1, '2026-05-04 10:10:35.149+00'),
-('1:CD:2026-05-05', 2, '2026-05-05 12:26:29.943+00'),
-('1:CD:2026-05-08', 2, '2026-05-08 12:11:48.380+00'),
-('1:CD:2026-05-09', 2, '2026-05-09 12:20:56.026+00'),
-('1:CD:2026-05-10', 6, '2026-05-10 11:18:39.904+00'),
-('1:CD:2026-05-15', 8, '2026-05-15 12:21:24.128+00'),
-('1:CD:2026-05-16', 1, '2026-05-16 08:51:54.236+00'),
-('1:CD:2026-05-19', 6, '2026-05-19 11:31:01.730+00'),
-('1:CD:2026-05-20', 16, '2026-05-20 12:32:54.068+00'),
-('1:CD:2026-05-22', 4, '2026-05-22 08:13:12.912+00'),
-('1:CD:2026-05-24', 8, '2026-05-24 13:57:23.047+00'),
-('1:CD:2026-05-27', 5, '2026-05-27 11:34:57.986+00'),
-('1:CD:2026-05-28', 17, '2026-05-28 10:39:49.731+00'),
-('1:CD:2026-05-29', 3, '2026-05-29 07:59:26.814+00'),
-('1:CDF', 3, '2026-05-27 07:48:32.110+00'),
-('1:CI:2026-05-03', 1, '2026-05-03 06:31:45.342+00'),
-('1:CI:2026-05-04', 4, '2026-05-04 10:56:07.865+00'),
-('1:CI:2026-05-05', 9, '2026-05-05 12:27:54.419+00'),
-('1:CI:2026-05-08', 5, '2026-05-08 12:13:49.228+00'),
-('1:CI:2026-05-09', 18, '2026-05-09 12:21:04.456+00'),
-('1:CI:2026-05-10', 27, '2026-05-10 11:22:50.898+00'),
-('1:CI:2026-05-15', 18, '2026-05-15 13:05:37.282+00'),
-('1:CI:2026-05-16', 3, '2026-05-16 08:56:33.587+00'),
-('1:CI:2026-05-19', 6, '2026-05-19 11:36:54.153+00'),
-('1:CI:2026-05-20', 24, '2026-05-20 12:38:29.417+00'),
-('1:CI:2026-05-21', 3, '2026-05-21 11:34:32.117+00'),
-('1:CI:2026-05-22', 5, '2026-05-22 12:43:13.924+00'),
-('1:CI:2026-05-24', 18, '2026-05-24 13:55:24.237+00'),
-('1:CI:2026-05-27', 22, '2026-05-27 11:39:21.679+00'),
-('1:CI:2026-05-28', 9, '2026-05-28 10:41:18.268+00'),
-('1:CI:2026-05-29', 26, '2026-05-29 08:29:53.616+00'),
-('1:CIR:2026-05-15', 6, '2026-05-15 12:56:23.926+00'),
-('1:CIR:2026-05-20', 3, '2026-05-20 12:29:29.202+00'),
-('1:CIR:2026-05-22', 1, '2026-05-22 09:18:14.236+00'),
-('1:CIR:2026-05-27', 2, '2026-05-27 08:30:27.356+00'),
-('1:CIR:2026-05-28', 2, '2026-05-28 07:51:00.209+00'),
-('1:CIR:2026-05-29', 10, '2026-05-29 07:37:48.114+00'),
-('1:CSO:2026-05-15', 2, '2026-05-15 13:03:57.095+00'),
-('1:CSO:2026-05-20', 2, '2026-05-20 12:30:39.470+00'),
-('1:CSO:2026-05-22', 1, '2026-05-22 09:19:12.473+00'),
-('1:CSO:2026-05-27', 3, '2026-05-27 08:31:25.023+00'),
-('1:CSO:2026-05-28', 2, '2026-05-28 07:55:17.631+00'),
-('1:CSO:2026-05-29', 2, '2026-05-29 07:46:45.745+00'),
-('1:DD', 6, '2026-05-29 05:18:15.535+00'),
-('1:DDP:2026-05-28', 1, '2026-05-28 08:08:34.055+00'),
-('1:DDP:2026-05-29', 3, '2026-05-29 08:06:26.317+00'),
-('1:DR:2026-05-28', 1, '2026-05-28 08:08:34.055+00'),
-('1:DR:2026-05-29', 3, '2026-05-29 08:06:26.317+00'),
-('1:EN:2026-05-03', 1, '2026-05-03 06:31:45.342+00'),
-('1:EN:2026-05-04', 1, '2026-05-04 09:32:24.679+00'),
-('1:EN:2026-05-05', 1, '2026-05-05 05:41:00.299+00'),
-('1:EN:2026-05-08', 2, '2026-05-08 12:11:33.842+00'),
-('1:EN:2026-05-09', 2, '2026-05-09 12:20:44.174+00'),
-('1:EN:2026-05-10', 4, '2026-05-10 11:18:15.499+00'),
-('1:EN:2026-05-15', 2, '2026-05-15 11:54:56.548+00'),
-('1:EN:2026-05-16', 1, '2026-05-16 08:51:40.557+00'),
-('1:EN:2026-05-19', 4, '2026-05-19 11:30:37.957+00'),
-('1:EN:2026-05-20', 7, '2026-05-20 12:13:40.095+00'),
-('1:EN:2026-05-22', 1, '2026-05-22 09:11:53.852+00'),
-('1:EN:2026-05-24', 2, '2026-05-24 13:55:24.237+00'),
-('1:EN:2026-05-27', 4, '2026-05-27 08:46:33.779+00'),
-('1:EN:2026-05-28', 2, '2026-05-28 06:12:10.662+00'),
-('1:EN:2026-05-29', 2, '2026-05-29 07:59:16.296+00'),
-('1:IV:2026-05-03', 1, '2026-05-03 06:31:46.350+00'),
-('1:IV:2026-05-04', 1, '2026-05-04 09:32:26.406+00'),
-('1:IV:2026-05-05', 1, '2026-05-05 05:41:01.557+00'),
-('1:IV:2026-05-08', 3, '2026-05-08 12:51:01.826+00'),
-('1:IV:2026-05-09', 4, '2026-05-09 12:21:14.810+00'),
-('1:IV:2026-05-10', 8, '2026-05-10 11:18:16.958+00'),
-('1:IV:2026-05-15', 4, '2026-05-15 13:05:45.828+00'),
-('1:IV:2026-05-16', 2, '2026-05-16 08:56:43.462+00'),
-('1:IV:2026-05-19', 3, '2026-05-19 11:30:39.903+00'),
-('1:IV:2026-05-20', 11, '2026-05-20 12:33:04.318+00'),
-('1:IV:2026-05-22', 1, '2026-05-22 09:11:54.789+00'),
-('1:IV:2026-05-24', 2, '2026-05-24 13:55:26.038+00'),
-('1:IV:2026-05-27', 6, '2026-05-27 08:51:36.377+00'),
-('1:IV:2026-05-28', 5, '2026-05-28 10:42:45.342+00'),
-('1:IV:2026-05-29', 6, '2026-05-29 08:17:56.087+00'),
-('1:LO', 17, '2026-05-24 12:58:53.673+00'),
-('1:MD', 19, '2026-05-29 05:41:33.256+00'),
-('1:MDP:2026-05-09', 6, '2026-05-09 12:21:04.456+00'),
-('1:MDP:2026-05-10', 24, '2026-05-10 11:18:55.639+00'),
-('1:MDP:2026-05-15', 20, '2026-05-15 13:05:37.282+00')
-ON CONFLICT ("seq_key") DO NOTHING;
-
-INSERT INTO "whale_sequence" ("seq_key", "current_value", "updated_at")
-VALUES
-('1:MDP:2026-05-16', 3, '2026-05-16 08:57:10.339+00'),
-('1:MDP:2026-05-20', 13, '2026-05-20 12:32:57.357+00'),
-('1:MDP:2026-05-21', 2, '2026-05-21 11:34:23.785+00'),
-('1:MDP:2026-05-22', 4, '2026-05-22 12:43:13.924+00'),
-('1:MDP:2026-05-24', 6, '2026-05-24 13:00:12.125+00'),
-('1:MDP:2026-05-27', 14, '2026-05-27 11:39:21.679+00'),
-('1:MDP:2026-05-28', 5, '2026-05-28 10:41:18.268+00'),
-('1:MDP:2026-05-29', 15, '2026-05-29 08:15:55.851+00'),
-('1:MR:2026-05-04', 15, '2026-05-04 11:00:46.045+00'),
-('1:MR:2026-05-05', 17, '2026-05-05 12:28:03.158+00'),
-('1:MR:2026-05-08', 9, '2026-05-08 12:21:46.430+00'),
-('1:MR:2026-05-09', 25, '2026-05-09 12:21:04.456+00'),
-('1:MR:2026-05-10', 35, '2026-05-10 11:22:52.972+00'),
-('1:MR:2026-05-15', 19, '2026-05-15 13:05:37.282+00'),
-('1:MR:2026-05-16', 7, '2026-05-16 08:57:10.339+00'),
-('1:MR:2026-05-19', 2, '2026-05-19 11:36:54.153+00'),
-('1:MR:2026-05-20', 22, '2026-05-20 12:32:57.357+00'),
-('1:MR:2026-05-21', 7, '2026-05-21 11:34:33.923+00'),
-('1:MR:2026-05-22', 17, '2026-05-22 12:38:25.323+00'),
-('1:MR:2026-05-24', 8, '2026-05-24 13:00:12.125+00'),
-('1:MR:2026-05-27', 31, '2026-05-27 11:37:17.860+00'),
-('1:MR:2026-05-28', 15, '2026-05-28 10:41:57.235+00'),
-('1:MR:2026-05-29', 22, '2026-05-29 08:29:54.818+00'),
-('1:PA', 20, '2026-05-27 08:31:43.938+00'),
-('1:PSI:2026-05-15', 3, '2026-05-15 13:03:58.358+00'),
-('1:PSI:2026-05-20', 2, '2026-05-20 12:30:43.664+00'),
-('1:PSI:2026-05-22', 1, '2026-05-22 09:19:13.157+00'),
-('1:PSI:2026-05-27', 2, '2026-05-27 08:31:26.134+00'),
-('1:PSI:2026-05-28', 2, '2026-05-28 07:55:18.402+00'),
-('1:PSI:2026-05-29', 2, '2026-05-29 07:46:47.181+00'),
-('1:PST:2026-05-24', 1, '2026-05-24 05:45:21.992+00'),
-('1:PYR', 111, '2026-05-29 08:17:50.691+00'),
-('1:SQ:2026-05-13', 2, '2026-05-13 12:58:04.191+00'),
-('1:SQ:2026-05-14', 3, '2026-05-14 07:11:41.554+00'),
-('1:SR:2026-05-10', 6, '2026-05-10 11:22:50.898+00'),
-('1:SR:2026-05-15', 1, '2026-05-15 12:25:41.337+00'),
-('1:SR:2026-05-20', 3, '2026-05-20 12:38:29.417+00'),
-('1:SR:2026-05-21', 1, '2026-05-21 11:34:32.117+00'),
-('1:SR:2026-05-24', 13, '2026-05-24 13:03:20.902+00'),
-('1:SR:2026-05-28', 6, '2026-05-28 10:41:55.847+00'),
-('1:SR:2026-05-29', 6, '2026-05-29 08:29:53.616+00'),
-('1:ZY:2026-05-19', 1, '2026-05-19 10:56:35.387+00'),
-('1:ZY:2026-05-20', 13, '2026-05-20 12:54:44.283+00'),
-('1:ZY:2026-05-22', 4, '2026-05-22 08:13:12.912+00'),
-('1:ZY:2026-05-24', 7, '2026-05-24 12:59:08.642+00'),
-('1:ZY:2026-05-27', 3, '2026-05-27 11:34:57.986+00'),
-('1:ZY:2026-05-28', 3, '2026-05-28 10:39:49.731+00'),
-('1:ZY:2026-05-29', 1, '2026-05-29 07:01:37.777+00')
-ON CONFLICT ("seq_key") DO NOTHING;
-
+-- (empty) 业务序号由运行时递增，不预置
 
 -- ========== whale_audit_logs ==========
 CREATE TABLE IF NOT EXISTS whale_audit_logs (
@@ -1682,3 +1019,1358 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_entity_id ON whale_audit_logs(entity_i
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON whale_audit_logs(created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON whale_audit_logs(user_id);
+
+-- ========== whale_framework_runtime_state ==========
+-- 框架运行时状态快照（whale-runtime 中心节点收集，无种子）
+CREATE TABLE IF NOT EXISTS whale_framework_runtime_state (
+    id BIGINT PRIMARY KEY,
+    insight_code VARCHAR(128) NOT NULL,
+    category VARCHAR(64),
+    runtime_version VARCHAR(64),
+    operator_user_id BIGINT,
+    session_started_at TIMESTAMP,
+    org_category VARCHAR(128),
+    org_name VARCHAR(256),
+    deployment_fingerprint VARCHAR(128),
+    license_customer VARCHAR(256),
+    license_not_after TIMESTAMP,
+    payload_json TEXT,
+    observed_at TIMESTAMP,
+    received_at TIMESTAMP NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_fw_runtime_state_insight_code ON whale_framework_runtime_state(insight_code);
+
+CREATE INDEX IF NOT EXISTS idx_fw_runtime_state_fingerprint ON whale_framework_runtime_state(deployment_fingerprint);
+
+CREATE INDEX IF NOT EXISTS idx_fw_runtime_state_received_at ON whale_framework_runtime_state(received_at DESC);
+
+COMMENT ON TABLE whale_users IS '系统用户';
+
+COMMENT ON COLUMN whale_users.id IS '主键';
+COMMENT ON COLUMN whale_users.user_name IS '登录用户名';
+COMMENT ON COLUMN whale_users.email IS '邮箱';
+COMMENT ON COLUMN whale_users.phone_number IS '手机号';
+COMMENT ON COLUMN whale_users.password_hash IS '密码哈希';
+COMMENT ON COLUMN whale_users.name IS '名';
+COMMENT ON COLUMN whale_users.surname IS '姓';
+COMMENT ON COLUMN whale_users.is_active IS '是否启用';
+COMMENT ON COLUMN whale_users.is_locked_out IS '是否锁定';
+COMMENT ON COLUMN whale_users.lockout_end IS '锁定结束时间';
+COMMENT ON COLUMN whale_users.access_failed_count IS '登录失败次数';
+COMMENT ON COLUMN whale_users.extra_properties IS '扩展属性 JSON';
+COMMENT ON COLUMN whale_users.created_at IS '创建时间';
+COMMENT ON COLUMN whale_users.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_users.created_by IS '创建人';
+COMMENT ON COLUMN whale_users.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_users.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_users.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_users.deleted_by IS '删除人';
+COMMENT ON COLUMN whale_users.ukey_id IS 'UKey 标识';
+COMMENT ON COLUMN whale_users.ukey_src_id IS 'UKey 来源标识';
+
+COMMENT ON TABLE whale_roles IS '系统角色';
+
+COMMENT ON COLUMN whale_roles.id IS '主键';
+COMMENT ON COLUMN whale_roles.name IS '角色名称（唯一）';
+COMMENT ON COLUMN whale_roles.display_name IS '显示名称';
+COMMENT ON COLUMN whale_roles.code IS '角色编码';
+COMMENT ON COLUMN whale_roles.description IS '描述';
+COMMENT ON COLUMN whale_roles.is_default IS '是否默认角色';
+COMMENT ON COLUMN whale_roles.is_static IS '是否静态角色（不可删）';
+COMMENT ON COLUMN whale_roles.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_roles.created_at IS '创建时间';
+COMMENT ON COLUMN whale_roles.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_roles.created_by IS '创建人';
+COMMENT ON COLUMN whale_roles.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_roles.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_roles.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_roles.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_user_roles IS '用户角色关联';
+
+COMMENT ON COLUMN whale_user_roles.id IS '主键';
+COMMENT ON COLUMN whale_user_roles.user_id IS '用户标识';
+COMMENT ON COLUMN whale_user_roles.role_id IS '角色标识';
+COMMENT ON COLUMN whale_user_roles.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_user_roles.created_at IS '创建时间';
+COMMENT ON COLUMN whale_user_roles.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_user_roles.created_by IS '创建人';
+COMMENT ON COLUMN whale_user_roles.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_user_roles.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_user_roles.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_user_roles.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_permissions IS '权限定义';
+
+COMMENT ON COLUMN whale_permissions.id IS '主键';
+COMMENT ON COLUMN whale_permissions.name IS '权限名称（唯一）';
+COMMENT ON COLUMN whale_permissions.display_name IS '显示名称';
+COMMENT ON COLUMN whale_permissions.parent_name IS '父权限名称';
+COMMENT ON COLUMN whale_permissions.description IS '描述';
+COMMENT ON COLUMN whale_permissions.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_permissions.created_at IS '创建时间';
+COMMENT ON COLUMN whale_permissions.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_permissions.created_by IS '创建人';
+COMMENT ON COLUMN whale_permissions.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_permissions.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_permissions.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_permissions.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_permission_grants IS '权限授权';
+
+COMMENT ON COLUMN whale_permission_grants.id IS '主键';
+COMMENT ON COLUMN whale_permission_grants.permission_name IS '权限名称';
+COMMENT ON COLUMN whale_permission_grants.provider_name IS '授权主体类型（R=角色/U=用户）';
+COMMENT ON COLUMN whale_permission_grants.provider_key IS '授权主体键';
+COMMENT ON COLUMN whale_permission_grants.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_permission_grants.created_at IS '创建时间';
+COMMENT ON COLUMN whale_permission_grants.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_permission_grants.created_by IS '创建人';
+COMMENT ON COLUMN whale_permission_grants.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_permission_grants.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_permission_grants.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_permission_grants.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_security_logs IS '安全审计日志';
+
+COMMENT ON COLUMN whale_security_logs.id IS '主键';
+COMMENT ON COLUMN whale_security_logs.user_id IS '用户标识';
+COMMENT ON COLUMN whale_security_logs.user_name IS 'user name';
+COMMENT ON COLUMN whale_security_logs.action IS '操作动作';
+COMMENT ON COLUMN whale_security_logs.client_ip IS 'client ip';
+COMMENT ON COLUMN whale_security_logs.user_agent IS 'user agent';
+COMMENT ON COLUMN whale_security_logs.result IS 'result';
+COMMENT ON COLUMN whale_security_logs.failure_reason IS 'failure reason';
+COMMENT ON COLUMN whale_security_logs.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_security_logs.extra_properties IS '扩展属性 JSON';
+COMMENT ON COLUMN whale_security_logs.created_at IS '创建时间';
+COMMENT ON COLUMN whale_security_logs.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_security_logs.created_by IS '创建人';
+COMMENT ON COLUMN whale_security_logs.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_security_logs.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_security_logs.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_security_logs.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_organization_units IS '组织机构单元';
+
+COMMENT ON COLUMN whale_organization_units.id IS '主键';
+COMMENT ON COLUMN whale_organization_units.code IS '编码';
+COMMENT ON COLUMN whale_organization_units.display_name IS '显示名称';
+COMMENT ON COLUMN whale_organization_units.parent_id IS '父节点标识';
+COMMENT ON COLUMN whale_organization_units.sort_order IS '排序号';
+COMMENT ON COLUMN whale_organization_units.is_enabled IS '是否启用，语义等同 { PublicationStatus.ACTIVE}（见 health-domain-shared）';
+COMMENT ON COLUMN whale_organization_units.remark IS '备注';
+COMMENT ON COLUMN whale_organization_units.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_organization_units.created_at IS '创建时间';
+COMMENT ON COLUMN whale_organization_units.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_organization_units.created_by IS '创建人';
+COMMENT ON COLUMN whale_organization_units.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_organization_units.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_organization_units.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_organization_units.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_user_organization_units IS '用户组织单元关联';
+
+COMMENT ON COLUMN whale_user_organization_units.id IS '主键';
+COMMENT ON COLUMN whale_user_organization_units.user_id IS '用户标识';
+COMMENT ON COLUMN whale_user_organization_units.organization_unit_id IS '组织单元标识';
+COMMENT ON COLUMN whale_user_organization_units.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_user_organization_units.created_at IS '创建时间';
+COMMENT ON COLUMN whale_user_organization_units.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_user_organization_units.created_by IS '创建人';
+COMMENT ON COLUMN whale_user_organization_units.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_user_organization_units.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_user_organization_units.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_user_organization_units.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_user_claims IS '用户声明';
+
+COMMENT ON COLUMN whale_user_claims.id IS '主键';
+COMMENT ON COLUMN whale_user_claims.user_id IS '用户标识';
+COMMENT ON COLUMN whale_user_claims.claim_type IS '声明类型';
+COMMENT ON COLUMN whale_user_claims.claim_value IS '声明值';
+COMMENT ON COLUMN whale_user_claims.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_user_claims.created_at IS '创建时间';
+COMMENT ON COLUMN whale_user_claims.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_user_claims.created_by IS '创建人';
+COMMENT ON COLUMN whale_user_claims.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_user_claims.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_user_claims.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_user_claims.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_role_claims IS '角色声明';
+
+COMMENT ON COLUMN whale_role_claims.id IS '主键';
+COMMENT ON COLUMN whale_role_claims.role_id IS '角色标识';
+COMMENT ON COLUMN whale_role_claims.claim_type IS '声明类型';
+COMMENT ON COLUMN whale_role_claims.claim_value IS '声明值';
+COMMENT ON COLUMN whale_role_claims.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_role_claims.created_at IS '创建时间';
+COMMENT ON COLUMN whale_role_claims.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_role_claims.created_by IS '创建人';
+COMMENT ON COLUMN whale_role_claims.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_role_claims.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_role_claims.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_role_claims.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_qrtz_locks IS 'Quartz 调度锁';
+
+COMMENT ON COLUMN whale_qrtz_locks.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_locks.lock_name IS '锁名称';
+
+COMMENT ON TABLE whale_qrtz_job_details IS 'Quartz 作业详情';
+
+COMMENT ON COLUMN whale_qrtz_job_details.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_job_details.job_name IS '作业名称';
+COMMENT ON COLUMN whale_qrtz_job_details.job_group IS '作业组';
+COMMENT ON COLUMN whale_qrtz_job_details.description IS '描述';
+COMMENT ON COLUMN whale_qrtz_job_details.job_class_name IS '作业类名';
+COMMENT ON COLUMN whale_qrtz_job_details.is_durable IS '是否持久化';
+COMMENT ON COLUMN whale_qrtz_job_details.is_nonconcurrent IS '是否禁止并发';
+COMMENT ON COLUMN whale_qrtz_job_details.is_update_data IS '是否更新数据';
+COMMENT ON COLUMN whale_qrtz_job_details.requests_recovery IS '是否请求恢复';
+COMMENT ON COLUMN whale_qrtz_job_details.job_data IS '作业数据（BLOB）';
+
+COMMENT ON TABLE whale_qrtz_triggers IS 'Quartz 触发器';
+
+COMMENT ON COLUMN whale_qrtz_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_triggers.job_name IS '关联作业名称';
+COMMENT ON COLUMN whale_qrtz_triggers.job_group IS '关联作业组';
+COMMENT ON COLUMN whale_qrtz_triggers.description IS '描述';
+COMMENT ON COLUMN whale_qrtz_triggers.next_fire_time IS '下次触发时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_triggers.prev_fire_time IS '上次触发时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_triggers.priority IS '优先级';
+COMMENT ON COLUMN whale_qrtz_triggers.trigger_state IS '触发器状态';
+COMMENT ON COLUMN whale_qrtz_triggers.trigger_type IS '触发器类型';
+COMMENT ON COLUMN whale_qrtz_triggers.start_time IS '开始时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_triggers.end_time IS '结束时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_triggers.calendar_name IS '日历名称';
+COMMENT ON COLUMN whale_qrtz_triggers.misfire_instr IS '错失触发策略';
+COMMENT ON COLUMN whale_qrtz_triggers.job_data IS '触发器数据（BLOB）';
+
+COMMENT ON TABLE whale_qrtz_cron_triggers IS 'Quartz Cron 触发器';
+
+COMMENT ON COLUMN whale_qrtz_cron_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_cron_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_cron_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_cron_triggers.cron_expression IS 'Cron 表达式';
+COMMENT ON COLUMN whale_qrtz_cron_triggers.time_zone_id IS '时区 ID';
+
+COMMENT ON TABLE whale_qrtz_simple_triggers IS 'Quartz 简单触发器';
+
+COMMENT ON COLUMN whale_qrtz_simple_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.repeat_count IS '重复次数';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.repeat_interval IS '重复间隔（毫秒）';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.times_triggered IS '已触发次数';
+
+COMMENT ON TABLE whale_qrtz_blob_triggers IS 'Quartz BLOB 触发器';
+
+COMMENT ON COLUMN whale_qrtz_blob_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_blob_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_blob_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_blob_triggers.blob_data IS '触发器 BLOB 数据';
+
+COMMENT ON TABLE whale_qrtz_calendars IS 'Quartz 日历';
+
+COMMENT ON COLUMN whale_qrtz_calendars.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_calendars.calendar_name IS '日历名称';
+COMMENT ON COLUMN whale_qrtz_calendars.calendar IS '日历对象（BLOB）';
+
+COMMENT ON TABLE whale_qrtz_paused_trigger_grps IS 'Quartz 暂停触发器组';
+
+COMMENT ON COLUMN whale_qrtz_paused_trigger_grps.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_paused_trigger_grps.trigger_group IS '触发器组';
+
+COMMENT ON TABLE whale_qrtz_scheduler_state IS 'Quartz 调度器状态';
+
+COMMENT ON COLUMN whale_qrtz_scheduler_state.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_scheduler_state.instance_name IS '实例名称';
+COMMENT ON COLUMN whale_qrtz_scheduler_state.last_checkin_time IS '最后检入时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_scheduler_state.checkin_interval IS '检入间隔（毫秒）';
+
+COMMENT ON TABLE whale_qrtz_fired_triggers IS 'Quartz 已触发记录';
+
+COMMENT ON COLUMN whale_qrtz_fired_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.entry_id IS '条目 ID';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.instance_name IS '实例名称';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.fired_time IS '触发时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.sched_time IS '计划时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.priority IS '优先级';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.state IS '状态';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.job_name IS '作业名称';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.job_group IS '作业组';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.is_nonconcurrent IS '是否禁止并发';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.requests_recovery IS '是否请求恢复';
+
+COMMENT ON TABLE whale_tenants IS '租户';
+
+COMMENT ON COLUMN whale_tenants.id IS '主键';
+COMMENT ON COLUMN whale_tenants.name IS '租户名称';
+COMMENT ON COLUMN whale_tenants.code IS '租户代码';
+COMMENT ON COLUMN whale_tenants.description IS '租户描述';
+COMMENT ON COLUMN whale_tenants.is_active IS '是否启用';
+COMMENT ON COLUMN whale_tenants.extra_properties IS '扩展属性';
+COMMENT ON COLUMN whale_tenants.created_at IS '创建时间';
+COMMENT ON COLUMN whale_tenants.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_tenants.created_by IS '创建人';
+COMMENT ON COLUMN whale_tenants.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_tenants.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_tenants.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_tenants.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_user_tenants IS '用户租户关联';
+
+COMMENT ON COLUMN whale_user_tenants.id IS '主键';
+COMMENT ON COLUMN whale_user_tenants.user_id IS '用户标识';
+COMMENT ON COLUMN whale_user_tenants.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_user_tenants.created_at IS '创建时间';
+COMMENT ON COLUMN whale_user_tenants.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_user_tenants.created_by IS '创建人';
+COMMENT ON COLUMN whale_user_tenants.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_user_tenants.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_user_tenants.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_user_tenants.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_settings IS '系统设置';
+
+COMMENT ON COLUMN whale_settings.id IS '主键';
+COMMENT ON COLUMN whale_settings.name IS '设置键';
+COMMENT ON COLUMN whale_settings.value IS '设置值';
+COMMENT ON COLUMN whale_settings.provider_name IS '提供者类型';
+COMMENT ON COLUMN whale_settings.provider_key IS '提供者键';
+COMMENT ON COLUMN whale_settings.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_settings.description IS '描述';
+COMMENT ON COLUMN whale_settings.created_at IS '创建时间';
+COMMENT ON COLUMN whale_settings.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_settings.created_by IS '创建人';
+COMMENT ON COLUMN whale_settings.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_settings.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_settings.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_settings.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_menus IS '菜单';
+
+COMMENT ON COLUMN whale_menus.id IS '主键';
+COMMENT ON COLUMN whale_menus.code IS '菜单编码';
+COMMENT ON COLUMN whale_menus.name IS '菜单名称';
+COMMENT ON COLUMN whale_menus.display_name IS '显示名称';
+COMMENT ON COLUMN whale_menus.icon IS '图标';
+COMMENT ON COLUMN whale_menus.path IS '路由路径';
+COMMENT ON COLUMN whale_menus.component IS '前端组件路径';
+COMMENT ON COLUMN whale_menus.permission_name IS '关联权限名称';
+COMMENT ON COLUMN whale_menus.parent_id IS '父菜单 ID';
+COMMENT ON COLUMN whale_menus.sort_order IS '排序号';
+COMMENT ON COLUMN whale_menus.is_enabled IS '是否启用';
+COMMENT ON COLUMN whale_menus.is_hidden IS '是否隐藏';
+COMMENT ON COLUMN whale_menus.is_external IS '是否外链';
+COMMENT ON COLUMN whale_menus.external_url IS '外链 URL';
+COMMENT ON COLUMN whale_menus.menu_type IS '菜单类型（menu/directory）';
+COMMENT ON COLUMN whale_menus.remark IS '备注';
+COMMENT ON COLUMN whale_menus.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_menus.created_at IS '创建时间';
+COMMENT ON COLUMN whale_menus.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_menus.created_by IS '创建人';
+COMMENT ON COLUMN whale_menus.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_menus.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_menus.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_menus.deleted_by IS '删除人';
+COMMENT ON COLUMN whale_menus.keep_alive IS '是否缓存页面';
+
+COMMENT ON TABLE whale_sequence IS '业务序号表，按 key 记录当前序号';
+
+COMMENT ON COLUMN whale_sequence.seq_key IS '序号键（如 ORDER、PATIENT、或 ORDER:2025-01-30 表示按天）';
+COMMENT ON COLUMN whale_sequence.current_value IS '当前序号值（递增后返回）';
+COMMENT ON COLUMN whale_sequence.updated_at IS '最后更新时间';
+
+COMMENT ON TABLE whale_audit_logs IS '实体变更审计日志';
+
+COMMENT ON COLUMN whale_audit_logs.id IS '主键';
+COMMENT ON COLUMN whale_audit_logs.entity_type IS '实体类型';
+COMMENT ON COLUMN whale_audit_logs.entity_id IS '实体 ID';
+COMMENT ON COLUMN whale_audit_logs.operation_type IS '操作类型';
+COMMENT ON COLUMN whale_audit_logs.user_id IS '操作人';
+COMMENT ON COLUMN whale_audit_logs.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_audit_logs.ip_address IS 'IP 地址';
+COMMENT ON COLUMN whale_audit_logs.user_agent IS 'User-Agent';
+COMMENT ON COLUMN whale_audit_logs.changes IS '变更内容';
+COMMENT ON COLUMN whale_audit_logs.created_at IS '创建时间';
+
+COMMENT ON TABLE whale_framework_runtime_state IS '框架运行时状态';
+
+COMMENT ON COLUMN whale_framework_runtime_state.id IS '主键';
+COMMENT ON COLUMN whale_framework_runtime_state.insight_code IS '洞察编码';
+COMMENT ON COLUMN whale_framework_runtime_state.category IS 'category';
+COMMENT ON COLUMN whale_framework_runtime_state.runtime_version IS 'runtime version';
+COMMENT ON COLUMN whale_framework_runtime_state.operator_user_id IS 'operator user id';
+COMMENT ON COLUMN whale_framework_runtime_state.session_started_at IS '会话开始时间';
+COMMENT ON COLUMN whale_framework_runtime_state.org_category IS '机构类别';
+COMMENT ON COLUMN whale_framework_runtime_state.org_name IS '机构名称';
+COMMENT ON COLUMN whale_framework_runtime_state.deployment_fingerprint IS '部署指纹';
+COMMENT ON COLUMN whale_framework_runtime_state.license_customer IS '许可证客户';
+COMMENT ON COLUMN whale_framework_runtime_state.license_not_after IS '许可证失效时间';
+COMMENT ON COLUMN whale_framework_runtime_state.payload_json IS '载荷 JSON';
+COMMENT ON COLUMN whale_framework_runtime_state.observed_at IS '观测时间';
+COMMENT ON COLUMN whale_framework_runtime_state.received_at IS '接收时间';
+
+-- ========== 发版合并：原 V74–V87 菜单/权限种子（whale_menus / whale_permissions）==========
+
+-- ----- V74__report_menus.sql -----
+-- V74：whale-report 菜单 + Report.* 权限 + 管理员角色授权
+-- 说明：V1 已写入菜单但缺少 Report.Templates.View 等权限及 role=1 授权，导致 UI 不显示
+-- 结构：顶级「报表打印」目录下集中 whale-report 全部入口
+
+-- ========== 1. Report 权限定义 ==========
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310700000000000001', 'Report', '打印与报表', NULL,
+     'whale-report 模块入口权限分组', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000002', 'Report.Templates.View', '打印模板', 'Report',
+     '菜单入口: ReportPrintTemplate', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000003', 'Report.Templates.Design', '打印模板设计', 'Report',
+     '菜单入口: ReportTemplateDesigner', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000004', 'Report.PrintLog.View', '打印日志', 'Report',
+     '菜单入口: ReportPrintLog', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000005', 'Report.Center.View', '动态报表', 'Report',
+     '菜单入口: WhaleReportLoaderCenter', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000006', 'Report.External.View', '外系统报告', 'Report',
+     '菜单入口: WhaleReportExternal', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+-- ========== 2. 菜单（upsert，兼容已跑过旧 V1 的库） ==========
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('310400000000000100', 'ReportCenter', 'ReportCenter', '报表管理', 'lucide:layout-dashboard',
+     '/reports', '', NULL, NULL, 11, TRUE, FALSE, FALSE, '', 'directory',
+     'whale-report 打印模板 / 报表模板 / 报表中心 / 外系统报告', NULL,
+     TIMESTAMP '2026-06-03 16:00:00+00', TIMESTAMP '2026-06-13 04:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('310600000000000101', 'ReportPrintTemplate', 'ReportPrintTemplate', '打印模板', 'lucide:file-text',
+     '/basic/report-template', '/basic/report-template/index', 'Report.Templates.View', '310400000000000100', 1,
+     TRUE, FALSE, FALSE, '', 'menu', 'Layout 设计器 L1：flow/roll/overlay 模板列表（whale-report）', NULL,
+     TIMESTAMP '2026-06-03 16:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('310600000000000102', 'ReportTemplateDesigner', 'ReportTemplateDesigner', '打印模板设计', 'lucide:layout-template',
+     '/basic/report-template/designer', '/basic/report-template/designer/index', 'Report.Templates.Design', '310400000000000100', 2,
+     TRUE, FALSE, FALSE, '', 'menu', 'Layout 设计器 L1 编辑页', NULL,
+     TIMESTAMP '2026-06-03 16:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL, FALSE),
+
+    ('310600000000000103', 'ReportPrintLog', 'ReportPrintLog', '打印日志', 'lucide:scroll-text',
+     '/basic/print-log', '/basic/print-log/index', 'Report.PrintLog.View', '310400000000000100', 3,
+     TRUE, FALSE, FALSE, '', 'menu', '打印事件明细 rpt_print_event_log', NULL,
+     TIMESTAMP '2026-06-03 16:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('310600000000000111', 'WhaleReportLoaderCenter', 'WhaleReportLoaderCenter', '动态报表', 'lucide:table',
+     '/reports/whale-center', '/report/center/index', 'Report.Center.View', '310400000000000100', 4,
+     TRUE, FALSE, FALSE, '', 'menu', 'whale-report C 类 ReportLoader 报表中心', NULL,
+     TIMESTAMP '2026-06-03 16:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('310600000000000112', 'WhaleReportExternal', 'WhaleReportExternal', '外系统报告', 'lucide:file-search',
+     '/reports/external', '/report/external/index', 'Report.External.View', '310400000000000100', 5,
+     TRUE, FALSE, FALSE, '', 'menu', 'D 类 LIS/PACS 外系统报告查看', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+-- V1 占位报表页（首页/院长/临床/财务）移出「报表打印」，避免与 whale-report 入口混排
+UPDATE whale_menus
+SET parent_id   = NULL,
+    sort_order  = 12,
+    is_hidden   = TRUE,
+    remark      = COALESCE(remark, '') || '；V74 已迁至隐藏，whale-report 统一在「报表打印」',
+    updated_at  = TIMESTAMP '2026-06-11 00:00:00+00'
+WHERE id IN (
+    '310400000000000101',
+    '310400000000000102',
+    '310400000000000103',
+    '301699662818054144'
+)
+  AND is_deleted = FALSE;
+
+-- ========== 3. 管理员角色（R / 1）授权 ==========
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310800000000000001', 'Report.Templates.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000002', 'Report.Templates.Design', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000003', 'Report.PrintLog.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000004', 'Report.Center.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000005', 'Report.External.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-11 00:00:00+00';
+
+-- ----- V75__report_print_binding_menu.sql -----
+-- V75：院点打印模板配置菜单
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310700000000000007', 'Report.PrintBinding.View', '打印模板配置', 'Report',
+    '菜单入口: ReportPrintBinding — 院点业务场景绑定 templateCode', NULL,
+    TIMESTAMP '2026-06-11 12:00:00+00', TIMESTAMP '2026-06-11 12:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310600000000000104', 'ReportPrintBinding', 'ReportPrintBinding', '打印模板配置', 'lucide:link-2',
+    '/basic/print-binding', '/basic/print-binding/index', 'Report.PrintBinding.View', '310400000000000100', 2,
+    TRUE, FALSE, FALSE, '', 'menu', '院点业务场景 → templateCode 绑定（whale-report）', NULL,
+    TIMESTAMP '2026-06-11 12:00:00+00', TIMESTAMP '2026-06-11 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+UPDATE whale_menus
+SET sort_order = 3,
+    updated_at = TIMESTAMP '2026-06-11 12:00:00+00'
+WHERE id = '310600000000000103' AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 4,
+    updated_at = TIMESTAMP '2026-06-11 12:00:00+00'
+WHERE id = '310600000000000111' AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 5,
+    updated_at = TIMESTAMP '2026-06-11 12:00:00+00'
+WHERE id = '310600000000000112' AND is_deleted = FALSE;
+
+DELETE FROM whale_permission_grants
+WHERE permission_name = 'Report.PrintBinding.View'
+  AND provider_name = 'R'
+  AND provider_key = '1'
+  AND id <> '310800000000000006';
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310800000000000006', 'Report.PrintBinding.View', 'R', '1', NULL,
+    TIMESTAMP '2026-06-11 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    provider_name   = EXCLUDED.provider_name,
+    provider_key    = EXCLUDED.provider_key,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+-- ----- V78__report_designer_and_center_menus.sql -----
+-- V78：动态报表拆分为「报表设计器」+「报表中心」
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310700000000000008', 'Report.Designer.View', '报表设计器', 'Report',
+    '菜单入口: WhaleReportDesigner — C 类报表配置与发布', NULL,
+    TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+UPDATE whale_permissions
+SET display_name = '报表中心',
+    description  = '菜单入口: WhaleReportCenter — 已发布 C 类报表查询/导出/打印',
+    updated_at   = TIMESTAMP '2026-06-13 00:00:00+00'
+WHERE name = 'Report.Center.View'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET code            = 'WhaleReportDesigner',
+    name            = 'WhaleReportDesigner',
+    display_name    = '报表设计器',
+    icon            = 'lucide:pen-line',
+    path            = '/reports/designer',
+    component       = '/report/designer/index',
+    permission_name = 'Report.Designer.View',
+    sort_order      = 4,
+    remark          = 'C 类报表配置、PDF 模板绑定与发布（draft → published）',
+    updated_at      = TIMESTAMP '2026-06-13 00:00:00+00'
+WHERE id = '310600000000000111'
+  AND is_deleted = FALSE;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310600000000000113', 'WhaleReportCenter', 'WhaleReportCenter', '报表中心', 'lucide:table-2',
+    '/reports/center', '/report/center/index', 'Report.Center.View', '310400000000000100', 5,
+    TRUE, FALSE, FALSE, '', 'menu', '已发布 C 类报表：查询、Excel/PDF 导出、打印预览与打印', NULL,
+    TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+UPDATE whale_menus
+SET sort_order = 6,
+    updated_at = TIMESTAMP '2026-06-13 00:00:00+00'
+WHERE id = '310600000000000112'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET remark = 'whale-report 打印模板 / 日志 / 报表设计器 / 报表中心 / 外系统报告',
+    updated_at = TIMESTAMP '2026-06-13 00:00:00+00'
+WHERE id = '310400000000000100'
+  AND is_deleted = FALSE;
+
+DELETE FROM whale_permission_grants
+WHERE permission_name = 'Report.Designer.View'
+  AND provider_name = 'R'
+  AND provider_key = '1'
+  AND id <> '310800000000000007';
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310800000000000007', 'Report.Designer.View', 'R', '1', NULL,
+    TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    provider_name   = EXCLUDED.provider_name,
+    provider_key    = EXCLUDED.provider_key,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+-- ----- V79__report_template_designer_center_menus.sql -----
+-- V79：C 类三层菜单 — 报表模板 / 报表设计器 / 报表中心
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310700000000000009', 'Report.Definition.View', '报表模板', 'Report',
+    '菜单入口: WhaleReportTemplate — C 类报表 CRUD', NULL,
+    TIMESTAMP '2026-06-13 12:00:00+00', TIMESTAMP '2026-06-13 12:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name, display_name = EXCLUDED.display_name,
+    description = EXCLUDED.description, is_deleted = FALSE, updated_at = EXCLUDED.updated_at;
+
+UPDATE whale_permissions
+SET display_name = '报表设计器',
+    description = '菜单入口: WhaleReportDesigner — SQL/表头/表底/筛选器设计',
+    updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
+WHERE name = 'Report.Designer.View' AND is_deleted = FALSE;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310600000000000114', 'WhaleReportTemplate', 'WhaleReportTemplate', '报表模板', 'lucide:file-spreadsheet',
+    '/reports/report-template', '/report/template/index', 'Report.Definition.View', '310400000000000100', 4,
+    TRUE, FALSE, FALSE, '', 'menu', 'C 类报表增删改查（类比打印模板列表）', NULL,
+    TIMESTAMP '2026-06-13 12:00:00+00', TIMESTAMP '2026-06-13 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code, display_name = EXCLUDED.display_name, path = EXCLUDED.path,
+    component = EXCLUDED.component, permission_name = EXCLUDED.permission_name,
+    sort_order = EXCLUDED.sort_order, remark = EXCLUDED.remark, is_deleted = FALSE,
+    updated_at = EXCLUDED.updated_at;
+
+UPDATE whale_menus
+SET sort_order = 5,
+    is_hidden = TRUE,
+    remark = 'C 类报表设计（从报表模板「设计」进入；编辑 SQL/表头/表底）',
+    updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
+WHERE id = '310600000000000111' AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 6, updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
+WHERE id = '310600000000000113' AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 7, updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
+WHERE id = '310600000000000112' AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET remark = 'whale-report 打印模板 / 报表模板 / 报表中心 / 外系统报告',
+    updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
+WHERE id = '310400000000000100' AND is_deleted = FALSE;
+
+DELETE FROM whale_permission_grants
+WHERE permission_name = 'Report.Definition.View'
+  AND provider_name = 'R'
+  AND provider_key = '1'
+  AND id <> '310800000000000008';
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310800000000000008', 'Report.Definition.View', 'R', '1', NULL,
+    TIMESTAMP '2026-06-13 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    permission_name = EXCLUDED.permission_name,
+    provider_name   = EXCLUDED.provider_name,
+    provider_key    = EXCLUDED.provider_key,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+-- ----- V81__chs_reconciliation_menu.sql -----
+-- V81：医保对账清算菜单（3201 / 3203A–3206A）
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310500000000000103', 'ChsReconciliation', 'ChsReconciliation', '对账清算', 'lucide:scale',
+    '/chs/reconciliation', '/chs/reconciliation/index', '', '310500000000000100', 3,
+    TRUE, FALSE, FALSE, '', 'menu', '3201 日对账 + 3206A→3203A→3205A→3204A 月清算', NULL,
+    TIMESTAMP '2026-06-13 12:00:00+00', TIMESTAMP '2026-06-13 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+-- ----- V82__chs_catalog_mapping_workbench_menu.sql -----
+-- V82：医保目录对码 Workbench 菜单
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310500000000000104', 'ChsCatalogMappingWorkbench', 'ChsCatalogMappingWorkbench', '目录对码工作台', 'lucide:git-compare',
+    '/chs/catalog-mapping-workbench', '/chs/catalog-mapping-workbench/index', '', '310500000000000100', 4,
+    TRUE, FALSE, FALSE, '', 'menu', '待对码分页 + 3301 批量上传进度', NULL,
+    TIMESTAMP '2026-06-13 14:00:00+00', TIMESTAMP '2026-06-13 14:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+-- ----- V83__chs_inventory_ops_menu.sql -----
+-- V83：医保进销存运维菜单（本地上传流水 + 3508–3513 平台查询）
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310500000000000105', 'ChsInventoryOps', 'ChsInventoryOps', '进销存运维', 'lucide:package-search',
+    '/chs/inventory', '/chs/inventory/index', '', '310500000000000100', 5,
+    TRUE, FALSE, FALSE, '', 'menu', '3503–3506 本地上传流水 + 3508–3513 平台查询', NULL,
+    TIMESTAMP '2026-06-14 12:00:00+00', TIMESTAMP '2026-06-14 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+-- ----- V84__wh_return_to_supplier_menu.sql -----
+-- V84：药库退货单（向供应商退货）菜单
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310400000000000106', 'WhReturnToSupplier', 'WhReturnToSupplier', '药库退货单', 'lucide:package-x',
+    '/inventory/warehouse/return-to-supplier', '/inventory/warehouse/return-to-supplier/index', '', '284503862625177600', 6,
+    TRUE, FALSE, FALSE, '', 'menu', '药库向供应商退货 + 医保3504', NULL,
+    TIMESTAMP '2026-06-14 14:00:00+00', TIMESTAMP '2026-06-14 14:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+-- ----- V85__dept_stocktake_menu.sql -----
+-- V85：科室盘点单菜单
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310400000000000107', 'DeptStocktakeOrder', 'DeptStocktakeOrder', '科室盘点单', 'lucide:clipboard-check',
+    '/inventory/department/stocktake', '/inventory/department/stocktake/index', '', '284503862625177600', 7,
+    TRUE, FALSE, FALSE, '', 'menu', '科室盘点 + 医保3501/3502', NULL,
+    TIMESTAMP '2026-06-14 16:00:00+00', TIMESTAMP '2026-06-14 16:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+-- ----- V86__inventory_gainloss_transfer_menu.sql -----
+-- V86：损益单与调拨单菜单（药库/药房/科室损益 + 调拨入/出库）
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+(
+    '310400000000000108', 'WhGainLoss', 'WhGainLoss', '药库损益单', 'lucide:scale',
+    '/inventory/warehouse/gain-loss', '/inventory/warehouse/gain-loss/index', '', '284503862625177600', 8,
+    TRUE, FALSE, FALSE, '', 'menu', '药库损益 + 医保3502', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000109', 'PhaGainLoss', 'PhaGainLoss', '药房损益单', 'lucide:scale',
+    '/inventory/pharmacy/gain-loss', '/inventory/pharmacy/gain-loss/index', '', '284503862625177600', 9,
+    TRUE, FALSE, FALSE, '', 'menu', '药房损益 + 医保3502', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000110', 'DeptGainLoss', 'DeptGainLoss', '科室损益单', 'lucide:scale',
+    '/inventory/department/gain-loss', '/inventory/department/gain-loss/index', '', '284503862625177600', 10,
+    TRUE, FALSE, FALSE, '', 'menu', '科室损益 + 医保3502', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000111', 'WhTransferOut', 'WhTransferOut', '药库调拨出库', 'lucide:arrow-right-left',
+    '/inventory/warehouse/transfer-out', '/inventory/warehouse/transfer-out/index', '', '284503862625177600', 11,
+    TRUE, FALSE, FALSE, '', 'menu', '药库调拨出库 + 医保3502(102)', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000112', 'WhTransferIn', 'WhTransferIn', '药库调拨入库', 'lucide:arrow-right-left',
+    '/inventory/warehouse/transfer-in', '/inventory/warehouse/transfer-in/index', '', '284503862625177600', 12,
+    TRUE, FALSE, FALSE, '', 'menu', '药房调拨入库 + 医保3502(101)', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+-- ----- V87__inventory_return_menu.sql -----
+-- V87：退库单菜单（药房退库 / 药库退库 / 科室退库）
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+(
+    '310400000000000114', 'PhaReturnUpstream', 'PhaReturnUpstream', '药房退库', 'lucide:undo-2',
+    '/inventory/pharmacy/return-upstream', '/inventory/pharmacy/return-upstream/index', '', '284503862625177600', 14,
+    TRUE, FALSE, FALSE, '', 'menu', '药房退库至药库', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000115', 'WhReturnFromDownstream', 'WhReturnFromDownstream', '药库退库', 'lucide:undo-2',
+    '/inventory/warehouse/return-from-downstream', '/inventory/warehouse/return-from-downstream/index', '', '284503862625177600', 15,
+    TRUE, FALSE, FALSE, '', 'menu', '下游退回药库', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+),
+(
+    '310400000000000116', 'DeptReturn', 'DeptReturn', '科室退库', 'lucide:undo-2',
+    '/inventory/department/dept-return', '/inventory/department/dept-return/index', '', '284503862625177600', 16,
+    TRUE, FALSE, FALSE, '', 'menu', '科室退库至药库', NULL,
+    TIMESTAMP '2026-06-14 18:00:00+00', TIMESTAMP '2026-06-14 18:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+-- ========== V81–V87 补全 Navigation 权限与管理员角色（R/1）授权 ==========
+-- 原 V81–V87 仅写菜单且 permission_name 为空；非 admin 用户无法看到（MenuAppService 按 permission_name 匹配授权）
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('58', 'Navigation.Chsreconciliation', '对账清算', 'Navigation', '菜单入口: ChsReconciliation', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('59', 'Navigation.Chscatalogmappingworkbench', '目录对码工作台', 'Navigation', '菜单入口: ChsCatalogMappingWorkbench', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('60', 'Navigation.Chsinventoryops', '进销存运维', 'Navigation', '菜单入口: ChsInventoryOps', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('61', 'Navigation.Whreturntosupplier', '药库退货单', 'Navigation', '菜单入口: WhReturnToSupplier', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('62', 'Navigation.Deptstocktakeorder', '科室盘点单', 'Navigation', '菜单入口: DeptStocktakeOrder', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('63', 'Navigation.Whgainloss', '药库损益单', 'Navigation', '菜单入口: WhGainLoss', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('64', 'Navigation.Phagainloss', '药房损益单', 'Navigation', '菜单入口: PhaGainLoss', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('65', 'Navigation.Deptgainloss', '科室损益单', 'Navigation', '菜单入口: DeptGainLoss', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('66', 'Navigation.Whtransferout', '药库调拨出库', 'Navigation', '菜单入口: WhTransferOut', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('67', 'Navigation.Whtransferin', '药库调拨入库', 'Navigation', '菜单入口: WhTransferIn', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('68', 'Navigation.Phareturnupstream', '药房退库', 'Navigation', '菜单入口: PhaReturnUpstream', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('69', 'Navigation.Whreturnfromdownstream', '药库退库', 'Navigation', '菜单入口: WhReturnFromDownstream', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('70', 'Navigation.Deptreturn', '科室退库', 'Navigation', '菜单入口: DeptReturn', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    parent_name = EXCLUDED.parent_name,
+    description = EXCLUDED.description,
+    is_deleted = FALSE,
+    updated_at = EXCLUDED.updated_at;
+
+UPDATE whale_menus SET permission_name = 'Navigation.Chsreconciliation', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000103' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Chscatalogmappingworkbench', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000104' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Chsinventoryops', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000105' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Whreturntosupplier', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000106' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Deptstocktakeorder', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000107' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Whgainloss', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000108' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Phagainloss', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000109' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Deptgainloss', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000110' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Whtransferout', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000111' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Whtransferin', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000112' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Phareturnupstream', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000114' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Whreturnfromdownstream', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000115' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Deptreturn', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310400000000000116' AND is_deleted = FALSE;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('10057', 'Navigation.Chsreconciliation', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10058', 'Navigation.Chscatalogmappingworkbench', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10059', 'Navigation.Chsinventoryops', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10060', 'Navigation.Whreturntosupplier', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10061', 'Navigation.Deptstocktakeorder', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10062', 'Navigation.Whgainloss', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10063', 'Navigation.Phagainloss', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10064', 'Navigation.Deptgainloss', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10065', 'Navigation.Whtransferout', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10066', 'Navigation.Whtransferin', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10067', 'Navigation.Phareturnupstream', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10068', 'Navigation.Whreturnfromdownstream', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10069', 'Navigation.Deptreturn', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10070', 'Navigation.Medicinereturnip', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-17 00:00:00+00';
+
+-- Report 模块：补管理员角色对 Report 分组权限（与 Booking 模块 Booking 分组授权同构）
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310800000000000009', 'Report', 'R', '1', NULL,
+    TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-17 00:00:00+00';
+
+-- ========== V88：Booking（原 booking V6）+ 样本 / CHS 目录权限（对齐现网 98 条菜单） ==========
+
+-- ----- 1. Booking 权限（原 booking-application V6__Booking_Menus.sql） -----
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310900000000000001', 'Booking', '统一预约', NULL,
+     'whale-booking 模块入口权限分组', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000002', 'Booking.Schedule.View', '排班与号源', 'Booking',
+     '门诊排班、号源日历', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000003', 'Booking.Register.View', '门诊预约', 'Booking',
+     '门诊预约登记', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000004', 'Booking.Queue.View', '候诊叫号', 'Booking',
+     '候诊叫号台', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000005', 'Booking.Policy.View', '预约策略', 'Booking',
+     '放号策略与院点挂号策略', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000006', 'Booking.MedTech.View', '医技预约', 'Booking',
+     '医技预约登记', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000007', 'Booking.Bed.View', '床位预约', 'Booking',
+     '床位预留日历', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000008', 'Booking.HealthCheckup.View', '体检预约', 'Booking',
+     '团检与个检预约', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000009', 'Booking.Channel.View', '渠道配置', 'Booking',
+     '预约渠道与配额', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000010', 'Booking.QueueDisplay.View', '叫号大屏', 'Booking',
+     '候诊叫号大屏', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000011', 'Booking.Template.View', '排班模板', 'Booking',
+     'T1/T2/TW 排班模板维护', NULL,
+     TIMESTAMP '2026-06-14 00:00:00+00', TIMESTAMP '2026-06-14 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    parent_name = EXCLUDED.parent_name,
+    description = EXCLUDED.description,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+-- ----- 2. Booking 菜单 -----
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('310900000000000100', 'BookingHub', 'BookingHub', '统一预约', 'lucide:calendar-range',
+     '/booking', '', NULL, NULL, 8, TRUE, FALSE, FALSE, '', 'directory',
+     '门诊排班 / 号源 / 预约 / 候诊叫号 / 策略 / 模板', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000101', 'BookingOutpatientSchedule', 'BookingOutpatientSchedule', '门诊排班', 'lucide:calendar-clock',
+     '/booking/outpatient-schedule', '/booking/outpatient-schedule/index', 'Booking.Schedule.View', '310900000000000100', 1,
+     TRUE, FALSE, FALSE, '', 'menu', 'OutpatientScheduleAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000102', 'BookingSlotCalendar', 'BookingSlotCalendar', '号源日历', 'lucide:calendar-days',
+     '/booking/slot-calendar', '/booking/slot-calendar/index', 'Booking.Schedule.View', '310900000000000100', 2,
+     TRUE, FALSE, FALSE, '', 'menu', 'SlotManageAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000103', 'BookingOutpatientRegister', 'BookingOutpatientRegister', '门诊预约', 'lucide:calendar-check',
+     '/booking/outpatient-register', '/booking/outpatient-register/index', 'Booking.Register.View', '310900000000000100', 3,
+     TRUE, FALSE, FALSE, '', 'menu', 'BookingRegisterAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000104', 'BookingQueueBoard', 'BookingQueueBoard', '候诊叫号', 'lucide:megaphone',
+     '/booking/queue-board', '/booking/queue-board/index', 'Booking.Queue.View', '310900000000000100', 4,
+     TRUE, FALSE, FALSE, '', 'menu', 'QueueBoardAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000105', 'BookingPolicy', 'BookingPolicy', '放号策略', 'lucide:settings-2',
+     '/booking/policy', '/booking/policy/index', 'Booking.Policy.View', '310900000000000100', 5,
+     TRUE, FALSE, FALSE, '', 'menu', 'BookingPolicyAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000106', 'BookingMedTech', 'BookingMedTech', '医技预约', 'lucide:stethoscope',
+     '/booking/med-tech', '/booking/med-tech/index', 'Booking.MedTech.View', '310900000000000100', 6,
+     TRUE, FALSE, FALSE, '', 'menu', 'MedTechBookingAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000107', 'BookingBed', 'BookingBed', '床位预约', 'lucide:bed',
+     '/booking/bed', '/booking/bed/index', 'Booking.Bed.View', '310900000000000100', 7,
+     TRUE, FALSE, FALSE, '', 'menu', 'BedBookingAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000108', 'BookingHealthCheckup', 'BookingHealthCheckup', '体检预约', 'lucide:heart-pulse',
+     '/booking/health-checkup', '/booking/health-checkup/index', 'Booking.HealthCheckup.View', '310900000000000100', 8,
+     TRUE, FALSE, FALSE, '', 'menu', 'HealthCheckupBookingAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000109', 'BookingChannel', 'BookingChannel', '渠道配置', 'lucide:share-2',
+     '/booking/channel', '/booking/channel/index', 'Booking.Channel.View', '310900000000000100', 9,
+     TRUE, FALSE, FALSE, '', 'menu', 'ChannelBookingAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000110', 'BookingQueueDisplay', 'BookingQueueDisplay', '叫号大屏', 'lucide:monitor',
+     '/booking/queue-display', '/booking/queue-display/index', 'Booking.QueueDisplay.View', '310900000000000100', 10,
+     TRUE, FALSE, FALSE, '', 'menu', 'Queue display fullscreen', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, FALSE),
+    ('310900000000000112', 'BookingScheduleTemplate', 'BookingScheduleTemplate', '排班模板', 'lucide:layout-template',
+     '/booking/schedule-template', '/booking/schedule-template/index', 'Booking.Template.View', '310900000000000100', 11,
+     TRUE, FALSE, FALSE, '', 'menu', 'ScheduleTemplateAppService T1/T2/TW', NULL,
+     TIMESTAMP '2026-06-14 00:00:00+00', TIMESTAMP '2026-06-14 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code,
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    icon = EXCLUDED.icon,
+    path = EXCLUDED.path,
+    component = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_enabled = EXCLUDED.is_enabled,
+    is_hidden = EXCLUDED.is_hidden,
+    remark = EXCLUDED.remark,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+-- ----- 3. 样本管理 + CHS 国家目录 / 目录下载 Navigation 权限 -----
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('317000463887929349', 'Navigation.SpecimenDefinition', '样本管理', 'Navigation',
+     '菜单入口: specimen_definition', NULL,
+     TIMESTAMP '2026-06-12 08:18:12.580+00', TIMESTAMP '2026-06-12 08:18:12.580+00', 1, 1, FALSE, NULL, NULL),
+    ('71', 'Navigation.Chsnationalcatalog', '国家目录查询', 'Navigation',
+     '菜单入口: ChsNationalCatalog', NULL,
+     TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('72', 'Navigation.Chscatalogdownload', '目录文件下载', 'Navigation',
+     '菜单入口: ChsCatalogDownload', NULL,
+     TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    parent_name = EXCLUDED.parent_name,
+    description = EXCLUDED.description,
+    is_deleted = FALSE,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '317000463887929350', 'specimen_definition', 'SpecimenDefinition', '样本管理', 'lucide:test-tubes',
+    '/basic/specimendefinition', '/basic/specimendefinition/index', 'Navigation.SpecimenDefinition', '2000', 24,
+    TRUE, FALSE, FALSE, '', 'menu', '基础数据-样本定义维护（SpecimenDefinitionAppService）', NULL,
+    TIMESTAMP '2026-06-12 08:18:12.580+00', TIMESTAMP '2026-06-12 08:18:12.580+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO UPDATE SET
+    code = EXCLUDED.code,
+    name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    icon = EXCLUDED.icon,
+    path = EXCLUDED.path,
+    component = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id = EXCLUDED.parent_id,
+    sort_order = EXCLUDED.sort_order,
+    is_enabled = EXCLUDED.is_enabled,
+    is_hidden = EXCLUDED.is_hidden,
+    remark = EXCLUDED.remark,
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = EXCLUDED.updated_at;
+
+UPDATE whale_menus SET permission_name = 'Navigation.Chsnationalcatalog', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000101' AND is_deleted = FALSE;
+UPDATE whale_menus SET permission_name = 'Navigation.Chscatalogdownload', updated_at = TIMESTAMP '2026-06-17 00:00:00+00' WHERE id = '310500000000000102' AND is_deleted = FALSE;
+
+-- ----- 4. 管理员角色（R / 1）授权：Booking + 样本 + CHS 目录 -----
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310900000000000011', 'Booking.Schedule.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310900000000000012', 'Booking.Register.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310900000000000013', 'Booking.Queue.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310900000000000014', 'Booking', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310900000000000015', 'Booking.Policy.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310900000000000016', 'Booking.MedTech.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310900000000000017', 'Booking.Bed.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310900000000000018', 'Booking.HealthCheckup.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310900000000000019', 'Booking.Channel.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310900000000000020', 'Booking.QueueDisplay.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310900000000000021', 'Booking.Template.View', 'R', '1', NULL, TIMESTAMP '2026-06-14 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('317000463887929351', 'Navigation.SpecimenDefinition', 'R', '1', NULL, TIMESTAMP '2026-06-12 08:18:12.580+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10071', 'Navigation.Chsnationalcatalog', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10072', 'Navigation.Chscatalogdownload', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('10073', 'Navigation.Reporttemplatedesigner', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-17 00:00:00+00';

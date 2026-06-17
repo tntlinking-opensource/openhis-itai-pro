@@ -31,6 +31,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 住院医生站医嘱资源键。 */
 @Schema(description = "住院医生站医嘱资源键")
 public class InpatientDoctorStationAdviceResourceKeyDto {
 
@@ -45,6 +46,7 @@ public class InpatientDoctorStationAdviceResourceKeyDto {
     /** 药品/诊疗请求聚合主键。 */
     @NotNull(message = DoctorStationAdviceConstants.VALIDATION_REQUEST_ID_REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 聚合主键。 */
     @Schema(description = "聚合主键", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long requestId;
 }

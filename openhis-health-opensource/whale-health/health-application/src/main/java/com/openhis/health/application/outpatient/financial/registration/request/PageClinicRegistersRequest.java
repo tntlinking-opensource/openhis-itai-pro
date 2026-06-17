@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.outpatient.financial.registration.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -31,14 +31,16 @@ import java.time.LocalDate;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 挂号列表分页请求。 */
 @Schema(description = "挂号列表分页请求")
 public class PageClinicRegistersRequest extends AbstractHealthPageRequest {
 
-    /** 查询开始日期。 */
     @Schema(description = "开始日期")
+    /** 开始日期（业务字段）。 */
     private LocalDate dateFrom;
 
     /** 查询结束日期。 */
     @Schema(description = "结束日期")
+    /** 结束日期（业务字段）。 */
     private LocalDate dateTo;
 }

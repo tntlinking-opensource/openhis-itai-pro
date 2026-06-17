@@ -158,9 +158,6 @@ public class ServiceRequest extends BaseAuditedEntity {
     @Column(name = "therapy_enum")
     private String therapyEnum;
 
-    @Column(name = "sign_code")
-    private String signCode;
-
     @Column(name = "rate_code")
     private String rateCode;
 
@@ -347,6 +344,20 @@ public class ServiceRequest extends BaseAuditedEntity {
         }
         if (this.generateSourceEnum == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "执行派生创建需填写 generateSourceEnum");
+        }
+    }
+
+    /**
+     * 执行派生可逻辑删除断言（COMPLETED 态执行复制/绑定派生，AS-IP-NUR-012 BR-IP-CXL-013）。
+     *
+     * @throws BusinessException 状态不允许
+     */
+    public void assertExecutionDerivedRemovable() {
+        if (this.statusEnum == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "服务申请状态不能为空");
+        }
+        if (!this.statusEnum.equals(RequestStatus.COMPLETED.getCode())) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "仅已完成态执行派生服务申请允许逻辑删除");
         }
     }
 

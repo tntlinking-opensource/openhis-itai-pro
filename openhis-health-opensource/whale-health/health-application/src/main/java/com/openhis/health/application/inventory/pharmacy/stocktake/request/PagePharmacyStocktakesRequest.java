@@ -20,13 +20,15 @@ package com.openhis.health.application.inventory.pharmacy.stocktake.request;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 盘点单分页列表入参（IF-PHA-ST-02）。
@@ -34,6 +36,7 @@ import java.time.LocalDateTime;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 盘点单分页列表 IF-PHA-ST-02。 */
 @Schema(description = "盘点单分页列表 IF-PHA-ST-02")
 public class PagePharmacyStocktakesRequest extends AbstractHealthPageRequest {
 
@@ -48,11 +51,13 @@ public class PagePharmacyStocktakesRequest extends AbstractHealthPageRequest {
 
     /** 申请时间起。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 申请时间起。 */
     @Schema(description = "申请时间起")
     private LocalDateTime applyTimeFrom;
 
     /** 申请时间止。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 申请时间止。 */
     @Schema(description = "申请时间止")
     private LocalDateTime applyTimeTo;
 }

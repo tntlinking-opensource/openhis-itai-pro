@@ -29,6 +29,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 预交金流水列表响应。 */
 @Schema(description = "预交金流水列表响应")
 public class ListPrepayPaymentRecordsResponse {
 

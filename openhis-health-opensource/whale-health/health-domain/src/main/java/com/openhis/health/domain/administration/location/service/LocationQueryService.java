@@ -19,17 +19,18 @@ package com.openhis.health.domain.administration.location.service;
 
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.repository.LocationRepository;
-import com.openhis.health.domain.administration.practitionerrole.queries.model.PractitionerRoleAssignmentQueryModel;
-import com.openhis.health.domain.administration.practitionerrole.service.PractitionerRoleQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationOperational;
 import com.openhis.health.domain.share.enums.LocationStatus;
 import com.openhis.health.domain.share.enums.SupplyRequestType;
+import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -54,7 +55,6 @@ import java.util.Set;
 public class LocationQueryService {
 
     private final LocationRepository locationRepository;
-    private final PractitionerRoleQueryService practitionerRoleQueryService;
 
     /**
      * 按机构列出启用中的病区位置。
@@ -124,40 +124,136 @@ public class LocationQueryService {
     }
 
     /**
-     * 解析医务人员「管理病区」：取岗位分配中的位置，保留启用中的 {@link LocationForm#WARD}；
-     * 无分配或分配中无病区时返回全部启用病区（**BR-IP-NUR-001**）。
+     * 住院发药关键字：按床位名称模糊匹配启用态床位 location 主键。
      *
-     * @param practitionerId 医务人员主键；{@code null} 时等同「无管理病区」→ 全部启用病区
-     * @return 病区位置列表，非 {@code null}
+     * @param keyword 用户关键字；空白时返回空列表
+     * @return 床位 location 主键
      */
-    public List<Location> listManagedWardsForPractitioner(Long practitionerId) {
-        if (practitionerId == null) {
-            return this.listAllActiveWards();
+    public List<Long> listActiveBedIdsByNameKeyword(String keyword) {
+        if (StringUtils.isBlank(keyword)) {
+            return List.of();
         }
-        List<PractitionerRoleAssignmentQueryModel> assigns =
-            practitionerRoleQueryService.listAssignmentsByPractitioner(practitionerId);
-        if (assigns == null || assigns.isEmpty()) {
-            return this.listAllActiveWards();
-        }
-        Set<Long> assignedLocationIds = new LinkedHashSet<>();
-        for (PractitionerRoleAssignmentQueryModel row : assigns) {
-            if (row != null && row.getLocationId() != null) {
-                assignedLocationIds.add(row.getLocationId());
+        String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keyword.trim());
+        Specification<Location> specification = (root, criteriaQuery, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(root.get(FieldNameConstants.FORM_ENUM), LocationForm.BED.getCode()),
+            cb.equal(root.get(FieldNameConstants.STATUS_ENUM), LocationStatus.ACTIVE.getCode()),
+            cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc));
+        List<Location> rows = this.locationRepository.findAll(specification);
+        List<Long> ids = new ArrayList<>();
+        for (Location row : rows) {
+            if (row != null && row.getId() != null) {
+                ids.add(row.getId());
             }
         }
-        if (assignedLocationIds.isEmpty()) {
-            return this.listAllActiveWards();
-        }
-        List<Location> managedWards = locationRepository.findAllByIdInAndFormEnumAndStatusEnum(
-            assignedLocationIds, LocationForm.WARD.getCode(), LocationStatus.ACTIVE.getCode());
-        if (managedWards.isEmpty()) {
-            return this.listAllActiveWards();
-        }
-        return this.sortByDisplayOrder(managedWards);
+        return ids;
     }
 
     /**
-     * 列出全部启用中的病区（管理病区为空时的并集口径）。
+     * 列出病区下全部启用态床位 location 主键（经 HOUSE 子节点）。
+     *
+     * @param wardId 病区主键
+     * @return 床位 location 主键；{@code wardId} 为空时返回空列表
+     */
+    public List<Long> listActiveBedIdsUnderWard(Long wardId) {
+        if (wardId == null) {
+            return List.of();
+        }
+        List<Location> houses = this.listHousesUnderWard(wardId);
+        if (houses.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<Long> bedIds = new LinkedHashSet<>();
+        for (Location house : houses) {
+            if (house == null || house.getId() == null) {
+                continue;
+            }
+            List<Location> beds = this.locationRepository.findAllByParentIdAndFormEnumAndStatusEnum(
+                house.getId(), LocationForm.BED.getCode(), LocationStatus.ACTIVE.getCode());
+            for (Location bed : beds) {
+                if (bed != null && bed.getId() != null) {
+                    bedIds.add(bed.getId());
+                }
+            }
+        }
+        return new ArrayList<>(bedIds);
+    }
+
+    /**
+     * 按主键批量解析 location 物理形态 code（岗位管辖范围分类用）。
+     *
+     * @param locationIds location 主键
+     * @return id → formEnum code
+     */
+    public Map<Long, String> mapFormEnumCodeByIds(Collection<Long> locationIds) {
+        if (locationIds == null || locationIds.isEmpty()) {
+            return Map.of();
+        }
+        LinkedHashSet<Long> distinct = new LinkedHashSet<>();
+        for (Long id : locationIds) {
+            if (id != null) {
+                distinct.add(id);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> result = new HashMap<>();
+        for (Location row : this.locationRepository.findAllById(distinct)) {
+            if (row == null || row.getId() == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            result.put(row.getId(), row.getFormEnum());
+        }
+        return result;
+    }
+
+    /**
+     * 按主键批量加载启用态病区。
+     *
+     * @param wardIds 病区位置主键
+     * @return 病区列表，永不为 {@code null}
+     */
+    public List<Location> findActiveWardsByIds(Collection<Long> wardIds) {
+        if (wardIds == null || wardIds.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long wardId : wardIds) {
+            if (wardId != null) {
+                distinctIds.add(wardId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return List.of();
+        }
+        List<Location> wards = locationRepository.findAllByIdInAndFormEnumAndStatusEnum(
+            distinctIds, LocationForm.WARD.getCode(), LocationStatus.ACTIVE.getCode());
+        return this.sortByDisplayOrder(wards);
+    }
+
+    /**
+     * 按主键批量加载启用态药库（{@link LocationForm#WAREHOUSE}）。
+     *
+     * @param locationIds {@code adm_location.id} 集合
+     * @return 药库位置列表，永不为 {@code null}
+     */
+    public List<Location> findActiveWarehousesByIds(Collection<Long> locationIds) {
+        return this.findActiveLocationsByIdsAndForm(locationIds, LocationForm.WAREHOUSE.getCode());
+    }
+
+    /**
+     * 按主键批量加载启用态药房（{@link LocationForm#PHARMACY}）。
+     *
+     * @param locationIds {@code adm_location.id} 集合
+     * @return 药房位置列表，永不为 {@code null}
+     */
+    public List<Location> findActivePharmaciesByIds(Collection<Long> locationIds) {
+        return this.findActiveLocationsByIdsAndForm(locationIds, LocationForm.PHARMACY.getCode());
+    }
+
+    /**
+     * 列出全部启用中的病区（非严格模式 fallback 口径）。
      *
      * @return 病区列表
      */
@@ -545,6 +641,24 @@ public class LocationQueryService {
      * @param locations 待排序列表
      * @return 新列表，不修改入参
      */
+    private List<Location> findActiveLocationsByIdsAndForm(Collection<Long> locationIds, String formCode) {
+        if (locationIds == null || locationIds.isEmpty() || formCode == null || formCode.isBlank()) {
+            return List.of();
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long locationId : locationIds) {
+            if (locationId != null) {
+                distinctIds.add(locationId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return List.of();
+        }
+        List<Location> locations = locationRepository.findAllByIdInAndFormEnumAndStatusEnum(
+            distinctIds, formCode.trim(), LocationStatus.ACTIVE.getCode());
+        return this.sortByDisplayOrder(locations);
+    }
+
     private List<Location> sortByDisplayOrder(List<Location> locations) {
         if (locations == null || locations.isEmpty()) {
             return List.of();

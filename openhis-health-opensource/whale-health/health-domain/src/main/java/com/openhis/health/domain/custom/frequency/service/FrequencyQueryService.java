@@ -20,6 +20,7 @@ package com.openhis.health.domain.custom.frequency.service;
 import com.openhis.health.domain.share.constants.CustomConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.enums.FrequencyCycleType;
 import com.openhis.health.domain.custom.frequency.entity.Frequency;
 import com.openhis.health.domain.custom.frequency.queries.model.FrequencyConfigInitQueryModel;
 import com.openhis.health.domain.custom.frequency.queries.model.FrequencyExecutionTimePointQueryModel;
@@ -106,6 +107,15 @@ public class FrequencyQueryService {
     }
 
     /**
+     * 查询全部启用频次，供应用层下拉与展示码表装配。
+     *
+     * @return 按 sortNo、id 升序的启用频次
+     */
+    public List<Frequency> listActiveFrequencies() {
+        return repository.findByActiveFlagTrueOrderBySortNoAscIdAsc();
+    }
+
+    /**
      * 按主键读取频次实体。
      *
      * @param id 主键
@@ -137,7 +147,7 @@ public class FrequencyQueryService {
         if (!Boolean.TRUE.equals(frequency.getActiveFlag())) {
             throw new BusinessException(ErrorCodeConstants.FREQUENCY_INVALID_STATUS, "频次已停用");
         }
-        if (CustomConstants.CYCLE_TYPE_AS_NEEDED.equals(frequency.getCycleType())) {
+        if (FrequencyCycleType.AS_NEEDED.getCode().equals(frequency.getCycleType())) {
             return new ArrayList<>();
         }
         List<LocalDateTime> rawPoints;
@@ -280,7 +290,7 @@ public class FrequencyQueryService {
     }
 
     private boolean isWeeklyCycle(Frequency frequency) {
-        if (CustomConstants.CYCLE_TYPE_WEEKLY.equals(frequency.getCycleType())) {
+        if (FrequencyCycleType.WEEKLY.getCode().equals(frequency.getCycleType())) {
             return true;
         }
         if (Boolean.TRUE.equals(frequency.getWeekCycleFlag())) {
@@ -318,7 +328,15 @@ public class FrequencyQueryService {
         model.setRateCode(frequency.getRateCode());
         model.setName(frequency.getName());
         model.setCycleType(frequency.getCycleType());
+        model.setDayCount(frequency.getDayCount());
+        model.setDayInterval(frequency.getDayInterval());
         model.setDayTimes(frequency.getDayTimes());
+        model.setWeekCycleFlag(frequency.getWeekCycleFlag());
+        model.setTotalExecutionCount(frequency.getTotalExecutionCount());
+        model.setExecutionPeriod(frequency.getExecutionPeriod());
+        model.setExecutionPeriodUnit(frequency.getExecutionPeriodUnit());
+        model.setApplicableScenes(frequency.getApplicableScenes());
+        model.setAllowCrossDay(frequency.getAllowCrossDay());
         model.setActiveFlag(frequency.getActiveFlag());
         model.setSortNo(frequency.getSortNo());
         return model;

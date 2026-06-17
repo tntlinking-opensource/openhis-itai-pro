@@ -21,6 +21,8 @@ import com.openhis.health.domain.share.command.BatchCommand;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.List;
+
 @Getter
 @Setter
 /**
@@ -44,11 +46,16 @@ public class EditPractitionerRoleCommand extends BatchCommand<EditPractitionerRo
         private String name;
         /** 科室标识。 */
         private Long orgId;
-        /** 位置标识。 */
-        private Long locationId;
+        /**
+         * 位置标识。
+         * 普通岗位为单个 ID；库房/药房岗位可为逗号分隔的多个 ID，由应用层解析后走 {@code replaceRolesByType}。
+         */
+        private String locationId;
         /** 专业编码。 */
         private String specialtyCode;
         /** 岗位类型编码。 */
         private Integer typeCode;
+        /** 可接诊号源类型（HealthcareService）主键集合；{@code null} 表示不调整。 */
+        private List<Long> serviceIds;
     }
 }

@@ -26,22 +26,26 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 退号并退费请求。 */
 @Schema(description = "退号并退费请求")
 public class CancelWithRefundRequest {
 
-    /** 就诊 ID。 */
     @Schema(description = "就诊ID")
+    /** 就诊ID（业务字段）。 */
     private Long encounterId;
 
     /** 取消原因。 */
     @Schema(description = "取消原因")
+    /** 取消原因（业务字段）。 */
     private String cancelReason;
 
     /** 退费意图。 */
     @Schema(description = "退费意图")
+    /** 退费意图（业务字段）。 */
     private String refundIntent;
 
     /** 退费请求键。 */
     @Schema(description = "退费请求键")
+    /** 退费请求键（业务字段）。 */
     private String refundRequestId;
 }

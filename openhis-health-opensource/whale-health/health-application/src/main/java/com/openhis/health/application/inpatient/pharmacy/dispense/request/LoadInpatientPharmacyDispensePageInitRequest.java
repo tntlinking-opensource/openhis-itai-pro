@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inpatient.pharmacy.dispense.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -29,14 +29,16 @@ import lombok.experimental.Accessors;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 住院发药页初始化请求。 */
 @Schema(description = "住院发药页初始化请求")
 public class LoadInpatientPharmacyDispensePageInitRequest extends AbstractHealthPageRequest {
 
-    /** 当前药房机构（可选，用于收窄药师候选）。 */
-    @Schema(description = "当前药房机构（收窄药师候选）")
-    private Long pharmacyOrganizationId;
+    /**
+     * 当前药房库位主键（{@code adm_location.id}，{@code LocationForm.PHARMACY}）；用于收窄调配药师候选。
+     */
+    @Schema(description = "当前药房库位主键 adm_location.id（收窄调配药师候选）")
+    private Long pharmacyLocationId;
 
-    /** 岗位过滤码，透传 {@code PractitionerQueryService#pageActivePractitionersForPosition}。 */
-    @Schema(description = "岗位过滤码，透传药师分页查询")
-    private Integer practitionerRoleFilterCode;
+    @Schema(description = "已废弃；调配药师固定按药师岗与药房管辖收窄")
+    private String practitionerRoleFilterCode;
 }

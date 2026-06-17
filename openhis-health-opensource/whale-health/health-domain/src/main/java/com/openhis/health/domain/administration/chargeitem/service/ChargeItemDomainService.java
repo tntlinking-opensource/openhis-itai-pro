@@ -27,6 +27,8 @@ import com.openhis.health.domain.administration.chargeitem.command.BatchChargeIt
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemsLinkingRegeneratedAnchorsCommand;
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
 import com.openhis.health.domain.administration.chargeitem.command.SwitchChargeItemAccountCommand;
+import com.openhis.health.domain.administration.chargeitem.command.DeactivateChargeByExeCommand;
+import com.openhis.health.domain.administration.chargeitem.command.VoidOrderExecuteChargeItemsByProcedureIdsCommand;
 import com.openhis.health.domain.administration.chargeitem.command.VoidUnbilledDraftChargeItemsByServiceAnchorCommand;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.repository.ChargeItemRepository;
@@ -448,6 +450,82 @@ public class ChargeItemDomainService {
     }
 
     /**
+     * 按执行记录主键逻辑删除长期医嘱执行新建的待结算收费明细（generate_source=ORDER_EXECUTE，AS-IP-NUR-012 BR-IP-CXL-008）。
+     *
+     * <p>仅命中 {@code PENDING_SETTLEMENT + order-execute} 行；同 procedureId 下若存在已结算/退费链路行则拒绝（BR-CHG-002）。</p>
+     *
+     * @param cmd 执行记录主键集合
+     */
+    public void voidOrderExecuteChargeItemsByProcedureIds(VoidOrderExecuteChargeItemsByProcedureIdsCommand cmd) {
+        Collection<Long> procedureIds = this.distinctNonNullProcedureIds(cmd.getProcedureIds());
+        // 业务分支处理：无有效 procedureId 时静默跳过。
+        if (procedureIds.isEmpty()) {
+            return;
+        }
+        // Pre：加载各执行记录关联的全部收费明细，用于结算 Gate 与目标行筛选。
+        List<ChargeItem> linkedRows = repository.findAllByProcedureIdIn(procedureIds);
+        // 业务分支处理：任一关联行已进入结算/退费链路则整批拒绝，避免部分回退造成账实不一致。
+        for (ChargeItem row : linkedRows) {
+            if (this.isNonRollbackableChargeStatus(row.getStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
+                    "执行记录 " + row.getProcedureId() + " 关联费用已结算或退费中，不允许取消执行回退");
+            }
+        }
+        List<ChargeItem> toDelete = repository.findAllByProcedureIdInAndStatusEnumAndGenerateSourceEnum(
+            procedureIds,
+            ChargeItemStatus.PENDING_SETTLEMENT.getCode(),
+            GenerateSource.ORDER_EXECUTE.getCode());
+        // 业务分支处理：无长期执行新建行时静默跳过。
+        if (toDelete.isEmpty()) {
+            return;
+        }
+        repository.deleteAll(toDelete);
+        for (ChargeItem row : toDelete) {
+            domainEventPublisher.publish(new ChargeItemDomainEvents.ChargeItemExecutionCancelledEvent(row.getId()));
+        }
+    }
+
+    /**
+     * 取消执行逆激活收费明细：PENDING_SETTLEMENT → PLANNED 并清 procedureId（临时医嘱，AS-IP-NUR-012 BR-IP-CXL-008）。
+     *
+     * @param cmd 批量收费明细主键命令
+     */
+    public void deactivateChargeByExe(DeactivateChargeByExeCommand cmd) {
+        List<DeactivateChargeByExeCommand.Item> items = cmd.resolveItems();
+        if (items.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "逆激活收费明细入参不能为空");
+        }
+        List<Long> ids = new ArrayList<>();
+        for (DeactivateChargeByExeCommand.Item item : items) {
+            ids.add(item.getChargeItemId());
+        }
+        Map<Long, ChargeItem> map = this.loadMap(ids);
+        List<ChargeItem> toSave = new ArrayList<>();
+        for (DeactivateChargeByExeCommand.Item item : items) {
+            ChargeItem row = require(map, item.getChargeItemId());
+            // 业务分支处理：仅待结算态允许逆激活，与 activateChargeByExe 对称。
+            if (!ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
+                    "收费明细 " + item.getChargeItemId() + " 状态非 PENDING_SETTLEMENT，不允许逆激活");
+            }
+            if (this.isNonRollbackableChargeStatus(row.getStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
+                    "收费明细 " + item.getChargeItemId() + " 已进入结算/退费链路，不允许逆激活");
+            }
+            row.setStatusEnum(ChargeItemStatus.PLANNED.getCode());
+            row.setProcedureId(null);
+            toSave.add(row);
+        }
+        repository.saveAll(toSave);
+        for (ChargeItem row : toSave) {
+            domainEventPublisher.publish(new ChargeItemDomainEvents.ChargeItemExecutionCancelledEvent(row.getId()));
+        }
+    }
+
+    /**
      * 门诊结算收费明细，状态迁移至已结算（statusEnum=SETTLED），并发布 SETTLED 事件。
      *
      * @param cmd 批量收费明细主键命令
@@ -639,6 +717,32 @@ public class ChargeItemDomainService {
             }
         }
         this.batchUpdateStatus(cmd, ChargeItemStatus.SETTLED, ChargeItemEventType.INPATIENT_ITEMS_SETTLED);
+    }
+
+    /**
+     * 取消住院结算时回退收费明细：SETTLED → PENDING_SETTLEMENT，供再次结算。
+     *
+     * @param cmd 批量收费明细主键命令
+     */
+    public void revertInpatientSettledChargeItems(BatchChargeItemIdsCommand cmd) {
+        List<Long> ids = this.extractIds(cmd);
+        if (ids.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细批量入参不能为空");
+        }
+        Map<Long, ChargeItem> map = this.loadMap(ids);
+        List<ChargeItem> toSave = new ArrayList<>();
+        for (Long id : ids) {
+            ChargeItem row = require(map, id);
+            // Pre：仅已结算行允许回退，与 settleInpatientChargeItems 对称。
+            if (!ChargeItemStatus.SETTLED.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                    "收费明细 " + id + " 状态非已结算，不允许取消结算回退");
+            }
+            row.setStatusEnum(ChargeItemStatus.PENDING_SETTLEMENT.getCode());
+            toSave.add(row);
+        }
+        repository.saveAll(toSave);
     }
 
     /**
@@ -1068,6 +1172,44 @@ public class ChargeItemDomainService {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 是否已进入禁止取消执行回退的收费状态（SETTLED/REFUNDING/REFUNDED）。
+     *
+     * @param statusEnum 收费状态持久化码
+     * @return 禁止回退时为 true
+     */
+    private boolean isNonRollbackableChargeStatus(String statusEnum) {
+        if (ChargeItemStatus.SETTLED.getCode().equals(statusEnum)) {
+            return true;
+        }
+        if (ChargeItemStatus.REFUNDING.getCode().equals(statusEnum)) {
+            return true;
+        }
+        if (ChargeItemStatus.REFUNDED.getCode().equals(statusEnum)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 执行记录主键入参去重归一化。
+     *
+     * @param procedureIds 原始集合
+     * @return 非空去重集合
+     */
+    private Collection<Long> distinctNonNullProcedureIds(Collection<Long> procedureIds) {
+        LinkedHashSet<Long> idSet = new LinkedHashSet<>();
+        if (procedureIds == null) {
+            return idSet;
+        }
+        for (Long procedureId : procedureIds) {
+            if (procedureId != null) {
+                idSet.add(procedureId);
+            }
+        }
+        return idSet;
     }
 
     /**

@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inventory.warehouse.purchaseorder.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -28,36 +28,20 @@ import lombok.Setter;
 @Setter
 public class PageProductsForPurchaseRequest extends AbstractHealthPageRequest {
 
-    /**
-     * productTableName。
-     */
+    /** 产品表名（药品/耗材目录表）。 */
     private String productTableName;
-    /**
-     * categoryCode。
-     */
+    /** 供应类别 code。 */
     private String categoryCode;
-    /**
-     * activeFlag。
-     */
+    /** 是否仅查启用目录。 */
     private Boolean activeFlag;
-    /**
-     * supplierId。
-     */
+    /** 供应商主键筛选。 */
     private Long supplierId;
-    /**
-     * manufacturer。
-     */
+    /** 生产厂家关键字。 */
     private String manufacturer;
-    /**
-     * includeInventory。
-     */
+    /** 是否附带现库可用量扩展。 */
     private Boolean includeInventory;
-    /**
-     * sortField。
-     */
+    /** 排序字段。 */
     private String sortField;
-    /**
-     * sortOrder。
-     */
+    /** 排序方向（asc/desc）。 */
     private String sortOrder;
 }

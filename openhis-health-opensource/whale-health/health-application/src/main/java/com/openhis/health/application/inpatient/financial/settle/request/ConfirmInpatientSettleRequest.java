@@ -35,6 +35,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 确认住院结算请求。 */
 @Schema(description = "确认住院结算请求", requiredProperties = {
     "encounterId", "patientId", "paymentDraftId", "chargeItemIds", "paymentDetails"
 })
@@ -42,34 +43,51 @@ public class ConfirmInpatientSettleRequest {
 
     /** 住院就诊 ID。 */
     @NotNull(message = "就诊标识不能为空")
+    /** 住院就诊 ID。 */
     @Schema(description = "住院就诊 ID", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 住院就诊 ID（业务字段）。 */
     private Long encounterId;
 
     /** 患者 ID。 */
     @NotNull(message = "患者标识不能为空")
+    /** 患者 ID。 */
     @Schema(description = "患者 ID", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者 ID（业务字段）。 */
     private Long patientId;
 
     /** 预结算返回的支付草稿 ID。 */
     @NotNull(message = "支付草稿标识不能为空")
+    /** 支付草稿 ID。 */
     @Schema(description = "支付草稿 ID", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 支付草稿 ID（业务字段）。 */
     private Long paymentDraftId;
 
     /** 须与草稿绑定的收费明细 ID 列表。 */
     @NotEmpty(message = "收费明细不能为空")
+    /** 收费明细 ID 列表。 */
     @Schema(description = "收费明细 ID 列表", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 收费明细 ID 列表（业务字段）。 */
     private List<Long> chargeItemIds;
 
     /** 渠道实付明细。 */
     @NotEmpty(message = "支付明细不能为空")
+    /** 支付渠道明细。 */
     @Schema(description = "支付渠道明细", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 支付渠道明细（业务字段）。 */
     private List<InpatientSettlePaymentDetailDto> paymentDetails;
 
     /** 结算时间；缺省为服务端当前时刻。 */
     @Schema(description = "结算时间")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 结算时间（业务字段）。 */
     private LocalDateTime billDate;
+
+    /** 医保预结算快照 ID；缺省时按 paymentDraftId 查 ACTIVE。 */
+    @Schema(description = "医保预结算快照 ID")
+    @JsonSerialize(using = ToStringSerializer.class)
+    /** 医保预结算快照 ID（业务字段）。 */
+    private Long ybPreSettleId;
 }

@@ -21,7 +21,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 发布医嘱组套模板命令。
+ * 发布组套模板命令。
  */
 @Getter
 @Setter

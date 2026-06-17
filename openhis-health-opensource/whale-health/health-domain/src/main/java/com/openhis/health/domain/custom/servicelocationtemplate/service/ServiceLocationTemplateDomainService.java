@@ -27,7 +27,9 @@ import com.openhis.health.domain.share.events.custom.servicelocationtemplate.Ser
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalTime;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
 
@@ -42,8 +44,11 @@ public class ServiceLocationTemplateDomainService {
     private final IDomainEventPublisher domainEventPublisher;
 
     /**
-     * 整科覆盖保存。
+     * 整科覆盖保存（单事务：先软删后插，避免中间态对外可见）。
+     *
+     * @param command 开立科室与规则行列表
      */
+    @Transactional
     public void saveDistributionConfig(SaveDistributionConfigCommand command) {
         // 业务分支处理。
         if (command.getOrganizationId() == null) {
@@ -130,7 +135,7 @@ public class ServiceLocationTemplateDomainService {
     }
 
     /**
-     * 校验“组织 + 物品表 + 发放类别 + 物品定义 + 用法(途径)”组合键在本次提交中不重复。
+     * 校验「物品表 + 发放类别 + 具体项 + 用法 + 生效时段」组合键在本次提交中不重复（BR-SLT-004）。
      *
      * @param organizationId 开立科室/机构标识
      * @param items 待保存规则列表
@@ -142,13 +147,37 @@ public class ServiceLocationTemplateDomainService {
                 + item.getItemTable() + "\u0001"
                 + item.getDistributionCategoryCode() + "\u0001"
                 + String.valueOf(item.getItemDefinitionId()) + "\u0001"
-                + String.valueOf(item.getMethodCode());
-            // 业务分支处理。
+                + String.valueOf(item.getMethodCode()) + "\u0001"
+                + this.timeWindowKey(item.getStartTime(), item.getEndTime());
+            // 同一科室下五元组+时段完全相同视为重复配置，拒绝保存以免匹配歧义
             if (keys.contains(key)) {
-                throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "规则四元组不可重复");
+                throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "规则配置键不可重复");
             }
             keys.add(key);
         }
+    }
+
+    /**
+     * 将生效时段规范化为组合键片段；双空表示全天有效。
+     *
+     * @param startTime 生效开始
+     * @param endTime 生效结束
+     * @return 时段键
+     */
+    private String timeWindowKey(LocalTime startTime, LocalTime endTime) {
+        String startPart;
+        if (startTime == null) {
+            startPart = "";
+        } else {
+            startPart = startTime.toString();
+        }
+        String endPart;
+        if (endTime == null) {
+            endPart = "";
+        } else {
+            endPart = endTime.toString();
+        }
+        return startPart + "\u0002" + endPart;
     }
 
     /**

@@ -5,14 +5,6 @@
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.openhis.health.domain.administration.organization.entity;
@@ -20,8 +12,8 @@ package com.openhis.health.domain.administration.organization.entity;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.converter.OrganizationClassificationConverter;
 import com.openhis.health.domain.share.enums.OrganizationClassification;
-import com.openhis.health.domain.share.enums.OrganizationStatus;
 import com.openhis.health.domain.share.enums.OrganizationType;
+import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.BaseAuditedEntity;
 import jakarta.persistence.Column;
@@ -36,6 +28,8 @@ import java.time.LocalDateTime;
 
 /**
  * 机构聚合根实体。
+ *
+ * <p>主状态 {@link #statusEnum} 与 {@link PublicationStatus} 编码对齐。</p>
  */
 @Getter
 @Setter
@@ -64,7 +58,7 @@ public class Organization extends BaseAuditedEntity {
     @Convert(converter = OrganizationClassificationConverter.class)
     private OrganizationClassification classEnum;
 
-    /** status 枚举值。 */
+    /** status 枚举值（{@link PublicationStatus#getCode()}）。 */
     @Column(name = "status_enum", nullable = false)
     private String statusEnum;
 
@@ -120,11 +114,19 @@ public class Organization extends BaseAuditedEntity {
     private String caty;
 
     /**
-     * 初始化草稿态。
+     * 初始化草稿态（兼容旧发布流程）。
      */
     public void initAsDraft() {
-        this.statusEnum = OrganizationStatus.DRAFT.getCode();
+        this.statusEnum = PublicationStatus.DRAFT.getCode();
         this.activeFlag = Boolean.FALSE;
+    }
+
+    /**
+     * 新建默认启用（{@link PublicationStatus#ACTIVE}）。
+     */
+    public void initAsActive() {
+        this.statusEnum = PublicationStatus.ACTIVE.getCode();
+        this.activeFlag = Boolean.TRUE;
     }
 
     /**
@@ -137,10 +139,6 @@ public class Organization extends BaseAuditedEntity {
         if (this.typeEnum == null) {
             throw new BusinessException(ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "机构类型不能为空");
         }
-        if (OrganizationType.HOSPITAL.getCode().equals(this.typeEnum)
-            && StringUtils.isBlank(this.ybNo)) {
-            throw new BusinessException(ErrorCodeConstants.ORGANIZATION_RULE_CONFLICT, "医保机构等级不能为空");
-        }
         if (OrganizationType.DEPARTMENT.getCode().equals(this.typeEnum)
             && StringUtils.isNotBlank(this.medinsId)
             && StringUtils.isBlank(this.medinsLv)) {
@@ -152,7 +150,7 @@ public class Organization extends BaseAuditedEntity {
      * 校验发布前置条件。
      */
     public void assertPublishAllowed() {
-        if (!OrganizationStatus.DRAFT.getCode().equals(this.statusEnum)) {
+        if (!PublicationStatus.DRAFT.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.ORGANIZATION_INVALID_STATUS, "仅草稿机构可发布");
         }
         this.assertCreateAllowed();
@@ -162,8 +160,8 @@ public class Organization extends BaseAuditedEntity {
      * 校验可修改。
      */
     public void assertModifiable() {
-        if (!OrganizationStatus.DRAFT.getCode().equals(this.statusEnum)
-            && !OrganizationStatus.ACTIVE.getCode().equals(this.statusEnum)) {
+        if (!PublicationStatus.DRAFT.getCode().equals(this.statusEnum)
+            && !PublicationStatus.ACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.ORGANIZATION_INVALID_STATUS, "仅草稿/启用机构可修改");
         }
     }
@@ -172,7 +170,7 @@ public class Organization extends BaseAuditedEntity {
      * 校验可调整上级。
      */
     public void assertRelocateAllowed() {
-        if (!OrganizationStatus.ACTIVE.getCode().equals(this.statusEnum)) {
+        if (!PublicationStatus.ACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.ORGANIZATION_INVALID_STATUS, "仅启用机构可调整上级");
         }
     }
@@ -180,8 +178,8 @@ public class Organization extends BaseAuditedEntity {
     /**
      * 校验可停用。
      */
-    public void assertRetireAllowed() {
-        if (!OrganizationStatus.ACTIVE.getCode().equals(this.statusEnum)) {
+    public void assertDeactivatable() {
+        if (!PublicationStatus.ACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.ORGANIZATION_INVALID_STATUS, "仅启用机构可停用");
         }
     }
@@ -189,8 +187,8 @@ public class Organization extends BaseAuditedEntity {
     /**
      * 校验可重新启用。
      */
-    public void assertReactivateAllowed() {
-        if (!OrganizationStatus.RETIRED.getCode().equals(this.statusEnum)) {
+    public void assertActivatable() {
+        if (!PublicationStatus.INACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.ORGANIZATION_INVALID_STATUS, "仅停用机构可重新启用");
         }
     }
@@ -199,9 +197,8 @@ public class Organization extends BaseAuditedEntity {
      * 校验可废弃。
      */
     public void assertAbolishAllowed() {
-        if (!OrganizationStatus.DRAFT.getCode().equals(this.statusEnum)
-            && !OrganizationStatus.RETIRED.getCode().equals(this.statusEnum)) {
-            throw new BusinessException(ErrorCodeConstants.ORGANIZATION_INVALID_STATUS, "仅草稿/停用机构可废弃");
+        if (isDiscardedStatus(this.statusEnum) || Boolean.TRUE.equals(this.getIsDeleted())) {
+            throw new BusinessException(ErrorCodeConstants.ORGANIZATION_INVALID_STATUS, "机构已废弃");
         }
     }
 
@@ -211,7 +208,7 @@ public class Organization extends BaseAuditedEntity {
      * @throws BusinessException 机构未启用
      */
     public void assertActive() {
-        if (!OrganizationStatus.ACTIVE.getCode().equals(this.statusEnum)) {
+        if (!PublicationStatus.ACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.ORGANIZATION_RULE_CONFLICT, "上级机构未启用，当前机构不可启用");
         }
     }
@@ -220,15 +217,15 @@ public class Organization extends BaseAuditedEntity {
      * 迁移到启用态。
      */
     public void transitToActive() {
-        this.statusEnum = OrganizationStatus.ACTIVE.getCode();
+        this.statusEnum = PublicationStatus.ACTIVE.getCode();
         this.activeFlag = Boolean.TRUE;
     }
 
     /**
-     * 迁移到停用态。
+     * 迁移到停用态（ACTIVE -> INACTIVE）。
      */
-    public void transitToRetired() {
-        this.statusEnum = OrganizationStatus.RETIRED.getCode();
+    public void transitToInactive() {
+        this.statusEnum = PublicationStatus.INACTIVE.getCode();
         this.activeFlag = Boolean.FALSE;
     }
 
@@ -238,11 +235,15 @@ public class Organization extends BaseAuditedEntity {
      * @param operatorId 操作人
      */
     public void transitToDeleted(Long operatorId) {
-        this.statusEnum = OrganizationStatus.DELETED.getCode();
+        this.statusEnum = PublicationStatus.DISCARDED.getCode();
         this.activeFlag = Boolean.FALSE;
         this.setIsDeleted(Boolean.TRUE);
         this.setDeletedBy(operatorId);
         this.setDeletedAt(LocalDateTime.now());
     }
-}
 
+    private static boolean isDiscardedStatus(String statusEnum) {
+        return PublicationStatus.DISCARDED.getCode().equals(statusEnum)
+            || "DELETED".equals(statusEnum);
+    }
+}

@@ -33,6 +33,7 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站诊疗医嘱草稿行载荷。 */
 @Schema(description = "医生站诊疗医嘱草稿行载荷")
 public class SaveInpatientServiceAdviceDraftLinePayload {
 
@@ -55,6 +56,7 @@ public class SaveInpatientServiceAdviceDraftLinePayload {
 
     /** 默认执行科室（组织单元，落库 {@code wkf_service_request.org_id}）。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 执行科室。 */
     @Schema(description = "执行科室")
     private Long performOrgId;
 
@@ -69,7 +71,13 @@ public class SaveInpatientServiceAdviceDraftLinePayload {
     @Schema(description = "诊断定义主键")
     private Long conditionDefinitionId;
 
-    /** 用药频次术语 code（长期诊疗必填；落库 {@code wkf_service_request.rate_code}）。 */
+    /**
+     * 就诊诊断主键（落库 {@code wkf_service_request.encounter_diagnosis_id}，与药品医嘱语义一致）。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "就诊诊断主键")
+    private Long encounterDiagnosisId;
+
     @Schema(description = "频次编码（长期诊疗必填）")
     private String rateCode;
 

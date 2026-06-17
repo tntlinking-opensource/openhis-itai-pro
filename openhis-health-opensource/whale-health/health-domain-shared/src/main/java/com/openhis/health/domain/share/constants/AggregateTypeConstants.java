@@ -25,7 +25,7 @@ public interface AggregateTypeConstants {
     String PATIENT = "PA";
 
     /**
-     * 就诊聚合类型名称（门诊/急诊等业务号前缀）。
+     * 就诊聚合类型名称（门诊等业务号前缀）。
      */
     String ENCOUNTER = "EN";
 
@@ -95,16 +95,6 @@ public interface AggregateTypeConstants {
     String BODY_STRUCTURE = "BS";
 
     /**
-     * 急诊分诊聚合类型名称。
-     */
-    String EMERGENCY_TRIAGE = "ET";
-
-    /**
-     * 急诊知识库条目聚合类型名称。
-     */
-    String KNOWLEDGE_BASE_ITEM = "EK";
-
-    /**
      * 费用性质聚合类型名称。
      */
     String CONTRACT = "CT";
@@ -120,9 +110,19 @@ public interface AggregateTypeConstants {
     String MEDICATION_DISPENSE = "MDP";
 
     /**
-     * 药品申请聚合类型名称。
+     * 药品申请聚合类型名称（{@code med_medication_request.bus_no} 按日序号前缀）。
      */
     String MEDICATION_REQUEST = "MR";
+
+    /**
+     * 门诊处方分方单元号前缀（{@code med_medication_request.prescription_no}，与 {@link #MEDICATION_REQUEST} 分序列）。
+     */
+    String COMPOSITE_PRESCRIPTION = "CP";
+
+    /**
+     * 检验/检查/治疗申请单号前缀（{@code wkf_service_request.prescription_no}，与 {@link #SERVICE_REQUEST} 分序列）。
+     */
+    String REQUISITION_APPLICATION = "AR";
 
     /**
      * 耗材发放聚合类型名称。
@@ -204,7 +204,7 @@ public interface AggregateTypeConstants {
     String PRICE_ADJUSTMENT = "PAD";
 
     /**
-     * 医嘱组套模板聚合类型名称。
+     * 组套模板聚合类型名称。
      */
     String ORDER_TEMPLATE = "OT";
 
@@ -234,12 +234,12 @@ public interface AggregateTypeConstants {
     String PAYMENT_RECONCILIATION = "PYR";
 
     /**
-     * 患者警示聚合类型名称（DM-EMG-005）。
+     * 医保协同单聚合类型名称。
      */
-    String PATIENT_ALERT = "EPA";
+    String YB_COORDINATION = "YBC";
 
     /**
-     * 就诊限制聚合类型名称（DM-EMG-005）。
+     * 样本定义聚合类型名称。
      */
-    String VISIT_RESTRICTION = "EVR";
+    String SPECIMEN_DEFINITION = "SPD";
 }

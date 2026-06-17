@@ -32,6 +32,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医嘱校对列表查询请求。 */
 @Schema(description = "医嘱校对列表查询请求", requiredProperties = {"encounterIds", "auditTab"})
 public class ListNurseStationOrderAuditRequest {
 
@@ -43,6 +44,7 @@ public class ListNurseStationOrderAuditRequest {
 
     /** 校对 Tab：pending / passed / stopped / suspended（BR-IP-AUD-003）。 */
     @NotBlank(message = "校对 Tab 不能为空")
+    /** 校对 Tab：pending / passed / stopped / suspended。 */
     @Schema(description = "校对 Tab：pending / passed / stopped / suspended", required = true)
     private String auditTab;
 

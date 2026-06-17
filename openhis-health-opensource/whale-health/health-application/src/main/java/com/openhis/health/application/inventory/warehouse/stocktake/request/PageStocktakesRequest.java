@@ -20,13 +20,15 @@ package com.openhis.health.application.inventory.warehouse.stocktake.request;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -35,6 +37,7 @@ public class PageStocktakesRequest extends AbstractHealthPageRequest {
 
     /** 盘点药库；{@code 0} 表示当前用户可见全部药库。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 盘点药库 purposeLocationId。 */
     @Schema(description = "盘点药库 purposeLocationId，0 表示全部可见药库")
     private Long purposeLocationId;
 
@@ -44,11 +47,13 @@ public class PageStocktakesRequest extends AbstractHealthPageRequest {
 
     /** 申请时间起。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 申请时间起。 */
     @Schema(description = "申请时间起")
     private LocalDateTime applyTimeFrom;
 
     /** 申请时间止。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 申请时间止。 */
     @Schema(description = "申请时间止")
     private LocalDateTime applyTimeTo;
 }

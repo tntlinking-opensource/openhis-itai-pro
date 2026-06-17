@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.service;
 
+import com.openhis.health.application.insurance.inventory.InventoryMedicareUploadSupport;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.InboundReceiptDetailLineDto;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.InboundReceiptLineDto;
@@ -24,9 +25,10 @@ import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.Inb
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.mapper.InventoryWarehouseInboundReceiptMapper;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.request.*;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.response.*;
-import com.openhis.health.application.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.common.validator.PageWindowGate;
+import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.PageWindowGate;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.administration.location.entity.Location;
@@ -36,32 +38,32 @@ import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQ
 import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.SavePriceLineCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogEditorHintsAssembler;
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogEditorHintsAssembler;
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogEditorHintsAssembler;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionDomainService;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.custom.tracenumberrecord.command.AppendTraceRecordsCommand;
 import com.openhis.health.domain.custom.tracenumberrecord.service.TraceNumberRecordDomainService;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.application.querysupport.product.ProductDefinitionPurchasePageLoader;
-import com.openhis.health.application.querysupport.product.ProductDefinitionSelectionTerminologySupport;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionSelectionTerminologyMaps;
-import com.openhis.health.application.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.ProductDefinitionPurchasePageLoader;
+import com.openhis.health.module.querysupport.product.ProductDefinitionSelectionTerminologySupport;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionSelectionTerminologyMaps;
+import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.supplyrequest.queries.WarehouseDocumentDetailPageQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
-import com.openhis.health.application.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.domain.share.enums.SupplierStatus;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.PriceType;
-import com.openhis.health.domain.share.enums.PractitionerBusinessRoleCode;
+import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.SupplyRequestType;
 import com.openhis.health.domain.share.enums.TraceDirection;
 import com.openhis.health.domain.share.enums.TraceNumberRecordOperationType;
@@ -82,19 +84,18 @@ import com.openhis.health.domain.workflow.supplyrequest.support.SupplyPersistedS
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
+import com.openhis.whale.chs.jilin.port.InventoryInsurancePort;
+import com.openhis.whale.chs.jilin.port.model.UploadAfterInboundCommand;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.Collections;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -115,7 +116,10 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class InventoryWarehouseInboundReceiptAppService {
 
-    private final ICurrentUser currentUser;
+    @Autowired(required = false)
+    private InventoryInsurancePort inventoryInsurancePort;
+
+    private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     private final CurrentOperatorResolver currentOperatorResolver;
     private final PageWindowGate pageWindowGate;
     private final SupplyRequestDomainService supplyRequestDomainService;
@@ -125,6 +129,7 @@ public class InventoryWarehouseInboundReceiptAppService {
     private final InventoryItemQueryService inventoryItemQueryService;
     private final LocationQueryService locationQueryService;
     private final PractitionerQueryService practitionerQueryService;
+    private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     private final SupplierQueryService supplierQueryService;
     private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
@@ -135,11 +140,21 @@ public class InventoryWarehouseInboundReceiptAppService {
     private final ChargeItemDefinitionDomainService chargeItemDefinitionDomainService;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     private final TraceNumberRecordDomainService traceNumberRecordDomainService;
+    /**
+     * 加载库房单据页主数据（管辖药库、枚举选项、制单人员等）。
+     *
+     * @param request 页初始化请求；机构上下文由服务端解析
+     * @return 下拉选项与字典项
+     */
     public LoadInboundReceiptFormInitResponse loadInboundReceiptFormInit(LoadInboundReceiptFormInitRequest request) {
         // —— 经手人/库管等仍按会话机构收窄；药房与药库位置经 ICurrentUser#getManagedLocationIds 收窄（empty 时不收窄）。——
-        Long resolvedOrg = this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        Long resolvedOrg = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+            ErrorCodeConstants.WHS_IN_101, "机构上下文缺失");
         try {
-            // —— 门控：管辖库位非空时与启用位置求交；未注入管辖集合时不收窄（待 ICurrentUser#getManagedLocationIds 落地）。——
+            // Gate：机构会话上下文
+            // Pre：装载管辖范围内启用位置与角色人员
+            // Asm：Mapper 映射页初始化响应
+            // —— 门控：管辖库位非空时与启用位置求交；管辖 empty 时不拼 location_id 谓词。——
             List<Location> pharmacies = locationQueryService.listAllActivePharmacies();
             List<Location> warehouses = locationQueryService.listAllActiveWarehouses();
             List<Location> gatedPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(pharmacies);
@@ -147,10 +162,10 @@ public class InventoryWarehouseInboundReceiptAppService {
             List<SupplierListItemQueryModel> suppliers =
                 supplierQueryService.listSuppliersByTypeAndActive(
                     com.openhis.health.domain.share.enums.SupplierType.SUPPLIER.getCode());
-            List<Practitioner> pharmacists = this.loadAllPractitionersForRoleInOrganization(
-                PractitionerBusinessRoleCode.PHARMACIST.getNumericCode(), resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.loadAllPractitionersForRoleInOrganization(
-                PractitionerBusinessRoleCode.WAREHOUSE_ADMIN.getNumericCode(), resolvedOrg);
+            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
+            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+                WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
             return inboundReceiptMapper.toLoadInboundReceiptFormInitResponse(
                 inboundReceiptMapper.toOptionDtoListFromLocations(gatedPharmacies),
                 inboundReceiptMapper.toOptionDtoListFromLocations(gatedWarehouses),
@@ -175,16 +190,18 @@ public class InventoryWarehouseInboundReceiptAppService {
      */
     public PageInboundReceiptsResponse pageInboundReceipts(PageInboundReceiptsRequest request) {
         // —— 门面入参硬校验：避免 null 穿透到领域查询构造，产生难以定位的 NPE 或空结果误判。——
+        // Gate：请求体、分页窗口与机构上下文
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "请求不能为空");
         }
+        // Pre：组装列表查询与库房门禁
         if (request.getSourceLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "sourceLocationId 不能为空");
         }
         pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.WHS_IN_001, "分页参数不能为空");
         // —— 可选类型筛选项须解析为药库进货单，防止借列表接口窥探其它供应类型。——
         this.validateOptionalInboundReceiptTypeEnum(request.getTypeEnum());
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_IN_101, "机构上下文缺失");
         Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForInboundGate();
         this.assertLocationAllowed(request.getSourceLocationId(), allowed);
         if (request.getPurposeLocationId() != null) {
@@ -220,6 +237,7 @@ public class InventoryWarehouseInboundReceiptAppService {
         }
         listQuery.setEndDate(rangeEnd);
         try {
+            // Cmd：领域分页查询供应请求
             long mergedTotal = this.supplyRequestQueryService.countDistinctBusNo(listQuery);
             List<String> busNos = this.supplyRequestQueryService.listDistinctBusNoPage(listQuery);
             List<SupplyRequestModel> lines = this.supplyRequestQueryService.listByBusNosWithFilter(listQuery, busNos);
@@ -228,6 +246,7 @@ public class InventoryWarehouseInboundReceiptAppService {
             this.enrichInboundReceiptListDisplayNames(records, lines);
             int pageNo = request.getPageNo().intValue();
             int pageSize = listQuery.getBoundedPageSize();
+            // Asm：聚合 busNo 行并映射分页响应
             return this.inboundReceiptMapper.toPageInboundReceiptsAggregatedResponse(mergedTotal, pageNo, pageSize, records);
         } catch (RuntimeException ex) {
             log.warn("pageInboundReceipts failed (wkf_supply_request aggregate path)", ex);
@@ -244,6 +263,10 @@ public class InventoryWarehouseInboundReceiptAppService {
      */
     public GetInboundReceiptDetailResponse getInboundReceiptDetail(GetInboundReceiptDetailRequest request) {
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
+            // Gate：busNo 非空
+            // Pre：按 busNo 回读供应请求行
+            // Pre：批量装载产品读模型
+            // Asm：Mapper 映射详情并增强展示字段
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "busNo 不能为空");
         }
         // —— 按业务单号拉取同号全部供应请求行（写模型）：详情页与列表共用 wkf_supply_request 聚合视图。——
@@ -366,6 +389,7 @@ public class InventoryWarehouseInboundReceiptAppService {
 
     public CreateInboundReceiptResponse createInboundReceipt(CreateInboundReceiptRequest request) {
         // —— 入参形状：头字段 + 至少一行明细；源/目的库位必填（类型由 Mapper 按位置推导）。——
+        // Gate：请求体、明细与库房/供应商门禁
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "请求不能为空");
         }
@@ -375,7 +399,7 @@ public class InventoryWarehouseInboundReceiptAppService {
         if (request.getSourceLocationId() == null || request.getPurposeLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "源位置与目标位置不能为空");
         }
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_IN_101, "机构上下文缺失");
         Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForInboundGate();
         this.assertLocationAllowed(request.getSourceLocationId(), allowed);
         this.assertLocationAllowed(request.getPurposeLocationId(), allowed);
@@ -406,6 +430,7 @@ public class InventoryWarehouseInboundReceiptAppService {
             com.openhis.health.domain.workflow.supplyrequest.command.CreateInboundReceiptCommand cmd =
                 inboundReceiptMapper.toCreateInboundReceiptCommand(request, operatorId, applicantId);
             String busNo = supplyRequestDomainService.createInboundReceipt(cmd);
+            // Asm：返回 busNo
             return inboundReceiptMapper.toCreateInboundReceiptResponse(busNo);
         } catch (IllegalArgumentException ex) {
             // —— Mapper/枚举解析失败：统一包装为参数非法，避免把 IllegalArgumentException 原样透出 HTTP 层。——
@@ -424,6 +449,7 @@ public class InventoryWarehouseInboundReceiptAppService {
     
     public UpdateInboundReceiptResponse updateInboundReceipt(UpdateInboundReceiptRequest request) {
         // —— 与新建相同的头/明细非空约束，并额外要求 busNo + 乐观锁 rowVersion（待审核态全量替换语义）。——
+        // Gate：busNo、明细与可编辑态校验
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "busNo 不能为空");
         }
@@ -437,7 +463,7 @@ public class InventoryWarehouseInboundReceiptAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "rowVersion 不能为空");
         }
 
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_IN_101, "机构上下文缺失");
         Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForInboundGate();
         this.assertLocationAllowed(request.getSourceLocationId(), allowed);
         this.assertLocationAllowed(request.getPurposeLocationId(), allowed);
@@ -480,6 +506,7 @@ public class InventoryWarehouseInboundReceiptAppService {
             com.openhis.health.domain.workflow.supplyrequest.command.CreateInboundReceiptCommand cmd =
                 inboundReceiptMapper.toCreateInboundReceiptCommandForUpdate(request, operatorId, applicantId, originalSnapshot);
             String busNo = supplyRequestDomainService.createInboundReceipt(cmd);
+            // Asm：返回 busNo
             return inboundReceiptMapper.toUpdateInboundReceiptResponse(busNo);
         } catch (IllegalArgumentException ex) {
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "进货参数不合法：" + ex.getMessage());
@@ -498,6 +525,7 @@ public class InventoryWarehouseInboundReceiptAppService {
      */
     
     public SubmitInboundReceiptApprovalResponse submitInboundReceiptApproval(SubmitInboundReceiptApprovalRequest request) {
+        // Gate：busNo 与制单人员档案
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "请求不能为空");
         }
@@ -508,28 +536,40 @@ public class InventoryWarehouseInboundReceiptAppService {
             "当前用户未绑定医务人员档案，无法提交审批");
         // —— 提交审批仅驱动供应请求状态机，不涉及发放与库存；失败时映射为 WHS_IN_003 便于前端统一提示。——
         try {
+            // Cmd：领域提交审批
             supplyRequestDomainService.submitApproval(
-                inboundReceiptMapper.toSubmitApprovalCommand(request, currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录"), applicantId));
+                inboundReceiptMapper.toSubmitApprovalCommand(request,
+                    currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录"),
+                    applicantId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_IN_003);
         }
+        // Asm：映射提交响应
         SupplyStatus st = this.loadHeadSupplyStatus(request.getBusNo().trim());
         return inboundReceiptMapper.toSubmitInboundReceiptApprovalResponse(st);
     }
 
     
+    /**
+     * 撤回审批（回到可编辑草稿态）。
+     *
+     * @param request 含业务单号 busNo
+     * @return 撤回后的展示状态
+     */
     public WithdrawInboundReceiptApprovalResponse withdrawInboundReceiptApproval(WithdrawInboundReceiptApprovalRequest request) {
+        // Gate：busNo 与操作人
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "请求不能为空");
         }
         this.gateBusNo(request.getBusNo());
-        // —— 撤回审批与提交对称：仅供应请求聚合内状态回退，不涉及已入账侧写（同意前不应有库存侧事实）。——
         try {
+            // Cmd：领域撤回审批
             supplyRequestDomainService.withdrawApproval(
                 inboundReceiptMapper.toWithdrawApprovalCommand(request, currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录")));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_IN_003);
         }
+        // Asm：映射撤回响应
         SupplyStatus st = this.loadHeadSupplyStatus(request.getBusNo().trim());
         return inboundReceiptMapper.toWithdrawInboundReceiptApprovalResponse(st);
     }
@@ -770,7 +810,30 @@ public class InventoryWarehouseInboundReceiptAppService {
                 throw new BusinessException(ErrorCodeConstants.WHS_IN_104, "追溯码入库记录失败：" + ex.getMessage());
             }
         }
+        tryUploadMedicareInventoryAfterInboundAgree(request, agreedLines);
         return inboundReceiptMapper.toAgreeInboundReceiptResponse(true);
+    }
+
+    private void tryUploadMedicareInventoryAfterInboundAgree(
+        AgreeInboundReceiptRequest request,
+        List<SupplyRequestModel> agreedLines
+    ) {
+        List<Long> lineIds = new ArrayList<>();
+        for (SupplyRequestModel line : agreedLines) {
+            if (line != null && line.getId() != null) {
+                lineIds.add(line.getId());
+            }
+        }
+        if (lineIds.isEmpty()) {
+            return;
+        }
+        InventoryMedicareUploadSupport.uploadIfPortPresent(inventoryInsurancePort, () -> {
+            UploadAfterInboundCommand command = new UploadAfterInboundCommand()
+                .setInboundBusNo(request.getBusNo())
+                .setSupplyRequestLineIds(lineIds)
+                .setContractBusNo(request.getContractBusNo());
+            inventoryInsurancePort.uploadAfterInboundAgree(command);
+        });
     }
 
     /**
@@ -782,6 +845,7 @@ public class InventoryWarehouseInboundReceiptAppService {
      */
     
     public RejectInboundReceiptResponse rejectInboundReceipt(RejectInboundReceiptRequest request) {
+        // Gate：busNo、驳回原因与操作人
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "busNo 不能为空");
         }
@@ -804,6 +868,7 @@ public class InventoryWarehouseInboundReceiptAppService {
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_IN_003);
         }
+        // Asm：映射驳回响应
         return inboundReceiptMapper.toRejectInboundReceiptResponse(true);
     }
 
@@ -816,13 +881,14 @@ public class InventoryWarehouseInboundReceiptAppService {
      */
     
     public RemoveInboundReceiptResponse removeInboundReceipt(RemoveInboundReceiptRequest request) {
+        // Gate：busNo 与操作人
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "请求不能为空");
         }
         this.gateBusNo(request.getBusNo());
         Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录");
-        // —— 逻辑删除：底座将 delete 改写为 isDeleted 更新；状态不允许删除时由领域抛错，经 mapSupplyWorkflowException 收口为 WHS_IN_005。——
         try {
+            // Cmd：领域按 busNo 软删
             supplyRequestDomainService.removeByBusNo(
                 inboundReceiptMapper.toRemoveByBusNoCommand(request, operatorId));
         } catch (BusinessException ex) {
@@ -844,9 +910,13 @@ public class InventoryWarehouseInboundReceiptAppService {
         // —— 选品分页：除 B.10.11 分页三要素外，目的库必填（药库白名单门禁与进货头目的库语义一致）；不在本路径按库位汇总可用库存。——
         pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.WHS_IN_001, "分页参数不能为空");
         if (request.getPurposeLocationId() == null) {
+            // Gate：分页窗口、机构与库房门禁
+            // Pre：组装库存目录分页查询
+            // Cmd：查询可用库存行
+            // Asm：映射选品分页并增强价格
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "purposeLocationId 不能为空");
         }
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_IN_101, "机构上下文缺失");
         Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForInboundGate();
         this.assertLocationAllowed(request.getPurposeLocationId(), allowed);
         this.assertProductTableNameWhitelistForInboundSelection(request.getProductTableName());
@@ -946,10 +1016,14 @@ public class InventoryWarehouseInboundReceiptAppService {
     public PageLinkablePurchaseOrdersResponse pageLinkablePurchaseOrders(PageLinkablePurchaseOrdersRequest request) {
         // —— 订货候选：仅服务进货单头「originalBusNo」下拉，故强约束目的库与分页字段，防漏参导致读模型全表扫。——
         if (request == null || request.getPurposeLocationId() == null) {
+            // Gate：来源位置与分页窗口
+            // Pre：组装可关联来源单查询
+            // Cmd：分页查询已同意来源单
+            // Asm：映射分页响应
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "purposeLocationId 不能为空");
         }
         pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.WHS_IN_001, "分页参数不能为空");
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_IN_101, "机构上下文缺失");
         Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForInboundGate();
         this.assertLocationAllowed(request.getPurposeLocationId(), allowed);
 
@@ -993,17 +1067,6 @@ public class InventoryWarehouseInboundReceiptAppService {
                 throw new BusinessException(ErrorCodeConstants.WHS_IN_103, "单据类型非药库进货单");
             }
         }
-    }
-
-    private Long resolveOrganizationId(Long organizationId) {
-        Long orgId = organizationId;
-        if (orgId == null) {
-            orgId = currentUser.getCurrentOrganizationUnitId();
-        }
-        if (orgId == null) {
-            throw new BusinessException(ErrorCodeConstants.WHS_IN_101, "机构上下文缺失");
-        }
-        return orgId;
     }
 
     /**
@@ -1323,37 +1386,6 @@ public class InventoryWarehouseInboundReceiptAppService {
                 }
             }
         }
-    }
-
-    private List<Practitioner> loadAllPractitionersForRoleInOrganization(int businessRoleCode, Long organizationId) {
-        if (organizationId == null) {
-            return Collections.emptyList();
-        }
-        List<Practitioner> acc = new ArrayList<>();
-        int pageIndex = 0;
-        int pageSize = 500;
-        while (true) {
-            Page<Practitioner> page = this.practitionerQueryService.pageActivePractitionersForPosition(
-                businessRoleCode,
-                "",
-                PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.ASC, "id")));
-            if (!page.hasContent()) {
-                break;
-            }
-            for (Practitioner p : page.getContent()) {
-                if (p == null || p.getId() == null) {
-                    continue;
-                }
-                if (organizationId.equals(p.getOrgId())) {
-                    acc.add(p);
-                }
-            }
-            if (!page.hasNext()) {
-                break;
-            }
-            pageIndex++;
-        }
-        return acc;
     }
 
     private Map<String, SupplyRequestModel> buildInboundReceiptHeadLineByBusNo(List<SupplyRequestModel> detailLines) {

@@ -21,10 +21,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 编辑出库单响应。 */
 @Schema(description = "编辑出库单响应")
 public class UpdateStockOutResponse {
 

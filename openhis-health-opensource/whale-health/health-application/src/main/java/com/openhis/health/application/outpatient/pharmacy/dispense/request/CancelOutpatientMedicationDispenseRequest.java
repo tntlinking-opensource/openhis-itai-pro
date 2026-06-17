@@ -36,6 +36,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 作废门诊药品发放请求。 */
 @Schema(description = "作废门诊药品发放请求")
 public class CancelOutpatientMedicationDispenseRequest {
 
@@ -48,6 +49,7 @@ public class CancelOutpatientMedicationDispenseRequest {
     /** 每条待作废发放单及对应未发药原因枚举 code。 */
     @NotEmpty(message = "提交行不能为空")
     @Valid
+    /** 作废行集合。 */
     @Schema(description = "作废行集合", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<CancelMedicationDispenseLineSubmitDto> lines;
 }

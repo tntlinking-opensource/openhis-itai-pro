@@ -23,7 +23,9 @@ import lombok.Setter;
 import java.math.BigDecimal;
 
 /**
- * 门诊药房退药明细行（查主表装配，供 AS-OP-PHA-002 明细映射）。
+ * 门诊药房退药明细行（待退/已退发放事实 + 药嘱装配，供 AS-OP-PHA-002 明细映射）。
+ *
+ * <p>退药读侧<strong>不</strong>携带原正向发药单主键；应退金额由 App 按 {@code refundOriginRequestId}（{@code service_id}）汇总。</p>
  */
 @Getter
 @Setter
@@ -46,9 +48,4 @@ public class ReturnMedicineDetailReadRow {
     private String reqStatusText;
     private String serviceTable;
     private String traceNo;
-
-    /**
-     * 收费汇总锚点发放单主键：待退药/退药类型行指向原正向发放单，供应用层按 {@code adm_charge_item.dispense_id} 汇总金额。
-     */
-    private Long chargeAnchorDispenseId;
 }

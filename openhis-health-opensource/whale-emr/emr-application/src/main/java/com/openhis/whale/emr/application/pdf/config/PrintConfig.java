@@ -42,12 +42,36 @@ public class PrintConfig {
 
     public PrintConfig copy() {
         PrintConfig c = new PrintConfig();
-        c.paper = paper != null ? paper.copy() : PaperConfig.a4Portrait();
-        c.margins = margins != null ? margins.copy() : MarginConfig.printStandard();
-        c.header = header != null ? header.copy() : HeaderConfig.disabled();
-        c.footer = footer != null ? footer.copy() : FooterConfig.standard();
-        c.watermark = watermark != null ? watermark.copy() : WatermarkConfig.disabled();
-        c.font = font != null ? font.copy() : FontConfig.defaults();
+        if (paper != null) {
+            c.paper = paper.copy();
+        } else {
+            c.paper = PaperConfig.a4Portrait();
+        }
+        if (margins != null) {
+            c.margins = margins.copy();
+        } else {
+            c.margins = MarginConfig.printStandard();
+        }
+        if (header != null) {
+            c.header = header.copy();
+        } else {
+            c.header = HeaderConfig.disabled();
+        }
+        if (footer != null) {
+            c.footer = footer.copy();
+        } else {
+            c.footer = FooterConfig.standard();
+        }
+        if (watermark != null) {
+            c.watermark = watermark.copy();
+        } else {
+            c.watermark = WatermarkConfig.disabled();
+        }
+        if (font != null) {
+            c.font = font.copy();
+        } else {
+            c.font = FontConfig.defaults();
+        }
         c.dateFormat = dateFormat;
         c.datetimeFormat = datetimeFormat;
         c.showDeletedNodes = showDeletedNodes;

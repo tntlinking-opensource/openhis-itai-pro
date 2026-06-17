@@ -23,29 +23,52 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+import java.util.List;
+
 /**
  * 按原支付执行门诊账单退费响应（IF-REF-05）。
  */
 @Data
 @Accessors(chain = true)
+/** 按原支付执行门诊账单退费响应。 */
 @Schema(description = "按原支付执行门诊账单退费响应")
 public class ExecuteOutpatientBillRefundByPaymentResponse {
 
-    /** 是否执行成功。 */
     @Schema(description = "是否执行成功")
+    /** 是否执行成功（业务字段）。 */
     private boolean success;
 
     /** 逆向支付单主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 逆向支付单主键。 */
     @Schema(description = "逆向支付单主键")
+    /** 逆向支付单主键（业务字段）。 */
     private Long reversePaymentId;
 
     /** 原支付主单主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 原支付主单主键。 */
     @Schema(description = "原支付主单主键")
+    /** 原支付主单主键（业务字段）。 */
     private Long originalPaymentId;
 
     /** 是否执行了半退再结算分支。 */
     @Schema(description = "是否执行了半退再结算分支")
+    /** 是否执行了半退再结算分支（业务字段）。 */
     private boolean halfRefundExecuted;
+
+    /** 医保撤销模式：SYNC / INSURANCE_ASYNC。 */
+    @Schema(description = "医保撤销模式")
+    /** 医保撤销模式（业务字段）。 */
+    private String insuranceRevokeMode;
+
+    /** 医保撤销协同单主键列表（异步时）。 */
+    @Schema(description = "医保撤销协同单主键列表")
+    /** 医保撤销协同单主键列表（业务字段）。 */
+    private List<Long> coordinationIds;
+
+    /** 医保正式结算是否已撤销（同步完成或无需撤销时为 true）。 */
+    @Schema(description = "医保正式结算是否已撤销")
+    /** 医保正式结算是否已撤销（业务字段）。 */
+    private Boolean insuranceRevoked;
 }

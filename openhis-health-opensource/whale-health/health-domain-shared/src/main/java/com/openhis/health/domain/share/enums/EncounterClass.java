@@ -32,11 +32,7 @@ public enum EncounterClass implements EnumInterface {
     /**
      * OBSENC。
      */
-    OBSENC(0L, "OBSENC", "留观", "", 3L),
-    /**
-     * EMER。
-     */
-    EMER(0L, "EMER", "急诊", "", 4L);
+    OBSENC(0L, "OBSENC", "留观", "", 3L);
 
     private final Long codeSystemId;
     private final String code;

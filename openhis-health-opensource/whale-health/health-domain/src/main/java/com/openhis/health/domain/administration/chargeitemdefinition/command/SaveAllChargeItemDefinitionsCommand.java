@@ -48,6 +48,8 @@ public class SaveAllChargeItemDefinitionsCommand extends BatchCommand<SaveAllCha
         private String ybType;
         /** 价格类型编码（如零售价、医保价）。 */
         private String priceTypeCode;
+        /** 收费项展示名称（写入 {@code charge_name}）。 */
+        private String chargeName;
         /** 批次或效期批次号（可空）。 */
         private String lotNo;
         /** 价格数值（元，与 {@code adm_charge_item_definition.price_value} 一致）。 */

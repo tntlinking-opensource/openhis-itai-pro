@@ -29,21 +29,31 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 住院结算页初始化响应。 */
 @Schema(description = "住院结算页初始化响应")
 public class LoadInpatientSettlePageInitResponse {
 
     @Schema(description = "结算队列页签选项")
+    /** 结算队列页签选项（业务字段）。 */
     private List<OptionDto> settleQueueTabOptions;
 
+    /** 费用呈现模式选项。 */
     @Schema(description = "费用呈现模式选项")
+    /** 费用呈现模式选项（业务字段）。 */
     private List<OptionDto> presentationModeOptions;
 
+    /** 支付渠道选项。 */
     @Schema(description = "支付渠道选项")
+    /** 支付渠道选项（业务字段）。 */
     private List<OptionDto> paymentChannelOptions;
 
+    /** 默认队列页签 code。 */
     @Schema(description = "默认队列页签 code")
+    /** 默认队列页签 code（业务字段）。 */
     private String defaultSettleQueueTab;
 
+    /** 默认费用呈现模式 code。 */
     @Schema(description = "默认费用呈现模式 code")
+    /** 默认费用呈现模式 code（业务字段）。 */
     private String defaultPresentationMode;
 }

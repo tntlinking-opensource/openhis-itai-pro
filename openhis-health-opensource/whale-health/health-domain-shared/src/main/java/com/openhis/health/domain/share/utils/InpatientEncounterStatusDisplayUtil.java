@@ -23,7 +23,7 @@ import com.openhis.health.domain.share.enums.EncounterStatus;
 /**
  * 住院（{@code IMP}）{@code status_enum_text} 解析工具（DM-ADM-002 §2.3.2）。
  *
- * <p>门诊/急诊共用 {@link EncounterStatus#getDisplay()}；住院读模型与应用层出参须使用本工具，
+ * <p>门诊共用 {@link EncounterStatus#getDisplay()}；住院读模型与应用层出参须使用本工具，
  * 与 {@link com.openhis.health.domain.share.constants.InpatientEncounterStatusDisplayConstants} 对齐。</p>
  */
 public final class InpatientEncounterStatusDisplayUtil {

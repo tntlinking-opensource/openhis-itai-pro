@@ -26,8 +26,7 @@ import lombok.experimental.Accessors;
 @Data
 @Accessors(chain = true)
 public class SwitchEncounterChargeItemsToInsuranceRequest {
-    /**
-     * encounterId。
-     */
+
+    /** 就诊主键。 */
     private Long encounterId;
 }

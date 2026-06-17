@@ -168,6 +168,7 @@ public class ChargeItemDefinitionDomainService {
                 item.getPriceTypeCode(),
                 item.getLotNo(),
                 item.getPriceValue(),
+                item.getChargeName(),
                 null));
         }
         List<ChargeItemDefinition> saved = repository.saveAll(rows);
@@ -203,6 +204,7 @@ public class ChargeItemDefinitionDomainService {
                 item.getPriceTypeCode(),
                 item.getLotNo(),
                 item.getPriceValue(),
+                null,
                 item.getId());
             toSave.add(row);
         }
@@ -285,6 +287,7 @@ public class ChargeItemDefinitionDomainService {
         String priceTypeCode,
         String lotNo,
         BigDecimal priceValue,
+        String chargeName,
         Long id) {
         ChargeItemDefinition row = new ChargeItemDefinition();
         row.setId(id);
@@ -295,6 +298,7 @@ public class ChargeItemDefinitionDomainService {
         row.setPriceTypeCode(priceTypeCode);
         row.setLotNo(lotNo);
         row.setPriceValue(priceValue);
+        row.setChargeName(chargeName);
         return row;
     }
 }

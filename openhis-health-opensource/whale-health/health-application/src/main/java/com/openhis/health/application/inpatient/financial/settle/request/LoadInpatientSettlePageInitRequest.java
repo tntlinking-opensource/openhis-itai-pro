@@ -26,6 +26,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 住院结算页初始化请求。 */
 @Schema(description = "住院结算页初始化请求")
 public class LoadInpatientSettlePageInitRequest {
 }

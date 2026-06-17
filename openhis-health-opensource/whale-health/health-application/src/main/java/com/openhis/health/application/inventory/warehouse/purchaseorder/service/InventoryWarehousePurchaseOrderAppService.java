@@ -41,22 +41,23 @@ import com.openhis.health.application.inventory.warehouse.purchaseorder.response
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.SubmitPurchaseOrderApprovalResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.UpdatePurchaseOrderResponse;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.WithdrawPurchaseOrderApprovalResponse;
-import com.openhis.health.application.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.common.validator.PageWindowGate;
-import com.openhis.health.application.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierDetailQueryModel;
 import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.ProductDefinitionItemDto;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.application.querysupport.product.ProductDefinitionPurchasePageLoader;
-import com.openhis.health.application.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.ProductDefinitionPurchasePageLoader;
+import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.workflow.supplyrequest.queries.WarehouseDocumentDetailPageQuery;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -72,7 +73,6 @@ import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDom
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -102,7 +102,7 @@ public class InventoryWarehousePurchaseOrderAppService {
     /** 列表筛选「全部药库」时传入的 purposeLocationId 占位（0 非库位主键）。 */
     public static final long ALL_WAREHOUSES_LIST_FILTER_LOCATION_ID = 0L;
 
-    private final ICurrentUser currentUser;
+    private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     private final CurrentOperatorResolver currentOperatorResolver;
     private final PageWindowGate pageWindowGate;
     private final PractitionerQueryService practitionerQueryService;
@@ -116,8 +116,16 @@ public class InventoryWarehousePurchaseOrderAppService {
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     private final InventoryWarehousePurchaseOrderMapper purchaseOrderMapper;
 
+    /**
+     * 加载订货页主数据（管辖药库、供应商下拉）。
+     *
+     * @param request 页初始化请求；机构上下文由服务端解析
+     * @return 药库/供应商选项及「全部药库」列表筛选项
+     */
     public LoadPurchaseOrderFormInitResponse loadPurchaseOrderFormInit(LoadPurchaseOrderFormInitRequest request) {
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        // Gate：机构会话上下文
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_PO_101, "机构上下文缺失");
+        // Pre：装载管辖药库与启用供应商
         List<Location> warehouses = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(
             this.locationQueryService.listAllActiveWarehouses());
         List<com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel> suppliers =
@@ -127,6 +135,7 @@ public class InventoryWarehousePurchaseOrderAppService {
             purchaseOrderMapper.toWarehouseOptionDtoList(warehouses);
         List<com.openhis.health.application.inventory.warehouse.purchaseorder.dto.SupplierOptionDto> supOpts =
             purchaseOrderMapper.toSupplierOptionDtoList(suppliers);
+        // Asm：映射页初始化响应并注入「全部药库」筛选项
         LoadPurchaseOrderFormInitResponse res = purchaseOrderMapper.toLoadPurchaseOrderFormInitResponse(whOpts, supOpts);
         com.openhis.health.application.inventory.warehouse.purchaseorder.dto.WarehouseOptionDto allOpt =
             new com.openhis.health.application.inventory.warehouse.purchaseorder.dto.WarehouseOptionDto();
@@ -137,7 +146,14 @@ public class InventoryWarehousePurchaseOrderAppService {
         return res;
     }
 
+    /**
+     * 分页查询订货单列表（按 busNo 聚合展示）。
+     *
+     * @param request 含分页窗口、目的药库与状态筛选
+     * @return 聚合后的列表行与分页元数据
+     */
     public PagePurchaseOrdersResponse pagePurchaseOrders(PagePurchaseOrdersRequest request) {
+        // Gate：请求体、分页窗口与机构上下文
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "请求不能为空");
         }
@@ -146,9 +162,10 @@ public class InventoryWarehousePurchaseOrderAppService {
         }
         pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.WHS_PO_001, "分页参数不能为空");
         this.validateOptionalPurchaseTypeEnum(request.getTypeEnum());
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_PO_101, "机构上下文缺失");
         Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForPurchaseOrderGate();
 
+        // Pre：组装列表查询（全部药库展开或单库门禁）
         WarehouseDocumentDetailPageQuery query = new WarehouseDocumentDetailPageQuery();
         query.setTypeEnum(SupplyType.CABINET_PURCHASE_ORDER.getCode());
         Long filterLocationId = request.getPurposeLocationId();
@@ -179,8 +196,10 @@ public class InventoryWarehousePurchaseOrderAppService {
         query.setApplyTimeEnd(request.getApplyTimeTo());
 
         try {
+            // Cmd：领域分页查询供应请求
             Page<com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel> page =
                 supplyRequestQueryService.pageWarehouseDocumentDetail(query);
+            // Asm：映射列表分页响应
             return purchaseOrderMapper.toPagePurchaseOrdersResponse(page);
         } catch (RuntimeException ex) {
             log.warn("pageWarehouseDocumentDetail failed", ex);
@@ -188,10 +207,18 @@ public class InventoryWarehousePurchaseOrderAppService {
         }
     }
 
+    /**
+     * 按 busNo 回读订货单详情（含明细行与产品展示增强）。
+     *
+     * @param request 须含 busNo
+     * @return 头行与明细
+     */
     public GetPurchaseOrderDetailResponse getPurchaseOrderDetail(GetPurchaseOrderDetailRequest request) {
+        // Gate：busNo 不可为空
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "busNo 不能为空");
         }
+        // Pre：按单号读供应请求并批量加载产品定义
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
         q.setBusNo(request.getBusNo().trim());
         List<SupplyRequestModel> lines = supplyRequestQueryService.getSupplyByBusNo(q);
@@ -211,10 +238,18 @@ public class InventoryWarehousePurchaseOrderAppService {
             lookups.add(lookup);
         }
         Map<String, ProductDefinitionDisplayDto> products = productDefinitionBatchLoader.loadAsMap(lookups);
+        // Asm：映射详情响应
         return purchaseOrderMapper.toGetPurchaseOrderDetailResponse(lines, products);
     }
 
+    /**
+     * 新建订货单草稿并落库供应请求。
+     *
+     * @param request 含目的药库、供应商与明细行
+     * @return 新建 busNo
+     */
     public CreatePurchaseOrderResponse createPurchaseOrder(CreatePurchaseOrderRequest request) {
+        // Gate：请求体、明细、目的位置与机构/库房门禁
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "请求不能为空");
         }
@@ -225,7 +260,7 @@ public class InventoryWarehousePurchaseOrderAppService {
         if (request.getPurposeLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "入库目的位置不能为空");
         }
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_PO_101, "机构上下文缺失");
         Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForPurchaseOrderGate();
         this.assertLocationAllowed(request.getPurposeLocationId(), allowed);
 
@@ -243,16 +278,25 @@ public class InventoryWarehousePurchaseOrderAppService {
             "当前用户未绑定医务人员档案，无法制单");
 
         try {
+            // Cmd：组装 Create 命令并调用领域写服务
             com.openhis.health.domain.workflow.supplyrequest.command.CreatePurchaseOrderCommand cmd =
                 purchaseOrderMapper.toCreatePurchaseOrderCommand(request, operatorId, applicantId);
             String busNo = supplyRequestDomainService.createPurchaseOrder(cmd);
+            // Asm：映射新建响应
             return purchaseOrderMapper.toCreatePurchaseOrderResponse(busNo);
         } catch (IllegalArgumentException ex) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "订货参数不合法：" + ex.getMessage());
         }
     }
 
+    /**
+     * 修订订货单（同号全量对齐明细，须可编辑态）。
+     *
+     * @param request 含 busNo、目的药库与明细行
+     * @return 修订后 busNo
+     */
     public UpdatePurchaseOrderResponse updatePurchaseOrder(UpdatePurchaseOrderRequest request) {
+        // Gate：busNo、明细、目的位置与可编辑态
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "busNo 不能为空");
         }
@@ -262,7 +306,7 @@ public class InventoryWarehousePurchaseOrderAppService {
         if (request.getPurposeLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "入库目的位置不能为空");
         }
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_PO_101, "机构上下文缺失");
         Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForPurchaseOrderGate();
         this.assertLocationAllowed(request.getPurposeLocationId(), allowed);
 
@@ -274,6 +318,7 @@ public class InventoryWarehousePurchaseOrderAppService {
         }
         this.assertCabinetPurchaseOrder(existing);
 
+        // Pre：读侧校验当前状态允许编辑
         VerifyAbleEditQuery editQuery = new VerifyAbleEditQuery();
         editQuery.setBusNo(request.getBusNo().trim());
         SupplyRequestModel head = existing.get(0);
@@ -296,16 +341,25 @@ public class InventoryWarehousePurchaseOrderAppService {
             "当前用户未绑定医务人员档案，无法制单");
 
         try {
+            // Cmd：组装 Create 命令并调用领域写服务（同号修订）
             com.openhis.health.domain.workflow.supplyrequest.command.CreatePurchaseOrderCommand cmd =
                 purchaseOrderMapper.toCreatePurchaseOrderCommandForUpdate(request, operatorId, applicantId);
             String busNo = supplyRequestDomainService.createPurchaseOrder(cmd);
+            // Asm：映射修订响应
             return purchaseOrderMapper.toUpdatePurchaseOrderResponse(busNo);
         } catch (IllegalArgumentException ex) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "订货参数不合法：" + ex.getMessage());
         }
     }
 
+    /**
+     * 提交订货单进入待审批态。
+     *
+     * @param request 含业务单号 busNo
+     * @return 提交成功标志
+     */
     public SubmitPurchaseOrderApprovalResponse submitPurchaseOrderApproval(SubmitPurchaseOrderApprovalRequest request) {
+        // Gate：busNo 与制单人员档案
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "请求不能为空");
         }
@@ -315,35 +369,53 @@ public class InventoryWarehousePurchaseOrderAppService {
             "用户未登录",
             "当前用户未绑定医务人员档案，无法提交审批");
         try {
+            // Cmd：领域提交审批
             supplyRequestDomainService.submitApproval(purchaseOrderMapper.toSubmitApprovalCommand(request,
                 currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录"),
                 applicantId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_PO_003);
         }
+        // Asm：映射提交响应
         return purchaseOrderMapper.toSubmitPurchaseOrderApprovalResponse();
     }
 
+    /**
+     * 撤回订货单审批（回到可编辑态）。
+     *
+     * @param request 须含 busNo
+     * @return 撤回成功标志
+     */
     public WithdrawPurchaseOrderApprovalResponse withdrawPurchaseOrderApproval(WithdrawPurchaseOrderApprovalRequest request) {
+        // Gate：busNo 与操作人
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "请求不能为空");
         }
         this.gateBusNo(request.getBusNo());
         try {
+            // Cmd：领域撤回审批
             supplyRequestDomainService.withdrawApproval(purchaseOrderMapper.toWithdrawApprovalCommand(request, currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录")));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_PO_003);
         }
+        // Asm：映射撤回响应
         return purchaseOrderMapper.toWithdrawPurchaseOrderApprovalResponse();
     }
 
+    /**
+     * 同意订货单（仅更新供应请求审批状态，不生成进货单）。
+     *
+     * @param request 须含 busNo；须未重复同意
+     * @return 同意成功标志
+     */
     public AgreePurchaseOrderResponse agreePurchaseOrder(AgreePurchaseOrderRequest request) {
+        // Gate：busNo 不可为空
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "busNo 不能为空");
         }
 
+        // Pre：读侧校验未重复同意
         SupplyRequestValidationModel validation = supplyRequestQueryService.supplyRequestValidation(request.getBusNo().trim());
-        // 幂等：已同意则拒绝（WHS_PO_104，与 mapAgreeException 领域侧映射一致）
         if (Boolean.TRUE.equals(validation.getHasAgreed())) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_104, "订货单已同意，禁止重复同意");
         }
@@ -351,14 +423,23 @@ public class InventoryWarehousePurchaseOrderAppService {
         Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录");
 
         try {
+            // Cmd：领域状态机同意订货单
             supplyRequestDomainService.agreeRequest(purchaseOrderMapper.toAgreeRequestCommand(request, operatorId));
         } catch (BusinessException ex) {
             throw this.mapAgreeException(ex);
         }
+        // Asm：映射同意响应
         return purchaseOrderMapper.toAgreePurchaseOrderResponse();
     }
 
+    /**
+     * 驳回订货单并记录原因。
+     *
+     * @param request 须含 busNo 与 rejectReason
+     * @return 驳回成功标志
+     */
     public RejectPurchaseOrderResponse rejectPurchaseOrder(RejectPurchaseOrderRequest request) {
+        // Gate：busNo 与驳回原因
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "busNo 不能为空");
         }
@@ -369,19 +450,34 @@ public class InventoryWarehousePurchaseOrderAppService {
         Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录");
 
         try {
+            // Cmd：领域驳回请求
             supplyRequestDomainService.rejectRequest(purchaseOrderMapper.toRejectRequestCommand(request, operatorId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_PO_003);
         }
+        // Asm：映射驳回响应
         return purchaseOrderMapper.toRejectPurchaseOrderResponse();
     }
 
+    /**
+     * 删除订货单（仅允许草稿/可删态）。
+     *
+     * @param request 须含 busNo
+     * @return 删除成功标志
+     */
     public RemovePurchaseOrderResponse removePurchaseOrder(RemovePurchaseOrderRequest request) {
+        // Gate：busNo 与操作人
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "请求不能为空");
         }
         this.gateBusNo(request.getBusNo());
-        supplyRequestDomainService.removeByBusNo(purchaseOrderMapper.toRemoveByBusNoCommand(request, currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录")));
+        try {
+            // Cmd：领域按 busNo 软删
+            supplyRequestDomainService.removeByBusNo(purchaseOrderMapper.toRemoveByBusNoCommand(request, currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录")));
+        } catch (BusinessException ex) {
+            throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_PO_005);
+        }
+        // Asm：映射删除响应
         return purchaseOrderMapper.toRemovePurchaseOrderResponse();
     }
 
@@ -414,8 +510,16 @@ public class InventoryWarehousePurchaseOrderAppService {
         }
     }
 
+    /**
+     * 分页查询订货选品（采购目录）。
+     *
+     * @param request 分页窗口与选品筛选条件
+     * @return 产品定义展示行分页
+     */
     public PageProductsForPurchaseResponse pageProductsForPurchase(PageProductsForPurchaseRequest request) {
+        // Gate：分页窗口
         pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.WHS_PO_001, "分页参数不能为空");
+        // Pre：组装产品定义分页查询
         ProductDefinitionPageQuery query = new ProductDefinitionPageQuery();
         query.setProductTableName(request.getProductTableName());
         query.setCategoryCode(request.getCategoryCode());
@@ -427,9 +531,11 @@ public class InventoryWarehousePurchaseOrderAppService {
         query.setSortField(request.getSortField());
         query.setSortOrder(request.getSortOrder());
         try {
+            // Cmd：分页查询采购选品
             Page<ProductDefinitionDisplayDto> page = productDefinitionPurchasePageLoader.pageForPurchase(query);
             PageProductsForPurchaseResponse response = purchaseOrderMapper.toPageProductsForPurchaseResponse(page);
             this.enrichPurchaseProductSelectionRows(response.getContent());
+            // Asm：返回富化后的选品分页
             return response;
         } catch (RuntimeException ex) {
             log.warn("pageProductForPurchase failed", ex);
@@ -487,17 +593,6 @@ public class InventoryWarehousePurchaseOrderAppService {
                 throw new BusinessException(ErrorCodeConstants.WHS_PO_103, "单据类型非药库订货单");
             }
         }
-    }
-
-    private Long resolveOrganizationId(Long organizationId) {
-        Long orgId = organizationId;
-        if (orgId == null) {
-            orgId = currentUser.getCurrentOrganizationUnitId();
-        }
-        if (orgId == null) {
-            throw new BusinessException(ErrorCodeConstants.WHS_PO_101, "机构上下文缺失");
-        }
-        return orgId;
     }
 
     private Set<Long> resolveGatedWarehouseLocationIdsForPurchaseOrderGate() {

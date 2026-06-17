@@ -19,7 +19,7 @@ package com.openhis.health.application.outpatient.pharmacy.dispense.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -35,10 +35,10 @@ import java.util.List;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 就诊下药品发药单分页请求。 */
 @Schema(description = "就诊下药品发药单分页请求")
 public class PageEncounterMedicationDispenseSlipsRequest extends AbstractHealthPageRequest {
 
-    /** 就诊主键；{@code null} 表示不按就诊过滤（慎用，列表可能偏大）。 */
     @Schema(description = "就诊主键（可空表示不按就诊过滤）")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;

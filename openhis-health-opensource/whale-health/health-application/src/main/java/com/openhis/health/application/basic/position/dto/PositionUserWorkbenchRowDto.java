@@ -25,50 +25,27 @@ import lombok.Data;
  * 岗位工作台左侧：用户 + 系统角色 + 医务人员主档摘要一行。
  */
 @Data
-/**
- * PositionUserWorkbenchRowDto。
- */
 public class PositionUserWorkbenchRowDto {
 
+    /** 系统用户主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    /**
-     * userId。
-     */
     private Long userId;
-    /**
-     * userName。
-     */
+    /** 登录账号。 */
     private String userName;
-    /**
-     * name。
-     */
+    /** 用户显示姓名。 */
     private String name;
     /** 系统角色展示名，顿号拼接 */
-    /**
-     * roleNames。
-     */
     private String roleNames;
-    /**
-     * isActive。
-     */
+    /** 用户是否启用。 */
     private Boolean isActive;
 
+    /** 关联医务人员主档主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    /**
-     * practitionerId。
-     */
     private Long practitionerId;
-    /**
-     * practitionerName。
-     */
+    /** 医务人员姓名。 */
     private String practitionerName;
-    /**
-     * busNo。
-     */
+    /** 医务人员业务号。 */
     private String busNo;
     /** adm_practitioner.status_enum */
-    /**
-     * practitionerStatusEnum。
-     */
     private String practitionerStatusEnum;
 }

@@ -24,8 +24,10 @@ import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.medication.medicationrequest.command.*;
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
+import com.openhis.health.domain.medication.medicationrequest.prescriptionsplit.OutpatientPrescriptionSplitPlanner;
 import com.openhis.health.domain.medication.medicationrequest.repository.MedicationRequestRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.share.events.medication.medicationrequest.*;
@@ -36,9 +38,13 @@ import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -115,6 +121,14 @@ public class MedicationRequestDomainService {
         }
         if (command.getConditionDefinitionId() != null) {
             request.setConditionDefinitionId(command.getConditionDefinitionId());
+        }
+        // Pre：绑定就诊诊断行，供收费/医保按 encounter_diagnosis_id 解析医疗类别。
+        if (command.getEncounterDiagnosisId() != null) {
+            request.setEncounterDiagnosisId(command.getEncounterDiagnosisId());
+        }
+        // Pre：费用性质覆盖，与诊疗服务申请 contract_id 口径一致。
+        if (command.getContractId() != null) {
+            request.setContractId(command.getContractId());
         }
         request.validateDosageSemantics();
         // Pre：医生站列表「开立时间」与耗材草稿一致：首次暂存即落库 req_authored_time；正式签发时在 sign 路径覆盖为签发时刻。
@@ -197,6 +211,16 @@ public class MedicationRequestDomainService {
             request.setConditionDefinitionId(command.getConditionDefinitionId());
             changedFields.add(FieldNameConstants.CONDITION_DEFINITION_ID);
         }
+        if (command.getEncounterDiagnosisId() != null
+            && !Objects.equals(command.getEncounterDiagnosisId(), request.getEncounterDiagnosisId())) {
+            request.setEncounterDiagnosisId(command.getEncounterDiagnosisId());
+            changedFields.add(FieldNameConstants.ENCOUNTER_DIAGNOSIS_ID);
+        }
+        if (command.getContractId() != null
+            && !Objects.equals(command.getContractId(), request.getContractId())) {
+            request.setContractId(command.getContractId());
+            changedFields.add(FieldNameConstants.CONTRACT_ID);
+        }
         request.validateDosageSemantics();
         medicationRequestRepository.save(request);
         domainEventPublisher.publish(new MedicationOrderDraftEditedEvent(
@@ -227,12 +251,11 @@ public class MedicationRequestDomainService {
         request.ensureSignable();
         // Pre：与诊疗服务申请签发写入 authored_time 口径一致：开立时间取签发时刻，供医生站统一列表排序与展示。
         request.setReqAuthoredTime(LocalDateTime.now());
-        request.draftToActive(command.getSignCode(), command.getPrescriptionNo());
+        request.draftToActive(command.getPrescriptionNo());
         medicationRequestRepository.save(request);
         // Pub：载荷携带 save 后 status_enum，供 OrderInfo 投影 ACTIVE 供护士站待校对列表查询。
         domainEventPublisher.publish(new MedicationOrderSignedEvent(
             request.getId(),
-            request.getSignCode(),
             request.getPrescriptionNo(),
             request.getStatusEnum(),
             command.getOperatorId()));
@@ -435,63 +458,121 @@ public class MedicationRequestDomainService {
     }
 
     /**
-     * 创建中药医嘱草稿。
+     * 创建中药医嘱草稿（BR-MRQ-011：与西药 create 分轨，落库饮片行级字段与方头扩展）。
      *
-     * @param command 中药草稿创建命令
+     * @param command 中药草稿创建命令；{@code medicationId}、{@code quantity} 必填
      * @return 新建草稿标识
+     * @throws BusinessException 入参非法、非中药语义或剂量不变式失败时
      */
     public Long createHerbalMedicationOrderDraft(CreateHerbalMedicationOrderDraftCommand command) {
+        if (command == null || command.getOperatorId() == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "创建中药草稿时操作人不能为空");
+        }
+        if (command.getMedicationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "创建中药草稿时饮片定义标识不能为空");
+        }
+        if (command.getQuantity() == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "创建中药草稿时请求数量不能为空");
+        }
         MedicationRequest request = new MedicationRequest();
+        // Pre：业务号在聚合创建时生成，避免外部传入污染唯一性口径。
         request.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.MEDICATION_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         request.setEncounterId(command.getEncounterId());
         request.setPatientId(command.getPatientId());
-        request.setTcmFlag(command.getTcmFlag());
-        request.setContentJson(command.getContentJson());
-        request.setTherapyEnum(TherapyType.TEMPORARY.getCode());
-        request.setQuantity(command.getChineseHerbsDoseQuantity());
-        request.setUnitCode(MedicationCommonConstants.HERBAL_UNIT_CODE);
-        request.setMethodCode(MedicationCommonConstants.HERBAL_METHOD_CODE);
-        request.setRateCode(MedicationCommonConstants.HERBAL_RATE_CODE);
-        // Pre：中药草稿首次保存同样记录开立时刻；签发后由 sign 覆盖为正式开立时间。
+        this.applyHerbalDraftFieldsFromCreateCommand(request, command);
+        request.validateDosageSemantics();
+        // Pre：中药草稿首次保存记录开立时刻；正式签发时由 sign 覆盖。
         request.setReqAuthoredTime(LocalDateTime.now());
         request.initDraft();
+        // 持久化：先落库再发事件（B.14）。
         MedicationRequest saved = medicationRequestRepository.save(request);
         domainEventPublisher.publish(new HerbalMedicationOrderDraftCreatedEvent(saved.getId(), command.getOperatorId()));
         return saved.getId();
     }
 
     /**
-     * 修改中药医嘱草稿。
+     * 修改中药医嘱草稿（BR-MRQ-011：仅草稿且 tcm_flag=true 行可编辑）。
      *
-     * @param command 中药草稿修改命令
+     * @param command 中药草稿修改命令；null 字段表示不变更；须 {@code tcm_flag=true} 草稿行
+     * @throws BusinessException 非草稿、非中药路径或剂量不变式失败时
      */
     public void changeHerbalMedicationOrderDraft(ChangeHerbalMedicationOrderDraftCommand command) {
+        if (command == null || command.getId() == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "修改中药草稿时药品申请标识不能为空");
+        }
+        if (command.getOperatorId() == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "修改中药草稿时操作人不能为空");
+        }
         MedicationRequest request = this.mustGet(command.getId());
         request.ensureDraftEditable();
-        request.setContentJson(command.getContentJson());
+        this.assertHerbalMedicationRequestPath(request);
+        // Cmd：按命令非空字段覆盖草稿；null 表示该字段不变更。
+        this.applyHerbalDraftFieldChanges(request, command);
+        request.validateDosageSemantics();
+        // 持久化：先落库再发事件（B.14）。
         medicationRequestRepository.save(request);
         domainEventPublisher.publish(new HerbalMedicationOrderDraftEditedEvent(request.getId(), command.getOperatorId()));
     }
 
     /**
-     * 执行处分方并回写分组。
+     * 门诊药品处方分方：划分处方单元并回写 {@code prescription_no}、{@code rx_type_code}（不改医嘱状态）。
      *
-     * @param command 分方命令
+     * @param command 分方命令（行快照与金额上限由应用层装配）
      * @return 分方结果
+     * @throws BusinessException 待分方行不存在或违反强制分方规则时
      */
     public SplitPrescriptionResult splitPrescription(SplitPrescriptionCommand command) {
-        List<MedicationRequest> requests = medicationRequestRepository.findByIdIn(command.getRequestIds());
-        if (requests.isEmpty()) {
+        if (command == null || command.getLines() == null || command.getLines().isEmpty()) {
+            return new SplitPrescriptionResult(0, 0, Map.of(), Map.of());
+        }
+        List<PrescriptionSplitLineContext> lineContexts = command.getLines();
+        // Pre：纯内存装箱，按 med_type/特殊药品/库房/金额/品种上限划分处方单元
+        List<OutpatientPrescriptionSplitPlanner.PrescriptionUnitPlan> unitPlans =
+            OutpatientPrescriptionSplitPlanner.plan(lineContexts, command.getAmountLimitYuan());
+        if (unitPlans.isEmpty()) {
+            return new SplitPrescriptionResult(0, 0, Map.of(), Map.of());
+        }
+        LinkedHashSet<Long> allRequestIds = new LinkedHashSet<>();
+        for (PrescriptionSplitLineContext line : lineContexts) {
+            if (line != null && line.getRequestId() != null) {
+                allRequestIds.add(line.getRequestId());
+            }
+        }
+        List<MedicationRequest> entities = medicationRequestRepository.findByIdIn(new ArrayList<>(allRequestIds));
+        if (entities.size() != allRequestIds.size()) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_NOT_FOUND, "待分方医嘱不存在");
         }
-        int groupSeed = 1;
-        for (MedicationRequest request : requests) {
-            request.setGroupId((long) groupSeed);
-            groupSeed++;
+        Map<Long, MedicationRequest> entityById = new HashMap<>();
+        for (MedicationRequest entity : entities) {
+            entityById.put(entity.getId(), entity);
         }
-        medicationRequestRepository.saveAll(requests);
-        domainEventPublisher.publish(new MedicationOrderGroupAdjustedEvent(requests.get(0).getId(), command.getRequestIds(), null, command.getOperatorId()));
-        return new SplitPrescriptionResult(requests.size(), requests.size());
+        Map<Long, String> prescriptionNoByRequestId = new HashMap<>();
+        Map<Long, String> rxTypeCodeByRequestId = new HashMap<>();
+        // Pre：按处方单元数批量取当日处方号（前缀 CP，与 bus_no 的 MR 分序列；B.10.9）
+        List<String> prescriptionNos = businessSequenceService.getSeqByDay(
+            AggregateTypeConstants.COMPOSITE_PRESCRIPTION, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH, unitPlans.size());
+        for (int unitIndex = 0; unitIndex < unitPlans.size(); unitIndex++) {
+            OutpatientPrescriptionSplitPlanner.PrescriptionUnitPlan unit = unitPlans.get(unitIndex);
+            String prescriptionNo = prescriptionNos.get(unitIndex);
+            String rxTypeCode = unit.getRxTypeCode();
+            for (Long requestId : unit.getRequestIds()) {
+                MedicationRequest entity = entityById.get(requestId);
+                if (entity == null) {
+                    throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_NOT_FOUND, "待分方医嘱不存在");
+                }
+                entity.setPrescriptionNo(prescriptionNo);
+                entity.setRxTypeCode(rxTypeCode);
+                prescriptionNoByRequestId.put(requestId, prescriptionNo);
+                rxTypeCodeByRequestId.put(requestId, rxTypeCode);
+            }
+        }
+        // Pub：先落库再返回（B.14）；本方法不发布领域事件
+        medicationRequestRepository.saveAll(entities);
+        return new SplitPrescriptionResult(
+            allRequestIds.size(),
+            unitPlans.size(),
+            prescriptionNoByRequestId,
+            rxTypeCodeByRequestId);
     }
 
     /**
@@ -529,6 +610,211 @@ public class MedicationRequestDomainService {
     private MedicationRequest mustGet(Long id) {
         return medicationRequestRepository.findById(id).orElseThrow(
             () -> new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_NOT_FOUND, "药品申请不存在"));
+    }
+
+    /**
+     * 校验药品申请属于中药专用写路径（tcm_flag=true）。
+     *
+     * @param request 药品申请聚合根
+     * @throws BusinessException 非中药路径时拒绝
+     */
+    private void assertHerbalMedicationRequestPath(MedicationRequest request) {
+        if (!Boolean.TRUE.equals(request.getTcmFlag())) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "非中药医嘱不得走中药专用修改路径");
+        }
+    }
+
+    /**
+     * 创建路径：将中药草稿命令字段写入聚合根（不含 busNo/状态/initDraft）。
+     *
+     * @param request 待写入实体
+     * @param command   创建命令
+     */
+    private void applyHerbalDraftFieldsFromCreateCommand(MedicationRequest request, CreateHerbalMedicationOrderDraftCommand command) {
+        request.setMedicationId(command.getMedicationId());
+        Boolean tcmFlag = command.getTcmFlag();
+        if (tcmFlag == null) {
+            tcmFlag = Boolean.TRUE;
+        }
+        request.setTcmFlag(tcmFlag);
+        request.setChineseHerbsDoseQuantity(command.getChineseHerbsDoseQuantity());
+        request.setSufferingFlag(command.getSufferingFlag());
+        request.setContentJson(command.getContentJson());
+        request.setDosageInstruction(command.getDosageInstruction());
+        request.setRemark(command.getRemark());
+        request.setTherapyEnum(TherapyType.TEMPORARY.getCode());
+        request.setQuantity(command.getQuantity());
+        if (command.getUnitCode() != null) {
+            request.setUnitCode(command.getUnitCode());
+        } else if (command.getDoseUnitCode() != null) {
+            // 饮片开立数量单位与单剂用量单位一致（如 g），供 FIFO 与 quantity 配套
+            request.setUnitCode(command.getDoseUnitCode());
+        } else {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                DoctorStationAdviceConstants.MSG_MEDICATION_UNIT_CODE_REQUIRED);
+        }
+        if (command.getMethodCode() != null) {
+            request.setMethodCode(command.getMethodCode());
+        } else {
+            request.setMethodCode(MedicationCommonConstants.HERBAL_METHOD_CODE);
+        }
+        if (command.getRateCode() != null) {
+            request.setRateCode(command.getRateCode());
+        } else {
+            request.setRateCode(MedicationCommonConstants.HERBAL_RATE_CODE);
+        }
+        if (command.getDose() != null) {
+            request.setDose(command.getDose());
+        }
+        if (command.getDoseUnitCode() != null) {
+            request.setDoseUnitCode(command.getDoseUnitCode());
+        }
+        if (command.getDispensePerDuration() != null) {
+            request.setDispensePerDuration(command.getDispensePerDuration());
+        }
+        if (command.getConditionDefinitionId() != null) {
+            request.setConditionDefinitionId(command.getConditionDefinitionId());
+        }
+        if (command.getEncounterDiagnosisId() != null) {
+            request.setEncounterDiagnosisId(command.getEncounterDiagnosisId());
+        }
+        if (command.getContractId() != null) {
+            request.setContractId(command.getContractId());
+        }
+        if (command.getOrgId() != null) {
+            request.setOrgId(command.getOrgId());
+        }
+        if (command.getPerformLocation() != null) {
+            request.setPerformLocation(command.getPerformLocation());
+        }
+        if (command.getSortNumber() != null) {
+            request.setSortNumber(command.getSortNumber());
+        }
+        if (command.getRxTypeCode() != null) {
+            request.setRxTypeCode(command.getRxTypeCode());
+        }
+        if (command.getPrescriptionNo() != null) {
+            request.setPrescriptionNo(command.getPrescriptionNo());
+        }
+        String generateSourceCode = command.getGenerateSourceEnum();
+        if (generateSourceCode == null) {
+            generateSourceCode = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
+        }
+        request.setGenerateSourceEnum(generateSourceCode);
+        if (command.getRecorderId() != null) {
+            request.setRecorderId(command.getRecorderId());
+            request.setRequesterId(command.getRecorderId());
+        } else {
+            request.setRecorderId(command.getOperatorId());
+            request.setRequesterId(command.getOperatorId());
+        }
+    }
+
+    /**
+     * 修改路径：按命令非空字段覆盖中药草稿；返回变更字段名列表供事件载荷扩展。
+     *
+     * @param request 聚合根
+     * @param command 修改命令
+     * @return 实际变更的字段名列表（当前事件未携带，预留审计扩展）
+     */
+    private List<String> applyHerbalDraftFieldChanges(MedicationRequest request, ChangeHerbalMedicationOrderDraftCommand command) {
+        List<String> changedFields = new ArrayList<>();
+        if (command.getMedicationId() != null && !Objects.equals(command.getMedicationId(), request.getMedicationId())) {
+            request.setMedicationId(command.getMedicationId());
+            changedFields.add(FieldNameConstants.MEDICATION_ID);
+        }
+        if (command.getChineseHerbsDoseQuantity() != null
+            && (request.getChineseHerbsDoseQuantity() == null
+            || command.getChineseHerbsDoseQuantity().compareTo(request.getChineseHerbsDoseQuantity()) != 0)) {
+            request.setChineseHerbsDoseQuantity(command.getChineseHerbsDoseQuantity());
+            changedFields.add("chineseHerbsDoseQuantity");
+        }
+        if (command.getSufferingFlag() != null && !Objects.equals(command.getSufferingFlag(), request.getSufferingFlag())) {
+            request.setSufferingFlag(command.getSufferingFlag());
+            changedFields.add("sufferingFlag");
+        }
+        if (command.getQuantity() != null
+            && (request.getQuantity() == null || command.getQuantity().compareTo(request.getQuantity()) != 0)) {
+            request.setQuantity(command.getQuantity());
+            changedFields.add(FieldNameConstants.QUANTITY);
+        }
+        if (command.getUnitCode() != null && !Objects.equals(command.getUnitCode(), request.getUnitCode())) {
+            request.setUnitCode(command.getUnitCode());
+            changedFields.add(FieldNameConstants.UNIT_CODE);
+        }
+        if (command.getDose() != null
+            && (request.getDose() == null || command.getDose().compareTo(request.getDose()) != 0)) {
+            request.setDose(command.getDose());
+            changedFields.add(FieldNameConstants.DOSE);
+        }
+        if (command.getDoseUnitCode() != null && !Objects.equals(command.getDoseUnitCode(), request.getDoseUnitCode())) {
+            request.setDoseUnitCode(command.getDoseUnitCode());
+            changedFields.add(FieldNameConstants.DOSE_UNIT_CODE);
+        }
+        if (command.getMethodCode() != null && !Objects.equals(command.getMethodCode(), request.getMethodCode())) {
+            request.setMethodCode(command.getMethodCode());
+            changedFields.add(FieldNameConstants.METHOD_CODE);
+        }
+        if (command.getRateCode() != null && !Objects.equals(command.getRateCode(), request.getRateCode())) {
+            request.setRateCode(command.getRateCode());
+            changedFields.add(FieldNameConstants.RATE_CODE);
+        }
+        if (command.getDispensePerDuration() != null
+            && !Objects.equals(command.getDispensePerDuration(), request.getDispensePerDuration())) {
+            request.setDispensePerDuration(command.getDispensePerDuration());
+            changedFields.add(FieldNameConstants.DISPENSE_PER_DURATION);
+        }
+        if (command.getContentJson() != null && !Objects.equals(command.getContentJson(), request.getContentJson())) {
+            request.setContentJson(command.getContentJson());
+            changedFields.add("contentJson");
+        }
+        if (command.getDosageInstruction() != null
+            && !Objects.equals(command.getDosageInstruction(), request.getDosageInstruction())) {
+            request.setDosageInstruction(command.getDosageInstruction());
+            changedFields.add(FieldNameConstants.DOSAGE_INSTRUCTION);
+        }
+        if (command.getRemark() != null && !Objects.equals(command.getRemark(), request.getRemark())) {
+            request.setRemark(command.getRemark());
+            changedFields.add("remark");
+        }
+        if (command.getConditionDefinitionId() != null
+            && !Objects.equals(command.getConditionDefinitionId(), request.getConditionDefinitionId())) {
+            request.setConditionDefinitionId(command.getConditionDefinitionId());
+            changedFields.add(FieldNameConstants.CONDITION_DEFINITION_ID);
+        }
+        if (command.getEncounterDiagnosisId() != null
+            && !Objects.equals(command.getEncounterDiagnosisId(), request.getEncounterDiagnosisId())) {
+            request.setEncounterDiagnosisId(command.getEncounterDiagnosisId());
+            changedFields.add(FieldNameConstants.ENCOUNTER_DIAGNOSIS_ID);
+        }
+        if (command.getContractId() != null && !Objects.equals(command.getContractId(), request.getContractId())) {
+            request.setContractId(command.getContractId());
+            changedFields.add(FieldNameConstants.CONTRACT_ID);
+        }
+        if (command.getOrgId() != null && !Objects.equals(command.getOrgId(), request.getOrgId())) {
+            request.setOrgId(command.getOrgId());
+            changedFields.add(FieldNameConstants.ORG_ID);
+        }
+        if (command.getPerformLocation() != null
+            && !Objects.equals(command.getPerformLocation(), request.getPerformLocation())) {
+            request.setPerformLocation(command.getPerformLocation());
+            changedFields.add("performLocation");
+        }
+        if (command.getSortNumber() != null && !Objects.equals(command.getSortNumber(), request.getSortNumber())) {
+            request.setSortNumber(command.getSortNumber());
+            changedFields.add(FieldNameConstants.SORT_NUMBER);
+        }
+        if (command.getRxTypeCode() != null && !Objects.equals(command.getRxTypeCode(), request.getRxTypeCode())) {
+            request.setRxTypeCode(command.getRxTypeCode());
+            changedFields.add("rxTypeCode");
+        }
+        if (command.getPrescriptionNo() != null
+            && !Objects.equals(command.getPrescriptionNo(), request.getPrescriptionNo())) {
+            request.setPrescriptionNo(command.getPrescriptionNo());
+            changedFields.add("prescriptionNo");
+        }
+        return changedFields;
     }
 
     /**
@@ -619,7 +905,6 @@ public class MedicationRequestDomainService {
         out.setSupportInfo(source.getSupportInfo());
         out.setReasonJson(source.getReasonJson());
         out.setPrescriptionNo(null);
-        out.setSignCode(null);
         out.setRefundMedicineId(null);
         out.setPerformerCheckId(null);
         out.setCheckTime(null);

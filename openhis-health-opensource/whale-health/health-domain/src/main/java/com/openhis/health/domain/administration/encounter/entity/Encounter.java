@@ -199,39 +199,13 @@ public class Encounter extends BaseAuditedEntity {
     }
 
     /**
-     * 断言当前状态允许分诊。
-     *
-     * <p>门诊（AMB）需先完成挂号缴费后进入 REGISTERED 状态方可分诊；
-     * 急诊（EMER）无前置缴费步骤，可从 PLANNED 直接分诊。</p>
-     */
-    public void assertTriagedFromPlanned() {
-        this.assertClass(EncounterClass.AMB.getCode(), EncounterClass.EMER.getCode());
-        // 急诊无缴费步骤，从计划状态即可分诊；门诊需已缴费确认（REGISTERED）后方可分诊。
-        if (EncounterClass.EMER.getCode().equals(this.classEnum)) {
-            this.assertStatus(EncounterStatus.PLANNED.getCode());
-        } else {
-            this.assertStatus(EncounterStatus.REGISTERED.getCode());
-        }
-    }
-
-    /**
      * 断言当前状态允许接诊。
      *
      * <p>门诊（AMB）：须已完成挂号缴费（REGISTERED）或已分诊（TRIAGED），禁止对「待挂号」态（PLANNED）接诊。</p>
-     * <p>急诊（EMER）：允许 PLANNED（分级/接诊前候诊）、REGISTERED、TRIAGED。</p>
      */
     public void assertReceptionAllowed() {
-        this.assertClass(EncounterClass.AMB.getCode(), EncounterClass.EMER.getCode());
-        if (EncounterClass.AMB.getCode().equals(this.classEnum)) {
-            if (!EncounterStatus.REGISTERED.getCode().equals(this.statusEnum)
-                && !EncounterStatus.TRIAGED.getCode().equals(this.statusEnum)) {
-                throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前状态不允许接诊");
-            }
-            return;
-        }
-        // 急诊：PLANNED 表示候诊/分级前；REGISTERED/TRIAGED 表示可进入接诊路径。
-        if (!EncounterStatus.PLANNED.getCode().equals(this.statusEnum)
-            && !EncounterStatus.REGISTERED.getCode().equals(this.statusEnum)
+        this.assertClass(EncounterClass.AMB.getCode());
+        if (!EncounterStatus.REGISTERED.getCode().equals(this.statusEnum)
             && !EncounterStatus.TRIAGED.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前状态不允许接诊");
         }
@@ -241,7 +215,7 @@ public class Encounter extends BaseAuditedEntity {
      * 断言当前状态允许暂离。
      */
     public void assertCanMarkOnHold() {
-        this.assertClass(EncounterClass.AMB.getCode(), EncounterClass.EMER.getCode(), EncounterClass.IMP.getCode());
+        this.assertClass(EncounterClass.AMB.getCode(), EncounterClass.IMP.getCode());
         this.assertStatus(EncounterStatus.IN_PROGRESS.getCode());
     }
 
@@ -249,7 +223,7 @@ public class Encounter extends BaseAuditedEntity {
      * 断言当前状态允许完诊/出院。
      */
     public void assertCompletable() {
-        this.assertClass(EncounterClass.AMB.getCode(), EncounterClass.EMER.getCode(), EncounterClass.IMP.getCode());
+        this.assertClass(EncounterClass.AMB.getCode(), EncounterClass.IMP.getCode());
         if (!EncounterStatus.IN_PROGRESS.getCode().equals(this.statusEnum)
             && !EncounterStatus.ON_HOLD.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前状态不允许完诊/出院");
@@ -296,20 +270,6 @@ public class Encounter extends BaseAuditedEntity {
     }
 
     /**
-     * 如果传入的 classEnum 为 EMER（急诊），则将就诊类型设为急诊；否则保持当前 classEnum 不变。
-     *
-     * <p>用于门诊挂号初始化后，根据号源类型动态覆盖为急诊类型。</p>
-     *
-     * @param classEnumFromInput 来源于命令的 classEnum 参数
-     */
-    public void applyEmergencyClassIfNeeded(String classEnumFromInput) {
-        // 若号源类型指定为急诊，则覆盖初始化时设置的门诊 classEnum。
-        if (EncounterClass.EMER.getCode().equals(classEnumFromInput)) {
-            this.classEnum = EncounterClass.EMER.getCode();
-        }
-    }
-
-    /**
      * 断言当前住院就诊允许取消登记（DM §6.1.23 {@code cancelInpatientAdmission}）。
      *
      * <p>允许 {@code PLANNED}（医生申请后未登记）、{@code REGISTERED}（已登记未分床）。</p>
@@ -331,7 +291,7 @@ public class Encounter extends BaseAuditedEntity {
     /**
      * 断言当前状态允许取消。
      *
-     * <p>门诊/急诊允许退号的前置状态：REGISTERED（已挂号未接诊）、
+     * <p>门诊允许退号的前置状态：REGISTERED（已挂号未接诊）、
      * TRIAGED（已分诊但医生未接诊）、IN_PROGRESS（接诊中，医生尚未完诊）。
      * PLANNED（待挂号/预结算未缴费）不走退号域动作，由应用侧引导完成缴费或清理草稿。</p>
      *
@@ -341,20 +301,12 @@ public class Encounter extends BaseAuditedEntity {
         if (EncounterClass.IMP.getCode().equals(this.classEnum)) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "住院取消登记请使用专用域动作");
         }
-        // 门急诊：待挂号（PLANNED）禁止退号；已挂号未接诊及在诊中允许退号。
+        // 门诊：待挂号（PLANNED）禁止退号；已挂号未接诊及在诊中允许退号。
         if (!EncounterStatus.REGISTERED.getCode().equals(this.statusEnum)
             && !EncounterStatus.TRIAGED.getCode().equals(this.statusEnum)
             && !EncounterStatus.IN_PROGRESS.getCode().equals(this.statusEnum)) {
-            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前门急诊状态不允许取消");
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前门诊状态不允许取消");
         }
-    }
-
-    /**
-     * 迁移到分诊状态。
-     */
-    public void transitToTriaged() {
-        this.assertNotTerminal();
-        this.statusEnum = EncounterStatus.TRIAGED.getCode();
     }
 
     /**

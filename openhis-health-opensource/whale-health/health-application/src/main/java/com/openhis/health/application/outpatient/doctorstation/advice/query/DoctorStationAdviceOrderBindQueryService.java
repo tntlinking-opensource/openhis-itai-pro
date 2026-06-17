@@ -17,13 +17,13 @@
 
 package com.openhis.health.application.outpatient.doctorstation.advice.query;
 
-import com.openhis.health.application.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceOrderBindRowDto;
 import com.openhis.health.domain.custom.servicedevicetemplate.queries.model.ServiceDeviceTemplateQueryModel;
 import com.openhis.health.domain.custom.servicedevicetemplate.service.ServiceDeviceTemplateQueryService;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
@@ -34,8 +34,6 @@ import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConsta
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.enums.ServiceDeviceTemplateRangeCode;
 import com.openhis.health.domain.share.enums.ServiceDeviceTemplateTypeCode;
-import com.openhis.health.domain.terminology.entity.Concept;
-import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -52,9 +50,9 @@ import java.util.Set;
 /**
  * IF-DOR-12：门诊医嘱绑定行只读装载。
  *
- * <p>与住院 {@code InpatientDoctorStationAdviceOrderBindQueryService} 同构：经
- * {@link ServiceDeviceTemplateQueryService} 查询全院启用态模板，批量解析展示名（A.9.1）。
- * 包级隔离，禁止跨站 import 住院查询服务。</p>
+ * <p>与住院 {@code InpatientDoctorStationAdviceOrderBindQueryService} 同构：用法来源键为
+ * {@code method_code} 术语 code；诊疗来源键为活动定义主键字符串。经
+ * {@link ServiceDeviceTemplateQueryService} 查询全院启用态模板，批量解析展示名（A.9.1）。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -64,23 +62,44 @@ public class DoctorStationAdviceOrderBindQueryService {
     private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
     private final TerminologyOptionLoader terminologyOptionLoader;
-    private final CodeSystemQueryService codeSystemQueryService;
 
     /**
-     * 按绑定类型与主数据标识装载绑定行。
+     * 按绑定类型与主数据主键装载绑定行（诊疗来源等 {@code item_id} 存数字主键字符串的场景）。
      *
-     * <p><b>规模（B.2）</b>：返回行数上限 {@link DoctorStationAdviceConstants#ORDER_BIND_LIST_MAX_ROWS}。</p>
+     * @param bindType           绑定类型业务码
+     * @param itemId             诊疗活动定义主键
+     * @param organizationUnitId 机构单元过滤（预留，当前未参与查询）
+     * @return 绑定行集合
+     */
+    public List<DoctorStationAdviceOrderBindRowDto> listBindings(
+        String bindType,
+        Long itemId,
+        Long organizationUnitId
+    ) {
+        if (bindType == null || itemId == null) {
+            return new ArrayList<>();
+        }
+        return this.listBindingsBySourceItemKey(bindType, String.valueOf(itemId), organizationUnitId);
+    }
+
+    /**
+     * 按绑定类型与来源项键装载绑定行。
      *
-     * @param bindType            绑定类型业务码（{@link DoctorStationAdviceConstants#BIND_TYPE_USAGE_TO_DEVICE} /
-     *                            {@link DoctorStationAdviceConstants#BIND_TYPE_ACTIVITY_CHILD}）
-     * @param itemId              主数据主键（已由 Mapper 从业务号/数字 id 解析）
-     * @param organizationUnitId  机构单元过滤（预留，当前未参与查询）
+     * <p>用法绑定：{@code sourceItemKey} 为 {@code method_code}（术语 code）；诊疗绑定：
+     * {@code sourceItemKey} 为 {@code wkf_activity_definition.id} 字符串。</p>
+     *
+     * @param bindType           绑定类型业务码
+     * @param sourceItemKey      模板来源项键
+     * @param organizationUnitId 机构单元过滤（预留，当前未参与查询）
      * @return 绑定行集合；入参缺失或未知绑定类型时返回可变空列表
      */
-    public List<DoctorStationAdviceOrderBindRowDto> listBindings(String bindType, Long itemId, Long organizationUnitId) {
+    public List<DoctorStationAdviceOrderBindRowDto> listBindingsBySourceItemKey(
+        String bindType,
+        String sourceItemKey,
+        Long organizationUnitId
+    ) {
         List<DoctorStationAdviceOrderBindRowDto> rows = new ArrayList<>();
-        // 门控：缺少绑定类型或主键时无法定位模板来源项。
-        if (bindType == null || itemId == null) {
+        if (bindType == null || StringUtils.isBlank(sourceItemKey)) {
             return rows;
         }
         Optional<BindQueryContext> contextOpt = resolveBindContext(bindType);
@@ -89,7 +108,7 @@ public class DoctorStationAdviceOrderBindQueryService {
         }
         BindQueryContext context = contextOpt.get();
         String rangeCode = ServiceDeviceTemplateRangeCode.HOSPITAL.getCode();
-        String itemIdKey = String.valueOf(itemId);
+        String itemIdKey = sourceItemKey.trim();
         List<ServiceDeviceTemplateQueryModel> bindings = serviceDeviceTemplateQueryService.listBindingsByRangeTypeAndSource(
             rangeCode,
             context.typeCode(),
@@ -104,7 +123,11 @@ public class DoctorStationAdviceOrderBindQueryService {
         if (bound > maxRows) {
             bound = maxRows;
         }
-        String sourceItemName = resolveSourceItemName(context, itemId);
+        Map<String, String> methodLabelByCode = new HashMap<>();
+        if (context.sourceIsMethodCode()) {
+            methodLabelByCode = terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.METHOD_CODE);
+        }
+        String sourceItemName = resolveSourceItemName(context, itemIdKey, methodLabelByCode);
         Map<String, ProductDefinitionDisplayDto> targetProductByKey = batchLoadTargetProducts(bindings);
         Map<String, String> unitLabelByCode =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE);
@@ -113,7 +136,7 @@ public class DoctorStationAdviceOrderBindQueryService {
             ServiceDeviceTemplateQueryModel binding = bindings.get(i);
             DoctorStationAdviceOrderBindRowDto row = new DoctorStationAdviceOrderBindRowDto();
             row.setBindType(bindType);
-            row.setSourceItemId(itemId);
+            row.setSourceItemId(resolveSourceItemIdForDisplay(context, itemIdKey));
             row.setSourceItemName(sourceItemName);
             row.setTargetItemId(binding.getDevActId());
             row.setTargetItemName(resolveTargetItemName(binding, targetProductByKey));
@@ -133,21 +156,15 @@ public class DoctorStationAdviceOrderBindQueryService {
         return rows;
     }
 
-    /**
-     * 将前端 bindType 契约码映射为领域模板查询上下文。
-     *
-     * @param bindType 前端传入的绑定类型码
-     * @return 命中则返回查询上下文，否则空
-     */
     private Optional<BindQueryContext> resolveBindContext(String bindType) {
-        if (DoctorStationAdviceConstants.BIND_TYPE_USAGE_TO_DEVICE.equals(bindType)) {
+        if (DoctorStationAdviceConstants.BIND_TYPE_USAGE.equals(bindType)) {
             return Optional.of(new BindQueryContext(
                 ServiceDeviceTemplateTypeCode.USAGE.getCode(),
                 TableNameConstants.TER_CONCEPT,
                 true
             ));
         }
-        if (DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY_CHILD.equals(bindType)) {
+        if (DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY.equals(bindType)) {
             return Optional.of(new BindQueryContext(
                 ServiceDeviceTemplateTypeCode.ACTIVITY.getCode(),
                 TableNameConstants.WKF_ACTIVITY_DEFINITION,
@@ -157,35 +174,47 @@ public class DoctorStationAdviceOrderBindQueryService {
         return Optional.empty();
     }
 
-    /**
-     * 解析绑定来源项展示名（用法概念或诊疗活动定义）。
-     *
-     * @param context 绑定查询上下文
-     * @param itemId  来源主键
-     * @return 展示名；未命中时 null
-     */
-    private String resolveSourceItemName(BindQueryContext context, Long itemId) {
-        if (context.sourceIsConcept()) {
-            Optional<Concept> concept = codeSystemQueryService.findConceptById(itemId);
-            if (concept.isPresent()) {
-                return concept.get().getDisplay();
-            }
+    private String resolveSourceItemName(
+        BindQueryContext context,
+        String sourceItemKey,
+        Map<String, String> methodLabelByCode
+    ) {
+        if (StringUtils.isBlank(sourceItemKey)) {
             return null;
         }
-        List<com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition> rows =
-            activityDefinitionQueryService.findAllByIds(List.of(itemId));
-        if (!rows.isEmpty() && rows.get(0) != null) {
-            return rows.get(0).getName();
+        String key = sourceItemKey.trim();
+        if (context.sourceIsMethodCode()) {
+            String label = methodLabelByCode.get(key);
+            if (StringUtils.isNotBlank(label)) {
+                return label;
+            }
+            return key;
+        }
+        if (StringUtils.isNumeric(key)) {
+            Long activityId = Long.valueOf(key);
+            List<com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition> activityRows =
+                activityDefinitionQueryService.findAllByIds(List.of(activityId));
+            if (!activityRows.isEmpty() && activityRows.get(0) != null) {
+                return activityRows.get(0).getName();
+            }
         }
         return null;
     }
 
-    /**
-     * 批量加载绑定目标项（诊疗/耗材定义）的产品展示 DTO。
-     *
-     * @param bindings 模板绑定行
-     * @return 复合键到展示 DTO 的映射
-     */
+    private Long resolveSourceItemIdForDisplay(BindQueryContext context, String sourceItemKey) {
+        if (context.sourceIsMethodCode()) {
+            return null;
+        }
+        if (StringUtils.isBlank(sourceItemKey)) {
+            return null;
+        }
+        String key = sourceItemKey.trim();
+        if (StringUtils.isNumeric(key)) {
+            return Long.valueOf(key);
+        }
+        return null;
+    }
+
     private Map<String, ProductDefinitionDisplayDto> batchLoadTargetProducts(List<ServiceDeviceTemplateQueryModel> bindings) {
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         Set<String> dedupe = new LinkedHashSet<>();
@@ -212,12 +241,6 @@ public class DoctorStationAdviceOrderBindQueryService {
         return productDefinitionBatchLoader.loadAsMap(lookups);
     }
 
-    /**
-     * 判断目标表是否支持经产品批量加载解析展示名。
-     *
-     * @param table 持久化表名
-     * @return 支持则 true
-     */
     private static boolean isSupportedTargetTable(String table) {
         if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(table)) {
             return true;
@@ -228,24 +251,10 @@ public class DoctorStationAdviceOrderBindQueryService {
         return false;
     }
 
-    /**
-     * 构造批量去重键（表名 + SOH + 定义主键）。
-     *
-     * @param table 目标表名
-     * @param devActId 目标定义主键
-     * @return 去重键
-     */
     private static String buildTargetDedupeKey(String table, Long devActId) {
         return table + GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR + devActId;
     }
 
-    /**
-     * 从批量展示 DTO 映射中解析单条绑定目标的展示名。
-     *
-     * @param binding 模板绑定行
-     * @param targetProductByKey 批量展示 DTO
-     * @return 展示名；未命中时 null
-     */
     private String resolveTargetItemName(
         ServiceDeviceTemplateQueryModel binding,
         Map<String, ProductDefinitionDisplayDto> targetProductByKey
@@ -262,9 +271,6 @@ public class DoctorStationAdviceOrderBindQueryService {
         return null;
     }
 
-    /**
-     * 从批量展示 DTO 映射中解析绑定目标产品行（单位展示名回落）。
-     */
     private ProductDefinitionDisplayDto resolveTargetProductForBind(
         ServiceDeviceTemplateQueryModel binding,
         Map<String, ProductDefinitionDisplayDto> targetProductByKey
@@ -277,6 +283,6 @@ public class DoctorStationAdviceOrderBindQueryService {
         return targetProductByKey.get(key);
     }
 
-    private record BindQueryContext(String typeCode, String itemTable, boolean sourceIsConcept) {
+    private record BindQueryContext(String typeCode, String itemTable, boolean sourceIsMethodCode) {
     }
 }

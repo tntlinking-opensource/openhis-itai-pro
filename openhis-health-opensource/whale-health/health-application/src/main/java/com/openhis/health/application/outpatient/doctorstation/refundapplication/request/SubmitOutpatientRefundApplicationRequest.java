@@ -34,6 +34,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊医生站-申请退费-提交门诊退费申请请求。 */
 @Schema(description = "门诊医生站-申请退费-提交门诊退费申请请求")
 public class SubmitOutpatientRefundApplicationRequest {
 
@@ -46,6 +47,7 @@ public class SubmitOutpatientRefundApplicationRequest {
     /** 提交行集合。 */
     @NotEmpty(message = "退费申请行不能为空")
     @Valid
+    /** 与 IF-DRA-01 返回成套的提交行集合。 */
     @Schema(description = "与 IF-DRA-01 返回成套的提交行集合", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<RefundApplicationLineItemDto> lines;
 }

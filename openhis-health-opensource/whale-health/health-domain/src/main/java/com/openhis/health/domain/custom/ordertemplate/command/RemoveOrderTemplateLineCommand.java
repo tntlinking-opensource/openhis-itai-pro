@@ -21,13 +21,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 移除模板行命令（默认逻辑删除）。
+ * 移除组套模板行命令（默认逻辑删除）。
  */
 @Getter
 @Setter
 public class RemoveOrderTemplateLineCommand {
     /**
-     * 模板行标识。
+     * 组套模板行标识。
      */
     private Long lineId;
     /**

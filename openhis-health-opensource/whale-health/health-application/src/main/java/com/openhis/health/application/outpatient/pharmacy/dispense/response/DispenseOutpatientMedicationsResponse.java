@@ -28,14 +28,13 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊核发响应。 */
 @Schema(description = "门诊核发响应")
 public class DispenseOutpatientMedicationsResponse {
 
-    /** 本地事务内发药与扣库是否成功。 */
     @Schema(description = "本地发药是否成功")
     private Boolean success;
 
-    /** 提示文案；开启医保上传且外协失败时会拼接告警摘要。 */
     @Schema(description = "提示文案（可含医保失败摘要）")
     private String message;
 

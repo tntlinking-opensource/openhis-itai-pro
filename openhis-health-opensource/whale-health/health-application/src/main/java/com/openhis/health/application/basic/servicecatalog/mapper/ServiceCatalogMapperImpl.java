@@ -19,11 +19,9 @@ package com.openhis.health.application.basic.servicecatalog.mapper;
 
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogChildDto;
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogDetailDto;
-import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogDto;
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogInitDto;
 import com.openhis.health.application.basic.servicecatalog.request.CreateServiceCatalogRequest;
 import com.openhis.health.application.basic.servicecatalog.request.UpdateServiceCatalogRequest;
-import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.domain.workflow.activitydefinition.command.CreateActivityDefinitionCommand;
 import com.openhis.health.domain.workflow.activitydefinition.command.UpdateActivityDefinitionCommand;
@@ -33,7 +31,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.ArrayList;
-import java.util.stream.Collectors;
 
 /**
  * {@link ServiceCatalogMapper} 默认实现：读模型/实体到 DTO 的字段拷贝与 0/1 标志、枚举字符串转整型。

@@ -30,8 +30,6 @@ public class SignMedicationOrderCommand {
     private Long operatorId;
     /** 药品申请标识。 */
     private Long id;
-    /** 签发编码。 */
-    private String signCode;
     /** 处方号。 */
     private String prescriptionNo;
 }

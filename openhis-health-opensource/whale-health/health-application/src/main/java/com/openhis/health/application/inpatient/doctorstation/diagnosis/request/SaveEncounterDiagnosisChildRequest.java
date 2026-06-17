@@ -32,6 +32,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-就诊诊断保存子项。 */
 @Schema(description = "医生站-就诊诊断保存子项")
 public class SaveEncounterDiagnosisChildRequest {
 
@@ -96,9 +97,9 @@ public class SaveEncounterDiagnosisChildRequest {
     private Integer diagnosisSortNo;
 
     /**
-     * 医疗类别/医保类别编码：写入就诊诊断关联 {@code medType}。
+     * 医保医疗类别编码：写入就诊诊断关联 {@code medType}；空则服务端默认 {@link com.openhis.health.domain.share.enums.YbMedType#GENERAL_OUTPATIENT}（{@code 11}）。
      */
-    @Schema(description = "医疗类型代码")
+    @Schema(description = "医疗类型代码（YbMedType code；空=普通门诊）")
     private String medicalTypeCode;
 
     /**

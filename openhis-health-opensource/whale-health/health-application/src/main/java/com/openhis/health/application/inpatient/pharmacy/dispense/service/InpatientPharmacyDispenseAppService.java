@@ -17,13 +17,15 @@
 
 package com.openhis.health.application.inpatient.pharmacy.dispense.service;
 
-import com.openhis.health.application.common.assembler.advice.InpatientMedicationRequestExecutionMeasureSupport;
-import com.openhis.health.application.common.assembler.option.OptionDtoAssembler;
-import com.openhis.health.application.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.application.common.pagination.PageQueryBinder;
-import com.openhis.health.application.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.common.validator.PageWindowGate;
+import com.openhis.health.module.common.assembler.advice.InpatientMedicationRequestExecutionMeasureSupport;
+import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
+import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
+import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.PageWindowGate;
 import com.openhis.health.application.inpatient.pharmacy.dispense.dto.CancelMedicationDispenseLineSubmitDto;
 import com.openhis.health.application.inpatient.pharmacy.dispense.dto.DispenseMedicationLineSubmitDto;
 import com.openhis.health.application.inpatient.pharmacy.dispense.dto.SavePrepareInpatientDispenseLineSubmitDto;
@@ -41,12 +43,11 @@ import com.openhis.health.application.inpatient.pharmacy.dispense.response.PageE
 import com.openhis.health.application.inpatient.pharmacy.dispense.response.PagePendingDispenseInpatientEncounterQueueResponse;
 import com.openhis.health.application.inpatient.pharmacy.dispense.response.SavePrepareInpatientMedicationDispenseResponse;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
-import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
-import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
@@ -57,39 +58,45 @@ import com.openhis.health.domain.medication.medicationdispense.command.PrepareMe
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.query.InpatientPharmacyPendingEncounterPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseDomainService;
-import com.openhis.health.application.querysupport.pharmacy.PharmacyDispenseSlipQuerySupport;
-import com.openhis.health.application.querysupport.pharmacy.PharmacyEncounterQueueLoader;
+import com.openhis.health.module.querysupport.pharmacy.InpatientMedicationDispenseChargePricingLoader;
+import com.openhis.health.module.querysupport.pharmacy.EncounterMedicationDispenseSlipPageLoader;
+import com.openhis.health.module.querysupport.pharmacy.EncounterMedicationDispenseSlipLoaderQuery;
+import com.openhis.health.module.querysupport.pharmacy.PharmacyDispenseSlipQuerySupport;
+import com.openhis.health.module.querysupport.pharmacy.PharmacyEncounterQueueLoader;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestDetailQueryModel;
-import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
-import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseSlipPageQuery;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.application.querysupport.product.ProductDefinitionDisplaySupport;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.InsuranceCoordinationConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
-import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.MedicationDispenseType;
-import com.openhis.health.domain.share.enums.PractitionerBusinessRoleCode;
+import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.command.AllocateAndDecreaseCommand;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.support.MedicationProductQuantityToSplitUnitConverter;
+import com.openhis.health.application.insurance.config.InsuranceCoordinationProperties;
+import com.openhis.health.application.insurance.inventory.DispenseTraceGateCommandSupport;
+import com.openhis.health.application.insurance.inventory.MedicareInventoryUploadCoordinator;
+import com.openhis.whale.chs.jilin.port.InventoryInsurancePort;
+import com.openhis.whale.chs.jilin.port.InventoryTraceDispenseGatePort;
+import com.openhis.whale.chs.jilin.port.model.UploadAfterDispenseCommand;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -107,25 +114,44 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * 住院发药工作站应用编排。
+ * 住院发药工作站应用服务（AS-IP-PHA-001）。
  *
- * <p>待发队列：按管辖药房筛选有待发药的在院患者。</p>
- * <p>配药/发药：保存调配草稿 → 确认发药扣减库存；支持按行作废未发药记录。</p>
- * <p>不发候选库存；汇总发药、退药与医保上传不在本服务范围。</p>
+ * <p>职责边界：</p>
+ * <ul>
+ *   <li>Gate：登录/分页/岗位管辖、发药行状态与数量、追溯码与库存门禁。</li>
+ *   <li>Pre：待发队列、发药单读模型、收费定价与产品定义加载。</li>
+ *   <li>Cmd：配药保存、核发发药、作废与库存扣减、3505 进销存上传。</li>
+ *   <li>Asm：经 {@link InpatientPharmacyDispenseMapper} 装配响应。</li>
+ * </ul>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class InpatientPharmacyDispenseAppService {
 
-    private final ICurrentUser currentUser;
+    @Autowired(required = false)
+    private InventoryInsurancePort inventoryInsurancePort;
+
+    @Autowired(required = false)
+    private InventoryTraceDispenseGatePort inventoryTraceDispenseGatePort;
+
+    @Autowired(required = false)
+    private MedicareInventoryUploadCoordinator medicareInventoryUploadCoordinator;
+
+    private final InsuranceCoordinationProperties insuranceCoordinationProperties;
+
     private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     private final PageWindowGate pageWindowGate;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
+    /** 开单科室名称回填（adm_organization），非药房下拉口径。 */
     private final OrganizationQueryService organizationQueryService;
     private final PractitionerQueryService practitionerQueryService;
+    private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
     private final CodeSystemQueryService codeSystemQueryService;
     private final TerminologyOptionLoader terminologyOptionLoader;
+    /** 频次展示码表：cus_frequency 主数据。 */
+    private final FrequencyOptionLoader frequencyOptionLoader;
     private final EncounterQueryService encounterQueryService;
     private final EncounterContextFacade encounterContextFacade;
     private final LocationQueryService locationQueryService;
@@ -138,10 +164,12 @@ public class InpatientPharmacyDispenseAppService {
     private final InventoryItemQueryService inventoryItemQueryService;
     private final InventoryItemDomainService inventoryItemDomainService;
     private final TraceNumberRecordQueryService traceNumberRecordQueryService;
-    private final ChargeItemQueryService chargeItemQueryService;
+    private final InpatientMedicationDispenseChargePricingLoader inpatientMedicationDispenseChargePricingLoader;
     private final InpatientPharmacyDispenseMapper inpatientPharmacyDispenseMapper;
+    private final EncounterMedicationDispenseSlipPageLoader encounterMedicationDispenseSlipPageLoader;
 
     /**
+     * 加载住院发药页初始化元数据与调配药师分页候选。
      *
      * @param request 分页与可选岗位过滤；药房机构由会话解析
      * @return 下拉与药师候选分页
@@ -149,18 +177,19 @@ public class InpatientPharmacyDispenseAppService {
      */
     public LoadInpatientPharmacyDispensePageInitResponse loadInpatientPharmacyDispensePageInit(
         LoadInpatientPharmacyDispensePageInitRequest request) {
-        if (!currentUser.isAuthenticated()) {
-            throw new BusinessException(ErrorCodeConstants.EX_OPP_101_INIT_METADATA_FAILED, "未登录或会话无效，无法加载发药页元数据");
-        }
+        // Gate：须已登录且会话有效。
+        currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.EX_OPP_101_INIT_METADATA_FAILED, "未登录或会话无效，无法加载发药页元数据");
         if (request == null) {
             request = new LoadInpatientPharmacyDispensePageInitRequest();
         }
         try {
-            List<Organization> pharmacies = organizationQueryService.getOrganizationTreeForPharmacy();
+            // Pre：药房下拉、病区与调配药师分页候选。
+            List<Location> pharmacies = managedLocationIdsResolver.listManagedActivePharmaciesOrEmpty();
             List<OptionDto> dispenseStatusOptions = codeSystemQueryService.getOptionListByEnum(DispenseStatus.class);
             List<OptionDto> notPerformedReasonOptions = new ArrayList<>();
             List<OptionDto> wardOptions = new ArrayList<>();
-            Long organizationUnitId = currentUser.getCurrentOrganizationUnitId();
+            Long organizationUnitId = managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery();
             if (organizationUnitId != null) {
                 List<Location> wards = locationQueryService.listWardsByOrganization(organizationUnitId);
                 wardOptions = OptionDtoAssembler.toOptions(wards, Location::getId, Location::getName, 0L);
@@ -168,14 +197,29 @@ public class InpatientPharmacyDispenseAppService {
             int pageIndex = request.springPageIndex();
             int pageSize = request.getBoundedPageSize();
             Pageable pageable = PageRequest.of(pageIndex, pageSize);
-            Page<Practitioner> preparerPage;
-            if (request.getPractitionerRoleFilterCode() != null) {
-                preparerPage = practitionerQueryService.pageActivePractitionersForPosition(
-                    request.getPractitionerRoleFilterCode(), StringUtils.EMPTY, pageable, false);
+
+            // 调配药师：须为药师岗且 adm_pr_assign.location_id 落在目标药房（请求指定或管辖内启用药房）。
+            List<Long> preparerPharmacyLocationIds = new ArrayList<>();
+            Long requestedPharmacyLocationId = request.getPharmacyLocationId();
+            if (requestedPharmacyLocationId != null) {
+                Set<Long> managedLocationIds = managedLocationIdsResolver.managedLocationIdSetOrEmpty();
+                if (managedLocationIds.isEmpty() || managedLocationIds.contains(requestedPharmacyLocationId)) {
+                    preparerPharmacyLocationIds.add(requestedPharmacyLocationId);
+                }
             } else {
-                preparerPage = practitionerQueryService.pageActivePractitionersForPosition(
-                    PractitionerBusinessRoleCode.DOCTOR.getNumericCode(), StringUtils.EMPTY, pageable, false);
+                for (Location pharmacy : pharmacies) {
+                    if (pharmacy != null && pharmacy.getId() != null) {
+                        preparerPharmacyLocationIds.add(pharmacy.getId());
+                    }
+                }
             }
+
+            Page<Practitioner> preparerPage = practitionerRoleScopeLoader.pageActivePractitionersForPlatformRoleInLocations(
+                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST,
+                preparerPharmacyLocationIds,
+                StringUtils.EMPTY,
+                pageable,
+                false);
             return inpatientPharmacyDispenseMapper.toLoadInitResponse(
                 pharmacies, dispenseStatusOptions, notPerformedReasonOptions, wardOptions, preparerPage);
         } catch (BusinessException ex) {
@@ -186,6 +230,7 @@ public class InpatientPharmacyDispenseAppService {
     }
 
     /**
+     * 分页查询住院发药在院患者队列，并回补住院就诊上下文展示字段。
      *
      * @param request 时间窗、关键字、病区、发放状态子集与分页；库房由会话机构解析
      * @return 队列分页；无启用药房时为空分页
@@ -196,11 +241,12 @@ public class InpatientPharmacyDispenseAppService {
         if (request == null) {
             request = new PagePendingDispenseInpatientEncounterQueueRequest();
         }
-        if (!currentUser.isAuthenticated()) {
-            throw new BusinessException(ErrorCodeConstants.EX_OPP_102_QUEUE_QUERY_FAILED, "未登录或会话无效，无法查询队列");
-        }
+        // Gate：须登录且分页窗口合法。
+        currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.EX_OPP_102_QUEUE_QUERY_FAILED, "未登录或会话无效，无法查询队列");
         pageWindowGate.requirePositivePageWindow(
             request, ErrorCodeConstants.EX_OPP_102_QUEUE_QUERY_FAILED, "分页参数不合法");
+        // Pre：按管辖药房与可选病区筛选待发就诊。
         List<Long> pharmacyLocationIds = managedLocationIdsResolver.listManagedLocationIdsOrEmpty();
         InpatientPharmacyPendingEncounterPageQuery pendingQuery = new InpatientPharmacyPendingEncounterPageQuery();
         if (!pharmacyLocationIds.isEmpty()) {
@@ -224,7 +270,9 @@ public class InpatientPharmacyDispenseAppService {
     }
 
     /**
+     * 分页加载就诊下住院药品发药单读模型行（不含候选库存）。
      *
+     * @param request 就诊、库房、中西药过滤、发放状态与分页
      * @return 明细分页
      * @throws BusinessException {@code EX_OPP_103}：参数/就诊/分页非法
      */
@@ -233,6 +281,7 @@ public class InpatientPharmacyDispenseAppService {
         if (request == null) {
             request = new PageEncounterMedicationDispenseSlipsRequest();
         }
+        // Gate：就诊与分页参数须合法。
         if (request.getEncounterId() == null) {
             throw new BusinessException(ErrorCodeConstants.EX_OPP_103_DISPENSE_SLIP_LOAD_FAILED, "就诊不能为空");
         }
@@ -243,162 +292,27 @@ public class InpatientPharmacyDispenseAppService {
         } catch (BusinessException ex) {
             throw new BusinessException(ErrorCodeConstants.EX_OPP_103_DISPENSE_SLIP_LOAD_FAILED, ex.getMessage());
         }
-        String encounterBusNo = null;
-        InpatientEncounterContextQueryModel inpatientContext =
-            encounterContextFacade.getInpatientContextByEncounterId(request.getEncounterId()).orElse(null);
-        if (inpatientContext != null) {
-            encounterBusNo = inpatientContext.getEncounterBusNo();
+        EncounterMedicationDispenseSlipLoaderQuery query = toSlipPageQuery(request);
+        return inpatientPharmacyDispenseMapper.toSlipPageResponse(
+            encounterMedicationDispenseSlipPageLoader.pageInpatientEncounterMedicationDispenseSlips(query));
+    }
+
+    private static EncounterMedicationDispenseSlipLoaderQuery toSlipPageQuery(PageEncounterMedicationDispenseSlipsRequest request) {
+        if (request == null) {
+            return new EncounterMedicationDispenseSlipLoaderQuery();
         }
-        MedicationDispenseSlipPageQuery slipQuery = new MedicationDispenseSlipPageQuery();
-        slipQuery.setEncounterId(request.getEncounterId());
-        slipQuery.setLocationId(request.getLocationId());
-        slipQuery.setInpatientMedicationOnly(true);
-        if (request.getDispenseStatusEnumIn() != null && !request.getDispenseStatusEnumIn().isEmpty()) {
-            slipQuery.setDispenseStatusEnumIn(request.getDispenseStatusEnumIn());
-        }
-        PageQueryBinder.bind(request, slipQuery);
-        this.pharmacyDispenseSlipQuerySupport.enrichResolvedFilters(slipQuery);
-        Page<MedicationDispenseSlipQueryModel> slipPage =
-            medicationDispenseQueryService.pageMedicationDispenseSlip(slipQuery);
-        List<MedicationRequestListQueryModel> medicationRequestRows =
-            medicationRequestQueryService.listMedicationRequestsByEncounter(request.getEncounterId());
-        Map<Long, MedicationRequestListQueryModel> medicationRequestByMedReqId = new HashMap<>();
-        for (MedicationRequestListQueryModel row : medicationRequestRows) {
-            if (row.getId() != null) {
-                medicationRequestByMedReqId.put(row.getId(), row);
-            }
-        }
-        List<ProductDefinitionBatchLookup> productLookups = new ArrayList<>();
-        for (MedicationDispenseSlipQueryModel slipRow : slipPage.getContent()) {
-            if (slipRow == null || slipRow.getMedicationId() == null) {
-                continue;
-            }
-            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
-            lookup.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
-            lookup.setProductDefinitionId(slipRow.getMedicationId());
-            productLookups.add(lookup);
-        }
-        Map<String, ProductDefinitionDisplayDto> productRowsByKey =
-            productDefinitionBatchLoader.loadAsMap(productLookups);
-        Map<Long, ProductDefinitionDisplayDto> productByMedicationId = new HashMap<>();
-        for (MedicationDispenseSlipQueryModel slipRow : slipPage.getContent()) {
-            if (slipRow == null || slipRow.getMedicationId() == null) {
-                continue;
-            }
-            String compositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
-                TableNameConstants.MED_MEDICATION_DEFINITION, slipRow.getMedicationId());
-            ProductDefinitionDisplayDto productRow = productRowsByKey.get(compositeKey);
-            if (productRow != null) {
-                productByMedicationId.put(slipRow.getMedicationId(), productRow);
-            }
-        }
-        Set<Long> dispenserPractitionerIds = new LinkedHashSet<>();
-        Set<Long> orderingPractitionerIds = new LinkedHashSet<>();
-        Set<Long> orderingDepartmentOrganizationIds = new LinkedHashSet<>();
-        Set<Long> dispenseLocationIds = new LinkedHashSet<>();
-        for (MedicationDispenseSlipQueryModel slipRow : slipPage.getContent()) {
-            if (slipRow == null) {
-                continue;
-            }
-            if (slipRow.getDispenserId() != null) {
-                dispenserPractitionerIds.add(slipRow.getDispenserId());
-            }
-            if (slipRow.getMedRequesterId() != null) {
-                orderingPractitionerIds.add(slipRow.getMedRequesterId());
-            }
-            MedicationRequestListQueryModel mr = medicationRequestByMedReqId.get(slipRow.getMedReqId());
-            if (mr != null && mr.getPerformLocation() != null) {
-                orderingDepartmentOrganizationIds.add(mr.getPerformLocation());
-            }
-            if (slipRow.getLocationId() != null) {
-                dispenseLocationIds.add(slipRow.getLocationId());
-            }
-        }
-        Map<Long, String> dispensingPractitionerNameByDispenseId = new HashMap<>();
-        Map<Long, Practitioner> dispenserById = loadPractitionersByIds(dispenserPractitionerIds);
-        for (MedicationDispenseSlipQueryModel slipRow : slipPage.getContent()) {
-            if (slipRow == null || slipRow.getDispenseId() == null || slipRow.getDispenserId() == null) {
-                continue;
-            }
-            Practitioner dispenser = dispenserById.get(slipRow.getDispenserId());
-            if (dispenser != null) {
-                dispensingPractitionerNameByDispenseId.put(slipRow.getDispenseId(), dispenser.getName());
-            }
-        }
-        Map<Long, Practitioner> orderingById = loadPractitionersByIds(orderingPractitionerIds);
-        Map<Long, String> orderingPractitionerNameById = new HashMap<>();
-        for (Long practitionerId : orderingPractitionerIds) {
-            Practitioner p = orderingById.get(practitionerId);
-            if (p != null) {
-                orderingPractitionerNameById.put(practitionerId, p.getName());
-            }
-        }
-        Map<Long, String> orderingDepartmentNameByOrgId =
-            organizationQueryService.mapNamesByIds(orderingDepartmentOrganizationIds);
-        Map<Long, String> dispenseLocationNameByLocationId = locationQueryService.mapNamesByIds(dispenseLocationIds);
-        List<Long> slipDispenseIds = new ArrayList<>();
-        for (MedicationDispenseSlipQueryModel slipRow : slipPage.getContent()) {
-            if (slipRow != null && slipRow.getDispenseId() != null) {
-                slipDispenseIds.add(slipRow.getDispenseId());
-            }
-        }
-        List<MedicationDispense> dispenseEntitiesForTrace =
-            medicationDispenseQueryService.listMedicationDispensesByIds(slipDispenseIds);
-        Map<Long, String> traceNoEffectiveByDispenseId = new HashMap<>();
-        Map<Long, String> lotNumberEffectiveByDispenseId = new HashMap<>();
-        for (MedicationDispense dispenseEntity : dispenseEntitiesForTrace) {
-            if (dispenseEntity == null || dispenseEntity.getId() == null) {
-                continue;
-            }
-            if (StringUtils.isNotBlank(dispenseEntity.getTraceNo())) {
-                traceNoEffectiveByDispenseId.put(dispenseEntity.getId(), dispenseEntity.getTraceNo().trim());
-            }
-            if (StringUtils.isNotBlank(dispenseEntity.getLotNumber())) {
-                lotNumberEffectiveByDispenseId.put(dispenseEntity.getId(), dispenseEntity.getLotNumber().trim());
-            }
-        }
-        List<ChargeItem> chargeRowsForSlip =
-            chargeItemQueryService.listChargeItemsForMedicationDispensePricing(
-                request.getEncounterId(), slipDispenseIds);
-        Map<Long, BigDecimal> chargeUnitPriceByDispenseId = new HashMap<>();
-        Map<Long, BigDecimal> chargeTotalPriceByDispenseId = new HashMap<>();
-        mapChargePricingByDispenseId(chargeRowsForSlip, chargeUnitPriceByDispenseId, chargeTotalPriceByDispenseId);
-        Map<String, String> rateLabelByCode =
-            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.RATE_CODE);
-        Map<String, String> methodLabelByCode =
-            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.METHOD_CODE);
-        Map<String, String> doseUnitLabelByCode =
-            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DOSE_UNIT);
-        Map<String, String> unitLabelByCode =
-            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE);
-        Map<String, String> partAttributeLabelByCode =
-            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.PART_ATTRIBUTE_ENUM);
-        Map<String, String> rxFlagLabelByCode =
-            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.RX_FLAG);
-        return inpatientPharmacyDispenseMapper.toSlipPage(
-            slipPage,
-            medicationRequestByMedReqId,
-            productByMedicationId,
-            request.getTcmOnly(),
-            request.getWesternOnly(),
-            dispensingPractitionerNameByDispenseId,
-            encounterBusNo,
-            orderingDepartmentNameByOrgId,
-            orderingPractitionerNameById,
-            dispenseLocationNameByLocationId,
-            traceNoEffectiveByDispenseId,
-            lotNumberEffectiveByDispenseId,
-            chargeUnitPriceByDispenseId,
-            chargeTotalPriceByDispenseId,
-            rateLabelByCode,
-            methodLabelByCode,
-            doseUnitLabelByCode,
-            unitLabelByCode,
-            rxFlagLabelByCode,
-            partAttributeLabelByCode);
+        EncounterMedicationDispenseSlipLoaderQuery query = new EncounterMedicationDispenseSlipLoaderQuery();
+        query.setEncounterId(request.getEncounterId());
+        query.setLocationId(request.getLocationId());
+        query.setTcmOnly(request.getTcmOnly());
+        query.setWesternOnly(request.getWesternOnly());
+        query.setDispenseStatusEnumIn(request.getDispenseStatusEnumIn());
+        PageQueryBinder.bind(request, query);
+        return query;
     }
 
     /**
+     * 保存配药（领域推进 {@code PREPARATION}→{@code IN_PROGRESS}）；库房/批号/数量以聚合持久化值为准。
      *
      * @param request 就诊、调配药师与提交行（仅 dispenseId、可选追溯码）
      * @return 处理结果
@@ -406,6 +320,7 @@ public class InpatientPharmacyDispenseAppService {
      */
     public SavePrepareInpatientMedicationDispenseResponse savePrepareInpatientMedicationDispense(
         SavePrepareInpatientMedicationDispenseRequest request) {
+        // Gate：调配药师与配药行须非空。
         if (request.getPreparerPractitionerId() == null || request.getLines() == null || request.getLines().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.EX_OPP_202_PREPARER_INVALID, "调配药师或配药行不能为空");
         }
@@ -457,7 +372,20 @@ public class InpatientPharmacyDispenseAppService {
             if (dispenseQty == null) {
                 dispenseQty = dispense.getDispenseQuantity();
             }
-            traceCodeInputs.addAll(splitTraceCodes(submitLine.getTraceNo()));
+            List<String> lineTraceCodes = splitTraceCodes(submitLine.getTraceNo());
+            if (inventoryTraceDispenseGatePort != null) {
+                inventoryTraceDispenseGatePort.assertTraceAllowedForPrepare(
+                    DispenseTraceGateCommandSupport.from(dispense), lineTraceCodes);
+            }
+            traceCodeInputs.addAll(lineTraceCodes);
+            if (!lineTraceCodes.isEmpty()) {
+                traceNumberRecordQueryService.assertCodesInNetStockForDispenseLine(
+                    TableNameConstants.MED_MEDICATION_DEFINITION,
+                    dispense.getMedicationId(),
+                    dispense.getLotNumber(),
+                    dispense.getLocationId(),
+                    lineTraceCodes);
+            }
             ProductDefinitionDisplayDto productRow = loadProductForMedication(dispense.getMedicationId());
             if (productRow == null) {
                 throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID, "缺少药品目录投影，无法校验库存");
@@ -479,6 +407,7 @@ public class InpatientPharmacyDispenseAppService {
                 dispense.getUnitCode(),
                 ProductDefinitionDisplaySupport.toUnitConversionSource(productRow));
         }
+        traceNumberRecordQueryService.assertNoDuplicateTraceCodes(traceCodeInputs);
         traceNumberRecordQueryService.assertCodesNotAlreadyOutbound(traceCodeInputs);
         assertTemporaryTherapyQuantitiesForInpatient(dispenseById);
         PrepareMedicationDispenseCommand prepareCommand = inpatientPharmacyDispenseMapper.toPrepareMedicationDispenseCommand(
@@ -495,6 +424,7 @@ public class InpatientPharmacyDispenseAppService {
      * @throws BusinessException {@code EX_OPP_203}、{@code EX_OPP_205}：门控或库存不足
      */
     public DispenseInpatientMedicationsResponse dispenseInpatientMedications(DispenseInpatientMedicationsRequest request) {
+        // Gate：发药行须非空且当前用户须绑定医务主档。
         if (request.getLines() == null || request.getLines().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.EX_OPP_203_DISPENSE_STATUS_NOT_ALLOWED, "发药行不能为空");
         }
@@ -545,6 +475,10 @@ public class InpatientPharmacyDispenseAppService {
             if (!medicationDispenseQueryService.validateDispensable(dispense.getId())) {
                 throw new BusinessException(ErrorCodeConstants.EX_OPP_203_DISPENSE_STATUS_NOT_ALLOWED, "当前状态不允许发药");
             }
+            if (inventoryTraceDispenseGatePort != null) {
+                inventoryTraceDispenseGatePort.assertTraceAllowedForDispense(
+                    DispenseTraceGateCommandSupport.from(dispense));
+            }
             BigDecimal requiredQuantity = dispense.getQuantity();
             if (requiredQuantity == null) {
                 requiredQuantity = dispense.getDispenseQuantity();
@@ -581,10 +515,34 @@ public class InpatientPharmacyDispenseAppService {
             }
         }
         applyInventoryDeductionForDispensedLines(dispensersInSubmitOrder, operatorUserId, productByMedicationIdForDispense);
-        return inpatientPharmacyDispenseMapper.toDispenseBatchResponse(submittedDispenseIds, "发药成功", true);
+        DispenseInpatientMedicationsResponse response =
+            inpatientPharmacyDispenseMapper.toDispenseBatchResponse(submittedDispenseIds, "发药成功", true);
+        if (insuranceCoordinationProperties.isDispenseUploadAsyncEnabled()
+            && medicareInventoryUploadCoordinator != null) {
+            medicareInventoryUploadCoordinator.scheduleUploadIfEnabled(
+                request.getEncounterId(),
+                submittedDispenseIds,
+                operatorUserId,
+                InsuranceCoordinationConstants.DISPENSE_UPLOAD_KIND_SALE);
+        } else {
+            try {
+                if (inventoryInsurancePort != null) {
+                    UploadAfterDispenseCommand uploadCommand = new UploadAfterDispenseCommand()
+                        .setEncounterId(request.getEncounterId())
+                        .setDispenseIds(submittedDispenseIds)
+                        .setContractBusNo(request.getContractBusNo());
+                    inventoryInsurancePort.uploadAfterDispense(uploadCommand);
+                }
+            } catch (RuntimeException ex) {
+                log.warn("医保进销存3505上传失败（本地住院发药已成功）", ex);
+                response.setMessage("发药成功；" + ErrorCodeConstants.EX_OPP_207_MEDICARE_PARTIAL_FAILURE + "：" + ex.getMessage());
+            }
+        }
+        return response;
     }
 
     /**
+     * 作废未发放闭环内的发放行（领域推进至拒绝态）。
      *
      * @param request 就诊、发放行与未执行原因码
      * @return 处理结果
@@ -592,6 +550,7 @@ public class InpatientPharmacyDispenseAppService {
      */
     public CancelInpatientMedicationDispenseResponse cancelInpatientMedicationDispense(
         CancelInpatientMedicationDispenseRequest request) {
+        // Gate：作废行与作废原因须非空。
         if (request.getLines() == null || request.getLines().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.EX_OPP_208_CANCEL_NOT_ALLOWED, "作废行不能为空");
         }
@@ -710,7 +669,7 @@ public class InpatientPharmacyDispenseAppService {
     }
 
     /**
-     * BR-IPP-006：临时医嘱拆分行数量合计须与开立量一致（数量取自聚合持久化值）。
+     * BR-IPP-006：临时医嘱「待发/在途」拆分行数量合计须与开立量一致。
      */
     private void assertTemporaryTherapyQuantitiesForInpatient(Map<Long, MedicationDispense> dispenseById) {
         Set<Long> distinctMedicationRequestIds = new LinkedHashSet<>();
@@ -726,11 +685,11 @@ public class InpatientPharmacyDispenseAppService {
                 continue;
             }
             List<MedicationDispense> siblingDispenses =
-                medicationDispenseQueryService.listMedicationDispensesByMedReqIds(List.of(medicationRequestId));
+                medicationDispenseQueryService.listByMedReqIds(List.of(medicationRequestId));
             BigDecimal sumQuantities = BigDecimal.ZERO;
             for (MedicationDispense sibling : siblingDispenses) {
-                if (DispenseStatus.DECLINED.equals(sibling.getStatusEnum())
-                    || DispenseStatus.COMPLETED.equals(sibling.getStatusEnum())) {
+                DispenseStatus siblingStatus = sibling.getStatusEnum();
+                if (siblingStatus == null || !siblingStatus.countsTowardTemporaryTherapyPendingQuantitySum()) {
                     continue;
                 }
                 BigDecimal quantityContribution = sibling.getQuantity();
@@ -749,6 +708,9 @@ public class InpatientPharmacyDispenseAppService {
     }
 
     /**
+     * 实物扣减：将发放行上的业务单位数量换算为库存最小单位后，写入 {@code wkf_inventory_item}。
+     *
+     * <p>批号非空时按「药品+库房+批号」解析唯一库存行并合并扣减；批号为空时在目标库房按效期优先（FEFO）占用多条账面批次。</p>
      *
      * @param dispensersInSubmitOrder    已完成领域核发的快照行
      * @param operatorUserId             操作用户 id

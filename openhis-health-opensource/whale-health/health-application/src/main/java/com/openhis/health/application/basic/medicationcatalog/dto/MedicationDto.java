@@ -20,11 +20,13 @@ package com.openhis.health.application.basic.medicationcatalog.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * 药品目录列表/摘要 DTO：读模型或分页行扁平输出，供表格与卡片展示。
@@ -36,12 +38,10 @@ import java.math.BigDecimal;
 @Schema(title = "药品目录详情DTO", description = "药品目录详情传输对象")
 public class MedicationDto {
 
-    /** 读模型或聚合主键（序列化为字符串避免前端 Long 精度丢失）。 */
     @Schema(description = "ID（以字符串形式序列化）", example = "1", type = "string")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
 
-    /** 药品业务定义主键，可与 {@link #id} 同源或按投影口径冗余。 */
     @Schema(description = "药品编码（以字符串形式序列化）", example = "1001", type = "string")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long medicationDefId;
@@ -124,11 +124,9 @@ public class MedicationDto {
      */
     private BigDecimal PurchasePrice;
 
-    /** 是否处方药标识。 */
     @Schema(description = "是否处方药", example = "true")
     private Boolean rxFlag;
 
-    /** 国家/院内医保目录是否已对照成功。 */
     @Schema(description = "医保是否已对码", example = "true")
     private Boolean ybMatchFlag;
 
@@ -152,6 +150,10 @@ public class MedicationDto {
     /** 开单销售单位编码。 */
     @Schema(description = "销售单位编码", example = "DW003")
     private String packageUnitCode;
+
+    /** 包装单位展示文案。 */
+    @Schema(description = "包装单位文本", example = "盒")
+    private String packageUnitCode_dictText;
 
     /** 库房记账单位编码。 */
     @Schema(description = "库存单位编码", example = "DW004")
@@ -179,4 +181,10 @@ public class MedicationDto {
 
     /** 目录或制剂版本号（变更追溯）。 */
     private String version;
+
+    /**
+     * 五类单位槽（采购/拆零/包装/库存/剂量），口径对齐门诊医生站 {@code pageDoctorStationAdviceCatalog}。
+     */
+    @Schema(description = "多计量单位槽（unitBands）")
+    private List<ProductDefinitionCatalogUnitBandDto> unitBands;
 }

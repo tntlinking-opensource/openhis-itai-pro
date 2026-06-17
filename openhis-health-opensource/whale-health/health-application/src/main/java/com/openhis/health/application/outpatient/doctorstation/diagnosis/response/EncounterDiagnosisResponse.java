@@ -29,17 +29,13 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-就诊诊断列表响应。 */
 @Schema(description = "医生站-就诊诊断列表响应")
-/**
- * EncounterDiagnosisResponse。
- */
 public class EncounterDiagnosisResponse {
 
-    /** 诊断行列表。 */
     @Schema(description = "就诊诊断行列表")
     private List<EncounterDiagnosisRowDto> diagnosisList;
 
-    /** 列表总数。 */
     @Schema(description = "列表总数")
     private Integer totalCount;
 }

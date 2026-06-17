@@ -32,6 +32,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊医生站-申请退费-耗材执行门禁请求。 */
 @Schema(description = "门诊医生站-申请退费-耗材执行门禁请求")
 public class VerifyConsumableExecutionBeforeRefundRequest {
 
@@ -43,6 +44,7 @@ public class VerifyConsumableExecutionBeforeRefundRequest {
 
     /** 勾选收费项主键集合。 */
     @NotEmpty(message = "收费项标识列表不能为空")
+    /** 勾选收费项主键集合。 */
     @Schema(description = "勾选收费项主键集合", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<Long> chargeItemIds;
 }

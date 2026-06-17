@@ -23,7 +23,7 @@ public class MedcasnoGenerator {
     public String nextMedcasno() {
         Long tenantId = TenantUtils.getCurrentTenantId();
         int yearNo = Year.now().getValue();
-        MedcasnoSequence sequence = sequenceRepository.findForUpdate(tenantId, yearNo)
+        MedcasnoSequence sequence = sequenceRepository.findByTenantIdAndYearNo(tenantId, yearNo)
                 .orElseGet(() -> createSequence(tenantId, yearNo));
         long next = sequence.getLastValue() + 1;
         sequence.setLastValue(next);

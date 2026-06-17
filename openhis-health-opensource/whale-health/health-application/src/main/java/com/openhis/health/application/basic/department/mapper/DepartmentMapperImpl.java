@@ -27,7 +27,7 @@ import com.openhis.health.domain.administration.organization.command.MedicalInsu
 import com.openhis.health.domain.administration.organization.command.ModifyOrganizationCommand;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.share.enums.OrganizationClassification;
-import com.openhis.health.domain.share.enums.OrganizationStatus;
+import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import org.apache.commons.lang3.StringUtils;
@@ -64,7 +64,9 @@ public class DepartmentMapperImpl implements DepartmentMapper {
         dto.setId(entity.getId());
         dto.setBusNo(entity.getBusNo());
         dto.setName(entity.getName());
-        dto.setActiveFlag(toLegacyActiveFlag(entity.getActiveFlag()));
+        dto.setStatusEnum(entity.getStatusEnum());
+        dto.setStatusEnum_dictText(codeSystemQueryService.getDisplayByCode(
+            PublicationStatus.class, entity.getStatusEnum()));
         dto.setTypeEnum(resolveLegacyTypeEnum(entity.getTypeEnum()));
         dto.setClassEnum(toLegacyClassEnum(entity.getClassEnum()));
         dto.setPyStr(entity.getPyStr());
@@ -86,7 +88,6 @@ public class DepartmentMapperImpl implements DepartmentMapper {
         } else {
             dto.setClassEnum_dictText(entity.getClassEnum().getDisplay());
         }
-        dto.setActiveFlag_dictText(resolveActiveFlagDictText(entity.getActiveFlag()));
         return dto;
     }
 
@@ -107,8 +108,9 @@ public class DepartmentMapperImpl implements DepartmentMapper {
         CreateOrganizationCommand.CreateOrganizationItemCommand item = new CreateOrganizationCommand.CreateOrganizationItemCommand();
         item.setName(request.getName());
         item.setBusNo(request.getBusNo());
+        String typeCode = resolveOrganizationTypeCode(request.getTypeEnum());
+        item.setTypeEnum(typeCode);
         item.setParentId(request.getParentId());
-        item.setTypeEnum(resolveOrganizationTypeCode(request.getTypeEnum()));
         item.setClassEnum(resolveOrganizationClass(request.getClassEnum()));
         item.setDisplayOrder(request.getDisplayOrder());
         item.setDefDoctorId(request.getDefDoctorId());
@@ -275,13 +277,7 @@ public class DepartmentMapperImpl implements DepartmentMapper {
      * @return 排序值或 null
      */
     private Integer resolveLegacyTypeEnum(String typeCode) {
-        OrganizationType type = null;
-        for (OrganizationType item : OrganizationType.values()) {
-            if (item != null && item.getCode().equals(typeCode)) {
-                type = item;
-                break;
-            }
-        }
+        OrganizationType type = resolveOrganizationType(typeCode);
         if (type == null || type.getSortOrder() == null) {
             return null;
         }
@@ -289,7 +285,7 @@ public class DepartmentMapperImpl implements DepartmentMapper {
     }
 
     /**
-     * 将领域布尔启用态转为旧版 1/2 整型（1 启用，2 停用）。
+     * 将领域布尔启用态转为旧版 1/2 整型（仅详情 DTO 等旧接口使用）。
      *
      * @param activeFlag 领域启用标志
      * @return 1、2 或 null
@@ -302,24 +298,6 @@ public class DepartmentMapperImpl implements DepartmentMapper {
             return 1;
         }
         return 2;
-    }
-
-    /**
-     * 解析列表页状态展示文案，避免在主映射流程内嵌套条件表达式。
-     *
-     * @param activeFlag 领域启用状态
-     * @return 字典展示文案；入参为空时返回 null
-     */
-    private String resolveActiveFlagDictText(Boolean activeFlag) {
-        Integer legacyActiveFlag = toLegacyActiveFlag(activeFlag);
-        if (legacyActiveFlag == null) {
-            return null;
-        }
-        String statusCode = "RETIRED";
-        if (Boolean.TRUE.equals(activeFlag)) {
-            statusCode = "ACTIVE";
-        }
-        return codeSystemQueryService.getDisplayByCode(OrganizationStatus.class, statusCode);
     }
 
     /**
@@ -336,17 +314,29 @@ public class DepartmentMapperImpl implements DepartmentMapper {
     }
 
     /**
-     * 由旧版分类排序值反查领域 {@link OrganizationClassification}。
+     * 解析科室分类：支持直接传领域 code，或传旧版排序数字字符串。
      *
-     * @param classEnumSortOrder 旧版排序值
+     * @param classEnumRaw 前端原始值
      * @return 分类枚举或 null
      */
-    private OrganizationClassification resolveOrganizationClass(Integer classEnumSortOrder) {
-        if (classEnumSortOrder == null) {
+    private OrganizationClassification resolveOrganizationClass(String classEnumRaw) {
+        if (StringUtils.isBlank(classEnumRaw)) {
+            return null;
+        }
+        String normalizedClass = classEnumRaw.trim();
+        for (OrganizationClassification item : OrganizationClassification.values()) {
+            if (item != null && item.getCode().equals(normalizedClass)) {
+                return item;
+            }
+        }
+        long sortOrder;
+        try {
+            sortOrder = Long.parseLong(normalizedClass);
+        } catch (NumberFormatException ex) {
             return null;
         }
         for (OrganizationClassification item : OrganizationClassification.values()) {
-            if (item != null && item.getSortOrder() != null && item.getSortOrder().longValue() == classEnumSortOrder.longValue()) {
+            if (item != null && item.getSortOrder() != null && item.getSortOrder().longValue() == sortOrder) {
                 return item;
             }
         }
@@ -360,26 +350,17 @@ public class DepartmentMapperImpl implements DepartmentMapper {
      * @return 领域类型 code，无法解析时返回 null
      */
     private String resolveOrganizationTypeCode(String typeEnumRaw) {
-        if (StringUtils.isBlank(typeEnumRaw)) {
-            return null;
-        }
-        String normalizedType = typeEnumRaw.trim();
-        for (OrganizationType item : OrganizationType.values()) {
-            if (item != null && item.getCode().equals(normalizedType)) {
-                return item.getCode();
-            }
-        }
-        long sortOrder;
-        try {
-            sortOrder = Long.parseLong(normalizedType);
-        } catch (NumberFormatException ex) {
-            return null;
-        }
-        for (OrganizationType item : OrganizationType.values()) {
-            if (item != null && item.getSortOrder() != null && item.getSortOrder().longValue() == sortOrder) {
-                return item.getCode();
-            }
-        }
-        return null;
+        OrganizationType type = resolveOrganizationType(typeEnumRaw);
+        return type == null ? null : type.getCode();
+    }
+
+    /**
+     * 解析机构层级类型：支持领域 code、旧版 sortOrder 数字，以及历史误写的业务 type 码。
+     *
+     * @param typeEnumRaw 前端或库表原始值
+     * @return 层级类型枚举或 null
+     */
+    private OrganizationType resolveOrganizationType(String typeEnumRaw) {
+        return OrganizationType.resolveRaw(typeEnumRaw);
     }
 }

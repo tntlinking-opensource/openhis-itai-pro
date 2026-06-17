@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -31,11 +32,9 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 public class RejectStockOutRequest {
 
-    /** 出库业务单号。 */
     @Schema(description = "业务单号", requiredMode = Schema.RequiredMode.REQUIRED)
     private String busNo;
 
-    /** 驳回原因字典或工作流侧持久化身份（与领域命令字段对齐）。 */
     @Schema(description = "驳回原因码")
     private String changeReasonCode;
 

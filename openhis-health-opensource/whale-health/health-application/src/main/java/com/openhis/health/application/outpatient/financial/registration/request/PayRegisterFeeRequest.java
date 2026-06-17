@@ -30,17 +30,21 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 挂号支付请求。 */
 @Schema(description = "挂号支付请求")
-/**
- * PayRegisterFeeRequest。
- */
 public class PayRegisterFeeRequest {
 
-    /** 支付草稿 ID。 */
     @Schema(description = "支付草稿ID")
+    /** 支付草稿ID（业务字段）。 */
     private Long paymentDraftId;
 
     /** 支付明细列表。 */
     @Schema(description = "支付明细")
+    /** 支付明细（业务字段）。 */
     private List<PaymentDetailDto> paymentDetails;
+
+    /** 关联预约主键（缴费成功后回填 encounter）。 */
+    @Schema(description = "预约ID")
+    /** 预约ID（业务字段）。 */
+    private Long appointmentId;
 }

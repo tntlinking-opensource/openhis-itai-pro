@@ -35,9 +35,9 @@ public class CreateFrequencyCommand {
      */
     private String name;
     /**
-     * 周期类型枚举值。
+     * 周期类型 code（{@link com.openhis.health.domain.share.enums.FrequencyCycleType}）。
      */
-    private Integer cycleType;
+    private String cycleType;
     /**
      * 日计数（可空）。
      */
@@ -71,9 +71,9 @@ public class CreateFrequencyCommand {
      */
     private String applicableScenes;
     /**
-     * 允许跨日选项枚举值（可空）。
+     * 允许跨日选项 code（{@link com.openhis.health.domain.share.enums.FrequencyAllowCrossDay}；可空）。
      */
-    private Integer allowCrossDay;
+    private String allowCrossDay;
     /**
      * 排序号（可空）。
      */

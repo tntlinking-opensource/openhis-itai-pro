@@ -17,11 +17,12 @@
 
 package com.openhis.health.application.inventory.warehouse.stockout.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -32,11 +33,9 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 public class PageProductsForStockOutRequest extends AbstractHealthPageRequest {
 
-    /** 源药库位置主键，库存五元组查询的库位维度。 */
     @Schema(description = "源药库位置", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long sourceLocationId;
 
-    /** 物品物理表名（与库存、产品复合键一致），如药品定义表或耗材定义表。 */
     @Schema(description = "物品表名白名单", requiredMode = Schema.RequiredMode.REQUIRED)
     private String productTableName;
 }

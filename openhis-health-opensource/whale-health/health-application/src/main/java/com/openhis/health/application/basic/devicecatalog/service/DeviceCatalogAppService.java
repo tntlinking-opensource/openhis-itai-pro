@@ -17,14 +17,14 @@
 
 package com.openhis.health.application.basic.devicecatalog.service;
 
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.domain.share.constants.DeviceCatalogUiConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.PriceType;
-import com.openhis.health.application.common.assembler.pricing.ChargePricingCommandAssembler;
-import com.openhis.health.application.common.assembler.option.OptionDtoAssembler;
-import com.openhis.health.application.common.assembler.option.TerminologyOptionLoader;
+import com.openhis.health.module.common.assembler.pricing.ChargePricingCommandAssembler;
+import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
+import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
 import com.openhis.health.application.basic.devicecatalog.dto.DeviceCatalogDto;
 import com.openhis.health.application.basic.devicecatalog.dto.DeviceCatalogInitDto;
 import com.openhis.health.application.basic.devicecatalog.dto.PageDeviceCatalogResponse;
@@ -53,7 +53,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -482,6 +481,10 @@ public class DeviceCatalogAppService {
             if (doseLabel != null) {
                 dto.setDoseUnitCode_dictText(doseLabel);
             }
+            String encounterLabel = DeviceCatalogAppService.dictLabel(unitCodeMap, dto.getDefEncounterUnitCode());
+            if (encounterLabel != null) {
+                dto.setDefEncounterUnitCode_dictText(encounterLabel);
+            }
 
             if (dto.getItemTypeCode() != null) {
                 String finLabel = financialTypeTextMap.get(dto.getItemTypeCode());
@@ -718,13 +721,13 @@ public class DeviceCatalogAppService {
         List<SaveAllChargeItemDefinitionsCommand.Item> items = new ArrayList<>();
         ChargePricingCommandAssembler.appendPriceLineIfPresent(items,
             TableNameConstants.ADM_DEVICE_DEFINITION, instanceId, itemTypeCode, ybType,
-            PriceType.PURCHASE.getCode(), purchasePrice);
+            PriceType.PURCHASE.getCode(), purchasePrice, null);
         ChargePricingCommandAssembler.appendPriceLineIfPresent(items,
             TableNameConstants.ADM_DEVICE_DEFINITION, instanceId, itemTypeCode, ybType,
-            PriceType.SALE.getCode(), retailPrice);
+            PriceType.SALE.getCode(), retailPrice, null);
         ChargePricingCommandAssembler.appendPriceLineIfPresent(items,
             TableNameConstants.ADM_DEVICE_DEFINITION, instanceId, itemTypeCode, ybType,
-            PriceType.LIMIT.getCode(), maximumRetailPrice);
+            PriceType.LIMIT.getCode(), maximumRetailPrice, null);
         if (items.isEmpty()) {
             return;
         }

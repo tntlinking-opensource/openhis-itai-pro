@@ -17,7 +17,8 @@
 
 package com.openhis.health.application.outpatient.financial.refund.mapper;
 
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.domain.share.constants.InsuranceCoordinationConstants;
 import com.openhis.health.domain.share.constants.OutpatientRefundQueueTab;
 import com.openhis.health.application.outpatient.financial.refund.dto.OutpatientRefundLineItemDto;
 import com.openhis.health.application.outpatient.financial.refund.dto.OutpatientRefundPaymentGroupDto;
@@ -288,6 +289,28 @@ public class OutpatientRefundMapperImpl implements OutpatientRefundMapper {
         response.setReversePaymentId(reversePaymentId);
         response.setOriginalPaymentId(originalPaymentId);
         response.setHalfRefundExecuted(halfRefundExecuted);
+        response.setInsuranceRevokeMode(InsuranceCoordinationConstants.SETTLEMENT_MODE_SYNC);
+        response.setInsuranceRevoked(true);
+        return response;
+    }
+
+    /**
+     * 装配医保撤销异步协同响应（OP_SETTLE_REVERSE 已启动，本地退费尚未执行）。
+     *
+     * @param originalPaymentId 原支付单主键
+     * @param coordinationIds   已创建的协同单 ID 列表
+     * @return 异步退费响应（success=false，含 coordinationIds）
+     */
+    @Override
+    public ExecuteOutpatientBillRefundByPaymentResponse toExecuteOutpatientBillRefundInsuranceAsyncResponse(
+        Long originalPaymentId,
+        List<Long> coordinationIds) {
+        ExecuteOutpatientBillRefundByPaymentResponse response = new ExecuteOutpatientBillRefundByPaymentResponse();
+        response.setSuccess(false);
+        response.setOriginalPaymentId(originalPaymentId);
+        response.setInsuranceRevokeMode(InsuranceCoordinationConstants.SETTLEMENT_MODE_INSURANCE_ASYNC);
+        response.setCoordinationIds(coordinationIds);
+        response.setInsuranceRevoked(false);
         return response;
     }
 

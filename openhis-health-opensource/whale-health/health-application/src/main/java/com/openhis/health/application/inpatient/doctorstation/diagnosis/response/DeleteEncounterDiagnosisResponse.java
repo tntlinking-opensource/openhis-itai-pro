@@ -28,6 +28,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-删除就诊诊断响应。 */
 @Schema(description = "医生站-删除就诊诊断响应")
 public class DeleteEncounterDiagnosisResponse {
 

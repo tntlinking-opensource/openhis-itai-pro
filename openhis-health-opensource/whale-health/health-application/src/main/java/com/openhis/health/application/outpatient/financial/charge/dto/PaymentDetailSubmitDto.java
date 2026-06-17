@@ -28,16 +28,13 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 正式结算-支付明细。 */
 @Schema(description = "正式结算-支付明细")
 public class PaymentDetailSubmitDto {
+
     @Schema(description = "支付渠道编码")
-    /**
-     * payChannelCode。
-     */
     private String payChannelCode;
+
     @Schema(description = "金额")
-    /**
-     * amount。
-     */
     private BigDecimal amount;
 }

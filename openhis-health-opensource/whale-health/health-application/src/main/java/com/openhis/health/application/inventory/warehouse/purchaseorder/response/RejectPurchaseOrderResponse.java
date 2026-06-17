@@ -25,13 +25,8 @@ import lombok.Setter;
  */
 @Getter
 @Setter
-/**
- * RejectPurchaseOrderResponse。
- */
 public class RejectPurchaseOrderResponse {
 
-    /**
-     * success。
-     */
+    /** 是否驳回成功。 */
     private Boolean success;
 }

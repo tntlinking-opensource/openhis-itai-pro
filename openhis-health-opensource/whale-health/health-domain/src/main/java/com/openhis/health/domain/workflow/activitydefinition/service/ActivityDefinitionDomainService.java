@@ -31,6 +31,7 @@ import com.openhis.health.domain.workflow.activitydefinition.command.ActivateAct
 import com.openhis.health.domain.workflow.activitydefinition.command.CreateActivityDefinitionCommand;
 import com.openhis.health.domain.workflow.activitydefinition.command.ImportActivityCatalogCommand;
 import com.openhis.health.domain.workflow.activitydefinition.command.ImportActivityCatalogResult;
+import com.openhis.health.domain.workflow.activitydefinition.command.DeleteActivityDefinitionsCommand;
 import com.openhis.health.domain.workflow.activitydefinition.command.RetireActivityDefinitionsCommand;
 import com.openhis.health.domain.workflow.activitydefinition.command.SyncActivityYbMappingCommand;
 import com.openhis.health.domain.workflow.activitydefinition.command.UpdateActivityDefinitionCommand;
@@ -430,6 +431,25 @@ public class ActivityDefinitionDomainService {
     }
 
     /**
+     * 批量删除（逻辑删除）诊疗项目。
+     *
+     * @param command 命令（支持 item/items）
+     */
+    public void deleteActivityDefinitions(DeleteActivityDefinitionsCommand command) {
+        List<DeleteActivityDefinitionsCommand.DeleteActivityDefinitionsItemCommand> items = command.resolveItems();
+        List<Long> ids = this.collectIdList(items, "批量删除诊疗项目时 idList 不能为空");
+        List<ActivityDefinition> definitions = activityDefinitionRepository.findByIdIn(ids);
+        if (definitions.size() != ids.size()) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_NOT_FOUND, "批量删除诊疗项目时存在无效主键");
+        }
+        Long operatorId = command.getOperatorId();
+        for (ActivityDefinition definition : definitions) {
+            definition.markDeleted(operatorId);
+        }
+        activityDefinitionRepository.saveAll(definitions);
+    }
+
+    /**
      * 批量启用（含草稿发布与停用恢复）。
      *
      * <p>维护端「启用」口径：草稿项执行 {@link ActivityDefinition#publish()}，停用项执行 {@link ActivityDefinition#activate()}；
@@ -452,7 +472,7 @@ public class ActivityDefinitionDomainService {
             if (PublicationStatus.DRAFT.getCode().equals(status)) {
                 // 新建默认草稿：首次启用即发布，供医嘱开立目录（仅 ACTIVE）检索。
                 definition.publish();
-            } else if (PublicationStatus.RETIRED.getCode().equals(status)) {
+            } else if (PublicationStatus.INACTIVE.getCode().equals(status)) {
                 definition.activate();
             } else if (PublicationStatus.ACTIVE.getCode().equals(status)) {
                 // 已发布：重复启用不报错，便于维护端批量操作。

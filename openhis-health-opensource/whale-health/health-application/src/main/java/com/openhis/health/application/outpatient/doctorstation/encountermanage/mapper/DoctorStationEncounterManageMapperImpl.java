@@ -17,8 +17,8 @@
 
 package com.openhis.health.application.outpatient.doctorstation.encountermanage.mapper;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.CompleteOutpatientEncounterRequest;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.MarkOutpatientLeaveRequest;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.PageOutpatientInfoForDoctorStationRequest;
@@ -29,7 +29,7 @@ import com.openhis.health.application.outpatient.doctorstation.encountermanage.r
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.response.StartOutpatientReceptionResponse;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.mapper.DoctorStationDiagnosisMapper;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.dto.OutpatientInfoItemDto;
-import com.openhis.health.application.common.converter.TextValueConverter;
+import com.openhis.health.module.common.converter.TextValueConverter;
 import com.openhis.health.domain.administration.encounter.command.CompleteOutpatientEncounterCommand;
 import com.openhis.health.domain.administration.encounter.command.MarkOutpatientLeaveCommand;
 import com.openhis.health.domain.administration.encounter.command.StartOutpatientReceptionCommand;
@@ -58,8 +58,8 @@ import java.util.Map;
  *
  * <p><b>边界假设</b>：
  * <ul>
- *   <li>队列查询默认状态并集（已挂号/在诊/暂离/诊毕）与医生站首页默认视图对齐，
- *       单状态筛选时按请求参数精确过滤。</li>
+ *   <li>队列查询默认状态并集（已挂号/在诊/暂离/诊毕）与医生站首页默认视图对齐；
+ *       医师可见性由 {@code doctorStationViewerPractitionerId} 与 BR-DOR-009 在读侧判定。</li>
  *   <li>金额字段优先以收费汇总映射覆盖读模型快照，保证列表展示与账单事实一致。</li>
  *   <li>性别、就诊类别等枚举的码→展示文本转换使用 {@link EnumUtil}，与前端码表约定一致。</li>
  * </ul></p>
@@ -80,9 +80,11 @@ public class DoctorStationEncounterManageMapperImpl implements DoctorStationEnco
     public OutpatientEncounterPageQuery toOutpatientEncounterPageQuery(PageOutpatientInfoForDoctorStationRequest request) {
         OutpatientEncounterPageQuery query = new OutpatientEncounterPageQuery();
         PageQueryBinder.bind(request, query);
-        // 状态筛选分支：前端未显式筛选时，默认展示医生站首页「本科室全部候诊患者」并集。
+        // 医生站列表须携带当前登录医师，读侧按 BR-DOR-009 做状态×参与者可见性收窄。
+        query.setDoctorStationViewerPractitionerId(request.getStaffPractitionerId());
+        query.setDoctorId(null);
+        // 状态筛选分支：前端未显式筛选时，默认展示医生站首页四态并集（待诊/在诊/暂离/诊毕）。
         if (request.getEncounterStatus() == null) {
-            // 医生站首页缺省：本科室下已挂号/在诊/暂离/诊毕并集，不按接诊医师过滤（与单队列「在诊」区分）。
             List<String> defaultStatuses = new ArrayList<>();
             defaultStatuses.add(EncounterStatus.REGISTERED.getCode());
             defaultStatuses.add(EncounterStatus.IN_PROGRESS.getCode());
@@ -90,16 +92,10 @@ public class DoctorStationEncounterManageMapperImpl implements DoctorStationEnco
             defaultStatuses.add(EncounterStatus.DISCHARGED.getCode());
             query.setStatusEnumIn(defaultStatuses);
             query.setStatusEnum(null);
-            query.setDoctorId(null);
         } else {
-            // 显式状态筛选：单状态精确匹配，仅在「在诊」时追加接诊医师过滤。
+            // 显式单队列：精确匹配就诊状态；医师可见性由 doctorStationViewerPractitionerId 驱动。
             query.setStatusEnumIn(null);
             query.setStatusEnum(request.getEncounterStatus().getCode());
-            if (EncounterStatus.IN_PROGRESS.equals(request.getEncounterStatus())) {
-                query.setDoctorId(request.getStaffPractitionerId());
-            } else {
-                query.setDoctorId(null);
-            }
         }
         return query;
     }

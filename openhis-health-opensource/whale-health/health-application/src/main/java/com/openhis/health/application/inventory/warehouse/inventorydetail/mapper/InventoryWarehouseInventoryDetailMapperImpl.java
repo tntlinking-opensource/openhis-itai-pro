@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inventory.warehouse.inventorydetail.mapper;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.dto.InventoryDetailCurrentExportRowDto;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.dto.InventoryDetailListRowDto;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.request.ExportInventoryDetailCurrentRequest;
@@ -30,6 +30,7 @@ import com.openhis.health.domain.workflow.inventoryitem.queries.model.WarehouseI
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
@@ -234,8 +235,7 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
         return new InventoryDetailCurrentExportRowDto()
             .setName(row.getName())
             .setLotNumber(row.getLotNumber())
-            .setQuantity(row.getDisplayQuantity())
-            .setUnitName(row.getDisplayUnitName())
+            .setQuantityText(StringUtils.defaultString(row.getDisplayQuantityText()))
             .setWarehouseName(row.getWarehouseName())
             .setSupplierName(row.getSupplierName())
             .setExpirationDate(row.getExpirationDate())

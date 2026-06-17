@@ -30,22 +30,36 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 挂号预结算响应。 */
 @Schema(description = "挂号预结算响应")
 public class PreRegisterSettlementResponse {
 
-    /** 本次预结算对应的就诊主键（待挂号态 PLANNED，结算成功后变为 REGISTERED）。 */
     @Schema(description = "就诊ID")
+    /** 就诊ID（业务字段）。 */
     private Long encounterId;
 
     /** 支付草稿 ID。 */
     @Schema(description = "支付草稿ID")
+    /** 支付草稿ID（业务字段）。 */
     private Long paymentDraftId;
 
     /** 预结算总额。 */
     @Schema(description = "总额")
+    /** 总额（业务字段）。 */
     private BigDecimal totalAmount;
 
     /** 预结算明细。 */
     @Schema(description = "明细")
+    /** 明细（业务字段）。 */
     private List<ChargeItemPreviewDto> chargeItems;
+
+    /** 关联预约主键（预约转挂号时回传）。 */
+    @Schema(description = "预约ID")
+    /** 预约ID（业务字段）。 */
+    private Long appointmentId;
+
+    /** 关联号源主键（预约转挂号时回传）。 */
+    @Schema(description = "号源ID")
+    /** 号源ID（业务字段）。 */
+    private Long slotId;
 }

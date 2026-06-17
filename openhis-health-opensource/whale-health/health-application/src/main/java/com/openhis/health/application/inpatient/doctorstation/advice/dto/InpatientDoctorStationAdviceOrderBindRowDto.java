@@ -33,15 +33,22 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站医嘱绑定明细行。 */
 @Schema(description = "医生站医嘱绑定明细行")
 public class InpatientDoctorStationAdviceOrderBindRowDto {
 
-    /** 绑定类型回显。 */
     @Schema(description = "绑定类型回显")
     private String bindType;
 
-    /** 源定义主键。 */
+    /** 诊疗耗材绑定模板主键（{@code cus_service_device_template.id}）。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 绑定模板主键。 */
+    @Schema(description = "绑定模板主键")
+    private Long bindingId;
+
+    /** 源定义主键；用法绑定场景为空（来源键为 {@code method_code}），诊疗绑定为活动定义主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    /** 源定义主键。 */
     @Schema(description = "源定义主键")
     private Long sourceItemId;
 
@@ -51,6 +58,7 @@ public class InpatientDoctorStationAdviceOrderBindRowDto {
 
     /** 目标定义主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 目标定义主键。 */
     @Schema(description = "目标定义主键")
     private Long targetItemId;
 
@@ -61,6 +69,24 @@ public class InpatientDoctorStationAdviceOrderBindRowDto {
     /** 目标展示名。 */
     @Schema(description = "目标展示名")
     private String targetItemName;
+
+    /** 目标业务编码。 */
+    @Schema(description = "目标业务编码")
+    private String busNo;
+
+    /** 目标规格展示。 */
+    @Schema(description = "目标规格展示")
+    private String specificationText;
+
+    /** 零售单价（每包装单位售价）。 */
+    @Schema(description = "零售单价")
+    private BigDecimal unitPrice;
+
+    /** 收费项定义主键（与 {@link #unitPrice} 对应）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    /** 收费项定义主键。 */
+    @Schema(description = "收费项定义主键")
+    private Long chargeItemDefinitionId;
 
     /** 数量分子。 */
     @Schema(description = "数量分子")

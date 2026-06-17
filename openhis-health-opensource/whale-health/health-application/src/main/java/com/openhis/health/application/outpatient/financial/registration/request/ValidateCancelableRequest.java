@@ -26,17 +26,16 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 退号可否校验请求。 */
 @Schema(description = "退号可否校验请求")
-/**
- * ValidateCancelableRequest。
- */
 public class ValidateCancelableRequest {
 
-    /** 就诊 ID。 */
     @Schema(description = "就诊ID")
+    /** 就诊ID（业务字段）。 */
     private Long encounterId;
 
     /** 退号原因。 */
     @Schema(description = "退号原因")
+    /** 退号原因（业务字段）。 */
     private String reason;
 }

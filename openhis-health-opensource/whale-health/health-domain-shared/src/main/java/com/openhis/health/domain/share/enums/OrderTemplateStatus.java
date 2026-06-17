@@ -18,7 +18,7 @@
 package com.openhis.health.domain.share.enums;
 
 /**
- * 医嘱组套模板状态枚举。
+ * 组套模板状态枚举。
  */
 public enum OrderTemplateStatus implements EnumInterface {
     /**

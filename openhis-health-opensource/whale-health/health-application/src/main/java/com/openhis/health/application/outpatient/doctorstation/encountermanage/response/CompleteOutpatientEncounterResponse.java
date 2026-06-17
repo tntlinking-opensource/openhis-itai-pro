@@ -28,18 +28,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-门诊完诊响应。 */
 @Schema(description = "医生站-门诊完诊响应")
-/**
- * CompleteOutpatientEncounterResponse。
- */
 public class CompleteOutpatientEncounterResponse {
 
     /** 就诊标识。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊标识")
-    /**
-     * encounterId。
-     */
     private Long encounterId;
 
     /** 是否成功。 */

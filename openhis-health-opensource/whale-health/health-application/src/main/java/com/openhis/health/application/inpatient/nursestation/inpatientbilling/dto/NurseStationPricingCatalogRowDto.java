@@ -19,7 +19,7 @@ package com.openhis.health.application.inpatient.nursestation.inpatientbilling.d
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -34,10 +34,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 护士划价选品目录行。 */
 @Schema(description = "护士划价选品目录行")
 public class NurseStationPricingCatalogRowDto {
 
-    /** 产品定义主键（与 productTableName 成对）。 */
     @Schema(description = "产品定义主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long productDefinitionId;
@@ -82,18 +82,14 @@ public class NurseStationPricingCatalogRowDto {
     @Schema(description = "五类单位槽")
     private List<ProductDefinitionCatalogUnitBandDto> unitBands;
 
-    /** 当前定价来源下选中的 ChargeItemDefinition id。 */
-    @Schema(description = "选中定价行定义 id")
+    /** 目录展示选中的 ChargeItemDefinition id（仅展示；入账以写路径重算为准）。 */
+    @Schema(description = "选中定价行定义 id（展示用）")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long chargeItemDefinitionId;
 
-    /** 选中价目单价。 */
-    @Schema(description = "单价")
+    /** 目录展示单价（仅展示；入账以写路径重算为准）。 */
+    @Schema(description = "单价（展示用）")
     private BigDecimal unitPrice;
-
-    /** 实际使用的定价来源 code。 */
-    @Schema(description = "实际定价来源")
-    private String pricingSourceCode;
 
     /** 诊疗活动定义 id（诊疗行）。 */
     @Schema(description = "诊疗活动定义 id")
@@ -105,11 +101,16 @@ public class NurseStationPricingCatalogRowDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long deviceDefId;
 
-    /** 套餐子项（wkf_activity_definition_children；写路径服务端再展开）。 */
+    /**
+     * 耗材默认发放库房（IF-IP-PRC-01 读侧模板 + FIFO 解析；写路径回传 {@code performLocation}）。
+     */
+    @Schema(description = "默认发放库房（耗材行；写 IF-IP-PRC-02/04 回传 performLocation）")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long defaultDispenseLocationId;
+
     @Schema(description = "诊疗套餐子项列表（子表事实行）")
     private List<NurseStationPricingPackageChildDto> packageChildren;
 
-    /** 是否吸氧/心电计时类（写路径 Gate 预检）。 */
     @Schema(description = "是否吸氧/心电计时类")
     private Boolean oxygenOrEcgFlag;
 

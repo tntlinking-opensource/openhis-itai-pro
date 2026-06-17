@@ -179,6 +179,13 @@ public interface OutpatientRefundMapper {
         boolean halfRefundExecuted);
 
     /**
+     * 装配退费执行异步医保撤销响应。
+     */
+    ExecuteOutpatientBillRefundByPaymentResponse toExecuteOutpatientBillRefundInsuranceAsyncResponse(
+        Long originalPaymentId,
+        List<Long> coordinationIds);
+
+    /**
      * 装配保留行账户切换响应。
      *
      * @param success 是否成功

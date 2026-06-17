@@ -28,11 +28,7 @@ public enum ServiceDeviceTemplateTypeCode implements EnumInterface {
     /**
      * ACTIVITY。
      */
-    ACTIVITY(0L, "ACTIVITY", "诊疗绑定", "", 2L),
-    /**
-     * SLOT。
-     */
-    SLOT(0L, "SLOT", "号源绑定", "", 3L);
+    ACTIVITY(0L, "ACTIVITY", "诊疗绑定", "", 2L);
 
     private final Long codeSystemId;
     private final String code;

@@ -20,3 +20,23 @@ CREATE TABLE IF NOT EXISTS "public"."cln_procedure_performer" (
     "org_from_id" varchar(255),
     CONSTRAINT "cln_procedure_performer_pkey" PRIMARY KEY ("id")
 );
+
+COMMENT ON TABLE cln_procedure_performer IS '临床 procedure performer';
+
+COMMENT ON COLUMN cln_procedure_performer.id IS '主键';
+COMMENT ON COLUMN cln_procedure_performer.tenant_id IS '租户标识';
+COMMENT ON COLUMN cln_procedure_performer.created_at IS '创建时间';
+COMMENT ON COLUMN cln_procedure_performer.updated_at IS '最后更新时间';
+COMMENT ON COLUMN cln_procedure_performer.created_by IS '创建人';
+COMMENT ON COLUMN cln_procedure_performer.updated_by IS '最后更新人';
+COMMENT ON COLUMN cln_procedure_performer.is_deleted IS '软删标记';
+COMMENT ON COLUMN cln_procedure_performer.deleted_at IS '删除时间';
+COMMENT ON COLUMN cln_procedure_performer.deleted_by IS '删除人';
+COMMENT ON COLUMN cln_procedure_performer.version IS '乐观锁版本号';
+COMMENT ON COLUMN cln_procedure_performer.procedure_id IS 'procedure id';
+COMMENT ON COLUMN cln_procedure_performer.function_code IS 'function code';
+COMMENT ON COLUMN cln_procedure_performer.start_time IS 'start time';
+COMMENT ON COLUMN cln_procedure_performer.end_time IS 'end time';
+COMMENT ON COLUMN cln_procedure_performer.practitioner_id IS 'practitioner id';
+COMMENT ON COLUMN cln_procedure_performer.org_from_id IS 'org from id';
+

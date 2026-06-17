@@ -17,14 +17,17 @@
 
 package com.openhis.health.application.inpatient.doctorstation.advice.port;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceRequestDetailSummaryDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.List;
+
 /**
  * IF-IP-DOR-15：检验/检查外发命令（目标态网关入参壳）。
- *
- * <p>当前仅携带就诊/患者锚点供占位网关与后续对接协议扩展；诊疗申请 id、活动类型等字段
- * 将在 LIS/PACS 集成落地时按租户协议补齐。</p>
  */
 @Getter
 @Setter
@@ -35,4 +38,13 @@ public class LisPacsAdviceApplyCommand {
 
     /** 患者主键：与就诊卡片、门控校验一致。 */
     private Long patientId;
+
+    /** 诊疗服务申请主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "服务申请主键")
+    private Long requestId;
+
+    /** 部位/样本明细摘要（BR-REQ-008）。 */
+    @Schema(description = "服务申请明细摘要")
+    private List<ServiceRequestDetailSummaryDto> serviceRequestDetails;
 }

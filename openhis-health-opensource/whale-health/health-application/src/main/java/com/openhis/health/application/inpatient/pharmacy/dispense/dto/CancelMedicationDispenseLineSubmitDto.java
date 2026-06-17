@@ -28,10 +28,10 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 住院作废发放提交行。 */
 @Schema(description = "住院作废发放提交行")
 public class CancelMedicationDispenseLineSubmitDto {
 
-    /** 药品发放单主键。 */
     @Schema(description = "发放单主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long dispenseId;

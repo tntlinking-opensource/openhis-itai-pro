@@ -28,14 +28,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 住院医生站-长期医嘱停嘱响应。 */
 @Schema(description = "住院医生站-长期医嘱停嘱响应")
 public class StopLongTermInpatientDoctorStationAdviceResponse {
 
-    /** 批次停嘱是否全部成功落库。 */
     @Schema(description = "是否成功")
     private Boolean success;
 
-    /** 面向用户的结果说明；失败时携带业务语义提示。 */
     @Schema(description = "提示文案")
     private String message;
 }

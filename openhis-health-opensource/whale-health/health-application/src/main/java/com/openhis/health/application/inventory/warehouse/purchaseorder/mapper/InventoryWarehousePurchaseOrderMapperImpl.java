@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inventory.warehouse.purchaseorder.mapper;
 
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderDetailLineDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderLineDto;
@@ -45,7 +45,7 @@ import com.openhis.health.application.inventory.warehouse.purchaseorder.response
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
@@ -72,7 +72,7 @@ import java.util.Map;
 /**
  * 药库订货单装配实现：{@link InventoryWarehousePurchaseOrderMapper}。
  *
- * 11 选品。契约、B.10.8.1 / B.10.11 口径以接口为准。</p>
+ * <p>列表/详情/命令/响应装配与选品分页映射；B.10.8.1 / B.10.11 口径以接口 JavaDoc 为准。</p>
  *
  * <p>各 {@code @Override} 方法须在 JavaDoc 中与接口保持<strong>同义完整说明</strong>（可补充实现细节与体内 {@code //} 呼应），
  * 禁止仅用单独一行 {@code @inheritDoc} 作为方法说明占位（B.1）。</p>
@@ -91,6 +91,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         this.locationQueryService = locationQueryService;
     }
 
+    /** 将启用药库位置列表映射为下拉选项 DTO。 */
     @Override
     public List<WarehouseOptionDto> toWarehouseOptionDtoList(List<Location> locations) {
         List<WarehouseOptionDto> list = new ArrayList<>();
@@ -111,6 +112,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return list;
     }
 
+    /** 将启用供应商列表映射为下拉选项 DTO。 */
     @Override
     public List<SupplierOptionDto> toSupplierOptionDtoList(List<SupplierListItemQueryModel> suppliers) {
         List<SupplierOptionDto> list = new ArrayList<>();
@@ -137,6 +139,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return list;
     }
 
+    /** 装配订货页初始化响应（药库/供应商选项挂接）。 */
     @Override
     public LoadPurchaseOrderFormInitResponse toLoadPurchaseOrderFormInitResponse(
         List<WarehouseOptionDto> warehouseOptions,
@@ -168,6 +171,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return PagedResultBuilder.build(new PagePurchaseOrdersResponse(), content, page);
     }
 
+    /** 将库房单据读模型行装配为列表行 DTO（枚举转 sortOrder 供前端排序）。 */
     private WarehouseDocumentDetailRowDto toWarehouseDocumentDetailRowDto(WarehouseDocumentDetailQueryModel row) {
         WarehouseDocumentDetailRowDto dto = new WarehouseDocumentDetailRowDto();
         dto.setId(row.getId());
@@ -189,6 +193,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return dto;
     }
 
+    /** 将同号供应请求明细与产品读模型装配为订货单详情响应。 */
     @Override
     public GetPurchaseOrderDetailResponse toGetPurchaseOrderDetailResponse(
         List<SupplyRequestModel> lines,
@@ -216,6 +221,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return res;
     }
 
+    /** 将供应请求明细行与产品读模型装配为订货单详情行 DTO。 */
     private PurchaseOrderDetailLineDto toDetailLine(SupplyRequestModel line, Map<String, ProductDefinitionDisplayDto> productByKey) {
         PurchaseOrderDetailLineDto dto = new PurchaseOrderDetailLineDto();
         dto.setId(line.getId());
@@ -238,6 +244,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return dto;
     }
 
+    /** 将新建订货请求装配为领域 CreatePurchaseOrderCommand。 */
     @Override
     public CreatePurchaseOrderCommand toCreatePurchaseOrderCommand(
         CreatePurchaseOrderRequest request,
@@ -288,6 +295,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return command;
     }
 
+    /** 将修订订货请求装配为领域 CreatePurchaseOrderCommand（同号全量对齐）。 */
     @Override
     public CreatePurchaseOrderCommand toCreatePurchaseOrderCommandForUpdate(
         UpdatePurchaseOrderRequest request,
@@ -338,6 +346,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return command;
     }
 
+    /** 装配新建订货成功响应（含 busNo 与待审批状态）。 */
     @Override
     public CreatePurchaseOrderResponse toCreatePurchaseOrderResponse(String busNo) {
         CreatePurchaseOrderResponse res = new CreatePurchaseOrderResponse();
@@ -347,6 +356,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return res;
     }
 
+    /** 装配修订订货成功响应（含 busNo 与待审批状态）。 */
     @Override
     public UpdatePurchaseOrderResponse toUpdatePurchaseOrderResponse(String busNo) {
         UpdatePurchaseOrderResponse res = new UpdatePurchaseOrderResponse();
@@ -356,6 +366,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return res;
     }
 
+    /** 将提交审批请求装配为领域 SubmitApprovalCommand。 */
     @Override
     public SubmitApprovalCommand toSubmitApprovalCommand(SubmitPurchaseOrderApprovalRequest request, Long operatorId, Long applicantId) {
         SubmitApprovalCommand command = new SubmitApprovalCommand();
@@ -367,6 +378,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return command;
     }
 
+    /** 装配提交审批成功响应。 */
     @Override
     public SubmitPurchaseOrderApprovalResponse toSubmitPurchaseOrderApprovalResponse() {
         SubmitPurchaseOrderApprovalResponse res = new SubmitPurchaseOrderApprovalResponse();
@@ -376,6 +388,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return res;
     }
 
+    /** 将撤回审批请求装配为领域 WithdrawApprovalCommand。 */
     @Override
     public WithdrawApprovalCommand toWithdrawApprovalCommand(WithdrawPurchaseOrderApprovalRequest request, Long operatorId) {
         WithdrawApprovalCommand command = new WithdrawApprovalCommand();
@@ -386,6 +399,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return command;
     }
 
+    /** 装配撤回审批成功响应。 */
     @Override
     public WithdrawPurchaseOrderApprovalResponse toWithdrawPurchaseOrderApprovalResponse() {
         WithdrawPurchaseOrderApprovalResponse res = new WithdrawPurchaseOrderApprovalResponse();
@@ -395,6 +409,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return res;
     }
 
+    /** 将同意请求装配为领域 AgreeRequestCommand。 */
     @Override
     public AgreeRequestCommand toAgreeRequestCommand(AgreePurchaseOrderRequest request, Long operatorId) {
         AgreeRequestCommand command = new AgreeRequestCommand();
@@ -406,6 +421,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return command;
     }
 
+    /** 装配同意订货成功响应。 */
     @Override
     public AgreePurchaseOrderResponse toAgreePurchaseOrderResponse() {
         AgreePurchaseOrderResponse res = new AgreePurchaseOrderResponse();
@@ -413,6 +429,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return res;
     }
 
+    /** 将驳回请求装配为领域 RejectRequestCommand。 */
     @Override
     public RejectRequestCommand toRejectRequestCommand(RejectPurchaseOrderRequest request, Long operatorId) {
         RejectRequestCommand command = new RejectRequestCommand();
@@ -425,6 +442,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return command;
     }
 
+    /** 装配驳回订货成功响应。 */
     @Override
     public RejectPurchaseOrderResponse toRejectPurchaseOrderResponse() {
         RejectPurchaseOrderResponse res = new RejectPurchaseOrderResponse();
@@ -432,6 +450,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return res;
     }
 
+    /** 将删除请求装配为领域 RemoveByBusNoCommand。 */
     @Override
     public RemoveByBusNoCommand toRemoveByBusNoCommand(RemovePurchaseOrderRequest request, Long operatorId) {
         RemoveByBusNoCommand command = new RemoveByBusNoCommand();
@@ -442,6 +461,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return command;
     }
 
+    /** 装配删除订货成功响应。 */
     @Override
     public RemovePurchaseOrderResponse toRemovePurchaseOrderResponse() {
         RemovePurchaseOrderResponse res = new RemovePurchaseOrderResponse();
@@ -469,6 +489,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return PagedResultBuilder.build(new PageProductsForPurchaseResponse(), content, page);
     }
 
+    /** 将产品定义读模型装配为订货选品行 DTO（含采购价解析）。 */
     private ProductDefinitionItemDto toProductDefinitionItemDto(ProductDefinitionDisplayDto pr) {
         ProductDefinitionItemDto dto = new ProductDefinitionItemDto();
         dto.setProductDefinitionId(pr.getProductDefinitionId());

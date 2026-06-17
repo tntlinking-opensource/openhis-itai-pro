@@ -1,16 +1,19 @@
 package com.openhis.health.application.outpatient.financial.charge.service;
 
+import com.openhis.health.application.outpatient.financial.charge.dto.OpInsurancePreSettleGroupDto;
+import com.openhis.health.application.outpatient.financial.charge.dto.OpSelfPayRollupDto;
 import com.openhis.health.application.outpatient.financial.charge.dto.ChargeQueueChargeItemBriefDto;
 import com.openhis.health.application.outpatient.financial.charge.dto.ChargeQueueRowDto;
 import com.openhis.health.application.outpatient.financial.charge.dto.PendingChargeItemRowDto;
 import com.openhis.health.application.outpatient.financial.charge.dto.PreSettleChargeLinePreviewDto;
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.application.common.pagination.PageQueryBinder;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.common.validator.PageWindowGate;
-import com.openhis.health.application.common.validator.PaymentChannelGate;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.module.common.validator.PaymentChannelGate;
+import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.health.application.outpatient.financial.charge.mapper.OutpatientChargeMapper;
 import com.openhis.health.application.outpatient.financial.charge.request.ConfirmOutpatientChargeSettlementRequest;
 import com.openhis.health.application.outpatient.financial.charge.request.LoadChargePageInitRequest;
@@ -40,11 +43,12 @@ import com.openhis.health.domain.administration.practitioner.entity.Practitioner
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.application.querysupport.financial.OutpatientChargeEncounterQueueLoader;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.financial.OutpatientChargeEncounterQueueLoader;
 import com.openhis.health.domain.administration.invoice.service.InvoiceDomainService;
 import com.openhis.health.domain.clinical.condition.service.ConditionQueryService;
 import com.openhis.health.domain.clinical.condition.queries.model.ConditionBatchItemQueryModel;
+import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.financial.contract.queries.model.ContractDetailQueryModel;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.financial.paymentreconciliation.command.AbortPreSettlementBeforePaymentCommand;
@@ -64,11 +68,14 @@ import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQ
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestDomainService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.domain.share.constants.ChargeItemDmConstants;
+import com.openhis.health.application.insurance.config.InsuranceCoordinationProperties;
+import com.openhis.health.application.insurance.outpatient.InsuranceOutpatientSettlementAppService;
+import com.openhis.health.application.insurance.outpatient.OutpatientInsuranceSettlementCompensation;
+import com.openhis.health.domain.share.constants.InsuranceCoordinationConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.OutpatientChargeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -77,6 +84,7 @@ import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.ChargeTypeCategory;
 import com.openhis.health.domain.share.enums.PaymentChannel;
 import com.openhis.health.domain.share.enums.PaymentStatus;
+import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -84,6 +92,15 @@ import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import com.openhis.whale.chs.jilin.port.OutpatientInsuranceSettlementPort;
+import com.openhis.whale.chs.jilin.port.model.OpInsuranceConfirmCommand;
+import com.openhis.whale.chs.jilin.port.model.OpInsuranceConfirmResult;
+import com.openhis.whale.chs.jilin.port.model.OpInsurancePreSettleBatchCommand;
+import com.openhis.whale.chs.jilin.port.model.OpInsurancePreSettleBatchResult;
+import com.openhis.whale.chs.jilin.port.model.OpInsurancePreSettleCommand;
+import com.openhis.whale.chs.jilin.port.model.OpInsurancePreSettleGroupResult;
+import com.openhis.whale.chs.jilin.port.model.OpInsurancePreSettleResult;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -142,6 +159,18 @@ public class OutpatientChargeAppService {
     private final DeviceDispenseQueryService deviceDispenseQueryService;
     private final ServiceRequestDomainService serviceRequestDomainService;
 
+    /** 门诊医保结算 Port（未装 chs-jilin 时为 null）。 */
+    @Autowired(required = false)
+    private OutpatientInsuranceSettlementPort outpatientInsuranceSettlementPort;
+
+    @Autowired(required = false)
+    private InsuranceOutpatientSettlementAppService insuranceOutpatientSettlementAppService;
+
+    @Autowired(required = false)
+    private OutpatientInsuranceSettlementCompensation outpatientInsuranceSettlementCompensation;
+
+    private final InsuranceCoordinationProperties insuranceCoordinationProperties;
+
     /**
      * IF-OPC-01：加载收费页初始化数据。
      *
@@ -150,9 +179,10 @@ public class OutpatientChargeAppService {
      */
     public LoadChargePageInitResponse loadChargePageInit(LoadChargePageInitRequest request) {
         try {
-            // 初始化页签所需状态选项统一走术语服务，避免应用层硬编码枚举列表。
-            return outpatientChargeMapper.toLoadChargePageInitResponse(
-                codeSystemQueryService.getOptionListByEnum(ChargeItemStatus.class));
+            // Pre：初始化页签所需状态选项统一走术语服务。
+            List<OptionDto> options = codeSystemQueryService.getOptionListByEnum(ChargeItemStatus.class);
+            // Asm：装配初始化响应。
+            return outpatientChargeMapper.toLoadChargePageInitResponse(options);
         } catch (BusinessException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -171,9 +201,9 @@ public class OutpatientChargeAppService {
      */
     public PageOutpatientChargeQueueResponse pageOutpatientChargeQueue(PageOutpatientChargeQueueRequest request) {
         try {
-            // 门禁校验：分页参数与页签类型必须合法
+            // Gate：分页参数与页签类型必须合法。
             this.validateQueueRequest(request);
-            // 先按收费事实（待收费/已结算、非草稿、非挂号锚点）分页就诊，再回补门诊信息读模型，保证队列患者均存在可收银明细。
+            // Pre：按收费事实分页就诊并回补门诊信息读模型。
             OutpatientChargeQueueEncounterQuery queueEncounterQuery = new OutpatientChargeQueueEncounterQuery();
             PageQueryBinder.bind(request, queueEncounterQuery);
             queueEncounterQuery.setExcludedServiceTable(TableNameConstants.ADM_HEALTHCARE_SERVICE);
@@ -201,7 +231,7 @@ public class OutpatientChargeAppService {
                     filtered.add(record);
                 }
             }
-            // 队列页签过滤发生在应用层，分页总数字段应与当前返回记录口径一致，避免前端分页器与列表条数不一致。
+            // Asm：按页签过滤并封装分页响应。
             return this.toQueuePageResponse(pageShell, filtered);
         } catch (BusinessException ex) {
             throw ex;
@@ -225,8 +255,10 @@ public class OutpatientChargeAppService {
      */
     public LoadPendingChargeItemsResponse loadPendingChargeItems(LoadPendingChargeItemsRequest request) {
         try {
+            // Gate：就诊主键须非空且就诊须存在。
             this.validateEncounterId(request.getEncounterId());
             encounterQueryService.mustGetEncounter(request.getEncounterId());
+            // Pre：加载就诊下待收费/已结算明细（排除挂号锚点）。
             ChargeItemQueryCommand queryCommand = new ChargeItemQueryCommand();
             queryCommand.setEncounterId(request.getEncounterId());
             this.applyOutpatientCashierChargeItemQueryFilters(queryCommand);
@@ -238,6 +270,7 @@ public class OutpatientChargeAppService {
             }
             LoadPendingChargeItemsResponse response = new LoadPendingChargeItemsResponse();
             response.setEncounterId(request.getEncounterId());
+            // Asm：映射明细行并返回。
             response.setItems(this.toPendingRows(rows, Boolean.TRUE.equals(request.getIncludePriceExtension())));
             return response;
         } catch (BusinessException ex) {
@@ -257,6 +290,7 @@ public class OutpatientChargeAppService {
      */
     public SwitchEncounterChargeItemsAccountResponse switchEncounterChargeItemsToInsurance(
         SwitchEncounterChargeItemsToInsuranceRequest request) {
+        // Cmd：批量切换就诊收费项至医保账户。
         return this.switchAccount(request.getEncounterId(), true);
     }
 
@@ -268,6 +302,7 @@ public class OutpatientChargeAppService {
      */
     public SwitchEncounterChargeItemsAccountResponse switchEncounterChargeItemsToSelfPay(
         SwitchEncounterChargeItemsToSelfPayRequest request) {
+        // Cmd：批量切换就诊收费项至自费账户。
         return this.switchAccount(request.getEncounterId(), false);
     }
 
@@ -288,9 +323,9 @@ public class OutpatientChargeAppService {
      * @throws BusinessException 任一步前置校验失败时抛出；无法解析结算账户时抛出（语义码 {@code EX-OPC-308}）
      */
     public PreSettleOutpatientChargesResponse preSettleOutpatientCharges(PreSettleOutpatientChargesRequest request) {
-        // 门禁校验：预结算请求参数必须完整且合法
+        // Gate：预结算请求参数必须完整且合法。
         this.validatePreSettleRequest(request);
-        // 预加载就诊详情，确保就诊存在且有效
+        // Pre：预加载就诊详情，确保就诊存在且有效。
         EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounter(request.getEncounterId());
         // 批量加载收费项明细，用于后续校验与金额汇总
         ChargeItemQueryCommand queryCommand = new ChargeItemQueryCommand();
@@ -369,7 +404,11 @@ public class OutpatientChargeAppService {
             preview.setLineAmount(chargeItem.getTotalPrice());
             previews.add(preview);
         }
-        return outpatientChargeMapper.toPreSettleOutpatientChargesResponse(paymentDraftId, totalAmount, previews);
+        PreSettleOutpatientChargesResponse response =
+            outpatientChargeMapper.toPreSettleOutpatientChargesResponse(paymentDraftId, totalAmount, previews);
+        this.applyInsurancePreSettleIfNeeded(request, paymentDraftId, response, chargeItems);
+        // Asm：返回预结算响应（草稿 ID、预览金额与医保分组）。
+        return response;
     }
 
     /**
@@ -388,9 +427,11 @@ public class OutpatientChargeAppService {
      */
     public ConfirmOutpatientChargeSettlementResponse confirmOutpatientChargeSettlement(
         ConfirmOutpatientChargeSettlementRequest request) {
+        // Gate：正式结算请求参数须完整。
         this.validateConfirmSettleRequest(request);
+        // Pre：加载支付草稿并校验草稿态与就诊一致。
         PaymentReconciliationQueryModel payment = paymentReconciliationQueryService.mustGetPayment(request.getPaymentDraftId());
-        // 支付草稿就诊锚点必须与本次提交一致，防止跨就诊错结算。
+        // Gate：支付草稿就诊锚点必须与本次提交一致，防止跨就诊错结算。
         if (!request.getEncounterId().equals(payment.getEncounterId())) {
             throw new BusinessException(
                 ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
@@ -433,9 +474,9 @@ public class OutpatientChargeAppService {
             OutpatientChargeConstants.MESSAGE_CODE_SETTLE_CHARGE_ITEMS_MISMATCH);
         // 校验收费项未结算：已结算或已退款的收费项不能再次结算
         this.assertNotSettledChargeItems(chargeItems);
-        // 计算收费项总金额作为预期金额基准
-        BigDecimal expected = this.sumChargeItemAmount(chargeItems);
-        // 支付草稿明细金额必须与当前收费项事实一致，防止历史脏草稿在正式结算阶段穿透。
+        // 计算收费项总金额作为预期金额基准；医保预结算后以草稿 displayAmount 为准。
+        BigDecimal expected = this.resolveExpectedPayableAmount(payment, chargeItems);
+        // 支付草稿明细金额必须与当前应付口径一致，防止历史脏草稿在正式结算阶段穿透。
         this.assertDraftDetailAmountMatchesExpected(details, expected);
         BigDecimal actual = this.sumSubmitAmount(request);
         if (expected.compareTo(actual) != 0) {
@@ -443,14 +484,20 @@ public class OutpatientChargeAppService {
                 ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
                 this.buildMessage(OutpatientChargeConstants.MESSAGE_CODE_SETTLE_AMOUNT_MISMATCH, "支付金额与预结算不一致"));
         }
-        // 支付成功态先落账，再推进收费项结算，最后创建发票草稿，保持业务链路顺序稳定。
+        Long operatorId = currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
+            "当前会话操作人不能为空");
+        ConfirmOutpatientChargeSettlementResponse asyncResponse =
+            this.tryConfirmOutpatientChargeAsync(request, operatorId, payment);
+        if (asyncResponse != null) {
+            return asyncResponse;
+        }
+        this.runInsuranceConfirmIfNeeded(request);
+        // Cmd：支付成功态先落账，再推进收费项结算，最后创建发票草稿，保持业务链路顺序稳定。
         // Mapper 仅映射渠道与金额；正式结算 replaceDetails 要求每行 accountId 非空，须与 IF-OPC-06 草稿明细对齐。
         SettleOutpatientPaymentCommand settleCommand = outpatientChargeMapper.toSettleOutpatientPaymentCommand(request);
         this.attachDraftAccountsToPayReceiptDetails(settleCommand.getPayReceiptDetails(), details);
         Long paymentId = paymentReconciliationDomainService.settleOutpatientPayment(settleCommand);
-        Long operatorId = currentOperatorResolver.requireOperatorId(
-            ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
-            "当前会话操作人不能为空");
         BatchChargeItemIdsCommand batchChargeItemIdsCommand =
             outpatientChargeMapper.toBatchChargeItemIdsCommand(request.getChargeItemIds(), operatorId);
         chargeItemDomainService.settleChargeItems(batchChargeItemIdsCommand);
@@ -460,6 +507,7 @@ public class OutpatientChargeAppService {
         this.syncAdviceStatesAfterChargeSettlement(chargeItems, operatorId);
         Long invoiceId = invoiceDomainService.createDraftInvoiceAfterPayment(
             outpatientChargeMapper.toCreateDraftInvoiceCommand(payment, paymentId, operatorId));
+        // Asm：装配正式结算成功响应（支付主键、票据主键）。
         return outpatientChargeMapper.toConfirmOutpatientChargeSettlementResponse(paymentId, invoiceId);
     }
 
@@ -686,6 +734,7 @@ public class OutpatientChargeAppService {
             }
         }
         Map<String, String> contractNameByBusNo = contractQueryService.mapContractNameByBusNoIn(contractBusNos);
+        Map<String, Long> contractIdByBusNo = contractQueryService.mapContractIdByBusNoIn(contractBusNos);
         Map<Long, String> medTypeByEncounterDxId = encounterQueryService.mapMedTypeByEncounterDiagnosisIds(batchDxIds);
         List<PendingChargeItemRowDto> items = new ArrayList<>();
         for (ChargeItem row : rows) {
@@ -723,9 +772,11 @@ public class OutpatientChargeAppService {
             item.setAccountId(row.getAccountId());
             Account accBind = accountByIdForPending.get(row.getAccountId());
             if (accBind != null && StringUtils.isNotBlank(accBind.getContractNo())) {
-                String feeNature = contractNameByBusNo.get(accBind.getContractNo().trim());
+                String contractBusNo = accBind.getContractNo().trim();
+                String feeNature = contractNameByBusNo.get(contractBusNo);
                 item.setContractName(feeNature);
                 item.setFeeNatureDisplay(feeNature);
+                item.setContractId(contractIdByBusNo.get(contractBusNo));
             }
             item.setMedTypeCode(medTypeByEncounterDxId.get(row.getEncounterDiagnosisId()));
             if (product != null && StringUtils.isNotBlank(product.getYbNo())) {
@@ -980,7 +1031,7 @@ public class OutpatientChargeAppService {
     }
 
     /**
-     * 门诊收银数量单位展示：优先产品目录单位槽解析为中文名；缺省「次」且存在门诊默认单位时回落 defEncounterUnit。
+     * 门诊收银数量单位展示：按产品读模型各槽单位码精确匹配展示名；未命中时返回持久化 code。
      *
      * @param quantityUnit 持久化单位 code
      * @param product      产品读模型，可空
@@ -1002,14 +1053,6 @@ public class OutpatientChargeAppService {
                     && StringUtils.isNotBlank(band.getUnitName())) {
                     return band.getUnitName();
                 }
-            }
-            if (ChargeItemDmConstants.DEFAULT_QUANTITY_UNIT.equals(normalized)
-                && StringUtils.isNotBlank(product.getDefEncounterUnitCodeDictText())) {
-                return product.getDefEncounterUnitCodeDictText().trim();
-            }
-            if (ChargeItemDmConstants.DEFAULT_QUANTITY_UNIT.equals(normalized)
-                && StringUtils.isNotBlank(product.getDefEncounterUnitCode())) {
-                return product.getDefEncounterUnitCode().trim();
             }
         }
         return normalized;
@@ -1883,5 +1926,448 @@ public class OutpatientChargeAppService {
         for (Long serviceReqId : serviceReqIds) {
             serviceRequestDomainService.completeServiceRequestAfterOutpatientCharge(serviceReqId, operatorId);
         }
+    }
+
+    private void applyInsurancePreSettleIfNeeded(
+        PreSettleOutpatientChargesRequest request,
+        Long paymentDraftId,
+        PreSettleOutpatientChargesResponse response,
+        List<ChargeItem> chargeItems) {
+        if (outpatientInsuranceSettlementPort == null) {
+            response.setSettlementComposition("SELF_PAY_ONLY");
+            return;
+        }
+        Long insuranceContractId = this.resolveInsuranceContractId(request, chargeItems, request.getEncounterId());
+        if (insuranceContractId == null) {
+            response.setSettlementComposition("SELF_PAY_ONLY");
+            return;
+        }
+        if (!outpatientInsuranceSettlementPort.isInsuranceContract(insuranceContractId)) {
+            response.setSettlementComposition("SELF_PAY_ONLY");
+            return;
+        }
+        if (StringUtils.isBlank(request.getPsnNo())) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                this.buildMessage(OutpatientChargeConstants.MESSAGE_CODE_PRESETTLE_CONTRACT_NOT_FOUND, "医保预结算须先读卡获取人员编号"));
+        }
+        boolean multiAccount = this.hasMultipleSettlementAccounts(request.getEncounterId(), chargeItems);
+        if (!multiAccount) {
+            this.applySingleInsurancePreSettle(request, paymentDraftId, response, chargeItems, insuranceContractId);
+            return;
+        }
+        this.applyMixedInsurancePreSettle(request, paymentDraftId, response, chargeItems, insuranceContractId);
+    }
+
+    private void applySingleInsurancePreSettle(
+        PreSettleOutpatientChargesRequest request,
+        Long paymentDraftId,
+        PreSettleOutpatientChargesResponse response,
+        List<ChargeItem> chargeItems,
+        Long insuranceContractId) {
+        OpInsurancePreSettleCommand command = new OpInsurancePreSettleCommand();
+        command.setEncounterId(request.getEncounterId());
+        command.setChargeItemIds(request.getChargeItemIds());
+        command.setContractId(insuranceContractId);
+        command.setPaymentDraftId(paymentDraftId);
+        command.setMdtrtCertType(request.getYbMediumType());
+        command.setMdtrtCertNo(request.getYbCardInfo());
+        command.setPsnNo(request.getPsnNo());
+        command.setInsuplcAdmdvs(request.getInsuplcAdmdvs());
+        command.setInsutype(request.getInsutype());
+        command.setMedType(request.getMedType());
+        OpInsurancePreSettleResult ybResult = outpatientInsuranceSettlementPort.preSettle(command);
+        response.setInsurancePreSettled(Boolean.TRUE);
+        response.setSettlementComposition("INSURANCE_ONLY");
+        response.setYbChrgBchno(ybResult.getChrgBchno());
+        response.setYbMedfeeSumamt(ybResult.getMedfeeSumamt());
+        response.setYbFundPaySumamt(ybResult.getFundPaySumamt());
+        response.setYbAcctPay(ybResult.getAcctPay());
+        response.setYbPsnCashPay(ybResult.getPsnCashPay());
+        if (ybResult.getPsnCashPay() != null) {
+            response.setDisplayAmount(ybResult.getPsnCashPay());
+        }
+        OpInsurancePreSettleBatchResult syntheticBatch = new OpInsurancePreSettleBatchResult();
+        OpInsurancePreSettleGroupResult group = new OpInsurancePreSettleGroupResult();
+        group.setAccountId(this.resolvePrimaryAccountId(request.getEncounterId(), chargeItems));
+        group.setPsnCashPay(ybResult.getPsnCashPay());
+        syntheticBatch.setGroups(List.of(group));
+        List<PaymentDetailItemCommand> draftLines = this.buildMixedPreSettlePaymentDetailDraftLines(
+            request.getEncounterId(),
+            chargeItems,
+            syntheticBatch);
+        paymentReconciliationDomainService.refreshPaymentDraftPreSettleAmounts(
+            paymentDraftId,
+            response.getDisplayAmount(),
+            draftLines);
+    }
+
+    private void applyMixedInsurancePreSettle(
+        PreSettleOutpatientChargesRequest request,
+        Long paymentDraftId,
+        PreSettleOutpatientChargesResponse response,
+        List<ChargeItem> chargeItems,
+        Long insuranceContractId) {
+        OpInsurancePreSettleBatchCommand batchCommand = new OpInsurancePreSettleBatchCommand();
+        batchCommand.setEncounterId(request.getEncounterId());
+        batchCommand.setChargeItemIds(request.getChargeItemIds());
+        batchCommand.setContractId(insuranceContractId);
+        batchCommand.setPaymentDraftId(paymentDraftId);
+        batchCommand.setMdtrtCertType(request.getYbMediumType());
+        batchCommand.setMdtrtCertNo(request.getYbCardInfo());
+        batchCommand.setPsnNo(request.getPsnNo());
+        batchCommand.setInsuplcAdmdvs(request.getInsuplcAdmdvs());
+        batchCommand.setInsutype(request.getInsutype());
+
+        OpInsurancePreSettleBatchResult batchResult = outpatientInsuranceSettlementPort.preSettleBatch(batchCommand);
+        OpSelfPayRollupDto selfPayRollup = null;
+        if (batchResult.getSelfPayRollup() != null) {
+            selfPayRollup = new OpSelfPayRollupDto();
+            selfPayRollup.setAccountId(batchResult.getSelfPayRollup().getAccountId());
+            selfPayRollup.setChargeItemIds(batchResult.getSelfPayRollup().getChargeItemIds());
+            selfPayRollup.setTotalAmount(batchResult.getSelfPayRollup().getTotalAmount());
+        }
+        if (batchResult.getGroups() == null || batchResult.getGroups().isEmpty()) {
+            response.setSettlementComposition("SELF_PAY_ONLY");
+            response.setSelfPayRollup(selfPayRollup);
+            return;
+        }
+
+        List<OpInsurancePreSettleGroupDto> groupDtos = new ArrayList<>();
+        BigDecimal totalFund = BigDecimal.ZERO;
+        BigDecimal totalAcct = BigDecimal.ZERO;
+        BigDecimal totalPsnCash = BigDecimal.ZERO;
+        BigDecimal totalMedfee = BigDecimal.ZERO;
+        List<String> chrgBchnos = new ArrayList<>();
+        for (OpInsurancePreSettleGroupResult group : batchResult.getGroups()) {
+            OpInsurancePreSettleGroupDto dto = this.toInsuranceGroupDto(group, insuranceContractId);
+            groupDtos.add(dto);
+            if (group.getChrgBchno() != null) {
+                chrgBchnos.add(group.getChrgBchno());
+            }
+            totalFund = this.addAmount(totalFund, group.getFundPaySumamt());
+            totalAcct = this.addAmount(totalAcct, group.getAcctPay());
+            totalPsnCash = this.addAmount(totalPsnCash, group.getPsnCashPay());
+            totalMedfee = this.addAmount(totalMedfee, group.getMedfeeSumamt());
+        }
+        response.setInsurancePreSettled(Boolean.TRUE);
+        response.setSettlementComposition(this.resolveSettlementComposition(groupDtos, selfPayRollup));
+        response.setInsuranceGroups(groupDtos);
+        response.setSelfPayRollup(selfPayRollup);
+        response.setYbMedfeeSumamt(totalMedfee);
+        response.setYbFundPaySumamt(totalFund);
+        response.setYbAcctPay(totalAcct);
+        response.setYbPsnCashPay(totalPsnCash);
+        if (!chrgBchnos.isEmpty()) {
+            response.setYbChrgBchno(chrgBchnos.get(chrgBchnos.size() - 1));
+        }
+        if (batchResult.getTotalPsnCashPay() != null) {
+            response.setDisplayAmount(batchResult.getTotalPsnCashPay());
+        }
+        List<PaymentDetailItemCommand> draftLines = this.buildMixedPreSettlePaymentDetailDraftLines(
+            request.getEncounterId(),
+            chargeItems,
+            batchResult);
+        paymentReconciliationDomainService.refreshPaymentDraftPreSettleAmounts(
+            paymentDraftId,
+            response.getDisplayAmount(),
+            draftLines);
+    }
+
+    private boolean hasMultipleSettlementAccounts(Long encounterId, List<ChargeItem> chargeItems) {
+        Long defaultSelfPayAccountId = accountQueryService.getSelfPayAccount(encounterId);
+        LinkedHashSet<Long> accountIds = new LinkedHashSet<>();
+        for (ChargeItem item : chargeItems) {
+            Long accountId = item.getAccountId();
+            if (accountId == null) {
+                accountId = defaultSelfPayAccountId;
+            }
+            if (accountId != null) {
+                accountIds.add(accountId);
+            }
+        }
+        return accountIds.size() > 1;
+    }
+
+    private Long resolvePrimaryAccountId(Long encounterId, List<ChargeItem> chargeItems) {
+        Long defaultSelfPayAccountId = accountQueryService.getSelfPayAccount(encounterId);
+        for (ChargeItem item : chargeItems) {
+            if (item.getAccountId() != null) {
+                return item.getAccountId();
+            }
+        }
+        return defaultSelfPayAccountId;
+    }
+
+    private Long resolveInsuranceContractId(
+        PreSettleOutpatientChargesRequest request,
+        List<ChargeItem> chargeItems,
+        Long encounterId) {
+        if (request.getContractId() != null) {
+            return request.getContractId();
+        }
+        LinkedHashSet<Long> accountIds = new LinkedHashSet<>();
+        for (ChargeItem item : chargeItems) {
+            if (item.getAccountId() != null) {
+                accountIds.add(item.getAccountId());
+            }
+        }
+        Long defaultSelfPayAccountId = accountQueryService.getSelfPayAccount(encounterId);
+        if (defaultSelfPayAccountId != null) {
+            accountIds.add(defaultSelfPayAccountId);
+        }
+        Map<Long, Account> accountById = accountQueryService.mapAccountsByIds(accountIds);
+        for (ChargeItem item : chargeItems) {
+            Long accountId = item.getAccountId();
+            if (accountId == null) {
+                accountId = defaultSelfPayAccountId;
+            }
+            Account account = accountById.get(accountId);
+            if (account == null || StringUtils.isBlank(account.getContractNo())) {
+                continue;
+            }
+            Contract contract = contractQueryService.findOptionalContractEntityByBusNo(account.getContractNo().trim())
+                .orElse(null);
+            if (contract == null) {
+                continue;
+            }
+            if (outpatientInsuranceSettlementPort.isInsuranceContract(contract.getId())) {
+                return contract.getId();
+            }
+        }
+        return null;
+    }
+
+    private ConfirmOutpatientChargeSettlementResponse tryConfirmOutpatientChargeAsync(
+        ConfirmOutpatientChargeSettlementRequest request,
+        Long operatorId,
+        PaymentReconciliationQueryModel payment) {
+        if (!insuranceCoordinationProperties.isOpSettleAsyncEnabled()) {
+            return null;
+        }
+        if (insuranceOutpatientSettlementAppService == null || outpatientInsuranceSettlementPort == null) {
+            return null;
+        }
+        List<String> chrgBchnos = this.resolveYbChrgBchnos(request);
+        if (chrgBchnos.isEmpty()) {
+            return null;
+        }
+        Long contractId = null;
+        if (StringUtils.isNotBlank(payment.getContractNo())) {
+            contractId = contractQueryService.mapContractIdByBusNoIn(
+                Collections.singleton(payment.getContractNo().trim())).get(payment.getContractNo().trim());
+        }
+        if (contractId == null) {
+            ChargeItemQueryCommand chargeItemQueryCommand = new ChargeItemQueryCommand();
+            chargeItemQueryCommand.setIds(request.getChargeItemIds());
+            List<ChargeItem> chargeItems = chargeItemQueryService.loadChargeItemsByIds(chargeItemQueryCommand);
+            contractId = this.resolveInsuranceContractId(
+                new PreSettleOutpatientChargesRequest()
+                    .setEncounterId(request.getEncounterId())
+                    .setChargeItemIds(request.getChargeItemIds()),
+                chargeItems,
+                request.getEncounterId());
+        }
+        if (contractId == null) {
+            return null;
+        }
+        Long accountId = payment.getAccountId();
+        if (accountId == null) {
+            accountId = accountQueryService.getMedicalInsuranceAccount(request.getEncounterId());
+        }
+        if (accountId == null) {
+            return null;
+        }
+        InsuranceOutpatientSettlementAppService.StartOpInsuranceSettleCommand startCmd =
+            new InsuranceOutpatientSettlementAppService.StartOpInsuranceSettleCommand();
+        startCmd.setPaymentDraftId(request.getPaymentDraftId());
+        startCmd.setContractId(contractId);
+        startCmd.setAccountId(accountId);
+        startCmd.setEncounterId(request.getEncounterId());
+        startCmd.setPatientId(payment.getPatientId());
+        startCmd.setOperatorId(operatorId);
+        startCmd.setChargeItemIds(request.getChargeItemIds());
+        startCmd.setChrgBchnos(chrgBchnos);
+        startCmd.setConfirmRequest(request);
+        InsuranceOutpatientSettlementAppService.StartOpInsuranceSettleResult startResult =
+            insuranceOutpatientSettlementAppService.startOutpatientSettle(startCmd);
+        ConfirmOutpatientChargeSettlementResponse response = new ConfirmOutpatientChargeSettlementResponse();
+        response.setPaymentId(startResult.getPaymentId());
+        response.setSettlementMode(startResult.getSettlementMode());
+        response.setPaymentStatus(startResult.getPaymentStatus());
+        response.setCoordinationIds(startResult.getCoordinationIds());
+        return response;
+    }
+
+    private void runInsuranceConfirmIfNeeded(ConfirmOutpatientChargeSettlementRequest request) {
+        if (outpatientInsuranceSettlementPort == null) {
+            return;
+        }
+        List<String> chrgBchnos = this.resolveYbChrgBchnos(request);
+        if (chrgBchnos.isEmpty()) {
+            return;
+        }
+        List<String> setlIds = new ArrayList<>();
+        int succeededBatches = 0;
+        try {
+            for (String chrgBchno : chrgBchnos) {
+                OpInsuranceConfirmCommand command = new OpInsuranceConfirmCommand();
+                command.setPaymentDraftId(request.getPaymentDraftId());
+                command.setChrgBchno(chrgBchno);
+                command.setEncounterId(request.getEncounterId());
+                OpInsuranceConfirmResult ybResult = outpatientInsuranceSettlementPort.confirmBeforeLocalSettle(command);
+                if (StringUtils.isNotBlank(ybResult.getSetlId())) {
+                    setlIds.add(ybResult.getSetlId().trim());
+                }
+                succeededBatches += 1;
+            }
+        } catch (RuntimeException ex) {
+            if (succeededBatches > 0 && outpatientInsuranceSettlementCompensation != null) {
+                outpatientInsuranceSettlementCompensation.compensateSettlementsByPayment(request.getPaymentDraftId());
+            }
+            throw new BusinessException("INS-013", "部分医保结算失败，请勿重复收费，联系医保办处理");
+        }
+        if (!setlIds.isEmpty()) {
+            request.setYbSettleIds(String.join(",", setlIds));
+        }
+    }
+
+    private List<String> resolveYbChrgBchnos(ConfirmOutpatientChargeSettlementRequest request) {
+        if (request.getYbChrgBchnos() != null && !request.getYbChrgBchnos().isEmpty()) {
+            return request.getYbChrgBchnos();
+        }
+        if (StringUtils.isNotBlank(request.getYbChrgBchno())) {
+            return List.of(request.getYbChrgBchno().trim());
+        }
+        if (outpatientInsuranceSettlementPort == null || request.getPaymentDraftId() == null) {
+            return List.of();
+        }
+        List<OpInsurancePreSettleResult> active =
+            outpatientInsuranceSettlementPort.listActivePreSettlesByPaymentDraft(request.getPaymentDraftId());
+        List<String> chrgBchnos = new ArrayList<>();
+        for (OpInsurancePreSettleResult row : active) {
+            if (StringUtils.isNotBlank(row.getChrgBchno())) {
+                chrgBchnos.add(row.getChrgBchno().trim());
+            }
+        }
+        return chrgBchnos;
+    }
+
+    private BigDecimal resolveExpectedPayableAmount(
+        PaymentReconciliationQueryModel payment,
+        List<ChargeItem> chargeItems) {
+        if (payment.getDisplayAmount() != null
+            && outpatientInsuranceSettlementPort != null
+            && payment.getId() != null
+            && !outpatientInsuranceSettlementPort.listActivePreSettlesByPaymentDraft(payment.getId()).isEmpty()) {
+            return payment.getDisplayAmount();
+        }
+        return this.sumChargeItemAmount(chargeItems);
+    }
+
+    private List<PaymentDetailItemCommand> buildMixedPreSettlePaymentDetailDraftLines(
+        Long encounterId,
+        List<ChargeItem> chargeLines,
+        OpInsurancePreSettleBatchResult batchResult) {
+        Map<Long, BigDecimal> amountByAccountId = new LinkedHashMap<>();
+        if (batchResult.getGroups() != null) {
+            for (OpInsurancePreSettleGroupResult group : batchResult.getGroups()) {
+                if (group.getAccountId() == null) {
+                    continue;
+                }
+                BigDecimal lineAmount;
+                if (group.getPsnCashPay() == null) {
+                    lineAmount = BigDecimal.ZERO;
+                } else {
+                    lineAmount = group.getPsnCashPay();
+                }
+                amountByAccountId.merge(group.getAccountId(), lineAmount, BigDecimal::add);
+            }
+        }
+        if (batchResult.getSelfPayRollup() != null
+            && batchResult.getSelfPayRollup().getAccountId() != null
+            && batchResult.getSelfPayRollup().getTotalAmount() != null) {
+            amountByAccountId.put(
+                batchResult.getSelfPayRollup().getAccountId(),
+                batchResult.getSelfPayRollup().getTotalAmount());
+        }
+        if (amountByAccountId.isEmpty()) {
+            return this.buildPreSettlePaymentDetailDraftLines(encounterId, chargeLines);
+        }
+        List<Account> encounterAccounts = accountQueryService.getAccountListByEncounter(encounterId);
+        Map<Long, Account> accountById = new HashMap<>();
+        for (Account accountRow : encounterAccounts) {
+            accountById.put(accountRow.getId(), accountRow);
+        }
+        List<PaymentDetailItemCommand> draftLines = new ArrayList<>();
+        for (Map.Entry<Long, BigDecimal> entry : amountByAccountId.entrySet()) {
+            PaymentDetailItemCommand draftLine = new PaymentDetailItemCommand();
+            draftLine.setAccountId(entry.getKey());
+            Account matchedAccount = accountById.get(entry.getKey());
+            if (matchedAccount != null) {
+                draftLine.setAccountCode(matchedAccount.getBusNo());
+            }
+            draftLine.setPayEnum(PaymentChannel.CASHIER.getCode());
+            draftLine.setAmount(entry.getValue());
+            draftLine.setChargeAmount(entry.getValue());
+            draftLine.setResultEnum(PaymentStatus.DRAFT.getCode());
+            draftLines.add(draftLine);
+        }
+        return draftLines;
+    }
+
+    private OpInsurancePreSettleGroupDto toInsuranceGroupDto(
+        OpInsurancePreSettleGroupResult group,
+        Long contractId) {
+        OpInsurancePreSettleGroupDto dto = new OpInsurancePreSettleGroupDto();
+        dto.setGroupIndex(group.getGroupIndex());
+        dto.setMedType(group.getMedType());
+        if (StringUtils.isNotBlank(group.getMedType())) {
+            YbMedType medTypeEnum = EnumUtil.fromCode(YbMedType.class, group.getMedType().trim());
+            if (medTypeEnum != null) {
+                dto.setMedTypeDisplay(medTypeEnum.getDisplay());
+            }
+        }
+        dto.setDiseCodg(group.getDiseCodg());
+        dto.setContractId(contractId);
+        dto.setAccountId(group.getAccountId());
+        dto.setChargeItemIds(group.getChargeItemIds());
+        dto.setChrgBchno(group.getChrgBchno());
+        dto.setMdtrtId(group.getMdtrtId());
+        dto.setPreSettleId(group.getPreSettleId());
+        dto.setMedfeeSumamt(group.getMedfeeSumamt());
+        dto.setFundPaySumamt(group.getFundPaySumamt());
+        dto.setAcctPay(group.getAcctPay());
+        dto.setPsnCashPay(group.getPsnCashPay());
+        return dto;
+    }
+
+    private String resolveSettlementComposition(
+        List<OpInsurancePreSettleGroupDto> insuranceGroups,
+        OpSelfPayRollupDto selfPayRollup) {
+        boolean hasInsurance = insuranceGroups != null && !insuranceGroups.isEmpty();
+        boolean hasSelfPay = selfPayRollup != null
+            && selfPayRollup.getChargeItemIds() != null
+            && !selfPayRollup.getChargeItemIds().isEmpty();
+        if (hasInsurance && hasSelfPay) {
+            return "MIXED";
+        }
+        if (hasInsurance) {
+            if (insuranceGroups.size() > 1) {
+                return "MIXED";
+            }
+            return "INSURANCE_ONLY";
+        }
+        return "SELF_PAY_ONLY";
+    }
+
+    private BigDecimal addAmount(BigDecimal base, BigDecimal delta) {
+        if (delta == null) {
+            return base;
+        }
+        if (base == null) {
+            return delta;
+        }
+        return base.add(delta);
     }
 }

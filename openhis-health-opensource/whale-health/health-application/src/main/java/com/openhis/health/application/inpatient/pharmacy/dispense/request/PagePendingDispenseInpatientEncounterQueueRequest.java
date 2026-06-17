@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inpatient.pharmacy.dispense.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -33,12 +33,14 @@ import java.util.List;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 住院发药在院患者队列分页请求。 */
 @Schema(description = "住院发药在院患者队列分页请求")
 public class PagePendingDispenseInpatientEncounterQueueRequest extends AbstractHealthPageRequest {
 
     @Schema(description = "病区主键；未传或 null 表示不按病区过滤")
     private Long wardId;
 
+    /** 发放状态 code 集合；空表示不按发放状态过滤。 */
     @Schema(description = "发放状态 code 集合；空表示不按发放状态过滤")
     private List<String> dispenseStatusEnumIn;
 }

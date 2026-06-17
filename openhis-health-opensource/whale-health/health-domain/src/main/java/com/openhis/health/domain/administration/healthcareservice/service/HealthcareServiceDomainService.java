@@ -75,6 +75,7 @@ public class HealthcareServiceDomainService {
             row.setTypeCode(item.getTypeCode());
             row.setCategoryCode(item.getCategoryCode());
             row.setOfferedOrgId(item.getOfferedOrgId());
+            row.setYbNo(item.getYbNo());
             row.initDraft();
             toSave.add(row);
         }
@@ -138,6 +139,7 @@ public class HealthcareServiceDomainService {
             row.setTypeCode(item.getTypeCode());
             row.setCategoryCode(item.getCategoryCode());
             row.setOfferedOrgId(item.getOfferedOrgId());
+            row.setYbNo(item.getYbNo());
             toSave.add(row);
         }
         // 先批量落库，确保字段变更持久化后再发布事件（B.14 硬门禁）。

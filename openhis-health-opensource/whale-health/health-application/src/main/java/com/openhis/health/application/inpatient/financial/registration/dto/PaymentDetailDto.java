@@ -30,16 +30,22 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 预交金支付明细。 */
 @Schema(description = "预交金支付明细")
 public class PaymentDetailDto {
 
     @Schema(description = "支付渠道 code", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 支付渠道 code（业务字段）。 */
     private String payChannelCode;
 
+    /** 支付金额。 */
     @Schema(description = "支付金额", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 支付金额（业务字段）。 */
     private BigDecimal amount;
 
+    /** 结算账户 ID。 */
     @Schema(description = "结算账户 ID（开户后回填）")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 结算账户 ID（开户后回填）（业务字段）。 */
     private Long accountId;
 }

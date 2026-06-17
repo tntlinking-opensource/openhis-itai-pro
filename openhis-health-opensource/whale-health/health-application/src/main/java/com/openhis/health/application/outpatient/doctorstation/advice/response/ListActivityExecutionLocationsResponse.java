@@ -26,6 +26,7 @@ import java.util.List;
  * 诊疗可执行科室规则列表（含执行科室/地点展示名）。
  */
 @Data
+/** 医生站-诊疗可执行科室规则列表。 */
 @Schema(description = "医生站-诊疗可执行科室规则列表")
 public class ListActivityExecutionLocationsResponse {
 

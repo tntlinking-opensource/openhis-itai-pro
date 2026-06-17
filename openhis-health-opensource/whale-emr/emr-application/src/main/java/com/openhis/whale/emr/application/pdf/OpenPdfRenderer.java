@@ -28,7 +28,7 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.emr.application.pdf.config.PrintConfig;
 import com.openhis.whale.emr.application.pdf.model.PdfRenderOptions;
 import com.openhis.whale.emr.application.pdf.model.PdfRenderResult;
-import com.openhis.whale.emr.application.request.GeneratePdfRequest;
+import com.openhis.whale.emr.application.document.request.GeneratePdfRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -62,10 +62,18 @@ public class OpenPdfRenderer {
             Rectangle pageSize = buildPageSize(printConfig);
             float marginLeft = PdfUnitUtils.mmToPt(printConfig.getMargins().getLeftMm());
             float marginRight = PdfUnitUtils.mmToPt(printConfig.getMargins().getRightMm());
+            float headerHeightMm = 0f;
+            if (printConfig.getHeader().isEnabled()) {
+                headerHeightMm = printConfig.getHeader().getHeightMm();
+            }
+            float footerHeightMm = 0f;
+            if (printConfig.getFooter().isEnabled()) {
+                footerHeightMm = printConfig.getFooter().getHeightMm();
+            }
             float marginTop = PdfUnitUtils.mmToPt(printConfig.getMargins().getTopMm())
-                    + PdfUnitUtils.mmToPt(printConfig.getHeader().isEnabled() ? printConfig.getHeader().getHeightMm() : 0);
+                    + PdfUnitUtils.mmToPt(headerHeightMm);
             float marginBottom = PdfUnitUtils.mmToPt(printConfig.getMargins().getBottomMm())
-                    + PdfUnitUtils.mmToPt(printConfig.getFooter().isEnabled() ? printConfig.getFooter().getHeightMm() : 0);
+                    + PdfUnitUtils.mmToPt(footerHeightMm);
 
             Document document = new Document(pageSize, marginLeft, marginRight, marginTop, marginBottom);
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -122,7 +130,11 @@ public class OpenPdfRenderer {
 
     public String computeContentHash(String contentJson, PrintConfig config) {
         try {
-            String raw = contentJson + (config != null ? objectMapper.writeValueAsString(config) : "");
+            String configJson = "";
+            if (config != null) {
+                configJson = objectMapper.writeValueAsString(config);
+            }
+            String raw = contentJson + configJson;
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] digest = md.digest(raw.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(digest);

@@ -22,16 +22,23 @@ import com.openhis.health.application.basic.department.dto.DepartmentDto;
 import com.openhis.health.application.basic.department.dto.DepartmentInitDto;
 import com.openhis.health.application.basic.department.mapper.DepartmentMapper;
 import com.openhis.health.application.basic.department.request.CreateDepartmentRequest;
+import com.openhis.health.application.basic.department.request.QueryDepartmentListRequest;
 import com.openhis.health.application.basic.department.request.UpdateDepartmentRequest;
+import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
+import com.openhis.health.bridge.shared.organization.OrganizationUnitLinkCode;
 import com.openhis.health.domain.administration.organization.command.AbolishOrganizationCommand;
 import com.openhis.health.domain.administration.organization.command.RelocateOrganizationCommand;
 import com.openhis.health.domain.administration.organization.command.ReactivateOrganizationCommand;
 import com.openhis.health.domain.administration.organization.command.RetireOrganizationCommand;
 import com.openhis.health.domain.administration.organization.entity.Organization;
+import com.openhis.health.domain.administration.organization.query.OrganizationManagementListQuery;
 import com.openhis.health.domain.administration.organization.service.OrganizationDomainService;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
 import com.openhis.health.domain.share.enums.OrganizationClassification;
 import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
@@ -42,6 +49,7 @@ import com.openhis.whale.identity.application.OrganizationUnitAppService;
 import com.openhis.whale.identity.domain.OrganizationUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -58,20 +66,20 @@ import java.util.Set;
 /**
  * 科室应用服务：查询与树构建、初始化、增删改、启停，并与 identity 组织单元（OrganizationUnit）同步。
  *
- * <p>领域侧以 {@link Organization} 为真源；组织单元编码优先取 {@code busNo}，超长截断，缺省回退 {@code org-}{@code id}。</p>
+ * <p>领域侧以 {@link Organization} 为真源；与 identity {@link OrganizationUnit} 通过
+ * {@link OrganizationUnitLinkCode} 关联（{@code code} = busNo 或 {@code org-}{@code id}），两侧主键独立。</p>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class DepartmentAppService {
 
-    /** 写入 identity 组织单元 code 字段的最大长度。 */
-    private static final int OU_CODE_MAX_LENGTH = 128;
-
     /** 组织读侧：科室树、字典树与按 id 展示加载。 */
     private final OrganizationQueryService organizationQueryService;
     /** 组织写侧：创建、修改、迁父、启停与作废。 */
     private final OrganizationDomainService organizationDomainService;
+    /** 写路径操作人门控（B.6.5）。 */
+    private final CurrentOperatorResolver currentOperatorResolver;
     /** 术语下拉：科室分类、类型等初始化选项。 */
     private final CodeSystemQueryService codeSystemQueryService;
     /** 科室请求/实体与 DTO、领域命令映射。 */
@@ -80,6 +88,8 @@ public class DepartmentAppService {
     private final OrganizationUnitAppService organizationUnitAppService;
     /** 医务人员读侧：维护页默认医师下拉。 */
     private final PractitionerQueryService practitionerQueryService;
+    /** 岗位 → 医务人员主键预解析（B.6.1.3.1）。 */
+    private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
 
     /**
      * 全量科室树（启用机构平铺后组树）。
@@ -97,24 +107,6 @@ public class DepartmentAppService {
      */
     public List<DepartmentDto> getTreeForResponsibilityDept() {
         return toDtoList(organizationQueryService.getOrganizationTreeForResponsibilityDept());
-    }
-
-    /**
-     * 药房场景下的组织树。
-     *
-     * @return 根节点列表
-     */
-    public List<DepartmentDto> getTreeForPharmacy() {
-        return toDtoList(organizationQueryService.getOrganizationTreeForPharmacy());
-    }
-
-    /**
-     * 仓储/库房场景下的组织树。
-     *
-     * @return 根节点列表
-     */
-    public List<DepartmentDto> getTreeForStorage() {
-        return toDtoList(organizationQueryService.getOrganizationTreeForStorage());
     }
 
     /**
@@ -177,12 +169,14 @@ public class DepartmentAppService {
     }
 
     /**
-     * 科室列表（当前等同全树）。
+     * 科室列表（管理页：含 ACTIVE 与 INACTIVE 停用科室，不含 DISCARDED 已删除）。
      *
+     * @param request 查询条件；字段均可空
      * @return 根节点列表
      */
-    public List<DepartmentDto> getDepartmentList() {
-        return getTree();
+    public List<DepartmentDto> getDepartmentList(QueryDepartmentListRequest request) {
+        OrganizationManagementListQuery query = toManagementListQuery(request);
+        return toDtoList(organizationQueryService.listOrganizationsForManagement(query));
     }
 
     /**
@@ -195,8 +189,12 @@ public class DepartmentAppService {
         if (request == null) {
             throw new ValidationException("创建科室失败：请求不能为空");
         }
-        // 步骤一：领域落库组织主档（管理端无登录上下文，操作人占位 0）
-        Long createdId = organizationDomainService.createOrganization(departmentMapper.toCreateCommand(request, 0L));
+        validateOrganizationHierarchy(request.getTypeEnum(), request.getParentId(), null);
+        Long operatorId = currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再新建科室");
+        // 步骤一：领域落库组织主档
+        Long createdId = organizationDomainService.createOrganization(
+            departmentMapper.toCreateCommand(request, operatorId));
         Organization organization = organizationQueryService.loadOrganizationByIdForDisplay(createdId);
         // 步骤二：同步 identity 侧 OrganizationUnit，避免权限树与 HIS 科室脱节
         syncCreateOu(organization);
@@ -217,17 +215,21 @@ public class DepartmentAppService {
         if (current == null) {
             throw new ValidationException("科室不存在");
         }
+        validateOrganizationHierarchy(request.getTypeEnum(), request.getParentId(), current);
         // 仅在前端显式声明“上级已变更”时才执行 relocate；
         // 支持 newParentId=null 表示“提升为根节点”。
+        Long operatorId = currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再编辑科室");
         if (Boolean.TRUE.equals(request.getParentIdChanged())
             && !isSameParent(current.getParentId(), request.getParentId())) {
-            relocateDepartment(request.getId(), request.getParentId());
+            relocateDepartment(request.getId(), request.getParentId(), operatorId);
         }
         // 步骤二：更新组织属性（名称、分类、医保信息等）
-        organizationDomainService.modifyOrganization(departmentMapper.toModifyCommand(request, 0L));
+        organizationDomainService.modifyOrganization(
+            departmentMapper.toModifyCommand(request, operatorId));
         Organization organization = organizationQueryService.loadOrganizationByIdForDisplay(request.getId());
-        // 步骤三：回写 identity 组织单元展示名、排序与父子关系
-        syncUpdateOu(organization);
+        // 步骤三：按 code 回写 identity 组织单元（含 busNo 变更时的关联键迁移）
+        syncUpdateOu(organization, current);
         return getDepartment(request.getId());
     }
 
@@ -242,8 +244,10 @@ public class DepartmentAppService {
         if (organization == null) {
             throw new ValidationException("科室不存在");
         }
+        Long operatorId = currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再删除科室");
         AbolishOrganizationCommand command = new AbolishOrganizationCommand();
-        command.setOperatorId(0L);
+        command.setOperatorId(operatorId);
         AbolishOrganizationCommand.AbolishOrganizationItemCommand item =
             new AbolishOrganizationCommand.AbolishOrganizationItemCommand();
         item.setOrganizationId(id);
@@ -264,8 +268,10 @@ public class DepartmentAppService {
         if (validDeptIds.isEmpty()) {
             return false;
         }
+        Long operatorId = currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再启用科室");
         ReactivateOrganizationCommand command = new ReactivateOrganizationCommand();
-        command.setOperatorId(0L);
+        command.setOperatorId(operatorId);
         List<ReactivateOrganizationCommand.ReactivateOrganizationItemCommand> items = new ArrayList<>();
         for (Long deptId : validDeptIds) {
             // 逐条构建启用命令项，保持领域命令语义清晰。
@@ -292,8 +298,10 @@ public class DepartmentAppService {
         if (validDeptIds.isEmpty()) {
             return false;
         }
+        Long operatorId = currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再停用科室");
         RetireOrganizationCommand command = new RetireOrganizationCommand();
-        command.setOperatorId(0L);
+        command.setOperatorId(operatorId);
         List<RetireOrganizationCommand.RetireOrganizationItemCommand> items = new ArrayList<>();
         for (Long deptId : validDeptIds) {
             // 逐条构建停用命令项，保持领域命令语义清晰。
@@ -310,9 +318,35 @@ public class DepartmentAppService {
     }
 
     /**
+     * 将应用层列表查询请求转为领域查询对象。
+     *
+     * @param request HTTP 请求体；{@code null} 时返回空条件
+     * @return 领域查询对象
+     */
+    private OrganizationManagementListQuery toManagementListQuery(QueryDepartmentListRequest request) {
+        OrganizationManagementListQuery query = new OrganizationManagementListQuery();
+        if (request == null) {
+            return query;
+        }
+        if (StringUtils.isNotBlank(request.getKeyword())) {
+            query.setKeyword(request.getKeyword().trim());
+        }
+        if (StringUtils.isNotBlank(request.getTypeEnum())) {
+            query.setTypeEnum(request.getTypeEnum().trim());
+        }
+        if (StringUtils.isNotBlank(request.getClassEnum())) {
+            query.setClassEnum(request.getClassEnum().trim());
+        }
+        if (StringUtils.isNotBlank(request.getStatusEnum())) {
+            query.setStatusEnum(request.getStatusEnum().trim());
+        }
+        return query;
+    }
+
+    /**
      * 将平铺 Organization 列表转换为树形 DepartmentDto 列表。
      *
-     * <p>说明：查询服务返回的是启用机构平铺列表；此处按 parentId 建树，
+     * <p>说明：查询服务返回管理页平铺列表（含 INACTIVE 停用）；此处按 parentId 建树，
      * 使前端可以直接基于 children 渲染树表，而无需再次组树。</p>
      *
      * @param organizations 机构平铺列表
@@ -390,81 +424,87 @@ public class DepartmentAppService {
     }
 
     /**
-     * 领域组织新建后：按 id 或 code 对齐插入或更新 {@link OrganizationUnit}。
-     *
-     * @param organization 已持久化组织
+     * 领域组织新建后：按 {@link OrganizationUnitLinkCode} 同步 {@link OrganizationUnit}。
      */
     private void syncCreateOu(Organization organization) {
         if (organization == null) {
             return;
         }
-        String code = buildOuCode(organization);
-        Optional<OrganizationUnit> existingById = organizationUnitAppService.findOptionalById(organization.getId());
+        String code = OrganizationUnitLinkCode.fromOrganization(organization);
+        if (code == null || code.isBlank()) {
+            return;
+        }
         Optional<OrganizationUnit> existingByCode = organizationUnitAppService.findOptionalByCode(code);
-        assertNoOuIdCodeDrift(organization, code, existingById, existingByCode);
-        if (existingById.isPresent()) {
-            OrganizationUnit ou = existingById.get();
-            ou.setDisplayName(resolveOuDisplayName(organization));
-            ou.setSortOrder(resolveSortOrder(organization.getDisplayOrder()));
-            ou.setIsEnabled(Boolean.TRUE.equals(organization.getActiveFlag()));
-            ou.setParentId(organization.getParentId());
+        if (existingByCode.isPresent()) {
+            OrganizationUnit ou = existingByCode.get();
+            applyOrganizationToOu(organization, ou);
+            restoreOuIfOrganizationActive(organization, ou);
             organizationUnitAppService.persistOrganizationUnit(ou);
             return;
         }
         OrganizationUnit ou = new OrganizationUnit();
-        ou.setId(organization.getId());
         ou.setCode(code);
-        ou.setDisplayName(resolveOuDisplayName(organization));
-        ou.setSortOrder(resolveSortOrder(organization.getDisplayOrder()));
-        ou.setIsEnabled(Boolean.TRUE.equals(organization.getActiveFlag()));
-        ou.setParentId(organization.getParentId());
+        applyOrganizationToOu(organization, ou);
         ou.setTenantId(TenantUtils.getCurrentTenantId());
         organizationUnitAppService.persistOrganizationUnit(ou);
     }
 
     /**
-     * 组织变更后同步更新组织单元展示名、排序、启用与父子关系。
+     * 组织变更后同步更新组织单元；若 busNo 变更则沿旧 code 找到 OU 并迁移关联键。
      *
-     * @param organization 最新组织快照
+     * @param organization       变更后组织快照
+     * @param previousSnapshot   变更前组织快照（用于 code 迁移；可为 null）
      */
-    private void syncUpdateOu(Organization organization) {
+    private void syncUpdateOu(Organization organization, Organization previousSnapshot) {
         if (organization == null) {
             return;
         }
-        String code = buildOuCode(organization);
-        Optional<OrganizationUnit> existingById = organizationUnitAppService.findOptionalById(organization.getId());
-        Optional<OrganizationUnit> existingByCode = organizationUnitAppService.findOptionalByCode(code);
-        assertNoOuIdCodeDrift(organization, code, existingById, existingByCode);
-        if (existingById.isEmpty()) {
-            syncCreateOu(organization);
+        String newCode = OrganizationUnitLinkCode.fromOrganization(organization);
+        if (newCode == null || newCode.isBlank()) {
             return;
         }
-        OrganizationUnit ou = existingById.get();
-        ou.setCode(code);
-        ou.setDisplayName(resolveOuDisplayName(organization));
-        ou.setSortOrder(resolveSortOrder(organization.getDisplayOrder()));
-        ou.setIsEnabled(Boolean.TRUE.equals(organization.getActiveFlag()));
-        ou.setParentId(organization.getParentId());
-        organizationUnitAppService.persistOrganizationUnit(ou);
+        Optional<OrganizationUnit> existingByNewCode = organizationUnitAppService.findOptionalByCode(newCode);
+        if (existingByNewCode.isPresent()) {
+            assertOuCodeOwnedByOrganization(existingByNewCode.get(), organization.getId(), newCode);
+            OrganizationUnit ou = existingByNewCode.get();
+            applyOrganizationToOu(organization, ou);
+            restoreOuIfOrganizationActive(organization, ou);
+            organizationUnitAppService.persistOrganizationUnit(ou);
+            return;
+        }
+        if (previousSnapshot != null) {
+            String oldCode = OrganizationUnitLinkCode.fromOrganization(previousSnapshot);
+            if (oldCode != null && !oldCode.isBlank() && !oldCode.equals(newCode)) {
+                Optional<OrganizationUnit> existingByOldCode = organizationUnitAppService.findOptionalByCode(oldCode);
+                if (existingByOldCode.isPresent()) {
+                    OrganizationUnit ou = existingByOldCode.get();
+                    ou.setCode(newCode);
+                    applyOrganizationToOu(organization, ou);
+                    restoreOuIfOrganizationActive(organization, ou);
+                    organizationUnitAppService.persistOrganizationUnit(ou);
+                    return;
+                }
+            }
+        }
+        syncCreateOu(organization);
     }
 
     /**
      * 领域作废后标记组织单元逻辑删除。
-     *
-     * @param organization 被作废组织
      */
     private void syncDeleteOu(Organization organization) {
         if (organization == null) {
             return;
         }
-        String code = buildOuCode(organization);
-        Optional<OrganizationUnit> existingById = organizationUnitAppService.findOptionalById(organization.getId());
-        Optional<OrganizationUnit> existingByCode = organizationUnitAppService.findOptionalByCode(code);
-        assertNoOuIdCodeDrift(organization, code, existingById, existingByCode);
-        if (existingById.isEmpty()) {
+        String code = OrganizationUnitLinkCode.fromOrganization(organization);
+        if (code == null || code.isBlank()) {
             return;
         }
-        OrganizationUnit ou = existingById.get();
+        Optional<OrganizationUnit> existingByCode = organizationUnitAppService.findOptionalByCode(code);
+        if (existingByCode.isEmpty()) {
+            return;
+        }
+        OrganizationUnit ou = existingByCode.get();
         ou.setIsDeleted(Boolean.TRUE);
         ou.setDeletedAt(LocalDateTime.now());
         organizationUnitAppService.persistOrganizationUnit(ou);
@@ -472,9 +512,6 @@ public class DepartmentAppService {
 
     /**
      * 按科室 id 列表批量切换组织单元启用状态。
-     *
-     * @param deptIds 科室主键
-     * @param enabled   目标启用状态
      */
     private void syncOrganizationOuEnabled(List<Long> deptIds, boolean enabled) {
         for (Long deptId : deptIds) {
@@ -485,68 +522,82 @@ public class DepartmentAppService {
             if (organization == null) {
                 continue;
             }
-            String code = buildOuCode(organization);
-            Optional<OrganizationUnit> existingById = organizationUnitAppService.findOptionalById(organization.getId());
-            Optional<OrganizationUnit> existingByCode = organizationUnitAppService.findOptionalByCode(code);
-            assertNoOuIdCodeDrift(organization, code, existingById, existingByCode);
-            if (existingById.isEmpty()) {
+            String code = OrganizationUnitLinkCode.fromOrganization(organization);
+            if (code == null || code.isBlank()) {
                 continue;
             }
-            OrganizationUnit ou = existingById.get();
+            Optional<OrganizationUnit> existingByCode = organizationUnitAppService.findOptionalByCode(code);
+            if (existingByCode.isEmpty()) {
+                continue;
+            }
+            OrganizationUnit ou = existingByCode.get();
             ou.setIsEnabled(enabled);
+            if (enabled) {
+                restoreOuIfOrganizationActive(organization, ou);
+            }
             organizationUnitAppService.persistOrganizationUnit(ou);
         }
     }
 
     /**
-     * 校验组织 id 与组织单元 code 不出现交叉占用（防双轨漂移）。
-     *
-     * @param organization   当前组织
-     * @param code           推导出的 OU code
-     * @param existingById   同 id 的 OU
-     * @param existingByCode 同 code 的 OU
+     * 将 HIS 组织快照字段写入 OU（不含 Whale 主键；parent 映射为上级 OU 的 id）。
      */
-    private void assertNoOuIdCodeDrift(
-        Organization organization,
-        String code,
-        Optional<OrganizationUnit> existingById,
-        Optional<OrganizationUnit> existingByCode
-    ) {
-        if (organization == null || organization.getId() == null || code == null || code.isBlank()) {
-            return;
-        }
-        if (existingByCode.isPresent() && !organization.getId().equals(existingByCode.get().getId())) {
-            throw new ValidationException("组织机构与组织单元ID不一致：busNo/code=" + code
-                + "，organizationId=" + organization.getId()
-                + "，organizationUnitId=" + existingByCode.get().getId());
-        }
-        if (existingById.isPresent() && !code.equals(existingById.get().getCode())) {
-            throw new ValidationException("组织机构与组织单元编码不一致：organizationId=" + organization.getId()
-                + "，organizationBusNo=" + code
-                + "，organizationUnitCode=" + existingById.get().getCode());
-        }
+    private void applyOrganizationToOu(Organization organization, OrganizationUnit ou) {
+        ou.setDisplayName(resolveOuDisplayName(organization));
+        ou.setSortOrder(resolveSortOrder(organization.getDisplayOrder()));
+        ou.setIsEnabled(Boolean.TRUE.equals(organization.getActiveFlag()));
+        ou.setParentId(resolveOuParentId(organization));
     }
 
     /**
-     * 生成组织单元 code：优先 busNo，空则用 org-主键，超长截断至 {@link #OU_CODE_MAX_LENGTH}。
-     *
-     * @param organization 组织
-     * @return code 字符串，可能为 null
+     * 解析 OU 父节点：按上级组织的 code 查找已同步的 {@link OrganizationUnit}，返回其 Whale id。
      */
-    private String buildOuCode(Organization organization) {
-        if (organization == null) {
+    private Long resolveOuParentId(Organization organization) {
+        if (organization == null || organization.getParentId() == null) {
             return null;
         }
-        if (organization.getBusNo() == null || organization.getBusNo().isBlank()) {
-            if (organization.getId() == null) {
-                return null;
+        Organization parentOrg = organizationQueryService.loadOrganizationByIdForDisplay(organization.getParentId());
+        if (parentOrg == null) {
+            return null;
+        }
+        String parentCode = OrganizationUnitLinkCode.fromOrganization(parentOrg);
+        if (parentCode == null || parentCode.isBlank()) {
+            return null;
+        }
+        return organizationUnitAppService.findOptionalByCode(parentCode)
+            .map(OrganizationUnit::getId)
+            .orElse(null);
+    }
+
+    /**
+     * 组织启用且仍关联同一科室时，撤销 OU 软删标记（作废后重新启用场景）。
+     */
+    private void restoreOuIfOrganizationActive(Organization organization, OrganizationUnit ou) {
+        if (organization == null || ou == null || !Boolean.TRUE.equals(organization.getActiveFlag())) {
+            return;
+        }
+        ou.setIsDeleted(Boolean.FALSE);
+        ou.setDeletedAt(null);
+        ou.setDeletedBy(null);
+    }
+
+    /**
+     * 防止新 code 已被其他科室占用（关联键冲突）。
+     */
+    private void assertOuCodeOwnedByOrganization(OrganizationUnit ou, Long organizationId, String code) {
+        if (ou == null || organizationId == null || code == null || code.isBlank()) {
+            return;
+        }
+        Optional<Long> linkedByPrefix = OrganizationUnitLinkCode.parseBusinessOrganizationId(code);
+        if (linkedByPrefix.isPresent() && !linkedByPrefix.get().equals(organizationId)) {
+            throw new ValidationException("组织单元编码已被其他科室占用: " + code);
+        }
+        if (linkedByPrefix.isEmpty()) {
+            Organization owner = organizationQueryService.findFirstByBusNo(code.trim());
+            if (owner != null && owner.getId() != null && !owner.getId().equals(organizationId)) {
+                throw new ValidationException("组织单元编码已被其他科室占用: " + code);
             }
-            return "org-" + organization.getId();
         }
-        if (organization.getBusNo().length() <= OU_CODE_MAX_LENGTH) {
-            return organization.getBusNo();
-        }
-        return organization.getBusNo().substring(0, OU_CODE_MAX_LENGTH);
     }
 
     /**
@@ -581,7 +632,8 @@ public class DepartmentAppService {
      * @return 选项列表
      */
     private List<OptionDto> loadPractitionerOptions() {
-        List<Practitioner> practitioners = practitionerQueryService.listPractitionersForOutpatientRegistration(null);
+        List<Practitioner> practitioners = practitionerRoleScopeLoader.listActivePractitionersForPlatformRole(
+            WhalePlatformRoleCodeConstants.ROLE_DOCTOR, null);
         List<OptionDto> options = new ArrayList<>();
         long sort = 0L;
         for (Practitioner practitioner : practitioners) {
@@ -600,9 +652,9 @@ public class DepartmentAppService {
      * @param organizationId 待调整组织
      * @param newParentId    新父 id，可为 null 表示提升为根
      */
-    private void relocateDepartment(Long organizationId, Long newParentId) {
+    private void relocateDepartment(Long organizationId, Long newParentId, Long operatorId) {
         RelocateOrganizationCommand command = new RelocateOrganizationCommand();
-        command.setOperatorId(0L);
+        command.setOperatorId(operatorId);
         RelocateOrganizationCommand.RelocateOrganizationItemCommand item =
             new RelocateOrganizationCommand.RelocateOrganizationItemCommand();
         item.setOrganizationId(organizationId);
@@ -629,13 +681,65 @@ public class DepartmentAppService {
     }
 
     /**
-     * 上级科室树形下拉数据。
+     * 上级组织树形下拉（医院与科室全量，具体可选范围由层级校验约束）。
      *
-     * @return 树根选项
+     * @return 组织树根选项
      */
     private List<OptionDto> loadDepartmentOptions() {
         List<Organization> organizations = organizationQueryService.getOrganizationDictTree();
         return toOrganizationOptions(organizations);
+    }
+
+    /**
+     * 校验组织层级：单租户仅允许一家根医院；科室必须挂在医院或医院下科室。
+     *
+     * @param typeEnumRaw 请求中的类型原始值
+     * @param parentId    上级组织主键
+     * @param current     编辑时的现有组织（用于请求未传 type 时回退）
+     */
+    private void validateOrganizationHierarchy(String typeEnumRaw, Long parentId, Organization current) {
+        OrganizationType type = OrganizationType.resolveRaw(typeEnumRaw);
+        if (type == null && current != null) {
+            type = OrganizationType.resolveRaw(current.getTypeEnum());
+        }
+        if (type == null) {
+            return;
+        }
+        Long selfId = null;
+        if (current != null) {
+            selfId = current.getId();
+        }
+        if (OrganizationType.HOSPITAL == type) {
+            // 单租户仅允许维护一家医院，且须为根节点供科室挂载。
+            if (organizationQueryService.existsHospitalExcluding(selfId)) {
+                throw new ValidationException("当前租户已存在医院，不可再新建医院");
+            }
+            if (parentId != null) {
+                throw new ValidationException("医院须为根节点，不可挂载上级组织");
+            }
+            return;
+        }
+        if (OrganizationType.DEPARTMENT == type) {
+            // 科室必须挂在医院体系下，不允许无上级或悬挂在根节点。
+            if (!organizationQueryService.existsHospitalExcluding(null)) {
+                throw new ValidationException("请先创建医院，再维护科室");
+            }
+            if (parentId == null) {
+                throw new ValidationException("科室必须选择上级组织");
+            }
+            if (selfId != null && parentId.equals(selfId)) {
+                throw new ValidationException("上级组织不能是自身");
+            }
+            Organization parent = organizationQueryService.loadOrganizationByIdForDisplay(parentId);
+            if (parent == null) {
+                throw new ValidationException("上级组织不存在");
+            }
+            OrganizationType parentType = OrganizationType.resolveRaw(parent.getTypeEnum());
+            if (OrganizationType.HOSPITAL != parentType
+                && OrganizationType.DEPARTMENT != parentType) {
+                throw new ValidationException("科室的上级只能是医院或科室");
+            }
+        }
     }
 
     /**

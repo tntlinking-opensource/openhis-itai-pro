@@ -25,8 +25,10 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 审批同意药房入库（手工单）请求（IF-PHA-IN-08）。
@@ -35,6 +37,7 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 审批同意药房入库 IF-PHA-IN-08。 */
 @Schema(description = "审批同意药房入库 IF-PHA-IN-08", requiredProperties = {"busNo"})
 public class AgreePharmacyStockInRequest {
 
@@ -55,4 +58,12 @@ public class AgreePharmacyStockInRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "已废弃：审批人取当前登录用户，可忽略", deprecated = true)
     private Long approverId;
+
+    /** @deprecated CHS 模块启用即上传，此开关不再生效。 */
+    @Deprecated
+    @Schema(description = "同意后是否上传医保进销存")
+    private Boolean medicareUploadEnabled;
+
+    @Schema(description = "医保契约 busNo")
+    private String contractBusNo;
 }

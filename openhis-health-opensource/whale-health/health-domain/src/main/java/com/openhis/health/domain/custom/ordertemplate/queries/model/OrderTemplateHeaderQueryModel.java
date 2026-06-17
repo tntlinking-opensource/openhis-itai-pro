@@ -21,8 +21,10 @@ import lombok.Getter;
 import lombok.Setter;
 import com.openhis.health.domain.share.enums.OrderTemplateScene;
 
+import java.math.BigDecimal;
+
 /**
- * 组套头查询模型。
+ * 组套模板头查询模型。
  */
 @Getter
 @Setter
@@ -43,6 +45,14 @@ public class OrderTemplateHeaderQueryModel {
      * 适用场景枚举值（门诊/住院/通用）。
      */
     private OrderTemplateScene sceneEnum;
+    /**
+     * 组套种类（GENERAL/TCM/PRICING）。
+     */
+    private String templateKindEnum;
+    /**
+     * 模板来源（MAINTAINED/FROM_ADVICE）。
+     */
+    private String templateSourceEnum;
     /**
      * 模板编码（可空）。
      */
@@ -67,4 +77,12 @@ public class OrderTemplateHeaderQueryModel {
      * 备注（可空）。
      */
     private String remark;
+    /**
+     * TCM 组套默认中药付数。
+     */
+    private BigDecimal defaultChineseHerbsDoseQuantity;
+    /**
+     * TCM 组套默认代煎标志。
+     */
+    private Boolean defaultSufferingFlag;
 }

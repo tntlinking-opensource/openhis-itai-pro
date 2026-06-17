@@ -28,10 +28,10 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 病房树节点。 */
 @Schema(description = "病房树节点")
 public class NurseStationHouseTreeNodeDto {
 
-    /** 病房位置主键。 */
     @Schema(description = "病房位置主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long locationId;

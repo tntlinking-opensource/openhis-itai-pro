@@ -25,13 +25,8 @@ import lombok.Setter;
  */
 @Getter
 @Setter
-/**
- * AgreePurchaseOrderResponse。
- */
 public class AgreePurchaseOrderResponse {
 
-    /**
-     * success。
-     */
+    /** 是否同意成功。 */
     private Boolean success;
 }

@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 编辑药房入库单响应（IF-PHA-IN-05）。
@@ -28,6 +29,7 @@ import lombok.experimental.Accessors;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 编辑药房入库单 IF-PHA-IN-05。 */
 @Schema(description = "编辑药房入库单 IF-PHA-IN-05")
 public class UpdatePharmacyStockInResponse {
 

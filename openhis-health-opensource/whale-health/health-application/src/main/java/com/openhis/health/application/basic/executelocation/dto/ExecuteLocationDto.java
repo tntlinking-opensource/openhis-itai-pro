@@ -19,43 +19,73 @@ package com.openhis.health.application.basic.executelocation.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import java.time.LocalTime;
 
 /**
- * 执行科室下某诊疗活动定义的执行规则行：绑定执行地点、时段与优先级等。
+ * 执行科室下某诊疗活动定义的执行规则行（WH-EXE001 右侧表格）。
  */
 @Data
+@Schema(description = "执行科室规则行")
 public class ExecuteLocationDto {
 
-    /** 执行规则主键（JSON 序列化为字符串）。 */
+    @Schema(description = "规则主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
 
-    /** 诊疗活动定义（产品定义）主键。 */
+    @Schema(description = "诊疗活动定义主键；为空表示该诊疗大类下的默认规则")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long activityDefinitionId;
 
-    /** 诊疗大类业务码（与读模型分类过滤一致）。 */
+    /** 诊疗活动定义名称。 */
+    @Schema(description = "诊疗活动定义名称")
+    private String activityDefinitionName;
+
+    /** 诊疗大类业务码。 */
+    @Schema(description = "诊疗大类编码")
     private String activityCategoryCode;
 
-    /** 执行科室（组织机构）主键。 */
+    /** 诊疗大类展示名。 */
+    @Schema(description = "诊疗大类展示名")
+    private String activityCategoryCode_dictText;
+
+    /** 执行科室主键。 */
+    @Schema(description = "执行科室标识")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long executionOrgId;
 
-    /** 实际执行地点（位置）主键。 */
+    /** 执行科室名称。 */
+    @Schema(description = "执行科室名称")
+    private String executionOrgName;
+
+    /** 实际执行地点主键。 */
+    @Schema(description = "执行地点标识")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long executionLocationId;
 
+    /** 执行地点名称。 */
+    @Schema(description = "执行地点名称")
+    private String executionLocationName;
+
     /** 当日有效开始时刻（含）。 */
+    @Schema(description = "生效开始时刻")
     private LocalTime startTime;
+
     /** 当日有效结束时刻（含）。 */
+    @Schema(description = "生效结束时刻")
     private LocalTime endTime;
-    /** 规则优先级，数值越小或越大由前端约定展示，此处透传领域值。 */
+
+    /** 优先级（1 最优先，数值越小越优先）。 */
+    @Schema(description = "优先级")
     private Integer priority;
+
     /** 同科室内展示排序。 */
+    @Schema(description = "展示顺序")
     private Integer displayOrder;
+
     /** 备注。 */
+    @Schema(description = "备注")
     private String remark;
 }

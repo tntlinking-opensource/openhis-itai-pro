@@ -28,10 +28,10 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 批量不执行响应。 */
 @Schema(description = "批量不执行响应")
 public class SkipNurseStationOrderSlotsResponse {
 
-    /** 成功登记的槽位数。 */
     @Schema(description = "成功登记的槽位数")
     private Integer processedCount;
 }

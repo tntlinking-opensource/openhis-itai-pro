@@ -29,6 +29,7 @@ import java.util.List;
  * 加载退药初始化元数据响应（IF-PHA-02-01）。
  */
 @Data
+/** 加载退药初始化元数据响应。 */
 @Schema(description = "加载退药初始化元数据响应")
 public class LoadReturnMedicineInitResponse implements Serializable {
 
@@ -37,6 +38,7 @@ public class LoadReturnMedicineInitResponse implements Serializable {
     @Schema(description = "科室下拉选项")
     private List<DepartmentOptionDto> departmentOptions;
 
+    /** 退药状态下拉选项。 */
     @Schema(description = "退药状态下拉选项")
     private List<RefundStatusOptionDto> refundStatusOptions;
 }

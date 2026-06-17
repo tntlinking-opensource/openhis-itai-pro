@@ -33,12 +33,6 @@ import org.springframework.stereotype.Component;
 @Component
 public class FrequencyMapperImpl implements FrequencyMapper {
 
-    /**
-     * 将频次聚合根实体投影为前端频次 DTO；实体为 {@code null} 时返回 {@code null}。
-     *
-     * @param entity 领域频次实体
-     * @return 频次展示对象
-     */
     @Override
     public FrequencyDto toDto(Frequency entity) {
         if (entity == null) {
@@ -48,26 +42,21 @@ public class FrequencyMapperImpl implements FrequencyMapper {
         dto.setId(entity.getId());
         dto.setRateCode(entity.getRateCode());
         dto.setName(entity.getName());
+        dto.setCycleType(entity.getCycleType());
+        dto.setDayCount(entity.getDayCount());
         dto.setDayInterval(entity.getDayInterval());
         dto.setDayTimes(entity.getDayTimes());
         dto.setWeekCycleFlag(toIntFlag(entity.getWeekCycleFlag()));
         dto.setTotalExecutionCount(entity.getTotalExecutionCount());
         dto.setExecutionPeriod(entity.getExecutionPeriod());
         dto.setExecutionPeriodUnit(entity.getExecutionPeriodUnit());
-        dto.setActiveFlag(toIntFlag(entity.getActiveFlag()));
-        dto.setSortNo(entity.getSortNo());
-        dto.setCycleType(entity.getCycleType());
         dto.setApplicableScenes(entity.getApplicableScenes());
         dto.setAllowCrossDay(entity.getAllowCrossDay());
+        dto.setActiveFlag(toIntFlag(entity.getActiveFlag()));
+        dto.setSortNo(entity.getSortNo());
         return dto;
     }
 
-    /**
-     * 将频次分页列表行读模型投影为 DTO；入参为 {@code null} 时返回 {@code null}（字段为列表所需子集）。
-     *
-     * @param model 分页行读模型
-     * @return 频次列表行
-     */
     @Override
     public FrequencyDto toDto(FrequencyPageItemQueryModel model) {
         if (model == null) {
@@ -78,21 +67,22 @@ public class FrequencyMapperImpl implements FrequencyMapper {
         dto.setRateCode(model.getRateCode());
         dto.setName(model.getName());
         dto.setCycleType(model.getCycleType());
+        dto.setDayCount(model.getDayCount());
+        dto.setDayInterval(model.getDayInterval());
         dto.setDayTimes(model.getDayTimes());
+        dto.setWeekCycleFlag(toIntFlag(model.getWeekCycleFlag()));
+        dto.setTotalExecutionCount(model.getTotalExecutionCount());
+        dto.setExecutionPeriod(model.getExecutionPeriod());
+        dto.setExecutionPeriodUnit(model.getExecutionPeriodUnit());
+        dto.setApplicableScenes(model.getApplicableScenes());
+        dto.setAllowCrossDay(model.getAllowCrossDay());
         dto.setActiveFlag(toIntFlag(model.getActiveFlag()));
         dto.setSortNo(model.getSortNo());
         return dto;
     }
 
-    /**
-     * 将新增频次请求装配为领域创建命令；请求体为空时抛出校验异常。
-     *
-     * @param request 创建请求
-     * @return 领域创建命令
-     * @throws ValidationException 请求体为空时
-     */
     @Override
-    public CreateFrequencyCommand toCreateCommand(CreateFrequencyRequest request) {
+    public CreateFrequencyCommand toCreateCommand(CreateFrequencyRequest request, Long operatorId) {
         if (request == null) {
             throw new ValidationException("新增频次失败：请求体不能为空");
         }
@@ -100,6 +90,7 @@ public class FrequencyMapperImpl implements FrequencyMapper {
         command.setRateCode(request.getRateCode());
         command.setName(request.getName());
         command.setCycleType(request.getCycleType());
+        command.setDayCount(request.getDayCount());
         command.setDayInterval(request.getDayInterval());
         command.setDayTimes(request.getDayTimes());
         command.setWeekCycleFlag(toBooleanFlag(request.getWeekCycleFlag()));
@@ -109,19 +100,12 @@ public class FrequencyMapperImpl implements FrequencyMapper {
         command.setApplicableScenes(request.getApplicableScenes());
         command.setAllowCrossDay(request.getAllowCrossDay());
         command.setSortNo(request.getSortNo());
-        command.setOperatorId(0L);
+        command.setOperatorId(operatorId);
         return command;
     }
 
-    /**
-     * 将编辑频次请求装配为领域修改命令；请求体为空时抛出校验异常。
-     *
-     * @param request 编辑请求
-     * @return 领域修改命令
-     * @throws ValidationException 请求体为空时
-     */
     @Override
-    public ModifyFrequencyCommand toModifyCommand(UpdateFrequencyRequest request) {
+    public ModifyFrequencyCommand toModifyCommand(UpdateFrequencyRequest request, Long operatorId) {
         if (request == null) {
             throw new ValidationException("更新频次失败：请求体不能为空");
         }
@@ -129,6 +113,7 @@ public class FrequencyMapperImpl implements FrequencyMapper {
         command.setId(request.getId());
         command.setName(request.getName());
         command.setCycleType(request.getCycleType());
+        command.setDayCount(request.getDayCount());
         command.setDayInterval(request.getDayInterval());
         command.setDayTimes(request.getDayTimes());
         command.setWeekCycleFlag(toBooleanFlag(request.getWeekCycleFlag()));
@@ -138,16 +123,10 @@ public class FrequencyMapperImpl implements FrequencyMapper {
         command.setApplicableScenes(request.getApplicableScenes());
         command.setAllowCrossDay(request.getAllowCrossDay());
         command.setSortNo(request.getSortNo());
-        command.setOperatorId(0L);
+        command.setOperatorId(operatorId);
         return command;
     }
 
-    /**
-     * 领域布尔标志转前端整型：true→1，false→0，未知→null。
-     *
-     * @param value 领域布尔
-     * @return 前端约定整型
-     */
     private Integer toIntFlag(Boolean value) {
         if (Boolean.TRUE.equals(value)) {
             return 1;
@@ -158,12 +137,6 @@ public class FrequencyMapperImpl implements FrequencyMapper {
         return null;
     }
 
-    /**
-     * 前端整型标志转领域布尔：仅 1 视为 true，其余非 null 视为 false；null 保持 null。
-     *
-     * @param value 前端传入整型
-     * @return 领域布尔或 null
-     */
     private Boolean toBooleanFlag(Integer value) {
         if (value == null) {
             return null;

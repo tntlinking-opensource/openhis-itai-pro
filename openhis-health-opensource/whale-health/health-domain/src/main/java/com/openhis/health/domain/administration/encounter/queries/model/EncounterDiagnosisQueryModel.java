@@ -42,4 +42,8 @@ public class EncounterDiagnosisQueryModel {
     private String diagTypeCode;
     /** 医保医疗类别。 */
     private String medType;
+    /** 中医病证组号。 */
+    private String tcmSyndromeGroup;
+    /** 是否中医诊断关联。 */
+    private Boolean tcmFlag;
 }

@@ -33,6 +33,7 @@ import java.time.LocalDate;
  */
 @Data
 @Accessors(chain = true)
+/** 住院结算专用费用查询请求。 */
 @Schema(description = "住院结算专用费用查询请求", requiredProperties = {"encounterId", "patientId", "presentationMode"})
 public class QueryInpatientSettleChargesRequest {
 
@@ -40,26 +41,33 @@ public class QueryInpatientSettleChargesRequest {
     @NotNull(message = "就诊标识不能为空")
     @Schema(description = "住院就诊 ID", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 住院就诊 ID（业务字段）。 */
     private Long encounterId;
 
     /** 患者 ID。 */
     @NotNull(message = "患者标识不能为空")
+    /** 患者 ID。 */
     @Schema(description = "患者 ID", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者 ID（业务字段）。 */
     private Long patientId;
 
     /** 费用呈现模式：DETAIL / SUMMARY。 */
     @NotBlank(message = "费用呈现模式不能为空")
+    /** 费用呈现模式 code。 */
     @Schema(description = "费用呈现模式 code", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 费用呈现模式 code（业务字段）。 */
     private String presentationMode;
 
     /** 费用业务日起。 */
     @Schema(description = "费用业务日起")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    /** 费用业务日起（业务字段）。 */
     private LocalDate chargeDateFrom;
 
     /** 费用业务日止。 */
     @Schema(description = "费用业务日止")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    /** 费用业务日止（业务字段）。 */
     private LocalDate chargeDateTo;
 }

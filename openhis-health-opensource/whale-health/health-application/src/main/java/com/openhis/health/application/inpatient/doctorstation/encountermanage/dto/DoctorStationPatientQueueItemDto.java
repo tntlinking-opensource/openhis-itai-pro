@@ -36,6 +36,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 住院医生站在院患者列表行。 */
 @Schema(description = "住院医生站在院患者列表行")
 public class DoctorStationPatientQueueItemDto {
 

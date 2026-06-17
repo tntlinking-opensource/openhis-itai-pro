@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.basic.diagnosiscatalog.service;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.application.basic.diagnosiscatalog.dto.DiagnosisCatalogDetailDto;
 import com.openhis.health.application.basic.diagnosiscatalog.dto.DiagnosisCatalogDto;

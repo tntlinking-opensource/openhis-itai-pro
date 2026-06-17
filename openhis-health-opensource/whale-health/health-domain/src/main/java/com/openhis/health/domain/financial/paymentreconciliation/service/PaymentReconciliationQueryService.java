@@ -186,6 +186,47 @@ public class PaymentReconciliationQueryService {
     }
 
     /**
+     * 批量解析就诊下最近一次已成功支付的流水主键，供挂号列表补打小票。
+     *
+     * <p>同一就诊若存在多条 SUCCESS，取主键较大者作为最近一次成功支付。</p>
+     *
+     * @param encounterIds 就诊主键集合；空集合时返回空 Map
+     * @return 就诊主键 → 支付流水主键
+     */
+    public Map<Long, Long> findLatestSuccessPaymentIdsByEncounterIds(Collection<Long> encounterIds) {
+        Map<Long, Long> result = new HashMap<>();
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return result;
+        }
+        List<Long> idList = new ArrayList<>();
+        for (Long eid : encounterIds) {
+            if (eid != null) {
+                idList.add(eid);
+            }
+        }
+        if (idList.isEmpty()) {
+            return result;
+        }
+        List<PaymentReconciliation> rows =
+                paymentRepository.findByEncounterIdInAndStatusEnum(idList, PaymentStatus.SUCCESS);
+        for (PaymentReconciliation row : rows) {
+            Long eid = row.getEncounterId();
+            if (eid == null) {
+                continue;
+            }
+            Long pid = row.getId();
+            if (pid == null) {
+                continue;
+            }
+            Long existing = result.get(eid);
+            if (existing == null || pid > existing) {
+                result.put(eid, pid);
+            }
+        }
+        return result;
+    }
+
+    /**
      * 判断关联原单是否已产生退款流水，并回填首条匹配流水的标识与状态。
      *
      * @param relationId 业务关联单标识（与原支付关联字段一致）

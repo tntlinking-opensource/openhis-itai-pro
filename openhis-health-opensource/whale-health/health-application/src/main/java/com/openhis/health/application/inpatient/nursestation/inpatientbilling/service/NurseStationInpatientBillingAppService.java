@@ -17,9 +17,11 @@
 
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.service;
 
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.common.validator.PageWindowGate;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.module.common.validator.PageWindowGate;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler.NurseStationInpatientBillingCatalogAssembler;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler.NurseStationInpatientBillingListAssembler;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler.NurseStationInpatientBillingWriteAssembler;
@@ -43,36 +45,31 @@ import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQuery
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemDomainService;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.domain.administration.location.entity.Location;
-import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.application.querysupport.order.dto.InpatientOrderListSkeleton;
-import com.openhis.health.application.common.assembler.order.InpatientOrderListMergeAssembler;
-import com.openhis.health.application.querysupport.order.InpatientOrderLookupLoader;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.application.querysupport.product.ProductDefinitionCatalogPageLoader;
-import com.openhis.health.domain.custom.servicelocationtemplate.service.ServiceLocationTemplateQueryService;
+import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.module.common.assembler.order.InpatientOrderListMergeAssembler;
+import com.openhis.health.module.querysupport.order.InpatientOrderLookupLoader;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionCatalogPageLoader;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
-import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
-import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
-import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
+import com.openhis.health.domain.workflow.devicedispense.queries.model.DeviceDispenseListModel;
+import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestDomainService;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseDomainService;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
-import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestDomainService;
+import com.openhis.health.module.querysupport.device.DeviceDispenseNurseWorkflowSupport;
+import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -80,6 +77,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -102,12 +100,10 @@ import java.util.Set;
 public class NurseStationInpatientBillingAppService {
 
     private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
+    private final CurrentManagedWardLocationIdsResolver managedWardLocationIdsResolver;
     private final PageWindowGate pageWindowGate;
-    private final ICurrentUser currentUser;
-    private final LocationQueryService locationQueryService;
     private final ProductDefinitionCatalogPageLoader productDefinitionCatalogPageLoader;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
-    private final ServiceLocationTemplateQueryService serviceLocationTemplateQueryService;
     private final InpatientOrderListMergeAssembler inpatientOrderListMergeAssembler;
     private final InpatientOrderLookupLoader inpatientOrderLookupLoader;
     private final MedicationRequestQueryService medicationRequestQueryService;
@@ -119,6 +115,8 @@ public class NurseStationInpatientBillingAppService {
     private final ServiceRequestDomainService serviceRequestDomainService;
     private final DeviceRequestDomainService deviceRequestDomainService;
     private final DeviceDispenseDomainService deviceDispenseDomainService;
+    private final DeviceDispenseNurseWorkflowSupport deviceDispenseNurseWorkflowSupport;
+    private final InventoryItemDomainService inventoryItemDomainService;
     private final ChargeItemDomainService chargeItemDomainService;
     private final NurseStationInpatientBillingMapper nurseStationInpatientBillingMapper;
     private final NurseStationInpatientBillingCatalogAssembler nurseStationInpatientBillingCatalogAssembler;
@@ -126,10 +124,11 @@ public class NurseStationInpatientBillingAppService {
     private final NurseStationInpatientBillingWriteAssembler nurseStationInpatientBillingWriteAssembler;
 
     /**
+     * IF-IP-PRC-01：划价选品目录分页（读侧 FIFO 批号售价 + 耗材 defaultDispenseLocationId）。
      *
-     * @param request 含定价来源、分页与关键字
+     * @param request 分页、prepickedProductKeys、机构/库房筛选
      * @return 带定价行、单位槽、套餐子项、吸氧/心电 Gate 标记的目录页
-     * @throws BusinessException EX-IP-PRC-101 分页/定价来源非法
+     * @throws BusinessException EX-IP-PRC-101 分页非法或目录加载失败
      */
     public PageNurseStationPricingCatalogResponse pageNurseStationPricingCatalog(
         PageNurseStationPricingCatalogRequest request) {
@@ -138,14 +137,6 @@ public class NurseStationInpatientBillingAppService {
                 request,
                 InpatientNurseStationConstants.EX_IP_PRC_101,
                 "分页参数无效");
-            String pricingSource = StringUtils.defaultIfBlank(
-                request.getPricingSourceCode(), DoctorStationAdviceConstants.PRICING_SOURCE_RETAIL_PRICE);
-            if (!DoctorStationAdviceConstants.PRICING_SOURCE_RETAIL_PRICE.equals(pricingSource)
-                && !DoctorStationAdviceConstants.PRICING_SOURCE_BATCH_SELLING_PRICE.equals(pricingSource)) {
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_PRC_101,
-                    "医嘱定价来源未配置，请联系管理员");
-            }
             var pageQuery = nurseStationInpatientBillingMapper.toProductDefinitionPageQuery(request);
             Page<ProductDefinitionDisplayDto> page = productDefinitionCatalogPageLoader.pageProductDefinition(pageQuery);
             var rows = nurseStationInpatientBillingCatalogAssembler.assembleCatalogRows(request, page);
@@ -160,10 +151,14 @@ public class NurseStationInpatientBillingAppService {
     }
 
     /**
+     * IF-IP-PRC-02：直接划价确认（无父医嘱锚点）。
      *
-     * @param request 1～50 行写明细，每行须 accountId 与完整定价字段
+     * <p>耗材 {@code performLocation} 须为 IF-IP-PRC-01 目录 {@code defaultDispenseLocationId} 回传；
+     * 入账价经 {@link NurseStationInpatientBillingWriteAssembler#reapplyAuthoritativeWritePricing} 重算。</p>
+     *
+     * @param request 1～50 行写明细，每行须 accountId 与数量等产品字段（单价由服务端重算）
      * @return 新建诊疗/耗材请求 id 汇总
-     * @throws BusinessException EX-IP-PRC-201 夹带父锚点；其余同写路径
+     * @throws BusinessException EX-IP-PRC-201 夹带父锚点；EX-IP-PRC-202 缺耗材库位；其余同写路径
      */
     @Transactional
     public ConfirmDirectNurseStationPricingResponse confirmDirectNurseStationPricing(
@@ -296,11 +291,14 @@ public class NurseStationInpatientBillingAppService {
             }
             Map<Long, List<Long>> dispenseIdsByDeviceReqId =
                 deviceDispenseQueryService.mapDeviceDispenseIdsByDeviceRequestIds(deviceReqIds);
+            Map<Long, String> primaryDispenseStatusByDeviceReqId =
+                this.buildPrimaryDispenseStatusByDeviceReqId(dispenseIdsByDeviceReqId);
             Map<Long, NurseStationInpatientBillingListAssembler.PricedOrderRowFacts> pricedRowFactsByOrderId =
                 nurseStationInpatientBillingListAssembler.buildPricedRowFactsByOrderId(skeleton);
             List<NurseStationPricingPatientGroupDto> groups =
                 nurseStationInpatientBillingListAssembler.assemblePricedOrderGroups(
-                    skeleton, chargeByServiceId, dispenseIdsByDeviceReqId, pricedRowFactsByOrderId);
+                    skeleton, chargeByServiceId, dispenseIdsByDeviceReqId, primaryDispenseStatusByDeviceReqId,
+                    pricedRowFactsByOrderId);
             ListNurseStationPricedOrdersResponse resp = new ListNurseStationPricedOrdersResponse();
             resp.setGroups(groups);
             return resp;
@@ -314,6 +312,7 @@ public class NurseStationInpatientBillingAppService {
     }
 
     /**
+     * IF-IP-PRC-02/04 写路径公共编排：重算价、Gate、按产品类型分流落库。
      *
      * @param items 1～50 行；直接划价无 based_on，补费由 Mapper 写入 based_on
      * @return 写结果与新建 id 列表
@@ -333,7 +332,7 @@ public class NurseStationInpatientBillingAppService {
         Long operatorId = currentOperatorResolver.requireOperatorId(
             InpatientNurseStationConstants.EX_IP_PRC_205,
             "划价失败，请稍后重试");
-        Long requesterId = currentUser.getCurrentPractitionerId();
+        Long requesterId = currentPractitionerResolver.findPractitionerIdOrNull();
         Set<Long> encounterIds = new HashSet<>();
         for (NurseStationPricingWriteItemDto row : items) {
             if (row != null && row.getEncounterId() != null) {
@@ -341,8 +340,11 @@ public class NurseStationInpatientBillingAppService {
             }
         }
         this.assertEncountersVisible(new ArrayList<>(encounterIds));
-        // 耗材发放库房：前端不传时按就诊住院科室 + 取药/发材科室模板自动解析（BR-IP-PRC-009）
-        this.fillDevicePerformLocationWhenAbsent(items, new ArrayList<>(encounterIds));
+        // 写路径入账价：耗材 performLocation 须由 IF-IP-PRC-01 目录回传，不再服务端 match 模板
+        nurseStationInpatientBillingWriteAssembler.reapplyAuthoritativeWritePricing(
+            items,
+            new ArrayList<>(encounterIds),
+            managedWardLocationIdsResolver.listManagedWardLocationIdsOrEmpty());
         List<NurseStationPricingWriteItemDto> serviceRows = new ArrayList<>();
         List<NurseStationPricingWriteItemDto> deviceRows = new ArrayList<>();
         for (NurseStationPricingWriteItemDto row : items) {
@@ -376,7 +378,8 @@ public class NurseStationInpatientBillingAppService {
         Long orgId = orgSnapshot.getOrganizationId();
         List<Long> createdServiceIds = new ArrayList<>();
         List<Long> createdDeviceIds = new ArrayList<>();
-        // 耗材轨：请求 COMPLETED + 待发发放 + 费用待结算（BR-IP-PRC-008）
+        // 耗材轨：请求 COMPLETED + 发放单按开关已配药/已发药 + 费用待结算（BR-IP-PRC-008）
+        Map<Long, BigDecimal> inventoryDecreaseAccumulator = new HashMap<>();
         if (!deviceRows.isEmpty()) {
             var deviceCmd = nurseStationInpatientBillingMapper.toCreateExecutedDeviceOrderCommand(deviceRows, operatorId);
             List<Long> deviceReqIds = deviceRequestDomainService.createExecutedDeviceOrder(deviceCmd);
@@ -386,8 +389,10 @@ public class NurseStationInpatientBillingAppService {
                 NurseStationPricingWriteItemDto row = deviceRows.get(i);
                 var genCmd = nurseStationInpatientBillingMapper.toGenerateDeviceDispenseFromTemporaryPathCommand(
                     deviceReqId, row, operatorId);
-                Long dispenseId = deviceDispenseDomainService.generateDeviceDispenseFromTemporaryPath(genCmd);
-                deviceDispenseDomainService.promoteDraftDispensesForDeviceRequests(List.of(deviceReqId), operatorId);
+                deviceDispenseDomainService.generateDeviceDispenseFromTemporaryPath(genCmd);
+                deviceDispenseNurseWorkflowSupport.finalizeInpatientTemporaryPathDispense(
+                    deviceReqId, operatorId, requesterId, inventoryDecreaseAccumulator);
+                Long dispenseId = this.resolvePrimaryDeviceDispenseId(deviceReqId);
                 var chargeCmd = nurseStationInpatientBillingMapper.toCreateChargeItemCommand(
                     row,
                     TableNameConstants.WKF_DEVICE_REQUEST,
@@ -397,6 +402,9 @@ public class NurseStationInpatientBillingAppService {
                     operatorId,
                     orgId);
                 chargeItemDomainService.priceByNurseStation(chargeCmd);
+            }
+            if (!inventoryDecreaseAccumulator.isEmpty()) {
+                inventoryItemDomainService.decreaseQuantitiesMerged(operatorId, inventoryDecreaseAccumulator);
             }
         }
         // 诊疗轨：请求 VERIFIED + 费用待结算；套餐子项同事务展开（BR-IP-PRC-007/011）
@@ -430,113 +438,7 @@ public class NurseStationInpatientBillingAppService {
     }
 
     /**
-     * 为未传 {@code performLocation} 的耗材划价行，按就诊住院科室与 {@link ServiceLocationTemplateQueryService} 解析默认发放库房。
-     *
-     * @param items        写路径行
-     * @param encounterIds 本批就诊（已通过可见性 Gate）
-     */
-    private void fillDevicePerformLocationWhenAbsent(
-        List<NurseStationPricingWriteItemDto> items,
-        List<Long> encounterIds) {
-        if (items == null || items.isEmpty()) {
-            return;
-        }
-        boolean needsResolve = false;
-        for (NurseStationPricingWriteItemDto row : items) {
-            if (row != null
-                && TableNameConstants.ADM_DEVICE_DEFINITION.equals(row.getProductTableName())
-                && row.getPerformLocation() == null) {
-                needsResolve = true;
-                break;
-            }
-        }
-        if (!needsResolve) {
-            return;
-        }
-        var encounterQuery = nurseStationInpatientBillingMapper.toInpatientEncounterPageQuery(
-            encounterIds, this.resolveManagedWardIds(currentUser.getCurrentPractitionerId()));
-        List<InpatientEncounterContextQueryModel> encounterRows =
-            encounterContextFacade.listInpatientEncounterContexts(encounterQuery);
-        Map<Long, InpatientEncounterContextQueryModel> encounterById = new HashMap<>();
-        for (InpatientEncounterContextQueryModel encounterRow : encounterRows) {
-            if (encounterRow != null && encounterRow.getEncounterId() != null) {
-                encounterById.put(encounterRow.getEncounterId(), encounterRow);
-            }
-        }
-        List<ProductDefinitionBatchLookup> productLookups = new ArrayList<>();
-        for (NurseStationPricingWriteItemDto row : items) {
-            if (row == null || row.getPerformLocation() != null) {
-                continue;
-            }
-            if (!TableNameConstants.ADM_DEVICE_DEFINITION.equals(row.getProductTableName())) {
-                continue;
-            }
-            if (row.getProductDefinitionId() == null) {
-                continue;
-            }
-            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
-            lookup.setProductTableName(TableNameConstants.ADM_DEVICE_DEFINITION);
-            lookup.setProductDefinitionId(row.getProductDefinitionId());
-            productLookups.add(lookup);
-        }
-        Map<String, ProductDefinitionDisplayDto> productByKey =
-            productDefinitionBatchLoader.loadAsMap(productLookups);
-        for (NurseStationPricingWriteItemDto row : items) {
-            if (row == null || row.getPerformLocation() != null) {
-                continue;
-            }
-            if (!TableNameConstants.ADM_DEVICE_DEFINITION.equals(row.getProductTableName())) {
-                continue;
-            }
-            InpatientEncounterContextQueryModel encounterRow = encounterById.get(row.getEncounterId());
-            Long organizationId = null;
-            if (encounterRow != null) {
-                organizationId = encounterRow.getOrganizationId();
-            }
-            if (organizationId == null) {
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_PRC_202,
-                    "耗材划价失败：未配置该住院科室的发放库房");
-            }
-            String productKey = ProductDefinitionKeyUtil.buildCompositeKey(
-                TableNameConstants.ADM_DEVICE_DEFINITION, row.getProductDefinitionId());
-            ProductDefinitionDisplayDto productRow = productByKey.get(productKey);
-            String distributionCategory = MedicationCommonConstants.DEFAULT_SERVICE_LOCATION_DISTRIBUTION_CATEGORY_CODE;
-            if (productRow != null && StringUtils.isNotBlank(productRow.getCategoryCode())) {
-                distributionCategory = productRow.getCategoryCode();
-            }
-            Long deviceDefinitionId = row.getDeviceDefId();
-            if (deviceDefinitionId == null) {
-                deviceDefinitionId = row.getProductDefinitionId();
-            }
-            Long performLocation = serviceLocationTemplateQueryService.matchDefaultDistributionLocation(
-                organizationId,
-                TableNameConstants.ADM_DEVICE_DEFINITION,
-                distributionCategory,
-                deviceDefinitionId,
-                null,
-                null);
-            if (performLocation == null) {
-                List<Long> candidateLocations = serviceLocationTemplateQueryService.listCandidateDistributionLocationIds(
-                    organizationId,
-                    TableNameConstants.ADM_DEVICE_DEFINITION,
-                    distributionCategory,
-                    null);
-                if (!candidateLocations.isEmpty()) {
-                    performLocation = candidateLocations.get(0);
-                }
-            }
-            if (performLocation == null) {
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_PRC_202,
-                    "耗材划价失败：未配置该住院科室的发放库房");
-            }
-            row.setPerformLocation(performLocation);
-        }
-    }
-
-    /**
-     * 写行定价字段完整性（BR-IP-PRC-013/204）。
+     * 写行定价字段完整性（BR-IP-PRC-013/204；价目须已由 {@link NurseStationInpatientBillingWriteAssembler#reapplyAuthoritativeWritePricing} 重算）。
      *
      * @param row 待提交行
      */
@@ -626,8 +528,7 @@ public class NurseStationInpatientBillingAppService {
                 InpatientNurseStationConstants.EX_IP_PRC_102,
                 "当前患者不可用，请刷新左侧列表");
         }
-        Long practitionerId = currentUser.getCurrentPractitionerId();
-        List<Long> wardIds = this.resolveManagedWardIds(practitionerId);
+        List<Long> wardIds = managedWardLocationIdsResolver.listManagedWardLocationIdsOrEmpty();
         // 住院上下文：护士站队列 + 管理病区 + 请求 encounter 交集
         var query = nurseStationInpatientBillingMapper.toInpatientEncounterPageQuery(distinct, wardIds);
         List<InpatientEncounterContextQueryModel> visible =
@@ -658,7 +559,7 @@ public class NurseStationInpatientBillingAppService {
     private InpatientEncounterContextQueryModel requireVisibleSnapshot(List<Long> encounterIds, Long patientId) {
         this.assertEncountersVisible(encounterIds);
         var query = nurseStationInpatientBillingMapper.toInpatientEncounterPageQuery(
-            encounterIds, this.resolveManagedWardIds(currentUser.getCurrentPractitionerId()));
+            encounterIds, managedWardLocationIdsResolver.listManagedWardLocationIdsOrEmpty());
         List<InpatientEncounterContextQueryModel> rows =
             encounterContextFacade.listInpatientEncounterContexts(query);
         for (InpatientEncounterContextQueryModel row : rows) {
@@ -689,23 +590,6 @@ public class NurseStationInpatientBillingAppService {
                 InpatientNurseStationConstants.EX_IP_PRC_102,
                 "当前患者不可用，请刷新左侧列表");
         }
-    }
-
-    /**
-     * 当前护士管辖病区 id 列表（无管辖时返回空列表，由可见性 Gate 拒绝）。
-     *
-     * @param practitionerId 当前医务人员 id
-     * @return 病区 location id 列表
-     */
-    private List<Long> resolveManagedWardIds(Long practitionerId) {
-        List<Location> wards = locationQueryService.listManagedWardsForPractitioner(practitionerId);
-        List<Long> ids = new ArrayList<>();
-        for (Location ward : wards) {
-            if (ward != null && ward.getId() != null) {
-                ids.add(ward.getId());
-            }
-        }
-        return ids;
     }
 
     /**
@@ -750,6 +634,59 @@ public class NurseStationInpatientBillingAppService {
             groups.add(group);
         }
         return groups;
+    }
+
+    /**
+     * 解析耗材请求下主发放行 id（id 最小者），供收费锚点关联。
+     *
+     * @param deviceReqId 耗材请求主键
+     * @return 主发放行 id；无则 null
+     */
+    private Long resolvePrimaryDeviceDispenseId(Long deviceReqId) {
+        List<Long> ids = this.deviceDispenseQueryService.listDeviceDispenseIdsByDeviceRequest(deviceReqId);
+        if (ids == null || ids.isEmpty()) {
+            return null;
+        }
+        Long primary = null;
+        for (Long id : ids) {
+            if (id == null) {
+                continue;
+            }
+            if (primary == null || id < primary) {
+                primary = id;
+            }
+        }
+        return primary;
+    }
+
+    /**
+     * 批量解析各耗材请求主发放行的 status_enum（主行取 id 最小）。
+     *
+     * @param dispenseIdsByDeviceReqId 请求 → 发放 id 列表
+     * @return 请求 → 主发放状态码
+     */
+    private Map<Long, String> buildPrimaryDispenseStatusByDeviceReqId(Map<Long, List<Long>> dispenseIdsByDeviceReqId) {
+        Map<Long, String> statusByReqId = new HashMap<>();
+        if (dispenseIdsByDeviceReqId == null || dispenseIdsByDeviceReqId.isEmpty()) {
+            return statusByReqId;
+        }
+        List<Long> allDeviceReqIds = new ArrayList<>(dispenseIdsByDeviceReqId.keySet());
+        List<DeviceDispenseListModel> dispenseRows =
+            this.deviceDispenseQueryService.selectByRequestIdList(allDeviceReqIds);
+        Map<Long, DeviceDispenseListModel> primaryByReqId = new HashMap<>();
+        for (DeviceDispenseListModel row : dispenseRows) {
+            if (row == null || row.getDeviceReqId() == null || row.getId() == null) {
+                continue;
+            }
+            DeviceDispenseListModel existed = primaryByReqId.get(row.getDeviceReqId());
+            if (existed == null || row.getId() < existed.getId()) {
+                primaryByReqId.put(row.getDeviceReqId(), row);
+            }
+        }
+        for (Map.Entry<Long, DeviceDispenseListModel> entry : primaryByReqId.entrySet()) {
+            statusByReqId.put(entry.getKey(), entry.getValue().getStatusEnum());
+        }
+        return statusByReqId;
     }
 
 }

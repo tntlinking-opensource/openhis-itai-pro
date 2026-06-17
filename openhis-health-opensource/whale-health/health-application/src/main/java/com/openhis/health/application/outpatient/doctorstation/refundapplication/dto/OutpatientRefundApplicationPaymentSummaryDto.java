@@ -28,14 +28,13 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊医生站-申请退费-按支付分组的执行衔接摘要。 */
 @Schema(description = "门诊医生站-申请退费-按支付分组的执行衔接摘要")
 public class OutpatientRefundApplicationPaymentSummaryDto {
 
-    /** 原支付主单主键。 */
     @Schema(description = "原支付主单主键")
     private Long paymentId;
 
-    /** 本单拟退、已进入 REFUNDING 的收费明细主键。 */
     @Schema(description = "拟退收费明细主键列表")
     private List<Long> refundingChargeItemIds;
 

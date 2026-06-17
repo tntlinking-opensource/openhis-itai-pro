@@ -17,9 +17,7 @@
 
 package com.openhis.health.application.basic.servicecatalog.mapper;
 
-import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogChildDto;
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogDetailDto;
-import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogDto;
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogInitDto;
 import com.openhis.health.application.basic.servicecatalog.request.CreateServiceCatalogRequest;
 import com.openhis.health.application.basic.servicecatalog.request.UpdateServiceCatalogRequest;

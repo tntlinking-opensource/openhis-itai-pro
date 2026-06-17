@@ -23,13 +23,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 模板行已更新事件。
+ * 组套模板行已更新事件。
  */
 @Getter
 @Setter
 public class OrderTemplateLineUpdatedEvent extends DomainEvent {
     /**
-     * 模板行主键。
+     * 组套模板行主键。
      */
     private Long lineId;
 

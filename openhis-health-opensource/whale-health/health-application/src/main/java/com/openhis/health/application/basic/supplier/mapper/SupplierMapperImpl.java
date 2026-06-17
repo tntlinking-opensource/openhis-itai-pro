@@ -26,6 +26,7 @@ import com.openhis.health.domain.custom.supplier.command.RegisterSupplierCommand
 import com.openhis.health.domain.custom.supplier.entity.Supplier;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierDetailQueryModel;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
+import com.openhis.health.domain.share.enums.SupplierStatus;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.stereotype.Component;
 
@@ -113,7 +114,7 @@ public class SupplierMapperImpl implements SupplierMapper {
         supplierDto.setWbStr(supplier.getWbStr());
         supplierDto.setPhone(supplier.getPhone());
         supplierDto.setEmail(supplier.getEmail());
-        supplierDto.setStatusEnum(parseInt(supplier.getStatusEnum()));
+        fillStatusFields(supplierDto, supplier.getStatusEnum());
         supplierDto.setOrgId(supplier.getOrgId());
         supplierDto.setBankName(supplier.getBankName());
         supplierDto.setBankAccount(supplier.getBankAccount());
@@ -144,7 +145,7 @@ public class SupplierMapperImpl implements SupplierMapper {
         dto.setWbStr(supplier.getWbStr());
         dto.setPhone(supplier.getPhone());
         dto.setEmail(supplier.getEmail());
-        dto.setStatusEnum(parseInt(supplier.getStatusEnum()));
+        fillStatusFields(dto, supplier.getStatusEnum());
         dto.setOrgId(supplier.getOrgId());
         dto.setBankName(supplier.getBankName());
         dto.setBankAccount(supplier.getBankAccount());
@@ -168,8 +169,11 @@ public class SupplierMapperImpl implements SupplierMapper {
         dto.setBusNo(supplier.getBusNo());
         dto.setName(supplier.getName());
         dto.setTypeEnum(parseInt(supplier.getTypeEnum()));
-        dto.setStatusEnum(parseInt(supplier.getStatusEnum()));
+        fillStatusFields(dto, supplier.getStatusEnum());
         dto.setPyStr(supplier.getPyStr());
+        dto.setAddress(supplier.getAddress());
+        dto.setPhone(supplier.getPhone());
+        dto.setEmail(supplier.getEmail());
         return dto;
     }
 
@@ -213,6 +217,25 @@ public class SupplierMapperImpl implements SupplierMapper {
             return Integer.parseInt(value);
         } catch (NumberFormatException ex) {
             return null;
+        }
+    }
+
+    /**
+     * 写入状态编码及展示文案。
+     */
+    private void fillStatusFields(SupplierDto dto, String statusCode) {
+        if (dto == null) {
+            return;
+        }
+        dto.setStatusEnum(statusCode);
+        if (statusCode == null || statusCode.isBlank()) {
+            return;
+        }
+        for (SupplierStatus status : SupplierStatus.values()) {
+            if (status.getCode().equals(statusCode)) {
+                dto.setStatusEnum_enumText(status.getDisplay());
+                return;
+            }
         }
     }
 }

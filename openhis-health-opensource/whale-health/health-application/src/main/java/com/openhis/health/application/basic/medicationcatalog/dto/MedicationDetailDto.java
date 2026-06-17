@@ -111,7 +111,6 @@ public class MedicationDetailDto extends MedicationDto {
     @NotBlank(message = "剂量单位不能为空")
     private String doseUnitCode;
 
-    /** 剂量单位字典码对应的中文展示（冗余于术语解析结果）。 */
     @Schema(description = "剂量单位编码对应的文本值", example = "克")
     private String doseUnitCode_dictText;
 
@@ -200,7 +199,6 @@ public class MedicationDetailDto extends MedicationDto {
     @Schema(description = "采购单位编码（字典码：unit_code）", example = "DW001")
     private String purchaseUnitCode;
 
-    /** 采购单位字典码对应的中文展示。 */
     @Schema(description = "采购单位编码对应的文本值", example = "盒")
     private String purchaseUnitCode_dictText;
 
@@ -241,7 +239,6 @@ public class MedicationDetailDto extends MedicationDto {
     @Schema(description = "剂量形式（字典码：dose_form_code）", example = "1")
     private Integer doseFrom;
 
-    /** 剂量形式整数码对应的中文展示。 */
     @Schema(description = "剂量形式对应的文本值", example = "胶囊")
     private String doseFrom_dictText;
 
@@ -331,7 +328,6 @@ public class MedicationDetailDto extends MedicationDto {
     @Schema(description = "财务类别编码（字典码：fin_type_code）", example = "CW001")
     private String typeCode;
 
-    /** 财务分类字典码对应的中文展示。 */
     @Schema(description = "财务类别编码对应的文本值", example = "西药")
     private String typeCode_dictText;
 
@@ -360,6 +356,12 @@ public class MedicationDetailDto extends MedicationDto {
     private String nationalDrugCode;
 
     /**
+     * 药品69码
+     */
+    @Schema(description = "药品69码", example = "6901234567890")
+    private String drug69Code;
+
+    /**
      * DDD值
      */
     @Schema(description = "限定日剂量（DDD）编码", example = "DDD001")
@@ -383,7 +385,6 @@ public class MedicationDetailDto extends MedicationDto {
     @Schema(description = "抗生素分类编码（字典码：antibiotic_type_code）", example = "KS001")
     private String antibioticCode;
 
-    /** 抗生素分类字典码对应的中文展示。 */
     @Schema(description = "抗生素分类编码对应的文本值", example = "青霉素类")
     private String antibioticCode_dictText;
 
@@ -448,12 +449,10 @@ public class MedicationDetailDto extends MedicationDto {
     @Schema(description = "用药说明/注意事项", example = "饭后服用，每次1粒，每日3次")
     private String dosageInstruction;
 
-    /** 基药标识 */
     @Schema(description = "是否为基本药物 1-是 0-否", example = "1", allowableValues = {"0", "1"})
     private Boolean basicFlag;
 
 
-    /** 是否皮试 */
     @Schema(description = "是否需要皮试 1-是 0-否", example = "0", allowableValues = {"0", "1"})
     private Boolean skinTestFlag;
 

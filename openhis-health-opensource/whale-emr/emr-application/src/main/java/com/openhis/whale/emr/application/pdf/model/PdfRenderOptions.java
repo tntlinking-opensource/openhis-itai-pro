@@ -45,6 +45,9 @@ public class PdfRenderOptions {
     private Map<String, String> metadata = new HashMap<>();
 
     public Map<String, String> safeMetadata() {
-        return metadata != null ? metadata : Map.of();
+        if (metadata != null) {
+            return metadata;
+        }
+        return Map.of();
     }
 }

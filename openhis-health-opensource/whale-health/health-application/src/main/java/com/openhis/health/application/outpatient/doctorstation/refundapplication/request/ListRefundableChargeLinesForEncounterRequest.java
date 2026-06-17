@@ -29,6 +29,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊医生站-申请退费-加载可申请退费账单行请求。 */
 @Schema(description = "门诊医生站-申请退费-加载可申请退费账单行请求")
 public class ListRefundableChargeLinesForEncounterRequest {
 

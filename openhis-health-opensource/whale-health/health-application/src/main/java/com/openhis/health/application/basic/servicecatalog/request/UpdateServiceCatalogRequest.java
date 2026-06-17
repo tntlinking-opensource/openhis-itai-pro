@@ -29,14 +29,8 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = false)
-/**
- * UpdateServiceCatalogRequest。
- */
 public class UpdateServiceCatalogRequest extends CreateServiceCatalogRequest {
     @Schema(description = "主键ID", example = "10001", type = "Long")
     @JsonSerialize(using = ToStringSerializer.class)
-    /**
-     * id。
-     */
     private Long id;
 }

@@ -1,8 +1,8 @@
 package com.openhis.whale.mrms.application.support.noop;
 
-import com.openhis.whale.mrms.domain.port.DiagnosisProcedurePort;
-import com.openhis.whale.mrms.domain.port.model.DiagnosisLineSnapshot;
-import com.openhis.whale.mrms.domain.port.model.ProcedureLineSnapshot;
+import com.openhis.whale.mrms.port.DiagnosisProcedurePort;
+import com.openhis.whale.mrms.port.model.DiagnosisLineSnapshot;
+import com.openhis.whale.mrms.port.model.ProcedureLineSnapshot;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 

@@ -30,6 +30,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-常用诊断行。 */
 @Schema(description = "医生站-常用诊断行")
 public class CommonDiagnosisRowDto {
 
@@ -81,4 +82,17 @@ public class CommonDiagnosisRowDto {
      */
     @Schema(description = "医保诊断编码")
     private String ybNo;
+
+    /**
+     * 中医证候组号：历史分支按就诊关联反查后回填，供前端病证合并展示与重复校验。
+     */
+    @Schema(description = "中医证候组号")
+    private String tcmSyndromeGroup;
+
+    /**
+     * 证候定义主键：仅中医合并历史行返回，点选录入时与病名定义成对使用。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "证候定义标识")
+    private Long syndromeDefinitionId;
 }

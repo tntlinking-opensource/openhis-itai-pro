@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.outpatient.doctorstation.diagnosis.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -29,10 +29,10 @@ import lombok.experimental.Accessors;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 医生站-诊断定义分页检索请求。 */
 @Schema(description = "医生站-诊断定义分页检索请求")
 public class PageConditionDefinitionRequest extends AbstractHealthPageRequest {
 
-    /** 诊断中西医维度筛选：1 西医，2 中医；空表示不按来源过滤。 */
     @Schema(description = "诊断中西医维度筛选：1=西医，2=中医；不传则不过滤来源")
     private String diagnosisKindCode;
 }

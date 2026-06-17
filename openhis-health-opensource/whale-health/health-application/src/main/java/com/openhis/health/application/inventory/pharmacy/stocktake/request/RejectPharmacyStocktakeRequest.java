@@ -20,20 +20,20 @@ package com.openhis.health.application.inventory.pharmacy.stocktake.request;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 审批驳回盘点单入参（IF-PHA-ST-09）。
  */
 @Data
 @Accessors(chain = true)
+/** 审批驳回盘点 IF-PHA-ST-09。 */
 @Schema(description = "审批驳回盘点 IF-PHA-ST-09")
 public class RejectPharmacyStocktakeRequest {
 
-    /** 业务单号。 */
     @Schema(description = "业务单号 busNo", requiredMode = Schema.RequiredMode.REQUIRED)
     private String busNo;
 
-    /** 驳回原因码。 */
     @Schema(description = "驳回原因码 changeReasonCode")
     private String changeReasonCode;
 

@@ -54,6 +54,6 @@ public class EncounterDetailQueryModel {
     /** 病情优先级编码。 */
     private String priorityEnum;
 
-    /** 源门诊或急诊就诊主键（住院线 {@code adm_encounter.amb_encounter_id}；无申请直登时为 null）。 */
+    /** 源门诊就诊主键（住院线 {@code adm_encounter.amb_encounter_id}；无申请直登时为 null）。 */
     private Long ambEncounterId;
 }

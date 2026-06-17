@@ -29,14 +29,19 @@ import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 身体部位（解剖部位）主数据读侧查询服务。
@@ -135,7 +140,7 @@ public class BodyStructureQueryService {
             ));
             return cb.and(preds.toArray(Predicate[]::new));
         };
-        Page<BodyStructure> page = repository.findAll(spec, pageable);
+        Page<BodyStructure> page = repository.findAll(spec, applyDefaultListSort(pageable));
         return page.map(item -> {
             BodyStructureListItemQueryModel model = new BodyStructureListItemQueryModel();
             model.setId(item.getId());
@@ -145,6 +150,51 @@ public class BodyStructureQueryService {
             model.setStatusEnum(item.getStatusEnum());
             return model;
         });
+    }
+
+    /**
+     * 按主键批量解析部位展示名（申请单明细、列表回显等场景避免 N+1）。
+     *
+     * @param bodyStructureIds 部位主键集合；{@code null} 或空时返回空映射
+     * @return id → 名称；未命中、已删或无名称时为 {@code null} 值
+     */
+    public Map<Long, String> mapNamesByIds(Collection<Long> bodyStructureIds) {
+        Map<Long, String> result = new HashMap<>();
+        if (bodyStructureIds == null || bodyStructureIds.isEmpty()) {
+            return result;
+        }
+        Set<Long> distinct = new LinkedHashSet<>();
+        for (Long id : bodyStructureIds) {
+            if (id != null) {
+                distinct.add(id);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return result;
+        }
+        List<BodyStructure> rows = repository.findByIdIn(distinct);
+        for (BodyStructure row : rows) {
+            if (row == null || row.getId() == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            result.put(row.getId(), row.getName());
+        }
+        return result;
+    }
+
+    /** 列表未指定排序时默认按主键升序，供医生站 init 下拉稳定次序。 */
+    private static Pageable applyDefaultListSort(Pageable pageable) {
+        Sort defaultSort = Sort.by(Sort.Direction.ASC, FieldNameConstants.ID);
+        if (pageable == null) {
+            return PageRequest.of(0, Integer.MAX_VALUE, defaultSort);
+        }
+        if (pageable.getSort().isSorted()) {
+            return pageable;
+        }
+        if (!pageable.isPaged()) {
+            return PageRequest.of(0, Integer.MAX_VALUE, defaultSort);
+        }
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), defaultSort);
     }
 }
 

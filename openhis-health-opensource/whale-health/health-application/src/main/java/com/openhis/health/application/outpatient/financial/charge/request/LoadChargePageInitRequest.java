@@ -26,11 +26,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 加载收费页初始化请求。 */
 @Schema(description = "加载收费页初始化请求")
 public class LoadChargePageInitRequest {
     /**
      * 当前操作机构主键。
      */
     @Schema(description = "机构 ID")
+    /** 机构 ID（业务字段）。 */
     private Long organizationId;
 }

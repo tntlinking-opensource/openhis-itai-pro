@@ -29,7 +29,8 @@ import lombok.Setter;
 /**
  * 服务申请明细子实体。
  *
- * <p>对应表：wkf_service_request_detail。</p>
+ * <p>对应表：wkf_service_request_detail。每行通过 {@code target_table + target_id} 指向一条主数据
+ *（如身体结构、标本定义）；同一 {@code service_req_id} 下可有多行，每行仅一个目标引用。</p>
  */
 @Getter
 @Setter
@@ -41,21 +42,17 @@ public class ServiceRequestDetail extends BaseAuditedEntity {
     @Column(name = "service_req_id", nullable = false)
     private Long serviceReqId;
 
-    /** 明细类型编码。 */
-    @Column(name = "type_code")
-    private String typeCode;
+    /** 明细目标表名（如 {@code dia_body_structure}、{@code adm_specimen_definition}）。 */
+    @Column(name = "target_table")
+    private String targetTable;
 
-    /** 明细来源表名。 */
-    @Column(name = "order_detail_table")
-    private String orderDetailTable;
+    /** 明细目标表主键。 */
+    @Column(name = "target_id")
+    private Long targetId;
 
-    /** 明细来源标识。 */
-    @Column(name = "order_detail_id")
-    private Long orderDetailId;
-
-    /** 明细扩展内容。 */
-    @Column(name = "detail_json")
-    private String detailJson;
+    /** 明细备注。 */
+    @Column(name = "remark")
+    private String remark;
 
     /**
      * 明细归属断言（BR-SRQ-011）。
@@ -67,5 +64,28 @@ public class ServiceRequestDetail extends BaseAuditedEntity {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "服务申请明细 serviceReqId 不能为空");
         }
     }
-}
 
+    /**
+     * 明细目标引用断言（BR-SRQ-DTL-001）。
+     *
+     * @throws BusinessException 目标表或目标主键非法
+     */
+    public void assertTargetValid() {
+        if (this.targetTable == null || this.targetTable.isBlank()) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "服务申请明细 targetTable 不能为空");
+        }
+        if (this.targetId == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "服务申请明细 targetId 不能为空");
+        }
+    }
+
+    /**
+     * 持久化前完整断言：归属 + 目标引用。
+     *
+     * @throws BusinessException 参数非法
+     */
+    public void assertPersistable() {
+        this.assertBelongsToServiceRequest();
+        this.assertTargetValid();
+    }
+}

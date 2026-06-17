@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.outpatient.pharmacy.returnmedicine.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -27,6 +27,7 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
+/** 加载门诊药房退药初始化元数据请求。 */
 @Schema(description = "加载门诊药房退药初始化元数据请求")
 public class LoadReturnMedicineInitRequest extends PageQueryBinder.AbstractHealthPageRequest {
     private static final long serialVersionUID = 1L;

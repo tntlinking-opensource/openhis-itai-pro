@@ -30,10 +30,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医嘱补费父医嘱列表响应。 */
 @Schema(description = "医嘱补费父医嘱列表响应")
 public class ListNurseStationSupplementParentOrdersResponse {
 
-    /** 按 encounterId 分组的父医嘱行；组内已 sortNumber/authoredTime 排序。 */
     @Schema(description = "按就诊分组")
     private List<NurseStationPricingPatientGroupDto> groups = new ArrayList<>();
 }

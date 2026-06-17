@@ -28,6 +28,7 @@ import java.math.BigDecimal;
  * 退药明细行（IF-PHA-02-03）。
  */
 @Data
+/** 退药明细行。 */
 @Schema(description = "退药明细行")
 public class ReturnMedicineDetailRowDto {
 
@@ -39,50 +40,65 @@ public class ReturnMedicineDetailRowDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long requestId;
 
+    /** 原药品/耗材请求单标识。 */
     @Schema(description = "原药品/耗材请求单标识", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long refundMedicineId;
 
+    /** 药品/耗材定义标识。 */
     @Schema(description = "药品/耗材定义标识", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long itemId;
 
+    /** 药品/耗材名称。 */
     @Schema(description = "药品/耗材名称", requiredMode = Schema.RequiredMode.REQUIRED)
     private String itemName;
 
+    /** 批号。 */
     @Schema(description = "批号", requiredMode = Schema.RequiredMode.REQUIRED)
     private String lotNumber;
 
+    /** 应退数量。 */
     @Schema(description = "应退数量（绝对值）", requiredMode = Schema.RequiredMode.REQUIRED)
     private BigDecimal quantity;
 
+    /** 单位编码。 */
     @Schema(description = "单位编码", requiredMode = Schema.RequiredMode.REQUIRED)
     private String unitCode;
 
+    /** 单位显示。 */
     @Schema(description = "单位显示", requiredMode = Schema.RequiredMode.REQUIRED)
     private String unitCodeText;
 
+    /** 该行收费合计。 */
     @Schema(description = "该行收费合计（按发放单汇总 ChargeItem，与门诊发药展示口径一致）", requiredMode = Schema.RequiredMode.REQUIRED)
     private BigDecimal totalPrice;
 
+    /** 开单医生姓名。 */
     @Schema(description = "开单医生姓名", requiredMode = Schema.RequiredMode.REQUIRED)
     private String doctorName;
 
+    /** 退药状态编码。 */
     @Schema(description = "退药状态编码", requiredMode = Schema.RequiredMode.REQUIRED)
     private String refundEnum;
 
+    /** 退药状态展示。 */
     @Schema(description = "退药状态展示", requiredMode = Schema.RequiredMode.REQUIRED)
     private String refundEnumText;
 
+    /** 请求状态编码。 */
     @Schema(description = "请求状态编码", requiredMode = Schema.RequiredMode.REQUIRED)
     private String reqStatus;
 
+    /** 请求状态展示。 */
     @Schema(description = "请求状态展示", requiredMode = Schema.RequiredMode.REQUIRED)
     private String reqStatusText;
 
+    /** 业务表名。 */
     @Schema(description = "业务表名", requiredMode = Schema.RequiredMode.REQUIRED)
     private String serviceTable;
 
+    /** 追溯码。 */
     @Schema(description = "追溯码（逗号分隔）")
     private String traceNo;
 }

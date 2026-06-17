@@ -25,14 +25,8 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-/**
- * UpdateFrequencyRequest。
- */
 public class UpdateFrequencyRequest extends CreateFrequencyRequest {
 
     /** 频次聚合根主键。 */
-    /**
-     * id。
-     */
     private Long id;
 }

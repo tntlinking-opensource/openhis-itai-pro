@@ -20,20 +20,20 @@ package com.openhis.health.application.inventory.pharmacy.stocktake.response;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 提交盘点审批出参（IF-PHA-ST-06）。
  */
 @Data
 @Accessors(chain = true)
+/** 提交盘点审批 IF-PHA-ST-06。 */
 @Schema(description = "提交盘点审批 IF-PHA-ST-06")
 public class SubmitPharmacyStocktakeApprovalResponse {
 
-    /** 是否成功。 */
     @Schema(description = "是否成功 success")
     private Boolean success;
 
-    /** 提交后状态 code。 */
     @Schema(description = "状态 statusEnum")
     private String statusEnum;
 }

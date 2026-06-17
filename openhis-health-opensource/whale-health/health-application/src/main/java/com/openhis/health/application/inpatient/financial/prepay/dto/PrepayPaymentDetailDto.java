@@ -30,14 +30,13 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 预交金支付明细。 */
 @Schema(description = "预交金支付明细")
 public class PrepayPaymentDetailDto {
 
-    /** 支付渠道 code（对应 fin 明细 pay_enum）。 */
     @Schema(description = "支付渠道 code", requiredMode = Schema.RequiredMode.REQUIRED)
     private String payChannelCode;
 
-    /** 明细金额（正数）。 */
     @Schema(description = "明细金额", requiredMode = Schema.RequiredMode.REQUIRED)
     private BigDecimal amount;
 

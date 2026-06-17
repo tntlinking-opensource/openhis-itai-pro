@@ -26,23 +26,28 @@ public interface CustomConstants {
     Pattern DAY_TIME_PATTERN = Pattern.compile("^([01]\\d|2[0-3]):[0-5]\\d$");
 
     /**
-     * 周期类型：日周期（每日）。
+     * 周期类型：日周期（历史 openhis 存值 1；展开步进读 day_interval / day_count，不在计算侧写死）。
+     * @deprecated 使用 {@link com.openhis.health.domain.share.enums.FrequencyCycleType} code 字符串
      */
+    @Deprecated
     Integer CYCLE_TYPE_DAILY = 1;
 
     /**
-     * 周期类型：隔日/间隔天（历史 openhis 存值 2；展开步进读 day_interval / day_count，不在计算侧写死）。
+     * @deprecated 使用 {@link com.openhis.health.domain.share.enums.FrequencyCycleType}
      */
+    @Deprecated
     Integer CYCLE_TYPE_EVERY_OTHER_DAY = 2;
 
     /**
-     * 周期类型：周周期。
+     * @deprecated 使用 {@link com.openhis.health.domain.share.enums.FrequencyCycleType}
      */
+    @Deprecated
     Integer CYCLE_TYPE_WEEKLY = 3;
 
     /**
-     * 周期类型：必要时。
+     * @deprecated 使用 {@link com.openhis.health.domain.share.enums.FrequencyCycleType}
      */
+    @Deprecated
     Integer CYCLE_TYPE_AS_NEEDED = 4;
 
     /**
@@ -89,7 +94,6 @@ public interface CustomConstants {
         String ADMISSION_TO_DEPT = "admission_to_dept";
         String BED_TRANSFER = "bed_transfer";
         String BED_CARD_PRINT = "bed_card_print";
-        String COMPANION_WRISTBAND_PRINT = "companion_wristband_print";
     }
 
     // 表名常量已集中到 TableNameConstants。
@@ -108,5 +112,15 @@ public interface CustomConstants {
      */
     public interface ChangedField {
         String DEFAULT_CHANGED_FIELDS = "profile";
+    }
+
+    /**
+     * 诊疗耗材绑定列表/下拉展示文案（WH-BND001）。
+     */
+    public interface ServiceDeviceBindingDisplayLabel {
+        /** 绑定目标表：诊疗活动。 */
+        String TARGET_TABLE_ACTIVITY = "诊疗";
+        /** 绑定目标表：耗材。 */
+        String TARGET_TABLE_DEVICE = "耗材";
     }
 }

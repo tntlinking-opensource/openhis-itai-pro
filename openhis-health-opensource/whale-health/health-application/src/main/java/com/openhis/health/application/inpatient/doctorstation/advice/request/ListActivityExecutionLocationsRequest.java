@@ -24,14 +24,13 @@ import lombok.Data;
  * IF-IP-DOR-19：按诊疗活动定义查询可执行科室/地点规则（须与住院就诊、患者门控一致）。
  */
 @Data
+/** 医生站-按诊疗定义查询执行科室规则。 */
 @Schema(description = "医生站-按诊疗定义查询执行科室规则")
 public class ListActivityExecutionLocationsRequest {
 
-    /** 当前住院就诊主键，用于 {@code InpatientInfo} 门控。 */
     @Schema(description = "就诊主键")
     private Long encounterId;
 
-    /** 患者主键，须与就诊读模型中的 {@code patientId} 一致。 */
     @Schema(description = "患者主键（须与就诊绑定一致）")
     private Long patientId;
 

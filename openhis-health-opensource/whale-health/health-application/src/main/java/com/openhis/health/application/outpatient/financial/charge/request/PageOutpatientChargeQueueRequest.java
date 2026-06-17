@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.outpatient.financial.charge.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -30,6 +30,7 @@ import lombok.experimental.Accessors;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 分页查询门诊收费队列请求。 */
 @Schema(description = "分页查询门诊收费队列请求")
 public class PageOutpatientChargeQueueRequest extends AbstractHealthPageRequest {
 
@@ -37,5 +38,6 @@ public class PageOutpatientChargeQueueRequest extends AbstractHealthPageRequest 
      * 队列页签编码（待收费/已收费等）。
      */
     @Schema(description = "队列页签编码")
+    /** 队列页签编码（业务字段）。 */
     private String queueTabCode;
 }

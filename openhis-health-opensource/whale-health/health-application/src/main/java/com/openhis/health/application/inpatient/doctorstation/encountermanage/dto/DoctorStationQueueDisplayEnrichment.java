@@ -28,6 +28,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站队列展示增补字段。 */
 @Schema(description = "医生站队列展示增补字段")
 public class DoctorStationQueueDisplayEnrichment {
 

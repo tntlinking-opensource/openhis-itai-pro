@@ -17,16 +17,18 @@
 
 package com.openhis.health.application.inpatient.financial.settle.mapper;
 
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
-import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettleCategorySummaryDto;
-import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettleChargeLineDto;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.module.querysupport.financial.dto.InpatientSettleCategorySummaryDto;
+import com.openhis.health.module.querysupport.financial.dto.InpatientSettleChargeLineDto;
 import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettlePaymentDetailDto;
 import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettleQueueItemDto;
-import com.openhis.health.application.inpatient.financial.settle.dto.SettledPaymentBriefDto;
+import com.openhis.health.module.querysupport.financial.dto.SettledPaymentBriefDto;
+import com.openhis.health.application.inpatient.financial.settle.request.CancelInpatientSettleRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.ConfirmInpatientSettleRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.PageInpatientSettleQueueRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.PreSettleInpatientChargesRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.QueryInpatientSettleChargesRequest;
+import com.openhis.health.application.inpatient.financial.settle.response.CancelInpatientSettleResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.ConfirmInpatientSettleResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.LoadInpatientSettlePageInitResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.LoadInpatientSettleSummaryResponse;
@@ -39,14 +41,19 @@ import com.openhis.health.domain.administration.chargeitem.command.BatchChargeIt
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.encounter.command.CompleteInpatientFinancialSettlementCommand;
+import com.openhis.health.domain.administration.invoice.command.CancelInvoiceCommand;
 import com.openhis.health.domain.administration.invoice.command.CreateDraftInvoiceCommand;
+import com.openhis.health.domain.administration.invoice.query.InvoiceQueryCommand;
+import com.openhis.health.domain.financial.paymentreconciliation.command.CancelInpatientSettleAsRefundCommand;
+import com.openhis.health.domain.financial.paymentreconciliation.command.CompleteInpatientSettleCancelRefundCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CreatePaymentDraftFromPreSettleCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.RefundAdvanceDepositCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.SettleInpatientPaymentCommand;
+import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentRecDetailQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
 
@@ -268,13 +275,15 @@ public interface InpatientSettleMapper {
      * @param invoiceDraftId         发票草稿 ID
      * @param dischargeFullSettle    是否出院全结
      * @param advanceRefundPaymentId 出院多退预交金支付单 ID；无多退时为 null
+     * @param ybSetlId               医保结算 ID；无医保时为 null
      * @return 正式结算响应
      */
     ConfirmInpatientSettleResponse toConfirmInpatientSettleResponse(
         Long paymentId,
         Long invoiceDraftId,
         boolean dischargeFullSettle,
-        Long advanceRefundPaymentId);
+        Long advanceRefundPaymentId,
+        String ybSetlId);
 
     /**
      * 出院全结多退 → 退还预交金领域命令（现金退现占位明细）。
@@ -328,4 +337,61 @@ public interface InpatientSettleMapper {
         String payMethodText,
         List<InpatientSettleChargeLineDto> lines,
         List<InpatientSettleCategorySummaryDto> categories);
+
+    /**
+     * 原结算支付单 + 渠道明细 → 取消住院结算领域命令。
+     *
+     * @param originalPayment 成功结算支付单读模型
+     * @param paymentDetails  原单渠道明细；调用方保证非 null
+     * @param operatorId      操作员 ID
+     * @return 取消住院结算命令
+     */
+    CancelInpatientSettleAsRefundCommand toCancelInpatientSettleAsRefundCommand(
+        PaymentReconciliationQueryModel originalPayment,
+        List<PaymentRecDetailQueryModel> paymentDetails,
+        Long operatorId);
+
+    /**
+     * 取消住院结算结果 → 响应。
+     *
+     * @param refundPaymentId   逆向退款支付单 ID
+     * @param insuranceRevoked  是否已撤销医保正式结算
+     * @param ybSetlId          撤销后的医保结算 ID；无医保时为 null
+     * @return 取消住院结算响应
+     */
+    CancelInpatientSettleResponse toCancelInpatientSettleResponse(
+        Long refundPaymentId,
+        Boolean insuranceRevoked,
+        String ybSetlId);
+
+    /**
+     * 取消结算收口 → 领域命令。
+     *
+     * @param originalPaymentId 原结算支付单 ID
+     * @param reversePaymentId  逆向退款支付单 ID
+     * @param ybSetlId          撤销后的医保结算 ID；无医保时为 null
+     * @return 收口命令
+     */
+    CompleteInpatientSettleCancelRefundCommand toCompleteInpatientSettleCancelRefundCommand(
+        Long originalPaymentId,
+        Long reversePaymentId,
+        String ybSetlId);
+
+    /**
+     * 按支付单查询关联票据。
+     *
+     * @param paymentId 结算支付单 ID
+     * @return 票据查询命令
+     */
+    InvoiceQueryCommand toInvoiceQueryByPaymentId(Long paymentId);
+
+    /**
+     * 构建票据作废/冲红命令。
+     *
+     * @param invoiceId  票据 ID
+     * @param reason     作废或冲红原因
+     * @param operatorId 操作员 ID
+     * @return 作废/冲红命令
+     */
+    CancelInvoiceCommand toCancelInvoiceCommand(Long invoiceId, String reason, Long operatorId);
 }

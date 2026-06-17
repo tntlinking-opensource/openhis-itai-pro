@@ -20,21 +20,25 @@ package com.openhis.health.application.inventory.warehouse.stocktake.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Data
 @Accessors(chain = true)
+/** 药库盘库单详情明细行。 */
 @Schema(description = "药库盘库单详情明细行")
 public class StocktakeDetailLineDto {
 
     /** 供应请求行主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 明细行主键 lineId。 */
     @Schema(description = "明细行主键 lineId")
     private Long lineId;
 
@@ -44,6 +48,7 @@ public class StocktakeDetailLineDto {
 
     /** 物品定义主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 物品定义主键 itemId。 */
     @Schema(description = "物品定义主键 itemId")
     private Long itemId;
 
@@ -65,6 +70,7 @@ public class StocktakeDetailLineDto {
 
     /** 效期止点。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 效期 expirationDate。 */
     @Schema(description = "效期 expirationDate")
     private LocalDateTime expirationDate;
 
@@ -102,6 +108,7 @@ public class StocktakeDetailLineDto {
 
     /** 业务发生时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 业务发生时间 occurrenceTime。 */
     @Schema(description = "业务发生时间 occurrenceTime")
     private LocalDateTime occurrenceTime;
 

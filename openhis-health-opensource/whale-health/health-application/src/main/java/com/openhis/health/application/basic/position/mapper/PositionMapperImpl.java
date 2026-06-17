@@ -27,7 +27,8 @@ import com.openhis.health.domain.administration.practitionerrole.entity.Practiti
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
-import com.openhis.health.domain.share.enums.PractitionerBusinessRoleCode;
+import com.openhis.health.application.basic.position.support.PositionRoleApiCompat;
+import com.openhis.whale.identity.infrastructure.repository.RoleRepository;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.identity.application.dto.RoleDto;
 import com.openhis.whale.identity.application.dto.UserDto;
@@ -52,9 +53,16 @@ public class PositionMapperImpl implements PositionMapper {
     /** 位置读侧：岗位行补全物理位置展示文案。 */
     private final LocationQueryService locationQueryService;
 
-    public PositionMapperImpl(OrganizationQueryService organizationQueryService, LocationQueryService locationQueryService) {
+    /** 平台角色读侧：岗位行补全角色展示名。 */
+    private final RoleRepository roleRepository;
+
+    public PositionMapperImpl(
+        OrganizationQueryService organizationQueryService,
+        LocationQueryService locationQueryService,
+        RoleRepository roleRepository) {
         this.organizationQueryService = organizationQueryService;
         this.locationQueryService = locationQueryService;
+        this.roleRepository = roleRepository;
     }
 
     /**
@@ -118,8 +126,9 @@ public class PositionMapperImpl implements PositionMapper {
         PractitionerAssignmentRowDto dto = new PractitionerAssignmentRowDto();
         dto.setAssignmentId(role.getId());
         dto.setPractitionerId(role.getPractitionerId());
-        dto.setRoleCode(role.getRoleCode());
-        dto.setRoleName(PractitionerBusinessRoleCode.displayNameOf(role.getRoleCode()));
+        dto.setRoleId(role.getRoleId());
+        dto.setRoleCode(PositionRoleApiCompat.toLegacyRoleCode(role.getRoleId()));
+        dto.setRoleName(resolveRoleDisplayName(role.getRoleId()));
         dto.setOrgId(role.getOrgId());
         if (role.getOrgId() != null) {
             Organization org = organizationQueryService.loadOrganizationByIdForDisplay(role.getOrgId());
@@ -200,5 +209,19 @@ public class PositionMapperImpl implements PositionMapper {
             name = "";
         }
         return name + "（" + formLabel + "）";
+    }
+
+    private String resolveRoleDisplayName(Long roleId) {
+        if (roleId == null) {
+            return GeneralSharedConstants.EMPTY_STRING;
+        }
+        return roleRepository.findById(roleId)
+            .map(role -> {
+                if (StringUtils.isNotBlank(role.getDisplayName())) {
+                    return role.getDisplayName();
+                }
+                return role.getName();
+            })
+            .orElse(GeneralSharedConstants.EMPTY_STRING);
     }
 }

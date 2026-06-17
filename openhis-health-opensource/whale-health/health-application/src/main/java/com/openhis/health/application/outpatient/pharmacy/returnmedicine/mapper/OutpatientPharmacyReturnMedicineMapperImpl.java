@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.outpatient.pharmacy.returnmedicine.mapper;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.dto.DepartmentOptionDto;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.dto.RefundStatusOptionDto;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.dto.ReturnMedicineDetailRowDto;

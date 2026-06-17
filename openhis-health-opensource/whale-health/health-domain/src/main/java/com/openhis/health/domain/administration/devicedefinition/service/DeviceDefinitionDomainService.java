@@ -254,7 +254,7 @@ public class DeviceDefinitionDomainService {
         List<DeviceDefinition> toSave = new ArrayList<>();
         for (RetireDeviceDefinitionsCommand.Item item : items) {
             DeviceDefinition row = require(map, item.getId());
-            row.transitToRetired();
+            row.transitToInactive();
             toSave.add(row);
         }
         repository.saveAll(toSave);

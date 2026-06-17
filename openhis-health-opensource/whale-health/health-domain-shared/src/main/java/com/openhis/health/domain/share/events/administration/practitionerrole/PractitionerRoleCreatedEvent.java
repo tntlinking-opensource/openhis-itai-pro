@@ -5,14 +5,6 @@
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.openhis.health.domain.share.events.administration.practitionerrole;
@@ -24,32 +16,21 @@ import lombok.Setter;
 
 @Getter
 @Setter
-/**
- * PractitionerRoleCreatedEvent。
- */
 public class PractitionerRoleCreatedEvent extends DomainEvent {
-    /**
-     * practitionerId。
-     */
-    private Long practitionerId;
-    /**
-     * orgId。
-     */
-    private Long orgId;
-    /**
-     * roleCode。
-     */
-    private Integer roleCode;
 
-    public PractitionerRoleCreatedEvent() { super(); }
-    /**
-     * 处理Long assignmentId, Long practitionerId, Long orgId, Integer roleCode逻辑。
-     * @return 返回结果
-     */
-    public PractitionerRoleCreatedEvent(Long assignmentId, Long practitionerId, Long orgId, Integer roleCode) {
+    private Long practitionerId;
+    private Long orgId;
+    /** 平台角色主键 {@code whale_roles.id}。 */
+    private Long roleId;
+
+    public PractitionerRoleCreatedEvent() {
+        super();
+    }
+
+    public PractitionerRoleCreatedEvent(Long assignmentId, Long practitionerId, Long orgId, Long roleId) {
         super(assignmentId, AggregateTypeConstants.PRACTITIONER_ROLE);
         this.practitionerId = practitionerId;
         this.orgId = orgId;
-        this.roleCode = roleCode;
+        this.roleId = roleId;
     }
 }

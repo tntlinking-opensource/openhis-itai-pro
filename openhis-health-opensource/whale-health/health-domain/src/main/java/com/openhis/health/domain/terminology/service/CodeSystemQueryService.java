@@ -31,6 +31,7 @@ import com.openhis.whale.core.infrastructure.util.SearchUtils;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
@@ -40,6 +41,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -200,7 +202,7 @@ public class CodeSystemQueryService {
 
         List<Concept> cached = conceptCache.getAll(cacheKey);
         if (!cached.isEmpty()) {
-            return cached;
+            return sortConceptsBySortOrder(cached);
         }
         return loadAndCacheConcepts(name);
     }
@@ -212,7 +214,12 @@ public class CodeSystemQueryService {
      * @return 选项 DTO 列表
      */
     public List<OptionDto> getOptionListByCodeSystemName(String codeSystemName) {
-        return conceptToOptionList(findConceptsByCodeSystemName(codeSystemName));
+        List<OptionDto> options = conceptToOptionList(findConceptsByCodeSystemName(codeSystemName));
+        // Asm：按 sort_order 升序稳定下拉次序，供 IF-DOR-18 init 与前端展示一致
+        options.sort(
+            Comparator.comparing(OptionDto::getSort, Comparator.nullsLast(Long::compareTo))
+                .thenComparing(o -> StringUtils.defaultString(o.getValue())));
+        return options;
     }
 
     /**
@@ -339,6 +346,25 @@ public class CodeSystemQueryService {
     }
 
     /**
+     * 术语概念按库表 sort_order 升序（缓存回源后须重排，避免 HashSet 索引乱序）。
+     *
+     * @param list 概念列表；{@code null} 时返回空列表
+     * @return 排序后的新列表
+     */
+    private static List<Concept> sortConceptsBySortOrder(List<Concept> list) {
+        if (list == null || list.isEmpty()) {
+            if (list == null) {
+                return List.of();
+            }
+            return list;
+        }
+        return list.stream()
+            .sorted(Comparator.comparing(Concept::getSortOrder, Comparator.nullsLast(Long::compareTo))
+                .thenComparing(c -> String.valueOf(c.getCode())))
+            .collect(Collectors.toList());
+    }
+
+    /**
      * 加载全部未删除编码系统并预取概念集合（B.2：仓储禁 {@code @Query}）。
      *
      * @return 含 LEFT FETCH concepts 的编码系统列表
@@ -363,22 +389,16 @@ public class CodeSystemQueryService {
     @Transactional(readOnly = true)
     public void initCodeSystemCache() {
         if (!initCacheOnStartup) {
-            log.info("编码系统概念缓存使用懒加载，跳过启动预热");
             return;
         }
         try {
-            log.info("开始初始化编码系统缓存...");
             List<CodeSystem> codeSystems = findAllWithConceptsLoaded();
-            int totalConcepts = 0;
             // Loop：遍历编码系统，逐个写入缓存分片
             for (CodeSystem codeSystem : codeSystems) {
                 if (codeSystem.getConcepts() != null && !codeSystem.getConcepts().isEmpty()) {
                     conceptCache.putAll(CACHE_PREFIX_DICT + codeSystem.getName(), codeSystem.getConcepts(), Concept::getCode);
-                    totalConcepts += codeSystem.getConcepts().size();
-                    log.debug("缓存编码系统: {} -> {} 个概念", codeSystem.getName(), codeSystem.getConcepts().size());
                 }
             }
-            log.info("编码系统缓存初始化完成: {} 个编码系统, {} 个概念", codeSystems.size(), totalConcepts);
         } catch (Exception e) {
             log.error("编码系统缓存初始化失败", e);
         }

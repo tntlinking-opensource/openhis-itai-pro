@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.outpatient.financial.charge.mapper;
 
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.outpatient.financial.charge.dto.ChargeQueueRowDto;
 import com.openhis.health.application.outpatient.financial.charge.dto.PaymentDetailSubmitDto;
 import com.openhis.health.application.outpatient.financial.charge.dto.PreSettleChargeLinePreviewDto;

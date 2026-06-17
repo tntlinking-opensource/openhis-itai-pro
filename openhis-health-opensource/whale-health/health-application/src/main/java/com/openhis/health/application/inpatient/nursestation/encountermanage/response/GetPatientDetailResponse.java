@@ -27,10 +27,10 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 患者详情查询响应。 */
 @Schema(description = "患者详情查询响应")
 public class GetPatientDetailResponse {
 
-    /** 全景详情。 */
     @Schema(description = "患者全景详情")
     private PatientDetailDto detail;
 }

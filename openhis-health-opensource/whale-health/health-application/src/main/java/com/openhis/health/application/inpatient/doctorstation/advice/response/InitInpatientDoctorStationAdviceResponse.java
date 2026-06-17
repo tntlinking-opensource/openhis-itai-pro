@@ -25,19 +25,29 @@ import lombok.experimental.Accessors;
 import java.util.List;
 
 /**
- * IF-IP-DOR-18：医嘱开立页初始化响应（用药频次、给药途径术语下拉）。
- * <p>费用性质下拉由 <strong>AS-IP-DOR-001</strong> 的 {@code feeNatureOptions} 提供（IF-IP-DOR-13 已废止）。</p>
+ * IF-IP-DOR-18：医嘱开立页初始化响应（用药频次、给药途径术语下拉与费用性质下拉）。
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-医嘱开立-初始化响应。 */
 @Schema(description = "医生站-医嘱开立-初始化响应")
 public class InitInpatientDoctorStationAdviceResponse {
 
-    /** 用药频次术语下拉（编码体系 {@code rate_code}）。 */
     @Schema(description = "用药频次下拉")
     private List<OptionDto> medicationRateOptions;
 
-    /** 给药途径 / 用法术语下拉（编码体系 {@code method_code}）。 */
     @Schema(description = "给药途径（用法）下拉")
     private List<OptionDto> medicationRouteOptions;
+
+    /**
+     * 费用性质（合同）下拉：{@code value} 为合同主键字符串（落库 {@code contract_id}），{@code label} 为名称。
+     */
+    @Schema(description = "费用性质（合同）下拉")
+    private List<OptionDto> feeNatureOptions;
+
+    @Schema(description = "身体部位下拉")
+    private List<OptionDto> bodyStructureOptions;
+
+    @Schema(description = "样本定义下拉")
+    private List<OptionDto> specimenDefinitionOptions;
 }

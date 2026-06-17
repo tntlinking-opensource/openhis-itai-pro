@@ -19,7 +19,6 @@ package com.openhis.health.application.inventory.warehouse.stocktake.response;
 
 import com.openhis.health.application.inventory.warehouse.stocktake.dto.StocktakeListRowDto;
 import com.openhis.whale.core.application.dto.PagedResult;
-import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;

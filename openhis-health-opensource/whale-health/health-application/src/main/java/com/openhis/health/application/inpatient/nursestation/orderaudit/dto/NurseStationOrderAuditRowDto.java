@@ -31,14 +31,13 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
+/** 医嘱校对列表行。 */
 @Schema(description = "医嘱校对列表行")
 public class NurseStationOrderAuditRowDto {
 
-    /** 稳定行键：requestId + SOH + orderType。 */
     @Schema(description = "稳定行键：requestId + SOH(U+0001) + orderType")
     private String listRowKey;
 
-    /** 药品/诊疗申请主键。 */
     @Schema(description = "药品/诊疗申请主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long requestId;
@@ -122,11 +121,9 @@ public class NurseStationOrderAuditRowDto {
     @Schema(description = "药品成组号（仅药嘱）")
     private Long groupId;
 
-    /** 药品组号/排序号（排序用）。 */
     @Schema(description = "药品组号/排序号（排序用）")
     private Integer groupNo;
 
-    /** 排序号（药品）。 */
     @Schema(description = "排序号（药品）")
     private Integer sortNumber;
 }

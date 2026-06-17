@@ -25,14 +25,11 @@ import lombok.Setter;
 /**
  * 服务申请已签退事件。
  *
- * <p>SDD-WKF-004 §7 最小载荷：serviceRequestId（via super.aggregateId）、signCode。</p>
+ * <p>SDD-WKF-004 §7 最小载荷：serviceRequestId（via super.aggregateId）。</p>
  */
 @Getter
 @Setter
 public class ServiceRequestWithdrawnEvent extends DomainEvent {
-
-    /** 原签发码（用于下游撤销签发关联记录）。 */
-    private String signCode;
 
     /**
      * 默认构造函数（反序列化用）。
@@ -45,10 +42,8 @@ public class ServiceRequestWithdrawnEvent extends DomainEvent {
      * 构造服务申请已签退事件。
      *
      * @param serviceRequestId 服务申请主键（aggregateId）
-     * @param signCode         原签发码
      */
-    public ServiceRequestWithdrawnEvent(Long serviceRequestId, String signCode) {
+    public ServiceRequestWithdrawnEvent(Long serviceRequestId) {
         super(serviceRequestId, AggregateTypeConstants.SERVICE_REQUEST);
-        this.signCode = signCode;
     }
 }

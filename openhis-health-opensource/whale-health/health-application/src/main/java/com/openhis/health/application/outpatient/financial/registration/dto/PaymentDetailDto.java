@@ -25,29 +25,32 @@ import java.math.BigDecimal;
 
 @Data
 @Accessors(chain = true)
+/** 支付明细。 */
 @Schema(description = "支付明细")
-/**
- * PaymentDetailDto。
- */
 public class PaymentDetailDto {
 
     /** 支付渠道编码。 */
     @Schema(description = "支付渠道编码")
+    /** 支付渠道编码（业务字段）。 */
     private String payChannelCode;
 
     /** 支付金额。 */
     @Schema(description = "支付金额")
+    /** 支付金额（业务字段）。 */
     private BigDecimal payAmount;
 
     /** 外部流水号。 */
     @Schema(description = "外部流水号")
+    /** 外部流水号（业务字段）。 */
     private String transactionNo;
 
     /** 账户主键。 */
     @Schema(description = "账户主键")
+    /** 账户主键（业务字段）。 */
     private Long accountId;
 
     /** 账户编码。 */
     @Schema(description = "账户编码")
+    /** 账户编码（业务字段）。 */
     private String accountCode;
 }

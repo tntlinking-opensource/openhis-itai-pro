@@ -28,30 +28,34 @@ import lombok.experimental.Accessors;
 /**
  * IF-IP-DOR-12：查询医嘱绑定信息请求。
  *
- * <p>按用法编码或诊疗活动定义主键拉取绑定模板行，供开立弹窗展示关联耗材/套餐子项。</p>
+ * <p>按用法 {@code method_code} 或诊疗活动定义主键拉取绑定模板行，供开立弹窗展示关联耗材/套餐子项。</p>
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-医嘱开立-查询医嘱绑定信息请求。 */
 @Schema(description = "医生站-医嘱开立-查询医嘱绑定信息请求")
 public class GetInpatientDoctorStationAdviceOrderBindInfoRequest {
 
-    /** 绑定类型。 */
+    /** 绑定来源类型：{@code USAGE} / {@code ACTIVITY}，与模板 {@code type_code} 同码。 */
     @NotBlank(message = DoctorStationAdviceConstants.VALIDATION_BIND_TYPE_REQUIRED)
-    @Schema(description = "绑定类型", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "绑定来源类型：USAGE（用法）/ ACTIVITY（诊疗）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String bindType;
 
-    /** 主数据业务号或定义 id 的字符串形态。 */
+    /** 主数据来源键字符串：用法绑定为 {@code method_code}；诊疗绑定为活动定义主键字符串。 */
     @NotBlank(message = DoctorStationAdviceConstants.VALIDATION_BIND_SOURCE_ITEM_NO_REQUIRED)
-    @Schema(description = "主数据业务号或定义 id 的字符串形态", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 用法 method_code 或诊疗活动定义主键字符串。 */
+    @Schema(description = "用法 method_code 或诊疗活动定义主键字符串", requiredMode = Schema.RequiredMode.REQUIRED)
     private String itemNo;
 
-    /** 主数据主键。 */
+    /** 诊疗活动定义主键（仅 {@code ACTIVITY} 绑定可选，与 itemNo 二选一）。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 主数据主键。 */
     @Schema(description = "主数据主键")
     private Long itemId;
 
     /** 机构单元过滤。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 机构单元过滤。 */
     @Schema(description = "机构单元过滤")
     private Long organizationUnitId;
 }

@@ -24,25 +24,21 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * 药品处分方命令。
+ * 门诊药品处方分方命令（应用层预装配行快照与金额阈值，领域层只执行装箱与回写）。
  */
 @Getter
 @Setter
 public class SplitPrescriptionCommand {
+
     /** 操作人标识。 */
     private Long operatorId;
+
     /** 就诊标识。 */
     private Long encounterId;
-    /** 待分方医嘱标识集合。 */
-    private List<Long> requestIds;
-    /** 分方场景类型。 */
-    private String sceneType;
-    /** 医保标志。 */
-    private Boolean insuranceFlag;
-    /** 豁免规则标识集合。 */
-    private List<String> exemptionFlags;
-    /** 金额阈值。 */
-    private BigDecimal amountThreshold;
-    /** 手动方剂标志。 */
-    private Boolean manualFormulaFlag;
+
+    /** 待分方行快照（须覆盖本次就诊全部未收费药品）。 */
+    private List<PrescriptionSplitLineContext> lines;
+
+    /** 单张处方金额上限（元）；由系统设置注入。 */
+    private BigDecimal amountLimitYuan;
 }

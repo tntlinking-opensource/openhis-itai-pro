@@ -17,21 +17,16 @@
 
 package com.openhis.health.application.inpatient.nursestation.costdetail.assembler;
 
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostCategoryTotalDto;
-import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostDetailLineDto;
-import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostDetailTotalsDto;
+import com.openhis.health.module.querysupport.financial.NurseStationCostDetailReadAssembler;
+import com.openhis.health.module.querysupport.financial.dto.NurseStationCostCategoryTotalDto;
+import com.openhis.health.module.querysupport.financial.dto.NurseStationCostDetailLineDto;
+import com.openhis.health.module.querysupport.financial.dto.NurseStationCostDetailTotalsDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostSummaryLineDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.InpatientNurseStationCostDetailChargeRow;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
-import com.openhis.health.domain.share.constants.TableNameConstants;
-import com.openhis.health.domain.share.enums.ChargeItemStatus;
-import com.openhis.health.domain.share.enums.GenerateSource;
-import com.openhis.health.domain.share.utils.EnumUtil;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
@@ -56,6 +51,7 @@ public class NurseStationCostDetailAssembler {
 
     /** 汇总数量换算（BR-IP-CDT-011）。 */
     private final NurseStationCostDetailQuantityAssembler nurseStationCostDetailQuantityAssembler;
+    private final NurseStationCostDetailReadAssembler nurseStationCostDetailReadAssembler;
 
     /**
      * 校验候选行均可展示：product_id、category、service_table 归类完整（IF-IP-CDT-02 Pre 步骤 10）。
@@ -114,57 +110,7 @@ public class NurseStationCostDetailAssembler {
         List<InpatientNurseStationCostDetailChargeRow> rows,
         Map<String, ProductDefinitionDisplayDto> productByKey,
         Map<Long, ChargeItem> parentChargeById) {
-        List<NurseStationCostDetailLineDto> lines = new ArrayList<>();
-        if (rows == null || rows.isEmpty()) {
-            return lines;
-        }
-        for (InpatientNurseStationCostDetailChargeRow row : rows) {
-            if (row == null || row.getChargeItem() == null) {
-                continue;
-            }
-            ChargeItem charge = row.getChargeItem();
-            Long displayProductId = this.resolveDisplayProductId(charge, parentChargeById);
-            String displayProductTable = this.resolveDisplayProductTable(charge, parentChargeById);
-            String productKey =
-                ProductDefinitionKeyUtil.buildCompositeKey(displayProductTable, displayProductId);
-            ProductDefinitionDisplayDto product = productByKey.get(productKey);
-            NurseStationCostDetailLineDto line = new NurseStationCostDetailLineDto();
-            line.setChargeItemId(charge.getId());
-            line.setProductId(displayProductId);
-            line.setProductTableName(displayProductTable);
-            if (product != null) {
-                line.setItemName(product.getProductName());
-                line.setItemSpec(product.getTotalVolume());
-            }
-            line.setQuantityValue(charge.getQuantityValue());
-            line.setQuantityUnit(charge.getQuantityUnit());
-            line.setQuantityUnitDisplay(this.resolveQuantityUnitDisplay(charge.getQuantityUnit(), product));
-            // 行级单价/行合计按账单事实原样返回（BR-IP-CDT-012）
-            line.setUnitPrice(charge.getUnitPrice());
-            line.setTotalPrice(charge.getTotalPrice());
-            line.setBusinessDateTime(row.getBusinessDateTime());
-            line.setStatusEnum(charge.getStatusEnum());
-            ChargeItemStatus status = EnumUtil.fromCode(ChargeItemStatus.class, charge.getStatusEnum());
-            if (status != null) {
-                line.setStatusDisplay(status.getDisplay());
-            }
-            line.setGenerateSourceEnum(charge.getGenerateSourceEnum());
-            GenerateSource source = EnumUtil.fromCode(GenerateSource.class, charge.getGenerateSourceEnum());
-            if (source != null) {
-                line.setGenerateSourceDisplay(source.getDisplay());
-            }
-            // 退费态须醒目标识（BR-IP-CDT-013）
-            if (ChargeItemStatus.REFUNDING.getCode().equals(charge.getStatusEnum())
-                || ChargeItemStatus.REFUNDED.getCode().equals(charge.getStatusEnum())) {
-                line.setRefundHighlight(Boolean.TRUE);
-            } else {
-                line.setRefundHighlight(Boolean.FALSE);
-            }
-            line.setServiceTable(charge.getServiceTable());
-            line.setExpenseBlockCode(this.resolveExpenseBlockCode(charge.getServiceTable()));
-            lines.add(line);
-        }
-        return lines;
+        return nurseStationCostDetailReadAssembler.buildDetailLines(rows, productByKey, parentChargeById);
     }
 
     /**
@@ -323,13 +269,7 @@ public class NurseStationCostDetailAssembler {
      * @return 展示用产品 id
      */
     public Long resolveDisplayProductId(ChargeItem charge, Map<Long, ChargeItem> parentChargeById) {
-        if (charge.getParentId() != null && parentChargeById != null) {
-            ChargeItem parent = parentChargeById.get(charge.getParentId());
-            if (parent != null && parent.getProductId() != null) {
-                return parent.getProductId();
-            }
-        }
-        return charge.getProductId();
+        return nurseStationCostDetailReadAssembler.resolveDisplayProductId(charge, parentChargeById);
     }
 
     /**
@@ -340,13 +280,7 @@ public class NurseStationCostDetailAssembler {
      * @return 展示用产品表名
      */
     public String resolveDisplayProductTable(ChargeItem charge, Map<Long, ChargeItem> parentChargeById) {
-        if (charge.getParentId() != null && parentChargeById != null) {
-            ChargeItem parent = parentChargeById.get(charge.getParentId());
-            if (parent != null && StringUtils.isNotBlank(parent.getProductTable())) {
-                return parent.getProductTable();
-            }
-        }
-        return charge.getProductTable();
+        return nurseStationCostDetailReadAssembler.resolveDisplayProductTable(charge, parentChargeById);
     }
 
     /**
@@ -360,52 +294,7 @@ public class NurseStationCostDetailAssembler {
      * @throws IllegalArgumentException 未识别表名
      */
     public String resolveExpenseBlockCode(String serviceTable) {
-        if (StringUtils.isBlank(serviceTable)) {
-            throw new IllegalArgumentException("charge missing service_table");
-        }
-        String normalized = serviceTable.trim().toLowerCase();
-        if (TableNameConstants.MED_MEDICATION_REQUEST.equals(normalized)
-            || TableNameConstants.MED_MEDICATION_DISPENSE.equals(normalized)) {
-            return InpatientNurseStationConstants.COST_DETAIL_EXPENSE_BLOCK_MEDICATION;
-        }
-        if (TableNameConstants.WKF_SERVICE_REQUEST.equals(normalized)) {
-            return InpatientNurseStationConstants.COST_DETAIL_EXPENSE_BLOCK_SERVICE;
-        }
-        if (TableNameConstants.WKF_DEVICE_REQUEST.equals(normalized)
-            || TableNameConstants.WKF_DEVICE_DISPENSE.equals(normalized)) {
-            return InpatientNurseStationConstants.COST_DETAIL_EXPENSE_BLOCK_DEVICE;
-        }
-        throw new IllegalArgumentException("unknown service_table for expense block: " + serviceTable);
-    }
-
-    /**
-     * 解析账单单位展示名。
-     *
-     * @param quantityUnit 账单单位 code
-     * @param product      产品读模型
-     * @return 展示名；无法解析时回落 code
-     */
-    private String resolveQuantityUnitDisplay(String quantityUnit, ProductDefinitionDisplayDto product) {
-        if (StringUtils.isBlank(quantityUnit)) {
-            return quantityUnit;
-        }
-        if (product == null) {
-            return quantityUnit;
-        }
-        List<ProductDefinitionCatalogUnitBandDto> bands =
-            ProductDefinitionCatalogUnitBandsAssembler.buildInboundSelectionBands(product);
-        String normalized = quantityUnit.trim();
-        for (ProductDefinitionCatalogUnitBandDto band : bands) {
-            if (band == null || StringUtils.isBlank(band.getUnitCode())) {
-                continue;
-            }
-            if (normalized.equalsIgnoreCase(band.getUnitCode().trim())) {
-                if (StringUtils.isNotBlank(band.getUnitName())) {
-                    return band.getUnitName();
-                }
-            }
-        }
-        return quantityUnit;
+        return nurseStationCostDetailReadAssembler.resolveExpenseBlockCode(serviceTable);
     }
 
     /**

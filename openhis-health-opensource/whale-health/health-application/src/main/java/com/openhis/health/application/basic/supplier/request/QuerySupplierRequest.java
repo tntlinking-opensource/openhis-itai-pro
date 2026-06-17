@@ -18,7 +18,7 @@
 package com.openhis.health.application.basic.supplier.request;
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -34,15 +34,9 @@ import java.util.List;
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
 @Schema(description = "供应商查询指令DTO")
-/**
- * QuerySupplierRequest。
- */
 public class QuerySupplierRequest extends AbstractHealthPageRequest {
 
     /** 类型过滤（多选 code 或展示值，语义以前端约定为准）。 */
-    /**
-     * typeEnum。
-     */
     private List<String> typeEnum;
 
     /** 默认 where 列为业务编号/名称/拼音/五笔，排序按创建时间。 */

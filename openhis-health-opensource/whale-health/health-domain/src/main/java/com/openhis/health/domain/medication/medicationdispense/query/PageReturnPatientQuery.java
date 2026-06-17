@@ -43,4 +43,9 @@ public class PageReturnPatientQuery extends AbstractPageQuery {
      * 发药库房库位主键集合（与 {@code MedicationDispense.location_id} 收敛）；非空时按库房 {@code IN} 收敛；空表示不按库房过滤。
      */
     private List<Long> locationIds;
+
+    /**
+     * 应用层预解析的门诊就诊主键收窄集合（科室/关键字）；{@code null} 表示不按就诊主键额外收窄。
+     */
+    private List<Long> resolvedEncounterScope;
 }

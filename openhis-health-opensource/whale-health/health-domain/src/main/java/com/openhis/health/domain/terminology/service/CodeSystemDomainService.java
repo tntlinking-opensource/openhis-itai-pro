@@ -44,7 +44,6 @@ public class CodeSystemDomainService {
 
     private final CodeSystemRepository codeSystemRepository;
     private final ConceptRepository conceptRepository;
-    private final CodeSystemQueryService codeSystemQueryService;
 
     /**
      * 新建编码系统：校验名称唯一后落库，并清空字典缓存避免读侧脏读。
@@ -76,8 +75,6 @@ public class CodeSystemDomainService {
             .tenantId(command.getTenantId())
             .build();
         CodeSystem saved = codeSystemRepository.save(codeSystem);
-        // 编码系统变更后清缓存：避免后续字典读取读到旧数据
-        codeSystemQueryService.clearAllDictCache();
         return saved;
     }
 
@@ -114,8 +111,6 @@ public class CodeSystemDomainService {
             codeSystem.setStatus(command.getStatus());
         }
         CodeSystem saved = codeSystemRepository.save(codeSystem);
-        // 编码系统变更（含可能的 name 变更）后清空字典缓存，保证一致性
-        codeSystemQueryService.clearAllDictCache();
         return saved;
     }
 
@@ -130,9 +125,8 @@ public class CodeSystemDomainService {
         CodeSystem codeSystem = codeSystemRepository.findById(id)
             .orElseThrow(() -> new IllegalArgumentException("编码系统不存在: " + id));
         // 业务上采用状态停用而非物理删除，避免历史就诊/单据引用断裂。
-        codeSystem.setStatus(PublicationStatus.RETIRED.getCode());
+        codeSystem.setStatus(PublicationStatus.INACTIVE.getCode());
         codeSystemRepository.save(codeSystem);
-        codeSystemQueryService.clearAllDictCache();
     }
 
     /**
@@ -174,10 +168,6 @@ public class CodeSystemDomainService {
             concept.setParent(parent);
         }
         Concept save = conceptRepository.save(concept);
-        // 概念变更后按编码系统粒度失效字典缓存，避免下拉仍展示旧项。
-        if (save != null) {
-            codeSystemQueryService.evictDictByCodeSystemId(save.getCodeSystemId());
-        }
         return save;
     }
 
@@ -233,7 +223,6 @@ public class CodeSystemDomainService {
             concept.setParent(parent);
         }
         Concept saved = conceptRepository.save(concept);
-        codeSystemQueryService.evictDictByCodeSystemId(saved.getCodeSystemId());
         return saved;
     }
 
@@ -262,7 +251,6 @@ public class CodeSystemDomainService {
 
         concept.setIsDefault("Y");
         conceptRepository.save(concept);
-        codeSystemQueryService.evictDictByCodeSystemId(concept.getCodeSystemId());
     }
 
     /**
@@ -277,7 +265,6 @@ public class CodeSystemDomainService {
             .orElseThrow(() -> new IllegalArgumentException("概念不存在: " + id));
         concept.setIsActive(true);
         conceptRepository.save(concept);
-        codeSystemQueryService.evictDictByCodeSystemId(concept.getCodeSystemId());
     }
 
     /**
@@ -292,7 +279,6 @@ public class CodeSystemDomainService {
             .orElseThrow(() -> new IllegalArgumentException("概念不存在: " + id));
         concept.setIsActive(false);
         conceptRepository.save(concept);
-        codeSystemQueryService.evictDictByCodeSystemId(concept.getCodeSystemId());
     }
 
     /**
@@ -311,6 +297,5 @@ public class CodeSystemDomainService {
         }
         concept.setIsDeleted(true);
         conceptRepository.save(concept);
-        codeSystemQueryService.evictDictByCodeSystemId(concept.getCodeSystemId());
     }
 }

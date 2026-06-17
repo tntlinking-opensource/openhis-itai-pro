@@ -28,17 +28,23 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 取消住院登记请求。 */
 @Schema(description = "取消住院登记请求")
 public class CancelRegistrationRequest {
 
     @Schema(description = "住院就诊 ID", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 住院就诊 ID（业务字段）。 */
     private Long encounterId;
 
+    /** 取消原因。 */
     @Schema(description = "取消原因")
+    /** 取消原因（业务字段）。 */
     private String cancelReason;
 
+    /** 操作人 ID。 */
     @Schema(description = "操作人 ID", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 操作人 ID（业务字段）。 */
     private Long operatorId;
 }

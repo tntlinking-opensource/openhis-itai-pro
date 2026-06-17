@@ -52,6 +52,10 @@ public class ChangeMedicationOrderDraftCommand {
     private Boolean skinTestFlag;
     /** 绑定诊断定义主键；非空时更新。 */
     private Long conditionDefinitionId;
+    /** 就诊诊断主键；非空时更新。 */
+    private Long encounterDiagnosisId;
+    /** 费用性质/合同覆盖；非空时更新。 */
+    private Long contractId;
     /** 药品成组号；非空时更新。 */
     private Long groupId;
     /** 首日量。 */

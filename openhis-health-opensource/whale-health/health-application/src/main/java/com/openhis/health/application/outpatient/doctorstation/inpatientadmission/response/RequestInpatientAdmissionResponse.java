@@ -28,6 +28,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊医生站-住院申请-发起住院申请响应。 */
 @Schema(description = "门诊医生站-住院申请-发起住院申请响应")
 public class RequestInpatientAdmissionResponse {
 

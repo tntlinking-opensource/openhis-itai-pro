@@ -22,6 +22,7 @@ import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Data
 @Accessors(chain = true)
@@ -29,6 +30,7 @@ public class LoadStocktakeFormInitRequest {
 
     /** 兼容字段，服务端以 {@link com.openhis.whale.core.infrastructure.security.ICurrentUser} 为准。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 兼容字段。 */
     @Schema(description = "兼容字段，服务端忽略")
     private Long organizationId;
 }

@@ -103,14 +103,22 @@ public class EmrPdfPageEventHelper extends PdfPageEventHelper {
 
     private String resolveTemplate(String template, int page) {
         Map<String, String> meta = options.safeMetadata();
+        String documentTitle = "";
+        if (options.getDocumentTitle() != null) {
+            documentTitle = options.getDocumentTitle();
+        }
+        String documentTypeName = "";
+        if (options.getDocumentTypeName() != null) {
+            documentTypeName = options.getDocumentTypeName();
+        }
         return template
                 .replace("{page}", String.valueOf(page))
                 .replace("{total}", "?")
                 .replace("{patientName}", meta.getOrDefault("patientName", ""))
                 .replace("{gender}", meta.getOrDefault("gender", ""))
                 .replace("{age}", meta.getOrDefault("age", ""))
-                .replace("{documentTitle}", options.getDocumentTitle() != null ? options.getDocumentTitle() : "")
-                .replace("{documentTypeName}", options.getDocumentTypeName() != null ? options.getDocumentTypeName() : "")
+                .replace("{documentTitle}", documentTitle)
+                .replace("{documentTypeName}", documentTypeName)
                 .replace("{orgName}", meta.getOrDefault("orgName", ""))
                 .replace("{deptName}", meta.getOrDefault("deptName", ""))
                 .replace("{printTime}", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));

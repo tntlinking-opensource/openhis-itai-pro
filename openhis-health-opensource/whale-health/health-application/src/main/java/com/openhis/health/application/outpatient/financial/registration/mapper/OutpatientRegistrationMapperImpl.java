@@ -17,8 +17,8 @@
 
 package com.openhis.health.application.outpatient.financial.registration.mapper;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.outpatient.financial.registration.dto.*;
 import com.openhis.health.application.outpatient.financial.registration.request.*;
 import com.openhis.health.application.outpatient.financial.registration.response.*;
@@ -109,9 +109,11 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
     @Override
     public LoadRegisterFormInitResponse toLoadRegisterFormInitResponse(List<OptionDto> departments,
                                                                        List<OptionDto> practitioners, List<OptionDto> contracts, List<OptionDto> serviceTypes,
+                                                                       Map<String, BigDecimal> serviceTypeFeeById,
                                                                        List<OptionDto> genderOptions) {
         return new LoadRegisterFormInitResponse().setDepartmentOptions(departments)
             .setPractitionerOptions(practitioners).setContractOptions(contracts).setServiceTypeOptions(serviceTypes)
+            .setServiceTypeFeeById(serviceTypeFeeById)
             .setGenderOptions(genderOptions);
     }
 
@@ -176,9 +178,64 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
      */
     @Override
     public PreRegisterSettlementResponse toPreRegisterSettlementResponse(Long encounterId, Long paymentDraftId, BigDecimal totalAmount,
-        List<ChargeItemPreviewDto> chargeItems) {
+        List<ChargeItemPreviewDto> chargeItems, Long appointmentId, Long slotId) {
         return new PreRegisterSettlementResponse().setEncounterId(encounterId).setPaymentDraftId(paymentDraftId).setTotalAmount(totalAmount)
-            .setChargeItems(chargeItems);
+            .setChargeItems(chargeItems).setAppointmentId(appointmentId).setSlotId(slotId);
+    }
+
+    /**
+     * 预约快照 → 挂号台加载预约响应（IF-REG-12）。
+     *
+     * @param snapshot booking 模块预约快照；为 null 时返回 null
+     * @return 加载预约响应
+     */
+    @Override
+    public LoadAppointmentForRegisterResponse toLoadAppointmentForRegisterResponse(
+        com.openhis.whale.booking.contracts.dto.OutpatientBookingSnapshot snapshot) {
+        if (snapshot == null) {
+            return null;
+        }
+        return new LoadAppointmentForRegisterResponse()
+            .setAppointmentId(snapshot.getAppointmentId())
+            .setAppointmentBusNo(snapshot.getAppointmentBusNo())
+            .setSlotId(snapshot.getSlotId())
+            .setOrganizationId(snapshot.getOrganizationId())
+            .setPractitionerId(snapshot.getPractitionerId())
+            .setHealthcareServiceId(snapshot.getHealthcareServiceId())
+            .setSlotStart(snapshot.getSlotStart())
+            .setSlotEnd(snapshot.getSlotEnd())
+            .setOrganizationName(snapshot.getOrganizationName())
+            .setPractitionerName(snapshot.getPractitionerName())
+            .setServiceTypeName(snapshot.getServiceTypeName())
+            .setStatusEnum(snapshot.getStatusEnum());
+    }
+
+    /**
+     * 可约时段摘要列表 → 响应 DTO（IF-REG-14）。
+     *
+     * @param hints booking 模块时段摘要；可为 null
+     * @return 时段提示响应
+     */
+    @Override
+    public ListBookableSlotHintsResponse toListBookableSlotHintsResponse(
+        java.util.List<com.openhis.whale.booking.contracts.dto.BookableSlotHint> hints) {
+        ListBookableSlotHintsResponse response = new ListBookableSlotHintsResponse();
+        java.util.List<BookableSlotHintDto> rows = new java.util.ArrayList<>();
+        if (hints != null) {
+            for (com.openhis.whale.booking.contracts.dto.BookableSlotHint hint : hints) {
+                if (hint == null) {
+                    continue;
+                }
+                BookableSlotHintDto dto = new BookableSlotHintDto();
+                dto.setSlotId(hint.getSlotId());
+                dto.setSlotStart(hint.getSlotStart());
+                dto.setSlotEnd(hint.getSlotEnd());
+                dto.setRemainingCount(hint.getRemainingCount());
+                rows.add(dto);
+            }
+        }
+        response.setHints(rows);
+        return response;
     }
 
     /**
@@ -362,12 +419,14 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
      * @param page                         挂号分页对象
      * @param registrationFeeTotalByAnchor 挂号费锚点键 → 收费明细总价
      * @param paymentDraftIdByEncounterId  就诊主键 → 支付草稿主键（仅待结算挂号行有值）
+     * @param paymentIdByEncounterId       就诊主键 → 已成功支付流水主键（供补打小票）
      * @return 挂号列表 DTO
      */
     @Override
     public List<ClinicRegisterItemDto> toClinicRegisterItemDtoList(Page<ClinicRegisterQueryModel> page,
         Map<String, BigDecimal> registrationFeeTotalByAnchor,
-        Map<Long, Long> paymentDraftIdByEncounterId) {
+        Map<Long, Long> paymentDraftIdByEncounterId,
+        Map<Long, Long> paymentIdByEncounterId) {
         return page.getContent().stream().map(item -> {
             // 列表金额以账单事实（挂号费收费明细）为准；读模型未投影挂号费，不能用账户余额冒充。
             BigDecimal rowAmount = null;
@@ -406,6 +465,10 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
             if (paymentDraftIdByEncounterId != null && item.getEncounterId() != null) {
                 draftId = paymentDraftIdByEncounterId.get(item.getEncounterId());
             }
+            Long paymentId = null;
+            if (paymentIdByEncounterId != null && item.getEncounterId() != null) {
+                paymentId = paymentIdByEncounterId.get(item.getEncounterId());
+            }
             return new ClinicRegisterItemDto().setEncounterId(item.getEncounterId())
                 .setEncounterBusNo(item.getEncounterBusNo()).setPatientName(item.getPatientName())
                 .setPatientGenderCode(item.getPatientGenderCode()).setPatientGenderText(genderRowText)
@@ -413,7 +476,8 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
                 .setDoctorName(item.getDoctorName()).setStatusEnum(item.getStatusEnum())
                 .setStatusText(item.getStatusEnumText()).setStartTime(item.getStartTime())
                 .setServiceTypeId(item.getServiceTypeId()).setServiceTypeName(item.getServiceTypeName())
-                .setAmount(rowAmount).setPrintCount(item.getPrintCount()).setPaymentDraftId(draftId);
+                .setAmount(rowAmount).setPrintCount(item.getPrintCount()).setPaymentDraftId(draftId)
+                .setPaymentId(paymentId);
         }).collect(Collectors.toList());
     }
 

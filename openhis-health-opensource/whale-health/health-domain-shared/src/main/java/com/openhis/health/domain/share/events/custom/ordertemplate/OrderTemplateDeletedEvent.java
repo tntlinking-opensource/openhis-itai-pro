@@ -21,7 +21,7 @@ import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.whale.core.domain.event.DomainEvent;
 
 /**
- * 医嘱组套模板已逻辑删除事件。
+ * 组套模板已逻辑删除事件。
  */
 public class OrderTemplateDeletedEvent extends DomainEvent {
     private Long operatorId;

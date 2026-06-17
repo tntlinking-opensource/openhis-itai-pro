@@ -23,7 +23,7 @@ import lombok.Setter;
 import java.util.List;
 
 /**
- * 组套头+行查询模型。
+ * 组套模板头+行查询模型。
  */
 @Getter
 @Setter

@@ -30,15 +30,16 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站医嘱目录库存行。 */
 @Schema(description = "医生站医嘱目录库存行")
 public class DoctorStationAdviceInventoryRowDto {
 
-    /** 物品主表名。 */
     @Schema(description = "物品主表名")
     private String itemTable;
 
     /** 物品定义主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 物品定义主键。 */
     @Schema(description = "物品定义主键")
     private Long itemId;
 
@@ -48,6 +49,7 @@ public class DoctorStationAdviceInventoryRowDto {
 
     /** 库存行主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 库存行主键。 */
     @Schema(description = "库存行主键")
     private Long inventoryId;
 
@@ -69,11 +71,13 @@ public class DoctorStationAdviceInventoryRowDto {
 
     /** 库位 id。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 库位主键。 */
     @Schema(description = "库位主键")
     private Long locationStoreId;
 
     /** 库房 id。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 库房主键。 */
     @Schema(description = "库房主键")
     private Long locationId;
 
@@ -93,7 +97,6 @@ public class DoctorStationAdviceInventoryRowDto {
     @Schema(description = "批号售价定价行主键")
     private Long chargeItemDefinitionId;
 
-    /** 展示顺序。 */
     @Schema(description = "展示顺序")
     private Integer displayOrder;
 }

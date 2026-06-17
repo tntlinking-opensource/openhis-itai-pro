@@ -19,8 +19,6 @@ package com.openhis.health.domain.administration.practitionerrole.service;
 
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
-import com.openhis.health.domain.administration.practitioner.repository.PractitionerRepository;
-import com.openhis.health.domain.administration.healthcareservice.repository.HealthcareServiceRepository;
 import com.openhis.health.domain.administration.practitionerrole.command.*;
 import com.openhis.health.domain.administration.practitionerrole.entity.PractitionerRoleScheduleItem;
 import com.openhis.health.domain.administration.practitionerrole.entity.PractitionerRoleServiceItem;
@@ -51,8 +49,6 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class PractitionerRoleDomainService {
     private final PractitionerRoleRepository repository;
-    private final PractitionerRepository practitionerRepository;
-    private final HealthcareServiceRepository healthcareServiceRepository;
     private final PractitionerRoleServiceItemRepository serviceItemRepository;
     private final PractitionerRoleScheduleItemRepository scheduleItemRepository;
     private final IDomainEventPublisher domainEventPublisher;
@@ -70,18 +66,14 @@ public class PractitionerRoleDomainService {
         List<PractitionerRole> toSave = new ArrayList<>();
         Set<String> batchBusinessKeys = new HashSet<>();
         for (AssignPractitionerRoleCommand.AssignPractitionerRoleItemCommand item : items) {
-            // 前置校验：目标医务人员必须存在，否则分配动作无意义。
-            if (!practitionerRepository.findById(item.getPractitionerId()).isPresent()) {
-                throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_RULE_CONFLICT, "医务人员不存在");
-            }
             // 批内唯一性校验：同一批次中不允许出现相同业务唯一键，避免落库阶段才因冲突失败。
-            String batchKey = buildUniqueBusinessKey(item.getPractitionerId(), item.getRoleCode(), item.getOrgId(), item.getLocationId());
+            String batchKey = buildUniqueBusinessKey(item.getPractitionerId(), item.getRoleId(), item.getOrgId(), item.getLocationId());
             if (!batchBusinessKeys.add(batchKey)) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_CONFLICT, "岗位分配重复");
             }
             // 唯一性校验：同一医务人员在相同角色、科室、地点组合下不允许重复分配岗位。
-            if (repository.existsByPractitionerIdAndRoleCodeAndOrgIdAndLocationId(
-                item.getPractitionerId(), item.getRoleCode(), item.getOrgId(), item.getLocationId())) {
+            if (repository.existsByPractitionerIdAndRoleIdAndOrgIdAndLocationId(
+                item.getPractitionerId(), item.getRoleId(), item.getOrgId(), item.getLocationId())) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_CONFLICT, "岗位分配重复");
             }
             // 服务项去重校验：同一岗位内 serviceIds 不允许重复（BR-PRL-010）。
@@ -89,12 +81,6 @@ public class PractitionerRoleDomainService {
                 Set<Long> set = new HashSet<>(item.getServiceIds());
                 if (set.size() != item.getServiceIds().size()) {
                     throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_RULE_CONFLICT, "同一岗位下就诊类型不允许重复");
-                }
-                // 服务引用完整性校验：每个 HealthcareServiceId 必须存在（BR-PRL-002）。
-                for (Long serviceId : set) {
-                    if (serviceId == null || !healthcareServiceRepository.findById(serviceId).isPresent()) {
-                        throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_RULE_CONFLICT, "就诊类型不存在");
-                    }
                 }
             }
             // 排班 JSON 校验：每个排班项必须为合法 JSON（BR-PRL-003 的最小落点）。
@@ -110,7 +96,7 @@ public class PractitionerRoleDomainService {
             role.setPractitionerId(item.getPractitionerId());
             role.setOrgId(item.getOrgId());
             role.setLocationId(item.getLocationId());
-            role.setRoleCode(item.getRoleCode());
+            role.setRoleId(item.getRoleId());
             role.setName(item.getName());
             role.setSpecialtyCode(item.getSpecialtyCode());
             role.setTypeCode(item.getTypeCode());
@@ -124,7 +110,7 @@ public class PractitionerRoleDomainService {
         // 组装 saveAll 结果映射，避免依赖返回顺序。
         Map<String, PractitionerRole> roleByBusinessKey = new HashMap<>();
         for (PractitionerRole role : saved) {
-            String key = buildUniqueBusinessKey(role.getPractitionerId(), role.getRoleCode(), role.getOrgId(), role.getLocationId());
+            String key = buildUniqueBusinessKey(role.getPractitionerId(), role.getRoleId(), role.getOrgId(), role.getLocationId());
             roleByBusinessKey.put(key, role);
         }
 
@@ -132,7 +118,7 @@ public class PractitionerRoleDomainService {
         List<PractitionerRoleServiceItem> serviceItemsToSave = new ArrayList<>();
         List<PractitionerRoleScheduleItem> scheduleItemsToSave = new ArrayList<>();
         for (AssignPractitionerRoleCommand.AssignPractitionerRoleItemCommand item : items) {
-            String key = buildUniqueBusinessKey(item.getPractitionerId(), item.getRoleCode(), item.getOrgId(), item.getLocationId());
+            String key = buildUniqueBusinessKey(item.getPractitionerId(), item.getRoleId(), item.getOrgId(), item.getLocationId());
             PractitionerRole role = roleByBusinessKey.get(key);
             if (role == null) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_CONFLICT, "岗位落库结果回绑失败");
@@ -170,7 +156,7 @@ public class PractitionerRoleDomainService {
 
         // 子表与主表均已落库后再逐条发布岗位分配领域事件（B.14 硬门禁）。
         for (PractitionerRole role : saved) {
-            domainEventPublisher.publish(new PractitionerRoleCreatedEvent(role.getId(), role.getPractitionerId(), role.getOrgId(), role.getRoleCode()));
+            domainEventPublisher.publish(new PractitionerRoleCreatedEvent(role.getId(), role.getPractitionerId(), role.getOrgId(), role.getRoleId()));
         }
         return saved.get(0).getId();
     }
@@ -191,13 +177,14 @@ public class PractitionerRoleDomainService {
             PractitionerRole role = require(map, item.getAssignmentId());
             // 校验当前角色状态允许编辑（委托聚合根方法，避免服务层直接比较枚举值）。
             role.assertEditable();
+            Long locationId = parseSingleEditLocationId(item.getLocationId());
             // 校验组织/位置至少一项非空（BR-PRL-007）。
-            if (item.getOrgId() == null && item.getLocationId() == null) {
+            if (item.getOrgId() == null && locationId == null) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_RULE_CONFLICT, "科室与位置不可同时为空");
             }
             // 唯一性校验：编辑后仍需满足人员+角色+科室+位置唯一（BR-PRL-001）。
-            if (repository.existsByPractitionerIdAndRoleCodeAndOrgIdAndLocationIdAndIdNot(
-                role.getPractitionerId(), role.getRoleCode(), item.getOrgId(), item.getLocationId(), role.getId())) {
+            if (repository.existsByPractitionerIdAndRoleIdAndOrgIdAndLocationIdAndIdNot(
+                role.getPractitionerId(), role.getRoleId(), item.getOrgId(), locationId, role.getId())) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_CONFLICT, "岗位分配重复");
             }
 
@@ -208,7 +195,7 @@ public class PractitionerRoleDomainService {
             if (!Objects.equals(role.getOrgId(), item.getOrgId())) {
                 changedFields.add(FieldNameConstants.ORG_ID);
             }
-            if (!Objects.equals(role.getLocationId(), item.getLocationId())) {
+            if (!Objects.equals(role.getLocationId(), locationId)) {
                 changedFields.add(FieldNameConstants.LOCATION_ID);
             }
             if (!Objects.equals(role.getSpecialtyCode(), item.getSpecialtyCode())) {
@@ -219,7 +206,7 @@ public class PractitionerRoleDomainService {
             }
 
             role.setOrgId(item.getOrgId());
-            role.setLocationId(item.getLocationId());
+            role.setLocationId(locationId);
             role.setName(item.getName());
             role.setSpecialtyCode(item.getSpecialtyCode());
             role.setTypeCode(item.getTypeCode());
@@ -339,7 +326,7 @@ public class PractitionerRoleDomainService {
                     throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_RULE_CONFLICT, "同一岗位下就诊类型不允许重复");
                 }
                 for (Long serviceId : set) {
-                    if (serviceId == null || !healthcareServiceRepository.findById(serviceId).isPresent()) {
+                    if (serviceId == null) {
                         throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_RULE_CONFLICT, "就诊类型不存在");
                     }
                     PractitionerRoleServiceItem row = new PractitionerRoleServiceItem();
@@ -434,7 +421,7 @@ public class PractitionerRoleDomainService {
      */
     public List<Long> replaceRolesByType(ReplacePractitionerRolesByTypeCommand cmd) {
         // 查询该医务人员当前所有同类型的有效岗位，准备替换。
-        List<PractitionerRole> old = repository.findAllByPractitionerIdAndRoleCode(cmd.getPractitionerId(), cmd.getRoleCode());
+        List<PractitionerRole> old = repository.findAllByPractitionerIdAndRoleId(cmd.getPractitionerId(), cmd.getRoleId());
         // 将所有历史同类型岗位标记为已删除，为新的岗位分配腾出名额。
         for (PractitionerRole row : old) {
             row.transitToDeleted(cmd.getOperatorId());
@@ -443,7 +430,7 @@ public class PractitionerRoleDomainService {
         if (!old.isEmpty()) {
             repository.saveAll(old);
         }
-        // 归一化替换入参：替换维度由顶层 practitionerId + roleCode 决定，items 中若携带同字段必须一致。
+        // 归一化替换入参：替换维度由顶层 practitionerId + roleId 决定，items 中若携带同字段必须一致。
         if (cmd.getItems() != null) {
             for (AssignPractitionerRoleCommand.AssignPractitionerRoleItemCommand item : cmd.getItems()) {
                 if (item == null) {
@@ -454,17 +441,17 @@ public class PractitionerRoleDomainService {
                 } else if (!item.getPractitionerId().equals(cmd.getPractitionerId())) {
                     throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_INVALID_ARGUMENT, "批量替换的医务人员标识不一致");
                 }
-                if (item.getRoleCode() == null) {
-                    item.setRoleCode(cmd.getRoleCode());
-                } else if (!item.getRoleCode().equals(cmd.getRoleCode())) {
-                    throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_INVALID_ARGUMENT, "批量替换的角色编码不一致");
+                if (item.getRoleId() == null) {
+                    item.setRoleId(cmd.getRoleId());
+                } else if (!item.getRoleId().equals(cmd.getRoleId())) {
+                    throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_INVALID_ARGUMENT, "批量替换的平台角色不一致");
                 }
             }
         }
         // 批量创建新岗位：替换场景不逐条发布 Created/Abolished 事件，仅发布 BatchReplaced 事件（DM-ADM-006 §5.2）。
         List<Long> newAssignmentIds = createRolesWithoutEvents(cmd.getItems());
         // 发布批量替换完成的领域事件，携带替换后岗位 ID 列表供下游消费（DM §5.1：替换后岗位ID列表）。
-        domainEventPublisher.publish(new PractitionerRoleBatchReplacedEvent(cmd.getPractitionerId(), cmd.getRoleCode(), newAssignmentIds));
+        domainEventPublisher.publish(new PractitionerRoleBatchReplacedEvent(cmd.getPractitionerId(), cmd.getRoleId(), newAssignmentIds));
         return newAssignmentIds;
     }
 
@@ -506,19 +493,34 @@ public class PractitionerRoleDomainService {
     }
 
     /**
-     * 构建岗位分配唯一业务键：practitionerId + roleCode + orgId + locationId。
+     * 构建岗位分配唯一业务键：practitionerId + roleId + orgId + locationId。
      *
      * <p>分隔符使用不可见控制字符，避免业务值中常见字符（如 {@code :}、{@code |}）导致拼接碰撞。</p>
      *
      * @param practitionerId 医务人员标识
-     * @param roleCode       角色编码
+     * @param roleId         平台角色主键
      * @param orgId          科室标识（可空）
      * @param locationId     位置标识（可空）
      * @return 唯一业务键
      */
-    private String buildUniqueBusinessKey(Long practitionerId, Integer roleCode, Long orgId, Long locationId) {
+    private String buildUniqueBusinessKey(Long practitionerId, Long roleId, Long orgId, Long locationId) {
         String sep = "\u0001";
-        return String.valueOf(practitionerId) + sep + String.valueOf(roleCode) + sep + String.valueOf(orgId) + sep + String.valueOf(locationId);
+        return String.valueOf(practitionerId) + sep + String.valueOf(roleId) + sep + String.valueOf(orgId) + sep + String.valueOf(locationId);
+    }
+
+    private Long parseSingleEditLocationId(String locationId) {
+        if (locationId == null || locationId.isBlank()) {
+            return null;
+        }
+        String trimmed = locationId.trim();
+        if (trimmed.contains(",")) {
+            throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_INVALID_ARGUMENT, "普通岗位位置只能为单个标识");
+        }
+        try {
+            return Long.parseLong(trimmed);
+        } catch (NumberFormatException ex) {
+            throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_INVALID_ARGUMENT, "位置标识格式无效");
+        }
     }
 
     /**
@@ -531,6 +533,9 @@ public class PractitionerRoleDomainService {
      * @return 新建岗位主键列表
      */
     private List<Long> createRolesWithoutEvents(List<AssignPractitionerRoleCommand.AssignPractitionerRoleItemCommand> items) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
         AssignPractitionerRoleCommand cmd = new AssignPractitionerRoleCommand();
         cmd.setItems(items);
 
@@ -538,26 +543,18 @@ public class PractitionerRoleDomainService {
         List<PractitionerRole> toSave = new ArrayList<>();
         Set<String> batchBusinessKeys = new HashSet<>();
         for (AssignPractitionerRoleCommand.AssignPractitionerRoleItemCommand item : cmd.resolveItems()) {
-            if (!practitionerRepository.findById(item.getPractitionerId()).isPresent()) {
-                throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_RULE_CONFLICT, "医务人员不存在");
-            }
-            String batchKey = buildUniqueBusinessKey(item.getPractitionerId(), item.getRoleCode(), item.getOrgId(), item.getLocationId());
+            String batchKey = buildUniqueBusinessKey(item.getPractitionerId(), item.getRoleId(), item.getOrgId(), item.getLocationId());
             if (!batchBusinessKeys.add(batchKey)) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_CONFLICT, "岗位分配重复");
             }
-            if (repository.existsByPractitionerIdAndRoleCodeAndOrgIdAndLocationId(
-                item.getPractitionerId(), item.getRoleCode(), item.getOrgId(), item.getLocationId())) {
+            if (repository.existsByPractitionerIdAndRoleIdAndOrgIdAndLocationId(
+                item.getPractitionerId(), item.getRoleId(), item.getOrgId(), item.getLocationId())) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_CONFLICT, "岗位分配重复");
             }
             if (item.getServiceIds() != null) {
                 Set<Long> set = new HashSet<>(item.getServiceIds());
                 if (set.size() != item.getServiceIds().size()) {
                     throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_RULE_CONFLICT, "同一岗位下就诊类型不允许重复");
-                }
-                for (Long serviceId : set) {
-                    if (serviceId == null || !healthcareServiceRepository.findById(serviceId).isPresent()) {
-                        throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_RULE_CONFLICT, "就诊类型不存在");
-                    }
                 }
             }
             if (item.getScheduleItems() != null) {
@@ -573,7 +570,7 @@ public class PractitionerRoleDomainService {
             role.setPractitionerId(item.getPractitionerId());
             role.setOrgId(item.getOrgId());
             role.setLocationId(item.getLocationId());
-            role.setRoleCode(item.getRoleCode());
+            role.setRoleId(item.getRoleId());
             role.setName(item.getName());
             role.setSpecialtyCode(item.getSpecialtyCode());
             role.setTypeCode(item.getTypeCode());
@@ -585,13 +582,13 @@ public class PractitionerRoleDomainService {
         List<PractitionerRole> saved = repository.saveAll(toSave);
         Map<String, PractitionerRole> roleByBusinessKey = new HashMap<>();
         for (PractitionerRole role : saved) {
-            roleByBusinessKey.put(buildUniqueBusinessKey(role.getPractitionerId(), role.getRoleCode(), role.getOrgId(), role.getLocationId()), role);
+            roleByBusinessKey.put(buildUniqueBusinessKey(role.getPractitionerId(), role.getRoleId(), role.getOrgId(), role.getLocationId()), role);
         }
 
         List<PractitionerRoleServiceItem> serviceItemsToSave = new ArrayList<>();
         List<PractitionerRoleScheduleItem> scheduleItemsToSave = new ArrayList<>();
         for (AssignPractitionerRoleCommand.AssignPractitionerRoleItemCommand item : cmd.resolveItems()) {
-            String key = buildUniqueBusinessKey(item.getPractitionerId(), item.getRoleCode(), item.getOrgId(), item.getLocationId());
+            String key = buildUniqueBusinessKey(item.getPractitionerId(), item.getRoleId(), item.getOrgId(), item.getLocationId());
             PractitionerRole role = roleByBusinessKey.get(key);
             if (role == null) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_ROLE_CONFLICT, "岗位落库结果回绑失败");

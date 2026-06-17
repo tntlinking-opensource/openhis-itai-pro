@@ -433,7 +433,7 @@ public class InventoryItemDomainService {
                 throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "id 不能为空");
             }
             InventoryItem entity = this.mustGetActiveRow(item.getId());
-            entity.activeToRetired();
+            entity.stopSupply();
             toSave.add(entity);
         }
         return inventoryItemRepository.saveAll(toSave);
@@ -457,7 +457,7 @@ public class InventoryItemDomainService {
                 throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "id 不能为空");
             }
             InventoryItem entity = this.mustGetActiveRow(item.getId());
-            entity.retiredToActive();
+            entity.resumeSupply();
             toSave.add(entity);
         }
         return inventoryItemRepository.saveAll(toSave);

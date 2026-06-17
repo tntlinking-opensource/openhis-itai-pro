@@ -152,6 +152,15 @@ public interface ErrorCodeConstants {
     String PRACTITIONER_ROLE_RULE_CONFLICT = "PRACTITIONER_ROLE_005";
 
     /**
+     * 数据管辖错误码：目标超出岗位管辖范围。
+     */
+    String MANAGED_SCOPE_OUT_OF_SCOPE = "MANAGED_SCOPE_001";
+    /**
+     * 数据管辖错误码：未配置对应岗位管辖范围。
+     */
+    String MANAGED_SCOPE_NOT_CONFIGURED = "MANAGED_SCOPE_002";
+
+    /**
      * 医疗服务错误码：参数非法。
      */
     String HEALTHCARE_SERVICE_INVALID_ARGUMENT = "HEALTHCARE_SERVICE_001";
@@ -309,44 +318,6 @@ public interface ErrorCodeConstants {
     String BODY_STRUCTURE_RULE_CONFLICT = "BODY_STRUCTURE_005";
 
     /**
-     * 急诊分诊错误码：参数非法。
-     */
-    String EMERGENCY_TRIAGE_INVALID_ARGUMENT = "EMERGENCY_TRIAGE_001";
-    /**
-     * 急诊分诊错误码：资源不存在。
-     */
-    String EMERGENCY_TRIAGE_NOT_FOUND = "EMERGENCY_TRIAGE_002";
-    /**
-     * 急诊分诊错误码：状态不允许。
-     */
-    String EMERGENCY_TRIAGE_INVALID_STATUS = "EMERGENCY_TRIAGE_003";
-    /**
-     * 急诊分诊错误码：规则冲突。
-     */
-    String EMERGENCY_TRIAGE_RULE_CONFLICT = "EMERGENCY_TRIAGE_004";
-    /**
-     * 急诊分诊错误码：唯一性冲突。
-     */
-    String EMERGENCY_TRIAGE_CONFLICT = "EMERGENCY_TRIAGE_005";
-
-    /**
-     * 急诊知识库错误码：参数非法。
-     */
-    String EMERGENCY_KNOWLEDGE_INVALID_ARGUMENT = "EMERGENCY_KNOWLEDGE_001";
-    /**
-     * 急诊知识库错误码：资源不存在。
-     */
-    String EMERGENCY_KNOWLEDGE_NOT_FOUND = "EMERGENCY_KNOWLEDGE_002";
-    /**
-     * 急诊知识库错误码：规则冲突。
-     */
-    String EMERGENCY_KNOWLEDGE_RULE_CONFLICT = "EMERGENCY_KNOWLEDGE_003";
-    /**
-     * 急诊知识库错误码：唯一性冲突。
-     */
-    String EMERGENCY_KNOWLEDGE_CONFLICT = "EMERGENCY_KNOWLEDGE_004";
-
-    /**
      * 费用性质错误码：参数非法。
      */
     String CONTRACT_INVALID_ARGUMENT = "CONTRACT_001";
@@ -486,6 +457,35 @@ public interface ErrorCodeConstants {
      * 门诊药房退药：拒绝退药成功提示码（EX-PHA-002-411）。
      */
     String EX_PHA_002_411_DECLINE_OK = "EX-PHA-002-411";
+
+    /**
+     * 住院药房退药（AS-IP-PHA-003）：元数据加载失败（EX-IPR-101）。
+     */
+    String EX_IPR_101_LOAD_FAILED = "EX-IPR-101";
+    /**
+     * 住院药房退药：队列查询失败或分页非法（EX-IPR-102）。
+     */
+    String EX_IPR_102_QUERY_FAILED = "EX-IPR-102";
+    /**
+     * 住院药房退药：明细加载失败或就诊无效（EX-IPR-103）。
+     */
+    String EX_IPR_103_DETAIL_FAILED = "EX-IPR-103";
+    /**
+     * 住院药房退药：当前状态不允许确认退药（EX-IPR-201）。
+     */
+    String EX_IPR_201_STATUS_NOT_ALLOWED = "EX-IPR-201";
+    /**
+     * 住院药房退药：已退药重复确认（EX-IPR-202）。
+     */
+    String EX_IPR_202_DUPLICATE_REFUND = "EX-IPR-202";
+    /**
+     * 住院药房退药：批号或库存项缺失（EX-IPR-203）。
+     */
+    String EX_IPR_203_INVENTORY_MISSING = "EX-IPR-203";
+    /**
+     * 住院药房退药：未选择退药项（EX-IPR-301）。
+     */
+    String EX_IPR_301_ITEMS_EMPTY = "EX-IPR-301";
 
     /**
      * 药品申请错误码：参数非法。
@@ -686,6 +686,67 @@ public interface ErrorCodeConstants {
     /** 药库盘库单：并发或乐观锁冲突（AS EX-WHS-ST-105）。 */
     String WHS_ST_105 = "WHS_ST_105";
 
+    /** 药库损益单：参数或明细校验失败（AS WHS_GL_001）。 */
+    String WHS_GL_001 = "WHS_GL_001";
+    /** 药库损益单：损益库房非法（AS WHS_GL_002）。 */
+    String WHS_GL_002 = "WHS_GL_002";
+    /** 药库损益单：状态不允许提交、撤回或驳回（AS WHS_GL_003）。 */
+    String WHS_GL_003 = "WHS_GL_003";
+    /** 药库损益单：禁止编辑（AS WHS_GL_004）。 */
+    String WHS_GL_004 = "WHS_GL_004";
+    /** 药库损益单：删除被拒绝（AS WHS_GL_005）。 */
+    String WHS_GL_005 = "WHS_GL_005";
+    /** 药库损益单：机构上下文缺失或无权限（AS WHS_GL_101）。 */
+    String WHS_GL_101 = "WHS_GL_101";
+    /** 药库损益单：列表或选品查询失败（AS WHS_GL_102）。 */
+    String WHS_GL_102 = "WHS_GL_102";
+    /** 药库损益单：单据不存在或类型不匹配（AS WHS_GL_103）。 */
+    String WHS_GL_103 = "WHS_GL_103";
+    /** 药库损益单：重复同意或损益发放/库存编排失败（AS WHS_GL_104）。 */
+    String WHS_GL_104 = "WHS_GL_104";
+    /** 药库损益单：并发或乐观锁冲突（AS WHS_GL_105）。 */
+    String WHS_GL_105 = "WHS_GL_105";
+
+    /** 药库调出单：参数或明细校验失败（AS WHS_TR_001）。 */
+    String WHS_TR_001 = "WHS_TR_001";
+    /** 药库调出单：来源请领不可引用（AS WHS_TR_002）。 */
+    String WHS_TR_002 = "WHS_TR_002";
+    /** 药库调出单：状态不允许提交、撤回或驳回（AS WHS_TR_003）。 */
+    String WHS_TR_003 = "WHS_TR_003";
+    /** 药库调出单：禁止编辑（AS WHS_TR_004）。 */
+    String WHS_TR_004 = "WHS_TR_004";
+    /** 药库调出单：删除被拒绝（AS WHS_TR_005）。 */
+    String WHS_TR_005 = "WHS_TR_005";
+    /** 药库调出单：机构上下文缺失或无权限（AS WHS_TR_101）。 */
+    String WHS_TR_101 = "WHS_TR_101";
+    /** 药库调出单：列表或选品查询失败（AS WHS_TR_102）。 */
+    String WHS_TR_102 = "WHS_TR_102";
+    /** 药库调出单：单据不存在或类型不匹配（AS WHS_TR_103）。 */
+    String WHS_TR_103 = "WHS_TR_103";
+    /** 药库调出单：重复同意或调拨发放/库存编排失败（AS WHS_TR_104）。 */
+    String WHS_TR_104 = "WHS_TR_104";
+    /** 药库调出单：并发或乐观锁冲突（AS WHS_TR_105）。 */
+    String WHS_TR_105 = "WHS_TR_105";
+
+    /** 药库调入单：参数或明细校验失败（AS WHS_TI_001）。 */
+    String WHS_TI_001 = "WHS_TI_001";
+    /** 药库调入单：状态不允许（AS WHS_TI_003）。 */
+    String WHS_TI_003 = "WHS_TI_003";
+    /** 药库调入单：禁止编辑（AS WHS_TI_004）。 */
+    String WHS_TI_004 = "WHS_TI_004";
+    /** 药库调入单：删除被拒绝（AS WHS_TI_005）。 */
+    String WHS_TI_005 = "WHS_TI_005";
+    /** 药库调入单：机构上下文缺失或无权限（AS WHS_TI_101）。 */
+    String WHS_TI_101 = "WHS_TI_101";
+    /** 药库调入单：列表或选品查询失败（AS WHS_TI_102）。 */
+    String WHS_TI_102 = "WHS_TI_102";
+    /** 药库调入单：单据不存在或类型不匹配（AS WHS_TI_103）。 */
+    String WHS_TI_103 = "WHS_TI_103";
+    /** 药库调入单：重复同意或调入编排失败（AS WHS_TI_104）。 */
+    String WHS_TI_104 = "WHS_TI_104";
+    /** 药库调入单：并发或乐观锁冲突（AS WHS_TI_105）。 */
+    String WHS_TI_105 = "WHS_TI_105";
+
     /** 库存明细：机构/权限上下文缺失或库房范围非法（AS EX-INV-DTL-101）。 */
     String WHS_DTL_101 = "WHS_DTL_101";
     /** 库存明细：页面筛选项加载失败（AS EX-INV-DTL-201）。 */
@@ -728,14 +789,24 @@ public interface ErrorCodeConstants {
 
     /** 药库退库单（下游退回）：参数或校验失败（AS WHS_RFD_001）。 */
     String WHS_RFD_001 = "WHS_RFD_001";
+    /** 药库退库单：来源发放单不可退（AS WHS_RFD_002）。 */
+    String WHS_RFD_002 = "WHS_RFD_002";
     /** 药库退库单：状态不允许（AS WHS_RFD_003）。 */
     String WHS_RFD_003 = "WHS_RFD_003";
+    /** 药库退库单：禁止编辑（AS WHS_RFD_004）。 */
+    String WHS_RFD_004 = "WHS_RFD_004";
+    /** 药库退库单：删除被拒绝（AS WHS_RFD_005）。 */
+    String WHS_RFD_005 = "WHS_RFD_005";
     /** 药库退库单：机构上下文缺失或无权限（AS WHS_RFD_101）。 */
     String WHS_RFD_101 = "WHS_RFD_101";
+    /** 药库退库单：列表或可关联单查询失败（AS WHS_RFD_102）。 */
+    String WHS_RFD_102 = "WHS_RFD_102";
     /** 药库退库单：单据不存在或类型不匹配（AS WHS_RFD_103）。 */
     String WHS_RFD_103 = "WHS_RFD_103";
     /** 药库退库单：重复同意或退库发放/库存入账失败（AS WHS_RFD_104）。 */
     String WHS_RFD_104 = "WHS_RFD_104";
+    /** 药库退库单：非法传入乐观锁字段或并发冲突（AS WHS_RFD_105）。 */
+    String WHS_RFD_105 = "WHS_RFD_105";
     /**
      * 药库退库单：与药房退库互斥，或须先完成药房退库（AS WHS_RFD_020 / RTN-SDD-R-001 对偶调整）。
      */
@@ -796,8 +867,94 @@ public interface ErrorCodeConstants {
     /** 药房盘点单：并发或乐观锁冲突（AS EX-PHA-ST-105）。 */
     String PHA_ST_105 = "PHA_ST_105";
 
+    /** 药房损益单：参数或明细校验失败（AS PHA_GL_001）。 */
+    String PHA_GL_001 = "PHA_GL_001";
+    /** 药房损益单：损益药房非法（AS PHA_GL_002）。 */
+    String PHA_GL_002 = "PHA_GL_002";
+    /** 药房损益单：状态不允许提交、撤回或驳回（AS PHA_GL_003）。 */
+    String PHA_GL_003 = "PHA_GL_003";
+    /** 药房损益单：禁止编辑（AS PHA_GL_004）。 */
+    String PHA_GL_004 = "PHA_GL_004";
+    /** 药房损益单：删除被拒绝（AS PHA_GL_005）。 */
+    String PHA_GL_005 = "PHA_GL_005";
+    /** 药房损益单：机构上下文缺失或无权限（AS PHA_GL_101）。 */
+    String PHA_GL_101 = "PHA_GL_101";
+    /** 药房损益单：列表或选品查询失败（AS PHA_GL_102）。 */
+    String PHA_GL_102 = "PHA_GL_102";
+    /** 药房损益单：单据不存在或类型不匹配（AS PHA_GL_103）。 */
+    String PHA_GL_103 = "PHA_GL_103";
+    /** 药房损益单：重复同意或损益发放/库存编排失败（AS PHA_GL_104）。 */
+    String PHA_GL_104 = "PHA_GL_104";
+    /** 药房损益单：并发或乐观锁冲突（AS PHA_GL_105）。 */
+    String PHA_GL_105 = "PHA_GL_105";
+
+    /** 科室盘点单：参数或明细校验失败（AS EX-DEP-ST-001）。 */
+    String DEP_ST_001 = "DEP_ST_001";
+    /** 科室盘点单：盘点科室非法（AS EX-DEP-ST-002）。 */
+    String DEP_ST_002 = "DEP_ST_002";
+    /** 科室盘点单：状态不允许提交、撤回或驳回（AS EX-DEP-ST-003）。 */
+    String DEP_ST_003 = "DEP_ST_003";
+    /** 科室盘点单：禁止编辑（AS EX-DEP-ST-004）。 */
+    String DEP_ST_004 = "DEP_ST_004";
+    /** 科室盘点单：删除被拒绝（AS EX-DEP-ST-005）。 */
+    String DEP_ST_005 = "DEP_ST_005";
+    /** 科室盘点单：机构上下文缺失或无权限（AS EX-DEP-ST-101）。 */
+    String DEP_ST_101 = "DEP_ST_101";
+    /** 科室盘点单：列表或选品查询失败（AS EX-DEP-ST-102）。 */
+    String DEP_ST_102 = "DEP_ST_102";
+    /** 科室盘点单：单据不存在或类型不匹配（AS EX-DEP-ST-103）。 */
+    String DEP_ST_103 = "DEP_ST_103";
+    /** 科室盘点单：重复同意或盘点发放/库存编排失败（AS EX-DEP-ST-104）。 */
+    String DEP_ST_104 = "DEP_ST_104";
+    /** 科室盘点单：并发或乐观锁冲突（AS EX-DEP-ST-105）。 */
+    String DEP_ST_105 = "DEP_ST_105";
+
+    /** 科室损益单：参数或明细校验失败（AS DEP_GL_001）。 */
+    String DEP_GL_001 = "DEP_GL_001";
+    /** 科室损益单：损益科室非法（AS DEP_GL_002）。 */
+    String DEP_GL_002 = "DEP_GL_002";
+    /** 科室损益单：状态不允许提交、撤回或驳回（AS DEP_GL_003）。 */
+    String DEP_GL_003 = "DEP_GL_003";
+    /** 科室损益单：禁止编辑（AS DEP_GL_004）。 */
+    String DEP_GL_004 = "DEP_GL_004";
+    /** 科室损益单：删除被拒绝（AS DEP_GL_005）。 */
+    String DEP_GL_005 = "DEP_GL_005";
+    /** 科室损益单：机构上下文缺失或无权限（AS DEP_GL_101）。 */
+    String DEP_GL_101 = "DEP_GL_101";
+    /** 科室损益单：列表或选品查询失败（AS DEP_GL_102）。 */
+    String DEP_GL_102 = "DEP_GL_102";
+    /** 科室损益单：单据不存在或类型不匹配（AS DEP_GL_103）。 */
+    String DEP_GL_103 = "DEP_GL_103";
+    /** 科室损益单：重复同意或损益发放/库存编排失败（AS DEP_GL_104）。 */
+    String DEP_GL_104 = "DEP_GL_104";
+    /** 科室损益单：并发或乐观锁冲突（AS DEP_GL_105）。 */
+    String DEP_GL_105 = "DEP_GL_105";
+
+    /** 科室退库单：参数或校验失败（AS DEP_RT_001）。 */
+    String DEP_RT_001 = "DEP_RT_001";
+    /** 科室退库单：来源单据不可退（AS DEP_RT_002）。 */
+    String DEP_RT_002 = "DEP_RT_002";
+    /** 科室退库单：状态不允许（AS DEP_RT_003）。 */
+    String DEP_RT_003 = "DEP_RT_003";
+    /** 科室退库单：禁止编辑（AS DEP_RT_004）。 */
+    String DEP_RT_004 = "DEP_RT_004";
+    /** 科室退库单：删除被拒绝（AS DEP_RT_005）。 */
+    String DEP_RT_005 = "DEP_RT_005";
+    /** 科室退库单：机构上下文缺失或无权限（AS DEP_RT_101）。 */
+    String DEP_RT_101 = "DEP_RT_101";
+    /** 科室退库单：列表或可关联单查询失败（AS DEP_RT_102）。 */
+    String DEP_RT_102 = "DEP_RT_102";
+    /** 科室退库单：单据不存在或类型不匹配（AS DEP_RT_103）。 */
+    String DEP_RT_103 = "DEP_RT_103";
+    /** 科室退库单：重复同意或退库编排失败（AS DEP_RT_104）。 */
+    String DEP_RT_104 = "DEP_RT_104";
+    /** 科室退库单：并发或乐观锁冲突（AS DEP_RT_105）。 */
+    String DEP_RT_105 = "DEP_RT_105";
+
     /** 药房退库单：参数或校验失败（AS PHA_RU_001）。 */
     String PHA_RU_001 = "PHA_RU_001";
+    /** 药房退库单：来源入库单不可退（AS PHA_RU_002）。 */
+    String PHA_RU_002 = "PHA_RU_002";
     /** 药房退库单：状态不允许（AS PHA_RU_003）。 */
     String PHA_RU_003 = "PHA_RU_003";
     /** 药房退库单：禁止编辑（AS PHA_RU_004）。 */
@@ -812,6 +969,8 @@ public interface ErrorCodeConstants {
     String PHA_RU_103 = "PHA_RU_103";
     /** 药房退库单：重复同意或退库编排失败（AS PHA_RU_104）。 */
     String PHA_RU_104 = "PHA_RU_104";
+    /** 药房退库单：非法传入乐观锁字段或并发冲突（AS PHA_RU_105）。 */
+    String PHA_RU_105 = "PHA_RU_105";
     /** 药房退库单：与药库退库（下游）互斥（AS PHA_RU_020 / PHA-RU-SDD-R-001）。 */
     String PHA_RU_020 = "PHA_RU_020";
 
@@ -877,6 +1036,27 @@ public interface ErrorCodeConstants {
     String FREQUENCY_CONCURRENCY_CONFLICT = "FREQUENCY_005";
 
     /**
+     * 样本定义错误码：参数非法。
+     */
+    String SPECIMEN_DEFINITION_INVALID_ARGUMENT = "SPECIMEN_DEFINITION_001";
+    /**
+     * 样本定义错误码：资源不存在。
+     */
+    String SPECIMEN_DEFINITION_NOT_FOUND = "SPECIMEN_DEFINITION_002";
+    /**
+     * 样本定义错误码：状态不允许。
+     */
+    String SPECIMEN_DEFINITION_INVALID_STATUS = "SPECIMEN_DEFINITION_003";
+    /**
+     * 样本定义错误码：业务编码冲突。
+     */
+    String SPECIMEN_DEFINITION_BUS_NO_CONFLICT = "SPECIMEN_DEFINITION_004";
+    /**
+     * 样本定义错误码：规则冲突。
+     */
+    String SPECIMEN_DEFINITION_RULE_CONFLICT = "SPECIMEN_DEFINITION_005";
+
+    /**
      * 供应商错误码：参数非法。
      */
     String SUPPLIER_INVALID_ARGUMENT = "SUPPLIER_001";
@@ -918,6 +1098,14 @@ public interface ErrorCodeConstants {
      * 追溯码记录错误码：参数非法。
      */
     String TRACE_NUMBER_RECORD_INVALID_ARGUMENT = "TRACE_NUMBER_RECORD_001";
+    /**
+     * 追溯码记录错误码：码不在库或与药品/批号/库房不匹配。
+     */
+    String TRACE_NUMBER_RECORD_NOT_IN_STOCK_OR_MISMATCH = "TRACE_NUMBER_RECORD_002";
+    /**
+     * 追溯码记录错误码：同单重复追溯码。
+     */
+    String TRACE_NUMBER_RECORD_DUPLICATE_IN_REQUEST = "TRACE_NUMBER_RECORD_003";
 
     /**
      * 取药科室模板错误码：参数非法。
@@ -986,19 +1174,19 @@ public interface ErrorCodeConstants {
     String PRICE_ADJUSTMENT_INVALID_STATUS = "PRICE_ADJUSTMENT_003";
 
     /**
-     * 医嘱组套模板错误码：参数非法。
+     * 组套模板错误码：参数非法。
      */
     String ORDER_TEMPLATE_INVALID_ARGUMENT = "ORDER_TEMPLATE_001";
     /**
-     * 医嘱组套模板错误码：资源不存在。
+     * 组套模板错误码：资源不存在。
      */
     String ORDER_TEMPLATE_NOT_FOUND = "ORDER_TEMPLATE_002";
     /**
-     * 医嘱组套模板错误码：状态不允许。
+     * 组套模板错误码：状态不允许。
      */
     String ORDER_TEMPLATE_INVALID_STATUS = "ORDER_TEMPLATE_003";
     /**
-     * 医嘱组套模板错误码：模板编码冲突。
+     * 组套模板错误码：模板编码冲突。
      */
     String ORDER_TEMPLATE_CODE_CONFLICT = "ORDER_TEMPLATE_004";
 

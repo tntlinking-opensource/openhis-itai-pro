@@ -17,15 +17,17 @@
 
 package com.openhis.health.application.inventory.warehouse.stocktake.service;
 
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogEditorHintsAssembler;
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.application.common.pagination.PageQueryBinder;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
-import com.openhis.health.application.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.common.validator.PageWindowGate;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogEditorHintsAssembler;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.application.insurance.inventory.InventoryMedicareUploadSupport;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.mapper.InventoryWarehouseInboundReceiptMapper;
 import com.openhis.health.application.inventory.warehouse.stocktake.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.stocktake.dto.StocktakeDetailLineDto;
@@ -39,10 +41,11 @@ import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.application.querysupport.product.ProductDefinitionSelectionTerminologySupport;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionSelectionTerminologyMaps;
+import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.ProductDefinitionSelectionTerminologySupport;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionSelectionTerminologyMaps;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -51,7 +54,7 @@ import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
-import com.openhis.health.domain.share.enums.PractitionerBusinessRoleCode;
+import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.utils.EnumUtil;
@@ -74,10 +77,12 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequ
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
+import com.openhis.whale.chs.jilin.port.InventoryInsurancePort;
+import com.openhis.whale.chs.jilin.port.model.UploadAfterStocktakeCommand;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -88,7 +93,6 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -108,7 +112,10 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class InventoryWarehouseStocktakeAppService {
 
-    private final ICurrentUser currentUser;
+    @Autowired(required = false)
+    private InventoryInsurancePort inventoryInsurancePort;
+
+    private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     private final CurrentOperatorResolver currentOperatorResolver;
     private final PageWindowGate pageWindowGate;
     private final SupplyRequestDomainService supplyRequestDomainService;
@@ -119,6 +126,7 @@ public class InventoryWarehouseStocktakeAppService {
     private final InventoryItemQueryService inventoryItemQueryService;
     private final LocationQueryService locationQueryService;
     private final PractitionerQueryService practitionerQueryService;
+    private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
     private final ProductDefinitionSelectionTerminologySupport productDefinitionSelectionTerminologySupport;
@@ -127,15 +135,25 @@ public class InventoryWarehouseStocktakeAppService {
     private final InventoryWarehouseInboundReceiptMapper inboundReceiptMapper;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
 
+    /**
+     * 加载库房单据页主数据（管辖药库、枚举选项、制单人员等）。
+     *
+     * @param request 页初始化请求；机构上下文由服务端解析
+     * @return 下拉选项与字典项
+     */
     public LoadStocktakeFormInitResponse loadStocktakeFormInit(LoadStocktakeFormInitRequest request) {
-        Long resolvedOrg = this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        Long resolvedOrg = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+            ErrorCodeConstants.WHS_ST_101, "机构上下文缺失");
         try {
+            // Gate：机构会话上下文
+            // Pre：装载管辖范围内启用位置与角色人员
+            // Asm：Mapper 映射页初始化响应
             List<Location> warehouses = locationQueryService.listAllActiveWarehouses();
             List<Location> gatedWarehouses = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(warehouses);
-            List<Practitioner> pharmacists = this.loadAllPractitionersForRoleInOrganization(
-                PractitionerBusinessRoleCode.PHARMACIST.getNumericCode(), resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.loadAllPractitionersForRoleInOrganization(
-                PractitionerBusinessRoleCode.WAREHOUSE_ADMIN.getNumericCode(), resolvedOrg);
+            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
+            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+                WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
             return stocktakeMapper.toLoadStocktakeFormInitResponse(
                 stocktakeMapper.toOptionDtoListFromLocations(gatedWarehouses),
                 stocktakeMapper.toOptionDtoListInboundItemTableTypes(),
@@ -148,12 +166,22 @@ public class InventoryWarehouseStocktakeAppService {
         }
     }
 
+    /**
+     * 分页查询库房单据列表（按 busNo 聚合展示）。
+     *
+     * @param request 含分页窗口、库房与状态筛选
+     * @return 聚合后的列表行与分页元数据
+     */
     public PageStocktakesResponse pageStocktakes(PageStocktakesRequest request) {
+        // Gate：请求体、分页窗口与机构上下文
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_001, "请求不能为空");
         }
+        // Pre：组装列表查询与库房门禁
+        // Cmd：领域分页查询供应请求
+        // Asm：聚合 busNo 行并映射分页响应
         pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.WHS_ST_001, "分页参数不能为空");
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_ST_101, "机构上下文缺失");
         Set<Long> allowedWarehouses = this.resolveGatedWarehouseLocationIdsForWarehouseGate();
         SupplyRequestDocumentListQuery listQuery = new SupplyRequestDocumentListQuery();
         listQuery.setTypeEnum(SupplyType.CABINET_STOCKTAKE.getCode());
@@ -188,6 +216,7 @@ public class InventoryWarehouseStocktakeAppService {
         }
         listQuery.setEndDate(rangeEnd);
         try {
+            // Cmd：领域分页查询供应请求
             long mergedTotal = this.supplyRequestQueryService.countDistinctBusNo(listQuery);
             List<String> busNos = this.supplyRequestQueryService.listDistinctBusNoPage(listQuery);
             List<SupplyRequestModel> lines = this.supplyRequestQueryService.listByBusNosWithFilter(listQuery, busNos);
@@ -197,6 +226,7 @@ public class InventoryWarehouseStocktakeAppService {
             this.enrichStocktakeListStatusEnumText(records);
             int pageNo = request.getPageNo().intValue();
             int pageSize = listQuery.getBoundedPageSize();
+            // Asm：聚合 busNo 行并映射分页响应
             return this.stocktakeMapper.toPageStocktakesAggregatedResponse(mergedTotal, pageNo, pageSize, records);
         } catch (RuntimeException ex) {
             log.warn("pageStocktakes failed", ex);
@@ -204,8 +234,18 @@ public class InventoryWarehouseStocktakeAppService {
         }
     }
 
+    /**
+     * 按 busNo 回读单据详情（含明细行与展示增强）。
+     *
+     * @param request 含业务单号 busNo
+     * @return 单头与明细
+     */
     public GetStocktakeDetailResponse getStocktakeDetail(GetStocktakeDetailRequest request) {
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
+            // Gate：busNo 非空
+            // Pre：按 busNo 回读供应请求行
+            // Pre：批量装载产品读模型
+            // Asm：Mapper 映射详情并增强展示字段
             throw new BusinessException(ErrorCodeConstants.WHS_ST_001, "busNo 不能为空");
         }
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
@@ -260,7 +300,14 @@ public class InventoryWarehouseStocktakeAppService {
         return res;
     }
 
+    /**
+     * 新建库房单据草稿并落库供应请求。
+     *
+     * @param request 单头、明细与库房门禁字段
+     * @return 新建后的 busNo
+     */
     public CreateStocktakeResponse createStocktake(CreateStocktakeRequest request) {
+        // Gate：请求体、明细与库房/供应商门禁
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_001, "请求不能为空");
         }
@@ -270,7 +317,7 @@ public class InventoryWarehouseStocktakeAppService {
         if (request.getPurposeLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_001, "purposeLocationId 不能为空");
         }
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_ST_101, "机构上下文缺失");
         this.assertStocktakePurposeLocationGate(request.getPurposeLocationId());
         if (request.getPractitionerId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_001, "经手人不能为空");
@@ -282,6 +329,7 @@ public class InventoryWarehouseStocktakeAppService {
             "用户未登录",
             "当前用户未绑定医务人员档案，无法制单");
         try {
+            // Cmd：组装 Create 命令并调用领域写服务
             String busNo = supplyRequestDomainService.createStocktake(
                 stocktakeMapper.toCreateStocktakeCommand(request, operatorId, applicantId, null));
             return stocktakeMapper.toCreateStocktakeResponse(busNo);
@@ -292,7 +340,14 @@ public class InventoryWarehouseStocktakeAppService {
         }
     }
 
+    /**
+     * 更新可编辑态库房单据（全量明细覆盖）。
+     *
+     * @param request 含 busNo、明细与乐观锁相关字段
+     * @return 更新后的 busNo
+     */
     public UpdateStocktakeResponse updateStocktake(UpdateStocktakeRequest request) {
+        // Gate：busNo、明细与可编辑态校验
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_001, "busNo 不能为空");
         }
@@ -302,7 +357,7 @@ public class InventoryWarehouseStocktakeAppService {
         if (request.getPurposeLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_001, "purposeLocationId 不能为空");
         }
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_ST_101, "机构上下文缺失");
         this.assertStocktakePurposeLocationGate(request.getPurposeLocationId());
         VerifyAbleEditQuery editQuery = new VerifyAbleEditQuery();
         editQuery.setBusNo(request.getBusNo().trim());
@@ -325,6 +380,7 @@ public class InventoryWarehouseStocktakeAppService {
             "用户未登录",
             "当前用户未绑定医务人员档案，无法制单");
         try {
+            // Cmd：组装 Create 命令并调用领域写服务
             String busNo = supplyRequestDomainService.createStocktake(
                 stocktakeMapper.toCreateStocktakeCommand(request, operatorId, applicantId));
             return stocktakeMapper.toUpdateStocktakeResponse(busNo);
@@ -337,7 +393,14 @@ public class InventoryWarehouseStocktakeAppService {
         }
     }
 
+    /**
+     * 提交单据进入待审批态。
+     *
+     * @param request 含业务单号 busNo
+     * @return 提交后的展示状态
+     */
     public SubmitStocktakeApprovalResponse submitStocktakeApproval(SubmitStocktakeApprovalRequest request) {
+        // Gate：busNo 与制单人员档案
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_001, "请求不能为空");
         }
@@ -347,6 +410,7 @@ public class InventoryWarehouseStocktakeAppService {
             "用户未登录",
             "当前用户未绑定医务人员档案，无法提交审批");
         try {
+            // Cmd：领域提交审批
             supplyRequestDomainService.submitApproval(
                 stocktakeMapper.toSubmitApprovalCommand(request,
                     currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_ST_101, "用户未登录"),
@@ -354,31 +418,50 @@ public class InventoryWarehouseStocktakeAppService {
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_ST_003);
         }
+        // Asm：映射提交响应
         SupplyStatus st = this.loadHeadSupplyStatus(request.getBusNo().trim());
         return stocktakeMapper.toSubmitStocktakeApprovalResponse(st);
     }
 
+    /**
+     * 撤回审批（回到可编辑草稿态）。
+     *
+     * @param request 含业务单号 busNo
+     * @return 撤回后的展示状态
+     */
     public WithdrawStocktakeApprovalResponse withdrawStocktakeApproval(WithdrawStocktakeApprovalRequest request) {
+        // Gate：busNo 与操作人
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_001, "请求不能为空");
         }
         this.gateBusNo(request.getBusNo());
         try {
+            // Cmd：领域撤回审批
             supplyRequestDomainService.withdrawApproval(
                 stocktakeMapper.toWithdrawApprovalCommand(request,
                     currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_ST_101, "用户未登录")));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_ST_003);
         }
+        // Asm：映射撤回响应
         SupplyStatus st = this.loadHeadSupplyStatus(request.getBusNo().trim());
         return stocktakeMapper.toWithdrawStocktakeApprovalResponse(st);
     }
 
+    /**
+     * 药库盘库单同意编排：领域落已同意态 → 盘点发放 → 按盈亏行增/减库存 → 可选医保进销存上报。
+     *
+     * @param request 含 busNo；须未重复同意
+     * @return 同意后 busNo 与状态 code
+     */
     public AgreeStocktakeResponse agreeStocktake(AgreeStocktakeRequest request) {
+        // Gate：busNo 与操作人
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_001, "busNo 不能为空");
         }
         Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_ST_101, "用户未登录");
+
+        // Pre：回读盘库单并校验未重复同意
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
         q.setBusNo(request.getBusNo().trim());
         List<SupplyRequestModel> beforeLines = supplyRequestQueryService.getSupplyByBusNo(q);
@@ -390,6 +473,7 @@ public class InventoryWarehouseStocktakeAppService {
         if (Boolean.TRUE.equals(validation.getHasAgreed())) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_104, "盘库单已同意，禁止重复同意");
         }
+        // Cmd：领域状态机同意盘库单
         try {
             supplyRequestDomainService.agreeRequest(stocktakeMapper.toAgreeRequestCommand(request, operatorId));
         } catch (BusinessException ex) {
@@ -397,6 +481,8 @@ public class InventoryWarehouseStocktakeAppService {
         } catch (OptimisticLockingFailureException ex) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_105, "盘库单已被并发修改，请刷新后重试", ex);
         }
+
+        // Pre：强制读回 AGREE 行，保证发放/库存编排输入合法
         this.supplyRequestDomainService.flushPendingChanges();
         List<SupplyRequestModel> agreedLines = supplyRequestQueryService.getSupplyByBusNo(q);
         this.assertCabinetStocktake(agreedLines);
@@ -422,12 +508,15 @@ public class InventoryWarehouseStocktakeAppService {
         if (!duplicateCompletedRequestIds.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_104, "供应请求行已存在完成态发放，禁止重复同意盘点");
         }
+        // Cmd：盘点发放落库
         try {
             supplyDeliveryDomainService.createStocktakingDelivery(
                 stocktakeMapper.toCreateStocktakingDeliveryCommand(agreedLines, operatorId));
         } catch (BusinessException ex) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_104, "盘点发放落库失败：" + ex.getMessage());
         }
+
+        // Pre：批量产品读模型，供拆零量与盘盈建库存行使用
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         for (SupplyRequestModel line : agreedLines) {
             if (line == null || line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
@@ -464,6 +553,7 @@ public class InventoryWarehouseStocktakeAppService {
             matchKey.setItemId(line.getItemId());
             Long inventoryId = inventoryItemQueryService.findFirstIdByInventoryMatchKey(matchKey).orElse(null);
             int sign = profitLossQty.compareTo(BigDecimal.ZERO);
+            // 盘盈：命中既有库存行则加量，否则新建库存项
             if (sign > 0) {
                 try {
                     if (inventoryId != null) {
@@ -492,6 +582,7 @@ public class InventoryWarehouseStocktakeAppService {
                     throw new BusinessException(ErrorCodeConstants.WHS_ST_104, "盘盈库存增加失败：" + ex.getMessage());
                 }
             } else {
+                // 盘亏：须命中库存行后按绝对量扣减
                 BigDecimal absQty = profitLossQty.abs();
                 if (inventoryId == null) {
                     throw new BusinessException(ErrorCodeConstants.WHS_ST_104, "盘点库房未找到匹配库存行，无法盘亏扣减");
@@ -505,11 +596,43 @@ public class InventoryWarehouseStocktakeAppService {
                 }
             }
         }
+        // Asm：可选医保进销存上报（CHS 模块启用时）
+        tryUploadMedicareInventoryAfterStocktakeAgree(request, agreedLines);
         return stocktakeMapper.toAgreeStocktakeResponse(
             request.getBusNo().trim(), SupplyStatus.AGREE.getCode());
     }
 
+    private void tryUploadMedicareInventoryAfterStocktakeAgree(
+        AgreeStocktakeRequest request,
+        List<SupplyRequestModel> agreedLines
+    ) {
+        List<Long> lineIds = new ArrayList<>();
+        for (SupplyRequestModel line : agreedLines) {
+            if (line != null && line.getId() != null) {
+                lineIds.add(line.getId());
+            }
+        }
+        if (lineIds.isEmpty()) {
+            return;
+        }
+        InventoryMedicareUploadSupport.uploadIfPortPresent(inventoryInsurancePort, () -> {
+            UploadAfterStocktakeCommand command = new UploadAfterStocktakeCommand()
+                .setStocktakeBusNo(request.getBusNo())
+                .setSupplyRequestLineIds(lineIds)
+                .setSupplyTypeCode(SupplyType.CABINET_STOCKTAKE.getCode())
+                .setContractBusNo(request.getContractBusNo());
+            inventoryInsurancePort.uploadAfterStocktakeAgree(command);
+        });
+    }
+
+    /**
+     * 驳回单据并记录原因。
+     *
+     * @param request 含 busNo 与驳回原因
+     * @return 是否驳回成功
+     */
     public RejectStocktakeResponse rejectStocktake(RejectStocktakeRequest request) {
+        // Gate：busNo、驳回原因与操作人
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_001, "busNo 不能为空");
         }
@@ -518,33 +641,54 @@ public class InventoryWarehouseStocktakeAppService {
         }
         Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_ST_101, "用户未登录");
         try {
+            // Cmd：领域驳回请求
             supplyRequestDomainService.rejectRequest(stocktakeMapper.toRejectRequestCommand(request, operatorId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_ST_003);
         }
+        // Asm：映射驳回响应
         return stocktakeMapper.toRejectStocktakeResponse(true);
     }
 
+    /**
+     * 删除单据（仅允许草稿/可删态）。
+     *
+     * @param request 含业务单号 busNo
+     * @return 是否删除成功
+     */
     public RemoveStocktakeResponse removeStocktake(RemoveStocktakeRequest request) {
+        // Gate：busNo 与操作人
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_ST_001, "请求不能为空");
         }
         this.gateBusNo(request.getBusNo());
         Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_ST_101, "用户未登录");
         try {
+            // Cmd：领域按 busNo 软删
             supplyRequestDomainService.removeByBusNo(stocktakeMapper.toRemoveByBusNoCommand(request, operatorId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_ST_005);
         }
+        // Asm：映射删除响应
         return stocktakeMapper.toRemoveStocktakeResponse(true);
     }
 
+    /**
+     * 分页查询单据选品（库存目录可用量）。
+     *
+     * @param request 含库房、物品表与分页参数
+     * @return 选品行与分页元数据
+     */
     public PageProductsForStocktakeResponse pageProductsForStocktake(PageProductsForStocktakeRequest request) {
         pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.WHS_ST_001, "分页参数不能为空");
         if (request.getPurposeLocationId() == null) {
+            // Gate：分页窗口、机构与库房门禁
+            // Pre：组装库存目录分页查询
+            // Cmd：查询可用库存行
+            // Asm：映射选品分页并增强价格
             throw new BusinessException(ErrorCodeConstants.WHS_ST_001, "purposeLocationId 不能为空");
         }
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_ST_101, "机构上下文缺失");
         Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForWarehouseGate();
         this.assertWarehouseLocationAllowed(request.getPurposeLocationId(), allowed);
         this.assertProductTableNameWhitelistForStocktakeSelection(request.getProductTableName());
@@ -887,17 +1031,6 @@ public class InventoryWarehouseStocktakeAppService {
         }
     }
 
-    private Long resolveOrganizationId(Long organizationId) {
-        Long orgId = organizationId;
-        if (orgId == null) {
-            orgId = currentUser.getCurrentOrganizationUnitId();
-        }
-        if (orgId == null) {
-            throw new BusinessException(ErrorCodeConstants.WHS_ST_101, "机构上下文缺失");
-        }
-        return orgId;
-    }
-
     private Long requireWarehousePreparerPractitionerId(
         String notLoggedInErrorCode,
         String notLoggedInMessage,
@@ -942,37 +1075,6 @@ public class InventoryWarehouseStocktakeAppService {
                 throw new BusinessException(ErrorCodeConstants.WHS_ST_001, "物品表非法");
             }
         }
-    }
-
-    private List<Practitioner> loadAllPractitionersForRoleInOrganization(int businessRoleCode, Long organizationId) {
-        if (organizationId == null) {
-            return Collections.emptyList();
-        }
-        List<Practitioner> acc = new ArrayList<>();
-        int pageIndex = 0;
-        int pageSize = 500;
-        while (true) {
-            Page<Practitioner> page = this.practitionerQueryService.pageActivePractitionersForPosition(
-                businessRoleCode,
-                "",
-                PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.ASC, FieldNameConstants.ID)));
-            if (!page.hasContent()) {
-                break;
-            }
-            for (Practitioner p : page.getContent()) {
-                if (p == null || p.getId() == null) {
-                    continue;
-                }
-                if (organizationId.equals(p.getOrgId())) {
-                    acc.add(p);
-                }
-            }
-            if (!page.hasNext()) {
-                break;
-            }
-            pageIndex++;
-        }
-        return acc;
     }
 
     private void gateBusNo(String busNo) {

@@ -23,8 +23,10 @@ import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Data
 @Accessors(chain = true)
@@ -36,11 +38,23 @@ public class AgreeStocktakeRequest {
 
     /** 已废弃：审批时间由服务端写入。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 已废弃：审批时间由服务端写入。 */
     @Schema(description = "已废弃：审批时间由服务端写入", deprecated = true)
     private LocalDateTime approvalTime;
 
     /** 已废弃：审批人取当前操作人。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 已废弃：审批人取当前登录用户。 */
     @Schema(description = "已废弃：审批人取当前登录用户", deprecated = true)
     private Long approverId;
+
+    /** @deprecated CHS 模块启用即上传，此开关不再生效。 */
+    @Deprecated
+    /** 同意后是否上传医保进销存。 */
+    @Schema(description = "同意后是否上传医保进销存")
+    private Boolean medicareUploadEnabled;
+
+    /** 医保契约 busNo。 */
+    @Schema(description = "医保契约 busNo")
+    private String contractBusNo;
 }

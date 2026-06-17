@@ -53,7 +53,13 @@ public class MetadataFieldReferenceChecker {
                 continue;
             }
             if (contentReferencesFieldKey(template.getContent(), fieldKey)) {
-                names.add(template.getName() != null ? template.getName() : template.getCode());
+                String displayName;
+                if (template.getName() != null) {
+                    displayName = template.getName();
+                } else {
+                    displayName = template.getCode();
+                }
+                names.add(displayName);
             }
         }
         return new ArrayList<>(names);

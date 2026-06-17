@@ -17,8 +17,8 @@
 
 package com.openhis.health.application.inpatient.doctorstation.encountermanage.mapper;
 
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.dto.DoctorStationPatientQueueItemDto;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.dto.DoctorStationQueueDisplayEnrichment;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.request.PagePatientQueueRequest;
@@ -60,7 +60,7 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
      * {@code doctorStationQueue} 固定 true 以激活读侧医生站专用过滤。</p>
      *
      * @param request HTTP 分页请求，允许为 null（仅装配默认队列条件）
-     * @return 住院就诊上下文分页查询，永不为 null；科室收窄由领域 {@code InpatientEncounterContextQuerySupport} 从会话解析
+     * @return 住院就诊上下文分页查询，永不为 null；科室收窄由 {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver} 从会话解析
      */
     @Override
     public InpatientEncounterPageQuery toInpatientEncounterPageQuery(PagePatientQueueRequest request) {

@@ -33,14 +33,13 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊发药页初始化响应。 */
 @Schema(description = "门诊发药页初始化响应")
 public class LoadPharmacyDispensePageInitResponse {
 
-    /** 当前租户下可选药房机构树（扁平为选项列表）。 */
-    @Schema(description = "启用药房机构选项")
+    @Schema(description = "可操作药房位置选项（adm_location.id）")
     private List<OptionDto> pharmacyOrganizationOptions;
 
-    /** 发放状态筛选下拉（枚举术语）。 */
     @Schema(description = "发放状态筛选项")
     private List<OptionDto> dispenseStatusFilterOptions;
 

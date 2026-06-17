@@ -37,9 +37,9 @@ public class FrequencyCreatedEvent extends DomainEvent {
      */
     private String name;
     /**
-     * 周期类型枚举值。
+     * 周期类型 code。
      */
-    private Integer cycleType;
+    private String cycleType;
 
     private Long operatorId;
 
@@ -55,7 +55,7 @@ public class FrequencyCreatedEvent extends DomainEvent {
      * 处理Long id, String rateCode, String name, Integer cycleType逻辑。
      * @return 返回结果
      */
-    public FrequencyCreatedEvent(Long id, String rateCode, String name, Integer cycleType, Long operatorId) {
+    public FrequencyCreatedEvent(Long id, String rateCode, String name, String cycleType, Long operatorId) {
         super(id, AggregateTypeConstants.FREQUENCY);
         this.rateCode = rateCode;
         this.name = name;

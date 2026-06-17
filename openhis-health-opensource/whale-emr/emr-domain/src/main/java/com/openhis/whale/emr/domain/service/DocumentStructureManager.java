@@ -54,9 +54,12 @@ public class DocumentStructureManager {
      * @param nodeTypes       要收集的 node type 集合，空表示收集 region、section、dataElement
      */
     public List<StructureItem> parseStructure(String contentJson, boolean firstLevelOnly, Set<String> nodeTypes) {
-        Set<String> types = nodeTypes != null && !nodeTypes.isEmpty()
-                ? nodeTypes
-                : Set.of("region", "section", "dataElement");
+        Set<String> types;
+        if (nodeTypes != null && !nodeTypes.isEmpty()) {
+            types = nodeTypes;
+        } else {
+            types = Set.of("region", "section", "dataElement");
+        }
         List<StructureItem> result = new ArrayList<>();
         try {
             JsonNode root = objectMapper.readTree(contentJson);
@@ -79,7 +82,10 @@ public class DocumentStructureManager {
      */
     public String setValuesByNames(String contentJson, Map<String, Object> nameToValue) {
         if (contentJson == null || contentJson.isEmpty() || nameToValue == null || nameToValue.isEmpty()) {
-            return contentJson != null ? contentJson : "{}";
+            if (contentJson != null) {
+                return contentJson;
+            }
+            return "{}";
         }
         try {
             JsonNode root = objectMapper.readTree(contentJson);
@@ -103,8 +109,12 @@ public class DocumentStructureManager {
             if (type == null) continue;
             if (nodeTypes.contains(type)) {
                 JsonNode attrs = node.get(ATTRS);
-                String name = attrs != null ? attrs.path(ATTR_NAME).asText(null) : null;
-                String title = attrs != null ? attrs.path(ATTR_TITLE).asText(null) : null;
+                String name = null;
+                String title = null;
+                if (attrs != null) {
+                    name = attrs.path(ATTR_NAME).asText(null);
+                    title = attrs.path(ATTR_TITLE).asText(null);
+                }
                 StructureItem item = new StructureItem(name, title, type, depth, pageNo, null);
                 if (!firstLevelOnly && node.has(CONTENT) && node.get(CONTENT).isArray()) {
                     List<StructureItem> children = new ArrayList<>();

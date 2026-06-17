@@ -22,8 +22,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -34,7 +36,6 @@ import java.time.LocalDateTime;
 @Accessors(chain = true)
 public class AgreeStockOutRequest {
 
-    /** 出库业务单号。 */
     @Schema(description = "出库业务单号", requiredMode = Schema.RequiredMode.REQUIRED)
     private String busNo;
 
@@ -50,4 +51,12 @@ public class AgreeStockOutRequest {
      */
     @Schema(description = "已废弃：审批人取当前登录用户，可忽略", deprecated = true)
     private Long approverId;
+
+    /** @deprecated CHS 模块启用即上传，此开关不再生效。 */
+    @Deprecated
+    @Schema(description = "同意后是否上传医保进销存")
+    private Boolean medicareUploadEnabled;
+
+    @Schema(description = "医保契约 busNo")
+    private String contractBusNo;
 }

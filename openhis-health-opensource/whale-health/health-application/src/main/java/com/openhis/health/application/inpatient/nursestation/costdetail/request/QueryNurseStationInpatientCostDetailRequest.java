@@ -32,6 +32,7 @@ import java.time.LocalDate;
  */
 @Data
 @Accessors(chain = true)
+/** 住院护士站费用明细查询请求。 */
 @Schema(description = "住院护士站费用明细查询请求", requiredProperties = {
     "encounterId", "patientId", "dateFrom", "dateTo", "presentationMode"
 })
@@ -40,29 +41,34 @@ public class QueryNurseStationInpatientCostDetailRequest {
     /** 当前选中就诊（BR-IP-CDT-014 单就诊）。 */
     @NotNull(message = "就诊标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 就诊标识。 */
     @Schema(description = "就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long encounterId;
 
     /** 左侧卡片患者 id，与就诊读模型交叉校验（BR-IP-CDT-001）。 */
     @NotNull(message = "患者标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者标识。 */
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
     /** 业务日期下界（闭区间，BR-IP-CDT-002/005）。 */
     @NotNull(message = "查询开始日期不能为空")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    /** 业务日期下界。 */
     @Schema(description = "业务日期下界", requiredMode = Schema.RequiredMode.REQUIRED)
     private LocalDate dateFrom;
 
     /** 业务日期上界（闭区间；须 dateFrom ≤ dateTo）。 */
     @NotNull(message = "查询结束日期不能为空")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    /** 业务日期上界。 */
     @Schema(description = "业务日期上界", requiredMode = Schema.RequiredMode.REQUIRED)
     private LocalDate dateTo;
 
     /** 展示模式：DETAIL 明细 / SUMMARY 汇总。 */
     @NotNull(message = "展示模式不能为空")
+    /** 展示模式：DETAIL 或 SUMMARY。 */
     @Schema(description = "展示模式：DETAIL 或 SUMMARY", requiredMode = Schema.RequiredMode.REQUIRED)
     private String presentationMode;
 }

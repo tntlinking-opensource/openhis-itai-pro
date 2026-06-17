@@ -27,8 +27,5 @@ import lombok.EqualsAndHashCode;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Schema(description = "疾病（病种）目录详情")
-/**
- * DiagnosisCatalogDetailDto。
- */
 public class DiagnosisCatalogDetailDto extends DiagnosisCatalogDto {
 }

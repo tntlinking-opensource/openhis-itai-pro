@@ -23,8 +23,6 @@ import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.medication.medicationdispense.command.*;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.repository.MedicationDispenseRepository;
-import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
-import com.openhis.health.domain.medication.medicationrequest.repository.MedicationRequestRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.MedicationDispenseType;
@@ -54,7 +52,6 @@ import lombok.RequiredArgsConstructor;
 public class MedicationDispenseDomainService {
 
     private final MedicationDispenseRepository medicationDispenseRepository;
-    private final MedicationRequestRepository medicationRequestRepository;
     private final IDomainEventPublisher domainEventPublisher;
     /** 药品发放 busNo：业务流水按日递增，前缀 {@link AggregateTypeConstants#MEDICATION_DISPENSE}。 */
     private final BusinessSequenceService businessSequenceService;
@@ -143,33 +140,23 @@ public class MedicationDispenseDomainService {
     /**
      * 执行退药并推进到已退药状态。
      *
+     * <p>待退药确认路径（{@code PENDING_REFUND}）仅推进 {@code dispense_enum=REFUND} 的对冲发放行；
+     * 原正向 {@code COMPLETED} 发药单与退药链路<strong>无</strong>读写关联；发药/退药统计分别计正向行与 REFUND 对冲行（DM-MED-002 §6.1.4）。</p>
+     *
      * @param command 退药命令
      */
     public void refundDispensedMedication(RefundDispensedMedicationCommand command) {
-        Map<Long, MedicationDispense> toSaveById = new LinkedHashMap<>();
+        List<MedicationDispense> toSave = new ArrayList<>();
         for (RefundDispensedMedicationCommand.Item item : command.resolveItems()) {
             MedicationDispense dispense = this.mustGet(item.getId());
-            dispense.ensureRefundable();
-            // Pre：待退药确认路径须回写药师与可选原因，已发药直退路径保持原 toRefunded 语义。
-            if (DispenseStatus.PENDING_REFUND.equals(dispense.getStatusEnum())) {
-                Long practitionerId = item.getPractitionerId();
-                if (practitionerId == null) {
-                    practitionerId = item.getOperatorId();
-                }
-                dispense.pendingRefundToRefundedWithAudit(item.getRefundQuantity(), practitionerId, item.getReasonText());
-                // Pre：门诊退药申请会新建 REFUND 类型待退行，原正向 COMPLETED 行须同步收口，否则已发药列表仍命中。
-                MedicationDispense originForward = this.findOriginForwardDispenseForRefundLine(dispense);
-                if (originForward != null) {
-                    originForward.toRefunded();
-                    toSaveById.put(originForward.getId(), originForward);
-                }
-            } else {
-                // Pre：已发药态退库仍沿用原数量回写与状态推进。
-                dispense.toRefunded(item.getRefundQuantity());
+            // Pre：仅允许待退 REFUND 对冲行确认；禁止误传 COMPLETED 正向发药单改态（DM-MED-002 §6.1.4）。
+            Long practitionerId = item.getPractitionerId();
+            if (practitionerId == null) {
+                practitionerId = item.getOperatorId();
             }
-            toSaveById.put(dispense.getId(), dispense);
+            dispense.pendingRefundToRefundedWithAudit(item.getRefundQuantity(), practitionerId, item.getReasonText());
+            toSave.add(dispense);
         }
-        List<MedicationDispense> toSave = new ArrayList<>(toSaveById.values());
         medicationDispenseRepository.saveAll(toSave);
         for (MedicationDispense dispense : toSave) {
             MedicationDispenseRefundedEvent refundedEvent =
@@ -401,47 +388,13 @@ public class MedicationDispenseDomainService {
 
     /**
      * 基于原发放单创建待退药记录。
+     * <p>
+     * 住院取消执行（{@code AS-IP-NUR-012}）须传入 {@code procedureId} 挂接新 CANCEL 行；
+     * 门诊退药申请（{@code AS-OP-DOR-004}）可不传 {@code procedureId}。
      *
      * @param command 待退药创建命令
      * @return 新建待退药记录标识
      */
-    /**
-     * 解析退药发放行对应的原正向发放单（非 REFUND 类型、仍处可收口为已退药的状态）。
-     *
-     * @param refundLine 已确认或待确认的退药类型发放行
-     * @return 原正向发放单；无法解析时 {@code null}
-     */
-    private MedicationDispense findOriginForwardDispenseForRefundLine(MedicationDispense refundLine) {
-        if (refundLine == null || !MedicationDispenseType.REFUND.equals(refundLine.getDispenseEnum())) {
-            return null;
-        }
-        Long refundReqId = refundLine.getMedReqId();
-        if (refundReqId == null) {
-            return null;
-        }
-        MedicationRequest refundReq = this.medicationRequestRepository.findById(refundReqId).orElse(null);
-        if (refundReq == null || refundReq.getRefundMedicineId() == null) {
-            return null;
-        }
-        List<MedicationDispense> candidates =
-            this.medicationDispenseRepository.findByMedReqIdIn(List.of(refundReq.getRefundMedicineId()));
-        for (MedicationDispense candidate : candidates) {
-            if (candidate == null || Boolean.TRUE.equals(candidate.getIsDeleted())) {
-                continue;
-            }
-            if (MedicationDispenseType.REFUND.equals(candidate.getDispenseEnum())) {
-                continue;
-            }
-            DispenseStatus status = candidate.getStatusEnum();
-            if (DispenseStatus.COMPLETED.equals(status)
-                || DispenseStatus.PART_COMPLETED.equals(status)
-                || DispenseStatus.SUMMARIZED.equals(status)) {
-                return candidate;
-            }
-        }
-        return null;
-    }
-
     public Long createPendingRefundDispense(CreatePendingRefundDispenseCommand command) {
         MedicationDispense origin = this.mustGet(command.getOriginDispenseId());
         origin.ensureRefundable();
@@ -452,6 +405,11 @@ public class MedicationDispenseDomainService {
             command.getRefundRequestId(), origin.getMedicationId(), origin.getEncounterId(), origin.getPatientId(),
             origin.getLocationId(), command.getRefundQuantity(), origin.getUnitCode(), MedicationDispenseType.REFUND);
         pending.toPendingRefund();
+        pending.setLotNumber(origin.getLotNumber());
+        pending.setTraceNo(origin.getTraceNo());
+        if (command.getProcedureId() != null) {
+            pending.setProcedureId(command.getProcedureId());
+        }
         MedicationDispense saved = medicationDispenseRepository.save(pending);
         // Event（B.14）：持久化成功后再发布，载荷 status 使用 getCode() 字符串身份。
         MedicationDispenseCreatedEvent createdEvent = new MedicationDispenseCreatedEvent(
@@ -468,6 +426,7 @@ public class MedicationDispenseDomainService {
         MedicationDispensePendingRefundCreatedEvent pendingRefundEvent = new MedicationDispensePendingRefundCreatedEvent(
             saved.getId(), origin.getId(), command.getRefundQuantity(), command.getOperatorId());
         pendingRefundEvent.setStatusEnumCode(saved.getStatusEnum().getCode());
+        pendingRefundEvent.setProcedureId(saved.getProcedureId());
         domainEventPublisher.publish(pendingRefundEvent);
         return saved.getId();
     }
@@ -575,10 +534,12 @@ public class MedicationDispenseDomainService {
     public void rollbackUndispensedDispense(RollbackUndispensedDispenseCommand command) {
         List<MedicationDispense> dispenses = medicationDispenseRepository.findByIdIn(command.getIds());
         for (MedicationDispense dispense : dispenses) {
-            // Pre：回退仅恢复草稿并清理汇总标识，不覆盖其它业务字段。
+            // Pre：临时嘱取消执行须回到 DRAFT，并清 procedure 挂接（BR-IP-CXL-007），供再次执行 linkDispenseProcedure。
             dispense.ensureRollbackable();
             dispense.initDraft();
             dispense.setSummaryNo(null);
+            dispense.setProcedureId(null);
+            dispense.setPlannedDispenseTime(null);
         }
         medicationDispenseRepository.saveAll(dispenses);
     }

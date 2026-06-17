@@ -72,8 +72,8 @@ public class CreateDepartmentRequest {
     private Long defDoctorId;
     /** 科别。 */
     private String caty;
-    /** 科室分类（旧版枚举排序值）。 */
-    private Integer classEnum;
+    /** 科室分类编码（领域 code，或旧版排序数字字符串）。 */
+    private String classEnum;
     /** 科室类型编码。 */
     private String typeEnum;
     /** 显示顺序。 */

@@ -22,8 +22,10 @@ import jakarta.validation.constraints.NotEmpty;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 批量恢复供应入参（IF-INV-DTL-09）。
@@ -31,6 +33,7 @@ import java.util.List;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 批量恢复供应 IF-INV-DTL-09。 */
 @Schema(description = "批量恢复供应 IF-INV-DTL-09", requiredProperties = {"inventoryItemIds"})
 public class ResumeInventoryItemsRequest {
 

@@ -24,7 +24,7 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * 用药频次维护页初始化数据：状态下拉、周期类型、适用场景与跨天策略等固定选项。
+ * 用药频次维护页初始化数据：状态下拉、周期类型、适用场景、跨日策略与周期单位等固定选项。
  *
  * <p>各选项的 {@code code} 与领域/库内约定一致，须与 {@link FrequencyAppService#init()}
  * 保持同步。</p>
@@ -32,15 +32,18 @@ import java.util.List;
 @Data
 public class FrequencyInitDto {
 
-    /** 启用状态：1=启用，0=停用（与列表 activeFlag 语义对齐）。 */
+    /** 启用状态：1=启用，0=停用。 */
     private List<OptionDto> statusOptions;
 
-    /** 周期类型：按天/按周/按月等（整数码与领域 cycleType 一致）。 */
+    /** 周期类型（FrequencyCycleType code）。 */
     private List<OptionDto> cycleTypeOptions;
 
-    /** 适用场景：门诊/住院/护理/通用等业务范围筛选。 */
+    /** 适用场景：outpatient/inpatient/nursing/all。 */
     private List<OptionDto> sceneOptions;
 
-    /** 是否允许跨天执行：0 不允许，1 允许。 */
+    /** 跨日选项：same-day / cross-day / by-shift。 */
     private List<OptionDto> allowCrossDayOptions;
+
+    /** 执行周期单位：min / h / d / wk / mo。 */
+    private List<OptionDto> periodUnitOptions;
 }

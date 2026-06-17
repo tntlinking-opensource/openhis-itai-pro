@@ -25,31 +25,38 @@ import java.time.LocalDate;
 
 @Data
 @Accessors(chain = true)
+/** 患者列表项。 */
 @Schema(description = "患者列表项")
 public class PatientItemDto {
 
     /** 患者 ID。 */
     @Schema(description = "患者ID")
+    /** 患者ID（业务字段）。 */
     private Long patientId;
 
     /** 患者业务号。 */
     @Schema(description = "患者业务号")
+    /** 患者业务号（业务字段）。 */
     private String patientBusNo;
 
     /** 患者姓名。 */
     @Schema(description = "姓名")
+    /** 姓名（业务字段）。 */
     private String name;
 
     /** 性别编码（AdministrativeGender#getCode()）。 */
     @Schema(description = "性别编码")
+    /** 性别编码（业务字段）。 */
     private String genderCode;
 
     /** 性别展示文案。 */
     @Schema(description = "性别展示文案")
+    /** 性别展示文案（业务字段）。 */
     private String genderText;
 
     /** 出生日期。 */
     @Schema(description = "出生日期")
+    /** 出生日期（业务字段）。 */
     private LocalDate birthDate;
 
     /**
@@ -57,13 +64,14 @@ public class PatientItemDto {
      * <p>与患者主数据分页列表提示口径一致，仅供界面展示。</p>
      */
     @Schema(description = "年龄（周岁）")
+    /** 年龄（周岁）（业务字段）。 */
     private Integer age;
 
-    /** 脱敏证件号。 */
     @Schema(description = "脱敏证件号")
+    /** 脱敏证件号（业务字段）。 */
     private String idCardNoMasked;
 
-    /** 脱敏手机号。 */
     @Schema(description = "脱敏手机号")
+    /** 脱敏手机号（业务字段）。 */
     private String phoneMasked;
 }

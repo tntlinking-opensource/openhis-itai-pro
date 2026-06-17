@@ -36,6 +36,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊保存配药请求。 */
 @Schema(description = "门诊保存配药请求")
 public class SavePrepareOutpatientMedicationDispenseRequest {
 
@@ -47,6 +48,7 @@ public class SavePrepareOutpatientMedicationDispenseRequest {
 
     /** 调配责任人（药师）医务主键。 */
     @NotNull(message = "调配药师不能为空")
+    /** 调配药师主键。 */
     @Schema(description = "调配药师主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long preparerPractitionerId;
@@ -54,6 +56,7 @@ public class SavePrepareOutpatientMedicationDispenseRequest {
     /** 用户勾选的多条发放行及每行确认的数量与库位。 */
     @NotEmpty(message = "提交行不能为空")
     @Valid
+    /** 勾选待发药行。 */
     @Schema(description = "勾选待发药行", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<SavePrepareDispenseLineSubmitDto> lines;
 }

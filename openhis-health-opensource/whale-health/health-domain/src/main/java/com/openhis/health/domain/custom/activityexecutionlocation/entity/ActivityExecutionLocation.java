@@ -40,16 +40,10 @@ import java.time.LocalTime;
 public class ActivityExecutionLocation extends BaseAuditedEntity {
 
     /**
-     * 诊疗定义标识。
+     * 诊疗定义标识；为空表示该诊疗大类下的默认规则。
      */
     @Column(name = "activity_definition_id")
     private Long activityDefinitionId;
-
-    /**
-     * 收费项定义标识。
-     */
-    @Column(name = "charge_item_definition_id")
-    private Long chargeItemDefinitionId;
 
     /**
      * 活动类别编码。
@@ -82,7 +76,7 @@ public class ActivityExecutionLocation extends BaseAuditedEntity {
     private LocalTime endTime;
 
     /**
-     * 优先级（数值越大越优先）。
+     * 优先级（数值越小越优先，1 最优先；与取药科室一致）。
      */
     @Column(name = "priority", nullable = false)
     private Integer priority;
@@ -115,11 +109,11 @@ public class ActivityExecutionLocation extends BaseAuditedEntity {
     }
 
     /**
-     * 断言锚点至少存在一个。
+     * 断言规则锚点有效：诊疗大类必填；诊疗项目可选，为空时表示该大类下的默认规则。
      */
     public void assertAnchorPresent() {
-        if (this.activityDefinitionId == null && this.chargeItemDefinitionId == null) {
-            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗定义与收费项定义不能同时为空");
+        if (StringUtils.isBlank(this.activityCategoryCode)) {
+            throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "活动类别编码不能为空");
         }
     }
 

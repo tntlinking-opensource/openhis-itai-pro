@@ -30,10 +30,10 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 护士划价写路径单行。 */
 @Schema(description = "护士划价写路径单行")
 public class NurseStationPricingWriteItemDto {
 
-    /** 就诊主键。 */
     @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;
@@ -88,16 +88,16 @@ public class NurseStationPricingWriteItemDto {
     @Schema(description = "总价", requiredMode = Schema.RequiredMode.REQUIRED)
     private BigDecimal totalPrice;
 
-    /** 耗材发放库房（耗材行必填；未传时服务端按就诊住院科室与取药/发材模板解析，BR-IP-PRC-009）。 */
-    @Schema(description = "耗材发放库房（可选；未传时服务端自动解析）")
+    /**
+     * 耗材发放库房（IF-IP-PRC-01 目录已解析；写路径定价 FIFO 直接在该库位取批号，不再二次 match 模板）。
+     */
+    @Schema(description = "耗材发放库房（目录 defaultDispenseLocationId 回传；耗材行必填）")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long performLocation;
 
-    /** 父锚点：直接划价须为空；补费须非空。 */
     @Schema(description = "父锚点")
     private NurseStationPricingParentRequestAnchorDto parentRequestAnchor;
 
-    /** 是否吸氧/心电计时类（选品回传，BR-IP-PRC-010 Gate 用）。 */
     @Schema(description = "是否吸氧/心电计时类")
     private Boolean oxygenOrEcgFlag;
 

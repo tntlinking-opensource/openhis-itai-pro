@@ -30,6 +30,7 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊医生站-申请退费-可退账单行。 */
 @Schema(description = "门诊医生站-申请退费-可退账单行")
 public class RefundableChargeLineItemDto {
 
@@ -52,11 +53,13 @@ public class RefundableChargeLineItemDto {
 
     /** 收费明细主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 收费行锚点。 */
     @Schema(description = "收费行锚点")
     private Long chargeItemId;
 
     /** 就诊主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 就诊主键。 */
     @Schema(description = "就诊主键")
     private Long encounterId;
 
@@ -66,6 +69,7 @@ public class RefundableChargeLineItemDto {
 
     /** 上游业务主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 业务来源主键。 */
     @Schema(description = "业务来源主键")
     private Long serviceId;
 
@@ -95,6 +99,7 @@ public class RefundableChargeLineItemDto {
 
     /** 分组排序键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 用于前端稳定分组排序。 */
     @Schema(description = "用于前端稳定分组排序（典型取 paymentId）")
     private Long paymentGroupSortKey;
 }

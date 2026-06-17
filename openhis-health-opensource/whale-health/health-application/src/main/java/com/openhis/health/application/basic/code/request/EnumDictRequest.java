@@ -24,9 +24,6 @@ import lombok.Data;
  * 枚举字典查询请求（前端左侧枚举TAB使用）
  */
 @Data
-/**
- * EnumDictRequest。
- */
 public class EnumDictRequest {
 
     /** 枚举简单类名（须落在术语枚举扫描包内）。 */

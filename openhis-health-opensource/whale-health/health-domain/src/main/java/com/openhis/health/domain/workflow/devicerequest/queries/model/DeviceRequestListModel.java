@@ -73,5 +73,7 @@ public class DeviceRequestListModel {
     private Long basedOnId;
     /** 诊断定义主键（持久化 {@code wkf_device_request.condition_definition_id}）。 */
     private Long conditionDefinitionId;
+    /** 就诊诊断主键（持久化 {@code wkf_device_request.encounter_diagnosis_id}）。 */
+    private Long encounterDiagnosisId;
 }
 

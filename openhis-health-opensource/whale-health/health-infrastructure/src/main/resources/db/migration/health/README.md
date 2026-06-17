@@ -1,27 +1,23 @@
-# health Flyway 迁移
+# health Flyway 迁移规范（PostgreSQL）
 
-## 结构（按表拆分）
+路径：`health-infrastructure/src/main/resources/db/migration/health/`  
+历史表：`flyway_schema_history`
 
-| 版本 | 文件 | 内容 |
-|------|------|------|
-| **V1** | `V1__Init.sql` | 全部 `whale_*` 表：建表 + 种子数据 |
-| **V2–V86** | `V2__{表名}.sql` … | 每张非 `whale_*` 业务表一个文件（含 `V86__whale_framework_runtime_state.sql`） |
+## 注释（必须）
 
-执行入口：`ModularFlywayConfiguration` → `classpath:db/migration/health`（单表 `flyway_schema_history`）。
-
-## 新增变更约定
-
-- `whale_*` 表：改 `V1__Init.sql`
-- 其他表：新增 `V{n}__{表名}.sql`，版本号接当前最大 V 递增
-- 禁止再向 Flyway 加入 `hisrm_*` 读模型表
-
-## 本地库从旧版 V1–V21 迁移
-
-若 `flyway_schema_history` 仍为旧版校验和，开发库请换空库或清空历史后重建：
+每张表、每一列均须在同一脚本内补充：
 
 ```sql
-TRUNCATE flyway_schema_history;
--- 或 DROP SCHEMA public CASCADE; CREATE SCHEMA public;
+COMMENT ON TABLE adm_patient IS '患者主档';
+COMMENT ON COLUMN adm_patient.id IS '主键';
+-- ...
 ```
 
-然后启动应用，按 V1→V86 顺序执行。
+审计字段标准注释见 [`scripts/flyway-comment-gen/README.md`](../../../../../../../scripts/flyway-comment-gen/README.md)。
+
+批量补注释：`node scripts/flyway-comment-gen/generate_and_apply.mjs --root . --apply`
+
+## 命名
+
+- 单表脚本：`V{n}__{表名}.sql`（如 `V17__adm_patient.sql`）
+- 框架与种子：`V1__Init.sql`

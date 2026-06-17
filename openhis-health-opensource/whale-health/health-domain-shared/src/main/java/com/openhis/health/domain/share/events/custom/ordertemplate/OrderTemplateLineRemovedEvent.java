@@ -23,13 +23,13 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 模板行已移除事件。
+ * 组套模板行已移除事件。
  */
 @Getter
 @Setter
 public class OrderTemplateLineRemovedEvent extends DomainEvent {
     /**
-     * 被移除的模板行主键。
+     * 被移除的组套模板行主键。
      */
     private Long lineId;
 

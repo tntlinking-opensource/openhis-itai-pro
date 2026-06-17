@@ -28,6 +28,7 @@ import java.util.List;
  * 查询退药明细响应（IF-PHA-02-03）。
  */
 @Data
+/** 查询退药明细响应。 */
 @Schema(description = "查询退药明细响应")
 public class ReturnMedicineDetailResponse implements Serializable {
 

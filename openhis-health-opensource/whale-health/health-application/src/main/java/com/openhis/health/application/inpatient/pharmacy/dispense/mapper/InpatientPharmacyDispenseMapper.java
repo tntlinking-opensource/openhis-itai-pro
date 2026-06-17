@@ -25,7 +25,8 @@ import com.openhis.health.application.inpatient.pharmacy.dispense.response.LoadI
 import com.openhis.health.application.inpatient.pharmacy.dispense.response.PageEncounterMedicationDispenseSlipsResponse;
 import com.openhis.health.application.inpatient.pharmacy.dispense.response.PagePendingDispenseInpatientEncounterQueueResponse;
 import com.openhis.health.application.inpatient.pharmacy.dispense.response.SavePrepareInpatientMedicationDispenseResponse;
-import com.openhis.health.domain.administration.organization.entity.Organization;
+import com.openhis.health.module.querysupport.pharmacy.dto.MedicationDispenseSlipPageResult;
+import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.medication.medicationdispense.command.CancelMedicationDispenseCommand;
 import com.openhis.health.domain.medication.medicationdispense.command.DispenseMedicationCommand;
@@ -34,7 +35,7 @@ import com.openhis.health.domain.medication.medicationdispense.entity.Medication
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
 
@@ -51,7 +52,7 @@ public interface InpatientPharmacyDispenseMapper {
      * IF-IPP-01：装配初始化响应。
      */
     LoadInpatientPharmacyDispensePageInitResponse toLoadInitResponse(
-        List<Organization> pharmacies,
+        List<Location> pharmacies,
         List<OptionDto> dispenseStatusOptions,
         List<OptionDto> notPerformedReasonOptions,
         List<OptionDto> wardOptions,
@@ -88,6 +89,11 @@ public interface InpatientPharmacyDispenseMapper {
         Map<String, String> businessUnitLabelMap,
         Map<String, String> rxFlagLabelMap,
         Map<String, String> partAttributeLabelMap);
+
+    /**
+     * 将 querysupport slip 分页结果包装为 IF-IPP-03 响应。
+     */
+    PageEncounterMedicationDispenseSlipsResponse toSlipPageResponse(MedicationDispenseSlipPageResult result);
 
     /**
      * IF-IPP-04：装配保存配药命令（库房/批号/数量取自聚合实体）。

@@ -21,15 +21,16 @@ import com.openhis.health.domain.custom.ordertemplate.entity.OrderTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * 医嘱组套模板头仓储。
+ * 组套模板头仓储。
  */
-public interface OrderTemplateRepository extends JpaRepository<OrderTemplate, Long> {
+public interface OrderTemplateRepository extends JpaRepository<OrderTemplate, Long>, JpaSpecificationExecutor<OrderTemplate> {
 
     Optional<OrderTemplate> findById(Long id);
 
@@ -60,6 +61,14 @@ public interface OrderTemplateRepository extends JpaRepository<OrderTemplate, Lo
         Pageable pageable
     );
 
+    Page<OrderTemplate> findAllByBindingEnumAndSceneEnumAndStatusEnumAndTemplateKindEnumOrderBySortWeightAscIdAsc(
+        String bindingEnum,
+        com.openhis.health.domain.share.enums.OrderTemplateScene sceneEnum,
+        String statusEnum,
+        String templateKindEnum,
+        Pageable pageable
+    );
+
     List<OrderTemplate> findAllByObjectIdAndBindingEnumAndStatusEnumOrderBySortWeightAscIdAsc(
         Long objectId,
         String bindingEnum,
@@ -71,5 +80,39 @@ public interface OrderTemplateRepository extends JpaRepository<OrderTemplate, Lo
         String bindingEnum,
         String statusEnum,
         Collection<com.openhis.health.domain.share.enums.OrderTemplateScene> sceneEnums
+    );
+
+    List<OrderTemplate> findAllByObjectIdAndBindingEnumAndStatusEnumAndSceneEnumInAndTemplateKindEnumOrderBySortWeightAscIdAsc(
+        Long objectId,
+        String bindingEnum,
+        String statusEnum,
+        Collection<com.openhis.health.domain.share.enums.OrderTemplateScene> sceneEnums,
+        String templateKindEnum
+    );
+
+    Page<OrderTemplate> findAllByBindingEnumAndSceneEnumAndStatusEnumAndTemplateSourceEnumOrderBySortWeightAscIdAsc(
+        String bindingEnum,
+        com.openhis.health.domain.share.enums.OrderTemplateScene sceneEnum,
+        String statusEnum,
+        String templateSourceEnum,
+        Pageable pageable
+    );
+
+    Page<OrderTemplate> findAllByBindingEnumAndSceneEnumAndStatusEnumAndTemplateKindEnumAndTemplateSourceEnumOrderBySortWeightAscIdAsc(
+        String bindingEnum,
+        com.openhis.health.domain.share.enums.OrderTemplateScene sceneEnum,
+        String statusEnum,
+        String templateKindEnum,
+        String templateSourceEnum,
+        Pageable pageable
+    );
+
+    List<OrderTemplate> findAllByObjectIdAndBindingEnumAndStatusEnumAndSceneEnumInAndTemplateKindEnumAndTemplateSourceEnumOrderBySortWeightAscIdAsc(
+        Long objectId,
+        String bindingEnum,
+        String statusEnum,
+        Collection<com.openhis.health.domain.share.enums.OrderTemplateScene> sceneEnums,
+        String templateKindEnum,
+        String templateSourceEnum
     );
 }

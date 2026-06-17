@@ -80,11 +80,11 @@ public interface EncounterRepository extends JpaRepository<Encounter, Long>, Jpa
     List<Encounter> findAllByIdIn(Collection<Long> ids);
 
     /**
-     * 按门诊/急诊锚点取最新一条未处于排除状态集合中的住院线就诊。
+     * 按门诊锚点取最新一条未处于排除状态集合中的住院线就诊。
      *
      * <p>用于住院申请防重：同一 {@code ambEncounterId} 在 {@code IMP} 下仅允许一条未取消住院线。</p>
      *
-     * @param ambEncounterId 源门诊或急诊就诊标识
+     * @param ambEncounterId 源门诊就诊标识
      * @param classEnum 就诊类别（住院为 {@code IMP}）
      * @param excludedStatusEnums 排除的状态码集合（通常仅 {@code CANCELLED}）
      * @return 命中时返回最新一条，否则 empty

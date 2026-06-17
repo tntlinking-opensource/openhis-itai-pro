@@ -25,13 +25,8 @@ import lombok.Setter;
  */
 @Getter
 @Setter
-/**
- * RemovePurchaseOrderResponse。
- */
 public class RemovePurchaseOrderResponse {
 
-    /**
-     * success。
-     */
+    /** 是否删除成功。 */
     private Boolean success;
 }

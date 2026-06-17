@@ -25,19 +25,11 @@ import lombok.Setter;
  */
 @Getter
 @Setter
-/**
- * WithdrawPurchaseOrderApprovalResponse。
- */
 public class WithdrawPurchaseOrderApprovalResponse {
 
-    /**
-     * success。
-     */
+    /** 是否撤回成功。 */
     private Boolean success;
 
     /** 撤回后状态序列号（成功时为「已撤回」=9）。 */
-    /**
-     * statusEnum。
-     */
     private Integer statusEnum;
 }

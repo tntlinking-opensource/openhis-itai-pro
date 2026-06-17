@@ -29,12 +29,10 @@ import lombok.Data;
 @Schema(description = "疾病（病种）目录列表项")
 public class DiagnosisCatalogDto {
 
-    /** 技术主键（JSON 序列化为字符串，避免前端 Long 精度问题）。 */
     @Schema(description = "主键ID")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
 
-    /** 疾病来源/分类持久化码（术语集 CONDITION_DEFINITION_SOURCE）。 */
     @Schema(description = "所属分类编码")
     private String sourceEnum;
 

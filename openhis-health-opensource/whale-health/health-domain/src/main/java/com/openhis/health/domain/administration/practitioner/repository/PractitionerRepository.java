@@ -18,6 +18,7 @@
 package com.openhis.health.domain.administration.practitioner.repository;
 
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.whale.core.infrastructure.transaction.SkipSoftDeleteFilter;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -45,6 +46,12 @@ public interface PractitionerRepository extends JpaRepository<Practitioner, Long
      * @return 查询结果
      */
     boolean existsByUserId(Long userId);
+
+    /**
+     * 按绑定用户查询（含已软删记录），创建前校验用户是否已绑定医务人员。
+     */
+    @SkipSoftDeleteFilter
+    Optional<Practitioner> findFirstByUserIdOrderByIdAsc(Long userId);
 
     /**
      * 按绑定用户查询医务人员主档（未逻辑删除），用户与主档通常一对一。

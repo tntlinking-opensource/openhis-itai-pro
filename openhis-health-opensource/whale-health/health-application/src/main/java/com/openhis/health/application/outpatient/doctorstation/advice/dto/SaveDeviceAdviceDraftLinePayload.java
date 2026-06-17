@@ -27,9 +27,13 @@ import java.math.BigDecimal;
 
 /**
  * IF-DOR-14：耗材医嘱草稿行载荷。
+ *
+ * <p>{@code dispenseLocationId} 为 IF-DOR-11 目录已解析库位；写路径经
+ * {@code clientResolvedDispenseLocationId} FIFO 定价，不再二次 match 取药科室模板。</p>
  */
 @Data
 @Accessors(chain = true)
+/** 医生站耗材医嘱草稿行载荷。 */
 @Schema(description = "医生站耗材医嘱草稿行载荷")
 public class SaveDeviceAdviceDraftLinePayload {
 
@@ -48,8 +52,17 @@ public class SaveDeviceAdviceDraftLinePayload {
 
     /** 默认执行科室（组织单元）。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 执行科室。 */
     @Schema(description = "执行科室")
     private Long performOrgId;
+
+    /**
+     * 目录 IF-DOR-11 已解析发药库位；IF-DOR-14 写路径定价 FIFO 直接在该库位取批号，
+     * 不再二次 match 取药科室模板。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "发药库位（目录已解析，暂存定价用）")
+    private Long dispenseLocationId;
 
     /**
      * 诊断定义主键（落库 {@code wkf_device_request.condition_definition_id}，与药品医嘱语义一致）。
@@ -57,4 +70,11 @@ public class SaveDeviceAdviceDraftLinePayload {
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "诊断定义主键")
     private Long conditionDefinitionId;
+
+    /**
+     * 就诊诊断主键（落库 {@code wkf_device_request.encounter_diagnosis_id}，与药品医嘱语义一致）。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "就诊诊断主键")
+    private Long encounterDiagnosisId;
 }

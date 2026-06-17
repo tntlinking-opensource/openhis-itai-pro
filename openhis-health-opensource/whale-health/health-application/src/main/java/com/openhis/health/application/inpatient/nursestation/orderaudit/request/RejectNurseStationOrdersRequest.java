@@ -31,6 +31,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 批量退回请求。 */
 @Schema(description = "批量退回请求", requiredProperties = {"items"})
 public class RejectNurseStationOrdersRequest {
 

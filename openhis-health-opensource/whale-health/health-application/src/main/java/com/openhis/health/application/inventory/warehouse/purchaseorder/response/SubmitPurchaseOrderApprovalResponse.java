@@ -25,19 +25,11 @@ import lombok.Setter;
  */
 @Getter
 @Setter
-/**
- * SubmitPurchaseOrderApprovalResponse。
- */
 public class SubmitPurchaseOrderApprovalResponse {
 
-    /**
-     * success。
-     */
+    /** 是否提交成功。 */
     private Boolean success;
 
     /** 提交后单据状态序列号（SupplyStatus.sortOrder，成功时为「审核中」=2）。 */
-    /**
-     * statusEnum。
-     */
     private Integer statusEnum;
 }

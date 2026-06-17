@@ -17,11 +17,12 @@
 
 package com.openhis.health.application.inpatient.doctorstation.encountermanage.service;
 
-import com.openhis.health.application.common.assembler.inpatient.AdmissionPrimaryDiagnosisAssembler;
-import com.openhis.health.application.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
-import com.openhis.health.application.common.pagination.PageQueryBinder;
-import com.openhis.health.application.common.validator.PageWindowGate;
+import com.openhis.health.module.common.assembler.inpatient.AdmissionPrimaryDiagnosisAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.module.common.validator.PageWindowGate;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.dto.DoctorStationPatientQueueItemDto;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.dto.DoctorStationQueueDisplayEnrichment;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.mapper.InpatientDoctorStationEncounterManageMapper;
@@ -31,7 +32,7 @@ import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.patient.queries.model.PatientDetailQueryModel;
@@ -42,7 +43,6 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientDoctorStationConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -69,8 +69,8 @@ public class InpatientDoctorStationEncounterManageAppService {
 
     /** 分页窗口门控：页码/页大小须为正（EX-IP-DOR-101）。 */
     private final PageWindowGate pageWindowGate;
-    /** 当前登录用户：科室收窄与机构上下文。 */
-    private final ICurrentUser currentUser;
+    /** 会话机构解析（B.6.1 读路径）。 */
+    private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     /** 就诊读侧：在院队列分页与优先级批量回填。 */
     private final EncounterQueryService encounterQueryService;
     private final EncounterContextFacade encounterContextFacade;
@@ -102,7 +102,7 @@ public class InpatientDoctorStationEncounterManageAppService {
                 request,
                 InpatientDoctorStationConstants.EX_IP_DOR_101,
                 "分页参数不合法，请检查页码与每页条数");
-            Long organizationId = currentUser.getCurrentOrganizationUnitId();
+            Long organizationId = managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery();
             if (organizationId == null) {
                 throw new BusinessException(
                     ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,

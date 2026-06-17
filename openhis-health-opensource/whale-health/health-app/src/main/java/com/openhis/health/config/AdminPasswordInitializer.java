@@ -31,8 +31,10 @@ import org.springframework.stereotype.Component;
 import java.util.Optional;
 
 /**
- * 管理员密码初始化器
- * 在应用启动时检查并修复管理员密码
+ * 管理员密码初始化器。
+ *
+ * <p>应用就绪时检查 id=1 或 userName=admin 的管理员账户：恢复软删、重置 BCrypt 哈希为默认密码，
+ * 并确保账户处于激活且未锁定状态。{@code @Order(1)} 优先于其他启动日志输出。</p>
  */
 @Component
 public class AdminPasswordInitializer {
@@ -48,6 +50,9 @@ public class AdminPasswordInitializer {
     @Autowired
     private PasswordEncoder passwordEncoder;
     
+    /**
+     * 检查并强制更新管理员密码，确保开发/演示环境可凭默认账户登录。
+     */
     @EventListener(ApplicationReadyEvent.class)
     @Order(1) // 在其他初始化之前执行
     public void initializeAdminPassword() {

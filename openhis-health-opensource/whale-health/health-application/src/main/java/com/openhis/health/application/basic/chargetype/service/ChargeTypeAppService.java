@@ -17,18 +17,18 @@
 
 package com.openhis.health.application.basic.chargetype.service;
 
-import com.openhis.health.application.common.converter.TextValueConverter;
 import com.openhis.health.application.basic.chargetype.dto.ChargeTypeDto;
 import com.openhis.health.application.basic.chargetype.dto.ChargeTypeInitDto;
 import com.openhis.health.application.basic.chargetype.mapper.ChargeTypeMapper;
 import com.openhis.health.application.basic.chargetype.request.CreateChargeTypeRequest;
-import com.openhis.health.application.basic.chargetype.request.IdValueRequest;
 import com.openhis.health.application.basic.chargetype.request.UpdateChargeTypeRequest;
 import com.openhis.health.domain.financial.contract.command.DeleteContractCommand;
 import com.openhis.health.domain.financial.contract.queries.model.ContractListItemQueryModel;
 import com.openhis.health.domain.financial.contract.service.ContractDomainService;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.ChargeTypeCategory;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.ValidationException;
@@ -56,6 +56,8 @@ public class ChargeTypeAppService {
     private final ContractDomainService contractDomainService;
     /** 请求/读模型与 DTO、领域命令之间的装配。 */
     private final ChargeTypeMapper chargeTypeMapper;
+    /** 写路径操作人门控（B.6.5）。 */
+    private final CurrentOperatorResolver currentOperatorResolver;
 
     /**
      * 返回新建/编辑表单所需的分类下拉数据。
@@ -124,21 +126,20 @@ public class ChargeTypeAppService {
     }
 
     /**
-     * 删除费用性质（逻辑删除语义由领域/底座实现）：从字符串 id 解析主键后下发删除命令。
+     * 删除费用性质（逻辑删除语义由领域/底座实现）。
      *
-     * @param request 含 {@link IdValueRequest#getValue()} 的删除请求
-     * @throws ValidationException id 缺失或不是合法 Long 时
+     * @param id 主键
+     * @throws ValidationException id 为空时
      */
-    public void deleteChargeType(IdValueRequest request) {
-        String deleteIdValue = null;
-        if (request != null) {
-            deleteIdValue = request.getValue();
+    public void deleteChargeType(Long id) {
+        if (id == null) {
+            throw new ValidationException("删除费用性质失败：id 不能为空");
         }
-        Long id = TextValueConverter.requireLong(deleteIdValue, "删除费用性质失败：id 非法");
+        Long operatorId = currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.CONTRACT_INVALID_ARGUMENT, "请先登录后再删除费用性质");
         DeleteContractCommand command = new DeleteContractCommand();
         command.setId(id);
-        // 管理端入口暂无登录上下文，与历史实现一致写死操作人占位
-        command.setOperatorId(0L);
+        command.setOperatorId(operatorId);
         contractDomainService.deleteContract(command);
         log.info("Deleted charge type (费用性质): {}", id);
     }

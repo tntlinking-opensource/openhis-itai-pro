@@ -69,7 +69,6 @@ import java.util.Objects;
 public class DeviceRequestDomainService {
 
     private final DeviceRequestRepository deviceRequestRepository;
-    private final DeviceRequestQueryService deviceRequestQueryService;
     private final IDomainEventPublisher domainEventPublisher;
     /** 耗材请求 busNo：业务流水按日递增，前缀 {@link AggregateTypeConstants#DEVICE_REQUEST}。 */
     private final BusinessSequenceService businessSequenceService;
@@ -106,6 +105,10 @@ public class DeviceRequestDomainService {
         // 医生站：可选绑定诊断定义，与药品医嘱口径一致（单列 condition_definition_id）。
         if (item.getConditionDefinitionId() != null) {
             request.setConditionDefinitionId(item.getConditionDefinitionId());
+        }
+        // Pre：绑定就诊诊断行，供收费/医保按 encounter_diagnosis_id 解析医疗类别。
+        if (item.getEncounterDiagnosisId() != null) {
+            request.setEncounterDiagnosisId(item.getEncounterDiagnosisId());
         }
         request.initDraft();
         request.setIsDeleted(Boolean.FALSE);
@@ -222,6 +225,12 @@ public class DeviceRequestDomainService {
             && !Objects.equals(item.getConditionDefinitionId(), request.getConditionDefinitionId())) {
             request.setConditionDefinitionId(item.getConditionDefinitionId());
             changedFields.add(FieldNameConstants.CONDITION_DEFINITION_ID);
+        }
+        // 业务分支处理：就诊诊断绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
+        if (item.getEncounterDiagnosisId() != null
+            && !Objects.equals(item.getEncounterDiagnosisId(), request.getEncounterDiagnosisId())) {
+            request.setEncounterDiagnosisId(item.getEncounterDiagnosisId());
+            changedFields.add(FieldNameConstants.ENCOUNTER_DIAGNOSIS_ID);
         }
 
         request.assertRequiredForCreate();
@@ -406,7 +415,7 @@ public class DeviceRequestDomainService {
         DeviceRequest source = this.requireDeviceRequest(item.getSourceRequestId());
 
         // 冲销校验（BR-DR-011）：严格使用 refundDeviceId + quantity<0 汇总口径。
-        BigDecimal remaining = deviceRequestQueryService.offsetVerification(source.getId(), item.getRefundQuantity()).getRemainingQuantity();
+        BigDecimal remaining = this.offsetVerification(source.getId(), item.getRefundQuantity());
         // 业务分支处理。
         if (remaining.compareTo(BigDecimal.ZERO) < 0) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_RULE_CONFLICT, "退耗材冲销数量超额");
@@ -474,6 +483,7 @@ public class DeviceRequestDomainService {
             request.setGenerateSourceEnum(item.getGenerateSourceEnum());
             request.setDeviceDefId(item.getDeviceDefId());
             request.setQuantity(item.getQuantity());
+            request.setUnitCode(item.getUnitCode());
             request.setEncounterId(item.getEncounterId());
             request.setPatientId(item.getPatientId());
             // 执行侧补单同样以后端当前操作人为开嘱人兜底。
@@ -667,5 +677,28 @@ public class DeviceRequestDomainService {
     private DeviceRequest requireDeviceRequest(Long id) {
         return deviceRequestRepository.findById(id).orElseThrow(
             () -> new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_NOT_FOUND, "耗材请求不存在"));
+    }
+
+    /**
+     * 冲销校验剩余可退数量（仅本聚合仓储判定）。
+     */
+    private BigDecimal offsetVerification(Long sourceRequestId, BigDecimal preOffsetQuantity) {
+        if (sourceRequestId == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "冲销校验时 sourceRequestId 不能为空");
+        }
+        if (preOffsetQuantity == null) {
+            preOffsetQuantity = BigDecimal.ZERO;
+        }
+        DeviceRequest source = this.requireDeviceRequest(sourceRequestId);
+        List<DeviceRequest> negativeRows = deviceRequestRepository.findByRefundDeviceIdAndQuantityLessThan(
+            sourceRequestId, BigDecimal.ZERO);
+        BigDecimal offsetQuantity = BigDecimal.ZERO;
+        for (DeviceRequest row : negativeRows) {
+            if (row.getQuantity() == null) {
+                continue;
+            }
+            offsetQuantity = offsetQuantity.add(row.getQuantity().abs());
+        }
+        return source.getQuantity().subtract(offsetQuantity).subtract(preOffsetQuantity);
     }
 }

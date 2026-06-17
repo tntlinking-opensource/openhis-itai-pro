@@ -17,8 +17,8 @@
 
 package com.openhis.health.application.inventory.warehouse.stockout.mapper;
 
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.WarehouseDocumentDetailRowDto;
 import com.openhis.health.application.inventory.warehouse.stockout.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.stockout.dto.StockOutDetailLineDto;
@@ -46,7 +46,7 @@ import com.openhis.health.application.inventory.warehouse.stockout.response.With
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -94,6 +94,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         this.locationQueryService = locationQueryService;
     }
 
+    /** 将启用位置列表映射为下拉选项（id/编码/展示名） */
     @Override
     public List<OptionDto> toOptionDtoListFromLocations(List<Location> locations) {
         List<OptionDto> list = new ArrayList<>();
@@ -115,6 +116,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return list;
     }
 
+    /** 将医务人员列表映射为下拉选项 */
     @Override
     public List<OptionDto> toOptionDtoListFromPractitioners(List<Practitioner> practitioners) {
         List<OptionDto> list = new ArrayList<>();
@@ -136,6 +138,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return list;
     }
 
+    /** 装配供应请求状态枚举选项（持久化 code） */
     @Override
     public List<OptionDto> toOptionDtoListSupplyStatuses() {
         List<SupplyStatus> ordered = new ArrayList<>();
@@ -151,6 +154,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return list;
     }
 
+    /** 装配物品来源表（药品/耗材）选项 */
     @Override
     public List<OptionDto> toOptionDtoListInboundItemTableTypes() {
         List<OptionDto> list = new ArrayList<>();
@@ -160,6 +164,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return list;
     }
 
+    /** 装配页初始化响应（选项集合写入各字段）。 */
     @Override
     public LoadStockOutFormInitResponse toLoadStockOutFormInitResponse(
         List<OptionDto> warehouseOpts,
@@ -179,6 +184,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return res;
     }
 
+    /** 按 busNo 顺序聚合供应请求明细为列表行 DTO。 */
     @Override
     public List<StockOutListRowDto> toStockOutListAggregated(List<String> busNoPageOrder, List<SupplyRequestModel> detailRows) {
         List<StockOutListRowDto> out = new ArrayList<>();
@@ -277,6 +283,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return out;
     }
 
+    /** 用聚合列表行构建分页响应。 */
     @Override
     public PageStockOutsResponse toPageStockOutsAggregatedResponse(long mergedTotal, int pageNo, int pageSize, List<StockOutListRowDto> records) {
         // —— records 永不为 null：避免前端列表组件对 null 与空数组分支分叉。——
@@ -289,6 +296,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return PagedResultBuilder.build(new PageStockOutsResponse(), content, mergedTotal, pageNo, pageSize);
     }
 
+    /** 将供应请求行列表映射为详情响应（含明细增强字段）。 */
     @Override
     public GetStockOutDetailResponse toGetStockOutDetailResponse(
         List<SupplyRequestModel> lines,
@@ -328,6 +336,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return res;
     }
 
+    /** 单条供应请求行映射为详情明细 DTO。 */
     @Override
     public StockOutDetailLineDto toStockOutDetailLineDto(SupplyRequestModel line) {
         if (line == null) {
@@ -356,6 +365,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return dto;
     }
 
+    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 */
     @Override
     public CreateStockOutCommand toCreateStockOutCommand(
         CreateStockOutRequest request,
@@ -449,6 +459,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return this.toCreateStockOutCommand(synthetic, operatorId, applicantId, busNo);
     }
 
+    /** 装配创建成功响应（写入 busNo 等）。 */
     @Override
     public CreateStockOutResponse toCreateStockOutResponse(String busNo) {
         CreateStockOutResponse res = new CreateStockOutResponse();
@@ -456,6 +467,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return res;
     }
 
+    /** 装配更新成功响应。 */
     @Override
     public UpdateStockOutResponse toUpdateStockOutResponse(String busNo) {
         UpdateStockOutResponse res = new UpdateStockOutResponse();
@@ -463,6 +475,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return res;
     }
 
+    /** 将提交审批请求映射为 SubmitApprovalCommand。 */
     @Override
     public SubmitApprovalCommand toSubmitApprovalCommand(SubmitStockOutApprovalRequest request, Long operatorId, Long applicantId) {
         SubmitApprovalCommand command = new SubmitApprovalCommand();
@@ -474,6 +487,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return command;
     }
 
+    /** 装配提交审批响应。 */
     @Override
     public SubmitStockOutApprovalResponse toSubmitStockOutApprovalResponse(SupplyStatus statusAfter) {
         SubmitStockOutApprovalResponse res = new SubmitStockOutApprovalResponse();
@@ -485,6 +499,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return res;
     }
 
+    /** 将撤回审批请求映射为 WithdrawApprovalCommand。 */
     @Override
     public WithdrawApprovalCommand toWithdrawApprovalCommand(WithdrawStockOutApprovalRequest request, Long operatorId) {
         WithdrawApprovalCommand command = new WithdrawApprovalCommand();
@@ -496,6 +511,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return command;
     }
 
+    /** 装配撤回审批响应。 */
     @Override
     public WithdrawStockOutApprovalResponse toWithdrawStockOutApprovalResponse(SupplyStatus statusAfter) {
         WithdrawStockOutApprovalResponse res = new WithdrawStockOutApprovalResponse();
@@ -507,6 +523,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return res;
     }
 
+    /** 将同意请求映射为领域 AgreeRequestCommand。 */
     @Override
     public AgreeRequestCommand toAgreeRequestCommand(AgreeStockOutRequest request, Long operatorId) {
         AgreeRequestCommand command = new AgreeRequestCommand();
@@ -519,6 +536,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return command;
     }
 
+    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 将已同意供应请求行装配为发放命令。 */
     @Override
     public CreateSupplyDeliveryCommand toCreateSupplyDeliveryCommandForStockOut(List<SupplyRequestModel> lines, Long operatorId) {
         CreateSupplyDeliveryCommand cmd = new CreateSupplyDeliveryCommand();
@@ -547,6 +565,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return cmd;
     }
 
+    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 */
     @Override
     public CreateRequisitionCommand toCreateRequisitionCommandForShellPharmacyStockIn(
         List<SupplyRequestModel> agreedOutLines,
@@ -598,6 +617,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return command;
     }
 
+    /** 装配同意成功响应。 */
     @Override
     public AgreeStockOutResponse toAgreeStockOutResponse(String outboundBusNo, String statusEnum, String generatedInBusNo) {
         AgreeStockOutResponse res = new AgreeStockOutResponse();
@@ -635,6 +655,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return command;
     }
 
+    /** 装配驳回响应。 */
     @Override
     public RejectStockOutResponse toRejectStockOutResponse(boolean ok) {
         RejectStockOutResponse res = new RejectStockOutResponse();
@@ -642,6 +663,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return res;
     }
 
+    /** 将删除请求映射为 RemoveByBusNoCommand。 */
     @Override
     public RemoveByBusNoCommand toRemoveByBusNoCommand(RemoveStockOutRequest request, Long operatorId) {
         RemoveByBusNoCommand command = new RemoveByBusNoCommand();
@@ -652,6 +674,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return command;
     }
 
+    /** 装配删除响应。 */
     @Override
     public RemoveStockOutResponse toRemoveStockOutResponse(boolean ok) {
         RemoveStockOutResponse res = new RemoveStockOutResponse();
@@ -699,6 +722,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return PagedResultBuilder.build(new PageLinkableRequisitionsResponse(), content, page);
     }
 
+    /** Assemble mapping result for WarehouseDocumentDetailRowDto. */
     @Override
     public WarehouseDocumentDetailRowDto toWarehouseDocumentDetailRowDto(WarehouseDocumentDetailQueryModel rm) {
         if (rm == null) {
@@ -728,6 +752,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return dto;
     }
 
+    /** 产品读模型映射为选品行 DTO。 */
     @Override
     public ProductDefinitionItemDto toProductDefinitionItemDtoFromInventory(InventoryItemModel inv, ProductDefinitionDisplayDto pr) {
         ProductDefinitionItemDto dto = new ProductDefinitionItemDto();

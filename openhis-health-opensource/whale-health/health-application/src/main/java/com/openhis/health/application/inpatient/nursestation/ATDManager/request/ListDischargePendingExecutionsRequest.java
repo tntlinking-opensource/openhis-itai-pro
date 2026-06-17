@@ -29,6 +29,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 出院前待执行医嘱列表请求。 */
 @Schema(description = "出院前待执行医嘱列表请求", requiredProperties = {"encounterId"})
 public class ListDischargePendingExecutionsRequest {
 

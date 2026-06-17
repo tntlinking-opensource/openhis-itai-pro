@@ -23,14 +23,17 @@ import com.openhis.health.application.inventory.pharmacy.stocktake.dto.PharmacyS
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 新建药房盘点单入参（IF-PHA-ST-04）。
  */
 @Data
 @Accessors(chain = true)
+/** 新建盘点单 IF-PHA-ST-04。 */
 @Schema(description = "新建盘点单 IF-PHA-ST-04")
 public class CreatePharmacyStocktakeRequest {
 
@@ -41,6 +44,7 @@ public class CreatePharmacyStocktakeRequest {
 
     /** 经手人医务人员主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 经手人 practitionerId。 */
     @Schema(description = "经手人 practitionerId", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long practitionerId;
 

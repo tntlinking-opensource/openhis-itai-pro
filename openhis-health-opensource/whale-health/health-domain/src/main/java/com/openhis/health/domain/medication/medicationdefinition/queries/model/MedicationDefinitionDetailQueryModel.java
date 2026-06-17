@@ -152,4 +152,8 @@ public class MedicationDefinitionDetailQueryModel {
     private String restrictedScope;
     /** 产品特性编码。 */
     private Integer characteristic;
+    /** 药理作用分类编码。 */
+    private String pharmacologyCategoryCode;
+    /** 药品69码。 */
+    private String drug69Code;
 }

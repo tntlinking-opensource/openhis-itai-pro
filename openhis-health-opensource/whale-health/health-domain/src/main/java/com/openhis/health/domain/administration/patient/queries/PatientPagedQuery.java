@@ -28,6 +28,11 @@ import lombok.Setter;
 public class PatientPagedQuery {
 
     /**
+     * 通用关键字（B.10.11，与 {@link AbstractPageQuery#keyword} 对齐）。
+     */
+    private String keyword;
+
+    /**
      * 姓名关键字。
      */
     private String name;

@@ -25,29 +25,32 @@ import java.math.BigDecimal;
 
 @Data
 @Accessors(chain = true)
+/** 预结算收费项。 */
 @Schema(description = "预结算收费项")
-/**
- * ChargeItemPreviewDto。
- */
 public class ChargeItemPreviewDto {
 
     /** 收费项编码。 */
     @Schema(description = "收费项编码")
+    /** 收费项编码（业务字段）。 */
     private String chargeItemCode;
 
     /** 收费项名称。 */
     @Schema(description = "收费项名称")
+    /** 收费项名称（业务字段）。 */
     private String chargeItemName;
 
     /** 单价。 */
     @Schema(description = "单价")
+    /** 单价（业务字段）。 */
     private BigDecimal unitPrice;
 
     /** 数量。 */
     @Schema(description = "数量")
+    /** 数量（业务字段）。 */
     private BigDecimal quantity;
 
     /** 金额。 */
     @Schema(description = "金额")
+    /** 金额（业务字段）。 */
     private BigDecimal amount;
 }

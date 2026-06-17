@@ -22,6 +22,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -68,5 +69,12 @@ public interface FrequencyRepository extends JpaRepository<Frequency, Long> {
      * @return 分页结果
      */
     Page<Frequency> findAllByNameContaining(String name, Pageable pageable);
+
+    /**
+     * 查询全部启用频次，按排序号与主键升序（下拉与码表预热）。
+     *
+     * @return 启用态频次列表
+     */
+    List<Frequency> findByActiveFlagTrueOrderBySortNoAscIdAsc();
 }
 

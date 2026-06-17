@@ -31,26 +31,38 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
+/** 登记患者主档。 */
 @Schema(description = "登记患者主档")
 public class RegistrationPatientDto {
 
     @Schema(description = "患者 ID")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者 ID（业务字段）。 */
     private Long patientId;
 
+    /** 姓名。 */
     @Schema(description = "姓名")
+    /** 姓名（业务字段）。 */
     private String name;
 
+    /** 身份证号。 */
     @Schema(description = "身份证号")
+    /** 身份证号（业务字段）。 */
     private String idCard;
 
+    /** 性别 code。 */
     @Schema(description = "性别 code")
+    /** 性别 code（业务字段）。 */
     private String genderEnum;
 
+    /** 出生日期。 */
     @Schema(description = "出生日期")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 出生日期（业务字段）。 */
     private LocalDateTime birthDate;
 
+    /** 联系电话。 */
     @Schema(description = "联系电话")
+    /** 联系电话（业务字段）。 */
     private String phone;
 }

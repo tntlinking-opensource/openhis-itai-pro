@@ -30,6 +30,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站医嘱资源键。 */
 @Schema(description = "医生站医嘱资源键")
 public class DoctorStationAdviceResourceKeyDto {
 
@@ -44,6 +45,7 @@ public class DoctorStationAdviceResourceKeyDto {
     /** 聚合主键。 */
     @NotNull(message = "请求主键不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 聚合主键。 */
     @Schema(description = "聚合主键", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long requestId;
 }

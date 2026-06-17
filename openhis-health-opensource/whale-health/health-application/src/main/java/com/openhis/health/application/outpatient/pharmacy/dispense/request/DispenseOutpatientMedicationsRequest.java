@@ -36,6 +36,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊核发请求。 */
 @Schema(description = "门诊核发请求")
 public class DispenseOutpatientMedicationsRequest {
 
@@ -45,13 +46,16 @@ public class DispenseOutpatientMedicationsRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;
 
-    /** {@code true} 时在本地事务成功后尝试医保等外协上传（失败仅合并提示，不回滚发药事实）。 */
+    /** @deprecated CHS 模块启用即上传，此开关不再生效。 */
+    @Deprecated
+    /** 是否在事务成功后尝试医保/进销存上传。 */
     @Schema(description = "是否在事务成功后尝试医保/进销存上传")
     private Boolean medicareUploadEnabled;
 
     /** 用户勾选的待发药完成行（仅须发放单 id，数量以领域实体为准）。 */
     @NotEmpty(message = "提交行不能为空")
     @Valid
+    /** 勾选发放行。 */
     @Schema(description = "勾选发放行", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<DispenseMedicationLineSubmitDto> lines;
 }

@@ -1,19 +1,23 @@
 package com.openhis.health.application.outpatient.financial.registration.service;
 
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.common.validator.PageWindowGate;
-import com.openhis.health.application.common.validator.PaymentChannelGate;
+import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.module.common.validator.PaymentChannelGate;
 import com.openhis.health.application.outpatient.financial.registration.dto.PaymentDetailDto;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.application.outpatient.financial.registration.dto.ChargeItemPreviewDto;
 import com.openhis.health.application.outpatient.financial.registration.dto.ClinicRegisterItemDto;
 import com.openhis.health.application.outpatient.financial.registration.dto.PatientItemDto;
 import com.openhis.health.application.outpatient.financial.registration.dto.RegistrationSlipDto;
 import com.openhis.health.application.outpatient.financial.registration.mapper.OutpatientRegistrationMapper;
 import com.openhis.health.application.outpatient.financial.registration.request.CancelWithRefundRequest;
+import com.openhis.health.application.outpatient.financial.registration.request.ListBookableSlotHintsRequest;
 import com.openhis.health.application.outpatient.financial.registration.request.ListDepartmentsRequest;
 import com.openhis.health.application.outpatient.financial.registration.request.ListPractitionersRequest;
+import com.openhis.health.application.outpatient.financial.registration.request.LoadAppointmentForRegisterRequest;
 import com.openhis.health.application.outpatient.financial.registration.request.LoadRegisterFormInitRequest;
 import com.openhis.health.application.outpatient.financial.registration.request.PageClinicRegistersRequest;
 import com.openhis.health.application.outpatient.financial.registration.request.PagePatientsForSelectRequest;
@@ -22,8 +26,10 @@ import com.openhis.health.application.outpatient.financial.registration.request.
 import com.openhis.health.application.outpatient.financial.registration.request.PrintRegisterTicketRequest;
 import com.openhis.health.application.outpatient.financial.registration.request.ValidateCancelableRequest;
 import com.openhis.health.application.outpatient.financial.registration.response.CancelWithRefundResponse;
+import com.openhis.health.application.outpatient.financial.registration.response.ListBookableSlotHintsResponse;
 import com.openhis.health.application.outpatient.financial.registration.response.ListDepartmentsResponse;
 import com.openhis.health.application.outpatient.financial.registration.response.ListPractitionersResponse;
+import com.openhis.health.application.outpatient.financial.registration.response.LoadAppointmentForRegisterResponse;
 import com.openhis.health.application.outpatient.financial.registration.response.LoadRegisterFormInitResponse;
 import com.openhis.health.application.outpatient.financial.registration.response.PageClinicRegistersResponse;
 import com.openhis.health.application.outpatient.financial.registration.response.PagePatientsForSelectResponse;
@@ -51,7 +57,8 @@ import com.openhis.health.domain.administration.encounter.queries.model.Encounte
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientDuplicateCheckQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.domain.administration.healthcareservice.entity.HealthcareService;
 import com.openhis.health.domain.administration.healthcareservice.service.HealthcareServiceQueryService;
 import com.openhis.health.domain.administration.invoice.command.CancelInvoiceCommand;
@@ -93,26 +100,41 @@ import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.PaymentStatus;
+import com.openhis.health.domain.share.enums.PriceType;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
+import com.openhis.whale.booking.contracts.command.WalkInSlotAllocateCommand;
+import com.openhis.whale.booking.contracts.dto.BookableServiceOption;
+import com.openhis.whale.booking.contracts.dto.BookableSlotHint;
+import com.openhis.whale.booking.contracts.command.BookingRegistrationValidateCommand;
+import com.openhis.whale.booking.contracts.command.RegistrationCancelReason;
+import com.openhis.whale.booking.contracts.dto.OutpatientBookingSnapshot;
+import com.openhis.whale.booking.contracts.port.BookingQueryPort;
+import com.openhis.whale.booking.contracts.port.BookingRegistrationPort;
+import com.openhis.whale.booking.contracts.query.OutpatientBookingLookupQuery;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -152,6 +174,8 @@ public class OutpatientRegistrationAppService {
     private final OrganizationQueryService organizationQueryService;
     /** 医生查询服务。 */
     private final PractitionerQueryService practitionerQueryService;
+    /** 岗位 → 医务人员主键预解析（B.6.1.3.1）。 */
+    private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
     /** 费用性质查询服务。 */
     private final ContractQueryService contractQueryService;
     /** 诊疗服务查询服务。 */
@@ -183,8 +207,9 @@ public class OutpatientRegistrationAppService {
     private final OutpatientRegistrationMapper outpatientRegistrationMapper;
     /** 术语枚举 → 下拉选项（性别等与患者主档对齐）。 */
     private final CodeSystemQueryService codeSystemQueryService;
-    /** 当前登录用户上下文（机构、展示名等，非操作人门控）。 */
-    private final ICurrentUser currentUser;
+    /** 当前登录用户上下文（展示名等，非操作人/机构门控）。 */
+    /** 会话机构门控（B.6.1）。 */
+    private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     /** 登录操作人门控（B.6.1）。 */
     private final CurrentOperatorResolver currentOperatorResolver;
     /** 分页窗口入站门控（B.10.11）。 */
@@ -193,6 +218,14 @@ public class OutpatientRegistrationAppService {
     /** 支付渠道入站门控。 */
     private final PaymentChannelGate paymentChannelGate;
 
+    /** 预约只读 Port（未装 booking 时为 null）。 */
+    @Autowired(required = false)
+    private BookingQueryPort bookingQueryPort;
+
+    /** 预约写侧衔接 Port（未装 booking 时为 null）。 */
+    @Autowired(required = false)
+    private BookingRegistrationPort bookingRegistrationPort;
+
     /**
      * 加载挂号表单初始化数据。
      *
@@ -200,22 +233,63 @@ public class OutpatientRegistrationAppService {
      * @return 初始化结果
      */
     public LoadRegisterFormInitResponse loadRegisterFormInit(LoadRegisterFormInitRequest request) {
-        // 加载当前门诊挂号可选的科室、医生、费用性质和号源类型。
+        // Pre：加载科室、医生、费用性质、号源类型与性别下拉主数据。
         List<Organization> organizations = organizationQueryService.listOrganizationsForOutpatientRegistration();
-        List<Practitioner> practitioners = practitionerQueryService.listPractitionersForOutpatientRegistration(request.getOrganizationId());
+        List<Practitioner> practitioners = practitionerRoleScopeLoader.listActivePractitionersForOutpatientRegistration(
+            WhalePlatformRoleCodeConstants.ROLE_DOCTOR, request.getOrganizationId());
         Page<ContractListItemQueryModel> contractPage = contractQueryService.listContracts(request.getOrganizationId(), Pageable.unpaged());
         List<ContractListItemQueryModel> contracts = contractPage.getContent();
         List<HealthcareService> healthcareServices = healthcareServiceQueryService.listServicesForRegistration();
-        // 性别下拉与患者建档页一致：AdministrativeGender → OptionDto。
+        healthcareServices = this.narrowHealthcareServicesForBooking(
+            healthcareServices, request.getOrganizationId(), request.getPractitionerId(), request.getRegistrationDate());
+        Map<String, BigDecimal> serviceTypeFeeById = buildServiceTypeFeeById(healthcareServices);
+        // Pre：性别下拉与患者建档页一致。
         List<OptionDto> genderOptions = codeSystemQueryService.getOptionListByEnum(AdministrativeGender.class);
-        // 统一转换为前端下拉结构并返回。
+        // Asm：统一转换为前端下拉结构并返回。
         return outpatientRegistrationMapper.toLoadRegisterFormInitResponse(
             outpatientRegistrationMapper.toOrganizationOptionList(organizations),
             outpatientRegistrationMapper.toPractitionerOptionList(practitioners),
             outpatientRegistrationMapper.toContractOptionList(contracts),
             outpatientRegistrationMapper.toHealthcareServiceOptionList(healthcareServices),
+            serviceTypeFeeById,
             genderOptions
         );
+    }
+
+    /**
+     * 批量解析号源类型对应的 SALE 零售价，供挂号页选择号源后展示挂号费。
+     *
+     * @param services 可挂号号源列表
+     * @return 号源主键（String）→ 销售价（元）
+     */
+    private Map<String, BigDecimal> buildServiceTypeFeeById(List<HealthcareService> services) {
+        Map<String, BigDecimal> result = new LinkedHashMap<>();
+        if (services == null || services.isEmpty()) {
+            return result;
+        }
+        List<Long> serviceIds = new ArrayList<>();
+        for (HealthcareService service : services) {
+            if (service != null && service.getId() != null) {
+                serviceIds.add(service.getId());
+            }
+        }
+        if (serviceIds.isEmpty()) {
+            return result;
+        }
+        ChargeItemDefinitionQueryCommand queryCommand = new ChargeItemDefinitionQueryCommand();
+        queryCommand.setInstanceTable(TableNameConstants.ADM_HEALTHCARE_SERVICE);
+        queryCommand.setInstanceIds(serviceIds);
+        List<ChargeItemDefinition> priceRows = chargeItemDefinitionQueryService.findPriceLinesByProjects(queryCommand);
+        for (ChargeItemDefinition row : priceRows) {
+            if (row == null || row.getInstanceId() == null || row.getPriceValue() == null) {
+                continue;
+            }
+            if (!PriceType.SALE.getCode().equals(row.getPriceTypeCode())) {
+                continue;
+            }
+            result.putIfAbsent(String.valueOf(row.getInstanceId()), row.getPriceValue());
+        }
+        return result;
     }
 
     /**
@@ -226,14 +300,16 @@ public class OutpatientRegistrationAppService {
      * @throws BusinessException 页码或页大小非法时抛出
      */
     public PagePatientsForSelectResponse pagePatientsForSelect(PagePatientsForSelectRequest request) {
+        // Gate：分页窗口须为正。
         pageWindowGate.requirePositivePageWindow(request, "REG-PAT-VAL-001", "分页参数不合法");
-        // 组装领域分页查询命令。
+        // Pre：组装领域分页查询命令。
         PatientPagedQuery query = new PatientPagedQuery();
-        query.setName(request.getKeyword());
+        query.setKeyword(request.getKeyword());
         query.setPageNo(request.getPageNo());
         query.setPageSize(request.getPageSize());
-        // 查询患者分页并映射返回。
+        // Pre：查询患者分页。
         Page<PatientPageItemQueryModel> page = patientQueryService.searchPatientsPaged(query);
+        // Asm：映射为前端可选患者列表。
         List<PatientItemDto> records = outpatientRegistrationMapper.toPatientItemDtoList(page);
         return outpatientRegistrationMapper.toPagePatientsForSelectResponse(page, records);
     }
@@ -257,9 +333,75 @@ public class OutpatientRegistrationAppService {
      * @return 医生下拉结果
      */
     public ListPractitionersResponse listPractitioners(ListPractitionersRequest request) {
-        // 按科室加载可挂号医生并映射输出。
-        List<Practitioner> practitioners = practitionerQueryService.listPractitionersForOutpatientRegistration(request.getOrganizationId());
+        List<Practitioner> practitioners = practitionerRoleScopeLoader.listActivePractitionersForOutpatientRegistration(
+            WhalePlatformRoleCodeConstants.ROLE_DOCTOR, request.getOrganizationId());
         return outpatientRegistrationMapper.toListPractitionersResponse(outpatientRegistrationMapper.toPractitionerOptionList(practitioners));
+    }
+
+    /**
+     * IF-REG-12：挂号台加载有效门诊预约。
+     */
+    public LoadAppointmentForRegisterResponse loadAppointmentForRegister(LoadAppointmentForRegisterRequest request) {
+        if (bookingQueryPort == null) {
+            throw new BusinessException("BKG-REG-404", "预约模块未启用");
+        }
+        if (request == null) {
+            throw new BusinessException("REG-VAL-001", "查询参数不完整");
+        }
+        boolean hasBusNo = StringUtils.isNotBlank(request.getAppointmentBusNo());
+        if (!hasBusNo && request.getPatientId() == null) {
+            throw new BusinessException("REG-VAL-001", "patientId 与 appointmentBusNo 至少传一个");
+        }
+        OutpatientBookingLookupQuery lookupQuery = new OutpatientBookingLookupQuery();
+        lookupQuery.setPatientId(request.getPatientId());
+        lookupQuery.setAppointmentBusNo(request.getAppointmentBusNo());
+        LocalDate registrationDate;
+        if (request.getRegistrationDate() != null) {
+            registrationDate = request.getRegistrationDate();
+        } else {
+            registrationDate = LocalDate.now();
+        }
+        lookupQuery.setRegistrationDate(registrationDate);
+        OutpatientBookingSnapshot snapshot = bookingQueryPort.findActiveOutpatientBooking(lookupQuery)
+            .orElseThrow(() -> new BusinessException("BKG-REG-404", "未找到有效预约"));
+        return outpatientRegistrationMapper.toLoadAppointmentForRegisterResponse(snapshot);
+    }
+
+    /**
+     * IF-REG-13：预约转挂号预结算（Gate + 复用 IF-REG-06）。
+     */
+    public PreRegisterSettlementResponse preRegisterFromAppointment(PreRegisterSettlementRequest request) {
+        if (request == null || request.getAppointmentId() == null) {
+            throw new BusinessException("REG-VAL-001", "appointmentId 不能为空");
+        }
+        if (bookingQueryPort == null) {
+            throw new BusinessException("BKG-REG-404", "预约模块未启用");
+        }
+        return this.preRegisterSettlement(request);
+    }
+
+    /**
+     * IF-REG-14：现场挂号可约时段摘要。
+     */
+    public ListBookableSlotHintsResponse listBookableSlotHints(ListBookableSlotHintsRequest request) {
+        ListBookableSlotHintsResponse response = new ListBookableSlotHintsResponse();
+        response.setHints(new ArrayList<>());
+        if (bookingQueryPort == null || request == null || request.getOrganizationId() == null) {
+            return response;
+        }
+        LocalDate registrationDate;
+        if (request.getRegistrationDate() != null) {
+            registrationDate = request.getRegistrationDate();
+        } else {
+            registrationDate = LocalDate.now();
+        }
+        Long healthcareServiceId = request.getHealthcareServiceId();
+        List<BookableSlotHint> hints = bookingQueryPort.listBookableSlots(
+            request.getOrganizationId(),
+            request.getPractitionerId(),
+            healthcareServiceId,
+            registrationDate);
+        return outpatientRegistrationMapper.toListBookableSlotHintsResponse(hints);
     }
 
     /**
@@ -270,13 +412,16 @@ public class OutpatientRegistrationAppService {
      * @throws BusinessException 挂号要素不完整、重复挂号、主数据失效或定价不存在时抛出
      */
     public PreRegisterSettlementResponse preRegisterSettlement(PreRegisterSettlementRequest request) {
-        // 门控挂号关键要素，避免后续编排出现空主键。
+        // Gate：门控挂号关键要素，避免后续编排出现空主键。
         if (request.getContractId() == null || request.getOrganizationId() == null || request.getServiceTypeId() == null) {
             throw new BusinessException("REG-VAL-001", "请补齐挂号要素");
         }
         // 预结算前先收敛患者主档：优先使用已选患者，其次按身份证命中既有患者，未命中则新建患者。
         Long patientId = resolvePatientIdForPreRegister(request);
         request.setPatientId(patientId);
+        if (request.getAppointmentId() != null && bookingQueryPort != null) {
+            this.runBookingRegistrationGate(request);
+        }
         // 与开立就诊同一业务时刻，保证防重自然日与领域 occurredAt 一致。
         LocalDateTime occurredAt = LocalDateTime.now();
         // 同患者、同目标科室、当日：凡有效就诊（含诊毕）均占名额，退号后释放（PLANNED 未交费不占名额）。
@@ -315,6 +460,10 @@ public class OutpatientRegistrationAppService {
 
         // 挂号员与患者快照：投影依赖事件携带展示字段，须在此拉齐主档后再组装命令。
         Long registrarId = currentOperatorResolver.requireOperatorId("REG-VAL-001", "当前登录用户不能为空");
+        Long walkInSlotId = null;
+        if (request.getAppointmentId() == null && bookingRegistrationPort != null) {
+            walkInSlotId = this.tryAllocateWalkInSlot(request, patientId, registrarId, occurredAt.toLocalDate());
+        }
         PatientDetailQueryModel patientDetail = patientQueryService.loadPatientDetail(patientId);
         PatientCoreQueryModel patientCore = null;
         if (patientDetail != null) {
@@ -335,7 +484,7 @@ public class OutpatientRegistrationAppService {
             healthcareService,
             patientCore,
             registrarId,
-            currentUser.getCurrentUserName(),
+            currentOperatorResolver.findOperatorUserNameOrNull(),
             occurredAt,
             registrationPractitionerDisplayName
         );
@@ -387,12 +536,23 @@ public class OutpatientRegistrationAppService {
             currentOperatorResolver.requireOperatorId("REG-VAL-001", "当前登录用户不能为空"));
         Long paymentDraftId = paymentReconciliationDomainService.createPaymentDraftFromPreSettle(paymentDraftCommand);
         List<ChargeItemPreviewDto> previews = outpatientRegistrationMapper.toChargeItemPreviewDtoListBySaleLine(saleLine);
+        Long responseAppointmentId = request.getAppointmentId();
+        Long responseSlotId = walkInSlotId;
+        if (responseAppointmentId != null && bookingQueryPort != null) {
+            Optional<OutpatientBookingSnapshot> bookingSnapshot =
+                bookingQueryPort.loadOutpatientBookingById(responseAppointmentId);
+            if (bookingSnapshot.isPresent()) {
+                responseSlotId = bookingSnapshot.get().getSlotId();
+            }
+        }
         // 返回预结算结果，供前端确认收费项和金额。
         return outpatientRegistrationMapper.toPreRegisterSettlementResponse(
             encounterId,
             paymentDraftId,
             chargeItemAmount,
-            previews
+            previews,
+            responseAppointmentId,
+            responseSlotId
         );
     }
 
@@ -446,6 +606,11 @@ public class OutpatientRegistrationAppService {
         // 缴费成功后将就诊状态从 PLANNED 迁移至 REGISTERED，与 EncounterStatus 生命周期对齐。
         encounterDomainService.completeOutpatientRegistration(paymentDraft.getEncounterId());
 
+        if (request.getAppointmentId() != null && bookingRegistrationPort != null) {
+            bookingRegistrationPort.linkEncounter(request.getAppointmentId(), paymentDraft.getEncounterId());
+            bookingRegistrationPort.checkInAfterRegister(request.getAppointmentId(), paymentDraft.getEncounterId());
+        }
+
         // 第四步：支付完成后创建电子发票草稿、开具发票并回查最新票据结果。
         CreateDraftInvoiceCommand draftInvoiceCommand = outpatientRegistrationMapper.toCreateDraftInvoiceCommand(paymentDraft, paymentId);
         Long invoiceId = invoiceDomainService.createDraftInvoiceAfterPayment(draftInvoiceCommand);
@@ -486,8 +651,20 @@ public class OutpatientRegistrationAppService {
         }
         Map<Long, Long> paymentDraftByEncounter =
             paymentReconciliationQueryService.findDraftPaymentIdsByEncounterIds(plannedEncounterIds);
+        List<Long> settledEncounterIds = new ArrayList<>();
+        for (ClinicRegisterQueryModel row : page.getContent()) {
+            if (row.getEncounterId() == null) {
+                continue;
+            }
+            if (!EncounterStatus.PLANNED.getCode().equals(row.getStatusEnum())) {
+                settledEncounterIds.add(row.getEncounterId());
+            }
+        }
+        Map<Long, Long> paymentIdByEncounter =
+            paymentReconciliationQueryService.findLatestSuccessPaymentIdsByEncounterIds(settledEncounterIds);
         List<ClinicRegisterItemDto> records =
-            outpatientRegistrationMapper.toClinicRegisterItemDtoList(page, registrationFeeByAnchor, paymentDraftByEncounter);
+            outpatientRegistrationMapper.toClinicRegisterItemDtoList(
+                page, registrationFeeByAnchor, paymentDraftByEncounter, paymentIdByEncounter);
         return outpatientRegistrationMapper.toPageClinicRegistersResponse(page, records);
     }
 
@@ -572,6 +749,11 @@ public class OutpatientRegistrationAppService {
         // 执行就诊退号动作。
         CancelOutpatientRegistrationCommand cancelCommand = outpatientRegistrationMapper.toCancelOutpatientRegistrationCommand(request);
         encounterDomainService.cancelOutpatientRegistration(cancelCommand);
+        if (bookingRegistrationPort != null) {
+            RegistrationCancelReason cancelReason = new RegistrationCancelReason();
+            cancelReason.setCancelReason(request.getCancelReason());
+            bookingRegistrationPort.onRegistrationCancelled(request.getEncounterId(), cancelReason);
+        }
         List<PaymentReconciliationQueryModel> payments = paymentReconciliationQueryService.findPaySuccessOrRefundingByEncounter(request.getEncounterId());
         List<Long> paymentIds = new ArrayList<>();
         for (PaymentReconciliationQueryModel payment : payments) {
@@ -731,6 +913,95 @@ public class OutpatientRegistrationAppService {
     }
 
     /**
+     * IF-REG-01：岗位号源与当日放号求交，收窄号源类型下拉。
+     */
+    private List<HealthcareService> narrowHealthcareServicesForBooking(
+        List<HealthcareService> services,
+        Long organizationId,
+        Long practitionerId,
+        LocalDate registrationDate) {
+        if (bookingQueryPort == null || organizationId == null || services == null || services.isEmpty()) {
+            return services;
+        }
+        LocalDate date;
+        if (registrationDate != null) {
+            date = registrationDate;
+        } else {
+            date = LocalDate.now();
+        }
+        List<BookableServiceOption> bookable = bookingQueryPort.listBookableServiceTypes(
+            organizationId, practitionerId, date);
+        if (bookable == null || bookable.isEmpty()) {
+            return services;
+        }
+        Set<Long> allowedIds = new HashSet<>();
+        for (BookableServiceOption option : bookable) {
+            if (option != null && option.getHealthcareServiceId() != null) {
+                allowedIds.add(option.getHealthcareServiceId());
+            }
+        }
+        List<HealthcareService> narrowed = new ArrayList<>();
+        for (HealthcareService service : services) {
+            if (service != null && service.getId() != null && allowedIds.contains(service.getId())) {
+                narrowed.add(service);
+            }
+        }
+        if (narrowed.isEmpty()) {
+            return services;
+        }
+        return narrowed;
+    }
+
+    /**
+     * 模式 C：现场挂号尝试占当日空闲号源（失败则降级不占号）。
+     */
+    private Long tryAllocateWalkInSlot(
+        PreRegisterSettlementRequest request,
+        Long patientId,
+        Long operatorId,
+        LocalDate registrationDate) {
+        if (request.getOrganizationId() == null || request.getServiceTypeId() == null) {
+            return null;
+        }
+        WalkInSlotAllocateCommand command = new WalkInSlotAllocateCommand();
+        command.setOrganizationId(request.getOrganizationId());
+        command.setPractitionerId(request.getPractitionerId());
+        command.setHealthcareServiceId(request.getServiceTypeId());
+        command.setRegistrationDate(registrationDate);
+        command.setPatientId(patientId);
+        command.setOperatorId(operatorId);
+        return bookingRegistrationPort.allocateWalkInSlot(command);
+    }
+
+    /**
+     * IF-REG-13 预约转挂号 Gate：校验预约事实与三要素，并复核医师岗位。
+     */
+    private void runBookingRegistrationGate(PreRegisterSettlementRequest request) {
+        BookingRegistrationValidateCommand validateCommand = new BookingRegistrationValidateCommand();
+        validateCommand.setAppointmentId(request.getAppointmentId());
+        validateCommand.setOrganizationId(request.getOrganizationId());
+        validateCommand.setPractitionerId(request.getPractitionerId());
+        validateCommand.setHealthcareServiceId(request.getServiceTypeId());
+        validateCommand.setPatientId(request.getPatientId());
+        bookingQueryPort.validateForRegistration(validateCommand);
+
+        if (request.getPractitionerId() != null && request.getOrganizationId() != null) {
+            List<Practitioner> activePractitioners = practitionerRoleScopeLoader.listActivePractitionersForOutpatientRegistration(
+                WhalePlatformRoleCodeConstants.ROLE_DOCTOR, request.getOrganizationId());
+            boolean practitionerMatched = false;
+            for (Practitioner practitioner : activePractitioners) {
+                if (practitioner != null && Objects.equals(practitioner.getId(), request.getPractitionerId())) {
+                    practitionerMatched = true;
+                    break;
+                }
+            }
+            if (!practitionerMatched) {
+                throw new BusinessException("BKG-REG-403", "医师在该科室无有效岗位");
+            }
+        }
+    }
+
+    /**
      * 在预结算前解析患者主档：有患者ID直接复用，否则按身份证号查重后复用或建档。
      *
      * @param request 预结算请求
@@ -754,11 +1025,9 @@ public class OutpatientRegistrationAppService {
         if (request.getName() == null || request.getName().isBlank() || request.getGender() == null || request.getGender().isBlank()) {
             throw new BusinessException("REG-PAT-VAL-001", "请补齐患者信息");
         }
-        // 新建患者主档时，机构归属强制取当前登录机构，不使用前端挂号科室入参。
-        Long patientOrganizationId = currentUser.getCurrentOrganizationUnitId();
-        if (patientOrganizationId == null) {
-            throw new BusinessException("REG-VAL-001", "当前登录机构不能为空");
-        }
+        // 新建患者主档时，机构归属强制取当前会话机构，不使用前端挂号科室入参。
+        Long patientOrganizationId = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+            "REG-VAL-001", "当前登录机构不能为空");
         RegisterPatientCommand command = outpatientRegistrationMapper.toRegisterPatientCommand(request);
         // RegisterPatientCommand 同时支持 item（单条）与 items（批量）两种形态：
         // 这里统一覆盖 organizationId，确保“患者建档机构”始终取当前登录机构，而非前端挂号科室入参。

@@ -30,10 +30,10 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 调配药师候选行。 */
 @Schema(description = "调配药师候选行")
 public class PractitionerOptionDto {
 
-    /** 药师主键。 */
     @Schema(description = "药师主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long practitionerId;

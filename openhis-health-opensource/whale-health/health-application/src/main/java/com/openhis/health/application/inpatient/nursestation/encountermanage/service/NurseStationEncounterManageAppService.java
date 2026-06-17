@@ -1,23 +1,29 @@
 package com.openhis.health.application.inpatient.nursestation.encountermanage.service;
 
-import com.openhis.health.application.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
-import com.openhis.health.application.common.pagination.PageQueryBinder;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.common.validator.PageWindowGate;
+import com.openhis.health.module.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.PageWindowGate;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.NurseStationQueueDisplayEnrichment;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.NurseStationTaskCountBundle;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.ParticipantDto;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.PatientQueueItemDto;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.mapper.NurseStationEncounterManageMapper;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.request.GetPatientDetailRequest;
+import com.openhis.health.application.inpatient.nursestation.encountermanage.request.LoadAdmissionParticipantInitRequest;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.request.LoadWardTreeRequest;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.request.PagePatientQueueRequest;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.request.SavePatientInfoRequest;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.GetPatientDetailResponse;
+import com.openhis.health.application.inpatient.nursestation.encountermanage.response.LoadAdmissionParticipantInitResponse;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.LoadWardTreeResponse;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.PagePatientQueueResponse;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.SavePatientInfoResponse;
+import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
@@ -26,7 +32,7 @@ import com.openhis.health.domain.administration.encounter.queries.model.Encounte
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterParticipantQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.patient.queries.model.PatientCoreQueryModel;
@@ -52,7 +58,6 @@ import com.openhis.health.domain.share.utils.EncounterParticipantRoleDisplayUtil
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -95,8 +100,8 @@ public class NurseStationEncounterManageAppService {
     /** 分页窗口入站门控（B.10.11）。 */
     private final PageWindowGate pageWindowGate;
 
-    /** 当前登录用户：解析 practitionerId、管理病区。 */
-    private final ICurrentUser currentUser;
+    /** 当前登录者管辖病区解析。 */
+    private final CurrentManagedWardLocationIdsResolver managedWardLocationIdsResolver;
 
     /** 位置读侧：病区树与病房解析。 */
     private final LocationQueryService locationQueryService;
@@ -135,6 +140,9 @@ public class NurseStationEncounterManageAppService {
     /** 住院队列读模型展示回填。 */
     private final InpatientInfoQueueDisplayAssembler inpatientInfoQueueDisplayAssembler;
 
+    /** 岗位分配 → 医务人员范围解析。 */
+    private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
+
     /**
      * IF-IP-NUR-01：病区病房树查询。
      *
@@ -144,9 +152,7 @@ public class NurseStationEncounterManageAppService {
      */
     public LoadWardTreeResponse loadWardTree(LoadWardTreeRequest request) {
         try {
-            Long practitionerId = currentUser.getCurrentPractitionerId();
-            // Pre：按登录者管理病区加载病区根；无分配时域层回落全部启用病区（BR-IP-NUR-001）。
-            List<Location> wards = locationQueryService.listManagedWardsForPractitioner(practitionerId);
+            List<Location> wards = managedWardLocationIdsResolver.listManagedActiveWardsOrEmpty();
             Map<Long, List<Location>> housesByWardId = new HashMap<>();
             for (Location ward : wards) {
                 if (ward == null || ward.getId() == null) {
@@ -157,6 +163,50 @@ public class NurseStationEncounterManageAppService {
                 housesByWardId.put(ward.getId(), houses);
             }
             return nurseStationEncounterManageMapper.toLoadWardTreeResponse(wards, housesByWardId);
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_NUR_101,
+                "加载失败，请稍后重试");
+        }
+    }
+
+    /**
+     * 分床/入科责任医护下拉初始化：住院医师按科室、责任护士按入院病区加载。
+     *
+     * @param request 可选入院科室与病区位置主键
+     * @return 医生与责任护士下拉
+     * @throws BusinessException 读失败时 EX-IP-NUR-101
+     */
+    public LoadAdmissionParticipantInitResponse loadAdmissionParticipantInit(
+        LoadAdmissionParticipantInitRequest request) {
+        try {
+            Long organizationId = null;
+            Long wardLocationId = null;
+            if (request != null) {
+                organizationId = request.getOrganizationId();
+                wardLocationId = request.getWardLocationId();
+            }
+            List<Practitioner> doctors;
+            List<Practitioner> nurses;
+            if (organizationId != null) {
+                // 住院医师：按入院科室挂了激活医师岗的在职人员。
+                doctors = practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+                    WhalePlatformRoleCodeConstants.ROLE_DOCTOR, organizationId);
+            } else {
+                // 未传科室：按平台医师角色全量在职人员（不按门诊科室收窄）。
+                doctors = practitionerRoleScopeLoader.listActivePractitionersForPlatformRole(
+                    WhalePlatformRoleCodeConstants.ROLE_DOCTOR, null);
+            }
+            if (wardLocationId != null) {
+                // 责任护士：仅返回该入院病区挂了激活护士岗的在职人员。
+                nurses = practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleAtWardLocation(
+                    WhalePlatformRoleCodeConstants.ROLE_NURSE, wardLocationId);
+            } else {
+                nurses = Collections.emptyList();
+            }
+            return nurseStationEncounterManageMapper.toLoadAdmissionParticipantInitResponse(doctors, nurses);
         } catch (BusinessException ex) {
             throw ex;
         } catch (RuntimeException ex) {
@@ -182,16 +232,8 @@ public class NurseStationEncounterManageAppService {
             // Gate：任务筛选 code 须在白名单内或为空（BR-IP-NUR-007）。
             String taskFilterCode = this.resolveNurseStationTaskFilterFromRequest(request);
             this.assertTaskFilterAllowed(taskFilterCode);
-            Long practitionerId = currentUser.getCurrentPractitionerId();
-            // Pre：管理病区并集写入查询，限制可见地理范围（BR-IP-NUR-003）。
-            List<Location> managedWards = locationQueryService.listManagedWardsForPractitioner(practitionerId);
-            List<Long> managedWardIds = new ArrayList<>();
-            for (Location ward : managedWards) {
-                if (ward == null || ward.getId() == null) {
-                    continue;
-                }
-                managedWardIds.add(ward.getId());
-            }
+            List<Location> managedWards = managedWardLocationIdsResolver.listManagedActiveWardsOrEmpty();
+            List<Long> managedWardIds = this.extractWardLocationIds(managedWards);
             Map<String, String> houseNameByBusNo = this.buildHouseNameByBusNoIndex(managedWards);
             LocalDate executionDate = this.resolveNurseStationExecutionDateFromRequest(request);
             Collection<Long> encounterIdsIn = null;
@@ -313,8 +355,7 @@ public class NurseStationEncounterManageAppService {
                     InpatientNurseStationConstants.EX_IP_NUR_102,
                     "患者不可用，请刷新");
             }
-            Long practitionerId = currentUser.getCurrentPractitionerId();
-            List<Location> managedWards = locationQueryService.listManagedWardsForPractitioner(practitionerId);
+            List<Location> managedWards = managedWardLocationIdsResolver.listManagedActiveWardsOrEmpty();
             Map<String, String> houseNameByBusNo = this.buildHouseNameByBusNoIndex(managedWards);
             Set<Long> singleEncounter = Collections.singleton(encounterId);
             Map<Long, Account> accountByEncounterId =
@@ -423,6 +464,22 @@ public class NurseStationEncounterManageAppService {
                 InpatientNurseStationConstants.EX_IP_NUR_201,
                 "保存失败，请联系管理员");
         }
+    }
+
+    /**
+     * 从病区位置列表提取 id（与 {@link #loadWardTree} 同一数据源，供队列 geographic 收窄）。
+     */
+    private List<Long> extractWardLocationIds(List<Location> wards) {
+        if (wards == null || wards.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<Long> wardIds = new LinkedHashSet<>();
+        for (Location ward : wards) {
+            if (ward != null && ward.getId() != null) {
+                wardIds.add(ward.getId());
+            }
+        }
+        return new ArrayList<>(wardIds);
     }
 
     /**

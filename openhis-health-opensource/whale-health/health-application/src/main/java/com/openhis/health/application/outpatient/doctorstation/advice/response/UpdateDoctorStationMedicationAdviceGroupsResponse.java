@@ -26,14 +26,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-医嘱开立-更新药品医嘱组号响应。 */
 @Schema(description = "医生站-医嘱开立-更新药品医嘱组号响应")
 public class UpdateDoctorStationMedicationAdviceGroupsResponse {
 
-    /** 拆组/并组是否全部成功。 */
     @Schema(description = "是否成功")
     private Boolean success;
 
-    /** 人类可读结果说明。 */
     @Schema(description = "提示信息")
     private String message;
 }

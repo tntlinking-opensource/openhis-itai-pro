@@ -30,6 +30,7 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 收取预交金响应。 */
 @Schema(description = "收取预交金响应")
 public class CollectPrepayAdvanceDepositResponse {
 
@@ -37,6 +38,7 @@ public class CollectPrepayAdvanceDepositResponse {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long paymentId;
 
+    /** 结算后账户余额。 */
     @Schema(description = "结算后账户余额（展示口径，动态计算）")
     private BigDecimal accountBalance;
 }

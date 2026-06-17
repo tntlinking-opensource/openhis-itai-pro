@@ -26,18 +26,21 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 退号可否校验响应。 */
 @Schema(description = "退号可否校验响应")
 public class ValidateCancelableResponse {
 
-    /** 是否允许退号。 */
     @Schema(description = "是否可退")
+    /** 是否可退（业务字段）。 */
     private Boolean cancelable;
 
     /** 不可退号原因码。 */
     @Schema(description = "原因码")
+    /** 原因码（业务字段）。 */
     private String reasonCode;
 
     /** 不可退号原因说明。 */
     @Schema(description = "原因说明")
+    /** 原因说明（业务字段）。 */
     private String reasonText;
 }

@@ -30,6 +30,7 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 住院护士站费用汇总行。 */
 @Schema(description = "住院护士站费用汇总行")
 public class NurseStationCostSummaryLineDto {
 

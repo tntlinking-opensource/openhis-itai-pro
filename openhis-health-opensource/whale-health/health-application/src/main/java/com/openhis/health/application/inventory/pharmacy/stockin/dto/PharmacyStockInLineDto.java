@@ -24,9 +24,11 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 药房入库单写模型明细行（IF-PHA-IN-04/05）。
@@ -34,6 +36,7 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 药房入库单明细行。 */
 @Schema(description = "药房入库单明细行（写）")
 public class PharmacyStockInLineDto {
 
@@ -41,6 +44,7 @@ public class PharmacyStockInLineDto {
     private String itemTable;
 
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 物品定义主键。 */
     @Schema(description = "物品定义主键")
     private Long itemId;
 
@@ -59,22 +63,28 @@ public class PharmacyStockInLineDto {
     @Schema(description = "计量单位编码")
     private String unitCode;
 
+    /** 批号。 */
     @Schema(description = "批号")
     private String lotNumber;
 
+    /** 追溯码。 */
     @Schema(description = "追溯码")
     private String traceNo;
 
+    /** 单价。 */
     @Schema(description = "单价")
     private BigDecimal price;
 
+    /** 行总价。 */
     @Schema(description = "行总价")
     private BigDecimal totalPrice;
 
+    /** 行备注。 */
     @Schema(description = "行备注")
     private String remake;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 业务发生时间。 */
     @Schema(description = "业务发生时间")
     private LocalDateTime occurrenceTime;
 }

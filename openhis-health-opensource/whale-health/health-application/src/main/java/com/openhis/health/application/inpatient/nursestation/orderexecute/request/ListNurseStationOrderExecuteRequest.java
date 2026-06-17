@@ -37,6 +37,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医嘱执行列表查询请求。 */
 @Schema(description = "医嘱执行列表查询请求", requiredProperties = {"encounterIds", "executeTab", "executionDeadline"})
 public class ListNurseStationOrderExecuteRequest {
 
@@ -48,6 +49,7 @@ public class ListNurseStationOrderExecuteRequest {
 
     /** 执行 Tab：pending / executed / skipped / cancelled（BR-IP-EXE-010，必填）。 */
     @NotNull(message = "执行 Tab 不能为空")
+    /** 执行 Tab：pending / executed / skipped / cancelled。 */
     @Schema(description = "执行 Tab：pending / executed / skipped / cancelled", required = true)
     private String executeTab;
 
@@ -57,6 +59,7 @@ public class ListNurseStationOrderExecuteRequest {
 
     /** 截止时间（频次展开与 Tab 过滤上界，BR-IP-EXE-004/010）。 */
     @NotNull(message = "截止时间不能为空")
+    /** 截止时间。 */
     @Schema(description = "截止时间", required = true)
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime executionDeadline;

@@ -28,26 +28,31 @@ import java.time.LocalDate;
  */
 @Data
 @Accessors(chain = true)
+/** 首次建档请求。 */
 @Schema(description = "首次建档请求")
 public class SavePatientForFirstRegisterRequest {
 
-    /** 患者姓名。 */
     @Schema(description = "姓名")
+    /** 姓名（业务字段）。 */
     private String name;
 
     /** 性别编码。 */
     @Schema(description = "性别")
+    /** 性别（业务字段）。 */
     private String gender;
 
     /** 身份证号码。 */
     @Schema(description = "身份证号")
+    /** 身份证号（业务字段）。 */
     private String idCardNo;
 
     /** 手机号码。 */
     @Schema(description = "手机号")
+    /** 手机号（业务字段）。 */
     private String phone;
 
     /** 出生日期。 */
     @Schema(description = "出生日期")
+    /** 出生日期（业务字段）。 */
     private LocalDate birthDate;
 }

@@ -22,6 +22,7 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 审批驳回药房入库请求（IF-PHA-IN-09）。
@@ -29,6 +30,7 @@ import lombok.experimental.Accessors;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 审批驳回药房入库 IF-PHA-IN-09。 */
 @Schema(description = "审批驳回药房入库 IF-PHA-IN-09", requiredProperties = {"busNo"})
 public class RejectPharmacyStockInRequest {
 
@@ -36,9 +38,11 @@ public class RejectPharmacyStockInRequest {
     @Schema(description = "业务单号", requiredMode = Schema.RequiredMode.REQUIRED)
     private String busNo;
 
+    /** 驳回原因码。 */
     @Schema(description = "驳回原因码，可空")
     private String changeReasonCode;
 
+    /** 驳回原因说明。 */
     @Schema(description = "驳回原因说明，可空")
     private String changeReason;
 }

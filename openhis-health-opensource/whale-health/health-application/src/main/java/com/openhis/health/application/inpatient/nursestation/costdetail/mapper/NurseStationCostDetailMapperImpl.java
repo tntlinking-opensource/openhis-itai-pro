@@ -17,9 +17,9 @@
 
 package com.openhis.health.application.inpatient.nursestation.costdetail.mapper;
 
-import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostDetailLineDto;
+import com.openhis.health.module.querysupport.financial.dto.NurseStationCostDetailLineDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostDetailPresentationOptionDto;
-import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostDetailTotalsDto;
+import com.openhis.health.module.querysupport.financial.dto.NurseStationCostDetailTotalsDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostSummaryLineDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.request.QueryNurseStationInpatientCostDetailRequest;
 import com.openhis.health.application.inpatient.nursestation.costdetail.response.LoadNurseStationCostDetailPageInitResponse;
@@ -27,21 +27,17 @@ import com.openhis.health.application.inpatient.nursestation.costdetail.response
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.query.InpatientNurseStationCostDetailChargeRow;
-import com.openhis.health.application.inpatient.nursestation.costdetail.assembler.NurseStationCostDetailAssembler;
+import com.openhis.health.module.querysupport.financial.NurseStationCostDetailReadAssembler;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
-import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * {@link NurseStationCostDetailMapper} 实现：字段搬运与初始化常量下发，无跨域编排。
@@ -50,8 +46,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class NurseStationCostDetailMapperImpl implements NurseStationCostDetailMapper {
 
-    /** 组套父项 product 解析（与 Assembler 同构，避免 Mapper/Assembler 重复维护 BR-IP-CDT-006）。 */
-    private final NurseStationCostDetailAssembler nurseStationCostDetailAssembler;
+    private final NurseStationCostDetailReadAssembler nurseStationCostDetailReadAssembler;
 
     /**
      * 组装费用明细页初始化响应（IF-IP-CDT-01）。
@@ -129,33 +124,7 @@ public class NurseStationCostDetailMapperImpl implements NurseStationCostDetailM
     public List<ProductDefinitionBatchLookup> toProductBatchLookups(
         List<InpatientNurseStationCostDetailChargeRow> rows,
         Map<Long, ChargeItem> parentById) {
-        Set<String> dedupeKeys = new LinkedHashSet<>();
-        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
-        if (rows == null || rows.isEmpty()) {
-            return lookups;
-        }
-        for (InpatientNurseStationCostDetailChargeRow row : rows) {
-            if (row == null || row.getChargeItem() == null) {
-                continue;
-            }
-            ChargeItem charge = row.getChargeItem();
-            Long productId = nurseStationCostDetailAssembler.resolveDisplayProductId(charge, parentById);
-            String productTable = nurseStationCostDetailAssembler.resolveDisplayProductTable(charge, parentById);
-            if (productId == null || StringUtils.isBlank(productTable)) {
-                continue;
-            }
-            String dedupeKey = ProductDefinitionKeyUtil.buildCompositeKey(productTable.trim(), productId);
-            if (dedupeKey == null) {
-                continue;
-            }
-            if (dedupeKeys.add(dedupeKey)) {
-                ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
-                lookup.setProductTableName(productTable.trim());
-                lookup.setProductDefinitionId(productId);
-                lookups.add(lookup);
-            }
-        }
-        return lookups;
+        return nurseStationCostDetailReadAssembler.toProductBatchLookups(rows, parentById);
     }
 
     /**

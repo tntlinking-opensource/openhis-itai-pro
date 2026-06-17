@@ -37,10 +37,6 @@ public enum PublicationStatus implements EnumInterface {
      */
     INACTIVE(0L, "INACTIVE", "已停用", "", 3L),
     /**
-     * RETIRED。
-     */
-    RETIRED(0L, "RETIRED", "已退休（兼容旧域状态命名）", "", 3L),
-    /**
      * DISCARDED。
      */
     DISCARDED(0L, "DISCARDED", "已废弃", "", 4L);

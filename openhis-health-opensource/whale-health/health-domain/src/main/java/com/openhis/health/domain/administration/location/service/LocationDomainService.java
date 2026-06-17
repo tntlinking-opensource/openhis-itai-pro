@@ -24,6 +24,7 @@ import com.openhis.health.domain.administration.location.command.*;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.repository.LocationRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
 import com.openhis.health.domain.share.events.administration.location.*;
 import com.openhis.health.domain.share.utils.CommandBatchUtil;
@@ -90,7 +91,7 @@ public class LocationDomainService {
         location.setDisplayOrder(item.getDisplayOrder());
         location.setPyStr(item.getPyStr());
         location.setWbStr(item.getWbStr());
-        // 病区床位主数据登记后直接启用；库房等场景保持草稿待显式启用。
+        // 病区床位主数据登记后直接启用；库房/药房等同理，由应用层显式设置 registerAsActive。
         if (Boolean.TRUE.equals(item.getRegisterAsActive())) {
             location.initActive();
         } else {
@@ -252,7 +253,10 @@ public class LocationDomainService {
         List<Location> toSave = new ArrayList<>();
         for (DeactivateLocationCommand.DeactivateLocationItemCommand item : items) {
             Location location = this.requireLocation(map, item.getLocationId());
-            this.assertNoActiveChildren(location.getId());
+            // 库房/药房为扁平主数据，无层级子节点，跳过树形停用门禁。
+            if (!this.isWarehouseOrPharmacyForm(location.getFormEnum())) {
+                this.assertNoActiveChildren(location.getId());
+            }
             location.assertDeactivatable();
             location.deactivate();
             toSave.add(location);
@@ -273,7 +277,12 @@ public class LocationDomainService {
         List<Location> toSave = new ArrayList<>();
         for (AbolishLocationCommand.AbolishLocationItemCommand item : items) {
             Location location = this.requireLocation(map, item.getLocationId());
-            location.assertAbolishable();
+            // 库房/药房为扁平主数据，启用态也可直接逻辑删除；树形位置仍须草稿/停用。
+            if (this.isWarehouseOrPharmacyForm(location.getFormEnum())) {
+                location.assertAbolishableAsFlatInventoryNode();
+            } else {
+                location.assertAbolishable();
+            }
             location.markDeleted(command.getOperatorId());
             toSave.add(location);
         }
@@ -340,6 +349,17 @@ public class LocationDomainService {
         for (ReserveBedCommand.ReserveBedItemCommand item : items) {
             domainEventPublisher.publish(new BedReservedEvent(item.getLocationId(), item.getReason()));
         }
+    }
+
+    /**
+     * 判断形态是否为库房或药房（扁平库存节点，无树形子节点约束）。
+     *
+     * @param formCode 形态编码
+     * @return 是否库房/药房
+     */
+    private boolean isWarehouseOrPharmacyForm(String formCode) {
+        return LocationForm.WAREHOUSE.getCode().equals(formCode)
+            || LocationForm.PHARMACY.getCode().equals(formCode);
     }
 
     /**

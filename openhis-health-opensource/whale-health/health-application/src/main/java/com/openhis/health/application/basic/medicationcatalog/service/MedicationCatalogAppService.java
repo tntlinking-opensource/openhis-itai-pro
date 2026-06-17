@@ -30,10 +30,18 @@ import com.openhis.health.application.basic.medicationcatalog.mapper.MedicationC
 import com.openhis.health.application.basic.medicationcatalog.request.CreateMedicationCatalogRequest;
 import com.openhis.health.application.basic.medicationcatalog.request.QueryMedicationCatalogRequest;
 import com.openhis.health.application.basic.medicationcatalog.request.UpdateMedicationCatalogRequest;
-import com.openhis.health.application.common.assembler.option.OptionDtoAssembler;
-import com.openhis.health.application.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.application.common.assembler.pricing.ChargePricingCommandAssembler;
-import com.openhis.health.application.common.converter.TextValueConverter;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
+import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
+import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
+import com.openhis.health.module.common.assembler.pricing.ChargePricingCommandAssembler;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.common.converter.TextValueConverter;
+import com.openhis.health.module.querysupport.pharmacy.MedicationDefinitionExternalReferenceGuard;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.RemovePricingByInstanceCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.SaveAllChargeItemDefinitionsCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
@@ -53,21 +61,19 @@ import com.openhis.health.domain.medication.medicationdefinition.queries.Medicat
 import com.openhis.health.domain.medication.medicationdefinition.queries.model.MedicationDefinitionPageQueryModel;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.OrderCalcRuleEnum;
-import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.GatewayIdParseUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.ValidationException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -113,11 +119,18 @@ public class MedicationCatalogAppService {
     private final ChargeItemDefinitionDomainService chargeItemDefinitionDomainService;
     /** 术语下拉：药品维护页各编码体系选项。 */
     private final TerminologyOptionLoader terminologyOptionLoader;
+    /** 用药频次下拉：读 cus_frequency 启用态。 */
+    private final FrequencyOptionLoader frequencyOptionLoader;
     /** 供应商主数据列表 → 下拉 Option。 */
     private final SupplierQueryService supplierQueryService;
     /** 库房/药房点位：机构上下文下拉（可为空列表）。 */
     private final LocationQueryService locationQueryService;
-    private final ICurrentUser currentUser;
+    /** 会话科室收窄（读/写路径，{@code adm_organization.id}）。 */
+    private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
+    /** 废弃前跨聚合引用守卫。 */
+    private final MedicationDefinitionExternalReferenceGuard medicationDefinitionExternalReferenceGuard;
+    /** 写路径操作人门控（B.6.5）。 */
+    private final CurrentOperatorResolver currentOperatorResolver;
 
     /**
      * 药品目录维护页初始化：返回各字典下拉项（术语编码系统）及供应商、库房等选项。
@@ -171,10 +184,9 @@ public class MedicationCatalogAppService {
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.DOSAGE_INSTRUCTION));
         dto.setUnitCodeOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.UNIT_CODE));
-        dto.setRateCodeOptions(
-            terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.RATE_CODE));
+        dto.setRateCodeOptions(frequencyOptionLoader.loadActiveRateOptions());
         // 库房/药房选项：依赖机构 id；未传入时返回空，避免误列全库点位。
-        dto.setLocationOptions(this.loadLocationOptions(currentUser.getCurrentOrganizationUnitId()));
+        dto.setLocationOptions(this.loadLocationOptions(managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery()));
         return dto;
     }
 
@@ -287,6 +299,7 @@ public class MedicationCatalogAppService {
      */
     public void deleteMedicationCatalog(List<Long> ids) {
         GatewayIdParseUtil.requireNonEmptyLongIds(ids, "删除药品目录失败：ids 不能为空");
+        medicationDefinitionExternalReferenceGuard.assertNoExternalReference(ids);
         medicationDefinitionDomainService.discardMedicationDefinition(medicationCatalogMapper.toDiscardCommand(ids));
     }
 
@@ -301,10 +314,11 @@ public class MedicationCatalogAppService {
         if (file == null || file.isEmpty()) {
             throw new ValidationException("导入药品目录失败：文件不能为空");
         }
+        Long operatorId = currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.MEDICATION_DEFINITION_INVALID_ARGUMENT, "请先登录后再导入药品目录");
         ImportMedicationCatalogCommand command = new ImportMedicationCatalogCommand();
-        // 批次号仅用于追踪与日志关联；操作人占位待接入登录上下文。
         command.setBatchNo("MED-IMPORT-" + UUID.randomUUID().toString().substring(0, 8));
-        command.setOperatorId(0L);
+        command.setOperatorId(operatorId);
         command.setFileId(file.getOriginalFilename());
         try {
             command.setRows(this.parseImportRows(file));
@@ -351,6 +365,7 @@ public class MedicationCatalogAppService {
         MedicationDetailDto dto = medicationCatalogMapper.toMedicationDetailDto(
             medicationDefinitionQueryService.getMedicationCatalog(medicationDefinitionId));
         this.enrichPriceFields(dto, this.loadPriceLines(medicationDefinitionId));
+        this.enrichFinTypeCodeDictText(dto);
         return dto;
     }
 
@@ -363,7 +378,7 @@ public class MedicationCatalogAppService {
     private List<ChargeItemDefinition> loadPriceLines(Long medicationId) {
         ChargeItemDefinitionQueryCommand queryCommand = new ChargeItemDefinitionQueryCommand();
         queryCommand.setInstanceTable(TableNameConstants.MED_MEDICATION_DEFINITION);
-        queryCommand.setInstanceId(medicationId);
+        queryCommand.setInstanceIds(List.of(medicationId));
         return chargeItemDefinitionQueryService.findPriceLinesByProjects(queryCommand);
     }
 
@@ -378,6 +393,10 @@ public class MedicationCatalogAppService {
         if (ids.isEmpty()) {
             return;
         }
+        Map<String, String> categoryLabelMap = terminologyOptionLoader.buildLabelMap(
+            TerminologyCodeSystemNameConstants.MEDICATION_CATEGORY_CODE);
+        Map<String, String> unitCodeMap = terminologyOptionLoader.buildLabelMap(
+            TerminologyCodeSystemNameConstants.UNIT_CODE);
         Map<Long, List<ChargeItemDefinition>> priceMap = this.loadMedicationPriceMap(ids);
         Map<Long, String> supplierNameById = supplierQueryService.listSuppliers().stream()
             .filter(Objects::nonNull)
@@ -387,11 +406,71 @@ public class MedicationCatalogAppService {
             if (dto == null || dto.getId() == null) {
                 continue;
             }
+            if (dto.getCategoryCode() != null) {
+                String categoryLabel = categoryLabelMap.get(dto.getCategoryCode());
+                if (categoryLabel != null) {
+                    dto.setCategoryCode_dictText(categoryLabel);
+                }
+            }
+            if (dto.getPackageUnitCode() != null) {
+                String packageUnitLabel = unitCodeMap.get(dto.getPackageUnitCode());
+                if (packageUnitLabel != null) {
+                    dto.setPackageUnitCode_dictText(packageUnitLabel);
+                }
+            }
             this.enrichPriceFields(dto, priceMap.get(dto.getId()));
             if (dto.getSupplyId() != null) {
                 dto.setSupplyId_dictText(supplierNameById.get(dto.getSupplyId()));
             }
+            dto.setUnitBands(this.buildMedicationCatalogUnitBands(dto, unitCodeMap));
         }
+    }
+
+    /**
+     * 列表行装配 unitBands：结构/槽价算法与门诊医生站目录 {@link ProductDefinitionCatalogUnitBandsAssembler#buildDoctorStationBands} 一致。
+     */
+    private List<ProductDefinitionCatalogUnitBandDto> buildMedicationCatalogUnitBands(
+        MedicationDto dto,
+        Map<String, String> unitCodeMap
+    ) {
+        ProductDefinitionDisplayDto productRow = this.toProductRowForUnitBands(dto, unitCodeMap);
+        String bandPricingUnitCode = ProductDefinitionCatalogUnitBandsAssembler.resolveDoctorStationBandPricingUnitCode(
+            productRow, PriceType.SALE.getCode());
+        return ProductDefinitionCatalogUnitBandsAssembler.buildDoctorStationBands(
+            productRow, bandPricingUnitCode, dto.getRetailPrice());
+    }
+
+    /** 药品列表 DTO → 产品读模型（仅用于 unitBands 装配）。 */
+    private ProductDefinitionDisplayDto toProductRowForUnitBands(
+        MedicationDto dto,
+        Map<String, String> unitCodeMap
+    ) {
+        ProductDefinitionDisplayDto row = new ProductDefinitionDisplayDto();
+        row.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
+        row.setProductDefinitionId(dto.getId());
+        row.setPurchaseUnitCode(dto.getPurchaseUnitCode());
+        row.setPurchaseUnitCodeDictText(this.resolveUnitLabel(unitCodeMap, dto.getPurchaseUnitCode()));
+        row.setPurchaseUnitRatio(dto.getPurchaseUnitRatio());
+        row.setSplitUnitCode(dto.getSplitUnitCode());
+        row.setSplitUnitCodeDictText(this.resolveUnitLabel(unitCodeMap, dto.getSplitUnitCode()));
+        row.setPackageUnitCode(dto.getPackageUnitCode());
+        row.setPackageUnitCodeDictText(
+            StringUtils.firstNonBlank(dto.getPackageUnitCode_dictText(), this.resolveUnitLabel(unitCodeMap, dto.getPackageUnitCode())));
+        row.setPackageUnitRatio(dto.getPackageUnitRatio());
+        row.setStockUnitCode(dto.getStockUnitCode());
+        row.setStockUnitCodeDictText(this.resolveUnitLabel(unitCodeMap, dto.getStockUnitCode()));
+        row.setStockUnitRatio(dto.getStockUnitRatio());
+        row.setDoseUnitCode(dto.getDoseUnitCode());
+        row.setDoseUnitCodeDictText(this.resolveUnitLabel(unitCodeMap, dto.getDoseUnitCode()));
+        row.setDoseUnitRatio(dto.getDoseUnitRatio());
+        return row;
+    }
+
+    private String resolveUnitLabel(Map<String, String> unitCodeMap, String unitCode) {
+        if (unitCodeMap == null || unitCode == null || unitCode.isBlank()) {
+            return null;
+        }
+        return unitCodeMap.get(unitCode.trim());
     }
 
     private Map<Long, List<ChargeItemDefinition>> loadMedicationPriceMap(List<Long> medicationIds) {
@@ -445,6 +524,24 @@ public class MedicationCatalogAppService {
     }
 
     /**
+     * 详情/列表：财务类别编码回填展示文案（与下拉 options 的 value 同源）。
+     */
+    private void enrichFinTypeCodeDictText(MedicationDetailDto dto) {
+        if (dto == null || dto.getTypeCode() == null || dto.getTypeCode().isBlank()) {
+            return;
+        }
+        if (dto.getTypeCode_dictText() != null && !dto.getTypeCode_dictText().isBlank()) {
+            return;
+        }
+        Map<String, String> labelMap = terminologyOptionLoader.buildLabelMap(
+            TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
+        String label = labelMap.get(dto.getTypeCode());
+        if (label != null) {
+            dto.setTypeCode_dictText(label);
+        }
+    }
+
+    /**
      * 重建药品实例维度定价：先删后增，写入项由 {@link ChargePricingCommandAssembler} 按非空金额生成。
      *
      * @param instanceId         药品定义主键
@@ -470,13 +567,13 @@ public class MedicationCatalogAppService {
         // 三类价格行按需追加；空列表则跳过批量保存。
         ChargePricingCommandAssembler.appendPriceLineIfPresent(items,
             TableNameConstants.MED_MEDICATION_DEFINITION, instanceId, typeCode, ybType,
-            PriceType.PURCHASE.getCode(), purchasePrice);
+            PriceType.PURCHASE.getCode(), purchasePrice, null);
         ChargePricingCommandAssembler.appendPriceLineIfPresent(items,
             TableNameConstants.MED_MEDICATION_DEFINITION, instanceId, typeCode, ybType,
-            PriceType.SALE.getCode(), retailPrice);
+            PriceType.SALE.getCode(), retailPrice, null);
         ChargePricingCommandAssembler.appendPriceLineIfPresent(items,
             TableNameConstants.MED_MEDICATION_DEFINITION, instanceId, typeCode, ybType,
-            PriceType.LIMIT.getCode(), maximumRetailPrice);
+            PriceType.LIMIT.getCode(), maximumRetailPrice, null);
         if (items.isEmpty()) {
             return;
         }
@@ -629,10 +726,9 @@ public class MedicationCatalogAppService {
      */
     private void applyDefaultOrganizationIdForCreate(CreateMedicationCatalogRequest request) {
         if (request.getOrgId() == null) {
-            request.setOrgId(currentUser.getCurrentOrganizationUnitId());
-        }
-        if (request.getOrgId() == null) {
-            throw new ValidationException("新增药品目录失败：未选择机构上下文，请先在系统中选择科室/机构");
+            request.setOrgId(managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+                "MED-CAT-VAL-ORG",
+                "新增药品目录失败：未选择机构上下文，请先在系统中选择科室/机构"));
         }
     }
 

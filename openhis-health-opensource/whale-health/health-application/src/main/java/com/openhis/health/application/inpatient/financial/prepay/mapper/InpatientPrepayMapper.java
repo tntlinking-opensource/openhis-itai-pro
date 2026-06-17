@@ -18,7 +18,7 @@
 package com.openhis.health.application.inpatient.financial.prepay.mapper;
 
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayPaymentRecordDto;
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayQueueItemDto;
 import com.openhis.health.application.inpatient.financial.prepay.request.CollectPrepayAdvanceDepositRequest;
 import com.openhis.health.application.inpatient.financial.prepay.request.PagePrepayPatientQueueRequest;

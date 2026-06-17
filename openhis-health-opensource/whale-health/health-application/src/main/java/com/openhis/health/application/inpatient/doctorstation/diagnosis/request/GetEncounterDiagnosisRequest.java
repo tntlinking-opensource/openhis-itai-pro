@@ -31,6 +31,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-查询就诊诊断信息请求。 */
 @Schema(description = "医生站-查询就诊诊断信息请求")
 public class GetEncounterDiagnosisRequest {
 
