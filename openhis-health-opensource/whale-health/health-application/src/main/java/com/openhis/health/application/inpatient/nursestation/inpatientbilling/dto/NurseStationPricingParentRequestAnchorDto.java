@@ -28,14 +28,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医嘱补费父锚点。 */
 @Schema(description = "医嘱补费父锚点")
 public class NurseStationPricingParentRequestAnchorDto {
 
-    /** 父医嘱类型：MED_REQUEST / SERVICE_REQUEST。 */
     @Schema(description = "父医嘱类型：MED_REQUEST / SERVICE_REQUEST", requiredMode = Schema.RequiredMode.REQUIRED)
     private String orderType;
 
-    /** 父药品/诊疗申请主键。 */
     @Schema(description = "父药品/诊疗申请主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long requestId;

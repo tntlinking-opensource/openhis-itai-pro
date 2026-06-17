@@ -22,7 +22,6 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -57,6 +56,10 @@ public class CreateServiceRequestDraftCommand extends BatchCommand<CreateService
          * 诊断定义主键（门诊医生站绑定诊断；持久化 {@code wkf_service_request.condition_definition_id}）。
          */
         private Long conditionDefinitionId;
+        /**
+         * 就诊诊断主键（医生站绑定诊断；持久化 {@code wkf_service_request.encounter_diagnosis_id}）。
+         */
+        private Long encounterDiagnosisId;
         /** 用药频次编码（长期诊疗必填；持久化 {@code wkf_service_request.rate_code}）。 */
         private String rateCode;
         /** 执行科室（持久化 {@code wkf_service_request.org_id}）。 */
@@ -65,20 +68,19 @@ public class CreateServiceRequestDraftCommand extends BatchCommand<CreateService
         private Long locationId;
         /** 费用性质覆盖（持久化 {@code wkf_service_request.contract_id}）。 */
         private Long contractId;
+        /** 申请单/处方号（持久化 {@code wkf_service_request.prescription_no}）。 */
+        private String prescriptionNo;
     }
 
-    /**
-     * 明细行子命令（用于 detailJson 组装或结构化承载）。
-     */
+    /** 明细行子命令（每行一个 target_table + target_id 引用）。 */
     @Getter
     @Setter
     public static class DetailItemCommand {
-        private Long bodySiteId;
-        private Long reasonCodeId;
-        private String instruction;
-        private Integer priority;
-        private LocalDateTime scheduledTime;
-        private Long performerId;
-        private Long locationId;
+        /** 明细目标表名。 */
+        private String targetTable;
+        /** 明细目标表主键。 */
+        private Long targetId;
+        /** 备注。 */
+        private String remark;
     }
 }

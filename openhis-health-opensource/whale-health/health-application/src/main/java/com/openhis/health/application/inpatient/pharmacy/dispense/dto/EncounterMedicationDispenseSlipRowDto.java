@@ -35,10 +35,10 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
+/** 住院药品发药单行。 */
 @Schema(description = "住院药品发药单行")
 public class EncounterMedicationDispenseSlipRowDto {
 
-    /** 住院就诊主键。 */
     @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;

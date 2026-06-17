@@ -17,6 +17,8 @@
 
 package com.openhis.health.application.outpatient.doctorstation.inpatientadmission.service;
 
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.inpatient.financial.registration.support.EncounterInpatientAdmissionWriteSupport;
 import com.openhis.health.application.outpatient.doctorstation.inpatientadmission.dto.AdmissionDiagnosisSubmitDto;
 import com.openhis.health.application.outpatient.doctorstation.inpatientadmission.mapper.DoctorStationInpatientAdmissionMapper;
 import com.openhis.health.application.outpatient.doctorstation.inpatientadmission.request.CheckInpatientAdmissionExistsRequest;
@@ -36,7 +38,6 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -45,7 +46,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 门诊医生站住院申请编排：门急诊转住院、防重校验与意向科室/病区选点。
+ * 门诊医生站住院申请编排：门诊转住院、防重校验与意向科室/病区选点。
  */
 @Slf4j
 @Service
@@ -54,10 +55,11 @@ public class DoctorStationInpatientAdmissionAppService {
 
     private final EncounterQueryService encounterQueryService;
     private final EncounterDomainService encounterDomainService;
+    private final EncounterInpatientAdmissionWriteSupport encounterInpatientAdmissionWriteSupport;
     private final OrganizationQueryService organizationQueryService;
     private final LocationQueryService locationQueryService;
     private final DoctorStationInpatientAdmissionMapper doctorStationInpatientAdmissionMapper;
-    private final ICurrentUser currentUser;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
 
     /**
      * 发起住院申请（INSERT 新 IMP+PLANNED 住院线，不修改源门诊就诊）。
@@ -69,7 +71,7 @@ public class DoctorStationInpatientAdmissionAppService {
     public RequestInpatientAdmissionResponse requestInpatientAdmission(RequestInpatientAdmissionRequest request) {
         this.validateRequestInpatientAdmissionRequest(request);
         Long ambEncounterId = request.getAmbEncounterId();
-        // 加载源就诊并断言其为可转住院的门急诊线（BR-IP-REQ-001）。
+        // 加载源就诊并断言其为可转住院的门诊线（BR-IP-REQ-001）。
         EncounterDetailQueryModel ambEncounter = encounterQueryService.mustGetEncounter(ambEncounterId);
         encounterQueryService.assertAmbForInpatientReq(ambEncounterId);
         Long resolvedPatientId = ambEncounter.getPatientId();
@@ -93,6 +95,13 @@ public class DoctorStationInpatientAdmissionAppService {
         RequestInpatientAdmissionCommand command =
             doctorStationInpatientAdmissionMapper.toRequestInpatientAdmissionCommand(request, resolvedPatientId);
         Long inpatientEncounterId = encounterDomainService.requestInpatientAdmission(command);
+        RequestInpatientAdmissionCommand.RequestInpatientAdmissionItemCommand admissionItem =
+            command.resolveItems().get(0);
+        encounterInpatientAdmissionWriteSupport.saveAdmissionDiagnoses(
+            resolvedPatientId,
+            inpatientEncounterId,
+            admissionItem.getAdmissionDiagnoses(),
+            command.getOperatorId());
         // 回读新建住院线的业务号（BR-IP-REQ-009 独立住院前缀），供前端展示住院号。
         OpenInpatientLineQuery createdLine = encounterQueryService.findOpenInpatientLine(ambEncounterId);
         if (!createdLine.isExists() || createdLine.getBusNo() == null) {
@@ -105,7 +114,7 @@ public class DoctorStationInpatientAdmissionAppService {
             inpatientEncounterId,
             request.getRequestDoctorId(),
             request.getOperatorId(),
-            currentUser.getCurrentPractitionerId()
+            currentPractitionerResolver.findPractitionerIdOrNull()
         );
         return doctorStationInpatientAdmissionMapper.toRequestInpatientAdmissionResponse(
             inpatientEncounterId,

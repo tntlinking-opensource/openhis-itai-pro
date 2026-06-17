@@ -22,8 +22,11 @@ import com.openhis.health.domain.medication.medicationrequest.queries.model.Medi
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestFifoSignContext;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestHistoryQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
-import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
+import com.openhis.health.domain.medication.medicationrequest.queries.model.TcmHerbalPrescriptionGroupQueryModel;
+import com.openhis.health.domain.medication.medicationrequest.queries.model.TcmHerbalPrescriptionHistoryGroupQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.repository.MedicationRequestRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
@@ -40,6 +43,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -54,7 +58,6 @@ import java.util.Map;
 public class MedicationRequestQueryService {
 
     private final MedicationRequestRepository medicationRequestRepository;
-    private final MedicationDefinitionQueryService medicationDefinitionQueryService;
 
 
     /**
@@ -74,6 +77,56 @@ public class MedicationRequestQueryService {
      * @param requestId 药品申请主键
      * @return 药品定义主键或 null
      */
+    /**
+     * 按主键加载药品申请（不存在或已软删时 {@code null}）。
+     *
+     * @param id 药品申请主键
+     * @return 药品申请或 {@code null}
+     */
+    public MedicationRequest findById(Long id) {
+        if (id == null) {
+            return null;
+        }
+        MedicationRequest request = medicationRequestRepository.findById(id).orElse(null);
+        if (request == null || Boolean.TRUE.equals(request.getIsDeleted())) {
+            return null;
+        }
+        return request;
+    }
+
+    /**
+     * 按主键集合批量加载未软删药品申请。
+     *
+     * @param ids 主键集合
+     * @return 药品申请列表
+     */
+    public List<MedicationRequest> listByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<MedicationRequest> rows = medicationRequestRepository.findAllById(ids);
+        List<MedicationRequest> result = new ArrayList<>();
+        for (MedicationRequest row : rows) {
+            if (row != null && !Boolean.TRUE.equals(row.getIsDeleted())) {
+                result.add(row);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 判断药品是否被有效药品申请引用。
+     *
+     * @param medicationId 药品定义主键
+     * @return 存在引用时为 true
+     */
+    public boolean existsByMedicationId(Long medicationId) {
+        if (medicationId == null) {
+            return false;
+        }
+        return medicationRequestRepository.existsByMedicationId(medicationId);
+    }
+
     public Long resolveMedicationDefinitionId(Long requestId) {
         if (requestId == null) {
             return null;
@@ -101,10 +154,7 @@ public class MedicationRequestQueryService {
         ctx.setPatientId(request.getPatientId());
         ctx.setQuantity(request.getQuantity());
         ctx.setUnitCode(request.getUnitCode());
-        if (request.getMedicationId() != null) {
-            ctx.setCatalogCategoryCode(
-                this.medicationDefinitionQueryService.resolveCategoryCodeByMedicationDefinitionId(request.getMedicationId()));
-        }
+        ctx.setMethodCode(request.getMethodCode());
         return ctx;
     }
 
@@ -186,6 +236,243 @@ public class MedicationRequestQueryService {
         // Loop：遍历医生站来源过滤后的药品申请，逐条转换为列表展示模型
         for (MedicationRequest request : requests) {
             result.add(this.toListModel(request));
+        }
+        return result;
+    }
+
+    /**
+     * 按就诊查询中药饮片处方列表（按方聚合：已签发按 {@code prescription_no}，草稿按 {@code content_json.prescriptionGroupKey}）。
+     *
+     * @param encounterId          就诊标识
+     * @param generateSourceEnum   生成来源码（医生站通常为 {@link GenerateSource#DOCTOR_PRESCRIPTION}）
+     * @return 按方聚合的中医处方读模型；无数据时返回空列表
+     */
+    public List<TcmHerbalPrescriptionGroupQueryModel> listTcmHerbalPrescriptionsByEncounter(
+        Long encounterId, String generateSourceEnum) {
+        if (encounterId == null || generateSourceEnum == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                "查询就诊中药处方时 encounterId 与 generateSourceEnum 不能为空");
+        }
+        List<MedicationRequest> requests = medicationRequestRepository.findByEncounterIdAndGenerateSourceEnum(
+            encounterId, generateSourceEnum);
+        List<MedicationRequestListQueryModel> tcmLines = new ArrayList<>();
+        // Pre：医生开立来源下再筛 tcm_flag，排除软删行。
+        for (MedicationRequest request : requests) {
+            if (request == null || Boolean.TRUE.equals(request.getIsDeleted())) {
+                continue;
+            }
+            if (!Boolean.TRUE.equals(request.getTcmFlag())) {
+                continue;
+            }
+            tcmLines.add(this.toListModel(request));
+        }
+        // Asm：按 prescription_no 或 content_json.prescriptionGroupKey 聚合为方。
+        return this.groupTcmHerbalPrescriptionLines(tcmLines);
+    }
+
+    /**
+     * 查询患者历史中药处方（排除当前就诊，按处方号聚合）。
+     *
+     * @param patientId          患者标识
+     * @param currentEncounterId 当前就诊标识（排除）
+     * @return 历史方摘要列表；无数据时返回空列表
+     */
+    public List<TcmHerbalPrescriptionHistoryGroupQueryModel> listTcmHerbalPrescriptionHistoryByPatient(
+        Long patientId, Long currentEncounterId) {
+        if (patientId == null || currentEncounterId == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                "查询患者历史中药处方时 patientId 与 currentEncounterId 不能为空");
+        }
+        List<MedicationRequest> requests = medicationRequestRepository.findByPatientIdAndEncounterIdNot(
+            patientId, currentEncounterId);
+        Map<String, TcmHerbalPrescriptionHistoryGroupQueryModel> grouped = new LinkedHashMap<>();
+        // Pre：仅保留医生开立、已签发（有 prescription_no）的中医饮片行。
+        for (MedicationRequest request : requests) {
+            if (request == null || Boolean.TRUE.equals(request.getIsDeleted())) {
+                continue;
+            }
+            if (!Boolean.TRUE.equals(request.getTcmFlag())) {
+                continue;
+            }
+            if (!GenerateSource.DOCTOR_PRESCRIPTION.getCode().equals(request.getGenerateSourceEnum())) {
+                continue;
+            }
+            if (StringUtils.isBlank(request.getPrescriptionNo())) {
+                continue;
+            }
+            String groupKey = request.getEncounterId() + "|" + request.getPrescriptionNo().trim();
+            TcmHerbalPrescriptionHistoryGroupQueryModel group = grouped.get(groupKey);
+            if (group == null) {
+                group = new TcmHerbalPrescriptionHistoryGroupQueryModel();
+                group.setPrescriptionNo(request.getPrescriptionNo().trim());
+                group.setEncounterId(request.getEncounterId());
+                group.setReqAuthoredTime(request.getReqAuthoredTime());
+                group.setLineCount(0);
+                grouped.put(groupKey, group);
+            }
+            if (request.getMedicationId() != null) {
+                group.getMedicationIds().add(request.getMedicationId());
+            }
+            group.setLineCount(group.getLineCount() + 1);
+            if (request.getReqAuthoredTime() != null) {
+                if (group.getReqAuthoredTime() == null || request.getReqAuthoredTime().isBefore(group.getReqAuthoredTime())) {
+                    group.setReqAuthoredTime(request.getReqAuthoredTime());
+                }
+            }
+        }
+        return new ArrayList<>(grouped.values());
+    }
+
+    /**
+     * 发药单筛选：在患者范围内解析状态落在集合内的药品申请主键（可排除指定就诊）。
+     *
+     * @param patientId          患者主键
+     * @param excludeEncounterId 排除的就诊主键；{@code null} 表示患者下全部就诊
+     * @param statusEnumsIn      请求状态 code 集合
+     * @return 药品申请主键；入参无法构成范围时返回空列表
+     */
+    public List<Long> listMedicationRequestIdsByPatientScopeAndStatusIn(
+        Long patientId,
+        Long excludeEncounterId,
+        Collection<String> statusEnumsIn) {
+        if (patientId == null) {
+            return Collections.emptyList();
+        }
+        List<String> statuses = this.normalizeStatusEnumIn(statusEnumsIn);
+        if (statuses.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Specification<MedicationRequest> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(statuses));
+            predicates.add(cb.equal(root.get(FieldNameConstants.PATIENT_ID), patientId));
+            if (excludeEncounterId != null) {
+                predicates.add(cb.notEqual(root.get(FieldNameConstants.ENCOUNTER_ID), excludeEncounterId));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<MedicationRequest> rows = this.medicationRequestRepository.findAll(specification);
+        List<Long> ids = new ArrayList<>();
+        for (MedicationRequest row : rows) {
+            if (row != null && row.getId() != null) {
+                ids.add(row.getId());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * 发药单筛选：在患者范围内解析指定开单科室的药品申请主键（可排除指定就诊）。
+     *
+     * @param patientId            患者主键
+     * @param excludeEncounterId   排除的就诊主键；{@code null} 表示患者下全部就诊
+     * @param orderingDepartmentId 开单科室组织主键（药嘱 {@code org_id}，{@code adm_organization.id}）
+     * @return 药品申请主键；入参无法构成范围时返回空列表
+     */
+    public List<Long> listMedicationRequestIdsByPatientScopeAndOrgId(
+        Long patientId,
+        Long excludeEncounterId,
+        Long orderingDepartmentId) {
+        if (patientId == null || orderingDepartmentId == null) {
+            return Collections.emptyList();
+        }
+        Specification<MedicationRequest> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.PATIENT_ID), patientId));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ORG_ID), orderingDepartmentId));
+            if (excludeEncounterId != null) {
+                predicates.add(cb.notEqual(root.get(FieldNameConstants.ENCOUNTER_ID), excludeEncounterId));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<MedicationRequest> rows = this.medicationRequestRepository.findAll(specification);
+        List<Long> ids = new ArrayList<>();
+        for (MedicationRequest row : rows) {
+            if (row != null && row.getId() != null) {
+                ids.add(row.getId());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * 发药单筛选：在单就诊范围内解析指定开单科室的药品申请主键。
+     *
+     * @param encounterId          就诊主键
+     * @param orderingDepartmentId 开单科室组织主键（药嘱 {@code org_id}，{@code adm_organization.id}）
+     * @return 药品申请主键；入参无法构成范围时返回空列表
+     */
+    public List<Long> listMedicationRequestIdsByEncounterAndOrgId(
+        Long encounterId,
+        Long orderingDepartmentId) {
+        if (encounterId == null || orderingDepartmentId == null) {
+            return Collections.emptyList();
+        }
+        Specification<MedicationRequest> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ENCOUNTER_ID), encounterId));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ORG_ID), orderingDepartmentId));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<MedicationRequest> rows = this.medicationRequestRepository.findAll(specification);
+        List<Long> ids = new ArrayList<>();
+        for (MedicationRequest row : rows) {
+            if (row != null && row.getId() != null) {
+                ids.add(row.getId());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * 发药单筛选：在多就诊范围内解析指定开单科室的药品申请主键。
+     *
+     * @param encounterIdsScope    就诊主键集合
+     * @param orderingDepartmentId 开单科室组织主键（药嘱 {@code org_id}，{@code adm_organization.id}）
+     * @return 药品申请主键；入参无法构成范围时返回空列表
+     */
+    public List<Long> listMedicationRequestIdsByEncounterIdsAndOrgId(
+        Collection<Long> encounterIdsScope,
+        Long orderingDepartmentId) {
+        if (encounterIdsScope == null || encounterIdsScope.isEmpty() || orderingDepartmentId == null) {
+            return Collections.emptyList();
+        }
+        Specification<MedicationRequest> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(root.get(FieldNameConstants.ENCOUNTER_ID).in(encounterIdsScope));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ORG_ID), orderingDepartmentId));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<MedicationRequest> rows = this.medicationRequestRepository.findAll(specification);
+        List<Long> ids = new ArrayList<>();
+        for (MedicationRequest row : rows) {
+            if (row != null && row.getId() != null) {
+                ids.add(row.getId());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * 按药品申请主键批量加载列表展示模型（发药 slip 跨就诊装配复用）。
+     *
+     * @param ids 药品申请主键集合
+     * @return 列表模型；无命中时返回空列表
+     */
+    public List<MedicationRequestListQueryModel> listMedicationRequestListModelsByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<MedicationRequest> requests = this.listByIds(ids);
+        List<MedicationRequestListQueryModel> result = new ArrayList<>();
+        for (MedicationRequest request : requests) {
+            if (request != null) {
+                result.add(this.toListModel(request));
+            }
         }
         return result;
     }
@@ -274,8 +561,10 @@ public class MedicationRequestQueryService {
         model.setDoseUnitCode(request.getDoseUnitCode());
         model.setLotNumber(request.getLotNumber());
         model.setDispensePerDuration(request.getDispensePerDuration());
+        model.setOrgId(request.getOrgId());
         model.setPerformLocation(request.getPerformLocation());
         model.setConditionDefinitionId(request.getConditionDefinitionId());
+        model.setEncounterDiagnosisId(request.getEncounterDiagnosisId());
         model.setRemark(request.getRemark());
         model.setContentJson(request.getContentJson());
         model.setRxTypeCode(request.getRxTypeCode());
@@ -297,9 +586,41 @@ public class MedicationRequestQueryService {
     }
 
     /**
+     * 医生站历史医嘱：在患者范围内收集存在医生开立药嘱的就诊主键（排除当前就诊）。
+     *
+     * @param patientId          患者主键
+     * @param excludeEncounterId 当前就诊（排除锚点）
+     * @return 历史就诊主键（去重、无序）
+     */
+    public List<Long> listDistinctEncounterIdsByPatientForDoctorStation(Long patientId, Long excludeEncounterId) {
+        // 前置：门控主键缺失时无法收窄历史范围，直接返回空集。
+        if (patientId == null || excludeEncounterId == null) {
+            return Collections.emptyList();
+        }
+        String doctorSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
+        Specification<MedicationRequest> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.PATIENT_ID), patientId));
+            predicates.add(cb.notEqual(root.get(FieldNameConstants.ENCOUNTER_ID), excludeEncounterId));
+            predicates.add(cb.equal(root.get(FieldNameConstants.GENERATE_SOURCE_ENUM), doctorSource));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<MedicationRequest> rows = medicationRequestRepository.findAll(specification);
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        // Loop：从医生开立药嘱行提取就诊 id，LinkedHashSet 保序去重。
+        for (MedicationRequest row : rows) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        return new ArrayList<>(encounterIds);
+    }
+
+    /**
      * 查询患者历史药品申请（排除当前就诊）。
      *
-     * @param patientId 患者标识
+     * @param patientId          患者标识
      * @param currentEncounterId 当前就诊标识
      * @return 历史药品申请集合
      */
@@ -563,5 +884,109 @@ public class MedicationRequestQueryService {
         model.setExecuteNum(request.getExecuteNum());
         model.setUnitCode(request.getUnitCode());
         return model;
+    }
+
+    /**
+     * 将扁平行中药饮片列表按方聚合为 {@link TcmHerbalPrescriptionGroupQueryModel}。
+     *
+     * @param tcmLines 已过滤 tcm_flag 的列表行
+     * @return 按方分组结果（保持插入顺序）
+     */
+    private List<TcmHerbalPrescriptionGroupQueryModel> groupTcmHerbalPrescriptionLines(
+        List<MedicationRequestListQueryModel> tcmLines) {
+        Map<String, TcmHerbalPrescriptionGroupQueryModel> grouped = new LinkedHashMap<>();
+        for (MedicationRequestListQueryModel line : tcmLines) {
+            if (line == null || line.getId() == null) {
+                continue;
+            }
+            String groupKey = this.resolveTcmPrescriptionGroupKey(line);
+            TcmHerbalPrescriptionGroupQueryModel group = grouped.get(groupKey);
+            if (group == null) {
+                group = new TcmHerbalPrescriptionGroupQueryModel();
+                group.setPrescriptionGroupKey(this.readTcmContentJsonTextField(line.getContentJson(), "prescriptionGroupKey"));
+                group.setPrescriptionNo(line.getPrescriptionNo());
+                group.setTcmSyndromeGroup(this.readTcmContentJsonTextField(line.getContentJson(), "tcmSyndromeGroup"));
+                group.setChineseHerbsDoseQuantity(line.getChineseHerbsDoseQuantity());
+                group.setSufferingFlag(line.getSufferingFlag());
+                group.setMethodCode(line.getMethodCode());
+                // 方头用药频次取组内首行 rate_code，与 methodCode 同源
+                group.setRateCode(line.getRateCode());
+                group.setDispensePerDuration(line.getDispensePerDuration());
+                group.setRemark(line.getRemark());
+                group.setRxTypeCode(line.getRxTypeCode());
+                group.setStatusEnum(line.getStatusEnum());
+                group.setReqAuthoredTime(line.getReqAuthoredTime());
+                grouped.put(groupKey, group);
+            }
+            group.getLines().add(line);
+            group.setStatusEnum(this.mergeTcmPrescriptionStatusEnum(group.getStatusEnum(), line.getStatusEnum()));
+            if (line.getReqAuthoredTime() != null) {
+                if (group.getReqAuthoredTime() == null || line.getReqAuthoredTime().isBefore(group.getReqAuthoredTime())) {
+                    group.setReqAuthoredTime(line.getReqAuthoredTime());
+                }
+            }
+        }
+        return new ArrayList<>(grouped.values());
+    }
+
+    /**
+     * 解析单行所属处方分组键：已签发优先 prescription_no，草稿用 content_json 中的 prescriptionGroupKey。
+     */
+    private String resolveTcmPrescriptionGroupKey(MedicationRequestListQueryModel line) {
+        if (StringUtils.isNotBlank(line.getPrescriptionNo())) {
+            return "RX:" + line.getPrescriptionNo().trim();
+        }
+        String prescriptionGroupKey = this.readTcmContentJsonTextField(line.getContentJson(), "prescriptionGroupKey");
+        if (StringUtils.isNotBlank(prescriptionGroupKey)) {
+            return "KEY:" + prescriptionGroupKey.trim();
+        }
+        return "ROW:" + line.getId();
+    }
+
+    /**
+     * 合并方内多行状态：ACTIVE 优先于 DRAFT，COMPLETED 优先于 ACTIVE。
+     */
+    private String mergeTcmPrescriptionStatusEnum(String current, String incoming) {
+        if (StringUtils.isBlank(current)) {
+            return incoming;
+        }
+        if (StringUtils.isBlank(incoming)) {
+            return current;
+        }
+        if (RequestStatus.COMPLETED.getCode().equals(current) || RequestStatus.COMPLETED.getCode().equals(incoming)) {
+            return RequestStatus.COMPLETED.getCode();
+        }
+        if (RequestStatus.ACTIVE.getCode().equals(current) || RequestStatus.ACTIVE.getCode().equals(incoming)) {
+            return RequestStatus.ACTIVE.getCode();
+        }
+        return current;
+    }
+
+    /**
+     * 从中药 {@code content_json} 读取顶层文本字段（如 {@code prescriptionGroupKey}，该 key 不落独立库列）。
+     *
+     * @param contentJson 扩展 JSON
+     * @param fieldName   字段名
+     * @return 非空文本；解析失败或未命中时返回 null
+     */
+    private String readTcmContentJsonTextField(String contentJson, String fieldName) {
+        if (StringUtils.isBlank(contentJson) || StringUtils.isBlank(fieldName)) {
+            return null;
+        }
+        try {
+            JsonNode root = new ObjectMapper().readTree(contentJson);
+            JsonNode node = root.get(fieldName);
+            if (node == null || node.isNull()) {
+                return null;
+            }
+            String text = node.asText(null);
+            if (StringUtils.isBlank(text)) {
+                return null;
+            }
+            return text.trim();
+        } catch (Exception ignored) {
+            // 读侧解析失败时返回 null，由 resolveTcmPrescriptionGroupKey 按处方号或行 id 兜底。
+            return null;
+        }
     }
 }

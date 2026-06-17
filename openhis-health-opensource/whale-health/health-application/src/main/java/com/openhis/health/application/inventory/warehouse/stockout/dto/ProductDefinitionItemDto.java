@@ -20,20 +20,23 @@ package com.openhis.health.application.inventory.warehouse.stockout.dto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.domain.share.enums.PriceType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 出库选品分页行。 */
 @Schema(description = "出库选品分页行")
 public class ProductDefinitionItemDto {
 
@@ -43,6 +46,7 @@ public class ProductDefinitionItemDto {
 
     /** 产品定义主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 产品定义主键。 */
     @Schema(description = "产品定义主键")
     private Long productDefinitionId;
 
@@ -68,6 +72,7 @@ public class ProductDefinitionItemDto {
 
     /** 该批效期（展示用时间点）。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 效期。 */
     @Schema(description = "效期")
     private LocalDateTime expirationDate;
 
@@ -85,6 +90,7 @@ public class ProductDefinitionItemDto {
 
     /** 库存项主键，用于出库行回写引用。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 库存行主键。 */
     @Schema(description = "库存行主键")
     private Long inventoryItemId;
 }

@@ -29,34 +29,27 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-删除就诊诊断请求。 */
 @Schema(description = "医生站-删除就诊诊断请求")
-/**
- * DeleteEncounterDiagnosisRequest。
- */
 public class DeleteEncounterDiagnosisRequest {
 
     /** 待删除的诊断事实主键。 */
     @NotNull(message = "诊断标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "诊断事实标识", requiredMode = Schema.RequiredMode.REQUIRED)
-    /**
-     * conditionId。
-     */
     private Long conditionId;
 
     /** 当前就诊主键（用于解除关联与上下文校验）。 */
     @NotNull(message = "就诊标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 就诊标识。 */
     @Schema(description = "就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
-    /**
-     * encounterId。
-     */
     private Long encounterId;
 
     /**
-     * 患者主键（急诊工作站门控必填；门诊删除接口可不传）。
+     * 患者主键（门控必填；门诊删除接口可不传）。
      */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "患者标识；急诊删除时用于就诊一致性校验")
+    @Schema(description = "患者标识；删除时用于就诊一致性校验")
     private Long patientId;
 }

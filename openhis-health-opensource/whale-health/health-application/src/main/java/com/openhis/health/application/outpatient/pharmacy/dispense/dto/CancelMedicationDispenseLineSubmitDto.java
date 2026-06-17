@@ -30,6 +30,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 作废发放提交行。 */
 @Schema(description = "作废发放提交行")
 public class CancelMedicationDispenseLineSubmitDto {
 
@@ -41,6 +42,7 @@ public class CancelMedicationDispenseLineSubmitDto {
 
     /** 未发药原因枚举 code。 */
     @NotBlank(message = "作废原因不能为空")
+    /** 未发药原因枚举 code。 */
     @Schema(description = "未发药原因枚举 code", requiredMode = Schema.RequiredMode.REQUIRED)
     private String notPerformedReasonEnum;
 }

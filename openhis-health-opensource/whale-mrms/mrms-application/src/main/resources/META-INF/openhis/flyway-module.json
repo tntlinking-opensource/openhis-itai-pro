@@ -1,0 +1,6 @@
+{
+  "moduleId": "mrms",
+  "enabledProperty": "openhis.modules.mrms.enabled",
+  "locations": "classpath:db/migration/mrms",
+  "historyTable": "flyway_schema_history_mrms"
+}

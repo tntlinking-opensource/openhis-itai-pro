@@ -35,6 +35,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 已划价列表请求。 */
 @Schema(description = "已划价列表请求")
 public class ListNurseStationPricedOrdersRequest {
 
@@ -45,16 +46,19 @@ public class ListNurseStationPricedOrdersRequest {
 
     /** 划价时间下限（含，对应 OrderInfo.createdAt）。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 划价时间起。 */
     @Schema(description = "划价时间起")
     private LocalDateTime pricedTimeFrom;
 
     /** 划价时间上限（含）。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 划价时间止。 */
     @Schema(description = "划价时间止")
     private LocalDateTime pricedTimeTo;
 
     /** 父医嘱 requestId；仅返回 based_on 指向该父的补费划价行。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 父医嘱 id 过滤。 */
     @Schema(description = "父医嘱 id 过滤（补费子行）")
     private Long parentRequestId;
 }

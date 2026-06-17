@@ -22,6 +22,7 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 撤回药房入库审批请求（IF-PHA-IN-07）。
@@ -29,6 +30,7 @@ import lombok.experimental.Accessors;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 撤回药房入库审批 IF-PHA-IN-07。 */
 @Schema(description = "撤回药房入库审批 IF-PHA-IN-07", requiredProperties = {"busNo"})
 public class WithdrawPharmacyStockInApprovalRequest {
 

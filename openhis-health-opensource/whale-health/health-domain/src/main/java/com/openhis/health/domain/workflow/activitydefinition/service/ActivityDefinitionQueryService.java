@@ -117,6 +117,41 @@ public class ActivityDefinitionQueryService {
     }
 
     /**
+     * 按诊疗项目名称精确解析唯一主键。
+     *
+     * <p>用于皮试检查等固定名称场景（{@code GeneralSharedConstants.SKIN_TEST_INSPECTION_ACTIVITY_NAME}）。</p>
+     *
+     * @param name 诊疗项目名称（精确匹配 {@code wkf_activity_definition.name}）
+     * @return 唯一主键
+     */
+    public Long requireIdByExactName(String name) {
+        if (StringUtils.isBlank(name)) {
+            throw new BusinessException(
+                ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT,
+                "诊疗项目名称不能为空");
+        }
+        String trimmed = name.trim();
+        Specification<ActivityDefinition> specification = (root, cq, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.NAME), trimmed));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<ActivityDefinition> definitions = activityDefinitionRepository.findAll(specification);
+        if (definitions.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.ACTIVITY_DEFINITION_NOT_FOUND,
+                "未找到诊疗项目：" + trimmed);
+        }
+        if (definitions.size() > 1) {
+            throw new BusinessException(
+                ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT,
+                "诊疗项目名称不唯一：" + trimmed);
+        }
+        return definitions.get(0).getId();
+    }
+
+    /**
      * 关键字检索。
      *
      * @param keyword 关键字
@@ -209,9 +244,9 @@ public class ActivityDefinitionQueryService {
         }
 
         // DOC-CONFLICT: DM/SDD 未定义“不可编辑条件”的完整规则，此处只做基础兜底判断。
-        if (PublicationStatus.RETIRED.getCode().equals(definition.getStatusEnum())) {
+        if (PublicationStatus.INACTIVE.getCode().equals(definition.getStatusEnum())) {
             model.setEditable(Boolean.FALSE);
-            model.setReasonCode("RETIRED");
+            model.setReasonCode("INACTIVE");
             model.setReasonMessage("停用状态的诊疗项目不允许编辑");
             return model;
         }
@@ -280,6 +315,8 @@ public class ActivityDefinitionQueryService {
         model.setBusNo(definition.getBusNo());
         model.setName(definition.getName());
         model.setCategoryCode(definition.getCategoryCode());
+        model.setPackageUnitCode(definition.getPackageUnitCode());
+        model.setDefEncounterUnitCode(definition.getDefEncounterUnitCode());
         model.setTypeEnum(definition.getTypeEnum());
         model.setStatusEnum(definition.getStatusEnum());
         model.setYbFlag(definition.getYbFlag());

@@ -17,7 +17,9 @@
 
 package com.openhis.health.application.inpatient.doctorstation.diagnosis.service;
 
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.mapper.InpatientDoctorStationDiagnosisMapper;
@@ -35,8 +37,6 @@ import com.openhis.health.application.inpatient.doctorstation.diagnosis.response
 import com.openhis.health.domain.administration.encounter.command.BatchUpsertEncounterDiagnosisAssociationCommand;
 import com.openhis.health.domain.administration.encounter.command.RemoveEncounterDiagnosisAssociationCommand;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
-import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.clinical.condition.command.DelEncounterDiagnosisCommand;
 import com.openhis.health.domain.clinical.condition.command.SaveDoctorDiagnosisCommand;
 import com.openhis.health.domain.clinical.condition.entity.Condition;
@@ -46,18 +46,19 @@ import com.openhis.health.domain.clinical.conditiondefinition.queries.model.Doct
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.health.domain.custom.conditiontemplate.queries.model.ConditionTemplateQueryModel;
 import com.openhis.health.domain.custom.conditiontemplate.service.ConditionTemplateQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.application.querysupport.encounter.EncounterDiagnosisSnapshotAssembler;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.bridge.shared.diagnosis.BridgeEncounterDiagnosisSnapshotAssembler;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientDoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.ConditionTemplateBinding;
+import com.openhis.health.domain.share.enums.IptPatientDiseaseDiagType;
+import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -83,14 +84,14 @@ import java.util.Set;
 public class InpatientDoctorStationDiagnosisAppService {
 
     private final EncounterContextFacade encounterContextFacade;
-    private final EncounterDiagnosisSnapshotAssembler encounterDiagnosisSnapshotAssembler;
+    private final BridgeEncounterDiagnosisSnapshotAssembler bridgeEncounterDiagnosisSnapshotAssembler;
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
     private final ConditionTemplateQueryService conditionTemplateQueryService;
     private final ConditionQueryService conditionQueryService;
     private final ConditionDomainService conditionDomainService;
     private final EncounterDomainService encounterDomainService;
-    private final PractitionerQueryService practitionerQueryService;
-    private final ICurrentUser currentUser;
+    private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     private final CurrentOperatorResolver currentOperatorResolver;
     private final CodeSystemQueryService codeSystemQueryService;
     private final InpatientDoctorStationDiagnosisMapper inpatientDoctorStationDiagnosisMapper;
@@ -107,8 +108,8 @@ public class InpatientDoctorStationDiagnosisAppService {
         inpatientDoctorStationDiagnosisMapper.validateInpatientEncounterPatientGate(snapshot, request.getPatientId());
         inpatientDoctorStationDiagnosisMapper.validateInpatientEncounterClassImp(snapshot);
         // 实时扫表拼装诊断行，禁止仅依赖上下文内 diagnosisJson 中转（读模型废止后 §四）。
-        List<EncounterDiagnosisRowDto> rows = inpatientDoctorStationDiagnosisMapper.copyDiagnosisRows(
-            encounterDiagnosisSnapshotAssembler.buildRows(request.getEncounterId()));
+        List<EncounterDiagnosisRowDto> rows = inpatientDoctorStationDiagnosisMapper.parseDiagnosisJson(
+            bridgeEncounterDiagnosisSnapshotAssembler.buildSnapshot(request.getEncounterId()).diagnosisJson());
         return inpatientDoctorStationDiagnosisMapper.toEncounterDiagnosisResponse(rows);
     }
 
@@ -118,16 +119,9 @@ public class InpatientDoctorStationDiagnosisAppService {
      * @return 四类常用诊断树数据（患者历史/医师常用/个人/科室）
      */
     public CommonDiagnosesResponse getConditionDefinitionBusinessClass(GetCommonDiagnosesRequest request) {
-        Long userId = currentUser.getCurrentUserId();
-        Long orgId = currentUser.getCurrentOrganizationUnitId();
-        Practitioner practitioner = null;
-        if (userId != null) {
-            practitioner = practitionerQueryService.findByUserId(userId);
-        }
-        Long practitionerId = null;
-        if (practitioner != null) {
-            practitionerId = practitioner.getId();
-        }
+        Long userId = currentOperatorResolver.findOperatorIdOrNull();
+        Long orgId = managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery();
+        Long practitionerId = currentPractitionerResolver.findPractitionerIdOrNull();
         Map<String, String> sourceLabels = this.buildSourceLabelMap();
         List<CommonDiagnosisRowDto> history = this.buildPatientHistoryCommonRows(request.getPatientId(), sourceLabels);
         List<CommonDiagnosisRowDto> doctorRows = new ArrayList<>();
@@ -148,7 +142,9 @@ public class InpatientDoctorStationDiagnosisAppService {
                 orgId, ConditionTemplateBinding.DEPARTMENT.getCode());
             orgRows = this.mapTemplatesToCommonRows(orgTemplates, sourceLabels);
         }
-        return inpatientDoctorStationDiagnosisMapper.toCommonDiagnosesResponse(history, doctorRows, personalRows, orgRows);
+        return inpatientDoctorStationDiagnosisMapper.toCommonDiagnosesResponse(
+            history, doctorRows, personalRows, orgRows,
+            EnumUtil.toOptions(IptPatientDiseaseDiagType.class));
     }
 
     /**

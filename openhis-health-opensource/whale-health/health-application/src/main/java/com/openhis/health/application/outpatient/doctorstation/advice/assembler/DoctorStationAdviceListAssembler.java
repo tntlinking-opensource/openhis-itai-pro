@@ -17,16 +17,19 @@
 
 package com.openhis.health.application.outpatient.doctorstation.advice.assembler;
 
-import com.openhis.health.application.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.application.common.assembler.advice.AdviceChargeDisplayStatusSupport;
-import com.openhis.health.application.common.assembler.order.OrderCatalogDisplayAssembler;
-import com.openhis.health.application.common.assembler.order.OrderRequestCatalogWarmAssembler;
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.advice.dto.AdvicePackageChildItemDto;
-import com.openhis.health.application.querysupport.advice.AdviceExtensionJsonSupport;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.application.querysupport.order.dto.OrderRequestCatalogWarmContext;
+import com.openhis.health.module.common.assembler.advice.ServiceApplyFormOrchestrationSupport;
+import com.openhis.health.module.common.assembler.advice.TcmMethodCodeDisplaySupport;
+import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
+import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
+import com.openhis.health.module.common.assembler.advice.AdviceChargeDisplayStatusSupport;
+import com.openhis.health.module.common.assembler.order.OrderCatalogDisplayAssembler;
+import com.openhis.health.module.common.assembler.order.OrderRequestCatalogWarmAssembler;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.advice.dto.AdvicePackageChildItemDto;
+import com.openhis.health.module.querysupport.advice.AdviceExtensionJsonSupport;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.order.dto.OrderRequestCatalogWarmContext;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
@@ -49,7 +52,6 @@ import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.ActivityType;
-import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.terminology.entity.Concept;
@@ -60,6 +62,7 @@ import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDef
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestListModel;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQueryService;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestDetailListModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import lombok.RequiredArgsConstructor;
@@ -110,8 +113,12 @@ public class DoctorStationAdviceListAssembler {
     private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
     /** 术语码表 label 批量解析。 */
     private final TerminologyOptionLoader terminologyOptionLoader;
+    /** 频次展示码表：cus_frequency 主数据。 */
+    private final FrequencyOptionLoader frequencyOptionLoader;
     /** 开立/录入医师姓名批量解析。 */
     private final PractitionerQueryService practitionerQueryService;
+    /** 申请单 DTO 与编排 Model 互转。 */
+    private final ServiceApplyFormAssembler serviceApplyFormAssembler;
     /** 术语概念单条回退查询（预热 map 未命中时）。 */
     private final CodeSystemQueryService codeSystemQueryService;
     /** 诊断定义 id → 展示名（药品行 {@link DoctorStationAdviceRowDto#getConditionDefinitionName()}）。 */
@@ -123,7 +130,7 @@ public class DoctorStationAdviceListAssembler {
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
 
     /**
-     * 装配医生站当前就诊下的统一医嘱列表行。
+     * 装配医生站当前就诊下的统一医嘱列表行（IF-DOR-10）。
      *
      * @param encounterId   就诊主键
      * @param patientId     患者主键（契约对齐，与就诊一致性由调用方门控）
@@ -132,10 +139,52 @@ public class DoctorStationAdviceListAssembler {
      * @return 已合并、已排序的列表行
      */
     public List<DoctorStationAdviceRowDto> assembleRows(Long encounterId, Long patientId, Boolean onlyMine, Long currentUserId) {
+        return assembleAdviceQueryRows(encounterId, patientId, onlyMine, currentUserId, null, null, true);
+    }
+
+    /**
+     * IF-DOR-20：装配单就诊下全类型医嘱行，支持可选科室与请求态过滤。
+     *
+     * @param encounterId           就诊主键
+     * @param patientId             患者主键
+     * @param onlyMine              是否仅本人开立
+     * @param currentUserId         当前用户
+     * @param orderingDepartmentId  开单科室；{@code null} 不过滤
+     * @param requestStatusEnumIn   请求态集合；空不过滤
+     * @return 已合并、已排序的列表行
+     */
+    public List<DoctorStationAdviceRowDto> assembleAdviceQueryRows(
+        Long encounterId,
+        Long patientId,
+        Boolean onlyMine,
+        Long currentUserId,
+        Long orderingDepartmentId,
+        List<String> requestStatusEnumIn) {
+        return assembleAdviceQueryRows(
+            encounterId, patientId, onlyMine, currentUserId, orderingDepartmentId, requestStatusEnumIn, false);
+    }
+
+    /**
+     * IF-DOR-10 / IF-DOR-20：装配单就诊下全类型医嘱行，支持可选科室与请求态过滤。
+     *
+     * @param excludeTcmMedication 为 {@code true} 时排除 {@code tcmFlag=true} 的中药饮片行（开立医嘱 Tab 与中药 Tab 分域）
+     */
+    public List<DoctorStationAdviceRowDto> assembleAdviceQueryRows(
+        Long encounterId,
+        Long patientId,
+        Boolean onlyMine,
+        Long currentUserId,
+        Long orderingDepartmentId,
+        List<String> requestStatusEnumIn,
+        boolean excludeTcmMedication) {
         // 前置：三类医嘱按医生站生成来源拉平（与 AS BR-ORD-010 一致：药/材/诊疗均使用医生站来源常量过滤）
         List<MedicationRequestListQueryModel> medicationRows =
             medicationRequestQueryService.listMedicationRequestsByEncounterForDoctorStation(
                 encounterId, GenerateSource.DOCTOR_PRESCRIPTION.getCode());
+        // Pre：开立 Tab 与中医 Tab 分域，排除 tcm_flag=true 饮片行（IF-DOR-10；IF-DOR-20 不过滤）
+        if (excludeTcmMedication) {
+            medicationRows = excludeTcmMedicationRows(medicationRows);
+        }
         List<ServiceRequestListModel> serviceRows =
             serviceRequestQueryService.listServiceRequestsByGenerateSource(
                 encounterId, GenerateSource.DOCTOR_PRESCRIPTION.getCode());
@@ -217,8 +266,9 @@ public class DoctorStationAdviceListAssembler {
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE);
         Map<String, String> methodLabelByCode =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.METHOD_CODE);
-        Map<String, String> rateLabelByCode =
-            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.RATE_CODE);
+        Map<String, String> tcmMethodLabelByCode =
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.TCM_METHOD_CODE);
+        Map<String, String> rateLabelByCode = frequencyOptionLoader.buildRateLabelMap();
         Map<String, String> doseUnitLabelByCode =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DOSE_UNIT);
         Map<String, String> dosageInstructionLabelByCode =
@@ -264,6 +314,17 @@ public class DoctorStationAdviceListAssembler {
         }
         Map<Long, String> fifoLocationNameById = locationQueryService.mapNamesByIds(fifoLocationIds);
 
+        List<Long> applyFormServiceRequestIds = new ArrayList<>();
+        for (ServiceRequestListModel serviceRow : serviceRows) {
+            // 申请单行（AR 前缀）须批量预取 Detail，供列表回填 serviceRequestDetails。
+            if (serviceRow.getId() != null
+                && ServiceApplyFormOrchestrationSupport.isRequisitionApplicationPrescriptionNo(serviceRow.getPrescriptionNo())) {
+                applyFormServiceRequestIds.add(serviceRow.getId());
+            }
+        }
+        Map<Long, List<ServiceRequestDetailListModel>> applyFormDetailsByRequestId =
+            serviceRequestQueryService.mapDetailListModelsByServiceRequestIds(applyFormServiceRequestIds);
+
         List<DoctorStationAdviceRowDto> unifiedRows = new ArrayList<>();
 
         // 装配：药品行——患者可见的医嘱名、剂量频次等由定义+字典拼装，金额来自收费归并
@@ -271,6 +332,11 @@ public class DoctorStationAdviceListAssembler {
             Long medAuthorId = resolveMedicationAuthorId(medicationRow);
             // onlyMine：非当前用户开立的药品行不进入统一列表，避免「只看本人」失效。
             if (Boolean.TRUE.equals(onlyMine) && currentUserId != null && !currentUserId.equals(medAuthorId)) {
+                continue;
+            }
+            if (!matchesAdviceQuerySourceFilter(
+                medicationRow.getOrgId(), medicationRow.getStatusEnum(), orderingDepartmentId, requestStatusEnumIn)) {
+                // IF-DOR-20 可选过滤：开单科室或发布态不匹配时跳过本药品行。
                 continue;
             }
             DoctorStationAdviceRowDto line = new DoctorStationAdviceRowDto();
@@ -296,7 +362,8 @@ public class DoctorStationAdviceListAssembler {
             line.setDoseUnitName(ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
                 doseUnitLabelByCode, medicationRow.getDoseUnitCode(), medProduct));
             line.setMethodCode(medicationRow.getMethodCode());
-            line.setMethodName(OrderCatalogDisplayAssembler.resolveCategoryDisplay(methodLabelByCode, medicationRow.getMethodCode()));
+            line.setMethodName(TcmMethodCodeDisplaySupport.resolveMethodDisplayName(
+                tcmMethodLabelByCode, methodLabelByCode, medicationRow.getTcmFlag(), medicationRow.getMethodCode()));
             line.setRateCode(medicationRow.getRateCode());
             line.setRateName(OrderCatalogDisplayAssembler.resolveCategoryDisplay(rateLabelByCode, medicationRow.getRateCode()));
             line.setLotNumber(medicationRow.getLotNumber());
@@ -315,6 +382,7 @@ public class DoctorStationAdviceListAssembler {
             line.setInjectionFlag(medicationRow.getInfusionFlag());
             line.setInjectionFlagText(formatYesNoChinese(medicationRow.getInfusionFlag()));
             line.setConditionDefinitionId(medicationRow.getConditionDefinitionId());
+            line.setEncounterDiagnosisId(medicationRow.getEncounterDiagnosisId());
             if (medicationRow.getConditionDefinitionId() != null) {
                 line.setConditionDefinitionName(
                     conditionDefinitionDisplayByDefinitionId.get(medicationRow.getConditionDefinitionId()));
@@ -351,6 +419,11 @@ public class DoctorStationAdviceListAssembler {
             if (Boolean.TRUE.equals(onlyMine) && currentUserId != null && !currentUserId.equals(serviceRow.getRequesterId())) {
                 continue;
             }
+            if (!matchesAdviceQuerySourceFilter(
+                serviceRow.getOrgId(), serviceRow.getStatusEnum(), orderingDepartmentId, requestStatusEnumIn)) {
+                // IF-DOR-20 可选过滤：开单科室或发布态不匹配时跳过本诊疗行。
+                continue;
+            }
             DoctorStationAdviceRowDto line = new DoctorStationAdviceRowDto();
             fillStableKeys(line, serviceRow.getId(), TableNameConstants.WKF_ACTIVITY_DEFINITION);
             line.setEncounterId(serviceRow.getEncounterId());
@@ -381,6 +454,7 @@ public class DoctorStationAdviceListAssembler {
             line.setRequestExtensions(AdviceExtensionJsonSupport.parseRequestExtensions(serviceRow.getContentJson()));
             line.setBasedOnServiceRequestId(resolveBasedOnServiceRequestId(serviceRow.getBasedOnTable(), serviceRow.getBasedOnId()));
             line.setConditionDefinitionId(serviceRow.getConditionDefinitionId());
+            line.setEncounterDiagnosisId(serviceRow.getEncounterDiagnosisId());
             if (serviceRow.getConditionDefinitionId() != null) {
                 line.setConditionDefinitionName(
                     conditionDefinitionDisplayByDefinitionId.get(serviceRow.getConditionDefinitionId()));
@@ -396,6 +470,13 @@ public class DoctorStationAdviceListAssembler {
             fillLineAmountByUnitAndQuantity(line);
             line.setIsAuthoredByCurrentUser(resolveIsMine(currentUserId, serviceRow.getRequesterId()));
             line.setContentSummary(buildServiceSummary(line));
+            line.setPrescriptionNo(serviceRow.getPrescriptionNo());
+            // 申请单行透出部位/样本摘要，非申请单行保持 null。
+            if (ServiceApplyFormOrchestrationSupport.isRequisitionApplicationPrescriptionNo(serviceRow.getPrescriptionNo())) {
+                line.setServiceRequestDetails(serviceApplyFormAssembler.toDetailSummaryDtos(
+                    ServiceApplyFormOrchestrationSupport.toDetailSummaryModels(
+                        applyFormDetailsByRequestId.get(serviceRow.getId()))));
+            }
             unifiedRows.add(line);
         }
 
@@ -403,6 +484,11 @@ public class DoctorStationAdviceListAssembler {
         for (DeviceRequestListModel deviceRow : deviceRows) {
             // onlyMine：非当前用户开立的耗材行跳过。
             if (Boolean.TRUE.equals(onlyMine) && currentUserId != null && !currentUserId.equals(deviceRow.getRequesterId())) {
+                continue;
+            }
+            // 耗材无 org_id：科室过滤仅作用药/诊；耗材仅按 requestStatusEnumIn 收窄。
+            if (!matchesAdviceQueryStatusFilter(deviceRow.getStatusEnum(), requestStatusEnumIn)) {
+                // IF-DOR-20 可选过滤：发布态不匹配时跳过本耗材行。
                 continue;
             }
             DoctorStationAdviceRowDto line = new DoctorStationAdviceRowDto();
@@ -433,6 +519,7 @@ public class DoctorStationAdviceListAssembler {
             line.setRemark(deviceRow.getRemark());
             line.setBasedOnServiceRequestId(resolveBasedOnServiceRequestId(deviceRow.getBasedOnTable(), deviceRow.getBasedOnId()));
             line.setConditionDefinitionId(deviceRow.getConditionDefinitionId());
+            line.setEncounterDiagnosisId(deviceRow.getEncounterDiagnosisId());
             if (deviceRow.getConditionDefinitionId() != null) {
                 line.setConditionDefinitionName(
                     conditionDefinitionDisplayByDefinitionId.get(deviceRow.getConditionDefinitionId()));
@@ -1024,6 +1111,91 @@ public class DoctorStationAdviceListAssembler {
             return null;
         }
         return requestId + String.valueOf(GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR) + productTableName;
+    }
+
+    /**
+     * IF-DOR-20 历史 Tab：跨历史就诊装配全类型医嘱行（排除当前就诊）。
+     *
+     * @param patientId             患者主键
+     * @param excludeEncounterId    当前就诊排除锚点
+     * @param orderingDepartmentId  开单科室；{@code null} 不过滤
+     * @param requestStatusEnumIn   请求态集合；空不过滤
+     * @return 按开立时间倒序合并后的全量行
+     */
+    public List<DoctorStationAdviceRowDto> assemblePatientHistoryAdviceRows(
+        Long patientId,
+        Long excludeEncounterId,
+        Long orderingDepartmentId,
+        List<String> requestStatusEnumIn) {
+        // Pre：药/诊/材三类请求并集收集历史就诊 id，排除当前工作站就诊。
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        encounterIds.addAll(
+            medicationRequestQueryService.listDistinctEncounterIdsByPatientForDoctorStation(patientId, excludeEncounterId));
+        encounterIds.addAll(
+            serviceRequestQueryService.listDistinctEncounterIdsByPatientForDoctorStation(patientId, excludeEncounterId));
+        encounterIds.addAll(
+            deviceRequestQueryService.listDistinctEncounterIdsByPatientForDoctorStation(patientId, excludeEncounterId));
+        List<DoctorStationAdviceRowDto> merged = new ArrayList<>();
+        // Loop：逐历史就诊复用单就诊装配，继承科室/状态过滤口径。
+        for (Long historyEncounterId : encounterIds) {
+            merged.addAll(assembleAdviceQueryRows(
+                historyEncounterId, patientId, false, null, orderingDepartmentId, requestStatusEnumIn));
+        }
+        // Asm：跨就诊结果按开立时间倒序，同时间再按就诊倒序。
+        merged.sort(Comparator
+            .comparing(DoctorStationAdviceRowDto::getAuthoredAt, Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(DoctorStationAdviceRowDto::getEncounterId, Comparator.nullsLast(Comparator.reverseOrder())));
+        return merged;
+    }
+
+    /**
+     * 从药品请求列表剔除 {@code tcm_flag=true} 的中药饮片行（开立医嘱 Tab 与中医 Tab 分域）。
+     *
+     * @param rows 医生站来源药品请求；允许为 {@code null} 或空
+     * @return 非饮片行列表；入参为空时原样返回
+     */
+    private static List<MedicationRequestListQueryModel> excludeTcmMedicationRows(
+        List<MedicationRequestListQueryModel> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return rows;
+        }
+        List<MedicationRequestListQueryModel> result = new ArrayList<>();
+        for (MedicationRequestListQueryModel row : rows) {
+            // 饮片行由 AS-OP-DOR-010 IF-DOR-34 承载，避免开立 Tab 重复展示
+            if (Boolean.TRUE.equals(row.getTcmFlag())) {
+                continue;
+            }
+            result.add(row);
+        }
+        return result;
+    }
+
+    private static boolean matchesAdviceQuerySourceFilter(
+        Long orgId,
+        String statusEnum,
+        Long orderingDepartmentId,
+        List<String> requestStatusEnumIn) {
+        if (orderingDepartmentId != null) {
+            // 科室过滤：请求无 org 或 org 与筛选科室不一致时剔除（BR-MRQ-029 只读 org_id）。
+            if (orgId == null || !orderingDepartmentId.equals(orgId)) {
+                return false;
+            }
+        }
+        return matchesAdviceQueryStatusFilter(statusEnum, requestStatusEnumIn);
+    }
+
+    /**
+     * IF-DOR-20 发布态白名单过滤；空集合表示不过滤。
+     */
+    private static boolean matchesAdviceQueryStatusFilter(String statusEnum, List<String> requestStatusEnumIn) {
+        if (requestStatusEnumIn == null || requestStatusEnumIn.isEmpty()) {
+            return true;
+        }
+        // 状态白名单非空但行上无发布态：无法命中白名单，剔除。
+        if (statusEnum == null) {
+            return false;
+        }
+        return requestStatusEnumIn.contains(statusEnum);
     }
 
     /**

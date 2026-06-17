@@ -18,7 +18,7 @@
 package com.openhis.health.application.basic.wardbed.request;
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -30,14 +30,8 @@ import java.util.List;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-/**
- * QueryWardBedRequest。
- */
 public class QueryWardBedRequest extends AbstractHealthPageRequest {
     /** 机构主键或父位置主键，依调用接口语义而定。 */
-    /**
-     * id。
-     */
     private Long id;
 
     /** 默认模糊列为拼音、五笔；排序按创建时间。 */

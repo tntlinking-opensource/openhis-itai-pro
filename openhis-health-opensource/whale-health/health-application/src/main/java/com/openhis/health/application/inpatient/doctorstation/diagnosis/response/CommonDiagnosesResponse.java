@@ -18,6 +18,7 @@
 package com.openhis.health.application.inpatient.doctorstation.diagnosis.response;
 
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
+import com.openhis.whale.core.application.dto.OptionDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -31,6 +32,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-常用诊断四类列表响应。 */
 @Schema(description = "医生站-常用诊断四类列表响应")
 public class CommonDiagnosesResponse {
 
@@ -57,4 +59,10 @@ public class CommonDiagnosesResponse {
      */
     @Schema(description = "科室诊断")
     private List<CommonDiagnosisRowDto> organizationList;
+
+    /**
+     * 住院患者疾病诊断类型下拉（术语 {@code ipt_dise_type_code}），供诊断表「诊断类型」列编辑。
+     */
+    @Schema(description = "住院患者疾病诊断类型选项（诊断类型列下拉）")
+    private List<OptionDto> iptDiseaseTypeOptions;
 }

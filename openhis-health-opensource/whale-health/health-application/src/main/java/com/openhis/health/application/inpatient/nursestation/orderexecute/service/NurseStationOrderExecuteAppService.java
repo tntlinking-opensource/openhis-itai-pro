@@ -1,11 +1,13 @@
 package com.openhis.health.application.inpatient.nursestation.orderexecute.service;
 
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.inpatient.doctorstation.advice.assembler.InpatientDoctorStationAdviceCatalogAssembler;
+import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
+import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.assembler.NurseStationExecutionInventoryAssembler;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.assembler.NurseStationOrderExecuteListAssembler;
-import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteBindItemDto;
-import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecutePatientGroupDto;
+import com.openhis.health.module.querysupport.procedure.dto.NurseStationOrderExecuteBindItemDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteWriteSlotDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.mapper.NurseStationOrderExecuteMapper;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ExecuteNurseStationOrdersRequest;
@@ -14,7 +16,8 @@ import com.openhis.health.application.inpatient.nursestation.orderexecute.reques
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ExecuteNurseStationOrdersResponse;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ListNurseStationOrderExecuteResponse;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.SkipNurseStationOrderSlotsResponse;
-import com.openhis.health.application.querysupport.order.InpatientOrderLookupLoader;
+import com.openhis.health.module.querysupport.order.InpatientOrderLookupLoader;
+import com.openhis.health.module.querysupport.procedure.NurseStationOrderExecuteListLoader;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemDomainService;
@@ -22,8 +25,6 @@ import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQue
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
-import com.openhis.health.domain.administration.location.entity.Location;
-import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.clinical.procedure.command.CreateProcedureRecordCommand;
 import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecordQueryModel;
 import com.openhis.health.domain.clinical.procedure.service.ProcedureDomainService;
@@ -34,17 +35,18 @@ import com.openhis.health.domain.medication.medicationdispense.service.Medicatio
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.application.querysupport.order.dto.InpatientOrderListSkeleton;
-import com.openhis.health.application.common.assembler.advice.InpatientMedicationRequestExecutionMeasureSupport;
-import com.openhis.health.application.common.assembler.order.InpatientOrderListMergeAssembler;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.module.common.assembler.advice.InpatientMedicationRequestExecutionMeasureSupport;
+import com.openhis.health.module.common.assembler.order.InpatientOrderListMergeAssembler;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.domain.share.constants.ChargeItemDmConstants;
+import com.openhis.health.module.common.assembler.product.ClinicalCatalogDispenseLocationResolveSupport;
+import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
@@ -54,14 +56,16 @@ import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
-import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseDomainService;
+import com.openhis.health.module.querysupport.device.DeviceDispenseNurseWorkflowSupport;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestDomainService;
+import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseDomainService;
+import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
+import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateExecutedServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -94,7 +98,7 @@ import java.util.Set;
  * <p>关键业务口径（与 AS v2.5 对齐）：</p>
  * <ul>
  *   <li>BR-IP-EXE-014：库存 Gate <b>仅药嘱</b>；绑定耗材不参与 Gate/扣减，由耗材发放等其他页面统一处理</li>
- *   <li>BR-IP-EXE-019：绑定诊疗走 {@code createExecutedServiceRequest}；绑定耗材走 DeviceRequest → 草稿 Dispense → 执行直发</li>
+ *   <li>BR-IP-EXE-019：绑定诊疗走 {@code createExecutedServiceRequest}；绑定耗材走 DeviceRequest → 草稿 Dispense → promote 待发（对齐护士划价，不 Gate 库存）</li>
  *   <li>BR-IP-EXE-022：批量写路径在同一 {@code @Transactional} 内提交，任一槽位失败整批回滚</li>
  * </ul>
  */
@@ -105,10 +109,10 @@ public class NurseStationOrderExecuteAppService {
 
     /** 写路径操作人门控。 */
     private final CurrentOperatorResolver currentOperatorResolver;
-    /** 当前登录用户。 */
-    private final ICurrentUser currentUser;
+    /** 当前医务人员解析。 */
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     /** 管理病区范围。 */
-    private final LocationQueryService locationQueryService;
+    private final CurrentManagedWardLocationIdsResolver managedWardLocationIdsResolver;
     /** 住院就诊上下文：可见 encounter 收窄。 */
     private final EncounterQueryService encounterQueryService;
     private final EncounterContextFacade encounterContextFacade;
@@ -133,20 +137,28 @@ public class NurseStationOrderExecuteAppService {
     private final ChargeItemQueryService chargeItemQueryService;
     /** 收费定价读侧（执行新建费用时补全 definitionId）。 */
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
+    private final ClinicalCatalogPriceResolveSupport clinicalCatalogPriceResolveSupport;
     /** 诊疗写侧（绑定派生）。 */
     private final ServiceRequestDomainService serviceRequestDomainService;
     /** 耗材请求写侧（绑定耗材派生）。 */
     private final DeviceRequestDomainService deviceRequestDomainService;
     /** 耗材发放写侧（绑定耗材派生）。 */
     private final DeviceDispenseDomainService deviceDispenseDomainService;
+    /** 耗材发放读侧（绑定耗材 Charge 锚点）。 */
+    private final DeviceDispenseQueryService deviceDispenseQueryService;
+    private final DeviceDispenseNurseWorkflowSupport deviceDispenseNurseWorkflowSupport;
+    private final InventoryItemDomainService inventoryItemDomainService;
     /** 映射器。 */
     private final NurseStationOrderExecuteMapper nurseStationOrderExecuteMapper;
     /** 列表装配。 */
     private final NurseStationOrderExecuteListAssembler nurseStationOrderExecuteListAssembler;
+    private final NurseStationOrderExecuteListLoader nurseStationOrderExecuteListLoader;
     /** 库存 Gate FIFO。 */
     private final NurseStationExecutionInventoryAssembler nurseStationExecutionInventoryAssembler;
     /** 药品目录批量读侧（执行新建 Charge 比例换算单价）。 */
     private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    /** 发放库房模板解析（绑定耗材 performLocation，对齐护士划价）。 */
+    private final ClinicalCatalogDispenseLocationResolveSupport clinicalCatalogDispenseLocationResolveSupport;
 
     /**
      * IF-IP-EXE-01：医嘱执行列表查询。
@@ -155,72 +167,9 @@ public class NurseStationOrderExecuteAppService {
      * @return 按就诊分组的医嘱行（含槽位与 bindItems）
      */
     public ListNurseStationOrderExecuteResponse listNurseStationOrderExecute(ListNurseStationOrderExecuteRequest request) {
-        try {
-            // 入参 Gate：至少一名患者、截止时间、Tab/长临合法性（BR-IP-EXE-001 前置）
-            this.assertListExecuteRequestValid(request);
-            // 护士可见范围 = 当前医务人员管理病区下的在院就诊（BR-IP-NUR-003）
-            Long practitionerId = currentUser.getCurrentPractitionerId();
-            List<Long> managedWardIds = this.resolveManagedWardIds(practitionerId);
-            List<Long> requestedEncounterIds = this.distinctEncounterIds(request.getEncounterIds());
-            InpatientEncounterPageQuery visibilityQuery =
-                nurseStationOrderExecuteMapper.toInpatientEncounterPageQuery(requestedEncounterIds, managedWardIds);
-            List<InpatientEncounterContextQueryModel> visibleRows =
-                encounterContextFacade.listInpatientEncounterContexts(visibilityQuery);
-            // 前端勾选就诊与护士可见范围求交（BR-IP-EXE-001）
-            List<Long> visibleEncounterIds = this.retainRequestedVisibleEncounterIds(requestedEncounterIds, visibleRows);
-            if (visibleEncounterIds.isEmpty()) {
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_EXE_102,
-                    "所选患者不在护士站可见范围");
-            }
-            Set<Long> visibleEncounterIdSet = new HashSet<>(visibleEncounterIds);
-            List<InpatientEncounterContextQueryModel> matchedVisibleRows = new ArrayList<>();
-            for (InpatientEncounterContextQueryModel row : visibleRows) {
-                if (row == null || row.getEncounterId() == null) {
-                    continue;
-                }
-                if (visibleEncounterIdSet.contains(row.getEncounterId())) {
-                    matchedVisibleRows.add(row);
-                }
-            }
-            // 机构主键供 bindItems 模板查询按 org 收窄（仅保留求交后的就诊行）
-            Map<Long, Long> encounterOrgIds = this.indexEncounterOrgIds(matchedVisibleRows);
-            // 长临筛选：all 时不传 therapyEnum，读模型侧不过滤
-            String therapyEnum = nurseStationOrderExecuteMapper.resolveTherapyEnum(request.getTherapyType());
-            // OrderInfo 骨架：仅 VERIFIED 且符合护士站执行场景的医嘱行
-            List<InpatientOrderListSkeleton> skeleton = inpatientOrderListMergeAssembler.mergeNurseStationExecuteOrders(
-                visibleEncounterIds, therapyEnum);
-            // 按就诊批量预热药/诊域明细（来源=医生开立），供槽位展开与展示字段回填
-            String doctorSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
-            Map<Long, List<MedicationRequestListQueryModel>> medByEncounter = new HashMap<>();
-            Map<Long, List<ServiceRequestListModel>> svcByEncounter = new HashMap<>();
-            for (Long encounterId : visibleEncounterIds) {
-                // 每个就诊各查一次药/诊明细列表，后续 Assembler 按 id 索引
-                medByEncounter.put(encounterId,
-                    medicationRequestQueryService.listMedicationRequestsByEncounterForDoctorStation(
-                        encounterId, doctorSource));
-                svcByEncounter.put(encounterId,
-                    serviceRequestQueryService.listServiceRequestsByGenerateSource(encounterId, doctorSource));
-            }
-            // 装配：频次计划点 + Procedure 归并四类槽位 + bindItems + Tab 过滤
-            List<NurseStationOrderExecutePatientGroupDto> groups =
-                nurseStationOrderExecuteListAssembler.assemblePatientGroups(
-                    skeleton,
-                    medByEncounter,
-                    svcByEncounter,
-                    request.getExecutionDeadline(),
-                    request.getExecuteTab(),
-                    encounterOrgIds);
-            return nurseStationOrderExecuteMapper.toListResponse(groups);
-        } catch (BusinessException ex) {
-            // 业务异常原样抛出（可见性、参数、频次等）
-            throw ex;
-        } catch (RuntimeException ex) {
-            // 未预期异常统一包装为 EX-IP-EXE-101，避免堆栈透出
-            throw new BusinessException(
-                InpatientNurseStationConstants.EX_IP_EXE_101,
-                "医嘱执行列表加载失败，请稍后重试");
-        }
+        return nurseStationOrderExecuteMapper.toListResponse(
+            nurseStationOrderExecuteListLoader.listNurseStationOrderExecute(
+                nurseStationOrderExecuteMapper.toListQuery(request)));
     }
 
     /**
@@ -241,15 +190,14 @@ public class NurseStationOrderExecuteAppService {
             InpatientNurseStationConstants.EX_IP_EXE_303,
             "未登录或登录已失效，无法执行医嘱");
         // performerId 写入 Procedure/Charge 的执行人维度
-        Long performerId = currentUser.getCurrentPractitionerId();
-        if (performerId == null) {
-            throw new BusinessException(
-                InpatientNurseStationConstants.EX_IP_EXE_303,
-                "未解析到当前医务人员，无法执行医嘱");
-        }
+        Long performerId = currentPractitionerResolver.requirePractitionerId(
+            InpatientNurseStationConstants.EX_IP_EXE_303,
+            "未解析到当前医务人员，无法执行医嘱");
         List<NurseStationOrderExecuteWriteSlotDto> items = request.getItems();
         // 预加载：OrderInfo、可见性、药诊明细、Procedure 历史——避免写循环内单条查库
         WriteContextBundle context = this.prepareWriteContext(items);
+        // Pre：批量预热产品定义/定价行/临时发药单，避免写循环内按槽位重复查库
+        this.warmWritePathCatalogCaches(items, context);
         // 逐槽位业务 Gate：可见性 + VERIFIED + 该 planTime 未被 Procedure 终态占用（EX-IP-EXE-301）
         for (NurseStationOrderExecuteWriteSlotDto item : items) {
             this.assertWriteSlotExecutable(item, context, performerId);
@@ -257,14 +205,18 @@ public class NurseStationOrderExecuteAppService {
         // === 库存 Gate 阶段（整批 dry-run，任一药品不足则本批全部拒绝）===
         List<NurseStationExecutionInventoryAssembler.InventoryGateDemandLine> gateLines =
             this.buildInventoryGateDemands(items, context);
-        // FIFO dry-run：任一药品不足整批 EX-IP-EXE-302，通过后 locationId+lotNumber 供长期发药写入
-        Map<Long, NurseStationExecutionInventoryAssembler.MedicationFifoAllocation> fifoByMedication =
-            nurseStationExecutionInventoryAssembler.runGateDryRun(gateLines);
+        // FIFO dry-run：按槽位顺序分段分配，跨批时 working 库存逐行扣减（BR-IP-EXE-014/016）
+        NurseStationExecutionInventoryAssembler.MedicationFifoBatchPlan fifoBatchPlan =
+            nurseStationExecutionInventoryAssembler.prepareMedicationFifoBatchPlan(gateLines);
+        Map<String, List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment>> fifoSegmentsBySlotKey =
+            this.indexFifoSegmentsByMedicationSlot(gateLines, items, fifoBatchPlan);
         int processed = 0;
-        // 逐槽位写 Procedure + 长临 Dispense/Charge + bindItems；同事务，失败即回滚整批
+        // 逐槽位写 Procedure + Dispense/Charge + bindItems；同事务，失败即回滚整批
         for (NurseStationOrderExecuteWriteSlotDto item : items) {
             try {
-                this.executeSingleSlot(item, context, operatorId, performerId, fifoByMedication);
+                List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment> fifoSegments =
+                    fifoSegmentsBySlotKey.get(this.buildMedicationGateSlotKey(item));
+                this.executeSingleSlot(item, context, operatorId, performerId, fifoSegments);
                 processed = processed + 1;
             } catch (BusinessException ex) {
                 // 业务拒绝（Gate/库存/槽位变更）整批回滚
@@ -274,6 +226,10 @@ public class NurseStationOrderExecuteAppService {
                     InpatientNurseStationConstants.EX_IP_EXE_304,
                     "医嘱执行失败，请稍后重试");
             }
+        }
+        if (!context.getDeviceInventoryDecreaseAccumulator().isEmpty()) {
+            inventoryItemDomainService.decreaseQuantitiesMerged(
+                operatorId, context.getDeviceInventoryDecreaseAccumulator());
         }
         return nurseStationOrderExecuteMapper.toExecuteResponse(processed);
     }
@@ -346,14 +302,14 @@ public class NurseStationOrderExecuteAppService {
      * @param context          预加载上下文
      * @param operatorId       登录操作人
      * @param performerId      当前医务人员（执行人）
-     * @param fifoByMedication 库存 Gate 通过的 FIFO 分配结果（仅长期药嘱消费）
+     * @param fifoSegments 本槽位 FIFO 分段（仅药嘱；诊嘱为 null 或空）
      */
     private void executeSingleSlot(
         NurseStationOrderExecuteWriteSlotDto item,
         WriteContextBundle context,
         Long operatorId,
         Long performerId,
-        Map<Long, NurseStationExecutionInventoryAssembler.MedicationFifoAllocation> fifoByMedication) {
+        List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment> fifoSegments) {
         InpatientOrderListSkeleton order = context.orderByKey.get(this.buildOrderKey(item));
         OrderExecutionContext orderCtx = context.resolveOrderContext(item);
         // requestTable/requestId 供 Procedure 锚定到具体 Request 聚合
@@ -376,15 +332,12 @@ public class NurseStationOrderExecuteAppService {
         // ③ 完成执行（recordedTime 由领域层取当前时刻）
         procedureDomainService.completeProcedureRecord(
             nurseStationOrderExecuteMapper.toCompleteProcedureRecordCommand(procedureId, operatorId));
-        String therapy = orderCtx.therapyEnum;
         Long orgId = context.encounterOrgIds.get(order.getEncounterId());
-        // ④ 主医嘱联动：药嘱走发药+账单，诊嘱走账单（长临分轨见各自 private 方法）
+        // ④ 主医嘱联动：药嘱 FIFO 分段新建 Dispense+Charge；诊嘱新建 Charge（长临同构，BR-IP-EXE-016/018）
         if (ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
-            this.executeMedicationPath(item, order, orderCtx, procedureId, operatorId, performerId, actualTime,
-                therapy, orgId, fifoByMedication, context);
+            this.executeMedicationPath(item, order, orderCtx, procedureId, operatorId, orgId, fifoSegments, context);
         } else if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(item.getOrderType())) {
-            this.executeServicePath(item, order, orderCtx, procedureId, operatorId, performerId, actualTime,
-                therapy, orgId, context);
+            this.executeServicePath(item, order, orderCtx, procedureId, operatorId, orgId, context);
         }
         // ⑤ 绑定项派生：列表回传 bindItems 非空时，按 activityId/deviceId 分支写下游聚合
         this.executeBindItems(
@@ -399,10 +352,10 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
-     * 药品执行分轨：长期新建 Dispense+Charge；临时挂接已有 Dispense 并激活 Charge。
+     * 药品执行：FIFO 分段新建 Dispense + Charge（长临同构，BR-IP-EXE-016/026）。
      *
-     * <p>BR-IP-EXE-016（长期）：{@code generateDispenseFromExecution} 使用 Gate 通过的库位/批号；
-     * BR-IP-EXE-017（临时）：挂接签发侧草稿 Dispense + 激活 DRAFT Charge。</p>
+     * <p>每次执行（含取消后再执行）均新建发放行与 {@code ORDER_EXECUTE} 待结算费用行，
+     * 跨批时按段写入库位/批号/数量，与药房 1:1 分段口径一致。</p>
      */
     private void executeMedicationPath(
         NurseStationOrderExecuteWriteSlotDto item,
@@ -410,54 +363,46 @@ public class NurseStationOrderExecuteAppService {
         OrderExecutionContext orderCtx,
         Long procedureId,
         Long operatorId,
-        Long performerId,
-        LocalDateTime actualTime,
-        String therapy,
         Long orgId,
-        Map<Long, NurseStationExecutionInventoryAssembler.MedicationFifoAllocation> fifoByMedication,
+        List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment> fifoSegments,
         WriteContextBundle context) {
         MedicationRequestListQueryModel med = orderCtx.medDetail;
         if (med == null) {
-            // 药嘱执行必须有域明细，否则无法解析数量/单位/发药锚点
             throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_303, "药品明细不存在");
         }
-        // 发药数量/单位与药品申请 quantity/unit_code 同套字段（长期=一次执行发药量，临时=总量；与 dose 无关）
-        BigDecimal quantity = InpatientMedicationRequestExecutionMeasureSupport.resolveDispenseQuantityFromRequest(
-            med.getQuantity());
+        if (fifoSegments == null || fifoSegments.isEmpty()) {
+            throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_302, "库存 Gate 未通过");
+        }
         String unitCode = InpatientMedicationRequestExecutionMeasureSupport.resolveDispenseUnitCodeFromRequest(
             med.getUnitCode());
-        if (TherapyType.LONG_TERM.getCode().equals(therapy)) {
-            // 长期：每次执行新建一条发放单 + 新建待结算费用行
-            NurseStationExecutionInventoryAssembler.MedicationFifoAllocation fifo =
-                fifoByMedication.get(med.getMedicationId());
-            if (fifo == null) {
-                // Gate 未分配该药品（不应发生，前置已 dry-run）→ 防御性拒绝
-                throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_302, "库存 Gate 未通过");
+        ChargeItem template = this.findChargeTemplate(context, order.getEncounterId(),
+            TableNameConstants.MED_MEDICATION_REQUEST, med.getId());
+        ProductDefinitionDisplayDto medicationProduct =
+            this.loadMedicationProductDefinition(context, med.getMedicationId());
+        // Cmd：每 FIFO 分段各建一条 Dispense(PREPARATION) 与一条待结算 Charge
+        for (NurseStationExecutionInventoryAssembler.MedicationFifoSegment segment : fifoSegments) {
+            if (segment == null || segment.getQuantity() == null) {
+                continue;
             }
-            // 写发药单：locationId/lotNumber 来自 FIFO Gate，护士不可手选
-            medicationDispenseDomainService.generateDispenseFromExecution(
+            BigDecimal segmentQuantity = segment.getQuantity();
+            Long dispenseId = medicationDispenseDomainService.generateDispenseFromExecution(
                 nurseStationOrderExecuteMapper.toGenerateDispenseFromExecutionCommand(
                     med.getId(),
                     procedureId,
                     item.getPlanTime(),
-                    fifo.getLocationId(),
-                    fifo.getLotNumber(),
-                    quantity,
+                    segment.getLocationId(),
+                    segment.getLotNumber(),
+                    segmentQuantity,
                     unitCode,
                     med.getMedicationId(),
                     order.getEncounterId(),
                     order.getPatientId()));
-            // 费用模板取自签发侧同 medReq 的 Charge 行，generate_source=ORDER_EXECUTE
-            ChargeItem template = this.findChargeTemplate(context, order.getEncounterId(),
-                TableNameConstants.MED_MEDICATION_REQUEST, med.getId());
-            ChargeItemDefinition priceLine = this.resolveSalePriceLineForPlannedCharge(
-                template,
+            ChargeItemDefinition priceLine = this.requirePriceLineForExecution(
+                context,
                 TableNameConstants.MED_MEDICATION_DEFINITION,
                 med.getMedicationId(),
-                true);
-            ProductDefinitionDisplayDto medicationProduct =
-                this.loadMedicationProductDefinition(med.getMedicationId());
-            // 复制模板 definitionId/科目，金额按执行 quantity/unit_code 与定价行比例换算（BR-IP-EXE-026）
+                null,
+                segment.getLotNumber());
             chargeItemDomainService.createPlannedChargeItemFromOrderExecution(
                 nurseStationOrderExecuteMapper.toCreatePlannedChargeItemFromOrderExecutionCommand(
                     order,
@@ -466,35 +411,18 @@ public class NurseStationOrderExecuteAppService {
                     item.getAccountId(),
                     procedureId,
                     item.getPlanTime(),
-                    quantity,
+                    segmentQuantity,
                     unitCode,
                     medicationProduct,
-                    null,
-                    null,
+                    dispenseId,
+                    TableNameConstants.MED_MEDICATION_DISPENSE,
                     operatorId,
                     orgId));
-        } else {
-            // 临时：签发时已生成 Dispense+Charge（PLANNED），执行时挂接 Procedure 并激活费用
-            MedicationDispense dispense = this.findDraftMedicationDispense(med.getId(), context);
-            // 将已有草稿发放单关联到本次 Procedure（不新建发放单）
-            medicationDispenseDomainService.linkDispenseProcedure(
-                nurseStationOrderExecuteMapper.toLinkDispenseProcedureCommand(
-                    dispense.getId(), procedureId, item.getPlanTime(), operatorId));
-            // 按 FIFO 分段 dispense 锚点定位待激活费用行（签发后 PLANNED；未升位时兼容 DRAFT）
-            ChargeItem activatableCharge = this.findActivatableChargeForDispense(
-                context, order.getEncounterId(), dispense.getId(), TableNameConstants.MED_MEDICATION_DISPENSE);
-            // PLANNED/DRAFT → 待结算，performerId 记录实际执行护士
-            chargeItemDomainService.activateChargeByExe(
-                nurseStationOrderExecuteMapper.toActivateChargeByExeCommand(
-                    activatableCharge.getId(), procedureId, actualTime, performerId));
         }
     }
 
     /**
-     * 诊疗执行分轨：长期新建 Charge；临时激活签发侧 PLANNED Charge。
-     *
-     * <p>BR-IP-EXE-018：诊嘱无发药联动；长期每次执行新建待结算费用行，
-     * 临时激活签发侧已计划（PLANNED）费用行。</p>
+     * 诊疗执行：每次 planTime 新建待结算 Charge（长临同构，BR-IP-EXE-018）。
      */
     private void executeServicePath(
         NurseStationOrderExecuteWriteSlotDto item,
@@ -502,9 +430,6 @@ public class NurseStationOrderExecuteAppService {
         OrderExecutionContext orderCtx,
         Long procedureId,
         Long operatorId,
-        Long performerId,
-        LocalDateTime actualTime,
-        String therapy,
         Long orgId,
         WriteContextBundle context) {
         ServiceRequestListModel svc = orderCtx.svcDetail;
@@ -515,43 +440,40 @@ public class NurseStationOrderExecuteAppService {
         }
         BigDecimal quantity = svc.getQuantity();
         String unitCode = org.apache.commons.lang3.StringUtils.trimToNull(svc.getUnitCode());
-        if (TherapyType.LONG_TERM.getCode().equals(therapy)) {
-            // 长期诊疗：每次 planTime 新建待结算费用行（无发药联动）
-            Long serviceId = item.getOrderId();
-            ChargeItem template = this.findChargeTemplate(context, order.getEncounterId(),
-                TableNameConstants.WKF_SERVICE_REQUEST, serviceId);
-            Long activityId = order.getActivityId();
-            if (svc.getActivityId() != null) {
-                activityId = svc.getActivityId();
-            }
-            ChargeItemDefinition priceLine = this.requireSalePriceLineForExecution(
-                TableNameConstants.WKF_ACTIVITY_DEFINITION,
-                activityId);
-            ProductDefinitionDisplayDto activityProduct =
-                this.loadProductDefinition(TableNameConstants.WKF_ACTIVITY_DEFINITION, activityId);
-            chargeItemDomainService.createPlannedChargeItemFromOrderExecution(
-                nurseStationOrderExecuteMapper.toCreatePlannedChargeItemFromOrderExecutionCommand(
-                    order,
-                    template,
-                    priceLine,
-                    item.getAccountId(),
-                    procedureId,
-                    item.getPlanTime(),
-                    quantity,
-                    unitCode,
-                    activityProduct,
-                    null,
-                    null,
-                    operatorId,
-                    orgId));
-        } else {
-            // 临时诊疗：激活签发侧 PLANNED Charge（兼容未升位的 DRAFT），关联本次 Procedure
-            ChargeItem activatableCharge = this.findActivatableChargeForService(
-                context, order.getEncounterId(), item.getOrderId(), TableNameConstants.WKF_SERVICE_REQUEST);
-            chargeItemDomainService.activateChargeByExe(
-                nurseStationOrderExecuteMapper.toActivateChargeByExeCommand(
-                    activatableCharge.getId(), procedureId, actualTime, performerId));
+        Long serviceId = item.getOrderId();
+        ChargeItem template = this.findChargeTemplate(context, order.getEncounterId(),
+            TableNameConstants.WKF_SERVICE_REQUEST, serviceId);
+        Long activityId = order.getActivityId();
+        if (svc.getActivityId() != null) {
+            activityId = svc.getActivityId();
         }
+        Long preferredDefinitionId = null;
+        if (template != null) {
+            preferredDefinitionId = template.getDefinitionId();
+        }
+        ChargeItemDefinition priceLine = this.requirePriceLineForExecution(
+            context,
+            TableNameConstants.WKF_ACTIVITY_DEFINITION,
+            activityId,
+            preferredDefinitionId,
+            null);
+        ProductDefinitionDisplayDto activityProduct =
+            this.loadProductDefinition(context, TableNameConstants.WKF_ACTIVITY_DEFINITION, activityId);
+        chargeItemDomainService.createPlannedChargeItemFromOrderExecution(
+            nurseStationOrderExecuteMapper.toCreatePlannedChargeItemFromOrderExecutionCommand(
+                order,
+                template,
+                priceLine,
+                item.getAccountId(),
+                procedureId,
+                item.getPlanTime(),
+                quantity,
+                unitCode,
+                activityProduct,
+                null,
+                null,
+                operatorId,
+                orgId));
     }
 
     /**
@@ -585,7 +507,7 @@ public class NurseStationOrderExecuteAppService {
             } else if (bindItem.getDeviceId() != null) {
                 // 绑定耗材：DeviceRequest + Dispense + Charge； deliberately 不做库存 Gate/扣减
                 this.executeBindDeviceItem(
-                    item, order, bindItem, operatorId, parentProcedureId, orgId, context);
+                    item, order, bindItem, operatorId, performerId, parentProcedureId, orgId, context);
             }
             // activityId 与 deviceId 均为空时跳过：模板数据异常，不阻断主医嘱
         }
@@ -644,11 +566,14 @@ public class NurseStationOrderExecuteAppService {
         // ③ 新建待结算 Charge，service=派生 Request，product=ActivityDefinition
         BigDecimal quantity = this.resolveBindItemQuantity(bindItem);
         String unitCode = org.apache.commons.lang3.StringUtils.trimToNull(bindItem.getUnitCode());
-        ChargeItemDefinition priceLine = this.requireSalePriceLineForExecution(
+        ChargeItemDefinition priceLine = this.requirePriceLineForExecution(
+            context,
             TableNameConstants.WKF_ACTIVITY_DEFINITION,
-            bindItem.getActivityId());
+            bindItem.getActivityId(),
+            bindItem.getChargeItemDefinitionId(),
+            null);
         ProductDefinitionDisplayDto activityProduct =
-            this.loadProductDefinition(TableNameConstants.WKF_ACTIVITY_DEFINITION, bindItem.getActivityId());
+            this.loadProductDefinition(context, TableNameConstants.WKF_ACTIVITY_DEFINITION, bindItem.getActivityId());
         chargeItemDomainService.createPlannedChargeItemFromOrderExecution(
             nurseStationOrderExecuteMapper.toCreatePlannedChargeItemFromBindExecutionCommand(
                 order.getPatientId(),
@@ -673,31 +598,38 @@ public class NurseStationOrderExecuteAppService {
     /**
      * 绑定耗材派生（BR-IP-EXE-019 device 分支）。
      *
-     * <p>DeviceRequest（已完成）→ 临时路径草稿 Dispense → 执行直发已发放 Dispense → 待结算 Charge。
-     * 批号/追溯使用占位常量，<b>不</b>调用库存 QueryService 校验或扣减——库存由耗材发放页统一处理。</p>
+     * <p>DeviceRequest（已完成，挂主医嘱 based_on + performLocation）→ 临时路径 Dispense →
+     * 按「耗材是否自动扣库」开关推进已配药或 FIFO 已发药扣库 → 待结算 Charge。</p>
      */
     private void executeBindDeviceItem(
         NurseStationOrderExecuteWriteSlotDto item,
         InpatientOrderListSkeleton order,
         NurseStationOrderExecuteBindItemDto bindItem,
         Long operatorId,
+        Long performerId,
         Long parentProcedureId,
         Long orgId,
         WriteContextBundle context) {
         Long deviceDefId = bindItem.getDeviceId();
         BigDecimal quantity = this.resolveBindItemQuantity(bindItem);
-        String unitCode = org.apache.commons.lang3.StringUtils.trimToNull(bindItem.getUnitCode());
-        // ① 创建已完成态 DeviceRequest（performLocation 暂空，库房由后续耗材页处理）
+        ProductDefinitionDisplayDto deviceProduct =
+            this.loadProductDefinition(context, TableNameConstants.ADM_DEVICE_DEFINITION, deviceDefId);
+        String unitCode = this.resolveBindItemUnitCode(bindItem, deviceProduct);
+        Long performLocation = this.resolveBindDevicePerformLocation(orgId, deviceDefId, deviceProduct);
+        String basedOnTable = this.resolveRequestTable(item.getOrderType());
+        Long basedOnId = item.getOrderId();
         List<Long> deviceReqIds = deviceRequestDomainService.createExecutedDeviceOrder(
             nurseStationOrderExecuteMapper.toCreateExecutedDeviceOrderCommand(
                 deviceDefId,
                 quantity,
-                null,
+                unitCode,
+                performLocation,
                 order.getEncounterId(),
                 order.getPatientId(),
+                basedOnTable,
+                basedOnId,
                 operatorId));
         Long deviceReqId = deviceReqIds.get(0);
-        // ② 生成临时路径草稿 Dispense，作为直发模板
         deviceDispenseDomainService.generateDeviceDispenseFromTemporaryPath(
             nurseStationOrderExecuteMapper.toGenerateDeviceDispenseFromTemporaryPathCommand(
                 deviceReqId,
@@ -708,21 +640,18 @@ public class NurseStationOrderExecuteAppService {
                 unitCode,
                 item.getPlanTime(),
                 operatorId));
-        // ③ 执行直发：批号/追溯占位，挂接主医嘱 Procedure
-        Long dispenseId = deviceDispenseDomainService.generateIssuedDeviceDispenseFromExecution(
-            nurseStationOrderExecuteMapper.toGenerateIssuedDeviceDispenseFromExecutionCommand(
-                deviceReqId,
-                parentProcedureId,
-                InpatientNurseStationConstants.INPATIENT_NURSE_EXECUTE_DEVICE_LOT_PLACEHOLDER,
-                InpatientNurseStationConstants.INPATIENT_NURSE_EXECUTE_DEVICE_TRACE_PLACEHOLDER,
-                quantity,
-                operatorId));
-        // ④ 新建待结算 Charge，关联 DeviceRequest + DeviceDispense
-        ChargeItemDefinition priceLine = this.requireSalePriceLineForExecution(
+        deviceDispenseNurseWorkflowSupport.finalizeInpatientTemporaryPathDispense(
+            deviceReqId,
+            operatorId,
+            performerId,
+            context.getDeviceInventoryDecreaseAccumulator());
+        Long dispenseId = this.resolvePrimaryDeviceDispenseId(deviceReqId);
+        ChargeItemDefinition priceLine = this.requirePriceLineForExecution(
+            context,
             TableNameConstants.ADM_DEVICE_DEFINITION,
-            deviceDefId);
-        ProductDefinitionDisplayDto deviceProduct =
-            this.loadProductDefinition(TableNameConstants.ADM_DEVICE_DEFINITION, deviceDefId);
+            deviceDefId,
+            bindItem.getChargeItemDefinitionId(),
+            null);
         chargeItemDomainService.createPlannedChargeItemFromOrderExecution(
             nurseStationOrderExecuteMapper.toCreatePlannedChargeItemFromBindExecutionCommand(
                 order.getPatientId(),
@@ -745,6 +674,60 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
+     * 解析耗材请求下主发放行 id（id 最小者），供收费锚点关联。
+     *
+     * @param deviceReqId 耗材请求主键
+     * @return 主发放行 id；无则 null
+     */
+    private Long resolvePrimaryDeviceDispenseId(Long deviceReqId) {
+        List<Long> ids = this.deviceDispenseQueryService.listDeviceDispenseIdsByDeviceRequest(deviceReqId);
+        if (ids == null || ids.isEmpty()) {
+            return null;
+        }
+        Long primary = null;
+        for (Long id : ids) {
+            if (id == null) {
+                continue;
+            }
+            if (primary == null || id < primary) {
+                primary = id;
+            }
+        }
+        return primary;
+    }
+
+    /**
+     * 绑定耗材默认发放库房：按机构 + 耗材分类解析 ServiceLocationTemplate（对齐护士划价）。
+     *
+     * @param orgId          机构主键
+     * @param deviceDefId    耗材定义主键
+     * @param deviceProduct  耗材读模型；可 null
+     * @return 发放库房主键
+     */
+    private Long resolveBindDevicePerformLocation(
+        Long orgId,
+        Long deviceDefId,
+        ProductDefinitionDisplayDto deviceProduct) {
+        if (orgId == null) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_EXE_304,
+                "绑定耗材执行失败：未配置该住院科室的发放库房");
+        }
+        String distributionCategory = MedicationCommonConstants.DEFAULT_SERVICE_LOCATION_DISTRIBUTION_CATEGORY_CODE;
+        if (deviceProduct != null && StringUtils.isNotBlank(deviceProduct.getCategoryCode())) {
+            distributionCategory = deviceProduct.getCategoryCode();
+        }
+        Long performLocation = clinicalCatalogDispenseLocationResolveSupport.matchDefaultDeviceDispenseLocationId(
+            orgId, deviceDefId, distributionCategory);
+        if (performLocation == null) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_EXE_304,
+                "绑定耗材执行失败：未配置该住院科室的发放库房");
+        }
+        return performLocation;
+    }
+
+    /**
      * 绑定项数量换算：分子/分母；缺省为 1。
      *
      * @param bindItem 绑定项；可 null
@@ -761,6 +744,36 @@ public class NurseStationOrderExecuteAppService {
             denominator = BigDecimal.ONE;
         }
         return bindItem.getQuantityNumerator().divide(denominator, 6, java.math.RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 绑定耗材单位：优先 bindItem.unitCode，否则回落耗材目录住院默认/拆零/包装单位。
+     *
+     * @param bindItem      绑定项
+     * @param deviceProduct 耗材读模型；可 null
+     * @return 业务单位编码
+     */
+    private String resolveBindItemUnitCode(
+        NurseStationOrderExecuteBindItemDto bindItem,
+        ProductDefinitionDisplayDto deviceProduct) {
+        String unitCode = org.apache.commons.lang3.StringUtils.trimToNull(
+            bindItem == null ? null : bindItem.getUnitCode());
+        if (unitCode != null) {
+            return unitCode;
+        }
+        if (deviceProduct != null) {
+            unitCode = org.apache.commons.lang3.StringUtils.firstNonBlank(
+                deviceProduct.getDefInhospitalUnitCode(),
+                deviceProduct.getSplitUnitCode(),
+                deviceProduct.getPackageUnitCode(),
+                deviceProduct.getStockUnitCode());
+        }
+        if (unitCode == null) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_EXE_304,
+                "绑定耗材执行失败：缺少单位编码");
+        }
+        return unitCode;
     }
 
     /**
@@ -799,6 +812,7 @@ public class NurseStationOrderExecuteAppService {
             // orgId 用于解析候选药房模板
             line.setOrgId(context.encounterOrgIds.get(order.getEncounterId()));
             line.setMedicationId(med.getMedicationId());
+            line.setMethodCode(med.getMethodCode());
             // categoryCode 由库存装配器按产品读模型 category_code 解析（与住院医生站 FIFO 口径一致）
             line.setBusinessQuantity(InpatientMedicationRequestExecutionMeasureSupport.resolveDispenseQuantityFromRequest(
                 med.getQuantity()));
@@ -810,205 +824,173 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
-     * 查找临时药嘱可挂接的草稿发放单（DRAFT 态）。
-     *
-     * @param medReqId 药品申请主键
-     * @param context  写上下文缓存
-     * @return 草稿 Dispense
-     * @throws BusinessException EX-IP-EXE-303 未找到
+     * 将 FIFO 分段计划按药嘱槽位键索引（与 {@link #buildInventoryGateDemands} 顺序一致）。
      */
-    private MedicationDispense findDraftMedicationDispense(Long medReqId, WriteContextBundle context) {
-        List<MedicationDispense> dispenses = context.dispensesByMedReqId.get(medReqId);
-        if (dispenses == null) {
-            // 首次访问该 medReq：批量查发放单并写入上下文缓存
-            dispenses = medicationDispenseQueryService.listMedicationDispensesByMedReqIds(List.of(medReqId));
-            context.dispensesByMedReqId.put(medReqId, dispenses);
-        }
-        for (MedicationDispense row : dispenses) {
-            if (row != null && row.isDraftStatus()) {
-                // 临时药嘱签发侧应已生成唯一草稿发放单
-                return row;
+    private Map<String, List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment>> indexFifoSegmentsByMedicationSlot(
+        List<NurseStationExecutionInventoryAssembler.InventoryGateDemandLine> gateLines,
+        List<NurseStationOrderExecuteWriteSlotDto> items,
+        NurseStationExecutionInventoryAssembler.MedicationFifoBatchPlan fifoBatchPlan) {
+        Map<String, List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment>> indexed = new HashMap<>();
+        int gateIndex = 0;
+        for (NurseStationOrderExecuteWriteSlotDto item : items) {
+            if (!ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
+                continue;
             }
+            indexed.put(this.buildMedicationGateSlotKey(item), fifoBatchPlan.getSegments(gateIndex));
+            gateIndex = gateIndex + 1;
         }
-        throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_303, "未找到可挂接的草稿发放单");
+        if (gateLines != null && gateIndex != gateLines.size()) {
+            throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_302, "库存 Gate 索引不一致");
+        }
+        return indexed;
     }
 
     /**
-     * 查找临时医嘱执行可激活的费用行（签发后 PLANNED；未升位时兼容 DRAFT）。
-     *
-     * @param context      写上下文缓存
-     * @param encounterId  就诊主键
-     * @param serviceId    服务主键（medReqId 或 serviceReqId）
-     * @param serviceTable 服务表名
-     * @return 可激活 ChargeItem
-     * @throws BusinessException EX-IP-EXE-303 未找到
+     * 药嘱库存 Gate 槽位键：orderKey + planTime。
      */
-    private ChargeItem findActivatableChargeForService(
-        WriteContextBundle context,
-        Long encounterId,
-        Long serviceId,
-        String serviceTable) {
-        List<ChargeItem> charges = this.loadEncounterCharges(context, encounterId);
-        for (ChargeItem row : charges) {
-            if (row == null) {
-                continue;
-            }
-            if (!serviceTable.equals(row.getServiceTable())) {
-                continue;
-            }
-            if (!serviceId.equals(row.getServiceId())) {
-                continue;
-            }
-            if (this.isActivatableByExecutionStatus(row.getStatusEnum())) {
-                return row;
-            }
+    private String buildMedicationGateSlotKey(NurseStationOrderExecuteWriteSlotDto item) {
+        String planTimeText = "";
+        if (item.getPlanTime() != null) {
+            planTimeText = item.getPlanTime().toString();
         }
-        throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_303, "未找到可激活的待收费费用行");
-    }
-
-    /**
-     * 查找临时药嘱 FIFO 分段执行可激活的费用行（按 dispense 锚点；签发后 PLANNED）。
-     *
-     * @param context       写上下文缓存
-     * @param encounterId   就诊主键
-     * @param dispenseId    发放单主键
-     * @param dispenseTable 发放物理表名
-     * @return 可激活 ChargeItem
-     * @throws BusinessException EX-IP-EXE-303 未找到
-     */
-    private ChargeItem findActivatableChargeForDispense(
-        WriteContextBundle context,
-        Long encounterId,
-        Long dispenseId,
-        String dispenseTable) {
-        List<ChargeItem> charges = this.loadEncounterCharges(context, encounterId);
-        for (ChargeItem row : charges) {
-            if (row == null) {
-                continue;
-            }
-            if (!dispenseTable.equals(row.getDispenseTable())) {
-                continue;
-            }
-            if (!dispenseId.equals(row.getDispenseId())) {
-                continue;
-            }
-            if (this.isActivatableByExecutionStatus(row.getStatusEnum())) {
-                return row;
-            }
-        }
-        throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_303, "未找到可激活的待收费费用行");
-    }
-
-    /**
-     * 按就诊懒加载费用行列表并写入写上下文缓存。
-     *
-     * @param context     写上下文
-     * @param encounterId 就诊主键
-     * @return 该就诊下全部费用行
-     */
-    private List<ChargeItem> loadEncounterCharges(WriteContextBundle context, Long encounterId) {
-        List<ChargeItem> charges = context.chargesByEncounterId.get(encounterId);
-        if (charges == null) {
-            ChargeItemQueryCommand cmd = new ChargeItemQueryCommand();
-            cmd.setEncounterId(encounterId);
-            charges = chargeItemQueryService.listChargeItemsByEncounterId(cmd);
-            context.chargesByEncounterId.put(encounterId, charges);
-        }
-        return charges;
-    }
-
-    /**
-     * 判断费用行是否可被临时医嘱执行激活（PLANNED 或 DRAFT）。
-     *
-     * @param statusEnum 收费状态持久化码
-     * @return 可激活时 true
-     */
-    private boolean isActivatableByExecutionStatus(String statusEnum) {
-        if (ChargeItemStatus.PLANNED.getCode().equals(statusEnum)) {
-            return true;
-        }
-        if (ChargeItemStatus.DRAFT.getCode().equals(statusEnum)) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * 长期执行新建费用：药嘱须始终解析定价行以做单位比例换算；诊疗等模板已带 definitionId 时可跳过查价。
-     *
-     * @param template         签发侧费用模板；可空
-     * @param productTable     产品定义表
-     * @param productId        产品定义主键
-     * @param medicationPath   药嘱执行路径时为 true
-     * @return 销售定价行；非药嘱且模板已含 definitionId 时返回 {@code null}
-     * @throws BusinessException 缺少产品主键或未配置开立口径定价时抛出
-     */
-    private ChargeItemDefinition resolveSalePriceLineForPlannedCharge(
-        ChargeItem template,
-        String productTable,
-        Long productId,
-        boolean medicationPath) {
-        if (medicationPath) {
-            return this.requireSalePriceLineForExecution(productTable, productId);
-        }
-        if (template != null && template.getDefinitionId() != null) {
-            return null;
-        }
-        return this.requireSalePriceLineForExecution(productTable, productId);
+        return this.buildOrderKey(item) + "|" + planTimeText;
     }
 
     /**
      * 加载单条药品定义读模型，供护士执行新建 Charge 时按单位槽换算单价。
      *
+     * @param context      写上下文缓存
      * @param medicationId 药品定义主键
      * @return 读模型；未命中时 {@code null}
      */
-    private ProductDefinitionDisplayDto loadMedicationProductDefinition(Long medicationId) {
-        return this.loadProductDefinition(TableNameConstants.MED_MEDICATION_DEFINITION, medicationId);
+    private ProductDefinitionDisplayDto loadMedicationProductDefinition(
+        WriteContextBundle context,
+        Long medicationId) {
+        return this.loadProductDefinition(context, TableNameConstants.MED_MEDICATION_DEFINITION, medicationId);
     }
 
     /**
-     * 按产品定义表与主键加载读模型，供执行计费比例换算。
+     * 按产品定义表与主键加载读模型，供执行计费比例换算（优先读写上下文缓存）。
+     *
+     * @param context              写上下文缓存
+     * @param productTable         产品定义表
+     * @param productDefinitionId  产品定义主键
+     * @return 读模型；未命中时 {@code null}
      */
-    private ProductDefinitionDisplayDto loadProductDefinition(String productTable, Long productDefinitionId) {
+    private ProductDefinitionDisplayDto loadProductDefinition(
+        WriteContextBundle context,
+        String productTable,
+        Long productDefinitionId) {
         if (productDefinitionId == null) {
             return null;
+        }
+        String cacheKey = ProductDefinitionKeyUtil.buildCompositeKey(productTable, productDefinitionId);
+        ProductDefinitionDisplayDto cached = context.getProductDefinition(cacheKey);
+        if (cached != null) {
+            return cached;
         }
         ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
         lookup.setProductTableName(productTable);
         lookup.setProductDefinitionId(productDefinitionId);
         Map<String, ProductDefinitionDisplayDto> loaded =
             productDefinitionBatchLoader.loadAsMap(List.of(lookup));
-        String key = ProductDefinitionKeyUtil.buildCompositeKey(productTable, productDefinitionId);
-        return loaded.get(key);
+        ProductDefinitionDisplayDto product = loaded.get(cacheKey);
+        if (product != null) {
+            context.putProductDefinition(cacheKey, product);
+        }
+        return product;
     }
 
     /**
-     * 按产品定义加载开立口径销售定价行（与住院医生站 {@code firstPriceLine} 同构）。
+     * 执行写路径解析 {@link ChargeItemDefinition}（对齐列表 bindItems 已回填的 definitionId 与 BR-IP-EXE-026）。
      *
-     * @param instanceTable 定价实例表（药品/诊疗/耗材定义表）
-     * @param instanceId    定价实例主键
-     * @return 销售定价行
-     * @throws BusinessException 实例主键为空或未配置定价时抛出
+     * <p>优先顺序：① 调用方已解析的 {@code preferredDefinitionId}（绑定项/诊嘱模板）；② 按实例批量查价，
+     * 药耗路径按 {@code executionLotNumber} 命中批号售价；③ 产品读模型 {@code chargeItemDefinitionId} 回落。</p>
+     *
+     * @param context                写上下文缓存
+     * @param instanceTable          定价实例表
+     * @param instanceId             定价实例主键
+     * @param preferredDefinitionId  列表或模板已选定价主键；无则 {@code null}
+     * @param executionLotNumber     FIFO/执行批号；仅药嘱长期执行传入
+     * @return 用于比例换算的定价行
+     * @throws BusinessException 实例与回落均无法命中开立口径定价时抛出
      */
-    private ChargeItemDefinition requireSalePriceLineForExecution(String instanceTable, Long instanceId) {
-        if (instanceId == null) {
+    private ChargeItemDefinition requirePriceLineForExecution(
+        WriteContextBundle context,
+        String instanceTable,
+        Long instanceId,
+        Long preferredDefinitionId,
+        String executionLotNumber) {
+        if (instanceId == null && preferredDefinitionId == null) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_EXE_303,
                 "产品定义主键缺失，无法生成执行费用");
         }
-        ChargeItemDefinitionQueryCommand priceQuery = new ChargeItemDefinitionQueryCommand();
-        priceQuery.setInstanceTable(instanceTable);
-        priceQuery.setInstanceIds(List.of(instanceId));
-        List<ChargeItemDefinition> priceLines = chargeItemDefinitionQueryService.findPriceLinesByProjects(priceQuery);
-        ChargeItemDefinition priceLine =
-            InpatientDoctorStationAdviceCatalogAssembler.selectFirstPriceLineForChargeDraft(instanceTable, priceLines);
-        if (priceLine == null) {
+        // 列表 bindItems / 诊嘱费用模板已解析 definitionId 时直接复用，避免与 IF-IP-EXE-01 展示口径不一致。
+        if (preferredDefinitionId != null) {
+            ChargeItemDefinition preferred = context.getChargeDefinitionById(preferredDefinitionId);
+            if (preferred == null) {
+                Map<Long, ChargeItemDefinition> preferredById =
+                    chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(List.of(preferredDefinitionId));
+                preferred = preferredById.get(preferredDefinitionId);
+                if (preferred != null) {
+                    context.putChargeDefinition(preferred);
+                }
+            }
+            if (preferred != null) {
+                return preferred;
+            }
+        }
+        if (instanceId == null) {
             throw new BusinessException(
                 ErrorCodeConstants.CHARGE_ITEM_DEFINITION_INVALID_ARGUMENT,
-                DoctorStationAdviceConstants.MSG_CHARGE_DEFINITION_MISSING_FOR_SAVE);
+                this.resolveExecutionChargeDefinitionMissingMessage(instanceTable));
         }
-        return priceLine;
+        List<ChargeItemDefinition> priceLines = context.getPriceLinesForInstance(instanceTable, instanceId);
+        if (priceLines == null) {
+            ChargeItemDefinitionQueryCommand priceQuery = new ChargeItemDefinitionQueryCommand();
+            priceQuery.setInstanceTable(instanceTable);
+            priceQuery.setInstanceIds(List.of(instanceId));
+            priceLines = chargeItemDefinitionQueryService.findPriceLinesByProjects(priceQuery);
+            context.putPriceLinesForInstance(instanceTable, instanceId, priceLines);
+        }
+        ChargeItemDefinition priceLine = clinicalCatalogPriceResolveSupport.selectExecutionPriceLineForChargeDraft(
+            instanceTable, priceLines, executionLotNumber);
+        if (priceLine != null) {
+            return priceLine;
+        }
+        // 与绑定列表 assemble 相同：产品定义行上挂接的 chargeItemDefinitionId 作末级回落。
+        ProductDefinitionDisplayDto productRow = this.loadProductDefinition(context, instanceTable, instanceId);
+        if (productRow != null && productRow.getChargeItemDefinitionId() != null) {
+            ChargeItemDefinition fallback = context.getChargeDefinitionById(productRow.getChargeItemDefinitionId());
+            if (fallback == null) {
+                Map<Long, ChargeItemDefinition> fallbackById = chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(
+                    List.of(productRow.getChargeItemDefinitionId()));
+                fallback = fallbackById.get(productRow.getChargeItemDefinitionId());
+                if (fallback != null) {
+                    context.putChargeDefinition(fallback);
+                }
+            }
+            if (fallback != null) {
+                return fallback;
+            }
+        }
+        throw new BusinessException(
+            ErrorCodeConstants.CHARGE_ITEM_DEFINITION_INVALID_ARGUMENT,
+            this.resolveExecutionChargeDefinitionMissingMessage(instanceTable));
+    }
+
+    /**
+     * 按产品表返回执行路径定价缺失文案（诊疗 SALE / 药耗 LOT_NUMBER_PRICE）。
+     *
+     * @param instanceTable 定价实例表
+     * @return 业务异常提示
+     */
+    private String resolveExecutionChargeDefinitionMissingMessage(String instanceTable) {
+        if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equalsIgnoreCase(instanceTable)) {
+            return DoctorStationAdviceConstants.MSG_CHARGE_DEFINITION_MISSING_FOR_SAVE;
+        }
+        return DoctorStationAdviceConstants.MSG_CHARGE_DEFINITION_MISSING_LOT_NUMBER_PRICE;
     }
 
     /**
@@ -1059,14 +1041,19 @@ public class NurseStationOrderExecuteAppService {
      */
     private WriteContextBundle prepareWriteContext(List<NurseStationOrderExecuteWriteSlotDto> items) {
         WriteContextBundle bundle = new WriteContextBundle();
-        Long practitionerId = currentUser.getCurrentPractitionerId();
-        List<Long> managedWardIds = this.resolveManagedWardIds(practitionerId);
+        List<Long> managedWardIds = managedWardLocationIdsResolver.listManagedWardLocationIdsOrEmpty();
         Set<Long> encounterIds = new LinkedHashSet<>();
-        // 批量解析 OrderInfo 骨架，建立 orderId:orderType → OrderInfo 索引
+        Set<String> loadedOrderKeys = new LinkedHashSet<>();
+        // 批量解析 OrderInfo 骨架：同一医嘱多计划点只查一次
         for (NurseStationOrderExecuteWriteSlotDto item : items) {
+            String orderKey = this.buildOrderKey(item);
+            if (loadedOrderKeys.contains(orderKey)) {
+                continue;
+            }
+            loadedOrderKeys.add(orderKey);
             InpatientOrderListSkeleton order = inpatientOrderLookupLoader.mustGetByOrderTypeAndId(
                 item.getOrderType(), item.getOrderId());
-            bundle.orderByKey.put(this.buildOrderKey(item), order);
+            bundle.orderByKey.put(orderKey, order);
             if (order.getEncounterId() != null) {
                 encounterIds.add(order.getEncounterId());
             }
@@ -1108,14 +1095,181 @@ public class NurseStationOrderExecuteAppService {
                 }
             }
         }
-        // 写 Gate 需比对「当前 pending 槽位」与 DB 中 Procedure 历史是否一致
+        // 按就诊预热费用行，供执行写路径定价模板复用
+        for (Long encounterId : encounterIds) {
+            ChargeItemQueryCommand cmd = new ChargeItemQueryCommand();
+            cmd.setEncounterId(encounterId);
+            List<ChargeItem> charges = chargeItemQueryService.listChargeItemsByEncounterId(cmd);
+            bundle.chargesByEncounterId.put(encounterId, charges);
+        }
+        // 写 Gate 需比对「当前 pending 槽位」与 DB 中 Procedure 历史是否一致（按医嘱去重）
+        Set<String> loadedProcedureKeys = new LinkedHashSet<>();
         for (NurseStationOrderExecuteWriteSlotDto item : items) {
+            String orderKey = this.buildOrderKey(item);
+            if (loadedProcedureKeys.contains(orderKey)) {
+                continue;
+            }
+            loadedProcedureKeys.add(orderKey);
             String requestTable = this.resolveRequestTable(item.getOrderType());
             List<ProcedureRecordQueryModel> procedures =
                 procedureQueryService.getProcedureRecords(item.getOrderId(), requestTable);
-            bundle.proceduresByOrderKey.put(this.buildOrderKey(item), procedures);
+            bundle.proceduresByOrderKey.put(orderKey, procedures);
         }
         return bundle;
+    }
+
+    /**
+     * 执行写路径批量预热：产品读模型与定价行（避免按槽位 N 次重复查库）。
+     *
+     * @param items   待执行槽位
+     * @param context 预加载写上下文
+     */
+    private void warmWritePathCatalogCaches(
+        List<NurseStationOrderExecuteWriteSlotDto> items,
+        WriteContextBundle context) {
+        List<ProductDefinitionBatchLookup> productLookups = new ArrayList<>();
+        Set<String> productLookupKeys = new LinkedHashSet<>();
+        Map<String, Set<Long>> instanceIdsByTable = new HashMap<>();
+        Set<Long> preferredDefinitionIds = new LinkedHashSet<>();
+        for (NurseStationOrderExecuteWriteSlotDto item : items) {
+            String orderKey = this.buildOrderKey(item);
+            InpatientOrderListSkeleton order = context.orderByKey.get(orderKey);
+            if (order == null) {
+                continue;
+            }
+            OrderExecutionContext orderCtx = context.resolveOrderContext(item);
+            if (ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
+                MedicationRequestListQueryModel med = orderCtx.medDetail;
+                if (med != null && med.getMedicationId() != null) {
+                    this.collectProductLookup(
+                        productLookups, productLookupKeys,
+                        TableNameConstants.MED_MEDICATION_DEFINITION, med.getMedicationId());
+                    this.collectInstanceIdForPriceWarmup(
+                        instanceIdsByTable, TableNameConstants.MED_MEDICATION_DEFINITION, med.getMedicationId());
+                    ChargeItem template = this.findChargeTemplate(
+                        context, order.getEncounterId(), TableNameConstants.MED_MEDICATION_REQUEST, med.getId());
+                    if (template != null && template.getDefinitionId() != null) {
+                        preferredDefinitionIds.add(template.getDefinitionId());
+                    }
+                }
+            } else if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(item.getOrderType())) {
+                ServiceRequestListModel svc = orderCtx.svcDetail;
+                Long activityId = order.getActivityId();
+                if (svc != null && svc.getActivityId() != null) {
+                    activityId = svc.getActivityId();
+                }
+                if (activityId != null) {
+                    this.collectProductLookup(
+                        productLookups, productLookupKeys,
+                        TableNameConstants.WKF_ACTIVITY_DEFINITION, activityId);
+                    this.collectInstanceIdForPriceWarmup(
+                        instanceIdsByTable, TableNameConstants.WKF_ACTIVITY_DEFINITION, activityId);
+                }
+                ChargeItem template = this.findChargeTemplate(
+                    context, order.getEncounterId(), TableNameConstants.WKF_SERVICE_REQUEST, item.getOrderId());
+                if (template != null && template.getDefinitionId() != null) {
+                    preferredDefinitionIds.add(template.getDefinitionId());
+                }
+            }
+            if (item.getBindItems() == null) {
+                continue;
+            }
+            for (NurseStationOrderExecuteBindItemDto bindItem : item.getBindItems()) {
+                if (bindItem == null) {
+                    continue;
+                }
+                if (bindItem.getChargeItemDefinitionId() != null) {
+                    preferredDefinitionIds.add(bindItem.getChargeItemDefinitionId());
+                }
+                if (bindItem.getActivityId() != null) {
+                    this.collectProductLookup(
+                        productLookups, productLookupKeys,
+                        TableNameConstants.WKF_ACTIVITY_DEFINITION, bindItem.getActivityId());
+                    this.collectInstanceIdForPriceWarmup(
+                        instanceIdsByTable, TableNameConstants.WKF_ACTIVITY_DEFINITION, bindItem.getActivityId());
+                }
+                if (bindItem.getDeviceId() != null) {
+                    this.collectProductLookup(
+                        productLookups, productLookupKeys,
+                        TableNameConstants.ADM_DEVICE_DEFINITION, bindItem.getDeviceId());
+                    this.collectInstanceIdForPriceWarmup(
+                        instanceIdsByTable, TableNameConstants.ADM_DEVICE_DEFINITION, bindItem.getDeviceId());
+                }
+            }
+        }
+        if (!productLookups.isEmpty()) {
+            Map<String, ProductDefinitionDisplayDto> loadedProducts =
+                productDefinitionBatchLoader.loadAsMap(productLookups);
+            for (Map.Entry<String, ProductDefinitionDisplayDto> entry : loadedProducts.entrySet()) {
+                if (entry.getValue() != null) {
+                    context.putProductDefinition(entry.getKey(), entry.getValue());
+                    if (entry.getValue().getChargeItemDefinitionId() != null) {
+                        preferredDefinitionIds.add(entry.getValue().getChargeItemDefinitionId());
+                    }
+                }
+            }
+        }
+        if (!preferredDefinitionIds.isEmpty()) {
+            Map<Long, ChargeItemDefinition> definitions =
+                chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(preferredDefinitionIds);
+            for (ChargeItemDefinition definition : definitions.values()) {
+                if (definition != null) {
+                    context.putChargeDefinition(definition);
+                }
+            }
+        }
+        for (Map.Entry<String, Set<Long>> entry : instanceIdsByTable.entrySet()) {
+            String instanceTable = entry.getKey();
+            List<Long> instanceIds = new ArrayList<>(entry.getValue());
+            if (instanceIds.isEmpty()) {
+                continue;
+            }
+            ChargeItemDefinitionQueryCommand priceQuery = new ChargeItemDefinitionQueryCommand();
+            priceQuery.setInstanceTable(instanceTable);
+            priceQuery.setInstanceIds(instanceIds);
+            List<ChargeItemDefinition> priceLines = chargeItemDefinitionQueryService.findPriceLinesByProjects(priceQuery);
+            context.indexPriceLinesByInstance(instanceTable, priceLines);
+        }
+    }
+
+    /**
+     * 收集产品定义批量查询项（去重）。
+     */
+    private void collectProductLookup(
+        List<ProductDefinitionBatchLookup> productLookups,
+        Set<String> productLookupKeys,
+        String productTable,
+        Long productDefinitionId) {
+        if (productDefinitionId == null) {
+            return;
+        }
+        String cacheKey = ProductDefinitionKeyUtil.buildCompositeKey(productTable, productDefinitionId);
+        if (productLookupKeys.contains(cacheKey)) {
+            return;
+        }
+        productLookupKeys.add(cacheKey);
+        ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+        lookup.setProductTableName(productTable);
+        lookup.setProductDefinitionId(productDefinitionId);
+        productLookups.add(lookup);
+    }
+
+    /**
+     * 收集定价实例主键（按实例表分组去重）。
+     */
+    private void collectInstanceIdForPriceWarmup(
+        Map<String, Set<Long>> instanceIdsByTable,
+        String instanceTable,
+        Long instanceId) {
+        if (instanceId == null) {
+            return;
+        }
+        Set<Long> bucket = instanceIdsByTable.get(instanceTable);
+        if (bucket == null) {
+            bucket = new LinkedHashSet<>();
+            instanceIdsByTable.put(instanceTable, bucket);
+        }
+        bucket.add(instanceId);
     }
 
     /**
@@ -1152,15 +1306,15 @@ public class NurseStationOrderExecuteAppService {
             order, orderCtx.medDetail, orderCtx.svcDetail, item.getPlanTime())) {
             throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_303, "计划点晚于停嘱时间，不可执行");
         }
-        // occurrence 防重：同一 planTime 已有 COMPLETED/STOPPED/CANCEL 终态则拒绝（EX-IP-EXE-301）
+        // occurrence 净态 Gate：仅 pending / cancelled 可正向执行；已执行/不执行拒绝（EX-IP-EXE-301）
         List<ProcedureRecordQueryModel> procedures = context.proceduresByOrderKey.get(this.buildOrderKey(item));
-        boolean pending = nurseStationOrderExecuteListAssembler.isPlanTimePending(
+        boolean executable = nurseStationOrderExecuteListAssembler.isPlanTimeExecutable(
             order,
             orderCtx.medDetail,
             orderCtx.svcDetail,
             item.getPlanTime(),
             procedures);
-        if (!pending) {
+        if (!executable) {
             throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_301, "该计划点已执行或已登记不执行，请刷新后重试");
         }
     }
@@ -1319,24 +1473,6 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
-     * 解析当前医务人员管理病区库位主键列表（护士站可见范围基础）。
-     *
-     * @param practitionerId 医务人员主键；可 null
-     * @return 病区 locationId 列表；无管理病区时为空列表
-     */
-    private List<Long> resolveManagedWardIds(Long practitionerId) {
-        // 护士站可见性：当前用户所管理病区（非全机构）
-        List<Location> wards = locationQueryService.listManagedWardsForPractitioner(practitionerId);
-        List<Long> ids = new ArrayList<>();
-        for (Location ward : wards) {
-            if (ward != null && ward.getId() != null) {
-                ids.add(ward.getId());
-            }
-        }
-        return ids;
-    }
-
-    /**
      * 就诊主键去重并保持前端勾选顺序。
      *
      * @param encounterIds 原始列表；可 null
@@ -1466,7 +1602,7 @@ public class NurseStationOrderExecuteAppService {
     /**
      * 写路径预加载上下文容器。
      *
-     * <p>Charge/Dispense 按 encounterId/medReqId 懒加载缓存，避免同一批次重复查库。</p>
+     * <p>Charge/产品/定价按 encounterId、产品键缓存，避免同一批次重复查库。</p>
      */
     private static class WriteContextBundle {
         /** orderId:orderType → OrderInfo 读模型。 */
@@ -1477,14 +1613,113 @@ public class NurseStationOrderExecuteAppService {
         private final Map<Long, ServiceRequestListModel> svcDetailById = new HashMap<>();
         /** orderKey → Procedure 历史列表。 */
         private final Map<String, List<ProcedureRecordQueryModel>> proceduresByOrderKey = new HashMap<>();
-        /** encounterId → 费用行列表（懒加载）。 */
+        /** encounterId → 费用行列表（执行写路径定价模板复用）。 */
         private final Map<Long, List<ChargeItem>> chargesByEncounterId = new HashMap<>();
-        /** medReqId → 发放单列表（懒加载）。 */
-        private final Map<Long, List<MedicationDispense>> dispensesByMedReqId = new HashMap<>();
+        /** 产品复合键 → 产品读模型。 */
+        private final Map<String, ProductDefinitionDisplayDto> productDefinitionByKey = new HashMap<>();
+        /** definitionId → 定价行。 */
+        private final Map<Long, ChargeItemDefinition> chargeDefinitionById = new HashMap<>();
+        /** instanceTable → instanceId → 定价行列表。 */
+        private final Map<String, Map<Long, List<ChargeItemDefinition>>> priceLinesByInstanceTable = new HashMap<>();
         /** 护士可见 encounterId 集合。 */
         private Set<Long> visibleEncounterIds = new HashSet<>();
         /** encounterId → organizationId。 */
         private Map<Long, Long> encounterOrgIds = new HashMap<>();
+        /** 绑定耗材自动扣库时按 inventoryItemId 累计待扣数量（批次末合并扣减）。 */
+        private final Map<Long, BigDecimal> deviceInventoryDecreaseAccumulator = new HashMap<>();
+
+        /**
+         * @return 绑定耗材自动扣库累计器（可空映射，调用方判空后合并扣减）
+         */
+        private Map<Long, BigDecimal> getDeviceInventoryDecreaseAccumulator() {
+            return this.deviceInventoryDecreaseAccumulator;
+        }
+
+        /**
+         * 写入产品读模型缓存。
+         */
+        private void putProductDefinition(String cacheKey, ProductDefinitionDisplayDto product) {
+            if (cacheKey != null && product != null) {
+                this.productDefinitionByKey.put(cacheKey, product);
+            }
+        }
+
+        /**
+         * 读取产品读模型缓存。
+         */
+        private ProductDefinitionDisplayDto getProductDefinition(String cacheKey) {
+            return this.productDefinitionByKey.get(cacheKey);
+        }
+
+        /**
+         * 写入定价行主键缓存。
+         */
+        private void putChargeDefinition(ChargeItemDefinition definition) {
+            if (definition != null && definition.getId() != null) {
+                this.chargeDefinitionById.put(definition.getId(), definition);
+            }
+        }
+
+        /**
+         * 按定价主键读取缓存。
+         */
+        private ChargeItemDefinition getChargeDefinitionById(Long definitionId) {
+            if (definitionId == null) {
+                return null;
+            }
+            return this.chargeDefinitionById.get(definitionId);
+        }
+
+        /**
+         * 按实例维度索引批量查价结果。
+         */
+        private void indexPriceLinesByInstance(String instanceTable, List<ChargeItemDefinition> priceLines) {
+            if (instanceTable == null || priceLines == null || priceLines.isEmpty()) {
+                return;
+            }
+            Map<Long, List<ChargeItemDefinition>> byInstanceId =
+                this.priceLinesByInstanceTable.computeIfAbsent(instanceTable, key -> new HashMap<>());
+            for (ChargeItemDefinition priceLine : priceLines) {
+                if (priceLine == null || priceLine.getInstanceId() == null) {
+                    continue;
+                }
+                List<ChargeItemDefinition> bucket = byInstanceId.get(priceLine.getInstanceId());
+                if (bucket == null) {
+                    bucket = new ArrayList<>();
+                    byInstanceId.put(priceLine.getInstanceId(), bucket);
+                }
+                bucket.add(priceLine);
+            }
+        }
+
+        /**
+         * 写入单实例定价行列表缓存。
+         */
+        private void putPriceLinesForInstance(
+            String instanceTable,
+            Long instanceId,
+            List<ChargeItemDefinition> priceLines) {
+            if (instanceTable == null || instanceId == null) {
+                return;
+            }
+            Map<Long, List<ChargeItemDefinition>> byInstanceId =
+                this.priceLinesByInstanceTable.computeIfAbsent(instanceTable, key -> new HashMap<>());
+            byInstanceId.put(instanceId, priceLines == null ? List.of() : priceLines);
+        }
+
+        /**
+         * 读取单实例定价行列表缓存。
+         */
+        private List<ChargeItemDefinition> getPriceLinesForInstance(String instanceTable, Long instanceId) {
+            if (instanceTable == null || instanceId == null) {
+                return null;
+            }
+            Map<Long, List<ChargeItemDefinition>> byInstanceId = this.priceLinesByInstanceTable.get(instanceTable);
+            if (byInstanceId == null) {
+                return null;
+            }
+            return byInstanceId.get(instanceId);
+        }
 
         /**
          * 解析单槽位药/诊明细与长临 code。

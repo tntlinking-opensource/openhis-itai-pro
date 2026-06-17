@@ -19,8 +19,8 @@ package com.openhis.health.application.inpatient.doctorstation.advice.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -37,6 +37,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站医嘱开立目录行。 */
 @Schema(description = "医生站医嘱开立目录行")
 public class InpatientDoctorStationAdviceCatalogRowDto {
 
@@ -74,12 +75,11 @@ public class InpatientDoctorStationAdviceCatalogRowDto {
     private String categoryCodeDictText;
 
     /**
-     * 计价主单位编码：门诊默认开立单位优先，其次采购、销售（与装配器 {@code StringUtils.firstNonBlank} 顺序一致）。
+     * 计价主单位编码：包装单位（{@code package_unit_code}），禁止跨槽回落。
      */
-    @Schema(description = "计价主单位编码")
+    @Schema(description = "计价主单位编码（包装单位）")
     private String unitCode;
 
-    /** 与 {@link #unitCode} 同优先级的单位展示名。 */
     @Schema(description = "计价主单位展示名")
     private String unitName;
 
@@ -88,22 +88,6 @@ public class InpatientDoctorStationAdviceCatalogRowDto {
      */
     @Schema(description = "五类单位槽列表")
     private List<ProductDefinitionCatalogUnitBandDto> unitBands;
-
-    /** 默认门诊开立单位编码。 */
-    @Schema(description = "默认门诊开立单位编码")
-    private String defEncounterUnitCode;
-
-    /** 默认门诊开立单位展示名。 */
-    @Schema(description = "默认门诊开立单位展示名")
-    private String defEncounterUnitName;
-
-    /** 默认住院单位编码。 */
-    @Schema(description = "默认住院单位编码")
-    private String defInhospitalUnitCode;
-
-    /** 默认住院单位展示名。 */
-    @Schema(description = "默认住院单位展示名")
-    private String defInhospitalUnitName;
 
     /** 默认用药频次编码（药品读模型投影）。 */
     @Schema(description = "默认频次编码")
@@ -179,6 +163,7 @@ public class InpatientDoctorStationAdviceCatalogRowDto {
 
     /** 默认执行科室主键（读模型 {@code location_id}）。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 默认执行科室主键。 */
     @Schema(description = "默认执行科室主键")
     private Long defaultPerformOrgId;
 
@@ -186,8 +171,9 @@ public class InpatientDoctorStationAdviceCatalogRowDto {
     @Schema(description = "默认执行科室名称")
     private String defaultPerformOrgName;
 
-    /** 默认发药/发材库房主键（由首条可用库存行推导）。 */
+    /** 默认发药/发材库房（IF-IP-DOR-11 读侧展示；住院写路径不回传）。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 默认发药/发材库房 id。 */
     @Schema(description = "默认发药/发材库房 id")
     private Long defaultDispenseLocationId;
 
@@ -214,8 +200,4 @@ public class InpatientDoctorStationAdviceCatalogRowDto {
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "收费项定义主键")
     private Long chargeItemDefinitionId;
-
-    /** 定价来源请求码回显（如零售价/批次售价）。 */
-    @Schema(description = "实际定价来源回显")
-    private String pricingSourceCode;
 }

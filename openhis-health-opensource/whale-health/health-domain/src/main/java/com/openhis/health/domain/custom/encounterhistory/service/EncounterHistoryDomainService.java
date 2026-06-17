@@ -121,28 +121,6 @@ public class EncounterHistoryDomainService {
     }
 
     /**
-     * 记录陪护腕带打印里程碑。
-     *
-     * @param encounterId 就诊标识
-     * @param companionId 陪护记录标识（写入 requestId 供追溯）
-     * @return 里程碑主键
-     */
-    public Long recordCompanionWristbandPrintMilestone(Long encounterId, Long companionId) {
-        if (encounterId == null) {
-            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_HISTORY_INVALID_ARGUMENT, "就诊标识不能为空");
-        }
-        EncounterHistory history = new EncounterHistory();
-        history.setName(CustomConstants.EncounterHistoryMilestoneName.COMPANION_WRISTBAND_PRINT);
-        history.setEncounterId(encounterId);
-        history.setRequestId(companionId);
-        history.setRequestTableName("emg_encounter_companion");
-        history.assertRequiredFields();
-        history.assertRequestRefPair();
-        EncounterHistory saved = repository.save(history);
-        return saved.getId();
-    }
-
-    /**
      * 记录入科里程碑。
      *
      * @param command 命令

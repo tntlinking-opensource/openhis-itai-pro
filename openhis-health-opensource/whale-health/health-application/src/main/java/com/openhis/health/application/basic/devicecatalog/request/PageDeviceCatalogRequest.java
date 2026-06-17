@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.basic.devicecatalog.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 

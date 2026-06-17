@@ -30,10 +30,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 已划价列表响应。 */
 @Schema(description = "已划价列表响应")
 public class ListNurseStationPricedOrdersResponse {
 
-    /** 按 encounterId 分组的已划价行；组内按划价时间降序。 */
     @Schema(description = "按就诊分组")
     private List<NurseStationPricingPatientGroupDto> groups = new ArrayList<>();
 }

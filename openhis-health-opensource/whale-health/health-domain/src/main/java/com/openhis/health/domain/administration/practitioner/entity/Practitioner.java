@@ -5,20 +5,12 @@
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.openhis.health.domain.administration.practitioner.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
-import com.openhis.health.domain.share.enums.PractitionerStatus;
+import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.BaseAuditedEntity;
 import jakarta.persistence.Column;
@@ -33,6 +25,10 @@ import java.time.LocalDateTime;
 
 /**
  * 医务人员聚合根实体。
+ *
+ * <p>与 identity {@code User} <strong>主键独立</strong>，仅通过 {@link #userId} 轻关联（不设库表外键），
+ * 与 {@code Organization} ↔ {@code OrganizationUnit} 的 code 桥接同一原则。</p>
+ * <p>主状态 {@link #statusEnum} 与 {@link PublicationStatus} 编码对齐。</p>
  */
 @Getter
 @Setter
@@ -93,10 +89,10 @@ public class Practitioner extends BaseAuditedEntity {
     private String wbStr;
 
     /**
-      * 初始化领域状态。
+     * 新建默认启用（{@link PublicationStatus#ACTIVE}）。
      */
     public void initAsActive() {
-        this.statusEnum = PractitionerStatus.ACTIVE.getCode();
+        this.statusEnum = PublicationStatus.ACTIVE.getCode();
         this.activeFlag = Boolean.TRUE;
     }
 
@@ -110,13 +106,25 @@ public class Practitioner extends BaseAuditedEntity {
         if (StringUtils.isBlank(this.name)) {
             throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "人员姓名不能为空");
         }
+        if (StringUtils.isBlank(this.genderEnum)) {
+            throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "人员性别不能为空");
+        }
+    }
+
+    /**
+     * 绑定平台用户（独立主键，仅写入 {@code user_id}，不设库表外键）。
+     *
+     * @param userId 平台用户主键
+     */
+    public void bindUser(Long userId) {
+        this.userId = userId;
     }
 
     /**
       * 断言业务前置条件满足。
      */
     public void assertEditable() {
-        if (!PractitionerStatus.ACTIVE.getCode().equals(this.statusEnum)) {
+        if (!PublicationStatus.ACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_STATUS, "仅启用人员可编辑");
         }
     }
@@ -125,7 +133,7 @@ public class Practitioner extends BaseAuditedEntity {
       * 断言业务前置条件满足。
      */
     public void assertDeactivatable() {
-        if (!PractitionerStatus.ACTIVE.getCode().equals(this.statusEnum)) {
+        if (!PublicationStatus.ACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_STATUS, "仅启用人员可停用");
         }
     }
@@ -134,7 +142,7 @@ public class Practitioner extends BaseAuditedEntity {
       * 断言业务前置条件满足。
      */
     public void assertActivatable() {
-        if (!PractitionerStatus.INACTIVE.getCode().equals(this.statusEnum)) {
+        if (!PublicationStatus.INACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_STATUS, "仅停用人员可启用");
         }
     }
@@ -143,8 +151,11 @@ public class Practitioner extends BaseAuditedEntity {
       * 断言业务前置条件满足。
      */
     public void assertRetirable() {
-        if (!PractitionerStatus.ACTIVE.getCode().equals(this.statusEnum)
-            && !PractitionerStatus.INACTIVE.getCode().equals(this.statusEnum)) {
+        if (isDiscardedStatus(this.statusEnum) || Boolean.TRUE.equals(this.getIsDeleted())) {
+            throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_STATUS, "人员已废弃");
+        }
+        if (!PublicationStatus.ACTIVE.getCode().equals(this.statusEnum)
+            && !PublicationStatus.INACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_STATUS, "仅启用/停用人员可废弃");
         }
     }
@@ -153,7 +164,7 @@ public class Practitioner extends BaseAuditedEntity {
       * 断言业务前置条件满足。
      */
     public void assertSwitchOrgAllowed() {
-        if (!PractitionerStatus.ACTIVE.getCode().equals(this.statusEnum)) {
+        if (!PublicationStatus.ACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_STATUS, "仅启用人员可切换科室");
         }
     }
@@ -162,7 +173,7 @@ public class Practitioner extends BaseAuditedEntity {
       * 处理transitToInactive逻辑。
      */
     public void transitToInactive() {
-        this.statusEnum = PractitionerStatus.INACTIVE.getCode();
+        this.statusEnum = PublicationStatus.INACTIVE.getCode();
         this.activeFlag = Boolean.FALSE;
     }
 
@@ -170,21 +181,25 @@ public class Practitioner extends BaseAuditedEntity {
       * 处理transitToActive逻辑。
      */
     public void transitToActive() {
-        this.statusEnum = PractitionerStatus.ACTIVE.getCode();
+        this.statusEnum = PublicationStatus.ACTIVE.getCode();
         this.activeFlag = Boolean.TRUE;
     }
 
     /**
-     * 退休/注销医务人员：状态迁至已删除并软删，记录操作人。
+     * 退休/注销医务人员：状态迁至已废弃并软删，记录操作人。
      *
      * @param operatorId 操作人主键
      */
     public void transitToDeleted(Long operatorId) {
-        this.statusEnum = PractitionerStatus.DELETED.getCode();
+        this.statusEnum = PublicationStatus.DISCARDED.getCode();
         this.activeFlag = Boolean.FALSE;
         this.setIsDeleted(Boolean.TRUE);
         this.setDeletedBy(operatorId);
         this.setDeletedAt(LocalDateTime.now());
     }
-}
 
+    private static boolean isDiscardedStatus(String statusEnum) {
+        return PublicationStatus.DISCARDED.getCode().equals(statusEnum)
+            || "DELETED".equals(statusEnum);
+    }
+}

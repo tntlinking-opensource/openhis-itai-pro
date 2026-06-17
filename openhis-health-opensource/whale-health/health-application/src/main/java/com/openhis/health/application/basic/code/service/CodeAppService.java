@@ -184,6 +184,7 @@ public class CodeAppService {
         // 租户隔离：写入当前线程租户，避免跨租户误建。
         command.setTenantId(TenantUtils.getCurrentTenantId());
         CodeSystem saved = codeSystemDomainService.create(command);
+        codeSystemQueryService.clearAllDictCache();
         return codesystemMapper.toDto(saved);
     }
 
@@ -203,6 +204,7 @@ public class CodeAppService {
         }
         var command = codesystemMapper.toUpdateCommand(request);
         CodeSystem saved = codeSystemDomainService.update(command);
+        codeSystemQueryService.clearAllDictCache();
         return codesystemMapper.toDto(saved);
     }
 
@@ -220,6 +222,7 @@ public class CodeAppService {
             throw new ValidationException("删除编码系统失败：编码系统ID不能为空");
         }
         codeSystemDomainService.delete(id);
+        codeSystemQueryService.clearAllDictCache();
     }
 
     /**
@@ -256,7 +259,8 @@ public class CodeAppService {
             throw new ValidationException("新增编码失败：编码系统ID不能为空");
         }
         var command = codesystemMapper.toCreateConceptCommand(request);
-        codeSystemDomainService.createConcept(command);
+        com.openhis.health.domain.terminology.entity.Concept saved = codeSystemDomainService.createConcept(command);
+        codeSystemQueryService.evictDictByCodeSystemId(saved.getCodeSystemId());
     }
 
     /**
@@ -273,7 +277,8 @@ public class CodeAppService {
             throw new ValidationException("更新编码失败：编码ID不能为空");
         }
         var command = codesystemMapper.toUpdateConceptCommand(request);
-        codeSystemDomainService.updateConcept(command);
+        com.openhis.health.domain.terminology.entity.Concept saved = codeSystemDomainService.updateConcept(command);
+        codeSystemQueryService.evictDictByCodeSystemId(saved.getCodeSystemId());
     }
 
     /**
@@ -289,6 +294,8 @@ public class CodeAppService {
         if (id == null) {
             throw new ValidationException("删除编码失败：编码ID不能为空");
         }
+        codeSystemQueryService.findConceptById(id).ifPresent(concept ->
+            codeSystemQueryService.evictDictByCodeSystemId(concept.getCodeSystemId()));
         codeSystemDomainService.deleteConcept(id);
     }
 

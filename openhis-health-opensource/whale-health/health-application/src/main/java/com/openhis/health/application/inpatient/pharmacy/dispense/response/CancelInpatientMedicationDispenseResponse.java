@@ -28,14 +28,13 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 住院作废发放响应。 */
 @Schema(description = "住院作废发放响应")
 public class CancelInpatientMedicationDispenseResponse {
 
-    /** 作废领域命令是否全部成功。 */
     @Schema(description = "是否成功")
     private Boolean success;
 
-    /** 面向用户的提示或错误摘要。 */
     @Schema(description = "提示文案")
     private String message;
 

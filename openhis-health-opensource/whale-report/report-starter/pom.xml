@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.openhis</groupId>
+        <artifactId>whale-report</artifactId>
+        <version>2.0.1-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>report-starter</artifactId>
+    <packaging>jar</packaging>
+    <name>Report Starter</name>
+    <description>Report Module 安装入口</description>
+
+    <dependencies>
+        <!-- report-adapter 依赖 EncounterContextFacade 等读侧 Facade，显式声明确保 starter 运行时 classpath 完整 -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>health-module-support</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>report-adapter</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>report-application</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+    </dependencies>
+</project>

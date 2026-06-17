@@ -17,12 +17,15 @@
 
 package com.openhis.health.application.inpatient.nursestation.orderexecute.assembler;
 
-import com.openhis.health.domain.custom.servicelocationtemplate.service.ServiceLocationTemplateQueryService;
+import com.openhis.health.module.common.assembler.product.ClinicalCatalogDispenseLocationResolveSupport;
+import com.openhis.health.module.common.assembler.product.DoctorStationAdviceFifoAllocationResult;
+import com.openhis.health.module.common.assembler.product.DoctorStationAdviceFifoSegmentDraft;
+import com.openhis.health.module.common.assembler.product.DoctorStationAdviceInventoryUnitQuantityHelper;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.DispenseExeReserveRowModel;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.application.querysupport.product.ProductDefinitionDisplaySupport;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -42,6 +45,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -50,18 +54,17 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 住院护士站医嘱执行库存 Gate FIFO dry-run（IF-IP-EXE-02，BR-IP-EXE-014）。
+ * 住院护士站医嘱执行库存 Gate 与 FIFO 分段（IF-IP-EXE-02，BR-IP-EXE-014/016）。
  *
- * <p>参照 {@link com.openhis.health.application.inpatient.doctorstation.advice.assembler.InpatientDoctorStationAdviceFifoAllocationAssembler}，
- * 预占口径为 {@link MedicationDispenseQueryService#listDispenseExeReserve} 全局汇总。
- * 绑定耗材库存 Gate 不在本模块处理，由其他页面统一编排。</p>
+ * <p>长临药嘱执行均在写路径按模板库位 + 批次效期做 FIFO 分段（与门诊 BR-ORD-021 同口径）；
+ * 预占口径为 {@link MedicationDispenseQueryService#listDispenseExeReserve} 全局汇总。</p>
  */
 @Component
 @RequiredArgsConstructor
 public class NurseStationExecutionInventoryAssembler {
 
-    /** 候选药房顺位解析。 */
-    private final ServiceLocationTemplateQueryService serviceLocationTemplateQueryService;
+    /** 候选药房顺位解析（categoryCode + calcScore）。 */
+    private final ClinicalCatalogDispenseLocationResolveSupport clinicalCatalogDispenseLocationResolveSupport;
     /** 批次级可用库存装载。 */
     private final InventoryItemQueryService inventoryItemQueryService;
     /** 全局待发预占读侧。 */
@@ -79,8 +82,10 @@ public class NurseStationExecutionInventoryAssembler {
         private Long orgId;
         /** 药品定义主键。 */
         private Long medicationId;
-        /** 目录分类编码；空则回落 DEFAULT。 */
+        /** 目录 categoryCode；空则回落产品读模型或 DEFAULT。 */
         private String categoryCode;
+        /** 给药途径编码（模板 calcScore 维度）。 */
+        private String methodCode;
         /** 业务单位数量（长期=单次量，临时=总量）。 */
         private BigDecimal businessQuantity;
         /** 业务单位编码。 */
@@ -88,133 +93,262 @@ public class NurseStationExecutionInventoryAssembler {
     }
 
     /**
-     * FIFO dry-run 分配结果（单药品一条，含库位+批号）。
+     * 执行写路径 FIFO 分段：库位、批号与本段业务单位数量。
      */
     @Getter
     @Setter
-    public static class MedicationFifoAllocation {
+    public static class MedicationFifoSegment {
         /** 发药库位主键。 */
         private Long locationId;
         /** 批号。 */
         private String lotNumber;
+        /** 本段发放数量（与医嘱 {@code unit_code} 一致的业务单位）。 */
+        private BigDecimal quantity;
     }
 
     /**
-     * 对批量执行需求做 FIFO dry-run；任一药品不足则整批失败（EX-IP-EXE-302）。
-     *
-     * @param demandLines 库存 Gate 需求行；仅药嘱汇总后传入
-     * @return medicationId → FIFO 分配结果
-     * @throws BusinessException EX-IP-EXE-302 库存不足
+     * 本批药嘱执行 FIFO 分段计划（与 {@link InventoryGateDemandLine} 列表下标一一对应）。
      */
-    public Map<Long, MedicationFifoAllocation> runGateDryRun(List<InventoryGateDemandLine> demandLines) {
-        Map<Long, MedicationFifoAllocation> result = new HashMap<>();
-        if (demandLines == null || demandLines.isEmpty()) {
-            return result;
+    @Getter
+    public static class MedicationFifoBatchPlan {
+        /** 每条 Gate 需求行对应的分段列表（可为多段）。 */
+        private final List<List<MedicationFifoSegment>> segmentsByDemandLineIndex;
+
+        /**
+         * @param segmentsByDemandLineIndex 分段计划
+         */
+        public MedicationFifoBatchPlan(List<List<MedicationFifoSegment>> segmentsByDemandLineIndex) {
+            if (segmentsByDemandLineIndex == null) {
+                this.segmentsByDemandLineIndex = Collections.emptyList();
+            } else {
+                this.segmentsByDemandLineIndex = segmentsByDemandLineIndex;
+            }
         }
-        // ① 按 medicationId 聚合拆零单位需求量（长期=单次量，临时=总量）
-        Map<Long, BigDecimal> aggregatedSplitQtyByMedication = this.aggregateSplitQuantities(demandLines);
-        if (aggregatedSplitQtyByMedication.isEmpty()) {
-            return result;
+
+        /**
+         * 按 Gate 需求行下标取 FIFO 分段。
+         *
+         * @param demandLineIndex Gate 需求行下标
+         * @return 分段列表；越界时空列表
+         */
+        public List<MedicationFifoSegment> getSegments(int demandLineIndex) {
+            if (demandLineIndex < 0 || demandLineIndex >= segmentsByDemandLineIndex.size()) {
+                return Collections.emptyList();
+            }
+            List<MedicationFifoSegment> segments = segmentsByDemandLineIndex.get(demandLineIndex);
+            if (segments == null) {
+                return Collections.emptyList();
+            }
+            return segments;
+        }
+    }
+
+    /**
+     * 对批量药嘱执行需求做 FIFO 分段 dry-run；按需求行顺序扣减 working 库存，任一不足整批失败。
+     *
+     * @param demandLines 库存 Gate 需求行（与待执行药嘱槽位顺序一致）
+     * @return 分段计划
+     * @throws BusinessException EX-IP-EXE-302 库存不足或未配置药房
+     */
+    public MedicationFifoBatchPlan prepareMedicationFifoBatchPlan(List<InventoryGateDemandLine> demandLines) {
+        if (demandLines == null || demandLines.isEmpty()) {
+            return new MedicationFifoBatchPlan(Collections.emptyList());
         }
         Long orgId = this.resolveOrgId(demandLines);
-        Set<Long> medicationIds = aggregatedSplitQtyByMedication.keySet();
-        // ② 解析候选药房库位顺位（ServiceLocationTemplate）
+        Set<Long> medicationIds = new LinkedHashSet<>();
+        for (InventoryGateDemandLine line : demandLines) {
+            if (line != null && line.getMedicationId() != null) {
+                medicationIds.add(line.getMedicationId());
+            }
+        }
+        if (medicationIds.isEmpty()) {
+            return new MedicationFifoBatchPlan(Collections.emptyList());
+        }
+        // Pre：候选库位、物理批次、全局待发预占（拆零单位，表+定义+库位复合键）
         List<Long> candidateLocationIds = this.resolveCandidateLocationIds(orgId, medicationIds, demandLines);
         if (candidateLocationIds.isEmpty()) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_EXE_302,
                 "未配置候选药房，库存 Gate 失败");
         }
-        // ③ 装载物理批次可用量，按模板顺位+效期 FIFO 排序
         List<InventoryCatalogAvailabilityRowModel> physical = inventoryItemQueryService.findAvailableCatalogRowsForOrder(
             TableNameConstants.MED_MEDICATION_DEFINITION, new ArrayList<>(medicationIds), candidateLocationIds);
         this.sortInventoryRowsForTemplateFifo(physical, candidateLocationIds);
-        // ④ 全局待发预占（不限就诊）扣减库位级可用量
-        Map<String, BigDecimal> globalReserve = this.buildGlobalReserveMap(
-            candidateLocationIds, medicationIds);
-        Map<String, BigDecimal> virtualNetByRowKey = this.buildVirtualNetByRowKey(physical, globalReserve);
-        // ⑤ 逐药品 FIFO dry-run；任一不足整批 EX-IP-EXE-302
-        for (Map.Entry<Long, BigDecimal> entry : aggregatedSplitQtyByMedication.entrySet()) {
-            Long medicationId = entry.getKey();
-            BigDecimal requiredSplitQty = entry.getValue();
-            MedicationFifoAllocation allocation = this.allocateSingleCatalogFifo(
-                medicationId, requiredSplitQty, physical, virtualNetByRowKey);
-            if (allocation == null) {
+        List<InventoryCatalogAvailabilityRowModel> workingPhysical = this.clonePhysicalRows(physical);
+        Map<String, BigDecimal> occupancyByItemLocationKey =
+            this.buildGlobalOccupancyByItemLocationKey(candidateLocationIds, medicationIds);
+        Map<Long, ProductDefinitionDisplayDto> productByMedicationId = this.batchLoadMedicationProducts(demandLines);
+        List<List<MedicationFifoSegment>> plan = new ArrayList<>();
+        // Cmd：逐需求行 FIFO 分段并在 working 库存上扣减，供同批后续槽位继续分配
+        for (InventoryGateDemandLine line : demandLines) {
+            if (line == null || line.getMedicationId() == null) {
+                plan.add(Collections.emptyList());
+                continue;
+            }
+            ProductDefinitionDisplayDto product = productByMedicationId.get(line.getMedicationId());
+            List<MedicationFifoSegment> segments = this.allocateSegmentsForDemandLine(
+                line, workingPhysical, occupancyByItemLocationKey, product);
+            if (segments.isEmpty()) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_EXE_302,
                     "药品库存不足，无法执行所选计划点");
             }
-            result.put(medicationId, allocation);
+            this.applySegmentDepletion(workingPhysical, product, line.getUnitCode(), segments);
+            plan.add(segments);
         }
-        return result;
+        return new MedicationFifoBatchPlan(plan);
     }
 
     /**
-     * 单目录品 FIFO 分配；成功返回首段库位+批号。
+     * 单条需求行 FIFO 分段（BR-ORD-021：整包装整数段、拆零可跨批部分切分）。
      */
-    private MedicationFifoAllocation allocateSingleCatalogFifo(
-        Long itemId,
-        BigDecimal requiredQty,
-        List<InventoryCatalogAvailabilityRowModel> physical,
-        Map<String, BigDecimal> virtualNetByRowKey) {
-        BigDecimal remaining = requiredQty;
-        MedicationFifoAllocation firstSegment = null;
-        for (InventoryCatalogAvailabilityRowModel row : physical) {
-            if (remaining.compareTo(BigDecimal.ZERO) <= 0) {
+    private List<MedicationFifoSegment> allocateSegmentsForDemandLine(
+        InventoryGateDemandLine line,
+        List<InventoryCatalogAvailabilityRowModel> workingPhysical,
+        Map<String, BigDecimal> occupancyByItemLocationKey,
+        ProductDefinitionDisplayDto product) {
+        if (line.getBusinessQuantity() == null || line.getBusinessQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+            return Collections.emptyList();
+        }
+        List<InventoryCatalogAvailabilityRowModel> medRows = new ArrayList<>();
+        for (InventoryCatalogAvailabilityRowModel row : workingPhysical) {
+            if (row == null || !line.getMedicationId().equals(row.getItemId())) {
+                continue;
+            }
+            medRows.add(row);
+        }
+        DoctorStationAdviceFifoAllocationResult fifoResult =
+            DoctorStationAdviceInventoryUnitQuantityHelper.allocateFifoSegmentsInDoctorBusinessUnit(
+                medRows,
+                occupancyByItemLocationKey,
+                TableNameConstants.MED_MEDICATION_DEFINITION,
+                product,
+                line.getUnitCode(),
+                line.getBusinessQuantity());
+        if (fifoResult.getRemainingSplitQuantity().compareTo(BigDecimal.ZERO) > 0) {
+            return Collections.emptyList();
+        }
+        return this.toMedicationFifoSegments(fifoResult.getSegments());
+    }
+
+    /**
+     * 将 FIFO 分段结果映射为执行写路径分段 DTO。
+     */
+    private List<MedicationFifoSegment> toMedicationFifoSegments(List<DoctorStationAdviceFifoSegmentDraft> drafts) {
+        List<MedicationFifoSegment> segments = new ArrayList<>();
+        if (drafts == null) {
+            return segments;
+        }
+        for (DoctorStationAdviceFifoSegmentDraft draft : drafts) {
+            if (draft == null) {
+                continue;
+            }
+            MedicationFifoSegment segment = new MedicationFifoSegment();
+            segment.setLocationId(draft.getLocationId());
+            segment.setLotNumber(draft.getLotNumber());
+            segment.setQuantity(draft.getQuantity());
+            segments.add(segment);
+        }
+        return segments;
+    }
+
+    /**
+     * 在 working 物理库存上扣减已分配分段（同批后续槽位共享）。
+     */
+    private void applySegmentDepletion(
+        List<InventoryCatalogAvailabilityRowModel> workingPhysical,
+        ProductDefinitionDisplayDto product,
+        String unitCode,
+        List<MedicationFifoSegment> segments) {
+        if (segments == null || segments.isEmpty()) {
+            return;
+        }
+        for (MedicationFifoSegment segment : segments) {
+            if (segment == null || segment.getQuantity() == null) {
+                continue;
+            }
+            BigDecimal takeSplit = MedicationProductQuantityToSplitUnitConverter.medicationQuantityToSplitUnit(
+                ProductDefinitionDisplaySupport.toUnitConversionSource(product), unitCode, segment.getQuantity());
+            for (InventoryCatalogAvailabilityRowModel row : workingPhysical) {
+                if (row == null) {
+                    continue;
+                }
+                if (!this.matchesInventoryRow(row, segment)) {
+                    continue;
+                }
+                BigDecimal net = row.getQuantity();
+                if (net == null) {
+                    net = BigDecimal.ZERO;
+                }
+                row.setQuantity(net.subtract(takeSplit));
                 break;
             }
-            if (row == null || !itemId.equals(row.getItemId())) {
-                // 只处理当前药品的批次行
-                continue;
-            }
-            String rowKey = this.catalogRowKey(row);
-            BigDecimal net = virtualNetByRowKey.getOrDefault(rowKey, BigDecimal.ZERO);
-            if (net.compareTo(BigDecimal.ZERO) <= 0) {
-                // 该批次已被前面药品/预占扣净
-                continue;
-            }
-            BigDecimal take = net.min(remaining);
-            if (firstSegment == null) {
-                firstSegment = new MedicationFifoAllocation();
-                firstSegment.setLocationId(row.getLocationId());
-                firstSegment.setLotNumber(row.getLotNumber());
-            }
-            // dry-run 扣减虚拟库存，同批次后续槽位共享 working copy
-            virtualNetByRowKey.put(rowKey, net.subtract(take));
-            remaining = remaining.subtract(take);
         }
-        if (remaining.compareTo(BigDecimal.ZERO) > 0) {
-            // 全部批次扣完仍不足 → 该药品 Gate 失败
-            return null;
-        }
-        return firstSegment;
     }
 
     /**
-     * 按药品聚合拆零单位需求量。
+     * 判断库存行与 FIFO 分段是否同一批次。
      */
-    private Map<Long, BigDecimal> aggregateSplitQuantities(List<InventoryGateDemandLine> demandLines) {
-        Map<Long, BigDecimal> aggregated = new LinkedHashMap<>();
-        Map<Long, ProductDefinitionDisplayDto> productByMedicationId = this.batchLoadMedicationProducts(demandLines);
-        for (InventoryGateDemandLine line : demandLines) {
-            if (line == null || line.getMedicationId() == null) {
-                continue;
-            }
-            if (line.getBusinessQuantity() == null || line.getBusinessQuantity().compareTo(BigDecimal.ZERO) <= 0) {
-                continue;
-            }
-            ProductDefinitionDisplayDto product = productByMedicationId.get(line.getMedicationId());
-            // 业务单位 → 拆零单位，与库存批次 quantity 口径对齐
-            BigDecimal splitQty = MedicationProductQuantityToSplitUnitConverter.medicationQuantityToSplitUnit(
-                ProductDefinitionDisplaySupport.toUnitConversionSource(product), line.getUnitCode(), line.getBusinessQuantity());
-            BigDecimal prev = aggregated.get(line.getMedicationId());
-            if (prev == null) {
-                prev = BigDecimal.ZERO;
-            }
-            // 同批次多条槽位可能重复同一 medicationId，需求量累加
-            aggregated.put(line.getMedicationId(), prev.add(splitQty));
+    private boolean matchesInventoryRow(InventoryCatalogAvailabilityRowModel row, MedicationFifoSegment segment) {
+        if (segment.getLocationId() == null) {
+            return false;
         }
-        return aggregated;
+        if (!segment.getLocationId().equals(row.getLocationId())) {
+            return false;
+        }
+        return StringUtils.equals(StringUtils.defaultString(row.getLotNumber()), StringUtils.defaultString(segment.getLotNumber()));
+    }
+
+    /**
+     * 克隆物理库存行供本批 FIFO working copy 使用。
+     */
+    private List<InventoryCatalogAvailabilityRowModel> clonePhysicalRows(
+        List<InventoryCatalogAvailabilityRowModel> source) {
+        List<InventoryCatalogAvailabilityRowModel> copy = new ArrayList<>();
+        if (source == null) {
+            return copy;
+        }
+        for (InventoryCatalogAvailabilityRowModel row : source) {
+            if (row == null) {
+                continue;
+            }
+            InventoryCatalogAvailabilityRowModel cloned = new InventoryCatalogAvailabilityRowModel();
+            cloned.setId(row.getId());
+            cloned.setItemTable(row.getItemTable());
+            cloned.setItemId(row.getItemId());
+            cloned.setLocationId(row.getLocationId());
+            cloned.setLotNumber(row.getLotNumber());
+            cloned.setExpirationDate(row.getExpirationDate());
+            cloned.setQuantity(row.getQuantity());
+            copy.add(cloned);
+        }
+        return copy;
+    }
+
+    /**
+     * 全局待发预占：表+定义+库位 → 拆零占用量（与 {@link DoctorStationAdviceInventoryUnitQuantityHelper} 键一致）。
+     */
+    private Map<String, BigDecimal> buildGlobalOccupancyByItemLocationKey(
+        List<Long> locationIds,
+        Set<Long> medicationIds) {
+        Map<String, BigDecimal> occ = new HashMap<>();
+        List<DispenseExeReserveRowModel> rows = medicationDispenseQueryService.listDispenseExeReserve(
+            locationIds, medicationIds);
+        char sep = GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR;
+        String table = TableNameConstants.MED_MEDICATION_DEFINITION;
+        for (DispenseExeReserveRowModel row : rows) {
+            if (row == null || row.getLocationId() == null || row.getMedicationId() == null) {
+                continue;
+            }
+            String key = table + sep + row.getMedicationId() + sep + row.getLocationId();
+            BigDecimal qty = row.getReserveQuantity();
+            if (qty == null) {
+                qty = BigDecimal.ZERO;
+            }
+            BigDecimal prev = occ.getOrDefault(key, BigDecimal.ZERO);
+            occ.put(key, prev.add(qty));
+        }
+        return occ;
     }
 
     /**
@@ -271,107 +405,30 @@ public class NurseStationExecutionInventoryAssembler {
         List<InventoryGateDemandLine> demandLines) {
         LinkedHashSet<Long> merged = new LinkedHashSet<>();
         if (orgId == null) {
-            // 无机构无法解析药房模板 → 上层抛 EX-IP-EXE-302
             return new ArrayList<>(merged);
         }
         Map<Long, ProductDefinitionDisplayDto> productByMedicationId = this.batchLoadMedicationProducts(demandLines);
-        Map<Long, String> categoryByMedication = new HashMap<>();
         for (InventoryGateDemandLine line : demandLines) {
             if (line == null || line.getMedicationId() == null) {
                 continue;
             }
-            if (!categoryByMedication.containsKey(line.getMedicationId())) {
-                ProductDefinitionDisplayDto product = productByMedicationId.get(line.getMedicationId());
-                String productCategory = null;
-                if (product != null) {
-                    productCategory = product.getCategoryCode();
-                }
-                // 与住院医生站目录/FIFO 一致：优先行内 category，再产品读模型 category_code，最后 DEFAULT
-                String category = StringUtils.firstNonBlank(
-                    line.getCategoryCode(),
-                    productCategory,
-                    MedicationCommonConstants.DEFAULT_SERVICE_LOCATION_DISTRIBUTION_CATEGORY_CODE);
-                categoryByMedication.put(line.getMedicationId(), category);
-            }
-        }
-        for (Long medicationId : medicationIds) {
-            String category = categoryByMedication.get(medicationId);
-            if (category == null) {
-                category = MedicationCommonConstants.DEFAULT_SERVICE_LOCATION_DISTRIBUTION_CATEGORY_CODE;
-            }
-            // 按药品目录分类查 ServiceLocationTemplate 候选药房顺位
-            List<Long> locs = serviceLocationTemplateQueryService.listCandidateDistributionLocationIds(
-                orgId, TableNameConstants.MED_MEDICATION_DEFINITION, category, null);
+            ProductDefinitionDisplayDto product = productByMedicationId.get(line.getMedicationId());
+            String category = StringUtils.firstNonBlank(
+                line.getCategoryCode(),
+                product != null ? product.getCategoryCode() : null,
+                MedicationCommonConstants.DEFAULT_SERVICE_LOCATION_DISTRIBUTION_CATEGORY_CODE);
+            List<Long> locs = clinicalCatalogDispenseLocationResolveSupport.listApplicableCandidateLocationIds(
+                orgId,
+                TableNameConstants.MED_MEDICATION_DEFINITION,
+                category,
+                line.getMedicationId(),
+                line.getMethodCode(),
+                null);
             for (Long locId : locs) {
-                // LinkedHashSet 保序去重：多药品候选库位合并为统一 FIFO 扫描序
                 merged.add(locId);
             }
         }
         return new ArrayList<>(merged);
-    }
-
-    /**
-     * 构建全局预占映射：location+medication → 预占量（拆零口径与可用量对齐由读侧保证）。
-     */
-    private Map<String, BigDecimal> buildGlobalReserveMap(List<Long> locationIds, Set<Long> medicationIds) {
-        Map<String, BigDecimal> reserve = new HashMap<>();
-        List<DispenseExeReserveRowModel> rows = medicationDispenseQueryService.listDispenseExeReserve(
-            locationIds, medicationIds);
-        for (DispenseExeReserveRowModel row : rows) {
-            if (row == null || row.getLocationId() == null || row.getMedicationId() == null) {
-                continue;
-            }
-            String key = this.locationMedicationKey(row.getLocationId(), row.getMedicationId());
-            BigDecimal qty = row.getReserveQuantity();
-            if (qty == null) {
-                qty = BigDecimal.ZERO;
-            }
-            // 同一库位+药品可能有多条预占行，累加为总量
-            BigDecimal prev = reserve.getOrDefault(key, BigDecimal.ZERO);
-            reserve.put(key, prev.add(qty));
-        }
-        return reserve;
-    }
-
-    /**
-     * 初始化批次行净可用量（物理量 − 全局库位级预占分摊到首行前的 working copy）。
-     */
-    private Map<String, BigDecimal> buildVirtualNetByRowKey(
-        List<InventoryCatalogAvailabilityRowModel> physical,
-        Map<String, BigDecimal> globalReserve) {
-        Map<String, BigDecimal> virtualNet = new HashMap<>();
-        Map<String, BigDecimal> reserveRemain = new HashMap<>(globalReserve);
-        for (InventoryCatalogAvailabilityRowModel row : physical) {
-            if (row == null || row.getItemId() == null || row.getLocationId() == null) {
-                continue;
-            }
-            String rowKey = this.catalogRowKey(row);
-            BigDecimal net = row.getQuantity();
-            if (net == null) {
-                net = BigDecimal.ZERO;
-            }
-            // 全局待发预占按 location+medication 维度扣减（不限就诊，同 IF-DOR-11）
-            String locMedKey = this.locationMedicationKey(row.getLocationId(), row.getItemId());
-            BigDecimal locked = reserveRemain.getOrDefault(locMedKey, BigDecimal.ZERO);
-            if (locked.compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal deduct = net.min(locked);
-                net = net.subtract(deduct);
-                reserveRemain.put(locMedKey, locked.subtract(deduct));
-            }
-            virtualNet.put(rowKey, net);
-        }
-        return virtualNet;
-    }
-
-    /**
-     * 单药品 FIFO 分配；成功返回首段库位+批号。
-     */
-    private MedicationFifoAllocation allocateSingleMedicationFifo(
-        Long medicationId,
-        BigDecimal requiredSplitQty,
-        List<InventoryCatalogAvailabilityRowModel> physical,
-        Map<String, BigDecimal> virtualNetByRowKey) {
-        return this.allocateSingleCatalogFifo(medicationId, requiredSplitQty, physical, virtualNetByRowKey);
     }
 
     /**
@@ -387,7 +444,6 @@ public class NurseStationExecutionInventoryAssembler {
             idx = idx + 1;
         }
         rows.sort((left, right) -> {
-            // 第一关键字：模板配置的药房优先级（护士不可手选，按模板顺位 FIFO）
             int la = locOrder.getOrDefault(left.getLocationId(), Integer.MAX_VALUE);
             int lb = locOrder.getOrDefault(right.getLocationId(), Integer.MAX_VALUE);
             if (la != lb) {
@@ -396,7 +452,6 @@ public class NurseStationExecutionInventoryAssembler {
                 }
                 return 1;
             }
-            // 第二关键字：效期近者优先（近效期先出）
             LocalDateTime ea = left.getExpirationDate();
             LocalDateTime eb = right.getExpirationDate();
             if (ea == null && eb == null) {
@@ -412,7 +467,6 @@ public class NurseStationExecutionInventoryAssembler {
             if (c != 0) {
                 return c;
             }
-            // 第三关键字：稳定 tie-break
             return compareLong(left.getId(), right.getId());
         });
     }
@@ -436,16 +490,5 @@ public class NurseStationExecutionInventoryAssembler {
             return 1;
         }
         return 0;
-    }
-
-    private String catalogRowKey(InventoryCatalogAvailabilityRowModel row) {
-        char sep = GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR;
-        String lot = StringUtils.defaultString(row.getLotNumber());
-        return row.getItemId() + String.valueOf(sep) + row.getLocationId() + String.valueOf(sep) + lot;
-    }
-
-    private String locationMedicationKey(Long locationId, Long medicationId) {
-        char sep = GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR;
-        return locationId + String.valueOf(sep) + medicationId;
     }
 }

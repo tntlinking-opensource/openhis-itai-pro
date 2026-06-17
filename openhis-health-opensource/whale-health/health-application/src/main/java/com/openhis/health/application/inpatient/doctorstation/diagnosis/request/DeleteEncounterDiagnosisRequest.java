@@ -31,6 +31,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-删除就诊诊断请求。 */
 @Schema(description = "医生站-删除就诊诊断请求")
 public class DeleteEncounterDiagnosisRequest {
 
@@ -51,9 +52,9 @@ public class DeleteEncounterDiagnosisRequest {
     private Long encounterId;
 
     /**
-     * 患者主键：急诊工作站删除时用于就诊一致性校验；住院删除接口可不传。
+     * 患者主键：删除时用于就诊一致性校验；住院删除接口可不传。
      */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "患者标识；急诊删除时用于就诊一致性校验")
+    @Schema(description = "患者标识；删除时用于就诊一致性校验")
     private Long patientId;
 }

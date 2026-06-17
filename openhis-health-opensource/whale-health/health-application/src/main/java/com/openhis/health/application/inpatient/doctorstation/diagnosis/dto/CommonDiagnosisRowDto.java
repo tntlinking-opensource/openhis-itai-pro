@@ -31,6 +31,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-常用诊断行。 */
 @Schema(description = "医生站-常用诊断行")
 public class CommonDiagnosisRowDto {
 

@@ -21,9 +21,11 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -32,13 +34,12 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 药库出库单列表聚合行。 */
 @Schema(description = "药库出库单列表聚合行")
 public class StockOutListRowDto {
 
-    /** 业务单号。 */
     @Schema(description = "业务单号")
     private String busNo;
-    /** 供应类型持久化码。 */
     @Schema(description = "供应类型持久化码，固定为药库出库 CABINET_STOCK_OUT")
     private String typeEnum;
     /** 单据状态持久化码。 */

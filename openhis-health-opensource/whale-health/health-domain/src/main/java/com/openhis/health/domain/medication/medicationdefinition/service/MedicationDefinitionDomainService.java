@@ -22,8 +22,6 @@ import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.medication.medicationdefinition.command.*;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.repository.MedicationDefinitionRepository;
-import com.openhis.health.domain.medication.medicationdispense.repository.MedicationDispenseRepository;
-import com.openhis.health.domain.medication.medicationrequest.repository.MedicationRequestRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.events.medication.medicationdefinition.*;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
@@ -49,8 +47,6 @@ import java.util.stream.Collectors;
 public class MedicationDefinitionDomainService {
 
     private final MedicationDefinitionRepository medicationDefinitionRepository;
-    private final MedicationRequestRepository medicationRequestRepository;
-    private final MedicationDispenseRepository medicationDispenseRepository;
     private final IDomainEventPublisher domainEventPublisher;
     /** 药品定义 busNo：主数据全局递增，前缀 {@link AggregateTypeConstants#MEDICATION_DEFINITION}。 */
     private final BusinessSequenceService businessSequenceService;
@@ -138,13 +134,14 @@ public class MedicationDefinitionDomainService {
 
     /**
      * 废弃药品定义。
+     *
+     * <p>Pre：应用层须先断言药品未被医嘱/发放引用（{@code MedicationDefinitionExternalReferenceGuard}）。</p>
      */
     public void discardMedicationDefinition(DiscardMedicationDefinitionCommand command) {
         List<DiscardMedicationDefinitionCommand.DiscardMedicationDefinitionItemCommand> items = command.resolveItems();
         List<MedicationDefinition> toSave = new ArrayList<>();
         for (DiscardMedicationDefinitionCommand.DiscardMedicationDefinitionItemCommand item : items) {
             MedicationDefinition definition = this.requireDefinition(item.getId());
-            this.assertNoExternalReference(definition.getId());
             definition.markDeleted(command.getOperatorId());
             toSave.add(definition);
         }
@@ -412,17 +409,6 @@ public class MedicationDefinitionDomainService {
             return String.valueOf(Integer.parseInt(currentVersion) + 1);
         } catch (NumberFormatException ex) {
             return currentVersion + "_1";
-        }
-    }
-
-    /**
-     * 私有方法：assertNoExternalReference。
-     */
-    private void assertNoExternalReference(Long medicationId) {
-        // 业务分支：空值校验失败则跳过该行计入失败。
-        if (medicationRequestRepository.existsByMedicationId(medicationId)
-            || medicationDispenseRepository.existsByMedicationId(medicationId)) {
-            throw new BusinessException(ErrorCodeConstants.MEDICATION_DEFINITION_RULE_CONFLICT, "药品已被业务引用，禁止废弃");
         }
     }
 }

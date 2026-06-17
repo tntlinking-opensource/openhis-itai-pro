@@ -22,8 +22,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -34,11 +36,9 @@ import java.util.List;
 @Accessors(chain = true)
 public class LoadStockOutFormInitResponse {
 
-    /** 源药库位置选项。 */
     @Schema(description = "源药库下拉")
     private List<OptionDto> warehouseLocationOptions;
 
-    /** 目的药房位置选项。 */
     @Schema(description = "目的药房下拉")
     private List<OptionDto> pharmacyLocationOptions;
 

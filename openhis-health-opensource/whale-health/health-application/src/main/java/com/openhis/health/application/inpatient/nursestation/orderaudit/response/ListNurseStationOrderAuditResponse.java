@@ -29,10 +29,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医嘱校对列表查询响应。 */
 @Schema(description = "医嘱校对列表查询响应")
 public class ListNurseStationOrderAuditResponse {
 
-    /** 按 encounterId 分组的医嘱行。 */
     @Schema(description = "按 encounterId 分组的医嘱行")
     private List<NurseStationOrderAuditPatientGroupDto> groups;
 }

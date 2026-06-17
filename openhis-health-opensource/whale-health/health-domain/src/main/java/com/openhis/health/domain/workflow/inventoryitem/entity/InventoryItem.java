@@ -68,7 +68,7 @@ public class InventoryItem extends BaseAuditedEntity {
     @Column(name = "wb_str")
     private String wbStr;
 
-    /** 库存状态（ACTIVE/RETIRED），与 PublicationStatus 编码对齐。 */
+    /** 库存状态（ACTIVE/INACTIVE），与 PublicationStatus 编码对齐。 */
     @Column(name = "inventory_status_enum", nullable = false)
     private String inventoryStatusEnum;
 
@@ -221,17 +221,17 @@ public class InventoryItem extends BaseAuditedEntity {
      */
     public void assertStopSupplyAllowed() {
         this.assertNotDeleted();
-        if (PublicationStatus.RETIRED.getCode().equals(this.inventoryStatusEnum)) {
+        if (PublicationStatus.INACTIVE.getCode().equals(this.inventoryStatusEnum)) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "已停供库存不允许重复停供");
         }
     }
 
     /**
-     * 停供（ACTIVE -> RETIRED）。
+     * 停供（ACTIVE -> INACTIVE）。
      */
-    public void activeToRetired() {
+    public void stopSupply() {
         this.assertStopSupplyAllowed();
-        this.inventoryStatusEnum = PublicationStatus.RETIRED.getCode();
+        this.inventoryStatusEnum = PublicationStatus.INACTIVE.getCode();
     }
 
     /**
@@ -239,15 +239,15 @@ public class InventoryItem extends BaseAuditedEntity {
      */
     public void assertResumeSupplyAllowed() {
         this.assertNotDeleted();
-        if (!PublicationStatus.RETIRED.getCode().equals(this.inventoryStatusEnum)) {
+        if (!PublicationStatus.INACTIVE.getCode().equals(this.inventoryStatusEnum)) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "仅已停供库存允许恢复供应");
         }
     }
 
     /**
-     * 恢复供应（RETIRED -> ACTIVE）。
+     * 恢复供应（INACTIVE -> ACTIVE）。
      */
-    public void retiredToActive() {
+    public void resumeSupply() {
         this.assertResumeSupplyAllowed();
         this.inventoryStatusEnum = PublicationStatus.ACTIVE.getCode();
     }

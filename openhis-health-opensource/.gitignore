@@ -7,9 +7,8 @@ out/
 
 .idea/
 *.iml
-.vscode/*
-!.vscode/settings.json
-!.vscode/launch.json
+.vscode/
+.mvn/
 
 logs/
 *.log
@@ -17,7 +16,12 @@ logs/
 **/application-local.properties
 **/application-local.yaml
 .env
-local-secrets/
+
+# 仅提交试用 openhis.lic；私钥与其它 secret 仍忽略
+local-secrets/**
+!local-secrets/license/
+local-secrets/license/*
+!local-secrets/license/openhis.lic
 
 .DS_Store
 Thumbs.db

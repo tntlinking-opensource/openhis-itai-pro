@@ -26,17 +26,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-删除就诊诊断响应。 */
 @Schema(description = "医生站-删除就诊诊断响应")
-/**
- * DeleteEncounterDiagnosisResponse。
- */
 public class DeleteEncounterDiagnosisResponse {
 
-    /** 是否成功。 */
     @Schema(description = "删除是否成功")
     private Boolean success;
 
-    /** 提示信息。 */
     @Schema(description = "操作结果提示")
     private String message;
 }

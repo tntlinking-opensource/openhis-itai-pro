@@ -19,8 +19,10 @@ package com.openhis.health.application.inventory.warehouse.inboundreceipt.reques
 
 import lombok.Getter;
 import lombok.Setter;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -48,4 +50,12 @@ public class AgreeInboundReceiptRequest {
      * 审批业务时钟；可空时由领域或命令默认值填充，用于审计与状态迁移时间线。
      */
     private LocalDateTime approvalClock;
+
+    /** @deprecated CHS 模块启用即上传，此开关不再生效。 */
+    @Deprecated
+    @Schema(description = "医保上报 medicareUploadEnabled")
+    private Boolean medicareUploadEnabled;
+
+    /** 医保契约 busNo；未传时回落 {@code openhis.chs.inventory.default-contract-bus-no} 或租户首条医保契约。 */
+    private String contractBusNo;
 }

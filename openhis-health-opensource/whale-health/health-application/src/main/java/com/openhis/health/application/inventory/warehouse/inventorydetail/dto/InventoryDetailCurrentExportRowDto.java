@@ -40,26 +40,23 @@ public class InventoryDetailCurrentExportRowDto {
     private String lotNumber;
 
     @Excel(name = "数量", sort = 3)
-    private BigDecimal quantity;
+    private String quantityText;
 
-    @Excel(name = "单位", sort = 4)
-    private String unitName;
-
-    @Excel(name = "库房", sort = 5)
+    @Excel(name = "库房", sort = 4)
     private String warehouseName;
 
-    @Excel(name = "供应商", sort = 6)
+    @Excel(name = "供应商", sort = 5)
     private String supplierName;
 
-    @Excel(name = "效期", sort = 7)
+    @Excel(name = "效期", sort = 6)
     private String expirationDate;
 
-    @Excel(name = "供应状态", sort = 8)
+    @Excel(name = "供应状态", sort = 7)
     private String inventoryStatusText;
 
-    @Excel(name = "进价总额", sort = 9, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE)
+    @Excel(name = "进价总额", sort = 8, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE)
     private BigDecimal lineCostTotal;
 
-    @Excel(name = "售价总额", sort = 10, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE)
+    @Excel(name = "售价总额", sort = 9, scale = ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE)
     private BigDecimal linePriceTotal;
 }

@@ -32,6 +32,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 患者信息维护请求。 */
 @Schema(description = "患者信息维护请求", requiredProperties = {"encounterId"})
 public class SavePatientInfoRequest {
 

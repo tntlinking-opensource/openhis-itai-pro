@@ -61,23 +61,24 @@ public class ModifyServiceRequestDraftCommand extends BatchCommand<ModifyService
          */
         private Long conditionDefinitionId;
         /**
+         * 就诊诊断主键（草稿修改；非空且与存量不同时更新 {@code wkf_service_request.encounter_diagnosis_id}）。
+         */
+        private Long encounterDiagnosisId;
+        /**
          * 用药频次编码（长期诊疗必填；传空串表示清空 {@code rate_code}）。
          */
         private String rateCode;
     }
 
-    /**
-     * 明细行子命令（为本命令独立类型，避免跨命令类型依赖）。
-     */
+    /** 明细行子命令（为本命令独立类型，每行一个 target_table + target_id 引用）。 */
     @Getter
     @Setter
     public static class DetailItemCommand {
-        private Long bodySiteId;
-        private Long reasonCodeId;
-        private String instruction;
-        private Integer priority;
-        private LocalDateTime scheduledTime;
-        private Long performerId;
-        private Long locationId;
+        /** 明细目标表名。 */
+        private String targetTable;
+        /** 明细目标表主键。 */
+        private Long targetId;
+        /** 备注。 */
+        private String remark;
     }
 }

@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.dto;
 
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.domain.share.enums.PriceType;
 import lombok.Getter;
 import lombok.Setter;
@@ -80,8 +80,10 @@ public class ProductDefinitionItemDto {
      */
     private BigDecimal price;
 
+    /** 采购进价。 */
     private BigDecimal purchasePrice;
 
+    /** 可用库存量。 */
     private BigDecimal availableQuantity;
 
     /**

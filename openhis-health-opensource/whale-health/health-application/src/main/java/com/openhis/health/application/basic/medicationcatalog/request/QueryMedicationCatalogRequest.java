@@ -19,7 +19,7 @@
 package com.openhis.health.application.basic.medicationcatalog.request;
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 

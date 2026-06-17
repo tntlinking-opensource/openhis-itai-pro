@@ -30,19 +30,10 @@ import java.util.List;
 @Data
 @Accessors(chain = true)
 @Schema(description = "供应商初始化数据传输对象")
-/**
- * SupplierInitDto。
- */
 public class SupplierInitDto {
     @Schema(description = "供应商类别选项列表")
-    /**
-     * supplierTypeOptions。
-     */
     private List<OptionDto> supplierTypeOptions;
 
     @Schema(description = "所属机构选项列表（由组织树映射）")
-    /**
-     * organizationOptions。
-     */
     private List<OptionDto> organizationOptions;
 }

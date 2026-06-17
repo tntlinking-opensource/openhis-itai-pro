@@ -20,7 +20,7 @@ package com.openhis.health.application.inpatient.nursestation.encountermanage.re
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -34,10 +34,10 @@ import java.time.LocalDate;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 在院患者列表分页查询请求。 */
 @Schema(description = "在院患者列表分页查询请求", requiredProperties = {"pageNo", "pageSize"})
 public class PagePatientQueueRequest extends AbstractHealthPageRequest {
 
-    /** 病区位置主键；选病区时返回该病区内全部患者。 */
     @Schema(description = "病区位置主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long wardId;

@@ -32,6 +32,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-医嘱开立-加载当前就诊医嘱统一列表请求。 */
 @Schema(description = "医生站-医嘱开立-加载当前就诊医嘱统一列表请求")
 public class ListInpatientDoctorStationAdviceRequest {
 
@@ -44,6 +45,7 @@ public class ListInpatientDoctorStationAdviceRequest {
     /** 患者标识。 */
     @NotNull(message = DoctorStationAdviceConstants.MSG_PATIENT_ID_REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者标识。 */
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 

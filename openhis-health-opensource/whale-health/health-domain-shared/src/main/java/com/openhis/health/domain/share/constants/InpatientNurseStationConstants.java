@@ -213,12 +213,6 @@ public interface InpatientNurseStationConstants {
     /** 住院护士站医嘱执行完成结果摘要（Procedure complete 门禁占位）。 */
     String INPATIENT_NURSE_EXECUTE_PROCEDURE_RESULT_TEXT = "住院护士站医嘱执行完成";
 
-    /** 绑定耗材执行直发批号占位（库存/批号匹配由耗材发放页统一处理）。 */
-    String INPATIENT_NURSE_EXECUTE_DEVICE_LOT_PLACEHOLDER = "NURSE_STATION_LOT_PENDING";
-
-    /** 绑定耗材执行直发追溯号占位（库存由其他页面统一处理）。 */
-    String INPATIENT_NURSE_EXECUTE_DEVICE_TRACE_PLACEHOLDER = "IP-NUR-EXE-TRACE-PENDING";
-
     /** 护士划价/补费写路径单批上限（AS-IP-NUR-005 §7 NFR）。 */
     int PRICING_WRITE_BATCH_MAX = 50;
 
@@ -308,4 +302,127 @@ public interface InpatientNurseStationConstants {
 
     /** 费用明细：账单缺产品/分类/业务时间或 service_table 无法归类（IF-IP-CDT-02）。 */
     String EX_IP_CDT_203 = "EX-IP-CDT-203";
+
+    /** 汇总领药 Tab：西药（IF-IP-SUM-01）。 */
+    String MEDICINE_CATEGORY_TAB_WEST = "west";
+
+    /** 汇总领药 Tab：中药（IF-IP-SUM-01）。 */
+    String MEDICINE_CATEGORY_TAB_TCM = "tcm";
+
+    /** 汇总领药写路径单批上限（AS-IP-NUR-010 §7 NFR）。 */
+    int SUMMARY_WRITE_BATCH_MAX = 500;
+
+    /** 汇总领药拆零数量换算小数位（HALF_UP，对齐 BR-IP-SUM-008）。 */
+    int SUMMARY_SPLIT_QUANTITY_SCALE = 6;
+
+    /** 汇总 Tab 发放态展示：待发（SupplyDelivery PREPARATION）。 */
+    String SUMMARY_DELIVERY_STATUS_PENDING_DISPLAY = "待发";
+
+    /** 汇总 Tab 发放态展示：已发（SupplyDelivery COMPLETED）。 */
+    String SUMMARY_DELIVERY_STATUS_COMPLETED_DISPLAY = "已发";
+
+    /** 汇总 Tab 审批态展示：待发送（SupplyRequest PENDING_APPROVAL）。 */
+    String SUMMARY_SUPPLY_STATUS_DRAFT_DISPLAY = "待发送";
+
+    /** 汇总 Tab 审批态展示：待核发（SupplyRequest APPROVAL）。 */
+    String SUMMARY_SUPPLY_STATUS_APPROVAL_DISPLAY = "待核发";
+
+    /** 汇总 Tab 审批态展示：已核发（SupplyRequest AGREE）。 */
+    String SUMMARY_SUPPLY_STATUS_AGREE_DISPLAY = "已核发";
+
+    /** 汇总 Tab 审批态展示：已驳回（SupplyRequest REJECT）。 */
+    String SUMMARY_SUPPLY_STATUS_REJECT_DISPLAY = "已驳回";
+
+    /** 汇总 Tab 审批态展示：已撤回（SupplyRequest WITHDRAW）。 */
+    String SUMMARY_SUPPLY_STATUS_WITHDRAW_DISPLAY = "已撤回";
+
+    /** 汇总领药：未选患者或无权（IF-IP-SUM-01～05）。 */
+    String EX_IP_SUM_101 = "EX-IP-SUM-101";
+
+    /** 汇总领药：列表查询失败（IF-IP-SUM-01～03）。 */
+    String EX_IP_SUM_102 = "EX-IP-SUM-102";
+
+    /** 汇总领药：汇总单不存在（IF-IP-SUM-03）。 */
+    String EX_IP_SUM_103 = "EX-IP-SUM-103";
+
+    /** 汇总领药：重复汇总或非 PREPARATION（IF-IP-SUM-04）。 */
+    String EX_IP_SUM_201 = "EX-IP-SUM-201";
+
+    /** 汇总领药：单位槽/换算失败（IF-IP-SUM-04）。 */
+    String EX_IP_SUM_202 = "EX-IP-SUM-202";
+
+    /** 汇总领药：ChargeItem 缺失（IF-IP-SUM-04）。 */
+    String EX_IP_SUM_203 = "EX-IP-SUM-203";
+
+    /** 汇总领药：批量校验或域写失败（IF-IP-SUM-04）。 */
+    String EX_IP_SUM_204 = "EX-IP-SUM-204";
+
+    /** 汇总领药：发送审批失败或状态不允许（IF-IP-SUM-05）。 */
+    String EX_IP_SUM_205 = "EX-IP-SUM-205";
+
+    /** 撤销汇总失败或状态不允许（IF-IP-SUM-08）。 */
+    String EX_IP_SUM_206 = "EX-IP-SUM-206";
+
+    /** 皮试表单枚举初始化失败（IF-IP-STK-01）。 */
+    String EX_IP_STK_101 = "EX-IP-STK-101";
+
+    /** 皮试：就诊不可见（IF-IP-STK-02～04）。 */
+    String EX_IP_STK_102 = "EX-IP-STK-102";
+
+    /** 皮试列表查询失败（IF-IP-STK-02）。 */
+    String EX_IP_STK_103 = "EX-IP-STK-103";
+
+    /** 皮试保存：双签或必填状态缺失（IF-IP-STK-03）。 */
+    String EX_IP_STK_201 = "EX-IP-STK-201";
+
+    /** 皮试保存：皮试药非已校对或不在本就诊（IF-IP-STK-03）。 */
+    String EX_IP_STK_202 = "EX-IP-STK-202";
+
+    /** 皮试保存：皮试检查定价无效（IF-IP-STK-03）。 */
+    String EX_IP_STK_203 = "EX-IP-STK-203";
+
+    /** 皮试保存：重复补费/并发（IF-IP-STK-03）。 */
+    String EX_IP_STK_204 = "EX-IP-STK-204";
+
+    /** 皮试保存：已存在医生开立皮试检查（IF-IP-STK-03）。 */
+    String EX_IP_STK_205 = "EX-IP-STK-205";
+
+    /** 皮试保存：写失败（IF-IP-STK-03）。 */
+    String EX_IP_STK_206 = "EX-IP-STK-206";
+
+    /** 皮试删除：记录不存在（IF-IP-STK-04）。 */
+    String EX_IP_STK_301 = "EX-IP-STK-301";
+
+    /** 皮试删除：已划价不可删（IF-IP-STK-04）。 */
+    String EX_IP_STK_302 = "EX-IP-STK-302";
+
+    /** 皮试删除：删除失败（IF-IP-STK-04）。 */
+    String EX_IP_STK_303 = "EX-IP-STK-303";
+
+    /** 批量取消执行单批上限（AS-IP-NUR-012 §7 NFR）。 */
+    int ORDER_CANCEL_EXECUTE_BATCH_MAX = 50;
+
+    /** 取消执行：未选 procedureId / 重复 / 超批 / 原因为空 / 就诊不可见（IF-IP-CXL-01）。 */
+    String EX_IP_CXL_201 = "EX-IP-CXL-201";
+
+    /** 取消执行：Procedure 不可取消或已被对冲（IF-IP-CXL-01）。 */
+    String EX_IP_CXL_202 = "EX-IP-CXL-202";
+
+    /** 取消执行：关联费用已结算或退费中（IF-IP-CXL-01）。 */
+    String EX_IP_CXL_203 = "EX-IP-CXL-203";
+
+    /** 取消执行：汇总单态并发冲突或已核发（IF-IP-CXL-01）。 */
+    String EX_IP_CXL_204 = "EX-IP-CXL-204";
+
+    /** 取消执行：域写失败（IF-IP-CXL-01）。 */
+    String EX_IP_CXL_205 = "EX-IP-CXL-205";
+
+    /** 取消执行成功默认提示（IF-IP-CXL-01）。 */
+    String ORDER_CANCEL_EXECUTE_SUCCESS_MESSAGE = "取消执行成功";
+
+    /** 取消执行成功且自动重建汇总单提示（IF-IP-CXL-01）。 */
+    String ORDER_CANCEL_EXECUTE_REBUILD_SUCCESS_MESSAGE = "取消执行成功，已自动重建汇总单";
+
+    /** 取消执行自动撤汇总时 Supply 驳回原因码（APPROVAL 路径，BR-IP-CXL-011）。 */
+    String ORDER_CANCEL_EXECUTE_SUPPLY_REJECT_REASON_CODE = "AUTO_CANCEL_EXECUTE";
 }

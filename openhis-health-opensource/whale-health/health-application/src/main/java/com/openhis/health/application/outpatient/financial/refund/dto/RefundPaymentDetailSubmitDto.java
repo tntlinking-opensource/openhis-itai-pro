@@ -30,16 +30,20 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 退费渠道实退明细。 */
 @Schema(description = "退费渠道实退明细")
 public class RefundPaymentDetailSubmitDto {
 
     /** 退款渠道编码。 */
     @NotBlank(message = "payChannelCode 不能为空")
     @Schema(description = "退款渠道编码", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 退款渠道编码（业务字段）。 */
     private String payChannelCode;
 
     /** 本渠道实退金额。 */
     @NotNull(message = "amount 不能为空")
+    /** 本渠道实退金额。 */
     @Schema(description = "本渠道实退金额", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 本渠道实退金额（业务字段）。 */
     private BigDecimal amount;
 }

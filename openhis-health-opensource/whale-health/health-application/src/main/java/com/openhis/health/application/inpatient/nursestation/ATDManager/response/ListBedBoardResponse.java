@@ -29,10 +29,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 床位列表查询响应。 */
 @Schema(description = "床位列表查询响应")
 public class ListBedBoardResponse {
 
-    /** 范围内全部启用床位行（位置块 + 可选占床患者块）。 */
     @Schema(description = "床位列表项")
     private List<BedBoardItemDto> items;
 }

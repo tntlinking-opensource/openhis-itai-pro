@@ -26,14 +26,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 批量退回响应。 */
 @Schema(description = "批量退回响应")
 public class RejectNurseStationOrdersResponse {
 
-    /** 整批成功为 true。 */
     @Schema(description = "整批成功为 true")
     private Boolean success;
 
-    /** 成功处理条数。 */
     @Schema(description = "成功处理条数")
     private Integer processedCount;
 }

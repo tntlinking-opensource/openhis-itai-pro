@@ -46,9 +46,6 @@ public class MedicationRequest extends BaseAuditedEntity {
     @Column(name = "prescription_no")
     private String prescriptionNo;
 
-    @Column(name = "sign_code")
-    private String signCode;
-
     @Column(name = "group_id")
     private Long groupId;
 
@@ -94,9 +91,11 @@ public class MedicationRequest extends BaseAuditedEntity {
     @Column(name = "location_id")
     private Long locationId;
 
+    /** 开立科室组织主键（{@code adm_organization.id}）。 */
     @Column(name = "org_id")
     private Long orgId;
 
+    /** 发放药房库位主键（{@code adm_location.id}）；与 {@link #orgId} 分列，禁止混存。 */
     @Column(name = "perform_location")
     private Long performLocation;
 
@@ -334,13 +333,11 @@ public class MedicationRequest extends BaseAuditedEntity {
     }
 
     /**
-     * 草稿发送至已发送：写入签名码与处方号并更新时间戳。
+     * 草稿发送至已发送：写入处方号并更新时间戳。
      *
-     * @param signCode 签名码
      * @param prescriptionNo 处方号
      */
-    public void draftToActive(String signCode, String prescriptionNo) {
-        this.signCode = signCode;
+    public void draftToActive(String prescriptionNo) {
         this.prescriptionNo = prescriptionNo;
         this.statusEnum = RequestStatus.ACTIVE.getCode();
         this.statusChangedTime = LocalDateTime.now();

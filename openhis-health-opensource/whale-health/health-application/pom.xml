@@ -8,7 +8,7 @@
     <parent>
         <groupId>com.openhis</groupId>
         <artifactId>whale-health</artifactId>
-        <version>2.0.0-SNAPSHOT</version>
+        <version>2.0.1-SNAPSHOT</version>
     </parent>
     
     <artifactId>health-application</artifactId>
@@ -22,6 +22,12 @@
         <dependency>
             <groupId>com.openhis</groupId>
             <artifactId>health-domain</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>health-module-support</artifactId>
             <version>${project.version}</version>
         </dependency>
         
@@ -55,6 +61,23 @@
             <groupId>com.openhis</groupId>
             <artifactId>whale-identity</artifactId>
         </dependency>
+
+        <!-- Booking 契约（挂号衔接 Port；实现由 booking-adapter 可选装配） -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>booking-contracts</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- CHS 吉林契约（门诊医保结算 Port；实现由 chs-jilin-adapter 可选装配） -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>chs-jilin-contracts</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
+
         
         <!-- Spring Boot Starter (含 validation，供 DTO/Request 校验) -->
         <dependency>

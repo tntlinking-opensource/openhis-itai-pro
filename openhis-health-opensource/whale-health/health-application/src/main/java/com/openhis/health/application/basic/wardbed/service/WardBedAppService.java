@@ -87,7 +87,8 @@ public class WardBedAppService {
     public List<WardBedDto> getWardList(QueryWardBedRequest query) {
         List<Location> wards;
         if (query != null && query.getId() != null) {
-            wards = locationQueryService.listWardsByOrganization(query.getId());
+            wards = locationQueryService.listByOrganizationIdAndFormCode(
+                query.getId(), LocationForm.WARD.getCode());
         } else {
             wards = locationQueryService.listAllByFormCode(LocationForm.WARD.getCode());
         }
@@ -209,12 +210,12 @@ public class WardBedAppService {
     }
 
     /**
-     * 机构树拍平为下拉选项。
+     * 住院科室拍平为下拉选项（病区挂靠科室须为类别=住院的启用科室）。
      *
      * @return 选项列表
      */
     private List<OptionDto> loadOrganizationOptions() {
-        List<Organization> organizations = organizationQueryService.getOrganizationTree();
+        List<Organization> organizations = organizationQueryService.listOrganizationsForInpatientAdmission();
         List<OptionDto> options = new ArrayList<>();
         long sort = 0L;
         for (Organization organization : organizations) {

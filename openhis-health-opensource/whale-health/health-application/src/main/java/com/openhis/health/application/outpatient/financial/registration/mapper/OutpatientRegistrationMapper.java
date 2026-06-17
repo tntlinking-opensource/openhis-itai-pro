@@ -27,6 +27,8 @@ import com.openhis.health.application.outpatient.financial.registration.request.
 import com.openhis.health.application.outpatient.financial.registration.request.PreRegisterSettlementRequest;
 import com.openhis.health.application.outpatient.financial.registration.request.SavePatientForFirstRegisterRequest;
 import com.openhis.health.application.outpatient.financial.registration.response.CancelWithRefundResponse;
+import com.openhis.health.application.outpatient.financial.registration.response.ListBookableSlotHintsResponse;
+import com.openhis.health.application.outpatient.financial.registration.response.LoadAppointmentForRegisterResponse;
 import com.openhis.health.application.outpatient.financial.registration.response.ListDepartmentsResponse;
 import com.openhis.health.application.outpatient.financial.registration.response.ListPractitionersResponse;
 import com.openhis.health.application.outpatient.financial.registration.response.LoadRegisterFormInitResponse;
@@ -98,6 +100,7 @@ public interface OutpatientRegistrationMapper {
         List<OptionDto> practitioners,
         List<OptionDto> contracts,
         List<OptionDto> serviceTypes,
+        Map<String, BigDecimal> serviceTypeFeeById,
         List<OptionDto> genderOptions
     );
 
@@ -150,8 +153,22 @@ public interface OutpatientRegistrationMapper {
         Long encounterId,
         Long paymentDraftId,
         BigDecimal totalAmount,
-        List<ChargeItemPreviewDto> chargeItems
+        List<ChargeItemPreviewDto> chargeItems,
+        Long appointmentId,
+        Long slotId
     );
+
+    /**
+     * IF-REG-12：预约快照转挂号台响应。
+     */
+    LoadAppointmentForRegisterResponse toLoadAppointmentForRegisterResponse(
+        com.openhis.whale.booking.contracts.dto.OutpatientBookingSnapshot snapshot);
+
+    /**
+     * IF-REG-14：可约时段摘要映射。
+     */
+    ListBookableSlotHintsResponse toListBookableSlotHintsResponse(
+        java.util.List<com.openhis.whale.booking.contracts.dto.BookableSlotHint> hints);
 
     /**
      * 组装挂号支付响应。
@@ -256,7 +273,8 @@ public interface OutpatientRegistrationMapper {
     List<ClinicRegisterItemDto> toClinicRegisterItemDtoList(
         Page<ClinicRegisterQueryModel> page,
         Map<String, BigDecimal> registrationFeeTotalByAnchor,
-        Map<Long, Long> paymentDraftIdByEncounterId
+        Map<Long, Long> paymentDraftIdByEncounterId,
+        Map<Long, Long> paymentIdByEncounterId
     );
 
     /**

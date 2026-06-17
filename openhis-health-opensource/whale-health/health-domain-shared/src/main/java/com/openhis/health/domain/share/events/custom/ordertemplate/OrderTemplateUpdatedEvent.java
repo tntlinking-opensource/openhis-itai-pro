@@ -25,7 +25,7 @@ import lombok.Setter;
 import java.util.List;
 
 /**
- * 医嘱组套模板已更新事件。
+ * 组套模板已更新事件。
  */
 @Getter
 @Setter

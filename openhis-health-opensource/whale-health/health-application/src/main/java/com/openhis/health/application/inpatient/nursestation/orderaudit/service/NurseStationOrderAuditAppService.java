@@ -17,7 +17,9 @@
 
 package com.openhis.health.application.inpatient.nursestation.orderaudit.service;
 
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.assembler.NurseStationOrderAuditListAssembler;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditPatientGroupDto;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditWriteItemDto;
@@ -31,9 +33,7 @@ import com.openhis.health.application.inpatient.nursestation.orderaudit.response
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.domain.administration.location.entity.Location;
-import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.domain.custom.encounterhistory.queries.model.EncounterHistoryMilestoneQueryModel;
 import com.openhis.health.domain.custom.encounterhistory.service.EncounterHistoryQueryService;
 import com.openhis.health.domain.medication.medicationrequest.command.RejectMedicationOrderCommand;
@@ -43,9 +43,9 @@ import com.openhis.health.domain.medication.medicationrequest.service.Medication
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.application.querysupport.order.dto.InpatientOrderListSkeleton;
-import com.openhis.health.application.common.assembler.order.InpatientOrderListMergeAssembler;
-import com.openhis.health.application.querysupport.order.InpatientOrderLookupLoader;
+import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.module.common.assembler.order.InpatientOrderListMergeAssembler;
+import com.openhis.health.module.querysupport.order.InpatientOrderLookupLoader;
 import com.openhis.health.domain.share.constants.CustomConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
@@ -60,7 +60,6 @@ import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRe
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -89,8 +88,8 @@ import java.util.Set;
 public class NurseStationOrderAuditAppService {
 
     private final CurrentOperatorResolver currentOperatorResolver;
-    private final ICurrentUser currentUser;
-    private final LocationQueryService locationQueryService;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
+    private final CurrentManagedWardLocationIdsResolver managedWardLocationIdsResolver;
     private final InpatientOrderListMergeAssembler inpatientOrderListMergeAssembler;
     private final InpatientOrderLookupLoader inpatientOrderLookupLoader;
     private final MedicationRequestQueryService medicationRequestQueryService;
@@ -114,9 +113,7 @@ public class NurseStationOrderAuditAppService {
     public ListNurseStationOrderAuditResponse listNurseStationOrderAudit(ListNurseStationOrderAuditRequest request) {
         try {
             this.assertListAuditRequestValid(request);
-            Long practitionerId = currentUser.getCurrentPractitionerId();
-            // Pre：管理病区与请求就诊求交，得到护士站可见 encounter 集合。
-            List<Long> managedWardIds = this.resolveManagedWardIds(practitionerId);
+            List<Long> managedWardIds = managedWardLocationIdsResolver.listManagedWardLocationIdsOrEmpty();
             List<Long> requestedEncounterIds = this.distinctEncounterIds(request.getEncounterIds());
             InpatientEncounterPageQuery visibilityQuery =
                 nurseStationOrderAuditMapper.toInpatientEncounterPageQueryForAudit(requestedEncounterIds, managedWardIds);
@@ -176,12 +173,9 @@ public class NurseStationOrderAuditAppService {
         Long operatorId = currentOperatorResolver.requireOperatorId(
             InpatientNurseStationConstants.EX_IP_AUD_201,
             "未登录或登录已失效，无法校对医嘱");
-        Long performerCheckId = currentUser.getCurrentPractitionerId();
-        if (performerCheckId == null) {
-            throw new BusinessException(
-                InpatientNurseStationConstants.EX_IP_AUD_201,
-                "未解析到当前医务人员，无法校对医嘱");
-        }
+        Long performerCheckId = currentPractitionerResolver.requirePractitionerId(
+            InpatientNurseStationConstants.EX_IP_AUD_201,
+            "未解析到当前医务人员，无法校对医嘱");
         LocalDateTime checkTime = LocalDateTime.now();
         List<NurseStationOrderAuditWriteItemDto> items = request.getItems();
         Set<Long> visibleEncounterIds = this.resolveVisibleEncounterIdsForWrite(items, true);
@@ -236,12 +230,9 @@ public class NurseStationOrderAuditAppService {
         Long operatorId = currentOperatorResolver.requireOperatorId(
             InpatientNurseStationConstants.EX_IP_AUD_301,
             "未登录或登录已失效，无法退回医嘱");
-        Long performerCheckId = currentUser.getCurrentPractitionerId();
-        if (performerCheckId == null) {
-            throw new BusinessException(
-                InpatientNurseStationConstants.EX_IP_AUD_301,
-                "未解析到当前医务人员，无法退回医嘱");
-        }
+        Long performerCheckId = currentPractitionerResolver.requirePractitionerId(
+            InpatientNurseStationConstants.EX_IP_AUD_301,
+            "未解析到当前医务人员，无法退回医嘱");
         LocalDateTime checkTime = LocalDateTime.now();
         String reason = request.getReason();
         List<NurseStationOrderAuditWriteItemDto> items = request.getItems();
@@ -341,8 +332,7 @@ public class NurseStationOrderAuditAppService {
     private Set<Long> resolveVisibleEncounterIdsForWrite(
         List<NurseStationOrderAuditWriteItemDto> items,
         boolean verifyPath) {
-        Long practitionerId = currentUser.getCurrentPractitionerId();
-        List<Long> managedWardIds = this.resolveManagedWardIds(practitionerId);
+        List<Long> managedWardIds = managedWardLocationIdsResolver.listManagedWardLocationIdsOrEmpty();
         Set<Long> encounterIdsFromItems = new LinkedHashSet<>();
         for (NurseStationOrderAuditWriteItemDto item : items) {
             Long encounterId = this.resolveEncounterIdForWriteItem(item);
@@ -559,23 +549,6 @@ public class NurseStationOrderAuditAppService {
             }
         }
         return null;
-    }
-
-    /**
-     * 登录者管理病区 id 列表。
-     *
-     * @param practitionerId 医务人员主键
-     * @return 病区 id 列表
-     */
-    private List<Long> resolveManagedWardIds(Long practitionerId) {
-        List<Location> wards = locationQueryService.listManagedWardsForPractitioner(practitionerId);
-        List<Long> ids = new ArrayList<>();
-        for (Location ward : wards) {
-            if (ward != null && ward.getId() != null) {
-                ids.add(ward.getId());
-            }
-        }
-        return ids;
     }
 
     /**

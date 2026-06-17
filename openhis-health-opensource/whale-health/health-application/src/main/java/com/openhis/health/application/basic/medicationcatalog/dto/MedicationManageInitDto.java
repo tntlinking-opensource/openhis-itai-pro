@@ -36,11 +36,9 @@ import java.util.List;
 @Schema(title = "MedicationManageInitDto", description = "药品目录页面初始化所需的各种字典/选项集合")
 public class MedicationManageInitDto {
 
-    /** 药品目录发布/流转状态下拉（术语编码体系）。 */
     @Schema(description = "状态选项列表")
     private List<OptionDto> statusFlagOptions;
 
-    /** 门诊/住院/通用等适用范围字典项。 */
     @Schema(description = "适用范围选项列表")
     private List<OptionDto> domainFlagOptions;
 

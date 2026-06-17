@@ -26,17 +26,16 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生列表请求。 */
 @Schema(description = "医生列表请求")
-/**
- * ListPractitionersRequest。
- */
 public class ListPractitionersRequest {
 
-    /** 科室 ID。 */
     @Schema(description = "科室ID")
+    /** 科室ID（业务字段）。 */
     private Long organizationId;
 
     /** 检索关键字。 */
     @Schema(description = "关键字")
+    /** 关键字（业务字段）。 */
     private String keyword;
 }

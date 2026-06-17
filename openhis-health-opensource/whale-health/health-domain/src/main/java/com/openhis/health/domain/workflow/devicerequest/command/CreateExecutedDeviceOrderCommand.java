@@ -45,6 +45,8 @@ public class CreateExecutedDeviceOrderCommand extends BatchCommand<CreateExecute
         private Long deviceDefId;
         /** 数量。 */
         private BigDecimal quantity;
+        /** 业务单位编码（FIFO 与发放单口径一致）。 */
+        private String unitCode;
         /** 就诊主键。 */
         private Long encounterId;
         /** 患者主键。 */

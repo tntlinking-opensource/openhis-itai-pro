@@ -45,4 +45,14 @@ public class OutpatientPharmacyPendingEncounterPageQuery extends AbstractPageQue
      * 空表示不按发放状态过滤；显式传入须为 {@link com.openhis.health.domain.share.enums.DispenseStatus#getCode()} 字面量并与 {@code EnumUtil} 解析一致（代码生成通用规范 B.10.8、B.10.8.1）。
      */
     private List<String> dispenseStatusEnumIn;
+
+    /**
+     * 应用层预解析的就诊主键收窄集合（关键字等跨聚合过滤）；{@code null} 表示不按就诊主键额外收窄。
+     */
+    private List<Long> resolvedEncounterScope;
+
+    /**
+     * 已被确认退药收口的正向药品医嘱主键（由 {@code MedicationDispenseRefundSupersedeLoader} 写入）。
+     */
+    private List<Long> resolvedSupersededForwardMedReqIds;
 }

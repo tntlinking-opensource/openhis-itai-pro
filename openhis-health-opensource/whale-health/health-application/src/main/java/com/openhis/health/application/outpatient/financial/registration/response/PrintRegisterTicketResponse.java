@@ -27,17 +27,16 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 补打挂号单响应。 */
 @Schema(description = "补打挂号单响应")
-/**
- * PrintRegisterTicketResponse。
- */
 public class PrintRegisterTicketResponse {
 
-    /** 挂号单详情。 */
     @Schema(description = "挂号单")
+    /** 挂号单（业务字段）。 */
     private RegistrationSlipDto slip;
 
     /** 打印后累计次数。 */
     @Schema(description = "打印后次数")
+    /** 打印后次数（业务字段）。 */
     private Integer printCount;
 }

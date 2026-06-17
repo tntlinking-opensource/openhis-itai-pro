@@ -21,71 +21,53 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * 岗位分配行（adm_pr_assign），用于工作台列表展示与行编辑。
  */
 @Data
-/**
- * PractitionerAssignmentRowDto。
- */
 public class PractitionerAssignmentRowDto {
 
+    /** 岗位分配主键（adm_pr_assign）。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    /**
-     * assignmentId。
-     */
     private Long assignmentId;
+    /** 医务人员主档主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    /**
-     * practitionerId。
-     */
     private Long practitionerId;
 
-    /** 业务角色编码：1 医师 2 护士 3 药师 4 库管 5 技师 6 行政（与 DM-ADM-006 一致） */
-    /**
-     * roleCode。
-     */
+    /** 平台角色主键 whale_roles.id。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long roleId;
+
+    /** 兼容旧前端 API：1=医生 2=护士 3=药师 4=库管 6=行政(财务)。 */
     private Integer roleCode;
     /** 角色中文说明 */
-    /**
-     * roleName。
-     */
     private String roleName;
 
+    /** 所属组织主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    /**
-     * orgId。
-     */
     private Long orgId;
-    /**
-     * orgName。
-     */
+    /** 所属组织名称。 */
     private String orgName;
 
+    /** 工作位置/科室主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    /**
-     * locationId。
-     */
     private Long locationId;
-    /**
-     * locationName。
-     */
+    /** 工作位置/科室名称。 */
     private String locationName;
 
-    /**
-     * name。
-     */
+    /** 医务人员姓名。 */
     private String name;
-    /**
-     * activeFlag。
-     */
+    /** 岗位是否有效。 */
     private Boolean activeFlag;
-    /**
-     * specialtyCode。
-     */
+    /** 专业编码。 */
     private String specialtyCode;
-    /**
-     * typeCode。
-     */
+    /** 人员类型编码。 */
     private Integer typeCode;
+
+    /** 岗位可接诊的号源类型（HealthcareService）主键列表。 */
+    private List<Long> serviceIds;
+    /** 号源类型名称，顿号分隔，供列表展示。 */
+    private String serviceNames;
 }

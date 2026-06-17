@@ -23,6 +23,8 @@ import com.openhis.health.domain.custom.ordertemplate.entity.OrderTemplateLine;
 import com.openhis.health.domain.custom.ordertemplate.repository.OrderTemplateLineRepository;
 import com.openhis.health.domain.custom.ordertemplate.repository.OrderTemplateRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.enums.OrderTemplateKind;
+import com.openhis.health.domain.share.enums.OrderTemplateSource;
 import com.openhis.health.domain.share.events.custom.ordertemplate.*;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
@@ -33,7 +35,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 医嘱组套模板写侧领域服务。
+ * 组套模板写侧领域服务。
  *
  * <p>DOC-CONFLICT：SDD（DM-CUS-012-OrderTemplate-SDD）§7 对事件载荷与触发方法的表述与 DM §5.1/§5.2 不一致，
  * 且包含可选事件 {@code OrderTemplateLinesBatchChangedEvent} 的“必有”要求。当前实现以 DM 为最高权威：仅实现 DM §5.1 定义的事件，
@@ -48,7 +50,7 @@ public class OrderTemplateDomainService {
     private final IDomainEventPublisher domainEventPublisher;
 
     /**
-     * 新建医嘱组套模板头：初始化草稿态，校验必填与模板编码在对象+绑定维度唯一后落库并发布创建事件。
+     * 新建组套模板头：初始化草稿态，校验必填与模板编码在对象+绑定维度唯一后落库并发布创建事件。
      *
      * @param command 归属对象、绑定类型、场景、编码名称等及操作人
      * @return 新模板主键
@@ -59,6 +61,16 @@ public class OrderTemplateDomainService {
         template.setObjectId(command.getObjectId());
         template.setBindingEnum(command.getBindingEnum());
         template.setSceneEnum(command.getSceneEnum());
+        if (command.getTemplateKindEnum() == null || command.getTemplateKindEnum().trim().isEmpty()) {
+            template.setTemplateKindEnum(OrderTemplateKind.GENERAL.getCode());
+        } else {
+            template.setTemplateKindEnum(command.getTemplateKindEnum().trim());
+        }
+        if (command.getTemplateSourceEnum() == null || command.getTemplateSourceEnum().trim().isEmpty()) {
+            template.setTemplateSourceEnum(OrderTemplateSource.MAINTAINED.getCode());
+        } else {
+            template.setTemplateSourceEnum(command.getTemplateSourceEnum().trim());
+        }
         template.setTemplateCode(command.getTemplateCode());
         template.setName(command.getName());
         template.setDescription(command.getDescription());
@@ -69,6 +81,8 @@ public class OrderTemplateDomainService {
             template.setSortWeight(command.getSortWeight());
         }
         template.setRemark(command.getRemark());
+        template.setDefaultChineseHerbsDoseQuantity(command.getDefaultChineseHerbsDoseQuantity());
+        template.setDefaultSufferingFlag(command.getDefaultSufferingFlag());
         template.initDraft();
 
         // 校验：必填与基础合法性（BR-OTL-001/002/005/011）
@@ -93,7 +107,7 @@ public class OrderTemplateDomainService {
     }
 
     /**
-     * 更新模板头字段：须可编辑且非退役；合并非空变更、重验编码唯一后保存；有变更键时发布更新事件。
+     * 更新组套模板头字段：须可编辑且非退役；合并非空变更、重验编码唯一后保存；有变更键时发布更新事件。
      *
      * @param command 模板主键与待更新头字段
      * @throws BusinessException 模板不存在、不可编辑、编码冲突或退役禁止修改时
@@ -110,6 +124,10 @@ public class OrderTemplateDomainService {
         if (command.getSceneEnum() != null) {
             template.setSceneEnum(command.getSceneEnum());
             changedKeys.add("scene_enum");
+        }
+        if (command.getTemplateKindEnum() != null) {
+            template.setTemplateKindEnum(command.getTemplateKindEnum().trim());
+            changedKeys.add("template_kind_enum");
         }
         // 业务分支处理。
         if (command.getTemplateCode() != null) {
@@ -135,6 +153,14 @@ public class OrderTemplateDomainService {
         if (command.getRemark() != null) {
             template.setRemark(command.getRemark());
             changedKeys.add("remark");
+        }
+        if (command.getDefaultChineseHerbsDoseQuantity() != null) {
+            template.setDefaultChineseHerbsDoseQuantity(command.getDefaultChineseHerbsDoseQuantity());
+            changedKeys.add("default_chinese_herbs_dose_quantity");
+        }
+        if (command.getDefaultSufferingFlag() != null) {
+            template.setDefaultSufferingFlag(command.getDefaultSufferingFlag());
+            changedKeys.add("default_suffering_flag");
         }
         // 业务分支处理。
         if (command.getStatusEnum() != null) {
@@ -175,13 +201,17 @@ public class OrderTemplateDomainService {
         OrderTemplate template = requireTemplate(command.getOrderTemplateId());
         template.assertEditable();
 
-        // 校验：发布时必须至少有一条有效行（BR-OTL-006）
-        List<OrderTemplateLine> lines = orderTemplateLineRepository.findAllByOrderTemplateId(template.getId());
-        // 业务分支处理。
+        // 校验：发布时必须至少有一条有效行（BR-OTL-006）；划价组套禁止药品行（BR-OTL-026）
+        List<OrderTemplateLine> lines = orderTemplateLineRepository
+            .findAllByOrderTemplateIdAndIsDeletedFalseOrderBySortOrderAscIdAsc(template.getId());
         if (lines.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_STATUS, "空壳组套不可发布");
         }
+        for (OrderTemplateLine line : lines) {
+            line.assertLineKindAllowedForTemplateKind(template.getTemplateKindEnum());
+        }
 
+        template.assertReadyToPublish();
         template.publish();
         OrderTemplate saved = orderTemplateRepository.save(template);
         domainEventPublisher.publish(new OrderTemplatePublishedEvent(saved.getId(), command.getOperatorId()));
@@ -202,7 +232,7 @@ public class OrderTemplateDomainService {
     }
 
     /**
-     * 软删模板头并级联软删全部明细行，发布删除事件；已删则幂等返回。
+     * 软删组套模板头并级联软删全部明细行，发布删除事件；已删则幂等返回。
      *
      * @param command 模板主键与操作人
      * @throws BusinessException 模板不存在时
@@ -227,7 +257,7 @@ public class OrderTemplateDomainService {
     }
 
     /**
-     * 新增组套明细行：模板须允许维护行，校验行不变式后保存并发布行新增事件。
+     * 新增组套模板行：组套须允许维护行，校验行不变式后保存并发布行新增事件。
      *
      * @param command 模板主键、行种类与各默认医嘱字段
      * @return 新行主键
@@ -253,8 +283,11 @@ public class OrderTemplateDomainService {
         line.setDosageText(command.getDosageText());
         line.setDefaultPerformOrgId(command.getDefaultPerformOrgId());
         line.setLineRemark(command.getLineRemark());
+        line.setChineseHerbsDoseQuantity(command.getChineseHerbsDoseQuantity());
+        line.setSufferingFlag(command.getSufferingFlag());
 
         line.assertRequiredFields();
+        line.assertLineKindAllowedForTemplateKind(template.getTemplateKindEnum());
 
         OrderTemplateLine saved = orderTemplateLineRepository.save(line);
         domainEventPublisher.publish(new OrderTemplateLineAddedEvent(template.getId(), saved.getId(), saved.getLineKindEnum(), command.getOperatorId()));
@@ -262,7 +295,7 @@ public class OrderTemplateDomainService {
     }
 
     /**
-     * 更新组套明细行：仅覆盖命令中非空字段，模板须允许维护行，保存后发布行更新事件。
+     * 更新组套模板行：仅覆盖命令中非空字段，组套须允许维护行，保存后发布行更新事件。
      *
      * @param command 行主键与增量字段
      * @throws BusinessException 行或模板不存在、不允许维护或校验失败时
@@ -312,14 +345,21 @@ public class OrderTemplateDomainService {
         if (command.getLineRemark() != null) {
             line.setLineRemark(command.getLineRemark());
         }
+        if (command.getChineseHerbsDoseQuantity() != null) {
+            line.setChineseHerbsDoseQuantity(command.getChineseHerbsDoseQuantity());
+        }
+        if (command.getSufferingFlag() != null) {
+            line.setSufferingFlag(command.getSufferingFlag());
+        }
 
         line.assertRequiredFields();
+        line.assertLineKindAllowedForTemplateKind(template.getTemplateKindEnum());
         OrderTemplateLine saved = orderTemplateLineRepository.save(line);
         domainEventPublisher.publish(new OrderTemplateLineUpdatedEvent(saved.getOrderTemplateId(), saved.getId(), command.getOperatorId()));
     }
 
     /**
-     * 软删组套明细行并发布行移除事件。
+     * 软删组套模板行并发布行移除事件。
      *
      * @param command 行主键与操作人
      * @throws BusinessException 行或模板不存在、不允许维护时
@@ -351,7 +391,7 @@ public class OrderTemplateDomainService {
      *
      * @param lineId 组套模板行主键
      * @return 组套模板行实体
-     * @throws BusinessException 模板行不存在时
+     * @throws BusinessException 组套模板行不存在时
      */
     private OrderTemplateLine requireLine(Long lineId) {
         return orderTemplateLineRepository.findById(lineId)

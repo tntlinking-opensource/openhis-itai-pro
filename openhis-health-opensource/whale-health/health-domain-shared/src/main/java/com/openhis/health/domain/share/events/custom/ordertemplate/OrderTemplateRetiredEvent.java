@@ -21,7 +21,7 @@ import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.whale.core.domain.event.DomainEvent;
 
 /**
- * 医嘱组套模板已停用事件。
+ * 组套模板已停用事件。
  */
 public class OrderTemplateRetiredEvent extends DomainEvent {
     private Long operatorId;

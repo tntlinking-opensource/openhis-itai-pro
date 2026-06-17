@@ -23,23 +23,24 @@ import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 药房盘点单列表聚合行（IF-PHA-ST-02：每 {@code bus_no} 一行）。
  */
 @Data
 @Accessors(chain = true)
+/** 药房盘点单列表聚合行。 */
 @Schema(description = "药房盘点单列表聚合行")
 public class PharmacyStocktakeListRowDto {
 
-    /** 业务单号。 */
     @Schema(description = "业务单号")
     private String busNo;
 
-    /** 单据状态持久化码。 */
     @Schema(description = "单据状态 SupplyStatus#getCode")
     private String statusEnum;
 
@@ -49,6 +50,7 @@ public class PharmacyStocktakeListRowDto {
 
     /** 盘点药房位置主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 盘点药房 purposeLocationId。 */
     @Schema(description = "盘点药房 purposeLocationId")
     private Long purposeLocationId;
 
@@ -70,6 +72,7 @@ public class PharmacyStocktakeListRowDto {
 
     /** 申请人主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 申请人 applicantId。 */
     @Schema(description = "申请人 applicantId")
     private Long applicantId;
 
@@ -79,11 +82,13 @@ public class PharmacyStocktakeListRowDto {
 
     /** 申请时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 申请时间 applyTime。 */
     @Schema(description = "申请时间 applyTime")
     private LocalDateTime applyTime;
 
     /** 审批人主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 审批人 approverId。 */
     @Schema(description = "审批人 approverId")
     private Long approverId;
 
@@ -93,11 +98,13 @@ public class PharmacyStocktakeListRowDto {
 
     /** 审批时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 审批时间 approvalTime。 */
     @Schema(description = "审批时间 approvalTime")
     private LocalDateTime approvalTime;
 
     /** 制单时间（明细 occurrence_time 组内最大值）。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 制单时间 occurrenceTime。 */
     @Schema(description = "制单时间 occurrenceTime")
     private LocalDateTime occurrenceTime;
 }

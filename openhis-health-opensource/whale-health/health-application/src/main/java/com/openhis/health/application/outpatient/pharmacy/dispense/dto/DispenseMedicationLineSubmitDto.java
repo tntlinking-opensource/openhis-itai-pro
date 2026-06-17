@@ -29,6 +29,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 核发提交行。 */
 @Schema(description = "核发提交行")
 public class DispenseMedicationLineSubmitDto {
 

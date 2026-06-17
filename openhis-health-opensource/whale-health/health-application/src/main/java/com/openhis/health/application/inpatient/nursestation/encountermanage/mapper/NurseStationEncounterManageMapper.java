@@ -24,10 +24,12 @@ import com.openhis.health.application.inpatient.nursestation.encountermanage.dto
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.PatientQueueItemDto;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.request.PagePatientQueueRequest;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.request.SavePatientInfoRequest;
+import com.openhis.health.application.inpatient.nursestation.encountermanage.response.LoadAdmissionParticipantInitResponse;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.LoadWardTreeResponse;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.PagePatientQueueResponse;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.SavePatientInfoResponse;
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.domain.administration.encounter.command.SaveNurseStationPatientCommand;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
@@ -52,6 +54,17 @@ public interface NurseStationEncounterManageMapper {
      * @return 树响应
      */
     LoadWardTreeResponse toLoadWardTreeResponse(List<Location> wards, Map<Long, List<Location>> housesByWardId);
+
+    /**
+     * 住院医师与责任护士实体列表 → 分床下拉初始化响应。
+     *
+     * @param doctors 住院医师候选
+     * @param nurses  责任护士候选
+     * @return 初始化响应
+     */
+    LoadAdmissionParticipantInitResponse toLoadAdmissionParticipantInitResponse(
+        List<Practitioner> doctors,
+        List<Practitioner> nurses);
 
     /**
      * 列表分页请求 → 住院信息读模型分页入参。

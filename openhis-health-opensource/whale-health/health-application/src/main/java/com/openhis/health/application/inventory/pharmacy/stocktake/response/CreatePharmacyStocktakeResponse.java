@@ -20,16 +20,17 @@ package com.openhis.health.application.inventory.pharmacy.stocktake.response;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 新建盘点单出参（IF-PHA-ST-04）。
  */
 @Data
 @Accessors(chain = true)
+/** 新建盘点单 IF-PHA-ST-04。 */
 @Schema(description = "新建盘点单 IF-PHA-ST-04")
 public class CreatePharmacyStocktakeResponse {
 
-    /** 新业务单号。 */
     @Schema(description = "业务单号 busNo")
     private String busNo;
 }

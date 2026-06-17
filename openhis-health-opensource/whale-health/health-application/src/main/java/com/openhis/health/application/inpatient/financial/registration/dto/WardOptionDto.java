@@ -28,16 +28,22 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 病区选项。 */
 @Schema(description = "病区选项")
 public class WardOptionDto {
 
     @Schema(description = "病区位置 ID")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 病区位置 ID（业务字段）。 */
     private Long wardId;
 
+    /** 病区编码。 */
     @Schema(description = "病区编码")
+    /** 病区编码（业务字段）。 */
     private String wardCode;
 
+    /** 病区名称。 */
     @Schema(description = "病区名称")
+    /** 病区名称（业务字段）。 */
     private String wardName;
 }

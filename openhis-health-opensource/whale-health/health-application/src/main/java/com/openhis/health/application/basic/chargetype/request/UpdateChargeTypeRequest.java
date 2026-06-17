@@ -25,14 +25,8 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-/**
- * UpdateChargeTypeRequest。
- */
 public class UpdateChargeTypeRequest extends CreateChargeTypeRequest {
 
     /** 费用性质（合约）主键。 */
-    /**
-     * id。
-     */
     private Long id;
 }

@@ -247,7 +247,7 @@ public class PatientMapper {
 
         RegisterPatientCommand.RegisterPatientItemCommand item = new RegisterPatientCommand.RegisterPatientItemCommand();
         item.setName(trimToNull(request.getName()));
-        item.setGenderEnum(request.getGenderEnum());
+        item.setGenderEnum(this.resolveGenderCode(request.getGenderEnum()));
         if (request.getBirthDate() != null) {
             item.setBirthDate(request.getBirthDate().toLocalDate());
         } else {
@@ -255,7 +255,8 @@ public class PatientMapper {
         }
         item.setIdCard(trimToNull(request.getIdCard()));
         item.setPhone(trimToNull(request.getPhone()));
-        item.setTempFlag(null);
+        // 患者管理菜单建档为正式档案，非临时建档（与门诊挂号 toRegisterPatientCommand 一致）。
+        item.setTempFlag(Boolean.FALSE);
         item.setOrganizationId(null);
         item.setIdentifierItems(this.toIdentifierItemCommands(request.getPatientIdInfoList()));
         command.setItems(Collections.singletonList(item));
@@ -276,7 +277,7 @@ public class PatientMapper {
         ModifyPatientProfileCommand.ModifyPatientProfileItemCommand item = new ModifyPatientProfileCommand.ModifyPatientProfileItemCommand();
         item.setPatientId(request.getId());
         item.setName(trimToNull(request.getName()));
-        item.setGenderEnum(request.getGenderEnum());
+        item.setGenderEnum(this.resolveGenderCode(request.getGenderEnum()));
         if (request.getBirthDate() != null) {
             item.setBirthDate(request.getBirthDate().toLocalDate());
         } else {
@@ -414,6 +415,24 @@ public class PatientMapper {
             return genderCode;
         }
         return gender.getDisplay();
+    }
+
+    /**
+     * 将请求中的性别 code 解析为 {@link AdministrativeGender#getCode()}；空白返回 {@code null}，非法 code 抛校验异常。
+     *
+     * @param rawGender 前端传入的 AdministrativeGender code（如 MALE、FEMALE）
+     * @return 规范化后的 code 或 {@code null}
+     */
+    private String resolveGenderCode(String rawGender) {
+        String trimmed = trimToNull(rawGender);
+        if (trimmed == null) {
+            return null;
+        }
+        AdministrativeGender gender = EnumUtil.fromCode(AdministrativeGender.class, trimmed);
+        if (gender == null) {
+            throw new ValidationException("性别编码无效：" + trimmed);
+        }
+        return gender.getCode();
     }
 
     /**

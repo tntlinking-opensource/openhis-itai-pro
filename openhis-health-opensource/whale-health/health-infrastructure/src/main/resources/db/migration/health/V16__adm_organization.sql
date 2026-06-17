@@ -33,27 +33,44 @@ CREATE TABLE IF NOT EXISTS "public"."adm_organization" (
     CONSTRAINT "adm_organization_pkey" PRIMARY KEY ("id")
 );
 
-INSERT INTO adm_organization (
-    id, bus_no, name, parent_id, display_order, active_flag, type_enum, class_enum, status_enum,
-    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted
-) VALUES
-      (1, 'ROOT', '总部', NULL, 0, true, 'HOSPITAL', 'MANAGER', 'ACTIVE', 1, NOW(), NOW(), 1, 1, false),
-      (2, 'BRANCH_01', '第一分院', 1, 1, true, 'HOSPITAL', 'MANAGER', 'ACTIVE', 1, NOW(), NOW(), 1, 1, false),
-      (3, 'BRANCH_02', '第二分院', 1, 2, true, 'HOSPITAL', 'MANAGER', 'ACTIVE', 1, NOW(), NOW(), 1, 1, false),
-      (4, 'DEPT_INTERNAL', '内科', 2, 1, true, 'DEPARTMENT', 'INPATIENT', 'ACTIVE', 1, NOW(), NOW(), 1, 1, false),
-      (5, 'DEPT_SURGERY', '外科', 2, 2, true, 'DEPARTMENT', 'INPATIENT', 'ACTIVE', 1, NOW(), NOW(), 1, 1, false),
-      (6, 'DEPT_OUTPATIENT', '门诊部', 3, 1, true, 'OUTPATIENT', 'CLINIC', 'ACTIVE', 1, NOW(), NOW(), 1, 1, false),
-      (7, 'DEPT_PHARMACY', '药房', 3, 2, true, 'DEPARTMENT', 'PHARMACY', 'ACTIVE', 1, NOW(), NOW(), 1, 1, false)
-    ON CONFLICT (id) DO UPDATE SET
-    bus_no = EXCLUDED.bus_no,
-                            name = EXCLUDED.name,
-                            parent_id = EXCLUDED.parent_id,
-                            display_order = EXCLUDED.display_order,
-                            active_flag = EXCLUDED.active_flag,
-                            type_enum = EXCLUDED.type_enum,
-                            class_enum = EXCLUDED.class_enum,
-                            status_enum = EXCLUDED.status_enum,
-                            tenant_id = EXCLUDED.tenant_id,
-                            updated_at = NOW(),
-                            updated_by = EXCLUDED.updated_by,
-                            is_deleted = false;
+COMMENT ON TABLE adm_organization IS '管理域 organization';
+
+COMMENT ON COLUMN adm_organization.id IS '主键';
+COMMENT ON COLUMN adm_organization.tenant_id IS '租户标识';
+COMMENT ON COLUMN adm_organization.created_at IS '创建时间';
+COMMENT ON COLUMN adm_organization.updated_at IS '最后更新时间';
+COMMENT ON COLUMN adm_organization.created_by IS '创建人';
+COMMENT ON COLUMN adm_organization.updated_by IS '最后更新人';
+COMMENT ON COLUMN adm_organization.is_deleted IS '软删标记';
+COMMENT ON COLUMN adm_organization.deleted_at IS '删除时间';
+COMMENT ON COLUMN adm_organization.deleted_by IS '删除人';
+COMMENT ON COLUMN adm_organization.version IS '乐观锁版本号';
+COMMENT ON COLUMN adm_organization.name IS '机构聚合根实体';
+COMMENT ON COLUMN adm_organization.bus_no IS 'bus 编号';
+COMMENT ON COLUMN adm_organization.parent_id IS 'parent 标识';
+COMMENT ON COLUMN adm_organization.type_enum IS 'type 枚举值';
+COMMENT ON COLUMN adm_organization.class_enum IS 'class 枚举值';
+COMMENT ON COLUMN adm_organization.status_enum IS 'status 枚举值（{ PublicationStatus#getCode()}）';
+COMMENT ON COLUMN adm_organization.active_flag IS 'active 标志位';
+COMMENT ON COLUMN adm_organization.display_order IS 'displayOrder';
+COMMENT ON COLUMN adm_organization.def_doctor_id IS 'defDoctor 标识';
+COMMENT ON COLUMN adm_organization.py_str IS 'pyStr';
+COMMENT ON COLUMN adm_organization.wb_str IS 'wbStr';
+COMMENT ON COLUMN adm_organization.yb_no IS 'yb 编号';
+COMMENT ON COLUMN adm_organization.yb_name IS 'yb 名称';
+COMMENT ON COLUMN adm_organization.medins_id IS 'medins 标识';
+COMMENT ON COLUMN adm_organization.medins_admdvs IS 'medinsAdmdvs';
+COMMENT ON COLUMN adm_organization.medins_type IS 'medinsType';
+COMMENT ON COLUMN adm_organization.medins_lv IS 'medinsLv';
+COMMENT ON COLUMN adm_organization.caty IS '科别';
+
+-- seed: adm_organization
+INSERT INTO "adm_organization" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "name", "bus_no", "parent_id", "type_enum", "class_enum", "status_enum", "active_flag", "display_order", "def_doctor_id", "py_str", "wb_str", "yb_no", "yb_name", "medins_id", "medins_admdvs", "medins_type", "medins_lv", "caty")
+VALUES
+('322663105141149696', '1', '2026-06-09 09:07:59.056+00', '2026-06-09 09:07:59.056+00', '1', '1', false, NULL, NULL, 0, '测试医院', 'OR0007', NULL, 'HOSPITAL', NULL, 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('322663218269917184', '1', '2026-06-09 09:08:26.028+00', '2026-06-09 09:08:26.028+00', '1', '1', false, NULL, NULL, 0, '门诊内科', 'OR0007.OR0008', '322663105141149696', 'DEPARTMENT', 'CLINIC', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('322663308812357632', '1', '2026-06-09 09:08:47.615+00', '2026-06-09 09:08:47.615+00', '1', '1', false, NULL, NULL, 0, '住院内科', 'OR0007.OR0009', '322663105141149696', 'DEPARTMENT', 'INPATIENT', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('322663606385643520', '1', '2026-06-09 09:09:58.562+00', '2026-06-09 09:37:54.930+00', '1', '1', false, NULL, NULL, 0, '处置室', 'OR0007.OR0010', '322663105141149696', 'DEPARTMENT', 'NS', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('322663652522987520', '1', '2026-06-09 09:10:09.562+00', '2026-06-09 09:37:49.884+00', '1', '1', false, NULL, NULL, 0, '护理站', 'OR0007.OR0011', '322663105141149696', 'DEPARTMENT', 'NS', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),
+('322663815429754880', '1', '2026-06-09 09:10:48.402+00', '2026-06-09 09:10:48.402+00', '1', '1', false, NULL, NULL, 0, '挂号收费处', 'OR0007.OR0012', '322663105141149696', 'DEPARTMENT', 'FIN', 'ACTIVE', true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;

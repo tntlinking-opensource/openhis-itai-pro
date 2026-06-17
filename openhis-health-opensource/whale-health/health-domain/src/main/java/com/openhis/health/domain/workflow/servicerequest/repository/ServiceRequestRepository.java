@@ -87,6 +87,24 @@ public interface ServiceRequestRepository extends JpaRepository<ServiceRequest, 
     Long countByBasedOnTableAndBasedOnId(String basedOnTable, Long basedOnId);
 
     /**
+     * 按来源锚点查询派生服务申请列表（取消执行绑定项 based_on 反查，DM-WKF-004 §6.2.23）。
+     *
+     * @param basedOnTable 来源表名
+     * @param basedOnId    来源主键
+     * @return 服务申请列表
+     */
+    List<ServiceRequest> findByBasedOnTableAndBasedOnId(String basedOnTable, Long basedOnId);
+
+    /**
+     * 按来源表名与多条来源主键批量查询派生服务申请（取消执行批量 based_on 反查）。
+     *
+     * @param basedOnTable 来源表名
+     * @param basedOnIds   来源主键集合
+     * @return 服务申请列表
+     */
+    List<ServiceRequest> findByBasedOnTableAndBasedOnIdIn(String basedOnTable, Collection<Long> basedOnIds);
+
+    /**
      * 按条件查询。
      * @param encounterId 条件
      * @param categoryEnums 条件
@@ -110,4 +128,15 @@ public interface ServiceRequestRepository extends JpaRepository<ServiceRequest, 
      * @return 诊疗申请集合
      */
     List<ServiceRequest> findByEncounterIdInAndStatusEnum(Collection<Long> encounterIds, String statusEnum);
+
+    /**
+     * 按就诊、申请单号与生成来源查询服务申请行（申请单编辑删旧、列表分组）。
+     *
+     * @param encounterId        就诊主键
+     * @param prescriptionNo     申请单号（完整匹配）
+     * @param generateSourceEnum 生成来源 code
+     * @return 服务申请列表
+     */
+    List<ServiceRequest> findByEncounterIdAndPrescriptionNoAndGenerateSourceEnum(
+        Long encounterId, String prescriptionNo, String generateSourceEnum);
 }

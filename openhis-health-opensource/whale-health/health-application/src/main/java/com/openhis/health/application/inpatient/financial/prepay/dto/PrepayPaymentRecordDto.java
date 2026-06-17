@@ -32,6 +32,7 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
+/** 预交金支付流水。 */
 @Schema(description = "预交金支付流水")
 public class PrepayPaymentRecordDto {
 
@@ -39,31 +40,40 @@ public class PrepayPaymentRecordDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long paymentId;
 
+    /** 收费/退费时间。 */
     @Schema(description = "收费/退费时间", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime tradeTime;
 
+    /** 业务类型展示：收预交金/退预交金。 */
     @Schema(description = "业务类型展示：收预交金/退预交金", requiredMode = Schema.RequiredMode.REQUIRED)
     private String bizTypeText;
 
+    /** 收付方向 PAY/UN_PAY。 */
     @Schema(description = "收付方向 PAY/UN_PAY", requiredMode = Schema.RequiredMode.REQUIRED)
     private String paymentEnum;
 
+    /** 金额。 */
     @Schema(description = "金额（正数）", requiredMode = Schema.RequiredMode.REQUIRED)
     private BigDecimal amount;
 
+    /** 支付方式展示。 */
     @Schema(description = "支付方式展示")
     private String payMethodText;
 
+    /** 操作员展示名。 */
     @Schema(description = "操作员展示名")
     private String operatorName;
 
+    /** 票据号/支付单号。 */
     @Schema(description = "票据号/支付单号")
     private String ticketNo;
 
+    /** 支付状态 code。 */
     @Schema(description = "支付状态 code", requiredMode = Schema.RequiredMode.REQUIRED)
     private String statusEnum;
 
+    /** 支付状态展示。 */
     @Schema(description = "支付状态展示", requiredMode = Schema.RequiredMode.REQUIRED)
     private String statusEnumText;
 }

@@ -17,12 +17,16 @@
 
 package com.openhis.health.application.outpatient.pharmacy.returnmedicine.service;
 
-import com.openhis.health.application.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.assembler.OutpatientReturnMedicinePatientQueueAssembler;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.mapper.OutpatientPharmacyReturnMedicineMapper;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
+import com.openhis.health.application.insurance.config.InsuranceCoordinationProperties;
+import com.openhis.health.application.insurance.inventory.MedicareInventoryUploadCoordinator;
+import com.openhis.health.domain.share.constants.InsuranceCoordinationConstants;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.request.ConfirmMedicineReturnRequest;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.request.GetReturnMedicineDetailRequest;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.request.LoadReturnMedicineInitRequest;
@@ -33,6 +37,7 @@ import com.openhis.health.application.outpatient.pharmacy.returnmedicine.respons
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.response.PageReturnPatientResponse;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.response.ReturnMedicineDetailResponse;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
+import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.entity.Organization;
@@ -48,20 +53,21 @@ import com.openhis.health.domain.medication.medicationdispense.service.Medicatio
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.application.querysupport.pharmacy.PharmacyEncounterQueueLoader;
-import com.openhis.health.application.querysupport.pharmacy.ReturnMedicineDetailLoader;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.pharmacy.PharmacyEncounterQueueLoader;
+import com.openhis.health.module.querysupport.pharmacy.ReturnMedicineDetailLoader;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.ReturnMedicineDetailReadRow;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.ReturnMedicinePatientQueueRow;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.application.querysupport.product.ProductDefinitionDisplaySupport;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.TraceDirection;
@@ -71,14 +77,16 @@ import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDom
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.support.MedicationProductQuantityToSplitUnitConverter;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
+import com.openhis.whale.chs.jilin.port.InventoryInsurancePort;
+import com.openhis.whale.chs.jilin.port.model.UploadAfterReturnCommand;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -86,15 +94,30 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 门诊药房退药工作站编排：初始化、患者队列、明细与确认/拒绝退药。
+ * 门诊药房退药工作站应用服务（AS-OP-PHA-002）。
+ *
+ * <p>职责边界：</p>
+ * <ul>
+ *   <li>Gate：分页/登录、退药行状态 PENDING_REFUND、同就诊约束。</li>
+ *   <li>Pre：患者队列、退药明细与应退金额回填。</li>
+ *   <li>Cmd：确认/拒绝退药、库存回补、追溯码、3506 进销存上传。</li>
+ *   <li>Asm：经 {@link OutpatientPharmacyReturnMedicineMapper} 装配响应。</li>
+ * </ul>
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OutpatientPharmacyReturnMedicineAppService {
 
-    private final ICurrentUser currentUser;
+    @Autowired(required = false)
+    private InventoryInsurancePort inventoryInsurancePort;
 
+    @Autowired(required = false)
+    private MedicareInventoryUploadCoordinator medicareInventoryUploadCoordinator;
+
+    private final InsuranceCoordinationProperties insuranceCoordinationProperties;
     private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     private final OrganizationQueryService organizationQueryService;
     private final LocationQueryService locationQueryService;
@@ -125,10 +148,12 @@ public class OutpatientPharmacyReturnMedicineAppService {
             if (request == null) {
                 request = new LoadReturnMedicineInitRequest();
             }
+            // Pre：加载科室下拉与退药状态筛选项。
             List<Organization> departments = this.organizationQueryService.listOrganizationsForOutpatientRegistration();
             LoadReturnMedicineInitResponse resp = new LoadReturnMedicineInitResponse();
             resp.setDepartmentOptions(this.returnMedicineMapper.mapToDepartmentOptions(departments));
             resp.setRefundStatusOptions(this.returnMedicineMapper.mapToRefundStatusOptions());
+            // Asm：返回初始化元数据。
             return resp;
         } catch (BusinessException ex) {
             throw ex;
@@ -149,7 +174,9 @@ public class OutpatientPharmacyReturnMedicineAppService {
             if (request == null) {
                 request = new PageReturnPatientRequest();
             }
+            // Gate：分页参数须合法。
             this.validatePageReturnPatientRequest(request);
+            // Pre：按管辖药房与筛选条件分页就诊 ID。
             PageReturnPatientQuery query = this.returnMedicineMapper.toPageReturnPatientQuery(request);
             List<Long> pharmacyLocationIds = this.managedLocationIdsResolver.listManagedLocationIdsOrEmpty();
             if (!pharmacyLocationIds.isEmpty()) {
@@ -185,14 +212,17 @@ public class OutpatientPharmacyReturnMedicineAppService {
      */
     public ReturnMedicineDetailResponse getReturnMedicineDetail(GetReturnMedicineDetailRequest request) {
         try {
+            // Gate：就诊主键须非空且就诊须存在。
             if (request == null || request.getEncounterId() == null) {
                 throw new BusinessException(ErrorCodeConstants.EX_PHA_002_101_LOAD_FAILED, "encounterId 不能为空");
             }
             this.encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+            // Pre：加载退药明细读模型行。
             ReturnMedicineDetailQuery query = this.returnMedicineMapper.toReturnMedicineDetailQuery(request);
             List<ReturnMedicineDetailReadRow> rows = this.returnMedicineDetailLoader.listReturnMedicineDetails(query);
-        // 按发放单汇总收费金额，展示口径与门诊发药 slip 明细一致。
-            this.applyChargeTotalPriceByDispenseId(request.getEncounterId(), rows);
+            // Pre：按原药嘱 service_id 汇总应退金额。
+            this.applyChargeTotalPriceByOriginRequestId(request.getEncounterId(), rows);
+            // Asm：映射明细列表并返回。
             ReturnMedicineDetailResponse resp = new ReturnMedicineDetailResponse();
             resp.setItems(this.returnMedicineMapper.mapToReturnMedicineDetailRows(rows));
             return resp;
@@ -211,6 +241,7 @@ public class OutpatientPharmacyReturnMedicineAppService {
      * @throws BusinessException 参数非法、状态不允许、库存定位失败等
      */
     public ConfirmMedicineReturnResponse confirmMedicineReturn(ConfirmMedicineReturnRequest request) {
+        // Gate：请求体、confirmType 与退药行须合法。
         this.validateConfirmMedicineReturnRequest(request);
         Long operatorId = this.requireOperatorUserId();
         Long practitionerId = this.resolvePractitionerIdForAudit(operatorId);
@@ -220,6 +251,7 @@ public class OutpatientPharmacyReturnMedicineAppService {
         boolean decline =
             MedicationCommonConstants.OUTPATIENT_PHARMACY_RETURN_CONFIRM_TYPE_DECLINE.equalsIgnoreCase(
                 request.getConfirmType().trim());
+        // Gate：confirmType 只能是 CONFIRM 或 DECLINE。
         if (!confirm && !decline) {
             throw new BusinessException(ErrorCodeConstants.EX_PHA_002_201_STATUS_NOT_ALLOWED, "confirmType 只能是 CONFIRM 或 DECLINE");
         }
@@ -228,6 +260,8 @@ public class OutpatientPharmacyReturnMedicineAppService {
         LinkedHashSet<Long> medRequestIds = new LinkedHashSet<>();
         List<AppendTraceRecordsCommand.AppendTraceRecordItemCommand> traceItems = new ArrayList<>();
         Map<Long, BigDecimal> inventoryIncreaseMerged = new HashMap<>();
+        List<Long> confirmedDispenseIds = new ArrayList<>();
+        Long encounterIdForUpload = null;
 
         for (ReturnMedicineItemRequest item : request.getItems()) {
             if (item == null) {
@@ -239,6 +273,11 @@ public class OutpatientPharmacyReturnMedicineAppService {
             }
             MedicationDispense md = this.medicationDispenseQueryService.mustGetMedicationDispense(item.getDispenseId());
             this.assertPendingRefundDispense(md.getStatusEnum(), item.getDispenseId());
+            if (encounterIdForUpload == null) {
+                encounterIdForUpload = md.getEncounterId();
+            } else if (!encounterIdForUpload.equals(md.getEncounterId())) {
+                throw new BusinessException(ErrorCodeConstants.EX_PHA_002_301_ITEMS_EMPTY, "一次退药确认仅支持同一就诊");
+            }
             if (confirm) {
                 RefundDispensedMedicationCommand.Item it = new RefundDispensedMedicationCommand.Item();
                 it.setId(md.getId());
@@ -247,6 +286,7 @@ public class OutpatientPharmacyReturnMedicineAppService {
                 it.setPractitionerId(practitionerId);
                 it.setReasonText(request.getReason());
                 medRefundItems.add(it);
+                confirmedDispenseIds.add(md.getId());
                 this.collectMedicationTraceAndInventory(md, traceItems, inventoryIncreaseMerged);
             } else {
                 DeclinePendingRefundMedicationDispenseCommand.Item it = new DeclinePendingRefundMedicationDispenseCommand.Item();
@@ -263,6 +303,7 @@ public class OutpatientPharmacyReturnMedicineAppService {
                 RefundDispensedMedicationCommand cmd = new RefundDispensedMedicationCommand();
                 cmd.setOperatorId(operatorId);
                 cmd.setItems(medRefundItems);
+                // Cmd：仅推进待退 REFUND 行；退药与原正向发药单无关联（BR-PHA-038）
                 this.medicationDispenseDomainService.refundDispensedMedication(cmd);
             }
         } else {
@@ -308,10 +349,58 @@ public class OutpatientPharmacyReturnMedicineAppService {
         resp.setFailedItems(new ArrayList<>());
         if (confirm) {
             resp.setMessage(MedicationCommonConstants.OUTPATIENT_PHARMACY_RETURN_CONFIRM_SUCCESS_MESSAGE);
+            mergeMedicareUploadWarning(
+                resp,
+                tryUploadMedicareInventoryAfterReturn(request, encounterIdForUpload, confirmedDispenseIds));
         } else {
             resp.setMessage(MedicationCommonConstants.OUTPATIENT_PHARMACY_RETURN_DECLINE_SUCCESS_MESSAGE);
         }
         return resp;
+    }
+
+    /**
+     * 退药本地事实提交后触发 3506；失败仅告警，不回滚退药。
+     *
+     * @return 需合并进响应的告警文案；无告警时 {@code null}
+     */
+    private String tryUploadMedicareInventoryAfterReturn(
+        ConfirmMedicineReturnRequest request,
+        Long encounterId,
+        List<Long> dispenseIds
+    ) {
+        if (encounterId == null || dispenseIds == null || dispenseIds.isEmpty()) {
+            return null;
+        }
+        try {
+            if (insuranceCoordinationProperties.isDispenseUploadAsyncEnabled()
+                && medicareInventoryUploadCoordinator != null) {
+                medicareInventoryUploadCoordinator.scheduleUploadIfEnabled(
+                    encounterId,
+                    dispenseIds,
+                    requireOperatorUserId(),
+                    InsuranceCoordinationConstants.DISPENSE_UPLOAD_KIND_RETURN);
+            } else if (inventoryInsurancePort != null) {
+                UploadAfterReturnCommand uploadCommand = new UploadAfterReturnCommand()
+                    .setEncounterId(encounterId)
+                    .setDispenseIds(dispenseIds);
+                inventoryInsurancePort.uploadAfterOutpatientReturn(uploadCommand);
+            }
+        } catch (RuntimeException ex) {
+            log.warn("医保进销存3506上传失败（本地退药已成功）", ex);
+            return MedicationCommonConstants.OUTPATIENT_PHARMACY_RETURN_CONFIRM_SUCCESS_MESSAGE
+                + "；"
+                + ErrorCodeConstants.EX_OPP_207_MEDICARE_PARTIAL_FAILURE
+                + "："
+                + ex.getMessage();
+        }
+        return null;
+    }
+
+    private static void mergeMedicareUploadWarning(ConfirmMedicineReturnResponse response, String warningMessage) {
+        if (response == null || StringUtils.isBlank(warningMessage)) {
+            return;
+        }
+        response.setMessage(warningMessage);
     }
 
     private void validatePageReturnPatientRequest(PageReturnPatientRequest request) {
@@ -354,7 +443,7 @@ public class OutpatientPharmacyReturnMedicineAppService {
     }
 
     private Long resolvePractitionerIdForAudit(Long operatorId) {
-        Long pid = currentUser.getCurrentPractitionerId();
+        Long pid = currentPractitionerResolver.findPractitionerIdOrNull();
         if (pid != null) {
             return pid;
         }
@@ -450,45 +539,57 @@ public class OutpatientPharmacyReturnMedicineAppService {
     }
 
     /**
-     * 为退药明细行回填总价：按就诊 + 发放单 id 批量查收费明细并汇总（与 {@link com.openhis.health.application.outpatient.pharmacy.dispense.service.OutpatientPharmacyDispenseAppService} 同源）。
+     * 为退药明细行回填总价：按就诊 + 原药嘱 {@code service_id} 批量查收费明细并汇总。
      *
      * @param encounterId 就诊主键
      * @param rows        读侧明细行；无匹配收费时保持原值（默认 0）
      */
-    private void applyChargeTotalPriceByDispenseId(Long encounterId, List<ReturnMedicineDetailReadRow> rows) {
+    private void applyChargeTotalPriceByOriginRequestId(Long encounterId, List<ReturnMedicineDetailReadRow> rows) {
         if (encounterId == null || rows == null || rows.isEmpty()) {
             return;
         }
-        List<Long> pricingDispenseIds = new ArrayList<>();
-        Map<Long, Long> pricingDispenseIdByRowDispenseId = new HashMap<>();
+        LinkedHashSet<Long> originRequestIds = new LinkedHashSet<>();
         for (ReturnMedicineDetailReadRow row : rows) {
-            if (row == null || row.getDispenseId() == null) {
+            if (row == null || row.getRefundOriginRequestId() == null) {
                 continue;
             }
-            Long pricingDispenseId = row.getChargeAnchorDispenseId();
-            if (pricingDispenseId == null) {
-                pricingDispenseId = row.getDispenseId();
-            }
-            pricingDispenseIds.add(pricingDispenseId);
-            pricingDispenseIdByRowDispenseId.put(row.getDispenseId(), pricingDispenseId);
+            originRequestIds.add(row.getRefundOriginRequestId());
         }
-        if (pricingDispenseIds.isEmpty()) {
+        if (originRequestIds.isEmpty()) {
             return;
         }
-        List<ChargeItem> chargeRows =
-            this.chargeItemQueryService.listChargeItemsForMedicationDispensePricing(encounterId, pricingDispenseIds);
-        Map<Long, BigDecimal> unitPriceByDispenseId = new HashMap<>();
-        Map<Long, BigDecimal> totalPriceByDispenseId = new HashMap<>();
-        mergeChargePricingFromChargeItems(chargeRows, unitPriceByDispenseId, totalPriceByDispenseId);
+        ChargeItemQueryCommand chargeQuery = new ChargeItemQueryCommand();
+        chargeQuery.setServiceIds(originRequestIds);
+        List<ChargeItem> chargeRows = this.chargeItemQueryService.listChargeItemsByServiceIds(chargeQuery);
+        Map<Long, BigDecimal> totalPriceByServiceId = new HashMap<>();
+        for (ChargeItem chargeRow : chargeRows) {
+            if (chargeRow == null || chargeRow.getServiceId() == null) {
+                continue;
+            }
+            if (!encounterId.equals(chargeRow.getEncounterId())) {
+                continue;
+            }
+            if (!TableNameConstants.MED_MEDICATION_REQUEST.equals(chargeRow.getServiceTable())) {
+                continue;
+            }
+            if (!this.isReturnMedicinePricingChargeStatus(chargeRow.getStatusEnum())) {
+                continue;
+            }
+            Long serviceKey = chargeRow.getServiceId();
+            if (chargeRow.getTotalPrice() != null) {
+                BigDecimal existed = totalPriceByServiceId.get(serviceKey);
+                if (existed == null) {
+                    totalPriceByServiceId.put(serviceKey, chargeRow.getTotalPrice());
+                } else {
+                    totalPriceByServiceId.put(serviceKey, existed.add(chargeRow.getTotalPrice()));
+                }
+            }
+        }
         for (ReturnMedicineDetailReadRow row : rows) {
-            if (row == null || row.getDispenseId() == null) {
+            if (row == null || row.getRefundOriginRequestId() == null) {
                 continue;
             }
-            Long pricingDispenseId = pricingDispenseIdByRowDispenseId.get(row.getDispenseId());
-            if (pricingDispenseId == null) {
-                continue;
-            }
-            BigDecimal total = totalPriceByDispenseId.get(pricingDispenseId);
+            BigDecimal total = totalPriceByServiceId.get(row.getRefundOriginRequestId());
             if (total != null) {
                 // 退药页展示应退金额绝对值（与应退数量口径一致）
                 row.setTotalPrice(total.abs());
@@ -497,51 +598,30 @@ public class OutpatientPharmacyReturnMedicineAppService {
     }
 
     /**
-     * 按发放单聚合收费明细的总价（与门诊发药 {@code mergeChargePricingFromChargeItems} 一致）。
+     * 退药明细应退金额所采纳的收费状态（与门诊发药定价 Query 子集一致）。
      *
-     * @param chargeRows        收费行
-     * @param unitPriceOut      输出：dispenseId→单价（退药页未用，占位与发药签名一致）
-     * @param totalPriceOut     输出：dispenseId→金额合计
+     * @param statusEnum 收费明细 status_enum code
+     * @return true 表示可纳入应退金额汇总
      */
-    private static void mergeChargePricingFromChargeItems(
-        List<ChargeItem> chargeRows,
-        Map<Long, BigDecimal> unitPriceOut,
-        Map<Long, BigDecimal> totalPriceOut) {
-        Map<Long, BigDecimal> totalByDispense = new HashMap<>();
-        Map<Long, BigDecimal> qtyByDispense = new HashMap<>();
-        for (ChargeItem chargeRow : chargeRows) {
-            if (chargeRow == null) {
-                continue;
-            }
-            if (chargeRow.getDispenseId() == null) {
-                continue;
-            }
-            Long dispenseKey = chargeRow.getDispenseId();
-            if (chargeRow.getTotalPrice() != null) {
-                BigDecimal existedTotal = totalByDispense.get(dispenseKey);
-                if (existedTotal == null) {
-                    totalByDispense.put(dispenseKey, chargeRow.getTotalPrice());
-                } else {
-                    totalByDispense.put(dispenseKey, existedTotal.add(chargeRow.getTotalPrice()));
-                }
-            }
-            if (chargeRow.getQuantityValue() != null) {
-                BigDecimal existedQty = qtyByDispense.get(dispenseKey);
-                if (existedQty == null) {
-                    qtyByDispense.put(dispenseKey, chargeRow.getQuantityValue());
-                } else {
-                    qtyByDispense.put(dispenseKey, existedQty.add(chargeRow.getQuantityValue()));
-                }
-            }
+    private boolean isReturnMedicinePricingChargeStatus(String statusEnum) {
+        if (statusEnum == null) {
+            return false;
         }
-        for (Map.Entry<Long, BigDecimal> entry : totalByDispense.entrySet()) {
-            Long dispenseKey = entry.getKey();
-            BigDecimal totalVal = entry.getValue();
-            totalPriceOut.put(dispenseKey, totalVal);
-            BigDecimal qtyVal = qtyByDispense.get(dispenseKey);
-            if (qtyVal != null && qtyVal.compareTo(BigDecimal.ZERO) > 0 && unitPriceOut != null) {
-                unitPriceOut.put(dispenseKey, totalVal.divide(qtyVal, 4, RoundingMode.HALF_UP));
-            }
+        if (ChargeItemStatus.DRAFT.getCode().equals(statusEnum)) {
+            return true;
         }
+        if (ChargeItemStatus.PLANNED.getCode().equals(statusEnum)) {
+            return true;
+        }
+        if (ChargeItemStatus.SETTLED.getCode().equals(statusEnum)) {
+            return true;
+        }
+        if (ChargeItemStatus.REFUNDING.getCode().equals(statusEnum)) {
+            return true;
+        }
+        if (ChargeItemStatus.REFUNDED.getCode().equals(statusEnum)) {
+            return true;
+        }
+        return false;
     }
 }

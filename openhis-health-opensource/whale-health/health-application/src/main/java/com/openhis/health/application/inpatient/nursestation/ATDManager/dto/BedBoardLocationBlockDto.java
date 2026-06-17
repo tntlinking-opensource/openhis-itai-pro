@@ -28,6 +28,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 床位位置块。 */
 @Schema(description = "床位位置块")
 public class BedBoardLocationBlockDto {
 
@@ -35,19 +36,24 @@ public class BedBoardLocationBlockDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long bedId;
 
+    /** 床号/名称。 */
     @Schema(description = "床号/名称")
     private String bedName;
 
+    /** 所属病房位置主键。 */
     @Schema(description = "所属病房位置主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long houseId;
 
+    /** 病房名称。 */
     @Schema(description = "病房名称")
     private String houseName;
 
+    /** 床运营态 code：IN_USE/NOT_IN_USE。 */
     @Schema(description = "床运营态 code：IN_USE/NOT_IN_USE")
     private String operationalEnum;
 
+    /** 排序序号。 */
     @Schema(description = "排序序号")
     private Integer displayOrder;
 }

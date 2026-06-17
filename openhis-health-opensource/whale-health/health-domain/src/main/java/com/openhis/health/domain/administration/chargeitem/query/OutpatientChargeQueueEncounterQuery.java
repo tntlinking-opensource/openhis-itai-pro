@@ -21,6 +21,8 @@ import com.openhis.health.domain.share.query.AbstractPageQuery;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.List;
+
 /**
  * 门诊收银队列：按收费事实收敛就诊主键分页查询入参。
  *
@@ -41,4 +43,9 @@ public class OutpatientChargeQueueEncounterQuery extends AbstractPageQuery {
      * <p>与门诊收银待收明细 {@link ChargeItemQueryCommand#getExcludedServiceTable} 口径一致。</p>
      */
     private String excludedServiceTable;
+
+    /**
+     * 应用层预解析的门诊 AMB 就诊主键集合；由 {@code OutpatientChargeEncounterQueueLoader} 写入后领域层仅 {@code IN} 过滤。
+     */
+    private List<Long> resolvedEncounterScope;
 }

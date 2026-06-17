@@ -33,6 +33,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 按原支付主单执行门诊账单退费请求。 */
 @Schema(description = "按原支付主单执行门诊账单退费请求")
 public class ExecuteOutpatientBillRefundByPaymentRequest {
 
@@ -40,26 +41,34 @@ public class ExecuteOutpatientBillRefundByPaymentRequest {
     @NotNull(message = "encounterId 不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 就诊主键（业务字段）。 */
     private Long encounterId;
 
     /** 原支付主单主键。 */
     @NotNull(message = "originalPaymentId 不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 原支付主单主键。 */
     @Schema(description = "原支付主单主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 原支付主单主键（业务字段）。 */
     private Long originalPaymentId;
 
     /** 本笔拟退收费明细主键集合。 */
     @NotEmpty(message = "refundingChargeItemIds 不能为空")
+    /** 拟退收费明细主键集合。 */
     @Schema(description = "拟退收费明细主键集合", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 拟退收费明细主键集合（业务字段）。 */
     private List<Long> refundingChargeItemIds;
 
     /** 半退保留再生收费明细主键集合；全退可空。 */
     @Schema(description = "半退保留再生收费明细主键集合")
+    /** 半退保留再生收费明细主键集合（业务字段）。 */
     private List<Long> preservedNewChargeItemIds;
 
     /** 渠道实退拆分明细。 */
     @NotEmpty(message = "refundPaymentDetails 不能为空")
+    /** 渠道实退拆分明细。 */
     @Schema(description = "渠道实退拆分明细", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 渠道实退拆分明细（业务字段）。 */
     private List<RefundPaymentDetailSubmitDto> refundPaymentDetails;
 
     /**
@@ -68,5 +77,6 @@ public class ExecuteOutpatientBillRefundByPaymentRequest {
      * <p>格式与 {@link com.openhis.health.domain.share.constants.GeneralSharedConstants#DATE_TIME_PATTERN} 一致。</p>
      */
     @Schema(description = "账单日，格式 yyyy-MM-dd HH:mm:ss")
+    /** 账单日，格式 yyyy-MM-dd HH:mm:ss（业务字段）。 */
     private String billDate;
 }

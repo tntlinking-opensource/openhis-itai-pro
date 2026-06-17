@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.ATDManager.mapper;
 
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardItemDto;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardLocationBlockDto;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardOccupantDto;

@@ -18,7 +18,7 @@
 package com.openhis.health.domain.share.enums;
 
 /**
- * 医嘱组套模板绑定类型枚举。
+ * 组套模板绑定类型枚举。
  */
 public enum OrderTemplateBinding implements EnumInterface {
     /**

@@ -26,14 +26,16 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 执行前可退门禁响应。 */
 @Schema(description = "执行前可退门禁响应")
 public class VerifyRefundableBeforeExecutionResponse {
 
-    /** 是否允许继续执行退费。 */
     @Schema(description = "是否允许继续执行退费")
+    /** 是否允许继续执行退费（业务字段）。 */
     private boolean allowed;
 
     /** 拒绝原因语义码（如 EX-REF-201）；允许时为 null。 */
     @Schema(description = "拒绝原因语义码，如 EX-REF-201")
+    /** 拒绝原因语义码，如 EX-REF-201（业务字段）。 */
     private String rejectReasonCode;
 }

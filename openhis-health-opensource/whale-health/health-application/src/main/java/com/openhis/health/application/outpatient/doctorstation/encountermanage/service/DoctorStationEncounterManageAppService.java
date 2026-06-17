@@ -36,21 +36,16 @@ import com.openhis.health.domain.administration.encounter.queries.model.Encounte
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.domain.financial.contract.queries.model.ContractListItemQueryModel;
-import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientEncounterListFinancialTotals;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
-import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.EncounterClass;
-import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -83,19 +78,15 @@ public class DoctorStationEncounterManageAppService {
     private final PractitionerQueryService practitionerQueryService;
     /** 收费明细读侧：列表页按就诊批量汇总费用。 */
     private final ChargeItemQueryService chargeItemQueryService;
-    /** 费用性质（合同）读侧：会话机构下拉选项。 */
-    private final ContractQueryService contractQueryService;
-    /** 当前登录用户：会话机构与费用性质下拉对齐。 */
-    private final ICurrentUser currentUser;
 
     /**
      * 分页查询本科室门诊患者列表（读模型）。
      *
-     * <p>{@code encounterStatus} 未传时：默认状态为已挂号、在诊、暂离、诊毕并集，不按接诊医师过滤；
-     * 显式传入时按单队列查询，在诊队列仍须 {@code staffPractitionerId}（BR-DOR-001）。</p>
+     * <p>{@code encounterStatus} 未传时：默认状态为已挂号、在诊、暂离、诊毕并集；
+     * 须 {@code staffPractitionerId}，读侧按 BR-DOR-009 做状态×参与者可见性过滤。</p>
      *
      * @param request 列表查询条件
-     * @return 分页结果（含与当前会话机构一致的费用性质下拉，主数据未配置时为空列表不阻断列表）
+     * @return 分页结果（{@code feeNatureOptions} 为空，医嘱开立 init 按就诊加载）
      * @throws BusinessException 参数非法时（分页/在诊队列缺医师键等）
      */
     public PageOutpatientInfoForDoctorStationResponse pageOutpatientInfoForDoctorStation(
@@ -105,9 +96,6 @@ public class DoctorStationEncounterManageAppService {
         // 将应用请求映射为读模型分页查询入参（含在诊态下的接诊医师过滤键）。
         OutpatientEncounterPageQuery pageQuery =
             this.doctorStationEncounterManageMapper.toOutpatientEncounterPageQuery(request);
-        // 提取当前会话机构，用于科室收窄与费用性质下拉
-        // 科室收窄在领域上下文查询内统一取自 CurrentUser；此处仅记下会话机构供费用性质下拉使用。
-        Long sessionOrganizationUnitId = this.currentUser.getCurrentOrganizationUnitId();
         // 下推到就诊上下文分页查询，避免应用层全表加载。
         Page<OutpatientEncounterContextQueryModel> page =
             this.encounterContextFacade.pageOutpatientEncounterContexts(pageQuery);
@@ -117,14 +105,8 @@ public class DoctorStationEncounterManageAppService {
         // 将读模型分页装配为前端列表契约（无写库）。
         PageOutpatientInfoForDoctorStationResponse resp =
             this.doctorStationEncounterManageMapper.toPageOutpatientInfoForDoctorStationResponse(page, chargeTotals);
-        // 费用性质下拉与当前会话机构对齐；会话无机构键时不查合同表，避免空 orgId 派生查询语义不明。
-        List<ContractListItemQueryModel> contractRows;
-        if (sessionOrganizationUnitId != null) {
-            contractRows = this.contractQueryService.listAllContractsByOrgId(sessionOrganizationUnitId);
-        } else {
-            contractRows = Collections.emptyList();
-        }
-        resp.setFeeNatureOptions(mapContractRowsToFeeNatureOptions(contractRows));
+        // 费用性质下拉随就诊挂号分类变化，患者列表页不附带（由医嘱 init 按 encounterId 加载）。
+        resp.setFeeNatureOptions(Collections.emptyList());
         return resp;
     }
 
@@ -140,7 +122,7 @@ public class DoctorStationEncounterManageAppService {
         this.validateStartOutpatientReceptionRequest(request);
         // 强一致加载就诊头表，用于应用层门诊类别门控（避免对非门诊行误触发接诊）。
         EncounterDetailQueryModel encounterHead = this.encounterQueryService.mustGetEncounter(request.getEncounterId());
-        // 医生站接诊仅针对门诊类别就诊，急诊走急诊接诊链路。
+        // 医生站接诊仅针对门诊类别就诊。
         if (!EncounterClass.AMB.getCode().equals(encounterHead.getClassEnum())) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前就诊类别不允许在此工作站执行门诊接诊");
         }
@@ -226,11 +208,11 @@ public class DoctorStationEncounterManageAppService {
         if (request.getPageSize() == null || request.getPageSize() < 1) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "页大小须为正整数");
         }
-        // 仅当显式查询在诊队列时要求当前医师主键，用于「仅看我接诊的患者」过滤（缺省并集不在此收缩）。
-        if (EncounterStatus.IN_PROGRESS.equals(request.getEncounterStatus())) {
-            if (request.getStaffPractitionerId() == null) {
-                throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "在诊列表须提供当前登录医师主键以过滤接诊记录");
-            }
+        // 医生站列表须携带当前登录医师，读侧才能按 BR-DOR-009 判定挂号医生/接诊医生可见范围。
+        if (request.getStaffPractitionerId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
+                "须提供当前登录医师主键以按可见性规则过滤患者列表");
         }
     }
 
@@ -360,40 +342,5 @@ public class DoctorStationEncounterManageAppService {
             }
         }
         return totalsByEncounter;
-    }
-
-    /**
-     * 将机构维度合同简项映射为费用性质下拉（B.10.5 统一 {@link OptionDto}）。
-     *
-     * @param rows 合同查询行，允许为 {@code null} 或空
-     * @return 非 {@code null}；无有效行时返回空列表
-     */
-    private static List<OptionDto> mapContractRowsToFeeNatureOptions(List<ContractListItemQueryModel> rows) {
-        if (rows == null || rows.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<OptionDto> options = new ArrayList<>();
-        for (ContractListItemQueryModel row : rows) {
-            if (row == null) {
-                continue;
-            }
-            Long id = row.getId();
-            if (id == null) {
-                continue;
-            }
-            OptionDto option = new OptionDto();
-            Integer displayOrder = row.getDisplayOrder();
-            if (displayOrder != null) {
-                option.setSort(displayOrder.longValue());
-            } else {
-                // 主数据未填展示序时，用主键保证前端稳定排序。
-                option.setSort(id);
-            }
-            option.setValue(String.valueOf(id));
-            option.setLabel(row.getName());
-            option.setBusNo(row.getBusNo());
-            options.add(option);
-        }
-        return options;
     }
 }

@@ -61,5 +61,13 @@ public interface EncounterDiagnosisRepository extends JpaRepository<EncounterDia
      * @return 诊断关联记录
      */
     Optional<EncounterDiagnosis> findByEncounterIdAndConditionId(Long encounterId, Long conditionId);
+
+    /**
+     * 按病情事实主键批量加载就诊诊断关联（患者历史病证组反查）。
+     *
+     * @param conditionIds 病情事实主键集合
+     * @return 关联行列表；入参为空时由调用方保证不入库
+     */
+    List<EncounterDiagnosis> findAllByConditionIdIn(Collection<Long> conditionIds);
 }
 

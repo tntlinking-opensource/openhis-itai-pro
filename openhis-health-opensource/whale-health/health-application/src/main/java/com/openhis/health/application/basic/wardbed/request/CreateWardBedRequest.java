@@ -40,39 +40,50 @@ public class CreateWardBedRequest {
     @NotBlank(message = "位置名称不能为空")
     private String name;
 
+    /** 状态 code。 */
     @Schema(description = "状态 code（选填；登记即启用时由领域写入 ACTIVE）", example = "ACTIVE")
     private String statusEnum;
 
+    /** 运营状态 code。 */
     @Schema(description = "运营状态 code（选填；领域登记默认 NOT_IN_USE）", example = "NOT_IN_USE")
     private String operationalEnum;
 
+    /** 模式 code。 */
     @Schema(description = "模式 code（选填，默认 INSTANCE）", example = "INSTANCE")
     private String modeEnum;
 
+    /** 类型编码。 */
     @Schema(description = "类型编码（选填）", example = "WARD-001")
     private String typeCode;
 
+    /** 类型扩展 JSON。 */
     @Schema(description = "类型扩展 JSON（选填，默认 {}）", example = "{}")
     private String typeJson;
 
+    /** 拼音简码。 */
     @Schema(description = "拼音简码（选填）", example = "NKYLF")
     private String pyStr;
 
+    /** 五笔简码。 */
     @Schema(description = "五笔简码（选填）", example = "MGSY")
     private String wbStr;
 
+    /** 物理形式 code：WARD / HOUSE / BED。 */
     @Schema(description = "物理形式 code：WARD / HOUSE / BED", requiredMode = Schema.RequiredMode.REQUIRED, example = "WARD")
     @NotBlank(message = "物理形式不能为空")
     private String formEnum;
 
+    /** 机构 ID。 */
     @Schema(description = "机构 ID", requiredMode = Schema.RequiredMode.REQUIRED, example = "1000000000000000001")
     @NotNull(message = "机构不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long organizationId;
 
+    /** 显示顺序。 */
     @Schema(description = "显示顺序（选填）", example = "10")
     private Integer displayOrder;
 
+    /** 父级位置 ID。 */
     @Schema(description = "父级位置 ID（选填；0 表示顶级）", example = "0")
     private Long parentId;
 }

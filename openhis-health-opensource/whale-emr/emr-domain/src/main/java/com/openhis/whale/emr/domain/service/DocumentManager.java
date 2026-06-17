@@ -119,7 +119,12 @@ public class DocumentManager {
             Template template = templateRepository.findByIdAndIsDeletedFalse(templateId).orElse(null);
             if (template != null) {
                 doc.setSourceTemplateId(templateId);
-                String name = StringUtils.hasText(template.getName()) ? template.getName().trim() : "文书";
+                String name;
+                if (StringUtils.hasText(template.getName())) {
+                    name = template.getName().trim();
+                } else {
+                    name = "文书";
+                }
                 doc.setTitle(name + "-" + LocalDateTime.now().format(TITLE_TIME_FORMAT));
                 if (TEMPLATE_CODE_FIRST_PROGRESS.equals(template.getCode())
                         && StringUtils.hasText(encounterId)
@@ -163,7 +168,11 @@ public class DocumentManager {
         DocumentVersion version = new DocumentVersion();
         version.setDocumentId(document.getId());
         version.setVersionNumber(next);
-        version.setContent(document.getContent() != null ? document.getContent() : "{}");
+        if (document.getContent() != null) {
+            version.setContent(document.getContent());
+        } else {
+            version.setContent("{}");
+        }
         return documentVersionRepository.save(version);
     }
 
@@ -179,8 +188,9 @@ public class DocumentManager {
             target = documentVersionRepository.findByDocumentIdAndId(documentId, versionId)
                     .orElseThrow(() -> new EntityNotFoundException("版本", versionId));
         } else if (versionNumber != null) {
+            long versionKey = versionNumber.longValue();
             target = documentVersionRepository.findByDocumentIdAndVersionNumber(documentId, versionNumber)
-                    .orElseThrow(() -> new EntityNotFoundException("版本", versionNumber != null ? versionNumber.longValue() : 0L));
+                    .orElseThrow(() -> new EntityNotFoundException("版本", versionKey));
         } else {
             throw new ValidationException("请指定 versionId 或 versionNumber");
         }

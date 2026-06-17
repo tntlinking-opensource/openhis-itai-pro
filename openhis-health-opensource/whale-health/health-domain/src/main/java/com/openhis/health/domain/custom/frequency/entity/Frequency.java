@@ -49,10 +49,10 @@ public class Frequency extends BaseAuditedEntity {
     private String name;
 
     /**
-     * 周期类型。
+     * 周期类型（{@link com.openhis.health.domain.share.enums.FrequencyCycleType#getCode()}）。
      */
     @Column(name = "cycle_type", nullable = false)
-    private Integer cycleType;
+    private String cycleType;
 
     /**
      * 日计数。
@@ -103,10 +103,10 @@ public class Frequency extends BaseAuditedEntity {
     private String applicableScenes;
 
     /**
-     * 允许跨日。
+     * 允许跨日（{@link com.openhis.health.domain.share.enums.FrequencyAllowCrossDay#getCode()}）。
      */
     @Column(name = "allow_cross_day")
-    private Integer allowCrossDay;
+    private String allowCrossDay;
 
     /**
      * 启用标记。
@@ -134,7 +134,7 @@ public class Frequency extends BaseAuditedEntity {
         if (StringUtils.isBlank(this.name)) {
             throw new BusinessException(ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "频次名称不能为空");
         }
-        if (this.cycleType == null) {
+        if (StringUtils.isBlank(this.cycleType)) {
             throw new BusinessException(ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "周期类型不能为空");
         }
     }

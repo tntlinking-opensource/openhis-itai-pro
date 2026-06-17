@@ -29,14 +29,13 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊医生站-申请退费-提交门诊退费申请响应。 */
 @Schema(description = "门诊医生站-申请退费-提交门诊退费申请响应")
 public class SubmitOutpatientRefundApplicationResponse {
 
-    /** 受理成功。 */
     @Schema(description = "受理成功")
     private boolean success;
 
-    /** 进入退款中的拟退行数。 */
     @Schema(description = "进入 REFUNDING 的拟退行数")
     private int refundingChargeItemCount;
 

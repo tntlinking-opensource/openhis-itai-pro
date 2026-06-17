@@ -26,6 +26,10 @@ public enum PaymentStatus implements EnumInterface {
      */
     DRAFT(0L, "DRAFT", "草稿（预结算已生成，尚未收款）", "", 0L),
     /**
+     * 结算中：医保协同单处理中，支付单锁定不可重复结算。
+     */
+    SETTLING(0L, "SETTLING", "结算中（医保协同单处理中）", "", 0L),
+    /**
      * SUCCESS。
      */
     SUCCESS(0L, "SUCCESS", "成功（收款已完成）", "", 1L),

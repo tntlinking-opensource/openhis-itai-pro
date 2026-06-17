@@ -18,6 +18,7 @@
 package com.openhis.health.domain.custom.ordertemplate.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.enums.OrderTemplateKind;
 import com.openhis.health.domain.share.enums.OrderTemplateLineKind;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.BaseAuditedEntity;
@@ -30,7 +31,7 @@ import lombok.Setter;
 import java.math.BigDecimal;
 
 /**
- * 医嘱组套模板行（聚合内子实体）。
+ * 组套模板行（聚合内子实体）。
  */
 @Getter
 @Setter
@@ -84,11 +85,23 @@ public class OrderTemplateLine extends BaseAuditedEntity {
     private String lineRemark;
 
     /**
+     * TCM 行级中药付数。
+     */
+    @Column(name = "chinese_herbs_dose_quantity")
+    private BigDecimal chineseHerbsDoseQuantity;
+
+    /**
+     * TCM 行级代煎标志。
+     */
+    @Column(name = "suffering_flag")
+    private Boolean sufferingFlag;
+
+    /**
      * 断言行必填与互斥引用（BR-OTL-008/010/016）。
      */
     public void assertRequiredFields() {
         if (this.orderTemplateId == null) {
-            throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT, "组套头标识不能为空");
+            throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT, "组套模板头标识不能为空");
         }
         if (this.lineKindEnum == null) {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT, "行类型不能为空");
@@ -132,6 +145,18 @@ public class OrderTemplateLine extends BaseAuditedEntity {
             return;
         }
         throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT, "未知的行类型");
+    }
+
+    /**
+     * 校验行类型与组套种类一致（BR-OTL-026）。
+     *
+     * @param templateKindEnum 头表组套种类 code
+     */
+    public void assertLineKindAllowedForTemplateKind(String templateKindEnum) {
+        if (OrderTemplateKind.PRICING.getCode().equals(templateKindEnum)
+            && OrderTemplateLineKind.MEDICATION.getCode().equals(this.lineKindEnum)) {
+            throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT, "划价组套禁止维护药品行");
+        }
     }
 
     /**

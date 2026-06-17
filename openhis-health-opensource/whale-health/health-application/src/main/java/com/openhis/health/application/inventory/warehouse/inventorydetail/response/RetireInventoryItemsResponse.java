@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 批量停供出参（IF-INV-DTL-08）。
@@ -28,6 +29,7 @@ import lombok.experimental.Accessors;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 批量停供 IF-INV-DTL-08。 */
 @Schema(description = "批量停供 IF-INV-DTL-08")
 public class RetireInventoryItemsResponse {
 

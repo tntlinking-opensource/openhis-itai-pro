@@ -28,10 +28,10 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 预交金流水查询请求。 */
 @Schema(description = "预交金流水查询请求")
 public class ListPrepayPaymentRecordsRequest {
 
-    /** 住院就诊 ID；未传返回空列表。 */
     @Schema(description = "住院就诊 ID")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;

@@ -21,12 +21,11 @@ import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.application.basic.devicecatalog.dto.DeviceCatalogDto;
 import com.openhis.health.application.basic.devicecatalog.request.CreateDeviceCatalogRequest;
 import com.openhis.health.application.basic.devicecatalog.request.UpdateDeviceCatalogRequest;
-import com.openhis.health.application.common.assembler.command.BatchCommandItemAssembler;
-import com.openhis.health.application.common.converter.TextValueConverter;
+import com.openhis.health.module.common.assembler.command.BatchCommandItemAssembler;
+import com.openhis.health.module.common.converter.TextValueConverter;
 import com.openhis.health.domain.administration.devicedefinition.command.*;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
 import com.openhis.health.domain.share.enums.PublicationStatus;
-import com.openhis.health.domain.share.utils.CatalogPresentationUtil;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import org.springframework.stereotype.Component;
 
@@ -67,6 +66,7 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
         dto.setPurchaseUnitCode(purchaseUnitCode);
         dto.setUnitCode(purchaseUnitCode);
         dto.setTotalVolume(entity.getTotalVolume());
+        dto.setSpecification(entity.getTotalVolume());
         dto.setMerchandisePyStr(entity.getMerchandisePyStr());
         dto.setMerchandiseWbStr(entity.getMerchandiseWbStr());
         dto.setDefEncounterUnitCode(entity.getDefEncounterUnitCode());

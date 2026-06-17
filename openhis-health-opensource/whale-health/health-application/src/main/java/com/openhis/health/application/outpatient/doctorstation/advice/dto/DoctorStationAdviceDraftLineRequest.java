@@ -29,6 +29,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站医嘱暂存批次行。 */
 @Schema(description = "医生站医嘱暂存批次行")
 public class DoctorStationAdviceDraftLineRequest {
 
@@ -47,6 +48,7 @@ public class DoctorStationAdviceDraftLineRequest {
 
     /** 药品/诊疗/耗材申请聚合主键；CREATE 时通常为空由领域分配。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 请求主键；UPDATE/DELETE 必填。 */
     @Schema(description = "请求主键；UPDATE/DELETE 必填")
     private Long requestId;
 

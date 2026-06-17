@@ -29,23 +29,13 @@ import java.util.List;
  */
 @Getter
 @Setter
-/**
- * LoadPurchaseOrderFormInitResponse。
- */
 public class LoadPurchaseOrderFormInitResponse {
 
-    /**
-     * warehouseOptions。
-     */
+    /** 可选药库下拉列表。 */
     private List<WarehouseOptionDto> warehouseOptions;
-    /**
-     * supplierOptions。
-     */
+    /** 可选供应商下拉列表。 */
     private List<SupplierOptionDto> supplierOptions;
 
     /** 左侧列表筛选用「全部药库」；{@code locationId} 为占位（约定 0），非真实 Location。 */
-    /**
-     * allWarehousesOption。
-     */
     private WarehouseOptionDto allWarehousesOption;
 }

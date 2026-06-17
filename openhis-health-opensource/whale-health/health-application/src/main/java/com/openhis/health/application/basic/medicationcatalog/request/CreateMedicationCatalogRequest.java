@@ -38,12 +38,10 @@ import java.math.BigDecimal;
 @Schema(description = "药品目录详情DTO", title = "MedicationDetailDto", requiredProperties = {"name", "doseUnitCode"}) // 显式指定必填字段
 public class CreateMedicationCatalogRequest {
 
-    /** 药品编码 */
     @Schema(description = "药品定义ID", example = "20001", type = "Long")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long medicationDefId;
 
-    /** 所属科室 */
     @Schema(description = "所属机构ID", example = "30001", type = "Long")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long orgId;

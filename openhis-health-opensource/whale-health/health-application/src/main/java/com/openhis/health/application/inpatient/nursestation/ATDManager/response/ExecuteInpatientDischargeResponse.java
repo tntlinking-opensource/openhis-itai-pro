@@ -28,10 +28,10 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 办理出院响应。 */
 @Schema(description = "办理出院响应")
 public class ExecuteInpatientDischargeResponse {
 
-    /** 就诊主键。 */
     @Schema(description = "就诊主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;

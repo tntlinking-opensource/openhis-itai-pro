@@ -17,22 +17,24 @@
 
 package com.openhis.health.application.outpatient.doctorstation.advice.assembler;
 
-import com.openhis.health.application.common.assembler.product.DoctorStationAdviceInventoryUnitQuantityHelper;
-import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
+import com.openhis.health.module.common.assembler.product.ClinicalCatalogDispenseLocationResolveSupport;
+import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
+import com.openhis.health.module.common.assembler.product.ClinicalCatalogUnitPriceCommand;
+import com.openhis.health.module.common.assembler.product.DoctorStationAdviceInventoryUnitQuantityHelper;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceCatalogRowDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceInventoryRowDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.PageDoctorStationAdviceCatalogRequest;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
-import com.openhis.health.domain.custom.servicelocationtemplate.service.ServiceLocationTemplateQueryService;
+import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseOrderCatalogOccupancyModel;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.enums.PriceType;
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.workflow.devicedispense.queries.model.DeviceDispenseOrderCatalogOccupancyModel;
@@ -51,6 +53,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * IF-DOR-11：医嘱开立目录分页装配（Asm：产品定义读模型 + 取药模板库位 ∩ 库存 + 同就诊发放预减 + 定价表选中单价）。
@@ -64,8 +67,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class DoctorStationAdviceCatalogAssembler {
 
-    /** 机构下配送/发药库位模板：解析候选库位 ID 列表。 */
-    private final ServiceLocationTemplateQueryService serviceLocationTemplateQueryService;
+    /** 取药科室模板库位解析（categoryCode + calcScore）。 */
+    private final ClinicalCatalogDispenseLocationResolveSupport clinicalCatalogDispenseLocationResolveSupport;
     /** 库存可用量：按表名+物料/定义+库位批量查询目录可开量。 */
     private final InventoryItemQueryService inventoryItemQueryService;
     /** 同就诊药品发放预占：目录可开量扣减。 */
@@ -74,6 +77,11 @@ public class DoctorStationAdviceCatalogAssembler {
     private final DeviceDispenseQueryService deviceDispenseQueryService;
     /** 收费项定义（定价行）：当前页批量取价。 */
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
+
+    /** 临床目录统一单价解析（诊疗 SALE / 药耗批号售价）。 */
+    private final ClinicalCatalogPriceResolveSupport clinicalCatalogPriceResolveSupport;
+    /** 默认执行科室展示名（诊疗 org_id → 机构名称）。 */
+    private final OrganizationQueryService organizationQueryService;
 
     /**
      * 装配目录分页结果（读模型分页已由调用方执行一次）。
@@ -101,21 +109,32 @@ public class DoctorStationAdviceCatalogAssembler {
         }
 
         // Pre：当前页所有产品行的定价行一次性拉齐，避免循环内逐条打定价查询（A.9.1 批量 I/O 精神在应用层的对齐）
-        Map<String, List<ChargeItemDefinition>> priceByKey = loadPricingGrouped(content);
+        Map<String, List<ChargeItemDefinition>> priceByKey = clinicalCatalogPriceResolveSupport.loadPriceLinesGrouped(content);
         Long orgId = snapshot.getOrganizationId();
         if (request.getOrganizationUnitId() != null) {
             // 请求显式指定组织单元时覆盖快照机构，用于多院区模板解析
             orgId = request.getOrganizationUnitId();
         }
 
-        String pricingSource = StringUtils.defaultIfBlank(request.getPricingSourceCode(), DoctorStationAdviceConstants.PRICING_SOURCE_RETAIL_PRICE);
         // 按实例批量取价未命中时，用读模型上的收费项定义主键再兜一条定价行（诊疗等场景常见）
         LinkedHashSet<Long> fallbackChargeDefIds = new LinkedHashSet<>();
         for (ProductDefinitionDisplayDto pre : content) {
             String compositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
                 pre.getProductTableName(), pre.getProductDefinitionId());
             List<ChargeItemDefinition> preLines = priceByKey.getOrDefault(compositeKey, List.of());
-            if (selectCatalogPriceLine(pricingSource, preLines, pre.getProductTableName()) == null && pre.getChargeItemDefinitionId() != null) {
+            ClinicalCatalogUnitPriceCommand preCmd = ClinicalCatalogUnitPriceCommand.builder()
+                .productTableName(pre.getProductTableName())
+                .productDefinitionId(pre.getProductDefinitionId())
+                .categoryCode(pre.getCategoryCode())
+                .methodCode(pre.getMethodCode())
+                .organizationId(orgId)
+                .pharmacyLocationId(request.getPharmacyLocationId())
+                .encounterId(request.getEncounterId())
+                .priceLines(preLines)
+                .productRowForOccupancy(pre)
+                .build();
+            if (clinicalCatalogPriceResolveSupport.resolveCatalogUnitPrice(preCmd) == null
+                && pre.getChargeItemDefinitionId() != null) {
                 fallbackChargeDefIds.add(pre.getChargeItemDefinitionId());
             }
         }
@@ -123,7 +142,6 @@ public class DoctorStationAdviceCatalogAssembler {
         List<DoctorStationAdviceCatalogRowDto> rows = new ArrayList<>();
         for (ProductDefinitionDisplayDto productRow : content) {
             DoctorStationAdviceCatalogRowDto dto = baseRow(productRow);
-            dto.setPricingSourceCode(pricingSource);
 
             if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(productRow.getProductTableName())
                 || TableNameConstants.ADM_DEVICE_DEFINITION.equals(productRow.getProductTableName())) {
@@ -165,10 +183,10 @@ public class DoctorStationAdviceCatalogAssembler {
                 dto.setInventoryList(invDtos);
                 // 暂存拆零加总；availableQuantity 在定价与 unitBands 装配后按展示单位回填
                 dto.setAvailableQuantity(sumNetSplit);
-                if (!invDtos.isEmpty()) {
-                    // 默认发点仅取首条正库存行；具体批号在 inventoryList 各行展示，不在目录行重复 default 字段。
-                    DoctorStationAdviceInventoryRowDto first = invDtos.get(0);
-                    dto.setDefaultDispenseLocationId(first.getLocationId());
+                // IF-DOR-11 读侧：模板 match 默认发药库位，供前端回传 IF-DOR-14 dispenseLocationId
+                Long defaultDispenseLocationId = resolveDefaultDispenseLocationId(orgId, productRow);
+                if (defaultDispenseLocationId != null) {
+                    dto.setDefaultDispenseLocationId(defaultDispenseLocationId);
                 }
             }
 
@@ -181,16 +199,18 @@ public class DoctorStationAdviceCatalogAssembler {
             List<DoctorStationAdviceInventoryRowDto> inventoryRows = dto.getInventoryList();
             if (isMedicationOrDeviceDefinitionTable(productRow.getProductTableName())
                 && inventoryRows != null && !inventoryRows.isEmpty()) {
-                Map<String, ChargeItemDefinition> lotPriceIndex = indexLotNumberPriceRows(lines);
+                Map<String, ChargeItemDefinition> lotPriceIndex = clinicalCatalogPriceResolveSupport.indexLotNumberPriceRows(lines);
                 for (DoctorStationAdviceInventoryRowDto invRow : inventoryRows) {
-                    ChargeItemDefinition rowPriceLine = resolveLotNumberPriceLineForLot(lotPriceIndex, invRow.getLotNumber());
+                    ChargeItemDefinition rowPriceLine = clinicalCatalogPriceResolveSupport.resolveLotNumberPriceLineForLot(
+                        lotPriceIndex, invRow.getLotNumber());
                     if (rowPriceLine != null) {
                         invRow.setPrice(rowPriceLine.getPriceValue());
                         invRow.setChargeItemDefinitionId(rowPriceLine.getId());
                     }
                 }
                 DoctorStationAdviceInventoryRowDto firstInv = inventoryRows.get(0);
-                ChargeItemDefinition headerLine = resolveLotNumberPriceLineForLot(lotPriceIndex, firstInv.getLotNumber());
+                ChargeItemDefinition headerLine = clinicalCatalogPriceResolveSupport.resolveLotNumberPriceLineForLot(
+                    lotPriceIndex, firstInv.getLotNumber());
                 if (headerLine != null) {
                     dto.setChargeItemDefinitionId(headerLine.getId());
                     dto.setUnitPrice(headerLine.getPriceValue());
@@ -199,7 +219,18 @@ public class DoctorStationAdviceCatalogAssembler {
                 }
             }
             if (!headerPriceFromInventoryLots) {
-                ChargeItemDefinition selected = selectCatalogPriceLine(pricingSource, lines, productRow.getProductTableName());
+                ClinicalCatalogUnitPriceCommand priceCmd = ClinicalCatalogUnitPriceCommand.builder()
+                    .productTableName(productRow.getProductTableName())
+                    .productDefinitionId(productRow.getProductDefinitionId())
+                    .categoryCode(productRow.getCategoryCode())
+                    .methodCode(productRow.getMethodCode())
+                    .organizationId(orgId)
+                    .pharmacyLocationId(request.getPharmacyLocationId())
+                    .encounterId(request.getEncounterId())
+                    .priceLines(lines)
+                    .productRowForOccupancy(productRow)
+                    .build();
+                ChargeItemDefinition selected = clinicalCatalogPriceResolveSupport.resolveCatalogUnitPrice(priceCmd);
                 if (selected != null) {
                     dto.setChargeItemDefinitionId(selected.getId());
                     dto.setUnitPrice(selected.getPriceValue());
@@ -241,7 +272,33 @@ public class DoctorStationAdviceCatalogAssembler {
             }
             rows.add(dto);
         }
+        enrichDefaultPerformOrgNames(rows);
         return rows;
+    }
+
+    /**
+     * 批量回填默认执行科室展示名（{@code defaultPerformOrgId} 为机构主键，非库位）。
+     */
+    private void enrichDefaultPerformOrgNames(List<DoctorStationAdviceCatalogRowDto> rows) {
+        Set<Long> orgIds = new LinkedHashSet<>();
+        for (DoctorStationAdviceCatalogRowDto row : rows) {
+            if (row.getDefaultPerformOrgId() != null) {
+                orgIds.add(row.getDefaultPerformOrgId());
+            }
+        }
+        if (orgIds.isEmpty()) {
+            return;
+        }
+        Map<Long, String> orgNameById = organizationQueryService.mapNamesByIds(orgIds);
+        for (DoctorStationAdviceCatalogRowDto row : rows) {
+            if (row.getDefaultPerformOrgId() == null) {
+                continue;
+            }
+            String name = orgNameById.get(row.getDefaultPerformOrgId());
+            if (StringUtils.isNotBlank(name)) {
+                row.setDefaultPerformOrgName(name);
+            }
+        }
     }
 
     /**
@@ -260,15 +317,11 @@ public class DoctorStationAdviceCatalogAssembler {
         dto.setWbCode(productRow.getWbStr());
         dto.setCategoryCode(productRow.getCategoryCode());
         dto.setCategoryCodeDictText(productRow.getCategoryCodeDictText());
-        // 计价主单位：默认开立单位优先；药品/耗材其次采购、包装；诊疗仅包装
+        // 计价主单位：仅包装单位（package_unit_code），禁止跨槽回落
         String primaryUnitCode = ProductDefinitionCatalogUnitBandsAssembler.resolveCatalogPrimaryUnitCode(productRow);
         dto.setUnitCode(primaryUnitCode);
         dto.setUnitName(ProductDefinitionCatalogUnitBandsAssembler.resolveCatalogPrimaryUnitName(productRow));
         dto.setUnitBands(ProductDefinitionCatalogUnitBandsAssembler.buildDoctorStationBands(productRow, primaryUnitCode, null));
-        dto.setDefEncounterUnitCode(productRow.getDefEncounterUnitCode());
-        dto.setDefEncounterUnitName(productRow.getDefEncounterUnitCodeDictText());
-        dto.setDefInhospitalUnitCode(productRow.getDefInhospitalUnitCode());
-        dto.setDefInhospitalUnitName(productRow.getDefInhospitalUnitCodeDictText());
         dto.setRateCode(productRow.getRateCode());
         dto.setRateCodeDictText(productRow.getRateCodeDictText());
         dto.setMethodCode(productRow.getMethodCode());
@@ -295,25 +348,28 @@ public class DoctorStationAdviceCatalogAssembler {
     }
 
     /**
-     * 解析发药/耗材候选库位：先按机构 + 产品表 + 配送分类取模板库位列表，若请求携带药房库位且命中模板，则收窄为该单点库位。
+     * 解析发药/耗材候选库位：按开立科室 + 物品表 + 目录 {@code categoryCode}（药品/耗材类别）+ 具体项 + 用法
+     * 过滤模板适用行（calcScore≥0）；若请求携带药房库位且命中候选，则收窄为该单点库位。
      *
      * @param orgId               机构或科室所属机构，用于模板查询
-     * @param productRow          当前产品行（表名、分类参与模板匹配）
+     * @param productRow          当前产品行（表名、categoryCode、定义 id、默认用法参与模板匹配）
      * @param pharmacyLocationId 可选；前端指定「在某药房开」时传入
      * @return 候选库位 ID 列表；机构缺失时返回空列表表示不做库存展示
      */
     private List<Long> resolveCandidateLocations(Long orgId, ProductDefinitionDisplayDto productRow, Long pharmacyLocationId) {
-        if (orgId == null) {
-            return List.of();
-        }
-        String distributionCategory = StringUtils.firstNonBlank(productRow.getCategoryCode(), "DEFAULT");
-        List<Long> locs = serviceLocationTemplateQueryService.listCandidateDistributionLocationIds(
-            orgId, productRow.getProductTableName(), distributionCategory, null);
-        if (pharmacyLocationId != null && locs.contains(pharmacyLocationId)) {
-            // 用户点选药房在候选内：只返回该库位，驱动库存查询与可开量计算聚焦
-            return List.of(pharmacyLocationId);
-        }
-        return locs;
+        return clinicalCatalogDispenseLocationResolveSupport.listApplicableCandidateLocationIds(
+            orgId, productRow, pharmacyLocationId);
+    }
+
+    /**
+     * IF-DOR-11 读侧：按取药科室模板解析默认发药/发材库位（calcScore 择优）。
+     *
+     * @param orgId      开立机构
+     * @param productRow 产品读模型
+     * @return 默认库位 id；写路径由前端回传 {@code dispenseLocationId}，不再二次 match
+     */
+    private Long resolveDefaultDispenseLocationId(Long orgId, ProductDefinitionDisplayDto productRow) {
+        return clinicalCatalogDispenseLocationResolveSupport.matchDefaultDispenseLocationId(orgId, productRow);
     }
 
     /**
@@ -345,226 +401,18 @@ public class DoctorStationAdviceCatalogAssembler {
     }
 
     /**
-     * 按产品来源表分组实例 ID，一次性查询定价行，再按「表+实例」复合键分组，供当前页每行 O(1) 取价。
-     *
-     * @param content 当前页产品读模型集合
-     * @return 复合键 → 该产品下所有定价行（顺序与查询返回一致）
-     */
-    private Map<String, List<ChargeItemDefinition>> loadPricingGrouped(List<ProductDefinitionDisplayDto> content) {
-        // 按来源表分组实例 ID：显式 for 展开，避免 stream 分组链在审查时跳读（A.8）；体量受分页页大小约束。
-        Map<String, List<Long>> idsByTable = new LinkedHashMap<>();
-        for (ProductDefinitionDisplayDto row : content) {
-            String table = row.getProductTableName();
-            Long defId = row.getProductDefinitionId();
-            if (table == null || defId == null) {
-                continue;
-            }
-            idsByTable.computeIfAbsent(table, k -> new ArrayList<>()).add(defId);
-        }
-        Map<String, List<ChargeItemDefinition>> out = new HashMap<>();
-        for (Map.Entry<String, List<Long>> e : idsByTable.entrySet()) {
-            if (e.getValue() == null || e.getValue().isEmpty()) {
-                continue;
-            }
-            ChargeItemDefinitionQueryCommand cmd = new ChargeItemDefinitionQueryCommand();
-            cmd.setInstanceTable(e.getKey());
-            cmd.setInstanceIds(e.getValue());
-            List<ChargeItemDefinition> lines = chargeItemDefinitionQueryService.findPriceLinesByProjects(cmd);
-            for (ChargeItemDefinition def : lines) {
-                String key = ProductDefinitionKeyUtil.buildCompositeKey(def.getInstanceTable(), def.getInstanceId());
-                out.computeIfAbsent(key, k -> new ArrayList<>()).add(def);
-            }
-        }
-        return out;
-    }
-
-    /**
      * 库存可用行与发放预减行的对齐键：表名、定义或物料主键、库位三维拼接，分隔符取 {@link GeneralSharedConstants#PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR}。
-     *
-     * @param table        物品来源表名
-     * @param definitionOrItemId 药品/耗材定义或物料主键
-     * @param locationId   库位
-     * @return 内存 Map 用键，禁止作为对外 API 契约暴露
      */
     private static String tripleCompositeKey(String table, Long definitionOrItemId, Long locationId) {
         char sep = GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR;
         return table + sep + definitionOrItemId + sep + locationId;
     }
 
-    /**
-     * 费用草稿单价来源：在已批量查出的定价行集合上按产品表语义选出一条 {@link ChargeItemDefinition}。
-     * <p>诊疗（{@link TableNameConstants#WKF_ACTIVITY_DEFINITION}）仅 {@link PriceType#SALE}；
-     * 药品/耗材定义表仅 {@link PriceType#LOT_NUMBER_PRICE}；其它表维持仓储顺序首条（非医生站三类目录时请慎用）。</p>
-     *
-     * @param instanceTable 定价实例表（与 {@link ChargeItemDefinition#getInstanceTable}、医嘱 product 锚点表一致）
-     * @param lines         {@link ChargeItemDefinitionQueryService#findPriceLinesByProjects} 返回的该实例下行集合，允许含多价型
-     * @return 写入费用草稿命令所用的定价行；按表分流无命中价型或集合为空时为 {@code null}
-     */
-    public static ChargeItemDefinition selectFirstPriceLineForChargeDraft(String instanceTable, List<ChargeItemDefinition> lines) {
-        if (lines == null || lines.isEmpty()) {
-            return null;
-        }
-        if (isActivityDefinitionTable(instanceTable)) {
-            return selectBestSalePriceLine(lines);
-        }
-        if (isMedicationOrDeviceDefinitionTable(instanceTable)) {
-            return selectBestLotNumberPriceLine(lines);
-        }
-        return lines.get(0);
-    }
-
-    /**
-     * 按定价来源与产品表从当前实例定价行中选出一条用于目录单价展示。
-     *
-     * @param pricingSourceCode {@link DoctorStationAdviceConstants#PRICING_SOURCE_RETAIL_PRICE} 或 {@link DoctorStationAdviceConstants#PRICING_SOURCE_BATCH_SELLING_PRICE}；
-     *                          仅药耗目录在批次模式下于 {@link PriceType#LOT_NUMBER_PRICE} 内优先带 {@code lotNo} 的行
-     * @param lines             该实例下定价行（已按查询返回顺序装入）
-     * @param productTableName  产品定义来源表（物理表名）
-     * @return 命中行；按表分流无命中价型时为 {@code null}
-     */
-    public static ChargeItemDefinition selectCatalogPriceLine(String pricingSourceCode, List<ChargeItemDefinition> lines, String productTableName) {
-        if (lines == null || lines.isEmpty()) {
-            return null;
-        }
-        if (isActivityDefinitionTable(productTableName)) {
-            return selectBestSalePriceLine(lines);
-        }
-        if (isMedicationOrDeviceDefinitionTable(productTableName)) {
-            return selectMedicationDeviceCatalogPriceLine(pricingSourceCode, lines);
-        }
-        // 非医生站三类目录的兜底：仅在零售价（SALE）码内择优，与定价枚举口径一致。
-        ChargeItemDefinition saleBest = null;
-        for (ChargeItemDefinition line : lines) {
-            if (PriceType.SALE.getCode().equals(line.getPriceTypeCode())) {
-                saleBest = betterPriceLine(saleBest, line);
-            }
-        }
-        if (saleBest != null) {
-            return saleBest;
-        }
-        return lines.get(0);
-    }
-
-    /**
-     * 药品/耗材目录：仅 {@link PriceType#LOT_NUMBER_PRICE}；批次定价来源时在批号售价行内优先展示带批号的一条。
-     *
-     * @param pricingSourceCode 零售价或批次售价请求码
-     * @param lines               当前实例下全部定价行
-     * @return 择优后的批号售价行；无 {@code LOT_NUMBER_PRICE} 时为 {@code null}
-     */
-    private static ChargeItemDefinition selectMedicationDeviceCatalogPriceLine(
-        String pricingSourceCode,
-        List<ChargeItemDefinition> lines
-    ) {
-        String lotPriceCode = PriceType.LOT_NUMBER_PRICE.getCode();
-        if (DoctorStationAdviceConstants.PRICING_SOURCE_BATCH_SELLING_PRICE.equals(pricingSourceCode)) {
-            ChargeItemDefinition withLot = null;
-            ChargeItemDefinition anyLotPrice = null;
-            for (ChargeItemDefinition line : lines) {
-                if (!lotPriceCode.equals(line.getPriceTypeCode())) {
-                    continue;
-                }
-                anyLotPrice = betterPriceLine(anyLotPrice, line);
-                if (StringUtils.isNotBlank(line.getLotNo())) {
-                    withLot = betterPriceLine(withLot, line);
-                }
-            }
-            if (withLot != null) {
-                return withLot;
-            }
-            return anyLotPrice;
-        }
-        return selectBestLotNumberPriceLine(lines);
-    }
-
-    /**
-     * 仅在 {@link PriceType#LOT_NUMBER_PRICE} 行内按 {@link #betterPriceLine} 择优（药耗费用草稿与目录零售价口径共用）。
-     *
-     * @param lines 同一实例下的全部定价行
-     * @return 最优批号售价行；不存在时为 {@code null}
-     */
-    private static ChargeItemDefinition selectBestLotNumberPriceLine(List<ChargeItemDefinition> lines) {
-        String lotPriceCode = PriceType.LOT_NUMBER_PRICE.getCode();
-        ChargeItemDefinition best = null;
-        for (ChargeItemDefinition line : lines) {
-            if (lotPriceCode.equals(line.getPriceTypeCode())) {
-                best = betterPriceLine(best, line);
-            }
-        }
-        return best;
-    }
-
-    /**
-     * 将 {@link PriceType#LOT_NUMBER_PRICE} 定价行按规范化批号建索引，同批号多条时按 {@link #betterPriceLine} 合并为一条。
-     *
-     * @param lines 当前实例下全部定价行
-     * @return 规范化批号 → 择优后的批号售价行
-     */
-    private static Map<String, ChargeItemDefinition> indexLotNumberPriceRows(List<ChargeItemDefinition> lines) {
-        String lotPriceCode = PriceType.LOT_NUMBER_PRICE.getCode();
-        Map<String, ChargeItemDefinition> index = new HashMap<>();
-        if (lines == null) {
-            return index;
-        }
-        for (ChargeItemDefinition line : lines) {
-            if (!lotPriceCode.equals(line.getPriceTypeCode())) {
-                continue;
-            }
-            String key = normalizeLotKey(line.getLotNo());
-            ChargeItemDefinition existing = index.get(key);
-            index.put(key, betterPriceLine(existing, line));
-        }
-        return index;
-    }
-
-    /**
-     * 批号对齐键：trim；{@code null} 与空串视为同一键。
-     *
-     * @param lotNo 定价或库存侧批号；{@code null} 时返回 {@link GeneralSharedConstants#EMPTY_STRING}
-     * @return 用作 Map 键的规范化字符串（trim 后）
-     */
-    private static String normalizeLotKey(String lotNo) {
-        if (lotNo == null) {
-            // null 批号与空串对齐为同一 Map 键（A.4）
-            return GeneralSharedConstants.EMPTY_STRING;
-        }
-        return lotNo.trim();
-    }
-
-    /**
-     * 按库存行批号在索引中取对应 {@link PriceType#LOT_NUMBER_PRICE} 行。
-     *
-     * @param lotPriceIndex {@link #indexLotNumberPriceRows} 结果
-     * @param inventoryLotNumber 库存可用行批号（与 {@code adm_charge_item_definition.lot_no} 对齐）
-     * @return 命中定价行；该批号未配置批号售价时为 {@code null}
-     */
-    private static ChargeItemDefinition resolveLotNumberPriceLineForLot(
-        Map<String, ChargeItemDefinition> lotPriceIndex,
-        String inventoryLotNumber
-    ) {
-        if (lotPriceIndex == null || lotPriceIndex.isEmpty()) {
-            return null;
-        }
-        String key = normalizeLotKey(inventoryLotNumber);
-        return lotPriceIndex.get(key);
-    }
-
-    /**
-     * 判断产品定义来源表是否为诊疗活动定义（与收费定价实例表维度一致，用于 Sale-only 分流）。
-     *
-     * @param productTableName 读模型或命令上的物理表名；允许与常量大小写不一致
-     * @return 视为诊疗活动定义则为 {@code true}
-     */
     private static boolean isActivityDefinitionTable(String productTableName) {
-        return productTableName != null && TableNameConstants.WKF_ACTIVITY_DEFINITION.equalsIgnoreCase(productTableName);
+        return productTableName != null
+            && TableNameConstants.WKF_ACTIVITY_DEFINITION.equalsIgnoreCase(productTableName);
     }
 
-    /**
-     * 是否为药品或耗材定义表（医生站目录三类之一），用于 {@link PriceType#LOT_NUMBER_PRICE} 与库存批号对齐。
-     *
-     * @param productTableName 读模型产品来源表名
-     * @return 药耗定义表则为 {@code true}
-     */
     private static boolean isMedicationOrDeviceDefinitionTable(String productTableName) {
         if (productTableName == null) {
             return false;
@@ -576,58 +424,5 @@ public class DoctorStationAdviceCatalogAssembler {
             return true;
         }
         return false;
-    }
-
-    /**
-     * 在当前实例的多条定价行中仅合并 {@link PriceType#SALE}，按 {@link #betterPriceLine} 优先级择优。
-     *
-     * @param lines 同一实例下的全部定价行（可含 PURCHASE 等，本方法忽略非 SALE）
-     * @return 最优 SALE 行；不存在 SALE 时为 {@code null}
-     */
-    private static ChargeItemDefinition selectBestSalePriceLine(List<ChargeItemDefinition> lines) {
-        ChargeItemDefinition best = null;
-        for (ChargeItemDefinition line : lines) {
-            if (PriceType.SALE.getCode().equals(line.getPriceTypeCode())) {
-                best = betterPriceLine(best, line);
-            }
-        }
-        return best;
-    }
-
-    /**
-     * 在两条定价行中取优先级更小者（同优先级时主键更小者），{@code null} 优先级视为较大。
-     *
-     * @param current 当前最优，可为 {@code null}
-     * @param candidate 候选行
-     * @return 更优行
-     */
-    private static ChargeItemDefinition betterPriceLine(ChargeItemDefinition current, ChargeItemDefinition candidate) {
-        if (candidate == null) {
-            return current;
-        }
-        if (current == null) {
-            return candidate;
-        }
-        Integer cp = candidate.getPriority();
-        Integer curp = current.getPriority();
-        if (cp != null && curp != null) {
-            int cmp = Integer.compare(cp, curp);
-            if (cmp < 0) {
-                return candidate;
-            }
-            if (cmp > 0) {
-                return current;
-            }
-        } else if (cp != null) {
-            return candidate;
-        } else if (curp != null) {
-            return current;
-        }
-        Long cid = candidate.getId();
-        Long curid = current.getId();
-        if (cid != null && curid != null && cid < curid) {
-            return candidate;
-        }
-        return current;
     }
 }

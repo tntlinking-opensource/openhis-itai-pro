@@ -31,14 +31,13 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 住院发药页初始化响应。 */
 @Schema(description = "住院发药页初始化响应")
 public class LoadInpatientPharmacyDispensePageInitResponse {
 
-    /** 启用药房机构下拉。 */
-    @Schema(description = "启用药房机构选项")
+    @Schema(description = "可操作药房位置选项（adm_location.id）")
     private List<OptionDto> pharmacyOrganizationOptions;
 
-    /** 发放状态筛选项（{@link com.openhis.health.domain.share.enums.DispenseStatus} code）。 */
     @Schema(description = "发放状态筛选项")
     private List<OptionDto> dispenseStatusFilterOptions;
 
@@ -48,11 +47,9 @@ public class LoadInpatientPharmacyDispensePageInitResponse {
     @Schema(description = "未发药原因选项")
     private List<OptionDto> notPerformedReasonOptions;
 
-    /** 病区候选（value=病区库位 id）。 */
     @Schema(description = "病区候选（value=病区库位 id）")
     private List<OptionDto> wardOptions;
 
-    /** 调配药师候选分页（Spring {@link Page} 壳，前端按 pageNo/pageSize 解析）。 */
     @Schema(description = "调配药师候选分页")
     private Page<PractitionerOptionDto> preparerCandidatePage;
 }

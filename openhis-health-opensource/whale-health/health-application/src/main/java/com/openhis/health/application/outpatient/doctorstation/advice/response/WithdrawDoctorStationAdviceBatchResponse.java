@@ -26,14 +26,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-医嘱开立-签退医嘱批次响应。 */
 @Schema(description = "医生站-医嘱开立-签退医嘱批次响应")
 public class WithdrawDoctorStationAdviceBatchResponse {
 
-    /** 签退批次是否完成。 */
     @Schema(description = "是否成功")
     private Boolean success;
 
-    /** 人类可读结果说明。 */
     @Schema(description = "提示信息")
     private String message;
 }

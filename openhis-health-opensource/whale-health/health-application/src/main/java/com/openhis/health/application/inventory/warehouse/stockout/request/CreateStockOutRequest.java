@@ -22,8 +22,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -34,11 +36,9 @@ import java.util.List;
 @Accessors(chain = true)
 public class CreateStockOutRequest {
 
-    /** 源药库 {@link com.openhis.health.domain.administration.location.entity.Location} 主键。 */
     @Schema(description = "源药库", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long sourceLocationId;
 
-    /** 目的位置主键（药房或柜等，由领域与读模型解释）。 */
     @Schema(description = "目的位置", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long purposeLocationId;
 

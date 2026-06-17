@@ -26,12 +26,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊收费账户切换响应。 */
 @Schema(description = "门诊收费账户切换响应")
 public class SwitchEncounterChargeItemsAccountResponse {
-    /** 是否成功。 */
     @Schema(description = "是否成功")
+    /** 是否成功（业务字段）。 */
     private Boolean success;
-    /** 结果语义码。 */
     @Schema(description = "结果语义码")
+    /** 结果语义码（业务字段）。 */
     private String messageCode;
 }

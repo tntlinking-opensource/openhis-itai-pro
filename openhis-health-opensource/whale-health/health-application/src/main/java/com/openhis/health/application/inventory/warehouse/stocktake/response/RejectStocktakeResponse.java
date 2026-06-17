@@ -20,6 +20,7 @@ package com.openhis.health.application.inventory.warehouse.stocktake.response;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Data
 @Accessors(chain = true)

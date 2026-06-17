@@ -24,14 +24,13 @@ import lombok.Data;
  * 退药状态下拉选项（IF-PHA-02-01）。
  */
 @Data
+/** 退药状态下拉选项。 */
 @Schema(description = "退药状态下拉选项")
 public class RefundStatusOptionDto {
 
-    /** 状态编码。 */
     @Schema(description = "状态编码", requiredMode = Schema.RequiredMode.REQUIRED)
     private String statusCode;
 
-    /** 状态显示名称。 */
     @Schema(description = "状态显示名称", requiredMode = Schema.RequiredMode.REQUIRED)
     private String statusName;
 }

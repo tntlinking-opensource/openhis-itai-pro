@@ -28,10 +28,12 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 病区床位余量查询请求。 */
 @Schema(description = "病区床位余量查询请求")
 public class LoadWardBedCapacityRequest {
 
     @Schema(description = "病区位置 ID", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 病区位置 ID（业务字段）。 */
     private Long wardId;
 }

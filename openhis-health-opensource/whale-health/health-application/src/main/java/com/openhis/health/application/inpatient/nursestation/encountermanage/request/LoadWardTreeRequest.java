@@ -26,6 +26,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 病区病房树查询请求。 */
 @Schema(description = "病区病房树查询请求")
 public class LoadWardTreeRequest {
 }

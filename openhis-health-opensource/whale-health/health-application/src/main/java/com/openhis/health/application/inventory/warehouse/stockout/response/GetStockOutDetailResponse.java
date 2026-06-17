@@ -22,8 +22,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -34,11 +36,9 @@ import java.util.List;
 @Accessors(chain = true)
 public class GetStockOutDetailResponse {
 
-    /** 业务单号。 */
     @Schema(description = "业务单号")
     private String busNo;
 
-    /** 供应类型持久化身份，药库出库场景为 {@link com.openhis.health.domain.share.enums.SupplyType#CABINET_STOCK_OUT} 的 {@code getCode()}。 */
     @Schema(description = "类型 CABINET_STOCK_OUT")
     private String typeEnum;
 

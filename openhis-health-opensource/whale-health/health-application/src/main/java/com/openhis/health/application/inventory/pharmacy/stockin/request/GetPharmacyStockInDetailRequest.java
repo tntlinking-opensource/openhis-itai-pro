@@ -22,6 +22,7 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 药房入库单详情请求（IF-PHA-IN-03）。
@@ -29,6 +30,7 @@ import lombok.experimental.Accessors;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 药房入库单详情 IF-PHA-IN-03。 */
 @Schema(description = "药房入库单详情 IF-PHA-IN-03", requiredProperties = {"busNo"})
 public class GetPharmacyStockInDetailRequest {
 

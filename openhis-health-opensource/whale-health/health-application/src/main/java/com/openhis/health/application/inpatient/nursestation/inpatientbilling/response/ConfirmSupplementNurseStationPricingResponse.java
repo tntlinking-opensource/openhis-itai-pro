@@ -33,14 +33,13 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医嘱补费确认响应。 */
 @Schema(description = "医嘱补费确认响应")
 public class ConfirmSupplementNurseStationPricingResponse {
 
-    /** 本批是否全部成功落库。 */
     @Schema(description = "整批成功")
     private Boolean success;
 
-    /** 成功处理的写行数。 */
     @Schema(description = "成功行数")
     private Integer processedCount;
 

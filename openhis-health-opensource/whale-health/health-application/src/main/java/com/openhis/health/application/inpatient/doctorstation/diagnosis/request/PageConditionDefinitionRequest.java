@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inpatient.doctorstation.diagnosis.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -31,6 +31,7 @@ import lombok.experimental.Accessors;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 医生站-诊断定义分页检索请求。 */
 @Schema(description = "医生站-诊断定义分页检索请求")
 public class PageConditionDefinitionRequest extends AbstractHealthPageRequest {
 

@@ -25,18 +25,9 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-/**
- * UpdateDeviceCatalogRequest。
- */
 public class UpdateDeviceCatalogRequest extends CreateDeviceCatalogRequest {
     /** 设备定义主键（网关字符串，解析见 {@link com.openhis.health.domain.share.utils.GatewayIdParseUtil}）。 */
-    /**
-     * id。
-     */
     private String id;
     /** 编辑业务码（由上游业务判定并透传，示例：OK）。 */
-    /**
-     * editabilityCode。
-     */
     private String editabilityCode;
 }

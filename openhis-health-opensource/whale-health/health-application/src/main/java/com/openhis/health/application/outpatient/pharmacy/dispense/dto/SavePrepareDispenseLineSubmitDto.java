@@ -31,6 +31,7 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 保存配药提交行。 */
 @Schema(description = "保存配药提交行")
 public class SavePrepareDispenseLineSubmitDto {
 
@@ -42,6 +43,7 @@ public class SavePrepareDispenseLineSubmitDto {
 
     /** 确认后的发放库房。 */
     @NotNull(message = "发放库房不能为空")
+    /** 发放库房。 */
     @Schema(description = "发放库房（库位）主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long dispenseLocationId;
@@ -56,6 +58,7 @@ public class SavePrepareDispenseLineSubmitDto {
 
     /** 实发数量。 */
     @NotNull(message = "实发数量不能为空")
+    /** 实发数量。 */
     @Schema(description = "实发数量", requiredMode = Schema.RequiredMode.REQUIRED)
     private BigDecimal quantity;
 }

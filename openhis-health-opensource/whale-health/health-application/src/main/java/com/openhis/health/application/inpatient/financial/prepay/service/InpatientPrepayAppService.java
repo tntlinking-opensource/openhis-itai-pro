@@ -1,17 +1,17 @@
 package com.openhis.health.application.inpatient.financial.prepay.service;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.common.validator.PageWindowGate;
-import com.openhis.health.application.common.validator.PaymentChannelGate;
-import com.openhis.health.application.common.validator.PatientEncounterConsistencyGate;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.module.common.validator.PaymentChannelGate;
+import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayPaymentDetailDto;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayPaymentRecordDto;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayQueueItemDto;
 import com.openhis.health.application.inpatient.financial.prepay.mapper.InpatientPrepayMapper;
-import com.openhis.health.application.common.assembler.financial.PaymentChannelDisplayAssembler;
-import com.openhis.health.application.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.module.common.assembler.financial.PaymentChannelDisplayAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.application.inpatient.financial.prepay.request.CollectPrepayAdvanceDepositRequest;
 import com.openhis.health.application.inpatient.financial.prepay.request.ListPrepayPaymentRecordsRequest;
 import com.openhis.health.application.inpatient.financial.prepay.request.PagePrepayPatientQueueRequest;
@@ -27,7 +27,7 @@ import com.openhis.health.domain.administration.account.service.AccountDomainSer
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CollectAdvanceDepositCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.RefundAdvanceDepositCommand;

@@ -28,22 +28,17 @@ import java.util.Map;
 /**
  * IF-IP-DOR-15：签发医嘱批次响应。
  *
- * <p>含签署批次号及药品 requestId→处方号映射，供前端刷新列表与打印。</p>
+ * <p>含药品 requestId→处方号映射，供前端刷新列表与打印。</p>
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-医嘱开立-签发医嘱批次响应。 */
 @Schema(description = "医生站-医嘱开立-签发医嘱批次响应")
 public class SignInpatientDoctorStationAdviceBatchResponse {
 
-    /** 签发批次是否完成。 */
     @Schema(description = "是否成功")
     private Boolean success;
 
-    /** 落库后实际批次编码（可能与请求传入不同）。 */
-    @Schema(description = "实际签署批次编码")
-    private String signBatchCode;
-
-    /** 药品签发后处方号回写，key 为 {@code med_medication_request.id}。 */
     @Schema(description = "药品请求主键到处方号映射")
     private Map<Long, String> prescriptionNoByMedicationRequestId;
 

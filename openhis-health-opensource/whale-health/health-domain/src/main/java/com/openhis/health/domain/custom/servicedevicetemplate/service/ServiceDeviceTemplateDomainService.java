@@ -31,7 +31,7 @@ import lombok.RequiredArgsConstructor;
 /**
  * 诊疗项目与耗材/设备活动绑定写侧领域服务。
  *
- * <p>维护号源、服务项目等目标与耗材主数据、设备活动之间的数量与单位绑定；新建默认全院范围，变更后走聚合不变式与类型门禁。</p>
+ * <p>维护用法、诊疗来源项与耗材主数据、设备活动之间的数量与单位绑定；新建默认全院范围，变更后走聚合不变式校验。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -70,9 +70,8 @@ public class ServiceDeviceTemplateDomainService {
             binding.setStatusEnum(command.getStatusEnum());
         }
 
-        // 校验：必填、数量、号源绑定目标限制等（BR-SDT-001/008/005）
+        // 校验：必填、数量等（BR-SDT-001/008）
         binding.assertRequiredFields();
-        binding.assertTargetAllowedForType();
 
         ServiceDeviceTemplate saved = repository.save(binding);
         domainEventPublisher.publish(new ServiceDeviceTemplateCreatedEvent(saved.getId(), command.getOperatorId()));
@@ -127,7 +126,6 @@ public class ServiceDeviceTemplateDomainService {
         }
 
         binding.assertRequiredFields();
-        binding.assertTargetAllowedForType();
 
         ServiceDeviceTemplate saved = repository.save(binding);
         domainEventPublisher.publish(new ServiceDeviceTemplateEditedEvent(saved.getId(), command.getOperatorId()));

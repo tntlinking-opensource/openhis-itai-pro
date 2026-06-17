@@ -32,6 +32,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 住院预结算请求。 */
 @Schema(description = "住院预结算请求", requiredProperties = {"encounterId", "patientId", "chargeItemIds"})
 public class PreSettleInpatientChargesRequest {
 
@@ -39,16 +40,67 @@ public class PreSettleInpatientChargesRequest {
     @NotNull(message = "就诊标识不能为空")
     @Schema(description = "住院就诊 ID", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 住院就诊 ID（业务字段）。 */
     private Long encounterId;
 
     /** 患者 ID。 */
     @NotNull(message = "患者标识不能为空")
+    /** 患者 ID。 */
     @Schema(description = "患者 ID", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者 ID（业务字段）。 */
     private Long patientId;
 
     /** 所选待结算收费明细 ID 列表。 */
     @NotEmpty(message = "请选择待结算费用")
+    /** 所选收费明细 ID 列表。 */
     @Schema(description = "所选收费明细 ID 列表", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 所选收费明细 ID 列表（业务字段）。 */
     private List<Long> chargeItemIds;
+
+    /** 医保合同 ID（登记账户为医保时）。 */
+    @Schema(description = "医保合同 ID")
+    @JsonSerialize(using = ToStringSerializer.class)
+    /** 医保合同 ID（业务字段）。 */
+    private Long contractId;
+
+    /** 就诊凭证类型（读卡）。 */
+    @Schema(description = "就诊凭证类型")
+    /** 就诊凭证类型（业务字段）。 */
+    private String ybMediumType;
+
+    /** 就诊凭证编号（读卡）。 */
+    @Schema(description = "就诊凭证编号")
+    /** 就诊凭证编号（业务字段）。 */
+    private String ybCardInfo;
+
+    /** 人员编号（1101）。 */
+    @Schema(description = "人员编号")
+    /** 人员编号（业务字段）。 */
+    private String psnNo;
+
+    /** 参保地医保区划。 */
+    @Schema(description = "参保地医保区划")
+    /** 参保地医保区划（业务字段）。 */
+    private String insuplcAdmdvs;
+
+    /** 险种类型。 */
+    @Schema(description = "险种类型")
+    /** 险种类型（业务字段）。 */
+    private String insutype;
+
+    /** 个人账户使用标志，默认 1。 */
+    @Schema(description = "个人账户使用标志")
+    /** 个人账户使用标志（业务字段）。 */
+    private String acctUsedFlag;
+
+    /** 个人结算方式，默认 01。 */
+    @Schema(description = "个人结算方式")
+    /** 个人结算方式（业务字段）。 */
+    private String psnSetlway;
+
+    /** 结算模式：DISCHARGE_FULL | MID_SETTLE。 */
+    @Schema(description = "结算模式")
+    /** 结算模式（业务字段）。 */
+    private String settleMode;
 }

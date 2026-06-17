@@ -43,6 +43,7 @@ import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.core.application.exception.ValidationException;
+import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import com.openhis.whale.setting.domain.SettingDefinitionEnum;
 import com.openhis.whale.setting.domain.service.SettingManager;
 import lombok.RequiredArgsConstructor;
@@ -77,6 +78,8 @@ public class PatientAppService {
     private final PatientStudentMapper patientStudentMapper;
     /** 全局开关：是否启用学籍维护（与前端表单显隐联动）。 */
     private final SettingManager settingManager;
+    /** 当前登录用户上下文（建档机构归属）。 */
+    private final ICurrentUser currentUser;
 
     /**
      * 患者管理页初始化：下拉选项（含学籍维护所需的学历、学习形式、在校状态、体检结果等枚举）。
@@ -224,16 +227,12 @@ public class PatientAppService {
      */
     public PagedResult<PatientDto> getPatientPage(PatientQueryRequest request) {
         PatientPagedQuery query = new PatientPagedQuery();
-        // 将应用层分页请求装配为领域分页查询（请求 {@link com.openhis.health.domain.share.query.AbstractPageQuery#pageNo} 与领域 PatientPagedQuery.pageNo 均为 1-based）。
+        // 分页与 keyword 装配与门诊选患者（pagePatientsForSelect）及 B.10.11 一致。
         if (request != null) {
-            if (request.getPageNo() != null && request.getPageNo() > 0) {
-                query.setPageNo(request.getPageNo());
-            }
-            if (request.getPageSize() != null && request.getPageSize() > 0) {
-                query.setPageSize(request.getPageSize());
-            }
+            query.setPageNo(request.getPageNo());
+            query.setPageSize(request.getPageSize());
             if (StringUtils.isNotBlank(request.getKeyword())) {
-                query.setName(request.getKeyword().trim());
+                query.setKeyword(request.getKeyword().trim());
             }
         }
 
@@ -290,6 +289,19 @@ public class PatientAppService {
         RegisterPatientCommand command = patientMapper.toRegisterCommand(request);
         if (command == null) {
             throw new ValidationException("新增患者失败：命令组装失败");
+        }
+        // 建档机构归属当前登录机构，与门诊挂号新建患者主档一致，禁止由前端传入 organizationId。
+        Long organizationId = currentUser.getCurrentOrganizationUnitId();
+        if (organizationId == null) {
+            throw new ValidationException("新增患者失败：当前登录机构不能为空");
+        }
+        if (command.getItem() != null) {
+            command.getItem().setOrganizationId(organizationId);
+        }
+        if (command.getItems() != null) {
+            for (RegisterPatientCommand.RegisterPatientItemCommand item : command.getItems()) {
+                item.setOrganizationId(organizationId);
+            }
         }
         Long patientId = patientDomainService.registerPatient(command);
         return this.getPatient(patientId);

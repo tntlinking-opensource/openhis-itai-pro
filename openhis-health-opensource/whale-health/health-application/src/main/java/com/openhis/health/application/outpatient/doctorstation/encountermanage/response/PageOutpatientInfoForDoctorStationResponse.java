@@ -36,6 +36,7 @@ import java.util.List;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 医生站-分页查询就诊患者列表响应。 */
 @Schema(description = "医生站-分页查询就诊患者列表响应")
 public class PageOutpatientInfoForDoctorStationResponse extends PagedResult<OutpatientInfoItemDto> {
 

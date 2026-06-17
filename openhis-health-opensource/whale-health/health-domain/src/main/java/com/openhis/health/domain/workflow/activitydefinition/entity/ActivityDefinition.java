@@ -241,7 +241,7 @@ public class ActivityDefinition extends BaseAuditedEntity {
         if (!PublicationStatus.ACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "仅已发布状态的诊疗项目允许停用");
         }
-        this.statusEnum = PublicationStatus.RETIRED.getCode();
+        this.statusEnum = PublicationStatus.INACTIVE.getCode();
     }
 
     /**
@@ -250,7 +250,7 @@ public class ActivityDefinition extends BaseAuditedEntity {
      * @throws BusinessException 状态不允许
      */
     public void activate() {
-        if (!PublicationStatus.RETIRED.getCode().equals(this.statusEnum)) {
+        if (!PublicationStatus.INACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "仅已停用状态的诊疗项目允许启用");
         }
         this.statusEnum = PublicationStatus.ACTIVE.getCode();

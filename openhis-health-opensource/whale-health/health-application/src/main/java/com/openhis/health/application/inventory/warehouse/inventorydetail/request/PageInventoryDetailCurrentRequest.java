@@ -17,13 +17,15 @@
 
 package com.openhis.health.application.inventory.warehouse.inventorydetail.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 现库存明细分页查询入参（IF-INV-DTL-02）。
@@ -31,10 +33,10 @@ import java.util.List;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 现库存明细分页 IF-INV-DTL-02。 */
 @Schema(description = "现库存明细分页 IF-INV-DTL-02")
 public class PageInventoryDetailCurrentRequest extends AbstractHealthPageRequest {
 
-    /** 药品类型编码多选。 */
     @Schema(description = "药品类型编码多选")
     private List<String> medicationCategoryCodes;
 

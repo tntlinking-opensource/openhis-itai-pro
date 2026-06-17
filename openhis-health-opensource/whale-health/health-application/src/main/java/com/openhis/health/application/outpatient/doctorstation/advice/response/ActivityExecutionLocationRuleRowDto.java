@@ -26,6 +26,7 @@ import java.time.LocalTime;
  * 单条诊疗活动「可执行科室」规则展示行（执行科室/地点展示名由应用层批量解析后回填）。
  */
 @Data
+/** 医生站-诊疗可执行科室规则行。 */
 @Schema(description = "医生站-诊疗可执行科室规则行")
 public class ActivityExecutionLocationRuleRowDto {
 
@@ -35,36 +36,43 @@ public class ActivityExecutionLocationRuleRowDto {
     @Schema(description = "诊疗活动定义主键")
     private Long activityDefinitionId;
 
-    @Schema(description = "关联收费项定义主键")
-    private Long chargeItemDefinitionId;
-
+    /** 诊疗大类编码。 */
     @Schema(description = "诊疗大类编码")
     private String activityCategoryCode;
 
+    /** 执行科室组织主键。 */
     @Schema(description = "执行科室组织主键")
     private Long executionOrgId;
 
+    /** 执行科室展示名。 */
     @Schema(description = "执行科室展示名")
     private String executionOrgName;
 
+    /** 执行地点主键。 */
     @Schema(description = "执行地点主键")
     private Long executionLocationId;
 
+    /** 执行地点展示名。 */
     @Schema(description = "执行地点展示名")
     private String executionLocationName;
 
+    /** 规则生效开始时刻。 */
     @Schema(description = "规则生效开始时刻（日内）")
     private LocalTime startTime;
 
+    /** 规则生效结束时刻。 */
     @Schema(description = "规则生效结束时刻（日内）")
     private LocalTime endTime;
 
+    /** 优先级。 */
     @Schema(description = "优先级")
     private Integer priority;
 
+    /** 展示排序。 */
     @Schema(description = "展示排序")
     private Integer displayOrder;
 
+    /** 备注。 */
     @Schema(description = "备注")
     private String remark;
 }

@@ -24,6 +24,7 @@ import com.openhis.health.domain.workflow.supplydelivery.queries.SupplyDeliveryI
 import com.openhis.health.domain.workflow.supplydelivery.queries.SupplyDeliveryRequestIdListQuery;
 import com.openhis.health.domain.workflow.supplydelivery.queries.model.SupplyDeliveryByRequestModel;
 import com.openhis.health.domain.workflow.supplydelivery.queries.model.SupplyDeliveryModel;
+import com.openhis.health.domain.workflow.supplydelivery.queries.model.SupplyDeliverySlipHeaderQueryModel;
 import com.openhis.health.domain.workflow.supplydelivery.queries.model.SupplyDeliveryValidationModel;
 import com.openhis.health.domain.workflow.supplydelivery.repository.SupplyDeliveryRepository;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -31,6 +32,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -142,6 +144,41 @@ public class SupplyDeliveryQueryService {
             if (row.getRequestId() != null) {
                 result.add(row.getRequestId());
             }
+        }
+        return result;
+    }
+
+    /**
+     * 汇总单头：按供应请求行批量加载发放态（receiver/status/receiveTime）。
+     *
+     * @param requestIds 供应请求行主键集合
+     * @return 发放摘要；入参为空时返回空表
+     */
+    public List<SupplyDeliverySlipHeaderQueryModel> listDeliveriesForSummarySlipHeaders(Collection<Long> requestIds) {
+        if (requestIds == null || requestIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> deduper = new LinkedHashSet<>();
+        for (Long requestId : requestIds) {
+            if (requestId != null) {
+                deduper.add(requestId);
+            }
+        }
+        if (deduper.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<SupplyDelivery> entities = supplyDeliveryRepository.findByRequestIdIn(new ArrayList<>(deduper));
+        List<SupplyDeliverySlipHeaderQueryModel> result = new ArrayList<>();
+        for (SupplyDelivery entity : entities) {
+            if (entity == null || entity.getRequestId() == null) {
+                continue;
+            }
+            SupplyDeliverySlipHeaderQueryModel model = new SupplyDeliverySlipHeaderQueryModel();
+            model.setRequestId(entity.getRequestId());
+            model.setReceiverId(entity.getReceiverId());
+            model.setStatusEnum(entity.getStatusEnum());
+            model.setReceiveTime(entity.getReceiveTime());
+            result.add(model);
         }
         return result;
     }

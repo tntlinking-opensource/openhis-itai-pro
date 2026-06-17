@@ -118,11 +118,10 @@ public class SupplyDelivery extends BaseAuditedEntity {
     }
 
     /**
-     * 初始化普通路径完成态（BR-SDL-003；对应 DispenseStatus.PART_COMPLETED）。
+     * 初始化普通路径完成态（BR-SDL-003；创建即已发放 COMPLETED）。
      */
     public void initCompleted() {
-        // DOC-CONFLICT: DM-WKF-005/007 status 6 对应 PART_COMPLETED；如语义为 COMPLETED(4) 请对照 DM §2.3 修正枚举映射。
-        this.statusEnum = DispenseStatus.PART_COMPLETED.getCode();
+        this.statusEnum = DispenseStatus.COMPLETED.getCode();
     }
 
     /**
@@ -147,8 +146,9 @@ public class SupplyDelivery extends BaseAuditedEntity {
         if (this.statusEnum == null) {
             throw new BusinessException(ErrorCodeConstants.SUPPLY_DELIVERY_INVALID_ARGUMENT, "发放状态不能为空");
         }
-        // 终态校验：PART_COMPLETED/ON_HOLD/STOPPED/DECLINED 均不可再次推进完成。
-        if (DispenseStatus.PART_COMPLETED.sameAs(this.statusEnum)
+        // 终态校验：COMPLETED/PART_COMPLETED/ON_HOLD/STOPPED/DECLINED 均不可再次推进完成。
+        if (DispenseStatus.COMPLETED.sameAs(this.statusEnum)
+            || DispenseStatus.PART_COMPLETED.sameAs(this.statusEnum)
             || DispenseStatus.ON_HOLD.sameAs(this.statusEnum)
             || DispenseStatus.STOPPED.sameAs(this.statusEnum)
             || DispenseStatus.DECLINED.sameAs(this.statusEnum)) {
@@ -157,14 +157,13 @@ public class SupplyDelivery extends BaseAuditedEntity {
     }
 
     /**
-     * 推进到完成语义状态（当前映射为部分完成），并写入发生时间与操作医务人员。
+     * 推进到完成态（COMPLETED），并写入发生时间与操作医务人员。
      *
      * @param completedTime 完成/发生时间
      * @param practitionerId 操作医务人员主键
      */
     public void toCompleted(LocalDateTime completedTime, Long practitionerId) {
-        // DOC-CONFLICT: 同 initCompleted() 注释，status 6 = PART_COMPLETED；请对照 DM §2.3 确认映射。
-        this.statusEnum = DispenseStatus.PART_COMPLETED.getCode();
+        this.statusEnum = DispenseStatus.COMPLETED.getCode();
         if (completedTime != null) {
             this.occurrenceTime = completedTime;
         }

@@ -33,11 +33,12 @@ import java.util.List;
 /**
  * IF-IP-DOR-15：签发医嘱批次请求。
  *
- * <p>目标列表见 {@link InpatientDoctorStationAdviceResourceKeyDto}；临时药品走 FIFO 发放与费用升位，
- * 长期仅 sign 请求；诊疗签发后触发 {@link com.openhis.health.application.inpatient.doctorstation.advice.port.LisPacsApplyGateway} 占位。</p>
+ * <p>目标列表见 {@link InpatientDoctorStationAdviceResourceKeyDto}；住院长临均仅 sign 请求；
+ * 诊疗签发后触发 {@link com.openhis.health.application.inpatient.doctorstation.advice.port.LisPacsApplyGateway} 占位。</p>
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-医嘱开立-签发医嘱批次请求。 */
 @Schema(description = "医生站-医嘱开立-签发医嘱批次请求")
 public class SignInpatientDoctorStationAdviceBatchRequest {
 
@@ -50,16 +51,14 @@ public class SignInpatientDoctorStationAdviceBatchRequest {
     /** 患者门控，须与就诊一致。 */
     @NotNull(message = DoctorStationAdviceConstants.MSG_PATIENT_ID_REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者标识。 */
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
     /** 待签发资源键列表（表名 + 请求 id）。 */
     @NotEmpty(message = DoctorStationAdviceConstants.VALIDATION_SIGN_TARGETS_REQUIRED)
     @Valid
+    /** 签发目标列表。 */
     @Schema(description = "签发目标列表", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<InpatientDoctorStationAdviceResourceKeyDto> signTargets;
-
-    /** 幂等或日志关联用批次号；空则服务端生成。 */
-    @Schema(description = "签署批次编码；空则由应用层生成")
-    private String signBatchCode;
 }

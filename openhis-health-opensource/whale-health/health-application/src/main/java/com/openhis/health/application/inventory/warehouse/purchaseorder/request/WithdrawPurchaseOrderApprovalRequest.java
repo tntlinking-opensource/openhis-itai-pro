@@ -25,14 +25,8 @@ import lombok.Setter;
  */
 @Getter
 @Setter
-/**
- * WithdrawPurchaseOrderApprovalRequest。
- */
 public class WithdrawPurchaseOrderApprovalRequest {
 
-    /** 单据号。 */
-    /**
-     * busNo。
-     */
+    /** 订货单业务单号。 */
     private String busNo;
 }

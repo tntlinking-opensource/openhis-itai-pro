@@ -26,6 +26,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 床位列表项。 */
 @Schema(description = "床位列表项")
 public class BedBoardItemDto {
 

@@ -24,7 +24,6 @@ import com.openhis.health.domain.custom.activityexecutionlocation.command.Create
 import com.openhis.health.domain.custom.activityexecutionlocation.command.UpdateExecutionRuleCommand;
 import com.openhis.health.domain.custom.activityexecutionlocation.queries.model.ExecutionRuleListQueryModel;
 import org.springframework.stereotype.Component;
-import org.springframework.stereotype.Service;
 
 import java.time.LocalTime;
 
@@ -110,7 +109,7 @@ public class ExecuteLocationMapperImpl implements ExecuteLocationMapper {
     }
 
     /**
-     * 优先级缺省为 1，避免领域侧出现 null 优先级导致排序不稳定。
+     * 优先级缺省为 1（最优先），与取药科室口径一致。
      *
      * @param value 前端传入优先级，可为 {@code null}
      * @return 非 null 优先级
@@ -128,7 +127,8 @@ public class ExecuteLocationMapperImpl implements ExecuteLocationMapper {
      * @param value 时间字面量
      * @return 解析结果；格式非法时由 {@link LocalTime#parse} 抛出运行时异常
      */
-    private LocalTime parseTime(String value) {
+    @Override
+    public LocalTime parseTime(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }

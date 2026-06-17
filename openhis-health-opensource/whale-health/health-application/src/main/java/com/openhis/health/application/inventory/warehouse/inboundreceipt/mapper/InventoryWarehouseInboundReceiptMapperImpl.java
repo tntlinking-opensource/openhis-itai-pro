@@ -21,8 +21,8 @@ import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.Inb
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.InboundReceiptLineDto;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.InboundReceiptListRowDto;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.ProductDefinitionItemDto;
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogEditorHintsAssembler;
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogEditorHintsAssembler;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.WarehouseDocumentDetailRowDto;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.request.*;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.response.*;
@@ -30,9 +30,9 @@ import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.application.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -51,8 +51,8 @@ import com.openhis.health.domain.workflow.supplyrequest.command.RemoveByBusNoCom
 import com.openhis.health.domain.workflow.supplyrequest.command.SubmitApprovalCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.WithdrawApprovalCommand;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
-import com.openhis.health.application.common.pagination.PageQueryBinder;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import org.apache.commons.lang3.StringUtils;
@@ -85,6 +85,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         this.locationQueryService = locationQueryService;
     }
 
+    /** 将启用位置列表映射为下拉选项（id/编码/展示名） */
     @Override
     public List<OptionDto> toOptionDtoListFromLocations(List<Location> locations) {
         List<OptionDto> list = new ArrayList<>();
@@ -106,6 +107,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return list;
     }
 
+    /** 将领域对象列表映射为通用 OptionDto 列表。 */
     @Override
     public List<OptionDto> toOptionDtoListFromSuppliers(List<SupplierListItemQueryModel> suppliers) {
         List<OptionDto> list = new ArrayList<>();
@@ -137,6 +139,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return list;
     }
 
+    /** 装配供应请求状态枚举选项（持久化 code） */
     @Override
     public List<OptionDto> toOptionDtoListSupplyStatuses() {
         List<SupplyStatus> ordered = new ArrayList<>();
@@ -151,6 +154,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return list;
     }
 
+    /** 装配物品来源表（药品/耗材）选项 */
     @Override
     public List<OptionDto> toOptionDtoListInboundItemTableTypes() {
         List<OptionDto> list = new ArrayList<>();
@@ -159,6 +163,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return list;
     }
 
+    /** 将医务人员列表映射为下拉选项 */
     @Override
     public List<OptionDto> toOptionDtoListFromPractitioners(List<Practitioner> practitioners) {
         List<OptionDto> list = new ArrayList<>();
@@ -179,6 +184,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return list;
     }
 
+    /** 装配页初始化响应（选项集合写入各字段）。 */
     @Override
     public LoadInboundReceiptFormInitResponse toLoadInboundReceiptFormInitResponse(
         List<OptionDto> pharmacyLocationOptions,
@@ -199,6 +205,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return res;
     }
 
+    /** 按 busNo 顺序聚合供应请求明细为列表行 DTO。 */
     @Override
     public List<InboundReceiptListRowDto> toInboundReceiptListAggregated(
         List<String> busNoPageOrder,
@@ -294,6 +301,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return out;
     }
 
+    /** 用聚合列表行构建分页响应。 */
     @Override
     public PageInboundReceiptsResponse toPageInboundReceiptsAggregatedResponse(
         long mergedTotal,
@@ -401,6 +409,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return dto;
     }
 
+    /** 将供应请求行列表映射为详情响应（含明细增强字段）。 */
     @Override
     public GetInboundReceiptDetailResponse toGetInboundReceiptDetailResponse(
         List<SupplyRequestModel> lines,
@@ -469,10 +478,11 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
      * @return 展示名或 {@code null}
      */
     private String resolveUnitCodeDictText(String unitCode, ProductDefinitionDisplayDto pr) {
-        return com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler
+        return com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler
             .resolveUnitDisplayName(null, unitCode, pr);
     }
 
+    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 */
     @Override
     public CreateInboundReceiptCommand toCreateInboundReceiptCommand(
         CreateInboundReceiptRequest request,
@@ -535,6 +545,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return command;
     }
 
+    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 */
     @Override
     public CreateInboundReceiptCommand toCreateInboundReceiptCommandForUpdate(
         UpdateInboundReceiptRequest request,
@@ -605,6 +616,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return command;
     }
 
+    /** 装配创建成功响应（写入 busNo 等）。 */
     @Override
     public CreateInboundReceiptResponse toCreateInboundReceiptResponse(String busNo) {
         CreateInboundReceiptResponse res = new CreateInboundReceiptResponse();
@@ -613,6 +625,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return res;
     }
 
+    /** 装配更新成功响应。 */
     @Override
     public UpdateInboundReceiptResponse toUpdateInboundReceiptResponse(String busNo) {
         UpdateInboundReceiptResponse res = new UpdateInboundReceiptResponse();
@@ -621,6 +634,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return res;
     }
 
+    /** 将提交审批请求映射为 SubmitApprovalCommand。 */
     @Override
     public SubmitApprovalCommand toSubmitApprovalCommand(SubmitInboundReceiptApprovalRequest request, Long operatorId, Long applicantId) {
         SubmitApprovalCommand command = new SubmitApprovalCommand();
@@ -632,6 +646,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return command;
     }
 
+    /** 装配提交审批响应。 */
     @Override
     public SubmitInboundReceiptApprovalResponse toSubmitInboundReceiptApprovalResponse(SupplyStatus statusAfter) {
         SubmitInboundReceiptApprovalResponse res = new SubmitInboundReceiptApprovalResponse();
@@ -643,6 +658,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return res;
     }
 
+    /** 将撤回审批请求映射为 WithdrawApprovalCommand。 */
     @Override
     public WithdrawApprovalCommand toWithdrawApprovalCommand(WithdrawInboundReceiptApprovalRequest request, Long operatorId) {
         WithdrawApprovalCommand command = new WithdrawApprovalCommand();
@@ -653,6 +669,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return command;
     }
 
+    /** 装配撤回审批响应。 */
     @Override
     public WithdrawInboundReceiptApprovalResponse toWithdrawInboundReceiptApprovalResponse(SupplyStatus statusAfter) {
         WithdrawInboundReceiptApprovalResponse res = new WithdrawInboundReceiptApprovalResponse();
@@ -664,6 +681,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return res;
     }
 
+    /** 将同意请求映射为领域 AgreeRequestCommand。 */
     @Override
     public AgreeRequestCommand toAgreeRequestCommand(AgreeInboundReceiptRequest request, Long operatorId) {
         AgreeRequestCommand command = new AgreeRequestCommand();
@@ -675,6 +693,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return command;
     }
 
+    /** 装配同意成功响应。 */
     @Override
     public AgreeInboundReceiptResponse toAgreeInboundReceiptResponse(boolean ok) {
         AgreeInboundReceiptResponse res = new AgreeInboundReceiptResponse();
@@ -682,6 +701,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return res;
     }
 
+    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 将已同意供应请求行装配为发放命令。 */
     @Override
     public CreateSupplyDeliveryCommand toCreateSupplyDeliveryCommandForInbound(List<SupplyRequestModel> lines, Long operatorId) {
         CreateSupplyDeliveryCommand cmd = new CreateSupplyDeliveryCommand();
@@ -710,6 +730,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return cmd;
     }
 
+    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 装配新建库存项命令（四元组匹配键与展示字段）。 */
     @Override
     public CreateInventoryItemCommand toCreateInventoryItemCommand(
         SupplyRequestModel line,
@@ -732,6 +753,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
             null);
     }
 
+    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 装配新建库存项命令（四元组匹配键与展示字段）。 */
     @Override
     public CreateInventoryItemCommand toCreateInventoryItemCommand(
         SupplyRequestModel line,
@@ -779,6 +801,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return command;
     }
 
+    /** 装配库存加量命令（库存行 id、拆零量、操作人）。 */
     @Override
     public IncreaseQuantityCommand toIncreaseQuantityCommand(Long inventoryItemId, BigDecimal increaseQty, Long operatorId) {
         IncreaseQuantityCommand command = new IncreaseQuantityCommand();
@@ -790,6 +813,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return command;
     }
 
+    /** 将驳回请求映射为 RejectRequestCommand。 */
     @Override
     public RejectRequestCommand toRejectRequestCommand(RejectInboundReceiptRequest request, Long operatorId) {
         RejectRequestCommand command = new RejectRequestCommand();
@@ -802,6 +826,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return command;
     }
 
+    /** 装配驳回响应。 */
     @Override
     public RejectInboundReceiptResponse toRejectInboundReceiptResponse(boolean ok) {
         RejectInboundReceiptResponse res = new RejectInboundReceiptResponse();
@@ -809,6 +834,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return res;
     }
 
+    /** 将删除请求映射为 RemoveByBusNoCommand。 */
     @Override
     public RemoveByBusNoCommand toRemoveByBusNoCommand(RemoveInboundReceiptRequest request, Long operatorId) {
         RemoveByBusNoCommand command = new RemoveByBusNoCommand();
@@ -819,6 +845,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return command;
     }
 
+    /** 装配删除响应。 */
     @Override
     public RemoveInboundReceiptResponse toRemoveInboundReceiptResponse(boolean ok) {
         RemoveInboundReceiptResponse res = new RemoveInboundReceiptResponse();
@@ -826,6 +853,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
         return res;
     }
 
+    /** Assemble mapping result for ProductDefinitionPageQuery. */
     @Override
     public ProductDefinitionPageQuery toProductDefinitionPageQuery(PageProductsForInboundReceiptRequest request) {
         ProductDefinitionPageQuery query = new ProductDefinitionPageQuery();
@@ -862,7 +890,7 @@ public class InventoryWarehouseInboundReceiptMapperImpl implements InventoryWare
     }
 
     /**
-     * {@link com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler#buildInboundSelectionBands}；选品列表 {@code purchasePrice}（实例维 {@code PURCHASE}）在应用层二次写入；{@code availableQuantity} 不装配（进货选品不关联库存）。
+     * {@link com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler#buildInboundSelectionBands}；选品列表 {@code purchasePrice}（实例维 {@code PURCHASE}）在应用层二次写入；{@code availableQuantity} 不装配（进货选品不关联库存）。
      *
      * @param pr 读模型
      * @return DTO

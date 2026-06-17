@@ -30,6 +30,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-就诊诊断保存子项。 */
 @Schema(description = "医生站-就诊诊断保存子项")
 public class SaveEncounterDiagnosisChildRequest {
 
@@ -40,22 +41,26 @@ public class SaveEncounterDiagnosisChildRequest {
 
     /** 就诊诊断关联主键；空表示新增关联。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 就诊诊断关联标识；空=新增。 */
     @Schema(description = "就诊诊断关联标识；空=新增")
     private Long encounterDiagnosisId;
 
     /** 诊断定义主键。 */
     @NotNull(message = "诊断定义不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 诊断定义标识。 */
     @Schema(description = "诊断定义标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long conditionDefinitionId;
 
     /** 诊断编码。 */
     @NotBlank(message = "诊断编码不能为空")
+    /** 诊断编码。 */
     @Schema(description = "诊断编码", requiredMode = Schema.RequiredMode.REQUIRED)
     private String conditionCode;
 
     /** 诊断定义标准名称（目录）。 */
     @NotBlank(message = "诊断名称不能为空")
+    /** 诊断定义名称。 */
     @Schema(description = "诊断定义名称", requiredMode = Schema.RequiredMode.REQUIRED)
     private String conditionDefinitionName;
 
@@ -75,16 +80,16 @@ public class SaveEncounterDiagnosisChildRequest {
     @Schema(description = "诊断排序号")
     private Integer diagnosisSortNo;
 
-    /** 医疗类型代码。 */
-    @Schema(description = "医疗类型代码")
+    /** 医保医疗类别（YbMedType code）；空则服务端默认普通门诊（11）。 */
+    @Schema(description = "医疗类型代码（YbMedType code；空=普通门诊）")
     private String medicalTypeCode;
 
     /** 诊断描述。 */
     @Schema(description = "诊断描述")
     private String diagnosisDesc;
 
-    /** 患者疾病诊断类型代码。 */
-    @Schema(description = "患者疾病诊断类型代码")
+    /** 患者疾病诊断类型代码（门诊忽略；服务端固定门诊诊断 code=2）。 */
+    @Schema(description = "患者疾病诊断类型代码（门诊忽略，固定门诊诊断）")
     private String iptDiseaseTypeCode;
 
     /** 诊断分类字典码。 */

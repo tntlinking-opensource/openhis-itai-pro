@@ -23,8 +23,10 @@ import com.openhis.health.application.inventory.warehouse.stocktake.dto.Stocktak
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Data
 @Accessors(chain = true)
@@ -32,11 +34,13 @@ public class CreateStocktakeRequest {
 
     /** 盘点药库位置主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 盘点药库 purposeLocationId。 */
     @Schema(description = "盘点药库 purposeLocationId", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long purposeLocationId;
 
     /** 经手人医务人员主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 经手人 practitionerId。 */
     @Schema(description = "经手人 practitionerId", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long practitionerId;
 

@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.outpatient.doctorstation.diagnosis.mapper;
 
+import com.openhis.health.bridge.shared.diagnosis.PatientHistoryCommonDiagnosisRow;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.request.SaveEncounterDiagnosisRequest;
@@ -177,5 +178,16 @@ public interface DoctorStationDiagnosisMapper {
      */
     CommonDiagnosisRowDto toCommonDiagnosisRowDto(
         DoctorStationConditionDefinitionRowModel model,
+        Map<String, String> sourceDisplayByCode);
+
+    /**
+     * 将患者历史合并读侧行转为常用诊断快捷行。
+     *
+     * @param model               历史读侧行
+     * @param sourceDisplayByCode 来源码→展示文案
+     * @return 常用诊断行
+     */
+    CommonDiagnosisRowDto toCommonDiagnosisRowDto(
+        PatientHistoryCommonDiagnosisRow model,
         Map<String, String> sourceDisplayByCode);
 }

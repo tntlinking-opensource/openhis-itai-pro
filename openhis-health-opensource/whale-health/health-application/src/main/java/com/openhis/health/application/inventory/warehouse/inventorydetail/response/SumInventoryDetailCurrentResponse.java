@@ -21,8 +21,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 现库底部汇总出参（IF-INV-DTL-03）。
@@ -30,15 +32,18 @@ import java.math.BigDecimal;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 现库库存明细汇总 IF-INV-DTL-03。 */
 @Schema(description = "现库库存明细汇总 IF-INV-DTL-03")
 public class SumInventoryDetailCurrentResponse {
 
     @Schema(description = "进价链行总额之和（跳过 null）")
     private BigDecimal sumLineCostTotal;
 
+    /** 售价链行总额之和。 */
     @Schema(description = "售价链行总额之和（跳过 null）")
     private BigDecimal sumLinePriceTotal;
 
+    /** 是否触发上限截断。 */
     @Schema(description = "是否触发上限截断")
     private Boolean truncated;
 }

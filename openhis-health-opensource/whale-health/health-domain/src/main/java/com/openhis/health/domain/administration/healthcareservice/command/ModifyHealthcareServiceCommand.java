@@ -49,6 +49,8 @@ public class ModifyHealthcareServiceCommand extends BatchCommand<ModifyHealthcar
         private String categoryCode;
         /** 提供该服务的组织机构主键。 */
         private Long offeredOrgId;
+        /** 医保目录编码或对照码。 */
+        private String ybNo;
         /** 本次实际发生变更的字段名列表（用于部分更新或留痕）。 */
         private List<String> changedFields;
     }

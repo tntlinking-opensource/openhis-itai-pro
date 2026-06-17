@@ -4,11 +4,13 @@ import com.openhis.whale.mrms.application.assembler.CaseRecordAssembler;
 import com.openhis.whale.mrms.application.assembler.HomepageAssembler;
 import com.openhis.whale.mrms.application.dto.CaseRecordDetailDto;
 import com.openhis.whale.mrms.application.dto.HomepageDto;
+import com.openhis.whale.mrms.application.dto.PdfGenerateResultDto;
 import com.openhis.whale.mrms.application.request.RefreshAutoFillRequest;
 import com.openhis.whale.mrms.application.request.SaveHomepageRequest;
 import com.openhis.whale.mrms.application.request.SubmitHomepageRequest;
 import com.openhis.whale.mrms.application.support.HomepageRequestMapper;
 import com.openhis.whale.mrms.application.support.HomepageSubmitValidator;
+import com.openhis.whale.mrms.application.pdf.HomepageOpenPdfRenderer;
 import com.openhis.whale.mrms.domain.entity.CaseRecord;
 import com.openhis.whale.mrms.domain.entity.CaseRecordHomepage;
 import com.openhis.whale.mrms.domain.enums.CaseRecordTransitionAction;
@@ -24,6 +26,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 import com.openhis.whale.mrms.application.request.LongValueRequest;
+
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.HexFormat;
 
 /**
  * 病案首页 AppService → /api/app/caseRecordHomepage/{methodName}
@@ -41,6 +48,7 @@ public class CaseRecordHomepageAppService {
     private final HomepageSubmitValidator submitValidator;
     private final CaseRecordAssembler caseRecordAssembler;
     private final HomepageAssembler homepageAssembler;
+    private final HomepageOpenPdfRenderer homepageOpenPdfRenderer;
 
     public HomepageDto getHomepage(@Valid LongValueRequest request) {
         return loadHomepageDto(request.getValue());
@@ -76,11 +84,35 @@ public class CaseRecordHomepageAppService {
         return caseRecordAssembler.toDetail(record);
     }
 
+    public PdfGenerateResultDto generateHomepagePdf(@Valid LongValueRequest request) {
+        Long caseRecordId = request.getValue();
+        CaseRecord caseRecord = caseRecordManager.requireById(caseRecordId);
+        HomepageDto homepage = loadHomepageDto(caseRecordId);
+        HomepageOpenPdfRenderer.RenderResult rendered =
+                homepageOpenPdfRenderer.render(caseRecord, homepage);
+
+        PdfGenerateResultDto dto = new PdfGenerateResultDto();
+        dto.setPdfBase64(Base64.getEncoder().encodeToString(rendered.pdfBytes()));
+        dto.setPageCount(rendered.pageCount());
+        dto.setContentHash(sha256Hex(rendered.pdfBytes()));
+        dto.setRenderedAt(Instant.now());
+        return dto;
+    }
+
     private HomepageDto loadHomepageDto(Long caseRecordId) {
         CaseRecord caseRecord = caseRecordManager.requireById(caseRecordId);
         CaseRecordHomepage homepage = homepageManager.ensureHomepage(caseRecordId, caseRecord.getTenantId());
         return homepageAssembler.toDto(homepage,
                 homepageManager.listDiagnoses(caseRecordId),
                 homepageManager.listProcedures(caseRecordId));
+    }
+
+    private static String sha256Hex(byte[] data) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(data));
+        } catch (Exception e) {
+            return Integer.toHexString(java.util.Arrays.hashCode(data));
+        }
     }
 }

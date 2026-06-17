@@ -35,10 +35,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 就诊药品发药单行。 */
 @Schema(description = "就诊药品发药单行")
 public class EncounterMedicationDispenseSlipRowDto {
 
-    /** 就诊主键。 */
     @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;

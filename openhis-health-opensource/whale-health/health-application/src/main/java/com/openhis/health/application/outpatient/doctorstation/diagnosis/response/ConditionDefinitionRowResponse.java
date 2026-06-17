@@ -28,6 +28,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-诊断定义分页行。 */
 @Schema(description = "医生站-诊断定义分页行")
 public class ConditionDefinitionRowResponse {
 

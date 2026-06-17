@@ -17,8 +17,8 @@
 
 package com.openhis.health.application.inventory.pharmacy.stocktake.mapper;
 
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inventory.pharmacy.stocktake.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.pharmacy.stocktake.dto.PharmacyStocktakeDetailLineDto;
 import com.openhis.health.application.inventory.pharmacy.stocktake.dto.PharmacyStocktakeLineDto;
@@ -44,7 +44,7 @@ import com.openhis.health.application.inventory.pharmacy.stocktake.response.With
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.SupplyCategory;
@@ -116,6 +116,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return list;
     }
 
+    /** 领域实体转下拉选项。 */
     @Override
     public List<OptionDto> toOptionDtoListFromPractitioners(List<Practitioner> practitioners) {
         List<OptionDto> list = new ArrayList<>();
@@ -136,6 +137,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return list;
     }
 
+    /** 领域实体转下拉选项。 */
     @Override
     public List<OptionDto> toOptionDtoListSupplyStatuses() {
         List<SupplyStatus> ordered = new ArrayList<>();
@@ -150,6 +152,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return list;
     }
 
+    /** 领域实体转下拉选项。 */
     @Override
     public List<OptionDto> toOptionDtoListInboundItemTableTypes() {
         List<OptionDto> list = new ArrayList<>();
@@ -158,6 +161,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return list;
     }
 
+    /** 装配页主数据初始化 Response。 */
     @Override
     public LoadPharmacyStocktakeFormInitResponse toLoadPharmacyStocktakeFormInitResponse(
         List<OptionDto> pharmacyOpts,
@@ -174,6 +178,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return res;
     }
 
+    /** toPharmacyStocktakeListAggregated 映射装配。 */
     @Override
     public List<PharmacyStocktakeListRowDto> toPharmacyStocktakeListAggregated(List<String> busNoPageOrder, List<SupplyRequestModel> detailRows) {
         List<PharmacyStocktakeListRowDto> out = new ArrayList<>();
@@ -269,6 +274,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return out;
     }
 
+    /** 装配分页查询 Response。 */
     @Override
     public PagePharmacyStocktakesResponse toPagePharmacyStocktakesAggregatedResponse(
         long mergedTotal, int pageNo, int pageSize, List<PharmacyStocktakeListRowDto> records) {
@@ -279,6 +285,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return PagedResultBuilder.build(new PagePharmacyStocktakesResponse(), content, mergedTotal, pageNo, pageSize);
     }
 
+    /** 装配单据详情 Response。 */
     @Override
     public GetPharmacyStocktakeDetailResponse toGetPharmacyStocktakeDetailResponse(
         List<SupplyRequestModel> lines,
@@ -322,6 +329,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return res;
     }
 
+    /** 供应行转详情明细 DTO。 */
     @Override
     public PharmacyStocktakeDetailLineDto toPharmacyStocktakeDetailLineDto(SupplyRequestModel line) {
         if (line == null) {
@@ -349,6 +357,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return dto;
     }
 
+    /** 装配新建成功 Response。 */
     @Override
     public CreateStocktakeCommand toCreateStocktakeCommand(
         CreatePharmacyStocktakeRequest request,
@@ -393,6 +402,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return command;
     }
 
+    /** 装配新建成功 Response。 */
     @Override
     public CreateStocktakeCommand toCreateStocktakeCommand(
         UpdatePharmacyStocktakeRequest request,
@@ -416,6 +426,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return this.toCreateStocktakeCommand(synthetic, operatorId, applicantId, busNo);
     }
 
+    /** 装配新建成功 Response。 */
     @Override
     public CreatePharmacyStocktakeResponse toCreatePharmacyStocktakeResponse(String busNo) {
         CreatePharmacyStocktakeResponse res = new CreatePharmacyStocktakeResponse();
@@ -423,6 +434,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return res;
     }
 
+    /** 装配更新成功 Response。 */
     @Override
     public UpdatePharmacyStocktakeResponse toUpdatePharmacyStocktakeResponse(String busNo) {
         UpdatePharmacyStocktakeResponse res = new UpdatePharmacyStocktakeResponse();
@@ -430,6 +442,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return res;
     }
 
+    /** 装配提交审批 Response。 */
     @Override
     public SubmitApprovalCommand toSubmitApprovalCommand(
         SubmitPharmacyStocktakeApprovalRequest request, Long operatorId, Long applicantId) {
@@ -442,6 +455,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return command;
     }
 
+    /** 装配提交审批 Response。 */
     @Override
     public SubmitPharmacyStocktakeApprovalResponse toSubmitPharmacyStocktakeApprovalResponse(SupplyStatus statusAfter) {
         SubmitPharmacyStocktakeApprovalResponse res = new SubmitPharmacyStocktakeApprovalResponse();
@@ -452,6 +466,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return res;
     }
 
+    /** 装配撤回审批 Response。 */
     @Override
     public WithdrawApprovalCommand toWithdrawApprovalCommand(WithdrawPharmacyStocktakeApprovalRequest request, Long operatorId) {
         WithdrawApprovalCommand command = new WithdrawApprovalCommand();
@@ -462,6 +477,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return command;
     }
 
+    /** 装配撤回审批 Response。 */
     @Override
     public WithdrawPharmacyStocktakeApprovalResponse toWithdrawPharmacyStocktakeApprovalResponse(SupplyStatus statusAfter) {
         WithdrawPharmacyStocktakeApprovalResponse res = new WithdrawPharmacyStocktakeApprovalResponse();
@@ -472,6 +488,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return res;
     }
 
+    /** 装配同意成功 Response。 */
     @Override
     public AgreeRequestCommand toAgreeRequestCommand(AgreePharmacyStocktakeRequest request, Long operatorId) {
         AgreeRequestCommand command = new AgreeRequestCommand();
@@ -483,6 +500,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return command;
     }
 
+    /** 装配新建成功 Response。 */
     @Override
     public CreateStocktakingDeliveryCommand toCreateStocktakingDeliveryCommand(
         List<SupplyRequestModel> lines, Long operatorId) {
@@ -519,6 +537,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return cmd;
     }
 
+    /** 装配领域写命令。 */
     @Override
     public IncreaseQuantityCommand toIncreaseQuantityCommand(Long inventoryItemId, BigDecimal increaseQty, Long operatorId) {
         IncreaseQuantityCommand command = new IncreaseQuantityCommand();
@@ -530,6 +549,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return command;
     }
 
+    /** 装配领域写命令。 */
     @Override
     public DecreaseQuantityCommand toDecreaseQuantityCommand(
         Long inventoryItemId, BigDecimal decreaseQty, boolean allowNegative, Long operatorId) {
@@ -543,6 +563,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return command;
     }
 
+    /** 装配同意成功 Response。 */
     @Override
     public AgreePharmacyStocktakeResponse toAgreePharmacyStocktakeResponse(String busNo, String statusEnum) {
         AgreePharmacyStocktakeResponse res = new AgreePharmacyStocktakeResponse();
@@ -551,6 +572,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return res;
     }
 
+    /** 装配驳回成功 Response。 */
     @Override
     public RejectRequestCommand toRejectRequestCommand(RejectPharmacyStocktakeRequest request, Long operatorId) {
         RejectRequestCommand command = new RejectRequestCommand();
@@ -570,6 +592,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return command;
     }
 
+    /** 装配驳回成功 Response。 */
     @Override
     public RejectPharmacyStocktakeResponse toRejectPharmacyStocktakeResponse(boolean ok) {
         RejectPharmacyStocktakeResponse res = new RejectPharmacyStocktakeResponse();
@@ -577,6 +600,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return res;
     }
 
+    /** 装配删除成功 Response。 */
     @Override
     public RemoveByBusNoCommand toRemoveByBusNoCommand(RemovePharmacyStocktakeRequest request, Long operatorId) {
         RemoveByBusNoCommand command = new RemoveByBusNoCommand();
@@ -587,6 +611,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return command;
     }
 
+    /** 装配删除成功 Response。 */
     @Override
     public RemovePharmacyStocktakeResponse toRemovePharmacyStocktakeResponse(boolean ok) {
         RemovePharmacyStocktakeResponse res = new RemovePharmacyStocktakeResponse();
@@ -594,6 +619,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return res;
     }
 
+    /** 装配分页查询 Response。 */
     @Override
     public PageProductsForPharmacyStocktakeResponse toPageProductsForPharmacyStocktakeResponse(Page<InventoryItemModel> page) {
         List<ProductDefinitionItemDto> content = new ArrayList<>();
@@ -606,6 +632,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return PagedResultBuilder.build(new PageProductsForPharmacyStocktakeResponse(), content, page);
     }
 
+    /** toProductDefinitionItemDtoFromInventory 映射装配。 */
     @Override
     public ProductDefinitionItemDto toProductDefinitionItemDtoFromInventory(
         InventoryItemModel inv, ProductDefinitionDisplayDto pr) {

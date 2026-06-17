@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inpatient.doctorstation.encountermanage.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -33,6 +33,7 @@ import lombok.experimental.Accessors;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 住院医生站在院患者列表分页查询请求。 */
 @Schema(description = "住院医生站在院患者列表分页查询请求", requiredProperties = {"pageNo", "pageSize"})
 public class PagePatientQueueRequest extends AbstractHealthPageRequest {
 }

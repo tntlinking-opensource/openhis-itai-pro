@@ -17,10 +17,10 @@
 
 package com.openhis.health.application.inpatient.financial.prepay.mapper;
 
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayPaymentDetailDto;
-import com.openhis.health.application.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayPaymentRecordDto;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayQueueItemDto;
 import com.openhis.health.application.inpatient.financial.prepay.request.CollectPrepayAdvanceDepositRequest;

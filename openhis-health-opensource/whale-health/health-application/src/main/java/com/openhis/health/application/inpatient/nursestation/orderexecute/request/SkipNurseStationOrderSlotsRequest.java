@@ -35,6 +35,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 批量登记计划点不执行请求。 */
 @Schema(description = "批量登记计划点不执行请求", requiredProperties = {"items"})
 public class SkipNurseStationOrderSlotsRequest {
 

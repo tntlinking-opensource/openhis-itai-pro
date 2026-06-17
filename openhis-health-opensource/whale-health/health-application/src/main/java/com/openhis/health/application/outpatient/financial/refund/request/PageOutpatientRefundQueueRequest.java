@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.outpatient.financial.refund.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
@@ -32,11 +32,13 @@ import lombok.experimental.Accessors;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 分页查询待退费患者队列请求。 */
 @Schema(description = "分页查询待退费患者队列请求")
 public class PageOutpatientRefundQueueRequest extends AbstractHealthPageRequest {
 
     /** 队列页签：ALL / PENDING（待退费）/ SETTLED（已退费）。 */
     @NotBlank(message = "queueTabCode 不能为空")
     @Schema(description = "队列页签编码", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 队列页签编码（业务字段）。 */
     private String queueTabCode;
 }

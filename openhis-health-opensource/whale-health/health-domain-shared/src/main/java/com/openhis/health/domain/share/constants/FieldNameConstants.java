@@ -172,6 +172,10 @@ public interface FieldNameConstants {
      */
     String CONTRACT_NO = "contractNo";
     /**
+     * 费用性质/合同主键（{@code contract_id}）。
+     */
+    String CONTRACT_ID = "contractId";
+    /**
      * 创建时间。
      */
     String CREATED_AT = "createdAt";
@@ -243,6 +247,10 @@ public interface FieldNameConstants {
      * 医生站诊断快照：医疗类别/医保类别编码（就诊诊断关联 {@code medType}）。
      */
     String MEDICAL_TYPE_CODE = "medicalTypeCode";
+    /**
+     * 医生站诊断快照：中医病证组号（同组病名+证候共用，对齐 {@code adm_encounter_diagnosis.tcm_syndrome_group}）。
+     */
+    String TCM_SYNDROME_GROUP = "tcmSyndromeGroup";
     /**
      * 医生站诊断快照：验证状态 UI 整数码（入库前经域服务映射为 FHIR 码）。
      */
@@ -1024,10 +1032,6 @@ public interface FieldNameConstants {
      */
     String TRIAGE_LEVEL_ENUM = "triageLevelEnum";
     /**
-     * 急诊同步的分诊级别。
-     */
-    String TRIAGE_LEVEL_FROM_EMG = "triageLevelFromEmg";
-    /**
      * 分诊护士标识。
      */
     String TRIAGE_NURSE_ID = "triageNurseId";
@@ -1115,4 +1119,29 @@ public interface FieldNameConstants {
      * 最近更新时间（审计字段，如 {@code AuditedEntityBase#updatedAt}）。
      */
     String UPDATED_AT = "updatedAt";
+
+    /**
+     * 组套模板绑定类型（个人/科室/全院）。
+     */
+    String BINDING_ENUM = "bindingEnum";
+
+    /**
+     * 组套模板适用场景（门诊/住院/通用）。
+     */
+    String SCENE_ENUM = "sceneEnum";
+
+    /**
+     * 组套模板种类（GENERAL/TCM/PRICING）。
+     */
+    String TEMPLATE_KIND_ENUM = "templateKindEnum";
+
+    /**
+     * 组套模板来源（MAINTAINED/FROM_ADVICE）。
+     */
+    String TEMPLATE_SOURCE_ENUM = "templateSourceEnum";
+
+    /**
+     * 组套模板头列表排序权重。
+     */
+    String SORT_WEIGHT = "sortWeight";
 }

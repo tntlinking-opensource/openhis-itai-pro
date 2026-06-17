@@ -27,10 +27,11 @@ import java.util.List;
 /**
  * IF-IP-DOR-02：当前住院就诊诊断列表响应（AS-IP-DOR-002）。
  *
- * <p>数据来自住院信息读模型 {@code diagnosisJson} 快照解析，非实时扫表；{@code totalCount} 与列表长度一致。</p>
+ * <p>数据来自 {@link BridgeEncounterDiagnosisSnapshotAssembler} 实时扫表装配后经 Mapper 解析，非读模型 JSON 透传；{@code totalCount} 与列表长度一致。</p>
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-就诊诊断列表响应。 */
 @Schema(description = "医生站-就诊诊断列表响应")
 public class EncounterDiagnosisResponse {
 

@@ -71,4 +71,28 @@ public interface OutpatientNurseStationConstants {
      * 药品执行记录在缺少 therapy 类目回落时的执行分类占位（避免误用请求状态码充当类目）。
      */
     String MEDICATION_PROCEDURE_CATEGORY_FALLBACK = "MEDICATION_ORDER";
+
+    /** 皮试枚举初始化失败（IF-OP-STK-01）。 */
+    String EX_OP_STK_101 = "EX-OP-STK-101";
+
+    /** 皮试就诊上下文无效（IF-OP-STK-02/03/04）。 */
+    String EX_OP_STK_102 = "EX-OP-STK-102";
+
+    /** 皮试列表查询失败（IF-OP-STK-02）。 */
+    String EX_OP_STK_103 = "EX-OP-STK-103";
+
+    /** 皮试双签或必填状态缺失（IF-OP-STK-03）。 */
+    String EX_OP_STK_201 = "EX-OP-STK-201";
+
+    /** 皮试检查不可登记（IF-OP-STK-03）。 */
+    String EX_OP_STK_202 = "EX-OP-STK-202";
+
+    /** 皮试保存落库失败（IF-OP-STK-03）。 */
+    String EX_OP_STK_203 = "EX-OP-STK-203";
+
+    /** 皮试删除目标不存在（IF-OP-STK-04）。 */
+    String EX_OP_STK_301 = "EX-OP-STK-301";
+
+    /** 皮试删除失败（IF-OP-STK-04）。 */
+    String EX_OP_STK_303 = "EX-OP-STK-303";
 }

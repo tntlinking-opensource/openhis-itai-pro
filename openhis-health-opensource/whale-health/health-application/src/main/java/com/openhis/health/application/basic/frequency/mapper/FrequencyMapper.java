@@ -50,15 +50,17 @@ public interface FrequencyMapper {
      * 组装领域「创建频次」命令。
      *
      * @param request 前端入参；{@code null} 时由实现抛校验异常
+     * @param operatorId 当前操作人主键
      * @return 领域创建命令
      */
-    CreateFrequencyCommand toCreateCommand(CreateFrequencyRequest request);
+    CreateFrequencyCommand toCreateCommand(CreateFrequencyRequest request, Long operatorId);
 
     /**
      * 组装领域「修改频次」命令（不含 rateCode 等创建后不可变项由领域约束）。
      *
      * @param request 前端入参；{@code null} 时由实现抛校验异常
+     * @param operatorId 当前操作人主键
      * @return 领域修改命令
      */
-    ModifyFrequencyCommand toModifyCommand(UpdateFrequencyRequest request);
+    ModifyFrequencyCommand toModifyCommand(UpdateFrequencyRequest request, Long operatorId);
 }

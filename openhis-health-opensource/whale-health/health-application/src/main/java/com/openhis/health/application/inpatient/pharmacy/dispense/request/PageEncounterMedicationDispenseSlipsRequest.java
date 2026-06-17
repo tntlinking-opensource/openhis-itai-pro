@@ -19,7 +19,7 @@ package com.openhis.health.application.inpatient.pharmacy.dispense.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -36,6 +36,7 @@ import java.util.List;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 住院就诊药品发药单分页请求。 */
 @Schema(description = "住院就诊药品发药单分页请求")
 public class PageEncounterMedicationDispenseSlipsRequest extends AbstractHealthPageRequest {
 
@@ -43,16 +44,20 @@ public class PageEncounterMedicationDispenseSlipsRequest extends AbstractHealthP
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;
 
+    /** 发药库房。 */
     @Schema(description = "发药库房（库位）主键；null 表示不按库房过滤")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long locationId;
 
+    /** 仅中药。 */
     @Schema(description = "仅中药")
     private Boolean tcmOnly;
 
+    /** 仅西药。 */
     @Schema(description = "仅西药")
     private Boolean westernOnly;
 
+    /** 发放状态 code 集合。 */
     @Schema(description = "发放状态 code 集合")
     private List<String> dispenseStatusEnumIn;
 }

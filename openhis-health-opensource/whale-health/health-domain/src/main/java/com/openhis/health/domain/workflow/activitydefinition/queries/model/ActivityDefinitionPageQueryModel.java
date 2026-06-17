@@ -34,6 +34,10 @@ public class ActivityDefinitionPageQueryModel {
     private String name;
     /** 类别编码。 */
     private String categoryCode;
+    /** 销售/计价单位编码。 */
+    private String packageUnitCode;
+    /** 默认就诊单位编码。 */
+    private String defEncounterUnitCode;
     /** 类型枚举编码。 */
     private String typeEnum;
     /** 状态枚举编码。 */

@@ -34,6 +34,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-医嘱开立-暂存医嘱变更批次请求。 */
 @Schema(description = "医生站-医嘱开立-暂存医嘱变更批次请求")
 public class SaveDoctorStationAdviceDraftBatchRequest {
 
@@ -46,16 +47,14 @@ public class SaveDoctorStationAdviceDraftBatchRequest {
     /** 必须与就诊患者一致，由 AppService 与领域二次校验。 */
     @NotNull(message = "患者标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者标识。 */
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
-
-    /** 租户定价策略码，见 {@link com.openhis.health.domain.share.constants.DoctorStationAdviceConstants} 定价来源常量族。 */
-    @Schema(description = "定价来源码；空则回落默认口径")
-    private String pricingSourceCode;
 
     /** 本批次 CREATE/UPDATE/DELETE 行集合，顺序即处理建议顺序。 */
     @NotEmpty(message = "批次行不能为空")
     @Valid
+    /** 批次行。 */
     @Schema(description = "批次行", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<DoctorStationAdviceDraftLineRequest> lines;
 }

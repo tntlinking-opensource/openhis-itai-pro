@@ -26,18 +26,21 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 退号并退费响应。 */
 @Schema(description = "退号并退费响应")
 public class CancelWithRefundResponse {
 
-    /** 就诊状态。 */
     @Schema(description = "就诊状态")
+    /** 就诊状态（业务字段）。 */
     private String encounterStatus;
 
     /** 退款状态。 */
     @Schema(description = "退款状态")
+    /** 退款状态（业务字段）。 */
     private String refundStatus;
 
     /** 红票 ID。 */
     @Schema(description = "红票ID")
+    /** 红票ID（业务字段）。 */
     private Long redInvoiceId;
 }

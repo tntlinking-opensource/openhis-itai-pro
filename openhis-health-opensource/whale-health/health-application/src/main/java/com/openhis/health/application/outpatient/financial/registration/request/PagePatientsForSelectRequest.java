@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.outpatient.financial.registration.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -29,6 +29,7 @@ import lombok.experimental.Accessors;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 患者分页检索请求。 */
 @Schema(description = "患者分页检索请求")
 public class PagePatientsForSelectRequest extends AbstractHealthPageRequest {
 }

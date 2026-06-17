@@ -33,19 +33,19 @@ import lombok.Setter;
 @Setter
 public class AppointmentCreatedEvent extends DomainEvent {
 
-    /** 预约分类（EMERGENCY_TRIAGE_QUEUE / OUTPATIENT_BOOKING / CHECK_IN_ONLY）。 */
+    /** 预约分类（OUTPATIENT_BOOKING / CHECK_IN_ONLY）。 */
     private String appointmentKind;
 
     /** 业务单号。 */
     private String busNo;
 
-    /** 患者标识（门诊预约/报到必填；急诊可空）。 */
+    /** 患者标识（门诊预约/报到必填；可空）。 */
     private Long patientId;
 
-    /** 就诊标识（急诊队列形态必填；纯预约阶段可空）。 */
+    /** 就诊标识（候诊队列形态必填；纯预约阶段可空）。 */
     private Long encounterId;
 
-    /** 显示顺序（急诊队列形态必填语义）。 */
+    /** 显示顺序（候诊队列形态必填语义）。 */
     private Integer displayOrder;
 
     /** 来源渠道摘要（AppointmentOrigin.originChannel）。 */

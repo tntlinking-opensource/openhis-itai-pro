@@ -36,6 +36,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站药品医嘱并组载荷。 */
 @Schema(description = "医生站药品医嘱并组载荷")
 public class AssignMedicationGroupPayload {
 
@@ -47,6 +48,7 @@ public class AssignMedicationGroupPayload {
 
     /** 待并入同组的 {@code med_medication_request} 主键列表。 */
     @NotEmpty(message = DoctorStationAdviceConstants.VALIDATION_MEDICATION_REQUEST_IDS_REQUIRED)
+    /** 药品请求主键列表。 */
     @Schema(description = "药品请求主键列表", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<Long> medicationRequestIds;
 }

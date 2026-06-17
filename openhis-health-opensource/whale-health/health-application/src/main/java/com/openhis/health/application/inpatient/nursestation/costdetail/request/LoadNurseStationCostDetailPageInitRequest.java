@@ -28,6 +28,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 住院护士站费用明细页初始化请求。 */
 @Schema(description = "住院护士站费用明细页初始化请求")
 public class LoadNurseStationCostDetailPageInitRequest {
 }

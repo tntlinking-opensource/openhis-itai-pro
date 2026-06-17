@@ -17,7 +17,7 @@
 
 package com.openhis.health.domain.workflow.devicerequest.service;
 
-import com.openhis.health.domain.administration.devicedefinition.service.DeviceDefinitionQueryService;
+import com.openhis.health.domain.workflow.devicerequest.repository.DeviceRequestRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
@@ -27,7 +27,6 @@ import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequ
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestListModel;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestQueryModel;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.OffsetVerificationModel;
-import com.openhis.health.domain.workflow.devicerequest.repository.DeviceRequestRepository;
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Sort;
@@ -55,7 +54,6 @@ import lombok.RequiredArgsConstructor;
 public class DeviceRequestQueryService {
 
     private final DeviceRequestRepository deviceRequestRepository;
-    private final DeviceDefinitionQueryService deviceDefinitionQueryService;
 
 
     /**
@@ -119,10 +117,6 @@ public class DeviceRequestQueryService {
         ctx.setPatientId(request.getPatientId());
         ctx.setQuantity(request.getQuantity());
         ctx.setUnitCode(request.getUnitCode());
-        if (request.getDeviceDefId() != null) {
-            ctx.setCatalogCategoryCode(
-                this.deviceDefinitionQueryService.resolveCategoryCodeByDeviceDefinitionId(request.getDeviceDefId()));
-        }
         return ctx;
     }
 
@@ -161,6 +155,59 @@ public class DeviceRequestQueryService {
     }
 
     /**
+     * 按来源锚点查询绑定耗材请求列表（取消执行 based_on 反查，DM-WKF-003 §6.2.10）。
+     *
+     * @param basedOnTable 来源表名
+     * @param basedOnId    来源主键
+     * @return 耗材请求列表
+     */
+    public List<DeviceRequestListModel> listDeviceRequestsByBasedOnAnchor(String basedOnTable, Long basedOnId) {
+        if (basedOnId == null) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "按来源锚点查询耗材请求时 basedOnId 不能为空");
+        }
+        if (basedOnTable == null) {
+            basedOnTable = "";
+        }
+        List<DeviceRequest> requests = deviceRequestRepository.findByBasedOnTableAndBasedOnId(basedOnTable, basedOnId);
+        List<DeviceRequestListModel> models = new ArrayList<>();
+        for (DeviceRequest request : requests) {
+            models.add(this.toListModel(request));
+        }
+        return models;
+    }
+
+    /**
+     * 按来源表名与多条来源主键批量查询绑定耗材请求。
+     *
+     * @param basedOnTable 来源表名
+     * @param basedOnIds   来源主键集合
+     * @return 耗材请求列表
+     */
+    public List<DeviceRequestListModel> listDeviceRequestsByBasedOnAnchors(String basedOnTable, Collection<Long> basedOnIds) {
+        if (basedOnIds == null || basedOnIds.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "批量按来源锚点查询耗材请求时 basedOnIds 不能为空");
+        }
+        if (basedOnTable == null) {
+            basedOnTable = "";
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long basedOnId : basedOnIds) {
+            if (basedOnId != null) {
+                distinctIds.add(basedOnId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return List.of();
+        }
+        List<DeviceRequest> requests = deviceRequestRepository.findByBasedOnTableAndBasedOnIdIn(basedOnTable, distinctIds);
+        List<DeviceRequestListModel> models = new ArrayList<>();
+        for (DeviceRequest request : requests) {
+            models.add(this.toListModel(request));
+        }
+        return models;
+    }
+
+    /**
      * 列表行映射。
      *
      * @param request 实体
@@ -190,7 +237,40 @@ public class DeviceRequestQueryService {
         model.setBasedOnTable(request.getBasedOnTable());
         model.setBasedOnId(request.getBasedOnId());
         model.setConditionDefinitionId(request.getConditionDefinitionId());
+        model.setEncounterDiagnosisId(request.getEncounterDiagnosisId());
         return model;
+    }
+
+    /**
+     * 医生站历史医嘱：在患者范围内收集存在医生开立耗材请求的就诊主键（排除当前就诊）。
+     *
+     * @param patientId          患者主键
+     * @param excludeEncounterId 当前就诊（排除锚点）
+     * @return 历史就诊主键（去重、无序）
+     */
+    public List<Long> listDistinctEncounterIdsByPatientForDoctorStation(Long patientId, Long excludeEncounterId) {
+        // 前置：门控主键缺失时无法收窄历史范围，直接返回空集。
+        if (patientId == null || excludeEncounterId == null) {
+            return Collections.emptyList();
+        }
+        String doctorSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
+        Specification<DeviceRequest> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.PATIENT_ID), patientId));
+            predicates.add(cb.notEqual(root.get(FieldNameConstants.ENCOUNTER_ID), excludeEncounterId));
+            predicates.add(cb.equal(root.get(FieldNameConstants.GENERATE_SOURCE_ENUM), doctorSource));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<DeviceRequest> rows = deviceRequestRepository.findAll(specification);
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        // Loop：从医生开立耗材行提取就诊 id，LinkedHashSet 保序去重。
+        for (DeviceRequest row : rows) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        return new ArrayList<>(encounterIds);
     }
 
     /**

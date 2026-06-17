@@ -18,7 +18,7 @@
 package com.openhis.health.application.basic.diagnosiscatalog.request;
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -30,15 +30,9 @@ import java.util.List;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-/**
- * QueryDiagnosisCatalogRequest。
- */
 public class QueryDiagnosisCatalogRequest extends AbstractHealthPageRequest {
 
     /** 疾病来源/分类业务码；与初始化「疾病分类」下拉的 code 对齐。 */
-    /**
-     * sourceEnum。
-     */
     private String sourceEnum;
 
     {

@@ -1,22 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.openhis.health.infrastructure.config;
 
+import com.openhis.whale.core.module.OpenHisFlywayModuleCatalog;
+import com.openhis.whale.core.module.OpenHisFlywayModuleDefinition;
 import org.flywaydb.core.Flyway;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -33,7 +22,8 @@ import java.util.List;
 /**
  * 多模块 Flyway：同一数据库、各自独立的 {@code flyway_schema_history_*} 表。
  * <p>
- * 与 {@code health-infrastructure} 内 {@code db/migration/*} 脚本同模块维护；院点与 {@code health-app} 通过依赖本模块装配。
+ * health 核心脚本在 {@code db/migration/health}；扩展 Module 通过
+ * {@code META-INF/openhis/flyway-module.json} 声明 locations 与 history 表。
  */
 @Configuration
 @ConditionalOnClass(Flyway.class)
@@ -41,19 +31,16 @@ import java.util.List;
 public class ModularFlywayConfiguration {
 
     private static final String HISTORY_CORE = "flyway_schema_history";
-    private static final String HISTORY_MRMS = "flyway_schema_history_mrms";
-    private static final String HISTORY_CHS = "flyway_schema_history_chs";
 
     @Bean(name = "flywayInitializer")
     @ConditionalOnMissingBean(FlywayMigrationInitializer.class)
     public ChainedFlywayMigrationInitializer flywayInitializer(DataSource dataSource, Environment env) {
         List<Flyway> chain = new ArrayList<>();
         chain.add(coreFlyway(dataSource, env));
-        if (isModuleEnabled(env, "openhis.modules.mrms.enabled")) {
-            chain.add(moduleFlyway(dataSource, env, "classpath:db/migration/mrms", HISTORY_MRMS));
-        }
-        if (isModuleEnabled(env, "openhis.modules.chs.enabled")) {
-            chain.add(moduleFlyway(dataSource, env, "classpath:db/migration/chs", HISTORY_CHS));
+        for (OpenHisFlywayModuleDefinition module : OpenHisFlywayModuleCatalog.entries()) {
+            if (isModuleEnabled(env, module.enabledProperty())) {
+                chain.add(moduleFlyway(dataSource, env, module.locations(), module.historyTable()));
+            }
         }
         return new ChainedFlywayMigrationInitializer(chain);
     }

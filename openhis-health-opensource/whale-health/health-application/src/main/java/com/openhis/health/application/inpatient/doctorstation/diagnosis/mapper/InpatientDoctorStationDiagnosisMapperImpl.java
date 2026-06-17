@@ -17,9 +17,8 @@
 
 package com.openhis.health.application.inpatient.doctorstation.diagnosis.mapper;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.bridge.shared.diagnosis.DiagnosisJsonSnapshotParser;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.SaveEncounterDiagnosisChildRequest;
@@ -39,9 +38,11 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.IptPatientDiseaseDiagType;
+import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.utils.DiagnosisKindPresentationUtil;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
@@ -71,16 +72,16 @@ import java.util.Set;
 @Component
 public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDoctorStationDiagnosisMapper {
 
-    /** Jackson 树模型解析器：用于读模型 {@code diagnosisJson} 数组快照，与物化端 JSON 结构契约一致。 */
-    private final ObjectMapper objectMapper;
+    /** 读模型 {@code diagnosisJson} 快照解析，与 bridge 展示路径共用同一解析器。 */
+    private final DiagnosisJsonSnapshotParser diagnosisJsonSnapshotParser;
 
     /**
-     * 构造：注入 JSON 解析器。
+     * 构造：注入诊断快照 JSON 解析器。
      *
-     * @param objectMapper Spring 容器中的 {@link ObjectMapper}，须与全局序列化配置一致
+     * @param diagnosisJsonSnapshotParser 与 {@code bridge.shared.diagnosis} 共用的解析组件
      */
-    public InpatientDoctorStationDiagnosisMapperImpl(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    public InpatientDoctorStationDiagnosisMapperImpl(DiagnosisJsonSnapshotParser diagnosisJsonSnapshotParser) {
+        this.diagnosisJsonSnapshotParser = diagnosisJsonSnapshotParser;
     }
 
     /**
@@ -121,91 +122,37 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
     @Override
     public List<EncounterDiagnosisRowDto> parseDiagnosisJson(String diagnosisJson) {
         List<EncounterDiagnosisRowDto> result = new ArrayList<>();
-        // 空白快照：等价于「尚未落诊断」，与读模型列 null/空串约定一致。
-        if (StringUtils.isBlank(diagnosisJson)) {
-            return result;
-        }
-        try {
-            JsonNode root = this.objectMapper.readTree(diagnosisJson);
-            // 历史或异常数据写成对象而非数组：不尝试强转，避免 NPE，直接当作无行返回。
-            if (!root.isArray()) {
-                return result;
-            }
-            for (JsonNode node : root) {
-                EncounterDiagnosisRowDto snapshotLine = new EncounterDiagnosisRowDto();
-                if (node.hasNonNull(FieldNameConstants.CONDITION_ID)) {
-                    snapshotLine.setConditionId(node.get(FieldNameConstants.CONDITION_ID).asLong());
-                }
-                if (node.hasNonNull(FieldNameConstants.ENCOUNTER_DIAGNOSIS_ID)) {
-                    snapshotLine.setEncounterDiagnosisId(node.get(FieldNameConstants.ENCOUNTER_DIAGNOSIS_ID).asLong());
-                }
-                if (node.hasNonNull(FieldNameConstants.CONDITION_DEFINITION_ID)) {
-                    snapshotLine.setConditionDefinitionId(
-                        node.get(FieldNameConstants.CONDITION_DEFINITION_ID).asLong());
-                }
-                if (node.hasNonNull(FieldNameConstants.CONDITION_CODE)) {
-                    snapshotLine.setConditionCode(node.get(FieldNameConstants.CONDITION_CODE).asText());
-                }
-                if (node.hasNonNull(FieldNameConstants.CONDITION_DEFINITION_NAME)) {
-                    snapshotLine.setConditionDefinitionName(
-                        node.get(FieldNameConstants.CONDITION_DEFINITION_NAME).asText());
-                }
-                // 中西医维度：新键 diagnosisKind；兼容历史 westTcmDiagnosisKind / medicineType 快照，避免读模型存量 JSON 断档。
-                if (node.hasNonNull(FieldNameConstants.DIAGNOSIS_KIND)) {
-                    snapshotLine.setDiagnosisKind(node.get(FieldNameConstants.DIAGNOSIS_KIND).asText());
-                }
-                if (node.hasNonNull(FieldNameConstants.DIAGNOSIS_KIND_TEXT)) {
-                    snapshotLine.setDiagnosisKindText(node.get(FieldNameConstants.DIAGNOSIS_KIND_TEXT).asText());
-                }
-                // 快照未冗余中文中西医文案时，由标签 WESTERN/TCM 推导展示，减少投影器与读模型双写。
-                if (StringUtils.isBlank(snapshotLine.getDiagnosisKindText())) {
-                    snapshotLine.setDiagnosisKindText(DiagnosisKindPresentationUtil.toDisplay(snapshotLine.getDiagnosisKind()));
-                }
-                if (node.hasNonNull(FieldNameConstants.VERIFICATION_STATUS_ENUM)) {
-                    // 仅接受 JSON 整型；浮点或字符串旧数据跳过，避免 asInt 抛错中断整批解析。
-                    if (node.get(FieldNameConstants.VERIFICATION_STATUS_ENUM).isInt()) {
-                        snapshotLine.setVerificationStatusEnum(node.get(FieldNameConstants.VERIFICATION_STATUS_ENUM).asInt());
-                    }
-                }
-                if (node.hasNonNull(FieldNameConstants.VERIFICATION_STATUS_ENUM_TEXT)) {
-                    snapshotLine.setVerificationStatusEnumText(node.get(FieldNameConstants.VERIFICATION_STATUS_ENUM_TEXT).asText());
-                }
-                if (node.hasNonNull(FieldNameConstants.MAIN_DIAGNOSIS_FLAG)) {
-                    snapshotLine.setMainDiagnosisFlag(node.get(FieldNameConstants.MAIN_DIAGNOSIS_FLAG).asInt());
-                }
-                if (node.hasNonNull(FieldNameConstants.DIAGNOSIS_SORT_NO)) {
-                    snapshotLine.setDiagnosisSortNo(node.get(FieldNameConstants.DIAGNOSIS_SORT_NO).asInt());
-                }
-                if (node.hasNonNull(FieldNameConstants.MEDICAL_TYPE_CODE)) {
-                    snapshotLine.setMedicalTypeCode(node.get(FieldNameConstants.MEDICAL_TYPE_CODE).asText());
-                }
-                if (node.hasNonNull(FieldNameConstants.DIAGNOSIS_DESC)) {
-                    snapshotLine.setDiagnosisDesc(node.get(FieldNameConstants.DIAGNOSIS_DESC).asText());
-                }
-                if (node.hasNonNull(FieldNameConstants.IPT_DISEASE_TYPE_CODE)) {
-                    snapshotLine.setIptDiseaseTypeCode(node.get(FieldNameConstants.IPT_DISEASE_TYPE_CODE).asText());
-                }
-                if (node.hasNonNull(FieldNameConstants.YB_NO)) {
-                    snapshotLine.setYbNo(node.get(FieldNameConstants.YB_NO).asText());
-                }
-                // 患者疾病诊断类型：快照仅存码，出站用域枚举补齐展示文案（与 diagnosisKind 中西医维度解耦）。
-                this.applyIptDiseaseTypeText(snapshotLine);
-                // 有整数码无文案时补中文验证状态，与保存入参整数码→域 FHIR 码映射对称，便于医生直接读列表。
-                if (snapshotLine.getVerificationStatusEnum() != null
-                    && StringUtils.isBlank(snapshotLine.getVerificationStatusEnumText())) {
-                    snapshotLine.setVerificationStatusEnumText(
-                        this.verificationDisplayText(snapshotLine.getVerificationStatusEnum()));
-                }
-                result.add(snapshotLine);
-            }
-        } catch (Exception ex) {
-            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "诊断快照解析失败，请稍后重试");
+        for (DiagnosisJsonSnapshotParser.ParsedDiagnosisRow row
+                : diagnosisJsonSnapshotParser.parseStrict(diagnosisJson)) {
+            result.add(toEncounterDiagnosisRowDto(row));
         }
         return result;
     }
 
+    private static EncounterDiagnosisRowDto toEncounterDiagnosisRowDto(
+            DiagnosisJsonSnapshotParser.ParsedDiagnosisRow source) {
+        EncounterDiagnosisRowDto dto = new EncounterDiagnosisRowDto();
+        dto.setConditionId(source.getConditionId());
+        dto.setEncounterDiagnosisId(source.getEncounterDiagnosisId());
+        dto.setConditionDefinitionId(source.getConditionDefinitionId());
+        dto.setConditionCode(source.getConditionCode());
+        dto.setConditionDefinitionName(source.getConditionDefinitionName());
+        dto.setDiagnosisKind(source.getDiagnosisKind());
+        dto.setDiagnosisKindText(source.getDiagnosisKindText());
+        dto.setVerificationStatusEnum(source.getVerificationStatusEnum());
+        dto.setVerificationStatusEnumText(source.getVerificationStatusEnumText());
+        dto.setMainDiagnosisFlag(source.getMainDiagnosisFlag());
+        dto.setDiagnosisSortNo(source.getDiagnosisSortNo());
+        dto.setMedicalTypeCode(source.getMedicalTypeCode());
+        dto.setDiagnosisDesc(source.getDiagnosisDesc());
+        dto.setIptDiseaseTypeCode(source.getIptDiseaseTypeCode());
+        dto.setIptDiseaseTypeText(source.getIptDiseaseTypeText());
+        dto.setYbNo(source.getYbNo());
+        return dto;
+    }
+
     /**
-     * 将门诊包诊断行拷贝为住院包 DTO（字段一一对应，供 {@code EncounterDiagnosisSnapshotAssembler#buildRows} 复用）。
+     * 将门诊包诊断行拷贝为住院包 DTO（字段一一对应；新读路径请直接用 {@link #parseDiagnosisJson}）。
      *
      * @param source 门诊侧诊断行，允许 null 或空
      * @return 住院侧行列表，永不为 null
@@ -280,12 +227,14 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
         List<CommonDiagnosisRowDto> patientHistoryList,
         List<CommonDiagnosisRowDto> doctorCommonUseList,
         List<CommonDiagnosisRowDto> userPersonalList,
-        List<CommonDiagnosisRowDto> organizationList) {
+        List<CommonDiagnosisRowDto> organizationList,
+        List<OptionDto> iptDiseaseTypeOptions) {
         CommonDiagnosesResponse response = new CommonDiagnosesResponse();
         response.setPatientHistoryList(patientHistoryList);
         response.setDoctorCommonUseList(doctorCommonUseList);
         response.setUserPersonalList(userPersonalList);
         response.setOrganizationList(organizationList);
+        response.setIptDiseaseTypeOptions(iptDiseaseTypeOptions);
         return response;
     }
 
@@ -498,7 +447,14 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
             }
             d.setRank(child.getDiagnosisSortNo());
             d.setDescription(child.getDiagnosisDesc());
-            d.setMedType(child.getMedicalTypeCode());
+            // 就诊诊断关联 med_type：未传时默认普通门诊（医保 med_type=11）；住院 diag_type_code 仍由 iptDiseaseTypeCode 写入。
+            String medTypeCode = StringUtils.trimToNull(child.getMedicalTypeCode());
+            if (medTypeCode == null) {
+                medTypeCode = YbMedType.GENERAL_OUTPATIENT.getCode();
+            } else if (EnumUtil.fromCode(YbMedType.class, medTypeCode) == null) {
+                throw new BusinessException(ErrorCodeConstants.CONDITION_INVALID_ARGUMENT, "请重新选择医疗类别");
+            }
+            d.setMedType(medTypeCode);
             d.setDiagTypeCode(StringUtils.trimToNull(child.getIptDiseaseTypeCode()));
             diagnosisItems.add(d);
         }
@@ -586,35 +542,6 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
     }
 
     /**
-     * 验证状态展示文案（与 {@link #resolveVerificationCode} 同一口径）。
-     *
-     * @param code 校验状态整数码
-     * @return 中文提示；未知码时回落为「已确认」，与 null 入参映射域默认值策略一致
-     */
-    private String verificationDisplayText(int code) {
-        if (code == DoctorStationDiagnosisConstants.VerificationUiCode.UNCONFIRMED) {
-            return "未确认";
-        }
-        if (code == DoctorStationDiagnosisConstants.VerificationUiCode.PROVISIONAL) {
-            return "疑似";
-        }
-        if (code == DoctorStationDiagnosisConstants.VerificationUiCode.DIFFERENTIAL) {
-            return "鉴别诊断";
-        }
-        if (code == DoctorStationDiagnosisConstants.VerificationUiCode.CONFIRMED) {
-            return "已确认";
-        }
-        if (code == DoctorStationDiagnosisConstants.VerificationUiCode.REFUTED) {
-            return "已反驳";
-        }
-        if (code == DoctorStationDiagnosisConstants.VerificationUiCode.ENTERED_IN_ERROR) {
-            return "录入错误";
-        }
-        // 未来扩展 UI 码或脏数据：不抛错，避免整张诊断卡无法渲染。
-        return "已确认";
-    }
-
-    /**
      * 将界面整数码映射为持久化验证状态编码串（FHIR Condition.verificationStatus 语义子集）。
      *
      * @param verificationStatusEnum 可为 null，表示前端未改验证态，按「已确认」落库以降低噪声
@@ -665,28 +592,6 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
             return DoctorStationDiagnosisConstants.DIAGNOSIS_KIND_TAG_TCM;
         }
         return null;
-    }
-
-    /**
-     * 将持久化患者疾病诊断类型码解析为展示文案（{@link IptPatientDiseaseDiagType}）。
-     *
-     * @param diagnosisRow 就诊诊断行；仅当 {@code iptDiseaseTypeCode} 非空且能解析为枚举时写入 {@code iptDiseaseTypeText}
-     */
-    private void applyIptDiseaseTypeText(EncounterDiagnosisRowDto diagnosisRow) {
-        if (diagnosisRow == null) {
-            return;
-        }
-        if (StringUtils.isBlank(diagnosisRow.getIptDiseaseTypeCode())) {
-            return;
-        }
-        String trimmed = diagnosisRow.getIptDiseaseTypeCode().trim();
-        IptPatientDiseaseDiagType parsed =
-            EnumUtil.fromCode(IptPatientDiseaseDiagType.class, trimmed);
-        // 未知码：保留码列供后续数据治理，不伪造中文，避免误导临床。
-        if (parsed == null) {
-            return;
-        }
-        diagnosisRow.setIptDiseaseTypeText(parsed.getDisplay());
     }
 
     /**

@@ -27,7 +27,7 @@ import com.openhis.health.domain.administration.encounter.command.InitiateDepart
 import com.openhis.health.domain.medication.medicationrequest.command.RejectMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.VerifyMedicationOrderCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
-import com.openhis.health.application.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;

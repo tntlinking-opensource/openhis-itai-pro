@@ -17,17 +17,19 @@
 
 package com.openhis.health.application.inpatient.financial.registration.service;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.common.validator.PageWindowGate;
-import com.openhis.health.application.common.validator.PaymentChannelGate;
+import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.module.common.validator.PaymentChannelGate;
 import com.openhis.health.application.inpatient.financial.registration.dto.AdmissionDiagnosisSubmitDto;
 import com.openhis.health.application.inpatient.financial.registration.dto.PaymentDetailDto;
 import com.openhis.health.application.inpatient.financial.registration.dto.RegistrationQueueItemDto;
 import com.openhis.health.application.inpatient.financial.registration.dto.RegistrationEncounterDto;
 import com.openhis.health.application.inpatient.financial.registration.dto.RegistrationPatientDto;
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.application.inpatient.financial.registration.mapper.InpatientRegistrationMapper;
 import com.openhis.health.domain.administration.account.command.AdjustAdvanceDepositBalanceCommand;
 import com.openhis.health.domain.administration.account.service.AccountDomainService;
@@ -43,6 +45,7 @@ import com.openhis.health.application.inpatient.financial.registration.response.
 import com.openhis.health.application.inpatient.financial.registration.response.LoadWardBedCapacityResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.PageRegistrationQueueResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.SubmitRegistrationResponse;
+import com.openhis.health.application.inpatient.financial.registration.support.EncounterInpatientAdmissionWriteSupport;
 import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.encounter.command.CancelInpatientAdmissionCommand;
@@ -50,7 +53,7 @@ import com.openhis.health.domain.administration.encounter.command.RegisterInpati
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.entity.Organization;
@@ -62,6 +65,11 @@ import com.openhis.health.domain.administration.patient.queries.model.PatientDet
 import com.openhis.health.domain.administration.patient.queries.model.PatientSimpleQueryModel;
 import com.openhis.health.domain.administration.patient.service.PatientDomainService;
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
+import com.openhis.health.domain.administration.encounter.queries.model.EncounterParticipantQueryModel;
+import com.openhis.health.domain.share.constants.EncounterConstants;
+import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.financial.contract.queries.model.ContractDetailQueryModel;
 import com.openhis.health.domain.financial.contract.queries.model.ContractListItemQueryModel;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
@@ -70,17 +78,23 @@ import com.openhis.health.domain.financial.paymentreconciliation.command.SettleI
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationDomainService;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.domain.share.constants.InpatientRegistrationConstants;
+import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
+import com.openhis.whale.chs.jilin.port.InpatientInsuranceSettlementPort;
+import com.openhis.whale.chs.jilin.port.model.IpInsuranceAdmissionCommand;
+import com.openhis.whale.chs.jilin.port.model.IpInsuranceAdmissionResult;
+import com.openhis.whale.chs.jilin.port.model.IpInsuranceEncounterCommand;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -89,17 +103,23 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * 住院登记应用编排。
+ * 住院登记应用服务（AS-IP-ADM-001，IF-IP-REG-01～06）。
  *
- * <p>待办队列：按登记状态/身份证筛选在院上下文 → 加载登记上下文与病区床位容量。</p>
- * <p>正式登记：患者解析/建档 → 开立住院就诊与账户 → 可选收取预交金并结算。</p>
- * <p>取消登记：校验可取消 → 撤销住院就诊及相关收款。</p>
+ * <p>职责边界：</p>
+ * <ul>
+ *   <li>Gate：分页窗口、登记状态筛选、科室/病区/预交金明细与余额门禁。</li>
+ *   <li>Pre：患者解析/建档、住院上下文与主数据加载、医保入院可选衔接。</li>
+ *   <li>Cmd：开立/完成住院就诊、收取预交金、取消登记与医保撤销。</li>
+ *   <li>Asm：经 {@link InpatientRegistrationMapper} 装配队列/上下文/登记响应。</li>
+ * </ul>
  */
 @Slf4j
 @Service
@@ -108,7 +128,7 @@ public class InpatientRegistrationAppService {
 
     private final PatientDomainService patientDomainService;
     private final PatientQueryService patientQueryService;
-    private final ICurrentUser currentUser;
+    private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     private final CurrentOperatorResolver currentOperatorResolver;
     private final PageWindowGate pageWindowGate;
     private final PaymentChannelGate paymentChannelGate;
@@ -116,6 +136,7 @@ public class InpatientRegistrationAppService {
     private final LocationQueryService locationQueryService;
     private final ContractQueryService contractQueryService;
     private final EncounterDomainService encounterDomainService;
+    private final EncounterInpatientAdmissionWriteSupport encounterInpatientAdmissionWriteSupport;
     private final EncounterQueryService encounterQueryService;
     private final EncounterContextFacade encounterContextFacade;
     private final AccountQueryService accountQueryService;
@@ -123,18 +144,27 @@ public class InpatientRegistrationAppService {
     private final PaymentReconciliationDomainService paymentReconciliationDomainService;
     private final InpatientRegistrationMapper inpatientRegistrationMapper;
     private final InpatientInfoQueueDisplayAssembler inpatientInfoQueueDisplayAssembler;
+    private final CodeSystemQueryService codeSystemQueryService;
+    private final PractitionerQueryService practitionerQueryService;
+
+    @Autowired(required = false)
+    private InpatientInsuranceSettlementPort inpatientInsuranceSettlementPort;
+
     /**
+     * 分页查询住院登记待办队列（IF-IP-REG-01）。
      *
-     * @param request 分页与筛选条件
-     * @return 分页列表
+     * @param request 分页与筛选条件（登记状态、身份证关键字）
+     * @return 登记队列分页结果
      * @throws BusinessException 分页或筛选参数非法时抛出（EX-IP-REG-101）
      */
     public PageRegistrationQueueResponse pageInpatientRegistrationQueue(PageRegistrationQueueRequest request) {
+        // Gate：分页窗口须为正，登记状态筛选码须合法。
         pageWindowGate.requirePositivePageWindow(
             request,
             InpatientRegistrationConstants.EX_IP_REG_101,
             "分页参数不合法，请检查页码与每页条数");
         this.validateRegistrationListStatus(request.getRegistrationListStatus());
+        // Pre：绑定分页参数与默认登记状态筛选。
         InpatientEncounterPageQuery query = new InpatientEncounterPageQuery();
         PageQueryBinder.bind(request, query);
         if (StringUtils.isNotBlank(request.getRegistrationListStatus())) {
@@ -142,9 +172,11 @@ public class InpatientRegistrationAppService {
         } else {
             query.setRegistrationListStatus(InpatientRegistrationConstants.DEFAULT_LIST_STATUS);
         }
+        // Pre：按身份证精确命中患者；未命中则直接返回空页，避免全表扫描。
         if (StringUtils.isNotBlank(request.getIdCard())) {
             PatientSimpleQueryModel matched = patientQueryService.findPatientByIdCard(request.getIdCard().trim());
             if (matched == null || matched.getId() == null) {
+                // Asm：身份证无对应患者时返回空分页，前端展示「无数据」。
                 return PagedResultBuilder.build(
                     new PageRegistrationQueueResponse(),
                     new ArrayList<>(),
@@ -154,20 +186,26 @@ public class InpatientRegistrationAppService {
             }
             query.setPatientId(matched.getId());
         }
+        // Pre：拉取住院登记读模型分页并批量解析源门诊就诊与展示覆盖层。
         Page<InpatientEncounterContextQueryModel> page = encounterContextFacade.pageInpatientRegQueue(query);
         Map<Long, Long> ambEncounterIdByEncounterId =
             this.loadAmbEncounterIdIndex(page.getContent());
         Map<Long, InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay> displayOverlay =
             inpatientInfoQueueDisplayAssembler.buildOverlay(page.getContent());
+        Map<String, String> inWayLabelByCode = this.buildTerminologyLabelByCode(
+            TerminologyCodeSystemNameConstants.IN_WAY_CODE);
+        // Asm：映射队列行并封装分页响应。
         List<RegistrationQueueItemDto> rows =
             inpatientRegistrationMapper.toRegistrationQueueItemDtoList(
                 page.getContent(),
                 ambEncounterIdByEncounterId,
-                displayOverlay);
+                displayOverlay,
+                inWayLabelByCode);
         return inpatientRegistrationMapper.toPageRegistrationQueueResponse(rows, page);
     }
 
     /**
+     * 加载住院登记表单上下文（IF-IP-REG-02）：患者/就诊快照与费用性质、科室下拉。
      *
      * @param request 就诊 ID 与科室（可空）
      * @return 患者、就诊与费用性质下拉
@@ -176,6 +214,15 @@ public class InpatientRegistrationAppService {
     public LoadRegistrationContextResponse loadInpatientRegistrationContext(LoadRegistrationContextRequest request) {
         RegistrationPatientDto patientDto = null;
         RegistrationEncounterDto encounterDto = null;
+        Map<String, String> inWayLabelByCode = this.buildTerminologyLabelByCode(
+            TerminologyCodeSystemNameConstants.IN_WAY_CODE);
+        Map<String, String> admitSourceLabelByCode = this.buildTerminologyLabelByCode(
+            TerminologyCodeSystemNameConstants.ADMIT_SOURCE_CODE);
+        List<OptionDto> inWayCodeOptions = codeSystemQueryService.getOptionListByCodeSystemName(
+            TerminologyCodeSystemNameConstants.IN_WAY_CODE);
+        List<OptionDto> admitSourceCodeOptions = codeSystemQueryService.getOptionListByCodeSystemName(
+            TerminologyCodeSystemNameConstants.ADMIT_SOURCE_CODE);
+        // Pre：有就诊 ID 时加载住院上下文与患者主档快照。
         if (request.getEncounterId() != null) {
             InpatientEncounterContextQueryModel inpatientRow =
                 this.mustGetInpatientContextForRegistration(request.getEncounterId());
@@ -184,7 +231,16 @@ public class InpatientRegistrationAppService {
                 EncounterClass.IMP.getCode(),
                 InpatientRegistrationConstants.EX_IP_REG_102,
                 "就诊记录不是住院类别，无法办理住院登记");
-            encounterDto = inpatientRegistrationMapper.toRegistrationEncounterDto(inpatientRow, encounter);
+            encounterDto = inpatientRegistrationMapper.toRegistrationEncounterDto(
+                inpatientRow,
+                encounter,
+                inWayLabelByCode,
+                admitSourceLabelByCode);
+            // Pre：门诊转住院时从源门诊就诊解析接诊医生，登记弹窗只读展示。
+            if (encounterDto != null && encounterDto.getAmbEncounterId() != null) {
+                encounterDto.setOutpatientDoctorName(
+                    this.resolveOutpatientDoctorName(encounterDto.getAmbEncounterId()));
+            }
             PatientDetailQueryModel patientDetail =
                 patientQueryService.loadPatientDetail(inpatientRow.getPatientId());
             if (patientDetail != null && patientDetail.getPatient() != null) {
@@ -202,29 +258,71 @@ public class InpatientRegistrationAppService {
                     core.getPhone());
             }
         }
+        // Pre：加载费用性质与住院科室下拉选项。
         Page<ContractListItemQueryModel> contractPage =
             contractQueryService.listContracts(request.getOrganizationId(), Pageable.unpaged());
         List<OptionDto> contractOptions =
             inpatientRegistrationMapper.toContractOptionList(contractPage.getContent());
+        // 入院科室：仅类别=住院的启用科室，与病区挂靠口径一致。
+        List<Organization> inpatientDepartments = organizationQueryService.listOrganizationsForInpatientAdmission();
+        List<OptionDto> organizationOptions = OptionDtoAssembler.toOptions(
+            inpatientDepartments, Organization::getId, Organization::getName, 0L);
+        // Gate：待入科（REGISTERED）与已入科（IN_PROGRESS）打开弹窗为只读查看，防止误改已登记信息。
         boolean readOnly = false;
-        if (encounterDto != null && EncounterStatus.IN_PROGRESS.getCode().equals(encounterDto.getStatusEnum())) {
-            readOnly = true;
+        if (encounterDto != null) {
+            String statusEnum = encounterDto.getStatusEnum();
+            if (EncounterStatus.REGISTERED.getCode().equals(statusEnum)
+                || EncounterStatus.IN_PROGRESS.getCode().equals(statusEnum)) {
+                readOnly = true;
+            }
         }
+        // Asm：装配登记上下文响应。
         return inpatientRegistrationMapper.toLoadRegistrationContextResponse(
             patientDto,
             encounterDto,
             contractOptions,
+            organizationOptions,
+            inWayCodeOptions,
+            admitSourceCodeOptions,
             readOnly);
     }
 
     /**
+     * 将术语下拉选项转为 code → 展示文案索引，供 Mapper 回填列表/详情。
+     *
+     * @param codeSystemName 术语编码体系名称
+     * @return 标签索引
+     */
+    private Map<String, String> buildTerminologyLabelByCode(String codeSystemName) {
+        List<OptionDto> options = codeSystemQueryService.getOptionListByCodeSystemName(codeSystemName);
+        Map<String, String> labelByCode = new HashMap<>();
+        if (options == null) {
+            return labelByCode;
+        }
+        for (OptionDto option : options) {
+            if (option == null || option.getValue() == null) {
+                continue;
+            }
+            String code = String.valueOf(option.getValue()).trim();
+            if (code.isEmpty()) {
+                continue;
+            }
+            labelByCode.put(code, option.getLabel());
+        }
+        return labelByCode;
+    }
+
+    /**
+     * 提交住院正式登记（IF-IP-REG-03）：直登或有申请登记，可选预交金与医保入院。
      *
      * @param request 登记表单
-     * @return 登记结果（含可选预交金支付单）
+     * @return 登记结果（含可选预交金支付单与医保就诊 ID）
      * @throws BusinessException 必填缺失、主数据无效、状态不允许或收款失败时抛出
      */
     public SubmitRegistrationResponse submitInpatientRegistration(SubmitRegistrationRequest request) {
+        // Gate：登记必填项、入院诊断与预交金明细门禁。
         this.validateSubmitRegistrationRequest(request);
+        // Pre：校验费用性质、科室与病区归属。
         ContractDetailQueryModel contract = contractQueryService.findContractById(request.getContractId());
         if (contract == null || StringUtils.isBlank(contract.getBusNo())) {
             throw new BusinessException(
@@ -240,17 +338,24 @@ public class InpatientRegistrationAppService {
         }
         this.assertWardBelongsToOrganization(request.getOrganizationId(), request.getWardId());
         Long registrarId = this.resolveRegistrarId(request.getOperatorId());
+        // Pre：患者分流（复用/身份证命中/新建）并按需更新主档。
         Long patientId = this.resolvePatientIdForSubmit(request);
         this.updatePatientProfileIfRequested(request, patientId);
         Long encounterId = request.getEncounterId();
+        // Cmd：组装住院登记命令并区分直登与有申请登记路径。
         RegisterInpatientEncounterCommand registerCommand =
             inpatientRegistrationMapper.toRegisterInpatientEncounterCommand(
                 request, encounterId, registrarId, contract.getBusNo());
         if (encounterId == null) {
+            // Cmd：直登路径开立新住院就诊。
             registerCommand.setPatientId(patientId);
             encounterId = encounterDomainService.registerDirectInpatientEncounter(registerCommand);
+            for (RegisterInpatientEncounterCommand.RegisterInpatientEncounterItemCommand item
+                : registerCommand.resolveItems()) {
+                item.setEncounterId(encounterId);
+            }
         } else {
-            // Pre 9：有申请时登记前须仍为 PLANNED。
+            // Gate：有申请时登记前须仍为 PLANNED，防止重复登记或状态漂移。
             EncounterDetailQueryModel encounterBeforeRegister = encounterQueryService.mustGetEncounterOfClass(
                 encounterId,
                 EncounterClass.IMP.getCode(),
@@ -265,7 +370,9 @@ public class InpatientRegistrationAppService {
             this.clearAdmissionDiagnosesOnRegisterCommand(registerCommand);
             encounterDomainService.registerInpatientEncounter(registerCommand);
         }
+        encounterInpatientAdmissionWriteSupport.completeAfterInpatientRegistration(registerCommand);
         boolean accountOpened = true;
+        // Cmd：可选收取预交金并完成支付落账与账户余额调整。
         Long paymentId = this.collectAdvanceDepositIfRequired(request, patientId, encounterId);
         EncounterDetailQueryModel registeredEncounter = encounterQueryService.mustGetEncounterOfClass(
             encounterId,
@@ -273,22 +380,84 @@ public class InpatientRegistrationAppService {
             InpatientRegistrationConstants.EX_IP_REG_003,
             "就诊类别不是住院，不能登记");
         String busNo = registeredEncounter.getBusNo();
+        // Cmd：医保费用性质时衔接入院登记（2401），获取 mdtrtId。
+        String ybMdtrtId = this.runInsuranceAdmissionIfNeeded(request, encounterId);
+        // Asm：返回登记结果供前端跳转或打印。
         return inpatientRegistrationMapper.toSubmitRegistrationResponse(
-            encounterId, busNo, paymentId, accountOpened);
+            encounterId, busNo, paymentId, accountOpened, ybMdtrtId);
+    }
+
+    private String runInsuranceAdmissionIfNeeded(SubmitRegistrationRequest request, Long encounterId) {
+        if (inpatientInsuranceSettlementPort == null) {
+            return null;
+        }
+        if (request.getContractId() == null
+            || !inpatientInsuranceSettlementPort.isInsuranceContract(request.getContractId())) {
+            return null;
+        }
+        if (StringUtils.isBlank(request.getPsnNo())) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_002,
+                "医保登记须先读卡获取人员编号");
+        }
+        IpInsuranceAdmissionCommand command = new IpInsuranceAdmissionCommand();
+        command.setEncounterId(encounterId);
+        command.setContractId(request.getContractId());
+        command.setMdtrtCertType(request.getYbMediumType());
+        command.setMdtrtCertNo(request.getYbCardInfo());
+        command.setPsnNo(request.getPsnNo());
+        command.setInsuplcAdmdvs(request.getInsuplcAdmdvs());
+        command.setInsutype(request.getInsutype());
+        command.setMedType(request.getMedType());
+        IpInsuranceAdmissionResult result = inpatientInsuranceSettlementPort.ensureAdmission(command);
+        if (result == null || StringUtils.isBlank(result.getMdtrtId())) {
+            return null;
+        }
+        return result.getMdtrtId().trim();
+    }
+
+    private void runInsuranceRevokeAdmissionIfNeeded(EncounterDetailQueryModel encounter, Account account) {
+        if (inpatientInsuranceSettlementPort == null || encounter == null) {
+            return;
+        }
+        Long contractId = resolveInsuranceContractId(account);
+        if (contractId == null || !inpatientInsuranceSettlementPort.isInsuranceContract(contractId)) {
+            return;
+        }
+        IpInsuranceEncounterCommand command = new IpInsuranceEncounterCommand();
+        command.setEncounterId(encounter.getId());
+        command.setContractId(contractId);
+        inpatientInsuranceSettlementPort.revokeAdmission(command);
+    }
+
+    private Long resolveInsuranceContractId(Account account) {
+        if (account == null || StringUtils.isBlank(account.getContractNo())) {
+            return null;
+        }
+        Contract contract = contractQueryService
+            .findOptionalContractEntityByBusNo(account.getContractNo().trim())
+            .orElse(null);
+        if (contract != null) {
+            return contract.getId();
+        }
+        return null;
     }
 
     /**
+     * 取消住院登记（IF-IP-REG-05）：预交金须清零，可选撤销医保入院。
      *
-     * @param request 取消请求
+     * @param request 取消请求（就诊 ID、操作人）
      * @return 取消结果
      * @throws BusinessException 余额大于 0 或已分床等不允许取消时抛出
      */
     public CancelRegistrationResponse cancelInpatientRegistration(CancelRegistrationRequest request) {
+        // Gate：取消登记须携带就诊与操作人。
         if (request.getEncounterId() == null || request.getOperatorId() == null) {
             throw new BusinessException(
                 InpatientRegistrationConstants.EX_IP_REG_001,
                 "取消登记缺少就诊或操作人");
         }
+        // Pre：加载住院就诊与登记账户余额快照。
         EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
             request.getEncounterId(),
             EncounterClass.IMP.getCode(),
@@ -298,6 +467,7 @@ public class InpatientRegistrationAppService {
         Account account = accountQueryService.getRegistrationAccount(patientId, request.getEncounterId());
         long balanceSnapshot = 0L;
         if (account != null && account.getBalance() != null) {
+            // Gate：预交金余额须为 0 才允许取消登记，防止资金悬空。
             if (account.getBalance().compareTo(BigDecimal.ZERO) > 0) {
                 throw new BusinessException(
                     InpatientRegistrationConstants.EX_IP_REG_005,
@@ -305,49 +475,60 @@ public class InpatientRegistrationAppService {
             }
             balanceSnapshot = account.getBalance().longValue();
         }
+        // Cmd：撤销医保入院（若适用）并取消住院就诊。
         CancelInpatientAdmissionCommand cancelCommand =
             inpatientRegistrationMapper.toCancelInpatientAdmissionCommand(request, balanceSnapshot);
         try {
+            this.runInsuranceRevokeAdmissionIfNeeded(encounter, account);
             encounterDomainService.cancelInpatientAdmission(cancelCommand);
         } catch (BusinessException ex) {
             throw new BusinessException(
                 InpatientRegistrationConstants.EX_IP_REG_006,
                 ex.getMessage());
         }
+        // Asm：返回取消成功标识。
         return inpatientRegistrationMapper.toCancelRegistrationResponse(request.getEncounterId());
     }
 
     /**
+     * 按住院科室查询下属病区下拉（IF-IP-REG-04）。
      *
      * @param request 科室 ID
-     * @return 病区选项
+     * @return 病区选项列表
      * @throws BusinessException 科室 ID 为空时抛出
      */
     public ListWardsByDepartmentResponse listWardsByDepartment(ListWardsByDepartmentRequest request) {
+        // Gate：住院科室不能为空。
         if (request.getOrganizationId() == null) {
             throw new BusinessException(
                 InpatientRegistrationConstants.EX_IP_REG_001,
                 "住院科室不能为空");
         }
+        // Pre：查询科室下启用病区并映射为下拉。
         List<Location> wards = locationQueryService.listWardsByOrganization(request.getOrganizationId());
+        // Asm：封装病区选项响应。
         return inpatientRegistrationMapper.toListWardsByDepartmentResponse(wards);
     }
 
     /**
+     * 加载病区床位容量（IF-IP-REG-04）：总床位数与空床数。
      *
      * @param request 病区位置 ID
      * @return 总床与空床数
-     * @throws BusinessException 病区 ID 为空时抛出
+     * @throws BusinessException 病区 ID 为空或无效时抛出
      */
     public LoadWardBedCapacityResponse loadWardBedCapacity(LoadWardBedCapacityRequest request) {
+        // Gate：病区不能为空且须为启用中的 WARD 形态位置。
         if (request.getWardId() == null) {
             throw new BusinessException(
                 InpatientRegistrationConstants.EX_IP_REG_001,
                 "病区不能为空");
         }
         this.requireActiveWard(request.getWardId());
+        // Pre：统计病区总床与空床数量。
         Long total = locationQueryService.countTotalBedsByWard(request.getWardId());
         Long vacant = locationQueryService.countBedsByWard(request.getWardId());
+        // Asm：返回床位容量摘要。
         return inpatientRegistrationMapper.toLoadWardBedCapacityResponse(
             request.getWardId(), total, vacant);
     }
@@ -558,7 +739,9 @@ public class InpatientRegistrationAppService {
             inpatientRegistrationMapper.toRegisterPatientCommand(request);
         Long orgId = request.getOrganizationId();
         if (orgId == null) {
-            orgId = currentUser.getCurrentOrganizationUnitId();
+            orgId = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+                InpatientRegistrationConstants.EX_IP_REG_001,
+                "当前登录机构不能为空");
         }
         if (registerCommand.getItem() != null) {
             registerCommand.getItem().setOrganizationId(orgId);
@@ -688,6 +871,44 @@ public class InpatientRegistrationAppService {
                 InpatientRegistrationConstants.EX_IP_REG_102,
                 "住院登记信息不存在或尚未同步，请稍后重试");
         }
+    }
+
+    /**
+     * 按源门诊就诊解析活动接诊医生姓名（ADMITTER），供门诊转住院登记弹窗只读展示。
+     *
+     * @param ambEncounterId 源门诊就诊 ID
+     * @return 接诊医生姓名；无参与者或未维护姓名时返回 null
+     */
+    private String resolveOutpatientDoctorName(Long ambEncounterId) {
+        if (ambEncounterId == null) {
+            return null;
+        }
+        List<EncounterParticipantQueryModel> participants =
+            encounterQueryService.listActiveEncounterParticipantsByType(
+                ambEncounterId, EncounterConstants.ROLE_ADMITTER);
+        if (participants == null || participants.isEmpty()) {
+            return null;
+        }
+        Long practitionerId = null;
+        for (EncounterParticipantQueryModel participant : participants) {
+            if (participant != null && participant.getPractitionerId() != null) {
+                practitionerId = participant.getPractitionerId();
+                break;
+            }
+        }
+        if (practitionerId == null) {
+            return null;
+        }
+        List<Practitioner> practitioners =
+            practitionerQueryService.findAllByIds(Collections.singleton(practitionerId));
+        if (practitioners == null || practitioners.isEmpty()) {
+            return null;
+        }
+        Practitioner practitioner = practitioners.get(0);
+        if (practitioner == null || StringUtils.isBlank(practitioner.getName())) {
+            return null;
+        }
+        return practitioner.getName().trim();
     }
 
     /**

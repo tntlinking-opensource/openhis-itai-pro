@@ -33,14 +33,13 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
+/** 医嘱补费父医嘱列表行。 */
 @Schema(description = "医嘱补费父医嘱列表行")
 public class NurseStationSupplementParentOrderRowDto {
 
-    /** 稳定行键：requestId + SOH + orderType。 */
     @Schema(description = "稳定行键：requestId + SOH(U+0001) + orderType")
     private String listRowKey;
 
-    /** 父药品/诊疗申请主键（写入 parentRequestAnchor.requestId）。 */
     @Schema(description = "药品/诊疗申请主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long requestId;
@@ -124,11 +123,9 @@ public class NurseStationSupplementParentOrderRowDto {
     @Schema(description = "药品成组号（仅药嘱）")
     private Long groupId;
 
-    /** 成组组号。 */
     @Schema(description = "组号")
     private Integer groupNo;
 
-    /** 列表排序号。 */
     @Schema(description = "排序号")
     private Integer sortNumber;
 }

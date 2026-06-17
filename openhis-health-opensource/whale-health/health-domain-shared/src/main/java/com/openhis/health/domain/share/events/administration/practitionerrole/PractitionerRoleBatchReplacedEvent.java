@@ -5,14 +5,6 @@
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.openhis.health.domain.share.events.administration.practitionerrole;
@@ -26,26 +18,19 @@ import java.util.List;
 
 @Getter
 @Setter
-/**
- * PractitionerRoleBatchReplacedEvent。
- */
 public class PractitionerRoleBatchReplacedEvent extends DomainEvent {
-    /**
-     * roleCode。
-     */
-    private Integer roleCode;
-    /**
-     * replacedAssignmentIds。
-     */
+
+    /** 平台角色主键 {@code whale_roles.id}。 */
+    private Long roleId;
     private List<Long> replacedAssignmentIds;
-    public PractitionerRoleBatchReplacedEvent() { super(); }
-    /**
-     * 处理Long practitionerId, Integer roleCode, List<Long> replacedAssignmentIds逻辑。
-     * @return 返回结果
-     */
-    public PractitionerRoleBatchReplacedEvent(Long practitionerId, Integer roleCode, List<Long> replacedAssignmentIds) {
+
+    public PractitionerRoleBatchReplacedEvent() {
+        super();
+    }
+
+    public PractitionerRoleBatchReplacedEvent(Long practitionerId, Long roleId, List<Long> replacedAssignmentIds) {
         super(practitionerId, AggregateTypeConstants.PRACTITIONER_ROLE);
-        this.roleCode = roleCode;
+        this.roleId = roleId;
         this.replacedAssignmentIds = replacedAssignmentIds;
     }
 }

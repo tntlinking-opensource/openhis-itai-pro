@@ -32,6 +32,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 直接划价确认请求。 */
 @Schema(description = "直接划价确认请求")
 public class ConfirmDirectNurseStationPricingRequest {
 

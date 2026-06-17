@@ -43,9 +43,6 @@ public class CreateRegistrationTypeRequest {
     @Size(max = 64, message = "挂号类型编码长度不能超过64")
     private String typeCode;
 
-    /** 挂号费销售金额（元）；{@code null} 表示不写入定价。 */
+    /** 挂号费销售金额（元）；新建时必填，由应用服务同步写入定价。 */
     private BigDecimal amount;
-
-    /** 业务流水号/展示编码。 */
-    private String busNo;
 }

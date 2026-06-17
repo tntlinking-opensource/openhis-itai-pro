@@ -21,22 +21,23 @@ import com.openhis.whale.core.application.dto.OptionDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 药房盘点页初始化出参（IF-PHA-ST-01；仅药房位置列表）。
  */
 @Data
 @Accessors(chain = true)
+/** 盘点页初始化 IF-PHA-ST-01。 */
 @Schema(description = "盘点页初始化 IF-PHA-ST-01")
 public class LoadPharmacyStocktakeFormInitResponse {
 
-    /** 药房位置选项（不含药库）。 */
     @Schema(description = "药房下拉 pharmacyLocationOptions")
     private List<OptionDto> pharmacyLocationOptions;
 
-    /** 入库项目类型两档。 */
     @Schema(description = "入库项目类型 inboundItemTableTypeOptions")
     private List<OptionDto> inboundItemTableTypeOptions;
 

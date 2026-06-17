@@ -80,4 +80,20 @@ public enum DispenseStatus implements EnumInterface {
         return this.getCode().equals(statusCode);
     }
 
+    /**
+     * 是否计入临时医嘱多段发放的「待发/在途」数量合计（BR-IPP-006 / BR-OPP-006）。
+     *
+     * <p>不含已发、待退/已退、已拒绝等终态或退药队列行；取消执行后 {@link #PENDING_REFUND} 不得与再执行新建的
+     * {@link #PREPARATION} 行重复计入。</p>
+     *
+     * @return {@code true} 表示该行数量应参与临时医嘱拆分行合计校验
+     */
+    public boolean countsTowardTemporaryTherapyPendingQuantitySum() {
+        return this == DRAFT
+            || this == PREPARATION
+            || this == PREPARED
+            || this == IN_PROGRESS
+            || this == SUMMARIZED;
+    }
+
 }

@@ -63,6 +63,7 @@ public class WardBedMapperImpl implements WardBedMapper {
         dto.setFormEnum(entity.getFormEnum());
         dto.setFormEnumText(this.resolveFormDisplay(entity.getFormEnum()));
         dto.setOrganizationId(entity.getOrganizationId());
+        dto.setParentId(entity.getParentId());
         dto.setDisplayOrder(entity.getDisplayOrder());
         return dto;
     }

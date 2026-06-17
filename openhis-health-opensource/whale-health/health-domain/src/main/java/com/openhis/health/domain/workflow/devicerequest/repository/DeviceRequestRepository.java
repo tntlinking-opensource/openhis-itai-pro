@@ -80,4 +80,22 @@ public interface DeviceRequestRepository extends JpaRepository<DeviceRequest, Lo
      * @return 退耗关联请求集合
      */
     List<DeviceRequest> findByRefundDeviceIdIn(Collection<Long> refundDeviceIds);
+
+    /**
+     * 按来源锚点查询绑定耗材请求列表（取消执行 based_on 反查，DM-WKF-003 §6.2.10）。
+     *
+     * @param basedOnTable 来源表名
+     * @param basedOnId    来源主键
+     * @return 耗材请求列表
+     */
+    List<DeviceRequest> findByBasedOnTableAndBasedOnId(String basedOnTable, Long basedOnId);
+
+    /**
+     * 按来源表名与多条来源主键批量查询绑定耗材请求。
+     *
+     * @param basedOnTable 来源表名
+     * @param basedOnIds   来源主键集合
+     * @return 耗材请求列表
+     */
+    List<DeviceRequest> findByBasedOnTableAndBasedOnIdIn(String basedOnTable, Collection<Long> basedOnIds);
 }

@@ -29,8 +29,8 @@ import com.openhis.health.domain.medication.medicationrequest.command.CreateMedi
 import com.openhis.health.domain.medication.medicationrequest.command.RemoveMedicationOrderDraftCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.SignMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.SignOffMedicationOrderCommand;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.workflow.devicerequest.command.ChangeDeviceOrderDraftCommand;
 import com.openhis.health.domain.workflow.devicerequest.command.CreateDeviceOrderDraftCommand;
 import com.openhis.health.domain.workflow.devicerequest.command.RemoveDeviceOrderDraftCommand;
@@ -294,12 +294,11 @@ public interface DoctorStationAdviceMapper {
      * 装配药品医嘱「签发」命令。
      *
      * @param id             药品申请主键
-     * @param signCode       签发批次号
      * @param prescriptionNo 处方号
      * @param operatorId     操作人
      * @return 领域命令
      */
-    SignMedicationOrderCommand toSignMedicationOrderCommand(Long id, String signCode, String prescriptionNo, Long operatorId);
+    SignMedicationOrderCommand toSignMedicationOrderCommand(Long id, String prescriptionNo, Long operatorId);
 
     /**
      * 装配药品医嘱「签退」命令。
@@ -314,11 +313,10 @@ public interface DoctorStationAdviceMapper {
      * 装配诊疗申请「签发」命令。
      *
      * @param id         诊疗申请主键
-     * @param signCode   签发批次号
      * @param operatorId 操作人
      * @return 领域命令
      */
-    SignServiceRequestCommand toSignServiceRequestCommand(Long id, String signCode, Long operatorId);
+    SignServiceRequestCommand toSignServiceRequestCommand(Long id, Long operatorId);
 
     /**
      * 装配诊疗申请「签退已签发」命令。
@@ -365,5 +363,14 @@ public interface DoctorStationAdviceMapper {
      * @return 非空主键
      * @throws com.openhis.whale.core.application.exception.BusinessException 二者皆空、或 {@code itemNo} 非数值
      */
-    Long parseOrderBindItemId(String itemNo, Long itemId);
+    /**
+     * 解析医嘱绑定查询用的来源项键（与 {@code cus_service_device_template.item_id} 精确匹配）。
+     *
+     * @param bindType 绑定类型业务码
+     * @param itemNo   用法 {@code method_code} 或诊疗主键字符串
+     * @param itemId   诊疗活动定义主键（诊疗绑定时可选）
+     * @return 非空来源项键
+     */
+    String resolveOrderBindSourceItemKey(String bindType, String itemNo, Long itemId);
+
 }

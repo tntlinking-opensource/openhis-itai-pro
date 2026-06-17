@@ -104,5 +104,13 @@ public interface MedicationDispenseRepository extends JpaRepository<MedicationDi
      * @return 是否存在引用
      */
     boolean existsByMedicationId(Long medicationId);
+
+    /**
+     * 按执行记录主键集合批量查询未删除发放记录（取消执行 Dispense 分轨定位，DM-MED-002 §6.2.14）。
+     *
+     * @param procedureIds 执行记录主键集合
+     * @return 发放记录集合；{@code procedureIds} 为空时返回空列表
+     */
+    List<MedicationDispense> findByProcedureIdIn(Collection<Long> procedureIds);
 }
 

@@ -45,5 +45,7 @@ public class CreateHealthcareServiceCommand extends BatchCommand<CreateHealthcar
         private String categoryCode;
         /** 提供该服务的组织机构主键。 */
         private Long offeredOrgId;
+        /** 医保目录编码或对照码。 */
+        private String ybNo;
     }
 }

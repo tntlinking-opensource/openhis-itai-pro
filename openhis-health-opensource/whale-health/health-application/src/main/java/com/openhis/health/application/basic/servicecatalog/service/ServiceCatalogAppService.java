@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.basic.servicecatalog.service;
 
-import com.openhis.health.application.common.assembler.pricing.ChargePricingCommandAssembler;
+import com.openhis.health.module.common.assembler.pricing.ChargePricingCommandAssembler;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.RemovePricingByInstanceCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.SaveAllChargeItemDefinitionsCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
@@ -28,6 +28,7 @@ import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.PriceType;
+import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogChildDto;
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogDetailDto;
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogDto;
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogInitDto;
@@ -44,6 +45,10 @@ import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.domain.workflow.activitydefinition.command.ActivateActivityDefinitionsCommand;
 import com.openhis.health.domain.workflow.activitydefinition.command.RetireActivityDefinitionsCommand;
 import com.openhis.health.domain.workflow.activitydefinition.queries.ActivityDefinitionPageQuery;
+import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.workflow.activitydefinition.command.DeleteActivityDefinitionsCommand;
+import com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionBaseQueryModel;
+import com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionChildQueryModel;
 import com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionDetailQueryModel;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionDomainService;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
@@ -64,6 +69,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -134,16 +140,105 @@ public class ServiceCatalogAppService {
         Sort sort = Sort.by(Sort.Direction.DESC, FieldNameConstants.CREATED_AT);
         Page<?> page = activityDefinitionQueryService.pageServiceCatalog(
             pageQuery, PageRequest.of(query.springPageIndex(), query.getBoundedPageSize(), sort));
-        return PagedResult.fromPage(page.map(item -> {
-            ServiceCatalogDto dto = new ServiceCatalogDto();
-            // 领域分页返回统一条目类型，此处收窄为活动定义分页行
-            var model = (com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionPageQueryModel) item;
-            dto.setId(model.getId());
-            dto.setBusNo(model.getBusNo());
-            dto.setName(model.getName());
-            dto.setCategoryCode(model.getCategoryCode());
-            return dto;
-        }));
+        List<ServiceCatalogDto> content = page.getContent().stream()
+            .map(item -> {
+                ServiceCatalogDto dto = new ServiceCatalogDto();
+                // 领域分页返回统一条目类型，此处收窄为活动定义分页行
+                var model =
+                    (com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionPageQueryModel) item;
+                dto.setId(model.getId());
+                dto.setBusNo(model.getBusNo());
+                dto.setName(model.getName());
+                dto.setCategoryCode(model.getCategoryCode());
+                dto.setPackageUnitCode(model.getPackageUnitCode());
+                dto.setDefEncounterUnitCode(model.getDefEncounterUnitCode());
+                this.applyPublicationStatus(model.getStatusEnum(), dto::setStatusEnum, dto::setStatusEnum_enumText);
+                return dto;
+            })
+            .collect(Collectors.toList());
+        this.enrichServiceCatalogPageFields(content);
+        return PagedResult.of(content, page.getTotalElements(), page.getNumber() + 1, page.getSize());
+    }
+
+    /**
+     * 分页列表补齐分类展示文案、零售价与单位等术语展示文案。
+     *
+     * @param rows 当前页 DTO 列表（就地修改）
+     */
+    private void enrichServiceCatalogPageFields(List<ServiceCatalogDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        Map<String, String> categoryMap = codeSystemQueryService
+            .getOptionListByCodeSystemName(TerminologyCodeSystemNameConstants.ACTIVITY_CATEGORY_CODE)
+            .stream()
+            .filter(item -> item.getValue() != null)
+            .collect(Collectors.toMap(OptionDto::getValue, OptionDto::getLabel, (a, b) -> a));
+        Map<String, String> unitCodeMap = codeSystemQueryService
+            .getOptionListByCodeSystemName(TerminologyCodeSystemNameConstants.UNIT_CODE)
+            .stream()
+            .filter(item -> item.getValue() != null)
+            .collect(Collectors.toMap(OptionDto::getValue, OptionDto::getLabel, (a, b) -> a));
+        List<Long> ids = rows.stream()
+            .map(ServiceCatalogDto::getId)
+            .filter(Objects::nonNull)
+            .toList();
+        Map<Long, List<ChargeItemDefinition>> priceMap = ids.isEmpty()
+            ? Collections.emptyMap()
+            : this.loadServicePriceMap(ids);
+        for (ServiceCatalogDto dto : rows) {
+            if (dto == null) {
+                continue;
+            }
+            String categoryLabel = categoryMap.get(dto.getCategoryCode());
+            if (categoryLabel != null) {
+                dto.setCategoryCode_dictText(categoryLabel);
+            }
+            String packageLabel = unitCodeMap.get(dto.getPackageUnitCode());
+            if (packageLabel != null) {
+                dto.setPackageUnitCode_dictText(packageLabel);
+            }
+            String encounterLabel = unitCodeMap.get(dto.getDefEncounterUnitCode());
+            if (encounterLabel != null) {
+                dto.setDefEncounterUnitCode_dictText(encounterLabel);
+            }
+            if (dto.getId() != null) {
+                this.enrichListRetailPrice(dto, priceMap.get(dto.getId()));
+            }
+        }
+    }
+
+    /**
+     * 列表页批量加载诊疗项目定价行。
+     */
+    private Map<Long, List<ChargeItemDefinition>> loadServicePriceMap(List<Long> activityIds) {
+        Map<Long, List<ChargeItemDefinition>> grouped = new HashMap<>();
+        ChargeItemDefinitionQueryCommand cmd = new ChargeItemDefinitionQueryCommand();
+        cmd.setInstanceTable(TableNameConstants.WKF_ACTIVITY_DEFINITION);
+        cmd.setInstanceIds(activityIds);
+        List<ChargeItemDefinition> priceRows = chargeItemDefinitionQueryService.findPriceLinesByProjects(cmd);
+        for (ChargeItemDefinition row : priceRows) {
+            if (row == null || row.getInstanceId() == null) {
+                continue;
+            }
+            grouped.computeIfAbsent(row.getInstanceId(), key -> new ArrayList<>()).add(row);
+        }
+        return grouped;
+    }
+
+    /**
+     * 列表行回填零售价。
+     */
+    private void enrichListRetailPrice(ServiceCatalogDto dto, List<ChargeItemDefinition> rows) {
+        if (dto == null || rows == null || rows.isEmpty()) {
+            return;
+        }
+        for (ChargeItemDefinition row : rows) {
+            if (PriceType.SALE.getCode().equals(row.getPriceTypeCode())) {
+                dto.setRetailPrice(row.getPriceValue());
+                return;
+            }
+        }
     }
 
     /**
@@ -154,36 +249,63 @@ public class ServiceCatalogAppService {
      */
     public ServiceCatalogDetailDto getServiceCatalog(Long id) {
         ActivityDefinitionDetailQueryModel model = activityDefinitionQueryService.getServiceCatalog(id);
+        ActivityDefinitionBaseQueryModel baseInfo = model.getBaseInfo();
         ServiceCatalogDetailDto dto = new ServiceCatalogDetailDto();
-        dto.setId(model.getBaseInfo().getId());
-        dto.setCategoryCode(model.getBaseInfo().getCategoryCode());
-        dto.setBusNo(model.getBaseInfo().getBusNo());
-        dto.setName(model.getBaseInfo().getName());
-        dto.setPyStr(model.getBaseInfo().getPyStr());
-        dto.setWbStr(model.getBaseInfo().getWbStr());
-        dto.setPackageUnitCode(model.getBaseInfo().getPackageUnitCode());
-        dto.setActivityVersion(model.getBaseInfo().getActivityVersion());
-        dto.setMerchandiseName(model.getBaseInfo().getMerchandiseName());
-        dto.setMerchandisePyStr(model.getBaseInfo().getMerchandisePyStr());
-        dto.setMerchandiseWbStr(model.getBaseInfo().getMerchandiseWbStr());
-        dto.setDefEncounterUnitCode(model.getBaseInfo().getDefEncounterUnitCode());
-        dto.setDefInhospitalUnitCode(model.getBaseInfo().getDefInhospitalUnitCode());
-        dto.setTypeEnum(parseInteger(model.getBaseInfo().getTypeEnum()));
-        dto.setDescriptionText(model.getBaseInfo().getDescriptionText());
-        dto.setBodySiteCode(model.getBaseInfo().getBodySiteCode());
-        dto.setSpecimenCode(model.getBaseInfo().getSpecimenCode());
-        dto.setOrgId(model.getBaseInfo().getOrgId());
-        dto.setLocationId(model.getBaseInfo().getLocationId());
-        if (model.getBaseInfo().getRuleId() == null) {
+        if (baseInfo == null) {
+            throw new ValidationException("查询诊疗目录详情失败：基础信息不存在");
+        }
+        dto.setId(baseInfo.getId());
+        dto.setCategoryCode(baseInfo.getCategoryCode());
+        dto.setBusNo(baseInfo.getBusNo());
+        dto.setName(baseInfo.getName());
+        dto.setPyStr(baseInfo.getPyStr());
+        dto.setWbStr(baseInfo.getWbStr());
+        dto.setPackageUnitCode(baseInfo.getPackageUnitCode());
+        dto.setActivityVersion(baseInfo.getActivityVersion());
+        dto.setMerchandiseName(baseInfo.getMerchandiseName());
+        dto.setMerchandisePyStr(baseInfo.getMerchandisePyStr());
+        dto.setMerchandiseWbStr(baseInfo.getMerchandiseWbStr());
+        dto.setDefEncounterUnitCode(baseInfo.getDefEncounterUnitCode());
+        dto.setDefInhospitalUnitCode(baseInfo.getDefInhospitalUnitCode());
+        dto.setTypeEnum(parseInteger(baseInfo.getTypeEnum()));
+        dto.setDescriptionText(baseInfo.getDescriptionText());
+        dto.setBodySiteCode(baseInfo.getBodySiteCode());
+        dto.setSpecimenCode(baseInfo.getSpecimenCode());
+        dto.setOrgId(baseInfo.getOrgId());
+        dto.setLocationId(baseInfo.getLocationId());
+        if (baseInfo.getRuleId() == null) {
             dto.setRuleId(null);
         } else {
-            dto.setRuleId(Long.valueOf(model.getBaseInfo().getRuleId()));
+            dto.setRuleId(Long.valueOf(baseInfo.getRuleId()));
         }
-        dto.setYbNo(model.getBaseInfo().getYbNo());
-        dto.setChrgitmLv(model.getBaseInfo().getChrgitmLv());
+        dto.setYbNo(baseInfo.getYbNo());
+        dto.setChrgitmLv(baseInfo.getChrgitmLv());
+        dto.setYbFlag(this.toWhetherInteger(baseInfo.getYbFlag()));
+        dto.setPricingFlag(this.toWhetherInteger(baseInfo.getPricingFlag()));
+        dto.setYbMatchFlag(this.toWhetherInteger(baseInfo.getYbMatchFlag()));
+        this.applyPublicationStatus(baseInfo.getStatusEnum(), dto::setStatusEnum, null);
+        dto.setChildren(this.toServiceCatalogChildDtos(model.getChildren()));
         // 定价行从收费定义表加载，与药品/耗材目录维护页口径一致。
         this.enrichPriceFields(dto, this.loadPriceLines(id));
         return dto;
+    }
+
+    /**
+     * 批量删除（逻辑删除）诊疗目录项。
+     *
+     * @param ids 活动定义主键列表，须非空
+     * @throws ValidationException ids 为空时
+     */
+    public void deleteServiceCatalog(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            throw new ValidationException("删除诊疗目录失败：ids 不能为空");
+        }
+        DeleteActivityDefinitionsCommand command = new DeleteActivityDefinitionsCommand();
+        DeleteActivityDefinitionsCommand.DeleteActivityDefinitionsItemCommand item =
+            new DeleteActivityDefinitionsCommand.DeleteActivityDefinitionsItemCommand();
+        item.setIdList(new ArrayList<>(ids));
+        command.setItem(item);
+        activityDefinitionDomainService.deleteActivityDefinitions(command);
     }
 
     /**
@@ -281,6 +403,49 @@ public class ServiceCatalogAppService {
         }
     }
 
+    private Integer toWhetherInteger(Boolean value) {
+        if (value == null) {
+            return null;
+        }
+        return Boolean.TRUE.equals(value) ? 1 : 0;
+    }
+
+    private void applyPublicationStatus(
+        String statusCode,
+        java.util.function.Consumer<Integer> statusEnumSetter,
+        java.util.function.Consumer<String> statusTextSetter) {
+        PublicationStatus publicationStatus = EnumUtil.fromCode(PublicationStatus.class, statusCode);
+        if (publicationStatus == null) {
+            return;
+        }
+        if (statusEnumSetter != null) {
+            statusEnumSetter.accept(publicationStatus.getSortOrder().intValue());
+        }
+        if (statusTextSetter != null) {
+            statusTextSetter.accept(publicationStatus.getDisplay());
+        }
+    }
+
+    private List<ServiceCatalogChildDto> toServiceCatalogChildDtos(List<ActivityDefinitionChildQueryModel> children) {
+        if (children == null || children.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<ServiceCatalogChildDto> result = new ArrayList<>();
+        for (ActivityDefinitionChildQueryModel child : children) {
+            if (child == null) {
+                continue;
+            }
+            ServiceCatalogChildDto childDto = new ServiceCatalogChildDto();
+            childDto.setId(child.getId());
+            childDto.setActivityId(child.getActivityId());
+            childDto.setChildrenId(child.getChildrenId());
+            childDto.setChildrenNum(child.getChildrenNum());
+            childDto.setChildrenName(child.getChildrenName());
+            result.add(childDto);
+        }
+        return result;
+    }
+
     /**
      * 加载单条诊疗项目实例下的全部定价行。
      *
@@ -352,13 +517,13 @@ public class ServiceCatalogAppService {
         List<SaveAllChargeItemDefinitionsCommand.Item> items = new ArrayList<>();
         ChargePricingCommandAssembler.appendPriceLineIfPresent(items,
             TableNameConstants.WKF_ACTIVITY_DEFINITION, instanceId, itemTypeCode, ybType,
-            PriceType.PURCHASE.getCode(), purchasePrice);
+            PriceType.PURCHASE.getCode(), purchasePrice, null);
         ChargePricingCommandAssembler.appendPriceLineIfPresent(items,
             TableNameConstants.WKF_ACTIVITY_DEFINITION, instanceId, itemTypeCode, ybType,
-            PriceType.SALE.getCode(), retailPrice);
+            PriceType.SALE.getCode(), retailPrice, null);
         ChargePricingCommandAssembler.appendPriceLineIfPresent(items,
             TableNameConstants.WKF_ACTIVITY_DEFINITION, instanceId, itemTypeCode, ybType,
-            PriceType.LIMIT.getCode(), maximumRetailPrice);
+            PriceType.LIMIT.getCode(), maximumRetailPrice, null);
         if (items.isEmpty()) {
             return;
         }

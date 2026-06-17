@@ -17,11 +17,11 @@
 
 package com.openhis.health.application.inpatient.nursestation.costdetail.assembler;
 
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.InpatientNurseStationCostDetailChargeRow;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;

@@ -32,6 +32,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-医嘱开立-更新药品医嘱组号请求。 */
 @Schema(description = "医生站-医嘱开立-更新药品医嘱组号请求")
 public class UpdateDoctorStationMedicationAdviceGroupsRequest {
 
@@ -44,6 +45,7 @@ public class UpdateDoctorStationMedicationAdviceGroupsRequest {
     /** 患者门控。 */
     @NotNull(message = "患者标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者标识。 */
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 

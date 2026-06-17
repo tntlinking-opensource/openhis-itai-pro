@@ -37,6 +37,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-医嘱开立-签退医嘱批次请求。 */
 @Schema(description = "医生站-医嘱开立-签退医嘱批次请求")
 public class WithdrawInpatientDoctorStationAdviceBatchRequest {
 
@@ -49,12 +50,14 @@ public class WithdrawInpatientDoctorStationAdviceBatchRequest {
     /** 患者门控。 */
     @NotNull(message = DoctorStationAdviceConstants.MSG_PATIENT_ID_REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者标识。 */
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
     /** 待签退资源键（已签发态方可签退）。 */
     @NotEmpty(message = DoctorStationAdviceConstants.VALIDATION_WITHDRAW_TARGETS_REQUIRED)
     @Valid
+    /** 签退目标列表。 */
     @Schema(description = "签退目标列表", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<InpatientDoctorStationAdviceResourceKeyDto> targets;
 }

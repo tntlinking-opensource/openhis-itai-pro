@@ -27,7 +27,7 @@ import java.time.LocalDateTime;
  * 住院就诊上下文查询模型（替代 {@code InpatientInfoReadModel} 读侧投影行）。
  *
  * <p>字段与 {@code hisrm_inpatient_info} 读模型列及
- * {@link com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler} 消费列对齐。</p>
+ * {@link com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler} 消费列对齐。</p>
  */
 @Getter
 @Setter

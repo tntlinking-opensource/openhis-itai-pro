@@ -35,7 +35,7 @@ public class InpatientAdmissionRequestedEvent extends DomainEvent {
     private Long patientId;
     /** 拟收治科室/机构标识。 */
     private Long targetDepartmentId;
-    /** 源门诊或急诊就诊标识。 */
+    /** 源门诊就诊标识。 */
     private Long ambEncounterId;
     /** 住院就诊业务号。 */
     private String busNo;

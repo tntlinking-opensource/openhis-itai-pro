@@ -28,10 +28,10 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 批量执行响应。 */
 @Schema(description = "批量执行响应")
 public class ExecuteNurseStationOrdersResponse {
 
-    /** 成功处理的槽位数。 */
     @Schema(description = "成功处理的槽位数")
     private Integer processedCount;
 }

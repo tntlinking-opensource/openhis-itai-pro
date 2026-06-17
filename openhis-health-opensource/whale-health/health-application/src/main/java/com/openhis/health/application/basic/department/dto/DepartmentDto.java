@@ -37,11 +37,10 @@ public class DepartmentDto {
     private String busNo;
     /** 科室名称。 */
     private String name;
-    /** 启停标识（旧版页面兼容值，1-启用，2-停用）。 */
-    @JsonSerialize(using = ToStringSerializer.class)
-    private Integer activeFlag;
-    /** 启停标识展示文案。 */
-    private String activeFlag_dictText;
+    /** 状态编码（与库 status_enum 一致，如 ACTIVE、INACTIVE）。 */
+    private String statusEnum;
+    /** 状态展示文案。 */
+    private String statusEnum_dictText;
     /** 类型枚举排序值（旧版页面兼容）。 */
     @JsonSerialize(using = ToStringSerializer.class)
     private Integer typeEnum;

@@ -25,14 +25,8 @@ import lombok.Setter;
  */
 @Getter
 @Setter
-/**
- * GetPurchaseOrderDetailRequest。
- */
 public class GetPurchaseOrderDetailRequest {
 
-    /** 订货单业务号。 */
-    /**
-     * busNo。
-     */
+    /** 订货单业务单号。 */
     private String busNo;
 }

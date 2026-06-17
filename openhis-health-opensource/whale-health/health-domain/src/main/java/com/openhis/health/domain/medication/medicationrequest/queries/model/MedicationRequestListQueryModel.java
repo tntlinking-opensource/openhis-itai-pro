@@ -75,10 +75,14 @@ public class MedicationRequestListQueryModel {
     private String lotNumber;
     /** 用药天数。 */
     private Integer dispensePerDuration;
-    /** 发药/执行位置 id（药品侧 perform_location）。 */
+    /** 开立科室组织主键（持久化 {@code org_id}，{@code adm_organization.id}）。 */
+    private Long orgId;
+    /** 发放药房库位主键（持久化 {@code perform_location}，{@code adm_location.id}）。 */
     private Long performLocation;
     /** 诊断定义主键（持久化 {@code med_medication_request.condition_definition_id}）。 */
     private Long conditionDefinitionId;
+    /** 就诊诊断主键（持久化 {@code med_medication_request.encounter_diagnosis_id}）。 */
+    private Long encounterDiagnosisId;
     /** 备注。 */
     private String remark;
     /** 请求扩展 JSON（编辑卡片回填）。 */

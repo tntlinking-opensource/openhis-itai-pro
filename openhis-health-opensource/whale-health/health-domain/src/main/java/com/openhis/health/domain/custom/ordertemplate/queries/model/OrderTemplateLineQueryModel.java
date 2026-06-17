@@ -23,13 +23,13 @@ import lombok.Setter;
 import java.math.BigDecimal;
 
 /**
- * 组套行查询模型。
+ * 组套模板行查询模型。
  */
 @Getter
 @Setter
 public class OrderTemplateLineQueryModel {
     /**
-     * 模板行标识。
+     * 组套模板行标识。
      */
     private Long id;
     /**
@@ -92,4 +92,12 @@ public class OrderTemplateLineQueryModel {
      * 行备注（可空）。
      */
     private String lineRemark;
+    /**
+     * TCM 行级中药付数。
+     */
+    private BigDecimal chineseHerbsDoseQuantity;
+    /**
+     * TCM 行级代煎标志。
+     */
+    private Boolean sufferingFlag;
 }

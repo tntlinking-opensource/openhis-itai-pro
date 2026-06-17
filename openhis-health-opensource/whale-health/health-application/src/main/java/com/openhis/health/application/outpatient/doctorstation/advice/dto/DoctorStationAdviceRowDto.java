@@ -19,8 +19,9 @@ package com.openhis.health.application.outpatient.doctorstation.advice.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.application.querysupport.advice.dto.AdvicePackageChildItemDto;
-import com.openhis.health.application.querysupport.advice.dto.AdviceRequestExtensionSnapshotDto;
+import com.openhis.health.module.querysupport.advice.dto.AdvicePackageChildItemDto;
+import com.openhis.health.module.querysupport.advice.dto.AdviceRequestExtensionSnapshotDto;
+import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceRequestDetailSummaryDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -38,30 +39,34 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站医嘱统一列表行。 */
 @Schema(description = "医生站医嘱统一列表行")
 public class DoctorStationAdviceRowDto {
 
-    /** 稳定行键：requestId + SOH + productTableName（A.9.1）。 */
     @Schema(description = "稳定行键：requestId + SOH(U+0001) + productTableName")
     private String listRowKey;
 
     /** 药品/耗材/诊疗请求聚合主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 医嘱请求主键。 */
     @Schema(description = "医嘱请求主键")
     private Long requestId;
 
     /** 就诊标识。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 就诊标识。 */
     @Schema(description = "就诊标识")
     private Long encounterId;
 
     /** 患者标识。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者标识。 */
     @Schema(description = "患者标识")
     private Long patientId;
 
     /** 与 IF-DOR-11 对齐的目录定义主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 产品定义主键。 */
     @Schema(description = "产品定义主键（与 productTableName 成对）")
     private Long productDefinitionId;
 
@@ -135,6 +140,7 @@ public class DoctorStationAdviceRowDto {
 
     /** 执行/发药位置 id。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 执行或发药位置 id。 */
     @Schema(description = "执行或发药位置 id")
     private Long performLocationId;
 
@@ -149,18 +155,23 @@ public class DoctorStationAdviceRowDto {
     @Schema(description = "FIFO 发放首选库位 id（发放主键升序首条）")
     private Long fifoDispenseLocationId;
 
-    /** FIFO 发放首选库位展示名。 */
     @Schema(description = "FIFO 发放首选库位名称")
     private String fifoDispenseLocationName;
 
-    /** 诊断定义名称（由 {@link #conditionDefinitionId} 批量解析）。 */
     @Schema(description = "诊断定义名称")
     private String conditionDefinitionName;
 
     /** 诊断定义主键（药品/诊疗/耗材请求均映射各自表的 {@code condition_definition_id}）。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 诊断定义主键。 */
     @Schema(description = "诊断定义主键")
     private Long conditionDefinitionId;
+
+    /** 就诊诊断主键（药品/诊疗/耗材请求均映射各自表的 {@code encounter_diagnosis_id}）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    /** 就诊诊断主键。 */
+    @Schema(description = "就诊诊断主键")
+    private Long encounterDiagnosisId;
 
     /** 是否皮试。 */
     @Schema(description = "是否皮试")
@@ -192,6 +203,7 @@ public class DoctorStationAdviceRowDto {
 
     /** 药品成组号。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 药品成组号。 */
     @Schema(description = "药品成组号")
     private Long groupId;
 
@@ -221,6 +233,7 @@ public class DoctorStationAdviceRowDto {
 
     /** 前置服务申请 id（如皮试关联）。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 前置服务申请主键。 */
     @Schema(description = "前置服务申请主键")
     private Long basedOnServiceRequestId;
 
@@ -242,6 +255,7 @@ public class DoctorStationAdviceRowDto {
 
     /** 主展示收费明细 id。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 主展示用收费明细 id。 */
     @Schema(description = "主展示用收费明细 id")
     private Long primaryChargeItemId;
 
@@ -264,15 +278,12 @@ public class DoctorStationAdviceRowDto {
     @Schema(description = "数量×单价推算金额（元，6 位小数）")
     private BigDecimal lineAmountByUnitAndQuantity;
 
-    /** 行级收费汇总态 code。 */
     @Schema(description = "行级收费汇总态 code")
     private String chargeStatusEnum;
 
-    /** 行级收费汇总态展示。 */
     @Schema(description = "行级收费汇总态展示文案")
     private String chargeStatusEnumText;
 
-    /** 请求状态 code。 */
     @Schema(description = "请求状态 code")
     private String statusEnum;
 
@@ -297,7 +308,6 @@ public class DoctorStationAdviceRowDto {
     @Schema(description = "开立者主键")
     private Long authoredById;
 
-    /** 开立者姓名。 */
     @Schema(description = "开立者姓名")
     private String authoredByName;
 
@@ -315,6 +325,7 @@ public class DoctorStationAdviceRowDto {
 
     /** 签署人（若已签发且可解析）。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 签署人主键。 */
     @Schema(description = "签署人主键")
     private Long signedById;
 
@@ -345,4 +356,8 @@ public class DoctorStationAdviceRowDto {
     /** 诊疗活动类型展示名。 */
     @Schema(description = "诊疗活动类型展示名")
     private String activityTypeName;
+
+    /** 申请单行部位/样本明细摘要（prescriptionNo 为 AR 前缀时有值）。 */
+    @Schema(description = "服务申请明细摘要（申请单行）")
+    private List<ServiceRequestDetailSummaryDto> serviceRequestDetails;
 }

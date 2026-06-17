@@ -17,16 +17,17 @@
 
 package com.openhis.health.application.inpatient.nursestation.orderexecute.mapper;
 
-import com.openhis.health.application.common.assembler.advice.ProductDefinitionOrderChargePricingSupport;
-import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecutePatientGroupDto;
-import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteRowDto;
-import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteSlotDto;
+import com.openhis.health.module.common.assembler.advice.ProductDefinitionOrderChargePricingSupport;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ListNurseStationOrderExecuteRequest;
+import com.openhis.health.module.querysupport.procedure.NurseStationOrderExecuteListQuery;
+import com.openhis.health.module.querysupport.procedure.NurseStationOrderExecuteListReadAssembler;
+import com.openhis.health.module.querysupport.procedure.NurseStationOrderExecuteListResult;
+import com.openhis.health.module.querysupport.procedure.dto.NurseStationOrderExecuteRowDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteWriteSlotDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ExecuteNurseStationOrdersResponse;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ListNurseStationOrderExecuteResponse;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.SkipNurseStationOrderSlotsResponse;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.domain.administration.chargeitem.command.ActivateChargeByExeCommand;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
@@ -38,24 +39,21 @@ import com.openhis.health.domain.clinical.procedure.command.CreateProcedureRecor
 import com.openhis.health.domain.clinical.procedure.command.SkipProcedureRecordCommand;
 import com.openhis.health.domain.clinical.procedure.command.StartProcedureExecutionCommand;
 import com.openhis.health.domain.medication.medicationdispense.command.GenerateDispenseFromExecutionCommand;
-import com.openhis.health.domain.medication.medicationdispense.command.LinkDispenseProcedureCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
-import com.openhis.health.application.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
 import com.openhis.health.domain.share.constants.ChargeItemDmConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
-import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.workflow.devicedispense.command.GenerateDeviceDispenseFromTemporaryPathCommand;
-import com.openhis.health.domain.workflow.devicedispense.command.GenerateIssuedDeviceDispenseFromExecutionCommand;
 import com.openhis.health.domain.workflow.devicerequest.command.CreateExecutedDeviceOrderCommand;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -66,109 +64,50 @@ import java.util.List;
  * 编排与 Gate 在 AppService / Assembler。</p>
  */
 @Component
+@RequiredArgsConstructor
 public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExecuteMapper {
 
-    /**
-     * 可见性查询入参：多选就诊 + 管理病区收窄（BR-IP-EXE-001 / BR-IP-NUR-003）。
-     *
-     * @param encounterIds   请求就诊主键列表；调用方保证非空
-     * @param managedWardIds 登录者管理病区；可空
-     * @return 住院信息读模型查询入参
-     */
+    private final NurseStationOrderExecuteListReadAssembler readAssembler;
+
+    @Override
+    public NurseStationOrderExecuteListQuery toListQuery(ListNurseStationOrderExecuteRequest request) {
+        if (request == null) {
+            return new NurseStationOrderExecuteListQuery();
+        }
+        return new NurseStationOrderExecuteListQuery()
+            .setEncounterIds(request.getEncounterIds())
+            .setExecuteTab(request.getExecuteTab())
+            .setTherapyType(request.getTherapyType())
+            .setExecutionDeadline(request.getExecutionDeadline());
+    }
+
+    @Override
+    public ListNurseStationOrderExecuteResponse toListResponse(NurseStationOrderExecuteListResult result) {
+        ListNurseStationOrderExecuteResponse response = new ListNurseStationOrderExecuteResponse();
+        if (result == null || result.getGroups() == null) {
+            response.setGroups(Collections.emptyList());
+            return response;
+        }
+        response.setGroups(result.getGroups());
+        return response;
+    }
+
     @Override
     public InpatientEncounterPageQuery toInpatientEncounterPageQuery(List<Long> encounterIds, List<Long> managedWardIds) {
-        InpatientEncounterPageQuery query = new InpatientEncounterPageQuery();
-        // 护士站可见性谓词：状态并集 + 管理病区 + encounterIdsIn 收窄（BR-IP-NUR-003 / BR-IP-EXE-001）。
-        query.setNurseStationQueue(Boolean.TRUE);
-        if (encounterIds != null && !encounterIds.isEmpty()) {
-            query.setEncounterIdsIn(encounterIds);
-        }
-        if (managedWardIds != null && !managedWardIds.isEmpty()) {
-            query.setManagedWardIds(managedWardIds);
-        }
-        return query;
+        return readAssembler.toInpatientEncounterPageQuery(encounterIds, managedWardIds);
     }
 
-    /**
-     * therapyType → TherapyType code；all 返回 null。
-     *
-     * @param therapyType all / long / temp；可空视为 all
-     * @return 长临 code；all 时为 null
-     */
     @Override
     public String resolveTherapyEnum(String therapyType) {
-        String normalized = StringUtils.trimToEmpty(therapyType);
-        if (StringUtils.isBlank(normalized)
-            || InpatientNurseStationConstants.THERAPY_FILTER_ALL.equals(normalized)) {
-            // all：读模型查询不过滤长临
-            return null;
-        }
-        if (InpatientNurseStationConstants.THERAPY_FILTER_LONG.equals(normalized)) {
-            return TherapyType.LONG_TERM.getCode();
-        }
-        if (InpatientNurseStationConstants.THERAPY_FILTER_TEMP.equals(normalized)) {
-            return TherapyType.TEMPORARY.getCode();
-        }
-        return null;
+        return readAssembler.resolveTherapyEnum(therapyType);
     }
 
-    /**
-     * 按 executeTab 收窄槽位：医嘱展示字段不变，仅当前 Tab 对应类别保留 planTime ≤ deadline 的计划点（BR-IP-EXE-010）。
-     *
-     * @param row               已装配四类槽位的医嘱行；原地改写槽位字段
-     * @param executeTab        pending / executed / skipped / cancelled
-     * @param executionDeadline 截止时间
-     */
     @Override
     public void applyExecuteTabSlotFilter(
         NurseStationOrderExecuteRowDto row,
         String executeTab,
         LocalDateTime executionDeadline) {
-        if (row == null || executionDeadline == null) {
-            return;
-        }
-        String tab = StringUtils.trimToEmpty(executeTab);
-        List<NurseStationOrderExecuteSlotDto> pendingSource = row.getPendingSlots();
-        List<NurseStationOrderExecuteSlotDto> executedSource = row.getExecutedSlots();
-        List<NurseStationOrderExecuteSlotDto> skippedSource = row.getSkippedSlots();
-        List<NurseStationOrderExecuteSlotDto> cancelledSource = row.getCancelledSlots();
-        // 四类槽位字段同构保留，非当前 Tab 一律清空，避免前端误读其他状态计划点
-        row.setPendingSlots(Collections.emptyList());
-        row.setExecutedSlots(Collections.emptyList());
-        row.setSkippedSlots(Collections.emptyList());
-        row.setCancelledSlots(Collections.emptyList());
-        if (InpatientNurseStationConstants.EXECUTE_TAB_PENDING.equals(tab)) {
-            row.setPendingSlots(this.filterSlotsWithinDeadline(pendingSource, executionDeadline));
-            return;
-        }
-        if (InpatientNurseStationConstants.EXECUTE_TAB_EXECUTED.equals(tab)) {
-            row.setExecutedSlots(this.filterSlotsWithinDeadline(executedSource, executionDeadline));
-            return;
-        }
-        if (InpatientNurseStationConstants.EXECUTE_TAB_SKIPPED.equals(tab)) {
-            row.setSkippedSlots(this.filterSlotsWithinDeadline(skippedSource, executionDeadline));
-            return;
-        }
-        if (InpatientNurseStationConstants.EXECUTE_TAB_CANCELLED.equals(tab)) {
-            row.setCancelledSlots(this.filterSlotsWithinDeadline(cancelledSource, executionDeadline));
-        }
-    }
-
-    /**
-     * 分组列表 → 列表响应。
-     *
-     * @param groups 患者分组；可 null
-     * @return 列表响应
-     */
-    @Override
-    public ListNurseStationOrderExecuteResponse toListResponse(List<NurseStationOrderExecutePatientGroupDto> groups) {
-        ListNurseStationOrderExecuteResponse response = new ListNurseStationOrderExecuteResponse();
-        if (groups == null) {
-            response.setGroups(Collections.emptyList());
-            return response;
-        }
-        response.setGroups(groups);
-        return response;
+        readAssembler.applyExecuteTabSlotFilter(row, executeTab, executionDeadline);
     }
 
     /**
@@ -310,43 +249,7 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
     }
 
     /**
-     * 临时药品执行 → 挂接已有发放单命令。
-     */
-    @Override
-    public LinkDispenseProcedureCommand toLinkDispenseProcedureCommand(
-        Long dispenseId,
-        Long procedureId,
-        LocalDateTime plannedDispenseTime,
-        Long operatorId) {
-        LinkDispenseProcedureCommand command = new LinkDispenseProcedureCommand();
-        command.setDispenseId(dispenseId);
-        command.setProcedureId(procedureId);
-        command.setPlannedDispenseTime(plannedDispenseTime);
-        command.setOperatorId(operatorId);
-        return command;
-    }
-
-    /**
-     * 临时医嘱执行 → 激活已有 DRAFT 收费明细。
-     */
-    @Override
-    public ActivateChargeByExeCommand toActivateChargeByExeCommand(
-        Long chargeItemId,
-        Long procedureId,
-        LocalDateTime performedAt,
-        Long performerId) {
-        ActivateChargeByExeCommand command = new ActivateChargeByExeCommand();
-        ActivateChargeByExeCommand.Item line = new ActivateChargeByExeCommand.Item();
-        line.setChargeItemId(chargeItemId);
-        line.setProcedureId(procedureId);
-        line.setPerformedAt(performedAt);
-        line.setPerformerId(performerId);
-        command.setItems(List.of(line));
-        return command;
-    }
-
-    /**
-     * 长期医嘱执行 → 新建待结算收费明细（generate_source=ORDER_EXECUTE）。
+     * 药/诊嘱执行 → 新建待结算收费明细（generate_source=ORDER_EXECUTE）。
      */
     @Override
     public CreateChargeItemCommand toCreatePlannedChargeItemFromOrderExecutionCommand(
@@ -388,7 +291,7 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
         }
         boolean productPricedCharge = medicationCharge || serviceCharge;
         if (template != null) {
-            // 复制签发侧费用模板：科目/机构等；药/诊金额须按执行 quantity/unit 与目录比例重算
+            // 复制费用模板非金额字段；药/诊金额须按执行 quantity/unit 与目录比例重算
             item.setDefinitionId(template.getDefinitionId());
             if (!productPricedCharge) {
                 item.setUnitPrice(template.getUnitPrice());
@@ -524,9 +427,12 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
     public CreateExecutedDeviceOrderCommand toCreateExecutedDeviceOrderCommand(
         Long deviceDefId,
         BigDecimal quantity,
+        String unitCode,
         Long performLocation,
         Long encounterId,
         Long patientId,
+        String basedOnTable,
+        Long basedOnId,
         Long operatorId) {
         CreateExecutedDeviceOrderCommand command = new CreateExecutedDeviceOrderCommand();
         command.setOperatorId(operatorId);
@@ -535,9 +441,12 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
         line.setGenerateSourceEnum(GenerateSource.ORDER_EXECUTE.getCode());
         line.setDeviceDefId(deviceDefId);
         line.setQuantity(quantity);
+        line.setUnitCode(unitCode);
         line.setPerformLocation(performLocation);
         line.setEncounterId(encounterId);
         line.setPatientId(patientId);
+        line.setBasedOnTable(basedOnTable);
+        line.setBasedOnId(basedOnId);
         command.setItems(List.of(line));
         return command;
     }
@@ -568,56 +477,6 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
         line.setLimitTime(limitTime);
         command.setItems(List.of(line));
         return command;
-    }
-
-    /**
-     * 绑定耗材执行 → 执行直发已发放命令。
-     */
-    @Override
-    public GenerateIssuedDeviceDispenseFromExecutionCommand toGenerateIssuedDeviceDispenseFromExecutionCommand(
-        Long deviceReqId,
-        Long procedureId,
-        String lotNumber,
-        String traceNo,
-        BigDecimal quantity,
-        Long operatorId) {
-        GenerateIssuedDeviceDispenseFromExecutionCommand command = new GenerateIssuedDeviceDispenseFromExecutionCommand();
-        command.setOperatorId(operatorId);
-        GenerateIssuedDeviceDispenseFromExecutionCommand.GenerateIssuedDeviceDispenseFromExecutionItemCommand line =
-            new GenerateIssuedDeviceDispenseFromExecutionCommand.GenerateIssuedDeviceDispenseFromExecutionItemCommand();
-        line.setDeviceReqId(deviceReqId);
-        line.setProcedureId(procedureId);
-        line.setLotNumber(lotNumber);
-        line.setTraceNo(traceNo);
-        line.setDispenseQuantity(quantity);
-        command.setItems(List.of(line));
-        return command;
-    }
-
-    /**
-     * 槽位列表中 planTime ≤ deadline 的项（BR-IP-EXE-011）。
-     *
-     * @param slots             源槽位列表
-     * @param executionDeadline 截止时间
-     * @return 窗口内计划点；源为空时返回空列表
-     */
-    private List<NurseStationOrderExecuteSlotDto> filterSlotsWithinDeadline(
-        List<NurseStationOrderExecuteSlotDto> slots,
-        LocalDateTime executionDeadline) {
-        if (slots == null || slots.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<NurseStationOrderExecuteSlotDto> filtered = new ArrayList<>();
-        for (NurseStationOrderExecuteSlotDto slot : slots) {
-            if (slot == null || slot.getPlanTime() == null) {
-                continue;
-            }
-            if (!slot.getPlanTime().isAfter(executionDeadline)) {
-                // planTime ≤ deadline 的计划点才出现在当前 Tab 列表
-                filtered.add(slot);
-            }
-        }
-        return filtered;
     }
 
     /**

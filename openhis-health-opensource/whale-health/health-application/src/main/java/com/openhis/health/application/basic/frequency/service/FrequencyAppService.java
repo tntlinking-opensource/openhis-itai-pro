@@ -17,12 +17,10 @@
 
 package com.openhis.health.application.basic.frequency.service;
 
-import com.openhis.health.application.common.converter.TextValueConverter;
 import com.openhis.health.application.basic.frequency.dto.FrequencyDto;
 import com.openhis.health.application.basic.frequency.dto.FrequencyInitDto;
 import com.openhis.health.application.basic.frequency.mapper.FrequencyMapper;
 import com.openhis.health.application.basic.frequency.request.CreateFrequencyRequest;
-import com.openhis.health.application.basic.frequency.request.IdValueRequest;
 import com.openhis.health.application.basic.frequency.request.QueryFrequencyRequest;
 import com.openhis.health.application.basic.frequency.request.UpdateFrequencyRequest;
 import com.openhis.health.domain.custom.frequency.command.ActivateFrequencyCommand;
@@ -30,9 +28,14 @@ import com.openhis.health.domain.custom.frequency.command.DeactivateFrequencyCom
 import com.openhis.health.domain.custom.frequency.command.DeleteFrequencyCommand;
 import com.openhis.health.domain.custom.frequency.entity.Frequency;
 import com.openhis.health.domain.custom.frequency.queries.model.FrequencyPageItemQueryModel;
+import com.openhis.health.domain.share.enums.FrequencyAllowCrossDay;
+import com.openhis.health.domain.share.enums.FrequencyCycleType;
 import com.openhis.health.domain.custom.frequency.service.FrequencyDomainService;
 import com.openhis.health.domain.custom.frequency.service.FrequencyQueryService;
+import com.openhis.health.domain.share.constants.CustomConstants;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.ValidationException;
@@ -58,6 +61,8 @@ public class FrequencyAppService {
     private final FrequencyDomainService frequencyDomainService;
     /** 请求/实体与 DTO、领域命令映射。 */
     private final FrequencyMapper frequencyMapper;
+    /** 写路径操作人门控（B.6.5）。 */
+    private final CurrentOperatorResolver currentOperatorResolver;
 
     /**
      * 返回频次维护表单所需的下拉选项（状态、周期类型、场景、跨天）。
@@ -71,21 +76,29 @@ public class FrequencyAppService {
             new OptionDto(2L, "0", "停用")
         ));
         dto.setCycleTypeOptions(List.of(
-            new OptionDto(1L, "1", "按天"),
-            new OptionDto(2L, "2", "按周"),
-            new OptionDto(3L, "3", "按月"),
-            new OptionDto(4L, "4", "按小时间隔"),
-            new OptionDto(5L, "5", "按需(PRN)")
+            new OptionDto(FrequencyCycleType.DAILY.getSortOrder(), FrequencyCycleType.DAILY.getCode(), FrequencyCycleType.DAILY.getDisplay()),
+            new OptionDto(FrequencyCycleType.WEEKLY.getSortOrder(), FrequencyCycleType.WEEKLY.getCode(), FrequencyCycleType.WEEKLY.getDisplay()),
+            new OptionDto(FrequencyCycleType.INTERVAL.getSortOrder(), FrequencyCycleType.INTERVAL.getCode(), FrequencyCycleType.INTERVAL.getDisplay()),
+            new OptionDto(FrequencyCycleType.AS_NEEDED.getSortOrder(), FrequencyCycleType.AS_NEEDED.getCode(), FrequencyCycleType.AS_NEEDED.getDisplay()),
+            new OptionDto(FrequencyCycleType.FIXED_COUNT.getSortOrder(), FrequencyCycleType.FIXED_COUNT.getCode(), FrequencyCycleType.FIXED_COUNT.getDisplay())
         ));
         dto.setSceneOptions(List.of(
-            new OptionDto(1L, "1", "门诊"),
-            new OptionDto(2L, "2", "住院"),
-            new OptionDto(3L, "3", "护理"),
-            new OptionDto(4L, "4", "通用")
+            new OptionDto(1L, "outpatient", "门诊"),
+            new OptionDto(2L, "inpatient", "住院"),
+            new OptionDto(3L, "nursing", "护理"),
+            new OptionDto(4L, "all", "全部")
         ));
         dto.setAllowCrossDayOptions(List.of(
-            new OptionDto(1L, "0", "不允许"),
-            new OptionDto(2L, "1", "允许")
+            new OptionDto(FrequencyAllowCrossDay.SAME_DAY.getSortOrder(), FrequencyAllowCrossDay.SAME_DAY.getCode(), FrequencyAllowCrossDay.SAME_DAY.getDisplay()),
+            new OptionDto(FrequencyAllowCrossDay.CROSS_DAY.getSortOrder(), FrequencyAllowCrossDay.CROSS_DAY.getCode(), FrequencyAllowCrossDay.CROSS_DAY.getDisplay()),
+            new OptionDto(FrequencyAllowCrossDay.BY_SHIFT.getSortOrder(), FrequencyAllowCrossDay.BY_SHIFT.getCode(), FrequencyAllowCrossDay.BY_SHIFT.getDisplay())
+        ));
+        dto.setPeriodUnitOptions(List.of(
+            new OptionDto(1L, CustomConstants.PERIOD_UNIT_MINUTE, "分钟"),
+            new OptionDto(2L, CustomConstants.PERIOD_UNIT_HOUR, "小时"),
+            new OptionDto(3L, CustomConstants.PERIOD_UNIT_DAY, "天"),
+            new OptionDto(4L, CustomConstants.PERIOD_UNIT_WEEK, "周"),
+            new OptionDto(5L, CustomConstants.PERIOD_UNIT_MONTH, "月")
         ));
         return dto;
     }
@@ -122,7 +135,10 @@ public class FrequencyAppService {
      */
     public FrequencyDto create(CreateFrequencyRequest request) {
         validateCreateRequest(request);
-        Long id = frequencyDomainService.createFrequency(frequencyMapper.toCreateCommand(request));
+        Long operatorId = currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "请先登录后再新增频次");
+        Long id = frequencyDomainService.createFrequency(
+            frequencyMapper.toCreateCommand(request, operatorId));
         Frequency created = frequencyQueryService.findById(id);
         return frequencyMapper.toDto(enrichFrequencyFields(created));
     }
@@ -136,7 +152,10 @@ public class FrequencyAppService {
      */
     public FrequencyDto update(UpdateFrequencyRequest request) {
         validateUpdateRequest(request);
-        frequencyDomainService.modifyFrequency(frequencyMapper.toModifyCommand(request));
+        Long operatorId = currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "请先登录后再更新频次");
+        frequencyDomainService.modifyFrequency(
+            frequencyMapper.toModifyCommand(request, operatorId));
         Frequency updated = frequencyQueryService.findById(request.getId());
         return frequencyMapper.toDto(enrichFrequencyFields(updated));
     }
@@ -144,50 +163,54 @@ public class FrequencyAppService {
     /**
      * 删除频次（逻辑删除语义由领域/底座实现）。
      *
-     * @param id 主键字符串
-     * @throws ValidationException id 非法时
+     * @param id 主键
+     * @throws ValidationException id 为空时
      */
-    public void delete(String id) {
-        Long parsedId = TextValueConverter.requireLong(id, "删除频次失败：id 非法");
+    public void delete(Long id) {
+        if (id == null) {
+            throw new ValidationException("删除频次失败：id 不能为空");
+        }
+        Long operatorId = currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "请先登录后再删除频次");
         DeleteFrequencyCommand command = new DeleteFrequencyCommand();
-        command.setId(parsedId);
-        command.setOperatorId(0L);
+        command.setId(id);
+        command.setOperatorId(operatorId);
         frequencyDomainService.deleteFrequency(command);
     }
 
     /**
      * 启用频次。
      *
-     * @param request 含字符串主键的请求体
-     * @throws ValidationException id 非法时
+     * @param id 主键
+     * @throws ValidationException id 为空时
      */
-    public void enable(IdValueRequest request) {
-        String enableIdValue = null;
-        if (request != null) {
-            enableIdValue = request.getValue();
+    public void enable(Long id) {
+        if (id == null) {
+            throw new ValidationException("启用频次失败：id 不能为空");
         }
-        Long id = TextValueConverter.requireLong(enableIdValue, "启用频次失败：id 非法");
+        Long operatorId = currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "请先登录后再启用频次");
         ActivateFrequencyCommand command = new ActivateFrequencyCommand();
         command.setId(id);
-        command.setOperatorId(0L);
+        command.setOperatorId(operatorId);
         frequencyDomainService.activateFrequency(command);
     }
 
     /**
      * 停用频次。
      *
-     * @param request 含字符串主键的请求体
-     * @throws ValidationException id 非法时
+     * @param id 主键
+     * @throws ValidationException id 为空时
      */
-    public void disable(IdValueRequest request) {
-        String disableIdValue = null;
-        if (request != null) {
-            disableIdValue = request.getValue();
+    public void disable(Long id) {
+        if (id == null) {
+            throw new ValidationException("停用频次失败：id 不能为空");
         }
-        Long id = TextValueConverter.requireLong(disableIdValue, "停用频次失败：id 非法");
+        Long operatorId = currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "请先登录后再停用频次");
         DeactivateFrequencyCommand command = new DeactivateFrequencyCommand();
         command.setId(id);
-        command.setOperatorId(0L);
+        command.setOperatorId(operatorId);
         frequencyDomainService.deactivateFrequency(command);
     }
 
@@ -246,7 +269,7 @@ public class FrequencyAppService {
         if (request.getRateCode() == null || request.getRateCode().isBlank()) {
             throw new ValidationException("新增频次失败：频次编码不能为空");
         }
-        if (request.getCycleType() == null) {
+        if (request.getCycleType() == null || request.getCycleType().isBlank()) {
             throw new ValidationException("新增频次失败：周期类型不能为空");
         }
     }
@@ -277,11 +300,11 @@ public class FrequencyAppService {
             return null;
         }
         // 统一默认值，保证前端列表/编辑回显稳定。
-        if (frequency.getCycleType() == null) {
-            frequency.setCycleType(1);
+        if (frequency.getCycleType() == null || frequency.getCycleType().isBlank()) {
+            frequency.setCycleType(FrequencyCycleType.DAILY.getCode());
         }
-        if (frequency.getAllowCrossDay() == null) {
-            frequency.setAllowCrossDay(0);
+        if (frequency.getAllowCrossDay() == null || frequency.getAllowCrossDay().isBlank()) {
+            frequency.setAllowCrossDay(FrequencyAllowCrossDay.SAME_DAY.getCode());
         }
         return frequency;
     }
@@ -296,8 +319,8 @@ public class FrequencyAppService {
         if (model == null) {
             return null;
         }
-        if (model.getCycleType() == null) {
-            model.setCycleType(1);
+        if (model.getCycleType() == null || model.getCycleType().isBlank()) {
+            model.setCycleType(FrequencyCycleType.DAILY.getCode());
         }
         return model;
     }

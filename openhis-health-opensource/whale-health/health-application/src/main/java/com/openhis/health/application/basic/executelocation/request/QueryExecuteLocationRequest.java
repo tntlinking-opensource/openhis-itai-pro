@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.basic.executelocation.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -26,19 +26,10 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-/**
- * QueryExecuteLocationRequest。
- */
 public class QueryExecuteLocationRequest extends AbstractHealthPageRequest {
 
     /** 执行科室主键，必填。 */
-    /**
-     * executionOrgId。
-     */
     private Long executionOrgId;
     /** 诊疗大类过滤；可空表示不按大类过滤（由查询服务解释）。 */
-    /**
-     * activityCategoryCode。
-     */
     private String activityCategoryCode;
 }

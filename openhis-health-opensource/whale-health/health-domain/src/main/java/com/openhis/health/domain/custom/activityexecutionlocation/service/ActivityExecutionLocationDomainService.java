@@ -32,6 +32,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -76,7 +77,6 @@ public class ActivityExecutionLocationDomainService {
         for (CreateExecutionRuleCommand.CreateExecutionRuleItemCommand item : items) {
             ActivityExecutionLocation rule = new ActivityExecutionLocation();
             rule.setActivityDefinitionId(item.getActivityDefinitionId());
-            rule.setChargeItemDefinitionId(item.getChargeItemDefinitionId());
             rule.setActivityCategoryCode(command.getActivityCategoryCode());
             rule.setExecutionOrgId(command.getExecutionOrgId());
             rule.setExecutionLocationId(item.getExecutionLocationId());
@@ -124,14 +124,8 @@ public class ActivityExecutionLocationDomainService {
             .orElseThrow(() -> new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_NOT_FOUND, "执行科室规则不存在"));
 
         // 合并命令字段到聚合根并执行必填与锚点校验。
-        // 业务分支处理：仅更新命令中提供的非空字段。
-        if (command.getActivityDefinitionId() != null) {
-            rule.setActivityDefinitionId(command.getActivityDefinitionId());
-        }
-        // 业务分支处理：收费项定义锚点变更。
-        if (command.getChargeItemDefinitionId() != null) {
-            rule.setChargeItemDefinitionId(command.getChargeItemDefinitionId());
-        }
+        // 业务分支处理：诊疗定义可空（大类默认规则），更新时须允许显式清空项目锚点。
+        rule.setActivityDefinitionId(command.getActivityDefinitionId());
         // 业务分支处理：活动类别编码变更。
         if (command.getActivityCategoryCode() != null) {
             rule.setActivityCategoryCode(command.getActivityCategoryCode());
@@ -227,44 +221,29 @@ public class ActivityExecutionLocationDomainService {
     /**
      * 按锚点加载候选规则集合。
      *
-     * <p>根据候选规则的活动定义锚点或收费项定义锚点，分别查询同科室同类别下的已有规则。</p>
+     * <p>按诊疗定义锚点查询同科室同类别下的已有规则。</p>
      *
      * @param candidate 待处理规则
      * @return 候选集合（去重后的已有规则列表）
      */
     private List<ActivityExecutionLocation> loadCandidates(ActivityExecutionLocation candidate) {
-        Map<Long, ActivityExecutionLocation> result = new HashMap<>();
-        // 业务分支处理：以活动定义为锚点时查询同锚点规则。
-        if (candidate.getActivityDefinitionId() != null) {
-            List<ActivityExecutionLocation> rows = repository.findAllByExecutionOrgIdAndActivityCategoryCodeAndActivityDefinitionId(
+        if (candidate.getActivityDefinitionId() == null) {
+            return repository.findAllByExecutionOrgIdAndActivityCategoryCodeAndActivityDefinitionIdIsNull(
                 candidate.getExecutionOrgId(),
-                candidate.getActivityCategoryCode(),
-                candidate.getActivityDefinitionId()
+                candidate.getActivityCategoryCode()
             );
-            // Loop：将查询结果按主键去重存入 Map。
-            for (ActivityExecutionLocation row : rows) {
-                result.put(row.getId(), row);
-            }
         }
-        // 业务分支处理：以收费项定义为锚点时查询同锚点规则。
-        if (candidate.getChargeItemDefinitionId() != null) {
-            List<ActivityExecutionLocation> rows = repository.findAllByExecutionOrgIdAndActivityCategoryCodeAndChargeItemDefinitionId(
-                candidate.getExecutionOrgId(),
-                candidate.getActivityCategoryCode(),
-                candidate.getChargeItemDefinitionId()
-            );
-            // Loop：将查询结果按主键去重存入 Map。
-            for (ActivityExecutionLocation row : rows) {
-                result.put(row.getId(), row);
-            }
-        }
-        return new ArrayList<>(result.values());
+        return repository.findAllByExecutionOrgIdAndActivityCategoryCodeAndActivityDefinitionId(
+            candidate.getExecutionOrgId(),
+            candidate.getActivityCategoryCode(),
+            candidate.getActivityDefinitionId()
+        );
     }
 
     /**
      * 将新增规则加入“按锚点分组”的批量容器中。
      *
-     * <p>同一规则可能同时包含诊疗定义锚点与收费项锚点，需要分别在两个分组中参与重叠校验。</p>
+     * <p>每条规则按诊疗定义锚点分组参与重叠校验。</p>
      *
      * @param newRulesByAnchor 新增规则分组容器
      * @param rule 待新增规则
@@ -274,16 +253,15 @@ public class ActivityExecutionLocationDomainService {
         if (rule.getExecutionOrgId() == null || rule.getActivityCategoryCode() == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室标识与活动类别编码不能为空");
         }
-        // 业务分支处理。
-        if (rule.getActivityDefinitionId() != null) {
-            AnchorGroupKey key = AnchorGroupKey.forActivity(rule.getExecutionOrgId(), rule.getActivityCategoryCode(), rule.getActivityDefinitionId());
-            this.appendRule(newRulesByAnchor, key, rule);
+        AnchorGroupKey key;
+        if (rule.getActivityDefinitionId() == null) {
+            // 业务分支处理：未配具体项目时，按「执行科室 + 活动类别」分组做时段重叠校验。
+            key = AnchorGroupKey.forCategory(rule.getExecutionOrgId(), rule.getActivityCategoryCode());
+        } else {
+            key = AnchorGroupKey.forActivity(
+                rule.getExecutionOrgId(), rule.getActivityCategoryCode(), rule.getActivityDefinitionId());
         }
-        // 业务分支处理。
-        if (rule.getChargeItemDefinitionId() != null) {
-            AnchorGroupKey key = AnchorGroupKey.forChargeItem(rule.getExecutionOrgId(), rule.getActivityCategoryCode(), rule.getChargeItemDefinitionId());
-            this.appendRule(newRulesByAnchor, key, rule);
-        }
+        this.appendRule(newRulesByAnchor, key, rule);
     }
 
     /**
@@ -314,28 +292,35 @@ public class ActivityExecutionLocationDomainService {
     private Map<AnchorGroupKey, List<ActivityExecutionLocation>> loadCandidatesForBatchCreate(Collection<AnchorGroupKey> keys) {
         Map<AnchorGroupKey, List<ActivityExecutionLocation>> result = new HashMap<>();
         Map<OrgCategoryKey, Set<Long>> activityIdsByOrgCategory = new HashMap<>();
-        Map<OrgCategoryKey, Set<Long>> chargeItemIdsByOrgCategory = new HashMap<>();
+        Set<OrgCategoryKey> categoryOnlyOrgCategories = new HashSet<>();
 
-        // 先按（执行科室 + 活动类别）分组，收集诊疗/收费项锚点集合，后续用 IN 查询一次性预取。
+        // 先按（执行科室 + 活动类别）分组，收集诊疗锚点集合，后续用 IN 查询一次性预取。
         for (AnchorGroupKey key : keys) {
             OrgCategoryKey orgCategoryKey = new OrgCategoryKey(key.getExecutionOrgId(), key.getActivityCategoryCode());
-            // 业务分支处理。
-            if (key.isActivityAnchor()) {
-                Set<Long> ids = activityIdsByOrgCategory.get(orgCategoryKey);
-                // 业务分支处理。
-                if (ids == null) {
-                    ids = new HashSet<>();
-                    activityIdsByOrgCategory.put(orgCategoryKey, ids);
-                }
-                ids.add(key.getAnchorId());
-            } else {
-                Set<Long> ids = chargeItemIdsByOrgCategory.get(orgCategoryKey);
-                // 业务分支处理。
-                if (ids == null) {
-                    ids = new HashSet<>();
-                    chargeItemIdsByOrgCategory.put(orgCategoryKey, ids);
-                }
-                ids.add(key.getAnchorId());
+            if (key.getActivityDefinitionId() == null) {
+                categoryOnlyOrgCategories.add(orgCategoryKey);
+                continue;
+            }
+            Set<Long> ids = activityIdsByOrgCategory.get(orgCategoryKey);
+            if (ids == null) {
+                ids = new HashSet<>();
+                activityIdsByOrgCategory.put(orgCategoryKey, ids);
+            }
+            ids.add(key.getActivityDefinitionId());
+        }
+
+        // 大类默认规则：按（执行科室 + 活动类别）预取 activity_definition_id 为空的存量行。
+        for (OrgCategoryKey orgCategoryKey : categoryOnlyOrgCategories) {
+            List<ActivityExecutionLocation> existed =
+                repository.findAllByExecutionOrgIdAndActivityCategoryCodeAndActivityDefinitionIdIsNull(
+                    orgCategoryKey.getExecutionOrgId(),
+                    orgCategoryKey.getActivityCategoryCode()
+                );
+            AnchorGroupKey anchorKey = AnchorGroupKey.forCategory(
+                orgCategoryKey.getExecutionOrgId(),
+                orgCategoryKey.getActivityCategoryCode());
+            for (ActivityExecutionLocation row : existed) {
+                this.appendRule(result, anchorKey, row);
             }
         }
 
@@ -347,28 +332,13 @@ public class ActivityExecutionLocationDomainService {
                 entry.getValue()
             );
             for (ActivityExecutionLocation row : existed) {
-                // 业务分支处理。
                 if (row.getActivityDefinitionId() == null) {
                     continue;
                 }
-                AnchorGroupKey anchorKey = AnchorGroupKey.forActivity(entry.getKey().getExecutionOrgId(), entry.getKey().getActivityCategoryCode(), row.getActivityDefinitionId());
-                this.appendRule(result, anchorKey, row);
-            }
-        }
-
-        // 收费项定义锚点：同上。
-        for (Map.Entry<OrgCategoryKey, Set<Long>> entry : chargeItemIdsByOrgCategory.entrySet()) {
-            List<ActivityExecutionLocation> existed = repository.findAllByExecutionOrgIdAndActivityCategoryCodeAndChargeItemDefinitionIdIn(
-                entry.getKey().getExecutionOrgId(),
-                entry.getKey().getActivityCategoryCode(),
-                entry.getValue()
-            );
-            for (ActivityExecutionLocation row : existed) {
-                // 业务分支处理。
-                if (row.getChargeItemDefinitionId() == null) {
-                    continue;
-                }
-                AnchorGroupKey anchorKey = AnchorGroupKey.forChargeItem(entry.getKey().getExecutionOrgId(), entry.getKey().getActivityCategoryCode(), row.getChargeItemDefinitionId());
+                AnchorGroupKey anchorKey = AnchorGroupKey.forActivity(
+                    entry.getKey().getExecutionOrgId(),
+                    entry.getKey().getActivityCategoryCode(),
+                    row.getActivityDefinitionId());
                 this.appendRule(result, anchorKey, row);
             }
         }
@@ -520,36 +490,32 @@ public class ActivityExecutionLocationDomainService {
     }
 
     /**
-     * （执行科室 + 活动类别 + 锚点类型 + 锚点标识）维度的分组 key。
+     * （执行科室 + 活动类别 + 诊疗定义）维度的分组 key。
      */
     private static class AnchorGroupKey {
         private final Long executionOrgId;
         private final String activityCategoryCode;
-        private final boolean activityAnchor;
-        private final Long anchorId;
+        private final Long activityDefinitionId;
 
-        /**
-         * 构造含锚点维度（活动定义或收费项定义）的分组键。
-         */
-        private AnchorGroupKey(Long executionOrgId, String activityCategoryCode, boolean activityAnchor, Long anchorId) {
+        private AnchorGroupKey(Long executionOrgId, String activityCategoryCode, Long activityDefinitionId) {
             this.executionOrgId = executionOrgId;
             this.activityCategoryCode = activityCategoryCode;
-            this.activityAnchor = activityAnchor;
-            this.anchorId = anchorId;
+            this.activityDefinitionId = activityDefinitionId;
         }
 
-        /**
-         * 以活动定义为锚点的分组键工厂方法。
-         */
-        private static AnchorGroupKey forActivity(Long executionOrgId, String activityCategoryCode, Long activityDefinitionId) {
-            return new AnchorGroupKey(executionOrgId, activityCategoryCode, true, activityDefinitionId);
+        private static AnchorGroupKey forActivity(
+            Long executionOrgId,
+            String activityCategoryCode,
+            Long activityDefinitionId
+        ) {
+            return new AnchorGroupKey(executionOrgId, activityCategoryCode, activityDefinitionId);
         }
 
-        /**
-         * 以收费项定义为锚点的分组键工厂方法。
-         */
-        private static AnchorGroupKey forChargeItem(Long executionOrgId, String activityCategoryCode, Long chargeItemDefinitionId) {
-            return new AnchorGroupKey(executionOrgId, activityCategoryCode, false, chargeItemDefinitionId);
+        private static AnchorGroupKey forCategory(
+            Long executionOrgId,
+            String activityCategoryCode
+        ) {
+            return new AnchorGroupKey(executionOrgId, activityCategoryCode, null);
         }
 
         private Long getExecutionOrgId() {
@@ -560,34 +526,27 @@ public class ActivityExecutionLocationDomainService {
             return activityCategoryCode;
         }
 
-        private boolean isActivityAnchor() {
-            return activityAnchor;
-        }
-
-        private Long getAnchorId() {
-            return anchorId;
+        private Long getActivityDefinitionId() {
+            return activityDefinitionId;
         }
 
         @Override
         public boolean equals(Object o) {
-            // 业务分支处理。
             if (this == o) {
                 return true;
             }
-            // 业务分支处理。
             if (!(o instanceof AnchorGroupKey)) {
                 return false;
             }
             AnchorGroupKey that = (AnchorGroupKey) o;
-            return activityAnchor == that.activityAnchor
-                && Objects.equals(executionOrgId, that.executionOrgId)
+            return Objects.equals(executionOrgId, that.executionOrgId)
                 && Objects.equals(activityCategoryCode, that.activityCategoryCode)
-                && Objects.equals(anchorId, that.anchorId);
+                && Objects.equals(activityDefinitionId, that.activityDefinitionId);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(executionOrgId, activityCategoryCode, activityAnchor, anchorId);
+            return Objects.hash(executionOrgId, activityCategoryCode, activityDefinitionId);
         }
     }
 

@@ -35,6 +35,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-门诊信息列表行。 */
 @Schema(description = "医生站-门诊信息列表行")
 public class OutpatientInfoItemDto {
 
@@ -61,6 +62,7 @@ public class OutpatientInfoItemDto {
 
     /** 患者主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者主键。 */
     @Schema(description = "患者主键")
     private Long patientId;
 
@@ -78,6 +80,7 @@ public class OutpatientInfoItemDto {
 
     /** 出生日期。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 出生日期。 */
     @Schema(description = "出生日期")
     private LocalDateTime birthDate;
 
@@ -95,6 +98,7 @@ public class OutpatientInfoItemDto {
 
     /** 科室主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 科室主键。 */
     @Schema(description = "科室主键")
     private Long organizationId;
 
@@ -104,6 +108,7 @@ public class OutpatientInfoItemDto {
 
     /** 接诊医生主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 接诊医生主键。 */
     @Schema(description = "接诊医生主键")
     private Long doctorId;
 
@@ -113,6 +118,7 @@ public class OutpatientInfoItemDto {
 
     /** 服务类型主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 服务类型主键。 */
     @Schema(description = "服务类型主键")
     private Long serviceTypeId;
 
@@ -122,16 +128,19 @@ public class OutpatientInfoItemDto {
 
     /** 就诊开始时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 就诊开始时间。 */
     @Schema(description = "就诊开始时间（挂号/预约）")
     private LocalDateTime startTime;
 
     /** 接诊时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 接诊时间。 */
     @Schema(description = "接诊时间")
     private LocalDateTime receptionTime;
 
     /** 结束时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 就诊结束时间。 */
     @Schema(description = "就诊结束时间")
     private LocalDateTime endTime;
 
@@ -160,11 +169,12 @@ public class OutpatientInfoItemDto {
     private List<EncounterDiagnosisRowDto> diagnoses;
 
     /** 分诊级别整型展示。 */
-    @Schema(description = "分诊级别（急诊场景，可能由字符串码映射为整数展示）")
+    @Schema(description = "分诊级别（可能由字符串码映射为整数展示）")
     private Integer triageLevelEnum;
 
     /** 分诊时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 分诊时间。 */
     @Schema(description = "分诊时间")
     private LocalDateTime triageTime;
 }

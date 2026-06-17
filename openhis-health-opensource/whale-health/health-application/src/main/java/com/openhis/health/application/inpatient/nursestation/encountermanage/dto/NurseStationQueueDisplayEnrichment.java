@@ -26,14 +26,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 队列展示增补字段。 */
 @Schema(description = "队列展示增补字段")
 public class NurseStationQueueDisplayEnrichment {
 
-    /** 病房名称（由床位 bus_no 解析）。 */
     @Schema(description = "病房名称")
     private String houseName;
 
-    /** 拼音检索码。 */
     @Schema(description = "拼音码")
     private String pinyinCode;
 

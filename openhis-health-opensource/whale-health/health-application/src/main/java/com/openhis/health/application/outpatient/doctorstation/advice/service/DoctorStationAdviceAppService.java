@@ -17,12 +17,16 @@
 
 package com.openhis.health.application.outpatient.doctorstation.advice.service;
 
-import com.openhis.health.application.common.assembler.advice.ServiceAdviceDraftCommandSupport;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.assembler.advice.ServiceAdviceDraftCommandSupport;
+import com.openhis.health.module.common.assembler.advice.ServiceApplyFormOrchestrationSupport;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
+import com.openhis.health.application.outpatient.doctorstation.support.OutpatientMedicationSignChargeSupport;
 import com.openhis.health.application.outpatient.doctorstation.advice.assembler.DoctorStationAdviceCatalogAssembler;
-import com.openhis.health.application.outpatient.doctorstation.advice.assembler.DoctorStationAdviceFifoAllocationAssembler;
+import com.openhis.health.module.common.assembler.product.DoctorStationAdviceFifoAllocationAssembler;
 import com.openhis.health.application.outpatient.doctorstation.advice.assembler.DoctorStationAdviceListAssembler;
+import com.openhis.health.application.outpatient.doctorstation.advice.assembler.ServiceApplyFormAssembler;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceCatalogRowDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceDraftLineRequest;
@@ -33,26 +37,41 @@ import com.openhis.health.application.outpatient.doctorstation.advice.port.LisPa
 import com.openhis.health.application.outpatient.doctorstation.advice.port.LisPacsApplyGateway;
 import com.openhis.health.application.outpatient.doctorstation.advice.query.DoctorStationAdviceOrderBindQueryService;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.GetDoctorStationAdviceOrderBindInfoRequest;
-import com.openhis.health.application.outpatient.doctorstation.advice.request.InitDoctorStationAdviceRequest;
-import com.openhis.health.application.outpatient.doctorstation.advice.request.ListActivityExecutionLocationsRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.ListDoctorStationAdviceRequest;
+import com.openhis.health.application.outpatient.doctorstation.advice.request.InitDoctorStationAdviceRequest;
+import com.openhis.health.application.outpatient.doctorstation.advice.request.ListDoctorStationServiceApplyFormsRequest;
+import com.openhis.health.application.outpatient.doctorstation.advice.request.SaveDoctorStationServiceApplyFormRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.PageDoctorStationAdviceCatalogRequest;
+import com.openhis.health.application.outpatient.doctorstation.advice.request.PageDoctorStationAdviceRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.SaveDoctorStationAdviceDraftBatchRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.SignDoctorStationAdviceBatchRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.UpdateDoctorStationMedicationAdviceGroupsRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.WithdrawDoctorStationAdviceBatchRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.response.GetDoctorStationAdviceOrderBindInfoResponse;
-import com.openhis.health.application.outpatient.doctorstation.advice.response.InitDoctorStationAdviceResponse;
-import com.openhis.health.application.outpatient.doctorstation.advice.response.ActivityExecutionLocationRuleRowDto;
-import com.openhis.health.application.outpatient.doctorstation.advice.response.ListActivityExecutionLocationsResponse;
 import com.openhis.health.application.outpatient.doctorstation.advice.response.ListDoctorStationAdviceResponse;
+import com.openhis.health.application.outpatient.doctorstation.advice.assembler.OutpatientPrescriptionSplitAssembler;
+import com.openhis.health.application.outpatient.doctorstation.advice.response.InitDoctorStationAdviceResponse;
+import com.openhis.health.domain.administration.specimendefinition.queries.SearchSpecimenDefinitionQuery;
+import com.openhis.health.domain.administration.specimendefinition.queries.model.SpecimenDefinitionSearchItemQueryModel;
+import com.openhis.health.domain.administration.specimendefinition.service.SpecimenDefinitionQueryService;
+import com.openhis.health.domain.diagnosis.bodystructure.queries.model.BodyStructureListItemQueryModel;
+import com.openhis.health.domain.diagnosis.bodystructure.service.BodyStructureQueryService;
+import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
+import com.openhis.whale.core.application.dto.OptionDto;
+import com.openhis.health.application.outpatient.doctorstation.advice.response.ListActivityExecutionLocationsResponse;
+import com.openhis.health.application.outpatient.doctorstation.advice.response.ListDoctorStationServiceApplyFormsResponse;
+import com.openhis.health.application.outpatient.doctorstation.advice.response.SaveDoctorStationServiceApplyFormResponse;
 import com.openhis.health.application.outpatient.doctorstation.advice.response.PageDoctorStationAdviceCatalogResponse;
+import com.openhis.health.application.outpatient.doctorstation.advice.response.PageDoctorStationAdviceResponse;
+import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceRowDto;
+import com.openhis.health.domain.share.constants.DoctorStationAdviceScopeTab;
 import com.openhis.health.application.outpatient.doctorstation.advice.response.SaveDoctorStationAdviceDraftBatchResponse;
 import com.openhis.health.application.outpatient.doctorstation.advice.response.SignDoctorStationAdviceBatchResponse;
 import com.openhis.health.application.outpatient.doctorstation.advice.response.UpdateDoctorStationMedicationAdviceGroupsResponse;
 import com.openhis.health.application.outpatient.doctorstation.advice.response.WithdrawDoctorStationAdviceBatchResponse;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
@@ -62,18 +81,20 @@ import com.openhis.health.domain.medication.medicationdispense.command.ReleaseDi
 import com.openhis.health.domain.medication.medicationdispense.command.ReplaceFifoMedicationDispenseDraftsCommand;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseDomainService;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
+import com.openhis.health.module.querysupport.order.OrderRequestFifoSignContextLoader;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestFifoSignContext;
+import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestDomainService;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.custom.activityexecutionlocation.queries.model.ExecutionRuleListQueryModel;
 import com.openhis.health.domain.custom.activityexecutionlocation.service.ActivityExecutionLocationQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.application.querysupport.product.ProductDefinitionCatalogPageLoader;
-import com.openhis.health.application.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.ProductDefinitionCatalogPageLoader;
+import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.enums.MedicationDispenseType;
@@ -81,6 +102,8 @@ import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.module.common.assembler.option.ContractFeeNatureOptionLoader;
+import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.domain.workflow.devicedispense.command.ReleaseDeviceDispenseReserveCommand;
@@ -90,13 +113,19 @@ import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQ
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestFifoSignContext;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestDomainService;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQueryService;
+import com.openhis.health.application.outpatient.doctorstation.advice.request.ListActivityExecutionLocationsRequest;
+import com.openhis.health.application.outpatient.doctorstation.advice.response.ActivityExecutionLocationRuleRowDto;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestDetailListModel;
+import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -123,6 +152,7 @@ public class DoctorStationAdviceAppService {
     private final ProductDefinitionCatalogPageLoader productDefinitionCatalogPageLoader;
     private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
+    private final ClinicalCatalogPriceResolveSupport clinicalCatalogPriceResolveSupport;
     private final ChargeItemDomainService chargeItemDomainService;
     private final AccountQueryService accountQueryService;
     private final MedicationRequestDomainService medicationRequestDomainService;
@@ -131,32 +161,47 @@ public class DoctorStationAdviceAppService {
     private final BusinessSequenceService businessSequenceService;
     private final LisPacsApplyGateway lisPacsApplyGateway;
     private final CodeSystemQueryService codeSystemQueryService;
+    /** 用药频次下拉：读 cus_frequency 启用态，替代术语 rate_code。 */
+    private final FrequencyOptionLoader frequencyOptionLoader;
+    /** 费用性质（合同）下拉：按就诊挂号分类收窄。 */
+    private final ContractFeeNatureOptionLoader contractFeeNatureOptionLoader;
     private final DoctorStationAdviceFifoAllocationAssembler doctorStationAdviceFifoAllocationAssembler;
     private final MedicationDispenseDomainService medicationDispenseDomainService;
     private final DeviceDispenseDomainService deviceDispenseDomainService;
+    private final OrderRequestFifoSignContextLoader orderRequestFifoSignContextLoader;
+    private final OutpatientMedicationSignChargeSupport outpatientMedicationSignChargeSupport;
     private final MedicationRequestQueryService medicationRequestQueryService;
     private final DeviceRequestQueryService deviceRequestQueryService;
     private final MedicationDispenseQueryService medicationDispenseQueryService;
     private final DeviceDispenseQueryService deviceDispenseQueryService;
     private final ActivityExecutionLocationQueryService activityExecutionLocationQueryService;
     private final LocationQueryService locationQueryService;
-
+    private final OrganizationQueryService organizationQueryService;
+    private final OutpatientPrescriptionSplitAssembler outpatientPrescriptionSplitAssembler;
+    private final ServiceApplyFormOrchestrationSupport serviceApplyFormOrchestrationSupport;
+    private final ServiceApplyFormAssembler serviceApplyFormAssembler;
+    private final ServiceRequestQueryService serviceRequestQueryService;
+    private final BodyStructureQueryService bodyStructureQueryService;
+    private final SpecimenDefinitionQueryService specimenDefinitionQueryService;
     /**
-     * 医嘱开立页初始化：用药频次、用法（给药途径）术语下拉（费用性质选项由就诊管理
-     * {@code pageOutpatientInfoForDoctorStation} 响应字段 {@code feeNatureOptions} 一并提供）。
+     * 医嘱开立页初始化：用药频次、用法（给药途径）与费用性质（合同）下拉。
      *
      * @param request 就诊与患者门控
-     * @return 术语类初始化数据
+     * @return 术语与费用性质初始化数据
      * @throws BusinessException 就诊不存在或患者不一致
      */
     public InitDoctorStationAdviceResponse initDoctorStationAdvice(InitDoctorStationAdviceRequest request) {
         // 门控：与列表/目录一致，先加载门诊快照并校验患者卡片与就诊绑定一致。
         OutpatientEncounterContextQueryModel snapshot = encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         doctorStationAdviceMapper.validatePatientEncounter(request.getPatientId(), snapshot.getPatientId());
-        // 前置：频次与给药途径走术语缓存全量下拉，体量受字典种子约束。
+        // 前置：频次读 cus_frequency 主数据；给药途径仍走术语缓存；费用性质按就诊挂号账户分类收窄。
         InitDoctorStationAdviceResponse resp = new InitDoctorStationAdviceResponse();
-        resp.setMedicationRateOptions(codeSystemQueryService.getOptionListByCodeSystemName(TerminologyCodeSystemNameConstants.RATE_CODE));
+        resp.setMedicationRateOptions(frequencyOptionLoader.loadActiveRateOptions());
         resp.setMedicationRouteOptions(codeSystemQueryService.getOptionListByCodeSystemName(TerminologyCodeSystemNameConstants.METHOD_CODE));
+        resp.setFeeNatureOptions(
+            contractFeeNatureOptionLoader.loadOptionsForEncounter(request.getPatientId(), request.getEncounterId()));
+        resp.setBodyStructureOptions(loadBodyStructureOptions());
+        resp.setSpecimenDefinitionOptions(loadSpecimenDefinitionOptions());
         return resp;
     }
 
@@ -171,8 +216,12 @@ public class DoctorStationAdviceAppService {
         OutpatientEncounterContextQueryModel snapshot =
             encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         doctorStationAdviceMapper.validatePatientEncounter(request.getPatientId(), snapshot.getPatientId());
+        ProductDefinitionDisplayDto activityProduct =
+            loadSingleProduct(TableNameConstants.WKF_ACTIVITY_DEFINITION, request.getActivityDefinitionId());
         List<ExecutionRuleListQueryModel> ruleModels =
-            activityExecutionLocationQueryService.listExecutionRulesByActivityDefinition(request.getActivityDefinitionId());
+            activityExecutionLocationQueryService.listExecutionRulesForActivityResolution(
+                request.getActivityDefinitionId(),
+                activityProduct.getCategoryCode());
         Set<Long> orgIds = new HashSet<>();
         Set<Long> locIds = new HashSet<>();
         for (ExecutionRuleListQueryModel row : ruleModels) {
@@ -183,14 +232,13 @@ public class DoctorStationAdviceAppService {
                 locIds.add(row.getExecutionLocationId());
             }
         }
-        Map<Long, String> orgNameById = locationQueryService.mapNamesByIds(orgIds);
+        Map<Long, String> orgNameById = organizationQueryService.mapNamesByIds(orgIds);
         Map<Long, String> locNameById = locationQueryService.mapNamesByIds(locIds);
         List<ActivityExecutionLocationRuleRowDto> rows = new ArrayList<>();
         for (ExecutionRuleListQueryModel src : ruleModels) {
             ActivityExecutionLocationRuleRowDto line = new ActivityExecutionLocationRuleRowDto();
             line.setId(src.getId());
             line.setActivityDefinitionId(src.getActivityDefinitionId());
-            line.setChargeItemDefinitionId(src.getChargeItemDefinitionId());
             line.setActivityCategoryCode(src.getActivityCategoryCode());
             line.setExecutionOrgId(src.getExecutionOrgId());
             if (src.getExecutionOrgId() != null) {
@@ -214,6 +262,47 @@ public class DoctorStationAdviceAppService {
         ListActivityExecutionLocationsResponse resp = new ListActivityExecutionLocationsResponse();
         resp.setRules(rows);
         return resp;
+    }
+
+    /**
+     * IF-DOR-20：分页查询患者门诊医嘱（单接口分 Tab：当前医嘱 / 历史医嘱；全类型统一列表）。
+     *
+     * <p>读口径与 IF-DOR-10 一致（药品 + 诊疗 + 耗材）；是否按处方展示由前端处理。</p>
+     *
+     * @param request 就诊、患者、{@code adviceScopeTabCode}、可选过滤与分页
+     * @return 医嘱统一列表行分页
+     * @throws BusinessException 就诊不存在或患者与就诊不一致
+     */
+    public PageDoctorStationAdviceResponse pageDoctorStationAdvice(PageDoctorStationAdviceRequest request) {
+        // Gate：与列表/目录一致，先校验就诊快照与患者卡片一致，再加载医嘱读模型。
+        OutpatientEncounterContextQueryModel snapshot =
+            encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+        doctorStationAdviceMapper.validatePatientEncounter(request.getPatientId(), snapshot.getPatientId());
+        List<DoctorStationAdviceRowDto> allRows;
+        // 分支：HISTORY 走患者维度跨就诊；其余（含 null）默认当前就诊全类型医嘱。
+        if (DoctorStationAdviceScopeTab.HISTORY.equals(request.getAdviceScopeTabCode())) {
+            // Pre：历史 Tab 按患者跨就诊拉全类型医嘱，排除当前工作站就诊。
+            allRows = doctorStationAdviceListAssembler.assemblePatientHistoryAdviceRows(
+                request.getPatientId(),
+                request.getEncounterId(),
+                request.getOrderingDepartmentId(),
+                request.getRequestStatusEnumIn());
+        } else {
+            // Pre：当前 Tab 仅装配当前就诊全类型医嘱。
+            allRows = doctorStationAdviceListAssembler.assembleAdviceQueryRows(
+                request.getEncounterId(),
+                request.getPatientId(),
+                false,
+                null,
+                request.getOrderingDepartmentId(),
+                request.getRequestStatusEnumIn());
+        }
+        // Asm：全量行内存分页，与 IF-DOR-10 行 DTO 同构下发。
+        return PagedResultBuilder.buildFromFullList(
+            new PageDoctorStationAdviceResponse(),
+            allRows,
+            request.getPageNo(),
+            request.getBoundedPageSize());
     }
 
     /**
@@ -260,17 +349,89 @@ public class DoctorStationAdviceAppService {
     }
 
     /**
+     * IF-DOR-21：保存检验/检查/治疗申请单（整张）；编辑时删旧 DRAFT 后取新 {@code AR} 号。
+     *
+     * @param request 就诊、患者、类别、整单执行科室、整单诊断绑定（可选）与明细行
+     * @return 新申请单号与新建 requestId 列表
+     * @throws BusinessException 门控失败、旧号校验失败、定价缺失或域校验失败
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public SaveDoctorStationServiceApplyFormResponse saveDoctorStationServiceApplyForm(
+        SaveDoctorStationServiceApplyFormRequest request
+    ) {
+        // Gate：与 IF-DOR-14 一致，先校验就诊快照与患者卡片一致。
+        OutpatientEncounterContextQueryModel snapshot =
+            encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+        doctorStationAdviceMapper.validatePatientEncounter(request.getPatientId(), snapshot.getPatientId());
+        Long operatorId = currentOperatorResolver.requireOperatorId(
+            ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
+        Long orgId = snapshot.getOrganizationId();
+        // Pre：自费账户为费用草稿锚点，缺失则拒绝整单保存。
+        Long accountId = accountQueryService.getSelfPayAccount(request.getEncounterId());
+        if (accountId == null) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "就诊未解析到自费账户，无法生成费用草稿");
+        }
+        SaveDoctorStationAdviceDraftBatchRequest chargeContext = new SaveDoctorStationAdviceDraftBatchRequest();
+        chargeContext.setEncounterId(request.getEncounterId());
+        chargeContext.setPatientId(request.getPatientId());
+        // Cmd：删旧（若有）→ 取新 AR 号 → 逐行 createServiceRequestDraft（整单 org/诊断透传）+ 挂费。
+        ServiceApplyFormOrchestrationSupport.SaveApplyFormResult saved = serviceApplyFormOrchestrationSupport.saveApplyForm(
+            request.getEncounterId(),
+            request.getPatientId(),
+            request.getCategoryEnum(),
+            request.getOrgId(),
+            request.getConditionDefinitionId(),
+            request.getEncounterDiagnosisId(),
+            request.getPreviousPrescriptionNo(),
+            serviceApplyFormAssembler.toLineSpecs(request.getLines()),
+            operatorId,
+            (encounterId, patientId, serviceRequestId, activityDefinitionId, quantity, unitCode, productRow) ->
+                createChargeIfPossible(
+                    chargeContext, serviceRequestId, TableNameConstants.WKF_SERVICE_REQUEST,
+                    TableNameConstants.WKF_ACTIVITY_DEFINITION, activityDefinitionId,
+                    quantity, unitCode, productRow, null, null, accountId, orgId, operatorId));
+        // Asm：返回新号与 requestId 列表。
+        SaveDoctorStationServiceApplyFormResponse resp = new SaveDoctorStationServiceApplyFormResponse();
+        resp.setPrescriptionNo(saved.getPrescriptionNo());
+        resp.setRequestIds(saved.getRequestIds());
+        return resp;
+    }
+
+    /**
+     * IF-DOR-22：按类别查询当前就诊 {@code AR} 前缀申请单列表。
+     *
+     * @param request 就诊、患者与 categoryEnum
+     * @return 按 prescriptionNo 分组的申请单头列表
+     * @throws BusinessException 就诊不存在或患者与就诊不一致
+     */
+    public ListDoctorStationServiceApplyFormsResponse listDoctorStationServiceApplyForms(
+        ListDoctorStationServiceApplyFormsRequest request
+    ) {
+        // Gate：与 IF-DOR-10 一致。
+        OutpatientEncounterContextQueryModel snapshot =
+            encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+        doctorStationAdviceMapper.validatePatientEncounter(request.getPatientId(), snapshot.getPatientId());
+        // Pre + Asm：按 AR 前缀与 category 过滤后分组装配。
+        ListDoctorStationServiceApplyFormsResponse resp = new ListDoctorStationServiceApplyFormsResponse();
+        resp.setForms(serviceApplyFormAssembler.toHeaderDtos(
+            serviceApplyFormOrchestrationSupport.listApplyForms(
+                request.getEncounterId(), request.getCategoryEnum())));
+        return resp;
+    }
+
+    /**
      * 查询医嘱绑定信息（当前为占位查询服务，返回空列表亦可）。
      *
      * @param request 绑定类型、项目主键/业务号、组织单元
      * @return 绑定行集合
      */
     public GetDoctorStationAdviceOrderBindInfoResponse getDoctorStationAdviceOrderBindInfo(GetDoctorStationAdviceOrderBindInfoRequest request) {
-        // 前置：业务号与数字主键二选一解析为绑定查询用的 itemId（具体优先级见 Mapper）。
-        Long itemId = doctorStationAdviceMapper.parseOrderBindItemId(request.getItemNo(), request.getItemId());
+        // 前置：用法绑定 itemNo=method_code；诊疗绑定 itemId/数字 itemNo=活动定义主键字符串
+        String sourceItemKey = doctorStationAdviceMapper.resolveOrderBindSourceItemKey(
+            request.getBindType(), request.getItemNo(), request.getItemId());
         GetDoctorStationAdviceOrderBindInfoResponse resp = new GetDoctorStationAdviceOrderBindInfoResponse();
-        // 装配：绑定行当前可为占位空列表，接口形状保持稳定供前端联调。
-        resp.setBindRows(doctorStationAdviceOrderBindQueryService.listBindings(request.getBindType(), itemId, request.getOrganizationUnitId()));
+        resp.setBindRows(doctorStationAdviceOrderBindQueryService.listBindingsBySourceItemKey(
+            request.getBindType(), sourceItemKey, request.getOrganizationUnitId()));
         return resp;
     }
 
@@ -281,6 +442,7 @@ public class DoctorStationAdviceAppService {
      * @return 成功标记与新建药品医嘱主键列表
      * @throws BusinessException 门控失败、自费账户缺失、行操作或资源类型非法、域校验失败
      */
+    @Transactional(rollbackFor = Exception.class)
     public SaveDoctorStationAdviceDraftBatchResponse saveDoctorStationAdviceDraftBatch(SaveDoctorStationAdviceDraftBatchRequest request) {
         // 门控：加载门诊快照并校验患者上下文一致
         OutpatientEncounterContextQueryModel snapshot = encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
@@ -351,16 +513,18 @@ public class DoctorStationAdviceAppService {
                 TableNameConstants.MED_MEDICATION_DEFINITION, line.getMedicationPayload().getMedicationDefinitionId(),
                 line.getMedicationPayload().getQuantity(), line.getMedicationPayload().getUnitCode(),
                 loadSingleProduct(TableNameConstants.MED_MEDICATION_DEFINITION, line.getMedicationPayload().getMedicationDefinitionId()),
+                line.getMedicationPayload().getDispenseLocationId(), line.getMedicationPayload().getMethodCode(),
                 accountId, orgId, operatorId);
             newMedIds.add(newMedicationRequestId);
         } else if (isDeviceProductTable(pt)) {
-            // 耗材：单条草稿 + 费用草稿（缺批号售价定价则保存失败，与目录查询展示解耦）
+            // 耗材：草稿 + 费用；dispenseLocationId 来自目录 IF-DOR-11，写路径 FIFO 不再 match 模板
             Long newDeviceRequestId = deviceRequestDomainService.createDeviceOrderDraft(
                 doctorStationAdviceMapper.toCreateDeviceOrderDraftCommand(request, line, operatorId));
             createChargeIfPossible(request, newDeviceRequestId, TableNameConstants.WKF_DEVICE_REQUEST,
                 TableNameConstants.ADM_DEVICE_DEFINITION, line.getDevicePayload().getDeviceDefinitionId(),
                 line.getDevicePayload().getQuantity(), line.getDevicePayload().getUnitCode(),
                 loadSingleProduct(TableNameConstants.ADM_DEVICE_DEFINITION, line.getDevicePayload().getDeviceDefinitionId()),
+                line.getDevicePayload().getDispenseLocationId(), null,
                 accountId, orgId, operatorId);
         } else if (isActivityProductTable(pt)) {
             // 诊疗：必须先解析活动定义对应的产品读模型行，再落服务申请草稿（携带展示/计价元数据）
@@ -374,7 +538,7 @@ public class DoctorStationAdviceAppService {
                     line.getServicePayload().getQuantity(), line.getServicePayload().getChildOverridesJson()),
                 ServiceAdviceDraftCommandSupport.requireUnitCode(
                     line.getServicePayload().getUnitCode(), line.getServicePayload().getChildOverridesJson(), activityProductRow),
-                activityProductRow, accountId, orgId, operatorId);
+                activityProductRow, null, null, accountId, orgId, operatorId);
         } else {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "不支持的产品定义表名: " + line.getProductTableName());
         }
@@ -409,6 +573,7 @@ public class DoctorStationAdviceAppService {
                 TableNameConstants.MED_MEDICATION_DEFINITION, line.getMedicationPayload().getMedicationDefinitionId(),
                 line.getMedicationPayload().getQuantity(), line.getMedicationPayload().getUnitCode(),
                 loadSingleProduct(TableNameConstants.MED_MEDICATION_DEFINITION, line.getMedicationPayload().getMedicationDefinitionId()),
+                line.getMedicationPayload().getDispenseLocationId(), line.getMedicationPayload().getMethodCode(),
                 accountId, orgId, operatorId);
         } else if (isDeviceProductTable(pt)) {
             chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchor(
@@ -419,6 +584,7 @@ public class DoctorStationAdviceAppService {
                 TableNameConstants.ADM_DEVICE_DEFINITION, line.getDevicePayload().getDeviceDefinitionId(),
                 line.getDevicePayload().getQuantity(), line.getDevicePayload().getUnitCode(),
                 loadSingleProduct(TableNameConstants.ADM_DEVICE_DEFINITION, line.getDevicePayload().getDeviceDefinitionId()),
+                line.getDevicePayload().getDispenseLocationId(), null,
                 accountId, orgId, operatorId);
         } else if (isActivityProductTable(pt)) {
             chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchor(
@@ -433,7 +599,7 @@ public class DoctorStationAdviceAppService {
                     line.getServicePayload().getQuantity(), line.getServicePayload().getChildOverridesJson()),
                 ServiceAdviceDraftCommandSupport.requireUnitCode(
                     line.getServicePayload().getUnitCode(), line.getServicePayload().getChildOverridesJson(), activityProductRow),
-                activityProductRow, accountId, orgId, operatorId);
+                activityProductRow, null, null, accountId, orgId, operatorId);
         } else {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "不支持的产品定义表名: " + line.getProductTableName());
         }
@@ -478,8 +644,10 @@ public class DoctorStationAdviceAppService {
     /**
      * 在存在收费项定义「定价行」的前提下，为当前医嘱申请生成一笔就诊费用草稿。
      *
-     * <p>定义主键为空时不生成费用（历史兼容）；定义主键非空时必须在 {@link DoctorStationAdviceCatalogAssembler#selectFirstPriceLineForChargeDraft}
-     * 分流下命中定价行（诊疗 {@code SALE}，药耗 {@code LOT_NUMBER_PRICE}），否则抛出 {@link BusinessException}，避免无锚点费用默默落库。</p>
+     * <p>定义主键为空时不生成费用（历史兼容）；定义主键非空时经
+     * {@link ClinicalCatalogPriceResolveSupport#resolveDraftChargePriceLine} 定价（诊疗 {@code SALE} 择优；
+     * 药耗 {@code LOT_NUMBER_PRICE}，{@code clientResolvedDispenseLocationId} 非空时 FIFO 直接在该库位取批号、
+     * 不再 match 取药科室模板），无命中则抛出 {@link BusinessException}，避免无锚点费用默默落库。</p>
      *
      * @param request        就诊与患者，写入费用项
      * @param requestId      医嘱申请主键，作为收费 service_id
@@ -489,6 +657,8 @@ public class DoctorStationAdviceAppService {
      * @param quantity       计价数量（与医嘱请求 quantity 同语义）
      * @param quantityUnit   计价单位 code
      * @param productRow     产品定义读模型
+     * @param clientResolvedDispenseLocationId 目录 IF-DOR-11 已解析发药库位；药耗非空时写路径不再 match 模板
+     * @param methodCode     给药途径（药品 FIFO 模板 calcScore）；诊疗/耗材可空
      * @param accountId      自费账户
      * @param orgId          机构
      * @param operatorId     操作人
@@ -503,119 +673,36 @@ public class DoctorStationAdviceAppService {
         java.math.BigDecimal quantity,
         String quantityUnit,
         ProductDefinitionDisplayDto productRow,
+        Long clientResolvedDispenseLocationId,
+        String methodCode,
         Long accountId,
         Long orgId,
         Long operatorId
     ) {
         if (definitionId == null) {
+            // 历史兼容：未重选定义时不挂费（UPDATE 行可能仅改数量/用法）
             return;
         }
-        ChargeItemDefinition priceLine = firstPriceLine(definitionTable, definitionId);
+        // Pre：按定义 + 目录已解析库位（clientResolvedDispenseLocationId）解析 LOT_NUMBER_PRICE / SALE
+        ChargeItemDefinition priceLine = clinicalCatalogPriceResolveSupport.resolveDraftChargePriceLine(
+            definitionTable,
+            definitionId,
+            productRow,
+            orgId,
+            request.getEncounterId(),
+            clientResolvedDispenseLocationId,
+            methodCode
+        );
         if (priceLine == null) {
             throw new BusinessException(
                 ErrorCodeConstants.CHARGE_ITEM_DEFINITION_INVALID_ARGUMENT,
                 "未配置符合开立规则的收费定价（诊疗须零售价 SALE，药品/耗材须批号售价 LOT_NUMBER_PRICE）。请先维护收费项定价后再保存医嘱。");
         }
+        // Cmd：落一笔未计费费用草稿，锚定当前医嘱 requestId
         chargeItemDomainService.createDraftChargeItemFromOrder(
             doctorStationAdviceMapper.toCreateChargeItemDraftFromOrder(
                 request.getEncounterId(), request.getPatientId(), accountId, orgId, operatorId,
                 requestId, requestTable, definitionTable, definitionId, priceLine, quantity, quantityUnit, productRow));
-    }
-
-    /**
-     * 按定价实例表与主键加载该实例下全部定价行，再交给 {@link DoctorStationAdviceCatalogAssembler#selectFirstPriceLineForChargeDraft}
-     * 选出费用草稿单价行（与目录计价对齐）。
-     * <p>诊疗活动定义（{@link TableNameConstants#WKF_ACTIVITY_DEFINITION}）仅采纳零售价行（价型
-     * {@link com.openhis.health.domain.share.enums.PriceType#SALE}）；其它定义表维持仓储返回顺序首条的历史兼容。</p>
-     *
-     * @param instanceTable 定价实例表（与 {@link ChargeItemDefinitionQueryCommand#setInstanceTable} 一致）
-     * @param instanceId    定价实例主键；{@code null} 时不查询，直接返回 {@code null}
-     * @return 用于草稿金额的定价行；无记录或诊疗无零售价行时 {@code null}
-     */
-    private ChargeItemDefinition firstPriceLine(String instanceTable, Long instanceId) {
-        if (instanceId == null) {
-            return null;
-        }
-        ChargeItemDefinitionQueryCommand priceQuery = new ChargeItemDefinitionQueryCommand();
-        priceQuery.setInstanceTable(instanceTable);
-        priceQuery.setInstanceIds(List.of(instanceId));
-        List<ChargeItemDefinition> priceLines = chargeItemDefinitionQueryService.findPriceLinesByProjects(priceQuery);
-        // 诊疗与目录共用 SALE-only 择优，避免「首条」落在采购价行导致计费单价为空或口径错误
-        return DoctorStationAdviceCatalogAssembler.selectFirstPriceLineForChargeDraft(instanceTable, priceLines);
-    }
-
-    /**
-     * 按 FIFO 发放分段批量生成费用草稿：单次解析定价、单次调用 {@link ChargeItemDomainService#createDraftChargeItemFromOrder}，
-     * 域内 {@code saveAll} 落库与批量 busNo（通用规范 A.9.1 / B.10.9）；无符合分流规则的定价行时抛出 {@link BusinessException}。
-     *
-     * @param encounterId         就诊主键
-     * @param patientId           患者主键
-     * @param accountId           自费账户
-     * @param orgId               开立机构
-     * @param operatorId          操作人
-     * @param requestId           医嘱申请主键（写入 {@code service_id}）
-     * @param requestServiceTable 医嘱请求物理表名（写入 {@code service_table}）
-     * @param productDefinitionTable 药品/耗材定义表（写入 {@code product_table}）
-     * @param productDefinitionId 定义主键（写入 {@code product_id}）
-     * @param dispenseTable       发放物理表名（写入 {@code dispense_table}）
-     * @param dispenseIds         与各分段顺序一致的 {@code dispense_id} 列表
-     * @param segmentQuantities   与各分段顺序一致的计价数量列表
-     * @param quantityUnit        计价单位 code（与医嘱开立单位一致）
-     * @throws BusinessException 分段条数与数量列表长度不一致，或缺少批号售价定价行时抛出
-     */
-    private void createDispenseSegmentChargeDrafts(
-        Long encounterId,
-        Long patientId,
-        Long accountId,
-        Long orgId,
-        Long operatorId,
-        Long requestId,
-        String requestServiceTable,
-        String productDefinitionTable,
-        Long productDefinitionId,
-        String dispenseTable,
-        List<Long> dispenseIds,
-        List<BigDecimal> segmentQuantities,
-        String quantityUnit
-    ) {
-        if (dispenseIds == null || segmentQuantities == null || dispenseIds.size() != segmentQuantities.size()) {
-            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "发放分段与费用草稿数量不一致");
-        }
-        if (dispenseIds.isEmpty()) {
-            return;
-        }
-        // 签发批量费用草稿：必须与目录/暂存同一「批号售价」口径命中定价行，缺失则阻断签发以便回到主数据补价。
-        ChargeItemDefinition priceLine = firstPriceLine(productDefinitionTable, productDefinitionId);
-        if (priceLine == null) {
-            throw new BusinessException(
-                ErrorCodeConstants.CHARGE_ITEM_DEFINITION_INVALID_ARGUMENT,
-                "未配置符合开立规则的收费定价（药品/耗材须批号售价 LOT_NUMBER_PRICE）。请先维护收费项定价后再签发医嘱。");
-        }
-        ProductDefinitionDisplayDto productRow = loadSingleProduct(productDefinitionTable, productDefinitionId);
-        List<CreateChargeItemCommand.Item> draftItems = new ArrayList<>();
-        // 每一发放分段一行 ChargeItem：service 指向医嘱请求，product 指向定义，dispense 指向本条分段（DM-ADM-011）。
-        for (int i = 0; i < dispenseIds.size(); i++) {
-            draftItems.add(doctorStationAdviceMapper.toCreateChargeItemDraftItemForFifoDispenseSegment(
-                encounterId,
-                patientId,
-                accountId,
-                orgId,
-                requestId,
-                requestServiceTable,
-                productDefinitionTable,
-                productDefinitionId,
-                dispenseTable,
-                dispenseIds.get(i),
-                priceLine,
-                segmentQuantities.get(i),
-                quantityUnit,
-                productRow));
-        }
-        CreateChargeItemCommand batchCmd = new CreateChargeItemCommand();
-        batchCmd.setOperatorId(operatorId);
-        batchCmd.setItems(draftItems);
-        // 单次 saveAll 批量落库草稿费用（A.9.1），busNo 由域内按批量条数取号。
-        chargeItemDomainService.createDraftChargeItemFromOrder(batchCmd);
     }
 
     /**
@@ -644,11 +731,11 @@ public class DoctorStationAdviceAppService {
      *
      * <p>签发成功后，将本批次内各医嘱锚点下仍处于 DRAFT 的收费明细升为 PLANNED，以便门诊收费预结算通过
      *
-     * @param request 就诊、患者、签发目标集合；批次号可空则按日序列生成
-     * @return 批次号、药品处方号映射
+     * @param request 就诊、患者、签发目标集合
+     * @return 药品处方号映射
      * @throws BusinessException 门控失败、产品表名不支持，或域签发/费用状态迁移失败
      */
-    
+    @Transactional(rollbackFor = Exception.class)
     public SignDoctorStationAdviceBatchResponse signDoctorStationAdviceBatch(SignDoctorStationAdviceBatchRequest request) {
         // 门控：加载门诊快照并校验患者上下文一致
         OutpatientEncounterContextQueryModel snapshot = encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
@@ -661,76 +748,63 @@ public class DoctorStationAdviceAppService {
         if (accountId == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "就诊未解析到自费账户，无法完成签发费用编排");
         }
-        // 生成批次号：请求传入时直接使用，否则按日序列生成
-        String signBatch;
-        if (StringUtils.isNotBlank(request.getSignBatchCode())) {
-            signBatch = request.getSignBatchCode();
-        } else {
-            signBatch = businessSequenceService.getSeqByDay(AggregateTypeConstants.MEDICATION_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
-        }
         // 收集药品医嘱与处方号映射，供前端展示
         Map<Long, String> rxMap = new HashMap<>();
+        boolean hasMedicationSignTarget = false;
+        for (DoctorStationAdviceResourceKeyDto signTarget : request.getSignTargets()) {
+            String productTable = normalizeProductTableName(signTarget.getProductTableName());
+            if (isMedicationProductTable(productTable)) {
+                hasMedicationSignTarget = true;
+                break;
+            }
+        }
+        // Pre（BR-ORD-023）：药品签发前先对就诊下全部未收费药品重分方，再逐条 signMedicationOrder
+        Map<Long, String> splitPrescriptionNoByRequestId = Map.of();
+        if (hasMedicationSignTarget) {
+            splitPrescriptionNoByRequestId = outpatientPrescriptionSplitAssembler.splitAndAssignPrescriptions(
+                request.getEncounterId(), orgId, operatorId);
+        }
         // 命令：按目标类型签发；诊疗分支触发外呼网关占位
         for (DoctorStationAdviceResourceKeyDto t : request.getSignTargets()) {
             String pt = normalizeProductTableName(t.getProductTableName());
             if (isMedicationProductTable(pt)) {
-                String prescriptionNo =
-                    businessSequenceService.getSeqByDay(AggregateTypeConstants.MEDICATION_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
-                medicationRequestDomainService.signMedicationOrder(
-                    doctorStationAdviceMapper.toSignMedicationOrderCommand(t.getRequestId(), signBatch, prescriptionNo, operatorId));
-                rxMap.put(t.getRequestId(), prescriptionNo);
-                // 签发后：作废原「医嘱申请锚点」暂存费用草稿 → FIFO 分段发放 → 按请求+定义+发放段挂费 → 按发放锚点批量升为 PLANNED。
-                chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchors(
-                    request.getEncounterId(), TableNameConstants.MED_MEDICATION_REQUEST, List.of(t.getRequestId()));
-                MedicationRequestFifoSignContext fifoMedCtx =
-                    medicationRequestQueryService.loadFifoSignContextOrThrow(t.getRequestId());
-                List<ReplaceFifoMedicationDispenseDraftsCommand.Segment> medSegments = doctorStationAdviceFifoAllocationAssembler.allocateMedicationFifo(
-                    orgId, fifoMedCtx.getEncounterId(), fifoMedCtx.getMedicationId(), fifoMedCtx.getCatalogCategoryCode(),
-                    fifoMedCtx.getUnitCode(), fifoMedCtx.getQuantity());
-                ReplaceFifoMedicationDispenseDraftsCommand fifoMedCmd = new ReplaceFifoMedicationDispenseDraftsCommand();
-                fifoMedCmd.setOperatorId(operatorId);
-                fifoMedCmd.setMedReqId(fifoMedCtx.getMedReqId());
-                fifoMedCmd.setMedicationId(fifoMedCtx.getMedicationId());
-                fifoMedCmd.setEncounterId(fifoMedCtx.getEncounterId());
-                fifoMedCmd.setPatientId(fifoMedCtx.getPatientId());
-                fifoMedCmd.setUnitCode(fifoMedCtx.getUnitCode());
-                fifoMedCmd.setDispenseEnum(MedicationDispenseType.OUTPATIENT);
-                fifoMedCmd.setSegments(medSegments);
-                List<Long> medDispenseIds = medicationDispenseDomainService.replaceFifoDraftDispensesAfterDoctorStationSign(fifoMedCmd);
-                List<BigDecimal> medQtys = new ArrayList<>();
-                for (ReplaceFifoMedicationDispenseDraftsCommand.Segment seg : medSegments) {
-                    medQtys.add(seg.getQuantity());
+                // Gate：中药饮片须在中医 Tab 签发（BR-TCM-ISO-001），避免与 IF-DOR-37 双轨冲突
+                MedicationRequestListQueryModel medRow = medicationRequestQueryService.getListModelById(t.getRequestId());
+                if (medRow != null && Boolean.TRUE.equals(medRow.getTcmFlag())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "请在中医 Tab 签发");
                 }
-                this.createDispenseSegmentChargeDrafts(
+                String prescriptionNo = splitPrescriptionNoByRequestId.get(t.getRequestId());
+                if (StringUtils.isBlank(prescriptionNo)) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, "药品医嘱处方分方未生成处方号");
+                }
+                medicationRequestDomainService.signMedicationOrder(
+                    doctorStationAdviceMapper.toSignMedicationOrderCommand(t.getRequestId(), prescriptionNo, operatorId));
+                rxMap.put(t.getRequestId(), prescriptionNo);
+                MedicationRequestFifoSignContext fifoMedCtx =
+                    this.orderRequestFifoSignContextLoader.loadMedicationFifoSignContextOrThrow(t.getRequestId());
+                // Cmd：FIFO 发放 + 分段挂费 + PLANNED（与 IF-DOR-37 共用 Support）
+                outpatientMedicationSignChargeSupport.replaceFifoDispenseAndPlanChargesAfterMedicationSigned(
                     request.getEncounterId(), request.getPatientId(), accountId, orgId, operatorId,
-                    fifoMedCtx.getMedReqId(),
-                    TableNameConstants.MED_MEDICATION_REQUEST,
-                    TableNameConstants.MED_MEDICATION_DEFINITION,
-                    fifoMedCtx.getMedicationId(),
-                    TableNameConstants.MED_MEDICATION_DISPENSE,
-                    medDispenseIds,
-                    medQtys,
-                    fifoMedCtx.getUnitCode());
-                chargeItemDomainService.planDraftChargeItemsAfterAdviceSignedByDispenseAnchors(
-                    request.getEncounterId(), TableNameConstants.MED_MEDICATION_DISPENSE, medDispenseIds);
+                    t.getRequestId(), fifoMedCtx);
             } else if (isActivityProductTable(pt)) {
-                // 诊疗：批次号写入服务申请；外呼仅占位，真实 LIS/PACS 路由待检查申请类型后替换
+                // 诊疗：域 sign 后外呼仅占位，真实 LIS/PACS 路由待检查申请类型后替换
                 serviceRequestDomainService.signServiceRequest(
-                    doctorStationAdviceMapper.toSignServiceRequestCommand(t.getRequestId(), signBatch, operatorId));
-                LisPacsAdviceApplyCommand lisPacsStub = new LisPacsAdviceApplyCommand();
-                lisPacsStub.setEncounterId(request.getEncounterId());
-                lisPacsStub.setPatientId(request.getPatientId());
+                    doctorStationAdviceMapper.toSignServiceRequestCommand(t.getRequestId(), operatorId));
+                LisPacsAdviceApplyCommand lisPacsStub = buildLisPacsApplyCommand(
+                    request.getEncounterId(), request.getPatientId(), t.getRequestId());
                 lisPacsApplyGateway.submitIfLabOrImaging(lisPacsStub);
                 // 诊疗申请签发完成：检查/治疗类费用行进入可预结算态。
                 chargeItemDomainService.planDraftChargeItemsAfterAdviceSigned(
                     request.getEncounterId(), TableNameConstants.WKF_SERVICE_REQUEST, t.getRequestId());
             } else if (isDeviceProductTable(pt)) {
-                // 耗材：当前域命令不携带批次号，与药品/诊疗批次展示策略区分
+                // 耗材：签发后走 FIFO 分段发放与费用升位
                 deviceRequestDomainService.signDeviceOrder(doctorStationAdviceMapper.toSignDeviceOrderCommand(t.getRequestId(), operatorId));
                 chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchors(
                     request.getEncounterId(), TableNameConstants.WKF_DEVICE_REQUEST, List.of(t.getRequestId()));
                 DeviceRequestFifoSignContext fifoDevCtx =
-                    deviceRequestQueryService.loadFifoSignContextOrThrow(t.getRequestId());
+                    this.orderRequestFifoSignContextLoader.loadDeviceFifoSignContextOrThrow(t.getRequestId());
                 List<ReplaceFifoDeviceDispenseDraftsCommand.Segment> devSegments = doctorStationAdviceFifoAllocationAssembler.allocateDeviceFifo(
                     orgId, fifoDevCtx.getEncounterId(), fifoDevCtx.getDeviceDefId(), fifoDevCtx.getCatalogCategoryCode(),
                     fifoDevCtx.getUnitCode(), fifoDevCtx.getQuantity());
@@ -747,7 +821,7 @@ public class DoctorStationAdviceAppService {
                 for (ReplaceFifoDeviceDispenseDraftsCommand.Segment seg : devSegments) {
                     devQtys.add(seg.getQuantity());
                 }
-                this.createDispenseSegmentChargeDrafts(
+                this.outpatientMedicationSignChargeSupport.createDispenseSegmentChargeDrafts(
                     request.getEncounterId(), request.getPatientId(), accountId, orgId, operatorId,
                     fifoDevCtx.getDeviceReqId(),
                     TableNameConstants.WKF_DEVICE_REQUEST,
@@ -765,7 +839,6 @@ public class DoctorStationAdviceAppService {
         }
         SignDoctorStationAdviceBatchResponse resp = new SignDoctorStationAdviceBatchResponse();
         resp.setSuccess(Boolean.TRUE);
-        resp.setSignBatchCode(signBatch);
         resp.setPrescriptionNoByMedicationRequestId(rxMap);
         resp.setMessage(DoctorStationAdviceConstants.RESPONSE_MESSAGE_OK);
         return resp;
@@ -823,12 +896,11 @@ public class DoctorStationAdviceAppService {
                     request.getEncounterId(), TableNameConstants.WKF_DEVICE_DISPENSE, devDispenseIds);
                 chargeItemDomainService.voidUnbilledDraftChargeItemsByServiceAnchors(
                     request.getEncounterId(), TableNameConstants.WKF_DEVICE_REQUEST, List.of(t.getRequestId()));
-                if (!devDispenseIds.isEmpty()) {
-                    ReleaseDeviceDispenseReserveCommand releaseDev = new ReleaseDeviceDispenseReserveCommand();
-                    releaseDev.setIdListOrRequestKey(String.valueOf(t.getRequestId()));
-                    releaseDev.setOperatorId(operatorId);
-                    deviceDispenseDomainService.releaseDeviceDispenseReserve(releaseDev);
-                }
+                // Cmd：按 WD① 解析出的发放主键释放库存预占（与药品 signOff 后始终 release 对称；优先逗号 id 列表，避免单键误解析）。
+                ReleaseDeviceDispenseReserveCommand releaseDev = new ReleaseDeviceDispenseReserveCommand();
+                releaseDev.setIdListOrRequestKey(buildDeviceDispenseReleaseFlexibleKey(devDispenseIds, t.getRequestId()));
+                releaseDev.setOperatorId(operatorId);
+                deviceDispenseDomainService.releaseDeviceDispenseReserve(releaseDev);
             } else {
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "不支持的产品定义表名: " + t.getProductTableName());
             }
@@ -905,6 +977,83 @@ public class DoctorStationAdviceAppService {
      */
     private static boolean isActivityProductTable(String productTableName) {
         return TableNameConstants.WKF_ACTIVITY_DEFINITION.equalsIgnoreCase(normalizeProductTableName(productTableName));
+    }
+
+    /**
+     * IF-DOR-18：加载启用态身体部位下拉（平面列表）。
+     */
+    private List<OptionDto> loadBodyStructureOptions() {
+        List<BodyStructureListItemQueryModel> rows =
+            bodyStructureQueryService.getList(null, true, Pageable.unpaged()).getContent();
+        return OptionDtoAssembler.sortBySortAsc(
+            OptionDtoAssembler.toOptionsWithSortFallback(
+                rows,
+                BodyStructureListItemQueryModel::getId,
+                BodyStructureListItemQueryModel::getName,
+                BodyStructureListItemQueryModel::getId,
+                0L));
+    }
+
+    /**
+     * IF-DOR-18：加载启用态样本定义下拉。
+     */
+    private List<OptionDto> loadSpecimenDefinitionOptions() {
+        SearchSpecimenDefinitionQuery query = new SearchSpecimenDefinitionQuery();
+        query.setLimit(500);
+        List<SpecimenDefinitionSearchItemQueryModel> rows = specimenDefinitionQueryService.searchByKeyWord(query);
+        return OptionDtoAssembler.sortBySortAsc(
+            OptionDtoAssembler.toOptionsWithSortFallback(
+                rows,
+                SpecimenDefinitionSearchItemQueryModel::getId,
+                SpecimenDefinitionSearchItemQueryModel::getName,
+                SpecimenDefinitionSearchItemQueryModel::getId,
+                0L));
+    }
+
+    /**
+     * 装配耗材签退释放预占用的灵活定位键：优先逗号分隔发放主键（IF-DOR-16 WD⑦），否则回落 deviceReqId。
+     *
+     * @param dispenseIds  本请求下关联发放主键（WD① 查询结果）
+     * @param deviceReqId  耗材请求主键，无发放事实时作请求维度键
+     * @return 传入 {@link ReleaseDeviceDispenseReserveCommand#setIdListOrRequestKey} 的定位串
+     */
+    private static String buildDeviceDispenseReleaseFlexibleKey(List<Long> dispenseIds, Long deviceReqId) {
+        if (dispenseIds != null && !dispenseIds.isEmpty()) {
+            StringBuilder builder = new StringBuilder();
+            boolean first = true;
+            for (Long dispenseId : dispenseIds) {
+                if (dispenseId == null) {
+                    continue;
+                }
+                if (!first) {
+                    builder.append(",");
+                }
+                builder.append(dispenseId);
+                first = false;
+            }
+            if (!builder.isEmpty()) {
+                return builder.toString();
+            }
+        }
+        if (deviceReqId != null) {
+            return String.valueOf(deviceReqId);
+        }
+        return "";
+    }
+
+    /**
+     * IF-DOR-15：装配 LIS/PACS 外发命令，携带申请明细摘要（BR-REQ-008）。
+     */
+    private LisPacsAdviceApplyCommand buildLisPacsApplyCommand(Long encounterId, Long patientId, Long requestId) {
+        LisPacsAdviceApplyCommand cmd = new LisPacsAdviceApplyCommand();
+        cmd.setEncounterId(encounterId);
+        cmd.setPatientId(patientId);
+        cmd.setRequestId(requestId);
+        Map<Long, List<ServiceRequestDetailListModel>> detailMap =
+            serviceRequestQueryService.mapDetailListModelsByServiceRequestIds(List.of(requestId));
+        cmd.setServiceRequestDetails(serviceApplyFormAssembler.toDetailSummaryDtos(
+            ServiceApplyFormOrchestrationSupport.toDetailSummaryModels(detailMap.get(requestId))));
+        return cmd;
     }
 
 }

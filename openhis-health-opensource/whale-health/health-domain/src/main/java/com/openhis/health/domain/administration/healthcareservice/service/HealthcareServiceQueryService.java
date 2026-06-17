@@ -19,9 +19,14 @@ package com.openhis.health.domain.administration.healthcareservice.service;
 
 import com.openhis.health.domain.administration.healthcareservice.entity.HealthcareService;
 import com.openhis.health.domain.administration.healthcareservice.repository.HealthcareServiceRepository;
+import com.openhis.health.domain.share.enums.HealthcareServiceStatus;
 import org.springframework.stereotype.Service;
 
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -29,7 +34,7 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>职责：为挂号、排班等场景提供启用中的医疗服务列表及按主键加载详情。</p>
  *
- * <p>边界：只读；列表过滤条件为 {@code statusEnum="1"}（启用），与持久化状态码约定一致。</p>
+ * <p>边界：只读；列表过滤条件为 {@link HealthcareServiceStatus#ACTIVE} 语义码。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -42,8 +47,8 @@ public class HealthcareServiceQueryService {
      * @return 医疗服务列表，可能为空
      */
     public List<HealthcareService> listServicesForRegistration() {
-        // 仅返回启用行，停用服务不出现在挂号下拉中。
-        return repository.findAllByStatusEnum("1");
+        // 仅返回已发布（ACTIVE）行，停用服务不出现在挂号下拉中。
+        return repository.findAllByStatusEnum(HealthcareServiceStatus.ACTIVE.getCode());
     }
 
     /**
@@ -54,5 +59,25 @@ public class HealthcareServiceQueryService {
      */
     public HealthcareService loadHealthcareServiceById(Long id) {
         return repository.findById(id).orElse(null);
+    }
+
+    /**
+     * 按主键批量加载医疗服务，供绑定列表 enrich 号源来源项展示名。
+     *
+     * @param ids 主键集合
+     * @return 主键到实体的映射；入参为空时返回空 Map
+     */
+    public Map<Long, HealthcareService> loadHealthcareServiceMapByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<HealthcareService> rows = repository.findAllById(ids);
+        Map<Long, HealthcareService> result = new HashMap<>();
+        for (HealthcareService row : rows) {
+            if (row != null && row.getId() != null) {
+                result.put(row.getId(), row);
+            }
+        }
+        return result;
     }
 }

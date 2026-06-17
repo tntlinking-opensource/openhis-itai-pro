@@ -26,18 +26,21 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 补打挂号单请求。 */
 @Schema(description = "补打挂号单请求")
 public class PrintRegisterTicketRequest {
 
-    /** 就诊 ID。 */
     @Schema(description = "就诊ID")
+    /** 就诊ID（业务字段）。 */
     private Long encounterId;
 
     /** 挂号单号。 */
     @Schema(description = "挂号单号")
+    /** 挂号单号（业务字段）。 */
     private String slipNo;
 
     /** 打印份数。 */
     @Schema(description = "打印份数")
+    /** 打印份数（业务字段）。 */
     private Integer printCopies;
 }

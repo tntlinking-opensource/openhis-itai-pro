@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -31,7 +32,6 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 public class LoadStockOutFormInitRequest {
 
-    /** 兼容旧前端或网关占位字段，服务端忽略。 */
     @Schema(description = "兼容字段，服务端忽略")
     private Long organizationId;
 }

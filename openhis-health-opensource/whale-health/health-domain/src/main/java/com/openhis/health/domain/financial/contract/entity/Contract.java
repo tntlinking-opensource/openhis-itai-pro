@@ -32,12 +32,17 @@ import java.time.LocalDateTime;
 
 /**
  * 费用性质聚合根。
+ *
+ * <p>医保（CHS）对接时，本表<strong>仅 {@code bus_no} 作为配置键</strong>与
+ * {@code chs-contract.properties} 的 {@code contract.{bus_no}.*} 对齐；{@code fixmedins_code}、
+ * {@code adm_vs}、OAuth 密钥等列不由 CHS 模块读取，终端参数以 properties 为准。</p>
  */
 @Getter
 @Setter
 @Entity
 @Table(name = "fin_contract")
 public class Contract extends BaseAuditedEntity {
+    /** 业务编码；CHS 仅用此字段关联 chs-contract.properties。 */
     @Column(name = "bus_no", nullable = false)
     private String busNo;
     @Column(name = "name", nullable = false)
@@ -54,6 +59,7 @@ public class Contract extends BaseAuditedEntity {
     private Boolean ybFlag;
     @Column(name = "display_order")
     private Integer displayOrder;
+    /** 院内/历史字段；CHS 统筹区划读 chs-contract.{bus_no}.adm_vs。 */
     @Column(name = "adm_vs")
     private String admVs;
     @Column(name = "py_str")
@@ -78,6 +84,7 @@ public class Contract extends BaseAuditedEntity {
     private String scope;
     @Column(name = "grant_type")
     private String grantType;
+    /** 院内/历史字段；CHS 定点机构编码读 chs-contract.{bus_no}.fixmedins_code。 */
     @Column(name = "fixmedins_code")
     private String fixmedinsCode;
     @Column(name = "fixmedins_name")

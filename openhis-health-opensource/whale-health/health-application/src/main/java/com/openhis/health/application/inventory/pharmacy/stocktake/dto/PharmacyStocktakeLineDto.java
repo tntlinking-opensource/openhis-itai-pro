@@ -23,9 +23,11 @@ import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 药房盘点单写模型明细行（IF-PHA-ST-04/05）。
@@ -34,15 +36,16 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
+/** 药房盘点单明细行。 */
 @Schema(description = "药房盘点单明细行（写）")
 public class PharmacyStocktakeLineDto {
 
-    /** 物品定义物理表名。 */
     @Schema(description = "物品来源表名", requiredMode = Schema.RequiredMode.REQUIRED)
     private String itemTable;
 
     /** 物品定义主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 物品定义主键。 */
     @Schema(description = "物品定义主键", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long itemId;
 
@@ -72,6 +75,7 @@ public class PharmacyStocktakeLineDto {
 
     /** 选品锚点库存行主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 库存项主键 inventoryItemId。 */
     @Schema(description = "库存项主键 inventoryItemId（选品，可选）")
     private Long inventoryItemId;
 
@@ -85,6 +89,7 @@ public class PharmacyStocktakeLineDto {
 
     /** 业务发生时间（制单时间）。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 业务发生时间 occurrenceTime。 */
     @Schema(description = "业务发生时间 occurrenceTime")
     private LocalDateTime occurrenceTime;
 }

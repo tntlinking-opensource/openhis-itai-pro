@@ -64,9 +64,24 @@ public interface InpatientSettleConstants {
     /** 住院结算发票类型码（草稿）。 */
     String INVOICE_TYPE_INPATIENT = "INPATIENT";
 
+    /** 取消住院结算时票据作废/冲红原因。 */
+    String INVOICE_CANCEL_REASON_INPATIENT_SETTLE = "取消住院结算";
+
     /** 正式结算成功语义码。 */
     String MESSAGE_CODE_SETTLE_SUCCESS = "EX-IP-STL-SUCCESS";
 
     /** 结算金额与明细合计比较小数位。 */
     int SETTLE_AMOUNT_COMPARE_SCALE = 2;
+
+    /** 出院全结模式。 */
+    String SETTLE_MODE_DISCHARGE_FULL = "DISCHARGE_FULL";
+
+    /** 中途结算模式。 */
+    String SETTLE_MODE_MID = "MID_SETTLE";
+
+    /** 医保：PENDING 部分勾选未声明中途（INS-IP-001）。 */
+    String INS_IP_001 = "INS-IP-001";
+
+    /** 医保：显式中途但已全选 PENDING（INS-IP-016）。 */
+    String INS_IP_016 = "INS-IP-016";
 }

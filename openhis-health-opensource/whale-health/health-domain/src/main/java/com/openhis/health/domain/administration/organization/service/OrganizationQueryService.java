@@ -18,10 +18,12 @@
 package com.openhis.health.domain.administration.organization.service;
 
 import com.openhis.health.domain.administration.organization.entity.Organization;
+import com.openhis.health.domain.administration.organization.query.OrganizationManagementListQuery;
 import com.openhis.health.domain.administration.organization.repository.OrganizationRepository;
 import com.openhis.health.domain.share.enums.OrganizationClassification;
-import com.openhis.health.domain.share.enums.OrganizationStatus;
+import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.enums.OrganizationType;
+import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
@@ -55,8 +57,8 @@ public class OrganizationQueryService {
      * @return 机构列表
      */
     public List<Organization> listOrganizationsForOutpatientRegistration() {
-        return organizationRepository.findAllByStatusEnumAndClassEnum(
-            OrganizationStatus.ACTIVE.getCode(), OrganizationClassification.CLINIC);
+        return scopeToCurrentTenant(organizationRepository.findAllByStatusEnumAndClassEnum(
+            PublicationStatus.ACTIVE.getCode(), OrganizationClassification.CLINIC));
     }
 
     /**
@@ -74,8 +76,8 @@ public class OrganizationQueryService {
      * @return 机构列表
      */
     public List<Organization> listOrganizationsForInpatientAdmission() {
-        return organizationRepository.findAllByStatusEnumAndClassEnum(
-            OrganizationStatus.ACTIVE.getCode(), OrganizationClassification.INPATIENT);
+        return scopeToCurrentTenant(organizationRepository.findAllByStatusEnumAndClassEnum(
+            PublicationStatus.ACTIVE.getCode(), OrganizationClassification.INPATIENT));
     }
 
     /**
@@ -85,7 +87,8 @@ public class OrganizationQueryService {
      * @return 机构实体或 {@code null}
      */
     public Organization loadOrganizationByIdForDisplay(Long organizationId) {
-        return organizationRepository.findById(organizationId).orElse(null);
+        Organization organization = organizationRepository.findById(organizationId).orElse(null);
+        return belongsToCurrentTenant(organization) ? organization : null;
     }
 
     /**
@@ -108,13 +111,39 @@ public class OrganizationQueryService {
         if (distinctIds.isEmpty()) {
             return nameByOrganizationId;
         }
-        List<Organization> organizations = organizationRepository.findAllByIdIn(distinctIds);
-        for (Organization organization : organizations) {
+        for (Organization organization : scopeToCurrentTenant(organizationRepository.findAllByIdIn(distinctIds))) {
             if (organization.getId() != null && organization.getName() != null) {
                 nameByOrganizationId.put(organization.getId(), organization.getName());
             }
         }
         return nameByOrganizationId;
+    }
+
+    /**
+     * 当前租户是否已存在未废弃的医院（编辑时可排除自身）。
+     *
+     * <p>管理态口径：含草稿/启用/停用，不含已废弃（DISCARDED）记录。</p>
+     *
+     * @param excludeOrganizationId 编辑场景下排除的机构主键；新建时传 {@code null}
+     * @return {@code true} 表示除排除项外仍存在医院
+     */
+    public boolean existsHospitalExcluding(Long excludeOrganizationId) {
+        List<Organization> hospitals = scopeToCurrentTenant(organizationRepository.findAllByTypeEnumAndStatusEnumIn(
+            OrganizationType.HOSPITAL.getCode(),
+            List.of(
+                PublicationStatus.DRAFT.getCode(),
+                PublicationStatus.ACTIVE.getCode(),
+                PublicationStatus.INACTIVE.getCode())));
+        for (Organization hospital : hospitals) {
+            if (hospital == null || hospital.getId() == null) {
+                continue;
+            }
+            if (excludeOrganizationId != null && excludeOrganizationId.equals(hospital.getId())) {
+                continue;
+            }
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -125,7 +154,7 @@ public class OrganizationQueryService {
      */
     public boolean checkOrganizationAbolishable(Long organizationId) {
         return !organizationRepository.existsByParentIdAndStatusEnum(
-            organizationId, OrganizationStatus.ACTIVE.getCode());
+            organizationId, PublicationStatus.ACTIVE.getCode());
     }
 
     /**
@@ -134,27 +163,67 @@ public class OrganizationQueryService {
      * @return 启用机构列表
      */
     public List<Organization> getOrganizationTree() {
-        return organizationRepository.findAllByStatusEnum(OrganizationStatus.ACTIVE.getCode());
+        return scopeToCurrentTenant(
+            organizationRepository.findAllByStatusEnum(PublicationStatus.ACTIVE.getCode()));
     }
 
     /**
-     * 药房业务可选启用机构（分类为药房）。
+     * 科室管理列表：含 DRAFT/ACTIVE/INACTIVE，不含 DISCARDED 已废弃机构。
      *
-     * @return 机构列表
+     * @return 机构平铺列表
      */
-    public List<Organization> getOrganizationTreeForPharmacy() {
-        return organizationRepository.findAllByStatusEnumAndClassEnum(
-            OrganizationStatus.ACTIVE.getCode(), OrganizationClassification.PHARMACY);
+    public List<Organization> listOrganizationsForManagement() {
+        return listOrganizationsForManagement(new OrganizationManagementListQuery());
     }
 
     /**
-     * 仓储业务可选启用机构（分类为仓储）。
+     * 科室管理列表（带筛选）：在管理态机构范围内按条件过滤，并保留命中节点的上级以维持树形展示。
      *
-     * @return 机构列表
+     * @param query 查询条件；{@code null} 时等价于无筛选
+     * @return 平铺机构列表
      */
-    public List<Organization> getOrganizationTreeForStorage() {
-        return organizationRepository.findAllByStatusEnumAndClassEnum(
-            OrganizationStatus.ACTIVE.getCode(), OrganizationClassification.STORAGE);
+    public List<Organization> listOrganizationsForManagement(OrganizationManagementListQuery query) {
+        List<Organization> allManagement = scopeToCurrentTenant(
+            organizationRepository.findAllByStatusEnumInOrderByDisplayOrderAscIdAsc(
+                List.of(
+                    PublicationStatus.DRAFT.getCode(),
+                    PublicationStatus.ACTIVE.getCode(),
+                    PublicationStatus.INACTIVE.getCode())));
+        OrganizationManagementListQuery effective = query == null ? new OrganizationManagementListQuery() : query;
+        if (!effective.hasAnyFilter()) {
+            return allManagement;
+        }
+
+        Map<Long, Organization> byId = new HashMap<>();
+        for (Organization organization : allManagement) {
+            if (organization.getId() != null) {
+                byId.put(organization.getId(), organization);
+            }
+        }
+
+        Set<Long> visibleIds = new LinkedHashSet<>();
+        for (Organization organization : allManagement) {
+            if (!matchesManagementFilter(organization, effective)) {
+                continue;
+            }
+            // 命中节点需连同上级一并返回，否则树表无法挂载。
+            Long currentId = organization.getId();
+            while (currentId != null) {
+                if (!visibleIds.add(currentId)) {
+                    break;
+                }
+                Organization current = byId.get(currentId);
+                currentId = current == null ? null : current.getParentId();
+            }
+        }
+
+        List<Organization> filtered = new ArrayList<>();
+        for (Organization organization : allManagement) {
+            if (organization.getId() != null && visibleIds.contains(organization.getId())) {
+                filtered.add(organization);
+            }
+        }
+        return filtered;
     }
 
     /**
@@ -208,56 +277,10 @@ public class OrganizationQueryService {
             return Map.of();
         }
         Map<Long, String> out = new HashMap<>(idSet.size());
-        for (Organization o : organizationRepository.findAllByIdIn(idSet)) {
+        for (Organization o : scopeToCurrentTenant(organizationRepository.findAllByIdIn(idSet))) {
             out.put(o.getId(), StringUtils.defaultString(o.getName()));
         }
         return out;
-    }
-
-    /**
-     * 急诊分诊可选科室：启用且 {@link OrganizationType#DEPARTMENT}。
-     *
-     * <p>上下文为医院/机构时取直接子科室；上下文本身为科室时取同上级下的兄弟科室（含自身）。</p>
-     *
-     * @param scopeOrganizationId 登录或初始化上下文中的机构/科室主键
-     * @return 按 displayOrder、主键升序的科室列表
-     */
-    public List<Organization> listActiveDepartmentsForTriageScope(Long scopeOrganizationId) {
-        if (scopeOrganizationId == null) {
-            return List.of();
-        }
-        Organization scope = loadOrganizationByIdForDisplay(scopeOrganizationId);
-        if (scope == null) {
-            return List.of();
-        }
-        Long siblingParentId =
-                OrganizationType.DEPARTMENT.getCode().equals(scope.getTypeEnum())
-                        ? scope.getParentId()
-                        : scopeOrganizationId;
-        List<Organization> departments = new ArrayList<>();
-        if (siblingParentId != null) {
-            for (Organization org : organizationRepository.findAllByParentId(siblingParentId)) {
-                if (isActiveDepartment(org)) {
-                    departments.add(org);
-                }
-            }
-        }
-        if (isActiveDepartment(scope)
-                && departments.stream().noneMatch(o -> Objects.equals(o.getId(), scope.getId()))) {
-            departments.add(scope);
-        }
-        departments.sort(
-                Comparator.comparing(
-                                Organization::getDisplayOrder,
-                                Comparator.nullsLast(Comparator.naturalOrder()))
-                        .thenComparing(Organization::getId, Comparator.nullsLast(Comparator.naturalOrder())));
-        return departments;
-    }
-
-    private static boolean isActiveDepartment(Organization org) {
-        return org != null
-                && OrganizationType.DEPARTMENT.getCode().equals(org.getTypeEnum())
-                && OrganizationStatus.ACTIVE.getCode().equals(org.getStatusEnum());
     }
 
     /**
@@ -267,6 +290,128 @@ public class OrganizationQueryService {
      * @return 机构实体；无匹配时 {@code null}
      */
     public Organization findFirstByBusNo(String busNo) {
-        return organizationRepository.findFirstByBusNo(busNo).orElse(null);
+        Organization organization = organizationRepository.findFirstByBusNo(busNo).orElse(null);
+        return belongsToCurrentTenant(organization) ? organization : null;
+    }
+
+    private boolean belongsToCurrentTenant(Organization organization) {
+        if (organization == null) {
+            return false;
+        }
+        Long tenantId = TenantUtils.getCurrentTenantId();
+        if (tenantId == null) {
+            return true;
+        }
+        return tenantId.equals(organization.getTenantId());
+    }
+
+    private List<Organization> scopeToCurrentTenant(List<Organization> organizations) {
+        Long tenantId = TenantUtils.getCurrentTenantId();
+        if (tenantId == null || organizations == null || organizations.isEmpty()) {
+            return organizations == null ? List.of() : organizations;
+        }
+        List<Organization> scoped = new ArrayList<>(organizations.size());
+        for (Organization organization : organizations) {
+            if (belongsToCurrentTenant(organization)) {
+                scoped.add(organization);
+            }
+        }
+        return scoped;
+    }
+
+    /**
+     * 判断机构是否满足科室管理页筛选条件。
+     *
+     * @param organization 候选机构
+     * @param query 查询条件
+     * @return 满足时为 true
+     */
+    private boolean matchesManagementFilter(Organization organization, OrganizationManagementListQuery query) {
+        if (organization == null || query == null) {
+            return false;
+        }
+        if (StringUtils.isNotBlank(query.getStatusEnum())
+            && !query.getStatusEnum().trim().equals(organization.getStatusEnum())) {
+            return false;
+        }
+        OrganizationType typeFilter = OrganizationType.resolveRaw(query.getTypeEnum());
+        if (typeFilter != null && !typeFilter.getCode().equals(organization.getTypeEnum())) {
+            return false;
+        }
+        OrganizationClassification classFilter = resolveOrganizationClassification(query.getClassEnum());
+        if (classFilter != null && organization.getClassEnum() != classFilter) {
+            return false;
+        }
+        if (StringUtils.isBlank(query.getKeyword())) {
+            return true;
+        }
+        return matchesKeyword(organization, query.getKeyword().trim());
+    }
+
+    /**
+     * 关键字模糊匹配：名称、医保字段、拼音/五笔、默认医师、科别等（不区分大小写）。
+     *
+     * @param organization 机构
+     * @param keyword 已 trim 的关键字
+     * @return 命中时为 true
+     */
+    private boolean matchesKeyword(Organization organization, String keyword) {
+        String core = keyword.toLowerCase(java.util.Locale.ROOT);
+        return containsIgnoreCase(organization.getName(), core)
+            || containsIgnoreCase(organization.getYbNo(), core)
+            || containsIgnoreCase(organization.getYbName(), core)
+            || containsIgnoreCase(organization.getMedinsId(), core)
+            || containsIgnoreCase(organization.getMedinsAdmdvs(), core)
+            || containsIgnoreCase(organization.getMedinsType(), core)
+            || containsIgnoreCase(organization.getMedinsLv(), core)
+            || containsIgnoreCase(organization.getPyStr(), core)
+            || containsIgnoreCase(organization.getWbStr(), core)
+            || containsIgnoreCase(organization.getCaty(), core)
+            || containsIgnoreCase(organization.getBusNo(), core)
+            || (organization.getDefDoctorId() != null
+                && String.valueOf(organization.getDefDoctorId()).toLowerCase().contains(core));
+    }
+
+    /**
+     * 不区分大小写的子串包含判断。
+     *
+     * @param source 源字符串
+     * @param keywordCore 已小写化的关键字（不含 % 通配符）
+     * @return 包含时为 true
+     */
+    private boolean containsIgnoreCase(String source, String keywordCore) {
+        if (StringUtils.isBlank(source)) {
+            return false;
+        }
+        return source.toLowerCase().contains(keywordCore);
+    }
+
+    /**
+     * 解析机构业务分类：支持领域 code 或 sortOrder 数字字符串。
+     *
+     * @param classEnumRaw 前端原始值
+     * @return 分类枚举；无法解析时返回 null
+     */
+    private OrganizationClassification resolveOrganizationClassification(String classEnumRaw) {
+        if (StringUtils.isBlank(classEnumRaw)) {
+            return null;
+        }
+        String normalized = classEnumRaw.trim();
+        for (OrganizationClassification item : OrganizationClassification.values()) {
+            if (item != null && item.getCode().equals(normalized)) {
+                return item;
+            }
+        }
+        try {
+            long sortOrder = Long.parseLong(normalized);
+            for (OrganizationClassification item : OrganizationClassification.values()) {
+                if (item != null && item.getSortOrder() != null && item.getSortOrder().longValue() == sortOrder) {
+                    return item;
+                }
+            }
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+        return null;
     }
 }

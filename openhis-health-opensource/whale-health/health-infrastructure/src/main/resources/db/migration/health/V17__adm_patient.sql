@@ -1,4 +1,4 @@
--- adm_patient（建表 + 种子数据）
+-- adm_patient（建表）
 -- Flyway V17
 
 CREATE TABLE IF NOT EXISTS "public"."adm_patient" (
@@ -50,27 +50,51 @@ CREATE TABLE IF NOT EXISTS "public"."adm_patient" (
     CONSTRAINT "adm_patient_pkey" PRIMARY KEY ("id")
 );
 
--- seed: adm_patient
-INSERT INTO "adm_patient" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "bus_no", "name", "name_json", "gender_enum", "birth_date", "status_enum", "active_flag", "temp_flag", "id_card", "marital_status_enum", "prfs_enum", "phone", "address", "address_province", "address_city", "address_district", "address_street", "address_extend_json", "nationality_code", "py_str", "wb_str", "blood_type_abo", "blood_type_rh", "work_company", "native_place", "country_code", "link_name", "link_relation_code", "link_telcom", "link_jsons", "deceased_date", "deceased_reason", "organization_id", "merged_target_patient_id", "merged_at")
-VALUES
-(309215438042566656, 1, '2026-05-03 06:31:45.374+00', '2026-05-03 06:31:45.374+00', 1, 1, false, NULL, NULL, 0, 'PA0001', '王先生', NULL, 'MALE', '1999-12-31 16:00:00.000+00', 'ACTIVE', true, false, 220322200001012235, NULL, NULL, 15655642235, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'WXS', 'GTT', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 6, NULL, NULL),
-(309623289395286016, 1, '2026-05-04 09:32:24.714+00', '2026-05-04 09:32:24.714+00', 1, 1, false, NULL, NULL, 0, 'PA0002', '小孙', NULL, 'MALE', '1999-12-31 16:00:00.000+00', 'ACTIVE', true, false, 220322200001012231, NULL, NULL, 15966533365, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'XS', 'IB', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 6, NULL, NULL),
-(309927441925148672, 1, '2026-05-05 05:41:00.329+00', '2026-05-05 05:41:00.329+00', 1, 1, false, NULL, NULL, 0, 'PA0003', '小王', NULL, 'MALE', '2000-03-02 16:00:00.000+00', 'ACTIVE', true, false, 220322200003032216, NULL, NULL, 15944896653, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'XW', 'IG', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 6, NULL, NULL),
-(311048971489906688, 1, '2026-05-08 07:57:33.813+00', '2026-05-08 07:57:33.813+00', 1, 1, false, NULL, NULL, 0, 'PA0004', '李先生', NULL, 'MALE', '2000-01-02 16:00:00.000+00', 'ACTIVE', true, false, 223222200001032253, NULL, NULL, 15944588868, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'LXS', 'STT', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 6, NULL, NULL),
-(311112892936097792, 1, '2026-05-08 12:11:33.874+00', '2026-05-08 12:11:33.874+00', 1, 1, false, NULL, NULL, 0, 'PA0005', '赵先生', NULL, 'FEMALE', '1999-12-31 16:00:00.000+00', 'ACTIVE', true, false, 220322200001011125, NULL, NULL, 15946665666, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ZXS', 'FTT', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 6, NULL, NULL),
-(311459219787223040, 1, '2026-05-09 11:07:44.629+00', '2026-05-09 11:07:44.629+00', 1, 1, false, NULL, NULL, 0, 'PA0006', '吴先生', NULL, 'FEMALE', '1999-12-31 16:00:00.000+00', 'ACTIVE', true, false, 220322200001014365, NULL, NULL, 15944656656, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'WXS', 'KTT', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, NULL, NULL),
-(311477573694525440, 1, '2026-05-09 12:20:40.542+00', '2026-05-09 12:20:40.542+00', 1, 1, false, NULL, NULL, 0, 'PA0007', '朱先生', NULL, 'FEMALE', '2003-02-02 16:00:00.000+00', 'ACTIVE', true, false, 220322200302033326, NULL, NULL, 15666545568, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ZXS', 'RTT', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 6, NULL, NULL),
-(311741724879753216, 1, '2026-05-10 05:50:19.092+00', '2026-05-10 05:50:19.092+00', 1, 1, false, NULL, NULL, 0, 'PA0008', '孙女士', NULL, 'MALE', '1999-12-31 16:00:00.000+00', 'ACTIVE', true, false, 220322200001011234, NULL, NULL, 13944891254, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'SNS', 'BVF', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 6, NULL, NULL),
-(315080284859535360, 1, '2026-05-19 10:56:33.819+00', '2026-05-19 10:56:33.819+00', 1, 1, false, NULL, NULL, 0, 'PA0009', '王先生', NULL, 'MALE', '2000-12-31 16:00:00.000+00', 'ACTIVE', true, false, 220322200101012235, NULL, NULL, 15944958865, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'WXS', 'GTT', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, NULL, NULL),
-(315372414342533120, 1, '2026-05-20 06:17:22.915+00', '2026-05-20 06:17:22.915+00', 1, 1, false, NULL, NULL, 0, 'PA0010', '张三', NULL, 'FEMALE', '2000-07-27 16:00:00.000+00', 'ACTIVE', true, false, 110101200007287301, NULL, NULL, '', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ZS', 'XD', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 6, NULL, NULL),
-(315396767448305664, 1, '2026-05-20 07:54:09.148+00', '2026-05-20 07:54:09.148+00', 1, 1, false, NULL, NULL, 0, 'PA0011', '李先生', NULL, 'MALE', '2000-02-01 16:00:00.000+00', 'ACTIVE', true, false, 220322200002023326, NULL, NULL, 15944896652, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'LXS', 'STT', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, NULL, NULL),
-(315397083057098752, 1, '2026-05-20 07:55:24.395+00', '2026-05-20 07:55:24.395+00', 1, 1, false, NULL, NULL, 0, 'PA0012', '小孙', NULL, 'MALE', '1999-12-31 16:00:00.000+00', 'ACTIVE', true, false, 220322200001012265, NULL, NULL, 15944896653, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'XS', 'IB', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, NULL, NULL),
-(315411961731878912, 1, '2026-05-20 08:54:31.747+00', '2026-05-20 08:54:31.747+00', 1, 1, false, NULL, NULL, 0, 'PA0013', '小李', NULL, 'MALE', '2000-06-05 16:00:00.000+00', 'ACTIVE', true, false, 220322200006063356, NULL, NULL, 15988966654, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'XL', 'IS', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 6, NULL, NULL),
-(315462076856799232, 1, '2026-05-20 12:13:40.124+00', '2026-05-20 12:13:40.124+00', 1, 1, false, NULL, NULL, 0, 'PA0014', '赵先生', NULL, 'MALE', '2000-01-01 16:00:00.000+00', 'ACTIVE', true, false, 220322200001021234, NULL, NULL, 15944458868, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ZXS', 'FTT', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 6, NULL, NULL),
-(316936268058988544, 1, '2026-05-24 13:51:34.696+00', '2026-05-24 13:51:34.696+00', 1, 1, false, NULL, NULL, 0, 'PA0015', '无名氏', NULL, 'UNKNOWN', '1899-12-31 15:54:17.000+00', 'DRAFT', false, true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'WMS', 'FQQ', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, NULL, NULL),
-(316936732003536896, 1, '2026-05-24 13:53:25.309+00', '2026-05-24 13:53:25.309+00', 1, 1, false, NULL, NULL, 0, 'PA0016', '无名氏', NULL, 'UNKNOWN', '1899-12-31 15:54:17.000+00', 'DRAFT', false, true, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'WMS', 'FQQ', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, NULL, NULL),
-(316937235894636544, 1, '2026-05-24 13:55:25.446+00', '2026-05-24 13:55:25.446+00', 1, 1, false, NULL, NULL, 0, 'PA0017', '李先生', NULL, 'MALE', '1989-02-28 16:00:00.000+00', 'ACTIVE', true, false, 210802198903010035, NULL, NULL, '', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'LXS', 'STT', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, NULL, NULL),
-(317911195614449664, 1, '2026-05-27 06:25:35.538+00', '2026-05-27 06:25:35.538+00', 1, 1, false, NULL, NULL, 0, 'PA0018', 'test', NULL, 'FEMALE', '2000-07-27 16:00:00.000+00', 'ACTIVE', true, false, 110101200007280302, NULL, NULL, '', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'TEST', 'TEST', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 6, NULL, NULL),
-(317931796996034560, 1, '2026-05-27 07:47:27.291+00', '2026-05-27 07:47:27.291+00', 1, 1, false, NULL, NULL, 0, 'PA0019', '门诊测试', NULL, 'FEMALE', '2000-07-27 16:00:00.000+00', 'ACTIVE', true, false, 110101200007289905, NULL, NULL, '', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'MZCS', 'UYIY', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 6, NULL, NULL),
-(317942940947189760, 1, '2026-05-27 08:31:44.216+00', '2026-05-27 08:31:44.216+00', 1, 1, false, NULL, NULL, 0, 'PA0020', 'test', NULL, 'FEMALE', '2000-07-27 16:00:00.000+00', 'ACTIVE', true, false, 110101200007281401, NULL, NULL, '', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'TEST', 'TEST', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 6, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
+COMMENT ON TABLE adm_patient IS '管理域 patient';
+
+COMMENT ON COLUMN adm_patient.id IS '主键';
+COMMENT ON COLUMN adm_patient.tenant_id IS '租户标识';
+COMMENT ON COLUMN adm_patient.created_at IS '创建时间';
+COMMENT ON COLUMN adm_patient.updated_at IS '最后更新时间';
+COMMENT ON COLUMN adm_patient.created_by IS '创建人';
+COMMENT ON COLUMN adm_patient.updated_by IS '最后更新人';
+COMMENT ON COLUMN adm_patient.is_deleted IS '软删标记';
+COMMENT ON COLUMN adm_patient.deleted_at IS '删除时间';
+COMMENT ON COLUMN adm_patient.deleted_by IS '删除人';
+COMMENT ON COLUMN adm_patient.version IS '乐观锁版本号';
+COMMENT ON COLUMN adm_patient.bus_no IS '患者聚合根实体';
+COMMENT ON COLUMN adm_patient.name IS '患者姓名';
+COMMENT ON COLUMN adm_patient.name_json IS '姓名扩展 JSON';
+COMMENT ON COLUMN adm_patient.gender_enum IS '性别编码';
+COMMENT ON COLUMN adm_patient.birth_date IS '出生日期';
+COMMENT ON COLUMN adm_patient.status_enum IS '患者状态编码';
+COMMENT ON COLUMN adm_patient.active_flag IS '启用标记';
+COMMENT ON COLUMN adm_patient.temp_flag IS '临时建档标记';
+COMMENT ON COLUMN adm_patient.id_card IS '身份证号';
+COMMENT ON COLUMN adm_patient.marital_status_enum IS '婚姻状态编码';
+COMMENT ON COLUMN adm_patient.prfs_enum IS '职业编码';
+COMMENT ON COLUMN adm_patient.phone IS '联系电话';
+COMMENT ON COLUMN adm_patient.address IS 'address';
+COMMENT ON COLUMN adm_patient.address_province IS 'address province';
+COMMENT ON COLUMN adm_patient.address_city IS 'address city';
+COMMENT ON COLUMN adm_patient.address_district IS 'address district';
+COMMENT ON COLUMN adm_patient.address_street IS 'address street';
+COMMENT ON COLUMN adm_patient.address_extend_json IS '主要地址';
+COMMENT ON COLUMN adm_patient.nationality_code IS '民族编码';
+COMMENT ON COLUMN adm_patient.py_str IS '拼音码';
+COMMENT ON COLUMN adm_patient.wb_str IS '五笔码';
+COMMENT ON COLUMN adm_patient.blood_type_abo IS 'blood type abo';
+COMMENT ON COLUMN adm_patient.blood_type_rh IS 'blood type rh';
+COMMENT ON COLUMN adm_patient.work_company IS '血型';
+COMMENT ON COLUMN adm_patient.native_place IS '籍贯';
+COMMENT ON COLUMN adm_patient.country_code IS '国家地区编码';
+COMMENT ON COLUMN adm_patient.link_name IS 'link name';
+COMMENT ON COLUMN adm_patient.link_relation_code IS 'link relation code';
+COMMENT ON COLUMN adm_patient.link_telcom IS 'link telcom';
+COMMENT ON COLUMN adm_patient.link_jsons IS '主要联系人';
+COMMENT ON COLUMN adm_patient.deceased_date IS '死亡时间';
+COMMENT ON COLUMN adm_patient.deceased_reason IS '死亡原因';
+COMMENT ON COLUMN adm_patient.organization_id IS '建档机构标识';
+COMMENT ON COLUMN adm_patient.merged_target_patient_id IS '合并目标患者标识';
+COMMENT ON COLUMN adm_patient.merged_at IS '合并时间';
+

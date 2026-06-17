@@ -17,12 +17,12 @@
 
 package com.openhis.health.application.inventory.warehouse.inventorydetail.service;
 
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.application.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
-import com.openhis.health.application.common.assembler.option.TerminologyOptionLoader;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
 import com.openhis.whale.core.application.util.AnnotatedExcelExporter;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.dto.InventoryDetailCurrentExportRowDto;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.dto.InventoryDetailListRowDto;
@@ -45,16 +45,17 @@ import com.openhis.health.domain.administration.chargeitemdefinition.service.Cha
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
 import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.inventory.InventoryCatalogFilterSupport;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.application.querysupport.product.ProductDefinitionSelectionTerminologySupport;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionSelectionTerminologyMaps;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.inventory.InventoryCatalogFilterSupport;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.ProductDefinitionSelectionTerminologySupport;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionSelectionTerminologyMaps;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InventoryWarehouseDetailExportConstants;
 import com.openhis.health.domain.share.constants.ProductDefinitionCatalogUnitBandConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -69,7 +70,6 @@ import com.openhis.health.domain.workflow.inventoryitem.queries.model.WarehouseI
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -102,8 +102,6 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class InventoryWarehouseInventoryDetailAppService {
 
-    private final ICurrentUser currentUser;
-
     private final CurrentOperatorResolver currentOperatorResolver;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     private final TerminologyOptionLoader terminologyOptionLoader;
@@ -124,9 +122,11 @@ public class InventoryWarehouseInventoryDetailAppService {
      * @throws BusinessException {@code WHS_DTL_201} 术语加载失败
      */
     public LoadInventoryDetailFormInitResponse loadInventoryDetailFormInit(@Valid LoadInventoryDetailFormInitRequest request) {
+        // Gate：登录上下文
         this.assertGateUserPresent();
         LoadInventoryDetailFormInitResponse response = new LoadInventoryDetailFormInitResponse();
         try {
+            // Pre：加载医保等级术语下拉
             List<OptionDto> chrgitm = terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.CHRGITM_LV);
             response.setChrgitmLvOptions(chrgitm);
         } catch (RuntimeException ex) {
@@ -140,12 +140,9 @@ public class InventoryWarehouseInventoryDetailAppService {
                 if (option == null) {
                     continue;
                 }
-                // 仅保留 ACTIVE 与 RETIRED 两态用于库存状态筛选。
-                if (PublicationStatus.ACTIVE.getCode().equals(option.getValue())) {
-                    filteredPub.add(option);
-                    continue;
-                }
-                if (PublicationStatus.RETIRED.getCode().equals(option.getValue())) {
+                // 库存状态筛选仅暴露 ACTIVE/INACTIVE 两态。
+                if (PublicationStatus.ACTIVE.getCode().equals(option.getValue())
+                    || PublicationStatus.INACTIVE.getCode().equals(option.getValue())) {
                     filteredPub.add(option);
                 }
             }
@@ -163,6 +160,7 @@ public class InventoryWarehouseInventoryDetailAppService {
             log.warn("库存明细初始化：药品/耗材分类术语加载失败", ex);
             throw new BusinessException(ErrorCodeConstants.WHS_DTL_201, "筛选项加载失败");
         }
+        // Asm：映射页初始化响应
         return response;
     }
 
@@ -174,7 +172,9 @@ public class InventoryWarehouseInventoryDetailAppService {
      * @throws BusinessException {@code WHS_DTL_202} 列表加载失败
      */
     public PageInventoryDetailCurrentResponse pageInventoryDetailCurrent(@Valid PageInventoryDetailCurrentRequest request) {
+        // Gate：登录上下文
         this.assertGateUserPresent();
+        // Pre：管辖库房收窄并组装分页查询
         List<Long> effectiveWarehouseIds = this.resolveEffectiveWarehouseIds(request.getWarehouseIds());
         WarehouseInventoryDetailPageQuery query =
             this.inventoryWarehouseInventoryDetailMapper.toWarehouseDetailPageQuery(request, effectiveWarehouseIds);
@@ -184,6 +184,7 @@ public class InventoryWarehouseInventoryDetailAppService {
         Pageable pageable = PageRequest.of(request.springPageIndex(), request.getBoundedPageSize(), sort);
         Page<WarehouseInventoryDetailItemModel> page;
         try {
+            // Cmd：分页查询现库明细
             page = this.inventoryWarehouseInventoryDetailMapper.selectCurrentDetailPage(query, pageable);
         } catch (RuntimeException ex) {
             log.warn("现库明细分页查询失败", ex);
@@ -195,6 +196,7 @@ public class InventoryWarehouseInventoryDetailAppService {
             rows.add(dto);
         }
         this.enrichRows(rows);
+        // Asm：装配分页响应
         return PagedResultBuilder.build(
             new PageInventoryDetailCurrentResponse(),
             rows,
@@ -212,13 +214,16 @@ public class InventoryWarehouseInventoryDetailAppService {
      * @throws BusinessException {@code WHS_DTL_203} 汇总加载失败
      */
     public SumInventoryDetailCurrentResponse sumInventoryDetailCurrent(@Valid SumInventoryDetailCurrentRequest request) {
+        // Gate：登录上下文
         this.assertGateUserPresent();
+        // Pre：管辖库房收窄并组装汇总查询
         List<Long> effectiveWarehouseIds = this.resolveEffectiveWarehouseIds(request.getWarehouseIds());
         WarehouseInventoryDetailPageQuery query =
             this.inventoryWarehouseInventoryDetailMapper.toWarehouseDetailPageQuery(request, effectiveWarehouseIds);
         this.inventoryCatalogFilterSupport.enrichResolvedDefinitionIds(query);
         List<WarehouseInventoryDetailItemModel> models;
         try {
+            // Cmd：装载汇总候选行（带上限行）
             models = this.inventoryWarehouseInventoryDetailMapper.selectCurrentDetailForSum(
                 query, InventoryWarehouseDetailExportConstants.INVENTORY_DETAIL_SUM_MAX_ROWS);
         } catch (RuntimeException ex) {
@@ -248,6 +253,7 @@ public class InventoryWarehouseInventoryDetailAppService {
             truncated = true;
         }
         response.setTruncated(truncated);
+        // Asm：映射汇总响应
         return response;
     }
 
@@ -259,13 +265,16 @@ public class InventoryWarehouseInventoryDetailAppService {
      * @throws BusinessException {@code WHS_DTL_206} 导出失败
      */
     public ExportInventoryDetailCurrentResponse exportInventoryDetailCurrent(@Valid ExportInventoryDetailCurrentRequest request) {
+        // Gate：登录上下文
         this.assertGateUserPresent();
+        // Pre：管辖库房收窄并组装导出查询
         List<Long> effectiveWarehouseIds = this.resolveEffectiveWarehouseIds(request.getWarehouseIds());
         WarehouseInventoryDetailPageQuery query =
             this.inventoryWarehouseInventoryDetailMapper.toWarehouseDetailPageQuery(request, effectiveWarehouseIds);
         this.inventoryCatalogFilterSupport.enrichResolvedDefinitionIds(query);
         List<WarehouseInventoryDetailItemModel> models;
         try {
+            // Cmd：装载导出行（带上限行）
             models = this.inventoryWarehouseInventoryDetailMapper.selectCurrentDetailForExport(query);
         } catch (RuntimeException ex) {
             log.warn("现库明细导出装载失败", ex);
@@ -300,17 +309,19 @@ public class InventoryWarehouseInventoryDetailAppService {
             log.warn("现库明细导出写流失败", ex);
             throw new BusinessException(ErrorCodeConstants.WHS_DTL_206, "导出失败，请稍后或联系管理员");
         }
+        // Asm：映射导出响应
         return response;
     }
 
     /**
-     * 批量停供：将选中库存项发布状态置为 RETIRED（领域 {@code stopSupply}）。
+     * 批量停供：将选中库存项发布状态置为 INACTIVE（领域 {@code stopSupply}）。
      *
      * @param request 库存项主键列表
      * @return 影响行数
      * @throws BusinessException 未更新任何行或并发冲突
      */
     public RetireInventoryItemsResponse retireInventoryItems(@Valid RetireInventoryItemsRequest request) {
+        // Gate：登录上下文与库存项主键列表
         this.assertGateUserPresent();
         GatewayIdParseUtil.requireNonEmptyLongIds(request.getInventoryItemIds(), "停供：库存项主键列表不能为空");
         List<Long> merged = this.dedupeIds(request.getInventoryItemIds());
@@ -326,12 +337,14 @@ public class InventoryWarehouseInventoryDetailAppService {
         }
         command.setItems(items);
         try {
+            // Cmd：领域批量停供
             int affected = this.inventoryItemDomainService.stopSupply(command).size();
             if (affected == 0) {
                 throw new BusinessException(ErrorCodeConstants.WHS_DTL_208, "未更新任何库存行");
             }
             RetireInventoryItemsResponse response = new RetireInventoryItemsResponse();
             response.setAffectedRows(affected);
+            // Asm：映射停供响应
             return response;
         } catch (OptimisticLockingFailureException ex) {
             throw new BusinessException(ErrorCodeConstants.WHS_DTL_105, "并发冲突，请稍后重试");
@@ -346,6 +359,7 @@ public class InventoryWarehouseInventoryDetailAppService {
      * @throws BusinessException 未更新任何行或并发冲突
      */
     public ResumeInventoryItemsResponse resumeInventoryItems(@Valid ResumeInventoryItemsRequest request) {
+        // Gate：登录上下文与库存项主键列表
         this.assertGateUserPresent();
         GatewayIdParseUtil.requireNonEmptyLongIds(request.getInventoryItemIds(), "恢复供应：库存项主键列表不能为空");
         List<Long> merged = this.dedupeIds(request.getInventoryItemIds());
@@ -361,12 +375,14 @@ public class InventoryWarehouseInventoryDetailAppService {
         }
         command.setItems(items);
         try {
+            // Cmd：领域批量恢复供应
             int affected = this.inventoryItemDomainService.resumeSupply(command).size();
             if (affected == 0) {
                 throw new BusinessException(ErrorCodeConstants.WHS_DTL_209, "未更新任何库存行");
             }
             ResumeInventoryItemsResponse response = new ResumeInventoryItemsResponse();
             response.setAffectedRows(affected);
+            // Asm：映射恢复响应
             return response;
         } catch (OptimisticLockingFailureException ex) {
             throw new BusinessException(ErrorCodeConstants.WHS_DTL_105, "并发冲突，请稍后重试");
@@ -383,8 +399,8 @@ public class InventoryWarehouseInventoryDetailAppService {
     /**
      * 将请求中的库房多选与用户管辖库位求交，得到最终库房主键集合。
      *
-     * <p>过渡口径：{@link ICurrentUser#getManagedLocationIds()} 尚未注入时返回 empty，调用方<strong>不拼</strong>
-     * {@code location_id} 谓词；请求显式多选仍生效。</p>
+     * <p>管辖集合来自 {@link CurrentManagedLocationIdsResolver#listManagedLocationIdsOrEmpty()}（{@code adm_pr_assign}）；
+     * empty 时不拼 {@code location_id} 谓词；请求显式多选仍生效。</p>
      *
      * @param requestedWarehouseIds 请求库房多选，可空
      * @return empty 表示不按库房收窄
@@ -592,7 +608,7 @@ public class InventoryWarehouseInventoryDetailAppService {
     }
 
     /**
-     * 列表/导出对客展示：数量、单位名、进售价单价均由服务端换算，不下发倍数与 unitBands。
+     * 列表/导出对客展示：满包整数 + 拆零余量、进售价单价均由服务端换算，不下发倍数与 unitBands。
      *
      * @param row 已装配产品与批号定价的目标行
      */
@@ -601,32 +617,51 @@ public class InventoryWarehouseInventoryDetailAppService {
             return;
         }
         List<ProductDefinitionCatalogUnitBandDto> bands = row.getUnitBands();
-        String stockUnitCode = resolveBandUnitCode(bands, ProductDefinitionCatalogUnitBandConstants.BAND_STOCK);
-        String stockUnitName = resolveBandUnitName(bands, ProductDefinitionCatalogUnitBandConstants.BAND_STOCK);
-        if (StringUtils.isBlank(stockUnitCode)) {
-            stockUnitCode = resolveBandUnitCode(bands, ProductDefinitionCatalogUnitBandConstants.BAND_PACKAGE);
-            stockUnitName = resolveBandUnitName(bands, ProductDefinitionCatalogUnitBandConstants.BAND_PACKAGE);
+        String packageUnitName = resolveBandUnitName(bands, ProductDefinitionCatalogUnitBandConstants.BAND_PACKAGE);
+        if (StringUtils.isBlank(packageUnitName)) {
+            packageUnitName = resolveBandUnitName(bands, ProductDefinitionCatalogUnitBandConstants.BAND_STOCK);
         }
-        BigDecimal displayQty = row.getQuantity();
-        if (displayQty != null && bands != null && !bands.isEmpty() && StringUtils.isNotBlank(stockUnitCode)) {
-            BigDecimal converted = ProductDefinitionCatalogUnitBandsAssembler.convertSplitQuantityToDisplayUnit(
-                bands, displayQty, stockUnitCode);
-            if (converted != null) {
-                displayQty = converted;
+        String splitUnitName = resolveBandUnitName(bands, ProductDefinitionCatalogUnitBandConstants.BAND_SPLIT);
+        if (StringUtils.isBlank(splitUnitName)) {
+            splitUnitName = StringUtils.trimToNull(row.getUnitName());
+        }
+        packageUnitName = StringUtils.trimToNull(packageUnitName);
+        splitUnitName = StringUtils.trimToNull(splitUnitName);
+        BigDecimal splitQty = row.getQuantity();
+        StringBuilder quantityText = new StringBuilder();
+        if (splitQty != null) {
+            BigDecimal packageRatio = row.getPackageUnitRatio();
+            if (packageRatio == null || packageRatio.compareTo(BigDecimal.ZERO) <= 0) {
+                packageRatio = BigDecimal.ONE;
             }
-        } else if (displayQty != null && row.getPackageUnitRatio() != null
-            && row.getPackageUnitRatio().compareTo(BigDecimal.ZERO) > 0
-            && row.getPackageUnitRatio().compareTo(BigDecimal.ONE) != 0) {
-            displayQty = displayQty.divide(
-                row.getPackageUnitRatio(),
-                ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE,
-                RoundingMode.HALF_UP);
+            // 持久化量为拆零单位：向下取整得满包整数，余量亦为整数片数，禁止小数盒展示
+            int packageQty = splitQty.divide(packageRatio, 0, RoundingMode.DOWN).intValue();
+            BigDecimal usedInPackages = packageRatio.multiply(BigDecimal.valueOf(packageQty));
+            BigDecimal remainder = splitQty.subtract(usedInPackages);
+            if (packageQty > 0) {
+                quantityText.append(packageQty);
+                if (StringUtils.isNotBlank(packageUnitName)) {
+                    quantityText.append(packageUnitName);
+                }
+            }
+            if (remainder.compareTo(BigDecimal.ZERO) > 0) {
+                quantityText.append(remainder.setScale(0, RoundingMode.DOWN).intValue());
+                if (StringUtils.isNotBlank(splitUnitName)) {
+                    quantityText.append(splitUnitName);
+                }
+            }
         }
-        row.setDisplayQuantity(displayQty);
-        if (StringUtils.isNotBlank(stockUnitName)) {
-            row.setDisplayUnitName(stockUnitName);
+        // 零库存或无满包/余量时，回落为「0+包装单位」避免列表空白
+        if (quantityText.isEmpty()) {
+            StringBuilder zeroText = new StringBuilder(GeneralSharedConstants.ZERO);
+            if (StringUtils.isNotBlank(packageUnitName)) {
+                zeroText.append(packageUnitName);
+            } else if (StringUtils.isNotBlank(row.getUnitName())) {
+                zeroText.append(row.getUnitName().trim());
+            }
+            row.setDisplayQuantityText(zeroText.toString());
         } else {
-            row.setDisplayUnitName(StringUtils.trimToNull(row.getUnitName()));
+            row.setDisplayQuantityText(quantityText.toString());
         }
         String costUnitName = resolveBandUnitName(bands, ProductDefinitionCatalogUnitBandConstants.BAND_PURCHASE);
         if (StringUtils.isBlank(costUnitName)) {
@@ -637,34 +672,6 @@ public class InventoryWarehouseInventoryDetailAppService {
         row.setDisplayCostUnitName(costUnitName);
         row.setDisplayPriceUnitPrice(row.getLotNumberPriceAmount());
         row.setDisplayPriceUnitName(priceUnitName);
-    }
-
-    /**
-     * 在单位槽列表中按槽语义取单位编码。
-     *
-     * @param bands    单位槽
-     * @param bandKind {@link ProductDefinitionCatalogUnitBandConstants} 槽语义
-     * @return 单位编码；未命中为 null
-     */
-    private static String resolveBandUnitCode(
-        List<ProductDefinitionCatalogUnitBandDto> bands,
-        String bandKind
-    ) {
-        if (bands == null || bands.isEmpty() || StringUtils.isBlank(bandKind)) {
-            return null;
-        }
-        for (ProductDefinitionCatalogUnitBandDto band : bands) {
-            if (band == null) {
-                continue;
-            }
-            if (!bandKind.equals(band.getBandKind())) {
-                continue;
-            }
-            if (StringUtils.isNotBlank(band.getUnitCode())) {
-                return band.getUnitCode().trim();
-            }
-        }
-        return null;
     }
 
     /**

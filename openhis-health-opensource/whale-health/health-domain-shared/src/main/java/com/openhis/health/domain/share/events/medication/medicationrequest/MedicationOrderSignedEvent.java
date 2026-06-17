@@ -25,15 +25,12 @@ import lombok.Setter;
 /**
  * 药品医嘱已签发领域事件（DM-MED-003 §5.1.4）。
  *
- * <p>最小载荷含签发码、处方号及 save 后 {@code status_enum}（通常为 {@code RequestStatus.ACTIVE}），
+ * <p>最小载荷含处方号及 save 后 {@code status_enum}（通常为 {@code RequestStatus.ACTIVE}），
  * 供 {@code OrderPanoramaProjector#onMedicationOrderSigned} 写入 OrderInfo 待校对队列。</p>
  */
 @Getter
 @Setter
 public class MedicationOrderSignedEvent extends DomainEvent {
-
-    /** 签发码（医师执行标识）。 */
-    private String signCode;
 
     /** 处方号。 */
     private String prescriptionNo;
@@ -55,27 +52,24 @@ public class MedicationOrderSignedEvent extends DomainEvent {
      * 构造药品签发事件（兼容旧调用；statusEnum 为空时投影器不覆盖状态列）。
      *
      * @param id             药品申请主键（aggregateId）
-     * @param signCode       签发码
      * @param prescriptionNo 处方号
      * @param operatorId     操作人用户主键
      */
-    public MedicationOrderSignedEvent(Long id, String signCode, String prescriptionNo, Long operatorId) {
-        this(id, signCode, prescriptionNo, null, operatorId);
+    public MedicationOrderSignedEvent(Long id, String prescriptionNo, Long operatorId) {
+        this(id, prescriptionNo, null, operatorId);
     }
 
     /**
      * 构造药品签发事件（含签发后状态，供 OrderInfo 读模型投影）。
      *
      * @param id             药品申请主键（aggregateId）
-     * @param signCode       签发码
      * @param prescriptionNo 处方号
      * @param statusEnum     签发后状态码（save 后实体 status_enum）
      * @param operatorId     操作人用户主键
      */
     public MedicationOrderSignedEvent(
-        Long id, String signCode, String prescriptionNo, String statusEnum, Long operatorId) {
+        Long id, String prescriptionNo, String statusEnum, Long operatorId) {
         super(id, AggregateTypeConstants.MEDICATION_REQUEST);
-        this.signCode = signCode;
         this.prescriptionNo = prescriptionNo;
         this.statusEnum = statusEnum;
         this.operatorId = operatorId;

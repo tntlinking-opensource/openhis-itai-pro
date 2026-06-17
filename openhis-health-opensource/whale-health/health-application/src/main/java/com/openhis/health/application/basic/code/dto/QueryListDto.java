@@ -25,7 +25,4 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-/**
- * QueryListDto。
- */
 public class QueryListDto extends QueryDto {}

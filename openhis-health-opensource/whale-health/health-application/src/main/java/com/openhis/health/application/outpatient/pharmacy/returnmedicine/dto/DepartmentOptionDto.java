@@ -26,15 +26,14 @@ import lombok.Data;
  * 科室下拉选项（IF-PHA-02-01）。
  */
 @Data
+/** 科室下拉选项。 */
 @Schema(description = "科室下拉选项")
 public class DepartmentOptionDto {
 
-    /** 科室标识。 */
     @Schema(description = "科室标识", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long departmentId;
 
-    /** 科室名称。 */
     @Schema(description = "科室名称", requiredMode = Schema.RequiredMode.REQUIRED)
     private String departmentName;
 }

@@ -17,13 +17,15 @@
 
 package com.openhis.health.application.inventory.warehouse.stockout.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -34,11 +36,9 @@ import java.time.LocalDateTime;
 @Accessors(chain = true)
 public class PageStockOutsRequest extends AbstractHealthPageRequest {
 
-    /** 源药库位置主键；传 {@code 0} 表示当前机构下岗位门控可见的全部药库（由应用层展开为 IN 条件）。 */
     @Schema(description = "源药库主键，0 表示机构内全部可见药库")
     private Long sourceLocationId;
 
-    /** 目的位置主键，可空表示不按目的库筛选。 */
     @Schema(description = "目的位置筛选")
     private Long purposeLocationId;
 

@@ -30,10 +30,10 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 候选库房×批号可用库存明细。 */
 @Schema(description = "候选库房×批号可用库存明细")
 public class MedicationDispenseInventoryDetailDto {
 
-    /** 候选发放库房 ID。 */
     @Schema(description = "候选发放库房主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long pharmacyOrganizationId;

@@ -31,6 +31,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 批量校对通过请求。 */
 @Schema(description = "批量校对通过请求", requiredProperties = {"items"})
 public class VerifyNurseStationOrdersRequest {
 

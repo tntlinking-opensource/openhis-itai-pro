@@ -24,6 +24,7 @@ import lombok.Data;
  * 按诊疗定义查询可执行科室规则（与就诊患者门控一致）。
  */
 @Data
+/** 医生站-按诊疗定义查询执行科室规则。 */
 @Schema(description = "医生站-按诊疗定义查询执行科室规则")
 public class ListActivityExecutionLocationsRequest {
 
@@ -33,6 +34,7 @@ public class ListActivityExecutionLocationsRequest {
     @Schema(description = "患者主键（须与就诊绑定一致）")
     private Long patientId;
 
+    /** 诊疗活动定义主键。 */
     @Schema(description = "诊疗活动定义主键")
     private Long activityDefinitionId;
 }

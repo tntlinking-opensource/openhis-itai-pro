@@ -73,6 +73,9 @@ public class DeviceCatalogDto {
     /** 包装规格。 */
     private String totalVolume;
 
+    /** 规格（列表展示，与 {@link #totalVolume} 同源）。 */
+    private String specification;
+
     /** 商品名拼音检索码。 */
     private String merchandisePyStr;
 
@@ -81,6 +84,8 @@ public class DeviceCatalogDto {
 
     /** 默认门诊/就诊单位编码。 */
     private String defEncounterUnitCode;
+    /** 默认门诊/就诊单位字典展示文案。 */
+    private String defEncounterUnitCode_dictText;
 
     /** 默认住院单位编码。 */
     private String defInhospitalUnitCode;

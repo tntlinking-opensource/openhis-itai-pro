@@ -50,5 +50,11 @@ public class AllergyIntoleranceRecordQueryModel {
     private String severityEnum;
     /** 记录日期。 */
     private LocalDateTime recordedDate;
+    /** 反应描述。 */
+    private String description;
+    /** 记录者（执行护士）主键。 */
+    private Long practitionerId;
+    /** 断言者（核对护士）主键。 */
+    private Long checkPractitionerId;
 }
 

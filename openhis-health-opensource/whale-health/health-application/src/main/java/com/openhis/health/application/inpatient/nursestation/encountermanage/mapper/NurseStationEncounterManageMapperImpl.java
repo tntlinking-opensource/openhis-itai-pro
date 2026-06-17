@@ -17,22 +17,24 @@
 
 package com.openhis.health.application.inpatient.nursestation.encountermanage.mapper;
 
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.*;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.request.PagePatientQueueRequest;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.request.SavePatientInfoRequest;
+import com.openhis.health.application.inpatient.nursestation.encountermanage.response.LoadAdmissionParticipantInitResponse;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.LoadWardTreeResponse;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.PagePatientQueueResponse;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.SavePatientInfoResponse;
-import com.openhis.health.application.common.assembler.inpatient.AdmissionPrimaryDiagnosisAssembler;
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.whale.core.application.dto.OptionDto;
+import com.openhis.health.module.common.assembler.inpatient.AdmissionPrimaryDiagnosisAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.domain.administration.encounter.command.SaveNurseStationPatientCommand;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.utils.EnumUtil;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -106,6 +108,46 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
     }
 
     /**
+     * 住院医师与责任护士实体列表 → 分床下拉初始化响应。
+     *
+     * @param doctors 住院医师候选
+     * @param nurses  责任护士候选
+     * @return 初始化响应
+     */
+    @Override
+    public LoadAdmissionParticipantInitResponse toLoadAdmissionParticipantInitResponse(
+        List<Practitioner> doctors,
+        List<Practitioner> nurses) {
+        LoadAdmissionParticipantInitResponse response = new LoadAdmissionParticipantInitResponse();
+        response.setDoctorOptions(toPractitionerOptionList(doctors));
+        response.setPrimaryNurseOptions(toPractitionerOptionList(nurses));
+        return response;
+    }
+
+    /**
+     * 医务人员实体列表 → 下拉选项。
+     *
+     * @param practitioners 医务人员列表
+     * @return 下拉选项
+     */
+    private List<OptionDto> toPractitionerOptionList(List<Practitioner> practitioners) {
+        if (practitioners == null || practitioners.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<OptionDto> list = new ArrayList<>();
+        for (Practitioner practitioner : practitioners) {
+            if (practitioner == null || practitioner.getId() == null) {
+                continue;
+            }
+            list.add(new OptionDto(
+                practitioner.getId(),
+                String.valueOf(practitioner.getId()),
+                practitioner.getName()));
+        }
+        return list;
+    }
+
+    /**
      * 列表分页请求 → 住院信息读模型分页入参。
      *
      * @param request          HTTP 请求
@@ -122,6 +164,7 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         if (request == null) {
             return query;
         }
+        query.setNurseStationQueue(Boolean.TRUE);
         query.setWardId(request.getWardId());
         query.setHouseId(request.getHouseId());
         query.setNurseStationTaskFilter(request.getNurseStationTaskFilter());

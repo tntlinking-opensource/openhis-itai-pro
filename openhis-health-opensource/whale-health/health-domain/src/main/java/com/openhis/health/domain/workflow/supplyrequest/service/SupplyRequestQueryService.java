@@ -17,9 +17,11 @@
 
 package com.openhis.health.domain.workflow.supplyrequest.service;
 
+import com.openhis.health.domain.share.enums.SupplyType;
+import com.openhis.health.domain.workflow.supplyrequest.queries.model.MedicationSummarySlipLineQueryModel;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
-import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.workflow.supplyrequest.entity.SupplyRequest;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDocumentListQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoBatchQuery;
@@ -50,10 +52,16 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -406,6 +414,7 @@ public class SupplyRequestQueryService {
         model.setRemake(entity.getRemake());
         model.setOriginalBusNo(entity.getOriginalBusNo());
         model.setSummaryId(entity.getSummaryId());
+        model.setPatientId(entity.getPatientId());
         model.setVersion(entity.getVersion());
         return model;
     }
@@ -444,5 +453,50 @@ public class SupplyRequestQueryService {
         model.setReason(entity.getReason());
         model.setRemake(entity.getRemake());
         return model;
+    }
+
+    /**
+     * 住院护士站汇总领药 · 汇总单合并明细行（**AS-IP-NUR-010 · IF-IP-SUM-03**）。
+     *
+     * <p>以 SupplyRequest 合并行为准；单价/总价由应用层 {@code InpatientMedicationDispenseChargePricingLoader} 协作回填（**BR-IP-SUM-009**）；不返回批号（**BR-IP-SUM-010**）。</p>
+     *
+     * @param summaryNo 汇总单号 / busNo
+     * @return 合并明细行；单号无效或无 type 27 行时返回空列表
+     */
+    public List<MedicationSummarySlipLineQueryModel> listMedicationSummarySlipLinesByBusNo(String summaryNo) {
+        if (summaryNo == null || summaryNo.isBlank()) {
+            return Collections.emptyList();
+        }
+        String busNo = summaryNo.trim();
+        SupplyByBusNoQuery busNoQuery = new SupplyByBusNoQuery();
+        busNoQuery.setBusNo(busNo);
+        List<SupplyRequestModel> supplyLines = this.getSupplyByBusNo(busNoQuery);
+        if (supplyLines.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<SupplyRequestModel> summaryLines = new ArrayList<>();
+        for (SupplyRequestModel line : supplyLines) {
+            if (line == null) {
+                continue;
+            }
+            if (!SupplyType.MEDICATION_SUMMARY_ORDER.getCode().equals(line.getTypeEnum())) {
+                continue;
+            }
+            summaryLines.add(line);
+        }
+        if (summaryLines.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<MedicationSummarySlipLineQueryModel> result = new ArrayList<>();
+        for (SupplyRequestModel line : summaryLines) {
+            MedicationSummarySlipLineQueryModel model = new MedicationSummarySlipLineQueryModel();
+            model.setSupplyRequestId(line.getId());
+            model.setBusNo(line.getBusNo());
+            model.setItemId(line.getItemId());
+            model.setItemQuantity(line.getItemQuantity());
+            model.setUnitCode(line.getUnitCode());
+            result.add(model);
+        }
+        return result;
     }
 }

@@ -79,6 +79,7 @@ public class RegistrationTypeMapperImpl implements RegistrationTypeMapper {
         item.setTypeCode(resolveTypeCode(request.getTypeCode()));
         item.setCategoryCode(null);
         item.setOfferedOrgId(null);
+        item.setYbNo(request.getYbNo());
         cmd.setItem(item);
         return cmd;
     }
@@ -103,6 +104,7 @@ public class RegistrationTypeMapperImpl implements RegistrationTypeMapper {
         item.setTypeCode(resolveTypeCode(request.getTypeCode()));
         item.setCategoryCode(null);
         item.setOfferedOrgId(null);
+        item.setYbNo(request.getYbNo());
         item.setChangedFields(null);
         cmd.setItem(item);
         return cmd;

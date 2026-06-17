@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 库存明细页初始化入参（IF-INV-DTL-01）；当前无业务字段，租户由会话解析。
@@ -28,6 +29,7 @@ import lombok.experimental.Accessors;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 库存明细页初始化 IF-INV-DTL-01。 */
 @Schema(description = "库存明细页初始化 IF-INV-DTL-01")
 public class LoadInventoryDetailFormInitRequest {
 }

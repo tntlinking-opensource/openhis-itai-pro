@@ -37,7 +37,7 @@ public class CreateGainLossCommand extends BatchCommand<CreateGainLossCommand.Cr
     private Long operatorId;
 
     /**
-     * 损益单行（通常仅源位置侧语义）。
+     * 损益单行（单端点 purpose 语义：报损/报溢所在库房）。
      */
     @Getter
     @Setter
@@ -56,10 +56,10 @@ public class CreateGainLossCommand extends BatchCommand<CreateGainLossCommand.Cr
         private String unitCode;
         /** 供应类别持久化码。 */
         private String categoryEnum;
-        /** 源位置类型持久化码。 */
-        private String sourceTypeEnum;
-        /** 源位置主键。 */
-        private Long sourceLocationId;
+        /** 库房类型持久化码。 */
+        private String purposeTypeEnum;
+        /** 库房主键。 */
+        private Long purposeLocationId;
         /** 批号。 */
         private String lotNumber;
         /** 业务发生时间。 */

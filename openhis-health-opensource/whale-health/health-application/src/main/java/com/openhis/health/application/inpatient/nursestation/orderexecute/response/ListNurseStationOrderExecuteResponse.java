@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.orderexecute.response;
 
-import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecutePatientGroupDto;
+import com.openhis.health.module.querysupport.procedure.dto.NurseStationOrderExecutePatientGroupDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -32,10 +32,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医嘱执行列表响应。 */
 @Schema(description = "医嘱执行列表响应")
 public class ListNurseStationOrderExecuteResponse {
 
-    /** 按就诊分组的医嘱行。 */
     @Schema(description = "按就诊分组的医嘱行")
     private List<NurseStationOrderExecutePatientGroupDto> groups;
 }

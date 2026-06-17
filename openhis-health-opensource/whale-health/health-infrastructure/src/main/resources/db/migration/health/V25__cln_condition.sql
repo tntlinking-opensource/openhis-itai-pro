@@ -37,3 +37,40 @@ CREATE TABLE IF NOT EXISTS "public"."cln_condition" (
     "encounter_id" int8,
     CONSTRAINT "cln_condition_pkey" PRIMARY KEY ("id")
 );
+
+COMMENT ON TABLE cln_condition IS '临床 condition';
+
+COMMENT ON COLUMN cln_condition.id IS '主键';
+COMMENT ON COLUMN cln_condition.tenant_id IS '租户标识';
+COMMENT ON COLUMN cln_condition.created_at IS '创建时间';
+COMMENT ON COLUMN cln_condition.updated_at IS '最后更新时间';
+COMMENT ON COLUMN cln_condition.created_by IS '创建人';
+COMMENT ON COLUMN cln_condition.updated_by IS '最后更新人';
+COMMENT ON COLUMN cln_condition.is_deleted IS '软删标记';
+COMMENT ON COLUMN cln_condition.deleted_at IS '删除时间';
+COMMENT ON COLUMN cln_condition.deleted_by IS '删除人';
+COMMENT ON COLUMN cln_condition.version IS '乐观锁版本号';
+COMMENT ON COLUMN cln_condition.verification_status_enum IS 'verification status enum';
+COMMENT ON COLUMN cln_condition.clinical_status_enum IS 'clinical status enum';
+COMMENT ON COLUMN cln_condition.category_enum IS 'category enum';
+COMMENT ON COLUMN cln_condition.severity_enum IS 'severity enum';
+COMMENT ON COLUMN cln_condition.bus_no IS 'bus no';
+COMMENT ON COLUMN cln_condition.body_site_json IS 'body site json';
+COMMENT ON COLUMN cln_condition.body_structure_id IS 'body structure id';
+COMMENT ON COLUMN cln_condition.patient_id IS 'patient id';
+COMMENT ON COLUMN cln_condition.description IS 'description';
+COMMENT ON COLUMN cln_condition.onset_datetime IS 'onset datetime';
+COMMENT ON COLUMN cln_condition.onset_age IS 'onset age';
+COMMENT ON COLUMN cln_condition.onset_text IS 'onset text';
+COMMENT ON COLUMN cln_condition.abatement_datetime IS 'abatement datetime';
+COMMENT ON COLUMN cln_condition.abatement_age IS 'abatement age';
+COMMENT ON COLUMN cln_condition.abatement_string IS 'abatement string';
+COMMENT ON COLUMN cln_condition.recorded_datetime IS 'recorded datetime';
+COMMENT ON COLUMN cln_condition.recorder_id IS 'recorder id';
+COMMENT ON COLUMN cln_condition.stage_summary_text IS 'stage summary text';
+COMMENT ON COLUMN cln_condition.evidence IS 'evidence';
+COMMENT ON COLUMN cln_condition.yb_no IS 'yb no';
+COMMENT ON COLUMN cln_condition.definition_id IS 'definition id';
+COMMENT ON COLUMN cln_condition.tcm_flag IS 'tcm flag';
+COMMENT ON COLUMN cln_condition.encounter_id IS '诊断记录聚合根';
+

@@ -29,10 +29,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 出院前待发退药列表响应。 */
 @Schema(description = "出院前待发退药列表响应")
 public class ListDischargePendingMedicationsResponse {
 
-    /** 待发/待退药行。 */
     @Schema(description = "待发退药行列表")
     private List<DischargePendingMedicationItemDto> items;
 }

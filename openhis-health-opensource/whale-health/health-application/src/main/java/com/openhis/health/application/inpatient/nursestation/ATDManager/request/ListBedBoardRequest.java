@@ -29,10 +29,10 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 床位列表查询请求。 */
 @Schema(description = "床位列表查询请求", requiredProperties = {"panel"})
 public class ListBedBoardRequest {
 
-    /** 病区位置主键；与 {@code houseId} 同时存在时以病房为准。 */
     @Schema(description = "病区位置主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long wardId;
@@ -44,6 +44,7 @@ public class ListBedBoardRequest {
 
     /** 床列表面板：{@code admission} 入科 / {@code discharge} 出（{@link com.openhis.health.domain.share.constants.InpatientNurseStationConstants}）。 */
     @NotBlank(message = "床列表面板不能为空")
+    /** 床列表面板：admission 入科 / discharge 出。 */
     @Schema(description = "床列表面板：admission 入科 / discharge 出", requiredMode = Schema.RequiredMode.REQUIRED)
     private String panel;
 }

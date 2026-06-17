@@ -42,8 +42,23 @@ public class MedicationDispenseSlipPageQuery extends AbstractPageQuery {
      */
     private List<Long> resolvedMedReqIdsForRequestStatus;
 
+    /** 开单科室组织主键（药嘱 {@code org_id}，{@code adm_organization.id}）；由请求显式传入。 */
+    private Long orderingDepartmentId;
+
+    /**
+     * 开单科室预解析的药品申请主键（非 null 时以 {@code medReqId} IN 收窄）。
+     */
+    private List<Long> resolvedMedReqIdsForOrderingDepartment;
+
+    /**
+     * 已被确认退药收口的正向药品医嘱主键（由 {@code MedicationDispenseRefundSupersedeLoader} 写入）。
+     */
+    private List<Long> resolvedSupersededForwardMedReqIds;
+
     private Long locationId;
     private Long encounterId;
+    /** 排除的就诊主键（与 {@code patientId} 联用，历史处方 Tab）。 */
+    private Long excludeEncounterId;
     private Long patientId;
     private Long medicationId;
     private String statusEnum;

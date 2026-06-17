@@ -34,6 +34,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 分床换床互换请求。 */
 @Schema(description = "分床换床互换请求", requiredProperties = {"operationType", "encounterId"})
 public class ExecuteBedOperationRequest {
 

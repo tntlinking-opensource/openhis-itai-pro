@@ -29,6 +29,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 半退保留行转医保请求。 */
 @Schema(description = "半退保留行转医保请求")
 public class SwitchPreservedChargeItemsToInsuranceRequest {
 
@@ -36,5 +37,6 @@ public class SwitchPreservedChargeItemsToInsuranceRequest {
     @NotNull(message = "encounterId 不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 就诊主键（业务字段）。 */
     private Long encounterId;
 }

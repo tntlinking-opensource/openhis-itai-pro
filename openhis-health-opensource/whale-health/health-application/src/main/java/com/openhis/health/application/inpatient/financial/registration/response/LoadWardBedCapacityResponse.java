@@ -28,16 +28,22 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 病区床位余量。 */
 @Schema(description = "病区床位余量")
 public class LoadWardBedCapacityResponse {
 
     @Schema(description = "病区位置 ID")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 病区位置 ID（业务字段）。 */
     private Long wardId;
 
+    /** 总床位数。 */
     @Schema(description = "总床位数")
+    /** 总床位数（业务字段）。 */
     private Long totalBedCount;
 
+    /** 未占用床位数。 */
     @Schema(description = "未占用床位数（启用床位且 operational_enum 非 IN_USE）")
+    /** 未占用床位数（启用床位且 operational_enum 非 IN_USE）（业务字段）。 */
     private Long vacantBedCount;
 }

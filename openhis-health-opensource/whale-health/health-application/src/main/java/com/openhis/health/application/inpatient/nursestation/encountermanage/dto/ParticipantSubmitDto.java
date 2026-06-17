@@ -30,6 +30,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 参与者提交行。 */
 @Schema(description = "参与者提交行", requiredProperties = {"roleCode", "practitionerId"})
 public class ParticipantSubmitDto {
 
@@ -40,6 +41,7 @@ public class ParticipantSubmitDto {
 
     /** 医务人员主键。 */
     @NotNull(message = "医务人员标识不能为空")
+    /** 医务人员主键。 */
     @Schema(description = "医务人员主键", required = true)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long practitionerId;

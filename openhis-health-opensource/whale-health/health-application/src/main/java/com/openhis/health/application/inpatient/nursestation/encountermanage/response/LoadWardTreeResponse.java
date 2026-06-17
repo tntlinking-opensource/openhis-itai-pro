@@ -29,10 +29,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 病区病房树查询响应。 */
 @Schema(description = "病区病房树查询响应")
 public class LoadWardTreeResponse {
 
-    /** 病区根节点列表。 */
     @Schema(description = "病区根节点列表")
     private List<NurseStationWardTreeNodeDto> wardNodes;
 }

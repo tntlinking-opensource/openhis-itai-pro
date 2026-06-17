@@ -29,9 +29,11 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 病区列表。 */
 @Schema(description = "病区列表")
 public class ListWardsByDepartmentResponse {
 
     @Schema(description = "病区列表")
+    /** 病区列表（业务字段）。 */
     private List<WardOptionDto> wards;
 }

@@ -157,6 +157,9 @@ public class SupplierQueryService {
         model.setTypeEnum(supplier.getTypeEnum());
         model.setStatusEnum(supplier.getStatusEnum());
         model.setPyStr(supplier.getPyStr());
+        model.setAddress(supplier.getAddress());
+        model.setPhone(supplier.getPhone());
+        model.setEmail(supplier.getEmail());
         return model;
     }
 

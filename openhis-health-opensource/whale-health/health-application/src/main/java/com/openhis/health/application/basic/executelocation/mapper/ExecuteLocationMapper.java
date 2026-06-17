@@ -24,6 +24,8 @@ import com.openhis.health.domain.custom.activityexecutionlocation.command.Create
 import com.openhis.health.domain.custom.activityexecutionlocation.command.UpdateExecutionRuleCommand;
 import com.openhis.health.domain.custom.activityexecutionlocation.queries.model.ExecutionRuleListQueryModel;
 
+import java.time.LocalTime;
+
 /**
  * 「执行地点/执行规则」应用层与活动执行位置域命令、列表读模型之间的装配契约。
  */
@@ -53,4 +55,12 @@ public interface ExecuteLocationMapper {
      * @return 领域更新命令
      */
     UpdateExecutionRuleCommand toUpdateCommand(UpdateExecuteLocationRequest request);
+
+    /**
+     * 将 {@code HH:mm:ss} 风格字符串解析为 {@link LocalTime}；空串返回 {@code null}。
+     *
+     * @param value 时间字面量
+     * @return 解析结果
+     */
+    LocalTime parseTime(String value);
 }

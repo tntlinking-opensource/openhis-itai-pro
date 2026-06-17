@@ -24,28 +24,30 @@ import com.openhis.health.application.inventory.pharmacy.stocktake.dto.PharmacyS
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 盘点单详情出参（IF-PHA-ST-03）。
  */
 @Data
 @Accessors(chain = true)
+/** 盘点单详情 IF-PHA-ST-03。 */
 @Schema(description = "盘点单详情 IF-PHA-ST-03")
 public class GetPharmacyStocktakeDetailResponse {
 
-    /** 业务单号。 */
     @Schema(description = "业务单号 busNo")
     private String busNo;
 
-    /** 单据状态。 */
     @Schema(description = "状态 statusEnum")
     private String statusEnum;
 
     /** 盘点药房主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 盘点药房 purposeLocationId。 */
     @Schema(description = "盘点药房 purposeLocationId")
     private Long purposeLocationId;
 
@@ -55,26 +57,31 @@ public class GetPharmacyStocktakeDetailResponse {
 
     /** 经手人。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 经手人 practitionerId。 */
     @Schema(description = "经手人 practitionerId")
     private Long practitionerId;
 
     /** 申请人。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 申请人 applicantId。 */
     @Schema(description = "申请人 applicantId")
     private Long applicantId;
 
     /** 申请时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 申请时间 applyTime。 */
     @Schema(description = "申请时间 applyTime")
     private LocalDateTime applyTime;
 
     /** 审批人。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 审批人 approverId。 */
     @Schema(description = "审批人 approverId")
     private Long approverId;
 
     /** 审批时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 审批时间 approvalTime。 */
     @Schema(description = "审批时间 approvalTime")
     private LocalDateTime approvalTime;
 

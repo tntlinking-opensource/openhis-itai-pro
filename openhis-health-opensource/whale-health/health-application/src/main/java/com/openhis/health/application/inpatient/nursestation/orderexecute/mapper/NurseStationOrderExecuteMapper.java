@@ -17,14 +17,15 @@
 
 package com.openhis.health.application.inpatient.nursestation.orderexecute.mapper;
 
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecutePatientGroupDto;
-import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteRowDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ListNurseStationOrderExecuteRequest;
+import com.openhis.health.module.querysupport.procedure.NurseStationOrderExecuteListQuery;
+import com.openhis.health.module.querysupport.procedure.dto.NurseStationOrderExecuteRowDto;
+import com.openhis.health.module.querysupport.procedure.NurseStationOrderExecuteListResult;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteWriteSlotDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ExecuteNurseStationOrdersResponse;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ListNurseStationOrderExecuteResponse;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.SkipNurseStationOrderSlotsResponse;
-import com.openhis.health.domain.administration.chargeitem.command.ActivateChargeByExeCommand;
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
@@ -33,11 +34,9 @@ import com.openhis.health.domain.clinical.procedure.command.CreateProcedureRecor
 import com.openhis.health.domain.clinical.procedure.command.SkipProcedureRecordCommand;
 import com.openhis.health.domain.clinical.procedure.command.StartProcedureExecutionCommand;
 import com.openhis.health.domain.medication.medicationdispense.command.GenerateDispenseFromExecutionCommand;
-import com.openhis.health.domain.medication.medicationdispense.command.LinkDispenseProcedureCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
-import com.openhis.health.application.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
 import com.openhis.health.domain.workflow.devicedispense.command.GenerateDeviceDispenseFromTemporaryPathCommand;
-import com.openhis.health.domain.workflow.devicedispense.command.GenerateIssuedDeviceDispenseFromExecutionCommand;
 import com.openhis.health.domain.workflow.devicerequest.command.CreateExecutedDeviceOrderCommand;
 
 import java.math.BigDecimal;
@@ -50,6 +49,10 @@ import java.util.List;
  * <p>禁止承载业务流程判断；Tab/长临解析与 Tab 槽位收窄辅助在本接口声明。</p>
  */
 public interface NurseStationOrderExecuteMapper {
+
+    NurseStationOrderExecuteListQuery toListQuery(ListNurseStationOrderExecuteRequest request);
+
+    ListNurseStationOrderExecuteResponse toListResponse(NurseStationOrderExecuteListResult result);
 
     /**
      * 可见性查询入参：多选就诊 + 管理病区收窄（BR-IP-EXE-001 / BR-IP-NUR-003）。
@@ -79,14 +82,6 @@ public interface NurseStationOrderExecuteMapper {
         NurseStationOrderExecuteRowDto row,
         String executeTab,
         LocalDateTime executionDeadline);
-
-    /**
-     * 分组列表 → 列表响应。
-     *
-     * @param groups 患者分组；可 null
-     * @return 列表响应
-     */
-    ListNurseStationOrderExecuteResponse toListResponse(List<NurseStationOrderExecutePatientGroupDto> groups);
 
     /**
      * 批量执行成功响应。
@@ -194,37 +189,7 @@ public interface NurseStationOrderExecuteMapper {
         Long patientId);
 
     /**
-     * 临时药品执行 → 挂接已有发放单命令。
-     *
-     * @param dispenseId         发放单主键
-     * @param procedureId        执行记录主键
-     * @param plannedDispenseTime 计划发药时刻
-     * @param operatorId         操作人
-     * @return 挂接命令
-     */
-    LinkDispenseProcedureCommand toLinkDispenseProcedureCommand(
-        Long dispenseId,
-        Long procedureId,
-        LocalDateTime plannedDispenseTime,
-        Long operatorId);
-
-    /**
-     * 临时医嘱执行 → 激活已有 DRAFT 收费明细。
-     *
-     * @param chargeItemId 收费明细主键
-     * @param procedureId  执行记录主键
-     * @param performedAt  执行发生时刻
-     * @param performerId  执行人
-     * @return 激活命令
-     */
-    ActivateChargeByExeCommand toActivateChargeByExeCommand(
-        Long chargeItemId,
-        Long procedureId,
-        LocalDateTime performedAt,
-        Long performerId);
-
-    /**
-     * 长期医嘱执行 → 新建待结算收费明细（generate_source=ORDER_EXECUTE）。
+     * 药/诊嘱执行 → 新建待结算收费明细（generate_source=ORDER_EXECUTE）。
      *
      * @param order         医嘱读模型行
      * @param template      签发侧费用模板行；可空时由 {@code priceLine} 补全定价
@@ -301,19 +266,24 @@ public interface NurseStationOrderExecuteMapper {
      * 绑定耗材执行 → 生成已完成 DeviceRequest 命令。
      *
      * @param deviceDefId     耗材定义主键
-     * @param quantity          数量
-     * @param performLocation   发放库房；可空
-     * @param encounterId       就诊主键
-     * @param patientId         患者主键
-     * @param operatorId        操作人
+     * @param quantity        数量
+     * @param performLocation 发放库房
+     * @param encounterId     就诊主键
+     * @param patientId       患者主键
+     * @param basedOnTable    主医嘱来源表
+     * @param basedOnId       主医嘱来源主键
+     * @param operatorId      操作人
      * @return 创建命令
      */
     CreateExecutedDeviceOrderCommand toCreateExecutedDeviceOrderCommand(
         Long deviceDefId,
         BigDecimal quantity,
+        String unitCode,
         Long performLocation,
         Long encounterId,
         Long patientId,
+        String basedOnTable,
+        Long basedOnId,
         Long operatorId);
 
     /**
@@ -339,22 +309,4 @@ public interface NurseStationOrderExecuteMapper {
         LocalDateTime limitTime,
         Long operatorId);
 
-    /**
-     * 绑定耗材执行 → 执行直发已发放命令。
-     *
-     * @param deviceReqId  耗材请求主键
-     * @param procedureId  主医嘱 Procedure 主键
-     * @param lotNumber    批号占位（绑定耗材直发，库存由其他页面处理）
-     * @param traceNo      追溯号占位
-     * @param quantity     发放数量
-     * @param operatorId   操作人
-     * @return 直发命令
-     */
-    GenerateIssuedDeviceDispenseFromExecutionCommand toGenerateIssuedDeviceDispenseFromExecutionCommand(
-        Long deviceReqId,
-        Long procedureId,
-        String lotNumber,
-        String traceNo,
-        BigDecimal quantity,
-        Long operatorId);
 }

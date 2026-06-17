@@ -29,14 +29,13 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-常用诊断四类列表响应。 */
 @Schema(description = "医生站-常用诊断四类列表响应")
 public class CommonDiagnosesResponse {
 
-    /** 病人历史诊断。 */
     @Schema(description = "病人历史诊断")
     private List<CommonDiagnosisRowDto> patientHistoryList;
 
-    /** 医生常用诊断。 */
     @Schema(description = "医生常用诊断")
     private List<CommonDiagnosisRowDto> doctorCommonUseList;
 

@@ -26,13 +26,11 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 科室列表请求。 */
 @Schema(description = "科室列表请求")
-/**
- * ListDepartmentsRequest。
- */
 public class ListDepartmentsRequest {
 
-    /** 检索关键字。 */
     @Schema(description = "关键字")
+    /** 关键字（业务字段）。 */
     private String keyword;
 }

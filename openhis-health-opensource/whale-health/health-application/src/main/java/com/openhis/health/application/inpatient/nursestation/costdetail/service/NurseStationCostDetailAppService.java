@@ -17,10 +17,11 @@
 
 package com.openhis.health.application.inpatient.nursestation.costdetail.service;
 
-import com.openhis.health.application.common.validator.PatientEncounterConsistencyGate;
+import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
+import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.application.inpatient.nursestation.costdetail.assembler.NurseStationCostDetailAssembler;
-import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostDetailLineDto;
-import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostDetailTotalsDto;
+import com.openhis.health.module.querysupport.financial.dto.NurseStationCostDetailLineDto;
+import com.openhis.health.module.querysupport.financial.dto.NurseStationCostDetailTotalsDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostSummaryLineDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.mapper.NurseStationCostDetailMapper;
 import com.openhis.health.application.inpatient.nursestation.costdetail.request.LoadNurseStationCostDetailPageInitRequest;
@@ -30,20 +31,17 @@ import com.openhis.health.application.inpatient.nursestation.costdetail.response
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.query.InpatientNurseStationCostDetailChargeRow;
-import com.openhis.health.application.querysupport.financial.InpatientNurseStationCostDetailLoader;
+import com.openhis.health.module.querysupport.financial.InpatientNurseStationCostDetailLoader;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
-import com.openhis.health.domain.administration.location.entity.Location;
-import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -69,8 +67,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class NurseStationCostDetailAppService {
 
-    private final ICurrentUser currentUser;
-    private final LocationQueryService locationQueryService;
+    private final CurrentManagedWardLocationIdsResolver managedWardLocationIdsResolver;
     private final EncounterQueryService encounterQueryService;
     private final EncounterContextFacade encounterContextFacade;
     private final ChargeItemQueryService chargeItemQueryService;
@@ -185,8 +182,7 @@ public class NurseStationCostDetailAppService {
      * @param patientId   卡片患者 id
      */
     private void requireVisibleEncounter(Long encounterId, Long patientId) {
-        Long practitionerId = currentUser.getCurrentPractitionerId();
-        List<Long> wardIds = this.resolveManagedWardIds(practitionerId);
+        List<Long> wardIds = managedWardLocationIdsResolver.listManagedWardLocationIdsOrEmpty();
         InpatientEncounterPageQuery query = nurseStationCostDetailMapper.toInpatientEncounterPageQuery(
             Collections.singletonList(encounterId), wardIds);
         List<InpatientEncounterContextQueryModel> visibleRows =
@@ -246,20 +242,4 @@ public class NurseStationCostDetailAppService {
         return parentById;
     }
 
-    /**
-     * 当前护士管辖病区 id 列表。
-     *
-     * @param practitionerId 医务人员 id
-     * @return 病区 location id 列表
-     */
-    private List<Long> resolveManagedWardIds(Long practitionerId) {
-        List<Location> wards = locationQueryService.listManagedWardsForPractitioner(practitionerId);
-        List<Long> ids = new ArrayList<>();
-        for (Location ward : wards) {
-            if (ward != null && ward.getId() != null) {
-                ids.add(ward.getId());
-            }
-        }
-        return ids;
-    }
 }

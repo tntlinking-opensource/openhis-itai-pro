@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 医嘱组套模板行仓储。
+ * 组套模板行仓储。
  */
 public interface OrderTemplateLineRepository extends JpaRepository<OrderTemplateLine, Long> {
 
@@ -48,4 +48,6 @@ public interface OrderTemplateLineRepository extends JpaRepository<OrderTemplate
      * @return 查询结果
      */
     List<OrderTemplateLine> findAllByOrderTemplateId(Long orderTemplateId);
+
+    List<OrderTemplateLine> findAllByOrderTemplateIdAndIsDeletedFalseOrderBySortOrderAscIdAsc(Long orderTemplateId);
 }

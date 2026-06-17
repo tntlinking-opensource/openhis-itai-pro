@@ -34,6 +34,9 @@ public interface InpatientRegistrationConstants {
     /** 缺省列表筛选（待登记），由应用层装配至 Query。 */
     String DEFAULT_LIST_STATUS = LIST_STATUS_PLANNED;
 
+    /** 门诊转住院默认入院方式码（与 {@code ter_concept} {@code in_way_code} code=1 对齐）。 */
+    String DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER = "1";
+
     /** 登记必填项缺失（AS-IP-FIN-001 IF-IP-REG-03）。 */
     String EX_IP_REG_001 = "EX-IP-REG-001";
 

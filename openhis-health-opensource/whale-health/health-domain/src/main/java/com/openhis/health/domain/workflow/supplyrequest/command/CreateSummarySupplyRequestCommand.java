@@ -28,6 +28,8 @@ import java.time.LocalDateTime;
  * 创建药品汇总供应请求命令（type 27，见 {@link com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService#createSummarySupplyRequest}）。
  *
  * <p>枚举语义字段为持久化 {@code getCode()}（B.10.8.1）。</p>
+ * <p>type 27 为单端点：应用层仅装配 {@code purposeLocationId}/{@code purposeTypeEnum}（发放药房）；
+ * {@code source_*} 不落库。</p>
  */
 @Getter
 @Setter
@@ -62,10 +64,10 @@ public class CreateSummarySupplyRequestCommand extends BatchCommand<CreateSummar
         private String lotNumber;
         /** 供应类别持久化码。 */
         private String categoryEnum;
-        /** 源位置类型持久化码。 */
-        private String sourceTypeEnum;
-        /** 源位置主键。 */
-        private Long sourceLocationId;
+        /** 发放药房类型持久化码（由应用层按 {@code adm_location} 推导）。 */
+        private String purposeTypeEnum;
+        /** 发放药房主键（{@code MedicationDispense.location_id}）。 */
+        private Long purposeLocationId;
         /** 业务发生时间。 */
         private LocalDateTime occurrenceTime;
         /** 申请人主键。 */

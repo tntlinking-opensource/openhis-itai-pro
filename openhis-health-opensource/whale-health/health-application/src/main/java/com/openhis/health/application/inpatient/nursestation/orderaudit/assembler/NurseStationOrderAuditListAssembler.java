@@ -19,12 +19,12 @@ package com.openhis.health.application.inpatient.nursestation.orderaudit.assembl
 
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditPatientGroupDto;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditRowDto;
-import com.openhis.health.application.inpatient.nursestation.orderview.assembler.NurseStationOrderViewListAssembler;
-import com.openhis.health.application.inpatient.nursestation.orderview.dto.NurseStationOrderViewDisplayContext;
-import com.openhis.health.application.inpatient.nursestation.orderview.dto.NurseStationOrderViewDisplayCore;
-import com.openhis.health.application.inpatient.nursestation.orderview.dto.NurseStationOrderViewListDetailIndex;
+import com.openhis.health.module.querysupport.order.NurseStationOrderViewListAssembler;
+import com.openhis.health.module.querysupport.order.dto.NurseStationOrderViewDisplayContext;
+import com.openhis.health.module.querysupport.order.dto.NurseStationOrderViewDisplayCore;
+import com.openhis.health.module.querysupport.order.dto.NurseStationOrderViewListDetailIndex;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
-import com.openhis.health.application.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import lombok.RequiredArgsConstructor;

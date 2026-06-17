@@ -30,6 +30,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医嘱校对写操作锚点。 */
 @Schema(description = "医嘱校对写操作锚点", requiredProperties = {"orderType", "requestId"})
 public class NurseStationOrderAuditWriteItemDto {
 
@@ -40,6 +41,7 @@ public class NurseStationOrderAuditWriteItemDto {
 
     /** 药品/诊疗申请主键。 */
     @NotNull(message = "申请主键不能为空")
+    /** 药品/诊疗申请主键。 */
     @Schema(description = "药品/诊疗申请主键", required = true)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long requestId;

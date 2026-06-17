@@ -17,10 +17,10 @@
 
 package com.openhis.health.application.outpatient.doctorstation.advice.mapper;
 
-import com.openhis.health.application.common.assembler.advice.ProductDefinitionOrderChargePricingSupport;
-import com.openhis.health.application.common.assembler.advice.ServiceAdviceDraftCommandSupport;
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.application.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.assembler.advice.ProductDefinitionOrderChargePricingSupport;
+import com.openhis.health.module.common.assembler.advice.ServiceAdviceDraftCommandSupport;
+import com.openhis.health.module.common.assembler.advice.ServiceApplyFormOrchestrationSupport;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceDraftLineRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.PrepickedProductKeyDto;
@@ -36,12 +36,12 @@ import com.openhis.health.domain.medication.medicationrequest.command.CreateMedi
 import com.openhis.health.domain.medication.medicationrequest.command.RemoveMedicationOrderDraftCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.SignMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.SignOffMedicationOrderCommand;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
-import com.openhis.health.application.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.constants.ChargeItemDmConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
-import com.openhis.health.application.common.validator.PatientEncounterConsistencyGate;
+import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.TherapyType;
@@ -58,6 +58,7 @@ import com.openhis.health.domain.workflow.servicerequest.command.WithdrawSignedS
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -125,6 +126,7 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
             ));
         }
         if (request.getPrepickedProductKeys() != null && !request.getPrepickedProductKeys().isEmpty()) {
+            // 组套 IF-08 / 历史行 ids 收窄目录（IF-DOR-11 prepickedProductKeys）
             List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
             for (PrepickedProductKeyDto k : request.getPrepickedProductKeys()) {
                 ProductDefinitionBatchLookup l = new ProductDefinitionBatchLookup();
@@ -133,6 +135,13 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
                 lookups.add(l);
             }
             q.setPrepickedProductKeys(lookups);
+        }
+        // Pre：西药开立目录排除中草药等 med_category_code（IF-DOR-11 excludeMedicationCategoryCodes）
+        if (request.getExcludeMedicationCategoryCodes() != null && !request.getExcludeMedicationCategoryCodes().isEmpty()) {
+            q.setExcludeMedicationCategoryCodes(new ArrayList<>(request.getExcludeMedicationCategoryCodes()));
+        }
+        if (StringUtils.isNotBlank(request.getCategoryEnum())) {
+            q.setCategoryCode(ServiceApplyFormOrchestrationSupport.resolveApplyFormCategoryCode(request.getCategoryEnum()));
         }
         return q;
     }
@@ -183,6 +192,8 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         cmd.setDispensePerDuration(line.getMedicationPayload().getDispensePerDuration());
         cmd.setSkinTestFlag(line.getMedicationPayload().getSkinTestFlag());
         cmd.setConditionDefinitionId(line.getMedicationPayload().getConditionDefinitionId());
+        cmd.setEncounterDiagnosisId(line.getMedicationPayload().getEncounterDiagnosisId());
+        cmd.setContractId(line.getMedicationPayload().getContractId());
         return cmd;
     }
 
@@ -217,6 +228,8 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         cmd.setDispensePerDuration(line.getMedicationPayload().getDispensePerDuration());
         cmd.setSkinTestFlag(line.getMedicationPayload().getSkinTestFlag());
         cmd.setConditionDefinitionId(line.getMedicationPayload().getConditionDefinitionId());
+        cmd.setEncounterDiagnosisId(line.getMedicationPayload().getEncounterDiagnosisId());
+        cmd.setContractId(line.getMedicationPayload().getContractId());
         return cmd;
     }
 
@@ -269,6 +282,7 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         item.setGenerateSourceEnum(GenerateSource.DOCTOR_PRESCRIPTION.getCode());
         item.setSortNumber(line.getSortNumber());
         item.setConditionDefinitionId(line.getDevicePayload().getConditionDefinitionId());
+        item.setEncounterDiagnosisId(line.getDevicePayload().getEncounterDiagnosisId());
         cmd.setItem(item);
         return cmd;
     }
@@ -295,6 +309,7 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
             item.setUnitCode(line.getDevicePayload().getUnitCode());
             item.setPerformLocation(line.getDevicePayload().getPerformOrgId());
             item.setConditionDefinitionId(line.getDevicePayload().getConditionDefinitionId());
+            item.setEncounterDiagnosisId(line.getDevicePayload().getEncounterDiagnosisId());
         }
         item.setSortNumber(line.getSortNumber());
         cmd.setItem(item);
@@ -363,6 +378,7 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         item.setNote(servicePayload.getChildOverridesJson());
         item.setSortNumber(line.getSortNumber());
         item.setConditionDefinitionId(servicePayload.getConditionDefinitionId());
+        item.setEncounterDiagnosisId(servicePayload.getEncounterDiagnosisId());
         cmd.setItem(item);
         return cmd;
     }
@@ -388,6 +404,7 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
             SaveServiceAdviceDraftLinePayload servicePayload = line.getServicePayload();
             item.setRemark(servicePayload.getChildOverridesJson());
             item.setConditionDefinitionId(servicePayload.getConditionDefinitionId());
+            item.setEncounterDiagnosisId(servicePayload.getEncounterDiagnosisId());
             item.setOrgId(servicePayload.getPerformOrgId());
             BigDecimal quantity = ServiceAdviceDraftCommandSupport.resolveQuantityForModify(
                 servicePayload.getQuantity(), servicePayload.getChildOverridesJson());
@@ -626,20 +643,18 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
     }
 
     /**
-     * 装配药品医嘱签发命令（批次号 + 处方号）。
+     * 装配药品医嘱签发命令（处方号）。
      *
      * @param id             药品申请主键
-     * @param signCode       签发批次号
      * @param prescriptionNo 处方号（按日序列）
      * @param operatorId     操作人
      * @return {@link SignMedicationOrderCommand}
      */
     @Override
-    public SignMedicationOrderCommand toSignMedicationOrderCommand(Long id, String signCode, String prescriptionNo, Long operatorId) {
+    public SignMedicationOrderCommand toSignMedicationOrderCommand(Long id, String prescriptionNo, Long operatorId) {
         SignMedicationOrderCommand c = new SignMedicationOrderCommand();
         c.setId(id);
         c.setOperatorId(operatorId);
-        c.setSignCode(signCode);
         c.setPrescriptionNo(prescriptionNo);
         return c;
     }
@@ -660,20 +675,18 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
     }
 
     /**
-     * 装配诊疗申请签发命令（批次号写入服务申请）。
+     * 装配诊疗申请签发命令。
      *
      * @param id         诊疗申请主键
-     * @param signCode   签发批次号
      * @param operatorId 操作人，兼作签名人
      * @return {@link SignServiceRequestCommand}
      */
     @Override
-    public SignServiceRequestCommand toSignServiceRequestCommand(Long id, String signCode, Long operatorId) {
+    public SignServiceRequestCommand toSignServiceRequestCommand(Long id, Long operatorId) {
         SignServiceRequestCommand cmd = new SignServiceRequestCommand();
         cmd.setOperatorId(operatorId);
         SignServiceRequestCommand.SignServiceRequestItemCommand item = new SignServiceRequestCommand.SignServiceRequestItemCommand();
         item.setId(id);
-        item.setSignCode(signCode);
         item.setSignerId(operatorId);
         item.setSignTime(LocalDateTime.now());
         cmd.setItem(item);
@@ -749,25 +762,43 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
     }
 
     /**
-     * 解析医嘱绑定查询中的项目主键：优先数值主键，否则将业务项号解析为 Long。
+     * 解析 IF-DOR-12 绑定查询来源项键：用法走 {@code method_code}，诊疗走活动定义主键字符串。
      *
-     * @param itemNo 业务项号字符串，可与 {@code itemId} 二选一
-     * @param itemId 已解析的主键，非空时直接返回
-     * @return 非 null 主键
-     * @throws com.openhis.whale.core.application.exception.BusinessException 二者皆空或项号非数字时抛出
+     * @param bindType 绑定类型业务码
+     * @param itemNo   用法术语 code 或诊疗主键字符串
+     * @param itemId   诊疗活动定义主键
+     * @return 模板 {@code item_id} 匹配键
      */
     @Override
-    public Long parseOrderBindItemId(String itemNo, Long itemId) {
-        if (itemId != null) {
-            return itemId;
+    public String resolveOrderBindSourceItemKey(String bindType, String itemNo, Long itemId) {
+        if (DoctorStationAdviceConstants.BIND_TYPE_USAGE.equals(bindType)) {
+            if (StringUtils.isNotBlank(itemNo)) {
+                return itemNo.trim();
+            }
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                DoctorStationAdviceConstants.MSG_BIND_SOURCE_METHOD_CODE_REQUIRED);
         }
-        if (StringUtils.isBlank(itemNo)) {
-            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "主数据主键不能为空");
+        if (DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY.equals(bindType)) {
+            if (itemId != null) {
+                return String.valueOf(itemId);
+            }
+            if (StringUtils.isBlank(itemNo)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                    DoctorStationAdviceConstants.MSG_BIND_SOURCE_ITEM_ID_REQUIRED);
+            }
+            String trimmed = itemNo.trim();
+            if (!StringUtils.isNumeric(trimmed)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                    DoctorStationAdviceConstants.MSG_BIND_SOURCE_ITEM_NO_NOT_NUMERIC);
+            }
+            return trimmed;
         }
-        try {
-            return Long.parseLong(itemNo.trim());
-        } catch (NumberFormatException e) {
-            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "主数据项号无法解析为数值主键");
-        }
+        throw new BusinessException(
+            ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+            DoctorStationAdviceConstants.MSG_BIND_SOURCE_ITEM_ID_REQUIRED);
     }
+
 }

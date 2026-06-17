@@ -17,6 +17,7 @@
 
 package com.openhis.health.domain.clinical.conditiondefinition.service;
 
+import com.openhis.health.domain.clinical.condition.queries.model.DiagnosisCandidateQueryModel;
 import com.openhis.health.domain.clinical.conditiondefinition.entity.ConditionDefinition;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.DiseasePageQuery;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.*;
@@ -283,6 +284,44 @@ public class ConditionDefinitionQueryService {
         model.setYbMatchFlag(entity.getYbMatchFlag());
         model.setStatusEnum(entity.getStatusEnum());
         return model;
+    }
+
+    /**
+     * 按关键字从诊断定义目录检索候选条目（非分页全量候选集）。
+     *
+     * @param keyword 匹配名称/编码/拼音/五笔的子串；前后空白会 trim
+     * @return 命中列表；keyword 为空白时返回空集合（不访问库）
+     */
+    public List<DiagnosisCandidateQueryModel> getDiagnosisList(String keyword) {
+        if (StringUtils.isBlank(keyword)) {
+            return new ArrayList<>();
+        }
+        Specification<ConditionDefinition> specification = (root, cq, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), PublicationStatus.ACTIVE.getCode()));
+            String trimmed = keyword.trim();
+            String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
+            predicates.add(cb.or(
+                cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
+                cb.like(cb.lower(root.get(FieldNameConstants.CONDITION_CODE)), likeIc),
+                cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
+                cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc)
+            ));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<ConditionDefinition> definitions = repository.findAll(specification);
+        List<DiagnosisCandidateQueryModel> models = new ArrayList<>();
+        for (ConditionDefinition definition : definitions) {
+            DiagnosisCandidateQueryModel model = new DiagnosisCandidateQueryModel();
+            model.setDefinitionId(definition.getId());
+            model.setConditionCode(definition.getConditionCode());
+            model.setName(definition.getName());
+            model.setSourceEnum(definition.getSourceEnum());
+            model.setStatusEnum(definition.getStatusEnum());
+            models.add(model);
+        }
+        return models;
     }
 
     /**

@@ -26,10 +26,11 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊退费页初始化请求。 */
 @Schema(description = "门诊退费页初始化请求")
 public class LoadOutpatientRefundPageInitRequest {
 
-    /** 占位字段；机构由服务端会话解析。 */
     @Schema(description = "占位字段，当前版本不使用")
+    /** 占位字段，当前版本不使用（业务字段）。 */
     private String placeholder;
 }

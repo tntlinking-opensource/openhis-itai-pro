@@ -26,20 +26,15 @@ import java.time.LocalTime;
  * IF-IP-DOR-19：单条诊疗活动「可执行科室」规则展示行（执行科室/地点展示名由应用层批量解析后回填）。
  */
 @Data
+/** 医生站-诊疗可执行科室规则行。 */
 @Schema(description = "医生站-诊疗可执行科室规则行")
 public class ActivityExecutionLocationRuleRowDto {
 
-    /** 可执行科室规则主键。 */
     @Schema(description = "规则主键")
     private Long id;
 
-    /** 关联的诊疗活动定义主键。 */
     @Schema(description = "诊疗活动定义主键")
     private Long activityDefinitionId;
-
-    /** 规则绑定的收费项定义主键，用于计价锚点。 */
-    @Schema(description = "关联收费项定义主键")
-    private Long chargeItemDefinitionId;
 
     /** 诊疗大类编码，用于前端分组或筛选。 */
     @Schema(description = "诊疗大类编码")
@@ -69,7 +64,7 @@ public class ActivityExecutionLocationRuleRowDto {
     @Schema(description = "规则生效结束时刻（日内）")
     private LocalTime endTime;
 
-    /** 多条规则冲突时的匹配优先级，数值越大优先。 */
+    /** 多条规则冲突时的匹配优先级，数值越小越优先（1 最优先）。 */
     @Schema(description = "优先级")
     private Integer priority;
 

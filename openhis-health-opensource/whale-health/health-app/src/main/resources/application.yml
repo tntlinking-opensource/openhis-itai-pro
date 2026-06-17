@@ -9,7 +9,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/whale
     username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:root}
+    password: ${DB_PASSWORD:xZ_TTSL123}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 20
@@ -97,6 +97,15 @@ app:
     secret: ${JWT_SECRET:whale-health-secret-key-32-characters-long}
     access-token-expiration: 7200000  # 2小时，单位：毫秒
     refresh-token-expiration: 604800000  # 7天，单位：毫秒
+    impersonation-access-token-expiration: 1800000  # 代理登录 30 分钟
+
+  # 登录后会话（租户/医院/科室）：jdbc 持久化到库，重启仍有效；memory 仅内存
+  session-store:
+    type: jdbc
+    cache:
+      enabled: true
+      expire-after-write-minutes: 2
+      maximum-size: 5000
   
   cache:
     permission:
@@ -119,25 +128,12 @@ app:
   quartz:
     enabled: true
 
-  # CA证书登录配置
-  ca:
-    coss:
-      base-url: ${COSS_BASE_URL:http://localhost:8080/coss}
-      app-id: ${COSS_APP_ID:}
-      secure-code: ${COSS_SECURE_CODE:}
-      version: "1.0"
-      enabled: ${COSS_ENABLED:false}  # COSS未部署时为false，走本地验签
-      connect-timeout: 5000
-      read-timeout: 10000
-    challenge:
-      ttl: 300          # 挑战值有效期（秒），默认5分钟
-      nonce-length: 32  # nonce长度
-
 # 日志配置
 logging:
   level:
     root: INFO
     com.openhis.whale: DEBUG  # 框架代码使用 DEBUG，便于开发调试
+    com.openhis.whale.core.infrastructure.cache.IndexedCacheService: WARN  # 启动预热字典时避免批量缓存 DEBUG 刷屏
     com.openhis.health: DEBUG
     org.springframework.boot: WARN  # Spring Boot 自动配置日志改为 WARN，减少启动日志噪音
     org.springframework.jdbc: WARN  # JDBC 日志改为 WARN
@@ -187,15 +183,18 @@ openhis:
   flyway:
     modular:
       enabled: true
-  # 扩展模块唯一运行时开关（改后重启；jar 由 health-app pom 打入，无需再配 extensions-* profile）
+  # 扩展模块运行时开关
   modules:
     emr:
-      enabled: false
+      enabled: true
     mrms:
       enabled: true
     chs:
       enabled: false
-
+    report:
+      enabled: true
+    booking:
+      enabled: true
 whale:
   cache:
     concept:

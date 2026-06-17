@@ -25,13 +25,7 @@ import lombok.EqualsAndHashCode;
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
-/**
- * UpdateRegistrationTypeRequest。
- */
 public class UpdateRegistrationTypeRequest extends CreateRegistrationTypeRequest {
     /** 医疗服务（挂号类型）主键。 */
-    /**
-     * id。
-     */
     private Long id;
 }

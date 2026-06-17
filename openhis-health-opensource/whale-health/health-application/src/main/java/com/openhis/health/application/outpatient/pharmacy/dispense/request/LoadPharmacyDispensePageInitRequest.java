@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.outpatient.pharmacy.dispense.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -33,14 +33,19 @@ import lombok.experimental.Accessors;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 门诊发药页初始化请求。 */
 @Schema(description = "门诊发药页初始化请求")
 public class LoadPharmacyDispensePageInitRequest extends AbstractHealthPageRequest {
 
     /**
-     * 岗位/业务角色过滤码（可选）；用于调配药师分页候选过滤。
-     *
-     * <p>未传时应用服务按 SDD 使用默认登记口径。</p>
+     * 当前药房库位主键（{@code adm_location.id}，{@code LocationForm.PHARMACY}）；用于收窄调配药师候选。
      */
-    @Schema(description = "岗位或业务角色过滤整数码")
-    private Integer pharmacistRoleFilterCode;
+    @Schema(description = "当前药房库位主键 adm_location.id（收窄调配药师候选）")
+    private Long pharmacyLocationId;
+
+    /**
+     * 历史字段：岗位过滤语义码；**已废弃**，调配药师固定按 {@code ROLE_PHARMACIST} + 药房 Location 管辖收窄。
+     */
+    @Schema(description = "已废弃；调配药师固定按药师岗与药房管辖收窄")
+    private String pharmacistRoleFilterCode;
 }

@@ -29,10 +29,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊医生站-申请退费-可退账单行列表响应。 */
 @Schema(description = "门诊医生站-申请退费-可退账单行列表响应")
 public class ListRefundableChargeLinesForEncounterResponse {
 
-    /** 可退候选行。 */
     @Schema(description = "可退候选行（按支付分组排序）")
     private List<RefundableChargeLineItemDto> lines;
 }

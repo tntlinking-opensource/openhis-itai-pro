@@ -21,15 +21,15 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dt
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingPatientGroupDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationSupplementParentOrderRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.mapper.NurseStationInpatientBillingMapper;
-import com.openhis.health.application.inpatient.nursestation.orderview.assembler.NurseStationOrderViewListAssembler;
-import com.openhis.health.application.inpatient.nursestation.orderview.dto.NurseStationOrderViewDisplayContext;
-import com.openhis.health.application.inpatient.nursestation.orderview.dto.NurseStationOrderViewDisplayCore;
-import com.openhis.health.application.inpatient.nursestation.orderview.dto.NurseStationOrderViewListDetailIndex;
+import com.openhis.health.module.querysupport.order.NurseStationOrderViewListAssembler;
+import com.openhis.health.module.querysupport.order.dto.NurseStationOrderViewDisplayContext;
+import com.openhis.health.module.querysupport.order.dto.NurseStationOrderViewDisplayCore;
+import com.openhis.health.module.querysupport.order.dto.NurseStationOrderViewListDetailIndex;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
-import com.openhis.health.application.querysupport.order.dto.InpatientOrderListSkeleton;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -337,6 +337,7 @@ public class NurseStationInpatientBillingListAssembler {
      * @param skeleton               OrderInfo 已划价骨架
      * @param chargeByServiceId      服务 id → Charge 列表
      * @param dispenseIdsByDeviceReqId 耗材请求 id → 发放 id 列表
+     * @param primaryDispenseStatusByDeviceReqId 耗材请求 id → 主发放状态码
      * @param pricedRowFactsByOrderId orderId → 展示事实
      * @return 按 encounter 分组的已划价行
      */
@@ -344,6 +345,7 @@ public class NurseStationInpatientBillingListAssembler {
         List<InpatientOrderListSkeleton> skeleton,
         Map<Long, List<ChargeItem>> chargeByServiceId,
         Map<Long, List<Long>> dispenseIdsByDeviceReqId,
+        Map<Long, String> primaryDispenseStatusByDeviceReqId,
         Map<Long, PricedOrderRowFacts> pricedRowFactsByOrderId) {
         if (skeleton == null || skeleton.isEmpty()) {
             return new ArrayList<>();
@@ -354,7 +356,8 @@ public class NurseStationInpatientBillingListAssembler {
                 continue;
             }
             NurseStationPricedOrderRowDto row = this.mapPricedRow(
-                order, chargeByServiceId, dispenseIdsByDeviceReqId, pricedRowFactsByOrderId);
+                order, chargeByServiceId, dispenseIdsByDeviceReqId, primaryDispenseStatusByDeviceReqId,
+                pricedRowFactsByOrderId);
             if (row == null) {
                 continue;
             }
@@ -428,6 +431,7 @@ public class NurseStationInpatientBillingListAssembler {
      * @param order                    OrderInfo 行
      * @param chargeByServiceId        服务 id → Charge
      * @param dispenseIdsByDeviceReqId 耗材发放索引
+     * @param primaryDispenseStatusByDeviceReqId 主发放状态码
      * @param pricedRowFactsByOrderId   展示事实
      * @return 已划价行
      */
@@ -435,6 +439,7 @@ public class NurseStationInpatientBillingListAssembler {
         InpatientOrderListSkeleton order,
         Map<Long, List<ChargeItem>> chargeByServiceId,
         Map<Long, List<Long>> dispenseIdsByDeviceReqId,
+        Map<Long, String> primaryDispenseStatusByDeviceReqId,
         Map<Long, PricedOrderRowFacts> pricedRowFactsByOrderId) {
         Long serviceId = order.getOrderId();
         if (ReadModelOrderTypeConstants.DEVICE_REQUEST.equals(order.getOrderType())) {
@@ -525,8 +530,18 @@ public class NurseStationInpatientBillingListAssembler {
         if (ReadModelOrderTypeConstants.DEVICE_REQUEST.equals(order.getOrderType())) {
             List<Long> dispenseIds = dispenseIdsByDeviceReqId.get(serviceId);
             if (dispenseIds != null && !dispenseIds.isEmpty()) {
-                row.setDispenseStatusEnum(DispenseStatus.PREPARATION.getCode());
-                row.setDispenseStatusDisplay(DispenseStatus.PREPARATION.getDisplay());
+                String statusCode = null;
+                if (primaryDispenseStatusByDeviceReqId != null) {
+                    statusCode = primaryDispenseStatusByDeviceReqId.get(serviceId);
+                }
+                if (statusCode == null) {
+                    statusCode = DispenseStatus.PREPARATION.getCode();
+                }
+                row.setDispenseStatusEnum(statusCode);
+                DispenseStatus status = EnumUtil.fromCode(DispenseStatus.class, statusCode);
+                if (status != null) {
+                    row.setDispenseStatusDisplay(status.getDisplay());
+                }
             }
         }
         return row;

@@ -49,4 +49,9 @@ public class InpatientPharmacyPendingEncounterPageQuery extends AbstractPageQuer
      * 病区主键（与 {@code InpatientInfo.ward_id} 对齐）；为空表示不按病区过滤。
      */
     private Long wardId;
+
+    /**
+     * 应用层预解析的在院就诊主键集合（含病区/关键字收窄）；由 {@code PharmacyEncounterQueueLoader} 写入，领域层仅 {@code IN} 过滤。
+     */
+    private List<Long> resolvedEncounterScope;
 }

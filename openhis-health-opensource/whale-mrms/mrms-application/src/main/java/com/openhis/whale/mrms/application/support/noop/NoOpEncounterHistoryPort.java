@@ -1,7 +1,7 @@
 package com.openhis.whale.mrms.application.support.noop;
 
-import com.openhis.whale.mrms.domain.port.EncounterHistoryPort;
-import com.openhis.whale.mrms.domain.port.model.TransferLineSnapshot;
+import com.openhis.whale.mrms.port.EncounterHistoryPort;
+import com.openhis.whale.mrms.port.model.TransferLineSnapshot;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 

@@ -30,6 +30,7 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站药品医嘱草稿行载荷。 */
 @Schema(description = "医生站药品医嘱草稿行载荷")
 public class SaveMedicationAdviceDraftLinePayload {
 
@@ -56,6 +57,7 @@ public class SaveMedicationAdviceDraftLinePayload {
 
     /** 成组号；同号表示同组输液/配伍等。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 组号。 */
     @Schema(description = "组号")
     private Long groupId;
 
@@ -75,9 +77,12 @@ public class SaveMedicationAdviceDraftLinePayload {
     @Schema(description = "是否皮试")
     private Boolean skinTestFlag;
 
-    /** 预选发药库位，弱提示域，最终以库存与规则为准。 */
+    /**
+     * 目录 IF-DOR-11 已解析发药库位；IF-DOR-14 写路径定价 FIFO 直接在该库位取批号，
+     * 不再二次 match 取药科室模板（不落库到 MedicationRequest，签发仍以 FIFO 发放为准）。
+     */
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "发药位置（预选/弱提示，不固化到请求）")
+    @Schema(description = "发药库位（目录已解析，暂存定价用）")
     private Long dispenseLocationId;
 
     /**
@@ -86,6 +91,13 @@ public class SaveMedicationAdviceDraftLinePayload {
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "诊断定义主键")
     private Long conditionDefinitionId;
+
+    /**
+     * 就诊诊断主键（落库 {@code med_medication_request.encounter_diagnosis_id}）。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "就诊诊断主键")
+    private Long encounterDiagnosisId;
 
     /** 费用性质/合同覆盖，可空表示走患者默认。 */
     @JsonSerialize(using = ToStringSerializer.class)

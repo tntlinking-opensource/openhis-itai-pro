@@ -48,8 +48,8 @@ public class PatientDto {
     private String genderEnumText;
     /** 身份证号或其它主证件号（依建档口径）。 */
     private String idCard;
-    /** 出生日期（接口约定为字符串格式的日期时间片段）。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 出生日期（仅日期，不含时分秒）。 */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
     private LocalDate birthDate;
     /** 联系电话。 */
     private String phone;

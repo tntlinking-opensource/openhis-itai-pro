@@ -31,6 +31,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 住院保存配药请求。 */
 @Schema(description = "住院保存配药请求")
 public class SavePrepareInpatientMedicationDispenseRequest {
 
@@ -38,10 +39,12 @@ public class SavePrepareInpatientMedicationDispenseRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;
 
+    /** 调配药师主键。 */
     @Schema(description = "调配药师主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long preparerPractitionerId;
 
+    /** 配药行。 */
     @Schema(description = "配药行", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<SavePrepareInpatientDispenseLineSubmitDto> lines;
 }

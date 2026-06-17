@@ -17,9 +17,9 @@
 
 package com.openhis.health.application.inpatient.financial.registration.mapper;
 
-import com.openhis.health.application.common.assembler.inpatient.AdmissionPrimaryDiagnosisAssembler;
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.assembler.inpatient.AdmissionPrimaryDiagnosisAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.financial.registration.dto.AdmissionDiagnosisSubmitDto;
 import com.openhis.health.application.inpatient.financial.registration.dto.PaymentDetailDto;
 import com.openhis.health.application.inpatient.financial.registration.dto.RegistrationEncounterDto;
@@ -78,13 +78,15 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
      *
      * @param rows 读模型行；调用方保证非 null
      * @param ambEncounterIdByEncounterId 住院就诊 ID → 源门诊就诊 ID；可空
+     * @param inWayLabelByCode            入院方式 code → 展示文案；可空
      * @return 列表行 DTO
      */
     @Override
     public List<RegistrationQueueItemDto> toRegistrationQueueItemDtoList(
         List<InpatientEncounterContextQueryModel> rows,
         Map<Long, Long> ambEncounterIdByEncounterId,
-        Map<Long, InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay> displayOverlayByEncounterId) {
+        Map<Long, InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay> displayOverlayByEncounterId,
+        Map<String, String> inWayLabelByCode) {
         List<RegistrationQueueItemDto> list = new ArrayList<>();
         if (rows == null) {
             return list;
@@ -105,7 +107,7 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
                 ambEncounterId = ambIndex.get(row.getEncounterId());
                 overlay = overlayIndex.get(row.getEncounterId());
             }
-            list.add(this.toRegistrationQueueItemDto(row, ambEncounterId, overlay));
+            list.add(this.toRegistrationQueueItemDto(row, ambEncounterId, overlay, inWayLabelByCode));
         }
         return list;
     }
@@ -129,8 +131,11 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
      *
      * @param patient         患者 DTO，可 null
      * @param encounter       就诊 DTO，可 null
-     * @param contractOptions 费用性质下拉
-     * @param readOnly        是否只读查看
+     * @param contractOptions     费用性质下拉
+     * @param organizationOptions 入院科室下拉
+     * @param inWayCodeOptions    入院方式下拉
+     * @param admitSourceCodeOptions 入院类型下拉
+     * @param readOnly            是否只读查看
      * @return 上下文响应
      */
     @Override
@@ -138,11 +143,17 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
         RegistrationPatientDto patient,
         RegistrationEncounterDto encounter,
         List<OptionDto> contractOptions,
+        List<OptionDto> organizationOptions,
+        List<OptionDto> inWayCodeOptions,
+        List<OptionDto> admitSourceCodeOptions,
         boolean readOnly) {
         LoadRegistrationContextResponse response = new LoadRegistrationContextResponse();
         response.setPatient(patient);
         response.setEncounter(encounter);
         response.setContractOptions(contractOptions);
+        response.setOrganizationOptions(organizationOptions);
+        response.setInWayCodeOptions(inWayCodeOptions);
+        response.setAdmitSourceCodeOptions(admitSourceCodeOptions);
         response.setReadOnly(readOnly);
         return response;
     }
@@ -189,7 +200,9 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
     @Override
     public RegistrationEncounterDto toRegistrationEncounterDto(
         InpatientEncounterContextQueryModel row,
-        EncounterDetailQueryModel encounterHead) {
+        EncounterDetailQueryModel encounterHead,
+        Map<String, String> inWayLabelByCode,
+        Map<String, String> admitSourceLabelByCode) {
         if (row == null) {
             return null;
         }
@@ -201,13 +214,17 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
         dto.setOrganizationName(row.getOrganizationName());
         dto.setWardId(row.getWardId());
         dto.setWardName(row.getWardName());
+        dto.setBedId(row.getBedId());
+        dto.setBedName(row.getBedName());
         dto.setInWayCode(row.getInWayCode());
+        dto.setInWayCodeText(this.resolveTerminologyLabel(inWayLabelByCode, row.getInWayCode()));
         dto.setStartTime(row.getStartTime());
         AdmissionPrimaryDiagnosisAssembler.PrimaryDiagnosisDisplay primaryDiagnosis =
             admissionPrimaryDiagnosisAssembler.resolvePrimaryDiagnosis(row.getDiagnosisJson());
         dto.setPrimaryConditionDefinitionId(primaryDiagnosis.getPrimaryConditionDefinitionId());
         dto.setPrimaryConditionDefinitionName(primaryDiagnosis.getPrimaryConditionDefinitionName());
         dto.setAdmitSourceCode(null);
+        dto.setAdmitSourceCodeText(null);
         dto.setPriorityEnum(null);
         dto.setAmbEncounterId(null);
         if (encounterHead != null) {
@@ -215,6 +232,8 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
                 dto.setEncounterBusNo(encounterHead.getBusNo());
             }
             dto.setAdmitSourceCode(encounterHead.getAdmitSourceCode());
+            dto.setAdmitSourceCodeText(
+                this.resolveTerminologyLabel(admitSourceLabelByCode, encounterHead.getAdmitSourceCode()));
             dto.setPriorityEnum(encounterHead.getPriorityEnum());
             dto.setAmbEncounterId(encounterHead.getAmbEncounterId());
             if (encounterHead.getStartTime() != null) {
@@ -394,13 +413,15 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
         Long encounterId,
         String busNo,
         Long paymentId,
-        boolean accountOpened) {
+        boolean accountOpened,
+        String ybMdtrtId) {
         SubmitRegistrationResponse response = new SubmitRegistrationResponse();
         response.setEncounterId(encounterId);
         response.setEncounterBusNo(busNo);
         response.setStatusEnum(EncounterStatus.REGISTERED.getCode());
         response.setPaymentId(paymentId);
         response.setAccountOpened(accountOpened);
+        response.setYbMdtrtId(ybMdtrtId);
         return response;
     }
 
@@ -497,7 +518,8 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
     private RegistrationQueueItemDto toRegistrationQueueItemDto(
         InpatientEncounterContextQueryModel row,
         Long ambEncounterId,
-        InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay overlay) {
+        InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay overlay,
+        Map<String, String> inWayLabelByCode) {
         RegistrationQueueItemDto dto = new RegistrationQueueItemDto();
         dto.setEncounterId(row.getEncounterId());
         String overlayBusNo = null;
@@ -527,6 +549,7 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
         dto.setBedName(this.firstNonBlank(row.getBedName(), overlayBedName));
         dto.setStartTime(row.getStartTime());
         dto.setInWayCode(row.getInWayCode());
+        dto.setInWayCodeText(this.resolveTerminologyLabel(inWayLabelByCode, row.getInWayCode()));
         dto.setAmbEncounterId(ambEncounterId);
         dto.setCancelable(this.resolveCancelable(row));
         return dto;
@@ -547,6 +570,20 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
             return fromOverlay;
         }
         return null;
+    }
+
+    /**
+     * 术语 code → 展示文案；未命中时返回 null。
+     *
+     * @param labelByCode 术语标签索引
+     * @param code        业务码
+     * @return 展示文案或 null
+     */
+    private String resolveTerminologyLabel(Map<String, String> labelByCode, String code) {
+        if (labelByCode == null || StringUtils.isBlank(code)) {
+            return null;
+        }
+        return labelByCode.get(code.trim());
     }
 
     /**

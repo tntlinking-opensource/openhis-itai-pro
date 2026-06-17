@@ -18,7 +18,7 @@
 package com.openhis.health.application.inpatient.financial.settle.request;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -32,15 +32,17 @@ import java.time.LocalDate;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
+/** 住院结算患者队列分页请求。 */
 @Schema(description = "住院结算患者队列分页请求")
 public class PageInpatientSettleQueueRequest extends AbstractHealthPageRequest {
 
-    /** 入院日期（对齐 InpatientInfo.start_time 日期部分）。 */
     @Schema(description = "入院日期筛选")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    /** 入院日期筛选（业务字段）。 */
     private LocalDate admissionDate;
 
     /** 队列页签：PENDING_SETTLE / SETTLED。 */
     @Schema(description = "结算队列页签 code")
+    /** 结算队列页签 code（业务字段）。 */
     private String settleQueueTab;
 }

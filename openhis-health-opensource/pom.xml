@@ -14,7 +14,7 @@
 
     <groupId>com.openhis</groupId>
     <artifactId>whale</artifactId>
-    <version>2.0.0-SNAPSHOT</version>
+    <version>2.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>OpenHIS All</name>
@@ -33,26 +33,57 @@
         <whale.emr.version>${project.version}</whale.emr.version>
         <whale.mrms.version>${project.version}</whale.mrms.version>
         <whale.chs.version>${project.version}</whale.chs.version>
+        <whale.report.version>${project.version}</whale.report.version>
+        <whale.booking.version>${project.version}</whale.booking.version>
 
         <lombok.version>1.18.30</lombok.version>
         <mapstruct.version>1.5.5.Final</mapstruct.version>
+        <openhis.framework.maven.repo>file://${maven.multiModuleProjectDirectory}/dist/framework-maven-repo</openhis.framework.maven.repo>
     </properties>
-
-    <!-- 默认构建 framework + health + emr/mrms/chs（与 health-app 扩展依赖默认启用一致）；仅 HIS 核心用 -Popensource -->
+    <repositories>
+        <repository>
+            <id>openhis-framework-binary</id>
+            <name>OpenHIS Framework (prebuilt binaries)</name>
+            <url>${openhis.framework.maven.repo}</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+    </repositories>
+    <!-- 默认构建 BOM + framework + 全部业务 Module（health-app 扩展依赖仍由 with-* Profile 控制） -->
     <modules>
+        <module>whale-dependencies</module>
         <module>whale-health</module>
         <module>whale-emr</module>
         <module>whale-mrms</module>
+        <module>whale-booking</module>
+        <module>whale-report</module>
+        <module>whale-chs-jilin</module>
     </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.openhis</groupId>
+                <artifactId>whale-dependencies</artifactId>
+                <version>${project.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <profiles>
 <!-- 开源仓：仅 HIS 核心（无扩展模块） -->
         <profile>
             <id>opensource</id>
     <modules>
+        <module>whale-dependencies</module>
         <module>whale-health</module>
         <module>whale-emr</module>
         <module>whale-mrms</module>
+        <module>whale-booking</module>
+        <module>whale-report</module>
+        <module>whale-chs-jilin</module>
     </modules>
         </profile>
     </profiles>

@@ -17,8 +17,14 @@
 
 package com.openhis.health.application.outpatient.doctorstation.advice.port;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceRequestDetailSummaryDto;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
+
+import java.util.List;
 
 /**
  * IF-DOR-15：检验/检查外发命令（目标态网关入参壳，字段随对接协议扩展）。
@@ -32,4 +38,13 @@ public class LisPacsAdviceApplyCommand {
 
     /** 患者主键。 */
     private Long patientId;
+
+    /** 诊疗服务申请主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "服务申请主键")
+    private Long requestId;
+
+    /** 部位/样本明细摘要（BR-REQ-008）。 */
+    @Schema(description = "服务申请明细摘要")
+    private List<ServiceRequestDetailSummaryDto> serviceRequestDetails;
 }

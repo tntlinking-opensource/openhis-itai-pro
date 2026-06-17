@@ -72,8 +72,13 @@ public class EmrEditorImageStore {
         if (!FileUploadUtils.isAllowedExtension(ext, MimeTypeUtils.IMAGE_EXTENSION)) {
             throw new IOException("不允许的图片类型：" + ext);
         }
-        String relative = FileUploadUtils.generateFileName(
-                StringUtils.hasText(fileName) ? fileName : "image." + ext);
+        String uploadName;
+        if (StringUtils.hasText(fileName)) {
+            uploadName = fileName;
+        } else {
+            uploadName = "image." + ext;
+        }
+        String relative = FileUploadUtils.generateFileName(uploadName);
         String baseDir = FileUploadUtils.getDefaultBaseDir() + "/" + EMR_SUB_DIR;
         var dest = FileUploadUtils.getAbsoluteFile(baseDir, relative);
         Files.write(dest.toPath(), bytes);

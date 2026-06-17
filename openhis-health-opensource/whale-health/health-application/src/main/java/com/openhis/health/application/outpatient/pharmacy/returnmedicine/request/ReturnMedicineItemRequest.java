@@ -28,12 +28,12 @@ import java.io.Serializable;
  * 退药确认单项请求（IF-PHA-02-04）。
  */
 @Data
+/** 退药确认单项请求。 */
 @Schema(description = "退药确认单项请求")
 public class ReturnMedicineItemRequest implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    /** 发放单主键。 */
     @Schema(description = "发放单主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long dispenseId;

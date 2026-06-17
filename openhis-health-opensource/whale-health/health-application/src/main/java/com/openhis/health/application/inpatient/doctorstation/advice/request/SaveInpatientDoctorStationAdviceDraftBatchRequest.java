@@ -34,10 +34,11 @@ import java.util.List;
  * IF-IP-DOR-14：暂存医嘱变更批次请求（多行 CREATE/UPDATE/DELETE 同事务）。
  *
  * <p>单行载荷见 {@link InpatientDoctorStationAdviceDraftLineRequest}；失败整批回滚。
- * 临时药品/诊疗行在 AppService 内挂自费账户费用草稿（与门诊一致，发放仅在签发 FIFO）；长期药品仅 Request（BR-IP-ORD-005）。</p>
+ * 住院长临暂存均仅写 Request（BR-IP-ORD-005）；FIFO 与 ORDER_EXECUTE 费用在护士执行落库。</p>
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-医嘱开立-暂存医嘱变更批次请求。 */
 @Schema(description = "医生站-医嘱开立-暂存医嘱变更批次请求")
 public class SaveInpatientDoctorStationAdviceDraftBatchRequest {
 
@@ -50,16 +51,14 @@ public class SaveInpatientDoctorStationAdviceDraftBatchRequest {
     /** 必须与就诊患者一致，由 AppService 与领域二次校验。 */
     @NotNull(message = DoctorStationAdviceConstants.MSG_PATIENT_ID_REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者标识。 */
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
-
-    /** 租户定价策略码，见 {@link com.openhis.health.domain.share.constants.DoctorStationAdviceConstants} 定价来源常量族。 */
-    @Schema(description = "定价来源码；空则回落默认口径")
-    private String pricingSourceCode;
 
     /** 本批次 CREATE/UPDATE/DELETE 行集合，顺序即处理建议顺序。 */
     @NotEmpty(message = DoctorStationAdviceConstants.VALIDATION_DRAFT_LINES_REQUIRED)
     @Valid
+    /** 批次行。 */
     @Schema(description = "批次行", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<InpatientDoctorStationAdviceDraftLineRequest> lines;
 }

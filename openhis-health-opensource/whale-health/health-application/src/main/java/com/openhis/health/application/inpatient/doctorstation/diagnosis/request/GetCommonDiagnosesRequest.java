@@ -31,6 +31,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-查询诊断常用分类数据请求。 */
 @Schema(description = "医生站-查询诊断常用分类数据请求")
 public class GetCommonDiagnosesRequest {
 

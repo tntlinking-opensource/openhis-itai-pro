@@ -42,4 +42,8 @@ public interface TableNameConstants {
     String WKF_DEVICE_DISPENSE = "wkf_device_dispense";
     /** 就诊表名（收费明细 service_table 锚点，DM-ADM-011 / BR-CHG-001）。 */
     String ADM_ENCOUNTER = "adm_encounter";
+    /** 身体结构表名（服务申请明细 target_table 锚点）。 */
+    String DIA_BODY_STRUCTURE = "dia_body_structure";
+    /** 标本定义表名（服务申请明细 target_table 锚点）。 */
+    String ADM_SPECIMEN_DEFINITION = "adm_specimen_definition";
 }

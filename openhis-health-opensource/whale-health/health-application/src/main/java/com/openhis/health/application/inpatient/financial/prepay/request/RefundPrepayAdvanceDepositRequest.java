@@ -33,6 +33,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 退预交金请求。 */
 @Schema(description = "退预交金请求")
 public class RefundPrepayAdvanceDepositRequest {
 
@@ -42,22 +43,27 @@ public class RefundPrepayAdvanceDepositRequest {
     private Long encounterId;
 
     @NotNull(message = "患者 ID 不能为空")
+    /** 患者 ID。 */
     @Schema(description = "患者 ID", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long patientId;
 
     @NotNull(message = "退费金额不能为空")
+    /** 退费金额。 */
     @Schema(description = "退费金额，须大于 0 且不超过账户余额", requiredMode = Schema.RequiredMode.REQUIRED)
     private BigDecimal refundAmount;
 
     @NotNull(message = "退现明细不能为空")
+    /** 退现渠道明细。 */
     @Schema(description = "退现渠道明细，至少一条", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<PrepayPaymentDetailDto> paymentDetails;
 
+    /** 操作员 ID；缺省取当前登录用户。 */
     @Schema(description = "操作员 ID；缺省取当前登录用户")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long operatorId;
 
+    /** 备注。 */
     @Schema(description = "备注")
     private String remark;
 }

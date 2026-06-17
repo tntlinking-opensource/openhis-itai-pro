@@ -558,8 +558,8 @@ public class SupplyRequestDomainService {
         for (CreateGainLossCommand.CreateGainLossItemCommand item : items) {
             // 业务含义：创建损益执行单（审批同意后触发损溢发放与库存增减，由应用层编排）。
             SupplyRequest entity = this.buildCommonEntity(busNo, item.getTypeEnum(), item.getItemTable(), item.getItemId(),
-                item.getItemQuantity(), item.getUnitCode(), item.getCategoryEnum(), item.getSourceTypeEnum(), item.getSourceLocationId(),
-                null, null, item.getApplicantId(), item.getApplyTime());
+                item.getItemQuantity(), item.getUnitCode(), item.getCategoryEnum(), null, null,
+                item.getPurposeTypeEnum(), item.getPurposeLocationId(), item.getApplicantId(), item.getApplyTime());
             entity.setLotNumber(item.getLotNumber());
             entity.setOccurrenceTime(item.getOccurrenceTime());
             entity.setReason(item.getReason());
@@ -791,7 +791,7 @@ public class SupplyRequestDomainService {
     }
 
     /**
-     * 创建药品汇总单明细多行：关联 summaryId、患者等，初态一般为 {@link SupplyStatus#SEND}。
+     * 创建药品汇总单明细多行：关联 summaryId、患者等，初态为 {@link SupplyStatus#PENDING_APPROVAL}（对齐库房单据保存草稿）。
      *
      * @param command 汇总明细与操作人
      * @return 业务单号
@@ -808,16 +808,16 @@ public class SupplyRequestDomainService {
 
         List<SupplyRequest> toSave = new ArrayList<>();
         for (CreateSummarySupplyRequestCommand.CreateSummarySupplyRequestItemCommand item : items) {
-            // 业务含义：创建药品汇总单明细行（典型初态 SEND）。
+            // 业务含义：创建药品汇总单明细行（初态待审核；apply_time 在 submitApproval 时写入）。
             SupplyRequest entity = this.buildCommonEntity(busNo, item.getTypeEnum(), item.getItemTable(), item.getItemId(),
-                item.getItemQuantity(), item.getUnitCode(), item.getCategoryEnum(), item.getSourceTypeEnum(), item.getSourceLocationId(),
-                null, null, item.getApplicantId(), item.getApplyTime());
+                item.getItemQuantity(), item.getUnitCode(), item.getCategoryEnum(), null, null,
+                item.getPurposeTypeEnum(), item.getPurposeLocationId(), item.getApplicantId(), null);
             entity.setSummaryId(item.getSummaryId());
             entity.setPatientId(item.getPatientId());
             entity.setLotNumber(item.getLotNumber());
             entity.setOccurrenceTime(item.getOccurrenceTime());
             entity.setReason(item.getReason());
-            entity.setStatusEnum(SupplyStatus.SEND.getCode());
+            entity.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getCode());
 
             entity.assertCreatableMinimumFields();
             toSave.add(entity);
@@ -848,8 +848,8 @@ public class SupplyRequestDomainService {
         for (CreateDeviceSummarySupplyRequestCommand.CreateDeviceSummarySupplyRequestItemCommand item : items) {
             // 业务含义：创建科室耗材盘点单明细行（type 28）。
             SupplyRequest entity = this.buildCommonEntity(busNo, item.getTypeEnum(), item.getItemTable(), item.getItemId(),
-                item.getItemQuantity(), item.getUnitCode(), item.getCategoryEnum(), item.getSourceTypeEnum(), item.getSourceLocationId(),
-                null, null, item.getApplicantId(), item.getApplyTime());
+                item.getItemQuantity(), item.getUnitCode(), item.getCategoryEnum(), null, null,
+                item.getPurposeTypeEnum(), item.getPurposeLocationId(), item.getApplicantId(), item.getApplyTime());
             entity.setOccurrenceTime(item.getOccurrenceTime());
             entity.setReason(item.getReason());
             entity.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getCode());
@@ -1202,7 +1202,7 @@ public class SupplyRequestDomainService {
     }
 
     /**
-     * 由盘点命令项装配一行聚合实体（单端点库房：业务真源在 {@code purpose_*}，{@code source_*} 与 purpose 镜像以满足库表非空）。
+     * 由盘点命令项装配一行聚合实体（单端点库房：业务真源仅 {@code purpose_*}，{@code source_*} 不落库）。
      *
      * @param busNo 业务单号
      * @param item  盘点命令行
@@ -1242,9 +1242,6 @@ public class SupplyRequestDomainService {
         Long purposeLocationId = item.getPurposeLocationId();
         entity.setPurposeTypeEnum(purposeType);
         entity.setPurposeLocationId(purposeLocationId);
-        // 单端点盘点：对外契约以 purpose 为真源；source 与 purpose 同值镜像，满足 wkf_supply_request 非空列。
-        entity.setSourceTypeEnum(purposeType);
-        entity.setSourceLocationId(purposeLocationId);
 
         entity.setApplicantId(item.getApplicantId());
         entity.setPractitionerId(item.getPractitionerId());
@@ -1292,34 +1289,33 @@ public class SupplyRequestDomainService {
             entity.setCategoryEnum(categoryEnum);
         }
 
-        boolean cabinetPurchaseOrder = SupplyType.CABINET_PURCHASE_ORDER.getCode().equals(typeEnum);
-        if (cabinetPurchaseOrder) {
-            if (purposeTypeEnum == null) {
+        if (SupplyType.isPurposeOnlyLocationTypeCode(typeEnum)) {
+            // 单库房就是目的：仅写 purpose，source 保持空。
+            if (purposeTypeEnum == null || purposeTypeEnum.trim().isEmpty()) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "purposeTypeEnum 不能为空");
             }
             if (purposeLocationId == null) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "purposeLocationId 不能为空");
             }
-            entity.setSourceTypeEnum(sourceTypeEnum);
-            entity.setSourceLocationId(sourceLocationId);
-            entity.setPurposeTypeEnum(purposeTypeEnum);
+            entity.setPurposeTypeEnum(purposeTypeEnum.trim());
             entity.setPurposeLocationId(purposeLocationId);
         } else {
-            if (sourceTypeEnum == null) {
+            // 双端：出为源、进为目的；source 与 purpose 均必填且禁止同值。
+            if (sourceTypeEnum == null || sourceTypeEnum.trim().isEmpty()) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "sourceTypeEnum 不能为空");
             }
             if (sourceLocationId == null) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "sourceLocationId 不能为空");
             }
-            if (purposeTypeEnum == null) {
+            if (purposeTypeEnum == null || purposeTypeEnum.trim().isEmpty()) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "purposeTypeEnum 不能为空");
             }
             if (purposeLocationId == null) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "purposeLocationId 不能为空");
             }
-            entity.setSourceTypeEnum(sourceTypeEnum);
+            entity.setSourceTypeEnum(sourceTypeEnum.trim());
             entity.setSourceLocationId(sourceLocationId);
-            entity.setPurposeTypeEnum(purposeTypeEnum);
+            entity.setPurposeTypeEnum(purposeTypeEnum.trim());
             entity.setPurposeLocationId(purposeLocationId);
         }
 

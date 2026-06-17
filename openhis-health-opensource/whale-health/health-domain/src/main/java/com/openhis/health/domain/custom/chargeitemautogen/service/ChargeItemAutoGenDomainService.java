@@ -18,7 +18,6 @@
 package com.openhis.health.domain.custom.chargeitemautogen.service;
 
 import com.openhis.health.domain.share.constants.CustomConstants;
-import com.openhis.health.domain.administration.chargeitemdefinition.repository.ChargeItemDefinitionRepository;
 import com.openhis.health.domain.custom.chargeitemautogen.command.*;
 import com.openhis.health.domain.custom.chargeitemautogen.entity.ChargeItemAutoGen;
 import com.openhis.health.domain.custom.chargeitemautogen.repository.ChargeItemAutoGenRepository;
@@ -39,7 +38,6 @@ import lombok.RequiredArgsConstructor;
 public class ChargeItemAutoGenDomainService {
 
     private final ChargeItemAutoGenRepository repository;
-    private final ChargeItemDefinitionRepository chargeItemDefinitionRepository;
     private final IDomainEventPublisher domainEventPublisher;
 
 
@@ -48,12 +46,11 @@ public class ChargeItemAutoGenDomainService {
      *
      * @param command 新增命令
      * @return 新建规则标识
-     * @throws BusinessException 目标定价不存在或组合键冲突时
+     * @throws BusinessException 组合键冲突时
+     *
+     * <p>Pre：应用层须先断言 {@code targetDefinitionId} 对应收费项定价存在。</p>
      */
     public Long createAutoGenRule(CreateAutoGenRuleCommand command) {
-        if (!chargeItemDefinitionRepository.existsById(command.getTargetDefinitionId())) {
-            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_NOT_FOUND, "目标收费项定价不存在");
-        }
         ChargeItemAutoGen rule = new ChargeItemAutoGen();
         rule.setRuleName(command.getRuleName());
         rule.setTriggerSourceTable(command.getTriggerSourceTable());
@@ -134,9 +131,6 @@ public class ChargeItemAutoGenDomainService {
         }
         // 业务分支处理：目标定价变更。
         if (command.getTargetDefinitionId() != null) {
-            if (!chargeItemDefinitionRepository.existsById(command.getTargetDefinitionId())) {
-                    throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_NOT_FOUND, "目标收费项定价不存在");
-            }
             rule.setTargetDefinitionId(command.getTargetDefinitionId());
         }
         // 业务分支处理：执行科室标识变更。

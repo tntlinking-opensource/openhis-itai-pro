@@ -29,10 +29,11 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊退费页初始化响应。 */
 @Schema(description = "门诊退费页初始化响应")
 public class LoadOutpatientRefundPageInitResponse {
 
-    /** 收费项过程态筛选项（退费窗语义子集）。 */
     @Schema(description = "收费项状态筛选项")
+    /** 收费项状态筛选项（业务字段）。 */
     private List<OptionDto> chargeItemStatusOptions;
 }

@@ -17,16 +17,18 @@
 
 package com.openhis.health.application.inventory.pharmacy.stockin.service;
 
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogEditorHintsAssembler;
-import com.openhis.health.application.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.application.common.pagination.PageQueryBinder;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogEditorHintsAssembler;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
-import com.openhis.health.application.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.common.validator.PageWindowGate;
+import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.application.insurance.inventory.InventoryMedicareUploadSupport;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.PharmacyStockInDetailLineDto;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.PharmacyStockInLineDto;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.PharmacyStockInListRowDto;
@@ -41,10 +43,11 @@ import com.openhis.health.domain.administration.practitioner.entity.Practitioner
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.custom.tracenumberrecord.command.AppendTraceRecordsFromLineItemsCommand;
 import com.openhis.health.domain.custom.tracenumberrecord.service.TraceNumberRecordDomainService;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.application.querysupport.product.ProductDefinitionSelectionTerminologySupport;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionSelectionTerminologyMaps;
+import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.ProductDefinitionSelectionTerminologySupport;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionSelectionTerminologyMaps;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -53,7 +56,7 @@ import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
-import com.openhis.health.domain.share.enums.PractitionerBusinessRoleCode;
+import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.SupplyRequestType;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
@@ -78,11 +81,13 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequ
 import com.openhis.health.domain.workflow.supplyrequest.support.SupplyPersistedSplitQuantity;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
+import com.openhis.whale.chs.jilin.port.InventoryInsurancePort;
+import com.openhis.whale.chs.jilin.port.model.UploadAfterTransferCommand;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -105,7 +110,12 @@ import java.util.*;
 @RequiredArgsConstructor
 public class InventoryPharmacyStockInAppService {
 
-    private final ICurrentUser currentUser;
+    private static final String INV_CHG_TYPE_TRANSFER_IN = "101";
+
+    @Autowired(required = false)
+    private InventoryInsurancePort inventoryInsurancePort;
+
+    private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     private final CurrentOperatorResolver currentOperatorResolver;
     private final PageWindowGate pageWindowGate;
     private final SupplyRequestDomainService supplyRequestDomainService;
@@ -116,6 +126,7 @@ public class InventoryPharmacyStockInAppService {
     private final InventoryItemQueryService inventoryItemQueryService;
     private final LocationQueryService locationQueryService;
     private final PractitionerQueryService practitionerQueryService;
+    private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
     private final ProductDefinitionSelectionTerminologySupport productDefinitionSelectionTerminologySupport;
@@ -124,17 +135,26 @@ public class InventoryPharmacyStockInAppService {
     private final InventoryWarehouseInboundReceiptMapper inboundReceiptMapper;
     private final TraceNumberRecordDomainService traceNumberRecordDomainService;
 
+    /**
+     * 加载页主数据（库位、人员、状态等下拉）。
+     *
+     * @param request 可为空；当前无额外筛选字段
+     * @return 表单初始化选项集合
+     */
     public LoadPharmacyStockInFormInitResponse loadPharmacyStockInFormInit(LoadPharmacyStockInFormInitRequest request) {
-        Long resolvedOrg = this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        // Gate：会话机构上下文须存在，否则无法按管辖收窄库位与人员
+        // Pre：拉取启用库位/人员并经管辖 Gate 收窄
+        Long resolvedOrg = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+            ErrorCodeConstants.PHA_IN_101, "机构上下文缺失");
         try {
             List<Location> pharmacies = locationQueryService.listAllActivePharmacies();
             List<Location> warehouses = locationQueryService.listAllActiveWarehouses();
             List<Location> gatedPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(pharmacies);
             List<Location> gatedWarehouses = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(warehouses);
-            List<Practitioner> pharmacists = this.loadAllPractitionersForRoleInOrganization(
-                PractitionerBusinessRoleCode.PHARMACIST.getNumericCode(), resolvedOrg);
-            List<Practitioner> warehouseKeepers = this.loadAllPractitionersForRoleInOrganization(
-                PractitionerBusinessRoleCode.WAREHOUSE_ADMIN.getNumericCode(), resolvedOrg);
+            List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+                WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
+            List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+                WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
             return pharmacyStockInMapper.toLoadPharmacyStockInFormInitResponse(
                 pharmacyStockInMapper.toOptionDtoListFromLocations(gatedPharmacies),
                 pharmacyStockInMapper.toOptionDtoListFromLocations(gatedWarehouses),
@@ -148,7 +168,15 @@ public class InventoryPharmacyStockInAppService {
         }
     }
 
+    /**
+     * 分页查询单据列表。
+     *
+     * @param request 含库位筛选、状态与分页窗口
+     * @return 分页列表结果
+     */
     public PagePharmacyStockInsResponse pagePharmacyStockIns(PagePharmacyStockInsRequest request) {
+        // Gate：请求体、分页窗口与机构上下文
+        // Pre：组装供应单据列表查询条件
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "请求不能为空");
         }
@@ -157,7 +185,7 @@ public class InventoryPharmacyStockInAppService {
         }
         pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.PHA_IN_001, "分页参数不能为空");
         this.validateOptionalPharmacyStockInTypeEnum(request.getTypeEnum());
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.PHA_IN_101, "机构上下文缺失");
         Set<Long> allowedPharmacies = this.resolveGatedPharmacyLocationIdsForPharmacyGate();
         SupplyRequestDocumentListQuery listQuery = new SupplyRequestDocumentListQuery();
         listQuery.setTypeEnum(SupplyType.PHARMACY_STOCK_IN.getCode());
@@ -210,7 +238,15 @@ public class InventoryPharmacyStockInAppService {
         }
     }
 
+    /**
+     * 按业务单号查询单据详情。
+     *
+     * @param request 须含非空 busNo
+     * @return 头信息与明细行
+     */
     public GetPharmacyStockInDetailResponse getPharmacyStockInDetail(GetPharmacyStockInDetailRequest request) {
+        // Gate：busNo 不可为空
+        // Pre：按单号回读供应请求行并批量预取产品展示信息
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "busNo 不能为空");
         }
@@ -260,7 +296,15 @@ public class InventoryPharmacyStockInAppService {
         return res;
     }
 
+    /**
+     * 新建单据（草稿/待提交）。
+     *
+     * @param request 含库位、明细行等业务字段
+     * @return 新建业务单号
+     */
     public CreatePharmacyStockInResponse createPharmacyStockIn(CreatePharmacyStockInRequest request) {
+        // Gate：请求体、库位与明细不可为空
+        // Pre：解析操作人与制单人（医务人员档案）
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "请求不能为空");
         }
@@ -270,7 +314,7 @@ public class InventoryPharmacyStockInAppService {
         if (request.getSourceLocationId() == null || request.getPurposeLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "来源药库与目的药房不能为空");
         }
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.PHA_IN_101, "机构上下文缺失");
         this.assertPharmacyStockInLocationGate(request.getSourceLocationId(), request.getPurposeLocationId());
         this.assertPharmacyStockInTraceNosWithinWideLimit(request.getLines(), ErrorCodeConstants.PHA_IN_001);
         if (StringUtils.isNotBlank(request.getOriginalBusNo())) {
@@ -295,7 +339,15 @@ public class InventoryPharmacyStockInAppService {
         }
     }
 
+    /**
+     * 更新单据（全量替换明细，仅可编辑态允许）。
+     *
+     * @param request 含 busNo、库位与明细
+     * @return 业务单号
+     */
     public UpdatePharmacyStockInResponse updatePharmacyStockIn(UpdatePharmacyStockInRequest request) {
+        // Gate：busNo 与明细、库位不可为空
+        // Pre：回读现有单并校验可编辑态
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "busNo 不能为空");
         }
@@ -305,7 +357,7 @@ public class InventoryPharmacyStockInAppService {
         if (request.getSourceLocationId() == null || request.getPurposeLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "来源药库与目的药房不能为空");
         }
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.PHA_IN_101, "机构上下文缺失");
         this.assertPharmacyStockInLocationGate(request.getSourceLocationId(), request.getPurposeLocationId());
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
         q.setBusNo(request.getBusNo().trim());
@@ -346,7 +398,14 @@ public class InventoryPharmacyStockInAppService {
         }
     }
 
+    /**
+     * 提交单据审批。
+     *
+     * @param request 须含 busNo
+     * @return 空成功体
+     */
     public SubmitPharmacyStockInApprovalResponse submitPharmacyStockInApproval(SubmitPharmacyStockInApprovalRequest request) {
+        // Gate：请求与 busNo 不可为空
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "请求不能为空");
         }
@@ -367,7 +426,14 @@ public class InventoryPharmacyStockInAppService {
         return pharmacyStockInMapper.toSubmitPharmacyStockInApprovalResponse(st);
     }
 
+    /**
+     * 撤回单据审批（回到可编辑态）。
+     *
+     * @param request 须含 busNo
+     * @return 空成功体
+     */
     public WithdrawPharmacyStockInApprovalResponse withdrawPharmacyStockInApproval(WithdrawPharmacyStockInApprovalRequest request) {
+        // Gate：请求与 busNo 不可为空
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "请求不能为空");
         }
@@ -383,8 +449,15 @@ public class InventoryPharmacyStockInAppService {
         return pharmacyStockInMapper.toWithdrawPharmacyStockInApprovalResponse(st);
     }
 
-    /** 同意：领域已同意 → 发放 → 目的药房库存（增/建）→ 追溯；含防重复同意与完成态发放门禁。 */
+    /**
+     * 药房入库单同意编排：领域落已同意态 → 入库发放 → 目的药房库存（增/建）→ 追溯码入库。
+     *
+     * @param request 须含 busNo
+     * @return 同意成功标志
+     */
     public AgreePharmacyStockInResponse agreePharmacyStockIn(AgreePharmacyStockInRequest request) {
+        // Gate：busNo 与操作人不可为空
+        // Pre：回读单据并校验未重复同意
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "busNo 不能为空");
         }
@@ -548,10 +621,42 @@ public class InventoryPharmacyStockInAppService {
             }
         }
 
+        tryUploadMedicareInventoryAfterTransferAgree(request, agreedLines);
         return pharmacyStockInMapper.toAgreePharmacyStockInResponse(busNoTrim, SupplyStatus.AGREE.getCode());
     }
 
+    private void tryUploadMedicareInventoryAfterTransferAgree(
+        AgreePharmacyStockInRequest request,
+        List<SupplyRequestModel> agreedLines
+    ) {
+        List<Long> lineIds = new ArrayList<>();
+        for (SupplyRequestModel line : agreedLines) {
+            if (line != null && line.getId() != null) {
+                lineIds.add(line.getId());
+            }
+        }
+        if (lineIds.isEmpty()) {
+            return;
+        }
+        InventoryMedicareUploadSupport.uploadIfPortPresent(inventoryInsurancePort, () -> {
+            UploadAfterTransferCommand command = new UploadAfterTransferCommand()
+                .setTransferBusNo(request.getBusNo())
+                .setSupplyRequestLineIds(lineIds)
+                .setSupplyTypeCode(SupplyType.PHARMACY_STOCK_IN.getCode())
+                .setInvChgType(INV_CHG_TYPE_TRANSFER_IN)
+                .setContractBusNo(request.getContractBusNo());
+            inventoryInsurancePort.uploadAfterTransferAgree(command);
+        });
+    }
+
+    /**
+     * 驳回单据。
+     *
+     * @param request 须含 busNo 与驳回原因
+     * @return 驳回成功标志
+     */
     public RejectPharmacyStockInResponse rejectPharmacyStockIn(RejectPharmacyStockInRequest request) {
+        // Gate：busNo 与驳回原因不可为空
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "busNo 不能为空");
         }
@@ -565,7 +670,14 @@ public class InventoryPharmacyStockInAppService {
         return pharmacyStockInMapper.toRejectPharmacyStockInResponse(true);
     }
 
+    /**
+     * 删除单据（仅草稿/可删态）。
+     *
+     * @param request 须含 busNo
+     * @return 删除成功标志
+     */
     public RemovePharmacyStockInResponse removePharmacyStockIn(RemovePharmacyStockInRequest request) {
+        // Gate：请求与 busNo 不可为空
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "请求不能为空");
         }
@@ -579,12 +691,20 @@ public class InventoryPharmacyStockInAppService {
         return pharmacyStockInMapper.toRemovePharmacyStockInResponse(true);
     }
 
+    /**
+     * 分页查询选品（采购目录 + 可选库存）。
+     *
+     * @param request 分页窗口与选品筛选条件
+     * @return 产品定义展示行分页
+     */
     public PageProductsForPharmacyStockInResponse pageProductsForPharmacyStockIn(PageProductsForPharmacyStockInRequest request) {
+        // Gate：分页窗口与机构上下文
+        // Pre：组装产品定义分页查询
         pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.PHA_IN_001, "分页参数不能为空");
         if (request.getSourceLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "sourceLocationId 不能为空");
         }
-        this.resolveOrganizationId(this.currentUser.getCurrentOrganizationUnitId());
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.PHA_IN_101, "机构上下文缺失");
         Set<Long> allowedWarehouses = this.resolveGatedWarehouseLocationIdsForWarehouseGate();
         this.assertWarehouseLocationAllowed(request.getSourceLocationId(), allowedWarehouses);
         this.assertProductTableNameWhitelistForPharmacySelection(request.getProductTableName());
@@ -876,57 +996,6 @@ public class InventoryPharmacyStockInAppService {
             || !LocationStatus.ACTIVE.getCode().equals(locOpt.get().getStatusEnum())) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "目的位置须为启用中的药房");
         }
-    }
-
-    private Long resolveOrganizationId(Long organizationId) {
-        Long orgId = organizationId;
-        if (orgId == null) {
-            // —— 入参未带机构时回落到登录上下文，供下游读模型/域查询租户隔离。——
-            orgId = currentUser.getCurrentOrganizationUnitId();
-        }
-        if (orgId == null) {
-            throw new BusinessException(ErrorCodeConstants.PHA_IN_101, "机构上下文缺失");
-        }
-        return orgId;
-    }
-
-    /**
-     * 分页拉取指定业务角色下、属于某机构的在岗医务人员（用于初始化下拉）。
-     *
-     * @param businessRoleCode PractitionerBusinessRoleCode 数值
-     * @param organizationId   机构主键
-     * @return 人员列表，永不为 null
-     */
-    private List<Practitioner> loadAllPractitionersForRoleInOrganization(int businessRoleCode, Long organizationId) {
-        if (organizationId == null) {
-            return Collections.emptyList();
-        }
-        List<Practitioner> acc = new ArrayList<>();
-        int pageIndex = 0;
-        int pageSize = 500;
-        // —— 机构下人员可能超单页：固定页宽拉全量再筛 orgId（初始化下拉用，非高频热路径）。——
-        while (true) {
-            Page<Practitioner> page = this.practitionerQueryService.pageActivePractitionersForPosition(
-                businessRoleCode,
-                "",
-                PageRequest.of(pageIndex, pageSize, Sort.by(Sort.Direction.ASC, FieldNameConstants.ID)));
-            if (!page.hasContent()) {
-                break;
-            }
-            for (Practitioner p : page.getContent()) {
-                if (p == null || p.getId() == null) {
-                    continue;
-                }
-                if (organizationId.equals(p.getOrgId())) {
-                    acc.add(p);
-                }
-            }
-            if (!page.hasNext()) {
-                break;
-            }
-            pageIndex++;
-        }
-        return acc;
     }
 
     /** 业务单号非空校验。 */

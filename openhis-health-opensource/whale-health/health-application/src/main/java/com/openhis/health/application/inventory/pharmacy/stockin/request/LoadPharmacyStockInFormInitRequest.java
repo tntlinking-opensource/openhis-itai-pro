@@ -23,6 +23,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 药房入库页初始化请求（IF-PHA-IN-01）。
@@ -30,6 +31,7 @@ import lombok.experimental.Accessors;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 药房入库页初始化请求 IF-PHA-IN-01。 */
 @Schema(description = "药房入库页初始化请求 IF-PHA-IN-01")
 public class LoadPharmacyStockInFormInitRequest {
 

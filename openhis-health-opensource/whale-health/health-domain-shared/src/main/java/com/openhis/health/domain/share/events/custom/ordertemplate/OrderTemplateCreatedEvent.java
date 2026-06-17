@@ -24,7 +24,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 医嘱组套模板已创建事件。
+ * 组套模板已创建事件。
  */
 @Getter
 @Setter

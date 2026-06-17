@@ -36,7 +36,7 @@ public class OutpatientEncounterContextQueryModel {
     /** 就诊业务号。 */
     private String encounterBusNo;
 
-    /** 就诊类别枚举（门诊/急诊）。 */
+    /** 就诊类别枚举（门诊）。 */
     private String classEnum;
 
     /** 就诊状态枚举 code。 */

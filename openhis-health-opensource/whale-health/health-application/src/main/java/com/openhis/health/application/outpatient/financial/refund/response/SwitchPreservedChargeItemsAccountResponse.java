@@ -26,10 +26,11 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 半退保留行账户切换响应。 */
 @Schema(description = "半退保留行账户切换响应")
 public class SwitchPreservedChargeItemsAccountResponse {
 
-    /** 是否切换成功。 */
     @Schema(description = "是否切换成功")
+    /** 是否切换成功（业务字段）。 */
     private boolean success;
 }

@@ -97,5 +97,30 @@ public interface OrganizationRepository extends JpaRepository<Organization, Long
      * @return 查询结果
      */
     List<Organization> findAllByIdIn(Collection<Long> ids);
+
+    /**
+     * 按状态集合查询机构列表（科室管理页等：含 DRAFT/ACTIVE/INACTIVE，不含 DISCARDED）。
+     *
+     * @param statusEnums 状态 code 集合
+     * @return 按 displayOrder、id 升序的平铺列表
+     */
+    List<Organization> findAllByStatusEnumInOrderByDisplayOrderAscIdAsc(Collection<String> statusEnums);
+
+    /**
+     * 按层级类型与状态集合查询机构列表（单租户医院唯一性等业务校验）。
+     *
+     * @param typeEnum     机构层级类型 code（如 {@code HOSPITAL}）
+     * @param statusEnums  未废弃状态 code 集合
+     * @return 匹配的机构平铺列表
+     */
+    List<Organization> findAllByTypeEnumAndStatusEnumIn(String typeEnum, Collection<String> statusEnums);
+
+    /**
+     * 按层级编码前缀查询机构（调整上级时递归重算后代 busNo）。
+     *
+     * @param busNoPrefix 被移动节点 busNo 加 {@code .} 后的前缀
+     * @return 匹配的机构列表
+     */
+    List<Organization> findAllByBusNoStartingWith(String busNoPrefix);
 }
 

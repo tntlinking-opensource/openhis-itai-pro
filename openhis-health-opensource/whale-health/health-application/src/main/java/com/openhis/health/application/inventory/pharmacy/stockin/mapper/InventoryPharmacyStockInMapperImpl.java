@@ -17,8 +17,8 @@
 
 package com.openhis.health.application.inventory.pharmacy.stockin.mapper;
 
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.PharmacyStockInDetailLineDto;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.PharmacyStockInLineDto;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.PharmacyStockInListRowDto;
@@ -44,7 +44,7 @@ import com.openhis.health.application.inventory.pharmacy.stockin.response.Withdr
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.SupplyCategory;
@@ -674,6 +674,7 @@ public class InventoryPharmacyStockInMapperImpl implements InventoryPharmacyStoc
         return res;
     }
 
+    /** 装配同意成功 Response。 */
     @Override
     public AgreeRequestCommand toAgreeRequestCommand(AgreePharmacyStockInRequest request, Long operatorId) {
         AgreeRequestCommand command = new AgreeRequestCommand();

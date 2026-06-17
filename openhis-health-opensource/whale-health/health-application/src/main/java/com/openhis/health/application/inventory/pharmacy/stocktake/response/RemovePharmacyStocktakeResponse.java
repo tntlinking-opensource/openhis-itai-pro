@@ -20,16 +20,17 @@ package com.openhis.health.application.inventory.pharmacy.stocktake.response;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 删除盘点单出参（IF-PHA-ST-10）。
  */
 @Data
 @Accessors(chain = true)
+/** 删除盘点单 IF-PHA-ST-10。 */
 @Schema(description = "删除盘点单 IF-PHA-ST-10")
 public class RemovePharmacyStocktakeResponse {
 
-    /** 是否成功。 */
     @Schema(description = "是否成功 success")
     private Boolean success;
 }

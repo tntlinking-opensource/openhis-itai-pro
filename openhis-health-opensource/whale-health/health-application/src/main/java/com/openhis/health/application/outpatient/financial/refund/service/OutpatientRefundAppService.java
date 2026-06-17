@@ -1,14 +1,17 @@
 package com.openhis.health.application.outpatient.financial.refund.service;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
-import com.openhis.health.application.common.validator.PaymentChannelGate;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.PaymentChannelGate;
 import com.openhis.health.application.outpatient.financial.charge.dto.PaymentDetailSubmitDto;
 import com.openhis.health.application.outpatient.financial.charge.request.ConfirmOutpatientChargeSettlementRequest;
 import com.openhis.health.application.outpatient.financial.charge.request.PreSettleOutpatientChargesRequest;
 import com.openhis.health.application.outpatient.financial.charge.response.PreSettleOutpatientChargesResponse;
 import com.openhis.health.application.outpatient.financial.charge.service.OutpatientChargeAppService;
+import com.openhis.health.application.insurance.config.InsuranceCoordinationProperties;
+import com.openhis.health.application.insurance.outpatient.InsuranceOutpatientRevocationAppService;
+import com.openhis.health.domain.share.constants.InsuranceCoordinationConstants;
 import com.openhis.health.domain.share.constants.OutpatientRefundConstants;
 import com.openhis.health.domain.share.constants.OutpatientRefundQueueTab;
 import com.openhis.health.application.outpatient.financial.refund.dto.OutpatientRefundLineItemDto;
@@ -40,8 +43,8 @@ import com.openhis.health.domain.administration.chargeitemdefinition.entity.Char
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.application.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.application.querysupport.financial.OutpatientChargeEncounterQueueLoader;
+import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.financial.OutpatientChargeEncounterQueueLoader;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.administration.account.entity.Account;
@@ -58,8 +61,8 @@ import com.openhis.health.domain.financial.paymentreconciliation.service.Payment
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.application.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
@@ -76,9 +79,13 @@ import com.openhis.health.domain.workflow.devicerequest.entity.DeviceRequest;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQueryService;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.whale.chs.jilin.port.OutpatientInsuranceSettlementPort;
+import com.openhis.whale.chs.jilin.port.model.OpInsuranceRevokeSettleCommand;
+import com.openhis.whale.chs.jilin.port.model.OpInsuranceSettleRecordResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.stereotype.Service;
@@ -162,6 +169,15 @@ public class OutpatientRefundAppService {
     /** Request/Response 与 Command 装配。 */
     private final OutpatientRefundMapper outpatientRefundMapper;
 
+    /** 门诊医保结算 Port（未装 chs-jilin 时为 null）。 */
+    @Autowired(required = false)
+    private OutpatientInsuranceSettlementPort outpatientInsuranceSettlementPort;
+
+    @Autowired(required = false)
+    private InsuranceOutpatientRevocationAppService insuranceOutpatientRevocationAppService;
+
+    private final InsuranceCoordinationProperties insuranceCoordinationProperties;
+
     /**
      * IF-REF-01：加载退费页初始化数据。
      *
@@ -171,9 +187,10 @@ public class OutpatientRefundAppService {
      */
     public LoadOutpatientRefundPageInitResponse loadOutpatientRefundPageInit(LoadOutpatientRefundPageInitRequest request) {
         try {
-            // 退费窗仅暴露退费中/已退费等过程态，不提供收银 PLANNED/SETTLED 口径选项。
+            // Pre：退费窗仅暴露退费中/已退费等过程态，不提供收银 PLANNED/SETTLED 口径选项。
             List<OptionDto> allOptions = codeSystemQueryService.getOptionListByEnum(ChargeItemStatus.class);
             List<OptionDto> filtered = this.filterRefundPageInitOptions(allOptions);
+            // Asm：装配初始化下拉并返回。
             return outpatientRefundMapper.toLoadOutpatientRefundPageInitResponse(filtered);
         } catch (BusinessException ex) {
             throw ex;
@@ -193,8 +210,9 @@ public class OutpatientRefundAppService {
      */
     public PageOutpatientRefundQueueResponse pageOutpatientRefundQueue(PageOutpatientRefundQueueRequest request) {
         try {
+            // Gate：分页参数与页签类型必须合法。
             this.validateQueueRequest(request);
-            // 按页签收敛 REFUNDING/REFUNDED 收费事实分页就诊，再回补门诊信息并打退费标签。
+            // Pre：按页签收敛 REFUNDING/REFUNDED 收费事实分页就诊，再回补门诊信息并打退费标签。
             OutpatientChargeQueueEncounterQuery queueEncounterQuery = new OutpatientChargeQueueEncounterQuery();
             PageQueryBinder.bind(request, queueEncounterQuery);
             queueEncounterQuery.setExcludedServiceTable(TableNameConstants.ADM_HEALTHCARE_SERVICE);
@@ -209,14 +227,17 @@ public class OutpatientRefundAppService {
             List<OutpatientRefundQueueRowDto> records = outpatientRefundMapper.toOutpatientRefundQueueRowDtoList(infos, flags);
             List<OutpatientRefundQueueRowDto> filtered = new ArrayList<>();
             for (OutpatientRefundQueueRowDto record : records) {
+                // 全部页签：直接透传所有队列行。
                 if (OutpatientRefundQueueTab.ALL.equals(request.getQueueTabCode())) {
                     filtered.add(record);
                     continue;
                 }
+                // 待退/已退页签：仅保留与请求页签标签匹配的行。
                 if (request.getQueueTabCode().equals(record.getQueueLabelCode())) {
                     filtered.add(record);
                 }
             }
+            // Asm：封装分页响应。
             return this.toQueuePageResponse(pageShell, filtered);
         } catch (BusinessException ex) {
             throw ex;
@@ -237,17 +258,20 @@ public class OutpatientRefundAppService {
     public LoadOutpatientRefundExecutionDetailResponse loadOutpatientRefundExecutionDetail(
         LoadOutpatientRefundExecutionDetailRequest request) {
         try {
+            // Gate：就诊主键须非空且就诊须存在。
             this.validateEncounterId(request.getEncounterId());
             encounterQueryService.mustGetEncounter(request.getEncounterId());
+            // Pre：按展示口径组装按原支付分组的退费明细。
             String detailViewCode = this.resolveRefundDetailViewCode(request.getDetailViewCode());
             List<OutpatientRefundPaymentGroupDto> groups =
                 this.buildRefundPaymentGroupsByView(request.getEncounterId(), detailViewCode);
-            // 待执行口径：无 REFUNDING 行则拒绝，避免收费窗误操作；已退费口径允许空表只读查询。
+            // Gate：待执行口径下无 REFUNDING 行则拒绝，避免收费窗误操作。
             if (groups.isEmpty() && OutpatientRefundQueueTab.PENDING.equals(detailViewCode)) {
                 throw new BusinessException(
                     ErrorCodeConstants.CHARGE_ITEM_NOT_FOUND,
                     this.buildMessage(OutpatientRefundConstants.MESSAGE_CODE_EXECUTION_DETAIL_INVALID, "当前就诊无可执行退费"));
             }
+            // Asm：返回按支付分组的执行明细。
             return outpatientRefundMapper.toLoadOutpatientRefundExecutionDetailResponse(request.getEncounterId(), groups);
         } catch (BusinessException ex) {
             throw ex;
@@ -266,17 +290,22 @@ public class OutpatientRefundAppService {
      */
     public VerifyRefundableBeforeExecutionResponse verifyRefundableBeforeExecution(
         VerifyRefundableBeforeExecutionRequest request) {
+        // Gate：就诊与拟退收费明细须非空且归属一致。
         this.validateEncounterId(request.getEncounterId());
         GatewayIdParseUtil.requireNonEmptyLongIds(request.getRefundingChargeItemIds(), "拟退收费明细不能为空");
         encounterQueryService.mustGetEncounter(request.getEncounterId());
+        // Pre：加载拟退行并校验归属就诊。
         ChargeItemQueryCommand loadCmd = new ChargeItemQueryCommand();
         loadCmd.setIds(request.getRefundingChargeItemIds());
         List<ChargeItem> rows = chargeItemQueryService.loadChargeItemsByIds(loadCmd);
         this.assertChargeItemsBelongEncounter(rows, request.getEncounterId(), OutpatientRefundConstants.MESSAGE_CODE_CHARGE_ITEM_STATUS_CHANGED);
+        // Gate：退药/退耗未完成则返回拒绝码。
         String rejectCode = this.runRefundableGate(rows);
         if (rejectCode != null) {
+            // Asm：门禁不通过，返回拒绝码供前端展示。
             return outpatientRefundMapper.toVerifyRefundableBeforeExecutionResponse(false, rejectCode);
         }
+        // Asm：门禁通过。
         return outpatientRefundMapper.toVerifyRefundableBeforeExecutionResponse(true, null);
     }
 
@@ -289,11 +318,13 @@ public class OutpatientRefundAppService {
      */
     public ExecuteOutpatientBillRefundByPaymentResponse executeOutpatientBillRefundByPayment(
         ExecuteOutpatientBillRefundByPaymentRequest request) {
+        // Gate：退费请求参数、渠道与金额须完整合法。
         this.validateExecuteRefundRequest(request);
         Long operatorId = currentOperatorResolver.requireOperatorId(
             ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
             "当前会话操作人不能为空");
         encounterQueryService.mustGetEncounter(request.getEncounterId());
+        // Pre：加载原支付单并校验可退状态与就诊一致。
         PaymentReconciliationQueryModel originalPayment =
             paymentReconciliationQueryService.mustGetPayment(request.getOriginalPaymentId());
         if (!request.getEncounterId().equals(originalPayment.getEncounterId())) {
@@ -306,6 +337,7 @@ public class OutpatientRefundAppService {
         loadCmd.setIds(request.getRefundingChargeItemIds());
         List<ChargeItem> refundingRows = chargeItemQueryService.loadChargeItemsByIds(loadCmd);
         this.assertRefundingChargeItems(refundingRows, request.getRefundingChargeItemIds(), request.getEncounterId());
+        // Gate：退药/退耗门禁与实退金额须等于应退合计。
         String gateReject = this.runRefundableGate(refundingRows);
         if (gateReject != null) {
             if (OutpatientRefundConstants.MESSAGE_CODE_MEDICATION_RETURN_PENDING.equals(gateReject)) {
@@ -320,13 +352,26 @@ public class OutpatientRefundAppService {
                 ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
                 this.buildMessage(OutpatientRefundConstants.MESSAGE_CODE_REFUND_AMOUNT_MISMATCH, "实退合计与应退不符"));
         }
+        // Pre：医保撤销（同步或异步协同）须在本地逆向落账之前完成。
+        InsuranceOutpatientRevocationAppService.StartOpInsuranceRevokeResult asyncRevokeResult =
+            this.runInsuranceRevokeBeforeRefund(
+                request.getOriginalPaymentId(),
+                originalPayment,
+                operatorId,
+                request.getEncounterId());
+        if (asyncRevokeResult != null) {
+            // Asm：异步协同已启动，返回协同单 ID 供前端轮询。
+            return outpatientRefundMapper.toExecuteOutpatientBillRefundInsuranceAsyncResponse(
+                request.getOriginalPaymentId(),
+                asyncRevokeResult.getCoordinationIds());
+        }
         LocalDateTime billDate = this.resolveBillDate(request.getBillDate());
         String outcomeEnum = this.resolvePaymentOutcomeEnum(originalPayment);
         List<Long> paymentIdList = new ArrayList<>();
         paymentIdList.add(request.getOriginalPaymentId());
         EnterRefundProcessingWindowCommand windowCommand =
             outpatientRefundMapper.toEnterRefundProcessingWindowCommand(paymentIdList, operatorId);
-        // Cmd-7：锁定原支付进入退款受理窗口，避免并发重复退费。
+        // Cmd：锁定原支付进入退款受理窗口，避免并发重复退费。
         paymentReconciliationDomainService.enterRefundProcessingWindow(windowCommand);
         List<PaymentDetailItemCommand> refundPaymentDetailCommands =
             outpatientRefundMapper.toPaymentDetailItemCommands(request.getRefundPaymentDetails());
@@ -342,23 +387,20 @@ public class OutpatientRefundAppService {
             this.joinIds(request.getRefundingChargeItemIds()),
             expectedRefund,
             refundPaymentDetailCommands);
-        // Cmd-8：生成逆向支付单。
+        // Cmd：生成逆向支付单并完成原单/逆向单收口与收费项 REFUNDING→REFUNDED。
         Long reversePaymentId = paymentReconciliationDomainService.requestOutpatientRefund(refundCommand);
         FinalizeOriginalOutpatientPaymentCommand finalizeCommand =
             outpatientRefundMapper.toFinalizeOriginalOutpatientPaymentCommand(
                 request.getOriginalPaymentId(), outcomeEnum, billDate);
-        // Cmd-9：原单静默 REFUNDED，不发完成事件。
         paymentReconciliationDomainService.finalizeOriginalOutpatientPayment(finalizeCommand);
         CompleteOutpatientRefundCommand completeCommand =
             outpatientRefundMapper.toCompleteOutpatientRefundCommand(reversePaymentId, outcomeEnum, billDate);
-        // Cmd-10：逆向单完成并发布唯一退费完成事件。
         paymentReconciliationDomainService.completeOutpatientRefund(completeCommand);
         List<Long> snapshotIds = this.resolvePaymentSnapshotChargeItemIds(request.getOriginalPaymentId());
         List<Long> completionIds = chargeItemQueryService.resolveChargeItemIdsForOutpatientRefundBillCompletion(
             request.getEncounterId(), snapshotIds);
         BatchChargeItemIdsCommand billRefundCommand =
             outpatientRefundMapper.toBatchChargeItemIdsCommand(completionIds, operatorId);
-        // Cmd-12：收费明细 REFUNDING→REFUNDED 及被替代源行收口。
         chargeItemDomainService.completeOutpatientBillRefund(billRefundCommand);
         boolean halfRefundExecuted = false;
         if (request.getPreservedNewChargeItemIds() != null && !request.getPreservedNewChargeItemIds().isEmpty()) {
@@ -371,7 +413,7 @@ public class OutpatientRefundAppService {
                         "原支付结果码缺失，无法半退再结算"));
             }
             try {
-                // Cmd-13/14：半退保留行当场预结算并正式结算。
+                // Cmd：半退保留行当场预结算并正式结算（委托收费域 IF-OPC-06/07）。
                 this.preSettleAndConfirmPreservedLines(request, billDate, outcomeEnum);
             } catch (BusinessException ex) {
                 throw ex;
@@ -387,8 +429,62 @@ public class OutpatientRefundAppService {
             request.getOriginalPaymentId(),
             reversePaymentId,
             request.getRefundingChargeItemIds().size());
+        // Asm：返回逆向支付单 ID 与半退标志。
         return outpatientRefundMapper.toExecuteOutpatientBillRefundByPaymentResponse(
             reversePaymentId, request.getOriginalPaymentId(), halfRefundExecuted);
+    }
+
+    /**
+     * 退费前撤销医保正式结算（2208）；混合结算按回执逐条撤销。
+     *
+     * @return 异步协同单已启动时返回结果；同步完成或无需撤销时返回 null
+     */
+    private InsuranceOutpatientRevocationAppService.StartOpInsuranceRevokeResult runInsuranceRevokeBeforeRefund(
+        Long originalPaymentId,
+        PaymentReconciliationQueryModel originalPayment,
+        Long operatorId,
+        Long encounterId) {
+        if (outpatientInsuranceSettlementPort == null || originalPaymentId == null) {
+            return null;
+        }
+        List<OpInsuranceSettleRecordResult> records =
+            outpatientInsuranceSettlementPort.listSettlementsByPayment(originalPaymentId);
+        if (records.isEmpty()) {
+            return null;
+        }
+        if (insuranceCoordinationProperties.isOpSettleReverseAsyncEnabled()
+            && insuranceOutpatientRevocationAppService != null) {
+            InsuranceOutpatientRevocationAppService.StartOpInsuranceRevokeCommand startCmd =
+                new InsuranceOutpatientRevocationAppService.StartOpInsuranceRevokeCommand();
+            startCmd.setOriginalPaymentId(originalPaymentId);
+            startCmd.setPaymentNo(originalPayment.getPaymentNo());
+            startCmd.setAccountId(originalPayment.getAccountId());
+            startCmd.setEncounterId(encounterId);
+            startCmd.setPatientId(originalPayment.getPatientId());
+            startCmd.setOperatorId(operatorId);
+            InsuranceOutpatientRevocationAppService.StartOpInsuranceRevokeResult startResult =
+                insuranceOutpatientRevocationAppService.startOutpatientInsuranceRevoke(startCmd);
+            if (InsuranceCoordinationConstants.SETTLEMENT_MODE_INSURANCE_ASYNC.equals(
+                startResult.getSettlementMode())) {
+                return startResult;
+            }
+            return null;
+        }
+        for (OpInsuranceSettleRecordResult record : records) {
+            OpInsuranceRevokeSettleCommand command = new OpInsuranceRevokeSettleCommand();
+            command.setSettlementRecordId(record.getSettlementRecordId());
+            command.setPaymentId(originalPaymentId);
+            command.setPreSettleId(record.getPreSettleId());
+            command.setSetlId(record.getSetlId());
+            try {
+                outpatientInsuranceSettlementPort.revokeSettle(command);
+            } catch (RuntimeException ex) {
+                throw new BusinessException(
+                    "INS-013",
+                    "医保结算撤销失败，请勿重复退费，联系医保办处理");
+            }
+        }
+        return null;
     }
 
     /**
@@ -399,6 +495,7 @@ public class OutpatientRefundAppService {
      */
     public SwitchPreservedChargeItemsAccountResponse switchPreservedChargeItemsToInsurance(
         SwitchPreservedChargeItemsToInsuranceRequest request) {
+        // Cmd：半退保留 PLANNED 行批量切换至医保账户。
         return this.switchPreservedAccount(request.getEncounterId(), true);
     }
 
@@ -410,6 +507,7 @@ public class OutpatientRefundAppService {
      */
     public SwitchPreservedChargeItemsAccountResponse switchPreservedChargeItemsToSelfPay(
         SwitchPreservedChargeItemsToSelfPayRequest request) {
+        // Cmd：半退保留 PLANNED 行批量切换至自费账户。
         return this.switchPreservedAccount(request.getEncounterId(), false);
     }
 
@@ -421,8 +519,10 @@ public class OutpatientRefundAppService {
      * @return 切换响应
      */
     private SwitchPreservedChargeItemsAccountResponse switchPreservedAccount(Long encounterId, boolean insurance) {
+        // Gate：就诊须存在。
         this.validateEncounterId(encounterId);
         encounterQueryService.mustGetEncounter(encounterId);
+        // Pre：列举半退保留 PLANNED 行。
         List<ChargeItem> preservedRows = this.listPreservedPlannedChargeItems(encounterId);
         if (preservedRows.isEmpty()) {
             throw new BusinessException(
@@ -430,7 +530,7 @@ public class OutpatientRefundAppService {
                 this.buildMessage(OutpatientRefundConstants.MESSAGE_CODE_NO_PRESERVED_LINES, "当前就诊无保留待再结算项"));
         }
         Long targetAccountId;
-        // 半退保留行仅切换记账账户，不触发支付链。
+        // Pre：解析目标记账账户（医保或自费）。
         if (insurance) {
             targetAccountId = accountQueryService.getMedicalInsuranceAccount(encounterId);
         } else {
@@ -441,6 +541,7 @@ public class OutpatientRefundAppService {
                 ErrorCodeConstants.ACCOUNT_NOT_FOUND,
                 this.buildMessage(OutpatientRefundConstants.MESSAGE_CODE_ACCOUNT_NOT_FOUND, "未找到目标账户"));
         }
+        // Cmd：批量切换收费项账户，不触发支付链。
         SwitchChargeItemAccountCommand command = new SwitchChargeItemAccountCommand();
         command.setOperatorId(currentOperatorResolver.requireOperatorId(
             ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
@@ -454,6 +555,7 @@ public class OutpatientRefundAppService {
         }
         command.setItems(items);
         chargeItemDomainService.switchChargeItemAccount(command);
+        // Asm：返回切换成功标志。
         return outpatientRefundMapper.toSwitchPreservedChargeItemsAccountResponse(true);
     }
 

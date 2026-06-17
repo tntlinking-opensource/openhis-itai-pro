@@ -17,9 +17,8 @@
 
 package com.openhis.health.application.inpatient.pharmacy.dispense.mapper;
 
-import com.openhis.health.application.common.assembler.option.OptionDtoAssembler;
-import com.openhis.health.application.common.assembler.order.OrderCatalogDisplayAssembler;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.pharmacy.dispense.dto.CancelMedicationDispenseLineSubmitDto;
 import com.openhis.health.application.inpatient.pharmacy.dispense.dto.EncounterMedicationDispenseSlipRowDto;
 import com.openhis.health.application.inpatient.pharmacy.dispense.dto.PendingDispenseInpatientEncounterQueueRowDto;
@@ -31,7 +30,7 @@ import com.openhis.health.application.inpatient.pharmacy.dispense.response.LoadI
 import com.openhis.health.application.inpatient.pharmacy.dispense.response.PageEncounterMedicationDispenseSlipsResponse;
 import com.openhis.health.application.inpatient.pharmacy.dispense.response.PagePendingDispenseInpatientEncounterQueueResponse;
 import com.openhis.health.application.inpatient.pharmacy.dispense.response.SavePrepareInpatientMedicationDispenseResponse;
-import com.openhis.health.domain.administration.organization.entity.Organization;
+import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.medication.medicationdispense.command.CancelMedicationDispenseCommand;
 import com.openhis.health.domain.medication.medicationdispense.command.DispenseMedicationCommand;
@@ -40,14 +39,13 @@ import com.openhis.health.domain.medication.medicationdispense.entity.Medication
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.domain.share.constants.MedicationCommonConstants;
-import com.openhis.health.domain.share.enums.MedicationDispenseType;
-import com.openhis.health.domain.share.enums.TherapyType;
-import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.module.querysupport.pharmacy.EncounterMedicationDispenseSlipReadAssembler;
+import com.openhis.health.module.querysupport.pharmacy.dto.MedicationDispenseSlipPageResult;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.utils.InpatientEncounterStatusDisplayUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.stereotype.Component;
@@ -58,6 +56,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import lombok.RequiredArgsConstructor;
 
 /**
  * {@link InpatientPharmacyDispenseMapper} 实现：住院发药 IF-IPP-01～06 的请求/读模型/领域命令/响应字段搬运。
@@ -65,12 +64,15 @@ import java.util.Objects;
  * <p>职责边界：无业务流程分支与不变量；null 安全回落为空集合或空分页壳（B.1 / A.4）。</p>
  */
 @Component
+@RequiredArgsConstructor
 public class InpatientPharmacyDispenseMapperImpl implements InpatientPharmacyDispenseMapper {
+
+    private final EncounterMedicationDispenseSlipReadAssembler encounterMedicationDispenseSlipReadAssembler;
 
     /**
      * IF-IPP-01：装配初始化响应。
      *
-     * @param pharmacies                药房机构树
+     * @param pharmacies                可操作药房位置列表（adm_location）
      * @param dispenseStatusOptions     发放状态下拉
      * @param notPerformedReasonOptions 未发药原因下拉
      * @param wardOptions               病区下拉
@@ -79,7 +81,7 @@ public class InpatientPharmacyDispenseMapperImpl implements InpatientPharmacyDis
      */
     @Override
     public LoadInpatientPharmacyDispensePageInitResponse toLoadInitResponse(
-        List<Organization> pharmacies,
+        List<Location> pharmacies,
         List<OptionDto> dispenseStatusOptions,
         List<OptionDto> notPerformedReasonOptions,
         List<OptionDto> wardOptions,
@@ -89,7 +91,7 @@ public class InpatientPharmacyDispenseMapperImpl implements InpatientPharmacyDis
             response.setPharmacyOrganizationOptions(new ArrayList<>());
         } else {
             response.setPharmacyOrganizationOptions(
-                OptionDtoAssembler.toOptions(pharmacies, Organization::getId, Organization::getName, 0L));
+                OptionDtoAssembler.toOptions(pharmacies, Location::getId, Location::getName, 0L));
         }
         if (dispenseStatusOptions == null) {
             response.setDispenseStatusFilterOptions(new ArrayList<>());
@@ -188,8 +190,8 @@ public class InpatientPharmacyDispenseMapperImpl implements InpatientPharmacyDis
      * @param slipPage                         发药单读模型分页
      * @param reqByMedReqId                    医嘱列表模型映射
      * @param productByMedicationId            药品定义读模型
-     * @param tcmOnly                          契约占位，当前装配不做行过滤
-     * @param westernOnly                      契约占位，当前装配不做行过滤
+     * @param tcmOnly                          仅中药饮片
+     * @param westernOnly                      仅西药中成药
      * @param dispensingPractitionerNameByDispenseId 发药人姓名
      * @param encounterBusNo                   住院号
      * @param orderingDepartmentNameByOrgId    开立科室名称
@@ -227,141 +229,50 @@ public class InpatientPharmacyDispenseMapperImpl implements InpatientPharmacyDis
         Map<String, String> businessUnitLabelMap,
         Map<String, String> rxFlagLabelMap,
         Map<String, String> partAttributeLabelMap) {
-        List<EncounterMedicationDispenseSlipRowDto> content = new ArrayList<>();
-        if (slipPage == null) {
-            return PagedResultBuilder.build(new PageEncounterMedicationDispenseSlipsResponse(), content, null);
-        }
-        Map<Long, MedicationRequestListQueryModel> reqMap = Objects.requireNonNullElse(reqByMedReqId, Map.of());
-        Map<Long, ProductDefinitionDisplayDto> prodMap = Objects.requireNonNullElse(productByMedicationId, Map.of());
-        Map<Long, String> dispenserNames =
-            Objects.requireNonNullElse(dispensingPractitionerNameByDispenseId, Map.of());
-        Map<Long, String> deptNames = Objects.requireNonNullElse(orderingDepartmentNameByOrgId, Map.of());
-        Map<Long, String> orderingDrNames = Objects.requireNonNullElse(orderingPractitionerNameById, Map.of());
-        Map<Long, String> locNames = Objects.requireNonNullElse(dispenseLocationNameByLocationId, Map.of());
-        Map<Long, String> traceMap = Objects.requireNonNullElse(traceNoEffectiveByDispenseId, Map.of());
-        Map<Long, String> lotMap = Objects.requireNonNullElse(lotNumberEffectiveByDispenseId, Map.of());
-        Map<Long, BigDecimal> unitPriceMap = Objects.requireNonNullElse(chargeUnitPriceByDispenseId, Map.of());
-        Map<Long, BigDecimal> totalPriceMap = Objects.requireNonNullElse(chargeTotalPriceByDispenseId, Map.of());
-        Map<String, String> rateLabels = Objects.requireNonNullElse(rateCodeLabelMap, Map.of());
-        Map<String, String> methodLabels = Objects.requireNonNullElse(methodCodeLabelMap, Map.of());
-        Map<String, String> doseLabels = Objects.requireNonNullElse(doseUnitLabelMap, Map.of());
-        Map<String, String> bizUnitLabels = Objects.requireNonNullElse(businessUnitLabelMap, Map.of());
-        Map<String, String> rxLabels = Objects.requireNonNullElse(rxFlagLabelMap, Map.of());
-        Map<String, String> partLabels = Objects.requireNonNullElse(partAttributeLabelMap, Map.of());
+        MedicationDispenseSlipPageResult result = encounterMedicationDispenseSlipReadAssembler.assembleInpatientSlipPage(
+            slipPage,
+            reqByMedReqId,
+            productByMedicationId,
+            tcmOnly,
+            westernOnly,
+            dispensingPractitionerNameByDispenseId,
+            encounterBusNo,
+            orderingDepartmentNameByOrgId,
+            orderingPractitionerNameById,
+            dispenseLocationNameByLocationId,
+            traceNoEffectiveByDispenseId,
+            lotNumberEffectiveByDispenseId,
+            chargeUnitPriceByDispenseId,
+            chargeTotalPriceByDispenseId,
+            rateCodeLabelMap,
+            methodCodeLabelMap,
+            doseUnitLabelMap,
+            businessUnitLabelMap,
+            rxFlagLabelMap,
+            partAttributeLabelMap);
+        return toSlipPageResponse(result);
+    }
 
-        // 逐条搬运发药单行：读模型 + 医嘱 + 目录 + 术语预热映射（不含候选库存）。
-        for (MedicationDispenseSlipQueryModel slip : slipPage.getContent()) {
-            if (slip == null) {
-                continue;
-            }
-            MedicationRequestListQueryModel req = reqMap.get(slip.getMedReqId());
-            EncounterMedicationDispenseSlipRowDto row = new EncounterMedicationDispenseSlipRowDto();
-            row.setEncounterId(slip.getEncounterId());
-            row.setEncounterBusNo(encounterBusNo);
-            row.setDispenseId(slip.getDispenseId());
-            row.setMedReqId(slip.getMedReqId());
-            row.setMedicationId(slip.getMedicationId());
-            row.setDispenseLocationId(slip.getLocationId());
-            if (slip.getLocationId() != null) {
-                row.setDispenseLocationName(locNames.get(slip.getLocationId()));
-            }
-            row.setLotNumber(slip.getLotNumber());
-            String lotEffective = lotMap.get(slip.getDispenseId());
-            if (StringUtils.isNotBlank(lotEffective)) {
-                row.setLotNumber(lotEffective);
-            }
-            String traceEffective = traceMap.get(slip.getDispenseId());
-            if (StringUtils.isNotBlank(traceEffective)) {
-                row.setTraceNo(traceEffective);
-            } else {
-                row.setTraceNo(slip.getTraceNo());
-            }
-            row.setDispensingPractitionerName(dispenserNames.get(slip.getDispenseId()));
-            if (slip.getStatusEnum() != null) {
-                row.setStatusEnum(slip.getStatusEnum().getCode());
-                row.setStatusEnumText(slip.getStatusEnum().getDisplay());
-            }
-            MedicationDispenseType dispenseKind = slip.getDispenseEnum();
-            if (dispenseKind != null) {
-                row.setDispenseEnum(dispenseKind.getCode());
-                row.setDispenseEnumText(dispenseKind.getDisplay());
-            }
-            row.setQuantity(slip.getQuantity());
-            row.setUnitCode(slip.getUnitCode());
-            if (slip.getDispenseId() != null) {
-                row.setUnitPrice(unitPriceMap.get(slip.getDispenseId()));
-                row.setTotalPrice(totalPriceMap.get(slip.getDispenseId()));
-            }
-            row.setBusNo(slip.getBusNo());
-            row.setPrescriptionNo(slip.getPrescriptionNo());
-            row.setOrderingPractitionerId(slip.getMedRequesterId());
-            if (slip.getMedRequesterId() != null) {
-                row.setOrderingPractitionerName(orderingDrNames.get(slip.getMedRequesterId()));
-            }
-            ProductDefinitionDisplayDto product = prodMap.get(slip.getMedicationId());
-            if (product != null) {
-                row.setMedicationName(product.getProductName());
-                row.setMerchandiseName(product.getMerchandiseName());
-                row.setSpecificationText(product.getTotalVolume());
-                row.setManufacturerName(product.getManufacturer());
-                row.setProductTableName(product.getProductTableName());
-                row.setMedicationCategoryCode(product.getCategoryCode());
-                row.setMedicationCategoryText(product.getCategoryCodeDictText());
-                row.setSplitRatio(product.getDoseUnitRatio());
-                if (StringUtils.isNotBlank(product.getPartAttributeEnum())) {
-                    row.setPartAttributeCode(product.getPartAttributeEnum());
-                    row.setPartAttributeText(
-                        OrderCatalogDisplayAssembler.resolveCategoryDisplay(partLabels, product.getPartAttributeEnum()));
-                }
-            }
-            if (req != null) {
-                row.setOrderingDepartmentId(req.getPerformLocation());
-                if (req.getPerformLocation() != null) {
-                    row.setOrderingDepartmentName(deptNames.get(req.getPerformLocation()));
-                }
-                row.setRequestQuantity(req.getQuantity());
-                row.setFrequencyCode(req.getRateCode());
-                row.setRouteCode(req.getMethodCode());
-                row.setDoseValue(req.getDose());
-                row.setDoseUnitCode(req.getDoseUnitCode());
-                row.setDispensePerSupplyDays(req.getDispensePerDuration());
-                row.setPrescriptionGroupId(req.getGroupId());
-                row.setRequestAuthoredTime(req.getReqAuthoredTime());
-                row.setEncounterMedicationTypeCode(req.getRxTypeCode());
-                row.setEncounterMedicationTypeText(
-                    OrderCatalogDisplayAssembler.resolveCategoryDisplay(rxLabels, req.getRxTypeCode()));
-                row.setTherapyEnum(req.getTherapyEnum());
-                TherapyType therapyType = EnumUtil.fromCode(TherapyType.class, req.getTherapyEnum());
-                if (therapyType != null) {
-                    row.setTherapyEnumText(therapyType.getDisplay());
-                }
-                row.setFrequencyText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(rateLabels, req.getRateCode()));
-                row.setRouteText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(methodLabels, req.getMethodCode()));
-                String doseText = OrderCatalogDisplayAssembler.resolveCategoryDisplay(doseLabels, req.getDoseUnitCode());
-                row.setDoseUnitText(doseText);
-                row.setUnitText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(bizUnitLabels, slip.getUnitCode()));
-                row.setTcmFlag(req.getTcmFlag());
-                if (Boolean.TRUE.equals(req.getTcmFlag())) {
-                    row.setTcmFlagText(MedicationCommonConstants.TCM_CLASS_DISPLAY_TCM);
-                } else if (req.getTcmFlag() != null) {
-                    row.setTcmFlagText(MedicationCommonConstants.TCM_CLASS_DISPLAY_WESTERN_AND_PATENT);
-                }
-                row.setSkinTestFlag(req.getSkinTestFlag());
-                if (Boolean.TRUE.equals(req.getSkinTestFlag())) {
-                    row.setSkinTestFlagText(MedicationCommonConstants.WORKSTATION_BOOLEAN_DISPLAY_YES);
-                } else if (req.getSkinTestFlag() != null) {
-                    row.setSkinTestFlagText(MedicationCommonConstants.WORKSTATION_BOOLEAN_DISPLAY_NO);
-                }
-                row.setInfusionFlag(req.getInfusionFlag());
-                if (Boolean.TRUE.equals(req.getInfusionFlag())) {
-                    row.setInfusionFlagText(MedicationCommonConstants.WORKSTATION_BOOLEAN_DISPLAY_YES);
-                } else if (req.getInfusionFlag() != null) {
-                    row.setInfusionFlagText(MedicationCommonConstants.WORKSTATION_BOOLEAN_DISPLAY_NO);
-                }
-            }
-            content.add(row);
+    @Override
+    public PageEncounterMedicationDispenseSlipsResponse toSlipPageResponse(MedicationDispenseSlipPageResult result) {
+        PageEncounterMedicationDispenseSlipsResponse response = new PageEncounterMedicationDispenseSlipsResponse();
+        if (result == null) {
+            return PagedResultBuilder.buildEmpty(response);
         }
-        return PagedResultBuilder.build(new PageEncounterMedicationDispenseSlipsResponse(), content, slipPage);
+        List<EncounterMedicationDispenseSlipRowDto> rows = new ArrayList<>();
+        if (result.getContent() != null) {
+            for (com.openhis.health.module.querysupport.pharmacy.dto.EncounterMedicationDispenseSlipRowDto source
+                : result.getContent()) {
+                if (source == null) {
+                    continue;
+                }
+                EncounterMedicationDispenseSlipRowDto target = new EncounterMedicationDispenseSlipRowDto();
+                BeanUtils.copyProperties(source, target);
+                rows.add(target);
+            }
+        }
+        return PagedResultBuilder.build(
+            response, rows, result.getTotalCount(), result.getPageNo(), result.getPageSize());
     }
 
     /**

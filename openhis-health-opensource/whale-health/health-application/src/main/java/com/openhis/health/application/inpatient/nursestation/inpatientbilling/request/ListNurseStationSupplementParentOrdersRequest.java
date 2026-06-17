@@ -33,6 +33,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医嘱补费父医嘱列表请求。 */
 @Schema(description = "医嘱补费父医嘱列表请求")
 public class ListNurseStationSupplementParentOrdersRequest {
 
@@ -51,6 +52,7 @@ public class ListNurseStationSupplementParentOrdersRequest {
 
     /** 开立科室 id（科室维度在 OrderInfo 查询已下推时，此处仅配合关键字过滤）。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 开立科室筛选。 */
     @Schema(description = "开立科室筛选")
     private Long orgId;
 }

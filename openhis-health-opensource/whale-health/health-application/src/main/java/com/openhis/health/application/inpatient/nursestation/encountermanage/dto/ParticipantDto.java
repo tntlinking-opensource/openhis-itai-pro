@@ -28,6 +28,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 就诊参与者。 */
 @Schema(description = "就诊参与者")
 public class ParticipantDto {
 
@@ -37,10 +38,12 @@ public class ParticipantDto {
     @Schema(description = "角色展示名")
     private String roleName;
 
+    /** 医务人员主键。 */
     @Schema(description = "医务人员主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long practitionerId;
 
+    /** 医务人员姓名。 */
     @Schema(description = "医务人员姓名")
     private String practitionerName;
 }

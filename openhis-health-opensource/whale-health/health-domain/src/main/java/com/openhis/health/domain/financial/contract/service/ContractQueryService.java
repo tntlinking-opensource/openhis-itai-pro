@@ -38,6 +38,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 费用性质（合同/结算口径）主数据读侧查询服务。
@@ -51,10 +52,29 @@ public class ContractQueryService {
 
 
     /**
+     * 按业务号加载费用性质实体（bridge/编排读路径）；不存在或已软删时 empty。
+     */
+    public Optional<Contract> findOptionalContractEntityByBusNo(String busNo) {
+        if (StringUtils.isBlank(busNo)) {
+            return Optional.empty();
+        }
+        return contractRepository.findByBusNo(busNo.trim())
+                .filter(row -> !Boolean.TRUE.equals(row.getIsDeleted()));
+    }
+
+    /**
+     * 按主键加载费用性质实体（bridge/编排读路径）；不存在或已软删时 empty。
+     */
+    public Optional<Contract> findOptionalContractEntityById(Long id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return contractRepository.findById(id)
+                .filter(row -> !Boolean.TRUE.equals(row.getIsDeleted()));
+    }
+
+    /**
      * 按主键取费用性质详情；不存在返回 null，由调用方决定是否报错。
-     *
-     * @param id 主键
-     * @return 详情模型或 null
      */
     public ContractDetailQueryModel findContractById(Long id) {
         Contract contract = contractRepository.findById(id).orElse(null);
@@ -168,6 +188,36 @@ public class ContractQueryService {
                 continue;
             }
             out.put(contract.getBusNo(), StringUtils.defaultString(contract.getName()));
+        }
+        return out;
+    }
+
+    /**
+     * 按合同业务号批量解析合同主键。
+     *
+     * @param busNos 合同业务号集合
+     * @return 业务号 → 合同主键
+     */
+    public Map<String, Long> mapContractIdByBusNoIn(Collection<String> busNos) {
+        if (busNos == null || busNos.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (String busNo : busNos) {
+            if (StringUtils.isNotBlank(busNo)) {
+                unique.add(busNo.trim());
+            }
+        }
+        if (unique.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Contract> list = contractRepository.findAllByBusNoIn(unique);
+        Map<String, Long> out = new HashMap<>(list.size() * 2);
+        for (Contract contract : list) {
+            if (contract == null || contract.getBusNo() == null || contract.getId() == null) {
+                continue;
+            }
+            out.put(contract.getBusNo(), contract.getId());
         }
         return out;
     }

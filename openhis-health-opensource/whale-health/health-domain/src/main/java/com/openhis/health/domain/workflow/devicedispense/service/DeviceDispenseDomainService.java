@@ -52,6 +52,7 @@ import com.openhis.health.domain.workflow.devicedispense.command.RefundDispensed
 import com.openhis.health.domain.workflow.devicedispense.command.ReleaseDeviceDispenseReserveCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.RemoveUndispensedDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.RevertCompletedBatchToPreparationCommand;
+import com.openhis.health.domain.workflow.devicedispense.command.RevertPreparedBatchToPreparationCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.RollbackUndispensedDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.StopUndispensedDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.UpdateDispenseStatusCompletedFromSummaryCommand;
@@ -124,10 +125,10 @@ public class DeviceDispenseDomainService {
     }
 
     /**
-     * 核对发放：校验拣配人与发放人不能相同，推进完成/部分完成并发布已发放事件。
+     * 核对发放：推进完成/部分完成并发布已发放事件。
      *
      * @param command 批次内一条，须含 id、发放数量与执行人
-     * @throws BusinessException 参数非法、状态不允许或规则冲突时
+     * @throws BusinessException 参数非法或状态不允许时
      */
     public void dispenseDevice(DispenseDeviceCommand command) {
         List<DispenseDeviceCommand.DispenseDeviceItemCommand> items = command.resolveItems();
@@ -147,11 +148,6 @@ public class DeviceDispenseDomainService {
 
         DeviceDispense dispense = this.mustGetById(item.getId());
         dispense.assertDispensable();
-
-        // 业务分支处理。
-        if (dispense.getPreparerId() != null && dispense.getPreparerId().equals(item.getPerformerId())) {
-            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_RULE_CONFLICT, "拣配人与发放人不能为同一人");
-        }
 
         LocalDateTime now = LocalDateTime.now();
         dispense.toCompletedOrPartCompleted(item.getPerformerId(), item.getDispenseQuantity(), now);
@@ -554,23 +550,36 @@ public class DeviceDispenseDomainService {
     }
 
     /**
-     * 释放预留：按灵活键解析多条发放记录，置停止/删除语义并发布预留释放事件。
+     * 释放预留：按灵活键解析多条发放记录，将仍处于可释放态的行停发并发布预留释放事件。
      *
-     * @param command 须含 idListOrRequestKey（逗号 id、单 id 或 supportInfo）
-     * @throws BusinessException 未命中记录时
+     * <p>与 {@link com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseDomainService#releaseDispenseReserve}
+     * 对称：未命中或已全部释放时幂等静默返回，避免门诊签退重复调用报错。</p>
+     *
+     * @param command 须含 idListOrRequestKey（逗号分隔发放 id、单 id 或 deviceReqId/supportInfo）
+     * @throws BusinessException 定位键为空时
      */
     public void releaseDeviceDispenseReserve(ReleaseDeviceDispenseReserveCommand command) {
         List<DeviceDispense> rows = this.resolveFlexibleKey(command.getIdListOrRequestKey());
-        // 业务分支处理。
+        // 业务分支处理：未命中任何发放行时幂等返回（签退路径可能已无待发事实）。
         if (rows.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "未命中发放记录");
+            return;
         }
+        List<DeviceDispense> released = new ArrayList<>();
         for (DeviceDispense dispense : rows) {
-            dispense.assertReservableReleased();
-            dispense.toStoppedOrDeleted(null);
+            // 仅草稿/待发/已准备态释放预占；已停发、已发放等行跳过。
+            if (dispenseStatusEquals(dispense, DispenseStatus.DRAFT)
+                || dispenseStatusEquals(dispense, DispenseStatus.PREPARATION)
+                || dispenseStatusEquals(dispense, DispenseStatus.PREPARED)) {
+                dispense.toStoppedOrDeleted(null);
+                released.add(dispense);
+            }
         }
-        deviceDispenseRepository.saveAll(rows);
-        Long anchor = rows.get(0).getId();
+        // 业务分支处理：无可释放行时静默返回。
+        if (released.isEmpty()) {
+            return;
+        }
+        deviceDispenseRepository.saveAll(released);
+        Long anchor = released.get(0).getId();
         domainEventPublisher.publish(new DeviceDispenseReserveReleasedEvent(anchor, command.getIdListOrRequestKey(), command.getOperatorId()));
     }
 
@@ -840,6 +849,26 @@ public class DeviceDispenseDomainService {
         }
         for (DeviceDispense dispense : rows) {
             dispense.completedToPreparation();
+        }
+        deviceDispenseRepository.saveAll(rows);
+    }
+
+    /**
+     * 批量将已配药记录回退为待发（护士取消执行对称入口，由调用方约束业务许可）。
+     *
+     * @param command 须含非空 idList 且全部存在
+     * @throws BusinessException 部分 id 不存在或状态不允许回退时
+     */
+    public void revertPreparedBatchToPreparation(RevertPreparedBatchToPreparationCommand command) {
+        if (command.getIdList() == null || command.getIdList().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "idList 不能为空");
+        }
+        List<DeviceDispense> rows = deviceDispenseRepository.findByIdIn(command.getIdList());
+        if (rows.size() != command.getIdList().size()) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "部分发放记录不存在");
+        }
+        for (DeviceDispense dispense : rows) {
+            dispense.preparedToPreparation();
         }
         deviceDispenseRepository.saveAll(rows);
     }

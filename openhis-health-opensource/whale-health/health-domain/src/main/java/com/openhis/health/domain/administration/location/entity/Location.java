@@ -137,11 +137,12 @@ public class Location extends BaseAuditedEntity {
     }
 
     /**
-     * 断言允许启用。
+     * 断言允许启用（草稿首次启用，或停用后重新启用）。
      */
     public void assertActivatable() {
-        if (!LocationStatus.DRAFT.getCode().equals(this.statusEnum)) {
-            throw new BusinessException(ErrorCodeConstants.LOCATION_INVALID_STATUS, "仅草稿位置可启用");
+        if (!LocationStatus.DRAFT.getCode().equals(this.statusEnum)
+            && !LocationStatus.INACTIVE.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.LOCATION_INVALID_STATUS, "仅草稿或停用位置可启用");
         }
     }
 
@@ -172,7 +173,10 @@ public class Location extends BaseAuditedEntity {
             && !LocationStatus.SUSPENDED.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.LOCATION_INVALID_STATUS, "仅启用/暂停位置可停用");
         }
-        this.assertNotOccupiedBed();
+        // 床位运营占用校验仅适用于床位形态；库房/药房等扁平节点无此约束。
+        if (LocationForm.BED.getCode().equals(this.formEnum)) {
+            this.assertNotOccupiedBed();
+        }
     }
 
     /**
@@ -182,6 +186,15 @@ public class Location extends BaseAuditedEntity {
         if (!LocationStatus.DRAFT.getCode().equals(this.statusEnum)
             && !LocationStatus.INACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.LOCATION_INVALID_STATUS, "仅草稿/停用位置可废弃");
+        }
+    }
+
+    /**
+     * 断言库房/药房等扁平库存节点允许废弃（启用/停用/草稿均可；暂停态需先恢复或停用）。
+     */
+    public void assertAbolishableAsFlatInventoryNode() {
+        if (LocationStatus.SUSPENDED.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.LOCATION_INVALID_STATUS, "暂停中的位置不可删除，请先恢复或停用");
         }
     }
 

@@ -28,16 +28,18 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 住院登记上下文加载请求。 */
 @Schema(description = "住院登记上下文加载请求")
 public class LoadRegistrationContextRequest {
 
-    /** 住院就诊 ID；无档登记时为空。 */
     @Schema(description = "住院就诊 ID；无档登记时为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 住院就诊 ID；无档登记时为空（业务字段）。 */
     private Long encounterId;
 
     /** 已选住院科室（预拉费用性质与病区用）。 */
     @Schema(description = "已选住院科室 ID")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 已选住院科室 ID（业务字段）。 */
     private Long organizationId;
 }

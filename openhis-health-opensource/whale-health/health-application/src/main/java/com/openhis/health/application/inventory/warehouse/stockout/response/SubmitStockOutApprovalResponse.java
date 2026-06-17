@@ -21,10 +21,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 提交出库审批响应。 */
 @Schema(description = "提交出库审批响应")
 public class SubmitStockOutApprovalResponse {
 

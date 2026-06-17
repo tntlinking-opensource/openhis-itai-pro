@@ -26,15 +26,12 @@ import lombok.Data;
 @Data
 @Schema(description = "药品目录导入结果")
 public class ImportMedicationCatalogResponse {
-    /** 批次号，对应一次上传追踪。 */
     @Schema(description = "导入批次号", example = "MED-IMPORT-1a2b3c4d")
     private String batchNo;
 
-    /** 解析得到的业务数据行数（不含表头）。 */
     @Schema(description = "总行数（不含表头）", example = "20")
     private Integer totalCount;
 
-    /** 领域报告成功落库条数。 */
     @Schema(description = "成功条数", example = "18")
     private Integer successCount;
 

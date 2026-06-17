@@ -22,7 +22,7 @@ import com.openhis.health.application.basic.practitioner.request.SavePractitione
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerDomainService;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.application.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentOperatorResolver;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;

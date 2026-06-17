@@ -21,6 +21,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 删除药房入库单响应（IF-PHA-IN-10）。
@@ -28,6 +29,7 @@ import lombok.experimental.Accessors;
 @Getter
 @Setter
 @Accessors(chain = true)
+/** 删除药房入库单 IF-PHA-IN-10。 */
 @Schema(description = "删除药房入库单 IF-PHA-IN-10")
 public class RemovePharmacyStockInResponse {
 

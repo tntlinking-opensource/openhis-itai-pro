@@ -28,21 +28,25 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 预结算明细预览。 */
 @Schema(description = "预结算明细预览")
 public class PreSettleChargeLinePreviewDto {
     /**
      * 收费明细主键。
      */
     @Schema(description = "收费明细 ID")
+    /** 收费明细 ID（业务字段）。 */
     private Long chargeItemId;
     /**
      * 项目展示名称：与 IF-OPC-03 待收费列表 itemName 同口径（目录 product_name 优先，其次定价 charge_name）。
      */
     @Schema(description = "明细文案（目录名优先，与待收费列表一致）")
+    /** 明细文案（目录名优先，与待收费列表一致）（业务字段）。 */
     private String itemLabel;
     /**
      * 本行应收金额。
      */
     @Schema(description = "行金额")
+    /** 行金额（业务字段）。 */
     private BigDecimal lineAmount;
 }

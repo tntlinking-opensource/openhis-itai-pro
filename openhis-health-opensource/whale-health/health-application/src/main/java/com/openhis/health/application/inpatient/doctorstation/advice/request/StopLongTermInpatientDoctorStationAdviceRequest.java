@@ -34,6 +34,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 住院医生站-长期医嘱停嘱请求。 */
 @Schema(description = "住院医生站-长期医嘱停嘱请求")
 public class StopLongTermInpatientDoctorStationAdviceRequest {
 
@@ -46,11 +47,13 @@ public class StopLongTermInpatientDoctorStationAdviceRequest {
     /** 与就诊绑定的患者主键，由 AppService 二次校验。 */
     @NotNull(message = DoctorStationAdviceConstants.MSG_PATIENT_ID_REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 患者标识。 */
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
     /** 待停嘱的药品/诊疗请求行集合，按行驱动领域停嘱命令。 */
     @NotEmpty(message = DoctorStationAdviceConstants.VALIDATION_STOP_LINES_REQUIRED)
+    /** 待停嘱行。 */
     @Schema(description = "待停嘱行", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<StopLongTermAdviceLineRequest> lines;
 }

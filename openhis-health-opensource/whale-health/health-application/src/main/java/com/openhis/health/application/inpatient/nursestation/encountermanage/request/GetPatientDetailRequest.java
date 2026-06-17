@@ -29,6 +29,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 患者详情查询请求。 */
 @Schema(description = "患者详情查询请求", requiredProperties = {"encounterId"})
 public class GetPatientDetailRequest {
 

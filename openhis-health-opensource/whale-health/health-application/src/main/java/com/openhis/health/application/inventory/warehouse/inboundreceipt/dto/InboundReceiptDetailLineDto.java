@@ -17,12 +17,14 @@
 
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.dto;
 
-import com.openhis.health.application.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
 import lombok.Getter;
 import lombok.Setter;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
@@ -95,5 +97,8 @@ public class InboundReceiptDetailLineDto {
      */
     private String manufacturer;
 
+    /** 产品目录展示信息。 */
+
+    @Schema(description = "产品目录 productCatalog")
     private ProductDefinitionCatalogEditorHintsDto productCatalog;
 }

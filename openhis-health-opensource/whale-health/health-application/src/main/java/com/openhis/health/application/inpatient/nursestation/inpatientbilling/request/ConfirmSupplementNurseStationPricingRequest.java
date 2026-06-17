@@ -33,6 +33,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医嘱补费确认请求。 */
 @Schema(description = "医嘱补费确认请求")
 public class ConfirmSupplementNurseStationPricingRequest {
 

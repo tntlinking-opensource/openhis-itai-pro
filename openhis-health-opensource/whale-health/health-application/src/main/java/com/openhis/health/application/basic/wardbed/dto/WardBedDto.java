@@ -46,6 +46,9 @@ public class WardBedDto {
     /** 所属机构主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long organizationId;
+    /** 父位置主键（病房/床位挂靠）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long parentId;
     /** 显示顺序。 */
     private Integer displayOrder;
     /** 子位置（如病房下的床位）。 */

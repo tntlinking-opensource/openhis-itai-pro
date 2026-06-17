@@ -17,19 +17,21 @@
 
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.mapper;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder;
+import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.PrepickedProductKeyDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingParentRequestAnchorDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingWriteItemDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationSupplementParentOrderRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.PageNurseStationPricingCatalogRequest;
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
-import com.openhis.health.application.querysupport.order.dto.InpatientOrderListSkeleton;
-import com.openhis.health.application.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.constants.ChargeItemDmConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.workflow.devicerequest.command.CreateExecutedDeviceOrderCommand;
@@ -86,6 +88,23 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
         query.setPricingFlag(1);
         query.setActiveFlag(Boolean.TRUE);
         query.setProductTableNames(this.resolvePricingProductTableNames(request.getProductTableNames()));
+        if (request.getPrepickedProductKeys() != null && !request.getPrepickedProductKeys().isEmpty()) {
+            // 组套/历史行 ids 收窄目录（与 IF-DOR-11 prepickedProductKeys 同套路，BR-IP-PRC-017）
+            List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+            for (PrepickedProductKeyDto key : request.getPrepickedProductKeys()) {
+                if (key == null || key.getProductDefinitionId() == null
+                    || StringUtils.isBlank(key.getProductTableName())) {
+                    continue;
+                }
+                ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+                lookup.setProductTableName(key.getProductTableName().trim());
+                lookup.setProductDefinitionId(key.getProductDefinitionId());
+                lookups.add(lookup);
+            }
+            if (!lookups.isEmpty()) {
+                query.setPrepickedProductKeys(lookups);
+            }
+        }
         return query;
     }
 
@@ -284,6 +303,7 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
                 item.setGenerateSourceEnum(GenerateSource.NURSE_PRICING.getCode());
                 item.setDeviceDefId(row.getDeviceDefId());
                 item.setQuantity(row.getQuantity());
+                item.setUnitCode(row.getUnitCode());
                 item.setEncounterId(row.getEncounterId());
                 item.setPatientId(row.getPatientId());
                 item.setPerformLocation(row.getPerformLocation());

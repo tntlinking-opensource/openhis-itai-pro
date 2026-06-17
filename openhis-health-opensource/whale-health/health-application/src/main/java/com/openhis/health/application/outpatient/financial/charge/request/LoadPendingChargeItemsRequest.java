@@ -26,14 +26,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 加载就诊待收费明细请求。 */
 @Schema(description = "加载就诊待收费明细请求")
 public class LoadPendingChargeItemsRequest {
-    /**
-     * encounterId。
-     */
+
+    /** 就诊主键。 */
     private Long encounterId;
-    /**
-     * includePriceExtension。
-     */
+
+    /** 是否加载定价扩展字段（成本/折扣等）。 */
     private Boolean includePriceExtension;
 }

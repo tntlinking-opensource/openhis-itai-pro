@@ -103,6 +103,7 @@ public class MedicationDefinitionQueryService {
             return purchase;
         }
         purchase.setCategoryCode(query.getCategoryCode());
+        purchase.setExcludeMedicationCategoryCodes(query.getExcludeMedicationCategoryCodes());
         purchase.setActiveFlag(query.getActiveFlag());
         purchase.setSupplierId(query.getSupplierId());
         purchase.setManufacturer(query.getManufacturer());
@@ -275,6 +276,17 @@ public class MedicationDefinitionQueryService {
                 if (StringUtils.isNotBlank(query.getCategoryCode())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.CATEGORY_CODE), query.getCategoryCode().trim()));
                 }
+                // 开立西药医嘱排除中草药等目录分类（IF-DOR-11 excludeMedicationCategoryCodes）
+                if (query.getExcludeMedicationCategoryCodes() != null && !query.getExcludeMedicationCategoryCodes().isEmpty()) {
+                    List<String> excluded = query.getExcludeMedicationCategoryCodes().stream()
+                        .filter(StringUtils::isNotBlank)
+                        .map(String::trim)
+                        .distinct()
+                        .toList();
+                    if (!excluded.isEmpty()) {
+                        predicates.add(cb.not(root.get(FieldNameConstants.CATEGORY_CODE).in(excluded)));
+                    }
+                }
                 if (query.getActiveFlag() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.ACTIVE_FLAG), query.getActiveFlag()));
                 }
@@ -422,6 +434,8 @@ public class MedicationDefinitionQueryService {
         model.setRestrictedFlag(definition.getRestrictedFlag());
         model.setRestrictedScope(definition.getRestrictedScope());
         model.setCharacteristic(definition.getCharacteristic());
+        model.setPharmacologyCategoryCode(definition.getPharmacologyCategoryCode());
+        model.setDrug69Code(definition.getDrug69Code());
         return model;
     }
 

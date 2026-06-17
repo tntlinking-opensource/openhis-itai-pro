@@ -18,7 +18,7 @@
 package com.openhis.health.domain.share.enums;
 
 /**
- * 医嘱组套模板行类型枚举。
+ * 组套模板行类型枚举。
  */
 public enum OrderTemplateLineKind implements EnumInterface {
     /**

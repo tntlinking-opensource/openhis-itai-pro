@@ -81,10 +81,6 @@ public class CreateExecutionRuleCommand {
          */
         private Long activityDefinitionId;
         /**
-         * 收费项定义标识。
-         */
-        private Long chargeItemDefinitionId;
-        /**
          * 执行位置标识。
          */
         private Long executionLocationId;

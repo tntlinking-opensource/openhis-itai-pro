@@ -25,7 +25,7 @@ import com.openhis.whale.core.application.dto.PagedResult;
  *
  * <p>继承 {@link com.openhis.whale.core.application.dto.PagedResult}，对外字段为
  * {@code content}、{@code totalCount}、{@code pageNo}（1-based）、{@code pageSize}（B.10.11）；
- * 须经 {@link com.openhis.health.application.common.pagination.PagedResultBuilder} 装配。</p>
+ * 须经 {@link com.openhis.health.module.common.pagination.PagedResultBuilder} 装配。</p>
  */
 public class PagePatientQueueResponse extends PagedResult<DoctorStationPatientQueueItemDto> {
 }

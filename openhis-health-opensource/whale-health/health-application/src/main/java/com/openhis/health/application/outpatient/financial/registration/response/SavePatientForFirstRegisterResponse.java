@@ -26,17 +26,16 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 首次建档响应。 */
 @Schema(description = "首次建档响应")
-/**
- * SavePatientForFirstRegisterResponse。
- */
 public class SavePatientForFirstRegisterResponse {
 
-    /** 患者 ID。 */
     @Schema(description = "患者ID")
+    /** 患者ID（业务字段）。 */
     private Long patientId;
 
     /** 患者业务号。 */
     @Schema(description = "患者业务号")
+    /** 患者业务号（业务字段）。 */
     private String patientBusNo;
 }

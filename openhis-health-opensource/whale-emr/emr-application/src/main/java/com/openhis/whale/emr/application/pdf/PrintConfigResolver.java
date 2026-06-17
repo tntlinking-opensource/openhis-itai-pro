@@ -18,7 +18,7 @@
 package com.openhis.whale.emr.application.pdf;
 
 import com.openhis.whale.emr.application.pdf.config.PrintConfig;
-import com.openhis.whale.emr.application.request.GeneratePdfRequest;
+import com.openhis.whale.emr.application.document.request.GeneratePdfRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 

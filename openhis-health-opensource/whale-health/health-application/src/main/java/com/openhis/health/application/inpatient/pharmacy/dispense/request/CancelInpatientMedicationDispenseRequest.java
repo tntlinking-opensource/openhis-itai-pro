@@ -31,6 +31,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 住院作废发放请求。 */
 @Schema(description = "住院作废发放请求")
 public class CancelInpatientMedicationDispenseRequest {
 
@@ -38,6 +39,7 @@ public class CancelInpatientMedicationDispenseRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;
 
+    /** 作废行。 */
     @Schema(description = "作废行", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<CancelMedicationDispenseLineSubmitDto> lines;
 }

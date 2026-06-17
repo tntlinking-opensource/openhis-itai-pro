@@ -1,0 +1,16 @@
+package com.openhis.whale.booking.application.policy.request;
+
+import jakarta.validation.constraints.NotNull;
+import lombok.Getter;
+import lombok.Setter;
+
+/**
+ * 加载停诊变更策略请求（2.20）。
+ */
+@Getter
+@Setter
+public class GetScheduleChangePolicyRequest {
+
+    @NotNull
+    private Long organizationId;
+}

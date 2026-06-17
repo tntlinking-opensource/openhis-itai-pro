@@ -23,3 +23,26 @@ CREATE TABLE IF NOT EXISTS "public"."cus_charge_item_auto_gen" (
     "remark" varchar(255),
     CONSTRAINT "cus_charge_item_auto_gen_pkey" PRIMARY KEY ("id")
 );
+
+COMMENT ON TABLE cus_charge_item_auto_gen IS '自定义 charge item auto gen';
+
+COMMENT ON COLUMN cus_charge_item_auto_gen.id IS '主键';
+COMMENT ON COLUMN cus_charge_item_auto_gen.tenant_id IS '租户标识';
+COMMENT ON COLUMN cus_charge_item_auto_gen.created_at IS '创建时间';
+COMMENT ON COLUMN cus_charge_item_auto_gen.updated_at IS '最后更新时间';
+COMMENT ON COLUMN cus_charge_item_auto_gen.created_by IS '创建人';
+COMMENT ON COLUMN cus_charge_item_auto_gen.updated_by IS '最后更新人';
+COMMENT ON COLUMN cus_charge_item_auto_gen.is_deleted IS '软删标记';
+COMMENT ON COLUMN cus_charge_item_auto_gen.deleted_at IS '删除时间';
+COMMENT ON COLUMN cus_charge_item_auto_gen.deleted_by IS '删除人';
+COMMENT ON COLUMN cus_charge_item_auto_gen.version IS '乐观锁版本号';
+COMMENT ON COLUMN cus_charge_item_auto_gen.rule_name IS '收费明细自动生成规则聚合根';
+COMMENT ON COLUMN cus_charge_item_auto_gen.status_enum IS '状态枚举（发布状态）';
+COMMENT ON COLUMN cus_charge_item_auto_gen.trigger_source_table IS '触发来源表名（落库字符串须与来源聚合主表表名一致）';
+COMMENT ON COLUMN cus_charge_item_auto_gen.trigger_source_id IS '触发来源主键';
+COMMENT ON COLUMN cus_charge_item_auto_gen.target_definition_id IS '目标定价标识';
+COMMENT ON COLUMN cus_charge_item_auto_gen.performing_org_id IS '执行科室标识（为空表示全局规则）';
+COMMENT ON COLUMN cus_charge_item_auto_gen.quantity_value IS '默认数量（大于 0）';
+COMMENT ON COLUMN cus_charge_item_auto_gen.priority IS '优先级（数值越小越靠前）';
+COMMENT ON COLUMN cus_charge_item_auto_gen.remark IS '备注';
+

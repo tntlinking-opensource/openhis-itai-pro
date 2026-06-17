@@ -275,13 +275,13 @@ public class DeviceDefinition extends BaseAuditedEntity {
     }
 
     /**
-     * 迁移到停用（ACTIVE -> RETIRED）（SDD §5.1.3）。
+     * 迁移到停用（ACTIVE -> INACTIVE）（SDD §5.1.3）。
      *
      * @throws BusinessException 状态不允许
      */
-    public void transitToRetired() {
+    public void transitToInactive() {
         this.assertRetirable();
-        this.statusEnum = PublicationStatus.RETIRED.getCode();
+        this.statusEnum = PublicationStatus.INACTIVE.getCode();
         this.activeFlag = Boolean.FALSE;
     }
 
@@ -291,13 +291,13 @@ public class DeviceDefinition extends BaseAuditedEntity {
      * @throws BusinessException 状态不允许
      */
     public void assertActivatable() {
-        if (!PublicationStatus.RETIRED.getCode().equals(this.statusEnum)) {
+        if (!PublicationStatus.INACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_INVALID_STATUS, "仅停用状态的器材目录允许启用");
         }
     }
 
     /**
-     * 迁移到启用（RETIRED -> ACTIVE）（SDD §5.1.4）。
+     * 迁移到启用（INACTIVE -> ACTIVE）（SDD §5.1.4）。
      *
      * @throws BusinessException 状态不允许
      */

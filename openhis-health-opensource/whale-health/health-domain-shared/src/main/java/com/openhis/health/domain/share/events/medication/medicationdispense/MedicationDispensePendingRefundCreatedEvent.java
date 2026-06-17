@@ -32,6 +32,9 @@ public class MedicationDispensePendingRefundCreatedEvent extends DomainEvent {
 
     private Long operatorId;
 
+    /** 执行记录标识（住院取消执行挂接新 CANCEL 行；门诊退药申请可为空）。 */
+    private Long procedureId;
+
     /** 发放单持久化状态码（与写模型一致），供读模型投影使用。 */
     private String statusEnumCode;
 

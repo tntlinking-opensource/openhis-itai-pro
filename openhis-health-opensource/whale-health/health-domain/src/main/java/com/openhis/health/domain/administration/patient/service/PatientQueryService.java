@@ -111,11 +111,15 @@ public class PatientQueryService {
         Specification<Patient> specification = (root, criteriaQuery, criteriaBuilder) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(criteriaBuilder.isFalse(root.get(FieldNameConstants.IS_DELETED)));
-            // 关键字模糊：患者管理页一个输入框，需同时命中姓名、院内编码、身份证号、拼音码、五笔码（OR 语义）。
-            // 说明：患者分页检索当前将PatientPagedQuery.name作为唯一模糊关键字入口（与前台keyword语义对应）
-            if (StringUtils.isNotBlank(query.getName())) {
-                String trimmed = query.getName().trim();
-                String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
+            // 关键字模糊：与门诊选患者、B.10.11 一致，优先 keyword，兼容历史 name 入参；OR 命中姓名/病历号/证件/拼音/五笔。
+            String searchKey = null;
+            if (StringUtils.isNotBlank(query.getKeyword())) {
+                searchKey = query.getKeyword().trim();
+            } else if (StringUtils.isNotBlank(query.getName())) {
+                searchKey = query.getName().trim();
+            }
+            if (StringUtils.isNotBlank(searchKey)) {
+                String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(searchKey);
                 predicates.add(criteriaBuilder.or(
                     criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.NAME)), likeIc),
                     criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.BUS_NO)), likeIc),
@@ -462,6 +466,20 @@ public class PatientQueryService {
     private Patient requirePatient(Long patientId) {
         return patientRepository.findById(patientId)
             .orElseThrow(() -> new BusinessException(ErrorCodeConstants.PATIENT_NOT_FOUND, "患者不存在或已删除"));
+    }
+
+    /**
+     * 按主键加载患者实体（Port/bridge 读路径）；不存在或已软删时 empty。
+     *
+     * @param patientId 患者标识
+     * @return 患者实体
+     */
+    public Optional<Patient> findOptionalPatientEntityById(Long patientId) {
+        if (patientId == null) {
+            return Optional.empty();
+        }
+        return patientRepository.findById(patientId)
+            .filter(row -> !Boolean.TRUE.equals(row.getIsDeleted()));
     }
 
     /**

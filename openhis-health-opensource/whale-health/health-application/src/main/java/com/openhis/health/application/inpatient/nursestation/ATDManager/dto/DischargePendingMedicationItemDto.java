@@ -32,10 +32,10 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
+/** 出院前待发退药行。 */
 @Schema(description = "出院前待发退药行")
 public class DischargePendingMedicationItemDto {
 
-    /** 发放主键。 */
     @Schema(description = "药品发放主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long dispenseId;

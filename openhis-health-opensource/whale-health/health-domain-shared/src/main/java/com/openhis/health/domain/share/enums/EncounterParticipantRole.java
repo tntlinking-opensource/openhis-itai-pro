@@ -39,8 +39,8 @@ public enum EncounterParticipantRole implements EnumInterface {
     /** 住院责任护士。 */
     PRIMARY_NURSE(0L, "PRIMARY_NURSE", "责任护士", "住院责任护士", 5L),
 
-    /** 门诊/急诊分诊护士。 */
-    TRIAGE_NURSE(0L, "TRIAGE_NURSE", "分诊护士", "门诊/急诊分诊护士", 6L);
+    /** 门诊分诊护士。 */
+    TRIAGE_NURSE(0L, "TRIAGE_NURSE", "分诊护士", "门诊分诊护士", 6L);
 
     private final Long codeSystemId;
     private final String code;

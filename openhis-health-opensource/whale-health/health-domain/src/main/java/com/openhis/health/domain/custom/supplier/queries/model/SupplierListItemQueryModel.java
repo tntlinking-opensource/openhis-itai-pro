@@ -50,5 +50,17 @@ public class SupplierListItemQueryModel {
      * 拼音码（可空）。
      */
     private String pyStr;
+    /**
+     * 地址（可空）。
+     */
+    private String address;
+    /**
+     * 联系电话（可空）。
+     */
+    private String phone;
+    /**
+     * 电子邮箱（可空）。
+     */
+    private String email;
 }
 

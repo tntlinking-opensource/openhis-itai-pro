@@ -33,10 +33,10 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊发药就诊队列行。 */
 @Schema(description = "门诊发药就诊队列行")
 public class PendingDispenseEncounterQueueRowDto {
 
-    /** 就诊主键。 */
     @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;

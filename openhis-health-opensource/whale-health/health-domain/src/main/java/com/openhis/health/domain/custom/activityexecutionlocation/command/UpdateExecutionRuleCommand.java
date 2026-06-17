@@ -37,10 +37,6 @@ public class UpdateExecutionRuleCommand {
      */
     private Long activityDefinitionId;
     /**
-     * 收费项定义标识。
-     */
-    private Long chargeItemDefinitionId;
-    /**
      * 活动类别编码。
      */
     private String activityCategoryCode;

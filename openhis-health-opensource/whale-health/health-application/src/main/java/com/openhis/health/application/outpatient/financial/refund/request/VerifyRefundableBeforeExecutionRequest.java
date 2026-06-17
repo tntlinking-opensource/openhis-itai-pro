@@ -32,6 +32,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 执行前可退门禁请求。 */
 @Schema(description = "执行前可退门禁请求")
 public class VerifyRefundableBeforeExecutionRequest {
 
@@ -39,10 +40,13 @@ public class VerifyRefundableBeforeExecutionRequest {
     @NotNull(message = "encounterId 不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 就诊主键（业务字段）。 */
     private Long encounterId;
 
     /** 拟退收费明细主键集合。 */
     @NotEmpty(message = "refundingChargeItemIds 不能为空")
+    /** 拟退收费明细主键集合。 */
     @Schema(description = "拟退收费明细主键集合", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 拟退收费明细主键集合（业务字段）。 */
     private List<Long> refundingChargeItemIds;
 }

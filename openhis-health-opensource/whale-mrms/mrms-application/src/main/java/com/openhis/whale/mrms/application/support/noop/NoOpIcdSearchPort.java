@@ -1,7 +1,7 @@
 package com.openhis.whale.mrms.application.support.noop;
 
-import com.openhis.whale.mrms.domain.port.IcdSearchPort;
-import com.openhis.whale.mrms.domain.port.model.IcdItemSnapshot;
+import com.openhis.whale.mrms.port.IcdSearchPort;
+import com.openhis.whale.mrms.port.model.IcdItemSnapshot;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 

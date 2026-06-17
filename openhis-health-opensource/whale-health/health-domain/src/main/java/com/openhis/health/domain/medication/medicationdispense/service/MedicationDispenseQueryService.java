@@ -17,44 +17,36 @@
 
 package com.openhis.health.domain.medication.medicationdispense.service;
 
-import com.openhis.health.domain.administration.encounter.entity.Encounter;
-import com.openhis.health.domain.administration.encounter.entity.EncounterLocation;
-import com.openhis.health.domain.administration.location.entity.Location;
-import com.openhis.health.domain.administration.patient.entity.Patient;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
-import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.DispenseExeReserveRowModel;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseDetailQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseListQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseOrderCatalogOccupancyModel;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSummaryItemQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationPendingRefundQueryModel;
+import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispensePickupPendingQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.query.InpatientPharmacyPendingEncounterPageQuery;
+import com.openhis.health.domain.medication.medicationdispense.query.InpatientPharmacyReturnEncounterPageQuery;
+import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispensePickupPendingPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseSlipPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.query.OutpatientPharmacyPendingEncounterPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.query.PageReturnPatientQuery;
 import com.openhis.health.domain.medication.medicationdispense.repository.MedicationDispenseRepository;
 import com.openhis.health.domain.share.query.AbstractPageQuery;
 import com.openhis.health.domain.share.constants.DoctorStationOrderCatalogConstants;
-import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.NurseStationExecutionConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
-import com.openhis.health.domain.share.enums.EncounterActivityStatus;
-import com.openhis.health.domain.share.enums.EncounterClass;
-import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.MedicationDispenseType;
 import com.openhis.health.domain.share.utils.EnumUtil;
-import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Root;
-import jakarta.persistence.criteria.Subquery;
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.Predicate;
 import org.apache.commons.lang3.StringUtils;
@@ -197,13 +189,20 @@ public class MedicationDispenseQueryService {
     public List<MedicationDispenseSummaryItemQueryModel> listMedicationDispensesBySummaryNo(String summaryNo) {
         List<MedicationDispense> dispensess = medicationDispenseRepository.findBySummaryNo(summaryNo);
         List<MedicationDispenseSummaryItemQueryModel> result = new ArrayList<>();
-        // 汇总单维度：仅映射发药工作台关心的状态与数量
+        // 汇总单维度：映射核发核对、扣库与明细展示所需字段
         for (MedicationDispense dispense : dispensess) {
             MedicationDispenseSummaryItemQueryModel model = new MedicationDispenseSummaryItemQueryModel();
             model.setSummaryNo(dispense.getSummaryNo());
             model.setId(dispense.getId());
             model.setStatusEnum(dispense.getStatusEnum());
             model.setQuantity(dispense.getQuantity());
+            model.setMedicationId(dispense.getMedicationId());
+            model.setLocationId(dispense.getLocationId());
+            model.setLotNumber(dispense.getLotNumber());
+            model.setUnitCode(dispense.getUnitCode());
+            model.setEncounterId(dispense.getEncounterId());
+            model.setPatientId(dispense.getPatientId());
+            model.setTraceNo(dispense.getTraceNo());
             result.add(model);
         }
         return result;
@@ -268,6 +267,78 @@ public class MedicationDispenseQueryService {
             result.add(md);
         }
         return result;
+    }
+
+    /**
+     * 住院退药明细：按就诊与可选退药状态查询发放事实（AS-IP-PHA-003 IF-IPR-03）。
+     *
+     * @param encounterId      就诊主键
+     * @param refundStatusCode {@link DispenseStatus#getCode()}；空则返回待退/已退子集（不含拒退）
+     * @return 未删除且符合住院退药类型的发放行
+     */
+    public List<MedicationDispense> listInpatientReturnMedicationDispensesForDetail(
+        Long encounterId,
+        String refundStatusCode
+    ) {
+        if (encounterId == null) {
+            return new ArrayList<>();
+        }
+        DispenseStatus statusFilter = null;
+        if (StringUtils.isNotBlank(refundStatusCode)) {
+            statusFilter = EnumUtil.fromCode(DispenseStatus.class, refundStatusCode.trim());
+        }
+        List<MedicationDispense> source;
+        // 指定退药态时先下推 status 谓词，否则拉取本就诊全部发放再内存过滤
+        if (statusFilter != null) {
+            source = this.medicationDispenseRepository.findByEncounterIdAndStatusEnum(encounterId, statusFilter);
+        } else {
+            source = this.medicationDispenseRepository.findByEncounterId(encounterId);
+        }
+        List<MedicationDispense> result = new ArrayList<>();
+        for (MedicationDispense md : source) {
+            if (md == null || Boolean.TRUE.equals(md.getIsDeleted())) {
+                continue;
+            }
+            if (!this.isInpatientReturnMedicationDispenseForDetail(md, statusFilter)) {
+                continue;
+            }
+            result.add(md);
+        }
+        return result;
+    }
+
+    /**
+     * 住院退药明细行是否纳入结果集。
+     *
+     * @param md           药品发放事实
+     * @param statusFilter 调用方指定状态过滤；{@code null} 时按住院退药默认口径
+     * @return 纳入明细列表时 {@code true}
+     */
+    private boolean isInpatientReturnMedicationDispenseForDetail(MedicationDispense md, DispenseStatus statusFilter) {
+        MedicationDispenseType t = md.getDispenseEnum();
+        if (t == null) {
+            return false;
+        }
+        // 住院/临时/退药类型参与住院退药读侧
+        if (!MedicationDispenseType.INPATIENT.equals(t)
+            && !MedicationDispenseType.TEMPORARY.equals(t)
+            && !MedicationDispenseType.REFUND.equals(t)) {
+            return false;
+        }
+        DispenseStatus st = md.getStatusEnum();
+        if (st == null) {
+            return false;
+        }
+        if (statusFilter != null) {
+            return statusFilter.equals(st);
+        }
+        if (MedicationDispenseType.REFUND.equals(t)) {
+            return true;
+        }
+        if (DispenseStatus.PENDING_REFUND.equals(st)) {
+            return true;
+        }
+        return DispenseStatus.REFUNDED.equals(st);
     }
 
     /**
@@ -372,6 +443,65 @@ public class MedicationDispenseQueryService {
     }
 
     /**
+     * 批量聚合住院就诊维度退药展示状态（有待退优先，否则已退，否则空串）。
+     *
+     * <p>供住院退药患者队列装配（AS-IP-PHA-003 IF-IPR-02）。</p>
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 就诊主键 → {@link DispenseStatus#getCode()}；无命中行时值为空串
+     */
+    public Map<Long, String> mapAggregatedInpatientRefundStatusCodeByEncounterIds(Collection<Long> encounterIds) {
+        Map<Long, String> result = new HashMap<>();
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return result;
+        }
+        LinkedHashSet<Long> dedupedSet = new LinkedHashSet<>();
+        for (Long encounterId : encounterIds) {
+            if (encounterId != null) {
+                dedupedSet.add(encounterId);
+            }
+        }
+        List<Long> deduped = new ArrayList<>(dedupedSet);
+        if (deduped.isEmpty()) {
+            return result;
+        }
+        List<MedicationDispense> rows = this.medicationDispenseRepository.findByEncounterIdIn(deduped);
+        Map<Long, Boolean> anyPendingByEncounter = new HashMap<>();
+        Map<Long, Boolean> anyRefundedByEncounter = new HashMap<>();
+        for (MedicationDispense md : rows) {
+            if (md == null || md.getEncounterId() == null) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(md.getIsDeleted())) {
+                continue;
+            }
+            if (!this.isInpatientReturnMedicationDispenseForQueueAggregation(md)) {
+                continue;
+            }
+            Long encId = md.getEncounterId();
+            DispenseStatus st = md.getStatusEnum();
+            if (DispenseStatus.PENDING_REFUND.equals(st)) {
+                anyPendingByEncounter.put(encId, Boolean.TRUE);
+            }
+            if (DispenseStatus.REFUNDED.equals(st)) {
+                anyRefundedByEncounter.put(encId, Boolean.TRUE);
+            }
+        }
+        for (Long encounterId : deduped) {
+            if (Boolean.TRUE.equals(anyPendingByEncounter.get(encounterId))) {
+                result.put(encounterId, DispenseStatus.PENDING_REFUND.getCode());
+                continue;
+            }
+            if (Boolean.TRUE.equals(anyRefundedByEncounter.get(encounterId))) {
+                result.put(encounterId, DispenseStatus.REFUNDED.getCode());
+                continue;
+            }
+            result.put(encounterId, GeneralSharedConstants.EMPTY_STRING);
+        }
+        return result;
+    }
+
+    /**
      * 退药患者队列聚合口径：门诊/临时/退药类型且状态为待退或已退。
      *
      * @param md 发放事实
@@ -389,6 +519,32 @@ public class MedicationDispenseQueryService {
         }
         DispenseStatus st = md.getStatusEnum();
         // 队列聚合只关心待退/已退，其它状态不参与就诊维度汇总
+        if (st == null) {
+            return false;
+        }
+        if (!DispenseStatus.PENDING_REFUND.equals(st) && !DispenseStatus.REFUNDED.equals(st)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 住院退药患者队列聚合口径：住院/临时/退药类型且状态为待退或已退。
+     *
+     * @param md 发放事实
+     * @return 是否纳入就诊维度聚合
+     */
+    private boolean isInpatientReturnMedicationDispenseForQueueAggregation(MedicationDispense md) {
+        MedicationDispenseType t = md.getDispenseEnum();
+        if (t == null) {
+            return false;
+        }
+        if (!MedicationDispenseType.INPATIENT.equals(t)
+            && !MedicationDispenseType.TEMPORARY.equals(t)
+            && !MedicationDispenseType.REFUND.equals(t)) {
+            return false;
+        }
+        DispenseStatus st = md.getStatusEnum();
         if (st == null) {
             return false;
         }
@@ -576,6 +732,76 @@ public class MedicationDispenseQueryService {
             || DispenseStatus.PENDING_REFUND.equals(dispense.getStatusEnum());
     }
 
+    /**
+     * 按主键加载发放单（不存在或已软删时 {@code null}）。
+     *
+     * @param id 发放单主键
+     * @return 发放单或 {@code null}
+     */
+    public MedicationDispense findById(Long id) {
+        if (id == null) {
+            return null;
+        }
+        MedicationDispense dispense = medicationDispenseRepository.findById(id).orElse(null);
+        if (dispense == null || Boolean.TRUE.equals(dispense.getIsDeleted())) {
+            return null;
+        }
+        return dispense;
+    }
+
+    /**
+     * 按药品医嘱主键集合加载未软删发放行。
+     *
+     * @param medReqIds 药品医嘱主键集合
+     * @return 发放行列表
+     */
+    public List<MedicationDispense> listByMedReqIds(Collection<Long> medReqIds) {
+        if (medReqIds == null || medReqIds.isEmpty()) {
+            return List.of();
+        }
+        List<MedicationDispense> rows = medicationDispenseRepository.findByMedReqIdIn(medReqIds);
+        List<MedicationDispense> result = new ArrayList<>();
+        for (MedicationDispense row : rows) {
+            if (row != null && !Boolean.TRUE.equals(row.getIsDeleted())) {
+                result.add(row);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 判断药品是否被有效发放引用。
+     *
+     * @param medicationId 药品定义主键
+     * @return 存在引用时为 true
+     */
+    public boolean existsByMedicationId(Long medicationId) {
+        if (medicationId == null) {
+            return false;
+        }
+        return medicationDispenseRepository.existsByMedicationId(medicationId);
+    }
+
+    /**
+     * 列出已确认退药（REFUNDED）的退药类型发放行关联的药品医嘱主键。
+     *
+     * @return 退药医嘱主键列表
+     */
+    public List<Long> listRefundedRefundDispenseMedReqIds() {
+        Specification<MedicationDispense> specification = (root, cq, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(root.get(FieldNameConstants.DISPENSE_ENUM), MedicationDispenseType.REFUND),
+            cb.equal(root.get(FieldNameConstants.STATUS_ENUM), DispenseStatus.REFUNDED));
+        List<MedicationDispense> rows = medicationDispenseRepository.findAll(specification);
+        List<Long> medReqIds = new ArrayList<>();
+        for (MedicationDispense row : rows) {
+            if (row != null && row.getMedReqId() != null) {
+                medReqIds.add(row.getMedReqId());
+            }
+        }
+        return medReqIds;
+    }
+
 
     /**
      * 批量解析发放单主键到药品申请主键（医生站费用锚点归并，AS-OP-DOR-003 IF-DOR-10）。
@@ -608,6 +834,28 @@ public class MedicationDispenseQueryService {
             return List.of();
         }
         return medicationDispenseRepository.findByMedReqIdIn(medReqIds);
+    }
+
+    /**
+     * 按执行记录主键集合批量查询药品发放行（取消执行 Dispense 分轨定位，DM-MED-002 §6.2.14）。
+     *
+     * @param procedureIds 执行记录主键集合
+     * @return 发放单实体列表；空入参返回空列表
+     */
+    public List<MedicationDispense> listMedicationDispensesByProcedureIds(Collection<Long> procedureIds) {
+        if (procedureIds == null || procedureIds.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long procedureId : procedureIds) {
+            if (procedureId != null) {
+                distinctIds.add(procedureId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return List.of();
+        }
+        return medicationDispenseRepository.findByProcedureIdIn(distinctIds);
     }
 
     /**
@@ -683,6 +931,9 @@ public class MedicationDispenseQueryService {
                 if (query.getEncounterId() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.ENCOUNTER_ID), query.getEncounterId()));
                 }
+                if (query.getExcludeEncounterId() != null) {
+                    predicates.add(cb.notEqual(root.get(FieldNameConstants.ENCOUNTER_ID), query.getExcludeEncounterId()));
+                }
                 if (query.getPatientId() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.PATIENT_ID), query.getPatientId()));
                 }
@@ -730,6 +981,15 @@ public class MedicationDispenseQueryService {
                         predicates.add(root.get(FieldNameConstants.MED_REQ_ID).in(query.getResolvedMedReqIdsForRequestStatus()));
                     }
                 }
+                if (query.getOrderingDepartmentId() != null) {
+                    if (query.getResolvedMedReqIdsForOrderingDepartment() == null
+                        || query.getResolvedMedReqIdsForOrderingDepartment().isEmpty()) {
+                        predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
+                    } else {
+                        predicates.add(root.get(FieldNameConstants.MED_REQ_ID)
+                            .in(query.getResolvedMedReqIdsForOrderingDepartment()));
+                    }
+                }
                 if (query.getResolvedEncounterIdsForKeyword() != null) {
                     if (query.getResolvedEncounterIdsForKeyword().isEmpty()) {
                         predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
@@ -752,7 +1012,7 @@ public class MedicationDispenseQueryService {
                 }
                 // 已发药工作台：排除退药确认后仍停留在 COMPLETED 的正向锚点（历史数据兜底）
                 if (this.slipQueryIncludesCompletedStatus(query)) {
-                    predicates.add(cb.not(this.existsForwardDispenseSupersededByConfirmedRefund(root, criteriaQuery, cb)));
+                    this.applySupersededForwardMedReqExclusion(predicates, root, cb, query.getResolvedSupersededForwardMedReqIds());
                 }
             }
             return cb.and(predicates.toArray(new Predicate[0]));
@@ -789,32 +1049,21 @@ public class MedicationDispenseQueryService {
     }
 
     /**
-     * 是否存在已确认的退药发放行，其退药医嘱指向当前正向发放行的原药品医嘱。
-     *
-     * @param root 主查询发放根
-     * @param cq   所属 CriteriaQuery
-     * @param cb   CriteriaBuilder
-     * @return EXISTS 谓词
+     * 排除已被确认退药收口的正向 COMPLETED 发放行（预解析正向 medReqId 集合，禁止 EM 跨根 EXISTS）。
      */
-    private Predicate existsForwardDispenseSupersededByConfirmedRefund(
+    private void applySupersededForwardMedReqExclusion(
+        List<Predicate> predicates,
         Root<MedicationDispense> root,
-        CriteriaQuery<?> cq,
-        CriteriaBuilder cb
+        CriteriaBuilder cb,
+        List<Long> supersededForwardMedReqIds
     ) {
-        Subquery<Long> sq = cq.subquery(Long.class);
-        Root<MedicationDispense> refundDispense = sq.from(MedicationDispense.class);
-        Root<MedicationRequest> refundReq = sq.from(MedicationRequest.class);
-        sq.select(refundDispense.get(FieldNameConstants.ID));
-        sq.where(cb.and(
-            cb.isFalse(refundDispense.get(FieldNameConstants.IS_DELETED)),
-            cb.equal(refundDispense.get(FieldNameConstants.DISPENSE_ENUM), MedicationDispenseType.REFUND),
-            cb.equal(refundDispense.get(FieldNameConstants.STATUS_ENUM), DispenseStatus.REFUNDED),
-            cb.equal(refundReq.get(FieldNameConstants.ID), refundDispense.get(FieldNameConstants.MED_REQ_ID)),
-            cb.isFalse(refundReq.get(FieldNameConstants.IS_DELETED)),
-            cb.equal(refundReq.get(FieldNameConstants.REFUND_MEDICINE_ID), root.get(FieldNameConstants.MED_REQ_ID)),
-            cb.notEqual(root.get(FieldNameConstants.DISPENSE_ENUM), MedicationDispenseType.REFUND),
-            cb.equal(root.get(FieldNameConstants.STATUS_ENUM), DispenseStatus.COMPLETED)));
-        return cb.exists(sq);
+        if (supersededForwardMedReqIds == null || supersededForwardMedReqIds.isEmpty()) {
+            return;
+        }
+        predicates.add(cb.or(
+            cb.notEqual(root.get(FieldNameConstants.STATUS_ENUM), DispenseStatus.COMPLETED),
+            cb.equal(root.get(FieldNameConstants.DISPENSE_ENUM), MedicationDispenseType.REFUND),
+            cb.not(root.get(FieldNameConstants.MED_REQ_ID).in(supersededForwardMedReqIds))));
     }
 
     /**
@@ -934,6 +1183,47 @@ public class MedicationDispenseQueryService {
     }
 
     /**
+     * 住院药房退药患者队列：分页返回「存在待退药或已退药药品发放事实且在院」的就诊主键（AS-IP-PHA-003 IF-IPR-02）。
+     *
+     * @param query 查询入参；{@code null} 视为空条件对象
+     * @return 就诊主键页（按本就诊下命中发放行的最近 {@code status_changed_time} 倒序）
+     */
+    public Page<Long> pageEncounterIdsForInpatientPharmacyReturn(InpatientPharmacyReturnEncounterPageQuery query) {
+        if (query == null) {
+            query = new InpatientPharmacyReturnEncounterPageQuery();
+        }
+        int pageNo = query.springPageIndex();
+        int pageSize = this.resolveQueuePageSize(query);
+        if (pageSize > 100) {
+            pageSize = 100;
+        }
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<Long> countCq = cb.createQuery(Long.class);
+        Root<MedicationDispense> countRoot = countCq.from(MedicationDispense.class);
+        Predicate queuePredicate = this.buildInpatientPharmacyReturnEncounterQueuePredicate(countRoot, countCq, cb, query);
+        countCq.select(cb.countDistinct(countRoot.get(FieldNameConstants.ENCOUNTER_ID)));
+        countCq.where(queuePredicate);
+        Long totalRow = this.entityManager.createQuery(countCq).getSingleResult();
+        long total = 0L;
+        if (totalRow != null) {
+            total = totalRow.longValue();
+        }
+        CriteriaQuery<Long> dataCq = cb.createQuery(Long.class);
+        Root<MedicationDispense> md = dataCq.from(MedicationDispense.class);
+        Predicate dataPredicate = this.buildInpatientPharmacyReturnEncounterQueuePredicate(md, dataCq, cb, query);
+        dataCq.select(md.get(FieldNameConstants.ENCOUNTER_ID));
+        dataCq.where(dataPredicate);
+        dataCq.groupBy(md.get(FieldNameConstants.ENCOUNTER_ID));
+        dataCq.orderBy(cb.desc(cb.max(md.get(FieldNameConstants.STATUS_CHANGED_TIME))));
+        TypedQuery<Long> typed = this.entityManager.createQuery(dataCq);
+        typed.setFirstResult(pageNo * pageSize);
+        typed.setMaxResults(pageSize);
+        List<Long> encounterIds = typed.getResultList();
+        PageRequest pageable = PageRequest.of(pageNo, pageSize);
+        return new PageImpl<>(encounterIds, pageable, total);
+    }
+
+    /**
      * 门诊药房退药患者队列：分页返回「存在待退药或已退药药品发放事实」的就诊主键（AS-OP-PHA-002 IF-PHA-02-02）。
      *
      * <p>DOC-CONFLICT：本方法仅基于 {@code med_medication_dispense} 收敛就诊；纯耗材退药且无药品发放行的就诊需后续与
@@ -1001,15 +1291,30 @@ public class MedicationDispenseQueryService {
         if (end != null) {
             predicates.add(cb.lessThanOrEqualTo(md.get(FieldNameConstants.STATUS_CHANGED_TIME), end));
         }
-        if (query.getDepartmentId() != null) {
-            predicates.add(this.existsOutpatientEncounterForDispense(
-                md, cq, cb, query.getDepartmentId(), null, false));
+        if (query.getDepartmentId() != null || StringUtils.isNotBlank(query.getKeyword())) {
+            this.applyEncounterScopePredicate(predicates, md, cb, query.getResolvedEncounterScope());
         }
-        if (StringUtils.isNotBlank(query.getKeyword())) {
-            String pattern = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
-            predicates.add(this.existsOutpatientEncounterForDispense(
-                md, cq, cb, null, pattern, true));
+        return cb.and(predicates.toArray(new Predicate[0]));
+    }
+
+    private Predicate buildInpatientPharmacyReturnEncounterQueuePredicate(
+        Root<MedicationDispense> md,
+        CriteriaQuery<?> cq,
+        CriteriaBuilder cb,
+        InpatientPharmacyReturnEncounterPageQuery query
+    ) {
+        List<Predicate> predicates = new ArrayList<>();
+        predicates.add(cb.isFalse(md.get(FieldNameConstants.IS_DELETED)));
+        List<Long> locationIds = query.getLocationIds();
+        if (locationIds != null && !locationIds.isEmpty()) {
+            predicates.add(md.get(FieldNameConstants.LOCATION_ID).in(locationIds));
         }
+        List<DispenseStatus> returnStatuses = List.of(DispenseStatus.PENDING_REFUND, DispenseStatus.REFUNDED);
+        predicates.add(md.get(FieldNameConstants.STATUS_ENUM).in(returnStatuses));
+        List<MedicationDispenseType> inpatientTypes = List.of(
+            MedicationDispenseType.INPATIENT, MedicationDispenseType.TEMPORARY, MedicationDispenseType.REFUND);
+        predicates.add(md.get(FieldNameConstants.DISPENSE_ENUM).in(inpatientTypes));
+        this.applyEncounterScopePredicate(predicates, md, cb, query.getResolvedEncounterScope());
         return cb.and(predicates.toArray(new Predicate[0]));
     }
 
@@ -1031,14 +1336,12 @@ public class MedicationDispenseQueryService {
         }
         // 已发药队列与发药单明细分页口径一致：排除已被确认退药收口的正向 COMPLETED 行（历史数据兜底）。
         if (this.dispenseStatusEnumInIncludesCompleted(query.getDispenseStatusEnumIn())) {
-            predicates.add(cb.not(this.existsForwardDispenseSupersededByConfirmedRefund(md, cq, cb)));
+            this.applySupersededForwardMedReqExclusion(predicates, md, cb, query.getResolvedSupersededForwardMedReqIds());
         }
         List<MedicationDispenseType> outpatientTypes = List.of(MedicationDispenseType.OUTPATIENT, MedicationDispenseType.TEMPORARY);
         predicates.add(md.get(FieldNameConstants.DISPENSE_ENUM).in(outpatientTypes));
         if (StringUtils.isNotBlank(query.getKeyword())) {
-            String pattern = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
-            predicates.add(this.existsOutpatientEncounterForDispense(
-                md, cq, cb, null, pattern, false));
+            this.applyEncounterScopePredicate(predicates, md, cb, query.getResolvedEncounterScope());
         }
         return cb.and(predicates.toArray(new Predicate[0]));
     }
@@ -1083,157 +1386,23 @@ public class MedicationDispenseQueryService {
         List<MedicationDispenseType> inpatientTypes = List.of(
             MedicationDispenseType.INPATIENT, MedicationDispenseType.TEMPORARY);
         predicates.add(md.get(FieldNameConstants.DISPENSE_ENUM).in(inpatientTypes));
-        predicates.add(this.buildInpatientEncounterExistsForPharmacyQueue(md, cq, cb, query));
+        this.applyEncounterScopePredicate(predicates, md, cb, query.getResolvedEncounterScope());
         return cb.and(predicates.toArray(new Predicate[0]));
     }
 
-    private Predicate buildInpatientEncounterExistsForPharmacyQueue(
+    private void applyEncounterScopePredicate(
+        List<Predicate> predicates,
         Root<MedicationDispense> md,
-        CriteriaQuery<?> cq,
         CriteriaBuilder cb,
-        InpatientPharmacyPendingEncounterPageQuery query
-    ) {
-        Subquery<Long> sq = cq.subquery(Long.class);
-        Root<Encounter> encounterRoot = sq.from(Encounter.class);
-        sq.select(cb.literal(1L));
-        List<Predicate> subPredicates = new ArrayList<>();
-        subPredicates.add(cb.equal(encounterRoot.get(FieldNameConstants.ID), md.get(FieldNameConstants.ENCOUNTER_ID)));
-        subPredicates.add(cb.isFalse(encounterRoot.get(FieldNameConstants.IS_DELETED)));
-        subPredicates.add(cb.equal(encounterRoot.get(FieldNameConstants.CLASS_ENUM), EncounterClass.IMP.getCode()));
-        subPredicates.add(encounterRoot.get(FieldNameConstants.STATUS_ENUM).in(
-            EncounterStatus.IN_PROGRESS.getCode(),
-            EncounterStatus.ON_HOLD.getCode()));
-        if (query.getWardId() != null) {
-            subPredicates.add(this.inpatientWardScope(encounterRoot, cq, cb, query.getWardId()));
+        List<Long> resolvedEncounterScope) {
+        if (resolvedEncounterScope == null) {
+            return;
         }
-        if (StringUtils.isNotBlank(query.getKeyword())) {
-            String pattern = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
-            Predicate busNoLike = cb.like(cb.lower(encounterRoot.get(FieldNameConstants.BUS_NO)), pattern);
-            subPredicates.add(cb.or(
-                busNoLike,
-                this.existsInpatientPatientKeyword(encounterRoot, cb, cq, pattern),
-                this.existsActiveBedNameLike(encounterRoot, cb, cq, pattern)));
+        if (resolvedEncounterScope.isEmpty()) {
+            predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
+            return;
         }
-        sq.where(cb.and(subPredicates.toArray(new Predicate[0])));
-        return cb.exists(sq);
-    }
-
-    private Predicate existsOutpatientEncounterForDispense(
-        Root<MedicationDispense> md,
-        CriteriaQuery<?> cq,
-        CriteriaBuilder cb,
-        Long organizationId,
-        String keywordPattern,
-        boolean includeIdCardInKeyword) {
-        Subquery<Long> sq = cq.subquery(Long.class);
-        Root<Encounter> encounterRoot = sq.from(Encounter.class);
-        sq.select(cb.literal(1L));
-        List<Predicate> subPredicates = new ArrayList<>();
-        subPredicates.add(cb.equal(encounterRoot.get(FieldNameConstants.ID), md.get(FieldNameConstants.ENCOUNTER_ID)));
-        subPredicates.add(cb.isFalse(encounterRoot.get(FieldNameConstants.IS_DELETED)));
-        subPredicates.add(encounterRoot.get(FieldNameConstants.CLASS_ENUM).in(
-            EncounterClass.AMB.getCode(),
-            EncounterClass.EMER.getCode()));
-        if (organizationId != null) {
-            subPredicates.add(cb.equal(encounterRoot.get(FieldNameConstants.ORGANIZATION_ID), organizationId));
-        }
-        if (StringUtils.isNotBlank(keywordPattern)) {
-            Predicate busNoLike = cb.like(cb.lower(encounterRoot.get(FieldNameConstants.BUS_NO)), keywordPattern);
-            List<Predicate> keywordParts = new ArrayList<>();
-            keywordParts.add(busNoLike);
-            keywordParts.add(this.existsOutpatientPatientKeyword(
-                encounterRoot, cb, cq, keywordPattern, includeIdCardInKeyword));
-            subPredicates.add(cb.or(keywordParts.toArray(new Predicate[0])));
-        }
-        sq.where(cb.and(subPredicates.toArray(new Predicate[0])));
-        return cb.exists(sq);
-    }
-
-    private Predicate existsOutpatientPatientKeyword(
-        Root<Encounter> encounterRoot,
-        CriteriaBuilder cb,
-        CriteriaQuery<?> owningQuery,
-        String pattern,
-        boolean includeIdCard) {
-        Subquery<Long> patientSq = owningQuery.subquery(Long.class);
-        Root<Patient> patientRoot = patientSq.from(Patient.class);
-        patientSq.select(patientRoot.get(FieldNameConstants.ID));
-        List<Predicate> patientPredicates = new ArrayList<>();
-        patientPredicates.add(cb.equal(patientRoot.get(FieldNameConstants.ID), encounterRoot.get(FieldNameConstants.PATIENT_ID)));
-        patientPredicates.add(cb.isFalse(patientRoot.get(FieldNameConstants.IS_DELETED)));
-        List<Predicate> textPredicates = new ArrayList<>();
-        textPredicates.add(cb.like(cb.lower(patientRoot.get(FieldNameConstants.NAME)), pattern));
-        textPredicates.add(cb.like(
-            cb.lower(cb.coalesce(patientRoot.get(FieldNameConstants.PY_STR), "")),
-            pattern));
-        textPredicates.add(cb.like(
-            cb.lower(cb.coalesce(patientRoot.get(FieldNameConstants.WB_STR), "")),
-            pattern));
-        if (includeIdCard) {
-            textPredicates.add(cb.like(
-                cb.lower(cb.coalesce(patientRoot.get(FieldNameConstants.ID_CARD), "")),
-                pattern));
-        }
-        patientPredicates.add(cb.or(textPredicates.toArray(new Predicate[0])));
-        patientSq.where(cb.and(patientPredicates.toArray(new Predicate[0])));
-        return cb.exists(patientSq);
-    }
-
-    private Predicate existsInpatientPatientKeyword(
-        Root<Encounter> encounterRoot,
-        CriteriaBuilder cb,
-        CriteriaQuery<?> owningQuery,
-        String pattern) {
-        return this.existsOutpatientPatientKeyword(encounterRoot, cb, owningQuery, pattern, false);
-    }
-
-    private Predicate existsActiveBedNameLike(
-        Root<Encounter> encounterRoot,
-        CriteriaBuilder cb,
-        CriteriaQuery<?> owningQuery,
-        String pattern) {
-        Subquery<Long> sq = owningQuery.subquery(Long.class);
-        Root<EncounterLocation> elRoot = sq.from(EncounterLocation.class);
-        Root<Location> locRoot = sq.from(Location.class);
-        sq.select(elRoot.get(FieldNameConstants.ENCOUNTER_ID));
-        sq.where(cb.and(
-            cb.equal(elRoot.get(FieldNameConstants.ENCOUNTER_ID), encounterRoot.get(FieldNameConstants.ID)),
-            cb.equal(elRoot.get(FieldNameConstants.STATUS_ENUM), EncounterActivityStatus.ACTIVE.getCode()),
-            cb.equal(elRoot.get(FieldNameConstants.FORM_ENUM), LocationForm.BED.getCode()),
-            cb.equal(elRoot.get(FieldNameConstants.LOCATION_ID), locRoot.get(FieldNameConstants.ID)),
-            cb.isFalse(locRoot.get(FieldNameConstants.IS_DELETED)),
-            cb.like(cb.lower(locRoot.get(FieldNameConstants.NAME)), pattern)));
-        return cb.exists(sq);
-    }
-
-    private Predicate inpatientWardScope(
-        Root<Encounter> encounterRoot,
-        CriteriaQuery<?> owningQuery,
-        CriteriaBuilder cb,
-        Long wardId) {
-        Subquery<Long> wardSq = owningQuery.subquery(Long.class);
-        Root<EncounterLocation> wardEl = wardSq.from(EncounterLocation.class);
-        wardSq.select(wardEl.get(FieldNameConstants.ENCOUNTER_ID));
-        wardSq.where(cb.and(
-            cb.equal(wardEl.get(FieldNameConstants.ENCOUNTER_ID), encounterRoot.get(FieldNameConstants.ID)),
-            cb.equal(wardEl.get(FieldNameConstants.STATUS_ENUM), EncounterActivityStatus.ACTIVE.getCode()),
-            cb.equal(wardEl.get(FieldNameConstants.FORM_ENUM), LocationForm.WARD.getCode()),
-            cb.equal(wardEl.get(FieldNameConstants.LOCATION_ID), wardId)));
-
-        Subquery<Long> bedSq = owningQuery.subquery(Long.class);
-        Root<EncounterLocation> bedEl = bedSq.from(EncounterLocation.class);
-        Root<Location> bedLoc = bedSq.from(Location.class);
-        Root<Location> roomLoc = bedSq.from(Location.class);
-        bedSq.select(bedEl.get(FieldNameConstants.ENCOUNTER_ID));
-        bedSq.where(cb.and(
-            cb.equal(bedEl.get(FieldNameConstants.ENCOUNTER_ID), encounterRoot.get(FieldNameConstants.ID)),
-            cb.equal(bedEl.get(FieldNameConstants.STATUS_ENUM), EncounterActivityStatus.ACTIVE.getCode()),
-            cb.equal(bedEl.get(FieldNameConstants.FORM_ENUM), LocationForm.BED.getCode()),
-            cb.equal(bedEl.get(FieldNameConstants.LOCATION_ID), bedLoc.get(FieldNameConstants.ID)),
-            cb.equal(bedLoc.get(FieldNameConstants.FORM_ENUM), LocationForm.BED.getCode()),
-            cb.equal(roomLoc.get(FieldNameConstants.ID), bedLoc.get(FieldNameConstants.PARENT_ID)),
-            cb.equal(roomLoc.get(FieldNameConstants.PARENT_ID), wardId)));
-        return cb.or(cb.exists(wardSq), cb.exists(bedSq));
+        predicates.add(md.get(FieldNameConstants.ENCOUNTER_ID).in(resolvedEncounterScope));
     }
 
     private int resolveQueuePageSize(AbstractPageQuery query) {
@@ -1258,6 +1427,85 @@ public class MedicationDispenseQueryService {
             }
         }
         return new ArrayList<>(ordered);
+    }
+
+    /**
+     * 住院护士站汇总领药 · 待汇总发放明细分页（**AS-IP-NUR-010 · IF-IP-SUM-01**；**BR-IP-SUM-002**）。
+     *
+     * <p>基线：{@code PREPARATION} + {@code procedure_id} 非空 + 未绑定 {@code summary_no}；账单单价由应用层 {@code InpatientMedicationDispenseChargePricingLoader} 协作回填。</p>
+     *
+     * @param query 分页与过滤入参；{@code encounterIds} 为空时返回空页
+     * @return 待汇总明细分页
+     */
+    public Page<MedicationDispensePickupPendingQueryModel> pageMedicationDispensePickupPending(
+        MedicationDispensePickupPendingPageQuery query) {
+        if (query == null || query.getEncounterIds() == null || query.getEncounterIds().isEmpty()) {
+            return Page.empty();
+        }
+        int springIndex = query.springPageIndex();
+        int pageSize = query.getBoundedPageSize();
+        PageRequest pageable = PageRequest.of(
+            springIndex,
+            pageSize,
+            Sort.by(
+                Sort.Order.asc("plannedDispenseTime"),
+                Sort.Order.desc(FieldNameConstants.CREATED_AT)));
+        Specification<MedicationDispense> specification = this.buildPickupPendingSpecification(query);
+        Page<MedicationDispense> page = medicationDispenseRepository.findAll(specification, pageable);
+        List<MedicationDispensePickupPendingQueryModel> models = new ArrayList<>();
+        for (MedicationDispense row : page.getContent()) {
+            models.add(this.toPickupPendingQueryModel(row));
+        }
+        return new PageImpl<>(models, pageable, page.getTotalElements());
+    }
+
+    /**
+     * 组装待汇总领药明细的动态谓词（**BR-IP-SUM-002**）。
+     */
+    private Specification<MedicationDispense> buildPickupPendingSpecification(MedicationDispensePickupPendingPageQuery query) {
+        return (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), DispenseStatus.PREPARATION));
+            predicates.add(cb.isNotNull(root.get(FieldNameConstants.PROCEDURE_ID)));
+            predicates.add(cb.or(
+                cb.isNull(root.get(FieldNameConstants.SUMMARY_NO)),
+                cb.equal(root.get(FieldNameConstants.SUMMARY_NO), "")));
+            predicates.add(root.get(FieldNameConstants.ENCOUNTER_ID).in(query.getEncounterIds()));
+            predicates.add(root.get(FieldNameConstants.DISPENSE_ENUM).in(List.of(
+                MedicationDispenseType.INPATIENT,
+                MedicationDispenseType.TEMPORARY)));
+            if (query.getResolvedMedReqIds() != null) {
+                if (query.getResolvedMedReqIds().isEmpty()) {
+                    predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
+                } else {
+                    predicates.add(root.get(FieldNameConstants.MED_REQ_ID).in(query.getResolvedMedReqIds()));
+                }
+            }
+            if (query.getQueryDeadline() != null) {
+                predicates.add(cb.lessThanOrEqualTo(
+                    root.get("plannedDispenseTime"), query.getQueryDeadline()));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+    }
+
+    private MedicationDispensePickupPendingQueryModel toPickupPendingQueryModel(MedicationDispense dispense) {
+        MedicationDispensePickupPendingQueryModel model = new MedicationDispensePickupPendingQueryModel();
+        model.setDispenseId(dispense.getId());
+        model.setProcedureId(dispense.getProcedureId());
+        model.setPlannedDispenseTime(dispense.getPlannedDispenseTime());
+        model.setEncounterId(dispense.getEncounterId());
+        model.setPatientId(dispense.getPatientId());
+        model.setMedicationId(dispense.getMedicationId());
+        model.setMedReqId(dispense.getMedReqId());
+        model.setLocationId(dispense.getLocationId());
+        model.setQuantity(dispense.getQuantity());
+        model.setUnitCode(dispense.getUnitCode());
+        model.setDosageInstruction(dispense.getDosageInstruction());
+        model.setMethodCode(dispense.getMethodCode());
+        model.setFrequencyCode(dispense.getFrequencyCode());
+        return model;
     }
 
 }

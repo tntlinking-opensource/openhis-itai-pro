@@ -29,6 +29,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊医生站-住院申请-入院诊断提交行。 */
 @Schema(description = "门诊医生站-住院申请-入院诊断提交行")
 public class AdmissionDiagnosisSubmitDto {
 
@@ -39,11 +40,13 @@ public class AdmissionDiagnosisSubmitDto {
 
     /** 新开诊断时必填：诊断目录主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 诊断目录主键；引用已有病情时可空。 */
     @Schema(description = "诊断目录主键；引用已有病情时可空")
     private Long conditionDefinitionId;
 
     /** 是否主诊断。 */
     @NotNull(message = "是否主诊断不能为空")
+    /** 是否主诊断。 */
     @Schema(description = "是否主诊断", requiredMode = Schema.RequiredMode.REQUIRED)
     private Boolean primaryFlag;
 

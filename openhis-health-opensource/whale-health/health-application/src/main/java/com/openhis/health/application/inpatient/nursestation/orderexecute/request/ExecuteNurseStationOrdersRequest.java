@@ -36,6 +36,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 批量执行医嘱计划点请求。 */
 @Schema(description = "批量执行医嘱计划点请求", requiredProperties = {"items"})
 public class ExecuteNurseStationOrdersRequest {
 

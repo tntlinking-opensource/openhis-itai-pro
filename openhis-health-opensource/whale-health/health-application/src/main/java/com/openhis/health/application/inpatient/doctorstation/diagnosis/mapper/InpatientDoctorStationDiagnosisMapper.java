@@ -30,6 +30,7 @@ import com.openhis.health.domain.administration.encounter.command.BatchUpsertEnc
 import com.openhis.health.domain.clinical.condition.command.SaveDoctorDiagnosisCommand;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
 
 import java.util.List;
@@ -109,7 +110,8 @@ public interface InpatientDoctorStationDiagnosisMapper {
         List<CommonDiagnosisRowDto> patientHistoryList,
         List<CommonDiagnosisRowDto> doctorCommonUseList,
         List<CommonDiagnosisRowDto> userPersonalList,
-        List<CommonDiagnosisRowDto> organizationList);
+        List<CommonDiagnosisRowDto> organizationList,
+        List<OptionDto> iptDiseaseTypeOptions);
 
     /**
      * 将诊断中西医维度筛选入参解析为目录 {@code sourceEnum} 字符串集合。

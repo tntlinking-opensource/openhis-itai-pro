@@ -17,15 +17,22 @@
 
 package com.openhis.health.domain.workflow.servicerequest.service;
 
+import com.openhis.health.domain.administration.specimendefinition.queries.model.SpecimenDefinitionBatchItemQueryModel;
+import com.openhis.health.domain.administration.specimendefinition.service.SpecimenDefinitionQueryService;
+import com.openhis.health.domain.diagnosis.bodystructure.service.BodyStructureQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
+import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequestDetail;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestDetailListModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.OffsetVerificationModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestHistoryModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestQueryModel;
+import com.openhis.health.domain.workflow.servicerequest.repository.ServiceRequestDetailRepository;
 import com.openhis.health.domain.workflow.servicerequest.repository.ServiceRequestRepository;
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.Predicate;
@@ -56,6 +63,9 @@ import java.util.Map;
 public class ServiceRequestQueryService {
 
     private final ServiceRequestRepository serviceRequestRepository;
+    private final ServiceRequestDetailRepository serviceRequestDetailRepository;
+    private final BodyStructureQueryService bodyStructureQueryService;
+    private final SpecimenDefinitionQueryService specimenDefinitionQueryService;
 
 
     /**
@@ -188,6 +198,38 @@ public class ServiceRequestQueryService {
     }
 
     /**
+     * 医生站历史医嘱：在患者范围内收集存在医生开立诊疗申请的就诊主键（排除当前就诊）。
+     *
+     * @param patientId          患者主键
+     * @param excludeEncounterId 当前就诊（排除锚点）
+     * @return 历史就诊主键（去重、无序）
+     */
+    public List<Long> listDistinctEncounterIdsByPatientForDoctorStation(Long patientId, Long excludeEncounterId) {
+        // 前置：门控主键缺失时无法收窄历史范围，直接返回空集。
+        if (patientId == null || excludeEncounterId == null) {
+            return Collections.emptyList();
+        }
+        String doctorSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
+        Specification<ServiceRequest> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.PATIENT_ID), patientId));
+            predicates.add(cb.notEqual(root.get(FieldNameConstants.ENCOUNTER_ID), excludeEncounterId));
+            predicates.add(cb.equal(root.get(FieldNameConstants.GENERATE_SOURCE_ENUM), doctorSource));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<ServiceRequest> rows = serviceRequestRepository.findAll(specification);
+        LinkedHashSet<Long> encounterIds = new LinkedHashSet<>();
+        // Loop：从医生开立诊疗行提取就诊 id，LinkedHashSet 保序去重。
+        for (ServiceRequest row : rows) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        return new ArrayList<>(encounterIds);
+    }
+
+    /**
      * 查询患者历史服务申请并排除当前就诊，用于既往史侧栏。
      *
      * @param patientId 患者标识
@@ -312,6 +354,26 @@ public class ServiceRequestQueryService {
             models.add(this.toListModel(request));
         }
         return models;
+    }
+
+    /**
+     * 按就诊、申请单号与生成来源查询服务申请列表行（申请单编辑/列表读侧）。
+     *
+     * @param encounterId        就诊主键
+     * @param prescriptionNo     申请单号（完整匹配）
+     * @param generateSourceEnum 生成来源 code
+     * @return 列表行；无匹配时返回空列表
+     */
+    public List<ServiceRequestListModel> listByEncounterAndPrescriptionNo(
+        Long encounterId, String prescriptionNo, String generateSourceEnum) {
+        if (encounterId == null || StringUtils.isBlank(prescriptionNo) || StringUtils.isBlank(generateSourceEnum)) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "按申请单号查询时 encounterId/prescriptionNo/generateSourceEnum 不能为空");
+        }
+        List<ServiceRequest> requests = serviceRequestRepository.findByEncounterIdAndPrescriptionNoAndGenerateSourceEnum(
+            encounterId, prescriptionNo.trim(), generateSourceEnum.trim());
+        return this.mapListModels(requests);
     }
 
     /**
@@ -594,6 +656,168 @@ public class ServiceRequestQueryService {
     }
 
     /**
+     * 按来源锚点查询派生服务申请列表（取消执行绑定诊疗 based_on 反查，DM-WKF-004 §6.2.23）。
+     *
+     * @param basedOnTable 来源表名
+     * @param basedOnId    来源主键
+     * @return 服务申请列表
+     * @throws BusinessException basedOnId 为空
+     */
+    public List<ServiceRequest> listServiceRequestsByBasedOnAnchor(String basedOnTable, Long basedOnId) {
+        if (basedOnId == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "按来源锚点查询时 basedOnId 不能为空");
+        }
+        if (basedOnTable == null) {
+            basedOnTable = "";
+        }
+        return serviceRequestRepository.findByBasedOnTableAndBasedOnId(basedOnTable, basedOnId);
+    }
+
+    /**
+     * 按来源表名与多条来源主键批量查询派生服务申请（取消执行批量 based_on 反查）。
+     *
+     * @param basedOnTable 来源表名
+     * @param basedOnIds   来源主键集合
+     * @return 服务申请列表
+     * @throws BusinessException basedOnIds 为空
+     */
+    public List<ServiceRequest> listServiceRequestsByBasedOnAnchors(String basedOnTable, Collection<Long> basedOnIds) {
+        if (basedOnIds == null || basedOnIds.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "批量按来源锚点查询时 basedOnIds 不能为空");
+        }
+        if (basedOnTable == null) {
+            basedOnTable = "";
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long basedOnId : basedOnIds) {
+            if (basedOnId != null) {
+                distinctIds.add(basedOnId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return List.of();
+        }
+        return serviceRequestRepository.findByBasedOnTableAndBasedOnIdIn(basedOnTable, distinctIds);
+    }
+
+    /**
+     * 按服务申请主键批量加载明细行，并解析部位/样本展示名（DM-WKF-004 §6.2.24）。
+     *
+     * <p>用于医生站申请单列表、统一医嘱列表等读路径；排除逻辑删除明细；未知 {@code target_table} 时
+     * {@code targetDisplayName} 为 null。</p>
+     *
+     * @param serviceRequestIds 服务申请主键集合
+     * @return 服务申请主键 → 明细行列表（无明细时该键不出现或映射为空列表，实现采用空列表值）
+     */
+    public Map<Long, List<ServiceRequestDetailListModel>> mapDetailListModelsByServiceRequestIds(
+        Collection<Long> serviceRequestIds) {
+        Collection<Long> idSet = this.distinctNonNullServiceRequestIds(serviceRequestIds);
+        if (idSet.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<ServiceRequestDetail> detailRows = serviceRequestDetailRepository.findByServiceReqIdIn(new ArrayList<>(idSet));
+        if (detailRows.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Long> bodyStructureIds = new ArrayList<>();
+        List<Long> specimenDefinitionIds = new ArrayList<>();
+        for (ServiceRequestDetail detail : detailRows) {
+            if (detail == null || Boolean.TRUE.equals(detail.getIsDeleted())) {
+                continue;
+            }
+            if (TableNameConstants.DIA_BODY_STRUCTURE.equals(detail.getTargetTable()) && detail.getTargetId() != null) {
+                bodyStructureIds.add(detail.getTargetId());
+            } else if (TableNameConstants.ADM_SPECIMEN_DEFINITION.equals(detail.getTargetTable())
+                && detail.getTargetId() != null) {
+                specimenDefinitionIds.add(detail.getTargetId());
+            }
+        }
+        Map<Long, String> bodyStructureNameMap = bodyStructureQueryService.mapNamesByIds(bodyStructureIds);
+        Map<Long, String> specimenNameMap = this.mapSpecimenNamesByIds(specimenDefinitionIds);
+        Map<Long, List<ServiceRequestDetailListModel>> grouped = new HashMap<>();
+        for (ServiceRequestDetail detail : detailRows) {
+            if (detail == null || detail.getServiceReqId() == null || Boolean.TRUE.equals(detail.getIsDeleted())) {
+                continue;
+            }
+            ServiceRequestDetailListModel model = new ServiceRequestDetailListModel();
+            model.setId(detail.getId());
+            model.setServiceReqId(detail.getServiceReqId());
+            model.setTargetTable(detail.getTargetTable());
+            model.setTargetId(detail.getTargetId());
+            model.setRemark(detail.getRemark());
+            model.setTargetDisplayName(this.resolveDetailTargetDisplayName(
+                detail.getTargetTable(), detail.getTargetId(), bodyStructureNameMap, specimenNameMap));
+            grouped.computeIfAbsent(detail.getServiceReqId(), key -> new ArrayList<>()).add(model);
+        }
+        return grouped;
+    }
+
+    /**
+     * 就诊主键去重（批量明细查询入参归一化）。
+     *
+     * @param serviceRequestIds 原始服务申请主键集合
+     * @return 非空去重集合
+     */
+    private Collection<Long> distinctNonNullServiceRequestIds(Collection<Long> serviceRequestIds) {
+        LinkedHashSet<Long> idSet = new LinkedHashSet<>();
+        if (serviceRequestIds == null) {
+            return idSet;
+        }
+        for (Long serviceRequestId : serviceRequestIds) {
+            if (serviceRequestId != null) {
+                idSet.add(serviceRequestId);
+            }
+        }
+        return idSet;
+    }
+
+    /**
+     * 批量解析样本定义展示名。
+     *
+     * @param specimenDefinitionIds 样本定义主键集合
+     * @return id → 名称
+     */
+    private Map<Long, String> mapSpecimenNamesByIds(List<Long> specimenDefinitionIds) {
+        Map<Long, String> result = new HashMap<>();
+        if (specimenDefinitionIds == null || specimenDefinitionIds.isEmpty()) {
+            return result;
+        }
+        List<SpecimenDefinitionBatchItemQueryModel> rows = specimenDefinitionQueryService.listByIds(specimenDefinitionIds);
+        for (SpecimenDefinitionBatchItemQueryModel row : rows) {
+            if (row != null && row.getId() != null) {
+                result.put(row.getId(), row.getName());
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 按 target 白名单解析明细目标展示名。
+     *
+     * @param targetTable 目标表名
+     * @param targetId 目标主键
+     * @param bodyStructureNameMap 部位名称映射
+     * @param specimenNameMap 样本名称映射
+     * @return 展示名或 null
+     */
+    private String resolveDetailTargetDisplayName(
+        String targetTable,
+        Long targetId,
+        Map<Long, String> bodyStructureNameMap,
+        Map<Long, String> specimenNameMap) {
+        if (targetId == null || targetTable == null) {
+            return null;
+        }
+        if (TableNameConstants.DIA_BODY_STRUCTURE.equals(targetTable)) {
+            return bodyStructureNameMap.get(targetId);
+        }
+        if (TableNameConstants.ADM_SPECIMEN_DEFINITION.equals(targetTable)) {
+            return specimenNameMap.get(targetId);
+        }
+        return null;
+    }
+
+    /**
      * 详情读模型映射（状态与类别等头字段）。
      *
      * @param request 实体
@@ -644,6 +868,8 @@ public class ServiceRequestQueryService {
         model.setParentId(request.getParentId());
         model.setOccurrenceEndTime(request.getOccurrenceEndTime());
         model.setConditionDefinitionId(request.getConditionDefinitionId());
+        model.setEncounterDiagnosisId(request.getEncounterDiagnosisId());
+        model.setPrescriptionNo(request.getPrescriptionNo());
         return model;
     }
 

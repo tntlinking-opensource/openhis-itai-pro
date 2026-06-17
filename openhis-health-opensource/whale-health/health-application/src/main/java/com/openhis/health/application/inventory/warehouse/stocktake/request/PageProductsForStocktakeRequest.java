@@ -19,11 +19,12 @@ package com.openhis.health.application.inventory.warehouse.stocktake.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -32,6 +33,7 @@ public class PageProductsForStocktakeRequest extends AbstractHealthPageRequest {
 
     /** 盘点药库（非 sourceLocationId）。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 盘点药库 purposeLocationId。 */
     @Schema(description = "盘点药库 purposeLocationId", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long purposeLocationId;
 

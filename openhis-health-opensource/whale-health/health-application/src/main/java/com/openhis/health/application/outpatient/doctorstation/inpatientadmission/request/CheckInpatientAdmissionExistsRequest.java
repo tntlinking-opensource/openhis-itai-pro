@@ -29,12 +29,13 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊医生站-住院申请-查询是否已存在住院申请请求。 */
 @Schema(description = "门诊医生站-住院申请-查询是否已存在住院申请请求")
 public class CheckInpatientAdmissionExistsRequest {
 
-    /** 门诊或急诊就诊标识。 */
+    /** 门诊就诊标识。 */
     @NotNull(message = "门诊就诊标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "源门诊或急诊就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "源门诊就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long ambEncounterId;
 }

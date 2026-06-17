@@ -28,21 +28,31 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊收费队列行 — 收费明细摘要。 */
 @Schema(description = "门诊收费队列行 — 收费明细摘要")
 public class ChargeQueueChargeItemBriefDto {
 
     @Schema(description = "收费明细 ID")
+    /** 收费明细 ID（业务字段）。 */
     private Long chargeItemId;
 
+    /** 收费状态持久化码。 */
     @Schema(description = "收费状态持久化码（ChargeItemStatus.code）")
+    /** 收费状态持久化码（ChargeItemStatus.code）（业务字段）。 */
     private String statusCode;
 
+    /** 收费状态展示文案。 */
     @Schema(description = "收费状态展示文案")
+    /** 收费状态展示文案（业务字段）。 */
     private String statusText;
 
+    /** 行总金额。 */
     @Schema(description = "行总金额")
+    /** 行总金额（业务字段）。 */
     private BigDecimal totalPrice;
 
+    /** 项目名称。 */
     @Schema(description = "项目名称（目录/定价回落口径与 IF-OPC-03 一致）")
+    /** 项目名称（目录/定价回落口径与 IF-OPC-03 一致）（业务字段）。 */
     private String itemLabel;
 }

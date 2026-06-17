@@ -17,17 +17,18 @@
 
 package com.openhis.health.application.inpatient.financial.settle.mapper;
 
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
-import com.openhis.health.application.common.pagination.PagedResultBuilder;
-import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettleCategorySummaryDto;
-import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettleChargeLineDto;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.module.querysupport.financial.dto.InpatientSettleCategorySummaryDto;
+import com.openhis.health.module.querysupport.financial.dto.InpatientSettleChargeLineDto;
 import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettlePaymentDetailDto;
 import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettleQueueItemDto;
-import com.openhis.health.application.inpatient.financial.settle.dto.SettledPaymentBriefDto;
+import com.openhis.health.module.querysupport.financial.dto.SettledPaymentBriefDto;
 import com.openhis.health.application.inpatient.financial.settle.request.ConfirmInpatientSettleRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.PageInpatientSettleQueueRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.PreSettleInpatientChargesRequest;
 import com.openhis.health.application.inpatient.financial.settle.request.QueryInpatientSettleChargesRequest;
+import com.openhis.health.application.inpatient.financial.settle.response.CancelInpatientSettleResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.ConfirmInpatientSettleResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.LoadInpatientSettlePageInitResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.LoadInpatientSettleSummaryResponse;
@@ -40,22 +41,23 @@ import com.openhis.health.domain.administration.chargeitem.command.BatchChargeIt
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.encounter.command.CompleteInpatientFinancialSettlementCommand;
+import com.openhis.health.domain.administration.invoice.command.CancelInvoiceCommand;
 import com.openhis.health.domain.administration.invoice.command.CreateDraftInvoiceCommand;
+import com.openhis.health.domain.administration.invoice.query.InvoiceQueryCommand;
+import com.openhis.health.domain.financial.paymentreconciliation.command.CancelInpatientSettleAsRefundCommand;
+import com.openhis.health.domain.financial.paymentreconciliation.command.CompleteInpatientSettleCancelRefundCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CreatePaymentDraftFromPreSettleCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.PaymentDetailItemCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.RefundAdvanceDepositCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.SettleInpatientPaymentCommand;
+import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentRecDetailQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.constants.InpatientSettleConstants;
 import com.openhis.health.domain.share.constants.InpatientSettleQueueTab;
-import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
-import com.openhis.health.domain.share.enums.ChargeItemStatus;
-import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.PaymentChannel;
 import com.openhis.health.domain.share.enums.PaymentKind;
 import com.openhis.health.domain.share.enums.PaymentStatus;
@@ -63,6 +65,9 @@ import com.openhis.health.domain.share.enums.PaymentType;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.InpatientEncounterStatusDisplayUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
+import com.openhis.health.module.querysupport.financial.InpatientSettleReadAssembler;
+import com.openhis.health.module.querysupport.financial.InpatientSettleChargesQuery;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
@@ -71,7 +76,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -79,7 +83,10 @@ import java.util.Map;
  * {@link InpatientSettleMapper} 的 Spring 实现：字段映射；禁止承载业务流程判断。
  */
 @Component
+@RequiredArgsConstructor
 public class InpatientSettleMapperImpl implements InpatientSettleMapper {
+
+    private final InpatientSettleReadAssembler inpatientSettleReadAssembler;
 
     /**
      * 初始化下拉选项 → 页面初始化响应。
@@ -272,121 +279,31 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
     public ChargeItemQueryCommand toChargeItemQueryCommand(
         QueryInpatientSettleChargesRequest request,
         LocalDate admissionDate) {
-        ChargeItemQueryCommand command = new ChargeItemQueryCommand();
         if (request == null) {
-            return command;
+            return new ChargeItemQueryCommand();
         }
-        command.setEncounterId(request.getEncounterId());
-        List<String> statusIn = new ArrayList<>();
-        statusIn.add(ChargeItemStatus.PENDING_SETTLEMENT.getCode());
-        command.setStatusEnumIn(statusIn);
-        command.setExcludedServiceTable(TableNameConstants.ADM_HEALTHCARE_SERVICE);
-        LocalDate from = request.getChargeDateFrom();
-        if (from == null) {
-            from = admissionDate;
-        }
-        LocalDate to = request.getChargeDateTo();
-        if (to == null) {
-            to = LocalDate.now();
-        }
-        command.setBusinessDateFrom(from);
-        command.setBusinessDateTo(to);
-        return command;
+        InpatientSettleChargesQuery query = new InpatientSettleChargesQuery()
+            .setEncounterId(request.getEncounterId())
+            .setPatientId(request.getPatientId())
+            .setPresentationMode(request.getPresentationMode())
+            .setChargeDateFrom(request.getChargeDateFrom())
+            .setChargeDateTo(request.getChargeDateTo());
+        return inpatientSettleReadAssembler.toChargeItemQueryCommand(query, admissionDate);
     }
 
-    /**
-     * 收费明细 + 产品展示 DTO → 费用行 DTO 列表。
-     *
-     * @param chargeItems  收费明细列表
-     * @param productByKey 产品展示 DTO 索引（复合键）
-     * @param defaultSelected 是否默认勾选
-     * @return 费用行 DTO 列表
-     */
     @Override
     public List<InpatientSettleChargeLineDto> toInpatientSettleChargeLineDtoList(
         List<ChargeItem> chargeItems,
         Map<String, ProductDefinitionDisplayDto> productByKey,
         boolean defaultSelected) {
-        List<InpatientSettleChargeLineDto> lines = new ArrayList<>();
-        if (chargeItems == null) {
-            return lines;
-        }
-        for (ChargeItem chargeItem : chargeItems) {
-            if (chargeItem == null) {
-                continue;
-            }
-            InpatientSettleChargeLineDto dto = new InpatientSettleChargeLineDto();
-            dto.setChargeItemId(chargeItem.getId());
-            dto.setUnitPrice(chargeItem.getUnitPrice());
-            dto.setQuantityValue(chargeItem.getQuantityValue());
-            dto.setQuantityUnit(chargeItem.getQuantityUnit());
-            dto.setLineAmount(chargeItem.getTotalPrice());
-            dto.setStatusEnum(chargeItem.getStatusEnum());
-            ChargeItemStatus status = EnumUtil.fromCode(ChargeItemStatus.class, chargeItem.getStatusEnum());
-            if (status != null) {
-                dto.setStatusEnumText(status.getDisplay());
-            }
-            dto.setOccurrenceTime(chargeItem.getOccurrenceTime());
-            GenerateSource source = EnumUtil.fromCode(GenerateSource.class, chargeItem.getGenerateSourceEnum());
-            if (source != null) {
-                dto.setSourceText(source.getDisplay());
-            }
-            ProductDefinitionDisplayDto product = null;
-            if (productByKey != null && chargeItem.getProductTable() != null && chargeItem.getProductId() != null) {
-                String key = ProductDefinitionKeyUtil.buildCompositeKey(
-                    chargeItem.getProductTable(), chargeItem.getProductId());
-                product = productByKey.get(key);
-            }
-            if (product != null) {
-                dto.setItemName(product.getProductName());
-                dto.setSpecText(product.getTotalVolume());
-                dto.setCategoryCode(product.getCategoryCode());
-                dto.setCategoryDisplay(product.getCategoryCodeDictText());
-            }
-            dto.setSelected(defaultSelected);
-            lines.add(dto);
-        }
-        return lines;
+        return inpatientSettleReadAssembler.toInpatientSettleChargeLineDtoList(
+            chargeItems, productByKey, defaultSelected);
     }
 
-    /**
-     * 费用行列表 → 大类汇总 DTO 列表。
-     *
-     * @param lines 费用行 DTO 列表
-     * @return 大类汇总列表
-     */
     @Override
     public List<InpatientSettleCategorySummaryDto> toInpatientSettleCategorySummaryDtoList(
         List<InpatientSettleChargeLineDto> lines) {
-        Map<String, InpatientSettleCategorySummaryDto> accumulator = new LinkedHashMap<>();
-        if (lines == null) {
-            return new ArrayList<>();
-        }
-        for (InpatientSettleChargeLineDto line : lines) {
-            if (line == null) {
-                continue;
-            }
-            String categoryCode = line.getCategoryCode();
-            if (StringUtils.isBlank(categoryCode)) {
-                categoryCode = "_UNKNOWN";
-            }
-            InpatientSettleCategorySummaryDto summary = accumulator.get(categoryCode);
-            if (summary == null) {
-                summary = new InpatientSettleCategorySummaryDto();
-                summary.setCategoryCode(categoryCode);
-                summary.setCategoryDisplay(line.getCategoryDisplay());
-                summary.setAmount(BigDecimal.ZERO);
-                summary.setLineCount(0);
-                accumulator.put(categoryCode, summary);
-            }
-            BigDecimal lineAmount = line.getLineAmount();
-            if (lineAmount == null) {
-                lineAmount = BigDecimal.ZERO;
-            }
-            summary.setAmount(summary.getAmount().add(lineAmount));
-            summary.setLineCount(summary.getLineCount() + 1);
-        }
-        return new ArrayList<>(accumulator.values());
+        return inpatientSettleReadAssembler.toInpatientSettleCategorySummaryDtoList(lines);
     }
 
     /**
@@ -569,6 +486,7 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
      * @param invoiceDraftId         发票草稿 ID
      * @param dischargeFullSettle    是否出院全结
      * @param advanceRefundPaymentId 出院多退预交金支付单 ID；无多退时为 null
+     * @param ybSetlId               医保结算 ID；无医保时为 null
      * @return 正式结算响应
      */
     @Override
@@ -576,13 +494,18 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
         Long paymentId,
         Long invoiceDraftId,
         boolean dischargeFullSettle,
-        Long advanceRefundPaymentId) {
+        Long advanceRefundPaymentId,
+        String ybSetlId) {
         ConfirmInpatientSettleResponse response = new ConfirmInpatientSettleResponse();
         response.setPaymentId(paymentId);
         response.setInvoiceDraftId(invoiceDraftId);
         response.setDischargeFullSettle(dischargeFullSettle);
         response.setAdvanceRefundPaymentId(advanceRefundPaymentId);
         response.setSuccessMessageCode(InpatientSettleConstants.MESSAGE_CODE_SETTLE_SUCCESS);
+        if (StringUtils.isNotBlank(ybSetlId)) {
+            response.setYbSetlId(ybSetlId.trim());
+            response.setInsuranceSettled(Boolean.TRUE);
+        }
         return response;
     }
 
@@ -632,24 +555,7 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
     public List<SettledPaymentBriefDto> toSettledPaymentBriefDtoList(
         List<PaymentReconciliationQueryModel> payments,
         Map<Long, String> payMethodTexts) {
-        List<SettledPaymentBriefDto> rows = new ArrayList<>();
-        if (payments == null) {
-            return rows;
-        }
-        for (PaymentReconciliationQueryModel payment : payments) {
-            if (payment == null) {
-                continue;
-            }
-            SettledPaymentBriefDto dto = new SettledPaymentBriefDto();
-            dto.setPaymentId(payment.getId());
-            dto.setSettleTime(payment.getBillDate());
-            dto.setReceivableTotal(payment.getDisplayAmount());
-            if (payment.getId() != null && payMethodTexts != null) {
-                dto.setPayMethodText(payMethodTexts.get(payment.getId()));
-            }
-            rows.add(dto);
-        }
-        return rows;
+        return inpatientSettleReadAssembler.toSettledPaymentBriefDtoList(payments, payMethodTexts);
     }
 
     /**
@@ -688,6 +594,140 @@ public class InpatientSettleMapperImpl implements InpatientSettleMapper {
         response.setLines(lines);
         response.setCategories(categories);
         return response;
+    }
+
+    /**
+     * 原结算支付单 + 渠道明细 → 取消住院结算领域命令。
+     *
+     * @param originalPayment 成功结算支付单读模型
+     * @param paymentDetails  原单渠道明细；调用方保证非 null
+     * @param operatorId      操作员 ID
+     * @return 取消住院结算命令
+     */
+    @Override
+    public CancelInpatientSettleAsRefundCommand toCancelInpatientSettleAsRefundCommand(
+        PaymentReconciliationQueryModel originalPayment,
+        List<PaymentRecDetailQueryModel> paymentDetails,
+        Long operatorId) {
+        CancelInpatientSettleAsRefundCommand command = new CancelInpatientSettleAsRefundCommand();
+        command.setRelationId(originalPayment.getId());
+        command.setEncounterId(originalPayment.getEncounterId());
+        command.setPatientId(originalPayment.getPatientId());
+        command.setEntererId(operatorId);
+        command.setTenderedAmount(originalPayment.getTenderedAmount());
+        command.setDisplayAmount(originalPayment.getDisplayAmount());
+        command.setChargeItemIds(originalPayment.getChargeItemIds());
+        command.setKindEnum(originalPayment.getKindEnum());
+        command.setPaymentEnum(originalPayment.getPaymentEnum());
+        command.setPaymentDetails(this.toRefundPaymentDetailItemCommands(paymentDetails));
+        return command;
+    }
+
+    /**
+     * 取消住院结算结果 → 响应。
+     *
+     * @param refundPaymentId   逆向退款支付单 ID
+     * @param insuranceRevoked  是否已撤销医保正式结算
+     * @param ybSetlId          撤销后的医保结算 ID；无医保时为 null
+     * @return 取消住院结算响应
+     */
+    @Override
+    public CancelInpatientSettleResponse toCancelInpatientSettleResponse(
+        Long refundPaymentId,
+        Boolean insuranceRevoked,
+        String ybSetlId) {
+        CancelInpatientSettleResponse response = new CancelInpatientSettleResponse();
+        response.setRefundPaymentId(refundPaymentId);
+        response.setInsuranceRevoked(insuranceRevoked);
+        response.setYbSetlId(ybSetlId);
+        return response;
+    }
+
+    /**
+     * 取消结算收口 → 领域命令。
+     *
+     * @param originalPaymentId 原结算支付单 ID
+     * @param reversePaymentId  逆向退款支付单 ID
+     * @param ybSetlId          撤销后的医保结算 ID；无医保时为 null
+     * @return 收口命令
+     */
+    @Override
+    public CompleteInpatientSettleCancelRefundCommand toCompleteInpatientSettleCancelRefundCommand(
+        Long originalPaymentId,
+        Long reversePaymentId,
+        String ybSetlId) {
+        CompleteInpatientSettleCancelRefundCommand command = new CompleteInpatientSettleCancelRefundCommand();
+        command.setOriginalPaymentId(originalPaymentId);
+        command.setReversePaymentId(reversePaymentId);
+        command.setYbSettleIds(ybSetlId);
+        return command;
+    }
+
+    /**
+     * 按支付单查询关联票据。
+     *
+     * @param paymentId 结算支付单 ID
+     * @return 票据查询命令
+     */
+    @Override
+    public InvoiceQueryCommand toInvoiceQueryByPaymentId(Long paymentId) {
+        InvoiceQueryCommand command = new InvoiceQueryCommand();
+        command.setPaymentId(paymentId);
+        return command;
+    }
+
+    /**
+     * 构建票据作废/冲红命令。
+     *
+     * @param invoiceId  票据 ID
+     * @param reason     作废或冲红原因
+     * @param operatorId 操作员 ID
+     * @return 作废/冲红命令
+     */
+    @Override
+    public CancelInvoiceCommand toCancelInvoiceCommand(Long invoiceId, String reason, Long operatorId) {
+        CancelInvoiceCommand command = new CancelInvoiceCommand();
+        command.setInvoiceId(invoiceId);
+        command.setReason(reason);
+        command.setOperatorId(operatorId);
+        return command;
+    }
+
+    /**
+     * 原单渠道明细 → 逆向退款明细命令项。
+     *
+     * @param paymentDetails 原单渠道明细
+     * @return 逆向退款明细命令列表
+     */
+    private List<PaymentDetailItemCommand> toRefundPaymentDetailItemCommands(
+        List<PaymentRecDetailQueryModel> paymentDetails) {
+        List<PaymentDetailItemCommand> items = new ArrayList<>();
+        if (paymentDetails == null) {
+            return items;
+        }
+        for (PaymentRecDetailQueryModel detail : paymentDetails) {
+            if (detail == null) {
+                continue;
+            }
+            PaymentDetailItemCommand item = new PaymentDetailItemCommand();
+            item.setPredecessorId(detail.getId());
+            item.setTargetEnum(detail.getTargetEnum());
+            item.setAccountId(detail.getAccountId());
+            item.setAccountCode(detail.getAccountCode());
+            item.setPayEnum(detail.getPayEnum());
+            item.setPayLevelEnum(detail.getPayLevelEnum());
+            item.setAmount(detail.getAmount());
+            item.setReturnAmount(detail.getReturnAmount());
+            item.setChargeAmount(detail.getChargeAmount());
+            item.setPayTransNo(detail.getPayTransNo());
+            item.setPayTransText(detail.getPayTransText());
+            item.setPayTransDate(detail.getPayTransDate());
+            item.setBeforeBalance(detail.getBeforeBalance());
+            item.setAfterBalance(detail.getAfterBalance());
+            item.setResultEnum(detail.getResultEnum());
+            items.add(item);
+        }
+        return items;
     }
 
     /**

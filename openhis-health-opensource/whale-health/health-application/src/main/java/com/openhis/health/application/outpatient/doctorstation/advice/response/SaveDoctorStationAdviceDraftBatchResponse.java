@@ -30,14 +30,13 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-医嘱开立-暂存医嘱变更批次响应。 */
 @Schema(description = "医生站-医嘱开立-暂存医嘱变更批次响应")
 public class SaveDoctorStationAdviceDraftBatchResponse {
 
-    /** 批次是否全部成功落库（不含部分成功细分码时以网关约定为准）。 */
     @Schema(description = "是否成功")
     private Boolean success;
 
-    /** CREATE 药品行返回的新 {@code med_medication_request.id}，供前端刷新列表。 */
     @Schema(description = "本次新建药品请求主键列表")
     private List<Long> newMedicationRequestIds;
 

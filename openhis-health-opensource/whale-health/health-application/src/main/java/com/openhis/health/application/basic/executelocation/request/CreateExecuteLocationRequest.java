@@ -20,12 +20,12 @@ package com.openhis.health.application.basic.executelocation.request;
 import lombok.Data;
 
 /**
- * 创建单条执行规则请求：描述「某执行科室 + 诊疗定义」在何地、何时执行。
+ * 创建单条执行规则请求：描述「某执行科室 + 诊疗大类（+ 可选诊疗项目）」在何地、何时执行。
  */
 @Data
 public class CreateExecuteLocationRequest {
 
-    /** 诊疗活动定义主键。 */
+    /** 诊疗活动定义主键；为空时表示该诊疗大类下的默认规则。 */
     private Long activityDefinitionId;
     /** 诊疗大类业务码。 */
     private String activityCategoryCode;

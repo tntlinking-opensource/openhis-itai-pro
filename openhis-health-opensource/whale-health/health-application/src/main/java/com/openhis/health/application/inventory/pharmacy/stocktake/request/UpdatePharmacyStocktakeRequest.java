@@ -23,28 +23,32 @@ import com.openhis.health.application.inventory.pharmacy.stocktake.dto.PharmacyS
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 编辑药房盘点单入参（IF-PHA-ST-05）。
  */
 @Data
 @Accessors(chain = true)
+/** 编辑盘点单 IF-PHA-ST-05。 */
 @Schema(description = "编辑盘点单 IF-PHA-ST-05")
 public class UpdatePharmacyStocktakeRequest {
 
-    /** 业务单号。 */
     @Schema(description = "业务单号 busNo", requiredMode = Schema.RequiredMode.REQUIRED)
     private String busNo;
 
     /** 盘点药房位置主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 盘点药房 purposeLocationId。 */
     @Schema(description = "盘点药房 purposeLocationId", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long purposeLocationId;
 
     /** 经手人医务人员主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 经手人 practitionerId。 */
     @Schema(description = "经手人 practitionerId", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long practitionerId;
 

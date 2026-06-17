@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.orderexecute.dto;
 
+import com.openhis.health.module.querysupport.procedure.dto.NurseStationOrderExecuteBindItemDto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -37,6 +38,7 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 医嘱执行写路径槽位。 */
 @Schema(description = "医嘱执行写路径槽位", requiredProperties = {"orderId", "orderType", "planTime", "accountId"})
 public class NurseStationOrderExecuteWriteSlotDto {
 
@@ -48,11 +50,13 @@ public class NurseStationOrderExecuteWriteSlotDto {
 
     /** 医嘱类型：MED_REQUEST / SERVICE_REQUEST。 */
     @NotBlank(message = "医嘱类型不能为空")
+    /** 医嘱类型：MED_REQUEST / SERVICE_REQUEST。 */
     @Schema(description = "医嘱类型：MED_REQUEST / SERVICE_REQUEST", required = true)
     private String orderType;
 
     /** 计划执行时刻（须与列表 pending 槽位一致，BR-IP-EXE-023）。 */
     @NotNull(message = "计划执行时刻不能为空")
+    /** 计划执行时刻。 */
     @Schema(description = "计划执行时刻", required = true)
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime planTime;
@@ -70,7 +74,6 @@ public class NurseStationOrderExecuteWriteSlotDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long accountId;
 
-    /** 列表回传的绑定项；可为空。 */
     @Schema(description = "列表回传的绑定项")
     private List<NurseStationOrderExecuteBindItemDto> bindItems;
 }

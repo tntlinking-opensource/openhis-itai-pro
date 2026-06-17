@@ -19,6 +19,7 @@ package com.openhis.health.domain.workflow.supplydelivery.service;
 
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
+import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.events.workflow.supplydelivery.SupplyDeliveryCompletedEvent;
 import com.openhis.health.domain.share.events.workflow.supplydelivery.SupplyDeliveryCreatedEvent;
 import com.openhis.health.domain.share.events.workflow.supplydelivery.SupplyDeliveryDeletedEvent;
@@ -169,9 +170,10 @@ public class SupplyDeliveryDomainService {
     }
 
     /**
-     * 创建药品汇总发放（type 27，汇总单 SEND 后，进入待发药链路首态）。
+     * 创建药品汇总发放（type 27，药房核发时创建，进入汇总发放首态）。
      *
-     * <p>前置条件：来源 SupplyRequest type 27 已处于 SEND；患者与目录引用合法。</p>
+     * <p>前置条件：来源 SupplyRequest type 27 已处于 APPROVAL（护士站发送后）；患者与目录引用合法。</p>
+     * <p>库存扣减由应用层在 MedicationDispense 完成路径编排，本方法不写库存台账。</p>
      *
      * @param cmd 创建命令（含汇总明细集合）
      */
@@ -190,8 +192,10 @@ public class SupplyDeliveryDomainService {
             delivery.setUnitCode(item.getUnitCode());
             delivery.setLotNumber(item.getLotNumber());
             delivery.setReceiverId(item.getReceiverId());
-            // 汇总路径：首态为 DRAFT 或 PREPARATION（BR-SDL-004），默认 DRAFT。
-            delivery.initDraftOrPreparation(DispenseStatus.DRAFT.getCode());
+            // BR-SDL-005：发放 type 与来源 SupplyRequest（type 27）一致。
+            delivery.setTypeEnum(SupplyType.MEDICATION_SUMMARY_ORDER.getCode());
+            // 汇总路径首态 PREPARATION（BR-SDL-004；对齐 AS-IP-NUR-010 BR-IP-SUM-011 待发药）。
+            delivery.initDraftOrPreparation(DispenseStatus.PREPARATION.getCode());
             toSave.add(delivery);
         }
         List<SupplyDelivery> saved = repository.saveAll(toSave);

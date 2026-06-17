@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inventory.warehouse.purchaseorder.request;
 
-import com.openhis.health.application.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import lombok.Getter;
 import lombok.Setter;
 

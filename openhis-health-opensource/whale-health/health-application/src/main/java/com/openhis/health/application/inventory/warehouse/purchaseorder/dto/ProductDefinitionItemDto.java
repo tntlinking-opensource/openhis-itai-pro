@@ -34,7 +34,7 @@ public class ProductDefinitionItemDto {
     /** 物品来源表名。 */
     private String productTableName;
     /**
-     * 目录业务流水号：药品/耗材/器材定义 {@code bus_no}，与 {@link com.openhis.health.application.querysupport.product.dto.ProductDefinitionDisplayDto#getProductBusNo()} 一致。
+     * 目录业务流水号：药品/耗材/器材定义 {@code bus_no}，与 {@link com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto#getProductBusNo()} 一致。
      */
     private String productBusNo;
     /** 产品名称。 */

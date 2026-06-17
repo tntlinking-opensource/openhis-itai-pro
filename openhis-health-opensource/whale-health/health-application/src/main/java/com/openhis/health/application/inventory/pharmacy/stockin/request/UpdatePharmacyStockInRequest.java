@@ -27,8 +27,10 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 编辑药房入库单请求（IF-PHA-IN-05）。
@@ -44,38 +46,47 @@ import java.util.List;
 public class UpdatePharmacyStockInRequest {
 
     @NotBlank(message = "busNo 不能为空")
+    /** 业务单号。 */
     @Schema(description = "业务单号", requiredMode = Schema.RequiredMode.REQUIRED)
     private String busNo;
 
     @NotNull(message = "purposeLocationId 不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 目的药房主键。 */
     @Schema(description = "目的药房主键", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long purposeLocationId;
 
     @NotNull(message = "sourceLocationId 不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 来源药库主键。 */
     @Schema(description = "来源药库主键", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long sourceLocationId;
 
+    /** 源位置类型 SupplyRequestType#getCode。 */
     @Schema(description = "源位置类型 SupplyRequestType#getCode，可空由后端按库位推导")
     private String sourceTypeEnum;
 
+    /** 目的位置类型 SupplyRequestType#getCode。 */
     @Schema(description = "目的位置类型 SupplyRequestType#getCode，可空由后端按库位推导")
     private String purposeTypeEnum;
 
     @NotNull(message = "categoryEnum 不能为空")
+    /** 供应类别 SupplyCategory#getCode。 */
     @Schema(description = "供应类别 SupplyCategory#getCode", requiredMode = Schema.RequiredMode.REQUIRED)
     private String categoryEnum;
 
+    /** 关联上游业务单号。 */
     @Schema(description = "关联上游业务单号，可空")
     private String originalBusNo;
 
     @NotNull(message = "经手人不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 经手人 practitionerId。 */
     @Schema(description = "经手人 practitionerId", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long practitionerId;
 
     @NotEmpty(message = "明细不能为空")
+    /** 批号级明细。 */
     @Schema(description = "批号级明细", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<PharmacyStockInLineDto> lines;
 }

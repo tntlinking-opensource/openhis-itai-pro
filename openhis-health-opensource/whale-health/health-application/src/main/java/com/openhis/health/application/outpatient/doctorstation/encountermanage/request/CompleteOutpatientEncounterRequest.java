@@ -32,6 +32,7 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
+/** 医生站-门诊完诊请求。 */
 @Schema(description = "医生站-门诊完诊请求")
 public class CompleteOutpatientEncounterRequest {
 
@@ -43,6 +44,7 @@ public class CompleteOutpatientEncounterRequest {
 
     /** 完诊时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    /** 完诊时间。 */
     @Schema(description = "完诊时间，空则取当前时间")
     private LocalDateTime completedAt;
 
@@ -53,6 +55,7 @@ public class CompleteOutpatientEncounterRequest {
     /** 操作人主键。 */
     @NotNull(message = "操作人不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 操作人主键。 */
     @Schema(description = "操作人主键", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long operatorId;
 }

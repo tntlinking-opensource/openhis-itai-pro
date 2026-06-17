@@ -32,6 +32,7 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
+/** 占床患者块。 */
 @Schema(description = "占床患者块")
 public class BedBoardOccupantDto {
 
@@ -39,47 +40,61 @@ public class BedBoardOccupantDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;
 
+    /** 患者主键。 */
     @Schema(description = "患者主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long patientId;
 
+    /** 患者姓名。 */
     @Schema(description = "患者姓名")
     private String patientName;
 
+    /** 性别 code。 */
     @Schema(description = "性别 code")
     private String genderEnum;
 
+    /** 年龄文本。 */
     @Schema(description = "年龄文本")
     private String ageText;
 
+    /** 住院号。 */
     @Schema(description = "住院号")
     private String encounterBusNo;
 
+    /** 就诊状态 code。 */
     @Schema(description = "就诊状态 code")
     private String statusEnum;
 
+    /** 就诊状态展示文案。 */
     @Schema(description = "就诊状态展示文案")
     private String statusEnumText;
 
+    /** 病情 code。 */
     @Schema(description = "病情 code")
     private String priorityEnum;
 
+    /** 入科时间。 */
     @Schema(description = "入科时间")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime admissionTime;
 
+    /** 住院医师姓名摘要。 */
     @Schema(description = "住院医师姓名摘要")
     private String attendingDoctorName;
 
+    /** 责任护士姓名摘要。 */
     @Schema(description = "责任护士姓名摘要")
     private String primaryNurseName;
 
+    /** 诊断一行摘要。 */
     @Schema(description = "诊断一行摘要")
     private String diagnosisSummary;
 
+    /** 展示用账户余额。 */
     @Schema(description = "展示用账户余额")
     private BigDecimal accountBalance;
 
+    /** 低余额预警。 */
     @Schema(description = "低余额预警")
     private Boolean lowBalanceWarning;
 }

@@ -29,6 +29,7 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
+/** 门诊医生站-申请退费-提交行。 */
 @Schema(description = "门诊医生站-申请退费-提交行")
 public class RefundApplicationLineItemDto {
 
@@ -41,11 +42,13 @@ public class RefundApplicationLineItemDto {
     /** 收费明细主键。 */
     @NotNull(message = "收费明细标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 收费行锚点。 */
     @Schema(description = "收费行锚点", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long chargeItemId;
 
     /** 本单是否拟退。 */
     @NotNull(message = "本单退费标记不能为空")
+    /** 本单退费：true 拟退；false 保留并重开账单。 */
     @Schema(description = "本单退费：true 拟退；false 保留并重开账单", requiredMode = Schema.RequiredMode.REQUIRED)
     private Boolean refundForCurrentBill;
 }

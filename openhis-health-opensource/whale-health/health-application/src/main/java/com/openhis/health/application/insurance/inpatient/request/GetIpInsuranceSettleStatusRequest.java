@@ -1,0 +1,24 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ */
+
+package com.openhis.health.application.insurance.inpatient.request;
+
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+import lombok.experimental.Accessors;
+
+@Data
+@Accessors(chain = true)
+/** 查询住院医保结算协同单状态请求。 */
+@Schema(description = "查询住院医保结算协同单状态请求")
+public class GetIpInsuranceSettleStatusRequest {
+
+    /** 支付草稿主键，用于定位 IP_SETTLE 协同单。 */
+    @NotNull
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long paymentId;
+}

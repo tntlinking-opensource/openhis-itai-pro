@@ -47,7 +47,7 @@ import java.time.LocalDateTime;
 @Table(name = "adm_healthcare_service")
 public class HealthcareService extends BaseAuditedEntity {
 
-    /** 医疗服务名称，如"内科门诊""急诊分诊"。 */
+    /** 医疗服务名称，如"内科门诊"。 */
     @Column(name = "name", nullable = false)
     private String name;
 
@@ -55,7 +55,7 @@ public class HealthcareService extends BaseAuditedEntity {
     @Column(name = "type_code", nullable = false)
     private String typeCode;
 
-    /** 服务类别编码（category_code），区分门诊、住院、急诊等服务大类。 */
+    /** 服务类别编码（category_code），区分门诊、住院等服务大类。 */
     @Column(name = "category_code")
     private String categoryCode;
 

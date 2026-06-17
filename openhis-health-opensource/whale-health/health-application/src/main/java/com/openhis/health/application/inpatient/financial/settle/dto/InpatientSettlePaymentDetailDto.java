@@ -31,16 +31,20 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
+/** 住院结算支付渠道明细。 */
 @Schema(description = "住院结算支付渠道明细", requiredProperties = {"payChannelCode", "amount"})
 public class InpatientSettlePaymentDetailDto {
 
     /** 支付渠道 code。 */
     @NotNull(message = "支付渠道不能为空")
     @Schema(description = "支付渠道 code", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 支付渠道 code（业务字段）。 */
     private String payChannelCode;
 
     /** 明细金额。 */
     @NotNull(message = "支付金额不能为空")
+    /** 明细金额。 */
     @Schema(description = "明细金额", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 明细金额（业务字段）。 */
     private BigDecimal amount;
 }

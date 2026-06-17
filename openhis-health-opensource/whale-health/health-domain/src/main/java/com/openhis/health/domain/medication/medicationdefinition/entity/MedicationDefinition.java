@@ -229,7 +229,7 @@ public class MedicationDefinition extends BaseAuditedEntity {
     /** 采购入库位置（他域事实列）。 */
     @Column(name = "location_id")
     private Long locationId;
-    /** 生命周期状态编码（DRAFT/ACTIVE/RETIRED/DISCARDED）。 */
+    /** 生命周期状态编码（DRAFT/ACTIVE/INACTIVE/DISCARDED）。 */
     @Column(name = "status_enum", nullable = false)
     private String statusEnum;
     /** 机构标识。 */
@@ -296,7 +296,7 @@ public class MedicationDefinition extends BaseAuditedEntity {
      * 断言可重新启用。
      */
     public void ensureActivatable() {
-        if (!PublicationStatus.RETIRED.getCode().equals(this.statusEnum)) {
+        if (!PublicationStatus.INACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DEFINITION_INVALID_STATUS, "仅停用状态允许重新启用");
         }
     }
@@ -305,7 +305,7 @@ public class MedicationDefinition extends BaseAuditedEntity {
      * 迁移为停用。
      */
     public void retire() {
-        this.statusEnum = PublicationStatus.RETIRED.getCode();
+        this.statusEnum = PublicationStatus.INACTIVE.getCode();
         this.activeFlag = Boolean.FALSE;
     }
 

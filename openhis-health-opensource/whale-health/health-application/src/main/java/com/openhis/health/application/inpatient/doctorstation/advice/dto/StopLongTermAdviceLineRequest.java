@@ -35,6 +35,7 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
+/** 住院医生站-长期医嘱停嘱行。 */
 @Schema(description = "住院医生站-长期医嘱停嘱行")
 public class StopLongTermAdviceLineRequest {
 
@@ -46,6 +47,7 @@ public class StopLongTermAdviceLineRequest {
 
     /** 锚定产品定义物理表名。 */
     @NotBlank(message = DoctorStationAdviceConstants.VALIDATION_PRODUCT_TABLE_NAME_REQUIRED)
+    /** 产品定义表名。 */
     @Schema(description = "产品定义表名", requiredMode = Schema.RequiredMode.REQUIRED)
     private String productTableName;
 

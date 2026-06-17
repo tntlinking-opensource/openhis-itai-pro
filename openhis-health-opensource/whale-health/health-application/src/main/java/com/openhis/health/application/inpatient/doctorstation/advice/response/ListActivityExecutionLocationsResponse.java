@@ -26,10 +26,10 @@ import java.util.List;
  * IF-IP-DOR-19：诊疗可执行科室规则列表（执行科室/地点展示名由应用层批量解析回填）。
  */
 @Data
+/** 医生站-诊疗可执行科室规则列表。 */
 @Schema(description = "医生站-诊疗可执行科室规则列表")
 public class ListActivityExecutionLocationsResponse {
 
-    /** 匹配诊疗定义的可执行科室规则行，含日内时段与优先级。 */
     @Schema(description = "规则行")
     private List<ActivityExecutionLocationRuleRowDto> rules;
 }

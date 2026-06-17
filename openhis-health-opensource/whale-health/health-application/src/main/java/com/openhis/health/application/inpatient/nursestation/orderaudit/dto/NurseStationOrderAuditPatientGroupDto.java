@@ -30,10 +30,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
+/** 按就诊分组的医嘱校对列表。 */
 @Schema(description = "按就诊分组的医嘱校对列表")
 public class NurseStationOrderAuditPatientGroupDto {
 
-    /** 就诊主键。 */
     @Schema(description = "就诊主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;

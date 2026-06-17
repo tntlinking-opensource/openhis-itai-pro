@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inpatient.doctorstation.encountermanage.mapper;
 
-import com.openhis.health.application.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.dto.DoctorStationPatientQueueItemDto;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.dto.DoctorStationQueueDisplayEnrichment;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.request.PagePatientQueueRequest;

@@ -60,8 +60,8 @@ public class SupplierDto {
     /** 电子邮箱。 */
     private String email;
 
-    /** 状态（整型展示）。 */
-    private Integer statusEnum;
+    /** 状态编码（与领域 {@code SupplierStatus#getCode()} 一致，如 ACTIVE）。 */
+    private String statusEnum;
 
     /** 状态展示文案。 */
     private String statusEnum_enumText;
