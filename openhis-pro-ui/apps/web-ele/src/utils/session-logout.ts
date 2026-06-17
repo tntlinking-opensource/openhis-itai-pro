@@ -7,6 +7,8 @@ const AUTH_LOCAL_KEYS = [
   'selectedTenantId',
   'selectedHospitalId',
   'selectedOrganizationId',
+  'platformAdmin',
+  'organizationUnitSkipped',
 ] as const;
 
 /** 与 main.ts initStores 的 namespace 规则一致 */
@@ -20,6 +22,7 @@ export function getAppStoreNamespace() {
 export function clearPersistedSessionStorage() {
   const namespace = getAppStoreNamespace();
   const prefix = `${namespace}-`;
+  const secureMetaKey = `${namespace}-secure-meta`;
 
   for (const storage of [localStorage, sessionStorage] as const) {
     const keysToRemove: string[] = [];
@@ -28,7 +31,7 @@ export function clearPersistedSessionStorage() {
       if (!key) continue;
       const isAuthLocalKey =
         storage === localStorage && (AUTH_LOCAL_KEYS as readonly string[]).includes(key);
-      if (key.startsWith(prefix) || isAuthLocalKey) {
+      if (key.startsWith(prefix) || key === secureMetaKey || isAuthLocalKey) {
         keysToRemove.push(key);
       }
     }
@@ -73,6 +76,22 @@ export function buildLoginPageHref(redirectPath?: string) {
   return `${origin}${pathPrefix}${LOGIN_PATH}${query}`;
 }
 
+function isAlreadyOnLoginPage(targetHref: string) {
+  const { hash, href, pathname } = window.location;
+  if (href === targetHref) {
+    return true;
+  }
+  const loginHash = `#${LOGIN_PATH}`;
+  return hash === loginHash || hash.startsWith(`${loginHash}?`) || pathname === LOGIN_PATH;
+}
+
 export function hardRedirectToLogin(redirectPath?: string) {
-  window.location.replace(buildLoginPageHref(redirectPath));
+  const target = buildLoginPageHref(redirectPath);
+  if (isAlreadyOnLoginPage(target)) {
+    // hash 路由下若已在登录页，replace 同 URL 不会卸载应用，须强制刷新
+    const reloadHref = target + (target.includes('?') ? '&' : '?') + `_logout=${Date.now()}`;
+    window.location.replace(reloadHref);
+    return;
+  }
+  window.location.replace(target);
 }

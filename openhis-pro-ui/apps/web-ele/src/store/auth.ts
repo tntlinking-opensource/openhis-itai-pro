@@ -14,6 +14,7 @@ import { stopProgress } from '@vben/utils';
 import { getTenantsApi, getUserInfoApi, loginApi, logoutApi } from '#/api';
 import {
   beginForceLogoutSession,
+  endForceLogoutSession,
   registerEmrUnsavedGuard,
 } from '#/emrEditor/use-emr-unsaved-guard';
 import { unwrapApiList } from '#/utils/api/unwrap-api-list';
@@ -249,52 +250,58 @@ export const useAuthStore = defineStore('auth', () => {
       return logoutTask;
     }
 
-    logoutTask = Promise.resolve().then(() => {
-      const redirectPath =
-        redirect && window.location.pathname !== LOGIN_PATH
-          ? `${window.location.pathname}${window.location.search}`
-          : undefined;
+    logoutTask = Promise.resolve()
+      .then(() => {
+        const redirectPath =
+          redirect && window.location.pathname !== LOGIN_PATH
+            ? `${window.location.pathname}${window.location.search}`
+            : undefined;
 
-      try {
-        beginForceLogoutSession();
-        registerEmrUnsavedGuard(null);
+        try {
+          beginForceLogoutSession();
+          registerEmrUnsavedGuard(null);
+          void import('#/router/access-init').then(({ resetAccessInit }) => resetAccessInit());
 
-        const refreshToken = accessStore.refreshToken;
+          const refreshToken = accessStore.refreshToken;
 
-        accessStore.setAccessToken(null);
-        accessStore.setRefreshToken(null);
-        accessStore.setAccessCodes([]);
-        accessStore.setIsAccessChecked(false);
-        accessStore.setLoginExpired(false);
-        accessStore.unlockScreen();
+          accessStore.setAccessToken(null);
+          accessStore.setRefreshToken(null);
+          accessStore.setAccessCodes([]);
+          accessStore.setIsAccessChecked(false);
+          accessStore.setLoginExpired(false);
+          accessStore.unlockScreen();
 
-        setSelectedTenant('');
-        setSelectedHospital('');
-        setSelectedOrganization('');
-        setPlatformAdmin(false);
-        setOrganizationUnitSkipped(false);
-        setTenantList([]);
-        setUserInfo(null);
+          setSelectedTenant('');
+          setSelectedHospital('');
+          setSelectedOrganization('');
+          setPlatformAdmin(false);
+          setOrganizationUnitSkipped(false);
+          setTenantList([]);
+          setUserInfo(null);
 
-        clearTabbarPersistedState();
-        accessStore.setAccessMenus([]);
-        accessStore.setAccessRoutes([]);
-        resetAllStores();
-        clearPersistedSessionStorage();
+          clearTabbarPersistedState();
+          accessStore.setAccessMenus([]);
+          accessStore.setAccessRoutes([]);
+          resetAllStores();
+          clearPersistedSessionStorage();
 
-        accessStore.setAccessToken(null);
-        accessStore.setRefreshToken(null);
-        accessStore.setIsAccessChecked(false);
-        accessStore.setLoginExpired(false);
+          accessStore.setAccessToken(null);
+          accessStore.setRefreshToken(null);
+          accessStore.setIsAccessChecked(false);
+          accessStore.setLoginExpired(false);
 
-        stopProgress();
-        notifyServerLogout(refreshToken);
-      } catch (error) {
-        console.error('[auth] logout cleanup failed', error);
-      } finally {
-        hardRedirectToLogin(redirectPath);
-      }
-    });
+          stopProgress();
+          notifyServerLogout(refreshToken);
+        } catch (error) {
+          console.error('[auth] logout cleanup failed', error);
+        } finally {
+          hardRedirectToLogin(redirectPath);
+        }
+      })
+      .finally(() => {
+        logoutTask = null;
+        endForceLogoutSession();
+      });
 
     return logoutTask;
   }

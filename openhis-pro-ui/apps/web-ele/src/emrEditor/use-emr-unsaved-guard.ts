@@ -15,6 +15,11 @@ export function beginForceLogoutSession() {
   forceLogoutSession = true;
 }
 
+/** 退出登录流程结束（含跳转失败可重试）后重置 */
+export function endForceLogoutSession() {
+  forceLogoutSession = false;
+}
+
 export function isForceLogoutSession() {
   return forceLogoutSession;
 }
