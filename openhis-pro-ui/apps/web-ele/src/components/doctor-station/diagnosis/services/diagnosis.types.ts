@@ -11,7 +11,10 @@ export interface EncounterDiagnosisTabContext {
 
 export interface EncounterDiagnosisTabData {
   businessClass: CommonDiagnosesResponse;
+  /** 接口原始行 */
   diagnosisList: EncounterDiagnosisRowDto[];
+  /** 列表展示：中医按 tcmSyndromeGroup 合并 */
+  displayDiagnosisList: EncounterDiagnosisRowDto[];
 }
 
 export type DiagnosisMedicineType = 'tcm' | 'western';

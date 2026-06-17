@@ -19,12 +19,10 @@ import {
   httpVerifyConsumableExecutionBeforeRefund,
 } from '#/api/doctor-station/refund-application.http';
 import { useRequest } from '#/hooks/use-request';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 import { decimalAdd } from '#/utils/decimal-util';
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
 defineOptions({ name: 'DoctorStationRefundApplicationDialog' });
-
-type RefundTableRow = RefundableChargeLineItemDto;
 
 const props = withDefaults(
   defineProps<{
@@ -42,6 +40,8 @@ const emit = defineEmits<{
   submitted: [];
   'update:modelValue': [value: boolean];
 }>();
+
+type RefundTableRow = RefundableChargeLineItemDto;
 
 const tableRef = ref<InstanceType<typeof ElTable> | null>(null);
 const tableRows = ref<RefundTableRow[]>([]);
@@ -245,7 +245,7 @@ async function handleSubmit() {
       <div class="flex flex-wrap items-center gap-2 text-sm text-[var(--el-text-color-regular)]">
         <span v-if="patientName">患者：{{ patientName }}</span>
         <span v-else class="text-[var(--el-text-color-placeholder)]">未选择患者</span>
-        <span class="flex-1" />
+        <span class="flex-1"></span>
         <ElButton link type="primary" :loading="listLoading" @click="handleRefresh">刷新</ElButton>
         <ElButton link type="primary" @click="setAllSelected(true)">全选</ElButton>
         <ElButton link type="primary" @click="setAllSelected(false)">清空</ElButton>

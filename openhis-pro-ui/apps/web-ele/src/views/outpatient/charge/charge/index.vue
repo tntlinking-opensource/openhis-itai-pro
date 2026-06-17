@@ -4,6 +4,7 @@ import type { TableColumn } from '@vben-core/table-layout-ui';
 import type {
   ChargeQueueRowDto,
   PendingChargeItemRowDto,
+  PreSettleChargeLinePreviewDto,
   PreSettleOutpatientChargesResponse,
 } from '#/api/outpatient-charge/outpatient-charge.types';
 import type { BillingPatientCardPatient } from '#/components/charge/billing-patient-card.types';
@@ -20,11 +21,14 @@ import {
   ElButton,
   ElCard,
   ElDatePicker,
+  ElLoading,
   ElMessage,
   ElMessageBox,
+  ElOption,
   ElPagination,
   ElRadio,
   ElRadioGroup,
+  ElSelect,
   ElTag,
 } from 'element-plus';
 
@@ -52,6 +56,23 @@ import {
   OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED,
 } from './outpatient-charge.constants';
 import ChargeSettlementDialog from './settlement-dialog.vue';
+import {
+  isOutpatientInsuranceAsyncConfirmResponse,
+  pollOutpatientInsuranceSettleStatus,
+  resolveInsuranceContractId,
+  resolveOutpatientChargeInsuranceContext,
+  selectionIncludesInsuranceItems,
+} from './use-outpatient-charge-insurance';
+import { useChargeReceiptPrint } from '#/composables/use-charge-receipt-print';
+import { useOutpatientChargeListPrint } from '#/composables/use-outpatient-charge-list-print';
+import { useOutpatientInvoicePrint } from '#/composables/use-outpatient-invoice-print';
+import {
+  ensureOutpatientChargePrintBindingLoaded,
+  getOutpatientChargePrintTemplateCode,
+  isOutpatientInvoiceOverlayTemplate,
+  OUTPATIENT_CHARGE_PRINT_OPTIONS,
+  setOutpatientChargePrintTemplateCode,
+} from '#/utils/report/outpatient-charge-print-config';
 
 defineOptions({
   name: 'ChargeOpCharge',
@@ -81,9 +102,162 @@ const selectedChargeRows = ref<PendingChargeItemRowDto[]>([]);
 const preSettleSnapshot = ref<null | PreSettleOutpatientChargesResponse>(null);
 /** 预结算成功时锁定勾选 id，避免弹窗打开后表格勾选变化导致与草稿不一致 */
 const lockedChargeItemIds = ref<string[]>([]);
+
+/** 结算弹窗预览行：从待收明细补齐数量与单位（预结算接口不返回） */
+const settlementPreviews = computed<PreSettleChargeLinePreviewDto[]>(() => {
+  const previews = preSettleSnapshot.value?.previews ?? [];
+  if (previews.length === 0) {
+    return previews;
+  }
+  const lockedIds = new Set(lockedChargeItemIds.value);
+  const quantityByChargeItemId = new Map<
+    string,
+    Pick<PendingChargeItemRowDto, 'quantityDisplay' | 'quantityUnit'>
+  >();
+  for (const row of pendingItems.value) {
+    if (lockedIds.has(row.chargeItemId)) {
+      quantityByChargeItemId.set(row.chargeItemId, {
+        quantityDisplay: row.quantityDisplay,
+        quantityUnit: row.quantityUnit,
+      });
+    }
+  }
+  return previews.map((preview) => {
+    const quantity = quantityByChargeItemId.get(preview.chargeItemId);
+    if (!quantity) {
+      return preview;
+    }
+    return {
+      ...preview,
+      quantityDisplay: quantity.quantityDisplay,
+      quantityUnit: quantity.quantityUnit,
+    };
+  });
+});
+const settlementInsuranceBreakdown = computed(() => {
+  const snap = preSettleSnapshot.value;
+  if (!snap?.insurancePreSettled) {
+    return [];
+  }
+  return [
+    { key: 'poolingPay', label: '统筹基金支付', value: Number(snap.ybFundPaySumamt ?? 0) },
+    { key: 'accountPay', label: '个人账户支付', value: Number(snap.ybAcctPay ?? 0) },
+    { key: 'cashPay', label: '现金补缴', value: Number(snap.ybPsnCashPay ?? 0) },
+    { key: 'finalReceivable', label: '最终应收', value: Number(snap.displayAmount ?? 0) },
+  ];
+});
+const settlementSummaryInsurance = computed(() =>
+  Number(preSettleSnapshot.value?.ybMedfeeSumamt ?? 0),
+);
+const settlementSummarySelfPay = computed(() =>
+  Number(preSettleSnapshot.value?.selfPayRollup?.totalAmount ?? 0),
+);
+const settlementInsuranceGroups = computed(() => preSettleSnapshot.value?.insuranceGroups ?? []);
 const settlementVisible = ref(false);
 const preSettleLoading = ref(false);
 const confirmSettleLoading = ref(false);
+
+const {
+  printChargeReceipt,
+  isPrinting: receiptPrinting,
+  previewLoading: receiptPreviewLoading,
+} = useChargeReceiptPrint();
+const {
+  printOutpatientInvoice,
+  isPrinting: invoicePrinting,
+  previewLoading: invoicePreviewLoading,
+} = useOutpatientInvoicePrint();
+const {
+  printOutpatientChargeList,
+  isPrinting: chargeListPrinting,
+  previewLoading: chargeListPreviewLoading,
+} = useOutpatientChargeListPrint();
+
+const chargePrintTemplateCode = ref(getOutpatientChargePrintTemplateCode());
+const lastSettlePrintByEncounter = ref<
+  Record<string, { paymentId: string; chargeItemIds: string[] }>
+>({});
+
+const chargePrintBusy = computed(
+  () =>
+    receiptPrinting.value ||
+    receiptPreviewLoading.value ||
+    invoicePrinting.value ||
+    invoicePreviewLoading.value ||
+    chargeListPrinting.value ||
+    chargeListPreviewLoading.value,
+);
+
+async function handleChargePrintTemplateChange(code: string) {
+  await setOutpatientChargePrintTemplateCode(code);
+}
+
+async function printAfterChargeSettle(params: {
+  paymentId: string;
+  encounterId: string;
+  chargeItemIds: string[];
+}) {
+  // TODO: 打印插件就绪后恢复收费成功后自动打印
+  void params;
+  return;
+
+  /*
+  try {
+    const templateCode = getOutpatientChargePrintTemplateCode();
+    if (isOutpatientInvoiceOverlayTemplate(templateCode)) {
+      await printOutpatientInvoice({
+        ...params,
+        templateCode,
+        confirmBeforePrint: false,
+      });
+      return;
+    }
+    await printChargeReceipt({
+      ...params,
+      templateCode,
+      confirmBeforePrint: false,
+    });
+  } catch {
+    // 静默失败，不打扰收费主流程
+  }
+  */
+}
+
+async function handleReprintChargeSlip() {
+  const eid = selectedEncounterId.value;
+  if (!eid) {
+    ElMessage.warning('请先选择就诊');
+    return;
+  }
+  const ctx = lastSettlePrintByEncounter.value[eid];
+  if (!ctx) {
+    ElMessage.warning('暂无本次会话内的结算记录，请完成收费后打印');
+    return;
+  }
+  await printAfterChargeSettle({
+    paymentId: ctx.paymentId,
+    encounterId: eid,
+    chargeItemIds: ctx.chargeItemIds,
+  });
+}
+
+async function handlePrintChargeList() {
+  const eid = selectedEncounterId.value;
+  if (!eid) {
+    ElMessage.warning('请先选择就诊');
+    return;
+  }
+  const ctx = lastSettlePrintByEncounter.value[eid];
+  if (!ctx) {
+    ElMessage.warning('暂无本次会话内的结算记录，请完成收费后打印费用清单');
+    return;
+  }
+  await printOutpatientChargeList({
+    paymentId: ctx.paymentId,
+    encounterId: eid,
+    chargeItemIds: ctx.chargeItemIds,
+  });
+}
 
 const paymentForm = reactive({
   payChannelCode: DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE,
@@ -175,6 +349,20 @@ const chargeItemDashFormatter: NonNullable<TableColumn['formatter']> = (_row, _c
   }
   const s = String(cellValue).trim();
   return s.length > 0 ? s : '—';
+};
+
+/** 数量列：展示值后拼接单位，如「1支」 */
+const chargeItemQuantityFormatter: NonNullable<TableColumn['formatter']> = (
+  row,
+  _col,
+  cellValue,
+) => {
+  const display = chargeItemDashFormatter(row, _col, cellValue);
+  if (display === '—') {
+    return '—';
+  }
+  const unit = String((row as PendingChargeItemRowDto).quantityUnit ?? '').trim();
+  return unit ? `${display}${unit}` : display;
 };
 
 /** 当前选中队列行 */
@@ -378,7 +566,7 @@ const chargeTableColumns: TableColumn[] = [
     minWidth: 88,
     align: 'center',
     headerAlign: 'center',
-    formatter: chargeItemDashFormatter,
+    formatter: chargeItemQuantityFormatter,
     showOverflowTooltip: true,
   },
   {
@@ -495,9 +683,40 @@ const handleOpenSettlement = async () => {
   }
   preSettleLoading.value = true;
   try {
+    const rows = selectedChargeRows.value;
+    // TODO: 医保读卡插件就绪后恢复
+    const insuranceCtx = null;
+    /*
+    let insuranceCtx = null;
+    try {
+      insuranceCtx = await resolveOutpatientChargeInsuranceContext(rows);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '医保读卡失败';
+      ElMessage.error(message);
+      return;
+    }
+    if (insuranceCtx === null && selectionIncludesInsuranceItems(rows)) {
+      if (!resolveInsuranceContractId(rows)) {
+        return;
+      }
+      ElMessage.warning(
+        '本机 OpenHIS.Win 未启动，已跳过医保读卡；自费收费可继续，医保结算请先启动插件',
+      );
+    }
+    */
     const res = await httpPreSettleOutpatientCharges({
-      chargeItemIds: selectedChargeRows.value.map((r) => r.chargeItemId),
+      chargeItemIds: rows.map((r) => r.chargeItemId),
       encounterId: eid,
+      ...(insuranceCtx
+        ? {
+            contractId: insuranceCtx.contractId,
+            insuplcAdmdvs: insuranceCtx.insuplcAdmdvs,
+            insutype: insuranceCtx.insutype,
+            psnNo: insuranceCtx.psnNo,
+            ybCardInfo: insuranceCtx.ybCardInfo,
+            ybMediumType: insuranceCtx.ybMediumType,
+          }
+        : {}),
     });
     preSettleSnapshot.value = res;
     lockedChargeItemIds.value = selectedChargeRows.value.map((r) => r.chargeItemId);
@@ -516,8 +735,13 @@ const handleConfirmSettlement = async () => {
     return;
   }
   confirmSettleLoading.value = true;
+  let asyncLoading: ReturnType<typeof ElLoading.service> | null = null;
   try {
-    await httpConfirmOutpatientChargeSettlement({
+    const insuranceGroupBchnos =
+      snap.insuranceGroups
+        ?.map((group) => String(group.chrgBchno ?? '').trim())
+        .filter((value) => value.length > 0) ?? [];
+    let settleResult = await httpConfirmOutpatientChargeSettlement({
       billDate: dayjs().format('YYYY-MM-DD HH:mm:ss'),
       chargeItemIds: lockedChargeItemIds.value,
       encounterId: eid,
@@ -529,19 +753,62 @@ const handleConfirmSettlement = async () => {
         },
       ],
       paymentDraftId: snap.paymentDraftId,
+      ...(insuranceGroupBchnos.length > 0
+        ? { ybChrgBchnos: insuranceGroupBchnos }
+        : snap.ybChrgBchno
+          ? { ybChrgBchno: snap.ybChrgBchno }
+          : {}),
     });
+    if (isOutpatientInsuranceAsyncConfirmResponse(settleResult)) {
+      asyncLoading = ElLoading.service({
+        lock: true,
+        text: '医保协同单结算处理中，请稍候…',
+        background: 'rgba(0, 0, 0, 0.35)',
+      });
+      const polled = await pollOutpatientInsuranceSettleStatus(String(settleResult.paymentId));
+      settleResult = {
+        ...settleResult,
+        paymentId: polled.paymentId ?? settleResult.paymentId,
+        invoiceId: polled.invoiceId ?? settleResult.invoiceId,
+        ybSetlId: polled.ybSetlId ?? settleResult.ybSetlId,
+        paymentStatus: polled.paymentStatus ?? settleResult.paymentStatus,
+      };
+    }
     ElMessage.success('收费成功');
     settlementVisible.value = false;
+    const printedChargeItemIds = [...lockedChargeItemIds.value];
     preSettleSnapshot.value = null;
     lockedChargeItemIds.value = [];
-    await loadChargeQueue();
-    await loadPendingForSelectedEncounter();
+    if (settleResult.paymentId) {
+      lastSettlePrintByEncounter.value = {
+        ...lastSettlePrintByEncounter.value,
+        [eid]: {
+          paymentId: settleResult.paymentId,
+          chargeItemIds: printedChargeItemIds,
+        },
+      };
+      // TODO: 打印插件就绪后恢复收费成功后自动打印
+      // void printAfterChargeSettle({
+      //   paymentId: settleResult.paymentId,
+      //   encounterId: eid,
+      //   chargeItemIds: printedChargeItemIds,
+      // });
+    }
+    void loadChargeQueue().then(() => loadPendingForSelectedEncounter());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '门诊收费失败';
+    ElMessage.error(message);
   } finally {
+    asyncLoading?.close();
     confirmSettleLoading.value = false;
   }
 };
 
 onMounted(() => {
+  void (async () => {
+    await ensureOutpatientChargePrintBindingLoaded();
+    chargePrintTemplateCode.value = getOutpatientChargePrintTemplateCode();
+  })();
   void httpLoadChargePageInit({});
   void loadChargeQueue();
 });
@@ -698,6 +965,35 @@ onMounted(() => {
                 >
                   转自费
                 </ElButton>
+                <ElSelect
+                  v-model="chargePrintTemplateCode"
+                  class="!w-36 shrink-0"
+                  :disabled="!selectedEncounterId || chargePrintBusy"
+                  @change="handleChargePrintTemplateChange"
+                >
+                  <ElOption
+                    v-for="opt in OUTPATIENT_CHARGE_PRINT_OPTIONS"
+                    :key="opt.value"
+                    :label="opt.label"
+                    :value="opt.value"
+                  />
+                </ElSelect>
+                <ElButton
+                  plain
+                  :disabled="!selectedEncounterId"
+                  :loading="chargePrintBusy"
+                  @click="handlePrintChargeList"
+                >
+                  费用清单
+                </ElButton>
+                <ElButton
+                  plain
+                  :disabled="!selectedEncounterId"
+                  :loading="chargePrintBusy"
+                  @click="handleReprintChargeSlip"
+                >
+                  补打
+                </ElButton>
                 <ElButton
                   type="primary"
                   class="mr-1"
@@ -753,8 +1049,12 @@ onMounted(() => {
       v-model:pay-channel-code="paymentForm.payChannelCode"
       :loading="confirmSettleLoading"
       :display-amount="preSettleSnapshot?.displayAmount ?? 0"
-      :previews="preSettleSnapshot?.previews ?? []"
+      :insurance-breakdown-items="settlementInsuranceBreakdown"
+      :insurance-groups="settlementInsuranceGroups"
+      :previews="settlementPreviews"
       :selected-charge-count="lockedChargeItemIds.length"
+      :summary-insurance-amount="settlementSummaryInsurance"
+      :summary-self-pay-amount="settlementSummarySelfPay"
       :pay-channel-options="OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS"
       @confirm-charge="handleConfirmSettlement"
     />

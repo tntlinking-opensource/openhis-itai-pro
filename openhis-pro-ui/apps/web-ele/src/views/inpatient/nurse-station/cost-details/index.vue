@@ -19,6 +19,7 @@ import {
   httpQueryNurseStationInpatientCostDetail,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-cost-detail.http';
 import InpatientPatientInfoHeader from '#/components/inpatient/patient-info-header.vue';
+import { useInpatientDailyChargePrint } from '#/composables/use-inpatient-daily-charge-print';
 import { useRequest } from '#/hooks/use-request';
 import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
@@ -57,6 +58,8 @@ const pageInitialized = ref(false);
 
 const initRequest = useRequest(httpLoadNurseStationCostDetailPageInit, { manual: true });
 const queryRequest = useRequest(httpQueryNurseStationInpatientCostDetail, { manual: true });
+const { printInpatientDailyChargeList, isPrinting: costDetailPrintLoading } =
+  useInpatientDailyChargePrint();
 
 /** 费用明细要求左侧患者单选。 */
 const canOperateCostDetail = computed(() => props.patients.length === 1);
@@ -206,6 +209,44 @@ watch(
   },
 );
 
+const activeLineCount = computed(() =>
+  presentationMode.value === 'DETAIL' ? detailLines.value.length : summaryLines.value.length,
+);
+
+/** 打印住院费用明细清单（IP-25）。 */
+async function handleCostDetailPrint() {
+  const context = selectedPatientContext.value;
+  if (!context) {
+    ElMessage.warning('费用明细仅支持单选患者，请在左侧只勾选 1 位患者');
+    return;
+  }
+  const [dateFrom, dateTo] = costDetailDateRange.value;
+  if (!dateFrom || !dateTo) {
+    ElMessage.warning('请选择有效的查询日期');
+    return;
+  }
+  if (dayjs(dateFrom).isAfter(dayjs(dateTo))) {
+    ElMessage.warning('请选择有效的查询日期');
+    return;
+  }
+  if (activeLineCount.value <= 0) {
+    ElMessage.warning('当前查询结果为空，请先查询费用明细');
+    return;
+  }
+  try {
+    await printInpatientDailyChargeList({
+      encounterId: context.encounterId,
+      dateFrom,
+      dateTo,
+      templateCode: 'inpatient_charge_detail_list',
+      jobName: '住院费用明细清单',
+    });
+    ElMessage.success('住院费用明细清单已发送打印');
+  } catch {
+    // composable 已提示
+  }
+}
+
 onMounted(async () => {
   await loadPageInit();
   if (selectedPatientContext.value) {
@@ -227,6 +268,8 @@ onMounted(async () => {
       :summary-lines="summaryLines"
       :totals="totals"
       @on-presentation-mode-change="handlePresentationModeChange"
+      :print-loading="costDetailPrintLoading"
+      @on-print="handleCostDetailPrint"
       @on-query="handleCostDetailQuery"
       @on-quick-day-change="handleCostDetailQuickDayChange"
     />

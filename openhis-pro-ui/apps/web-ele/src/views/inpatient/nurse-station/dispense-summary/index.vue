@@ -1,82 +1,51 @@
 <script setup lang="ts">
+import type { NurseStationModulePatient } from '../components/nurse-station-module-patient.types';
+import type {
+  NurseStationDispenseSummaryMedicineCategoryTab,
+  NurseStationDispenseSummaryOrderRowDto,
+  NurseStationDispenseSummarySlipHeaderDto,
+  NurseStationDispenseSummarySlipLineDto,
+  NurseStationDispenseSummaryTherapyFilter,
+} from '#/api/inpatient/nurse-station/inpatient-nurse-station-dispense-summary.types';
+import type { DispenseSummarySelectableSlot } from './services/map-nurse-station-dispense-summary';
+
 import { computed, ref, watch } from 'vue';
 
 import dayjs from 'dayjs';
-
-import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display-cell.vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
 
 import {
-  nurseStationDispenseFallbackOrdersMock,
-  nurseStationDispenseOrdersByPatientIdMock,
-  nurseStationDispenseSummarySheetsMock,
-} from '../mock/dispense-summary.mock';
+  httpCancelMedicationSummary,
+  httpCreateMedicationSummary,
+  httpGetMedicationSummarySlipDetail,
+  httpPageMedicationSummarySlipHeaders,
+  httpPagePendingDispenseSummaryLines,
+  httpSubmitMedicationSummary,
+} from '#/api/inpatient/nurse-station/inpatient-nurse-station-dispense-summary.http';
+import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display-cell.vue';
+import { useWardDispenseSummaryPrint } from '#/composables/use-ward-dispense-summary-print';
+import { useRequest } from '#/hooks/use-request';
 
-type DispenseDrugCategoryTab = 'chinese' | 'western';
+import NurseStationPatientOrderCollapseTitle from '../components/nurse-station-patient-order-collapse-title.vue';
+import DispenseSummaryDetailDialog from './components/dispense-summary-detail-dialog.vue';
+import {
+  buildDispenseSummaryVisibleCards,
+  collectSelectableSlotsFromOrderRows,
+  formatPlannedDispenseTimeLabel,
+  formatQuantityWithUnit,
+  formatSummarySlipDateTime,
+  groupTimePointsForDisplay,
+  indexPatientGroupsByEncounterId,
+  isPendingSummarySlip,
+  mapSelectedSlotsToCreateItems,
+  resolveOrderRowKey,
+  resolveSlipStatusText,
+} from './services/map-nurse-station-dispense-summary';
+
 type DispenseDisplayMode = 'detail' | 'summary';
-type DispenseOrderType = 'all' | 'long' | 'temp';
-
-interface DispenseScheduleSlot {
-  checked: boolean;
-  time: string;
-}
-
-interface DispenseScheduleDay {
-  date: string;
-  slots: DispenseScheduleSlot[];
-}
-
-interface DispenseOrderItem {
-  id: string;
-  orderType: Exclude<DispenseOrderType, 'all'>;
-  drugCategory: 'chinese' | 'western';
-  orderClass: string;
-  orderContent: string;
-  pickupAmount: string;
-  pickupPharmacy: string;
-  schedule: DispenseScheduleDay[];
-  extension?: string;
-  groupItems?: string[];
-  procedureContent?: string;
-  procedureDosageText?: string;
-  procedureExtension?: string;
-}
-
-interface DispensePatientCard {
-  id: string;
-  bedNo: string;
-  patientNo: string;
-  patientName: string;
-  gender: string;
-  age: number;
-  diagnosis: string;
-  attendingDoctor: string;
-  estimatedAmount: string;
-  orders: DispenseOrderItem[];
-}
-
-interface DispenseSummarySheetItem {
-  id: string;
-  sheetNo: string;
-  applyTime: string;
-  dispenseTime: string;
-  pharmacy: string;
-  applicant: string;
-  pickupUser: string;
-  dispenseStatus: string;
-}
-
-interface DispensePatientItem {
-  id: string;
-  bedNo: string;
-  name: string;
-  gender?: string;
-  age: number;
-  nurseLevel: string;
-  diagnosis?: string;
-}
 
 interface Props {
-  patients?: DispensePatientItem[];
+  patients?: NurseStationModulePatient[];
 }
 
 defineOptions({
@@ -87,124 +56,433 @@ const props = withDefaults(defineProps<Props>(), {
   patients: () => [],
 });
 
-const drugCategoryTabs: Array<{ label: string; value: DispenseDrugCategoryTab }> = [
-  { label: '西药', value: 'western' },
-  { label: '中药', value: 'chinese' },
+const WRITE_BATCH_LIMIT = 500;
+const SUBMIT_BATCH_LIMIT = 50;
+const PENDING_PAGE_SIZE = 500;
+const SUMMARY_PAGE_SIZE = 50;
+
+const drugCategoryTabs: Array<{
+  label: string;
+  value: NurseStationDispenseSummaryMedicineCategoryTab;
+}> = [
+  { label: '西药', value: 'west' },
+  { label: '中药', value: 'tcm' },
 ];
 
 const displayModeTabs: Array<{ label: string; value: DispenseDisplayMode }> = [
-  { label: '明细', value: 'detail' },
-  { label: '汇总', value: 'summary' },
+  { label: '医嘱', value: 'detail' },
+  { label: '汇总单', value: 'summary' },
 ];
 
-const activeDrugCategoryTab = ref<DispenseDrugCategoryTab>('western');
+const activeDrugCategoryTab = ref<NurseStationDispenseSummaryMedicineCategoryTab>('west');
 const activeDisplayMode = ref<DispenseDisplayMode>('detail');
-const activeOrderType = ref<DispenseOrderType>('all');
+const activeOrderType = ref<NurseStationDispenseSummaryTherapyFilter>('all');
 const selectedAll = ref(false);
+const selectedSlotKeys = ref<Set<string>>(new Set());
+const selectedSummarySlips = ref<NurseStationDispenseSummarySlipHeaderDto[]>([]);
 
-/** 汇总领药查询截止时间（对接接口时作为 endTime 参数）。 */
+/** 汇总领药查询截止时间 */
 const queryDeadline = ref(dayjs().endOf('day').format('YYYY-MM-DD HH:mm:ss'));
 
-const mockOrdersByPatientId: Record<string, DispenseOrderItem[]> =
-  nurseStationDispenseOrdersByPatientIdMock as Record<string, DispenseOrderItem[]>;
+const ordersByEncounterId = ref(new Map<string, NurseStationDispenseSummaryOrderRowDto[]>());
+const summarySlipRows = ref<NurseStationDispenseSummarySlipHeaderDto[]>([]);
+const summaryTotalCount = ref(0);
 
-const fallbackOrders: DispenseOrderItem[] =
-  nurseStationDispenseFallbackOrdersMock as DispenseOrderItem[];
+const detailDialogVisible = ref(false);
+const detailDialogLoading = ref(false);
+const detailDialogHeader = ref<NurseStationDispenseSummarySlipHeaderDto | null>(null);
+const detailDialogLines = ref<NurseStationDispenseSummarySlipLineDto[]>([]);
 
-const mockSummarySheets: DispenseSummarySheetItem[] =
-  nurseStationDispenseSummarySheetsMock as DispenseSummarySheetItem[];
+const pendingLinesRequest = useRequest(httpPagePendingDispenseSummaryLines, { manual: true });
+const summaryHeadersRequest = useRequest(httpPageMedicationSummarySlipHeaders, { manual: true });
+const createSummaryRequest = useRequest(httpCreateMedicationSummary, { manual: true });
+const submitSummaryRequest = useRequest(httpSubmitMedicationSummary, { manual: true });
+const cancelSummaryRequest = useRequest(httpCancelMedicationSummary, { manual: true });
+const { printWardDispenseSummary, isPrinting: summaryPrintLoading } = useWardDispenseSummaryPrint();
 
-/** 按当前页签与长临嘱类型筛选领药明细（对接接口后以服务端条件为准）。 */
-function filterOrdersForDisplay(
-  orders: DispenseOrderItem[],
-  drugCategoryTab: DispenseDrugCategoryTab,
-  orderType: DispenseOrderType,
-): DispenseOrderItem[] {
-  return orders.filter((item) => {
-    // 按顶部西药/中药页签筛选药品类别。
-    const matchCategory =
-      drugCategoryTab === 'western'
-        ? item.drugCategory === 'western'
-        : item.drugCategory === 'chinese';
-    if (!matchCategory) return false;
-    if (orderType === 'all') return true;
-    return item.orderType === orderType;
-  });
-}
+const encounterIds = computed(() =>
+  props.patients.map((p) => String(p.id).trim()).filter((id) => id.length > 0),
+);
 
-/** 普通场景下主文案：优先 orderContent，缺省回退到类型。 */
-function dispenseOrderDisplayedContent(item: DispenseOrderItem): string {
-  const c = item.orderContent?.trim();
-  if (c && c.length > 0) return item.orderContent;
-  return item.orderClass;
-}
-
-const visibleCards = computed<DispensePatientCard[]>(() => {
-  // 将左侧已选患者转换为汇总领药展示结构，并补齐示例领药医嘱。
-  return props.patients.map((patient) => {
-    const rawOrders = mockOrdersByPatientId[patient.id] ?? fallbackOrders;
-    // 当前页面可见的领药医嘱明细。
-    const filteredOrders = filterOrdersForDisplay(
-      rawOrders,
-      activeDrugCategoryTab.value,
-      activeOrderType.value,
-    );
-    return {
-      id: patient.id,
-      bedNo: patient.bedNo ? `${patient.bedNo}床` : '未分床',
-      patientNo: patient.id.toUpperCase(),
-      patientName: patient.name,
-      gender: patient.gender || '-',
-      age: patient.age,
-      diagnosis: patient.diagnosis || '暂无主要诊断',
-      attendingDoctor: `责任护士:${patient.nurseLevel}`,
-      estimatedAmount: '1121.03',
-      orders: filteredOrders,
-    };
-  });
-});
+const visibleCards = computed(() =>
+  buildDispenseSummaryVisibleCards(props.patients, ordersByEncounterId.value),
+);
 
 const cardCountText = computed(() => `${visibleCards.value.length}位患者`);
 const expandedPatientIds = ref<string[]>([]);
-const summaryCountText = computed(() => `${mockSummarySheets.length}条记录`);
+const summaryCountText = computed(() => `${summaryTotalCount.value}条记录`);
 
-/** 患者联动变化时默认展开所有卡片，减少切换后的二次点击。 */
+/** 明细 Tab 全部可勾选槽位 */
+const allVisiblePlanSlots = computed(() =>
+  collectSelectableSlotsFromOrderRows(ordersByEncounterId.value),
+);
+
+const detailActionsEnabled = computed(() => activeDisplayMode.value === 'detail');
+
+/** 汇总 Tab 已选且待发送的单号 */
+const selectedSubmittableBusNos = computed(() =>
+  selectedSummarySlips.value
+    .filter(isPendingSummarySlip)
+    .map((row) => String(row.busNo ?? '').trim())
+    .filter(Boolean),
+);
+
+/** 汇总 Tab 已选且可撤销的单号 */
+const selectedCancellableBusNos = computed(() => selectedSubmittableBusNos.value);
+
+/** 槽位勾选变化时回写全选状态 */
+watch(
+  selectedSlotKeys,
+  (keys) => {
+    const total = allVisiblePlanSlots.value.length;
+    selectedAll.value = total > 0 && keys.size === total;
+  },
+  { deep: true },
+);
+
 watch(
   visibleCards,
   (cards) => {
-    expandedPatientIds.value = cards.map((item) => item.id);
+    expandedPatientIds.value = cards.map((item) => item.patient.id);
   },
   { immediate: true },
 );
 
-/** 触发汇总领药查询（当前为静态示例，预留接口接入）。 */
+watch(
+  [encounterIds, activeDrugCategoryTab, activeOrderType, queryDeadline, activeDisplayMode],
+  () => {
+    if (activeDisplayMode.value === 'detail') {
+      void loadPendingLines();
+    } else {
+      void loadSummaryHeaders();
+    }
+  },
+  { immediate: true },
+);
+
+/** 医嘱名称摘要（medicationName + specificationText） */
+function buildOrderContentTitle(row: NurseStationDispenseSummaryOrderRowDto): string {
+  const name = String(row.medicationName ?? '').trim();
+  const spec = String(row.specificationText ?? '').trim();
+  if (name && spec) return `${name}【${spec}】`;
+  return name || spec || '—';
+}
+
+/** 用法、频次扩展行（methodCodeText / frequencyCodeText） */
+function buildOrderExtensionLine(row: NurseStationDispenseSummaryOrderRowDto): string {
+  const method = String(row.methodCodeText ?? '').trim();
+  const freq = String(row.frequencyCodeText ?? '').trim();
+  if (method && freq) return `${method}，${freq}`;
+  return method || freq || '';
+}
+
+/** 领药数量展示：优先首条 timePoint，否则 dosageInstruction */
+function resolveOrderDosageText(row: NurseStationDispenseSummaryOrderRowDto): string {
+  const firstPoint = row.timePoints?.[0];
+  if (firstPoint) {
+    return formatQuantityWithUnit(firstPoint.quantity, firstPoint.unitCodeText);
+  }
+  return String(row.dosageInstruction ?? '').trim() || '—';
+}
+
+/** 类型列：therapyEnumText */
+function resolveTherapyTypeLabel(row: NurseStationDispenseSummaryOrderRowDto): string {
+  const therapy = String(row.therapyEnumText ?? '').trim();
+  if (therapy) return `${therapy}/药品`;
+  return '药品';
+}
+
+/** 判断槽位是否已勾选 */
+function isSlotSelected(slot: DispenseSummarySelectableSlot): boolean {
+  return selectedSlotKeys.value.has(slot.slotKey);
+}
+
+/** 切换槽位勾选 */
+function toggleSlotSelection(slot: DispenseSummarySelectableSlot, checked: boolean) {
+  const next = new Set(selectedSlotKeys.value);
+  if (checked) {
+    next.add(slot.slotKey);
+  } else {
+    next.delete(slot.slotKey);
+  }
+  selectedSlotKeys.value = next;
+}
+
+/** 勾选当前列表全部可操作时点 */
+function selectAllVisiblePlanSlots() {
+  if (!detailActionsEnabled.value) {
+    selectedSlotKeys.value = new Set();
+    selectedAll.value = false;
+    return;
+  }
+  const keys = allVisiblePlanSlots.value.map((slot) => slot.slotKey);
+  selectedSlotKeys.value = new Set(keys);
+  selectedAll.value = keys.length > 0;
+}
+
+/** 全选开关：选中或清空当前列表全部可操作时点 */
+function handleSelectedAllChange(on: boolean) {
+  if (!on) {
+    selectedSlotKeys.value = new Set();
+    selectedAll.value = false;
+    return;
+  }
+  selectAllVisiblePlanSlots();
+}
+
+/** 加载待汇总明细列表 */
+async function loadPendingLines() {
+  selectedSlotKeys.value = new Set();
+  selectedAll.value = false;
+  ordersByEncounterId.value = new Map();
+
+  if (encounterIds.value.length === 0) {
+    return;
+  }
+
+  const deadline = String(queryDeadline.value ?? '').trim();
+  if (!deadline) {
+    ElMessage.warning('请选择截止时间');
+    return;
+  }
+
+  const res = await pendingLinesRequest.run({
+    encounterIds: encounterIds.value,
+    medicineCategoryTab: activeDrugCategoryTab.value,
+    therapyFilter: activeOrderType.value,
+    queryDeadline: deadline,
+    pageNo: 1,
+    pageSize: PENDING_PAGE_SIZE,
+  });
+  ordersByEncounterId.value = indexPatientGroupsByEncounterId(res.patientGroups);
+  const total = res.totalCount ?? res.total ?? 0;
+  if (total > PENDING_PAGE_SIZE) {
+    ElMessage.warning(`待汇总明细共 ${total} 条，当前仅展示前 ${PENDING_PAGE_SIZE} 条`);
+  }
+  selectAllVisiblePlanSlots();
+}
+
+/** 加载已生成汇总单头列表 */
+async function loadSummaryHeaders() {
+  selectedSummarySlips.value = [];
+  summarySlipRows.value = [];
+  summaryTotalCount.value = 0;
+
+  const res = await summaryHeadersRequest.run({
+    pageNo: 1,
+    pageSize: SUMMARY_PAGE_SIZE,
+  });
+  summarySlipRows.value = res.rows ?? [];
+  summaryTotalCount.value = res.totalCount ?? res.total ?? summarySlipRows.value.length;
+}
+
+/** 工具栏「查询」：按当前 Tab 刷新列表 */
 function handleRunFilterQuery() {
-  // 预留：调用汇总领药列表接口，传入 activeDrugCategoryTab、activeDisplayMode、activeOrderType、queryDeadline。
+  if (activeDisplayMode.value === 'detail') {
+    void loadPendingLines();
+  } else {
+    void loadSummaryHeaders();
+  }
 }
 
-/** 批量汇总领药（当前为按钮占位，预留提交领药单动作）。 */
-function handleCreateSummaryPickup() {
-  // 预留：提交当前勾选明细生成领药单。
+/** 校验批量槽位数并提示 */
+function assertBatchWithinLimit(count: number): boolean {
+  if (count <= 0) {
+    ElMessage.warning('请先勾选待发药时间点');
+    return false;
+  }
+  if (count > WRITE_BATCH_LIMIT) {
+    ElMessage.warning(`单次最多汇总 ${WRITE_BATCH_LIMIT} 条明细`);
+    return false;
+  }
+  return true;
 }
 
-/** 打印汇总明细（当前为按钮占位，预留打印模板联动）。 */
+/** 汇总保存成功后刷新明细与汇总 Tab */
+async function afterCreateSummarySuccess(message: string) {
+  ElMessage.success(message);
+  selectedSlotKeys.value = new Set();
+  selectedAll.value = false;
+  await loadPendingLines();
+  if (activeDisplayMode.value === 'summary') {
+    await loadSummaryHeaders();
+  }
+}
+
+/** 批量汇总保存 */
+async function handleCreateSummaryPickup() {
+  if (!detailActionsEnabled.value) return;
+  const items = mapSelectedSlotsToCreateItems(selectedSlotKeys.value);
+  if (!assertBatchWithinLimit(items.length)) return;
+
+  try {
+    await ElMessageBox.confirm(`确认汇总已选 ${items.length} 条待发药明细？`, '汇总领药', {
+      type: 'warning',
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+    });
+  } catch {
+    return;
+  }
+
+  const res = await createSummaryRequest.run({ dispenseItems: items });
+  const msg =
+    res.message?.trim() ||
+    (res.summaryNos?.length
+      ? `已生成 ${res.summaryNos.length} 张汇总单，请在汇总单页发送`
+      : '汇总保存成功');
+  await afterCreateSummarySuccess(msg);
+}
+
+/** 打印汇总明细（复用当前已加载数据） */
 function handlePrintPickupDetail() {
-  // 预留：打开领药明细打印预览。
+  if (allVisiblePlanSlots.value.length === 0) {
+    ElMessage.warning('暂无待汇总明细可打印');
+    return;
+  }
+  ElMessage.info('打印模板待接入，可先导出当前列表数据');
 }
 
-/** 查看汇总单详情（当前为占位，预留跳转详情页）。 */
-function handleViewSummarySheet(row: DispenseSummarySheetItem) {
-  void row;
+/** 汇总 Tab 表格多选变化 */
+function handleSummarySelectionChange(rows: NurseStationDispenseSummarySlipHeaderDto[]) {
+  selectedSummarySlips.value = rows;
 }
 
-/** 打印汇总单（当前为占位，预留打印模板联动）。 */
-function handlePrintSummarySheet(row: DispenseSummarySheetItem) {
-  void row;
+/** 打开汇总单详情弹窗 */
+async function handleViewSummarySheet(row: NurseStationDispenseSummarySlipHeaderDto) {
+  const summaryNo = String(row.busNo ?? '').trim();
+  if (!summaryNo) return;
+  detailDialogVisible.value = true;
+  detailDialogHeader.value = row;
+  detailDialogLines.value = [];
+  detailDialogLoading.value = true;
+  try {
+    const res = await httpGetMedicationSummarySlipDetail({ summaryNo });
+    detailDialogLines.value = res.lines ?? [];
+    if (res.header) {
+      detailDialogHeader.value = res.header;
+    }
+  } finally {
+    detailDialogLoading.value = false;
+  }
+}
+
+/** 打印汇总单（IF-IP-SUM-07：报表模板 ward_dispense_summary） */
+async function handlePrintSummarySheet(row: NurseStationDispenseSummarySlipHeaderDto) {
+  const summaryNo = String(row.busNo ?? '').trim();
+  if (!summaryNo) {
+    ElMessage.warning('汇总单号为空，无法打印');
+    return;
+  }
+  await printWardDispenseSummary({ summaryNo });
+}
+
+/** 发送汇总单至药房 */
+async function submitSummaryNos(busNos: string[], confirmMessage: string) {
+  if (busNos.length === 0) {
+    return;
+  }
+  if (busNos.length > SUBMIT_BATCH_LIMIT) {
+    ElMessage.warning(`单次最多发送 ${SUBMIT_BATCH_LIMIT} 张汇总单`);
+    return;
+  }
+
+  try {
+    await ElMessageBox.confirm(confirmMessage, '发送汇总单', {
+      type: 'warning',
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+    });
+  } catch {
+    return;
+  }
+
+  const res = await submitSummaryRequest.run({ summaryNos: busNos });
+  ElMessage.success(res.message?.trim() || `已成功发送 ${busNos.length} 张汇总单`);
+  await loadSummaryHeaders();
+}
+
+/** 发送已选待发送汇总单 */
+async function handleSubmitSummarySheets() {
+  const busNos = selectedSubmittableBusNos.value;
+  if (busNos.length === 0) {
+    ElMessage.warning('请勾选待发送状态的汇总单');
+    return;
+  }
+  await submitSummaryNos(busNos, `确认发送已选 ${busNos.length} 张汇总单至药房？`);
+}
+
+/** 发送单行待发送汇总单 */
+async function handleSubmitSingleSummarySheet(row: NurseStationDispenseSummarySlipHeaderDto) {
+  if (!isPendingSummarySlip(row)) {
+    ElMessage.warning('仅待发送状态的汇总单可发送');
+    return;
+  }
+  const summaryNo = String(row.busNo ?? '').trim();
+  if (!summaryNo) {
+    return;
+  }
+  await submitSummaryNos([summaryNo], `确认发送汇总单 ${summaryNo} 至药房？`);
+}
+
+/** 撤销已选待发送汇总单 */
+async function handleCancelSummarySheets() {
+  const busNos = selectedCancellableBusNos.value;
+  if (busNos.length === 0) {
+    ElMessage.warning('请勾选待发送状态的汇总单');
+    return;
+  }
+  if (busNos.length > SUBMIT_BATCH_LIMIT) {
+    ElMessage.warning(`单次最多撤销 ${SUBMIT_BATCH_LIMIT} 张汇总单`);
+    return;
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确认撤销已选 ${busNos.length} 张汇总单？撤销后对应明细将恢复为待汇总。`,
+      '撤销汇总单',
+      {
+        type: 'warning',
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+      },
+    );
+  } catch {
+    return;
+  }
+
+  const res = await cancelSummaryRequest.run({ summaryNos: busNos });
+  ElMessage.success(res.message?.trim() || `已成功撤销 ${busNos.length} 张汇总单`);
+  await loadSummaryHeaders();
+  if (encounterIds.value.length > 0) {
+    await loadPendingLines();
+  }
+}
+
+/** 打印详情弹窗中的汇总单 */
+function handlePrintDetailDialog() {
+  if (!detailDialogHeader.value) return;
+  void handlePrintSummarySheet(detailDialogHeader.value);
+}
+
+/** 领药时点勾选标签：时刻 + 数量（与医嘱执行槽位标签同构） */
+function formatDispenseSlotLabel(slot: DispenseSummarySelectableSlot): string {
+  const time = formatPlannedDispenseTimeLabel(slot.point.plannedDispenseTime);
+  const qty = formatQuantityWithUnit(slot.point.quantity, slot.point.unitCodeText);
+  if (time !== '—' && qty !== '—') return `${time} ${qty}`;
+  return time !== '—' ? time : qty;
 }
 </script>
 
 <template>
   <div
+    v-loading="
+      pendingLinesRequest.loading.value ||
+      summaryHeadersRequest.loading.value ||
+      createSummaryRequest.loading.value ||
+      submitSummaryRequest.loading.value ||
+      cancelSummaryRequest.loading.value
+    "
     class="dispense-module flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden rounded-md bg-[#eef9fd]"
   >
     <section
@@ -224,37 +502,68 @@ function handlePrintSummarySheet(row: DispenseSummarySheetItem) {
             {{ tab.label }}
           </ElRadioButton>
         </ElRadioGroup>
-        <span class="shrink-0 text-sm text-[var(--el-text-color-regular)]">截止时间</span>
-        <ElDatePicker
-          v-model="queryDeadline"
-          type="datetime"
-          value-format="YYYY-MM-DD HH:mm:ss"
-          format="YYYY-MM-DD HH:mm:ss"
-          placeholder="请选择截止时间"
-          class="dispense-datetime"
-        />
         <ElRadioGroup
+          v-if="detailActionsEnabled"
           v-model="activeOrderType"
-          class="dispense-type-radio inline-flex shrink-0 flex-wrap items-center gap-3"
+          class="dispense-time-type-radio inline-flex shrink-0 flex-wrap items-center gap-3"
         >
           <ElRadio label="all">全部</ElRadio>
           <ElRadio label="long">长期</ElRadio>
           <ElRadio label="temp">临时</ElRadio>
         </ElRadioGroup>
+        <template v-if="detailActionsEnabled">
+          <span class="shrink-0 text-sm text-[var(--el-text-color-regular)]">截止时间</span>
+          <ElDatePicker
+            v-model="queryDeadline"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            format="YYYY-MM-DD HH:mm:ss"
+            placeholder="请选择截止时间"
+            class="dispense-datetime"
+          />
+        </template>
         <ElButton plain @click="handleRunFilterQuery">查询</ElButton>
       </div>
       <div class="flex flex-wrap items-center gap-1">
         <span class="mr-1 shrink-0 text-xs text-[var(--el-text-color-secondary)]">{{
           activeDisplayMode === 'summary' ? summaryCountText : cardCountText
         }}</span>
-        <label
-          class="mr-1 flex shrink-0 items-center gap-1 text-xs text-[var(--el-text-color-regular)]"
-        >
-          全选
-          <ElSwitch v-model="selectedAll" inline-prompt active-text=" " inactive-text=" " />
-        </label>
-        <ElButton type="primary" @click="handleCreateSummaryPickup">汇总领药</ElButton>
-        <ElButton plain @click="handlePrintPickupDetail">打印明细</ElButton>
+        <template v-if="detailActionsEnabled">
+          <label
+            class="mr-1 flex shrink-0 items-center gap-1 text-xs text-[var(--el-text-color-regular)]"
+          >
+            全选
+            <ElSwitch
+              :model-value="selectedAll"
+              :disabled="allVisiblePlanSlots.length === 0"
+              inline-prompt
+              active-text=" "
+              inactive-text=" "
+              @update:model-value="handleSelectedAllChange"
+            />
+          </label>
+          <ElButton type="primary" @click="handleCreateSummaryPickup">汇总领药</ElButton>
+          <ElButton plain :loading="summaryPrintLoading" @click="handlePrintPickupDetail">
+            打印明细
+          </ElButton>
+        </template>
+        <template v-else>
+          <ElButton
+            type="primary"
+            :disabled="selectedSubmittableBusNos.length === 0"
+            @click="handleSubmitSummarySheets"
+          >
+            发送
+          </ElButton>
+          <ElButton
+            type="danger"
+            plain
+            :disabled="selectedCancellableBusNos.length === 0"
+            @click="handleCancelSummarySheets"
+          >
+            撤销
+          </ElButton>
+        </template>
       </div>
     </section>
 
@@ -265,59 +574,60 @@ function handlePrintSummarySheet(row: DispenseSummarySheetItem) {
       <ElCollapse v-model="expandedPatientIds" class="patient-collapse">
         <ElCollapseItem
           v-for="card in visibleCards"
-          :key="card.id"
-          :name="card.id"
-          class="dispense-card mb-2.5 overflow-hidden rounded-lg border border-solid border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)] last:mb-0"
+          :key="card.patient.id"
+          :name="card.patient.id"
+          class="patient-order-card mb-2.5 overflow-hidden rounded-lg border border-solid border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)] last:mb-0"
         >
           <template #title>
-            <header class="card-head">
-              <div class="patient-meta">
-                <span class="bed-tag">{{ card.bedNo }}【{{ card.patientNo }}】</span>
-                <span class="name-text"
-                  >{{ card.patientName }} {{ card.gender }} / {{ card.age }}</span
-                >
-                <span class="diag-text">{{ card.diagnosis }}</span>
-              </div>
-              <div class="balance-meta">
-                <span>{{ card.attendingDoctor }}</span>
-                <span class="money-item">预交金额 {{ card.estimatedAmount }}</span>
-              </div>
-            </header>
+            <NurseStationPatientOrderCollapseTitle :patient="card.patient" />
           </template>
 
           <div class="card-table-wrap">
-            <ElTable :data="card.orders" class="order-table" stripe :show-header="false">
-              <ElTableColumn type="selection" width="54" />
-              <ElTableColumn prop="orderClass" label="类型" min-width="100" />
-              <ElTableColumn label="医嘱内容" min-width="380">
+            <ElTable
+              v-if="card.orderRows.length > 0"
+              :data="card.orderRows"
+              class="order-table order-table--horizontal-only"
+              stripe
+              :row-key="(row) => resolveOrderRowKey(row, card.encounterId)"
+            >
+              <ElTableColumn align="center" label="类型" min-width="108">
                 <template #default="{ row }">
-                  <div class="dispense-order-content-wrap">
-                    <AdviceOrderDisplayCell
-                      :row-key="row.id"
-                      :group-items="row.groupItems"
-                      :content="dispenseOrderDisplayedContent(row)"
-                      :dosage-text="row.pickupAmount"
-                      :extension="row.extension"
-                    />
-                  </div>
+                  {{ resolveTherapyTypeLabel(row) }}
                 </template>
               </ElTableColumn>
-              <ElTableColumn prop="pickupAmount" label="领药数量" min-width="90" />
-              <ElTableColumn prop="pickupPharmacy" label="取药药室" min-width="120" />
-              <ElTableColumn label="领药时间" min-width="280">
+              <ElTableColumn label="医嘱内容" min-width="360">
                 <template #default="{ row }">
-                  <div class="pickup-schedule">
-                    <div v-for="day in row.schedule" :key="day.date" class="pickup-schedule__day">
-                      <span class="pickup-schedule__date">{{ day.date }}</span>
-                      <div class="pickup-schedule__slots">
+                  <AdviceOrderDisplayCell
+                    :row-key="resolveOrderRowKey(row, card.encounterId)"
+                    :content="buildOrderContentTitle(row)"
+                    :dosage-text="resolveOrderDosageText(row)"
+                    :extension="buildOrderExtensionLine(row) || undefined"
+                  />
+                </template>
+              </ElTableColumn>
+              <ElTableColumn align="center" prop="locationName" label="取药药房" min-width="110" />
+              <ElTableColumn label="领药时间" min-width="220">
+                <template #default="{ row }">
+                  <div class="execute-schedule-list">
+                    <div
+                      v-for="dayGroup in groupTimePointsForDisplay(
+                        card.encounterId,
+                        row.timePoints,
+                      )"
+                      :key="`${resolveOrderRowKey(row, card.encounterId)}-${dayGroup.dateLabel}`"
+                      class="execute-schedule-row"
+                    >
+                      <span class="execute-schedule-date">{{ dayGroup.dateLabel }}</span>
+                      <div class="execute-schedule-slots">
                         <ElCheckbox
-                          v-for="slot in day.slots"
-                          :key="`${day.date}-${slot.time}`"
-                          v-model="slot.checked"
+                          v-for="slot in dayGroup.slots"
+                          :key="slot.slotKey"
+                          :model-value="isSlotSelected(slot)"
                           border
                           size="small"
+                          @update:model-value="(v: boolean) => toggleSlotSelection(slot, v)"
                         >
-                          {{ slot.time }}
+                          <span>{{ formatDispenseSlotLabel(slot) }}</span>
                         </ElCheckbox>
                       </div>
                     </div>
@@ -325,167 +635,120 @@ function handlePrintSummarySheet(row: DispenseSummarySheetItem) {
                 </template>
               </ElTableColumn>
             </ElTable>
+            <div v-else class="py-6 text-center text-sm text-[var(--el-text-color-secondary)]">
+              当前筛选下暂无待汇总明细
+            </div>
           </div>
         </ElCollapseItem>
       </ElCollapse>
     </section>
-    <section
-      v-else-if="activeDisplayMode === 'summary'"
-      class="min-h-0 min-w-0 flex-1 overflow-hidden bg-[#eef9fd] p-2"
-    >
-      <ElTable :data="mockSummarySheets" class="summary-sheet-table h-full" stripe>
-        <ElTableColumn prop="sheetNo" label="单据号" min-width="170" show-overflow-tooltip />
-        <ElTableColumn prop="applyTime" label="申请时间" min-width="165" />
-        <ElTableColumn prop="dispenseTime" label="发药时间" min-width="165">
-          <template #default="{ row }">
-            {{ row.dispenseTime || '-' }}
-          </template>
-        </ElTableColumn>
-        <ElTableColumn prop="pharmacy" label="药房" min-width="110" />
-        <ElTableColumn prop="applicant" label="申请人" min-width="100" />
-        <ElTableColumn prop="pickupUser" label="领药人" min-width="100">
-          <template #default="{ row }">
-            {{ row.pickupUser || '-' }}
-          </template>
-        </ElTableColumn>
-        <ElTableColumn prop="dispenseStatus" label="发药状态" min-width="100" />
-        <ElTableColumn label="操作" width="120" fixed="right">
-          <template #default="{ row }">
-            <div class="inline-flex items-center gap-2">
-              <ElButton link type="primary" @click="handleViewSummarySheet(row)">详情</ElButton>
-              <ElButton link type="primary" @click="handlePrintSummarySheet(row)">打印</ElButton>
-            </div>
-          </template>
-        </ElTableColumn>
-      </ElTable>
+    <section v-else-if="activeDisplayMode === 'summary'" class="min-h-0 flex-1 overflow-auto p-2.5">
+      <div
+        v-if="summarySlipRows.length > 0"
+        class="patient-order-card overflow-hidden rounded-lg border border-solid border-[var(--el-border-color-lighter)] bg-[var(--el-bg-color)]"
+      >
+        <div class="card-table-wrap">
+          <ElTable
+            :data="summarySlipRows"
+            class="order-table order-table--horizontal-only w-full"
+            stripe
+            row-key="busNo"
+            @selection-change="handleSummarySelectionChange"
+          >
+            <ElTableColumn
+              type="selection"
+              width="48"
+              :selectable="(row) => isPendingSummarySlip(row)"
+            />
+            <ElTableColumn prop="busNo" label="单据号" min-width="170" show-overflow-tooltip />
+            <ElTableColumn
+              prop="purposeLocationName"
+              label="汇总药房"
+              min-width="120"
+              show-overflow-tooltip
+            >
+              <template #default="{ row }">
+                {{ row.purposeLocationName?.trim() || '—' }}
+              </template>
+            </ElTableColumn>
+            <ElTableColumn prop="applicantName" label="申请人" min-width="100">
+              <template #default="{ row }">
+                {{ row.applicantName || '—' }}
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="状态" min-width="100">
+              <template #default="{ row }">
+                {{ resolveSlipStatusText(row) }}
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="申请时间" min-width="165">
+              <template #default="{ row }">
+                {{ formatSummarySlipDateTime(row.applyTime) }}
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="发药时间" min-width="165">
+              <template #default="{ row }">
+                {{ formatSummarySlipDateTime(row.dispenseTime) }}
+              </template>
+            </ElTableColumn>
+            <ElTableColumn prop="receiverName" label="领药人" min-width="100">
+              <template #default="{ row }">
+                {{ row.receiverName || '—' }}
+              </template>
+            </ElTableColumn>
+            <ElTableColumn label="操作" width="160" align="center">
+              <template #default="{ row }">
+                <ElButton link type="primary" @click="handleViewSummarySheet(row)">详情</ElButton>
+                <ElButton
+                  link
+                  type="primary"
+                  :loading="summaryPrintLoading"
+                  @click="handlePrintSummarySheet(row)"
+                >
+                  打印
+                </ElButton>
+                <ElButton
+                  link
+                  type="primary"
+                  :disabled="!isPendingSummarySlip(row)"
+                  @click="handleSubmitSingleSummarySheet(row)"
+                >
+                  发送
+                </ElButton>
+              </template>
+            </ElTableColumn>
+          </ElTable>
+        </div>
+      </div>
+      <div v-else class="flex min-h-[200px] items-center justify-center">
+        <ElEmpty description="暂无汇总单" />
+      </div>
     </section>
     <section v-else class="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-[#eef9fd]">
       <ElEmpty description="请先选择患者" />
     </section>
+
+    <DispenseSummaryDetailDialog
+      v-model:visible="detailDialogVisible"
+      :header="detailDialogHeader"
+      :lines="detailDialogLines"
+      :loading="detailDialogLoading"
+      @print="handlePrintDetailDialog"
+    />
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
+@use '../components/nurse-station-patient-order-list.scss';
+
 .dispense-datetime {
   width: 220px;
   max-width: 100%;
 }
 
-.dispense-type-radio :deep(.el-radio) {
+.dispense-time-type-radio :deep(.el-radio) {
   margin-right: 0;
   height: auto;
   align-items: center;
-}
-
-.patient-collapse {
-  border-top: none;
-  border-bottom: none;
-}
-
-.dispense-card {
-  border: 2px solid #e4e7ed !important;
-  border-radius: 14px !important;
-}
-
-.patient-collapse :deep(.el-collapse-item__header) {
-  min-height: 42px;
-  border-bottom: none;
-  background: var(--el-fill-color-blank);
-  line-height: normal;
-  align-items: center;
-}
-
-.patient-collapse :deep(.el-collapse-item__arrow) {
-  order: -1;
-  margin-right: 6px;
-  margin-left: 10px;
-  align-self: center;
-}
-
-.patient-collapse :deep(.el-collapse-item__wrap) {
-  border-bottom: none;
-}
-
-.patient-collapse :deep(.el-collapse-item__content) {
-  padding-bottom: 0;
-}
-
-.card-head {
-  min-height: 42px;
-  width: 100%;
-  padding: 0 10px 0 2px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.patient-meta,
-.balance-meta {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--el-text-color-primary);
-  font-size: 13px;
-}
-
-.bed-tag {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.diag-text {
-  color: var(--el-text-color-secondary);
-}
-
-.money-item {
-  color: var(--el-color-warning);
-  font-weight: 600;
-}
-
-.order-table {
-  width: 100%;
-}
-
-.card-table-wrap {
-  padding: 8px 10px 10px;
-}
-
-.order-table :deep(.el-table__row td.el-table__cell) {
-  color: var(--el-text-color-primary);
-  font-size: 13px;
-  padding: 8px 0;
-}
-
-.dispense-order-content-wrap {
-  min-width: 0;
-}
-
-.pickup-schedule {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.pickup-schedule__day {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.pickup-schedule__date {
-  min-width: 40px;
-  color: var(--el-text-color-secondary);
-}
-
-.pickup-schedule__slots {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-}
-
-.pickup-schedule__slots :deep(.el-checkbox) {
-  margin-right: 0;
 }
 </style>

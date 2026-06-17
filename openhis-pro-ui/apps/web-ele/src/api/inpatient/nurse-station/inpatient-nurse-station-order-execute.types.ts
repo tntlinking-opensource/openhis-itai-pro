@@ -25,10 +25,23 @@ export interface NurseStationOrderExecuteSlotDto {
 
 /** 绑定项（列表回传、写路径原样回传） */
 export interface NurseStationOrderExecuteBindItemDto {
+  bindType?: string;
+  bindingId?: string;
   activityId?: string;
   deviceId?: string;
-  bindType?: string;
+  /** 展示名（与后端 displayName 对齐） */
+  displayName?: string;
+  /** 兼容旧字段 */
   bindDisplayName?: string;
+  busNo?: string;
+  specificationText?: string;
+  unitPrice?: number;
+  chargeItemDefinitionId?: string;
+  quantityNumerator?: number;
+  quantityDenominator?: number;
+  unitCode?: string;
+  unitCode_dictText?: string;
+  priority?: number;
 }
 
 /** 列表行（与后端 NurseStationOrderExecuteRowDto 对齐） */

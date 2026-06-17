@@ -17,6 +17,8 @@ export interface AdviceEditForm {
   selectedId: string;
   diagnosis: string;
   feeNature: string;
+  /** 费用性质/合同主键（落库 `contract_id`） */
+  contractId?: string;
   skinTest?: boolean;
   pharmacy: string;
   /** 未录入时为 `undefined`，避免界面默认显示 0 */
@@ -68,6 +70,8 @@ export interface ProductQueryParams {
   pageSize: number;
   keyword?: string;
   productTableNames?: string[];
+  /** 排除药品 med_category_code（如开立西药医嘱传 ["4"] 排除中草药） */
+  excludeMedicationCategoryCodes?: string[];
 }
 
 export interface AdviceProductOption {
@@ -128,4 +132,8 @@ export interface AdviceRowItem {
   dispensePerDuration?: number;
   /** 列表计价数量（诊疗 quantity / 药品总量等） */
   listQuantity?: number;
+  /** 诊疗执行次数（结构-only 行 executionCount） */
+  listExecutionCount?: number;
+  performOrgId?: string;
+  performOrgName?: string;
 }

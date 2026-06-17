@@ -18,6 +18,8 @@ import {
   WARD_BED_FORM_CODE,
   WARD_BED_STATUS_CODE,
 } from '#/api/basic/ward-bed';
+import { unwrapApiList } from '#/utils/api/unwrap-api-list';
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
 import EditDialog from './edit-dialog.vue';
 
@@ -63,9 +65,10 @@ const statusLabelMap = computed(() => {
   return map;
 });
 
+/** 当前机构下病区（列表接口已按机构过滤，此处仅做空机构兜底） */
 const orgWards = computed(() => {
-  const orgId = Number(selectedOrganizationId.value || 0);
-  return allWards.value.filter((item) => Number(item.organizationId || 0) === orgId);
+  if (!selectedOrganizationId.value) return [];
+  return allWards.value;
 });
 
 /** 按关键词过滤病区/病房/床位 */
@@ -124,12 +127,10 @@ const treeTableData = computed(() => {
   });
 });
 
-/** 统计病房下实际床位数量 */
+/** 统计病房下床位数量（由下级床位节点汇总，非手工填报） */
 function getRoomBedCount(room: WardBedRow) {
   const children = (room.children as WardBedRow[] | undefined) || [];
-  if (children.length > 0) return children.length;
-  if (room.bedCount !== null && room.bedCount !== undefined) return Number(room.bedCount);
-  return 0;
+  return children.length;
 }
 
 /** 层级类型文案 */
@@ -158,10 +159,30 @@ async function loadInitOptions() {
   }
 }
 
-/** 拉取全部病区列表 */
+/** 将接口行归一化：雪花 ID 统一 string，避免比较/树表 row-key 异常 */
+function normalizeWardBedRow(item: WardBed): WardBedRow {
+  const id = preserveApiIdForRequest(item.id);
+  const organizationId = preserveApiIdForRequest(item.organizationId);
+  const parentId = preserveApiIdForRequest(item.parentId);
+  const children = unwrapApiList<WardBed>(item.children).map((child) => normalizeWardBedRow(child));
+  return {
+    ...item,
+    id,
+    organizationId,
+    parentId,
+    children: children.length > 0 ? children : undefined,
+  };
+}
+
+/** 按当前选中机构拉取病区列表 */
 async function loadWards() {
-  const response = await getWardListApi();
-  allWards.value = (response || []).map((item) => ({ ...item }));
+  const orgId = selectedOrganizationId.value;
+  if (!orgId) {
+    allWards.value = [];
+    return;
+  }
+  const response = await getWardListApi({ id: orgId });
+  allWards.value = unwrapApiList<WardBed>(response).map((item) => normalizeWardBedRow(item));
 }
 
 /** 并行加载当前机构下每个病区的病房与床位 */
@@ -174,10 +195,9 @@ async function loadWardSections() {
   wardSections.value = await Promise.all(
     wards.map(async (ward) => {
       const wardId = String(ward.id);
-      const rooms = ((await getWardBedPageApi({ id: wardId })) || []).map((item) => ({
-        ...item,
-        children: ((item.children as WardBedRow[] | undefined) || []).map((bed) => ({ ...bed })),
-      }));
+      const rooms = unwrapApiList<WardBed>(await getWardBedPageApi({ id: wardId })).map((item) =>
+        normalizeWardBedRow(item),
+      );
       return { ward, rooms };
     }),
   );
@@ -222,20 +242,19 @@ function handleAddWard() {
     lockFormEnum: true,
     formData: {
       formEnum: WARD_BED_FORM_CODE.WARD,
-      organizationId: Number(selectedOrganizationId.value),
+      organizationId: selectedOrganizationId.value,
     },
   });
 }
 
-/** 从病区或当前选中机构解析创建用的 organizationId */
-function resolveOrganizationIdForWard(ward: WardBedRow): number | undefined {
+/** 从病区或当前选中机构解析创建用的 organizationId（雪花 ID 须保持 string） */
+function resolveOrganizationIdForWard(ward: WardBedRow): string | undefined {
   const fromWard = ward.organizationId;
-  if (fromWard !== null && fromWard !== undefined) {
-    const num = Number(fromWard);
-    if (!Number.isNaN(num) && num > 0) return num;
+  if (fromWard !== null && fromWard !== undefined && String(fromWard).trim() !== '') {
+    return String(fromWard);
   }
-  const fromSelected = Number(selectedOrganizationId.value || 0);
-  return fromSelected > 0 ? fromSelected : undefined;
+  const fromSelected = selectedOrganizationId.value?.trim();
+  return fromSelected || undefined;
 }
 
 /** 在指定病区下新增病房 */
@@ -353,6 +372,7 @@ watch(selectedOrganizationId, async (organizationId) => {
   if (!organizationId || loading.value) return;
   loading.value = true;
   try {
+    await loadWards();
     await loadWardSections();
   } catch (error) {
     console.error('切换机构后加载病区失败:', error);

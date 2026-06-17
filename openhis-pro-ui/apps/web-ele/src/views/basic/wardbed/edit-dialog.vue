@@ -18,6 +18,8 @@ import {
   WARD_BED_FORM_CODE,
   WARD_BED_REGISTER_DEFAULT,
 } from '#/api/basic/ward-bed';
+import { unwrapApiList } from '#/utils/api/unwrap-api-list';
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
 interface Props {
   visible?: boolean;
@@ -54,6 +56,35 @@ const loadingRoomOptions = ref<Map<string, Promise<void>>>(new Map());
 const roomLoading = ref(false);
 const isEditMode = computed(() => !!props.formData?.id);
 
+function normalizeOrganizationId(value: unknown): string | undefined {
+  const id = preserveApiIdForRequest(value);
+  return id || undefined;
+}
+
+/** 科室下拉：value 统一 string，避免雪花 ID 精度丢失导致只显示裸 id */
+function buildOrganizationSelectOptions(currentOrgId?: string) {
+  const options = (initOptions.value?.organizationOptions || []).map((item) => ({
+    label: item.label,
+    value: String(item.value),
+  }));
+  if (currentOrgId && !options.some((item) => item.value === currentOrgId)) {
+    const matched = (initOptions.value?.organizationOptions || []).find(
+      (item) => String(item.value) === currentOrgId,
+    );
+    options.unshift({
+      label: matched?.label || currentOrgId,
+      value: currentOrgId,
+    });
+  }
+  return options;
+}
+
+const organizationSelectOptions = computed(() =>
+  buildOrganizationSelectOptions(
+    normalizeOrganizationId(originalData.value.organizationId ?? props.formData?.organizationId),
+  ),
+);
+
 async function loadInitOptions(force = false) {
   if (initOptionsLoaded.value && !force) {
     if (props.wardList && props.wardList.length > 0) {
@@ -74,9 +105,11 @@ async function loadInitOptions(force = false) {
         value: item.id || '',
       }));
     } else {
-      const wards = await getWardListApi();
-      wardOptions.value =
-        wards?.map((item) => ({ label: item.name || '', value: item.id || '' })) || [];
+      const wards = unwrapApiList<WardBed>(await getWardListApi());
+      wardOptions.value = wards.map((item) => ({
+        label: item.name || '',
+        value: preserveApiIdForRequest(item.id) || '',
+      }));
     }
     initOptionsLoaded.value = true;
   } catch (error) {
@@ -118,10 +151,11 @@ async function loadRoomOptions(wardId: string) {
   const loadPromise = (async () => {
     try {
       roomLoading.value = true;
-      const rooms = await getWardBedPageApi({ id: wardId });
-      const options =
-        rooms?.map((item) => ({ label: item.name || item.busNo || '', value: item.id || '' })) ||
-        [];
+      const rooms = unwrapApiList<WardBed>(await getWardBedPageApi({ id: wardId }));
+      const options = rooms.map((item) => ({
+        label: item.name || item.busNo || '',
+        value: preserveApiIdForRequest(item.id) || '',
+      }));
       roomOptions.value = options;
       roomOptionsCache.value.set(wardId, options);
     } catch (error) {
@@ -138,7 +172,7 @@ async function loadRoomOptions(wardId: string) {
 }
 
 /** 创建时解析机构 ID（病房/床位表单不展示机构，须从所属病区带入） */
-function resolveOrganizationId(submitData: Record<string, unknown>): number | undefined {
+function resolveOrganizationId(submitData: Record<string, unknown>): string | undefined {
   const candidates = [
     submitData.organizationId,
     props.parentWard?.organizationId,
@@ -146,9 +180,8 @@ function resolveOrganizationId(submitData: Record<string, unknown>): number | un
     originalData.value.organizationId,
   ];
   for (const raw of candidates) {
-    if (raw === null || raw === undefined || raw === '') continue;
-    const num = Number(raw);
-    if (!Number.isNaN(num) && num > 0) return num;
+    const id = normalizeOrganizationId(raw);
+    if (id) return id;
   }
   return undefined;
 }
@@ -169,6 +202,7 @@ async function handleSubmit() {
       submitData.parentId = submitData.roomParentId;
       delete submitData.roomParentId;
     }
+    delete submitData.bedCount;
     if (!isEditMode.value) {
       const organizationId = resolveOrganizationId(submitData);
       if (organizationId === undefined) {
@@ -207,6 +241,9 @@ async function loadFormData() {
       if (data) {
         originalData.value = { ...data };
         const formData: Record<string, any> = { ...data };
+        if (formData.organizationId != null) {
+          formData.organizationId = normalizeOrganizationId(formData.organizationId);
+        }
         if (data.formEnum === WARD_BED_FORM_CODE.BED) {
           formData.roomParentId = data.parent?.id;
         } else {
@@ -246,6 +283,9 @@ async function loadFormData() {
           props.formData.organizationId ?? props.parentWard?.organizationId ?? undefined,
       };
       const formData: Record<string, any> = { ...originalData.value };
+      if (formData.organizationId != null) {
+        formData.organizationId = normalizeOrganizationId(formData.organizationId);
+      }
       if (props.formData.formEnum === WARD_BED_FORM_CODE.BED && props.formData.roomParentId)
         formData.roomParentId = props.formData.roomParentId;
       const formEnum = props.formData.formEnum;
@@ -356,7 +396,7 @@ const formConfig = reactive({
         triggerFields: ['formEnum'],
         show: (values: Record<string, any>) => values.formEnum === WARD_BED_FORM_CODE.WARD,
         componentProps: () => ({
-          options: initOptions.value?.organizationOptions || [],
+          options: organizationSelectOptions.value,
           filterable: true,
           clearable: true,
           loading: initLoading.value,
@@ -394,23 +434,6 @@ const formConfig = reactive({
           filterable: true,
           clearable: true,
           loading: roomLoading.value,
-        }),
-      },
-    },
-    {
-      component: 'InputNumber',
-      fieldName: 'bedCount',
-      label: '病床数',
-      dependencies: {
-        triggerFields: ['formEnum'],
-        show: (values: Record<string, any>) =>
-          [WARD_BED_FORM_CODE.WARD, WARD_BED_FORM_CODE.HOUSE].includes(values.formEnum),
-        componentProps: () => ({
-          placeholder: '请输入病床数',
-          min: 0,
-          max: 999,
-          controlsPosition: 'right',
-          style: { width: '220px' },
         }),
       },
     },

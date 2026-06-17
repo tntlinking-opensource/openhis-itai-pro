@@ -17,6 +17,8 @@ export interface AdviceEditForm {
   selectedId: string;
   diagnosis: string;
   feeNature: string;
+  /** 费用性质/合同主键（落库 `contract_id`） */
+  contractId?: string;
   skinTest?: boolean;
   pharmacy: string;
   /** 未录入时为 `undefined`，避免界面默认显示 0 */

@@ -1,15 +1,15 @@
 import type { DoctorStationMedicationUnitBandDto } from '#/api/doctor-station/advice.types';
 
+import { decimalDiv, decimalMul } from '#/utils/decimal-util';
 import {
   convertProductUnitPriceBetweenBandKinds,
   PRODUCT_CATALOG_PRICE_SOURCE_BAND_KIND,
 } from '#/utils/product-unit-band-price';
-import { decimalDiv, decimalMul } from '#/utils/decimal-util';
 
 /** 解析目录行上的多计量带（数组或 JSON 字符串） */
 export function normalizeCatalogUnitBands(
   unitBands?: DoctorStationMedicationUnitBandDto[] | null,
-  unitBandsJson?: string | null,
+  unitBandsJson?: null | string,
 ): DoctorStationMedicationUnitBandDto[] {
   if (Array.isArray(unitBands) && unitBands.length > 0) {
     return unitBands;
@@ -140,7 +140,7 @@ export function convertSplitQtyToTotalUnitCode(
   const splitCode = unitCodeByBandKind(bands, 'SPLIT');
   if (!splitCode) return roundMedicationQty(splitQty);
   const converted = convertQtyBetweenUnitCodes(splitQty, splitCode, targetUnitCode, bands);
-  return converted !== undefined ? converted : roundMedicationQty(splitQty);
+  return converted === undefined ? roundMedicationQty(splitQty) : converted;
 }
 
 /**
@@ -177,10 +177,10 @@ export function resolveAdviceLineUnitPrice(params: {
 export function totalUnitSelectOptions(item: {
   totalUnitPackageCode?: string;
   totalUnitPackageName?: string;
-  totalUnitSplitCode?: string;
-  totalUnitSplitName?: string;
   totalUnitSalesCode?: string;
   totalUnitSalesName?: string;
+  totalUnitSplitCode?: string;
+  totalUnitSplitName?: string;
 }): TotalUnitSelectOption[] {
   const seen = new Set<string>();
   const out: TotalUnitSelectOption[] = [];
@@ -201,10 +201,10 @@ export function totalAmountUnitDisplayLabel(item: {
   totalAmountUnit: string;
   totalUnitPackageCode?: string;
   totalUnitPackageName?: string;
-  totalUnitSplitCode?: string;
-  totalUnitSplitName?: string;
   totalUnitSalesCode?: string;
   totalUnitSalesName?: string;
+  totalUnitSplitCode?: string;
+  totalUnitSplitName?: string;
 }): string {
   const c = String(item.totalAmountUnit || '').trim();
   if (!c) return '';
@@ -223,9 +223,9 @@ export function totalAmountUnitDisplayLabel(item: {
  */
 /** 草稿保存：单次剂量取 DOSE 带数值（右侧剂量单位），单位取 DOSE unitCode。 */
 export function resolveMedicationDraftDosePayload(item: {
-  singleDose?: number;
   doseConvertRatio?: number;
   doseSubUnit?: string;
+  singleDose?: number;
   unitBands?: DoctorStationMedicationUnitBandDto[];
 }): { dose?: number; doseUnitCode?: string } {
   const doseUnitCode =
@@ -257,11 +257,11 @@ export function hydrateAdviceRowDoseFromBackend(params: {
   doseUnitName?: null | string;
   unitBands?: DoctorStationMedicationUnitBandDto[];
 }): {
-  singleDose?: number;
+  doseBandConvertK?: number;
   doseConvertRatio?: number;
   doseMainUnit: string;
   doseSubUnit: string;
-  doseBandConvertK?: number;
+  singleDose?: number;
 } {
   const doseRaw = Number(params.dose);
   const doseQty = Number.isFinite(doseRaw) && doseRaw > 0 ? doseRaw : undefined;
@@ -346,13 +346,13 @@ export function totalAmountSplitToSalesFactor(
 
 /** 切换总量单位时换算数量；优先 unitBands，回落 SPLIT↔SALES 系数。 */
 export function convertTotalAmountWhenUnitChanges(params: {
-  oldUnit: string;
-  newUnit: string;
   bands?: DoctorStationMedicationUnitBandDto[] | undefined;
-  splitCode?: string;
-  salesCode?: string;
-  splitToSalesK?: number | undefined;
   currentAmount: number;
+  newUnit: string;
+  oldUnit: string;
+  salesCode?: string;
+  splitCode?: string;
+  splitToSalesK?: number | undefined;
 }): number | undefined {
   const ou = String(params.oldUnit ?? '').trim();
   const nu = String(params.newUnit ?? '').trim();

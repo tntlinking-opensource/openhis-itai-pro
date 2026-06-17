@@ -5,7 +5,12 @@ import { ref, watch } from 'vue';
 
 import { ElButton, ElMessage, ElUpload } from 'element-plus';
 
+import SectionTitle from '#/components/layouts/section-title.vue';
 import { getPractitionerProfileApi, savePractitionerSignatureApi } from '#/api/basic/practitioner';
+
+defineOptions({
+  name: 'PractitionerSignaturePanel',
+});
 
 const props = defineProps<{
   practitionerId?: string;
@@ -19,6 +24,7 @@ const signaturePreview = ref('');
 
 const MAX_FILE_BYTES = 200 * 1024;
 
+/** 加载当前医务人员签名图 */
 async function loadProfile() {
   const pid = props.practitionerId?.trim();
   if (!pid) {
@@ -46,6 +52,7 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+/** 上传前校验格式与大小，预览不落库 */
 const beforeUpload: UploadProps['beforeUpload'] = async (rawFile) => {
   if (!rawFile.type.startsWith('image/')) {
     ElMessage.warning('请上传 PNG、JPG 等图片格式');
@@ -63,6 +70,7 @@ const beforeUpload: UploadProps['beforeUpload'] = async (rawFile) => {
   return false;
 };
 
+/** 保存签名至医务人员主档 */
 async function handleSave() {
   const pid = props.practitionerId?.trim();
   if (!pid) {
@@ -82,6 +90,7 @@ async function handleSave() {
   }
 }
 
+/** 清除签名并同步保存 */
 async function handleClear() {
   signaturePreview.value = '';
   await handleSave();
@@ -97,55 +106,40 @@ watch(
 </script>
 
 <template>
-  <section
-    v-loading="loading"
-    class="practitioner-signature-panel border-border mb-3 rounded border bg-[var(--el-fill-color-blank)] p-3"
-    aria-label="医务人员签名维护"
-  >
-    <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-      <div>
-        <h3 class="text-sm font-medium">医生签名</h3>
-        <p class="text-muted-foreground text-xs">
-          保存至医务人员主档（adm_practitioner.signature），病历元数据可通过
-          <code class="text-xs">user.signatureImage</code> 引用。
-        </p>
-      </div>
-      <span v-if="practitionerName" class="text-muted-foreground text-xs">
-        {{ practitionerName }}
-        <template v-if="busNo">（{{ busNo }}）</template>
-      </span>
-    </div>
+  <section v-loading="loading" class="practitioner-signature-panel" aria-label="医务人员签名维护">
+    <SectionTitle title="医生签名" />
 
-    <div v-if="!practitionerId" class="text-muted-foreground text-sm">
+    <div v-if="!practitionerId" class="practitioner-signature-panel__tip">
       该用户尚未建立医务人员主档，请先在用户/主数据环节完成绑定后再维护签名。
     </div>
 
     <template v-else>
-      <div class="flex flex-wrap items-start gap-4">
-        <div
-          class="signature-preview-box flex h-20 min-w-[160px] items-center justify-center rounded border border-dashed bg-white px-2"
-        >
+      <div class="practitioner-signature-panel__content">
+        <div class="practitioner-signature-panel__preview">
           <img
             v-if="signaturePreview"
             :src="signaturePreview"
             alt="签名预览"
-            class="max-h-16 max-w-[200px] object-contain"
+            class="practitioner-signature-panel__image"
           />
-          <span v-else class="text-muted-foreground text-xs">暂无签名</span>
+          <span v-else class="practitioner-signature-panel__placeholder">暂无签名</span>
         </div>
-        <div class="flex flex-col gap-2">
+
+        <div class="practitioner-signature-panel__actions">
           <ElUpload
+            :before-upload="beforeUpload"
             :show-file-list="false"
             accept="image/png,image/jpeg,image/webp"
-            :before-upload="beforeUpload"
           >
-            <ElButton type="primary" plain>上传签名图</ElButton>
+            <ElButton plain type="primary">上传签名图</ElButton>
           </ElUpload>
-          <div class="flex gap-2">
-            <ElButton type="primary" :loading="saving" @click="handleSave">保存</ElButton>
+          <div class="practitioner-signature-panel__btn-row">
+            <ElButton :loading="saving" type="primary" @click="handleSave">保存</ElButton>
             <ElButton :disabled="!signaturePreview" @click="handleClear">清除</ElButton>
           </div>
-          <p class="text-muted-foreground text-xs">建议透明底 PNG，宽 200～400px，小于 200KB。</p>
+          <p class="practitioner-signature-panel__hint">
+            建议透明底 PNG，宽 200～400px，小于 200KB
+          </p>
         </div>
       </div>
     </template>
@@ -153,7 +147,64 @@ watch(
 </template>
 
 <style scoped>
-.signature-preview-box {
-  border-color: var(--el-border-color);
+.practitioner-signature-panel {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+}
+
+.practitioner-signature-panel__tip {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.practitioner-signature-panel__content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  margin-top: 12px;
+}
+
+.practitioner-signature-panel__preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 180px;
+  height: 80px;
+  background: var(--el-fill-color-blank);
+  border: 1px dashed var(--el-border-color);
+  border-radius: 4px;
+}
+
+.practitioner-signature-panel__image {
+  max-width: 160px;
+  max-height: 64px;
+  object-fit: contain;
+}
+
+.practitioner-signature-panel__placeholder {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.practitioner-signature-panel__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.practitioner-signature-panel__btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+.practitioner-signature-panel__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

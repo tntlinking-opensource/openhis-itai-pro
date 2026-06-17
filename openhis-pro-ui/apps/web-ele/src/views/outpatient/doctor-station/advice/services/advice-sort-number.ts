@@ -1,0 +1,132 @@
+import type { AdviceDrugItem, AdviceRowItem } from './advice.types';
+
+import { flattenAdviceRowsForResourceOps } from './advice-list';
+import { inferAdviceLineEditorKind } from './advice-row';
+
+/** 药品展示排序号步长（留空档便于以后拖序插入） */
+export const ADVICE_MEDICATION_SORT_STEP = 10;
+
+function positiveSortNumber(raw: unknown): number | undefined {
+  if (raw === null || raw === undefined || raw === '') return undefined;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : undefined;
+}
+
+function isMedicationAdviceRow(row: AdviceRowItem): boolean {
+  return (
+    String(row.resourceType ?? '')
+      .trim()
+      .toUpperCase() === 'MEDICATION'
+  );
+}
+
+function filterListRowsForSortContext(rows: readonly AdviceRowItem[]): AdviceRowItem[] {
+  return rows.filter((row) => !row.isEditor);
+}
+
+/** 从当前主表行取就诊内药品最大 sortNumber（含成组展开后的成员行） */
+export function resolveEncounterMaxMedicationSortNumber(
+  existingRows: readonly AdviceRowItem[],
+): number {
+  let max = 0;
+  const flat = flattenAdviceRowsForResourceOps(filterListRowsForSortContext(existingRows));
+  for (const row of flat) {
+    if (!isMedicationAdviceRow(row)) continue;
+    const sn = positiveSortNumber(row.sortNumber);
+    if (sn !== undefined && sn > max) {
+      max = sn;
+    }
+  }
+  return max;
+}
+
+function collectMedicationGroupSortMap(
+  existingRows: readonly AdviceRowItem[],
+  items: readonly AdviceDrugItem[],
+): Map<string, number> {
+  const map = new Map<string, number>();
+  const flat = flattenAdviceRowsForResourceOps(filterListRowsForSortContext(existingRows));
+  for (const row of flat) {
+    if (!isMedicationAdviceRow(row)) continue;
+    const gid = String(row.groupId ?? '').trim();
+    const sn = positiveSortNumber(row.sortNumber);
+    if (gid && sn !== undefined) {
+      map.set(gid, sn);
+    }
+  }
+  for (const item of items) {
+    if (inferAdviceLineEditorKind(item) !== 'MEDICATION') continue;
+    const gid = String(item.groupId ?? '').trim();
+    const sn = positiveSortNumber(item.sortNumber);
+    if (gid && sn !== undefined) {
+      map.set(gid, sn);
+    }
+  }
+  return map;
+}
+
+function resolveUpdateMedicationSortNumber(
+  item: AdviceDrugItem,
+  flatExisting: AdviceRowItem[],
+): number | undefined {
+  const fromItem = positiveSortNumber(item.sortNumber);
+  if (fromItem !== undefined) return fromItem;
+  const rid = String(item.medicationRequestId ?? '').trim();
+  if (!rid) return undefined;
+  const hit = flatExisting.find((row) => String(row.requestId ?? '').trim() === rid);
+  return positiveSortNumber(hit?.sortNumber);
+}
+
+/**
+ * 暂存前为药品行分配 sortNumber：UPDATE 保留原号；CREATE 追加 max+步长；同组成组共用同一号。
+ * 诊疗/耗材清除 sortNumber（仅药品参与 BR-ORD-018）。
+ */
+export function assignMedicationSortNumbersBeforeSave(
+  items: AdviceDrugItem[],
+  existingRows: readonly AdviceRowItem[] = [],
+): AdviceDrugItem[] {
+  const flatExisting = flattenAdviceRowsForResourceOps(filterListRowsForSortContext(existingRows));
+  const groupSortByGid = collectMedicationGroupSortMap(existingRows, items);
+  const batchGroupSort = new Map<string, number>();
+  let nextSort = resolveEncounterMaxMedicationSortNumber(existingRows);
+
+  return items.map((item) => {
+    if (inferAdviceLineEditorKind(item) !== 'MEDICATION') {
+      return { ...item, sortNumber: undefined };
+    }
+
+    const rid = String(item.medicationRequestId ?? '').trim();
+    if (rid) {
+      const preserved = resolveUpdateMedicationSortNumber(item, flatExisting);
+      return preserved === undefined
+        ? { ...item, sortNumber: undefined }
+        : { ...item, sortNumber: preserved };
+    }
+
+    const gid = String(item.groupId ?? '').trim();
+    const existingGroupSn = gid ? groupSortByGid.get(gid) : undefined;
+    if (existingGroupSn !== undefined) {
+      return { ...item, sortNumber: existingGroupSn };
+    }
+
+    const batchGroupSn = gid ? batchGroupSort.get(gid) : undefined;
+    if (batchGroupSn !== undefined) {
+      return { ...item, sortNumber: batchGroupSn };
+    }
+
+    nextSort += ADVICE_MEDICATION_SORT_STEP;
+    if (gid) {
+      batchGroupSort.set(gid, nextSort);
+    }
+    return { ...item, sortNumber: nextSort };
+  });
+}
+
+/** 药品草稿行 sortNumber（须已由 assignMedicationSortNumbersBeforeSave 写入） */
+export function resolveMedicationDraftSortNumber(item: AdviceDrugItem): number {
+  const sn = positiveSortNumber(item.sortNumber);
+  if (sn === undefined) {
+    throw new Error('药品草稿缺少排序号，请刷新后重试');
+  }
+  return sn;
+}

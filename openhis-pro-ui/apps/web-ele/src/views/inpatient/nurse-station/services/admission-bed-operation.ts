@@ -11,6 +11,8 @@ export interface AdmissionBedOperationIntent {
   targetBedName: string;
   targetHouseName: string;
   targetRegionName: string;
+  /** 目标入院病区位置 id */
+  targetWardLocationId: string;
   /** 互换对手就诊 id */
   encounterIdB?: string;
   swapPartnerName?: string;
@@ -55,6 +57,7 @@ export function buildAdmissionBedOperationIntent(
   bedName: string,
   houseName: string,
   regionName: string,
+  wardLocationId: string,
   targetOccupied: boolean,
   occupantEncounterId?: string,
   occupantName?: string,
@@ -70,6 +73,7 @@ export function buildAdmissionBedOperationIntent(
       targetBedName: bedName,
       targetHouseName: houseName,
       targetRegionName: regionName,
+      targetWardLocationId: wardLocationId,
       encounterIdB: occupantEncounterId,
       swapPartnerName: occupantName,
     };
@@ -81,6 +85,7 @@ export function buildAdmissionBedOperationIntent(
     targetBedName: bedName,
     targetHouseName: houseName,
     targetRegionName: regionName,
+    targetWardLocationId: wardLocationId,
   };
 }
 

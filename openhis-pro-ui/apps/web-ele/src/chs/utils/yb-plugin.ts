@@ -3,8 +3,8 @@
  * 9001 签到：浏览器优先取 MAC/IP；失败时由服务端 sign_mac / yb_plugin_url 回退。
  */
 const DEFAULT_PLUGIN_DATA_URL = 'http://127.0.0.1:5000/api/data/';
-const DEFAULT_CARD_READER_HOST = 'ddjk.jlhs.gov.cn';
-const DEFAULT_CARD_READER_PORT = 20215;
+export const DEFAULT_CARD_READER_HOST = 'ddjk.jlhs.gov.cn';
+export const DEFAULT_CARD_READER_PORT = 20215;
 const PLUGIN_FETCH_TIMEOUT_MS = 8_000;
 const PLUGIN_SIGN_MAC_TIMEOUT_MS = 65_000;
 const PLUGIN_HEALTH_TIMEOUT_MS = 3_000;

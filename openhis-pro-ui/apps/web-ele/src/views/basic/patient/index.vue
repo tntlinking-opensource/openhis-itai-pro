@@ -32,9 +32,12 @@ const total = ref(0);
 
 const initQueryParams: GetPatientPageParams = {
   pageNo: 1,
-  pageSize: 20,
+  pageSize: 10,
   keyword: '',
 };
+
+/** 表格最大高度（表体超出时在内部滚动） */
+const PATIENT_TABLE_MAX_HEIGHT = 700;
 
 const queryParams = reactive<GetPatientPageParams>({ ...initQueryParams });
 
@@ -52,76 +55,88 @@ const tableColumns = ref<TableColumn[]>([
   {
     type: 'index',
     label: '序号',
-    width: 60,
   },
   {
     label: '姓名',
     prop: 'name',
-    width: 150,
   },
   {
     label: '年龄',
     prop: 'age',
-    width: 80,
   },
   {
     label: '性别',
     prop: 'genderEnumText',
-    width: 100,
   },
   {
     label: '电话',
     prop: 'phone',
-    width: 160,
     showOverflowTooltip: true,
   },
   {
     label: '证件号',
     prop: 'idCard',
-    width: 180,
-    showOverflowTooltip: true,
-  },
-  {
-    label: '地址',
-    prop: 'address',
-    minWidth: 200,
     showOverflowTooltip: true,
   },
   {
     label: '操作',
     prop: 'action',
-    width: 260,
     fixed: 'right',
     slot: 'action',
+    align: 'center',
+    headerAlign: 'center',
   },
 ]);
 
-const handleQuery = async () => {
-  loading.value = true;
-  try {
-    const response = await getPatientListApi(queryParams);
-    tableData.value = response.content || [];
-    total.value = response.totalCount || 0;
-  } catch (error) {
-    console.error('加载数据失败:', error);
-    ElMessage.error('加载数据失败，请稍后重试');
-    tableData.value = [];
-    total.value = 0;
-  } finally {
-    loading.value = false;
+const handleQuery = async (params?: Partial<GetPatientPageParams>) => {
+  queryParams.pageNo = 1;
+  if (params?.keyword !== undefined) {
+    queryParams.keyword = String(params.keyword ?? '');
   }
+  if (params?.pageSize !== undefined) {
+    queryParams.pageSize = params.pageSize;
+  }
+  await loadPatientList();
 };
 
 const handleReset = () => {
   Object.assign(queryParams, initQueryParams);
-  handleQuery();
+  void loadPatientList();
 };
 
 const handlePagination = (pagination: { limit: number; page: number }) => {
   queryParams.pageSize = pagination.limit;
   queryParams.pageNo = pagination.page;
-  handleQuery();
+  void loadPatientList();
 };
+
+/** 防止连续查询竞态：仅最后一次请求结果写回表格 */
+let loadPatientListSeq = 0;
+
+async function loadPatientList() {
+  const seq = ++loadPatientListSeq;
+  loading.value = true;
+  try {
+    const response = await getPatientListApi({ ...queryParams });
+    if (seq !== loadPatientListSeq) {
+      return;
+    }
+    tableData.value = response.content;
+    total.value = response.totalCount;
+  } catch (error) {
+    if (seq !== loadPatientListSeq) {
+      return;
+    }
+    console.error('加载数据失败:', error);
+    ElMessage.error('加载数据失败，请稍后重试');
+    tableData.value = [];
+    total.value = 0;
+  } finally {
+    if (seq === loadPatientListSeq) {
+      loading.value = false;
+    }
+  }
+}
 
 /** 证件类型下拉选项（来自 init 的 identityDocumentType，排除身份证后供「其他证件」使用） */
 const certTypeOptions = ref<ApiOptionItem[]>([]);
@@ -188,9 +203,9 @@ const handleDelete = async (row: Patient) => {
       cancelButtonText: '取消',
       type: 'warning',
     });
-    await deletePatientApi({ value: row.id });
+    await deletePatientApi(row.id);
     ElMessage.success('删除成功');
-    handleQuery();
+    await loadPatientList();
   } catch (error: any) {
     if (error !== 'cancel') {
       ElMessage.error(error?.msg || '删除失败，请稍后重试');
@@ -220,7 +235,7 @@ onMounted(async () => {
     console.error('患者管理初始化失败:', error);
     showStudentInfoButton.value = false;
   }
-  handleQuery();
+  void loadPatientList();
 });
 </script>
 
@@ -233,6 +248,7 @@ onMounted(async () => {
       :query-params="queryParams"
       :form-items="formItems"
       :table-columns="tableColumns"
+      :max-height="PATIENT_TABLE_MAX_HEIGHT"
       :show-top-query="true"
       :show-pagination="true"
       row-key="id"
@@ -257,6 +273,7 @@ onMounted(async () => {
       :marital-status-options="maritalStatusOptions"
       :blood-type-abo-options="bloodTypeAboOptions"
       :blood-type-rh-options="bloodTypeRhOptions"
+      :sex-options="sexOptionsForStudent"
       :form-data="dialogFormData || undefined"
       @success="handleQuery"
     />

@@ -122,3 +122,52 @@
 .order-table--horizontal-only :deep(.el-table__inner-wrapper::after) {
   display: none;
 }
+
+.execute-schedule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.execute-schedule-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.execute-schedule-date {
+  width: 42px;
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+}
+
+.execute-schedule-slots {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.execute-schedule-slots :deep(.el-checkbox) {
+  margin-right: 0;
+}
+
+/* 类型列长临配色：与住院医生站医嘱列表一致 */
+.ip-advice-type-sep {
+  color: var(--el-text-color-secondary);
+}
+
+.ip-advice-therapy-text--long {
+  color: #a6745c;
+  font-weight: 500;
+}
+
+.ip-advice-therapy-text--temp {
+  color: #3787a5;
+  font-weight: 500;
+}
+
+.ip-advice-therapy-text--discharge {
+  color: #5b8c3e;
+  font-weight: 500;
+}

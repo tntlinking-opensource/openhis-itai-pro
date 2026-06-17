@@ -298,6 +298,10 @@ export interface AgreeInboundReceiptRequestBody {
   busNo: string;
   approverId?: string;
   approvalClock?: string;
+  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
+  medicareUploadEnabled?: boolean;
+  /** 医保契约 busNo（上传时必填） */
+  contractBusNo?: string;
 }
 
 export interface AgreeInboundReceiptResponseDto {

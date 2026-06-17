@@ -4,6 +4,7 @@
 import type { ApiResponse } from '#/types/api-response';
 
 import { requestClient } from '#/api/request';
+import { chsLongRequestConfig } from '#/chs/constants/request-timeout';
 
 const BASE = '/insuranceSession';
 
@@ -16,6 +17,10 @@ export interface InsuranceSignInParams {
 
 /** 手动触发 9001 签到，返回 sign_no */
 export async function insuranceSignInApi(params: InsuranceSignInParams): Promise<string> {
-  const res = await requestClient.post<ApiResponse<string>>(`${BASE}/signIn`, params);
+  const res = await requestClient.post<ApiResponse<string>>(
+    `${BASE}/signIn`,
+    params,
+    chsLongRequestConfig(),
+  );
   return res.data ?? '';
 }

@@ -53,8 +53,22 @@ export async function deleteMenuApi(params: { id: string }): Promise<void> {
 }
 
 /**
- * 获取菜单树形结构
+ * 获取菜单树形结构（菜单管理页，需 Navigation.MenuManagement）
  */
 export async function getMenuTreeApi(): Promise<Menu[]> {
   return publicRequestClient.post<Menu[]>('/menu/getTree');
+}
+
+/**
+ * 角色授权用菜单树（仅启用且未隐藏页面，需 Navigation.RoleManagement）
+ */
+export async function getMenuGrantTreeApi(): Promise<Menu[]> {
+  return publicRequestClient.post<Menu[]>('/menu/getGrantTree');
+}
+
+/**
+ * 当前登录用户可见菜单树（登录后动态路由、科室切换）
+ */
+export async function getMenuTreeByLoginUserApi(): Promise<Menu[]> {
+  return publicRequestClient.post<Menu[]>('/menu/getTreeByLoginUser');
 }

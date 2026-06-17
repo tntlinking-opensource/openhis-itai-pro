@@ -97,17 +97,9 @@ const formatField = (value: null | number | string | undefined) => {
   return String(value);
 };
 
-const genderEnumLabel = (genderEnum: null | number | undefined) => {
-  if (genderEnum === 1) return '男';
-  if (genderEnum === 2) return '女';
-  return '-';
-};
-
-/** 与 PatientCard 一致：优先接口 `genderEnumText`，否则 `genderEnum` 映射 */
+/** 展示性别：直接使用接口 `genderEnumText` */
 function outpatientGenderDisplay(patient: DoctorStationPatient): string {
-  const raw = (patient.genderEnumText ?? '').trim();
-  if (raw) return raw;
-  return genderEnumLabel(patient.genderEnum);
+  return (patient.genderEnumText ?? '').trim() || '-';
 }
 
 /** 与 PatientCard 门诊卡片一致：年龄行带「岁」 */

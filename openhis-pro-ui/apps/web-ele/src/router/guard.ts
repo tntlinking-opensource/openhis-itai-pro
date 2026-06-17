@@ -9,7 +9,10 @@ import { DEFAULT_HOME_PATH, resolvePostLoginPath } from '#/constants/app';
 import { coreRouteNames } from '#/router/routes';
 import { useAuthStore } from '#/store';
 
+import { isAuthFailureError, isTransientRequestError } from '#/utils/transient-request-error';
+
 import { ensureAccessRoutes, isNotFoundRouteName } from './access-init';
+import { LoginScopeNotReadyError, requireLoginScopeReady } from '#/utils/require-login-scope-ready';
 
 /**
  * 从 resolve 结果中只取 path/query/hash，避免展开 RouteLocationResolved 带入 matched 等内部字段。
@@ -69,19 +72,18 @@ function setupAccessGuard(router: Router) {
     // 基本路由，这些路由不需要进入权限拦截
     if (coreRouteNames.includes(to.name as string)) {
       if (to.path === LOGIN_PATH && accessStore.accessToken) {
-        // 检查是否已选择租户和科室
-        const tenantList = authStore.getTenantList();
-        const selectedTenant = authStore.getSelectedTenant();
-        const selectedOrganization = authStore.getSelectedOrganization();
-
-        // 如果有租户列表但没有选择租户，或者已选择租户但没有选择科室，允许停留在登录页
-        if (tenantList.length > 0 && (!selectedTenant || !selectedOrganization)) {
+        try {
+          await requireLoginScopeReady();
+          const rawTarget = resolvePostLoginPath(to.query?.redirect as string | undefined);
+          return { ...pickPathQueryHash(router.resolve(rawTarget)), replace: true };
+        } catch (error) {
+          if (!(error instanceof LoginScopeNotReadyError)) {
+            console.error('[router-guard] login scope check failed', error);
+          }
+          authStore.setSelectedOrganization('');
+          accessStore.setIsAccessChecked(false);
           return true;
         }
-
-        // 如果已选择租户和科室，重定向到首页或 redirect 参数（须拆 path/query，不能整段当 path）
-        const rawTarget = resolvePostLoginPath(to.query?.redirect as string | undefined);
-        return { ...pickPathQueryHash(router.resolve(rawTarget)), replace: true };
       }
       return true;
     }
@@ -99,31 +101,25 @@ function setupAccessGuard(router: Router) {
       return true;
     }
 
-    // 权限已校验完成，直接放行
+    // 动态路由已注册即放行；登录上下文在 ensureAccessRoutes 首次初始化时已校验
     if (accessStore.isAccessChecked) {
       return true;
-    }
-
-    // 如果有租户列表但没有选择租户，或者已选择租户但没有选择科室，重定向到登录页
-    const tenantList = authStore.getTenantList();
-    const selectedTenant = authStore.getSelectedTenant();
-    const selectedOrganization = authStore.getSelectedOrganization();
-
-    if (
-      tenantList.length > 0 &&
-      (!selectedTenant || !selectedOrganization) &&
-      to.path !== LOGIN_PATH
-    ) {
-      return {
-        path: LOGIN_PATH,
-        replace: true,
-      };
     }
 
     try {
       await ensureAccessRoutes(router);
     } catch (error) {
-      console.error('[router-guard] access-init failed, redirect to login', error);
+      if (error instanceof LoginScopeNotReadyError) {
+        authStore.setSelectedOrganization('');
+        accessStore.setIsAccessChecked(false);
+        return { path: LOGIN_PATH, replace: true };
+      }
+      if (isTransientRequestError(error) || !isAuthFailureError(error)) {
+        console.warn('[router-guard] access-init failed, keep session for retry', error);
+        accessStore.setIsAccessChecked(false);
+        return true;
+      }
+      console.error('[router-guard] access-init auth failed, redirect to login', error);
       accessStore.setAccessToken(null);
       return { path: LOGIN_PATH, replace: true };
     }

@@ -2,26 +2,18 @@
 import type { Organization } from '#/api';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
-
-import { useAccessStore } from '@vben/stores';
 
 import { ElInput, ElMessage, ElMessageBox, ElPopover, ElTree } from 'element-plus';
 
-import { getMenuTreeApi, getOrganizationApiByLoginUser, loginByOrgApi } from '#/api';
-import { DEFAULT_HOME_PATH, resolvePostLoginPath } from '#/constants/app';
-import { generateAccess } from '#/router/access';
-import { accessRoutes } from '#/router/routes';
+import { getAvailableOrganizationUnitsApi } from '#/api';
 import { useAuthStore } from '#/store';
-import { convertMenuData } from '#/utils/convert-menu-data';
+import { switchOrganizationUnitSession } from '#/utils/switch-organization-unit-session';
 
 defineOptions({
   name: 'DepartmentSelector',
 });
 
 const authStore = useAuthStore();
-const accessStore = useAccessStore();
-const router = useRouter();
 
 interface OrganizationNode {
   id: number | string;
@@ -106,55 +98,30 @@ const filteredOrganizations = computed(() => {
   return filterTree(organizations.value);
 });
 
+/** 切换科室：同步服务端会话后整页刷新，避免各业务页残留旧科室上下文 */
 async function proceedToSystem() {
+  const organizationId = selectedOrganizationId.value;
+  if (!organizationId) {
+    return;
+  }
+
   try {
-    await loginByOrgApi({
-      organizationUnitId: selectedOrganizationId.value as string,
-    });
-
-    // 获取菜单数据
-    const menus = await getMenuTreeApi();
-    const menuData = menus || [];
-
-    // 转换菜单数据格式
-    const convertedMenus = convertMenuData(menuData);
-
-    // 重置路由检查状态，确保路由守卫会重新生成路由
-    accessStore.setIsAccessChecked(false);
-
-    // 生成动态路由和菜单
-    const { accessibleMenus, accessibleRoutes } = await generateAccess({
-      roles: [],
-      router,
-      routes: accessRoutes,
-      menuData: convertedMenus,
-    });
-
-    // 保存菜单和路由信息
-    accessStore.setAccessMenus(accessibleMenus);
-    accessStore.setAccessRoutes(accessibleRoutes);
-    accessStore.setIsAccessChecked(true);
-
-    // 等待路由注册完成
-    await nextTick();
-
-    const redirectParam = router.currentRoute.value.query?.redirect as string | undefined;
-    await router.push(resolvePostLoginPath(redirectParam));
+    await switchOrganizationUnitSession(String(organizationId));
+    window.location.reload();
   } catch (error) {
     console.error('Failed to proceed to system:', error);
-    await router.push(DEFAULT_HOME_PATH);
+    throw error;
   }
 }
 
 async function fetchOrganizations() {
   try {
     loading.value = true;
-    const response = await getOrganizationApiByLoginUser();
+    const response = await getAvailableOrganizationUnitsApi();
     const organizationList =
       (response as unknown as { data?: Organization[] }).data || (response as Organization[]);
 
     if (organizationList && Array.isArray(organizationList) && organizationList.length > 0) {
-      // 转换 Organization[] 格式为树形格式，保留 children
       const transformToTree = (items: Organization[]): OrganizationNode[] => {
         return items.map((item) => ({
           id: item.id,
@@ -169,25 +136,28 @@ async function fetchOrganizations() {
 
       await nextTick();
 
-      const currentSelected = authStore.getSelectedOrganization();
-      if (currentSelected !== null && currentSelected !== undefined) {
-        const matchedOrg = findOrganizationInTree(organizations.value, currentSelected);
-        if (matchedOrg) {
-          selectedOrganizationId.value = String(matchedOrg.id);
-        } else if (organizations.value.length > 0) {
-          const firstOrgId = organizations.value[0]?.id;
-          if (firstOrgId) {
-            const orgIdStr = String(firstOrgId);
-            selectedOrganizationId.value = orgIdStr;
-            authStore.setSelectedOrganization(orgIdStr);
-          }
-        }
-      } else if (organizations.value.length > 0 && organizations.value[0]?.id) {
-        const firstOrgId = organizations.value[0].id;
-        const orgIdStr = String(firstOrgId);
-        selectedOrganizationId.value = orgIdStr;
-        authStore.setSelectedOrganization(orgIdStr);
+      const flatList = flattenTree(organizations.value);
+      const allowedIds = new Set(flatList.map((org) => String(org.id)));
+      const storedOrgId = authStore.getSelectedOrganization();
+      let resolvedOrgId: string | undefined;
+
+      if (storedOrgId && allowedIds.has(String(storedOrgId))) {
+        resolvedOrgId = String(storedOrgId);
+      } else if (flatList.length === 1 && flatList[0]?.id != null) {
+        resolvedOrgId = String(flatList[0].id);
       }
+
+      if (resolvedOrgId) {
+        selectedOrganizationId.value = resolvedOrgId;
+        // 会话科室由 requireLoginScopeReady / switchOrganizationUnitSession 维护，此处仅同步展示
+      } else {
+        selectedOrganizationId.value = '';
+        authStore.setSelectedOrganization('');
+      }
+    } else {
+      organizations.value = [];
+      selectedOrganizationId.value = '';
+      authStore.setSelectedOrganization('');
     }
   } catch (error) {
     console.error('Failed to get organization list:', error);
@@ -214,20 +184,19 @@ async function handleChange(value: string) {
     });
 
     selectedOrganizationId.value = value;
-    authStore.setSelectedOrganization(value);
     popoverVisible.value = false;
 
-    await proceedToSystem();
-
-    ElMessage.success(`已切换到${orgName}`);
+    try {
+      await proceedToSystem();
+      ElMessage.success(`已切换到${orgName}`);
+    } catch (error: any) {
+      console.error('Failed to switch department:', error);
+      selectedOrganizationId.value = oldValue;
+      popoverVisible.value = false;
+    }
   } catch (error: any) {
     if (error === 'cancel' || error?.action === 'cancel') {
       selectedOrganizationId.value = oldValue;
-      popoverVisible.value = false;
-    } else {
-      console.error('Failed to switch department:', error);
-      selectedOrganizationId.value = oldValue;
-      authStore.setSelectedOrganization(oldValue);
       popoverVisible.value = false;
     }
   }

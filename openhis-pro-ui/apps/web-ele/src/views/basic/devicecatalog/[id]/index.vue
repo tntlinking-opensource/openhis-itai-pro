@@ -6,17 +6,33 @@ import type {
   UpdateDeviceCatalogParams,
 } from '#/api';
 
+import type { NationalCatalogItem } from '#/chs/api';
+
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 
-import { ElButton, ElDialog, ElMessage } from 'element-plus';
+import { ElButton, ElDialog, ElMessage, ElMessageBox } from 'element-plus';
 
 import { useVbenForm } from '#/adapter/form';
+import {
+  EXTENDED_FORM_KEYBOARD_SELECTORS,
+  FORM_KEYBOARD_GRID_NAV_KEYS,
+  useFormKeyboardNavigation,
+} from '#/hooks/use-form-keyboard-navigation';
 import {
   createDeviceCatalogApi,
   getDeviceCatalogApi,
   initDeviceCatalogApi,
   updateDeviceCatalogApi,
 } from '#/api';
+import { getChargeTypeListApi } from '#/api/core/common';
+import { revokeDeviceCatalog3302Api, uploadDeviceCatalog3301Api } from '#/chs/api';
+import MedicationCatalogPickerDialog from '#/chs/components/medication-catalog-picker-dialog.vue';
+import { catalogChrgitmLvToFormValue } from '#/chs/constants/catalog-chrgitm-lv';
+import {
+  filterInsuranceChargeTypes,
+  resolveDefaultInsuranceBusNo,
+} from '#/chs/constants/insurance-contract';
+import { ensureInsuranceSignIn } from '#/chs/utils/ensure-insurance-sign-in';
 
 interface Props {
   modelValue: boolean;
@@ -47,7 +63,19 @@ type OptionItem = {
 };
 
 const loading = ref(false);
+const upload3301Loading = ref(false);
+const revoke3302Loading = ref(false);
+const pickerVisible = ref(false);
+const defaultContractBusNo = ref<string>();
+const formAreaRef = ref<HTMLElement | null>(null);
 const formData = ref<Partial<DeviceCatalogItem>>({});
+
+const { handleFormKeydown: handleDeviceFormKeydown } = useFormKeyboardNavigation(formAreaRef, {
+  selectors: EXTENDED_FORM_KEYBOARD_SELECTORS,
+  keys: FORM_KEYBOARD_GRID_NAV_KEYS,
+  selectPolicy: true,
+  navigationMode: 'grid',
+});
 const initOptions = ref<DeviceCatalogInitResponse>({} as DeviceCatalogInitResponse);
 const originalData = ref<Partial<DeviceCatalogItem>>({});
 
@@ -55,6 +83,40 @@ const BOOLEAN_FLAG_FIELDS = ['allergenFlag', 'ybFlag', 'ybMatchFlag', 'hvcmFlag'
 
 /** 业务信息内联复选组 */
 const CHECKBOX_INLINE_GROUP_FIELDS = ['allergenFlag', 'ybFlag', 'hvcmFlag'] as const;
+
+/** 已从表单移除、提交时须剔除的字段 */
+const REMOVED_FORM_FIELDS = [
+  'typeCode',
+  'modelNumber',
+  'substanceText',
+  'orgId',
+  'defEncounterUnitCode',
+  'defInhospitalUnitCode',
+  'locationId',
+  'jurisdiction',
+] as const;
+
+/** 拆零倍数输入：支持小数，不固定小数位、不补尾零 */
+const UNIT_RATIO_INPUT_PROPS = {
+  min: 1,
+  step: 0.001,
+  controlsPosition: 'right' as const,
+};
+
+/** 库存 4×4 栅格占位格（每行须满 4 格，否则下一行字段会顶到上一行第 4 列） */
+function buildInvGridPadField(fieldName: string) {
+  return {
+    component: 'Input' as const,
+    fieldName,
+    hideLabel: true,
+    formItemClass: 'inv-grid-pad !mb-0',
+    componentProps: {
+      disabled: true,
+      class: 'pointer-events-none opacity-0',
+      tabindex: -1,
+    },
+  };
+}
 
 const convertOptions = (
   options: null | OptionItem[] | undefined,
@@ -77,8 +139,6 @@ const createOptionsComputed = (key: string) =>
   computed(() => convertOptions((initOptions.value?.[key] as OptionItem[]) || null));
 
 const deviceCategories = createOptionsComputed('deviceCategories');
-const equipmentTypes = createOptionsComputed('equipmentTypes');
-const exeOrganizations = createOptionsComputed('exeOrganizations');
 const supplierListOptions = createOptionsComputed('supplierListOptions');
 /** 五类计量单位统一候选（unit_code），与药品目录一致；旧 init 无 unitCodeOptions 时回落 packUnits */
 const unitCodeOptions = computed(() => {
@@ -91,7 +151,6 @@ const unitCodeOptions = computed(() => {
 const ybCategories = createOptionsComputed('ybCategories');
 const financialTypes = createOptionsComputed('financialTypes');
 const ybGrades = createOptionsComputed('ybGrades');
-const locations = createOptionsComputed('locations');
 
 /** 弹窗显隐，与 ElDialog v-model 同步 */
 const dialogVisible = computed({
@@ -105,6 +164,133 @@ const isEditMode = computed(() => {
   const id = String(props.catalogId || '');
   return !!id && id !== 'new';
 });
+
+const pickerContext = computed(() => ({
+  name: String(formData.value?.name ?? ''),
+  approvalNumber: String(formData.value?.approvalNumber ?? ''),
+  totalVolume: String(formData.value?.totalVolume ?? ''),
+  listType: '301',
+}));
+
+const canUpload3301 = computed(
+  () => isEditMode.value && Boolean(String(formData.value?.ybNo ?? '').trim()),
+);
+
+const canRevoke3302 = computed(
+  () =>
+    isEditMode.value &&
+    Boolean(String(formData.value?.ybNo ?? '').trim()) &&
+    coerceLegacyBool(formData.value?.ybMatchFlag),
+);
+
+async function loadDefaultContractBusNo() {
+  try {
+    const list = await getChargeTypeListApi();
+    const eligible = filterInsuranceChargeTypes(list ?? []);
+    defaultContractBusNo.value = resolveDefaultInsuranceBusNo(eligible, defaultContractBusNo.value);
+  } catch {
+    defaultContractBusNo.value = undefined;
+  }
+}
+
+function openCatalogPicker() {
+  pickerVisible.value = true;
+}
+
+function applyCatalogSelection(row: NationalCatalogItem) {
+  formApi.setFieldValue('ybNo', row.hilistCode ?? '');
+  const lv = catalogChrgitmLvToFormValue(row.chrgitmLv);
+  if (lv !== undefined) {
+    formApi.setFieldValue('chrgitmLv', lv);
+  }
+  formApi.setFieldValue('ybMatchFlag', false);
+  formData.value = {
+    ...formData.value,
+    ybNo: row.hilistCode,
+    chrgitmLv: lv as DeviceCatalogItem['chrgitmLv'],
+    ybMatchFlag: false,
+  };
+  ElMessage.success(`已选用医保编码 ${row.hilistCode}，保存耗材后可上传 3301`);
+}
+
+async function handleUpload3301() {
+  const id = props.catalogId;
+  if (id === 'new') {
+    ElMessage.warning('请先保存耗材后再上传 3301');
+    return;
+  }
+  await loadDefaultContractBusNo();
+  if (!defaultContractBusNo.value) {
+    ElMessage.warning('未配置医保契约');
+    return;
+  }
+  const signedIn = await ensureInsuranceSignIn(defaultContractBusNo.value);
+  if (!signedIn) return;
+  upload3301Loading.value = true;
+  try {
+    const result = await uploadDeviceCatalog3301Api({
+      contractBusNo: defaultContractBusNo.value,
+      deviceDefId: id,
+      listType: '301',
+    });
+    if (result.allSuccess) {
+      ElMessage.success(result.summary ?? '3301 上传成功');
+      formApi.setFieldValue('ybMatchFlag', true);
+      formData.value = { ...formData.value, ybMatchFlag: true };
+    } else {
+      ElMessage.error(result.summary ?? '3301 上传失败');
+    }
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : '3301 上传失败';
+    ElMessage.error(msg);
+  } finally {
+    upload3301Loading.value = false;
+  }
+}
+
+async function handleRevoke3302() {
+  const id = props.catalogId;
+  if (id === 'new') {
+    ElMessage.warning('请先保存耗材后再撤销 3302');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '将撤销该耗材在医保平台的目录对照，本地「医保对码」将取消勾选。是否继续？',
+      '撤销医保对照(3302)',
+      { type: 'warning', confirmButtonText: '撤销', cancelButtonText: '取消' },
+    );
+  } catch {
+    return;
+  }
+  await loadDefaultContractBusNo();
+  if (!defaultContractBusNo.value) {
+    ElMessage.warning('未配置医保契约');
+    return;
+  }
+  const signedIn = await ensureInsuranceSignIn(defaultContractBusNo.value);
+  if (!signedIn) return;
+  revoke3302Loading.value = true;
+  try {
+    const result = await revokeDeviceCatalog3302Api({
+      contractBusNo: defaultContractBusNo.value,
+      deviceDefId: id,
+      listType: '301',
+    });
+    if (result.allSuccess) {
+      ElMessage.success(result.summary ?? '3302 撤销成功');
+      formApi.setFieldValue('ybMatchFlag', false);
+      formData.value = { ...formData.value, ybMatchFlag: false };
+    } else {
+      ElMessage.error(result.summary ?? '3302 撤销失败');
+    }
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : '3302 撤销失败';
+    ElMessage.error(msg);
+  } finally {
+    revoke3302Loading.value = false;
+  }
+}
 
 /** 弹窗标题：新增 / 编辑（带出耗材名） */
 const dialogTitle = computed(() => {
@@ -199,17 +385,12 @@ function normalizeUnitFieldNames(values: Record<string, unknown>): Record<string
 function normalizeFormSelectValues(data: Record<string, unknown>) {
   const selectFieldNames = [
     'categoryCode',
-    'typeCode',
     'supplyId',
     'doseUnitCode',
-    'orgId',
-    'locationId',
     'purchaseUnitCode',
     'stockUnitCode',
     'packageUnitCode',
     'splitUnitCode',
-    'defEncounterUnitCode',
-    'defInhospitalUnitCode',
     'itemTypeCode',
     'ybType',
     'chrgitmLv',
@@ -298,6 +479,9 @@ function buildSubmitData(formValues: Record<string, unknown>): Partial<DeviceCat
   mapLegacyPackageUnitFields(mergedData);
   delete mergedData.salesUnitCode;
   delete mergedData.salesUnitRatio;
+  REMOVED_FORM_FIELDS.forEach((field) => {
+    delete mergedData[field];
+  });
   const submitData: Partial<DeviceCatalogItem> = {};
   Object.keys(mergedData).forEach((key) => {
     if (key.startsWith('__')) {
@@ -380,7 +564,18 @@ const [Form, formApi] = useVbenForm(
     layout: 'horizontal',
     commonConfig: {
       labelClass: 'justify-start text-left',
+      formFieldProps: {
+        validateOnBlur: false,
+        validateOnChange: false,
+        validateOnInput: false,
+        validateOnModelUpdate: false,
+      },
+      componentProps: {
+        validateEvent: false,
+        class: 'w-full',
+      },
     },
+    // lg 起固定四列，避免「库存与单位」4×4 在 lg:3 列时第四格换行导致前三行只有三列（与药品目录一致）
     wrapperClass: 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4',
     schema: computed(() => [
       {
@@ -448,40 +643,25 @@ const [Form, formApi] = useVbenForm(
         },
       },
       {
-        component: 'Select',
-        fieldName: 'typeCode',
-        label: '耗材种类',
-        componentProps: {
-          options: equipmentTypes.value,
-          filterable: true,
-          placeholder: '请选择耗材种类',
-          clearable: true,
-        },
-      },
-      {
-        component: 'Input',
-        fieldName: 'modelNumber',
-        label: '产品型号',
-      },
-      {
         component: 'Input',
         fieldName: 'approvalNumber',
         label: '批准文号',
       },
       {
         component: 'Input',
-        fieldName: 'substanceText',
-        label: '主要成分',
+        fieldName: 'totalVolume',
+        label: '包装规格',
+        rules: 'required',
       },
       {
         component: 'Input',
         fieldName: 'ybNo',
         label: '医保编码',
-      },
-      {
-        component: 'Input',
-        fieldName: 'ybOrgNo',
-        label: '医药机构目录编码',
+        componentProps: {
+          onInput: (value: string) => {
+            formData.value = { ...formData.value, ybNo: value };
+          },
+        },
       },
       {
         component: 'Select',
@@ -494,6 +674,11 @@ const [Form, formApi] = useVbenForm(
           placeholder: '请选择财务类型',
           clearable: true,
         },
+      },
+      {
+        component: 'Input',
+        fieldName: 'ybOrgNo',
+        label: '医药机构目录编码',
       },
       {
         component: 'Select',
@@ -522,17 +707,6 @@ const [Form, formApi] = useVbenForm(
         fieldName: 'ybMatchFlag',
         label: '医保对码',
       },
-
-      {
-        component: 'SectionTitle',
-        fieldName: '__section_clinical',
-        label: '临床与规格信息',
-        hideLabel: true,
-        formItemClass: 'col-span-full !mb-0 !pb-0 device-catalog-form-dialog__section-title',
-        componentProps: {
-          title: '临床与规格信息',
-        },
-      },
       {
         component: 'Select',
         fieldName: 'doseUnitCode',
@@ -550,13 +724,7 @@ const [Form, formApi] = useVbenForm(
         fieldName: 'doseUnitRatio',
         label: '剂量/拆零倍数',
         hide: true,
-        componentProps: { min: 1, precision: 6 },
-      },
-      {
-        component: 'Input',
-        fieldName: 'totalVolume',
-        label: '包装规格',
-        rules: 'required',
+        componentProps: { min: 1, step: 0.001, controlsPosition: 'right' },
       },
 
       {
@@ -569,17 +737,7 @@ const [Form, formApi] = useVbenForm(
           title: '库存与单位信息',
         },
       },
-      {
-        component: 'ApiTreeSelect',
-        fieldName: 'orgId',
-        label: '提供部门',
-        componentProps: {
-          data: exeOrganizations.value,
-          checkStrictly: true,
-          placeholder: '请选择提供部门',
-          clearable: true,
-        },
-      },
+      // 库存与单位：四列四行 — 列1 单位、列2 倍数、列3 价格/警戒线高；列4 原门诊/住院/库房已删，用占位；第4 行第3–4 列：警戒线高/低
       {
         component: 'Select',
         fieldName: 'purchaseUnitCode',
@@ -597,7 +755,7 @@ const [Form, formApi] = useVbenForm(
         fieldName: 'purchaseUnitRatio',
         label: '采购/拆零倍数',
         rules: 'required',
-        componentProps: { min: 1, precision: 6 },
+        componentProps: UNIT_RATIO_INPUT_PROPS,
       },
       {
         component: 'InputNumber',
@@ -610,17 +768,7 @@ const [Form, formApi] = useVbenForm(
           placeholder: '请输入购入价',
         },
       },
-      {
-        component: 'Select',
-        fieldName: 'defEncounterUnitCode',
-        label: '默认门诊就诊单位',
-        componentProps: {
-          options: unitCodeOptions.value,
-          filterable: true,
-          placeholder: '请选择默认门诊/就诊单位',
-          clearable: true,
-        },
-      },
+      buildInvGridPadField('__inv_grid_pad_r1c4'),
       {
         component: 'Select',
         fieldName: 'stockUnitCode',
@@ -638,7 +786,7 @@ const [Form, formApi] = useVbenForm(
         fieldName: 'stockUnitRatio',
         label: '库存/拆零倍数',
         rules: 'required',
-        componentProps: { min: 1, precision: 6 },
+        componentProps: UNIT_RATIO_INPUT_PROPS,
       },
       {
         component: 'InputNumber',
@@ -651,17 +799,7 @@ const [Form, formApi] = useVbenForm(
           placeholder: '请输入零售价',
         },
       },
-      {
-        component: 'Select',
-        fieldName: 'defInhospitalUnitCode',
-        label: '默认住院单位',
-        componentProps: {
-          options: unitCodeOptions.value,
-          filterable: true,
-          placeholder: '请选择默认住院单位',
-          clearable: true,
-        },
-      },
+      buildInvGridPadField('__inv_grid_pad_r2c4'),
       {
         component: 'Select',
         fieldName: 'packageUnitCode',
@@ -679,7 +817,7 @@ const [Form, formApi] = useVbenForm(
         fieldName: 'packageUnitRatio',
         label: '包装/拆零倍数',
         rules: 'required',
-        componentProps: { min: 1, precision: 6 },
+        componentProps: UNIT_RATIO_INPUT_PROPS,
       },
       {
         component: 'InputNumber',
@@ -691,18 +829,7 @@ const [Form, formApi] = useVbenForm(
           placeholder: '请输入最高零售价',
         },
       },
-      {
-        component: 'TreeSelect',
-        fieldName: 'locationId',
-        label: '默认采购入库库房',
-        componentProps: {
-          data: locations.value,
-          checkStrictly: true,
-          filterable: true,
-          placeholder: '请选择仓库',
-          clearable: true,
-        },
-      },
+      buildInvGridPadField('__inv_grid_pad_r3c4'),
       {
         component: 'Select',
         fieldName: 'splitUnitCode',
@@ -715,17 +842,7 @@ const [Form, formApi] = useVbenForm(
           clearable: true,
         },
       },
-      {
-        component: 'Input',
-        fieldName: '__inv_grid_pad_r4c2',
-        hideLabel: true,
-        formItemClass: 'inv-grid-pad !mb-0',
-        componentProps: {
-          disabled: true,
-          class: 'pointer-events-none opacity-0',
-          tabindex: -1,
-        },
-      },
+      buildInvGridPadField('__inv_grid_pad_r4c2'),
       {
         component: 'InputNumber',
         fieldName: 'itemMaxQuantity',
@@ -762,11 +879,6 @@ const [Form, formApi] = useVbenForm(
         component: 'Input',
         fieldName: 'wbStr',
         label: '五笔码',
-      },
-      {
-        component: 'Input',
-        fieldName: 'jurisdiction',
-        label: '适用范围',
       },
       {
         component: 'CheckboxInlineGroup',
@@ -847,16 +959,48 @@ watch(
     @closed="handleDialogClosed"
   >
     <div v-loading="loading" class="min-h-0">
-      <div class="device-catalog-form-dialog__form-wrap box-border px-4 pb-3 pt-2 sm:px-5">
+      <div
+        ref="formAreaRef"
+        class="device-catalog-form-dialog__form-wrap box-border px-4 pb-3 pt-2 sm:px-5"
+        @keydown.capture="handleDeviceFormKeydown"
+      >
         <Form />
       </div>
     </div>
     <template #footer>
-      <div class="flex justify-end gap-2 px-4 sm:px-5">
-        <ElButton type="primary" :loading="loading" @click="handleSubmit">保存</ElButton>
-        <ElButton @click="closeDialog">取消</ElButton>
+      <div class="flex flex-wrap items-center justify-between gap-2 px-4 sm:px-5">
+        <div v-if="isEditMode" class="flex flex-wrap gap-2">
+          <ElButton type="success" plain @click="openCatalogPicker">从国家目录选择</ElButton>
+          <ElButton
+            v-if="canUpload3301"
+            type="warning"
+            plain
+            :loading="upload3301Loading"
+            @click="handleUpload3301"
+          >
+            上传医保对照(3301)
+          </ElButton>
+          <ElButton
+            v-if="canRevoke3302"
+            type="danger"
+            plain
+            :loading="revoke3302Loading"
+            @click="handleRevoke3302"
+          >
+            撤销医保对照(3302)
+          </ElButton>
+        </div>
+        <div class="flex gap-2">
+          <ElButton type="primary" :loading="loading" @click="handleSubmit">保存</ElButton>
+          <ElButton @click="closeDialog">取消</ElButton>
+        </div>
       </div>
     </template>
+    <MedicationCatalogPickerDialog
+      v-model="pickerVisible"
+      :context="pickerContext"
+      @confirm="applyCatalogSelection"
+    />
   </ElDialog>
 </template>
 
@@ -874,6 +1018,7 @@ watch(
   max-width: 98vw;
 }
 
+/* 库存 4×4 占位格：占满栅格列高，避免第四列视觉塌陷 */
 .inv-grid-pad :deep(.el-form-item__content) {
   display: flex;
   min-height: 40px;
@@ -885,6 +1030,46 @@ watch(
 .device-catalog-form-dialog .device-catalog-form-dialog__section-title {
   margin-top: 0;
   padding-bottom: 0 !important;
+}
+
+.device-catalog-form-dialog .device-catalog-form-dialog__section-title:not(:first-child) {
+  margin-top: 8px;
+}
+
+.device-catalog-form-dialog .el-form-item {
+  margin-bottom: 14px;
+}
+
+.device-catalog-form-dialog .el-form-item__content {
+  min-width: 0;
+}
+
+.device-catalog-form-dialog .inv-grid-pad .el-form-item__content {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+}
+
+.device-catalog-form-dialog .el-form-item__content .el-input,
+.device-catalog-form-dialog .el-form-item__content .el-select {
+  width: 100%;
+  max-width: 100%;
+}
+
+.device-catalog-form-dialog .el-form-item__content .el-input-number {
+  display: inline-flex;
+  width: 100%;
+  max-width: 100%;
+}
+
+.device-catalog-form-dialog .el-input-number .el-input {
+  flex: 1;
+  width: 100%;
+}
+
+.device-catalog-form-dialog .el-input-number .el-input__wrapper {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .device-catalog-form-dialog.el-dialog {

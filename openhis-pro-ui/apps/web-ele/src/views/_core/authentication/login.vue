@@ -1,12 +1,13 @@
 <script lang="ts" setup>
 import type { VbenFormSchema } from '@vben/common-ui';
 
-import type { AuthApi, Organization } from '#/api';
+import type { AuthApi } from '#/api';
 
 import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import {
+  AuthenticationHospitalList,
   AuthenticationLogin,
   AuthenticationOrganizationList,
   AuthenticationTenantList,
@@ -15,17 +16,50 @@ import {
 import { $t } from '@vben/locales';
 import { useAccessStore, useUserStore } from '@vben/stores';
 
-import { ElMessage } from 'element-plus';
+import { ElButton, ElMessage } from 'element-plus';
 
-import { getMenuTreeApi, getOrganizationApiByLoginUser, loginByOrgApi } from '#/api';
-import { DEFAULT_HOME_PATH, resolvePostLoginPath } from '#/constants/app';
+import {
+  getMenuTreeByLoginUserApi,
+  loginByOrgApi,
+  selectHospitalApi,
+  skipOrganizationUnitSelectionApi,
+} from '#/api';
+import { resolvePostLoginPath } from '#/constants/app';
 import { generateAccess } from '#/router/access';
 import { accessRoutes } from '#/router/routes';
 import { useAuthStore } from '#/store';
-import { unwrapApiList } from '#/utils/api/unwrap-api-list';
 import { convertMenuData } from '#/utils/convert-menu-data';
+import type { LoginScopeHospital, LoginScopeOrganization } from '#/utils/login-scope-flow';
+
+import {
+  LOGIN_DEPARTMENT_LOAD_FAILED_MESSAGE,
+  LOGIN_NO_DEPARTMENT_FOR_HOSPITAL_MESSAGE,
+  LOGIN_NO_DEPARTMENT_MESSAGE,
+  LOGIN_PLATFORM_ADMIN_BOOTSTRAP_MESSAGE,
+  resolveHospitalsAfterTenant,
+  resolveLoginDepartmentStep,
+} from '#/utils/login-scope-flow';
+import { canSkipLoginDepartmentSelection } from '#/utils/platform-admin';
+import { requireLoginScopeReady } from '#/utils/require-login-scope-ready';
 
 defineOptions({ name: 'Login' });
+
+interface QuickLoginAccount {
+  label: string;
+  userName: string;
+  password: string;
+}
+
+/** 登录页快捷账号：拼音用户名，统一密码 123456 */
+const QUICK_LOGIN_ACCOUNTS: QuickLoginAccount[] = [
+  { label: '医生', userName: 'yisheng', password: '123456' },
+  { label: '住院医生', userName: 'zyyisheng', password: '123456' },
+  { label: '护士', userName: 'hushi', password: '123456' },
+  { label: '收费', userName: 'shoufei', password: '123456' },
+  { label: '药房', userName: 'yaofang', password: '123456' },
+  { label: '库管', userName: 'kuguan', password: '123456' },
+  { label: '财务', userName: 'caiwu', password: '123456' },
+];
 
 const authStore = useAuthStore();
 const accessStore = useAccessStore();
@@ -35,9 +69,11 @@ const router = useRouter();
 const authenticationLoginRef = ref<InstanceType<typeof AuthenticationLogin>>();
 const loginSuccess = ref(false);
 const showTenantList = ref(false);
+const showHospitalList = ref(false);
 const showOrganizationList = ref(false);
 const organizationLoading = ref(false);
 const selectedTenantId = ref<number | string>();
+const selectedHospitalId = ref<number | string>();
 const selectedOrganizationId = ref<number | string>();
 
 const tenants = ref<
@@ -50,15 +86,20 @@ const tenants = ref<
   }>
 >([]);
 
-const organizations = ref<
-  Array<{
-    code?: string;
-    description?: string;
-    id: number | string;
-    logo?: string;
-    name: string;
-  }>
->([]);
+const hospitals = ref<LoginScopeHospital[]>([]);
+
+const organizations = ref<LoginScopeOrganization[]>([]);
+/** 科室步骤为空或失败时的说明，展示在科室列表上方 */
+const departmentStepHint = ref('');
+
+/** 已登录但尚未展示任一步骤面板（租户/医院/科室），用于避免步骤切换间隙白屏 */
+const showScopeLoading = computed(
+  () =>
+    loginSuccess.value &&
+    !showTenantList.value &&
+    !showHospitalList.value &&
+    !showOrganizationList.value,
+);
 
 function transformTenantData(apiData: AuthApi.TenantInfo[]) {
   return apiData.map((item) => ({
@@ -70,24 +111,108 @@ function transformTenantData(apiData: AuthApi.TenantInfo[]) {
   }));
 }
 
-function transformOrganizationData(apiData: AuthApi.OrganizationInfo[] | Organization[]) {
-  return apiData.map((item) => ({
-    id: item.id,
-    name:
-      (item as AuthApi.OrganizationInfo).displayName ||
-      (item as Organization).displayName ||
-      (item as Organization).name ||
-      '',
-    code: item.code || '',
-    description:
-      (item as AuthApi.OrganizationInfo).remark || (item as Organization).remark || undefined,
-    logo: undefined,
-  }));
+/** 无科室或拉取失败时回退：多医院回医院列表，否则回租户或登录页 */
+function revertAfterNoDepartment(options?: { fromHospital?: boolean }) {
+  selectedOrganizationId.value = undefined;
+  authStore.setSelectedOrganization('');
+  showOrganizationList.value = false;
+
+  if (options?.fromHospital && hospitals.value.length > 1) {
+    selectedHospitalId.value = undefined;
+    authStore.setSelectedHospital('');
+    showHospitalList.value = true;
+    return;
+  }
+
+  showHospitalList.value = false;
+  if (tenants.value.length > 1) {
+    showTenantList.value = true;
+    return;
+  }
+
+  selectedTenantId.value = undefined;
+  authStore.setSelectedTenant('');
+  authStore.setSelectedHospital('');
+  loginSuccess.value = false;
+}
+
+/** 进入科室选择：先展示科室面板与加载态，无科室时保留返回入口 */
+async function enterDepartmentStep() {
+  showOrganizationList.value = true;
+  organizationLoading.value = true;
+  departmentStepHint.value = '';
+  try {
+    const outcome = await resolveLoginDepartmentStep();
+    if (outcome.kind === 'auto') {
+      await handleOrganizationChange(outcome.department);
+      return;
+    }
+    if (outcome.kind === 'pick') {
+      organizations.value = outcome.departments;
+      await nextTick();
+      return;
+    }
+    organizations.value = [];
+    if (outcome.kind === 'empty') {
+      if (shouldSkipLoginDepartmentSelection()) {
+        departmentStepHint.value = LOGIN_PLATFORM_ADMIN_BOOTSTRAP_MESSAGE;
+        await proceedToSystemWithoutOrganization();
+        return;
+      }
+      const hasSelectedHospital = !!selectedHospitalId.value || !!authStore.getSelectedHospital();
+      departmentStepHint.value = hasSelectedHospital
+        ? LOGIN_NO_DEPARTMENT_FOR_HOSPITAL_MESSAGE
+        : LOGIN_NO_DEPARTMENT_MESSAGE;
+      ElMessage.warning(departmentStepHint.value);
+      return;
+    }
+    departmentStepHint.value = outcome.message || LOGIN_DEPARTMENT_LOAD_FAILED_MESSAGE;
+    ElMessage.error(departmentStepHint.value);
+  } finally {
+    organizationLoading.value = false;
+  }
+}
+
+/** 点击快捷账号：回填表单并走与普通登录相同的提交流程 */
+async function handleQuickLogin(account: QuickLoginAccount) {
+  if (authStore.loginLoading) {
+    return;
+  }
+
+  const formApi = authenticationLoginRef.value?.getFormApi?.();
+  if (formApi) {
+    await formApi.setFieldValue('userName', account.userName);
+    await formApi.setFieldValue('password', account.password);
+  }
+
+  await handleLogin({
+    userName: account.userName,
+    password: account.password,
+  });
+}
+
+function shouldSkipLoginDepartmentSelection(): boolean {
+  if (authStore.getPlatformAdmin()) {
+    return true;
+  }
+  const userInfo = userStore.userInfo as {
+    roles?: string[];
+    userName?: string;
+    username?: string;
+  } | null;
+  return canSkipLoginDepartmentSelection({
+    roles: userInfo?.roles,
+    username: userInfo?.userName ?? userInfo?.username,
+  });
 }
 
 async function handleLogin(values: any) {
   try {
     await authStore.authLogin(values, async ({ tenants: tenantsList, userInfo, configuration }) => {
+      if (userInfo) {
+        userStore.setUserInfo(userInfo as any);
+      }
+      loginSuccess.value = true;
       if (tenantsList && tenantsList.length > 0) {
         tenants.value = transformTenantData(tenantsList);
 
@@ -100,10 +225,6 @@ async function handleLogin(values: any) {
       } else {
         showTenantList.value = true;
       }
-      if (userInfo) {
-        userStore.setUserInfo(userInfo as any);
-      }
-      loginSuccess.value = true;
       if (configuration?.auth.grantedPolicies) {
         const permissions = configuration.auth.grantedPolicies;
         accessStore.setAccessCodes(Object.keys(permissions).filter((k) => permissions[k]));
@@ -137,48 +258,132 @@ function sameTenantId(a: number | string | undefined, b: number | string | undef
 }
 
 async function handleTenantSelect(tenant: any) {
-  if (sameTenantId(selectedTenantId.value, tenant.id) && showOrganizationList.value) {
+  if (
+    sameTenantId(selectedTenantId.value, tenant.id) &&
+    (showHospitalList.value || showOrganizationList.value)
+  ) {
     return;
   }
 
   selectedTenantId.value = tenant.id;
   authStore.setSelectedTenant(String(tenant.id));
+  selectedHospitalId.value = undefined;
+  authStore.setSelectedHospital('');
   selectedOrganizationId.value = undefined;
   authStore.setSelectedOrganization('');
+  authStore.setOrganizationUnitSkipped(false);
   showTenantList.value = false;
+  showHospitalList.value = false;
+  showOrganizationList.value = false;
   organizationLoading.value = true;
 
   try {
-    const response = await getOrganizationApiByLoginUser();
-    const organizationList = unwrapApiList<Organization>(response).filter((item) => !!item);
-
-    if (organizationList && Array.isArray(organizationList) && organizationList.length > 0) {
-      organizations.value = transformOrganizationData(organizationList);
-      nextTick(() => {
-        showOrganizationList.value = true;
-      });
-    } else {
-      organizations.value = [];
-      showOrganizationList.value = true;
+    const hospitalList = await resolveHospitalsAfterTenant(tenant.id);
+    hospitals.value = hospitalList;
+    if (hospitalList.length === 0 || hospitalList.length === 1) {
+      if (hospitalList.length === 1) {
+        selectedHospitalId.value = hospitalList[0]!.id;
+        authStore.setSelectedHospital(String(hospitalList[0]!.id));
+      }
+      await enterDepartmentStep();
+      return;
     }
-  } catch (error) {
-    console.error('Failed to get organization list:', error);
-    showOrganizationList.value = true;
-    await proceedToSystem();
+    await nextTick();
+    showHospitalList.value = true;
+  } catch (error: unknown) {
+    console.error('Failed to resolve hospitals:', error);
+    const message =
+      error instanceof Error
+        ? error.message
+        : (error as { message?: string })?.message || '获取医院列表失败，请稍后重试';
+    ElMessage.error(message);
+    showTenantList.value = tenants.value.length > 1;
+    loginSuccess.value = tenants.value.length > 1;
+    if (tenants.value.length <= 1) {
+      selectedTenantId.value = undefined;
+      authStore.setSelectedTenant('');
+      loginSuccess.value = false;
+    }
   } finally {
     organizationLoading.value = false;
   }
 }
 
-function handleBackFromOrganizationList() {
-  showOrganizationList.value = false;
-  selectedOrganizationId.value = undefined;
-  authStore.setSelectedOrganization('');
+/** 用户选定医院后写入会话，再拉取该医院下可登录科室 */
+async function handleHospitalSelect(hospital: LoginScopeHospital) {
+  selectedHospitalId.value = hospital.id;
+  authStore.setSelectedHospital(String(hospital.id));
+  showHospitalList.value = false;
+  try {
+    await selectHospitalApi({ hospitalId: hospital.id });
+    await enterDepartmentStep();
+  } catch (error: unknown) {
+    console.error('Failed to select hospital:', error);
+    const message =
+      error instanceof Error
+        ? error.message
+        : (error as { message?: string })?.message || '选择医院失败，请稍后重试';
+    ElMessage.error(message);
+    showOrganizationList.value = false;
+    showHospitalList.value = true;
+  }
+}
+
+function handleBackFromHospitalList() {
+  showHospitalList.value = false;
+  selectedHospitalId.value = undefined;
+  authStore.setSelectedHospital('');
   if (tenants.value.length > 1) {
     showTenantList.value = true;
   } else {
     loginSuccess.value = false;
-    showTenantList.value = false;
+  }
+}
+
+/** 步骤切换加载中返回：优先回到上一级选择，否则回到登录表单 */
+function handleScopeLoadingBack() {
+  organizationLoading.value = false;
+  departmentStepHint.value = '';
+  if (hospitals.value.length > 1) {
+    showHospitalList.value = true;
+    return;
+  }
+  if (tenants.value.length > 1) {
+    showTenantList.value = true;
+    return;
+  }
+  handleBackToLoginForm();
+}
+
+/** 重置登录范围状态并回到账号密码登录 */
+function handleBackToLoginForm() {
+  showTenantList.value = false;
+  showHospitalList.value = false;
+  showOrganizationList.value = false;
+  organizationLoading.value = false;
+  departmentStepHint.value = '';
+  selectedTenantId.value = undefined;
+  selectedHospitalId.value = undefined;
+  selectedOrganizationId.value = undefined;
+  authStore.setSelectedTenant('');
+  authStore.setSelectedHospital('');
+  authStore.setSelectedOrganization('');
+  authStore.setOrganizationUnitSkipped(false);
+  authStore.setPlatformAdmin(false);
+  loginSuccess.value = false;
+}
+
+function handleBackFromOrganizationList() {
+  showOrganizationList.value = false;
+  departmentStepHint.value = '';
+  selectedOrganizationId.value = undefined;
+  authStore.setSelectedOrganization('');
+  if (hospitals.value.length > 1) {
+    showHospitalList.value = true;
+  } else if (tenants.value.length > 1) {
+    showTenantList.value = true;
+  } else {
+    loginSuccess.value = false;
   }
 }
 
@@ -189,88 +394,120 @@ function handleBackFromTenantList() {
   loginSuccess.value = false;
 }
 
-async function handleOrganizationChange(organization: any) {
+async function handleOrganizationChange(organization: LoginScopeOrganization) {
   selectedOrganizationId.value = organization.id;
-  authStore.setSelectedOrganization(organization.id);
-
-  await proceedToSystem();
-}
-
-async function proceedToSystem() {
   try {
-    await loginByOrgApi({
-      organizationUnitId: selectedOrganizationId.value as string,
-    });
-
-    const menus = await getMenuTreeApi();
-    const menuData = menus || [];
-
-    const convertedMenus = convertMenuData(menuData);
-
-    accessStore.setIsAccessChecked(false);
-
-    const { accessibleMenus, accessibleRoutes } = await generateAccess({
-      roles: [],
-      router,
-      routes: accessRoutes,
-      menuData: convertedMenus,
-    });
-
-    accessStore.setAccessMenus(accessibleMenus);
-    accessStore.setAccessRoutes(accessibleRoutes);
-    accessStore.setIsAccessChecked(true);
-
-    await nextTick();
-    const redirectParam = router.currentRoute.value.query?.redirect as string | undefined;
-    const targetPath = resolvePostLoginPath(redirectParam);
-
-    await router.push(targetPath);
-  } catch (error) {
-    console.error('Failed to proceed to system:', error);
-    await router.push(DEFAULT_HOME_PATH);
+    await proceedToSystem(String(organization.id));
+  } catch {
+    selectedOrganizationId.value = undefined;
+    authStore.setSelectedOrganization('');
+    showOrganizationList.value = true;
   }
 }
 
+async function proceedToSystem(organizationId: string) {
+  if (!organizationId) {
+    ElMessage.warning(LOGIN_NO_DEPARTMENT_MESSAGE);
+    revertAfterNoDepartment();
+    return;
+  }
+
+  try {
+    await loginByOrgApi({
+      organizationUnitId: organizationId,
+    });
+    authStore.setSelectedOrganization(organizationId);
+    authStore.setOrganizationUnitSkipped(false);
+    await finishLoginAndNavigate();
+  } catch (error) {
+    console.error('Failed to proceed to system:', error);
+    authStore.setSelectedOrganization('');
+    const message =
+      error instanceof Error
+        ? error.message
+        : (error as { message?: string })?.message || '选择科室失败，请重试';
+    ElMessage.error(message);
+    throw error;
+  }
+}
+
+/** 平台管理员在无科室时跳过选科并进入系统 */
+async function proceedToSystemWithoutOrganization() {
+  try {
+    await skipOrganizationUnitSelectionApi();
+    authStore.setOrganizationUnitSkipped(true);
+    authStore.setSelectedOrganization('');
+    await finishLoginAndNavigate();
+  } catch (error) {
+    console.error('Failed to bootstrap login without organization:', error);
+    authStore.setOrganizationUnitSkipped(false);
+    const message =
+      error instanceof Error
+        ? error.message
+        : (error as { message?: string })?.message || '进入系统失败，请稍后重试';
+    ElMessage.error(message);
+    revertAfterNoDepartment();
+    throw error;
+  }
+}
+
+/** 登录范围就绪后拉菜单、注册路由并跳转首页 */
+async function finishLoginAndNavigate() {
+  const menus = await getMenuTreeByLoginUserApi();
+  const menuData = menus || [];
+
+  const convertedMenus = convertMenuData(menuData);
+
+  accessStore.setIsAccessChecked(false);
+
+  const { accessibleMenus, accessibleRoutes } = await generateAccess({
+    roles: [],
+    router,
+    routes: accessRoutes,
+    menuData: convertedMenus,
+  });
+
+  accessStore.setAccessMenus(accessibleMenus);
+  accessStore.setAccessRoutes(accessibleRoutes);
+  accessStore.setIsAccessChecked(true);
+
+  await nextTick();
+  const redirectParam = router.currentRoute.value.query?.redirect as string | undefined;
+  const targetPath = resolvePostLoginPath(redirectParam);
+
+  await router.push(targetPath);
+}
+
 onMounted(async () => {
-  if (accessStore.accessToken) {
-    const selectedTenant = authStore.getSelectedTenant();
-    const selectedOrganization = authStore.getSelectedOrganization();
-    if (selectedTenant && selectedOrganization) {
+  if (!accessStore.accessToken) {
+    return;
+  }
+
+  const selectedTenant = authStore.getSelectedTenant();
+  const selectedOrganization = authStore.getSelectedOrganization();
+  if (selectedTenant && (selectedOrganization || authStore.isOrganizationUnitSkipped())) {
+    try {
+      await requireLoginScopeReady();
       return;
+    } catch {
+      authStore.setSelectedOrganization('');
+      authStore.setOrganizationUnitSkipped(false);
     }
+  }
 
-    const storedTenants = authStore.getTenantList();
-    if (storedTenants.length > 0) {
-      tenants.value = transformTenantData(storedTenants);
-      loginSuccess.value = true;
+  const storedTenants = authStore.getTenantList();
+  if (storedTenants.length > 0) {
+    tenants.value = transformTenantData(storedTenants);
+    loginSuccess.value = true;
 
-      if (selectedTenant && !selectedOrganization) {
-        selectedTenantId.value = selectedTenant;
-        try {
-          organizationLoading.value = true;
-          showOrganizationList.value = true;
-          const response = await getOrganizationApiByLoginUser();
-          const organizationList = unwrapApiList<Organization>(response);
-
-          if (organizationList && Array.isArray(organizationList) && organizationList.length > 0) {
-            organizations.value = transformOrganizationData(organizationList);
-            const storedOrgId = authStore.getSelectedOrganization();
-            if (storedOrgId) {
-              selectedOrganizationId.value = storedOrgId;
-            }
-          }
-        } catch (error) {
-          console.error('Failed to load organization list:', error);
-        } finally {
-          organizationLoading.value = false;
-        }
-      } else if (!selectedTenant) {
-        if (storedTenants.length === 1) {
-          const singleTenant = tenants.value[0];
-          await handleTenantSelect(singleTenant);
-        } else {
-          showTenantList.value = true;
-        }
+    if (selectedTenant && !authStore.getSelectedOrganization()) {
+      selectedTenantId.value = selectedTenant;
+      await handleTenantSelect({ id: selectedTenant });
+    } else if (!selectedTenant) {
+      if (storedTenants.length === 1) {
+        await handleTenantSelect(tenants.value[0]);
+      } else {
+        showTenantList.value = true;
       }
     }
   }
@@ -325,13 +562,18 @@ const formSchema = computed((): VbenFormSchema[] => {
         :loading="authStore.loginLoading"
         @submit="handleLogin"
       />
-      <div class="mt-4 flex justify-center">
-        <router-link
-          class="text-primary hover:text-primary-hover cursor-pointer text-sm"
-          to="/auth/caLog"
+
+      <div class="mt-2 flex items-center justify-center gap-5">
+        <ElButton
+          v-for="account in QUICK_LOGIN_ACCOUNTS"
+          :key="account.userName"
+          :disabled="authStore.loginLoading"
+          link
+          type="primary"
+          @click="handleQuickLogin(account)"
         >
-          CA证书登录
-        </router-link>
+          {{ account.label }}
+        </ElButton>
       </div>
     </div>
 
@@ -346,15 +588,51 @@ const formSchema = computed((): VbenFormSchema[] => {
       />
     </div>
 
+    <div v-else-if="showHospitalList" class="mx-auto h-full w-full sm:max-w-3xl">
+      <AuthenticationHospitalList
+        v-model="selectedHospitalId"
+        :hospitals="hospitals"
+        :loading="organizationLoading"
+        :visible="showHospitalList"
+        @back="handleBackFromHospitalList"
+        @change="handleHospitalSelect"
+      />
+    </div>
+
     <div v-else-if="showOrganizationList" class="mx-auto h-full w-full sm:max-w-3xl">
+      <p
+        v-if="departmentStepHint"
+        class="mb-4 text-sm leading-relaxed"
+        style="color: var(--el-color-warning)"
+      >
+        {{ departmentStepHint }}
+      </p>
       <AuthenticationOrganizationList
         v-model="selectedOrganizationId"
         :loading="organizationLoading"
         :organizations="organizations"
-        :visible="showOrganizationList"
+        :visible="true"
         @back="handleBackFromOrganizationList"
         @change="handleOrganizationChange"
       />
+    </div>
+
+    <div
+      v-else-if="showScopeLoading"
+      class="mx-auto flex h-full w-full flex-col items-center justify-center gap-4 sm:max-w-3xl"
+    >
+      <div class="text-sm" style="color: var(--el-text-color-regular)">加载中...</div>
+      <ElButton link type="primary" @click="handleScopeLoadingBack">返回</ElButton>
+    </div>
+
+    <div
+      v-else-if="loginSuccess"
+      class="mx-auto flex h-full w-full flex-col items-center justify-center gap-4 sm:max-w-3xl"
+    >
+      <div class="text-sm" style="color: var(--el-text-color-regular)">
+        登录步骤异常，请返回重试
+      </div>
+      <ElButton link type="primary" @click="handleBackToLoginForm">返回登录</ElButton>
     </div>
   </Transition>
 </template>

@@ -5,11 +5,12 @@ import type {
   DispensePrescriptionBlock,
   DispensePrescriptionItemRow,
   DispenseQueuePatient,
+  DispenseRxKindBadgeCounts,
   DispenseRxTableRow,
   DispenseRxTableSpacerRow,
 } from './types';
 
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import {
   ElButton,
@@ -25,6 +26,13 @@ import {
 } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
+
+import {
+  ensureOutpatientPrescriptionPrintBindingLoaded,
+  getOutpatientPrescriptionTemplateCode,
+  OUTPATIENT_PRESCRIPTION_TEMPLATE_OPTIONS,
+  setOutpatientPrescriptionTemplateCode,
+} from '#/utils/report/outpatient-prescription-print-config';
 
 import { buildPrescriptionSheetData } from './build-prescription-sheet-data';
 import PrescriptionSheetView from './prescription-sheet-view.vue';
@@ -44,10 +52,16 @@ const props = withDefaults(
     prescriptionRowCount: number;
     /** 处方单弹窗：就诊下全部处方块（由父级单独拉全量 slip 后传入） */
     prescriptionSheetBlocks?: DispensePrescriptionBlock[];
+    /** 处方打印进行中（preview + Win 出纸） */
+    prescriptionPrintLoading?: boolean;
+    /** 中西药 tab 角标（处方块数） */
+    rxKindBadgeCounts?: DispenseRxKindBadgeCounts;
     selectedPatient: DispenseQueuePatient | null;
   }>(),
   {
     prescriptionSheetBlocks: () => [],
+    prescriptionPrintLoading: false,
+    rxKindBadgeCounts: () => ({ western: 0, herbal: 0 }),
   },
 );
 
@@ -85,6 +99,19 @@ const inventoryPickSelectRef = ref<null | { focus?: () => void }>(null);
 
 /** 纸质处方单在弹窗中展示 */
 const prescriptionSheetDialogVisible = ref(false);
+
+const prescriptionTemplateCode = ref(getOutpatientPrescriptionTemplateCode());
+
+onMounted(() => {
+  void (async () => {
+    await ensureOutpatientPrescriptionPrintBindingLoaded();
+    prescriptionTemplateCode.value = getOutpatientPrescriptionTemplateCode();
+  })();
+});
+
+async function handlePrescriptionTemplateChange(code: string) {
+  await setOutpatientPrescriptionTemplateCode(code);
+}
 
 watch(
   () => props.selectedPatient?.id,
@@ -160,6 +187,16 @@ const rxTableEmptyText = computed(() => {
   if (!props.selectedPatient) return '请从左侧选择患者';
   return '当前类型下无处方，请切换上方西药/中药';
 });
+
+/** 仅中西药均有处方时展示 tab 角标，提示另一侧待发 */
+const showRxKindBadges = computed(
+  () => props.rxKindBadgeCounts.western > 0 && props.rxKindBadgeCounts.herbal > 0,
+);
+
+function formatRxKindTabLabel(base: string, count: number): string {
+  if (!showRxKindBadges.value) return base;
+  return `${base} (${count})`;
+}
 
 /** 父级在切换患者/中西药后清空表格勾选 */
 async function clearRxTableSelection() {
@@ -315,13 +352,36 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
             <ElButton plain :disabled="!props.selectedPatient" @click="emit('viewPrescription')">
               处方查看
             </ElButton>
-            <ElButton plain :disabled="!props.selectedPatient" @click="emit('printPrescription')">
+            <ElSelect
+              v-model="prescriptionTemplateCode"
+              class="dispense-rx-template-select !w-36 shrink-0"
+              size="default"
+              :disabled="!props.selectedPatient || props.prescriptionPrintLoading"
+              @change="handlePrescriptionTemplateChange"
+            >
+              <ElOption
+                v-for="opt in OUTPATIENT_PRESCRIPTION_TEMPLATE_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </ElSelect>
+            <ElButton
+              plain
+              :disabled="!props.selectedPatient"
+              :loading="props.prescriptionPrintLoading"
+              @click="emit('printPrescription')"
+            >
               处方打印
             </ElButton>
           </div>
           <ElRadioGroup v-model="activeRxKind" class="dispense-rx-kind w-fit shrink-0">
-            <ElRadioButton value="western">西药 / 成药</ElRadioButton>
-            <ElRadioButton value="herbal">中药饮片</ElRadioButton>
+            <ElRadioButton value="western">
+              {{ formatRxKindTabLabel('西药 / 成药', props.rxKindBadgeCounts.western) }}
+            </ElRadioButton>
+            <ElRadioButton value="herbal">
+              {{ formatRxKindTabLabel('中药饮片', props.rxKindBadgeCounts.herbal) }}
+            </ElRadioButton>
           </ElRadioGroup>
           <div class="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
             <span class="text-xs text-[var(--el-text-color-secondary)]">调配药师</span>

@@ -1,10 +1,13 @@
 import type { ApiOptionItem } from '#/types/api-response';
 
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+
 import { publicRequestClient } from '../request';
 
 export interface ExecuteLocationItem {
   id?: string;
   activityDefinitionId?: string;
+  activityDefinitionName?: string;
   activityCategoryCode?: string;
   executionOrgId?: string;
   executionLocationId?: string;
@@ -98,8 +101,11 @@ export async function updateExecuteLocationApi(params: UpdateExecuteLocationPara
   return publicRequestClient.post<unknown>('/executeLocation/update', params);
 }
 
-export async function deleteExecuteLocationApi(id: string) {
-  return publicRequestClient.post<unknown>('/executeLocation/deleteById', { value: id });
+export async function deleteExecuteLocationApi(id: number | string) {
+  return publicRequestClient.post<unknown>(
+    '/executeLocation/deleteById',
+    preserveApiIdForRequest(id),
+  );
 }
 
 export async function batchCreateExecuteLocationApi(params: BatchCreateExecuteLocationParams) {

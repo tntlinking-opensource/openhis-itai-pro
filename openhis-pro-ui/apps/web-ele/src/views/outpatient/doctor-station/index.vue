@@ -2,7 +2,12 @@
 import type { Component } from 'vue';
 
 import type { DoctorStationPatient } from './doctorPatientStore';
+import type {
+  ServiceApplyKind,
+  ServiceApplyPatientSummary,
+} from './service-apply/service-apply.types';
 
+import type { EnsureClinicalReceptionFn } from '#/components/doctor-station';
 import type { PatientInfoBarPayload } from '#/components/outpatient/patient-card.types';
 
 import { computed, nextTick, onMounted, provide, ref } from 'vue';
@@ -16,33 +21,33 @@ import {
   httpPageOutpatientInfoForDoctorStation,
   httpStartOutpatientReception,
 } from '#/api/doctor-station/encounter.http';
-import DiagnosisForm from '#/components/outpatient/diagnosis-form.vue';
-import DoctorHeader from '#/components/outpatient/doctor-header.vue';
-import MedicalRecordForm from '#/components/outpatient/medical-record-form.vue';
-import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
-import { useAuthStore } from '#/store';
-import { formatLocalDateYmd, getLocalDayRangeDateTimeStrings } from '#/utils/date-range-quick';
-import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-
 import {
   DiagnosisList,
   ENSURE_CLINICAL_RECEPTION_KEY,
   TcmAdvice,
-  type EnsureClinicalReceptionFn,
 } from '#/components/doctor-station';
+import DiagnosisForm from '#/components/outpatient/diagnosis-form.vue';
+import DoctorHeader from '#/components/outpatient/doctor-header.vue';
+import MedicalRecordForm from '#/components/outpatient/medical-record-form.vue';
+import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
 import { confirmEmrDiscardUnsaved } from '#/emrEditor';
+import { useAuthStore } from '#/store';
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { formatLocalDateYmd, getLocalDayRangeDateTimeStrings } from '#/utils/date-range-quick';
 
 import { AdviceList } from './advice';
+import PrescriptionSheetDialog from './components/prescription-sheet-dialog.vue';
 import DoctorPatientList from './doctor-patient-list.vue';
 import { useDoctorPatientStore } from './doctorPatientStore';
 import InpatientAdmissionDialog from './inpatient-admission/inpatient-admission-dialog.vue';
 import RefundApplicationDialog from './refund/refund-application-dialog.vue';
+import ServiceApplyDialog from './service-apply/service-apply-dialog.vue';
 
 defineOptions({
   name: 'Doctor',
 });
 
-const QUEUE_PLANNED = 'PLANNED';
+const QUEUE_REGISTERED = 'REGISTERED';
 const QUEUE_IN_PROGRESS = 'IN_PROGRESS';
 
 /**
@@ -61,35 +66,34 @@ const userStore = useUserStore();
 const doctorPatientStore = useDoctorPatientStore();
 const { selectedPatient, currentPatientInfo } = storeToRefs(doctorPatientStore);
 
-/** 在诊列表（IF-DOR-01 / BR-DOR-001）过滤用：须与接诊写命令中的医师主键一致 */
-function resolveStaffPractitionerIdForInProgressQueue(): string {
-  const u = userStore.userInfo;
-  const raw = u?.practitionerId;
+/** 医生站列表/接诊写库用：当前登录医师主键（须与挂号/接诊参与者 practitionerId 一致，禁用 number 防雪花精度丢失） */
+function resolveStaffPractitionerIdForInProgressQueue(): string | undefined {
+  const raw = userStore.userInfo?.practitionerId;
   if (raw === null || raw === undefined || raw === '') {
-    return '308791351298756608';
+    return undefined;
   }
-  if (typeof raw === 'number' && Number.isFinite(raw)) {
-    return String(Math.trunc(raw));
+  const normalized = String(raw).trim();
+  if (!normalized) {
+    return undefined;
   }
-  const s = String(raw).trim();
-  return s || '308791351298756608';
+  return normalized;
 }
 
 /**
- * 接诊写库后从「在诊」队列分页拉当前就诊行，拿到读模型投影的最新 statusEnum / statusEnumText 等。
+ * 接诊写库后从患者队列分页拉当前就诊行，拿到读模型投影的最新 statusEnum / statusEnumText 等。
  */
-async function fetchPatientRowFromInProgressQueue(
+async function fetchPatientRowFromDoctorStationList(
   encounterId: string,
 ): Promise<DoctorStationPatient | null> {
   const organizationId = Number(authStore.getSelectedOrganization());
   if (!organizationId || Number.isNaN(organizationId)) return null;
+  const staffPractitionerId = resolveStaffPractitionerIdForInProgressQueue();
+  if (!staffPractitionerId) return null;
   const { startDate, endDate } = getLocalDayRangeDateTimeStrings(listDateStr.value);
   try {
     const res = await httpPageOutpatientInfoForDoctorStation({
       organizationId,
-      queueType: QUEUE_IN_PROGRESS,
-      encounterStatus: QUEUE_IN_PROGRESS,
-      staffPractitionerId: resolveStaffPractitionerIdForInProgressQueue(),
+      staffPractitionerId,
       startDate,
       endDate,
       pageNo: 1,
@@ -152,12 +156,6 @@ const waitingPatientCount = computed(
       .length,
 );
 
-function genderEnumToLabelForEmr(v: null | number | undefined): string {
-  if (v === 1) return '男';
-  if (v === 2) return '女';
-  return '';
-}
-
 /** 与侧栏「病历号」一致：就诊业务号优先，否则 encounterId */
 function resolveOutpatientEmrMedicalRecordNo(p: DoctorStationPatient): string {
   const bus = (p.encounterBusNo ?? '').trim();
@@ -173,7 +171,7 @@ const emrPatientInfo = computed(() => {
   const age = ageRaw.replace(/岁\s*$/u, '');
   return {
     name: p.patientName ?? '',
-    gender: genderEnumToLabelForEmr(p.genderEnum),
+    gender: (p.genderEnumText ?? '').trim(),
     age,
     phone: p.phone ?? '',
     medicalRecordNo: resolveOutpatientEmrMedicalRecordNo(p),
@@ -205,11 +203,14 @@ const tabComponents = computed<Record<DoctorTab, Component>>(() => {
 const doctorStationContextBindings = computed(() => {
   const encounterId = selectedPatient.value?.encounterId ?? '';
   const patientId = selectedPatient.value?.patientId ?? '';
-  if (activeTab.value === DOCTOR_TABS.DIAGNOSIS || activeTab.value === DOCTOR_TABS.ORDER) {
+  if (
+    activeTab.value === DOCTOR_TABS.DIAGNOSIS ||
+    activeTab.value === DOCTOR_TABS.ORDER ||
+    activeTab.value === DOCTOR_TABS.TCM
+  ) {
     return {
       encounterId,
       patientId,
-      patientServiceTypeName: selectedPatient.value?.serviceTypeName ?? '',
     };
   }
   if (activeTab.value === DOCTOR_TABS.MEDICAL_RECORD) {
@@ -218,11 +219,20 @@ const doctorStationContextBindings = computed(() => {
   return {};
 });
 
-/** 拉取待诊队列分页（在诊列表不再单独请求，由接诊成功后的本地状态维护）。 */
+/** 拉取患者队列分页（不传 encounterStatus，后端按 BR-DOR-009 返回挂当前医生号的各状态就诊；在诊 Tab 仍由本地维护）。 */
 async function loadDoctorStationLists(options?: { skipDefaultSelection?: boolean }) {
   const organizationId = Number(authStore.getSelectedOrganization());
   if (!organizationId || Number.isNaN(organizationId)) {
     ElMessage.warning('请先选择科室');
+    waitingPatients.value = [];
+    currentPatients.value = [];
+    doctorPatientStore.setSelectedPatient(null);
+    return;
+  }
+
+  const staffPractitionerId = resolveStaffPractitionerIdForInProgressQueue();
+  if (!staffPractitionerId) {
+    ElMessage.warning('当前账号未关联医师身份，无法加载患者队列');
     waitingPatients.value = [];
     currentPatients.value = [];
     doctorPatientStore.setSelectedPatient(null);
@@ -235,7 +245,7 @@ async function loadDoctorStationLists(options?: { skipDefaultSelection?: boolean
   try {
     const waitingRes = await httpPageOutpatientInfoForDoctorStation({
       organizationId,
-      queueType: QUEUE_PLANNED,
+      staffPractitionerId,
       keyword: listKeyword.value.trim() || undefined,
       startDate,
       endDate,
@@ -298,6 +308,13 @@ const handleTabChange = async (tab: string) => {
       void inst.loadAdviceInit();
     }
   }
+  if (next === DOCTOR_TABS.TCM) {
+    await nextTick();
+    const inst = tabPanelRef.value as undefined | { reload?: () => Promise<void> };
+    if (inst && typeof inst.reload === 'function') {
+      void inst.reload();
+    }
+  }
 };
 
 const handlePatientSelect = async (patient: DoctorStationPatient) => {
@@ -335,6 +352,40 @@ const handleAction = (_action: string) => {
   // TODO: 实现各种操作
 };
 
+const serviceApplyDialogVisible = ref(false);
+const serviceApplyKind = ref<ServiceApplyKind>('lab');
+
+/** 检验/检查申请弹窗顶部患者摘要 */
+const serviceApplyPatientSummary = computed<ServiceApplyPatientSummary>(() => {
+  const info = currentPatientInfo.value;
+  const gender = (info.genderEnumText ?? '').trim() || '—';
+  const ageRaw = (info.ageText ?? '').trim();
+  const age = ageRaw ? (ageRaw.includes('岁') ? ageRaw : `${ageRaw}岁`) : '—';
+  return {
+    patientName: (info.patientName ?? '').trim() || '—',
+    genderText: gender,
+    ageText: age,
+    encounterNo: (info.medicalRecordNo ?? info.encounterId ?? '').trim() || '—',
+    feeNatureText: (info.serviceTypeName ?? '').trim() || '普通门诊',
+  };
+});
+
+/** 打开检验/检查申请演示面板 */
+function openServiceApplyDialog(kind: ServiceApplyKind) {
+  serviceApplyKind.value = kind;
+  serviceApplyDialogVisible.value = true;
+}
+
+/** 申请单签发成功后刷新当前「开立医嘱」列表 */
+async function handleServiceApplySigned() {
+  if (activeTab.value !== DOCTOR_TABS.ORDER) return;
+  await nextTick();
+  const inst = tabPanelRef.value as undefined | { reload?: () => Promise<void> };
+  if (inst && typeof inst.reload === 'function') {
+    await inst.reload();
+  }
+}
+
 const handleQuickAction = async (
   action: 'allergy' | 'exam' | 'lab' | 'pathology' | 'report' | 'surgery' | 'transfusion',
 ) => {
@@ -347,9 +398,11 @@ const handleQuickAction = async (
     activeTab.value = DOCTOR_TABS.REPORT_QUERY;
     return;
   }
-  const actionTextMap: Record<Exclude<typeof action, 'report'>, string> = {
-    exam: '检查申请',
-    lab: '检验申请',
+  if (action === 'lab' || action === 'exam') {
+    openServiceApplyDialog(action);
+    return;
+  }
+  const actionTextMap: Record<Exclude<typeof action, 'exam' | 'lab' | 'report'>, string> = {
     transfusion: '输血申请',
     pathology: '病理申请',
     surgery: '手术申请',
@@ -387,6 +440,10 @@ async function ensureReceptionForPatient(patient: DoctorStationPatient): Promise
   acceptingEncounterId.value = patient.encounterId;
   try {
     const doctorPractitionerId = resolveStaffPractitionerIdForInProgressQueue();
+    if (!doctorPractitionerId) {
+      ElMessage.warning('当前账号未关联医师身份，无法接诊');
+      return false;
+    }
     await httpStartOutpatientReception({
       encounterId: patient.encounterId,
       doctorId: doctorPractitionerId,
@@ -396,7 +453,7 @@ async function ensureReceptionForPatient(patient: DoctorStationPatient): Promise
     ElMessage.success('接诊成功');
     await loadDoctorStationLists({ skipDefaultSelection: true });
     patientQueue.value = 'current';
-    const fresh = await fetchPatientRowFromInProgressQueue(patient.encounterId);
+    const fresh = await fetchPatientRowFromDoctorStationList(patient.encounterId);
     const inProgressPatient: DoctorStationPatient =
       fresh ??
       ({
@@ -435,19 +492,8 @@ const handlePatientAccept = async (patient: DoctorStationPatient) => {
     const ok = await guardEmrUnsavedBeforeLeaveMedicalRecord();
     if (!ok) return;
   }
-  const accepted = await ensureReceptionForPatient(patient);
-  if (!accepted) return;
+  await ensureReceptionForPatient(patient);
 };
-
-// 预留的历史搜索功能
-// const handleHistorySearch = (_keyword: string) => {
-//   // TODO: 实现历史搜索
-// };
-
-// 预留的历史项选择功能
-// const handleHistorySelect = (_item: any) => {
-//   // TODO: 实现历史项选择
-// };
 
 const handleFormUpdate = (data: Record<string, unknown>) => {
   medicalRecordData.value = data;
@@ -483,6 +529,7 @@ const handleTemporaryLeave = () => {
 
 const refundDialogVisible = ref(false);
 const admissionDialogVisible = ref(false);
+const prescriptionSheetDialogVisible = ref(false);
 
 /** 打开申请退费弹窗（须已选就诊） */
 const handleRefund = () => {
@@ -497,7 +544,12 @@ const handleRefundSubmitted = () => {
 
 const handlePrescription = () => {
   if (!ensurePatientSelected()) return;
-  ElMessage.info('处方单功能待实现');
+  const patientId = (selectedPatient.value?.patientId ?? '').trim();
+  if (!patientId) {
+    ElMessage.warning('缺少患者标识，无法查看处方单');
+    return;
+  }
+  prescriptionSheetDialogVisible.value = true;
 };
 
 /** 打开办理住院弹窗（须已选就诊） */
@@ -581,6 +633,22 @@ const handleAdmission = () => {
       :amb-encounter-id="selectedPatient?.encounterId ?? ''"
       :patient-id="selectedPatient?.patientId ?? ''"
       :patient="selectedPatient"
+    />
+
+    <PrescriptionSheetDialog
+      v-model:visible="prescriptionSheetDialogVisible"
+      :encounter-id="selectedPatient?.encounterId ?? ''"
+      :patient-id="selectedPatient?.patientId ?? ''"
+      :patient="selectedPatient"
+    />
+
+    <ServiceApplyDialog
+      v-model="serviceApplyDialogVisible"
+      :apply-kind="serviceApplyKind"
+      :encounter-id="selectedPatient?.encounterId ?? ''"
+      :patient-id="selectedPatient?.patientId ?? ''"
+      :patient="serviceApplyPatientSummary"
+      @signed="handleServiceApplySigned"
     />
   </div>
 </template>

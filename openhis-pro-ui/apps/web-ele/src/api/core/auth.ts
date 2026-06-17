@@ -110,6 +110,28 @@ export namespace AuthApi {
     status: number;
   }
 
+  export interface ImpersonateParams {
+    userId: number | string;
+    tenantId?: null | number | string;
+    reason?: string;
+  }
+
+  export interface ImpersonateUser {
+    id: number | string;
+    userName: string;
+    name?: null | string;
+    email?: string;
+  }
+
+  export interface ImpersonateResult {
+    accessToken: string;
+    refreshToken: string;
+    expiresIn: number;
+    user: ImpersonateUser;
+    impersonator: ImpersonateUser;
+    configuration: LoginConfiguration;
+  }
+
   export interface LoginParamsByOrg {
     organizationUnitId: string;
   }
@@ -126,6 +148,14 @@ export namespace AuthApi {
     updatedAt: string;
     createdBy: string;
     updatedBy: string;
+  }
+
+  /** 登录选医院/科室候选项 */
+  export interface LoginOrganizationOption {
+    id: number | string;
+    code?: string;
+    displayName?: string;
+    name?: string;
   }
 
   export interface OrganizationInfo {
@@ -156,21 +186,39 @@ export async function getTenantsApi() {
 }
 
 /**
+ * 选择租户（写入服务端会话，后续业务 API 均以此为准）
+ */
+export async function selectTenantApi(data: { tenantId: number | string }) {
+  return requestClient.post<ApiResponse<AuthApi.TenantInfo>>('/auth/selectTenant', data);
+}
+
+export async function getAvailableHospitalsApi() {
+  return requestClient.post<ApiResponse<AuthApi.LoginOrganizationOption[]>>(
+    '/auth/getAvailableHospitals',
+  );
+}
+
+export async function selectHospitalApi(data: { hospitalId: number | string }) {
+  return requestClient.post<ApiResponse<AuthApi.LoginOrganizationOption>>(
+    '/auth/selectHospital',
+    data,
+  );
+}
+
+/**
  * 刷新accessToken
  */
-export async function refreshTokenApi() {
-  return baseRequestClient.post<AuthApi.RefreshTokenResult>('/auth/refresh', {
-    withCredentials: true,
+export async function refreshTokenApi(refreshToken: string) {
+  return loginRequestClient.post<ApiResponse<AuthApi.LoginResult>>('/auth/refreshToken', {
+    refreshToken,
   });
 }
 
 /**
  * 退出登录
  */
-export async function logoutApi() {
-  return baseRequestClient.post('/auth/logout', {
-    withCredentials: true,
-  });
+export async function logoutApi(refreshToken?: string) {
+  return baseRequestClient.post('/auth/logout', refreshToken ? { refreshToken } : {});
 }
 
 /**
@@ -193,9 +241,47 @@ export async function getTenantListApi() {
 export async function loginByOrgApi(data: AuthApi.LoginParamsByOrg) {
   return requestClient.post('/auth/selectOrganizationUnit', data);
 }
+
 /**
- * 分页查询组织列表
+ * 平台管理员在无可登录科室时跳过选科（用于租户初始化：先建医院/科室）
+ */
+export async function skipOrganizationUnitSelectionApi() {
+  return requestClient.post('/auth/skipOrganizationUnitSelection');
+}
+
+/**
+ * 代理登录
+ */
+export async function impersonateApi(data: AuthApi.ImpersonateParams) {
+  return requestClient.post<ApiResponse<AuthApi.ImpersonateResult>>('/auth/impersonate', data);
+}
+
+/**
+ * 停止代理登录
+ */
+export async function stopImpersonatingApi(refreshToken: string) {
+  return requestClient.post('/auth/stopImpersonating', { refreshToken });
+}
+
+/**
+ * 获取应用配置（权限、currentUser 等）
+ */
+export async function getApplicationConfigurationApi() {
+  return requestClient.post<ApiResponse<AuthApi.LoginConfiguration>>(
+    '/applicationConfiguration/get',
+    {},
+  );
+}
+/**
+ * 用户关联的全部组织单元（展示用，不用于登录选科室）
  */
 export async function getOrganizationApiByLoginUser() {
-  return requestClient.post('/auth/getCurrentOrganizationUnitEntity');
+  return requestClient.post<AuthApi.OrganizationInfo[]>('/auth/getCurrentOrganizationUnitEntity');
+}
+
+/**
+ * 登录选科室：用户关联科室 ∩ 岗位管辖科室
+ */
+export async function getAvailableOrganizationUnitsApi() {
+  return requestClient.post<AuthApi.OrganizationInfo[]>('/auth/getAvailableOrganizationUnits');
 }

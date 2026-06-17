@@ -2,6 +2,7 @@ import type { UserInfo } from '#/api/user/user';
 import type { PageApiResponse, PageParams } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
 export interface TenantListParams extends PageParams {
   code?: string;
@@ -70,8 +71,8 @@ export async function updateTenantApi(params: UpdateTenantParams): Promise<void>
 /**
  * 删除租户
  */
-export async function deleteTenantApi(params: { value: string }): Promise<void> {
-  return publicRequestClient.post('/tenant/delete', params);
+export async function deleteTenantApi(id: number | string): Promise<void> {
+  return publicRequestClient.post('/tenant/delete', preserveApiIdForRequest(id));
 }
 
 /**

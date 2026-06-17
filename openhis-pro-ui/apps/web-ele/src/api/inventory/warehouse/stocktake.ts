@@ -153,6 +153,9 @@ export interface WithdrawStocktakeApprovalRequest {
 
 export interface AgreeStocktakeRequest {
   busNo: string;
+  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
+  medicareUploadEnabled?: boolean;
+  contractBusNo?: string;
 }
 
 export interface RejectStocktakeRequest {

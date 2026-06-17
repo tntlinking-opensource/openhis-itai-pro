@@ -1,61 +1,32 @@
 <script setup lang="ts">
-import type { NursingRecordViewRow } from './nursing-record.types';
-
-import { computed } from 'vue';
+import type { NursingRecordPaperHeader, NursingRecordViewRow } from './nursing-record.types';
 
 import { Delete } from '@element-plus/icons-vue';
-
-interface Props {
-  rows: NursingRecordViewRow[];
-}
-
-interface PaperDisplayRow extends NursingRecordViewRow {
-  showDate: boolean;
-}
-
-const props = defineProps<Props>();
-
-const emit = defineEmits<{
-  addRow: [];
-  deleteRow: [id: string];
-  print: [];
-  saveAll: [];
-}>();
 
 defineOptions({
   name: 'NursingRecordPaperTable',
 });
 
-/** 同日期合并首列，避免重复显示日期。 */
-const displayRows = computed<PaperDisplayRow[]>(() => {
-  const result: PaperDisplayRow[] = [];
-  let index = 0;
+interface Props {
+  paperHeader?: NursingRecordPaperHeader | null;
+  rows: NursingRecordViewRow[];
+  unsavedCount?: number;
+  weekRangeLabel?: string;
+}
 
-  while (index < props.rows.length) {
-    const currentDate = props.rows[index]?.recordDate ?? '';
-    let span = 1;
-
-    while (
-      index + span < props.rows.length &&
-      props.rows[index + span]?.recordDate === currentDate
-    ) {
-      span += 1;
-    }
-
-    for (let offset = 0; offset < span; offset += 1) {
-      const row = props.rows[index + offset];
-      if (!row) continue;
-      result.push({
-        ...row,
-        showDate: offset === 0,
-      });
-    }
-
-    index += span;
-  }
-
-  return result;
+const props = withDefaults(defineProps<Props>(), {
+  paperHeader: null,
+  unsavedCount: 0,
+  weekRangeLabel: '',
 });
+
+const emit = defineEmits<{
+  addRow: [];
+  deleteRow: [id: string];
+  markDirty: [id: string];
+  print: [];
+  saveAll: [];
+}>();
 
 /** 将完整日期格式化为 MM-DD。 */
 function formatDateShort(date?: string) {
@@ -71,193 +42,267 @@ function syncDateShort(row: NursingRecordViewRow, shortValue: string) {
   const match = shortValue.match(/^(\d{1,2})-(\d{1,2})$/);
   if (!match) {
     row.recordDate = shortValue;
+    emit('markDirty', row.id);
     return;
   }
   const month = match[1]?.padStart(2, '0');
   const day = match[2]?.padStart(2, '0');
   row.recordDate = `${year}-${month}-${day}`;
+  emit('markDirty', row.id);
+}
+
+/** 字段变更时标记未保存。 */
+function handleFieldDirty(row: NursingRecordViewRow) {
+  emit('markDirty', row.id);
 }
 </script>
 
 <template>
   <div class="paper-record">
-    <div class="paper-record__toolbar">
-      <span class="paper-record__title">护理记录单</span>
-      <div class="paper-record__toolbar-actions">
-        <ElButton size="small" type="primary" plain @click="emit('addRow')">新增行</ElButton>
-        <ElButton size="small" type="primary" @click="emit('saveAll')">保存</ElButton>
-        <ElButton size="small" plain @click="emit('print')">打印</ElButton>
-      </div>
-    </div>
-
     <div class="paper-record__scroll">
-      <table class="paper-record__table">
-        <colgroup>
-          <col class="col-datetime" />
-          <col class="col-consciousness" />
-          <col class="col-vital" span="6" />
-          <col class="col-io-name" />
-          <col class="col-io-amount" />
-          <col class="col-io-name" />
-          <col class="col-io-amount" />
-          <col class="col-io-color" />
-          <col class="col-care" />
-          <col class="col-care" />
-          <col class="col-reserved" />
-          <col class="col-reserved" />
-          <col class="col-observation" />
-          <col class="col-signature" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th class="col-datetime">日期</th>
-            <th class="col-consciousness" rowspan="2">意识</th>
-            <th class="col-vital">体温</th>
-            <th class="col-vital">脉搏</th>
-            <th class="col-vital">呼吸</th>
-            <th class="col-vital">血压</th>
-            <th class="col-vital">血氧饱和度</th>
-            <th class="col-vital">吸氧</th>
-            <th class="col-group" colspan="2">入量</th>
-            <th class="col-group" colspan="3">出量</th>
-            <th class="col-care" rowspan="2">皮肤情况</th>
-            <th class="col-care" rowspan="2">管路护理</th>
-            <th class="col-reserved" rowspan="2"></th>
-            <th class="col-reserved" rowspan="2"></th>
-            <th class="col-observation" rowspan="2">病情观察及措施</th>
-            <th class="col-signature" rowspan="2">护士签名</th>
-          </tr>
-          <tr>
-            <th class="col-datetime">时间</th>
-            <th class="col-vital">℃</th>
-            <th class="col-vital">次/分</th>
-            <th class="col-vital">次/分</th>
-            <th class="col-vital">mmHg</th>
-            <th class="col-vital">%</th>
-            <th class="col-vital">L/min</th>
-            <th class="col-io-name">名称</th>
-            <th class="col-io-amount">ml</th>
-            <th class="col-io-name">名称</th>
-            <th class="col-io-amount">ml</th>
-            <th class="col-io-color">颜色性状</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="row in displayRows" :key="row.id" class="paper-record__row">
-            <td class="col-datetime">
-              <input
-                v-if="row.showDate"
-                class="paper-field paper-field--date"
-                type="text"
-                :value="formatDateShort(row.recordDate)"
-                @input="syncDateShort(row, ($event.target as HTMLInputElement).value)"
-              />
-              <input v-model="row.recordTime" class="paper-field paper-field--time" type="text" />
-              <button
-                type="button"
-                class="paper-row-delete"
-                title="删除此行"
-                @click="emit('deleteRow', row.id)"
-              >
-                <ElIcon :size="12"><Delete /></ElIcon>
-              </button>
-            </td>
-            <td class="col-consciousness">
-              <input
-                v-model="row.consciousness"
-                class="paper-field"
-                type="text"
-                list="consciousness-list"
-              />
-            </td>
-            <td class="col-vital">
-              <input v-model="row.temperature" class="paper-field" type="text" />
-            </td>
-            <td class="col-vital">
-              <input v-model="row.pulse" class="paper-field" type="text" />
-            </td>
-            <td class="col-vital">
-              <input v-model="row.respiratory" class="paper-field" type="text" />
-            </td>
-            <td class="col-vital">
-              <input v-model="row.bloodPressure" class="paper-field" type="text" />
-            </td>
-            <td class="col-vital">
-              <input v-model="row.oxygenSaturation" class="paper-field" type="text" />
-            </td>
-            <td class="col-vital">
-              <input v-model="row.oxygenRate" class="paper-field" type="text" />
-            </td>
-            <td class="col-io-name">
-              <input v-model="row.intakeName" class="paper-field" type="text" />
-            </td>
-            <td class="col-io-amount">
-              <input v-model="row.intakeAmount" class="paper-field" type="text" />
-            </td>
-            <td class="col-io-name">
-              <input v-model="row.outputName" class="paper-field" type="text" />
-            </td>
-            <td class="col-io-amount">
-              <input v-model="row.outputAmount" class="paper-field" type="text" />
-            </td>
-            <td class="col-io-color">
-              <input v-model="row.outputColorCharacter" class="paper-field" type="text" />
-            </td>
-            <td class="col-care">
-              <input
-                v-model="row.skinStatus"
-                class="paper-field"
-                type="text"
-                list="skin-status-list"
-              />
-            </td>
-            <td class="col-care">
-              <input v-model="row.tubeCare" class="paper-field" type="text" list="tube-care-list" />
-            </td>
-            <td class="col-reserved">
-              <input v-model="row.reservedCol1" class="paper-field" type="text" />
-            </td>
-            <td class="col-reserved">
-              <input v-model="row.reservedCol2" class="paper-field" type="text" />
-            </td>
-            <td class="col-observation">
-              <textarea
-                v-model="row.conditionMeasure"
-                class="paper-field paper-field--textarea"
-                rows="1"
-              />
-            </td>
-            <td class="col-signature">
-              <input v-model="row.nurseSignature" class="paper-field" type="text" />
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="paper-record__sheet">
+        <div class="paper-record__doc-head">
+          <header class="sheet-title">护 理 记 录 单</header>
 
-      <datalist id="consciousness-list">
-        <option value="清醒" />
-        <option value="嗜睡" />
-        <option value="模糊" />
-        <option value="谵妄" />
-        <option value="昏睡" />
-        <option value="昏迷" />
-      </datalist>
-      <datalist id="skin-status-list">
-        <option value="完整" />
-        <option value="潮红" />
-        <option value="压红" />
-        <option value="破损" />
-        <option value="渗液" />
-        <option value="已换药" />
-      </datalist>
-      <datalist id="tube-care-list">
-        <option value="无" />
-        <option value="胃管" />
-        <option value="导尿管" />
-        <option value="静脉通路" />
-        <option value="引流管" />
-        <option value="气管插管" />
-      </datalist>
+          <div v-if="paperHeader" class="patient-info-line">
+            <span>姓名：{{ paperHeader.name || '' }}</span>
+            <span>性别：{{ paperHeader.gender || '' }}</span>
+            <span>年龄：{{ paperHeader.age ?? '' }}岁</span>
+            <span>病室：{{ paperHeader.wardName || '' }}</span>
+            <span>床号：{{ paperHeader.bedNo || '' }}</span>
+            <span>病历号：{{ paperHeader.inpatientNo || '' }}</span>
+            <span>入院日期：{{ paperHeader.admitAt || '' }}</span>
+            <span>出院日期：{{ paperHeader.dischargeAt || '' }}</span>
+          </div>
+        </div>
+
+        <div class="paper-record__toolbar">
+          <div class="paper-record__toolbar-main">
+            <span v-if="weekRangeLabel" class="paper-record__week">{{ weekRangeLabel }}</span>
+            <span v-if="unsavedCount > 0" class="paper-record__unsaved"
+              >未保存 {{ unsavedCount }} 条</span
+            >
+          </div>
+          <div class="paper-record__toolbar-actions">
+            <slot name="toolbar-extra" />
+            <ElButton type="primary" plain @click="emit('addRow')">新增行</ElButton>
+            <ElButton type="primary" @click="emit('saveAll')">保存</ElButton>
+            <ElButton plain @click="emit('print')">打印</ElButton>
+          </div>
+        </div>
+
+        <table class="paper-record__table">
+          <colgroup>
+            <col class="col-datetime" />
+            <col class="col-vital" span="5" />
+            <col class="col-consciousness" />
+            <col class="col-pupil" span="2" />
+            <col class="col-io-name" />
+            <col class="col-io-amount" />
+            <col class="col-io-name" />
+            <col class="col-io-amount" />
+            <col class="col-io-color" />
+            <col class="col-observation" />
+            <col class="col-signature" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="col-datetime" rowspan="2">日期<br />时间</th>
+              <th class="col-vital">体温</th>
+              <th class="col-vital">脉搏</th>
+              <th class="col-vital">心率</th>
+              <th class="col-vital">呼吸</th>
+              <th class="col-vital">血压</th>
+              <th class="col-consciousness" rowspan="2">意识</th>
+              <th class="col-pupil" colspan="2">瞳孔</th>
+              <th class="col-io" colspan="2">入量</th>
+              <th class="col-io" colspan="3">出量</th>
+              <th class="col-observation" rowspan="2">病情观察及护理</th>
+              <th class="col-signature" rowspan="2">护士签名</th>
+            </tr>
+            <tr>
+              <th class="col-vital">℃</th>
+              <th class="col-vital">次/分</th>
+              <th class="col-vital">次/分</th>
+              <th class="col-vital">次/分</th>
+              <th class="col-vital">mmHg</th>
+              <th class="col-pupil">左</th>
+              <th class="col-pupil">右</th>
+              <th class="col-io-name">名称</th>
+              <th class="col-io-amount">ml</th>
+              <th class="col-io-name">名称</th>
+              <th class="col-io-amount">ml</th>
+              <th class="col-io-color">颜色</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in rows" :key="row.id" class="paper-record__row">
+              <td class="col-datetime">
+                <input
+                  class="paper-field paper-field--date"
+                  type="text"
+                  data-nav-col="0"
+                  data-nav-slot="date"
+                  :value="formatDateShort(row.recordDate)"
+                  @input="syncDateShort(row, ($event.target as HTMLInputElement).value)"
+                />
+                <input
+                  v-model="row.recordTime"
+                  class="paper-field paper-field--time"
+                  type="text"
+                  data-nav-col="0"
+                  data-nav-slot="time"
+                  @input="handleFieldDirty(row)"
+                />
+                <button
+                  v-if="row.rowType === 'extra'"
+                  type="button"
+                  class="paper-row-delete"
+                  title="删除此行"
+                  @click="emit('deleteRow', row.id)"
+                >
+                  <ElIcon :size="10"><Delete /></ElIcon>
+                </button>
+              </td>
+              <td class="col-vital">
+                <input
+                  v-model="row.temperature"
+                  class="paper-field"
+                  type="text"
+                  data-nav-col="1"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+              <td class="col-vital">
+                <input
+                  v-model="row.pulse"
+                  class="paper-field"
+                  type="text"
+                  data-nav-col="2"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+              <td class="col-vital">
+                <input
+                  v-model="row.heartRate"
+                  class="paper-field"
+                  type="text"
+                  data-nav-col="3"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+              <td class="col-vital">
+                <input
+                  v-model="row.respiratory"
+                  class="paper-field"
+                  type="text"
+                  data-nav-col="4"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+              <td class="col-vital">
+                <input
+                  v-model="row.bloodPressure"
+                  class="paper-field"
+                  type="text"
+                  data-nav-col="5"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+              <td class="col-consciousness">
+                <input
+                  v-model="row.consciousness"
+                  class="paper-field"
+                  type="text"
+                  data-nav-col="6"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+              <td class="col-pupil">
+                <input
+                  v-model="row.pupilLeft"
+                  class="paper-field"
+                  type="text"
+                  data-nav-col="7"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+              <td class="col-pupil">
+                <input
+                  v-model="row.pupilRight"
+                  class="paper-field"
+                  type="text"
+                  data-nav-col="8"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+              <td class="col-io-name">
+                <input
+                  v-model="row.intakeName"
+                  class="paper-field"
+                  type="text"
+                  data-nav-col="9"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+              <td class="col-io-amount">
+                <input
+                  v-model="row.intakeAmount"
+                  class="paper-field"
+                  type="text"
+                  data-nav-col="10"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+              <td class="col-io-name">
+                <input
+                  v-model="row.outputName"
+                  class="paper-field"
+                  type="text"
+                  data-nav-col="11"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+              <td class="col-io-amount">
+                <input
+                  v-model="row.outputAmount"
+                  class="paper-field"
+                  type="text"
+                  data-nav-col="12"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+              <td class="col-io-color">
+                <input
+                  v-model="row.outputColorCharacter"
+                  class="paper-field"
+                  type="text"
+                  data-nav-col="13"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+              <td class="col-observation">
+                <textarea
+                  v-model="row.conditionMeasure"
+                  class="paper-field paper-field--textarea"
+                  rows="1"
+                  data-nav-col="14"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+              <td class="col-signature">
+                <input
+                  v-model="row.nurseSignature"
+                  class="paper-field"
+                  type="text"
+                  data-nav-col="15"
+                  @input="handleFieldDirty(row)"
+                />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </template>
@@ -267,7 +312,6 @@ function syncDateShort(row: NursingRecordViewRow, shortValue: string) {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 4px;
   min-width: 0;
   min-height: 0;
 }
@@ -277,20 +321,40 @@ function syncDateShort(row: NursingRecordViewRow, shortValue: string) {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 2px;
+  margin-bottom: 6px;
 }
 
-.paper-record__title {
-  color: var(--el-text-color-primary);
-  font-family: SimSun, 'Songti SC', serif;
-  font-size: 14px;
-  font-weight: 600;
+.paper-record__toolbar-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: #020817;
+}
+
+.paper-record__week {
+  color: #020817;
+}
+
+.paper-record__unsaved {
+  color: #020817;
 }
 
 .paper-record__toolbar-actions {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: 0 0 auto;
+}
+
+.paper-record__toolbar-actions :deep(.el-segmented) {
+  --el-border-radius-base: 6px;
+  background: #fff;
+  border: 1px solid var(--el-border-color-lighter);
+  padding: 2px;
 }
 
 .paper-record__scroll {
@@ -299,172 +363,248 @@ function syncDateShort(row: NursingRecordViewRow, shortValue: string) {
   min-height: 0;
   overflow: auto;
   background: #fff;
-  border: 1px solid #000;
+}
+
+.paper-record__sheet {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100%;
+  padding: 12px;
+  background: #fff;
+  color: #020817;
+}
+
+/* 单据抬头 + 表格 thead：与体温单 head-label / sheet-head-grid 同字体（非宋体） */
+.paper-record__doc-head {
+  color: #020817;
+  font-family: inherit;
+  margin-bottom: 6px;
+}
+
+.sheet-title {
+  text-align: center;
+  font-family: inherit;
+  font-size: 28px;
+  letter-spacing: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 6px;
+  color: #020817;
+}
+
+.patient-info-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  min-height: 24px;
+  padding: 2px 0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: #020817;
+}
+
+.patient-info-line span {
+  color: #020817;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
 }
 
 .paper-record__table {
   width: 100%;
-  min-width: 1480px;
   border-collapse: collapse;
   table-layout: fixed;
-  font-family: SimSun, 'Songti SC', serif;
-  font-size: 12px;
-  color: #000;
+  border: 1px solid #222;
+  color: #020817;
 }
 
 .paper-record__table th,
 .paper-record__table td {
-  border: 1px solid #000;
+  border: 1px solid #222;
   padding: 0;
   text-align: center;
   vertical-align: middle;
+  color: #020817;
 }
 
 .paper-record__table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   background: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.15;
-  padding: 3px 1px;
+  color: #020817;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.3;
+  padding: 5px 4px;
+  min-height: 33px;
+  overflow: hidden;
+  word-break: normal;
 }
 
-.paper-record__table thead tr:last-child th {
-  top: 24px;
-  font-size: 11px;
-  font-weight: 500;
+.paper-record__table tbody {
+  font-family: inherit;
+  font-size: 13px;
+  color: #020817;
 }
 
-.paper-record__table td {
-  height: 26px;
+.paper-record__table tbody td {
+  box-sizing: border-box;
+  height: 33px;
+  min-height: 33px;
   position: relative;
+  padding: 2px 0;
 }
 
-.col-datetime {
-  width: 52px;
-  padding-right: 12px !important;
+/* 列宽按原 794px 比例换算为百分比，表格随父容器拉伸 */
+.paper-record__table th.col-datetime,
+.paper-record__table td.col-datetime {
+  width: 6.55%;
 }
 
-.col-date,
-.col-time {
-  width: 52px;
+.paper-record__table th.col-vital,
+.paper-record__table td.col-vital {
+  width: 5.54%;
 }
 
-.paper-field--date {
-  height: 12px;
-  font-size: 11px;
-  line-height: 12px;
+.paper-record__table th.col-consciousness,
+.paper-record__table td.col-consciousness {
+  width: 4.79%;
 }
 
-.paper-field--time {
-  height: 12px;
-  font-size: 11px;
-  line-height: 12px;
+.paper-record__table th.col-pupil,
+.paper-record__table td.col-pupil {
+  width: 4.28%;
 }
 
-.col-datetime .paper-field--time:only-child {
-  height: 24px;
-  line-height: 24px;
+.paper-record__table th.col-io-name,
+.paper-record__table td.col-io-name {
+  width: 5.04%;
 }
 
-.col-consciousness {
-  width: 52px;
+.paper-record__table th.col-io-amount,
+.paper-record__table td.col-io-amount {
+  width: 3.02%;
 }
 
-.col-vital {
-  width: 48px;
+.paper-record__table th.col-io-color,
+.paper-record__table td.col-io-color {
+  width: 4.53%;
 }
 
-.col-io-name {
-  width: 60px;
+.paper-record__table th.col-observation,
+.paper-record__table td.col-observation {
+  width: 23.68%;
 }
 
-.col-io-amount {
-  width: 40px;
-}
-
-.col-io-color {
-  width: 68px;
-}
-
-.col-care {
-  width: 68px;
-}
-
-.col-reserved {
-  width: 20px;
-}
-
-.col-observation {
-  width: 220px;
-}
-
-.col-signature {
-  width: 64px;
+.paper-record__table th.col-signature,
+.paper-record__table td.col-signature {
+  width: 8.06%;
 }
 
 .paper-field {
   display: block;
+  box-sizing: border-box;
   width: 100%;
-  height: 24px;
   border: 0;
   outline: none;
   background: transparent;
-  color: #000;
+  color: #020817;
   font-family: inherit;
-  font-size: 12px;
-  line-height: 24px;
-  padding: 0 2px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.3;
   margin: 0;
+  padding: 0 2px;
   text-align: center;
+  -webkit-text-fill-color: #020817;
 }
 
-.paper-field:focus {
-  background: rgb(255 255 255 / 90%);
-  outline: 1px dashed #666;
-  outline-offset: -1px;
+.paper-field::placeholder {
+  color: #020817;
+  opacity: 0.35;
+}
+
+.paper-field--date {
+  height: 14px;
+  line-height: 14px;
+}
+
+.paper-field--time {
+  height: 14px;
+  line-height: 14px;
+}
+
+.col-datetime .paper-field {
+  width: 100%;
+}
+
+.col-vital .paper-field,
+.col-consciousness .paper-field,
+.col-pupil .paper-field,
+.col-io-amount .paper-field {
+  height: 29px;
+  line-height: 29px;
+}
+
+.col-io-name .paper-field,
+.col-io-color .paper-field {
+  height: 29px;
+  line-height: 29px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.col-signature .paper-field {
+  height: 29px;
+  line-height: 29px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .paper-field--textarea {
-  height: auto;
-  min-height: 24px;
-  line-height: 1.25;
-  padding: 2px 4px;
+  box-sizing: border-box;
+  height: 29px;
+  min-height: 29px;
+  padding: 3px 4px;
   text-align: left;
   resize: none;
   overflow: hidden;
+  word-break: break-all;
+  white-space: normal;
 }
 
-.col-observation .paper-field--textarea {
-  min-height: 24px;
+.paper-record__table .col-observation {
+  vertical-align: middle;
+}
+
+.paper-field:focus {
+  background: #fff;
+  outline: none;
 }
 
 .paper-row-delete {
   position: absolute;
-  top: 50%;
+  top: 1px;
   right: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   padding: 0;
   border: 0;
   background: transparent;
-  color: #999;
+  color: #666;
   cursor: pointer;
-  opacity: 0;
-  transform: translateY(-50%);
-}
-
-.paper-record__row:hover .paper-row-delete {
-  opacity: 1;
 }
 
 .paper-row-delete:hover {
-  color: #c00;
+  color: #020817;
 }
 
 @media print {
@@ -472,12 +612,22 @@ function syncDateShort(row: NursingRecordViewRow, shortValue: string) {
     display: none;
   }
 
-  .paper-row-delete {
-    display: none;
+  .paper-record__scroll {
+    border: 0;
+    overflow: visible;
   }
 
-  .paper-field:focus {
-    outline: none;
+  .paper-record__sheet {
+    width: 100%;
+    padding: 0;
+  }
+
+  .paper-record__table {
+    width: 100%;
+  }
+
+  .paper-row-delete {
+    display: none;
   }
 }
 </style>

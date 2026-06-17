@@ -7,11 +7,9 @@ import type { EncounterDiagnosisRowDto } from './diagnosis.types';
 /** IF-DOR-01 分页请求 */
 export interface PageOutpatientInfoForDoctorStationRequest {
   organizationId: number;
-  /** 与读模型/网关约定的队列入参（如 PLANNED）；与 {@link encounterStatus} 并存时以服务端为准 */
-  queueType: string;
   /**
    * 后端 `PageOutpatientInfoForDoctorStationRequest.encounterStatus`（EncounterStatus 持久化码）。
-   * 查询在诊队列时须与 {@link staffPractitionerId} 同传（BR-DOR-001）。
+   * 不传时后端默认 REGISTERED/IN_PROGRESS/ON_HOLD/DISCHARGED 并集，读侧按 {@link staffPractitionerId} 做 BR-DOR-009 可见性过滤。
    */
   encounterStatus?: string;
   keyword?: string;
@@ -19,6 +17,7 @@ export interface PageOutpatientInfoForDoctorStationRequest {
   endDate?: string;
   pageNo: number;
   pageSize: number;
+  /** 当前登录医师主键；必填，读侧按 BR-DOR-009 过滤可见患者 */
   staffPractitionerId?: number | string;
 }
 

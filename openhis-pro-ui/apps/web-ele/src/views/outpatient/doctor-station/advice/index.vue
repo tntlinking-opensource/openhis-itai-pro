@@ -9,10 +9,8 @@ const props = withDefaults(
   defineProps<{
     encounterId?: string;
     patientId?: string;
-    /** IF-DOR-01 就诊列表 `serviceTypeName`，用于医嘱默认「费用性质」 */
-    patientServiceTypeName?: string;
   }>(),
-  { encounterId: '', patientId: '', patientServiceTypeName: '' },
+  { encounterId: '', patientId: '' },
 );
 
 const workspaceRef = ref<InstanceType<typeof AdviceWorkspace> | null>(null);

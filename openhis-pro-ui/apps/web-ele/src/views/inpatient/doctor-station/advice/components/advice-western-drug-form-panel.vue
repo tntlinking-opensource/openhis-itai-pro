@@ -9,7 +9,11 @@ import { computed } from 'vue';
 import { ElButton, ElCheckbox, ElInputNumber, ElOption, ElSelect, ElSwitch } from 'element-plus';
 
 import { parseOptionalNumberInput } from '../services/advice-edit';
-import { formatMoneyStrYuan, formatUnitPriceYuan } from '../services/advice-format';
+import {
+  contractSelectionFromValue,
+  formatMoneyStrYuan,
+  formatUnitPriceYuan,
+} from '../services/advice-format';
 import { totalUnitSelectOptions } from '../services/medication-unit-bands';
 
 /** 本行西药明细表单与父级交互（闭包在父级按 index 绑定）。 */
@@ -28,10 +32,17 @@ const props = defineProps<{
   /** 长期医嘱：隐藏总量与自动推算总量 */
   hideTotalAmount?: boolean;
   item: AdviceDrugItem;
+  feeNatureOptions: TerminologyOptionDto[];
   medicationRateOptions: TerminologyOptionDto[];
   medicationRouteOptions: TerminologyOptionDto[];
   patientDiagnoses: DiagnosisItem[];
 }>();
+
+function patchContract(contractId: string) {
+  const sel = contractSelectionFromValue(contractId, props.feeNatureOptions);
+  props.formHandlers.setField('contractId', sel.contractId);
+  props.formHandlers.setField('feeNature', sel.feeNature);
+}
 
 const autoCalcTotalAmount = defineModel<boolean>('autoCalcTotalAmount', { required: true });
 
@@ -91,14 +102,16 @@ const calcTotalFee = computed(() => {
       <div class="field-item">
         <span class="meta-label">费用性质</span>
         <ElSelect
-          :model-value="item.feeNature"
+          :model-value="item.contractId"
           placeholder="请选择"
-          @update:model-value="
-            (value: unknown) => formHandlers.setField('feeNature', String(value || ''))
-          "
+          @update:model-value="(value: unknown) => patchContract(String(value || ''))"
         >
-          <ElOption label="自费" value="自费" />
-          <ElOption label="医保" value="医保" />
+          <ElOption
+            v-for="opt in feeNatureOptions"
+            :key="String(opt.value ?? '')"
+            :label="String(opt.label ?? opt.value ?? '')"
+            :value="String(opt.value ?? '')"
+          />
         </ElSelect>
       </div>
       <div class="field-item skin-test-item">

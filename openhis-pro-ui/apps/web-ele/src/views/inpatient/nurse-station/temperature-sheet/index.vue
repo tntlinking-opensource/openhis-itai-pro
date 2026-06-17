@@ -5,7 +5,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
+import { useReportTemplatePrint } from '#/composables/use-report-template-print';
 import { useFormKeyboardNavigation } from '#/hooks/use-form-keyboard-navigation';
+import { ElMessage } from 'element-plus';
 
 type WindowRange = '3d' | '7d' | '14d';
 
@@ -497,9 +499,25 @@ function updateSheetScale() {
   sheetScale.value = Number.isFinite(nextScale) && nextScale > 0 ? nextScale : 1;
 }
 
-/** 调用浏览器打印，使用系统打印预览完成打印参数设置。 */
+const { printReportTemplate, isPrinting: temperaturePdfPrinting } = useReportTemplatePrint();
+
+/** 浏览器打印当前体温单页面（过渡期保留）。 */
 function handlePrint() {
   window.print();
+}
+
+/** 按 report 模板正式打印体温单（IP-19）。 */
+async function handleReportPrint() {
+  const patient = selectedPatient.value;
+  if (!patient?.id) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  await printReportTemplate({
+    templateCode: 'temperature_chart',
+    encounterId: patient.id,
+    jobName: `体温单-${patient.name}`,
+  });
 }
 
 onMounted(() => {
@@ -682,6 +700,9 @@ watch(sheetViewportRef, () => {
           <ElDivider />
           <ElButton size="small" type="primary" @click="handlePrint">打印当前页</ElButton>
           <ElButton size="small" type="primary" @click="handlePrint">打印全部页</ElButton>
+          <ElButton size="small" plain :loading="temperaturePdfPrinting" @click="handleReportPrint">
+            PDF 正式打印
+          </ElButton>
           <ElButton size="small" type="success" @click="openFillDrawer">填写体温单</ElButton>
         </div>
       </div>
@@ -1072,6 +1093,7 @@ watch(sheetViewportRef, () => {
   font-weight: 700;
   line-height: 1.2;
   margin-bottom: 6px;
+  color: #020817;
 }
 .patient-info-line {
   display: flex;
@@ -1081,6 +1103,7 @@ watch(sheetViewportRef, () => {
   min-height: 24px;
   padding: 2px 4px;
   font-size: 12px;
+  color: #020817;
 }
 
 .sheet-head-grid {
@@ -1089,6 +1112,7 @@ watch(sheetViewportRef, () => {
   border: 1px solid #222;
   border-bottom: 1px solid #222;
   font-size: 13px;
+  color: #020817;
 }
 .head-label {
   box-sizing: border-box;

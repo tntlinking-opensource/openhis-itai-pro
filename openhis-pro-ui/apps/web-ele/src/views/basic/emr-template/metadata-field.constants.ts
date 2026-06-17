@@ -147,7 +147,7 @@ export const METADATA_SOURCE_PATH_BY_VALUE_SOURCE: Record<string, MetadataSource
     },
     { value: 'encounter.startTime', label: 'encounter.startTime — 就诊开始时间' },
     { value: 'encounter.admissionTime', label: 'encounter.admissionTime — 入院/开始时间' },
-    { value: 'encounter.classEnum', label: 'encounter.classEnum — 类别 AMB/EMER/IMP' },
+    { value: 'encounter.classEnum', label: 'encounter.classEnum — 类别 AMB/IMP' },
   ],
   ADMISSION: [],
   INSURANCE: [{ value: 'insurance.payorName', label: 'insurance.payorName — 医保/费别' }],

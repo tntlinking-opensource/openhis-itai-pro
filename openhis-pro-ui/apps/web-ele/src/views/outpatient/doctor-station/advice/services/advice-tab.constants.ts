@@ -5,6 +5,14 @@ export const ADVICE_PRICING_SOURCE_CODE = 'retailPrice';
 
 export const MEDICATION_DEFINITION_TABLE = 'med_medication_definition';
 
+/** IF-DOR-35 中草药 med_category_code；开立医嘱选品需排除 */
+export const HERBAL_MEDICATION_CATEGORY_CODE = '4';
+
+/** 开立医嘱目录检索默认排除的药品分类 */
+export const WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES = [
+  HERBAL_MEDICATION_CATEGORY_CODE,
+] as const;
+
 /** 列表未返回 `productTableName` 时，按 `resourceType` 回退（与域表名对齐） */
 export const ADVICE_ROW_PRODUCT_TABLE_FALLBACK: Record<string, string> = {
   MEDICATION: MEDICATION_DEFINITION_TABLE,

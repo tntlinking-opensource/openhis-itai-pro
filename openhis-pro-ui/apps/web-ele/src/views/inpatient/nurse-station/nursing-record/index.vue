@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type {
+  NursingRecordPaperHeader,
   NursingRecordPatient,
   NursingRecordRow,
   NursingRecordViewRow,
@@ -9,8 +10,12 @@ import { computed, ref, watch } from 'vue';
 
 import { ElMessage } from 'element-plus';
 
-import InpatientPatientInfoHeader from '#/components/inpatient/patient-info-header.vue';
-import { useFormKeyboardNavigation } from '#/hooks/use-form-keyboard-navigation';
+import {
+  FORM_KEYBOARD_GRID_NAV_KEYS,
+  useFormKeyboardNavigation,
+} from '#/hooks/use-form-keyboard-navigation';
+
+import { resolvePaperTableFocusIndex } from './services/nursing-record-paper-keyboard';
 
 import NursingRecordPaperTable from './components/nursing-record-paper-table.vue';
 import NursingRecordTimelineItem from './components/nursing-record-timeline-item.vue';
@@ -28,19 +33,22 @@ defineOptions({
 type RecordViewMode = 'paper' | 'timeline';
 
 const activePatient = computed(() => props.patients[0]);
-const patientHeaderInfo = computed(() => {
+
+/** 纸质单抬头患者信息，展示在表格上方。 */
+const paperHeaderInfo = computed<NursingRecordPaperHeader | null>(() => {
   if (!activePatient.value) {
     return null;
   }
   const patient = activePatient.value;
   return {
+    admitAt: '2026-01-13',
     age: patient.age,
     bedNo: patient.bedNo,
-    diagnosis: patient.diagnosis,
+    dischargeAt: '',
     gender: patient.gender,
     inpatientNo: patient.id,
-    insuranceType: patient.feeType,
     name: patient.name,
+    wardName: patient.wardName,
   };
 });
 
@@ -49,7 +57,12 @@ const recordList = ref<NursingRecordViewRow[]>([]);
 const editBackupMap = ref<Record<string, NursingRecordRow>>({});
 const formAreaRef = ref<HTMLElement | null>(null);
 const viewMode = ref<RecordViewMode>('paper');
-const { handleFormKeydown, navigateFromTarget } = useFormKeyboardNavigation(formAreaRef);
+const { handleFormKeydown } = useFormKeyboardNavigation(formAreaRef, {
+  keys: FORM_KEYBOARD_GRID_NAV_KEYS,
+  navigationMode: 'grid',
+  gridTolerance: { row: 32, col: 48 },
+  resolveFocusIndex: resolvePaperTableFocusIndex,
+});
 
 /** 按日期+时间倒序排列护理记录，确保最近记录优先显示。 */
 const timelineRecords = computed(() => {
@@ -69,6 +82,19 @@ const paperRecords = computed(() => {
   });
 });
 
+/** 当周纸质单日期范围文案（周一至周日）。 */
+const paperWeekRangeLabel = computed(() => {
+  const weekStart = getWeekStartDate();
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  return `本周 ${formatDateMd(weekStart)} ~ ${formatDateMd(weekEnd)}`;
+});
+
+/** 纸质单未保存条数，供工具栏提示。 */
+const paperUnsavedCount = computed(() => {
+  return recordList.value.filter((row) => row.isDirty).length;
+});
+
 /** 生成一条护理记录草稿，支持传入局部字段覆盖默认值。 */
 function createEmptyRow(partial: Partial<NursingRecordRow> = {}): NursingRecordRow {
   rowSeed += 1;
@@ -82,6 +108,8 @@ function createEmptyRow(partial: Partial<NursingRecordRow> = {}): NursingRecordR
     pulse: '',
     respiratory: '',
     bloodPressure: '',
+    pupilLeft: '',
+    pupilRight: '',
     oxygenSaturation: '',
     oxygenRate: '',
     oxygenMode: '',
@@ -122,6 +150,13 @@ function formatDateYmd(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+/** 格式化为 MM-DD，用于周范围展示。 */
+function formatDateMd(date: Date) {
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${month}-${day}`;
+}
+
 /** 生成当周 7 天纸质单骨架行，并写入演示数据。 */
 function buildWeekPaperRows(patientName?: string): NursingRecordViewRow[] {
   const weekStart = getWeekStartDate();
@@ -134,7 +169,10 @@ function buildWeekPaperRows(patientName?: string): NursingRecordViewRow[] {
     const recordDate = formatDateYmd(dayDate);
 
     for (const recordTime of PAPER_RECORD_TIMES) {
-      rows.push(createEmptyRow({ recordDate, recordTime }));
+      rows.push({
+        ...createEmptyRow({ recordDate, recordTime }),
+        rowType: 'skeleton',
+      });
     }
   }
 
@@ -143,8 +181,8 @@ function buildWeekPaperRows(patientName?: string): NursingRecordViewRow[] {
       bloodPressure: '128/76',
       conditionMeasure: '患者神志清，继续常规巡视，观察末梢循环。',
       consciousness: '清醒',
+      heartRate: '82',
       nurseSignature: '责任护士A',
-      oxygenRate: '2',
       oxygenSaturation: '98',
       pulse: '82',
       respiratory: '20',
@@ -158,6 +196,7 @@ function buildWeekPaperRows(patientName?: string): NursingRecordViewRow[] {
       bloodPressure: '126/74',
       conditionMeasure: `${patientName || '患者'} 午间一般情况平稳，宣教翻身与饮水。`,
       consciousness: '清醒',
+      heartRate: '78',
       intakeAmount: '250',
       intakeName: '温开水',
       nurseSignature: '责任护士A',
@@ -250,49 +289,63 @@ function handleCancelEditRecord(row: NursingRecordViewRow) {
   Object.assign(row, backup, { isEditing: false, isNew: false });
   clearEditBackup(row.id);
 }
-/** 打印指定护理记录（当前为前端占位提示）。 */
-function handlePrintRecord(_row?: NursingRecordRow) {
-  ElMessage.success('打印任务已发送');
+/** 打印护理记录单（IP-07 · nursing_record 模板）。 */
+async function handlePrintRecord(_row?: NursingRecordRow) {
+  const patient = activePatient.value;
+  if (!patient?.id) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  try {
+    await printReportTemplate({
+      templateCode: 'nursing_record',
+      encounterId: patient.id,
+      jobName: `护理记录单-${patient.name}`,
+    });
+    ElMessage.success('护理记录单已发送打印');
+  } catch {
+    // composable 已提示
+  }
 }
-/** 纸质单模式：新增一行并写入当前时刻。 */
+/** 纸质单模式：新增额外时点行并写入当前时刻。 */
 function handlePaperAddRow() {
   const nowDateTime = getNowDateTime();
   const latest = recordList.value.at(-1);
-  recordList.value.push(
-    createEmptyRow({
+  recordList.value.push({
+    ...createEmptyRow({
       nurseSignature: latest?.nurseSignature || '',
       recordDate: nowDateTime.date,
       recordTime: nowDateTime.time,
     }),
-  );
+    rowType: 'extra',
+  });
 }
-/** 纸质单模式：保存全部记录（当前为前端占位提示）。 */
+/** 纸质单模式：保存全部记录并清除未保存标记。 */
 function handlePaperSaveAll() {
+  recordList.value.forEach((row) => {
+    row.isDirty = false;
+  });
   ElMessage.success('护理记录已保存');
 }
-/** 纸质单模式：删除指定行，至少保留一条演示数据。 */
+/** 纸质单模式：仅允许删除额外插入行。 */
 function handlePaperDeleteRow(id: string) {
+  const target = recordList.value.find((item) => item.id === id);
+  if (!target || target.rowType !== 'extra') {
+    ElMessage.warning('骨架行不可删除，可清空内容后保存');
+    return;
+  }
   handleDeleteRecord(id);
 }
-/** 在护理记录编辑区统一处理键盘导航（仅时间轴模式启用）。 */
-function handleRecordAreaKeydown(event: KeyboardEvent) {
-  if (viewMode.value !== 'timeline') {
+/** 纸质单字段变更时标记该行未保存。 */
+function handlePaperMarkDirty(id: string) {
+  const target = recordList.value.find((item) => item.id === id);
+  if (!target) {
     return;
   }
-  handleRecordFormKeydown(event);
+  target.isDirty = true;
 }
-/** 时间轴卡片内键盘导航：上下左右与 Enter 切换焦点。 */
-function handleRecordFormKeydown(event: KeyboardEvent) {
-  const target = event.target as HTMLElement | null;
-  if (!target || !formAreaRef.value?.contains(target)) {
-    return;
-  }
-  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-    event.preventDefault();
-    const direction: -1 | 1 = event.key === 'ArrowUp' ? -1 : 1;
-    navigateFromTarget(target, direction, event);
-    return;
-  }
+/** 在护理记录编辑区统一处理键盘导航（纸质单与时间轴均启用）。 */
+function handleRecordAreaKeydown(event: KeyboardEvent) {
   handleFormKeydown(event);
 }
 
@@ -308,51 +361,60 @@ watch(
 
 <template>
   <div class="nursing-record-page">
-    <InpatientPatientInfoHeader v-if="activePatient" :patient-info="patientHeaderInfo" />
-    <ElEmpty v-else description="请先从左侧选择一位患者" />
+    <ElEmpty v-if="!activePatient" description="请先从左侧选择一位患者" />
 
-    <div
-      v-if="activePatient"
-      ref="formAreaRef"
-      class="record-content"
-      @keydown.capture="handleRecordAreaKeydown"
-    >
-      <div class="record-toolbar">
-        <ElSegmented
-          v-model="viewMode"
-          size="small"
-          :options="[
-            { label: '纸质单', value: 'paper' },
-            { label: '时间轴', value: 'timeline' },
-          ]"
-        />
-      </div>
-
+    <div v-else ref="formAreaRef" class="record-content" @keydown.capture="handleRecordAreaKeydown">
       <NursingRecordPaperTable
         v-if="viewMode === 'paper'"
+        :paper-header="paperHeaderInfo"
         :rows="paperRecords"
+        :unsaved-count="paperUnsavedCount"
+        :week-range-label="paperWeekRangeLabel"
         @add-row="handlePaperAddRow"
         @delete-row="handlePaperDeleteRow"
+        @mark-dirty="handlePaperMarkDirty"
         @print="handlePrintRecord()"
         @save-all="handlePaperSaveAll"
-      />
+      >
+        <template #toolbar-extra>
+          <ElSegmented
+            v-model="viewMode"
+            :options="[
+              { label: '纸质单', value: 'paper' },
+              { label: '时间轴', value: 'timeline' },
+            ]"
+          />
+        </template>
+      </NursingRecordPaperTable>
 
-      <div v-else class="record-timeline">
-        <NursingRecordTimelineItem
-          v-for="(row, index) in timelineRecords"
-          :key="row.id"
-          :index="index"
-          :row="row"
-          :total="timelineRecords.length"
-          @add="handleAddRecord"
-          @cancel="handleCancelEditRecord"
-          @copy="handleCopyRecord"
-          @delete="(item) => handleDeleteRecord(item.id)"
-          @edit="handleEditRecord"
-          @print="handlePrintRecord"
-          @save="handleSaveRecord"
-        />
-      </div>
+      <template v-else>
+        <div class="record-toolbar">
+          <ElSegmented
+            v-model="viewMode"
+            :options="[
+              { label: '纸质单', value: 'paper' },
+              { label: '时间轴', value: 'timeline' },
+            ]"
+          />
+        </div>
+
+        <div class="record-timeline">
+          <NursingRecordTimelineItem
+            v-for="(row, index) in timelineRecords"
+            :key="row.id"
+            :index="index"
+            :row="row"
+            :total="timelineRecords.length"
+            @add="handleAddRecord"
+            @cancel="handleCancelEditRecord"
+            @copy="handleCopyRecord"
+            @delete="(item) => handleDeleteRecord(item.id)"
+            @edit="handleEditRecord"
+            @print="handlePrintRecord"
+            @save="handleSaveRecord"
+          />
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -382,7 +444,6 @@ watch(
 .record-toolbar {
   display: flex;
   justify-content: flex-end;
-  padding: 0 2px;
 }
 
 .record-toolbar :deep(.el-segmented) {
@@ -400,6 +461,7 @@ watch(
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 0 2px 6px;
+  padding: 12px;
+  box-sizing: border-box;
 }
 </style>

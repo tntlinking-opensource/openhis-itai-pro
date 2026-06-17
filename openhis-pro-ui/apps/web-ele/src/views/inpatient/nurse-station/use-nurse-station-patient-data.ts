@@ -65,8 +65,10 @@ export function useNurseStationPatientData() {
     const regionIds = selectedRegionIds.value;
     const wardIds = selectedWardIds.value;
     return patients.value.filter((item) => {
-      const matchRegion =
-        regionIds.length === 0 || !item.regionId || regionIds.includes(item.regionId);
+      if (!item.regionId) {
+        return false;
+      }
+      const matchRegion = regionIds.length === 0 || regionIds.includes(item.regionId);
       const matchWard = wardIds.length === 0 || !item.wardId || wardIds.includes(item.wardId);
       return matchRegion && matchWard;
     });

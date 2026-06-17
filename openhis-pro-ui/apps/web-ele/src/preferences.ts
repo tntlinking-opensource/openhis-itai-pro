@@ -11,6 +11,7 @@ export const overridesPreferences = defineOverridesPreferences({
     layout: 'header-nav',
     name: import.meta.env.VITE_APP_TITLE,
     defaultHomePath: '/analytics',
+    enableRefreshToken: true,
     enableCheckUpdates: false,
     preferencesButtonPosition: undefined,
     accessMode: 'mixed',

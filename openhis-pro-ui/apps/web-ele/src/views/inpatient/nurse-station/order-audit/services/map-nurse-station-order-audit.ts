@@ -17,6 +17,12 @@ export interface NurseStationOrderAuditTableRow {
   stopTime: string;
   doctorName: string;
   typeLabel: string;
+  /** 药/诊短文案 */
+  orderKindLabel: string;
+  /** 长临 code（LONG_TERM / TEMPORARY） */
+  therapyTypeCode?: string;
+  /** 长临展示文案 */
+  therapyLabel?: string;
   content: string;
   dosage: string;
   extension?: string;
@@ -33,9 +39,48 @@ function orderTypeToShortLabel(orderType: string): string {
   return orderType || '医嘱';
 }
 
+/** 长临 code → 短文案 */
+function therapyEnumToLabel(code: string): string {
+  const c = code.trim().toUpperCase();
+  if (c === 'LONG_TERM') return '长期';
+  if (c === 'TEMPORARY') return '临时';
+  if (c === 'DISCHARGE_MEDICATION') return '出院带药';
+  return '';
+}
+
+/** 长临文案反推 code（therapyEnum 缺失时供颜色 class 使用） */
+function resolveTherapyTypeCodeFromLabel(label: string): string {
+  const text = label.trim();
+  if (text.includes('长期')) return 'LONG_TERM';
+  if (text.includes('临时')) return 'TEMPORARY';
+  if (text.includes('出院')) return 'DISCHARGE_MEDICATION';
+  return '';
+}
+
+/** 列表长临 code */
+function resolveAuditTherapyTypeCode(dto: NurseStationOrderAuditRowDto): string {
+  const code = String(dto.therapyEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (code) return code;
+  return resolveTherapyTypeCodeFromLabel(resolveAuditTherapyLabel(dto));
+}
+
+/** 列表长临文案：优先后端 therapyDisplay，否则按 therapyEnum 推导 */
+function resolveAuditTherapyLabel(dto: NurseStationOrderAuditRowDto): string {
+  const display = String(dto.therapyDisplay ?? '').trim();
+  if (display) {
+    if (display.includes('长期')) return '长期';
+    if (display.includes('临时')) return '临时';
+    if (display.includes('出院')) return '出院带药';
+    return display;
+  }
+  return therapyEnumToLabel(String(dto.therapyEnum ?? ''));
+}
+
 /** 组装列表「类型」列：长临 + 药/诊 */
 function buildAuditTypeLabel(dto: NurseStationOrderAuditRowDto): string {
-  const therapy = String(dto.therapyDisplay ?? '').trim();
+  const therapy = resolveAuditTherapyLabel(dto);
   const kind = orderTypeToShortLabel(String(dto.orderType ?? ''));
   if (therapy && kind) return `${therapy}/${kind}`;
   return therapy || kind || '—';
@@ -89,6 +134,9 @@ export function mapAuditRowDtoToTableRow(
     stopTime: stopRaw ? formatDateTime(stopRaw) : '',
     doctorName: String(dto.requesterName ?? '').trim() || '—',
     typeLabel: buildAuditTypeLabel(dto),
+    orderKindLabel: orderTypeToShortLabel(String(dto.orderType ?? '')) || '—',
+    therapyTypeCode: resolveAuditTherapyTypeCode(dto) || undefined,
+    therapyLabel: resolveAuditTherapyLabel(dto) || undefined,
     content: buildAuditContentTitle(dto),
     dosage: String(dto.dosageDisplay ?? '').trim() || '—',
     extension: buildAuditExtensionLine(dto) || undefined,

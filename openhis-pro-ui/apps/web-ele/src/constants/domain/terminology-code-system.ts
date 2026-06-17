@@ -24,7 +24,6 @@ export const TerminologyCodeSystemName = {
   RX_FLAG: 'rx_flag',
   DOSAGE_INSTRUCTION: 'dosage_instruction',
   UNIT_CODE: 'unit_code',
-  RATE_CODE: 'rate_code',
   CONDITION_DEFINITION_SOURCE: 'condition_definition_source',
   DIAG_TYPE: 'diag_type',
   PURCHASE_UNIT: 'purchase_unit',
@@ -35,5 +34,6 @@ export const TerminologyCodeSystemName = {
   /** 耗材分类 → 实体 category_code */
   DEVICE_CATEGORY_CODE: 'device_category_code',
   /** 耗材种类/类型 → 实体 type_code */
-  DEVICE_TYPE_CODE: 'device_type_code',
+  IN_WAY_CODE: 'in_way_code',
+  ADMIT_SOURCE_CODE: 'admit_source_code',
 } as const;

@@ -20,7 +20,7 @@ export async function httpPageNurseStationPatientQueue(
   body: PageNurseStationPatientQueueRequest,
 ): Promise<PageNurseStationPatientQueueResponse> {
   return publicRequestClient.post<PageNurseStationPatientQueueResponse>(
-    '/outpatientNurseStation/pageNurseStationPatientQueue',
+    '/outpatientNurseStationPatient/pageNurseStationPatientQueue',
     body,
   );
 }
@@ -30,7 +30,7 @@ export async function httpQueryEncounterTreatmentSheet(
   body: QueryEncounterTreatmentSheetRequest,
 ): Promise<QueryEncounterTreatmentSheetResponse> {
   return publicRequestClient.post<QueryEncounterTreatmentSheetResponse>(
-    '/outpatientNurseStation/queryEncounterTreatmentSheet',
+    '/outpatientNurseStationTreatment/queryEncounterTreatmentSheet',
     body,
   );
 }
@@ -40,7 +40,7 @@ export async function httpListProcedureRecordsForNurseStation(
   body: ListProcedureRecordsForNurseStationRequest,
 ): Promise<ListProcedureRecordsForNurseStationResponse> {
   return publicRequestClient.post<ListProcedureRecordsForNurseStationResponse>(
-    '/outpatientNurseStation/listProcedureRecordsForNurseStation',
+    '/outpatientNurseStationTreatment/listProcedureRecordsForNurseStation',
     body,
   );
 }
@@ -50,7 +50,7 @@ export async function httpBatchPerformDisposition(
   body: BatchPerformDispositionRequest,
 ): Promise<BatchPerformDispositionResponse> {
   return publicRequestClient.post<BatchPerformDispositionResponse>(
-    '/outpatientNurseStation/batchPerformDisposition',
+    '/outpatientNurseStationTreatment/batchPerformDisposition',
     body,
   );
 }
@@ -60,7 +60,7 @@ export async function httpListNetRemainingProcedureRecordsForNurseStation(
   body: ListNetRemainingProcedureRecordsForNurseStationRequest,
 ): Promise<ListNetRemainingProcedureRecordsForNurseStationResponse> {
   return publicRequestClient.post<ListNetRemainingProcedureRecordsForNurseStationResponse>(
-    '/outpatientNurseStation/listNetRemainingProcedureRecordsForNurseStation',
+    '/outpatientNurseStationTreatment/listNetRemainingProcedureRecordsForNurseStation',
     body,
   );
 }
@@ -70,7 +70,7 @@ export async function httpBatchCancelDisposition(
   body: BatchCancelDispositionRequest,
 ): Promise<BatchCancelDispositionResponse> {
   return publicRequestClient.post<BatchCancelDispositionResponse>(
-    '/outpatientNurseStation/batchCancelDisposition',
+    '/outpatientNurseStationTreatment/batchCancelDisposition',
     body,
   );
 }

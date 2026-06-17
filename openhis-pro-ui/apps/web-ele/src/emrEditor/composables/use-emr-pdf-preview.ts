@@ -10,9 +10,9 @@ import { ElMessage } from 'element-plus';
 
 import { generatePdfApi, mergePdfApi } from '#/api/emr/pdf';
 import { serializeEmrDocumentContent } from '#/api/emr/document';
+import { usePrintJob } from '#/composables/use-print-job';
 
 import { computeEmrContentHash } from '../utils/emr-content-hash';
-import { buildEmrSilentPrintTemplateId, sendEmrPdfSilentPrint } from '../utils/emr-hiprint-silent';
 import { pdfBase64ToBlob, pdfBase64ToObjectUrl, revokePdfObjectUrl } from '../utils/emr-pdf-blob';
 import {
   buildPdfMetadataFromPatient,
@@ -53,7 +53,7 @@ export function useEmrPdfPreview(ctx: UseEmrPdfPreviewContext) {
   let lastPdfUrl = '';
 
   const { printFromBlob, downloadBlob, isPrinting } = usePdfPrint();
-  const isSilentPrinting = ref(false);
+  const { runPrintJob, isPrinting: isSilentPrinting } = usePrintJob();
 
   function setPdfUrl(url: string) {
     revokePdfObjectUrl(lastPdfUrl);
@@ -167,12 +167,7 @@ export function useEmrPdfPreview(ctx: UseEmrPdfPreviewContext) {
   }
 
   async function printMergedFormal(documentIds: string[]) {
-    const res = await requestMergedPdf(documentIds, false);
-    if (!res?.pdfBase64) return;
-    printFromBlob(pdfBase64ToBlob(res.pdfBase64), {
-      title: '病程记录合并打印',
-      autoPrint: true,
-    });
+    return printMergedFormalSilent(documentIds);
   }
 
   async function requestPdf(previewMode: boolean) {
@@ -251,41 +246,51 @@ export function useEmrPdfPreview(ctx: UseEmrPdfPreviewContext) {
   }
 
   async function printFormal() {
-    const res = await requestPdf(false);
-    if (!res?.pdfBase64) return;
-    printFromBlob(pdfBase64ToBlob(res.pdfBase64), {
-      title: ctx.getDocumentTitle() || '病历打印',
-      autoPrint: true,
-    });
+    return printFormalSilent();
   }
 
   async function printFormalSilent() {
-    isSilentPrinting.value = true;
-    try {
-      const res = await requestPdf(false);
-      if (!res?.pdfBase64) return;
-      sendEmrPdfSilentPrint(pdfBase64ToBlob(res.pdfBase64), {
-        templateId: buildEmrSilentPrintTemplateId('single', ctx.getDocumentId()),
-        paperName: 'A4',
-      });
-    } finally {
-      isSilentPrinting.value = false;
-    }
+    const res = await requestPdf(false);
+    if (!res?.pdfBase64) return;
+    const blob = pdfBase64ToBlob(res.pdfBase64);
+    const documentId = ctx.getDocumentId() || 'emr';
+    await runPrintJob({
+      pdfBlob: blob,
+      jobName: ctx.getDocumentTitle() || '病历',
+      onFallbackBrowser: (fallbackBlob) =>
+        printFromBlob(fallbackBlob, {
+          title: ctx.getDocumentTitle() || '病历打印',
+          autoPrint: true,
+        }),
+      printLog: {
+        targetType: 'EMR',
+        targetCode: documentId,
+        contentHash: lastSyncedHash.value,
+        contentType: 'application/pdf',
+      },
+    });
   }
 
   async function printMergedFormalSilent(documentIds: string[]) {
-    isSilentPrinting.value = true;
-    try {
-      const res = await requestMergedPdf(documentIds, false);
-      if (!res?.pdfBase64) return;
-      const encounterId = ctx.getEncounterId() || 'merge';
-      sendEmrPdfSilentPrint(pdfBase64ToBlob(res.pdfBase64), {
-        templateId: buildEmrSilentPrintTemplateId('merge', encounterId),
-        paperName: 'A4',
-      });
-    } finally {
-      isSilentPrinting.value = false;
-    }
+    const res = await requestMergedPdf(documentIds, false);
+    if (!res?.pdfBase64) return;
+    const blob = pdfBase64ToBlob(res.pdfBase64);
+    const encounterId = ctx.getEncounterId() || 'merge';
+    await runPrintJob({
+      pdfBlob: blob,
+      jobName: '病程记录合并打印',
+      onFallbackBrowser: (fallbackBlob) =>
+        printFromBlob(fallbackBlob, {
+          title: '病程记录合并打印',
+          autoPrint: true,
+        }),
+      printLog: {
+        targetType: 'EMR',
+        targetCode: `merge-${encounterId}`,
+        contentHash: lastSyncedHash.value,
+        contentType: 'application/pdf',
+      },
+    });
   }
 
   onBeforeUnmount(() => {

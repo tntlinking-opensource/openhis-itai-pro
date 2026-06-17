@@ -2,6 +2,7 @@ import type { UserListParams } from '#/api/user/user';
 import type { ApiResponse } from '#/types/api-response';
 
 import { requestClient } from '#/api/request';
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
 /** 岗位工作台左侧用户行（与 PositionUserWorkbenchRowDto 一致） */
 export interface PositionUserWorkbenchRow {
@@ -62,21 +63,66 @@ export async function pageUsersForWorkbenchApi(
   );
 }
 
-/** adm_pr_assign 业务角色（与 DM-ADM-006 / 后端 Integer 编码一致） */
-export const PRACTITIONER_BUSINESS_ROLE_OPTIONS = [
-  { label: '医师', value: 1 },
-  { label: '护士', value: 2 },
-  { label: '药师', value: 3 },
-  { label: '库管', value: 4 },
-  { label: '技师', value: 5 },
-  { label: '行政', value: 6 },
-] as const;
+/** 内置业务角色 code（仅逻辑判断，不在界面展示） */
+export const PLATFORM_ROLE_CODE = {
+  DOCTOR: 'ROLE_DOCTOR',
+  NURSE: 'ROLE_NURSE',
+  PHARMACIST: 'ROLE_PHARMACIST',
+  WAREHOUSE: 'ROLE_WAREHOUSE',
+  ACCOUNTANT: 'ROLE_ACCOUNTANT',
+} as const;
+
+/** 岗位分配可选内置角色（服务端解析 id，勿写死种子 id） */
+export interface RoleOptionDto {
+  id: string;
+  displayName: string;
+  builtIn?: boolean;
+  /** 服务端 code，仅逻辑判断，不在界面展示 */
+  code?: string;
+  assignmentScopes?: string[];
+}
+
+/** 加载岗位分配可选内置角色 */
+export async function loadBusinessBuiltInRoleOptions(): Promise<RoleOptionDto[]> {
+  const res = await requestClient.post<RoleOptionDto[]>('/position/listAssignmentRoleOptions', {});
+  const raw = res as RoleOptionDto[] | { data?: RoleOptionDto[] };
+  const list = Array.isArray(raw) ? raw : raw.data;
+  if (!Array.isArray(list)) {
+    return [];
+  }
+  return list.map((item) => ({
+    ...item,
+    id: String(item.id),
+  }));
+}
+
+/** legacy roleCode（1/2/3/4/6）→ 展示名（读侧兼容） */
+export function legacyRoleCodeToLabel(code?: null | number | string): string {
+  if (code === undefined || code === null || code === '') {
+    return '';
+  }
+  const legacyMap: Record<number, string> = {
+    1: '医师',
+    2: '护士',
+    3: '药师',
+    4: '库管',
+    6: '行政',
+  };
+  const n = Number(code);
+  if (Number.isNaN(n)) {
+    return String(code);
+  }
+  return legacyMap[n] ?? String(code);
+}
 
 /** 岗位分配行（PractitionerAssignmentRowDto） */
 export interface PractitionerAssignmentRow {
   assignmentId?: string;
   practitionerId?: string;
-  roleCode?: number;
+  /** whale_roles.id */
+  roleId?: string;
+  /** legacy 1/2/3/4/6，非 whale_roles.id */
+  roleCode?: null | number;
   roleName?: string;
   orgId?: string;
   orgName?: string;
@@ -86,63 +132,86 @@ export interface PractitionerAssignmentRow {
   activeFlag?: boolean;
   specialtyCode?: string;
   typeCode?: number | null;
+  /** 岗位可接诊号源类型主键 */
+  serviceIds?: string[];
+  /** 号源类型名称（顿号分隔） */
+  serviceNames?: string;
 }
 
 export async function listPractitionerAssignmentsApi(practitionerId: string) {
   return requestClient.post<ApiResponse<PractitionerAssignmentRow[]>>(
     '/position/listPractitionerAssignments',
     {
-      practitionerId: typeof practitionerId === 'string' ? practitionerId : practitionerId,
+      practitionerId: preserveApiIdForRequest(practitionerId),
     },
   );
 }
 
 export interface AssignPractitionerRoleItemPayload {
   practitionerId: string;
-  orgId?: number | null;
-  locationId?: number | null;
-  roleCode: number;
+  orgId?: string | null;
+  locationId?: string | null;
+  /** 推荐：whale_roles.id */
+  roleId?: string;
+  /** 兼容 legacy 1/2/3/4/6（与 roleId 二选一，后端优先 roleId） */
+  roleCode?: number;
   name?: string;
   specialtyCode?: string;
   typeCode?: number | null;
+  /** 可接诊号源类型（HealthcareService）主键列表 */
+  serviceIds?: string[];
 }
 
-export async function assignPractitionerRoleApi(payload: AssignPractitionerRoleItemPayload) {
+export async function assignPractitionerRoleApi(
+  payload: AssignPractitionerRoleItemPayload | AssignPractitionerRoleItemPayload[],
+) {
+  const items = Array.isArray(payload) ? payload : [payload];
   return requestClient.post<ApiResponse<string>>('/position/assignPractitionerRole', {
-    item: payload,
+    item: items[0],
+    items,
   });
 }
 
 export interface EditPractitionerRoleItemPayload {
-  assignmentId: number;
+  assignmentId: string;
   name?: string;
-  orgId?: number | null;
-  locationId?: number | null;
+  orgId?: string | null;
+  /** 普通岗位为单个 ID；库房/药房多选时为逗号分隔的多个 ID */
+  locationId?: string | null;
   specialtyCode?: string;
   typeCode?: number | null;
+  /** 可接诊号源类型（HealthcareService）主键列表；传空数组表示清空 */
+  serviceIds?: string[];
 }
 
 export async function editPractitionerRoleApi(payload: EditPractitionerRoleItemPayload) {
   return requestClient.post<ApiResponse<null>>('/position/editPractitionerRole', {
     item: payload,
+    items: [payload],
   });
 }
 
-export async function retirePractitionerRoleApi(assignmentId: number, reason?: string) {
+export async function retirePractitionerRoleApi(assignmentId: string, reason?: string) {
+  const item = { assignmentId, reason: reason ?? '' };
   return requestClient.post<ApiResponse<null>>('/position/retirePractitionerRole', {
-    item: { assignmentId, reason: reason ?? '' },
+    item,
+    items: [item],
   });
 }
 
-export async function activatePractitionerRoleApi(assignmentId: number) {
+export async function activatePractitionerRoleApi(assignmentId: string) {
+  const item = { assignmentId };
   return requestClient.post<ApiResponse<null>>('/position/activatePractitionerRole', {
-    item: { assignmentId },
+    item,
+    items: [item],
   });
 }
 
-export async function deactivatePractitionerRoleApi(assignmentId: number, reason?: string) {
+export async function deactivatePractitionerRoleApi(assignmentId: string, reason?: string) {
+  const item = { assignmentId, reason: reason ?? '停用' };
   return requestClient.post<ApiResponse<null>>('/position/deactivatePractitionerRole', {
-    item: { assignmentId, reason: reason ?? '停用' },
+    item,
+    items: [item],
   });
 }
 
@@ -157,11 +226,10 @@ export interface LocationOptionDto {
  * 按科室加载启用中的物理位置下拉（名称 · 形态）
  * POST /api/app/position/listLocationOptionsByOrganization
  */
-export async function listLocationOptionsByOrganizationApi(organizationId: string | number) {
-  const id = typeof organizationId === 'string' ? Number(organizationId) : organizationId;
+export async function listLocationOptionsByOrganizationApi(organizationId: string) {
   return requestClient.post<ApiResponse<LocationOptionDto[]>>(
     '/position/listLocationOptionsByOrganization',
-    { organizationId: id },
+    { organizationId },
   );
 }
 
@@ -169,12 +237,11 @@ export async function listLocationOptionsByOrganizationApi(organizationId: strin
  * 单条位置选项（用于当前分配引用非启用位置时下拉补全）
  * POST /api/app/position/getLocationOptionById
  */
-export async function getLocationOptionByIdApi(locationId: string | number) {
-  const id = typeof locationId === 'string' ? Number(locationId) : locationId;
+export async function getLocationOptionByIdApi(locationId: string) {
   return requestClient.post<ApiResponse<LocationOptionDto | null>>(
     '/position/getLocationOptionById',
     {
-      locationId: id,
+      locationId,
     },
   );
 }

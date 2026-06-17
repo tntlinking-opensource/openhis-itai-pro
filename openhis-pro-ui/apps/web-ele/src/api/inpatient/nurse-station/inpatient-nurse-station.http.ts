@@ -1,6 +1,8 @@
 import type {
   GetPatientDetailRequest,
   GetPatientDetailResponse,
+  LoadAdmissionParticipantInitRequest,
+  LoadAdmissionParticipantInitResponse,
   LoadWardTreeRequest,
   LoadWardTreeResponse,
   PagePatientQueueRequest,
@@ -40,4 +42,14 @@ export async function httpSavePatientInfo(
   body: SavePatientInfoRequest,
 ): Promise<SavePatientInfoResponse> {
   return publicRequestClient.post<SavePatientInfoResponse>(`${BASE}/savePatientInfo`, body);
+}
+
+/** 分床/入科责任医护下拉初始化 */
+export async function httpLoadAdmissionParticipantInit(
+  body: LoadAdmissionParticipantInitRequest = {},
+): Promise<LoadAdmissionParticipantInitResponse> {
+  return publicRequestClient.post<LoadAdmissionParticipantInitResponse>(
+    `${BASE}/loadAdmissionParticipantInit`,
+    body,
+  );
 }

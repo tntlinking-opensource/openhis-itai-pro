@@ -14,6 +14,8 @@ export interface OptionDto {
 /** 挂号页面初始化请求参数 */
 export interface LoadRegisterFormInitParams {
   organizationId?: null | number | string;
+  practitionerId?: null | number | string;
+  registrationDate?: string;
   keyword?: string;
 }
 
@@ -25,6 +27,8 @@ export interface LoadRegisterFormInitResult {
   genderOptions: OptionDto[];
   practitionerOptions: OptionDto[];
   serviceTypeOptions: OptionDto[];
+  /** 号源类型主键 → 挂号费销售价（元） */
+  serviceTypeFeeById?: Record<string, number | string>;
 }
 
 /** 患者检索分页请求参数 */
@@ -67,6 +71,7 @@ export interface ListPractitionersResult {
 
 /** 挂号预结算请求参数（患者信息 + 挂号要素） */
 export interface PreRegisterSettlementParams {
+  appointmentId?: null | number | string;
   birthDate: string;
   contractId: number | string;
   gender: string;
@@ -90,9 +95,11 @@ export interface ChargeItemPreviewDto {
 
 /** 预结算返回：支付草稿、总额、费用明细（及可选就诊标识） */
 export interface PreRegisterSettlementResult {
+  appointmentId?: null | number | string;
   chargeItems: ChargeItemPreviewDto[];
   encounterId?: number | string;
   paymentDraftId: number | string;
+  slotId?: null | number | string;
   totalAmount: number | string;
 }
 
@@ -105,6 +112,7 @@ export interface PaymentDetailDto {
 
 /** 挂号费正式结算请求参数 */
 export interface PayRegisterFeeParams {
+  appointmentId?: null | number | string;
   paymentDetails: PaymentDetailDto[];
   paymentDraftId: number | string;
 }
@@ -142,6 +150,8 @@ export interface ClinicRegisterItemDto {
   patientName: string;
   /** 待正式结算时的支付草稿 id；无则不可点「收费」 */
   paymentDraftId?: string;
+  /** 已成功缴费后的支付流水 id，供补打挂号小票 */
+  paymentId?: string;
   printCount?: null | number;
   serviceTypeId: string;
   serviceTypeName: string;
@@ -149,6 +159,8 @@ export interface ClinicRegisterItemDto {
   /** 就诊状态枚举编码，如 PLANNED */
   statusEnum: string;
   statusText: string;
+  /** 是否关联预约（供退号提示） */
+  hasLinkedAppointment?: boolean;
 }
 
 /** 门诊挂号记录分页返回 */
@@ -183,6 +195,52 @@ export interface CancelWithRefundResult {
   encounterStatus: string;
   redInvoiceId?: null | number | string;
   refundStatus: string;
+  /** 关联预约释放提示（booking 模块退号后回填） */
+  appointmentReleaseMessage?: string;
+}
+
+/** IF-REG-12：加载有效预约请求 */
+export interface LoadAppointmentForRegisterParams {
+  appointmentBusNo?: string;
+  patientId?: null | number | string;
+  registrationDate?: string;
+}
+
+/** IF-REG-12：有效预约快照 */
+export interface OutpatientBookingSnapshotDto {
+  appointmentBusNo: string;
+  appointmentId: number | string;
+  healthcareServiceId: number | string;
+  organizationId: number | string;
+  organizationName?: string;
+  practitionerId?: null | number | string;
+  practitionerName?: string;
+  serviceTypeName?: string;
+  slotEnd?: string;
+  slotId?: null | number | string;
+  slotStart?: string;
+  statusEnum?: string;
+}
+
+/** IF-REG-14：可约时段摘要行 */
+export interface BookableSlotHintDto {
+  remainingCount?: null | number;
+  slotEnd?: string;
+  slotId?: null | number | string;
+  slotStart?: string;
+}
+
+/** IF-REG-14：可约时段摘要请求 */
+export interface ListBookableSlotHintsParams {
+  healthcareServiceId?: null | number | string;
+  organizationId: number | string;
+  practitionerId?: null | number | string;
+  registrationDate?: string;
+}
+
+/** IF-REG-14：可约时段摘要响应 */
+export interface ListBookableSlotHintsResult {
+  hints: BookableSlotHintDto[];
 }
 
 /** 挂号历史表格行：与 `ClinicRegisterItemDto` 同源 */
@@ -218,12 +276,42 @@ export async function httpListPractitioners(
   );
 }
 
-/** 确认挂号要素后的预结算：询价、草稿、生成就诊锚点等（不落正式收款） */
+/** 执行挂号预结算 */
 export async function httpPreRegisterSettlement(
   body: PreRegisterSettlementParams,
 ): Promise<PreRegisterSettlementResult> {
   return publicRequestClient.post<PreRegisterSettlementResult>(
     '/outpatientRegistration/preRegisterSettlement',
+    body,
+  );
+}
+
+/** IF-REG-13：预约转挂号预结算 */
+export async function httpPreRegisterFromAppointment(
+  body: PreRegisterSettlementParams,
+): Promise<PreRegisterSettlementResult> {
+  return publicRequestClient.post<PreRegisterSettlementResult>(
+    '/outpatientRegistration/preRegisterFromAppointment',
+    body,
+  );
+}
+
+/** IF-REG-12：挂号台加载有效预约 */
+export async function httpLoadAppointmentForRegister(
+  body: LoadAppointmentForRegisterParams,
+): Promise<OutpatientBookingSnapshotDto> {
+  return publicRequestClient.post<OutpatientBookingSnapshotDto>(
+    '/outpatientRegistration/loadAppointmentForRegister',
+    body,
+  );
+}
+
+/** IF-REG-14：可约时段摘要 */
+export async function httpListBookableSlotHints(
+  body: ListBookableSlotHintsParams,
+): Promise<ListBookableSlotHintsResult> {
+  return publicRequestClient.post<ListBookableSlotHintsResult>(
+    '/outpatientRegistration/listBookableSlotHints',
     body,
   );
 }

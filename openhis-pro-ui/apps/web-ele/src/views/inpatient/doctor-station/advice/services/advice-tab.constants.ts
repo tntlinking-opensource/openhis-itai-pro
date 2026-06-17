@@ -1,8 +1,5 @@
 import type { ProductColumn } from './advice.types';
 
-/** 与目录、暂存批次定价口径一致（AS BR-ORD-001 / SDD） */
-export const ADVICE_PRICING_SOURCE_CODE = 'retailPrice';
-
 export const MEDICATION_DEFINITION_TABLE = 'med_medication_definition';
 
 /** 住院可开立目录表名白名单（不含耗材） */

@@ -1,7 +1,9 @@
 import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
+import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 import type { InpatientDoctorStationAdviceDraftLineRequest } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.types';
 
 import type { AdviceDrugItem } from './advice.types';
+import { resolveMedicationContractId, resolveMedicationEncounterDiagnosisId } from './advice-edit';
 import {
   inferAdviceLineEditorKind,
   isInpatientLongTermMedicationTherapy,
@@ -49,6 +51,7 @@ function buildMedicationDraftLine(
   item: AdviceDrugItem,
   index: number,
   patientDiagnoses: DiagnosisItem[],
+  encounterRows: EncounterDiagnosisRowDto[] = [],
 ): InpatientDoctorStationAdviceDraftLineRequest {
   const defId = parseMedicationDefinitionId(item.selectedId);
   const rid = item.medicationRequestId?.trim();
@@ -60,6 +63,8 @@ function buildMedicationDraftLine(
     item.diagnosis,
     patientDiagnoses,
   );
+  const encounterDiagnosisId = resolveMedicationEncounterDiagnosisId(item.diagnosis, encounterRows);
+  const contractId = resolveMedicationContractId(item);
   const therapyEnum = String(item.therapyEnum ?? '').trim() || undefined;
   const longTerm = isInpatientLongTermMedicationTherapy(therapyEnum);
   let qty: number;
@@ -71,8 +76,6 @@ function buildMedicationDraftLine(
     qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
     unitCode = String(item.totalAmountUnit || 'U').trim() || 'U';
   }
-  const pharmacyRaw = String(item.pharmacy || '').trim();
-  const dispenseLocationId = /^\d+$/.test(pharmacyRaw) ? pharmacyRaw : undefined;
   const methodCode = String(item.usage || '').trim() || undefined;
   const rateCode = String(item.frequency || '').trim() || undefined;
   const { dose, doseUnitCode } = resolveMedicationDraftDosePayload(item);
@@ -99,8 +102,9 @@ function buildMedicationDraftLine(
     ...(dispensePerDuration === undefined ? {} : { dispensePerDuration }),
     ...(methodCode ? { methodCode } : {}),
     ...(rateCode ? { rateCode } : {}),
-    ...(dispenseLocationId ? { dispenseLocationId } : {}),
     ...(conditionDefinitionId ? { conditionDefinitionId } : {}),
+    ...(encounterDiagnosisId ? { encounterDiagnosisId } : {}),
+    ...(contractId ? { contractId } : {}),
     ...(gid ? { groupId: gid } : {}),
   };
 
@@ -162,10 +166,16 @@ function buildServiceDraftLine(
 /**
  * 将编辑卡多行组装为暂存批次 lines：按行区分药品 / 诊疗 / 耗材（与目录复合 selectedId、productTableName 一致）。
  */
+export interface BuildInpatientAdviceDraftLinesOptions {
+  encounterDiagnosisRows?: EncounterDiagnosisRowDto[];
+}
+
 export function buildAdviceDraftLines(
   items: AdviceDrugItem[],
   patientDiagnoses: DiagnosisItem[],
+  options?: BuildInpatientAdviceDraftLinesOptions,
 ): InpatientDoctorStationAdviceDraftLineRequest[] {
+  const encounterRows = options?.encounterDiagnosisRows ?? [];
   return items.map((item, index) => {
     const kind = inferAdviceLineEditorKind(item);
     if (kind === 'SERVICE') {
@@ -174,6 +184,6 @@ export function buildAdviceDraftLines(
     if (kind === 'DEVICE') {
       throw new Error('住院医生站不支持开立耗材医嘱');
     }
-    return buildMedicationDraftLine(item, index, patientDiagnoses);
+    return buildMedicationDraftLine(item, index, patientDiagnoses, encounterRows);
   });
 }

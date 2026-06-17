@@ -65,7 +65,7 @@ function validateWesternMedicationLineItem(
   return Boolean(
     item.selectedId &&
       item.diagnosis &&
-      item.feeNature &&
+      item.contractId &&
       item.usage &&
       item.frequency &&
       Number(item.singleDose) > 0 &&

@@ -1,5 +1,6 @@
 import type { ApiResponse } from '#/types/api-response';
 
+import type { DoctorStationMedicationUnitBandDto } from '#/api/doctor-station/advice.types';
 import { requestClient } from '#/api/request';
 
 /**
@@ -21,11 +22,14 @@ export interface MedicationCatalogItem {
   id?: string;
   name?: string;
   categoryCode?: string;
-  /** PublicationStatus#getCode()，如 ACTIVE、RETIRED（字符串，勿与枚举序列号混用） */
+  /** PublicationStatus#getCode()，如 ACTIVE、INACTIVE（字符串，勿与枚举序列号混用） */
   statusEnum?: string;
   medicationDefId?: string | number;
   /** 医保对码等布尔标志位（与后端 Boolean JSON 一致） */
   ybMatchFlag?: boolean;
+  /** 五类单位槽（采购/拆零/包装/库存/剂量），对齐门诊医生站目录 */
+  unitBands?: DoctorStationMedicationUnitBandDto[];
+  unitBandsJson?: string;
   [key: string]: unknown;
 }
 
@@ -118,6 +122,13 @@ export async function stopMedicationCatalogApi(ids: string[]): Promise<ApiRespon
  */
 export async function startMedicationCatalogApi(ids: string[]): Promise<ApiResponse<null>> {
   return requestClient.post<ApiResponse<null>>('/medicationCatalog/startMedicationCatalog', ids);
+}
+
+/**
+ * 批量删除（废弃）药品目录
+ */
+export async function deleteMedicationCatalogApi(ids: string[]): Promise<ApiResponse<null>> {
+  return requestClient.post<ApiResponse<null>>('/medicationCatalog/deleteMedicationCatalog', ids);
 }
 
 /**
@@ -274,6 +285,13 @@ export async function stopServiceCatalogApi(ids: string[]): Promise<ApiResponse<
  */
 export async function startServiceCatalogApi(ids: string[]): Promise<ApiResponse<null>> {
   return requestClient.post<ApiResponse<null>>('/serviceCatalog/startServiceCatalog', ids);
+}
+
+/**
+ * 批量删除诊疗目录
+ */
+export async function deleteServiceCatalogApi(ids: string[]): Promise<ApiResponse<null>> {
+  return requestClient.post<ApiResponse<null>>('/serviceCatalog/deleteServiceCatalog', ids);
 }
 
 /**

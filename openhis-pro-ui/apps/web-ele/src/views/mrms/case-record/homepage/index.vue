@@ -23,11 +23,11 @@ import {
   ElTag,
 } from 'element-plus';
 
-import { generateHomepagePdfApi, receiveCaseRecordApi, returnCaseRecordApi } from '#/api/mrms';
+import { receiveCaseRecordApi, returnCaseRecordApi } from '#/api/mrms';
 import AppDialog from '#/components/app-dialog.vue';
+import { useMrmsHomepagePrint } from '#/composables/use-mrms-homepage-print';
 import { useRequest } from '#/hooks/use-request';
 import { useUserStore } from '@vben/stores';
-import { pdfBase64ToObjectUrl, revokePdfObjectUrl } from '#/emrEditor/utils/emr-pdf-blob';
 
 import {
   CASE_RECORD_STATUS_LABEL,
@@ -125,10 +125,12 @@ const { run: runReturn, loading: returning } = useRequest(returnCaseRecordApi, {
   },
 });
 
-const { run: runPrint, loading: printing } = useRequest(generateHomepagePdfApi, {
-  manual: true,
-  showErrorMessage: true,
-});
+const {
+  isPrinting: homepagePrinting,
+  previewLoading: homepagePreviewLoading,
+  previewHomepagePdf,
+  printHomepagePdf,
+} = useMrmsHomepagePrint();
 
 /** 返回病案列表 */
 function goBack() {
@@ -187,36 +189,47 @@ async function confirmReturn() {
   await runReturn({ caseRecordId: caseRecordId.value, reason });
 }
 
-/** 打印预览（后端未实现时会报错） */
+/** 打印前保存确认 */
+async function ensureSavedBeforePrint(): Promise<boolean> {
+  if (!formDirty.value) {
+    return true;
+  }
+  try {
+    await ElMessageBox.confirm('有未保存修改，是否先保存再打印？', '打印', {
+      confirmButtonText: '保存并继续',
+      cancelButtonText: '取消',
+      type: 'warning',
+    });
+    await save();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** PDF 预览（新标签页） */
+async function onPreviewPdf() {
+  const id = caseRecordId.value;
+  if (!id) {
+    return;
+  }
+  if (!(await ensureSavedBeforePrint())) {
+    return;
+  }
+  await previewHomepagePdf(id);
+}
+
+/** 经 OpenHIS.Win printClient 打印 */
 async function onPrint() {
   const id = caseRecordId.value;
   if (!id) {
     return;
   }
-  if (formDirty.value) {
-    try {
-      await ElMessageBox.confirm('有未保存修改，是否先保存再打印？', '打印', {
-        confirmButtonText: '保存并打印',
-        cancelButtonText: '取消',
-        type: 'warning',
-      });
-      await save();
-    } catch {
-      return;
-    }
+  if (!(await ensureSavedBeforePrint())) {
+    return;
   }
-  let url: string | undefined;
-  try {
-    const res = await runPrint(id);
-    if (!res?.pdfBase64) {
-      ElMessage.warning('未生成 PDF');
-      return;
-    }
-    url = pdfBase64ToObjectUrl(res.pdfBase64);
-    window.open(url, '_blank');
-  } finally {
-    revokePdfObjectUrl(url);
-  }
+  const patientName = formModel.value?.psnName ?? caseRecord.value?.patientName;
+  await printHomepagePdf(id, patientName);
 }
 
 /** 字段来源角标（his / manual） */
@@ -275,7 +288,10 @@ onMounted(() => {
           <ElButton v-if="canReturn" type="warning" :loading="returning" @click="openReturnDialog">
             退回
           </ElButton>
-          <ElButton :loading="printing" @click="onPrint"> 打印预览 </ElButton>
+          <ElButton :loading="homepagePreviewLoading" @click="onPreviewPdf">PDF 预览</ElButton>
+          <ElButton :loading="homepagePrinting || homepagePreviewLoading" @click="onPrint">
+            打印
+          </ElButton>
         </div>
       </header>
 

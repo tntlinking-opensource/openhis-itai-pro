@@ -3,6 +3,7 @@ export { default as AdviceOrderSelect } from './components/advice-order-select.v
 export { calcAdviceTotalFee, useAdviceDrugList } from './composables/use-advice-drug-list';
 export type { UseAdviceDrugListParams } from './composables/use-advice-drug-list';
 export { default as AdviceList } from './index.vue';
+export { formatMoneyStrYuan, formatUnitPriceYuan } from './services/advice-format';
 export type {
   AdviceDrugItem,
   AdviceDrugPatchPayload,
@@ -11,5 +12,4 @@ export type {
   ProductColumn,
   ProductQueryParams,
 } from './services/advice.types';
-export { formatMoneyStrYuan, formatUnitPriceYuan } from './services/advice-format';
 export { normalizeCatalogUnitBands } from './services/medication-unit-bands';

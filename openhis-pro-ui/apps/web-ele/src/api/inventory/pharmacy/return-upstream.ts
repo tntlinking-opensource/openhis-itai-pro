@@ -206,8 +206,8 @@ export interface PageProductsForReturnUpstreamResponse {
 }
 
 export interface PageLinkableReturnSourceDocumentsRequest {
-  /** 药房位置（与后端 IF-PHA-RU-12 一致：入库单 purpose = 药房） */
-  purposeLocationId: number;
+  /** 药房位置（入库单 purpose = 药房） */
+  sourceLocationId: number;
   keyword?: string;
   pageNo: number;
   pageSize: number;

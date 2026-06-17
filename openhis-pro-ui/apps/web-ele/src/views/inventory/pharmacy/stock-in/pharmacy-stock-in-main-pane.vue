@@ -3,11 +3,12 @@
 -->
 <script setup lang="ts">
 import type { VxeGridProps, VxeGridPropTypes } from '#/adapter/vxe-table';
+import type { ChargeType } from '#/api/core/common';
 import type { WarehouseOptionDto } from '#/api/inventory/pharmacy/stock-in';
 import type { ApiOptionItem } from '#/types/api-response';
 import type { InboundProductUnitBand } from '#/utils/inventory/inbound-product-unit-bands';
 
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
@@ -32,6 +33,7 @@ import {
 } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import { getChargeTypeListApi } from '#/api/core/common';
 import {
   getPharmacyRequisitionDetailApi,
   type PharmacyRequisitionDetailLineDto,
@@ -55,6 +57,10 @@ import {
   pageLinkablePharmacyRequisitionsApi,
   type StockOutListRowDto,
 } from '#/api/inventory/warehouse/stock-out';
+import {
+  filterInsuranceChargeTypes,
+  resolveDefaultInsuranceBusNo,
+} from '#/chs/constants/insurance-contract';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { decimalMul } from '#/utils/decimal-util';
 import { resolveLoginPractitionerIdForRequest } from '#/utils/preserve-api-id';
@@ -184,6 +190,9 @@ const headItemTableType = ref(firstItemTableTypeValue());
 
 const saving = ref(false);
 
+const insuranceContractBusNo = ref<string>();
+const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
+
 const linkQlVisible = ref(false);
 const linkQlKeyword = ref('');
 const linkQlLoading = ref(false);
@@ -215,6 +224,21 @@ const docActionFlags = computed(() => {
 });
 
 const canEditOriginalBusNo = computed(() => documentEditable.value && isNewDraft.value);
+
+async function loadInsuranceContractBusNo() {
+  try {
+    const chargeTypes = await getChargeTypeListApi();
+    const eligible = filterInsuranceChargeTypes(chargeTypes);
+    insuranceChargeTypeOptions.value = eligible;
+    insuranceContractBusNo.value = resolveDefaultInsuranceBusNo(
+      eligible,
+      insuranceContractBusNo.value,
+    );
+  } catch {
+    insuranceContractBusNo.value = undefined;
+    insuranceChargeTypeOptions.value = [];
+  }
+}
 
 const paneFlashActive = ref(false);
 let paneFlashTimer: ReturnType<typeof setTimeout> | undefined;
@@ -977,6 +1001,10 @@ async function handleWithdraw() {
 async function handleApprove() {
   const no = headerBusNo.value;
   if (!no) return;
+  if (!insuranceContractBusNo.value?.trim()) {
+    ElMessage.warning('请选择医保契约');
+    return;
+  }
   const approverId = resolveLoginPractitionerIdForRequest(
     userStore.userInfo as null | Record<string, unknown>,
   );
@@ -985,6 +1013,7 @@ async function handleApprove() {
       busNo: no,
       approverId,
       approvalClock: nowIsoLocal(),
+      contractBusNo: insuranceContractBusNo.value,
     });
     ElMessage.success('审批同意');
     await loadDetail(no);
@@ -1186,6 +1215,10 @@ watch(
   },
   { deep: true },
 );
+
+onMounted(() => {
+  void loadInsuranceContractBusNo();
+});
 </script>
 
 <template>
@@ -1195,16 +1228,41 @@ watch(
   >
     <InvMainShell>
       <template #actionBar>
-        <InvDocActions
-          v-bind="docActionFlags"
-          @approve="handleApprove"
-          @reject="handleReject"
-          @remove-doc="handleRemoveDoc"
-          @save="handleSaveDoc"
-          @save-and-submit="handleSaveAndSubmitDoc"
-          @submit-approval="handleSubmitApproval"
-          @withdraw="handleWithdraw"
-        />
+        <div class="flex w-full flex-col gap-2">
+          <div
+            v-if="insuranceChargeTypeOptions.length > 0"
+            class="flex flex-wrap items-center gap-2"
+          >
+            <span class="text-xs text-[var(--el-text-color-secondary)]">医保契约</span>
+            <ElSelect
+              v-model="insuranceContractBusNo"
+              class="!w-72"
+              placeholder="请选择医保契约"
+              filterable
+              clearable
+              :disabled="docActionFlags.approveDisabled"
+            >
+              <ElOption
+                v-for="item in insuranceChargeTypeOptions"
+                :key="item.busNo"
+                :label="item.busNo ? `${item.label}（${item.busNo}）` : item.label"
+                :value="item.busNo"
+              />
+            </ElSelect>
+          </div>
+          <div class="flex w-full flex-wrap items-center justify-end gap-2">
+            <InvDocActions
+              v-bind="docActionFlags"
+              @approve="handleApprove"
+              @reject="handleReject"
+              @remove-doc="handleRemoveDoc"
+              @save="handleSaveDoc"
+              @save-and-submit="handleSaveAndSubmitDoc"
+              @submit-approval="handleSubmitApproval"
+              @withdraw="handleWithdraw"
+            />
+          </div>
+        </div>
       </template>
 
       <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2">

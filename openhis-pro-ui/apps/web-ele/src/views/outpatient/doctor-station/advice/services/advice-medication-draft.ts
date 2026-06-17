@@ -1,17 +1,24 @@
-import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
+import type { AdviceDrugItem, AdviceRowItem } from './advice.types';
+
 import type { DoctorStationAdviceDraftLineRequest } from '#/api/doctor-station/advice.types';
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
+import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
 
-import type { AdviceDrugItem } from './advice.types';
 import {
   pickMainDiagnosisDisplayName,
   resolveConditionDefinitionIdFromEncounterRows,
+  resolveMedicationContractId,
+  resolveMedicationEncounterDiagnosisId,
 } from './advice-edit';
 import {
   inferAdviceLineEditorKind,
   parseColonDefinitionId,
   parseProductTableNameFromSelectedId,
 } from './advice-row';
+import {
+  assignMedicationSortNumbersBeforeSave,
+  resolveMedicationDraftSortNumber,
+} from './advice-sort-number';
 import { MEDICATION_DEFINITION_TABLE } from './advice-tab.constants';
 import { resolveMedicationDraftDosePayload } from './medication-unit-bands';
 
@@ -70,17 +77,8 @@ export function resolveMedicationConditionDefinitionId(
   return undefined;
 }
 
-function normalizedSortNumber(item: AdviceDrugItem, index: number): number {
-  const sortRaw = item.sortNumber;
-  const sortParsed = Number(sortRaw);
-  const hasSort =
-    sortRaw !== undefined && sortRaw !== null && Number.isFinite(sortParsed) && sortParsed > 0;
-  return hasSort ? Math.trunc(sortParsed) : index + 1;
-}
-
 function buildMedicationDraftLine(
   item: AdviceDrugItem,
-  index: number,
   patientDiagnoses: DiagnosisItem[],
   encounterRows: EncounterDiagnosisRowDto[],
 ): DoctorStationAdviceDraftLineRequest {
@@ -95,6 +93,8 @@ function buildMedicationDraftLine(
     patientDiagnoses,
     encounterRows,
   );
+  const encounterDiagnosisId = resolveMedicationEncounterDiagnosisId(item.diagnosis, encounterRows);
+  const contractId = resolveMedicationContractId(item);
   const qtyRaw = Number(item.totalAmount ?? 1);
   const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
   const unitCode = String(item.totalAmountUnit || 'U').trim() || 'U';
@@ -111,7 +111,7 @@ function buildMedicationDraftLine(
     String(item.productTableName ?? '').trim() ||
     parseProductTableNameFromSelectedId(item.selectedId);
 
-  const sortNumber = normalizedSortNumber(item, index);
+  const sortNumber = resolveMedicationDraftSortNumber(item);
 
   const gid = String(item.groupId ?? '').trim();
   const medicationPayload: DoctorStationAdviceDraftLineRequest['medicationPayload'] = {
@@ -126,6 +126,8 @@ function buildMedicationDraftLine(
     ...(rateCode ? { rateCode } : {}),
     ...(dispenseLocationId ? { dispenseLocationId } : {}),
     ...(conditionDefinitionId ? { conditionDefinitionId } : {}),
+    ...(encounterDiagnosisId ? { encounterDiagnosisId } : {}),
+    ...(contractId ? { contractId } : {}),
     ...(gid ? { groupId: gid } : {}),
   };
 
@@ -141,7 +143,6 @@ function buildMedicationDraftLine(
 /** 诊疗：定义主键、数量、频次、执行次数、单位等与 `servicePayload` 顶层字段一致。 */
 function buildServiceDraftLine(
   item: AdviceDrugItem,
-  index: number,
   _patientDiagnoses: DiagnosisItem[],
 ): DoctorStationAdviceDraftLineRequest {
   const defId = parseColonDefinitionId(item.selectedId);
@@ -173,16 +174,12 @@ function buildServiceDraftLine(
     lineOp: op,
     requestId: rid || undefined,
     productTableName,
-    sortNumber: normalizedSortNumber(item, index),
     servicePayload,
   };
 }
 
 /** 耗材：定义主键、数量、单位与目录选行回填一致。 */
-function buildDeviceDraftLine(
-  item: AdviceDrugItem,
-  index: number,
-): DoctorStationAdviceDraftLineRequest {
+function buildDeviceDraftLine(item: AdviceDrugItem): DoctorStationAdviceDraftLineRequest {
   const defId = parseColonDefinitionId(item.selectedId);
   const rid = item.medicationRequestId?.trim();
   const op = rid ? 'UPDATE' : 'CREATE';
@@ -207,7 +204,6 @@ function buildDeviceDraftLine(
     lineOp: op,
     requestId: rid || undefined,
     productTableName,
-    sortNumber: normalizedSortNumber(item, index),
     devicePayload,
   };
 }
@@ -217,6 +213,8 @@ function buildDeviceDraftLine(
  */
 export interface BuildAdviceDraftLinesOptions {
   encounterDiagnosisRows?: EncounterDiagnosisRowDto[];
+  /** 当前就诊主表行，用于药品 sortNumber 追加分配 */
+  existingAdviceRows?: AdviceRowItem[];
 }
 
 export function buildAdviceDraftLines(
@@ -225,14 +223,16 @@ export function buildAdviceDraftLines(
   options?: BuildAdviceDraftLinesOptions,
 ): DoctorStationAdviceDraftLineRequest[] {
   const encounterRows = options?.encounterDiagnosisRows ?? [];
-  return items.map((item, index) => {
+  const existingAdviceRows = options?.existingAdviceRows ?? [];
+  const itemsWithSort = assignMedicationSortNumbersBeforeSave(items, existingAdviceRows);
+  return itemsWithSort.map((item) => {
     const kind = inferAdviceLineEditorKind(item);
     if (kind === 'SERVICE') {
-      return buildServiceDraftLine(item, index, patientDiagnoses);
+      return buildServiceDraftLine(item, patientDiagnoses);
     }
     if (kind === 'DEVICE') {
-      return buildDeviceDraftLine(item, index);
+      return buildDeviceDraftLine(item);
     }
-    return buildMedicationDraftLine(item, index, patientDiagnoses, encounterRows);
+    return buildMedicationDraftLine(item, patientDiagnoses, encounterRows);
   });
 }

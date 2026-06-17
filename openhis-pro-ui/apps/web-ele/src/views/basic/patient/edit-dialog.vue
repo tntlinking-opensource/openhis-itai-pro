@@ -27,6 +27,7 @@ import countryList from 'province-city-china/dist/country.json';
 import { useVbenForm, z } from '#/adapter/form';
 import { createPatientApi, editPatientApi } from '#/api/basic/patient';
 import SelectArea from '#/components/select-area.vue';
+import { parseChineseIdCard18 } from '#/utils/id-card-cn';
 
 const props = withDefaults(defineProps<Props>(), {
   visible: false,
@@ -34,6 +35,7 @@ const props = withDefaults(defineProps<Props>(), {
   maritalStatusOptions: () => [],
   bloodTypeAboOptions: () => [],
   bloodTypeRhOptions: () => [],
+  sexOptions: () => [],
   formData: null,
 });
 
@@ -61,6 +63,8 @@ interface Props {
   bloodTypeAboOptions?: ApiOptionItem[];
   /** 血型 RH（来自 init.bloodTypeRH） */
   bloodTypeRhOptions?: ApiOptionItem[];
+  /** 性别（来自 init.sex，与门诊挂号 AdministrativeGender code 一致） */
+  sexOptions?: ApiOptionItem[];
   formData?: null | Partial<Patient>;
 }
 
@@ -94,7 +98,7 @@ const ID_CARD_15_REGEX = /^[1-9]\d{7}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{
 
 function isValidChineseIdCard(value: unknown): boolean {
   const t = String(value ?? '').trim();
-  if (!t) return true;
+  if (!t) return false;
   return ID_CARD_18_REGEX.test(t) || ID_CARD_15_REGEX.test(t);
 }
 
@@ -111,16 +115,38 @@ function idCardFilled(values: Record<string, unknown>): boolean {
   return !!String(values?.idCard ?? '').trim();
 }
 
-/** 用证件号同步出生日期、年龄（须从 input 事件取 value，勿仅用 getValues，失焦时表单可能尚未写入最后一位） */
+/** 用证件号同步出生日期、年龄、性别（18 位规则与门诊挂号一致，见 `#/utils/id-card-cn`） */
 function syncBirthAgeFromIdCardInput(raw: string) {
   const trimmed = String(raw ?? '').trim();
   if (!trimmed) return;
-  const b = parseChineseIdBirth(trimmed);
-  if (!b) return;
   const api = formApiHolder.current;
   if (!api) return;
+
+  if (trimmed.length === 18) {
+    const parsed = parseChineseIdCard18(trimmed);
+    if (parsed) {
+      void api.setFieldValue('birthDate', `${parsed.birthDate} 00:00:00`);
+      void api.setFieldValue('age', dayjs().diff(dayjs(parsed.birthDate), 'year'));
+      void api.setFieldValue('genderEnum', parsed.genderCode);
+      return;
+    }
+  }
+
+  const b = parseChineseIdBirth(trimmed);
+  if (!b) return;
   void api.setFieldValue('birthDate', b);
   void api.setFieldValue('age', dayjs().diff(dayjs(b), 'year'));
+
+  // 15 位大陆身份证：末位序号奇男偶女，性别 code 与 AdministrativeGender 对齐
+  if (trimmed.length === 15) {
+    const seqChar = trimmed.charAt(14);
+    if (/\d/.test(seqChar)) {
+      const genderDigit = Number.parseInt(seqChar, 10);
+      if (!Number.isNaN(genderDigit)) {
+        void api.setFieldValue('genderEnum', genderDigit % 2 === 1 ? 'MALE' : 'FEMALE');
+      }
+    }
+  }
 }
 
 /** 其他证件信息列表（身份证以外的证件，对应 adm_patient_identifier），可增删行，提交时一并传给后端 */
@@ -275,7 +301,7 @@ async function resetForm() {
   } else {
     await formApi.setValues({
       name: '',
-      genderEnum: 0,
+      genderEnum: undefined,
       age: undefined,
       phone: '',
       idCard: '',
@@ -344,18 +370,66 @@ const formConfig = reactive({
       fieldName: 'genderEnum',
       label: '性别',
       required: true,
-      rules: z.unknown().refine((v) => v === 1 || v === 2, { message: '请选择性别' }),
+      rules: z.preprocess(
+        (v) => (v === null || v === undefined ? '' : String(v)),
+        z.string().min(1, { message: '请选择性别' }),
+      ),
       componentProps: {
-        options: [
-          { label: '男', value: 1 },
-          { label: '女', value: 2 },
-        ],
+        options: (props.sexOptions ?? []).map((opt) => ({
+          label: opt.label,
+          value: opt.value,
+        })),
+      },
+    },
+    {
+      component: 'Input',
+      fieldName: 'idCard',
+      label: '证件号',
+      required: true,
+      componentProps: {
+        placeholder: '请输入证件号（填后自动解析性别、出生日期与年龄）',
+        onBlur: (e: FocusEvent) => {
+          const el = e.target as HTMLInputElement | null;
+          syncBirthAgeFromIdCardInput(el?.value ?? '');
+        },
+        onInput: (e: Event) => {
+          const el = e.target as HTMLInputElement | null;
+          const raw = String(el?.value ?? '').trim();
+          if (raw.length === 15 || raw.length === 18) {
+            syncBirthAgeFromIdCardInput(raw);
+          }
+        },
+      },
+      rules: z.preprocess(
+        (v) => (v === null || v === undefined ? '' : String(v)).trim(),
+        z
+          .string()
+          .min(1, { message: '请输入证件号' })
+          .refine((t) => isValidChineseIdCard(t), {
+            message: '请输入正确的身份证号格式（15位或18位）',
+          }),
+      ),
+    },
+    {
+      component: 'Input',
+      fieldName: 'phone',
+      label: '电话',
+      componentProps: {
+        placeholder: '请输入电话',
       },
     },
     {
       component: 'InputNumber',
       fieldName: 'age',
       label: '年龄',
+      required: true,
+      rules: z.preprocess(
+        (v) => (v === null || v === undefined || v === '' ? undefined : Number(v)),
+        z
+          .number({ invalid_type_error: '请输入年龄', required_error: '请输入年龄' })
+          .min(0, { message: '年龄不能小于0' })
+          .max(150, { message: '年龄不能大于150' }),
+      ),
       dependencies: {
         componentProps(values: Record<string, unknown>) {
           const blocked = idCardFilled(values);
@@ -385,37 +459,33 @@ const formConfig = reactive({
       },
     },
     {
-      component: 'Input',
-      fieldName: 'phone',
-      label: '电话',
-      componentProps: {
-        placeholder: '请输入电话',
-      },
-    },
-    {
-      component: 'Input',
-      fieldName: 'idCard',
-      label: '证件号',
-      componentProps: {
-        placeholder: '请输入证件号（填后自动解析出生日期与年龄）',
-        onBlur: (e: FocusEvent) => {
-          const el = e.target as HTMLInputElement | null;
-          syncBirthAgeFromIdCardInput(el?.value ?? '');
-        },
-        onInput: (e: Event) => {
-          const el = e.target as HTMLInputElement | null;
-          const raw = String(el?.value ?? '').trim();
-          if (raw.length === 15 || raw.length === 18) {
-            syncBirthAgeFromIdCardInput(raw);
-          }
-        },
-      },
+      component: 'DatePicker',
+      fieldName: 'birthDate',
+      label: '出生日期',
+      required: true,
       rules: z.preprocess(
-        (v) => (v === null || v === undefined ? '' : String(v)),
-        z.string().refine((t) => isValidChineseIdCard(t), {
-          message: '请输入正确的身份证号格式（15位或18位），不填请留空',
-        }),
+        (v) => (v === null || v === undefined ? '' : String(v)).trim(),
+        z.string().min(1, { message: '请选择出生日期' }),
       ),
+      componentProps: {
+        type: 'date',
+        style: { width: '220px' },
+        format: 'YYYY-MM-DD HH:mm:ss',
+        valueFormat: 'YYYY-MM-DD HH:mm:ss',
+      },
+      dependencies: {
+        componentProps(values: Record<string, unknown>) {
+          const hasId = idCardFilled(values);
+          const ag = values?.age;
+          const hasAge = ag !== null && ag !== undefined && ag !== '' && !Number.isNaN(Number(ag));
+          // 仅「有年龄、尚未填证件」时禁用出生日；一旦填了证件号须解除禁用，否则 DatePicker 在 disabled 下往往不刷新显示
+          return {
+            disabled: hasAge && !hasId,
+            placeholder: hasId ? '由证件号解析' : hasAge ? '由年龄自动推算' : '请选择出生日期',
+          };
+        },
+        triggerFields: ['idCard', 'age'],
+      },
     },
     {
       component: 'Select',
@@ -492,30 +562,6 @@ const formConfig = reactive({
     //     min: 0,
     //   },
     // },
-    {
-      component: 'DatePicker',
-      fieldName: 'birthDate',
-      label: '出生日期',
-      componentProps: {
-        type: 'date',
-        style: { width: '220px' },
-        format: 'YYYY-MM-DD HH:mm:ss',
-        valueFormat: 'YYYY-MM-DD HH:mm:ss',
-      },
-      dependencies: {
-        componentProps(values: Record<string, unknown>) {
-          const hasId = idCardFilled(values);
-          const ag = values?.age;
-          const hasAge = ag !== null && ag !== undefined && ag !== '' && !Number.isNaN(Number(ag));
-          // 仅「有年龄、尚未填证件」时禁用出生日；一旦填了证件号须解除禁用，否则 DatePicker 在 disabled 下往往不刷新显示
-          return {
-            disabled: hasAge && !hasId,
-            placeholder: hasId ? '由证件号解析' : hasAge ? '由年龄自动推算' : '请选择出生日期',
-          };
-        },
-        triggerFields: ['idCard', 'age'],
-      },
-    },
     {
       component: 'DatePicker',
       fieldName: 'deceasedDate',

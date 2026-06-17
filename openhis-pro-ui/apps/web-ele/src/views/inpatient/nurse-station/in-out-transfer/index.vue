@@ -17,6 +17,7 @@ import {
   isEncounterInDischargeBedBoard,
 } from '../services/discharge-tab-scope';
 import { encounterStatusToDischargeLabel } from '../services/map-discharge-pending';
+import { isBedOperationalInUse, isBedVacant } from '../services/map-bed-board';
 import { readNurseStationBedDragPatientId } from '../services/nurse-station-bed-drag-payload';
 
 import DischargePanel from './discharge-panel.vue';
@@ -145,8 +146,9 @@ const visibleRegionGroups = computed(() => {
   return [...regionMap.values()];
 });
 
-/** 判断卡片在当前筛选下是否灰显 */
-function isDimmed(occupied: boolean) {
+/** 判断卡片在当前筛选下是否灰显（空床/占床以 operationalEnum 为准） */
+function isDimmed(bed: BedBoardBedCell) {
+  const occupied = isBedOperationalInUse(bed.operationalEnum);
   if (bedFilter.value === 'all') return false;
   if (bedFilter.value === 'empty') return occupied;
   return !occupied;
@@ -308,7 +310,7 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
     return;
   }
 
-  const targetOccupied = !!occupant;
+  const targetOccupied = isBedOperationalInUse(bed.operationalEnum);
   if (targetOccupied && !dragged.bedLocationId) {
     ElMessage.warning('待分床患者不能换至已占床位，请拖向空床完成分床');
     return;
@@ -322,6 +324,7 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
     bed.bedName,
     house.houseName,
     regionName,
+    house.regionId,
     targetOccupied,
     occupant?.encounterId,
     occupant?.patientName,
@@ -399,7 +402,7 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
                   :key="bed.bedId"
                   class="bed-card-wrap"
                   :class="{
-                    'is-dimmed': isDimmed(!!bed.occupant),
+                    'is-dimmed': isDimmed(bed),
                     'is-drop-target': dropHoverBedKey === bedDropKey(house.houseId, bed.bedId),
                   }"
                   @dragover.prevent="onBedDragOver(house.houseId, bed.bedId)"
@@ -411,8 +414,8 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
                     "
                     class="bed-drop-floater"
                     :class="{
-                      'bed-drop-floater--assign': !bed.occupant,
-                      'bed-drop-floater--swap': !!bed.occupant,
+                      'bed-drop-floater--assign': isBedVacant(bed),
+                      'bed-drop-floater--swap': isBedOperationalInUse(bed.operationalEnum),
                     }"
                   >
                     <template v-if="bed.occupant">
@@ -470,11 +473,21 @@ function onDropOnBed(e: DragEvent, house: BedBoardHouseGroup, bed: BedBoardBedCe
                     </div>
                     <div class="bed-card__status">在院</div>
                   </div>
-                  <div v-else class="bed-card bed-card--empty bed-card--droppable">
+                  <div
+                    v-else-if="isBedVacant(bed)"
+                    class="bed-card bed-card--empty bed-card--droppable"
+                  >
                     <span class="bed-card__stripe bed-card__stripe--empty"></span>
                     <div class="bed-card__main bed-card__main--empty">
                       <span class="bed-card__no bed-card__no--muted">{{ bed.bedName }}</span>
                       <span class="bed-card__empty-label">空床</span>
+                    </div>
+                  </div>
+                  <div v-else class="bed-card bed-card--empty">
+                    <span class="bed-card__stripe bed-card__stripe--in"></span>
+                    <div class="bed-card__main bed-card__main--empty">
+                      <span class="bed-card__no bed-card__no--muted">{{ bed.bedName }}</span>
+                      <span class="bed-card__empty-label">占床</span>
                     </div>
                   </div>
                 </div>

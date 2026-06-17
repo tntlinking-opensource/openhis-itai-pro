@@ -21,7 +21,8 @@ export interface PractitionerOptionDto {
 }
 
 export interface LoadInpatientPharmacyDispensePageInitRequest {
-  pharmacyOrganizationId?: null | string;
+  /** 当前药房库位 adm_location.id（非 organization） */
+  pharmacyLocationId?: null | string;
   pageNo?: number;
   pageSize?: number;
   practitionerRoleFilterCode?: number;
@@ -167,6 +168,9 @@ export interface DispenseMedicationLineSubmitDto {
 export interface DispenseInpatientMedicationsRequest {
   encounterId: string;
   lines: DispenseMedicationLineSubmitDto[];
+  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
+  medicareUploadEnabled?: boolean;
+  contractBusNo?: string;
 }
 
 export interface DispenseInpatientMedicationsResponse {

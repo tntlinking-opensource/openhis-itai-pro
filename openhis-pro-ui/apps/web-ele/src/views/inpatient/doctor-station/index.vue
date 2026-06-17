@@ -22,7 +22,10 @@ import DoctorHeader from '#/components/outpatient/doctor-header.vue';
 import MedicalRecordForm from '#/components/outpatient/medical-record-form.vue';
 import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
 import { confirmEmrDiscardUnsaved } from '#/emrEditor';
+import { getCaseRecordByEncounterApi } from '#/api/mrms';
+import { useMrmsHomepagePrint } from '#/composables/use-mrms-homepage-print';
 import { useAuthStore } from '#/store';
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
 import { InpatientAdviceList } from './advice';
 import InpatientDischargeAdviceDialog from './components/inpatient-discharge-advice-dialog.vue';
@@ -99,17 +102,17 @@ const doctorStationContextBindings = computed(() => {
   if (tab === DOCTOR_TABS.MEDICAL_RECORD) {
     return { ...base, stationKind: 'INPATIENT' as const };
   }
-  if (tab !== DOCTOR_TABS.DIAGNOSIS && tab !== DOCTOR_TABS.ORDER) {
+  if (tab !== DOCTOR_TABS.DIAGNOSIS && tab !== DOCTOR_TABS.ORDER && tab !== DOCTOR_TABS.TCM) {
     return {};
   }
-  const withService = {
-    ...base,
-    patientServiceTypeName: selectedPatient.value?.organizationName ?? '',
-  };
   if (tab === DOCTOR_TABS.DIAGNOSIS) {
-    return { ...withService, stationScope: 'inpatient' as const };
+    return {
+      ...base,
+      patientServiceTypeName: selectedPatient.value?.organizationName ?? '',
+      stationScope: 'inpatient' as const,
+    };
   }
-  return withService;
+  return base;
 });
 
 /** 同步选中患者：刷新后尽量保留原选中行，否则选第一条 */
@@ -208,6 +211,7 @@ const handleRefresh = () => {
 
 const tabPanelRef = ref<null | { reload?: () => Promise<void> | void }>(null);
 const dischargeDialogVisible = ref(false);
+const { printHomepagePdf, isPrinting: homepagePrinting } = useMrmsHomepagePrint();
 
 onMounted(() => {
   void loadInpatientDoctorStationList();
@@ -299,6 +303,28 @@ const handleNursing = () => {
   if (!ensurePatientSelected()) return;
   ElMessage.info('护理功能待实现');
 };
+
+/** 打印病案首页（IP-24 / MR-01）。 */
+async function handlePrintHomepage() {
+  if (!ensurePatientSelected()) return;
+  const encounterId = preserveApiIdForRequest(selectedPatient.value?.encounterId);
+  if (!encounterId) {
+    ElMessage.warning('缺少就诊信息');
+    return;
+  }
+  try {
+    const caseRecord = await getCaseRecordByEncounterApi(encounterId);
+    const caseRecordId = preserveApiIdForRequest(caseRecord?.id);
+    if (!caseRecordId) {
+      ElMessage.warning('未找到病案记录，请先完成病案建档');
+      return;
+    }
+    await printHomepagePdf(caseRecordId, selectedPatient.value?.patientName);
+    ElMessage.success('病案首页已发送打印');
+  } catch {
+    ElMessage.error('病案首页打印失败');
+  }
+}
 </script>
 
 <template>
@@ -324,6 +350,9 @@ const handleNursing = () => {
         >
           <template #actions>
             <ElButton type="primary" link @click="handleToolbarRefresh">刷新</ElButton>
+            <ElButton type="primary" link :loading="homepagePrinting" @click="handlePrintHomepage">
+              打印病案首页
+            </ElButton>
             <ElButton type="primary" link @click="handleCompleteVisit">出院</ElButton>
             <ElButton type="primary" link @click="handleSpecialty">转科</ElButton>
             <ElButton type="primary" link @click="handleNursing">护理</ElButton>

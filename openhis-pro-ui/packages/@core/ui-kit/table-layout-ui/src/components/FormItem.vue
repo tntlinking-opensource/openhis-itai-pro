@@ -64,12 +64,6 @@ const handleUpdateWithCheck = async (value: any, shouldCheck = false) => {
 const handleChange = (value: any) => {
   emit('change', value);
 };
-
-const handleEnter = () => {
-  if (props.onEnter && typeof props.onEnter === 'function') {
-    props.onEnter();
-  }
-};
 </script>
 
 <template>
@@ -81,7 +75,6 @@ const handleEnter = () => {
       :clearable="item.clearable !== false"
       :style="item.style || { width: item.width || '200px' }"
       v-bind="item.extraprops || {}"
-      @keyup.enter="handleEnter"
       @update:model-value="handleUpdate"
     />
     <el-select

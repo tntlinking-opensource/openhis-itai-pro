@@ -1,28 +1,20 @@
+import type { AdviceDrugItem, AdviceProductOption, AdviceRowItem } from './advice.types';
+
 import type {
   DoctorStationAdviceCatalogRowDto,
   DoctorStationAdviceRowDto,
 } from '#/api/doctor-station/advice.types';
-import {
-  mergeConsecutiveRowsByDrugGroup,
-  type DrugGroupDisplayItem,
-  type DrugGroupKey,
-} from '#/utils/drug-group-table';
-import { convertProductUnitPriceForDisplay } from '#/utils/product-unit-band-price';
+import type { DrugGroupDisplayItem, DrugGroupKey } from '#/utils/drug-group-table';
 
 import { formatDateTime } from '@vben/utils';
 
-import {
-  formatAdviceCatalogStockCellText,
-  isAdviceCatalogZeroStock,
-} from '#/utils/doctor-station/advice-catalog-stock-display';
+import { mergeConsecutiveRowsByDrugGroup } from '#/utils/drug-group-table';
+import { convertProductUnitPriceForDisplay } from '#/utils/product-unit-band-price';
 
-import type { AdviceDrugItem, AdviceProductOption, AdviceRowItem } from './advice.types';
 import { formatUnitPriceYuan } from './advice-format';
 import { normalizeCatalogUnitBands } from './medication-unit-bands';
 
 /** 医嘱列表映射、成组合并、目录选品、库存展示、旧行回填 */
-
-export { formatAdviceCatalogStockCellText, isAdviceCatalogZeroStock };
 
 function resourceTypeToTypeLabel(resourceType: string): string {
   const rt = resourceType.toUpperCase();
@@ -35,8 +27,18 @@ function resourceTypeToTypeLabel(resourceType: string): string {
 export function inferAdviceRowResourceType(dto: DoctorStationAdviceRowDto): string {
   const raw = String(dto.resourceType ?? '').trim();
   if (raw) return raw.toUpperCase();
-  const tbl = String(dto.productTableName ?? '').toLowerCase();
-  if (tbl.includes('medication')) return 'MEDICATION';
+  const tbl = String(dto.productTableName ?? '')
+    .trim()
+    .toLowerCase();
+  if (tbl.includes('medication') || tbl.includes('med_')) return 'MEDICATION';
+  if (tbl.includes('activity') || tbl.includes('service') || tbl.includes('wkf_')) {
+    return 'SERVICE';
+  }
+  if (tbl.includes('device') || tbl.includes('adm_')) return 'DEVICE';
+  const cat = String(dto.catalogCategoryCode ?? '').trim();
+  if (cat === '11') return 'DEVICE';
+  if (cat === '21' || cat.startsWith('21')) return 'SERVICE';
+  if (cat === '2' || cat === '3' || cat === '4') return 'MEDICATION';
   return '';
 }
 
@@ -179,6 +181,14 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
       const n = typeof q === 'number' ? q : Number(q);
       return Number.isFinite(n) && n > 0 ? n : undefined;
     })(),
+    listExecutionCount: (() => {
+      const raw = dto.executionCount;
+      if (raw === null || raw === undefined || String(raw).trim() === '') return undefined;
+      const n = typeof raw === 'number' ? raw : Number(raw);
+      return Number.isFinite(n) && n > 0 ? Math.trunc(n) : undefined;
+    })(),
+    performOrgId: String(dto.performLocationId ?? '').trim() || undefined,
+    performOrgName: String(dto.performLocationName ?? '').trim() || undefined,
   };
 }
 
@@ -295,22 +305,27 @@ export function flattenAdviceRowsForResourceOps(rows: AdviceRowItem[]): AdviceRo
 }
 
 /**
- * 列表排序：药品先按 groupId 聚邻（成组合并要求连续行），再 sortNumber、requestId。
- * 若仅按 sortNumber，同组药品可能与别组交叉，导致无法合并展示。
+ * 列表排序：sortNumber 升序（BR-ORD-018）；同号内成组药品聚邻，再 requestId 稳定序。
  */
 function sortDoctorStationAdviceRowsStable(
   rows: readonly DoctorStationAdviceRowDto[],
 ): DoctorStationAdviceRowDto[] {
-  return [...rows].sort((a, b) => {
-    const ag = medicationGroupMergeKey(a);
-    const bg = medicationGroupMergeKey(b);
-    const aGroupSort = ag === '' || ag === null || ag === undefined ? '\uffff' : String(ag);
-    const bGroupSort = bg === '' || bg === null || bg === undefined ? '\uffff' : String(bg);
-    const gcmp = aGroupSort.localeCompare(bGroupSort);
-    if (gcmp !== 0) return gcmp;
+  return [...rows].toSorted((a, b) => {
     const sa = dtoSortSeq(a.sortNumber);
     const sb = dtoSortSeq(b.sortNumber);
     if (sa !== sb) return sa - sb;
+
+    const ag = medicationGroupMergeKey(a);
+    const bg = medicationGroupMergeKey(b);
+    const aGroupSort = ag === '' || ag === null || ag === undefined ? '\uFFFF' : String(ag);
+    const bGroupSort = bg === '' || bg === null || bg === undefined ? '\uFFFF' : String(bg);
+    const gcmp = aGroupSort.localeCompare(bGroupSort);
+    if (gcmp !== 0) return gcmp;
+
+    const authA = String(a.authoredAt ?? '');
+    const authB = String(b.authoredAt ?? '');
+    if (authA !== authB) return authB.localeCompare(authA);
+
     return String(a.requestId ?? '').localeCompare(String(b.requestId ?? ''));
   });
 }
@@ -517,3 +532,8 @@ export function buildFallbackAdviceDrugItemFromRow(
     groupId: String(row.groupId ?? '').trim() || undefined,
   };
 }
+
+export {
+  formatAdviceCatalogStockCellText,
+  isAdviceCatalogZeroStock,
+} from '#/utils/doctor-station/advice-catalog-stock-display';

@@ -101,12 +101,12 @@ defineExpose({
       :inline="true"
       class="w-full"
       :label-width="labelWidth"
+      @submit.prevent="handleQuery"
     >
       <template v-for="item in displayedFormItems" :key="item.prop">
         <FormItem
           :item="item"
           :model-value="queryParams[item.prop]"
-          :on-enter="handleQuery"
           @update:model-value="(value) => (queryParams[item.prop] = value)"
           @change="(value) => item.onChange && item.onChange(value)"
         >

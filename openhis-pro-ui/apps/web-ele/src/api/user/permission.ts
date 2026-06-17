@@ -14,6 +14,8 @@ export interface PermissionInfo {
   updatedBy?: null | string;
   children?: PermissionInfo[];
   parentName?: string;
+  /** 目录分组节点为 false，不可授权 */
+  grantable?: boolean;
 }
 
 /**
@@ -63,7 +65,7 @@ export async function updatePermissionApi(params: UpdatePermissionParams): Promi
  * 根据角色ID获取权限
  */
 export interface GetPermissionsByRoleParams {
-  value: number;
+  value: string;
 }
 
 export async function getPermissionsByRoleApi(

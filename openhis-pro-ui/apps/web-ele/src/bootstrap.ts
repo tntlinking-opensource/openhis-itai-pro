@@ -3,7 +3,7 @@ import { createApp, watchEffect } from 'vue';
 import { registerAccessDirective } from '@vben/access';
 import { registerLoadingDirective } from '@vben/common-ui';
 import { preferences } from '@vben/preferences';
-import { initStores } from '@vben/stores';
+import { initStores, useAccessStore } from '@vben/stores';
 import '@vben/styles';
 import '@vben/styles/ele';
 
@@ -114,6 +114,22 @@ async function bootstrap(namespace: string) {
 
   // 配置 pinia-tore
   await initStores(app, { namespace });
+
+  // 切回标签页时静默恢复服务端租户/科室会话（应对后端重启而前端未刷新）
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+      const accessStore = useAccessStore();
+      if (!accessStore.accessToken) {
+        return;
+      }
+      void import('#/utils/restore-login-scope').then(({ restoreLoginScopeOnce }) =>
+        restoreLoginScopeOnce().catch(() => {}),
+      );
+    });
+  }
 
   // 安装权限指令
   registerAccessDirective(app);

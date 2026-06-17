@@ -1,6 +1,7 @@
+import type { ComputedRef, Ref } from 'vue';
+
 import type { AdviceDrugItem } from '../services/advice.types';
 
-import type { ComputedRef, Ref } from 'vue';
 import { ref, watch } from 'vue';
 
 import { useDebounceFn } from '@vueuse/core';

@@ -1,22 +1,36 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue';
+import type { ReportQueryPageResultDto } from '#/api/report/report-query';
+
+import { computed, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
+import dayjs from 'dayjs';
 import {
   ElButton,
   ElCard,
   ElDatePicker,
   ElForm,
   ElFormItem,
-  ElInput,
+  ElMessage,
   ElOption,
   ElSelect,
 } from 'element-plus';
 
+import {
+  downloadReportExportFile,
+  reportExportExcelApi,
+  reportQueryPageApi,
+} from '#/api/report/report-query';
+import { useReportTemplatePrint } from '#/composables/use-report-template-print';
+import { useRequest } from '#/hooks/use-request';
+
 defineOptions({
   name: 'ChargeOpDailySettlement',
 });
+
+const REPORT_CODE = 'outpatient_daily_settlement';
+const PDF_TEMPLATE = 'outpatient_daily_settlement_pdf';
 
 interface SummaryItem {
   label: string;
@@ -39,10 +53,19 @@ interface ReconciliationFormState {
   cashPayTotal: string;
 }
 
+const today = dayjs().format('YYYY-MM-DD');
 const queryForm = reactive<QueryFormState>({
-  dateRange: ['2026-04-28', '2026-04-28'],
+  dateRange: [today, today],
   expenseProperty: 'selfPay',
   cashier: '',
+});
+
+const queryResult = ref<ReportQueryPageResultDto | null>(null);
+const { printReportTemplate, isPrinting } = useReportTemplatePrint();
+const { run: runQuery, loading: queryLoading } = useRequest(reportQueryPageApi, { manual: true });
+const { run: runExportExcel, loading: exportLoading } = useRequest(reportExportExcelApi, {
+  manual: true,
+  onSuccess: (data) => downloadReportExportFile(data),
 });
 
 const reconciliationForm = reactive<ReconciliationFormState>({
@@ -55,87 +78,103 @@ const reconciliationForm = reactive<ReconciliationFormState>({
   cashPayTotal: '0',
 });
 
-const feeSummaryColumns = computed<SummaryItem[][]>(() => [
-  [
-    { label: '西药', value: '33.55 元' },
-    { label: '检查', value: '0.00 元' },
-    { label: '中成药', value: '40.49 元' },
-    { label: '医用耗材', value: '5.82 元' },
-  ],
-  [
-    { label: '护理', value: '0.00 元' },
-    { label: '治疗', value: '0.00 元' },
-    { label: '化验', value: '22.00 元' },
-    { label: '外科处置', value: '0.00 元' },
-  ],
-  [
-    { label: '处置费', value: '20.00 元' },
-    { label: '彩超费', value: '0.00 元' },
-    { label: 'X 光费', value: '150.00 元' },
-    { label: '心电费', value: '0.00 元' },
-  ],
-  [
-    { label: '注射费', value: '8.00 元' },
-    { label: '其他', value: '0.00 元' },
-    { label: '挂号费', value: '7.00 元' },
-    { label: '体检', value: '0.00 元' },
-  ],
-  [
-    { label: '眼科处置', value: '0.00 元' },
-    { label: '耳鼻喉科处置', value: '0.00 元' },
-    { label: '中医治疗', value: '0.00 元' },
-  ],
-]);
-
-const incomeSummaryColumns = computed<SummaryItem[][]>(() => [
-  [
-    { label: '总收入', value: '286.87 元' },
-    { label: '应收金额', value: '286.87 元' },
-    { label: '优惠金额', value: '0.00 元' },
-    { label: '实收金额', value: '286.87 元' },
-  ],
-  [
-    { label: '微信', value: '286.87 元' },
-    { label: '支付宝', value: '0.00 元' },
-    { label: '网银', value: '0.00 元' },
-    { label: '现金', value: '0.00 元' },
-  ],
-  [
-    { label: '自费人次', value: '7 人' },
-    { label: '省医保人次', value: '1 人' },
-    { label: '市医保人次', value: '2 人' },
-  ],
-  [
-    { label: '省医保现金', value: '0.00 元' },
-    { label: '省医保统筹', value: '0.00 元' },
-    { label: '省医保账户', value: '0.00 元' },
-    { label: '省医保基金', value: '0.00 元' },
-  ],
-  [
-    { label: '市医保现金', value: '0.00 元' },
-    { label: '市医保统筹', value: '0.00 元' },
-    { label: '市医保账户', value: '0.00 元' },
-    { label: '市医保基金', value: '0.00 元' },
-  ],
-  [
-    { label: '省医保总额', value: '0.00 元' },
-    { label: '市医保总额', value: '0.00 元' },
-  ],
-  [
-    { label: '现金收入总额', value: '286.87 元' },
-    { label: '体检人次', value: '0' },
-  ],
-]);
-
-// 执行日结单查询，后续可接入后端接口。
-function handleSearch() {
-  // 仅绘制页面结构，当前保留占位行为。
+function chunkItems<T>(items: T[], size: number): T[][] {
+  const rows: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    rows.push(items.slice(i, i + size));
+  }
+  return rows;
 }
 
-// 触发日结单打印，后续可替换为打印服务。
-function handlePrint() {
-  // 仅绘制页面结构，当前保留占位行为。
+const feeSummaryColumns = computed<SummaryItem[][]>(() => {
+  const rows = queryResult.value?.rows ?? [];
+  const items = rows.map((row) => ({
+    label: String(row.category ?? '—'),
+    value: `${row.amount ?? '0.00'} ${row.unit ?? '元'}`,
+  }));
+  return chunkItems(items, 4);
+});
+
+const incomeSummaryColumns = computed<SummaryItem[][]>(() => {
+  const summary = queryResult.value?.summary;
+  if (!summary) {
+    return [];
+  }
+  const items: SummaryItem[] = [
+    { label: '总收入', value: `${summary.totalIncome ?? '0.00'} 元` },
+    { label: '应收金额', value: `${summary.receivableAmount ?? '0.00'} 元` },
+    { label: '优惠金额', value: `${summary.discountAmount ?? '0.00'} 元` },
+    { label: '实收金额', value: `${summary.actualAmount ?? '0.00'} 元` },
+    { label: '微信', value: `${summary.wechatAmount ?? '0.00'} 元` },
+    { label: '现金', value: `${summary.cashAmount ?? '0.00'} 元` },
+    { label: '自费人次', value: `${summary.selfPayCount ?? 0} 人` },
+    { label: '医保人次', value: `${summary.insuranceCount ?? 0} 人` },
+  ];
+  return chunkItems(items, 4);
+});
+
+const headerDateRangeText = computed(() => {
+  const summaryRange = queryResult.value?.summary?.dateRange;
+  if (summaryRange) {
+    return String(summaryRange);
+  }
+  const [from, to] = queryForm.dateRange;
+  return from && to ? (from === to ? from : `${from}~${to}`) : '—';
+});
+
+async function handleSearch() {
+  const [dateFrom, dateTo] = queryForm.dateRange;
+  if (!dateFrom || !dateTo) {
+    ElMessage.warning('请选择查询日期');
+    return;
+  }
+  try {
+    queryResult.value = await runQuery({
+      reportCode: REPORT_CODE,
+      pageNo: 1,
+      pageSize: 200,
+      dateFrom,
+      dateTo,
+      keyword: queryForm.cashier?.trim() || undefined,
+    });
+  } catch {
+    queryResult.value = null;
+  }
 }
+
+async function handleExportExcel() {
+  const [dateFrom, dateTo] = queryForm.dateRange;
+  if (!dateFrom || !dateTo) {
+    ElMessage.warning('请选择查询日期');
+    return;
+  }
+  await runExportExcel({
+    reportCode: REPORT_CODE,
+    pageNo: 1,
+    pageSize: 5000,
+    dateFrom,
+    dateTo,
+    keyword: queryForm.cashier?.trim() || undefined,
+  });
+}
+
+async function handlePrint() {
+  const [dateFrom, dateTo] = queryForm.dateRange;
+  await printReportTemplate({
+    templateCode: PDF_TEMPLATE,
+    jobName: '门诊日结报表',
+    params: {
+      reportCode: REPORT_CODE,
+      dateFrom,
+      dateTo,
+      cashier: queryForm.cashier?.trim(),
+    },
+  });
+}
+
+onMounted(() => {
+  void handleSearch();
+});
 
 // 清空医保对账输入区。
 function handleClearReconciliation() {
@@ -184,8 +223,9 @@ function handleSubmitReconciliation() {
               </ElSelect>
             </ElFormItem>
             <div class="ml-auto flex shrink-0 items-center gap-2">
-              <ElButton type="primary" @click="handleSearch">查询</ElButton>
-              <ElButton @click="handlePrint">打印</ElButton>
+              <ElButton type="primary" :loading="queryLoading" @click="handleSearch">查询</ElButton>
+              <ElButton :loading="exportLoading" @click="handleExportExcel">导出 Excel</ElButton>
+              <ElButton :loading="isPrinting" @click="handlePrint">打印 PDF</ElButton>
             </div>
           </ElForm>
         </ElCard>
@@ -204,7 +244,7 @@ function handleSubmitReconciliation() {
               </div>
               <div class="col-span-2">
                 <span class="text-[var(--el-text-color-regular)]">时间：</span>
-                2026-04-28~2026-04-28
+                {{ headerDateRangeText }}
               </div>
             </div>
 

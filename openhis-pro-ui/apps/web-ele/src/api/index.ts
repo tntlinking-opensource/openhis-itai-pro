@@ -2,8 +2,6 @@ export * from './core';
 export * from './inventory/pharmacy/stock-in';
 export * from './inventory/warehouse/inventory-detail';
 export * from './inventory/warehouse/inbound-receipt';
-export * from './emg/knowledge';
-export * from './emg/triage';
 export * from './warehouse/purchase';
 export * from './warehouse/purchase-inbound';
 export * from './warehouse/stock-out';

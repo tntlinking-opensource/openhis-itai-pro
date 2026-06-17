@@ -18,8 +18,18 @@ export interface NurseStationOrderExecuteTableRow {
   orderId: string;
   orderType: NurseStationOrderExecuteOrderType;
   encounterId: string;
+  /** 诊疗类目 code（采血识别） */
+  categoryEnum?: string;
+  /** 输液组号 */
+  groupNo?: number;
   /** 长临 + 药/诊，如「长期/药品」 */
   typeLabel: string;
+  /** 药/诊短文案 */
+  orderKindLabel: string;
+  /** 长临 code（LONG_TERM / TEMPORARY） */
+  therapyTypeCode?: string;
+  /** 长临展示文案 */
+  therapyLabel?: string;
   content: string;
   dosage: string;
   extension?: string;
@@ -39,6 +49,8 @@ export interface NurseStationOrderExecutePlanSlot {
   slotKey: string;
   planTime: string;
   timeLabel: string;
+  /** 已执行 Tab 取消执行写路径主键（净剩 COMPLETED procedureId） */
+  procedureId?: string;
   checked: boolean;
 }
 
@@ -58,6 +70,25 @@ function therapyEnumToLabel(code: string): string {
   if (c === 'TEMPORARY') return '临时';
   if (c === 'DISCHARGE_MEDICATION') return '出院带药';
   return '';
+}
+
+/** 长临文案反推 code（therapyEnum 缺失时供颜色 class 使用） */
+function resolveTherapyTypeCodeFromLabel(label: string): string {
+  const text = label.trim();
+  if (text.includes('长期')) return 'LONG_TERM';
+  if (text.includes('临时')) return 'TEMPORARY';
+  if (text.includes('出院')) return 'DISCHARGE_MEDICATION';
+  return '';
+}
+
+/** 列表长临 code */
+function resolveExecuteTherapyTypeCode(dto: NurseStationOrderExecuteRowDto): string {
+  const code = String(dto.therapyEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (code) return code;
+  const label = resolveExecuteTherapyLabel(dto);
+  return label === '—' ? '' : resolveTherapyTypeCodeFromLabel(label);
 }
 
 /** 列表「长临」列：优先后端 therapyEnumText，否则按 therapyEnum 推导 */
@@ -148,6 +179,7 @@ export function groupSlotsByDate(
       slotKey,
       planTime,
       timeLabel,
+      procedureId: preserveApiIdForRequest(slot.procedureId) ?? undefined,
       checked: false,
     });
     byDate.set(dateKey, bucket);
@@ -159,6 +191,73 @@ export function groupSlotsByDate(
   }
   schedules.sort((a, b) => a.date.localeCompare(b.date));
   return schedules;
+}
+
+/** 绑定项展示名 */
+export function resolveExecuteBindItemDisplayName(
+  bind: NurseStationOrderExecuteBindItemDto,
+): string {
+  const name = String(bind.displayName ?? bind.bindDisplayName ?? '').trim();
+  return name || '—';
+}
+
+/** 绑定项展示：名称【规格】 */
+export function resolveExecuteBindItemDisplayText(
+  bind: NurseStationOrderExecuteBindItemDto,
+): string {
+  const name = resolveExecuteBindItemDisplayName(bind);
+  const spec = String(bind.specificationText ?? '').trim();
+  if (name === '—') return spec || '—';
+  if (spec) return `${name}【${spec}】`;
+  return name;
+}
+
+/** 绑定项单位文案（仅单位，不含数量） */
+export function resolveExecuteBindItemUnitLabel(bind: NurseStationOrderExecuteBindItemDto): string {
+  return String(bind.unitCode_dictText ?? bind.unitCode ?? '').trim();
+}
+
+/** 绑定项数量输入值（模板未配置时默认 1） */
+export function resolveExecuteBindQuantityValue(bind: NurseStationOrderExecuteBindItemDto): number {
+  const numerator = bind.quantityNumerator;
+  if (numerator == null || Number.isNaN(Number(numerator))) {
+    return 1;
+  }
+  return Number(numerator);
+}
+
+/** 绑定项数量 + 单位展示 */
+export function formatExecuteBindItemQuantity(bind: NurseStationOrderExecuteBindItemDto): string {
+  const unit = String(bind.unitCode_dictText ?? bind.unitCode ?? '').trim();
+  const numerator = bind.quantityNumerator;
+  if (numerator == null) {
+    return unit || '—';
+  }
+  const denominator = bind.quantityDenominator;
+  let qtyText = String(numerator);
+  if (denominator != null && denominator !== 1) {
+    qtyText = `${numerator}/${denominator}`;
+  }
+  return unit ? `${qtyText}${unit}` : qtyText;
+}
+
+/** 绑定项单价展示 */
+export function formatExecuteBindItemUnitPrice(unitPrice?: number): string {
+  if (unitPrice == null || Number.isNaN(unitPrice)) {
+    return '—';
+  }
+  return `¥${unitPrice.toFixed(2)}`;
+}
+
+/** 绑定项稳定 key（展开列表渲染） */
+export function resolveExecuteBindItemKey(
+  bind: NurseStationOrderExecuteBindItemDto,
+  index: number,
+): string {
+  const bindingId = preserveApiIdForRequest(bind.bindingId) ?? '';
+  const targetId =
+    preserveApiIdForRequest(bind.deviceId) ?? preserveApiIdForRequest(bind.activityId) ?? '';
+  return `${bindingId}-${targetId}-${index}`;
 }
 
 /** 列表行 DTO → 表格行 */
@@ -187,7 +286,15 @@ export function mapExecuteRowDtoToTableRow(
     orderId,
     orderType,
     encounterId: preserveApiIdForRequest(dto.encounterId) ?? '',
+    categoryEnum: String(dto.categoryEnum ?? '').trim() || undefined,
+    groupNo: dto.groupNo ?? undefined,
     typeLabel: buildExecuteTypeLabel(dto),
+    orderKindLabel: orderTypeToShortLabel(String(dto.orderType ?? '')) || '—',
+    therapyTypeCode: resolveExecuteTherapyTypeCode(dto) || undefined,
+    therapyLabel: (() => {
+      const label = resolveExecuteTherapyLabel(dto);
+      return label === '—' ? undefined : label;
+    })(),
     content: buildExecuteContentTitle(dto),
     dosage: String(dto.dosageDisplay ?? '').trim() || '—',
     extension: buildExecuteExtensionLine(dto) || undefined,
@@ -244,10 +351,20 @@ export function mapSelectedSlotsToWriteItems(
         }
         if (includeBindItems && row.bindItems.length > 0) {
           item.bindItems = row.bindItems.map((bind) => ({
+            bindType: bind.bindType,
+            bindingId: preserveApiIdForRequest(bind.bindingId),
             activityId: preserveApiIdForRequest(bind.activityId),
             deviceId: preserveApiIdForRequest(bind.deviceId),
-            bindType: bind.bindType,
-            bindDisplayName: bind.bindDisplayName,
+            displayName: bind.displayName ?? bind.bindDisplayName,
+            busNo: bind.busNo,
+            specificationText: bind.specificationText,
+            unitPrice: bind.unitPrice,
+            chargeItemDefinitionId: preserveApiIdForRequest(bind.chargeItemDefinitionId),
+            quantityNumerator: bind.quantityNumerator,
+            quantityDenominator: bind.quantityDenominator,
+            unitCode: bind.unitCode,
+            unitCode_dictText: bind.unitCode_dictText,
+            priority: bind.priority,
           }));
         }
         items.push(item);
@@ -269,4 +386,32 @@ export function mapSelectedSlotsToSkipItems(
       planTime,
     }),
   );
+}
+
+/** 已执行 Tab 勾选槽位 → 取消执行 procedureId 列表（去重、保序） */
+export function mapSelectedSlotsToCancelProcedureIds(
+  rows: NurseStationOrderExecuteTableRow[],
+  selectedSlotKeys: Set<string>,
+): { missingCount: number; procedureIds: string[] } {
+  const procedureIds: string[] = [];
+  const seen = new Set<string>();
+  let missingCount = 0;
+
+  for (const row of rows) {
+    for (const schedule of row.planSchedules) {
+      for (const slot of schedule.slots) {
+        if (!selectedSlotKeys.has(slot.slotKey)) continue;
+        const procedureId = String(slot.procedureId ?? '').trim();
+        if (!procedureId) {
+          missingCount += 1;
+          continue;
+        }
+        if (seen.has(procedureId)) continue;
+        seen.add(procedureId);
+        procedureIds.push(procedureId);
+      }
+    }
+  }
+
+  return { procedureIds, missingCount };
 }

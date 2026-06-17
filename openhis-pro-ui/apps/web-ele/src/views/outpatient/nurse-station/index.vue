@@ -45,10 +45,29 @@ import {
   mapDeviceLinesToSupplyItems,
   mapOrderExecutionToActionRecord,
   mapQueueItemToNursePatient,
+  isNurseExecuteMedicationRow,
   mapTreatmentSheetToExecuteRows,
   normalizeNurseStationRequestTableForApi,
   parseExecuteKeysToBatchIds,
+  resolveSupplyDispenseIdForApi,
 } from './services/map-nurse-station-api';
+import { useBedsideSpecimenBarcodePrint } from '#/composables/use-bedside-specimen-barcode-print';
+import { useIvInfusionLabelPrint } from '#/composables/use-iv-infusion-label-print';
+import {
+  useNebulizationLabelPrint,
+  useSkinTestLabelPrint,
+} from '#/composables/use-medication-label-print';
+import { useNursePrescriptionPrint } from '#/composables/use-nurse-prescription-print';
+import { useProcedureApplyFormPrint } from '#/composables/use-service-apply-form-print';
+import { useTreatmentExecuteSheetPrint } from '#/composables/use-treatment-execute-sheet-print';
+import { groupInfusionLabelPrintTargets } from '#/utils/report/iv-infusion-label-print';
+import {
+  groupMedicationExecuteRequestIds,
+  groupMedicationLabelPrintTargets,
+  groupProcedureApplyPrintTargets,
+  groupSpecimenBarcodePrintTargets,
+  groupTreatmentExecutePrintTargets,
+} from '#/utils/report/nurse-station-print-targets';
 
 defineOptions({
   name: 'OutpatientNurseStation',
@@ -84,6 +103,14 @@ const recordTypeFilter = ref<'全部' | '打印' | '执行'>('全部');
 const executeCenterRef = ref<InstanceType<typeof NurseExecuteCenter> | null>(null);
 const executeTableLoading = ref(false);
 const batchPerforming = ref(false);
+const { printIvInfusionLabels } = useIvInfusionLabelPrint();
+const { printBedsideSpecimenBarcodes } = useBedsideSpecimenBarcodePrint();
+const { printTreatmentExecuteSheet } = useTreatmentExecuteSheetPrint();
+const { printNursePrescriptions } = useNursePrescriptionPrint();
+const { printMedicationLabels: printSkinTestLabels } = useSkinTestLabelPrint();
+const { printMedicationLabels: printNebulizationLabels } = useNebulizationLabelPrint();
+const { printServiceApplyForm: printProcedureApplyForm } = useProcedureApplyFormPrint();
+
 const cancelExecuting = ref(false);
 const cancelProcedureDialogOpen = ref(false);
 const cancelProcedureRecords = ref<NetRemainingProcedureRecordItemDto[]>([]);
@@ -177,7 +204,7 @@ const totalSelectedCount = computed(() => {
 
 const totalPendingCount = computed(() => {
   const pendingExecute = executeItems.value.filter(
-    (item) => item.type !== '药品' && item.status !== '已完成',
+    (item) => !isNurseExecuteMedicationRow(item) && item.status !== '已完成',
   ).length;
   const pendingSupply = supplyItems.value.filter((item) => item.status === '待发放').length;
   return pendingExecute + pendingSupply;
@@ -266,7 +293,7 @@ const debouncedReloadQueueByKeyword = useDebounceFn(() => {
 
 function defaultSelectableExecuteKeys(): string[] {
   return executeItems.value
-    .filter((row) => row.type !== '药品' && row.status !== '已完成')
+    .filter((row) => !isNurseExecuteMedicationRow(row) && row.status !== '已完成')
     .map((r) => r.key);
 }
 
@@ -420,7 +447,7 @@ const handleQueueListDateChange = (date: string | undefined) => {
 
 const toggleSupplySelection = (id: string, checked: boolean) => {
   const target = supplyItems.value.find((item) => item.id === id);
-  if (!target || target.status === '已发放') {
+  if (!target || target.status !== '待发放') {
     return;
   }
   if (checked) {
@@ -432,8 +459,12 @@ const toggleSupplySelection = (id: string, checked: boolean) => {
   selectedSupplyIds.value = selectedSupplyIds.value.filter((itemId) => itemId !== id);
 };
 
-/** 提交 procedureIds 批量取消执行 */
-async function submitBatchCancelProcedure(procedureIds: string[]) {
+/** 提交 IF-NUR-05：诊疗 procedure 与/或耗材发放回退 */
+async function submitBatchCancel(params: {
+  deviceDispenseIds?: string[];
+  procedureIds?: string[];
+  targetLabel: string;
+}) {
   const encounterId = selectedPatientId.value.trim();
   const operatorRaw = userStore.userInfo?.id;
   const operatorId = (preserveApiIdForRequest(operatorRaw) ?? String(operatorRaw ?? '')).trim();
@@ -445,8 +476,10 @@ async function submitBatchCancelProcedure(procedureIds: string[]) {
     ElMessage.warning('当前登录用户无效，请重新登录');
     return;
   }
-  if (procedureIds.length === 0) {
-    ElMessage.warning('请至少选择一条执行记录');
+  const procedureIds = params.procedureIds ?? [];
+  const deviceDispenseIds = params.deviceDispenseIds ?? [];
+  if (procedureIds.length === 0 && deviceDispenseIds.length === 0) {
+    ElMessage.warning('请至少选择一项可取消内容');
     return;
   }
   cancelExecuting.value = true;
@@ -455,13 +488,14 @@ async function submitBatchCancelProcedure(procedureIds: string[]) {
       encounterId,
       operatorId,
       statusReasonText: DEFAULT_CANCEL_STATUS_REASON,
-      procedureIds,
+      procedureIds: procedureIds.length ? procedureIds : undefined,
+      deviceDispenseIds: deviceDispenseIds.length ? deviceDispenseIds : undefined,
     });
     ElMessage.success('取消执行成功');
     appendRecord({
       type: '执行',
       action: '取消执行',
-      target: cancelProcedureItemLabel.value || `共 ${procedureIds.length} 条`,
+      target: params.targetLabel,
     });
     cancelProcedureDialogOpen.value = false;
     await loadEncounterTreatmentSheet(encounterId);
@@ -470,6 +504,31 @@ async function submitBatchCancelProcedure(procedureIds: string[]) {
   } finally {
     cancelExecuting.value = false;
   }
+}
+
+/** 提交 procedureIds 批量取消执行 */
+async function submitBatchCancelProcedure(procedureIds: string[]) {
+  await submitBatchCancel({
+    procedureIds,
+    targetLabel: cancelProcedureItemLabel.value || `共 ${procedureIds.length} 条`,
+  });
+}
+
+/** 侧栏耗材取消执行（PREPARED / COMPLETED / PART_COMPLETED） */
+async function handleCancelSupplyExecute(supplyId: string) {
+  const item = supplyItems.value.find((row) => row.id === supplyId);
+  if (!item?.canCancelExecute) {
+    return;
+  }
+  const dispenseId = resolveSupplyDispenseIdForApi(item);
+  if (!dispenseId) {
+    ElMessage.warning('发放单无效，无法取消');
+    return;
+  }
+  await submitBatchCancel({
+    deviceDispenseIds: [dispenseId],
+    targetLabel: item.name?.trim() || '耗材',
+  });
 }
 
 /** 拉取当前诊疗项目净剩可取消执行记录 */
@@ -532,8 +591,9 @@ async function handleCancelProcedureDialogConfirm(procedureIds: string[]) {
   await submitBatchCancelProcedure(procedureIds);
 }
 
-const handlePrint = (label: string) => {
+const handlePrint = async (label: string) => {
   if (!currentPatient.value) {
+    ElMessage.warning('请先选择患者');
     return;
   }
   const selectedCount = totalSelectedCount.value;
@@ -542,6 +602,195 @@ const handlePrint = (label: string) => {
     selectedCount > 0
       ? `${patientName}（所选${selectedCount}项）`
       : `${patientName}（全部待执行项）`;
+
+  if (label === '打印瓶贴') {
+    const groups = groupInfusionLabelPrintTargets(
+      executeItems.value,
+      selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined,
+    );
+    if (!groups.length) {
+      ElMessage.warning('没有可打印的药品医嘱');
+      return;
+    }
+    try {
+      await printIvInfusionLabels({
+        encounterId: currentPatient.value.id,
+        groups,
+      });
+      appendRecord({
+        type: '打印',
+        action: label,
+        target: `${targetText} · ${groups.length} 组`,
+      });
+      ElMessage.success(`已发送 ${groups.length} 张输液瓶贴`);
+    } catch {
+      // composable 已提示
+    }
+    return;
+  }
+
+  if (label === '打印采血码') {
+    const targets = groupSpecimenBarcodePrintTargets(
+      executeItems.value,
+      selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined,
+    );
+    if (!targets.length) {
+      ElMessage.warning('没有可打印的采血/检验医嘱');
+      return;
+    }
+    try {
+      await printBedsideSpecimenBarcodes({
+        encounterId: currentPatient.value.id,
+        targets,
+      });
+      appendRecord({
+        type: '打印',
+        action: label,
+        target: `${targetText} · ${targets.length} 张`,
+      });
+      ElMessage.success(`已发送 ${targets.length} 张采血条码`);
+    } catch {
+      // composable 已提示
+    }
+    return;
+  }
+
+  if (label === '打印处置单') {
+    const target = groupTreatmentExecutePrintTargets(
+      executeItems.value,
+      selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined,
+    );
+    if (!target) {
+      ElMessage.warning('没有可打印的处置医嘱');
+      return;
+    }
+    try {
+      await printTreatmentExecuteSheet({
+        encounterId: currentPatient.value.id,
+        target,
+      });
+      appendRecord({
+        type: '打印',
+        action: label,
+        target: `${targetText} · ${target.serviceRequestIds.length} 项`,
+      });
+      ElMessage.success('处置执行单已发送打印');
+    } catch {
+      // composable 已提示
+    }
+    return;
+  }
+
+  if (label === '打印处方单') {
+    const medicationRequestIds = groupMedicationExecuteRequestIds(
+      executeItems.value,
+      selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined,
+    );
+    if (!medicationRequestIds.length) {
+      ElMessage.warning('没有可打印的药品医嘱');
+      return;
+    }
+    try {
+      const printedCount = await printNursePrescriptions({
+        encounterId: currentPatient.value.id,
+        medicationRequestIds,
+        executeRows: executeItems.value,
+      });
+      if (printedCount <= 0) {
+        return;
+      }
+      appendRecord({
+        type: '打印',
+        action: label,
+        target: `${targetText} · ${printedCount} 张`,
+      });
+      ElMessage.success(`已发送 ${printedCount} 张处方单`);
+    } catch {
+      // composable 已提示
+    }
+    return;
+  }
+
+  if (label === '打印皮试标签') {
+    const groups = groupMedicationLabelPrintTargets(
+      executeItems.value,
+      selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined,
+      'skin_test',
+    );
+    if (!groups.length) {
+      ElMessage.warning('没有可打印的皮试医嘱');
+      return;
+    }
+    try {
+      await printSkinTestLabels({
+        encounterId: currentPatient.value.id,
+        groups,
+      });
+      appendRecord({
+        type: '打印',
+        action: label,
+        target: `${targetText} · ${groups.length} 张`,
+      });
+      ElMessage.success(`已发送 ${groups.length} 张皮试标签`);
+    } catch {
+      // composable 已提示
+    }
+    return;
+  }
+
+  if (label === '打印雾化标签') {
+    const groups = groupMedicationLabelPrintTargets(
+      executeItems.value,
+      selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined,
+      'nebulization',
+    );
+    if (!groups.length) {
+      ElMessage.warning('没有可打印的雾化/吸入医嘱');
+      return;
+    }
+    try {
+      await printNebulizationLabels({
+        encounterId: currentPatient.value.id,
+        groups,
+      });
+      appendRecord({
+        type: '打印',
+        action: label,
+        target: `${targetText} · ${groups.length} 张`,
+      });
+      ElMessage.success(`已发送 ${groups.length} 张雾化标签`);
+    } catch {
+      // composable 已提示
+    }
+    return;
+  }
+
+  if (label === '打印处置申请单') {
+    const target = groupProcedureApplyPrintTargets(
+      executeItems.value,
+      selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined,
+    );
+    if (!target) {
+      ElMessage.warning('没有可打印的治疗/处置医嘱');
+      return;
+    }
+    try {
+      await printProcedureApplyForm({
+        encounterId: currentPatient.value.id,
+        target,
+      });
+      appendRecord({
+        type: '打印',
+        action: label,
+        target: `${targetText} · ${target.serviceRequestIds.length} 项`,
+      });
+      ElMessage.success('治疗/处置申请单已发送打印');
+    } catch {
+      // composable 已提示
+    }
+    return;
+  }
+
   appendRecord({
     type: '打印',
     action: label,
@@ -589,6 +838,7 @@ const handlePrint = (label: string) => {
         :supply-room-options="supplyRoomOptions"
         :recent-action-records="recentActionRecords"
         @supply-change="toggleSupplySelection"
+        @cancel-supply="handleCancelSupplyExecute"
         @print="handlePrint"
         @show-all-records="showRecordDrawer = true"
       />

@@ -120,3 +120,23 @@ export interface SavePatientInfoResponse {
   encounterId?: string;
   saved?: boolean;
 }
+
+/** 分床责任医护下拉初始化请求 */
+export interface LoadAdmissionParticipantInitRequest {
+  organizationId?: string;
+  /** 入院病区位置 id（form_enum=WARD） */
+  wardLocationId?: string;
+}
+
+/** 分床责任医护下拉初始化响应 */
+export interface LoadAdmissionParticipantInitResponse {
+  doctorOptions?: OptionDto[];
+  primaryNurseOptions?: OptionDto[];
+}
+
+/** 通用下拉选项（与后端 OptionDto 一致） */
+export interface OptionDto {
+  disabled?: boolean;
+  label: string;
+  value: string;
+}

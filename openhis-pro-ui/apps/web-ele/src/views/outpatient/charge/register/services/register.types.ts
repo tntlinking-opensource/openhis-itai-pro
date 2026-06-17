@@ -48,8 +48,16 @@ export interface RegisterHistoryExpose {
 
 /** 父组件通过 ref 调用的挂号表单区能力 */
 export interface RegisterFormAreaExpose {
+  /** 预约快照预填并锁定三要素 */
+  applyBookingSnapshot: (snapshot: {
+    healthcareServiceId: number | string;
+    organizationId: number | string;
+    practitionerId?: null | number | string;
+  }) => Promise<void>;
   /** 把选中患者写入患者信息表单 */
   applyPatientRecord: (patient: RegisterPatientRecord) => void;
+  /** 解除预约锁定并保留已填值 */
+  clearBookingLock: () => void;
   /** 清空患者信息表单各字段 */
   clearPatientFields: () => void;
   /** 焦点落到表单区内第一个可聚焦控件，便于选完患者后继续键盘录入 */

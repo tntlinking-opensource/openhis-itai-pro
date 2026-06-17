@@ -172,6 +172,8 @@ const [Modal, modalApi] = useVbenModal({
   cancelText: '取消',
 });
 
+const fullWidthStyle = { width: '100%' };
+
 const convertOptions = (
   options: Array<{ label: string; value: number | string }> | null | undefined,
 ) => {
@@ -187,22 +189,15 @@ const convertOptions = (
 const [Form, formApi] = useVbenForm(
   reactive({
     commonConfig: {
+      labelWidth: 96,
+      labelClass: 'justify-start text-left',
       componentProps: {
-        style: { width: '240px' },
+        style: fullWidthStyle,
       },
     },
     layout: 'horizontal',
-    wrapperClass: 'flex flex-wrap flex-row ',
+    wrapperClass: 'diagnosis-form-dialog__grid grid grid-cols-2 gap-x-6',
     schema: computed(() => [
-      {
-        component: 'Input',
-        fieldName: 'conditionCode',
-        label: '诊断编码',
-        componentProps: {
-          placeholder: '留空则系统自动生成',
-          clearable: true,
-        },
-      },
       {
         component: 'Input',
         fieldName: 'name',
@@ -254,6 +249,17 @@ const [Form, formApi] = useVbenForm(
         },
       },
       {
+        component: 'Select',
+        fieldName: 'statusEnum',
+        label: '状态',
+        componentProps: {
+          options: convertOptions(statusFlagOptions.value),
+          filterable: true,
+          placeholder: '请选择状态',
+          clearable: true,
+        },
+      },
+      {
         component: 'Checkbox',
         fieldName: 'ybFlag',
         label: '医保标记',
@@ -282,23 +288,14 @@ const [Form, formApi] = useVbenForm(
         },
       },
       {
-        component: 'Select',
-        fieldName: 'statusEnum',
-        label: '状态',
-        componentProps: {
-          options: convertOptions(statusFlagOptions.value),
-          filterable: true,
-          placeholder: '请选择状态',
-          clearable: true,
-        },
-      },
-      {
         component: 'InputArea',
         fieldName: 'description',
         label: '说明',
+        formItemClass: 'col-span-2',
         componentProps: {
           placeholder: '请输入说明',
           rows: 3,
+          style: fullWidthStyle,
         },
       },
     ]),
@@ -321,7 +318,7 @@ watch(
 
 <template>
   <Modal
-    class="w-[640px]"
+    class="diagnosis-form-dialog w-[720px]"
     :title="isEditMode ? '编辑疾病目录' : '新增疾病目录'"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
@@ -329,3 +326,13 @@ watch(
     <Form />
   </Modal>
 </template>
+
+<style scoped>
+.diagnosis-form-dialog :deep(.diagnosis-form-dialog__grid) {
+  align-items: start;
+}
+
+.diagnosis-form-dialog :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+</style>

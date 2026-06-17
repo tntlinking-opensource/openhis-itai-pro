@@ -1,4 +1,9 @@
-import type { ParticipantDto } from '#/api/inpatient/nurse-station/inpatient-nurse-station.types';
+import type {
+  OptionDto,
+  ParticipantDto,
+} from '#/api/inpatient/nurse-station/inpatient-nurse-station.types';
+
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
 import { NURSE_STATION_PARTICIPANT_ROLE } from '../components/patient-admission-bed-dialog.constants';
 
@@ -24,7 +29,7 @@ export function mapParticipantsToFormIds(
   }
   for (const row of participants) {
     const role = (row.roleCode ?? '').trim();
-    const id = String(row.practitionerId ?? '').trim();
+    const id = preserveApiIdForRequest(row.practitionerId) ?? '';
     if (!id) {
       continue;
     }
@@ -69,4 +74,47 @@ export function buildParticipantSubmitRows(form: NurseStationParticipantFormIds)
     });
   }
   return rows;
+}
+
+const DOCTOR_PARTICIPANT_ROLES = new Set<string>([
+  NURSE_STATION_PARTICIPANT_ROLE.INPATIENT_DOCTOR,
+  NURSE_STATION_PARTICIPANT_ROLE.ATTENDING_DOCTOR,
+  NURSE_STATION_PARTICIPANT_ROLE.CHIEF_DOCTOR,
+]);
+
+/** 将详情已有参与者补入下拉，避免 ElSelect 因选项缺失而回显 id */
+export function mergeParticipantsIntoOptionLists(
+  doctorOptions: OptionDto[],
+  primaryNurseOptions: OptionDto[],
+  participants: ParticipantDto[] | undefined,
+): { doctorOptions: OptionDto[]; primaryNurseOptions: OptionDto[] } {
+  const mergedDoctors = [...doctorOptions];
+  const mergedNurses = [...primaryNurseOptions];
+  const doctorValueSet = new Set(mergedDoctors.map((item) => String(item.value)));
+  const nurseValueSet = new Set(mergedNurses.map((item) => String(item.value)));
+
+  for (const row of participants ?? []) {
+    const id = preserveApiIdForRequest(row.practitionerId);
+    if (!id) {
+      continue;
+    }
+    const label = (row.practitionerName ?? '').trim() || id;
+    const role = (row.roleCode ?? '').trim();
+    if (DOCTOR_PARTICIPANT_ROLES.has(role)) {
+      if (!doctorValueSet.has(id)) {
+        doctorValueSet.add(id);
+        mergedDoctors.push({ value: id, label });
+      }
+      continue;
+    }
+    if (role === NURSE_STATION_PARTICIPANT_ROLE.PRIMARY_NURSE && !nurseValueSet.has(id)) {
+      nurseValueSet.add(id);
+      mergedNurses.push({ value: id, label });
+    }
+  }
+
+  return {
+    doctorOptions: mergedDoctors,
+    primaryNurseOptions: mergedNurses,
+  };
 }

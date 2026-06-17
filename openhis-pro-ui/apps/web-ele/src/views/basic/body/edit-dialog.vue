@@ -1,33 +1,20 @@
 <script lang="ts" setup>
-import type { CreateBodyParams, UpdateBodyParams } from '#/api/basic/body';
+import type { BodyItem, BodyTreeOption } from '#/api/basic/body';
 
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
 
 import { ElMessage } from 'element-plus';
 
-import { useVbenForm } from '#/adapter/form';
-import { createBodyApi, getBodyTreeApi, updateBodyApi } from '#/api/basic/body';
+import { useVbenForm, z } from '#/adapter/form';
+import { createBodyApi, getBodyApi, getBodyTreeApi, updateBodyApi } from '#/api/basic/body';
 
-interface BodyListResponse {
-  id?: string;
-  name?: string;
-  busNo?: string;
-  parentId?: string;
-  description?: string;
-  [key: string]: unknown;
-}
-
-interface BodyTreeOption {
-  value: string;
-  label: string;
-  children?: BodyTreeOption[];
-}
+defineOptions({ name: 'BasicBodyEditDialog' });
 
 interface Props {
   visible?: boolean;
-  formData?: Partial<BodyListResponse>;
+  formData?: Partial<BodyItem>;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -40,83 +27,25 @@ const emit = defineEmits<{
   'update:visible': [value: boolean];
 }>();
 
-const originalData = ref<Partial<BodyListResponse>>({});
+const originalData = ref<Partial<BodyItem>>({});
 const bodyTreeOptions = ref<BodyTreeOption[]>([]);
 
-const isEditMode = computed(() => {
-  return !!props.formData?.id;
-});
+const isEditMode = computed(() => !!props.formData?.id);
 
-async function handleSubmit() {
-  const { valid } = await formApi.validate();
-  if (!valid) {
-    return;
+const dialogTitle = computed(() => (isEditMode.value ? '编辑身体部位' : '新增身体部位'));
+
+const fullWidthStyle = { width: '100%' };
+
+/** 统一将 parentId 转为 TreeSelect 所需的 string */
+function normalizeParentId(value: unknown): string | undefined {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
   }
-
-  modalApi.lock(true);
-  try {
-    const formValues = await formApi.getValues();
-    const mergedData = {
-      ...originalData.value,
-      ...formValues,
-    };
-    const parentId = mergedData.parentId || undefined;
-
-    if (isEditMode.value) {
-      // 编辑模式
-      if (!originalData.value.id) {
-        ElMessage.error('缺少身体部位ID');
-        return;
-      }
-      const updateParams: UpdateBodyParams = {
-        id: originalData.value.id,
-        name: mergedData.name || '',
-        parentId,
-      };
-      await updateBodyApi(updateParams);
-      ElMessage.success('更新成功');
-    } else {
-      // 新增模式
-      const createParams: CreateBodyParams = {
-        name: mergedData.name || '',
-        parentId,
-      };
-      await createBodyApi(createParams);
-      ElMessage.success('创建成功');
-    }
-    emit('success');
-    modalApi.close();
-  } catch (error: unknown) {
-    console.error(isEditMode.value ? '更新失败:' : '创建失败:', error);
-    const errorMessage =
-      (error as { response?: { data?: { message?: string; msg?: string } } })?.response?.data
-        ?.msg ||
-      (error as { response?: { data?: { message?: string; msg?: string } } })?.response?.data
-        ?.message ||
-      (error as { message?: string })?.message ||
-      (error as { msg?: string })?.msg ||
-      (isEditMode.value ? '更新失败，请稍后重试' : '创建失败，请稍后重试');
-    ElMessage.error(errorMessage);
-  } finally {
-    modalApi.unlock();
-  }
+  return String(value);
 }
 
-async function loadFormData() {
-  if (props.formData && Object.keys(props.formData).length > 0) {
-    originalData.value = { ...props.formData };
-    formApi.setValues(props.formData);
-  } else {
-    originalData.value = {};
-    await formApi.resetForm();
-    await formApi.setValues({
-      name: '',
-      parentId: undefined,
-    });
-  }
-}
-
-const filterTreeOptions = (items: BodyTreeOption[], excludeId?: string): BodyTreeOption[] => {
+/** 编辑时排除自身及子孙，避免选自己为上级 */
+function filterTreeOptions(items: BodyTreeOption[], excludeId?: string): BodyTreeOption[] {
   if (!excludeId) {
     return items;
   }
@@ -126,48 +55,104 @@ const filterTreeOptions = (items: BodyTreeOption[], excludeId?: string): BodyTre
       ...item,
       children: item.children ? filterTreeOptions(item.children, excludeId) : undefined,
     }));
-};
+}
 
+/** 加载上级部位树 */
 async function loadBodyTreeOptions() {
-  const response = await getBodyTreeApi();
-  const options = Array.isArray(response)
-    ? response
-    : Array.isArray((response as { data?: unknown[] })?.data)
-      ? (response as { data: unknown[] }).data
-      : [];
-  const currentId = (props.formData?.id || originalData.value.id) as string | undefined;
-  bodyTreeOptions.value = filterTreeOptions(options as BodyTreeOption[], currentId);
-  const parentField = formConfig.schema.find((item) => item.fieldName === 'parentId') as
-    | { componentProps?: { data?: BodyTreeOption[] } }
-    | undefined;
-  if (parentField?.componentProps) {
-    parentField.componentProps.data = bodyTreeOptions.value;
+  try {
+    const options = await getBodyTreeApi();
+    const excludeId = normalizeParentId(props.formData?.id ?? originalData.value.id);
+    bodyTreeOptions.value = filterTreeOptions(options, excludeId);
+  } catch (error) {
+    console.error('加载上级部位树失败:', error);
+    bodyTreeOptions.value = [];
   }
 }
 
-const [Modal, modalApi] = useVbenModal({
-  onOpenChange: (isOpen: boolean) => {
-    emit('update:visible', isOpen);
-  },
-  onOpened: async () => {
-    await loadBodyTreeOptions();
-    await loadFormData();
-  },
-  onConfirm: handleSubmit,
-  showCancelButton: true,
-  showConfirmButton: true,
-  confirmText: '确定',
-  cancelText: '取消',
-});
+/** 提交新增或编辑 */
+async function handleSubmit() {
+  const { valid } = await formApi.validate();
+  if (!valid) {
+    return;
+  }
+
+  modalApi.lock(true);
+  try {
+    const values = (await formApi.getValues()) as Record<string, unknown>;
+    const name = String(values.name ?? '').trim();
+    const parentId = normalizeParentId(values.parentId);
+
+    if (isEditMode.value) {
+      const id = normalizeParentId(originalData.value.id ?? props.formData?.id);
+      if (!id) {
+        ElMessage.warning('缺少身体部位ID');
+        return;
+      }
+      await updateBodyApi({ id, name, parentId });
+      ElMessage.success('更新成功');
+    } else {
+      await createBodyApi({ name, parentId });
+      ElMessage.success('创建成功');
+    }
+
+    emit('success');
+    modalApi.close();
+  } catch (error) {
+    console.error(isEditMode.value ? '更新失败' : '创建失败', error);
+    ElMessage.error(isEditMode.value ? '更新失败，请稍后重试' : '创建失败，请稍后重试');
+  } finally {
+    modalApi.unlock();
+  }
+}
+
+/** 打开弹窗时拉详情并回填表单 */
+async function loadFormData() {
+  const editId = normalizeParentId(props.formData?.id);
+  if (editId) {
+    modalApi.setState({ loading: true });
+    try {
+      const detail = await getBodyApi(editId);
+      if (!detail) {
+        ElMessage.warning('未找到身体部位信息');
+        modalApi.close();
+        return;
+      }
+      originalData.value = { ...detail };
+      await formApi.setValues({
+        busNo: detail.busNo ?? '',
+        name: detail.name ?? '',
+        parentId: normalizeParentId(detail.parentId),
+      });
+    } catch (error) {
+      console.error('获取身体部位详情失败:', error);
+      ElMessage.error('获取身体部位详情失败，请稍后重试');
+      modalApi.close();
+    } finally {
+      modalApi.setState({ loading: false });
+    }
+    return;
+  }
+
+  originalData.value = {};
+  await formApi.resetForm();
+  await formApi.setValues({
+    busNo: '',
+    name: '',
+    parentId: undefined,
+  });
+}
 
 const formConfig = reactive({
   commonConfig: {
+    labelWidth: 96,
+    labelClass: 'justify-start text-left',
     componentProps: {
-      style: { width: '220px' },
+      style: fullWidthStyle,
     },
   },
   layout: 'horizontal' as const,
-  schema: [
+  wrapperClass: 'body-form-dialog__grid grid grid-cols-1',
+  schema: computed(() => [
     {
       component: 'Input',
       fieldName: 'busNo',
@@ -181,9 +166,9 @@ const formConfig = reactive({
       component: 'Input',
       fieldName: 'name',
       label: '名称',
-      required: true,
+      rules: z.string().min(1, { message: '请填写部位名称' }),
       componentProps: {
-        placeholder: '请输入名称',
+        placeholder: '请输入部位名称',
       },
     },
     {
@@ -195,18 +180,37 @@ const formConfig = reactive({
         filterable: true,
         clearable: true,
         checkStrictly: true,
+        placeholder: '不选则为顶级部位',
         props: {
           value: 'value',
           label: 'label',
           children: 'children',
         },
+        nodeKey: 'value',
+        style: fullWidthStyle,
       },
     },
-  ],
+  ]),
   showDefaultActions: false,
 });
 
 const [Form, formApi] = useVbenForm(formConfig);
+
+const [Modal, modalApi] = useVbenModal({
+  onOpenChange: (isOpen: boolean) => {
+    emit('update:visible', isOpen);
+  },
+  onOpened: async () => {
+    await nextTick();
+    await loadBodyTreeOptions();
+    await loadFormData();
+  },
+  onConfirm: handleSubmit,
+  showCancelButton: true,
+  showConfirmButton: true,
+  confirmText: '确定',
+  cancelText: '取消',
+});
 
 watch(
   () => props.visible,
@@ -223,11 +227,21 @@ watch(
 
 <template>
   <Modal
-    class="w-[500px]"
-    :title="isEditMode ? '编辑身体部位' : '新增身体部位'"
+    class="body-form-dialog w-[520px] max-w-[96vw]"
+    :title="dialogTitle"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
   >
     <Form />
   </Modal>
 </template>
+
+<style scoped>
+.body-form-dialog :deep(.body-form-dialog__grid) {
+  align-items: start;
+}
+
+.body-form-dialog :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+</style>

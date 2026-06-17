@@ -2,6 +2,8 @@
  * 医生站医嘱开立应用服务契约类型（与后端 DTO 字段名对齐；Long 类主键在请求 JSON 中使用 string）。
  */
 
+import type { EncounterMedicationDispenseSlipRowDto } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.types';
+
 /** 与后端 `AdvicePackageChildItemDto` 对齐 */
 export interface AdvicePackageChildItemDto {
   childrenId?: string;
@@ -39,6 +41,12 @@ export interface InitDoctorStationAdviceRequest {
 export interface InitDoctorStationAdviceResponse {
   medicationRateOptions?: TerminologyOptionDto[];
   medicationRouteOptions?: TerminologyOptionDto[];
+  /** 费用性质（合同）下拉：value=contractId，label=合同名称 */
+  feeNatureOptions?: TerminologyOptionDto[];
+  /** 身体部位下拉（申请单检查行明细） */
+  bodyStructureOptions?: TerminologyOptionDto[];
+  /** 样本定义下拉（申请单检验行明细） */
+  specimenDefinitionOptions?: TerminologyOptionDto[];
 }
 
 /** 与后端 `ComputeMedicationFrequencyExecutionsRequest` 对齐 */
@@ -122,6 +130,18 @@ export interface DoctorStationAdviceRowDto {
   skinTestOutcomeText?: string;
   /** 医生站主表展示排序号（AS BR-ORD-018） */
   sortNumber?: number | string | null;
+  /** 诊疗执行次数（结构-only 行） */
+  executionCount?: number | string | null;
+  /** 目录分类码（如 2 西药、11 耗材、21 治疗） */
+  catalogCategoryCode?: string;
+  /** 活动类型码/名（诊疗） */
+  activityTypeCode?: string;
+  activityTypeName?: string;
+  /** 执行科室 */
+  performLocationId?: string;
+  performLocationName?: string;
+  fifoDispenseLocationId?: string;
+  fifoDispenseLocationName?: string;
   /** 住院：长临医嘱 LONG_TERM / TEMPORARY */
   therapyTypeCode?: string;
   /** 住院：长临展示文案（如 长期、临时） */
@@ -148,6 +168,10 @@ export interface PageDoctorStationAdviceCatalogRequest {
   organizationUnitId?: string;
   pharmacyLocationId?: string;
   productTableNames?: string[];
+  /** 排除药品 med_category_code（如开立西药医嘱传 ["4"] 排除中草药） */
+  excludeMedicationCategoryCodes?: string[];
+  /** 申请单选品：检验 PROOF/22、检查 TEST/23、治疗 TREATMENT/21 */
+  categoryEnum?: string;
   keyword?: string;
   pageNo: number;
   pageSize: number;
@@ -281,6 +305,8 @@ export interface SaveMedicationAdviceDraftLinePayload {
   dispenseLocationId?: string;
   /** 绑定诊断定义主键，与就诊诊断 `conditionDefinitionId` 一致 */
   conditionDefinitionId?: string;
+  /** 就诊诊断主键（落库 `encounter_diagnosis_id`） */
+  encounterDiagnosisId?: string;
   contractId?: string;
   /** 皮试标记（与列表 `skinTestFlag` 对齐） */
   skinTestFlag?: boolean;
@@ -416,4 +442,165 @@ export interface ActivityExecutionLocationRuleRowDto {
 /** 与后端 `ListActivityExecutionLocationsResponse` 对齐 */
 export interface ListActivityExecutionLocationsResponse {
   rules?: ActivityExecutionLocationRuleRowDto[];
+}
+
+/** 服务申请明细摘要（部位/样本） */
+export interface ServiceRequestDetailSummaryDto {
+  targetTable?: string;
+  targetId?: string;
+  targetDisplayName?: string;
+  remark?: string;
+}
+
+/** 申请单保存：部位/样本明细行 */
+export interface ServiceApplyFormDetailItemRequest {
+  targetTable: string;
+  targetId: string;
+  remark?: string;
+}
+
+/** 申请单保存：主表一行 */
+export interface ServiceApplyFormLineRequest {
+  activityDefinitionId: string;
+  quantity: number | string;
+  unitCode: string;
+  remark?: string;
+  detailItems?: ServiceApplyFormDetailItemRequest[];
+}
+
+/** 保存检验/检查/治疗申请单（整张） */
+export interface SaveDoctorStationServiceApplyFormRequest {
+  encounterId: string;
+  patientId: string;
+  /** 检验 PROOF/22、检查 TEST/23、治疗 TREATMENT/21 */
+  categoryEnum: string;
+  orgId: string;
+  /** 整单绑定诊断定义主键（与 orgId 同级，写入全部 ServiceRequest） */
+  conditionDefinitionId?: string;
+  /** 整单绑定就诊诊断主键 */
+  encounterDiagnosisId?: string;
+  /** 编辑时待替换的旧 AR 申请单号 */
+  previousPrescriptionNo?: string;
+  lines: ServiceApplyFormLineRequest[];
+}
+
+export interface SaveDoctorStationServiceApplyFormResponse {
+  prescriptionNo?: string;
+  requestIds?: string[];
+}
+
+/** 查询申请单列表 */
+export interface ListDoctorStationServiceApplyFormsRequest {
+  encounterId: string;
+  patientId: string;
+  categoryEnum: string;
+}
+
+/** 申请单明细行摘要 */
+export interface ServiceApplyFormLineDto {
+  requestId?: string;
+  activityDefinitionId?: string;
+  activityName?: string;
+  quantity?: number | string;
+  unitCode?: string;
+  unitName?: string;
+  remark?: string;
+  details?: ServiceRequestDetailSummaryDto[];
+}
+
+/** 申请单头摘要 */
+export interface ServiceApplyFormHeaderDto {
+  prescriptionNo?: string;
+  categoryEnum?: string;
+  orgId?: string;
+  orgName?: string;
+  authoredAt?: string;
+  statusSummary?: string;
+  lines?: ServiceApplyFormLineDto[];
+}
+
+export interface ListDoctorStationServiceApplyFormsResponse {
+  forms?: ServiceApplyFormHeaderDto[];
+}
+
+/** IF-DOR-20：处方单查询范围 Tab */
+export type PrescriptionScopeTabCode = 'CURRENT_ENCOUNTER' | 'HISTORY';
+
+/** IF-DOR-20：就诊药品处方单分页请求（字段与门诊发药 slip 读口径对齐） */
+export interface PageEncounterMedicationPrescriptionSlipsRequest {
+  encounterId: string;
+  patientId: string;
+  prescriptionScopeTabCode?: PrescriptionScopeTabCode;
+  orderingDepartmentId?: string;
+  locationId?: string;
+  tcmOnly?: boolean;
+  westernOnly?: boolean;
+  dispenseStatusEnumIn?: string[];
+  requestStatusEnumIn?: string[];
+  pageNo: number;
+  pageSize: number;
+}
+
+/** 与门诊发药 IF-OPP-03 slip 行字段一致，医生站 IF-DOR-20 复用同一读模型 */
+export type EncounterMedicationPrescriptionSlipRowDto = EncounterMedicationDispenseSlipRowDto;
+
+/** IF-DOR-20：就诊药品处方单分页响应 */
+export interface PageEncounterMedicationPrescriptionSlipsResponse {
+  content?: EncounterMedicationPrescriptionSlipRowDto[];
+  rows?: EncounterMedicationPrescriptionSlipRowDto[];
+  totalCount?: number | string;
+  total?: number | string;
+}
+
+/** IF-DOR-20：医嘱查询范围 Tab（与后端 DoctorStationAdviceScopeTab 对齐） */
+export type DoctorStationAdviceScopeTabCode = 'CURRENT_ADVICE' | 'HISTORY';
+
+/** 处方单 Tab → 医嘱查询范围 Tab */
+export function mapPrescriptionScopeToAdviceScopeTab(
+  scope: PrescriptionScopeTabCode,
+): DoctorStationAdviceScopeTabCode {
+  return scope === 'CURRENT_ENCOUNTER' ? 'CURRENT_ADVICE' : 'HISTORY';
+}
+
+/** 历史医嘱 / 处方单查看：分页查询请求（POST …/doctorStationAdvice/pageDoctorStationAdvice） */
+export interface PageDoctorStationAdviceRequest {
+  patientId: string;
+  /** 当前就诊（患者门控 + 历史排除锚点） */
+  encounterId: string;
+  pageNo: number;
+  pageSize: number;
+  /** CURRENT_ADVICE=本次就诊；HISTORY=历史（排除当前 encounterId） */
+  adviceScopeTabCode?: DoctorStationAdviceScopeTabCode;
+}
+
+/** 历史医嘱：单次就诊摘要 */
+export interface PatientHistoryDoctorStationAdviceEncounterDto {
+  encounterId?: string;
+  visitTime?: string;
+  departmentName?: string;
+  visitTypeText?: string;
+  primaryDiagnosis?: string;
+  orderingDoctor?: string;
+  adviceCountSummary?: string;
+  isCurrentEncounter?: boolean;
+}
+
+/** 历史医嘱：单次就诊 + 医嘱行 */
+export interface PatientHistoryDoctorStationAdviceBundleDto {
+  encounter?: PatientHistoryDoctorStationAdviceEncounterDto;
+  rows?: DoctorStationAdviceRowDto[];
+}
+
+/** 历史医嘱：分页查询响应 */
+export interface PageDoctorStationAdviceResponse {
+  bundles?: PatientHistoryDoctorStationAdviceBundleDto[];
+  /** 分页包装或扁平 bundles / 结构-only 医嘱行 */
+  content?: PatientHistoryDoctorStationAdviceBundleDto[] | DoctorStationAdviceRowDto[];
+  /** 兼容：扁平 bundles 或结构-only 医嘱行 */
+  rows?: PatientHistoryDoctorStationAdviceBundleDto[] | DoctorStationAdviceRowDto[];
+  /** 结构-only 医嘱行 */
+  adviceRows?: DoctorStationAdviceRowDto[];
+  totalCount?: number | string;
+  pageNo?: number;
+  pageSize?: number;
 }

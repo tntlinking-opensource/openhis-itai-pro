@@ -7,9 +7,23 @@ export const WAREHOUSE_FORM_ENUM = {
   WAREHOUSE: '17',
 } as const;
 
+/** 后端 DTO 可能返回领域 code（WAREHOUSE/PHARMACY）或前端下拉 code（17/16） */
+export function isWarehouseFormEnum(formEnum?: null | string): boolean {
+  return formEnum === WAREHOUSE_FORM_ENUM.WAREHOUSE || formEnum === 'WAREHOUSE';
+}
+
+export function isPharmacyFormEnum(formEnum?: null | string): boolean {
+  return formEnum === WAREHOUSE_FORM_ENUM.PHARMACY || formEnum === 'PHARMACY';
+}
+
 export const WAREHOUSE_STATUS_ENUM = {
-  ACTIVE: '1',
+  ACTIVE: 'ACTIVE',
+  INACTIVE: 'INACTIVE',
 } as const;
+
+export interface ListWarehouseParams {
+  keyword?: string;
+}
 
 export interface Warehouse {
   busNo: string;
@@ -41,8 +55,8 @@ export async function initWarehouseApi() {
   return publicRequestClient.post<Warehouse[]>('/warehouse/init');
 }
 
-export async function getWarehouseListApi() {
-  return publicRequestClient.post<Warehouse[]>('/warehouse/getWarehouseList');
+export async function getWarehouseListApi(params?: ListWarehouseParams) {
+  return publicRequestClient.post<Warehouse[]>('/warehouse/getWarehouseList', params ?? {});
 }
 
 export async function createWarehouseApi(params: CreateWarehouseParams) {

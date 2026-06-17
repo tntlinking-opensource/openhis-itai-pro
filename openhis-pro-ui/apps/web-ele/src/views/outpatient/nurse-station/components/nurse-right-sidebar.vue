@@ -13,6 +13,7 @@ defineOptions({
 defineProps<Props>();
 
 const emit = defineEmits<{
+  cancelSupply: [id: string];
   print: [label: string];
   showAllRecords: [];
   supplyChange: [id: string, checked: boolean];
@@ -41,7 +42,7 @@ const onPrint = (label: string) => {
     <div class="bg-background px-2 py-1.5">
       <SectionTitle title="耗材明细" />
       <p class="mt-0.5 text-[11px] leading-snug text-gray-500">
-        勾选后随「执行并记录」一并发放；已发放不可再选。
+        勾选「待发放」随批执行；已配药/已发放可点「取消执行」回退。
       </p>
       <div class="mt-1.5 flex min-w-0 items-center gap-2">
         <span class="shrink-0 text-sm text-gray-600">耗材房（可选）</span>
@@ -78,6 +79,7 @@ const onPrint = (label: string) => {
           selectable
           :selected="selectedSupplyIds.includes(item.id)"
           @change="onSupplyChange"
+          @cancel="(id) => emit('cancelSupply', id)"
         />
       </div>
     </div>
@@ -90,6 +92,9 @@ const onPrint = (label: string) => {
       <ElButton size="small" @click="onPrint('打印处置单')">打印处置单</ElButton>
       <ElButton size="small" @click="onPrint('打印采血码')">打印采血码</ElButton>
       <ElButton size="small" @click="onPrint('打印处方单')">打印处方单</ElButton>
+      <ElButton size="small" @click="onPrint('打印皮试标签')">皮试标签</ElButton>
+      <ElButton size="small" @click="onPrint('打印雾化标签')">雾化标签</ElButton>
+      <ElButton size="small" @click="onPrint('打印处置申请单')">处置申请单</ElButton>
     </div>
 
     <div class="bg-background flex min-h-0 flex-1 flex-col px-2 py-1.5">
@@ -129,7 +134,7 @@ const onPrint = (label: string) => {
   min-width: 0;
   box-sizing: border-box;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, auto);
+  grid-auto-rows: auto;
   align-items: stretch;
   gap: 0.375rem;
 }

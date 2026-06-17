@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { DiagnosisConfirmPayload, DiagnosisItem } from '#/components/doctor-station/diagnosis';
 import type {
   AdviceDrugItem,
   AdviceDrugPatchPayload,
@@ -12,15 +11,19 @@ import type { WesternDrugFormHandlers } from './advice-western-drug-form-panel.v
 
 import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
+import type { DiagnosisConfirmPayload, DiagnosisItem } from '#/components/doctor-station/diagnosis';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import { ElButton, ElMessage } from 'element-plus';
 
 import { httpGetEncounterDiagnosis } from '#/api/doctor-station/diagnosis.http';
-import { useAuthStore } from '#/store';
-
 import { DiagnosisPickerDialog } from '#/components/doctor-station/diagnosis';
+import {
+  mapEncounterRowToDiagnosisItem,
+  resolveEncounterDiagnosisDisplayRows,
+} from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
+
 import { useAdviceDrugFormKeyboard } from '../composables/use-advice-drug-form-keyboard';
 import { calcAdviceTotalFee } from '../composables/use-advice-drug-list';
 import { useAdviceFrequencyTotal } from '../composables/use-advice-frequency-total';
@@ -35,7 +38,6 @@ import {
   buildWesternProductSelectPatch,
   createAdviceDrugItem,
   inferDoseBandConvertK,
-  mapEncounterRowToDiagnosisItem,
   pickMainDiagnosisDisplayName,
   resolveDefaultDrugRowDiagnosisName,
 } from '../services/advice-edit';
@@ -51,10 +53,13 @@ import AdviceDeviceServiceFormPanel from './advice-device-service-form-panel.vue
 import AdviceOrderSelect from './advice-order-select.vue';
 import AdviceWesternDrugFormPanel from './advice-western-drug-form-panel.vue';
 
+defineOptions({ name: 'AdviceEditCard' });
+
 const props = withDefaults(
   defineProps<{
     defaultFeeNature?: string;
     encounterId?: string;
+    feeNatureOptions?: TerminologyOptionDto[];
     initialGroup?: AdviceDrugItem[];
     medicationRateOptions?: TerminologyOptionDto[];
     medicationRouteOptions?: TerminologyOptionDto[];
@@ -75,6 +80,7 @@ const props = withDefaults(
   }>(),
   {
     defaultFeeNature: '',
+    feeNatureOptions: () => [],
     encounterId: '',
     medicationRateOptions: () => [],
     medicationRouteOptions: () => [],
@@ -97,7 +103,6 @@ const patientDiagnoses = defineModel<DiagnosisItem[]>('patientDiagnoses', { defa
 
 const isTcm = computed(() => props.variant === 'tcm');
 const { productColumns, queryProductOptions } = props;
-const authStore = useAuthStore();
 
 const encounterDiagnosisSnapshot = ref<EncounterDiagnosisRowDto[]>([]);
 
@@ -111,9 +116,9 @@ async function loadEncounterDiagnosisOptions() {
   }
   try {
     const res = await httpGetEncounterDiagnosis({ encounterId, patientId });
-    const list = res.diagnosisList ?? [];
-    encounterDiagnosisSnapshot.value = list;
-    patientDiagnoses.value = list
+    const displayList = resolveEncounterDiagnosisDisplayRows(res.diagnosisList ?? []);
+    encounterDiagnosisSnapshot.value = displayList;
+    patientDiagnoses.value = displayList
       .map((row) => mapEncounterRowToDiagnosisItem(row))
       .filter((item): item is DiagnosisItem => item !== null);
     applyMainDiagnosisDefaultToDrugRowsAfterLoad();
@@ -143,7 +148,7 @@ const diagnosisAutoPromptMuted = ref(false);
 
 const createDrugItem = (seed?: Partial<AdviceDrugItem>): AdviceDrugItem =>
   createAdviceDrugItem(seed, {
-    defaultFeeNature: props.defaultFeeNature ?? '',
+    feeNatureOptions: props.feeNatureOptions ?? [],
     medicationRateOptions: props.medicationRateOptions ?? [],
     medicationRouteOptions: props.medicationRouteOptions ?? [],
   });
@@ -323,11 +328,8 @@ const handleProductSelect = (index: number, row: AdviceProductOption) => {
       ...buildTcmProductSelectPatch(row),
     });
   } else if (tbl === 'wkf_activity_definition') {
-    const authOrg = String(authStore.getSelectedOrganization() ?? '').trim();
-    const orgId = String(row.defaultPerformOrgId ?? '').trim() || authOrg;
-    const orgName =
-      String(row.defaultPerformOrgName ?? '').trim() ||
-      (orgId && orgId === authOrg ? '当前登录机构' : '');
+    const orgId = String(row.defaultPerformOrgId ?? '').trim();
+    const orgName = String(row.defaultPerformOrgName ?? '').trim();
     const uCode = String(row.defaultUnitCode ?? '').trim() || '次';
     const uName = String(row.defaultUnitName ?? '').trim() || uCode;
     mergeDrugRow(index, {
@@ -517,6 +519,7 @@ const handleAddDrug = () => {
   const base: Partial<AdviceEditForm> = {
     orderType: lastItem.orderType,
     diagnosis: defaultDiagnosis,
+    contractId: lastItem.contractId,
     feeNature: lastItem.feeNature,
     skinTest: lastItem.skinTest,
     pharmacy: lastItem.pharmacy,
@@ -736,6 +739,7 @@ onMounted(() => {
               v-model:auto-calc-total-amount="autoCalcTotalAmount"
               :form-handlers="westernFormHandlers(index)"
               :item="item"
+              :fee-nature-options="feeNatureOptions"
               :medication-rate-options="medicationRateOptions"
               :medication-route-options="medicationRouteOptions"
               :patient-diagnoses="patientDiagnoses"

@@ -132,15 +132,6 @@ const coreRoutes: RouteRecordRaw[] = [
           title: $t('page.auth.login'),
         },
       },
-      {
-        name: 'CaLogin',
-        path: 'caLog',
-        component: () => import('#/views/caLog/index.vue'),
-        meta: {
-          hideInTab: true,
-          title: 'CA证书登录',
-        },
-      },
     ],
   },
 ];

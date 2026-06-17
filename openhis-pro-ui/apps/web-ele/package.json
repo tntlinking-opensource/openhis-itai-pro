@@ -19,6 +19,7 @@
     "build": "pnpm vite build --mode production",
     "build:analyze": "pnpm vite build --mode analyze",
     "dev": "pnpm vite --mode development",
+    "dev:local": "pnpm vite --mode development --config vite.config.local.mts --port 5778",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit --skipLibCheck"
   },
@@ -75,6 +76,7 @@
     "dayjs": "catalog:",
     "decimal.js": "^10.6.0",
     "element-plus": "catalog:",
+    "pdfjs-dist": "4.10.38",
     "pinia": "catalog:",
     "pinyin-pro": "^3.28.1",
     "react": "^19.2.4",

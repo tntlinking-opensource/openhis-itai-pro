@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type {
   CreateFrequencyParams,
+  FrequencyCycleTypeCode,
   FrequencyItem,
   UpdateFrequencyParams,
 } from '#/api/basic/frequency';
@@ -11,13 +12,14 @@ import { useVbenModal } from '@vben/common-ui';
 
 import { ElMessage } from 'element-plus';
 
-import { useVbenForm } from '#/adapter/form';
+import { useVbenForm, z } from '#/adapter/form';
 import { createFrequencyApi, initFrequencyApi, updateFrequencyApi } from '#/api/basic/frequency';
+
+defineOptions({ name: 'BasicFrequencyEditDialog' });
 
 interface Props {
   visible?: boolean;
   formData?: Partial<FrequencyItem> & { id?: string };
-  /** 复制模式：以当前行预填，要求填写新频次编码 */
   isCopyMode?: boolean;
 }
 
@@ -32,48 +34,189 @@ const emit = defineEmits<{
   'update:visible': [value: boolean];
 }>();
 
-const originalData = ref<Record<string, unknown>>({});
+const CYCLE_DAILY: FrequencyCycleTypeCode = 'daily';
+const CYCLE_WEEKLY: FrequencyCycleTypeCode = 'weekly';
+const CYCLE_INTERVAL: FrequencyCycleTypeCode = 'interval';
+const CYCLE_AS_NEEDED: FrequencyCycleTypeCode = 'as-needed';
+const CYCLE_FIXED_COUNT: FrequencyCycleTypeCode = 'fixed-count';
 
-const statusOptions = ref<Array<{ label: string; value: string }>>([]);
+/** BR-FRQ-007：日执行时点 HH:mm 格式 */
+const DAY_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+const CYCLE_SPECIFIC_FIELDS = [
+  'dayTimes',
+  'dayCount',
+  'dayInterval',
+  'weekCycleFlag',
+  'totalExecutionCount',
+  'executionPeriod',
+  'executionPeriodUnit',
+  'allowCrossDay',
+] as const;
+
+const originalData = ref<Record<string, unknown>>({});
+const selectedCycleType = ref<FrequencyCycleTypeCode | string>(CYCLE_DAILY);
+
 const cycleTypeOptions = ref<Array<{ label: string; value: string }>>([]);
 const sceneOptions = ref<Array<{ label: string; value: string }>>([]);
 const allowCrossDayOptions = ref<Array<{ label: string; value: string }>>([]);
+const periodUnitOptions = ref<Array<{ label: string; value: string }>>([]);
 
-const isEditMode = computed(() => {
-  return !!props.formData?.id && !props.isCopyMode;
-});
+const weekCycleFlagOptions = [
+  { label: '是', value: '1' },
+  { label: '否', value: '0' },
+];
+
+const isEditMode = computed(() => !!props.formData?.id && !props.isCopyMode);
 
 const dialogTitle = computed(() => {
   if (props.isCopyMode) return '复制频次';
   return isEditMode.value ? '编辑频次' : '新增频次';
 });
 
-/** 需求 2.2：频次编码在复制时必填（新编码），新增时建议填写 */
-const rateCodeRequired = computed(() => props.isCopyMode);
+const rateCodeRequired = computed(() => props.isCopyMode || !isEditMode.value);
+
+const fullWidthStyle = { width: '100%' };
+
+const sectionTitleClass = 'col-span-full !mb-0 !pb-0 frequency-form-dialog__section-title';
+
+const showAllowCrossDay = computed(() => {
+  const ct = selectedCycleType.value;
+  return ct === CYCLE_DAILY || ct === CYCLE_WEEKLY || ct === CYCLE_INTERVAL;
+});
 
 async function loadInitOptions() {
   try {
     const res = await initFrequencyApi();
-    const data = (
-      res as {
-        data?: {
-          allowCrossDayOptions?: Array<{ label: string; value: string }>;
-          cycleTypeOptions?: Array<{ label: string; value: string }>;
-          sceneOptions?: Array<{ label: string; value: string }>;
-          statusOptions?: Array<{ label: string; value: string }>;
-        };
-      }
-    )?.data;
-    statusOptions.value = data?.statusOptions ?? [];
+    const data =
+      res && typeof res === 'object' && 'data' in res
+        ? (
+            res as {
+              data?: {
+                allowCrossDayOptions?: Array<{ label: string; value: string }>;
+                cycleTypeOptions?: Array<{ label: string; value: string }>;
+                periodUnitOptions?: Array<{ label: string; value: string }>;
+                sceneOptions?: Array<{ label: string; value: string }>;
+              };
+            }
+          ).data
+        : (res as {
+            allowCrossDayOptions?: Array<{ label: string; value: string }>;
+            cycleTypeOptions?: Array<{ label: string; value: string }>;
+            periodUnitOptions?: Array<{ label: string; value: string }>;
+            sceneOptions?: Array<{ label: string; value: string }>;
+          });
     cycleTypeOptions.value = data?.cycleTypeOptions ?? [];
     sceneOptions.value = data?.sceneOptions ?? [];
     allowCrossDayOptions.value = data?.allowCrossDayOptions ?? [];
+    periodUnitOptions.value = data?.periodUnitOptions ?? [];
   } catch {
-    statusOptions.value = [];
     cycleTypeOptions.value = [];
     sceneOptions.value = [];
     allowCrossDayOptions.value = [];
+    periodUnitOptions.value = [];
   }
+}
+
+/** 周期类型切换时清空上一类型的专用字段，避免提交脏数据 */
+async function handleCycleTypeChange(value: string) {
+  selectedCycleType.value = value || CYCLE_DAILY;
+  const resets: Record<string, undefined> = {};
+  for (const field of CYCLE_SPECIFIC_FIELDS) {
+    resets[field] = undefined;
+  }
+  await formApi.setValues(resets);
+}
+
+/** 校验日执行时点格式（BR-FRQ-007） */
+function assertDayTimesFormat(dayTimes?: string): void {
+  if (!dayTimes) return;
+  const segments = dayTimes.split(',');
+  for (const segment of segments) {
+    const value = segment.trim();
+    if (!value) continue;
+    if (!DAY_TIME_PATTERN.test(value)) {
+      throw new Error('日执行时点格式不合法，请使用 HH:mm 逗号分隔，如 08:00,12:00,18:00');
+    }
+  }
+}
+
+/** 按周期类型裁剪 payload，仅保留当前类型相关字段 */
+function pickCycleFields(
+  cycleType: string,
+  merged: Record<string, unknown>,
+): Partial<CreateFrequencyParams> {
+  const dayTimes =
+    merged.dayTimes !== null && merged.dayTimes !== undefined && merged.dayTimes !== ''
+      ? Array.isArray(merged.dayTimes)
+        ? (merged.dayTimes as string[]).join(',')
+        : String(merged.dayTimes).trim()
+      : undefined;
+
+  const dayCount = merged.dayCount as number | undefined;
+  const dayInterval = merged.dayInterval as number | undefined;
+  const weekCycleFlag =
+    merged.weekCycleFlag !== undefined &&
+    merged.weekCycleFlag !== null &&
+    merged.weekCycleFlag !== ''
+      ? Number(merged.weekCycleFlag)
+      : undefined;
+  const totalExecutionCount = merged.totalExecutionCount as number | undefined;
+  const executionPeriod = merged.executionPeriod as number | undefined;
+  const executionPeriodUnit = merged.executionPeriodUnit as string | undefined;
+  const allowCrossDay =
+    merged.allowCrossDay !== undefined &&
+    merged.allowCrossDay !== null &&
+    merged.allowCrossDay !== ''
+      ? String(merged.allowCrossDay)
+      : undefined;
+
+  if (cycleType === CYCLE_DAILY) {
+    return { dayTimes, dayCount, dayInterval, allowCrossDay };
+  }
+  if (cycleType === CYCLE_WEEKLY) {
+    return {
+      dayTimes,
+      dayInterval,
+      weekCycleFlag: weekCycleFlag ?? 1,
+      allowCrossDay,
+    };
+  }
+  if (cycleType === CYCLE_INTERVAL) {
+    return { executionPeriod, executionPeriodUnit, dayInterval, allowCrossDay };
+  }
+  if (cycleType === CYCLE_FIXED_COUNT) {
+    return { totalExecutionCount, dayTimes };
+  }
+  if (cycleType === CYCLE_AS_NEEDED) {
+    return { dayTimes };
+  }
+  return {};
+}
+
+function buildPayload(merged: Record<string, unknown>): CreateFrequencyParams {
+  const cycleType = (merged.cycleType as string) || CYCLE_DAILY;
+  const cycleFields = pickCycleFields(cycleType, merged);
+
+  let applicableScenes: string | undefined;
+  if (
+    merged.applicableScenes !== null &&
+    merged.applicableScenes !== undefined &&
+    merged.applicableScenes !== ''
+  ) {
+    applicableScenes = Array.isArray(merged.applicableScenes)
+      ? (merged.applicableScenes as string[]).join(',')
+      : String(merged.applicableScenes).trim();
+  }
+
+  return {
+    rateCode: merged.rateCode as string | undefined,
+    name: String(merged.name ?? ''),
+    cycleType,
+    ...cycleFields,
+    sortNo: merged.sortNo as number | undefined,
+    applicableScenes,
+  };
 }
 
 async function handleSubmit() {
@@ -84,38 +227,14 @@ async function handleSubmit() {
   try {
     const formValues = (await formApi.getValues()) as Record<string, unknown>;
     const merged = { ...originalData.value, ...formValues };
+    const payload = buildPayload(merged);
 
-    // dayTimes：统一为字符串提交（后端为 string）
-    let dayTimes: string | undefined;
-    if (merged.dayTimes !== null && merged.dayTimes !== undefined && merged.dayTimes !== '') {
-      dayTimes = Array.isArray(merged.dayTimes)
-        ? (merged.dayTimes as string[]).join(',')
-        : String(merged.dayTimes).trim();
+    try {
+      assertDayTimesFormat(payload.dayTimes);
+    } catch (error) {
+      ElMessage.warning(error instanceof Error ? error.message : '日执行时点格式不合法');
+      return;
     }
-
-    // applicableScenes：多选为数组时转为逗号分隔字符串，后端为 String
-    let applicableScenes: string | undefined;
-    if (
-      merged.applicableScenes !== null &&
-      merged.applicableScenes !== undefined &&
-      merged.applicableScenes !== ''
-    ) {
-      applicableScenes = Array.isArray(merged.applicableScenes)
-        ? (merged.applicableScenes as string[]).join(',')
-        : String(merged.applicableScenes).trim();
-    }
-
-    // activeFlag、allowCrossDay：前端可能为字符串 "0"/"1"，转为 number 供后端 Integer
-    const activeFlag =
-      merged.activeFlag !== undefined && merged.activeFlag !== null && merged.activeFlag !== ''
-        ? Number(merged.activeFlag)
-        : undefined;
-    const allowCrossDay =
-      merged.allowCrossDay !== undefined &&
-      merged.allowCrossDay !== null &&
-      merged.allowCrossDay !== ''
-        ? Number(merged.allowCrossDay)
-        : undefined;
 
     if (isEditMode.value) {
       const id = props.formData?.id ?? merged.id;
@@ -123,52 +242,23 @@ async function handleSubmit() {
         ElMessage.warning('缺少频次ID');
         return;
       }
-      // 编辑时频次编码只读，可能不在 formValues 中，用 originalData/formData 保留原值，避免更新时被置空
       const rateCode =
         (merged.rateCode as string) ??
-        originalData.value.rateCode ??
+        (originalData.value.rateCode as string) ??
         props.formData?.rateCode ??
         '';
       const payload: UpdateFrequencyParams = {
+        ...buildPayload(merged),
         id: String(id),
         rateCode: rateCode || undefined,
-        name: String(merged.name ?? ''),
-        dayInterval: merged.dayInterval as number | undefined,
-        dayTimes,
-        weekCycleFlag: merged.weekCycleFlag as number | undefined,
-        weekInterval: merged.weekInterval as number | undefined,
-        totalExecutionCount: merged.totalExecutionCount as number | undefined,
-        executionPeriod: merged.executionPeriod as number | undefined,
-        executionPeriodUnit: merged.executionPeriodUnit as string | undefined,
-        thirdCode: merged.thirdCode as string | undefined,
-        memo: merged.memo as string | undefined,
-        activeFlag,
-        sortNo: merged.sortNo as number | undefined,
-        cycleType: merged.cycleType as number | undefined,
-        applicableScenes,
-        allowCrossDay,
       };
       await updateFrequencyApi(payload);
       ElMessage.success('更新成功');
     } else {
-      const payload: CreateFrequencyParams = {
-        rateCode: merged.rateCode as string | undefined,
-        name: String(merged.name ?? ''),
-        dayInterval: merged.dayInterval as number | undefined,
-        dayTimes,
-        weekCycleFlag: merged.weekCycleFlag as number | undefined,
-        weekInterval: merged.weekInterval as number | undefined,
-        totalExecutionCount: merged.totalExecutionCount as number | undefined,
-        executionPeriod: merged.executionPeriod as number | undefined,
-        executionPeriodUnit: merged.executionPeriodUnit as string | undefined,
-        thirdCode: merged.thirdCode as string | undefined,
-        memo: merged.memo as string | undefined,
-        activeFlag,
-        sortNo: merged.sortNo as number | undefined,
-        cycleType: merged.cycleType as number | undefined,
-        applicableScenes,
-        allowCrossDay,
-      };
+      if (!payload.rateCode) {
+        ElMessage.warning('请填写频次编码');
+        return;
+      }
       await createFrequencyApi(payload);
       ElMessage.success('创建成功');
     }
@@ -188,7 +278,6 @@ function normalizeDayTimes(v: FrequencyItem['dayTimes'] | unknown): string {
   return String(v).trim();
 }
 
-/** 适用场景：后端为逗号分隔字符串，多选组件需要数组 */
 function normalizeApplicableScenes(v: unknown): string[] {
   if (v === null || v === undefined || v === '') return [];
   if (Array.isArray(v)) return (v as string[]).filter(Boolean);
@@ -198,7 +287,6 @@ function normalizeApplicableScenes(v: unknown): string[] {
     .filter(Boolean);
 }
 
-/** 状态下拉、周期类型、允许跨日：后端为 number，下拉 option.value 为 string，回显时转为字符串才能匹配并显示枚举文案 */
 function toOptionValue(v: null | number | string | undefined): string {
   if (v === undefined || v === null || v === '') return '';
   return String(v);
@@ -208,19 +296,22 @@ async function loadFormData() {
   const { formData, isCopyMode } = props;
   if (formData && Object.keys(formData).length > 0) {
     originalData.value = { ...formData };
+    const cycleType = toOptionValue(formData.cycleType) || CYCLE_DAILY;
+    selectedCycleType.value = cycleType;
     await formApi.setValues({
       ...formData,
+      cycleType,
       dayTimes: normalizeDayTimes(formData.dayTimes),
       applicableScenes: normalizeApplicableScenes(formData.applicableScenes),
-      activeFlag: toOptionValue(formData.activeFlag as number | string | undefined),
-      cycleType: toOptionValue(formData.cycleType as number | string | undefined),
-      allowCrossDay: toOptionValue(formData.allowCrossDay as number | string | undefined),
-      // 复制模式下清空编码，由用户填写新编码
+      weekCycleFlag: toOptionValue(formData.weekCycleFlag),
+      allowCrossDay: toOptionValue(formData.allowCrossDay),
       rateCode: isCopyMode ? '' : formData.rateCode,
     });
   } else {
     originalData.value = {};
+    selectedCycleType.value = CYCLE_DAILY;
     await formApi.resetForm();
+    await formApi.setValues({ cycleType: CYCLE_DAILY });
   }
 }
 
@@ -240,164 +331,252 @@ const [Modal, modalApi] = useVbenModal({
   cancelText: '取消',
 });
 
+function buildCycleFields() {
+  const ct = selectedCycleType.value;
+  const fields: Record<string, unknown>[] = [];
+
+  if (ct === CYCLE_DAILY) {
+    fields.push(
+      {
+        component: 'Input',
+        fieldName: 'dayTimes',
+        label: '日执行时点',
+        componentProps: {
+          placeholder: '逗号分隔，如 08:00,12:00,18:00',
+        },
+      },
+      {
+        component: 'InputNumber',
+        fieldName: 'dayInterval',
+        label: '日间隔(天)',
+        componentProps: {
+          placeholder: '隔日=2；每两天一次请单独建频次',
+          min: 1,
+        },
+      },
+      {
+        component: 'InputNumber',
+        fieldName: 'dayCount',
+        label: '日计数',
+        componentProps: {
+          placeholder: '如「每 N 日」中的 N，可选',
+          min: 1,
+        },
+      },
+    );
+  }
+
+  if (ct === CYCLE_WEEKLY) {
+    fields.push(
+      {
+        component: 'Select',
+        fieldName: 'weekCycleFlag',
+        label: '按周周期',
+        componentProps: {
+          options: weekCycleFlagOptions,
+          placeholder: '是否为周周期频次',
+        },
+      },
+      {
+        component: 'Input',
+        fieldName: 'dayTimes',
+        label: '周内执行时点',
+        componentProps: {
+          placeholder: '逗号分隔，如 08:00,14:00',
+        },
+      },
+      {
+        component: 'InputNumber',
+        fieldName: 'dayInterval',
+        label: '周期间隔',
+        componentProps: {
+          placeholder: '每 N 周，可选',
+          min: 1,
+        },
+      },
+    );
+  }
+
+  if (ct === CYCLE_INTERVAL) {
+    fields.push(
+      {
+        component: 'InputNumber',
+        fieldName: 'executionPeriod',
+        label: '执行周期',
+        rules: 'required',
+        componentProps: {
+          placeholder: '如 Q8H 填 8',
+          min: 1,
+        },
+      },
+      {
+        component: 'Select',
+        fieldName: 'executionPeriodUnit',
+        label: '周期单位',
+        rules: 'required',
+        componentProps: {
+          options: periodUnitOptions.value,
+          placeholder: '分钟/小时/天/周/月',
+        },
+      },
+      {
+        component: 'InputNumber',
+        fieldName: 'dayInterval',
+        label: '日间隔(天)',
+        componentProps: {
+          placeholder: '按天间隔时填写，如 QOD=2',
+          min: 1,
+        },
+      },
+    );
+  }
+
+  if (ct === CYCLE_FIXED_COUNT) {
+    fields.push(
+      {
+        component: 'InputNumber',
+        fieldName: 'totalExecutionCount',
+        label: '总执行次数',
+        rules: 'required',
+        componentProps: {
+          placeholder: '如 ST=1',
+          min: 1,
+        },
+      },
+      {
+        component: 'Input',
+        fieldName: 'dayTimes',
+        label: '执行时点',
+        componentProps: {
+          placeholder: '可选，如 08:00',
+        },
+      },
+    );
+  }
+
+  if (ct === CYCLE_AS_NEEDED) {
+    fields.push({
+      component: 'Input',
+      fieldName: 'dayTimes',
+      label: '参考时点',
+      componentProps: {
+        placeholder: 'PRN 可不填；若需参考时点可填写',
+      },
+    });
+  }
+
+  return fields;
+}
+
 const formConfig = reactive({
   commonConfig: {
+    labelWidth: 96,
+    labelClass: 'justify-start text-left',
     componentProps: {
-      style: { width: '220px' },
+      style: fullWidthStyle,
     },
   },
   layout: 'horizontal' as const,
-  wrapperClass: 'flex flex-wrap flex-row',
-  schema: computed(() => [
-    {
-      component: 'Input',
-      fieldName: 'rateCode',
-      label: '频次编码',
-      rules: rateCodeRequired.value ? 'required' : undefined,
-      componentProps: {
-        placeholder: '如 QD、BID、TID、Q4H，复制时必填新编码',
-        disabled: isEditMode.value,
+  wrapperClass: 'frequency-form-dialog__grid grid grid-cols-1',
+  schema: computed(() => {
+    const baseFields: Record<string, unknown>[] = [
+      {
+        component: 'SectionTitle',
+        fieldName: '__sectionBasic',
+        label: '基本信息',
+        hideLabel: true,
+        formItemClass: sectionTitleClass,
+        componentProps: { title: '基本信息' },
       },
-    },
-    {
-      component: 'Input',
-      fieldName: 'name',
-      label: '频次名称',
-      rules: 'required',
-      componentProps: {
-        placeholder: '如 每日一次、每日两次',
+      {
+        component: 'Input',
+        fieldName: 'rateCode',
+        label: '频次编码',
+        rules: rateCodeRequired.value
+          ? z.string().min(1, { message: '请填写频次编码' })
+          : undefined,
+        componentProps: {
+          placeholder: '如 QD、BID、Q8H、PRN',
+          disabled: isEditMode.value,
+        },
       },
-    },
-    {
-      component: 'InputNumber',
-      fieldName: 'dayInterval',
-      label: '日间隔(天)',
-      componentProps: {
-        placeholder: '如 QD=1，Q2D=2',
-        min: 0,
+      {
+        component: 'Input',
+        fieldName: 'name',
+        label: '频次名称',
+        rules: z.string().min(1, { message: '请填写频次名称' }),
+        componentProps: {
+          placeholder: '如 每日一次、每8小时一次',
+        },
       },
-    },
-    {
-      component: 'Input',
-      fieldName: 'dayTimes',
-      label: '日内次数/时间点',
-      componentProps: {
-        placeholder: '如 1-0-0 或 08:00,14:00,20:00',
+      {
+        component: 'SectionTitle',
+        fieldName: '__sectionExecution',
+        label: '执行规则',
+        hideLabel: true,
+        formItemClass: sectionTitleClass,
+        componentProps: { title: '执行规则' },
       },
-    },
-    {
-      component: 'InputNumber',
-      fieldName: 'weekCycleFlag',
-      label: '按周周期(0否1是)',
-      componentProps: {
-        placeholder: '0 或 1',
-        min: 0,
-        max: 1,
+      {
+        component: 'Select',
+        fieldName: 'cycleType',
+        label: '周期类型',
+        rules: z.string().min(1, { message: '请选择周期类型' }),
+        componentProps: {
+          options: cycleTypeOptions.value,
+          placeholder: '请选择周期类型',
+          onChange: handleCycleTypeChange,
+        },
       },
-    },
-    {
-      component: 'InputNumber',
-      fieldName: 'weekInterval',
-      label: '周间隔',
-      componentProps: {
-        placeholder: '周间隔',
-        min: 0,
+      ...buildCycleFields(),
+    ];
+
+    if (showAllowCrossDay.value) {
+      baseFields.push({
+        component: 'Select',
+        fieldName: 'allowCrossDay',
+        label: '跨日策略',
+        componentProps: {
+          options: allowCrossDayOptions.value,
+          placeholder: '是否允许执行跨自然日',
+          clearable: true,
+        },
+      });
+    }
+
+    baseFields.push(
+      {
+        component: 'SectionTitle',
+        fieldName: '__sectionScope',
+        label: '适用范围',
+        hideLabel: true,
+        formItemClass: sectionTitleClass,
+        componentProps: { title: '适用范围' },
       },
-    },
-    {
-      component: 'InputNumber',
-      fieldName: 'totalExecutionCount',
-      label: '总执行次数',
-      componentProps: {
-        placeholder: '可选',
-        min: 0,
+      {
+        component: 'Select',
+        fieldName: 'applicableScenes',
+        label: '适用场景',
+        componentProps: {
+          options: sceneOptions.value,
+          placeholder: '可多选',
+          multiple: true,
+          collapseTags: true,
+        },
       },
-    },
-    {
-      component: 'InputNumber',
-      fieldName: 'executionPeriod',
-      label: '执行周期长度',
-      componentProps: {
-        placeholder: '可选',
-        min: 0,
+      {
+        component: 'InputNumber',
+        fieldName: 'sortNo',
+        label: '排序号',
+        componentProps: {
+          placeholder: '越小越靠前',
+          min: 0,
+        },
       },
-    },
-    {
-      component: 'Input',
-      fieldName: 'executionPeriodUnit',
-      label: '执行周期单位',
-      componentProps: {
-        placeholder: '如 DAY、WEEK',
-      },
-    },
-    {
-      component: 'Input',
-      fieldName: 'thirdCode',
-      label: '第三方编码',
-      componentProps: {
-        placeholder: '医保、区域码等',
-      },
-    },
-    {
-      component: 'Select',
-      fieldName: 'activeFlag',
-      label: '状态',
-      componentProps: {
-        options: statusOptions.value,
-        placeholder: '启用/停用',
-        clearable: true,
-      },
-    },
-    {
-      component: 'InputNumber',
-      fieldName: 'sortNo',
-      label: '排序号',
-      componentProps: {
-        placeholder: '用于列表与下拉排序',
-        min: 0,
-      },
-    },
-    {
-      component: 'Select',
-      fieldName: 'cycleType',
-      label: '周期类型',
-      componentProps: {
-        options: cycleTypeOptions.value,
-        placeholder: '请选择周期类型',
-        clearable: true,
-      },
-    },
-    {
-      component: 'Select',
-      fieldName: 'applicableScenes',
-      label: '适用场景',
-      componentProps: {
-        options: sceneOptions.value,
-        placeholder: '可多选，暂以逗号分隔保存',
-        multiple: true,
-        collapseTags: true,
-      },
-    },
-    {
-      component: 'Select',
-      fieldName: 'allowCrossDay',
-      label: '允许跨日',
-      componentProps: {
-        options: allowCrossDayOptions.value,
-        placeholder: '是否允许执行跨自然日',
-        clearable: true,
-      },
-    },
-    {
-      component: 'InputArea',
-      fieldName: 'memo',
-      label: '备注',
-      componentProps: {
-        placeholder: '请输入备注',
-        rows: 3,
-      },
-    },
-  ]),
+    );
+
+    return baseFields;
+  }),
   showDefaultActions: false,
 });
 
@@ -418,7 +597,7 @@ watch(
 
 <template>
   <Modal
-    class="w-[600px]"
+    class="frequency-form-dialog w-[600px] max-w-[96vw]"
     :title="dialogTitle"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
@@ -426,3 +605,22 @@ watch(
     <Form />
   </Modal>
 </template>
+
+<style scoped>
+.frequency-form-dialog :deep(.frequency-form-dialog__grid) {
+  align-items: start;
+}
+
+.frequency-form-dialog :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+
+.frequency-form-dialog :deep(.frequency-form-dialog__section-title) {
+  margin-top: 4px;
+  padding-bottom: 0 !important;
+}
+
+.frequency-form-dialog :deep(.frequency-form-dialog__section-title .el-form-item__content) {
+  min-height: 0;
+}
+</style>

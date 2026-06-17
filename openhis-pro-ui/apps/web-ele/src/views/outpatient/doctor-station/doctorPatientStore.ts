@@ -1,9 +1,9 @@
+import type { OutpatientInfoItemDto } from '#/api/doctor-station/encounter.types';
+import type { PatientInfoBarPayload } from '#/components/outpatient/patient-card.types';
+
 import { computed, ref } from 'vue';
 
 import { defineStore } from 'pinia';
-
-import type { OutpatientInfoItemDto } from '#/api/doctor-station/encounter.types';
-import type { PatientInfoBarPayload } from '#/components/outpatient/patient-card.types';
 
 /** 医生站侧栏/当前患者：与 IF-DOR-01 列表行 DTO 一致 */
 export type DoctorStationPatient = OutpatientInfoItemDto;

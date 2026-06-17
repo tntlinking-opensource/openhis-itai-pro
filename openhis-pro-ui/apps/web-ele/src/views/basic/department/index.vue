@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+
 import type {
   Department,
   DepartmentClassOption,
@@ -7,33 +8,32 @@ import type {
   DepartmentTypeOption,
   InitDepartmentResponse,
   PractitionerOption,
+  QueryDepartmentListParams,
 } from '#/api';
 
-import { computed, onActivated, ref } from 'vue';
+import { computed, onActivated, onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
+
 import { TableLayout } from '@vben-core/table-layout-ui';
-import { ElButton, ElMessage, ElTag } from 'element-plus';
+
+import { ElButton, ElMessage, ElMessageBox, ElTag } from 'element-plus';
 
 import {
   activeDepartmentApi,
+  deleteDepartmentApi,
   inactiveDepartmentApi,
   initDepartmentApi,
   pageDepartmentApi,
 } from '#/api';
+import { PublicationStatusCode } from '#/constants/domain/publication-status';
 
 import EditDialog from './edit-dialog.vue';
 
+defineOptions({ name: 'BasicDepartment' });
+
 interface DepartmentApiResponse {
   data?: Department[];
-}
-
-type DepartmentStatusFlag = '1' | '2' | undefined;
-
-interface DepartmentViewModel extends Department {
-  activeFlag?: DepartmentStatusFlag;
-  displayName?: string;
-  isEnabled?: boolean;
 }
 
 function isDepartmentRow(value: unknown): value is Department {
@@ -56,24 +56,14 @@ function unwrapDepartmentListResponse(response: unknown): Department[] {
   return [];
 }
 
-function toDepartmentStatusFlag(activeFlag: Department['activeFlag']): DepartmentStatusFlag {
-  if (activeFlag === '1' || activeFlag === 1) {
-    return '1';
-  }
-  if (activeFlag === '2' || activeFlag === 2) {
-    return '2';
-  }
-  return undefined;
-}
-
-const queryParams = ref({
+const initQueryParams = {
   keyword: '',
-  classEnum: undefined as number | undefined,
+  classEnum: undefined as string | undefined,
   typeEnum: undefined as number | string | undefined,
-  activeFlag: undefined as string | undefined,
-});
+  statusEnum: undefined as string | undefined,
+};
+const queryParams = reactive({ ...initQueryParams });
 
-const allData = ref<Department[]>([]);
 const tableData = ref<Department[]>([]);
 const loading = ref(false);
 const total = ref(0);
@@ -82,26 +72,45 @@ const departmentTypeOptions = ref<DepartmentTypeOption[]>([]);
 const departmentOptions = ref<DepartmentOption[]>([]);
 const practitionerOptions = ref<PractitionerOption[]>([]);
 
+// 列表仅展示名称、类型、类别、状态与操作。
 const tableColumns: TableColumn[] = [
-  { type: 'selection', fixed: 'left', width: 50, align: 'center' },
-  { type: 'index', label: '序号' },
-  { prop: 'name', label: '科室名称', treeNode: true, width: 200 },
-  { prop: 'busNo', label: '科室编号', width: 180 },
-  { prop: 'typeEnum_dictText', label: '类型' },
-  { prop: 'classEnum_dictText', label: '类别' },
-  { prop: 'ybNo', label: '医保编码' },
-  { prop: 'ybName', label: '医保名称' },
-  { prop: 'medinsId', label: '医保机构标识', width: 180 },
-  { prop: 'medinsAdmdvs', label: '医保区划', width: 120 },
-  { prop: 'medinsType', label: '医保机构类型', width: 160 },
-  { prop: 'medinsLv', label: '医保机构等级', width: 140 },
-  { prop: 'pyStr', label: '拼音', width: 120 },
-  { prop: 'wbStr', label: '五笔', width: 120 },
-  { prop: 'defDoctorId', label: '默认医师ID', width: 130 },
-  { prop: 'caty', label: '科别', width: 120 },
-  { prop: 'displayOrder', label: '显示顺序', width: 110 },
-  { prop: 'activeFlag_dictText', label: '状态', slot: 'activeFlag', width: 100, align: 'center' },
-  { prop: 'action', label: '操作', fixed: 'right', slot: 'action', width: 250 },
+  { type: 'selection', fixed: 'left', width: 48, align: 'center', headerAlign: 'center' },
+  {
+    prop: 'name',
+    label: '科室名称',
+    treeNode: true,
+    showOverflowTooltip: true,
+  },
+  {
+    prop: 'typeEnum_dictText',
+    label: '类型',
+    showOverflowTooltip: true,
+    align: 'center',
+    headerAlign: 'center',
+  },
+  {
+    prop: 'classEnum_dictText',
+    label: '类别',
+    showOverflowTooltip: true,
+    align: 'center',
+    headerAlign: 'center',
+  },
+  {
+    prop: 'statusEnum_dictText',
+    label: '状态',
+    slot: 'statusEnum',
+    align: 'center',
+    headerAlign: 'center',
+  },
+  {
+    prop: 'action',
+    label: '操作',
+    fixed: 'right',
+    slot: 'action',
+    width: 168,
+    align: 'center',
+    headerAlign: 'center',
+  },
 ];
 
 const formItems = computed<FormItemConfig[]>(() => [
@@ -111,6 +120,13 @@ const formItems = computed<FormItemConfig[]>(() => [
     label: '关键词',
     placeholder: '请输入名称、医保信息、拼音、五笔等',
     clearable: true,
+    extraprops: {
+      onKeyup: (event: KeyboardEvent) => {
+        if (event.key === 'Enter') {
+          handleQuery();
+        }
+      },
+    },
   },
   {
     type: 'select',
@@ -120,6 +136,9 @@ const formItems = computed<FormItemConfig[]>(() => [
     clearable: true,
     multiple: false,
     options: departmentTypeOptions.value.map((item) => ({ label: item.label, value: item.value })),
+    onChange: () => {
+      handleQuery();
+    },
   },
   {
     type: 'select',
@@ -129,18 +148,24 @@ const formItems = computed<FormItemConfig[]>(() => [
     clearable: true,
     multiple: false,
     options: departmentClassOptions.value.map((item) => ({ label: item.label, value: item.value })),
+    onChange: () => {
+      handleQuery();
+    },
   },
   {
     type: 'select',
-    prop: 'activeFlag',
+    prop: 'statusEnum',
     label: '状态',
     placeholder: '请选择状态',
     clearable: true,
     multiple: false,
     options: [
-      { label: '有效', value: '1' },
-      { label: '无效', value: '2' },
+      { label: '启用', value: PublicationStatusCode.ACTIVE },
+      { label: '停用', value: PublicationStatusCode.INACTIVE },
     ],
+    onChange: () => {
+      handleQuery();
+    },
   },
 ]);
 
@@ -160,48 +185,6 @@ function countTreeNodes(items: Department[] | undefined): number {
   return count;
 }
 
-function buildDepartmentOptionsFromTree(items: Department[]): DepartmentOption[] {
-  return items.map((item, index) => {
-    const children =
-      item.children && item.children.length > 0
-        ? buildDepartmentOptionsFromTree(item.children)
-        : undefined;
-    return {
-      label: item.name || `组织-${item.id}`,
-      value: String(item.id),
-      sort: item.displayOrder ?? index + 1,
-      children,
-    };
-  });
-}
-
-// 统一标准化后端树节点：补齐 displayName/isEnabled/sortOrder 的兼容字段映射。
-function normalizeDepartmentTree(items: Department[]): Department[] {
-  return items.map((item) => {
-    const itemView = item as DepartmentViewModel;
-    const rawChildren = Array.isArray(item.children) ? item.children : [];
-    const normalizedChildren = normalizeDepartmentTree(rawChildren);
-    const processedItem: DepartmentViewModel = {
-      ...item,
-      name: itemView.displayName || item.name,
-      children: normalizedChildren,
-    };
-    if (processedItem.displayOrder === undefined || processedItem.displayOrder === null) {
-      const sortOrder = item.sortOrder;
-      if (sortOrder !== undefined && sortOrder !== null) {
-        processedItem.displayOrder = sortOrder;
-      }
-    }
-    if (itemView.isEnabled !== undefined && itemView.isEnabled !== null) {
-      const enabled = Boolean(itemView.isEnabled);
-      processedItem.activeFlag = enabled ? '1' : '2';
-      processedItem.activeFlag_dictText = enabled ? '有效' : '无效';
-    }
-    return processedItem;
-  });
-}
-
-// 兼容老接口仅返回平铺列表时，按 parentId 组装树。
 function buildTreeFromFlat(items: Department[]): Department[] {
   const nodeMap = new Map<string, Department>();
   for (const item of items) {
@@ -232,80 +215,66 @@ function buildTreeFromFlat(items: Department[]): Department[] {
   return roots;
 }
 
-const filterTreeData = (
-  items: Department[],
-  filters: {
-    activeFlag?: string;
-    classEnum?: number;
-    keyword?: string;
-    typeEnum?: number | string;
-  },
-): Department[] => {
-  const { keyword, typeEnum, classEnum, activeFlag } = filters;
-  const searchKeyLower = keyword?.toLowerCase().trim() || '';
-  const result: Department[] = [];
-
-  for (const item of items) {
-    const filteredChildren =
-      item.children && item.children.length > 0 ? filterTreeData(item.children, filters) : [];
-
-    const matchesSearchKey =
-      !searchKeyLower ||
-      item.name?.toLowerCase().includes(searchKeyLower) ||
-      item.ybNo?.toLowerCase().includes(searchKeyLower) ||
-      item.ybName?.toLowerCase().includes(searchKeyLower) ||
-      item.medinsId?.toLowerCase().includes(searchKeyLower) ||
-      item.medinsAdmdvs?.toLowerCase().includes(searchKeyLower) ||
-      item.medinsType?.toLowerCase().includes(searchKeyLower) ||
-      item.medinsLv?.toLowerCase().includes(searchKeyLower) ||
-      item.pyStr?.toLowerCase().includes(searchKeyLower) ||
-      item.wbStr?.toLowerCase().includes(searchKeyLower) ||
-      String(item.defDoctorId ?? '')
-        .toLowerCase()
-        .includes(searchKeyLower) ||
-      item.caty?.toLowerCase().includes(searchKeyLower);
-
-    const matchesTypeEnum =
-      typeEnum === undefined ||
-      typeEnum === null ||
-      String(item.typeEnum ?? '') === String(typeEnum);
-    const matchesClassEnum = classEnum === undefined || item.classEnum === classEnum;
-    const matchesActiveFlag =
-      activeFlag === undefined || toDepartmentStatusFlag(item.activeFlag) === activeFlag;
-    const matchesAll = matchesSearchKey && matchesTypeEnum && matchesClassEnum && matchesActiveFlag;
-
-    if (matchesAll || filteredChildren.length > 0) {
-      result.push({
-        ...item,
-        children: filteredChildren,
-      });
-    }
+function normalizeOptionalFilter(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
   }
-  return result;
-};
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (raw === undefined || raw === null || raw === '') {
+    return undefined;
+  }
+  return String(raw);
+}
 
-const applyFilters = () => {
-  const filters = {
-    keyword: queryParams.value.keyword,
-    typeEnum: queryParams.value.typeEnum,
-    classEnum: queryParams.value.classEnum,
-    activeFlag: queryParams.value.activeFlag,
-  };
-  tableData.value = filterTreeData(allData.value, filters);
-  total.value = countTreeNodes(tableData.value);
-};
+/** 组装列表查询参数，传给后端 getDepartmentList */
+function buildListQueryParams(): QueryDepartmentListParams {
+  const params: QueryDepartmentListParams = {};
+  const keyword = queryParams.keyword?.trim();
+  if (keyword) {
+    params.keyword = keyword;
+  }
+  const typeEnum = normalizeOptionalFilter(queryParams.typeEnum);
+  if (typeEnum) {
+    params.typeEnum = typeEnum;
+  }
+  const classEnum = normalizeOptionalFilter(queryParams.classEnum);
+  if (classEnum) {
+    params.classEnum = classEnum;
+  }
+  const statusEnum = normalizeOptionalFilter(queryParams.statusEnum);
+  if (statusEnum) {
+    params.statusEnum = statusEnum;
+  }
+  return params;
+}
+
+function syncQueryParams(params?: {
+  classEnum?: string;
+  keyword?: string;
+  statusEnum?: string;
+  typeEnum?: string;
+}) {
+  if (!params) {
+    return;
+  }
+  if (params.keyword !== undefined) {
+    queryParams.keyword = params.keyword || '';
+  }
+  queryParams.typeEnum = normalizeOptionalFilter(params.typeEnum);
+  queryParams.classEnum = normalizeOptionalFilter(params.classEnum);
+  queryParams.statusEnum = normalizeOptionalFilter(params.statusEnum);
+}
 
 const loadAllData = async () => {
   loading.value = true;
   try {
-    const response = await pageDepartmentApi();
+    const response = await pageDepartmentApi(buildListQueryParams());
     const list = unwrapDepartmentListResponse(response);
-    const normalized = normalizeDepartmentTree(list || []);
     // 后端已返回 children 时直接使用；否则回退到前端按 parentId 组树。
-    const hasTreeChildren = normalized.some(
+    const hasTreeChildren = list.some(
       (item) => Array.isArray(item.children) && item.children.length > 0,
     );
-    const roots = hasTreeChildren ? normalized : buildTreeFromFlat(normalized);
+    const roots = hasTreeChildren ? list : buildTreeFromFlat(list);
 
     const sortTreeData = (items: Department[]): Department[] => {
       const sorted = [...items].toSorted((a, b) => {
@@ -330,14 +299,11 @@ const loadAllData = async () => {
       return sorted;
     };
 
-    allData.value = sortTreeData(roots);
-    // 兜底：即使 init 未返回 departmentOptions，也保证上级组织下拉有数据。
-    departmentOptions.value = buildDepartmentOptionsFromTree(allData.value);
-    applyFilters();
+    tableData.value = sortTreeData(roots);
+    total.value = countTreeNodes(tableData.value);
   } catch (error) {
     console.error('加载数据失败:', error);
     ElMessage.error('加载数据失败，请稍后重试');
-    allData.value = [];
     tableData.value = [];
     total.value = 0;
   } finally {
@@ -351,16 +317,19 @@ async function loadInitOptions() {
     const responseData = response as InitDepartmentResponse | { data?: InitDepartmentResponse };
     const data = 'data' in responseData ? responseData.data : responseData;
 
+    // init 下拉 OptionDto：sort=旧版枚举值，value=领域 code；表单绑定 sort 与详情/列表 typeEnum/classEnum 对齐。
     if (data?.departmentClassOptions) {
       departmentClassOptions.value = data.departmentClassOptions.map((item) => ({
         label: item.label,
-        value: item.value,
+        value: item.sort == null ? String(item.value) : String(item.sort),
+        sort: item.sort,
       }));
     }
     if (data?.departmentTypeOptions) {
       departmentTypeOptions.value = data.departmentTypeOptions.map((item) => ({
         label: item.label,
-        value: item.value,
+        value: item.sort == null ? String(item.value) : String(item.sort),
+        sort: item.sort,
       }));
     }
     if (data?.departmentOptions) {
@@ -381,7 +350,7 @@ async function loadInitOptions() {
     if (data?.practitionerOptions) {
       practitionerOptions.value = data.practitionerOptions.map((item) => ({
         label: item.label,
-        value: item.value,
+        value: String(item.value),
       }));
     }
   } catch (error) {
@@ -389,42 +358,22 @@ async function loadInitOptions() {
   }
 }
 
-const handleQuery = (params: {
-  activeFlag?: string;
+/** 搜索：同步表单条件并请求列表接口 */
+function handleQuery(params?: {
   classEnum?: string;
   keyword?: string;
+  statusEnum?: string;
   typeEnum?: string;
-}) => {
-  if (params.keyword !== undefined) {
-    queryParams.value.keyword = params.keyword || '';
-  }
-  if (params.typeEnum !== undefined) {
-    queryParams.value.typeEnum = Array.isArray(params.typeEnum)
-      ? params.typeEnum[0]
-      : params.typeEnum;
-  }
-  if (params.classEnum !== undefined) {
-    queryParams.value.classEnum = Array.isArray(params.classEnum)
-      ? params.classEnum[0]
-      : params.classEnum;
-  }
-  if (params.activeFlag !== undefined) {
-    queryParams.value.activeFlag = Array.isArray(params.activeFlag)
-      ? params.activeFlag[0]
-      : params.activeFlag;
-  }
-  applyFilters();
-};
+}) {
+  syncQueryParams(params);
+  void loadAllData();
+}
 
-const handleReset = () => {
-  queryParams.value = {
-    keyword: '',
-    classEnum: undefined,
-    typeEnum: undefined,
-    activeFlag: undefined,
-  };
-  applyFilters();
-};
+/** 重置：清空条件并重新请求列表接口 */
+function handleReset() {
+  Object.assign(queryParams, initQueryParams);
+  void loadAllData();
+}
 
 const handleSelectionChange = (selection: Department[] | Record<string, unknown>[]) => {
   selectedRows.value = selection.filter(isDepartmentRow);
@@ -445,8 +394,28 @@ const handleDialogSuccess = async () => {
   await loadAllData();
 };
 
-const handleDelete = async (_row: Department) => {
-  ElMessage.warning('删除功能待实现');
+/** 删除科室（作废并软删对应组织单元） */
+const handleDelete = async (row: Department) => {
+  if (!row.id) {
+    ElMessage.warning('缺少科室ID');
+    return;
+  }
+  const deptName = row.name || '该科室';
+  try {
+    await ElMessageBox.confirm(`确定要删除「${deptName}」吗？删除后无法恢复！`, '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    });
+    await deleteDepartmentApi(row.id);
+    ElMessage.success('删除成功');
+    await loadAllData();
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除失败:', error);
+      ElMessage.error('删除失败，请稍后重试');
+    }
+  }
 };
 
 const handleStart = async (row: Department) => {
@@ -485,7 +454,7 @@ const handleBatchStart = async () => {
     return;
   }
   const ids = selectedRows.value
-    .filter((row) => toDepartmentStatusFlag(row.activeFlag) !== '1' && row.id)
+    .filter((row) => row.statusEnum !== PublicationStatusCode.ACTIVE && row.id)
     .map((row) => String(row.id));
   if (ids.length === 0) {
     ElMessage.warning('所选组织中已全部启用，无需重复操作');
@@ -508,7 +477,7 @@ const handleBatchStop = async () => {
     return;
   }
   const ids = selectedRows.value
-    .filter((row) => toDepartmentStatusFlag(row.activeFlag) === '1' && row.id)
+    .filter((row) => row.statusEnum === PublicationStatusCode.ACTIVE && row.id)
     .map((row) => String(row.id));
   if (ids.length === 0) {
     ElMessage.warning('所选组织中已全部停用，无需重复操作');
@@ -530,6 +499,10 @@ const initPage = async () => {
   await loadAllData();
 };
 
+onMounted(() => {
+  initPage();
+});
+
 onActivated(() => {
   const needRefresh = sessionStorage.getItem('departmentRefresh');
   if (needRefresh === 'true') {
@@ -537,8 +510,6 @@ onActivated(() => {
     loadAllData();
   }
 });
-
-initPage();
 </script>
 
 <template>
@@ -553,7 +524,6 @@ initPage();
       :show-side-query="false"
       :show-top-query="true"
       :show-pagination="false"
-      :is-all-data="true"
       :tree="true"
       :tree-config="{
         children: 'children',
@@ -574,25 +544,23 @@ initPage();
         <ElButton type="warning" @click="handleBatchStop">批量停用</ElButton>
       </template>
 
-      <template #activeFlag="{ row }">
-        <ElTag :type="row.activeFlag === '1' ? 'success' : 'info'">
-          {{ row.activeFlag_dictText || (row.activeFlag === '1' ? '有效' : '无效') }}
+      <template #statusEnum="{ row }">
+        <ElTag :type="row.statusEnum === PublicationStatusCode.ACTIVE ? 'success' : 'info'">
+          {{ row.statusEnum_dictText || row.statusEnum }}
         </ElTag>
       </template>
 
       <template #action="{ row }">
         <ElButton type="primary" link @click.stop="handleEdit(row)">编辑</ElButton>
-        <ElButton v-if="row.activeFlag === '1'" type="warning" link @click.stop="handleStop(row)">
+        <ElButton
+          v-if="row.statusEnum === PublicationStatusCode.ACTIVE"
+          type="warning"
+          link
+          @click.stop="handleStop(row)"
+        >
           停用
         </ElButton>
-        <ElButton
-          v-else-if="row.activeFlag !== '1'"
-          type="success"
-          link
-          @click.stop="handleStart(row)"
-        >
-          启用
-        </ElButton>
+        <ElButton v-else type="success" link @click.stop="handleStart(row)">启用</ElButton>
         <ElButton type="danger" link @click.stop="handleDelete(row)">删除</ElButton>
       </template>
     </TableLayout>

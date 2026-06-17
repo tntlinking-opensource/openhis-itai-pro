@@ -40,11 +40,6 @@ import {
   SimpleEditor,
   useEmrPdfPreview,
 } from '#/emrEditor';
-import { buildEmrEditorPrintDocument } from '#/emrEditor/utils/emr-editor-print-document';
-import {
-  buildEmrSilentPrintTemplateId,
-  sendEmrHtmlSilentPrint,
-} from '#/emrEditor/utils/emr-hiprint-silent';
 import {
   defaultEmrEditorDoc,
   EDITOR_PAGE_MARGIN_PRESETS,
@@ -102,7 +97,6 @@ const documentTitle = ref('');
 const documentLoading = ref(false);
 const pdfPreviewVisible = ref(false);
 const pdfPreviewLoading = ref(false);
-const editorSilentPrinting = ref(false);
 /** 单份文书预览 vs 本就诊病程合并 */
 const pdfPreviewMode = ref<'merge' | 'single'>('single');
 
@@ -962,7 +956,7 @@ async function handleDialogPrintPdf() {
     if (!ok) return;
     pdfPreviewLoading.value = true;
     try {
-      await printMergedFormal(collectProgressNoteDocumentIds());
+      await printMergedFormalSilent(collectProgressNoteDocumentIds());
     } finally {
       pdfPreviewLoading.value = false;
     }
@@ -1015,6 +1009,11 @@ async function handleExportPdf() {
 }
 
 async function handlePrintPdf() {
+  await handleSilentPrintPdf();
+}
+
+/** 服务端 PDF 经 OpenHIS.Win 静默打印（与预览同源） */
+async function handleSilentPrintPdf() {
   if (!canPreviewPdf.value) {
     ElMessage.warning('请先选择患者并编辑病历内容');
     return;
@@ -1024,43 +1023,9 @@ async function handlePrintPdf() {
   if (!ok) return;
   pdfPreviewLoading.value = true;
   try {
-    await printFormalFromPreview();
+    await printFormalSilentFromPreview();
   } finally {
     pdfPreviewLoading.value = false;
-  }
-}
-
-function isEditorHtmlEffectivelyEmpty(html: string): boolean {
-  const stripped = html
-    .replaceAll(/<[^>]+>/g, '')
-    .replaceAll('&nbsp;', ' ')
-    .trim();
-  return !stripped;
-}
-
-/** 将当前编辑器 HTML 经 hiprint 发往本机打印客户端（静默） */
-function handleSilentPrintEditorHtml() {
-  if (!canPreviewPdf.value) {
-    ElMessage.warning('请先选择患者并编辑病历内容');
-    return;
-  }
-  const bodyHtml = editorRef.value?.getHTML?.() ?? '';
-  if (isEditorHtmlEffectivelyEmpty(bodyHtml)) {
-    ElMessage.warning('当前病历无有效内容，无法打印');
-    return;
-  }
-  editorSilentPrinting.value = true;
-  try {
-    const printHtml = buildEmrEditorPrintDocument({
-      bodyHtml,
-      title: documentTitle.value || '病历',
-      margins: editorPageMargins.value,
-    });
-    sendEmrHtmlSilentPrint(printHtml, {
-      templateId: buildEmrSilentPrintTemplateId('editor-html', documentId.value),
-    });
-  } finally {
-    editorSilentPrinting.value = false;
   }
 }
 
@@ -1160,11 +1125,11 @@ defineExpose({
           导出 PDF
         </ElButton>
         <ElButton
-          :disabled="!canPreviewPdf"
-          :loading="editorSilentPrinting"
-          @click="handleSilentPrintEditorHtml"
+          :disabled="!canPreviewPdf || documentReadOnly"
+          :loading="pdfPreviewDialogSilentPrinting"
+          @click="handleSilentPrintPdf"
         >
-          编辑器静默打印(试)
+          打印
         </ElButton>
         <span
           v-if="documentReadOnly"

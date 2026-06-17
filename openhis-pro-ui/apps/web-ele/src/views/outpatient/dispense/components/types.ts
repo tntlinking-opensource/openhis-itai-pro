@@ -1,3 +1,9 @@
+/** 中西药 tab 角标：按处方块计数（非明细行数） */
+export interface DispenseRxKindBadgeCounts {
+  herbal: number;
+  western: number;
+}
+
 /** 左侧待发药患者队列 */
 export interface DispenseQueuePatient {
   id: string;

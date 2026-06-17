@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { OptionDto } from '#/api/inpatient-registration';
 import type {
+  ConfirmInpatientSettleResponse,
   InpatientSettleChargeLineDto,
   InpatientSettleQueueItemDto,
   LoadInpatientSettleSummaryResponse,
@@ -17,7 +18,9 @@ import dayjs from 'dayjs';
 import {
   ElButton,
   ElCard,
+  ElLoading,
   ElMessage,
+  ElMessageBox,
   ElRadio,
   ElRadioGroup,
   ElTable,
@@ -28,6 +31,7 @@ import {
 } from 'element-plus';
 
 import {
+  httpCancelInpatientSettle,
   httpConfirmInpatientSettle,
   httpLoadInpatientSettlePageInit,
   httpLoadInpatientSettleSummary,
@@ -41,12 +45,26 @@ import SectionTitle from '#/components/layouts/section-title.vue';
 import SelectTable from '#/components/select-table.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { useInpatientChargeSummaryPrint } from '#/composables/use-inpatient-charge-summary-print';
+import { useInpatientInvoicePrint } from '#/composables/use-inpatient-invoice-print';
+import { useInsuranceSettlementPrint } from '#/composables/use-insurance-settlement-print';
 
 import {
   FALLBACK_DEFAULT_PAY_CHANNEL,
+  FALLBACK_PAY_CHANNEL_OPTIONS,
+  INPATIENT_SETTLE_MODE,
   SETTLE_PRESENTATION_MODE,
   SETTLE_QUEUE_TAB,
 } from './inpatient-settle.constants';
+import InpatientSettleDialog from './components/inpatient-settle-dialog.vue';
+import {
+  isInpatientInsuranceAsyncConfirmResponse,
+  isInpatientInsuranceRegistration,
+  pollInpatientInsuranceSettleStatus,
+  resolveInpatientSettleInsuranceContext,
+  resolveInpatientSettleMode,
+  verifyInpatientInsuranceCard,
+} from './use-inpatient-settle-insurance';
 
 defineOptions({
   name: 'ChargeIpSettle',
@@ -188,6 +206,11 @@ const settlementHistoryRows = ref<SettlementHistoryRow[]>([]);
 
 const preSettleSnapshot = ref<null | PreSettleInpatientChargesResponse>(null);
 const confirmSettleLoading = ref(false);
+const preSettleLoading = ref(false);
+const cancelSettleLoading = ref(false);
+const settleDialogVisible = ref(false);
+const settlePayChannelCode = ref(FALLBACK_DEFAULT_PAY_CHANNEL);
+const lockedChargeItemIds = ref<string[]>([]);
 const workspaceLoading = ref(false);
 
 const settlementDetailVisible = ref(false);
@@ -197,6 +220,32 @@ const historyDetailRows = ref<FeeDetailRow[]>([]);
 const skipQueueTabWatchReset = ref(false);
 
 const printActions = ['打印住院收费票据', '打印费用总清单', '打印医保结算单'];
+
+const {
+  isPrinting: chargeSummaryPrinting,
+  previewLoading: chargeSummaryPreviewLoading,
+  printInpatientChargeSummary,
+} = useInpatientChargeSummaryPrint();
+
+const chargeSummaryPrintBusy = computed(
+  () => chargeSummaryPrinting.value || chargeSummaryPreviewLoading.value,
+);
+
+const {
+  isPrinting: invoicePrinting,
+  previewLoading: invoicePreviewLoading,
+  printInpatientInvoice,
+} = useInpatientInvoicePrint();
+
+const invoicePrintBusy = computed(() => invoicePrinting.value || invoicePreviewLoading.value);
+
+const {
+  isPrinting: insurancePrinting,
+  previewLoading: insurancePreviewLoading,
+  printInsuranceSettlement,
+} = useInsuranceSettlementPrint();
+
+const insurancePrintBusy = computed(() => insurancePrinting.value || insurancePreviewLoading.value);
 
 const emptyPatientView = (): SettlePatientView => ({
   admissionDate: '—',
@@ -328,12 +377,102 @@ function mapCategoryRows(
   });
 }
 
+/** 全部待结算明细 ID */
+const allPendingChargeItemIds = computed(() => chargeLines.value.map((line) => line.chargeItemId));
+
+/** 当前结算模式（出院全结 / 中途结算） */
+const currentSettleMode = computed(() => {
+  const snapMode = preSettleSnapshot.value?.settleMode;
+  if (snapMode) {
+    return snapMode;
+  }
+  const status = summary.value?.statusEnum ?? currentQueueRow.value?.statusEnum;
+  return resolveInpatientSettleMode(
+    status,
+    selectedChargeItemIds.value,
+    allPendingChargeItemIds.value,
+  );
+});
+
+const currentSettleModeLabel = computed(() => {
+  if (currentSettleMode.value === INPATIENT_SETTLE_MODE.DISCHARGE_FULL) {
+    return '出院全结';
+  }
+  if (currentSettleMode.value === INPATIENT_SETTLE_MODE.MID_SETTLE) {
+    return '中途结算';
+  }
+  return '—';
+});
+
+const isInsuranceRegistration = computed(() =>
+  isInpatientInsuranceRegistration(currentQueueRow.value),
+);
+
+/** 患者实付金额：医保预结算后以 displayAmount 为准 */
+const payableAmount = computed(() => {
+  const snap = preSettleSnapshot.value;
+  if (snap?.insurancePreSettled && snap.displayAmount != null) {
+    return Number(snap.displayAmount);
+  }
+  if (snap?.displayAmount != null) {
+    return Number(snap.displayAmount);
+  }
+  return Number(summary.value?.selectedTotal ?? 0);
+});
+
+/** 医保报销合计（预结算后展示） */
+const insuranceReimbursementAmount = computed(() => {
+  const snap = preSettleSnapshot.value;
+  if (!snap?.insurancePreSettled) {
+    return null;
+  }
+  const fund = Number(snap.ybFundPaySumamt ?? 0);
+  const acct = Number(snap.ybAcctPay ?? 0);
+  const total = fund + acct;
+  return Number.isFinite(total) ? total : null;
+});
+
+const settlementInsuranceBreakdown = computed(() => {
+  const snap = preSettleSnapshot.value;
+  if (!snap?.insurancePreSettled) {
+    return [];
+  }
+  return [
+    { key: 'medfee', label: '医疗费总额', value: snap.ybMedfeeSumamt ?? 0 },
+    { key: 'fund', label: '基金支付', value: snap.ybFundPaySumamt ?? 0 },
+    { key: 'acct', label: '个人账户', value: snap.ybAcctPay ?? 0 },
+    { key: 'cash', label: '个人现金', value: snap.ybPsnCashPay ?? 0 },
+  ];
+});
+
+const settlePayChannelOptions = computed(() => {
+  const fromInit = payChannelCodeByLabel.value;
+  const options: { label: string; value: string }[] = [];
+  const seen = new Set<string>();
+  for (const item of FALLBACK_PAY_CHANNEL_OPTIONS) {
+    options.push({ label: item.label, value: item.value });
+    seen.add(item.value);
+  }
+  for (const [label, value] of Object.entries(fromInit)) {
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    options.push({ label, value });
+    seen.add(value);
+  }
+  return options;
+});
+
+const selectedSettleChargeLines = computed(() =>
+  chargeLines.value.filter((line) => lockedChargeItemIds.value.includes(line.chargeItemId)),
+);
+
+const categoryDisplayRows = ref<FeeCategoryRow[]>([]);
+
 /** 当前选中费用明细 ID（默认勾选待结算行） */
 const selectedChargeItemIds = computed(() =>
   chargeLines.value.filter((line) => line.selected).map((line) => line.chargeItemId),
 );
-
-const categoryDisplayRows = ref<FeeCategoryRow[]>([]);
 
 /** 当前患者展示快照（绑定原模板字段） */
 const currentPatientDisplay = computed<SettlePatientView>(() => {
@@ -364,10 +503,22 @@ const currentPatientDisplay = computed<SettlePatientView>(() => {
     totalFee: settledMode
       ? formatCurrencyDisplay(settled.receivableTotal)
       : formatCurrencyDisplay(s?.pendingSettlementTotal),
-    reimbursementAmount: '—',
-    selfPayAmount: settledMode
-      ? formatCurrencyDisplay(settled.receivableTotal)
-      : formatCurrencyDisplay(s?.selectedTotal),
+    reimbursementAmount:
+      insuranceReimbursementAmount.value != null
+        ? formatCurrencyDisplay(insuranceReimbursementAmount.value)
+        : preSettleSnapshot.value?.insurancePreSettled
+          ? formatCurrencyDisplay(
+              Number(preSettleSnapshot.value.ybFundPaySumamt ?? 0) +
+                Number(preSettleSnapshot.value.ybAcctPay ?? 0),
+            )
+          : '—',
+    selfPayAmount: preSettleSnapshot.value?.insurancePreSettled
+      ? formatCurrencyDisplay(
+          preSettleSnapshot.value.displayAmount ?? preSettleSnapshot.value.ybPsnCashPay,
+        )
+      : settledMode
+        ? formatCurrencyDisplay(settled.receivableTotal)
+        : formatCurrencyDisplay(s?.selectedTotal),
     prepayTotal: settledMode ? '—' : formatCurrencyDisplay(s?.prepayNetBalance),
     refundOrSupplement: settledMode ? '—' : formatBalanceHintDisplay(s?.balanceHint),
     insuranceInFee: '—',
@@ -397,11 +548,25 @@ const coreSettlementSummary = computed(() => [
   { label: '应补金额 / 应退金额', value: currentPatientDisplay.value.refundOrSupplement },
 ]);
 
-const insuranceKeyInfoRows = computed<InsuranceInfoRow[]>(() => [
-  { field: '医保内费用', value: currentPatientDisplay.value.insuranceInFee },
-  { field: '医保外自费项目合计', value: currentPatientDisplay.value.insuranceOutFee },
-  { field: '本次医保结算单号', value: currentPatientDisplay.value.settlementNo },
-]);
+const insuranceKeyInfoRows = computed<InsuranceInfoRow[]>(() => {
+  const snap = preSettleSnapshot.value;
+  if (snap?.insurancePreSettled) {
+    return [
+      { field: '结算模式', value: currentSettleModeLabel.value },
+      { field: '医疗费总额', value: formatCurrencyDisplay(snap.ybMedfeeSumamt) },
+      { field: '基金支付', value: formatCurrencyDisplay(snap.ybFundPaySumamt) },
+      { field: '个人账户支付', value: formatCurrencyDisplay(snap.ybAcctPay) },
+      { field: '个人现金支付', value: formatCurrencyDisplay(snap.ybPsnCashPay) },
+      { field: '预结算快照 ID', value: snap.ybPreSettleId ?? '—' },
+    ];
+  }
+  return [
+    { field: '结算模式', value: currentSettleModeLabel.value },
+    { field: '医保内费用', value: currentPatientDisplay.value.insuranceInFee },
+    { field: '医保外自费项目合计', value: currentPatientDisplay.value.insuranceOutFee },
+    { field: '费用性质', value: currentPatientDisplay.value.insuranceType },
+  ];
+});
 
 /** 解析底部支付方式对应的渠道 code */
 function resolvePayChannelCode() {
@@ -647,7 +812,12 @@ function handleToolbarAction(actionLabel: string) {
     return;
   }
   if (actionLabel === '医保校验') {
-    ElMessage.info('医保校验本期未接入');
+    const contractId = preserveApiIdForRequest(currentQueueRow.value?.contractId);
+    if (!contractId) {
+      ElMessage.warning('当前患者非医保登记或缺少合同信息');
+      return;
+    }
+    void verifyInpatientInsuranceCard(contractId);
     return;
   }
   ElMessage.success(`${actionLabel}已触发`);
@@ -669,14 +839,167 @@ function handleFeeDetailSelectionChange(rows: FeeDetailRow[]) {
 /** 底部结算与打印 */
 async function handleFooterAction(actionLabel: string) {
   if (actionLabel === '确认结算') {
-    await handleConfirmSettle();
+    await handleOpenSettleDialog();
+    return;
+  }
+  if (actionLabel === '打印费用总清单') {
+    await handlePrintChargeSummary();
+    return;
+  }
+  if (actionLabel === '打印住院收费票据') {
+    await handlePrintInpatientInvoice();
+    return;
+  }
+  if (actionLabel === '打印医保结算单') {
+    await handlePrintInsuranceSettlement();
     return;
   }
   ElMessage.info(`${actionLabel}功能待接入`);
 }
 
-/** 预结算并正式结算 */
-async function handleConfirmSettle() {
+/** 取消当前已结算单（CHS Wave 2 外挂；医保患者将同步撤销平台结算） */
+async function handleCancelInpatientSettle() {
+  if (!isSettledQueueTab.value) {
+    return;
+  }
+  const { encounterId, patientId } = resolveActiveSettlePatientIds();
+  if (!encounterId || !patientId) {
+    ElMessage.warning('请先搜索并选择患者');
+    return;
+  }
+  const paymentId = preserveApiIdForRequest(settledPaymentView.value?.activePaymentId);
+  if (!paymentId) {
+    ElMessage.warning('未找到可取消的结算单');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '取消后将生成逆向退款单，费用明细恢复待结算；医保患者将同步撤销平台结算。是否继续？',
+      '取消住院结算',
+      { type: 'warning', confirmButtonText: '确认取消', cancelButtonText: '返回' },
+    );
+  } catch {
+    return;
+  }
+  cancelSettleLoading.value = true;
+  try {
+    const result = await httpCancelInpatientSettle({
+      paymentId,
+      encounterId,
+      patientId,
+    });
+    const tips: string[] = ['取消住院结算成功'];
+    if (result.insuranceRevoked) {
+      tips.push(result.ybSetlId ? `已撤销医保结算（${result.ybSetlId}）` : '已撤销医保结算');
+    }
+    if (result.refundPaymentId) {
+      tips.push(`逆向退款单：${result.refundPaymentId}`);
+    }
+    ElMessage.success(tips.join('；'));
+    const keepEncounterId = selectedEncounterId.value;
+    const keepRow = currentQueueRow.value;
+    skipQueueTabWatchReset.value = true;
+    settleQueueTab.value = SETTLE_QUEUE_TAB.PENDING_SETTLE;
+    if (keepEncounterId && keepRow) {
+      selectedEncounterId.value = keepEncounterId;
+      cacheQueueRow(keepRow);
+    }
+    if (selectedEncounterId.value) {
+      await reloadWorkspace();
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '取消住院结算失败';
+    ElMessage.error(message);
+  } finally {
+    cancelSettleLoading.value = false;
+  }
+}
+
+/** 打印医保结算单（须已结算） */
+async function handlePrintInsuranceSettlement() {
+  if (!isSettledQueueTab.value) {
+    ElMessage.warning('请先完成结算后再打印医保结算单');
+    return;
+  }
+  const { encounterId, patientId } = resolveActiveSettlePatientIds();
+  if (!encounterId || !patientId) {
+    ElMessage.warning('请先搜索并选择患者');
+    return;
+  }
+  const paymentId = preserveApiIdForRequest(settledPaymentView.value?.activePaymentId);
+  if (!paymentId) {
+    ElMessage.warning('未找到结算单，无法打印医保结算单');
+    return;
+  }
+  await printInsuranceSettlement({
+    paymentId,
+    encounterId,
+    patientId,
+    contractDisplay: currentQueueRow.value?.contractDisplay,
+    jobName: '医保结算单',
+  });
+}
+
+/** 打印住院收费票据（套打 overlay，须已结算） */
+async function handlePrintInpatientInvoice() {
+  if (!isSettledQueueTab.value) {
+    ElMessage.warning('请先完成结算后再打印收费票据');
+    return;
+  }
+  const { encounterId, patientId } = resolveActiveSettlePatientIds();
+  if (!encounterId || !patientId) {
+    ElMessage.warning('请先搜索并选择患者');
+    return;
+  }
+  const paymentId = preserveApiIdForRequest(settledPaymentView.value?.activePaymentId);
+  if (!paymentId) {
+    ElMessage.warning('未找到结算单，无法打印收费票据');
+    return;
+  }
+  await printInpatientInvoice({
+    paymentId,
+    encounterId,
+    patientId,
+    jobName: '住院收费票据',
+  });
+}
+
+/** 打印住院费用总清单（待结算按勾选明细；已结算按当前 payment） */
+async function handlePrintChargeSummary() {
+  const { encounterId, patientId } = resolveActiveSettlePatientIds();
+  if (!encounterId || !patientId) {
+    ElMessage.warning('请先搜索并选择患者');
+    return;
+  }
+  if (isSettledQueueTab.value) {
+    const paymentId = preserveApiIdForRequest(settledPaymentView.value?.activePaymentId);
+    if (!paymentId) {
+      ElMessage.warning('未找到结算单，无法打印费用总清单');
+      return;
+    }
+    await printInpatientChargeSummary({
+      encounterId,
+      patientId,
+      paymentId,
+      jobName: '住院费用总清单',
+    });
+    return;
+  }
+  const chargeItemIds = selectedChargeItemIds.value;
+  if (chargeItemIds.length === 0) {
+    ElMessage.warning('请选择待打印的费用明细');
+    return;
+  }
+  await printInpatientChargeSummary({
+    encounterId,
+    patientId,
+    chargeItemIds,
+    jobName: '住院费用总清单',
+  });
+}
+
+/** 预结算并打开确认弹窗 */
+async function handleOpenSettleDialog() {
   const { encounterId, patientId } = resolveActiveSettlePatientIds();
   if (!encounterId || !patientId) {
     ElMessage.warning('请先搜索并选择患者');
@@ -687,44 +1010,144 @@ async function handleConfirmSettle() {
     ElMessage.warning('请选择待结算费用');
     return;
   }
-  confirmSettleLoading.value = true;
+  const settleMode = resolveInpatientSettleMode(
+    summary.value?.statusEnum ?? currentQueueRow.value?.statusEnum,
+    chargeItemIds,
+    allPendingChargeItemIds.value,
+  );
+  if (!settleMode) {
+    ElMessage.warning('请先完成护士出院或改为中途结算');
+    return;
+  }
+  preSettleLoading.value = true;
   try {
+    let insurancePayload: Record<string, string | undefined> = {};
+    if (isInsuranceRegistration.value) {
+      const contractId = preserveApiIdForRequest(currentQueueRow.value?.contractId);
+      if (!contractId) {
+        ElMessage.warning('医保患者缺少合同信息，请检查住院登记');
+        return;
+      }
+      try {
+        const insuranceCtx = await resolveInpatientSettleInsuranceContext(contractId);
+        if (insuranceCtx) {
+          insurancePayload = {
+            contractId: insuranceCtx.contractId,
+            insuplcAdmdvs: insuranceCtx.insuplcAdmdvs,
+            insutype: insuranceCtx.insutype,
+            psnNo: insuranceCtx.psnNo,
+            ybCardInfo: insuranceCtx.ybCardInfo,
+            ybMediumType: insuranceCtx.ybMediumType,
+          };
+        } else {
+          ElMessage.warning(
+            '本机 OpenHIS.Win 未启动，已跳过医保读卡；自费结算可继续，医保结算请先启动插件',
+          );
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '医保读卡失败';
+        ElMessage.error(message);
+        return;
+      }
+    }
     const pre = await httpPreSettleInpatientCharges({
       encounterId,
       patientId,
       chargeItemIds,
+      settleMode,
+      ...insurancePayload,
     });
     preSettleSnapshot.value = pre;
+    lockedChargeItemIds.value = [...chargeItemIds];
+    settlePayChannelCode.value = resolvePayChannelCode();
+    settleDialogVisible.value = true;
+  } finally {
+    preSettleLoading.value = false;
+  }
+}
+
+/** 正式结算成功后的页面刷新与提示 */
+async function finalizeAfterSettleSuccess(confirmRes: ConfirmInpatientSettleResponse) {
+  if (confirmRes.insuranceSettled && confirmRes.ybSetlId) {
+    ElMessage.success(`住院结算成功（医保结算号：${confirmRes.ybSetlId}）`);
+  } else {
+    ElMessage.success('住院结算成功');
+  }
+  preSettleSnapshot.value = null;
+  lockedChargeItemIds.value = [];
+  if (confirmRes.dischargeFullSettle) {
+    const keepEncounterId = selectedEncounterId.value;
+    const keepRow = currentQueueRow.value;
+    skipQueueTabWatchReset.value = true;
+    settleQueueTab.value = SETTLE_QUEUE_TAB.SETTLED;
+    if (keepEncounterId && keepRow) {
+      selectedEncounterId.value = keepEncounterId;
+      cacheQueueRow(keepRow);
+    }
+  }
+  if (selectedEncounterId.value) {
+    await reloadWorkspace();
+  }
+}
+
+/** 弹窗内确认正式结算 */
+async function handleConfirmSettleFromDialog() {
+  const snap = preSettleSnapshot.value;
+  const { encounterId, patientId } = resolveActiveSettlePatientIds();
+  if (!snap || !encounterId || !patientId) {
+    return;
+  }
+  const chargeItemIds = lockedChargeItemIds.value;
+  if (chargeItemIds.length === 0) {
+    ElMessage.warning('请选择待结算费用');
+    return;
+  }
+  confirmSettleLoading.value = true;
+  let asyncLoading: ReturnType<typeof ElLoading.service> | null = null;
+  try {
+    const payAmount =
+      snap.insurancePreSettled && snap.displayAmount != null
+        ? Number(snap.displayAmount)
+        : Number(snap.receivableTotal);
     const confirmRes = await httpConfirmInpatientSettle({
       billDate: dayjs().format('YYYY-MM-DD HH:mm:ss'),
       encounterId,
       patientId,
-      paymentDraftId: pre.paymentDraftId,
+      paymentDraftId: snap.paymentDraftId,
       chargeItemIds,
+      ybPreSettleId: snap.ybPreSettleId,
       paymentDetails: [
         {
-          amount: pre.receivableTotal,
-          payChannelCode: resolvePayChannelCode(),
+          amount: payAmount,
+          payChannelCode: settlePayChannelCode.value || resolvePayChannelCode(),
         },
       ],
     });
-    ElMessage.success('住院结算成功');
-    preSettleSnapshot.value = null;
-    // 出院全结后就诊变 COMPLETED，须切到已结算页签才能继续查阅
-    if (confirmRes.dischargeFullSettle) {
-      const keepEncounterId = selectedEncounterId.value;
-      const keepRow = currentQueueRow.value;
-      skipQueueTabWatchReset.value = true;
-      settleQueueTab.value = SETTLE_QUEUE_TAB.SETTLED;
-      if (keepEncounterId && keepRow) {
-        selectedEncounterId.value = keepEncounterId;
-        cacheQueueRow(keepRow);
-      }
+    settleDialogVisible.value = false;
+    if (isInpatientInsuranceAsyncConfirmResponse(confirmRes)) {
+      asyncLoading = ElLoading.service({
+        lock: true,
+        text: '医保协同单结算处理中，请稍候…',
+        background: 'rgba(0, 0, 0, 0.35)',
+      });
+      const polled = await pollInpatientInsuranceSettleStatus(String(confirmRes.paymentId));
+      const merged: ConfirmInpatientSettleResponse = {
+        ...confirmRes,
+        paymentId: polled.paymentId ?? confirmRes.paymentId,
+        invoiceDraftId: polled.invoiceDraftId ?? confirmRes.invoiceDraftId,
+        ybSetlId: polled.ybSetlId ?? confirmRes.ybSetlId,
+        insuranceSettled: Boolean(polled.ybSetlId),
+        paymentStatus: polled.paymentStatus ?? confirmRes.paymentStatus,
+      };
+      await finalizeAfterSettleSuccess(merged);
+      return;
     }
-    if (selectedEncounterId.value) {
-      await reloadWorkspace();
-    }
+    await finalizeAfterSettleSuccess(confirmRes);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '住院结算失败';
+    ElMessage.error(message);
   } finally {
+    asyncLoading?.close();
     confirmSettleLoading.value = false;
   }
 }
@@ -831,6 +1254,17 @@ watch(settleQueueTab, () => {
           <span><strong>病区：</strong>{{ currentPatientDisplay.wardName }}</span>
           <span><strong>入院日期：</strong>{{ currentPatientDisplay.admissionDate }}</span>
           <span><strong>医保类型：</strong>{{ currentPatientDisplay.insuranceType }}</span>
+          <ElTag
+            v-if="!isSettledQueueTab && currentSettleModeLabel !== '—'"
+            type="warning"
+            effect="plain"
+            class="ml-2"
+          >
+            {{ currentSettleModeLabel }}
+          </ElTag>
+          <ElTag v-if="isInsuranceRegistration && !isSettledQueueTab" type="success" effect="plain">
+            医保
+          </ElTag>
           <span><strong>主治医生：</strong>{{ currentPatientDisplay.doctorName }}</span>
         </div>
       </ElCard>
@@ -1009,6 +1443,18 @@ watch(settleQueueTab, () => {
           <div class="payment-footer-main">
             <SectionTitle title="结算支付信息" />
             <div class="payment-footer__line">
+              <span class="payment-footer__label">本次患者实付：</span>
+              <strong class="text-[var(--el-color-primary)]">
+                ¥{{ Number.isFinite(payableAmount) ? payableAmount.toFixed(2) : '0.00' }}
+              </strong>
+              <span
+                v-if="isInsuranceRegistration"
+                class="ml-3 text-xs text-[var(--el-text-color-secondary)]"
+              >
+                医保登记患者，确认结算时将自动读卡预结算
+              </span>
+            </div>
+            <div class="payment-footer__line">
               <span class="payment-footer__label">实际支付方式：</span>
               <ElRadioGroup v-model="paymentMethod">
                 <ElRadio label="现金" value="现金" />
@@ -1036,17 +1482,31 @@ watch(settleQueueTab, () => {
               v-for="action in printActions"
               :key="action"
               plain
+              :loading="
+                (action === '打印费用总清单' && chargeSummaryPrintBusy) ||
+                (action === '打印住院收费票据' && invoicePrintBusy) ||
+                (action === '打印医保结算单' && insurancePrintBusy)
+              "
               @click="handleFooterAction(action)"
             >
               {{ action }}
             </ElButton>
             <ElButton
+              v-if="isSettledQueueTab"
+              type="warning"
+              plain
+              :loading="cancelSettleLoading"
+              @click="handleCancelInpatientSettle"
+            >
+              取消结算
+            </ElButton>
+            <ElButton
               v-if="!isSettledQueueTab"
               type="primary"
-              :loading="confirmSettleLoading"
+              :loading="preSettleLoading || confirmSettleLoading"
               @click="handleFooterAction('确认结算')"
             >
-              确认结算
+              结算
             </ElButton>
           </div>
         </div>
@@ -1123,6 +1583,22 @@ watch(settleQueueTab, () => {
         <ElButton @click="handleCloseSettlementDetail">关闭</ElButton>
       </template>
     </AppDialog>
+
+    <InpatientSettleDialog
+      v-model="settleDialogVisible"
+      v-model:pay-channel-code="settlePayChannelCode"
+      :charge-lines="selectedSettleChargeLines"
+      :loading="preSettleLoading"
+      :confirm-loading="confirmSettleLoading"
+      :receivable-total="preSettleSnapshot?.receivableTotal ?? 0"
+      :display-amount="preSettleSnapshot?.displayAmount ?? preSettleSnapshot?.receivableTotal ?? 0"
+      :preview-text="preSettleSnapshot?.previewText"
+      :insurance-pre-settled="preSettleSnapshot?.insurancePreSettled"
+      :insurance-breakdown-items="settlementInsuranceBreakdown"
+      :settle-mode-label="currentSettleModeLabel"
+      :pay-channel-options="settlePayChannelOptions"
+      @confirm="handleConfirmSettleFromDialog"
+    />
   </Page>
 </template>
 

@@ -1,22 +1,27 @@
 <script lang="ts" setup>
+import type { Menu } from '#/api/core/system/menu.types';
 import type { VbenFormSchema } from '#/adapter/form';
-import type { PermissionInfo } from '#/api/user/permission';
 import type { CreateRoleParams, RoleInfo, UpdateRoleParams } from '#/api/user/role';
 
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
 
-import { ElMessage, ElTree } from 'element-plus';
+import { ElCheckbox, ElCheckboxGroup, ElMessage, ElTree } from 'element-plus';
 
 import { useVbenForm, z } from '#/adapter/form';
-import { getPermissionListApi, getPermissionsByRoleApi } from '#/api/user/permission';
+import { getMenuGrantTreeApi } from '#/api/core/system/menu';
+import { BUILTIN_ROLE_STAFF_SCOPES, STAFF_SCOPE_OPTIONS } from '#/api/basic/staff';
+import { getPermissionsByRoleApi } from '#/api/user/permission';
 import {
   assignPermissionsApi,
+  assignStaffScopesApi,
   createRoleApi,
-  getRoleByIdApi,
+  getStaffScopesApi,
   updateRoleApi,
 } from '#/api/user/role';
+import { resolveGrantableMenuPermissionName } from '#/utils/menu-navigation-permission';
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
 interface Props {
   modelValue: boolean;
@@ -34,54 +39,190 @@ const emit = defineEmits<{
 
 const isEdit = computed(() => !!props.role);
 
-// 判断是否为系统管理员角色
+/** 系统管理员角色不可编辑菜单与声明 */
 const isSystemAdminRole = computed(() => {
-  if (!props.role) return false;
-  return props.role.name === 'admin' || props.role.code === 'ROLE_ADMIN';
+  if (!props.role) {
+    return false;
+  }
+  return props.role.isStatic && (props.role.name === 'admin' || props.role.code === 'ROLE_ADMIN');
 });
 
-const originalData = ref<Record<string, any>>({});
+const originalData = ref<Record<string, unknown>>({});
 
-// 权限树数据
-const allPermissions = ref<PermissionInfo[]>([]);
+const roleMenuTree = ref<Menu[]>([]);
+const selectedMenuIds = ref<string[]>([]);
+const menuTreeRef = ref<InstanceType<typeof ElTree>>();
 
-// 选中的权限值（权限名称数组）
-const selectedPermissions = ref<string[]>([]);
+const selectedStaffScopes = ref<string[]>([]);
 
-// 监听权限树数据变化，设置默认展开
-watch(
-  allPermissions,
-  (newPermissions) => {
-    if (newPermissions.length > 0) {
-      // 默认展开前两级
-      const keys: string[] = [];
-      const collectKeys = (nodes: PermissionInfo[], level: number) => {
-        if (level <= 2) {
-          nodes.forEach((node) => {
-            keys.push(node.name);
-            if (node.children && node.children.length > 0) {
-              collectKeys(node.children, level + 1);
-            }
-          });
-        }
-      };
-      collectKeys(newPermissions, 1);
+/** 内置角色仅展示模板内管理能力；自定义角色可选全部（已去掉护士管理科室） */
+const staffScopeOptionsForForm = computed(() => {
+  if (isEdit.value && props.role?.isStatic && props.role.code) {
+    const allowed = BUILTIN_ROLE_STAFF_SCOPES[props.role.code];
+    if (allowed !== undefined) {
+      return STAFF_SCOPE_OPTIONS.filter((item) => allowed.includes(item.value));
     }
-  },
-  { immediate: true },
-);
-
-const loadPermissions = async () => {
-  try {
-    const response = await getPermissionListApi();
-    const data =
-      (response as unknown as { data?: PermissionInfo[] }).data || (response as PermissionInfo[]);
-    allPermissions.value = Array.isArray(data) ? data : [];
-  } catch (error) {
-    console.error('加载权限树失败:', error);
-    allPermissions.value = [];
   }
-};
+  return STAFF_SCOPE_OPTIONS;
+});
+
+/** 编辑回显时的初始权限名 / 声明，用于提交时跳过未变更的接口 */
+const initialPermissionNames = ref<string[]>([]);
+const initialStaffScopes = ref<string[]>([]);
+
+/** 扁平化菜单树，便于按 id / permissionName 检索 */
+function flattenMenus(menus: Menu[]): Menu[] {
+  const result: Menu[] = [];
+  const walk = (nodes: Menu[]) => {
+    for (const node of nodes) {
+      result.push(node);
+      if (node.children?.length) {
+        walk(node.children);
+      }
+    }
+  };
+  walk(menus);
+  return result;
+}
+
+/** 目录、隐藏、停用菜单不参与 Navigation 授权 */
+function isGrantableMenu(menu: Menu): boolean {
+  if (menu.menuType === 'directory') {
+    return false;
+  }
+  if (menu.isHidden || !menu.isEnabled) {
+    return false;
+  }
+  const permissionName = resolveGrantableMenuPermissionName(menu);
+  if (!permissionName) {
+    return false;
+  }
+  if (permissionName.startsWith('Navigation.__folder__.')) {
+    return false;
+  }
+  return true;
+}
+
+/** 根据勾选的菜单 id 收集 Navigation 权限名（菜单驱动授权） */
+function collectPermissionNamesFromMenuIds(menus: Menu[], menuIds: string[]): string[] {
+  const selectedIdSet = new Set(menuIds.map(String));
+  const permissionNames = new Set<string>();
+  for (const menu of flattenMenus(menus)) {
+    if (!selectedIdSet.has(String(menu.id))) {
+      continue;
+    }
+    if (!isGrantableMenu(menu)) {
+      continue;
+    }
+    const permissionName = resolveGrantableMenuPermissionName(menu);
+    if (permissionName) {
+      permissionNames.add(permissionName);
+    }
+  }
+  return [...permissionNames];
+}
+
+/** 根据角色已有权限名反推应勾选的菜单 id */
+function collectMenuIdsFromPermissionNames(menus: Menu[], permissionNames: string[]): string[] {
+  const grantedSet = new Set(permissionNames.map(String));
+  const menuIds: string[] = [];
+  for (const menu of flattenMenus(menus)) {
+    const permissionName = resolveGrantableMenuPermissionName(menu);
+    if (permissionName && grantedSet.has(permissionName)) {
+      menuIds.push(String(menu.id));
+    }
+  }
+  return menuIds;
+}
+
+/** 比较两组字符串是否相同（忽略顺序） */
+function isSameStringSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  const setB = new Set(b);
+  return a.every((item) => setB.has(item));
+}
+
+/** 编辑模式下基础字段是否有变更 */
+function hasBasicRoleFieldsChanged(mergedData: Record<string, unknown>): boolean {
+  const displayName = String(mergedData.displayName || '');
+  const description = String(mergedData.description || '');
+  return (
+    String(originalData.value.displayName || '') !== displayName ||
+    String(originalData.value.description || '') !== description
+  );
+}
+
+/** 解析 create 响应中的角色 id（禁止 Number 转换雪花 Long） */
+function resolveRoleIdFromCreateResponse(response: unknown): string | undefined {
+  const payload = response as RoleInfo | { data?: RoleInfo; id?: string | number };
+  if (payload && typeof payload === 'object' && 'data' in payload && payload.data?.id != null) {
+    return preserveApiIdForRequest(payload.data.id);
+  }
+  const direct = payload as RoleInfo;
+  if (direct?.id != null) {
+    return preserveApiIdForRequest(direct.id);
+  }
+  return undefined;
+}
+
+/** 解析字符串数组 API 响应 */
+function unwrapStringList(response: unknown): string[] {
+  const data =
+    (response as { data?: string[] })?.data !== undefined
+      ? (response as { data?: string[] }).data
+      : response;
+  return Array.isArray(data) ? data : [];
+}
+
+/** 非 admin 角色：仅在菜单或声明变更时调用对应接口 */
+async function saveRoleMenusAndScopesIfChanged(roleId: string) {
+  if (isSystemAdminRole.value) {
+    return;
+  }
+
+  const permissionNames = collectPermissionNamesFromMenuIds(
+    roleMenuTree.value,
+    selectedMenuIds.value,
+  );
+  const menusChanged = !isSameStringSet(permissionNames, initialPermissionNames.value);
+  const scopesChanged = !isSameStringSet(selectedStaffScopes.value, initialStaffScopes.value);
+
+  if (menusChanged) {
+    await assignPermissionsApi({
+      id: roleId,
+      request: { permissionNames },
+    });
+    initialPermissionNames.value = [...permissionNames];
+  }
+
+  if (scopesChanged) {
+    await assignStaffScopesApi(roleId, selectedStaffScopes.value);
+    initialStaffScopes.value = [...selectedStaffScopes.value];
+  }
+}
+
+/** 新增角色：保存菜单与声明 */
+async function saveRoleMenusAndScopesForCreate(roleId: string) {
+  if (isSystemAdminRole.value) {
+    return;
+  }
+
+  const permissionNames = collectPermissionNamesFromMenuIds(
+    roleMenuTree.value,
+    selectedMenuIds.value,
+  );
+  if (permissionNames.length > 0) {
+    await assignPermissionsApi({
+      id: roleId,
+      request: { permissionNames },
+    });
+  }
+  if (selectedStaffScopes.value.length > 0) {
+    await assignStaffScopesApi(roleId, selectedStaffScopes.value);
+  }
+}
 
 async function handleSubmit() {
   const { valid } = await formApi.validate();
@@ -97,66 +238,58 @@ async function handleSubmit() {
       ...formValues,
     };
 
-    let roleId: number;
+    let roleId: string | undefined;
 
     if (isEdit.value && props.role) {
-      // 编辑角色
-      roleId = props.role.id;
-      const updateParams: UpdateRoleParams = {
-        id: roleId,
-        isDefault: mergedData.isDefault || 'false',
-        displayName: mergedData.displayName || '',
-        description: mergedData.description || '',
-      };
-      await updateRoleApi(updateParams);
-
-      // 绑定权限（系统管理员角色不能编辑权限）
-      if (!isSystemAdminRole.value) {
-        await assignPermissionsApi({
-          id: roleId,
-          request: {
-            permissionNames: selectedPermissions.value,
-          },
-        });
+      roleId = preserveApiIdForRequest(props.role.id);
+      if (!roleId) {
+        throw new Error('缺少角色ID');
       }
 
+      if (hasBasicRoleFieldsChanged(mergedData)) {
+        const updateParams: UpdateRoleParams = {
+          id: roleId,
+          displayName: String(mergedData.displayName || ''),
+          description: String(mergedData.description || ''),
+        };
+        await updateRoleApi(updateParams);
+        originalData.value = {
+          ...originalData.value,
+          displayName: updateParams.displayName,
+          description: updateParams.description,
+        };
+      }
+
+      await saveRoleMenusAndScopesIfChanged(roleId);
       ElMessage.success('编辑角色成功');
     } else {
-      // 新增角色
       const createData: CreateRoleParams = {
-        isDefault: mergedData.isDefault || 'false',
-        isStatic: mergedData.isStatic || 'false',
-        code: mergedData.code || '',
-        displayName: mergedData.displayName || '',
-        name: mergedData.name || '',
-        description: mergedData.description || '',
+        isDefault: false,
+        displayName: String(mergedData.displayName || ''),
+        description: String(mergedData.description || ''),
       };
       const createResponse = await createRoleApi(createData);
+      roleId = resolveRoleIdFromCreateResponse(createResponse);
 
-      // 从响应中获取角色ID
-      const response = createResponse as unknown as { data?: { id: number }; id?: number };
-      roleId = response.data?.id || response.id || 0;
-
-      // 绑定权限
-      if (selectedPermissions.value.length > 0 && roleId) {
-        await assignPermissionsApi({
-          id: roleId,
-          request: {
-            permissionNames: selectedPermissions.value,
-          },
-        });
+      if (roleId) {
+        await saveRoleMenusAndScopesForCreate(roleId);
       }
 
       ElMessage.success('新增角色成功');
     }
     emit('success');
     modalApi.close();
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as {
+      message?: string;
+      msg?: string;
+      response?: { data?: { message?: string; msg?: string } };
+    };
     const errorMessage =
-      error?.response?.data?.msg ||
-      error?.response?.data?.message ||
-      error?.message ||
-      error?.msg ||
+      err?.response?.data?.msg ||
+      err?.response?.data?.message ||
+      err?.message ||
+      err?.msg ||
       (isEdit.value ? '编辑角色失败，请稍后重试' : '新增角色失败，请稍后重试');
     ElMessage.error(errorMessage);
   } finally {
@@ -164,79 +297,81 @@ async function handleSubmit() {
   }
 }
 
+/** 打开弹窗时加载表单与菜单授权回显 */
 async function loadFormData() {
-  if (props.role && props.role.id) {
-    // 编辑模式：调用接口获取角色详情
+  if (props.role?.id) {
     modalApi.setState({ loading: true });
     try {
-      const response = await getRoleByIdApi(props.role.id);
-      const roleData = (response as unknown as { data?: RoleInfo }).data || (response as RoleInfo);
-
+      const roleData = props.role;
       originalData.value = { ...roleData };
-      const formData: Record<string, any> = {
+      const formData: Record<string, unknown> = {
         displayName: roleData.displayName || '',
         description: roleData.description || '',
-        // 将布尔值或数字转换为字符串 'true' 或 'false'，确保与 Select 选项匹配
-        isDefault: normalizeBooleanString(roleData.isDefault),
-        isStatic: normalizeBooleanString(roleData.isStatic),
       };
 
-      // 调用接口获取角色的权限
       try {
-        const permissionsResponse = await getPermissionsByRoleApi({ value: props.role.id });
+        roleMenuTree.value = await getMenuGrantTreeApi();
+      } catch (error) {
+        console.error('获取菜单树失败:', error);
+        roleMenuTree.value = [];
+      }
+
+      try {
+        const permissionsResponse = await getPermissionsByRoleApi({
+          value: preserveApiIdForRequest(props.role.id) ?? String(props.role.id),
+        });
         const permissionsData =
           (permissionsResponse as unknown as { data?: string[] }).data ||
           (permissionsResponse as string[]);
-        selectedPermissions.value = Array.isArray(permissionsData) ? permissionsData : [];
+        const permissionNames = Array.isArray(permissionsData) ? permissionsData : [];
+        initialPermissionNames.value = [...permissionNames];
+        selectedMenuIds.value = collectMenuIdsFromPermissionNames(
+          roleMenuTree.value,
+          permissionNames,
+        );
       } catch (error) {
         console.error('获取角色权限失败:', error);
-        // 如果获取权限失败，尝试从角色详情中获取
-        if (roleData.permissionNames && Array.isArray(roleData.permissionNames)) {
-          selectedPermissions.value = roleData.permissionNames;
-        } else if (roleData.permissions && Array.isArray(roleData.permissions)) {
-          selectedPermissions.value = roleData.permissions;
-        } else {
-          selectedPermissions.value = [];
-        }
+        initialPermissionNames.value = [];
+        selectedMenuIds.value = [];
       }
 
-      // 等待表单 schema 更新后再设置值
+      try {
+        const roleId = preserveApiIdForRequest(props.role.id);
+        if (roleId) {
+          const scopesResponse = await getStaffScopesApi(roleId);
+          const scopes = unwrapStringList(scopesResponse);
+          initialStaffScopes.value = [...scopes];
+          selectedStaffScopes.value = scopes;
+        }
+      } catch (error) {
+        console.error('获取角色声明失败:', error);
+        initialStaffScopes.value = [];
+        selectedStaffScopes.value = [];
+      }
+
       await nextTick();
       await formApi.setValues(formData);
     } catch (error) {
-      console.error('获取角色详情失败:', error);
-      ElMessage.error('获取角色详情失败，请稍后重试');
+      console.error('加载角色表单失败:', error);
+      ElMessage.error('加载角色表单失败，请稍后重试');
       modalApi.close();
       return;
     } finally {
       modalApi.setState({ loading: false });
     }
   } else {
-    // 新增模式
     originalData.value = {};
-    selectedPermissions.value = [];
+    initialPermissionNames.value = [];
+    initialStaffScopes.value = [];
+    selectedMenuIds.value = [];
+    selectedStaffScopes.value = [];
+    try {
+      roleMenuTree.value = await getMenuGrantTreeApi();
+    } catch {
+      roleMenuTree.value = [];
+    }
     await formApi.resetForm();
-    await nextTick();
-    await formApi.setValues({
-      isDefault: 'false',
-      isStatic: 'false',
-    });
   }
-}
-
-/**
- * 将各种类型的布尔值转换为字符串 'true' 或 'false'
- * 支持：boolean、string ('true'/'false'/'1'/'0'/'Y'/'N')、number (1/0)
- */
-function normalizeBooleanString(value: any): string {
-  if (value === true || value === 'true' || value === '1' || value === 'Y') {
-    return 'true';
-  }
-  if (value === false || value === 'false' || value === '0' || value === 'N') {
-    return 'false';
-  }
-  // 默认返回 'false'
-  return 'false';
 }
 
 const [Modal, modalApi] = useVbenModal({
@@ -262,70 +397,15 @@ const formConfig = reactive({
   },
   layout: 'horizontal' as const,
   schema: computed((): VbenFormSchema[] => {
-    const schema: VbenFormSchema[] = [];
-
-    if (!isEdit.value) {
-      schema.push(
-        {
-          component: 'Input',
-          fieldName: 'code',
-          label: '角色编码',
-          componentProps: {
-            placeholder: '请输入角色编码',
-          },
-          rules: z.string().min(1, { message: '请输入角色编码' }),
-        },
-        {
-          component: 'Input',
-          fieldName: 'name',
-          label: '角色名称',
-          componentProps: {
-            placeholder: '请输入角色名称',
-          },
-          rules: z.string().min(1, { message: '请输入角色名称' }),
-        },
-      );
-    }
-
-    schema.push({
-      component: 'Input',
-      fieldName: 'displayName',
-      label: '显示名称',
-      componentProps: {
-        placeholder: '请输入显示名称',
-      },
-      rules: z.string().min(1, { message: '请输入显示名称' }),
-    });
-
-    if (!isEdit.value) {
-      schema.push({
-        component: 'Select',
-        fieldName: 'isStatic',
-        label: '是否内置',
-        componentProps: {
-          placeholder: '请选择是否内置',
-          options: [
-            { label: '是', value: 'true' },
-            { label: '否', value: 'false' },
-          ],
-        },
-        rules: z.string().min(1, { message: '请选择是否内置' }),
-      });
-    }
-
-    schema.push(
+    const schema: VbenFormSchema[] = [
       {
-        component: 'Select',
-        fieldName: 'isDefault',
-        label: '是否默认',
+        component: 'Input',
+        fieldName: 'displayName',
+        label: '角色名称',
         componentProps: {
-          placeholder: '请选择是否默认',
-          options: [
-            { label: '是', value: 'true' },
-            { label: '否', value: 'false' },
-          ],
+          placeholder: '请输入角色名称',
         },
-        rules: z.string().min(1, { message: '请选择是否默认' }),
+        rules: z.string().min(1, { message: '请输入角色名称' }),
       },
       {
         component: 'InputArea',
@@ -336,7 +416,20 @@ const formConfig = reactive({
           rows: 3,
         },
       },
-    );
+    ];
+
+    if (isEdit.value && props.role?.isStatic) {
+      schema.unshift({
+        component: 'Input',
+        fieldName: 'roleTypeHint',
+        label: '角色类型',
+        componentProps: {
+          disabled: true,
+          placeholder: '内置角色',
+        },
+        defaultValue: '内置角色',
+      });
+    }
 
     return schema;
   }),
@@ -357,34 +450,25 @@ watch(
   { immediate: true },
 );
 
-// Tree 组件引用
-const treeRef = ref<InstanceType<typeof ElTree>>();
-
-// 处理树节点选中事件
-const handleTreeCheck = (_data: PermissionInfo, checkedInfo: any) => {
+/** 菜单树勾选变更：仅维护 menuId，提交时再映射为 Navigation 权限 */
+const handleMenuTreeCheck = (_data: Menu, checkedInfo: { checkedKeys?: string[] }) => {
   if (isSystemAdminRole.value) {
     return;
   }
-  const checkedKeys = checkedInfo.checkedKeys || [];
-  selectedPermissions.value = checkedKeys.map(String);
+  selectedMenuIds.value = (checkedInfo.checkedKeys ?? []).map(String);
 };
 
-// 监听选中的权限变化，更新树组件的选中状态
 watch(
-  [selectedPermissions, allPermissions],
-  ([newPermissions, permissions]) => {
-    if (treeRef.value && newPermissions.length > 0 && permissions.length > 0) {
+  [selectedMenuIds, roleMenuTree],
+  ([menuIds, menus]) => {
+    if (menuTreeRef.value && menus.length > 0) {
       nextTick(() => {
-        treeRef.value?.setCheckedKeys(newPermissions);
+        menuTreeRef.value?.setCheckedKeys(menuIds);
       });
     }
   },
   { immediate: true },
 );
-
-onMounted(() => {
-  loadPermissions();
-});
 </script>
 
 <template>
@@ -395,29 +479,48 @@ onMounted(() => {
     :close-on-press-escape="false"
   >
     <div class="space-y-4">
+      <p v-if="!isEdit" class="text-muted-foreground text-xs">
+        新建为自定义角色，仅配置登录菜单与声明；参与岗位业务的内置角色由系统提供，不可新建。
+      </p>
       <Form />
 
       <div class="border-t pt-4">
-        <div class="mb-2 text-sm font-medium">权限选择</div>
+        <div class="mb-2 text-sm font-medium">菜单权限</div>
+        <p class="text-muted-foreground mb-2 text-xs">
+          勾选可访问的页面；仅显示启用且未隐藏的菜单，保存时自动同步 Navigation 入口权限。
+        </p>
         <div v-if="isSystemAdminRole" class="mb-2 text-xs text-gray-500">
-          系统管理员角色拥有所有权限
+          系统管理员角色拥有全部菜单
         </div>
         <div
-          class="overflow-y-auto rounded-md border p-4"
+          class="mb-4 max-h-64 overflow-y-auto rounded-md border p-4"
           :class="{ 'pointer-events-none opacity-50': isSystemAdminRole }"
         >
           <ElTree
-            ref="treeRef"
-            :data="allPermissions"
-            :props="{
-              children: 'children',
-              label: 'displayName',
-            }"
+            ref="menuTreeRef"
+            :data="roleMenuTree"
+            :props="{ children: 'children', label: 'displayName' }"
             show-checkbox
-            node-key="name"
-            @check="handleTreeCheck"
+            node-key="id"
+            @check="handleMenuTreeCheck"
           />
         </div>
+      </div>
+
+      <div class="border-t pt-4">
+        <div class="mb-2 text-sm font-medium">角色管理能力</div>
+        <p class="text-muted-foreground mb-2 text-xs">
+          拥有该角色的用户，在人员维护页可编辑的岗位分配区块。内置业务角色的能力由系统固定；自定义角色可按需勾选。
+        </p>
+        <ElCheckboxGroup
+          v-model="selectedStaffScopes"
+          :disabled="isSystemAdminRole"
+          class="flex flex-wrap gap-x-4 gap-y-2"
+        >
+          <ElCheckbox v-for="opt in staffScopeOptionsForForm" :key="opt.value" :label="opt.value">
+            {{ opt.label }}
+          </ElCheckbox>
+        </ElCheckboxGroup>
       </div>
     </div>
   </Modal>

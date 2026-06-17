@@ -163,8 +163,8 @@ const treeDataWithAll = computed(() => {
   return filteredSiderData.value || [];
 });
 
-const handleQuery = () => {
-  const queryParams = { ...props.queryParams, pageNo: 1 };
+const handleQuery = (filterParams?: Record<string, any>) => {
+  const queryParams = { ...(filterParams ?? props.queryParams), pageNo: 1 };
   emit('query', queryParams);
   // 移除 sideQuery 的触发，避免重复调用接口
   // sideQuery 应该只在侧边树节点点击时触发，不应该在搜索时触发

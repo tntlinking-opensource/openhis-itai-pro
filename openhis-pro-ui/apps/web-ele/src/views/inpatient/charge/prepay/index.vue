@@ -22,6 +22,7 @@ import {
   ElTag,
 } from 'element-plus';
 
+import { useDepositReceiptPrint } from '#/composables/use-deposit-receipt-print';
 import {
   httpCollectPrepayAdvanceDeposit,
   httpListPrepayPaymentRecords,
@@ -85,6 +86,8 @@ const collectSubmitting = ref(false);
 const refundSubmitting = ref(false);
 const refundDialogVisible = ref(false);
 
+const { isPrinting, previewLoading, printDepositReceipt } = useDepositReceiptPrint();
+
 const quickAmounts = [100, 200, 500, 1000, 2000];
 
 const recordTableColumns: TableColumn[] = [
@@ -115,6 +118,14 @@ const recordTableColumns: TableColumn[] = [
     slot: 'status',
     align: 'center',
     headerAlign: 'center',
+  },
+  {
+    label: '操作',
+    minWidth: 90,
+    slot: 'actions',
+    align: 'center',
+    headerAlign: 'center',
+    fixed: 'right',
   },
 ];
 
@@ -346,9 +357,37 @@ async function handleConfirmRefund() {
   }
 }
 
-/** 打印凭证占位（本期后端不编排） */
+/** 打印指定流水收据 */
+function handlePrintRecord(row: PrepayPaymentRecordDto) {
+  const encounterId = preserveApiIdForRequest(selectedEncounterId.value);
+  if (!encounterId) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  if (row.statusEnum !== 'SUCCESS') {
+    ElMessage.warning('仅成功流水可打印收据');
+    return;
+  }
+  void printDepositReceipt({
+    paymentId: row.paymentId,
+    encounterId,
+    jobName: `预交金-${row.ticketNo || row.paymentId}`,
+  });
+}
+
+/** 打印最近一条成功流水 */
 function handlePrintTicket() {
-  ElMessage.info('打印凭证功能待接入');
+  const encounterId = preserveApiIdForRequest(selectedEncounterId.value);
+  if (!encounterId) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const latest = prepayRecordData.value.find((row) => row.statusEnum === 'SUCCESS');
+  if (!latest) {
+    ElMessage.warning('暂无可打印的预交金流水');
+    return;
+  }
+  handlePrintRecord(latest);
 }
 
 watch(
@@ -483,7 +522,14 @@ onMounted(async () => {
                 <ElButton plain :disabled="!canOperatePrepay" @click="handleOpenRefundDialog">
                   退预交金
                 </ElButton>
-                <ElButton plain @click="handlePrintTicket">打印凭证</ElButton>
+                <ElButton
+                  plain
+                  :loading="isPrinting || previewLoading"
+                  :disabled="!canOperatePrepay"
+                  @click="handlePrintTicket"
+                >
+                  打印凭证
+                </ElButton>
               </div>
             </div>
 
@@ -541,6 +587,17 @@ onMounted(async () => {
                   <ElTag :type="row.statusEnum === 'SUCCESS' ? 'success' : 'info'" effect="light">
                     {{ row.statusEnumText }}
                   </ElTag>
+                </template>
+                <template #actions="{ row }">
+                  <ElButton
+                    v-if="row.statusEnum === 'SUCCESS'"
+                    link
+                    type="primary"
+                    :loading="isPrinting || previewLoading"
+                    @click="handlePrintRecord(row)"
+                  >
+                    打印
+                  </ElButton>
                 </template>
               </TableLayout>
             </div>

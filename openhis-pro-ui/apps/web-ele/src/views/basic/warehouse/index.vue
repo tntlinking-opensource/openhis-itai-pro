@@ -26,7 +26,6 @@ defineOptions({
   name: 'WarehouseList',
 });
 
-const allData = ref<Warehouse[]>([]);
 const tableData = ref<Warehouse[]>([]);
 const loading = ref(false);
 const initQueryParams = {
@@ -42,7 +41,7 @@ const formItems = ref([
     label: '关键词',
     prop: 'keyword',
     type: 'input',
-    placeholder: '请输入关键词',
+    placeholder: '请输入名称、拼音、五笔、类型或状态',
     clearable: true,
   },
 ]);
@@ -51,28 +50,25 @@ const tableColumns = ref<TableColumn[]>([
   {
     type: 'index',
     label: '序号',
-    width: 60,
+    align: 'center',
+    headerAlign: 'center',
   },
   {
     label: '名称',
     prop: 'name',
-    width: 200,
-  },
-  {
-    label: '业务编号',
-    prop: 'busNo',
-    width: 200,
+    showOverflowTooltip: true,
   },
   {
     label: '类型',
     prop: 'formEnumText',
-    width: 120,
+    align: 'center',
+    headerAlign: 'center',
   },
   {
     label: '状态',
     prop: 'statusEnumText',
-    width: 120,
     align: 'center',
+    headerAlign: 'center',
     slot: 'status',
   },
   {
@@ -80,65 +76,57 @@ const tableColumns = ref<TableColumn[]>([
     prop: 'action',
     fixed: 'right',
     slot: 'action',
-    minWidth: 200,
+    align: 'center',
+    headerAlign: 'center',
   },
 ]);
 
-const filterData = () => {
-  const keyword = queryParams.keyword?.toLowerCase().trim() || '';
+/** 判断库房/药房是否处于启用态 */
+function isWarehouseActive(row: Warehouse) {
+  return row.statusEnum === WAREHOUSE_STATUS_ENUM.ACTIVE;
+}
 
-  tableData.value = keyword
-    ? allData.value.filter((item) => {
-        const name = item.name?.toLowerCase() || '';
-        const busNo = item.busNo?.toLowerCase() || '';
-        const status = item.statusEnumText?.toLowerCase() || '';
-        const type = item.formEnumText?.toLowerCase() || '';
-        return (
-          name.includes(keyword) ||
-          busNo.includes(keyword) ||
-          status.includes(keyword) ||
-          type.includes(keyword)
-        );
-      })
-    : allData.value;
-};
-
-const loadAllData = async () => {
+/** 按当前查询条件拉取列表 */
+async function loadData() {
   loading.value = true;
   try {
-    const response = await getWarehouseListApi();
-    const data = response;
-    allData.value = Array.isArray(data) ? data : [];
-    filterData();
+    const response = await getWarehouseListApi({
+      keyword: queryParams.keyword?.trim() || undefined,
+    });
+    tableData.value = Array.isArray(response) ? response : [];
   } catch (error) {
     console.error('加载数据失败:', error);
     ElMessage.error('加载数据失败，请稍后重试');
-    allData.value = [];
     tableData.value = [];
   } finally {
     loading.value = false;
   }
-};
+}
 
-const handleQuery = () => {
-  filterData();
-};
+/** 触发服务端检索 */
+function handleQuery() {
+  loadData();
+}
 
-const handleReset = () => {
+/** 重置查询条件并刷新列表 */
+function handleReset() {
   Object.assign(queryParams, initQueryParams);
-  filterData();
-};
+  loadData();
+}
 
-const handleAdd = () => {
+/** 打开新增弹窗 */
+function handleAdd() {
   dialogFormData.value = {};
   dialogVisible.value = true;
-};
+}
 
-const handleDialogSuccess = () => {
-  loadAllData();
-};
+/** 保存成功后刷新列表 */
+function handleDialogSuccess() {
+  loadData();
+}
 
-const handleEdit = async (row: Warehouse) => {
+/** 编辑前拉取详情 */
+async function handleEdit(row: Warehouse) {
   if (!row.id) {
     ElMessage.warning('缺少库房ID');
     return;
@@ -151,15 +139,16 @@ const handleEdit = async (row: Warehouse) => {
     console.error('获取库房详情失败:', error);
     ElMessage.error('获取库房详情失败，请稍后重试');
   }
-};
+}
 
-const handleDelete = async (row: Warehouse) => {
+/** 废止库房/药房 */
+async function handleDelete(row: Warehouse) {
   if (!row.id) {
     ElMessage.warning('缺少库房ID');
     return;
   }
   try {
-    await ElMessageBox.confirm(`确定要删除该${row.formEnumText}吗？`, '提示', {
+    await ElMessageBox.confirm(`确定要删除该${row.formEnumText || '库房'}吗？`, '提示', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning',
@@ -168,7 +157,7 @@ const handleDelete = async (row: Warehouse) => {
     try {
       await deleteWarehouseApi({ id: row.id });
       ElMessage.success('删除成功');
-      loadAllData();
+      await loadData();
     } catch (error) {
       console.error('删除失败:', error);
       ElMessage.error('删除失败，请稍后重试');
@@ -176,46 +165,47 @@ const handleDelete = async (row: Warehouse) => {
       loading.value = false;
     }
   } catch {}
-};
+}
 
-const handleToggleStatus = async (row: Warehouse) => {
+/** 启用或停用库房/药房 */
+async function handleToggleStatus(row: Warehouse) {
   if (!row.id) {
     ElMessage.warning('缺少库房ID');
     return;
   }
 
-  const isEnabled = String(row.statusEnum) === WAREHOUSE_STATUS_ENUM.ACTIVE;
+  const willEnable = !isWarehouseActive(row);
+  const actionText = willEnable ? '启用' : '停用';
 
-  if (isEnabled) {
-    loading.value = true;
-    try {
-      await deactivateWarehouseApi({ id: row.id });
-      ElMessage.success('停用成功');
-      await loadAllData();
-    } catch (error) {
-      console.error('停用失败:', error);
-      ElMessage.error('停用失败，请稍后重试');
-    } finally {
-      loading.value = false;
-    }
+  try {
+    await ElMessageBox.confirm(`确定要${actionText}「${row.name || ''}」吗？`, '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    });
+  } catch {
     return;
   }
 
   loading.value = true;
   try {
-    await enableWarehouseApi({ id: row.id });
-    ElMessage.success('启用成功');
-    await loadAllData();
+    if (willEnable) {
+      await enableWarehouseApi({ id: row.id });
+    } else {
+      await deactivateWarehouseApi({ id: row.id });
+    }
+    ElMessage.success(`${actionText}成功`);
+    await loadData();
   } catch (error) {
-    console.error('启用失败:', error);
-    ElMessage.error('启用失败，请稍后重试');
+    console.error(`${actionText}失败:`, error);
+    ElMessage.error(`${actionText}失败，请稍后重试`);
   } finally {
     loading.value = false;
   }
-};
+}
 
 onMounted(() => {
-  loadAllData();
+  loadData();
 });
 </script>
 
@@ -240,16 +230,16 @@ onMounted(() => {
       <template #action="{ row }">
         <ElButton type="primary" link @click.stop="handleEdit(row)"> 编辑 </ElButton>
         <ElButton
-          :type="String(row.statusEnum) === WAREHOUSE_STATUS_ENUM.ACTIVE ? 'warning' : 'success'"
+          :type="isWarehouseActive(row) ? 'warning' : 'success'"
           link
           @click.stop="handleToggleStatus(row)"
         >
-          {{ String(row.statusEnum) === WAREHOUSE_STATUS_ENUM.ACTIVE ? '停用' : '启用' }}
+          {{ isWarehouseActive(row) ? '停用' : '启用' }}
         </ElButton>
         <ElButton type="danger" link @click.stop="handleDelete(row)"> 删除 </ElButton>
       </template>
       <template #status="{ row }">
-        <ElTag :type="String(row.statusEnum) === WAREHOUSE_STATUS_ENUM.ACTIVE ? 'success' : 'info'">
+        <ElTag :type="isWarehouseActive(row) ? 'success' : 'info'">
           {{ row.statusEnumText }}
         </ElTag>
       </template>

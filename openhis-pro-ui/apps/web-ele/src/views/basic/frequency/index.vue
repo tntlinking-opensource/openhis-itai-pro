@@ -27,6 +27,8 @@ import {
 
 import EditDialog from './edit-dialog.vue';
 
+defineOptions({ name: 'BasicFrequencyIndex' });
+
 const queryParams = ref<PageFrequencyParams>({
   pageNo: 1,
   pageSize: 50,
@@ -41,13 +43,14 @@ const statusOptions = ref<FrequencyInitResponse['statusOptions']>([]);
 const cycleTypeOptions = ref<FrequencyInitResponse['cycleTypeOptions']>([]);
 const sceneOptions = ref<FrequencyInitResponse['sceneOptions']>([]);
 const allowCrossDayOptions = ref<FrequencyInitResponse['allowCrossDayOptions']>([]);
+const periodUnitOptions = ref<FrequencyInitResponse['periodUnitOptions']>([]);
 
 const tableColumns: TableColumn[] = [
   { type: 'index', label: '序号', width: 58, fixed: 'left' },
   {
     prop: 'rateCode',
     label: '频次编码',
-    width: 120,
+    width: 110,
     fixed: 'left',
     showOverflowTooltip: true,
   },
@@ -61,92 +64,82 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'activeFlag',
     label: '状态',
-    width: 88,
+    width: 80,
     align: 'center',
     slot: 'activeFlag',
   },
   {
-    prop: 'sortNo',
-    label: '排序号',
-    width: 80,
-  },
-  {
     prop: 'cycleType',
     label: '周期类型',
-    width: 110,
+    width: 100,
     slot: 'cycleType',
   },
   {
-    prop: 'dayInterval',
-    label: '日间隔(天)',
-    width: 95,
-  },
-  {
     prop: 'dayTimes',
-    label: '日内次数/时间点',
+    label: '执行时点',
     minWidth: 130,
     showOverflowTooltip: true,
   },
   {
-    prop: 'weekCycleFlag',
-    label: '按周',
-    width: 65,
-    slot: 'weekCycleFlag',
+    prop: 'dayCount',
+    label: '日计数',
+    width: 75,
   },
   {
-    prop: 'weekInterval',
-    label: '周间隔',
+    prop: 'executionPeriod',
+    label: '执行周期',
+    width: 90,
+    slot: 'executionPeriod',
+  },
+  {
+    prop: 'dayInterval',
+    label: '日间隔',
     width: 75,
   },
   {
     prop: 'totalExecutionCount',
-    label: '总执行次数',
-    width: 100,
-  },
-  {
-    prop: 'executionPeriod',
-    label: '执行周期长度',
-    width: 110,
-  },
-  {
-    prop: 'executionPeriodUnit',
-    label: '执行周期单位',
-    width: 110,
+    label: '总次数',
+    width: 75,
   },
   {
     prop: 'applicableScenes',
     label: '适用场景',
-    minWidth: 120,
+    minWidth: 110,
     slot: 'applicableScenes',
     showOverflowTooltip: true,
   },
   {
     prop: 'allowCrossDay',
-    label: '允许跨日',
-    width: 85,
+    label: '跨日策略',
+    width: 95,
     slot: 'allowCrossDay',
   },
   {
-    prop: 'thirdCode',
-    label: '第三方编码',
-    width: 110,
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'memo',
-    label: '备注',
-    minWidth: 140,
-    showOverflowTooltip: true,
+    prop: 'sortNo',
+    label: '排序',
+    width: 65,
   },
   {
     prop: 'action',
     label: '操作',
     fixed: 'right',
     slot: 'action',
-    width: 240,
+    width: 200,
     align: 'center',
   },
 ];
+
+/** 判断频次是否为启用态（兼容后端 1/0 与布尔） */
+function isFrequencyActive(v: unknown): boolean {
+  if (v === true || v === 1) {
+    return true;
+  }
+  if (v === false || v === 0) {
+    return false;
+  }
+  const s = v === null || v === undefined ? '' : String(v).trim();
+  return s === '1' || s.toLowerCase() === 'true';
+}
 
 function optionLabel(
   options: Array<{ label: string; value: string }> | undefined,
@@ -157,37 +150,39 @@ function optionLabel(
   return hit?.label ?? String(v);
 }
 
-/** 周期类型展示文案：来自后端 init() 的 cycleTypeOptions */
-function cycleTypeLabel(v: null | number | undefined): string {
-  return optionLabel((cycleTypeOptions.value ?? []) as any, v);
+function cycleTypeLabel(v: unknown): string {
+  return optionLabel(cycleTypeOptions.value, v);
 }
 
-/** 状态展示文案：来自后端 init() 的 statusOptions */
-function activeFlagLabel(v: null | number | undefined): string {
-  return optionLabel((statusOptions.value ?? []) as any, v);
+function activeFlagLabel(v: unknown): string {
+  return optionLabel(statusOptions.value, v);
 }
 
-/** 状态标签类型（与 init 的 statusOptions 中 value=1/启用 等一致） */
-function activeFlagTagType(v: null | boolean | number | string | undefined): 'info' | 'success' {
-  if (v === true) return 'success';
-  const s = v === null || v === undefined ? '' : String(v).trim();
-  if (s === '1' || s.toLowerCase() === 'true') return 'success';
-  return 'info';
+function activeFlagTagType(v: FrequencyItem['activeFlag']): 'info' | 'success' {
+  return isFrequencyActive(v) ? 'success' : 'info';
 }
 
-/** 允许跨日展示文案：来自后端 init() 的 allowCrossDayOptions */
-function allowCrossDayLabel(v: null | number | undefined): string {
-  return optionLabel((allowCrossDayOptions.value ?? []) as any, v);
+function allowCrossDayLabel(v: unknown): string {
+  return optionLabel(allowCrossDayOptions.value, v);
 }
 
-/** 适用场景展示文案：来自后端 init() 的 sceneOptions，支持逗号分隔如 "1,2,3" */
+function periodUnitLabel(v: unknown): string {
+  return optionLabel(periodUnitOptions.value, v);
+}
+
+function executionPeriodLabel(row: FrequencyItem): string {
+  if (row.executionPeriod === null || row.executionPeriod === undefined) return '-';
+  const unit = periodUnitLabel(row.executionPeriodUnit);
+  return unit === '-' ? String(row.executionPeriod) : `${row.executionPeriod}${unit}`;
+}
+
 function applicableScenesLabel(v: null | string | undefined): string {
   if (v === null || v === undefined || String(v).trim() === '') return '-';
   const parts = String(v)
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
-    .map((key) => optionLabel((sceneOptions.value ?? []) as any, key));
+    .map((key) => optionLabel(sceneOptions.value, key));
   return parts.length > 0 ? parts.join('、') : '-';
 }
 
@@ -202,11 +197,13 @@ async function loadInitOptions() {
     cycleTypeOptions.value = data?.cycleTypeOptions ?? [];
     sceneOptions.value = data?.sceneOptions ?? [];
     allowCrossDayOptions.value = data?.allowCrossDayOptions ?? [];
+    periodUnitOptions.value = data?.periodUnitOptions ?? [];
   } catch {
     statusOptions.value = [];
     cycleTypeOptions.value = [];
     sceneOptions.value = [];
     allowCrossDayOptions.value = [];
+    periodUnitOptions.value = [];
   }
 }
 
@@ -281,7 +278,6 @@ const handleEdit = (row: FrequencyItem) => {
   dialogVisible.value = true;
 };
 
-/** 复制频次：以当前行为模板，预填除编码外的字段（需求 3.2.2） */
 const handleCopy = (row: FrequencyItem) => {
   isCopyMode.value = true;
   const { id: _id, rateCode: _code, ...rest } = row;
@@ -297,7 +293,6 @@ const handleDialogSuccess = () => {
   loadData();
 };
 
-/** 启用频次（需求 5.6、9.2.5） */
 const handleEnable = async (row: FrequencyItem) => {
   const id = row.id !== null && row.id !== undefined ? String(row.id) : undefined;
   if (!id) {
@@ -313,7 +308,6 @@ const handleEnable = async (row: FrequencyItem) => {
   }
 };
 
-/** 停用频次（需求 3.2.3、4.4：默认不支持物理删除，仅停用） */
 const handleDisable = async (row: FrequencyItem) => {
   const id = row.id !== null && row.id !== undefined ? String(row.id) : undefined;
   if (!id) {
@@ -336,7 +330,6 @@ const handleDisable = async (row: FrequencyItem) => {
   }
 };
 
-/** 删除：需求 4.4 默认不允许物理删除，仅允许停用；若保留删除则需二次确认 */
 const handleDelete = async (row: FrequencyItem) => {
   const id = row.id !== null && row.id !== undefined ? String(row.id) : undefined;
   if (!id) {
@@ -345,7 +338,7 @@ const handleDelete = async (row: FrequencyItem) => {
   }
   try {
     await ElMessageBox.confirm(
-      '建议优先使用「停用」而非删除。确定要物理删除该频次吗？',
+      '建议优先使用「停用」而非删除。删除后该频次将不再出现在列表中（逻辑删除），确定继续吗？',
       '删除频次',
       { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' },
     );
@@ -398,10 +391,6 @@ onMounted(async () => {
         <ElButton type="primary" @click="handleAdd">新增</ElButton>
       </template>
 
-      <template #weekCycleFlag="{ row }">
-        {{ row.weekCycleFlag === 1 ? '是' : row.weekCycleFlag === 0 ? '否' : '-' }}
-      </template>
-
       <template #activeFlag="{ row }">
         <ElTag :type="activeFlagTagType(row.activeFlag)" size="small" effect="plain">
           {{ activeFlagLabel(row.activeFlag) }}
@@ -410,6 +399,10 @@ onMounted(async () => {
 
       <template #cycleType="{ row }">
         {{ cycleTypeLabel(row.cycleType) }}
+      </template>
+
+      <template #executionPeriod="{ row }">
+        {{ executionPeriodLabel(row) }}
       </template>
 
       <template #applicableScenes="{ row }">
@@ -424,8 +417,22 @@ onMounted(async () => {
         <ElSpace wrap :size="4">
           <ElButton type="primary" link @click.stop="handleEdit(row)">编辑</ElButton>
           <ElButton type="primary" link @click.stop="handleCopy(row)">复制</ElButton>
-          <ElButton type="primary" link @click.stop="handleEnable(row)">启用</ElButton>
-          <ElButton type="warning" link @click.stop="handleDisable(row)">停用</ElButton>
+          <ElButton
+            v-if="!isFrequencyActive(row.activeFlag)"
+            type="primary"
+            link
+            @click.stop="handleEnable(row)"
+          >
+            启用
+          </ElButton>
+          <ElButton
+            v-if="isFrequencyActive(row.activeFlag)"
+            type="warning"
+            link
+            @click.stop="handleDisable(row)"
+          >
+            停用
+          </ElButton>
           <ElButton type="danger" link @click.stop="handleDelete(row)">删除</ElButton>
         </ElSpace>
       </template>

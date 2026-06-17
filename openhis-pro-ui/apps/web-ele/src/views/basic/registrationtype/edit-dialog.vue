@@ -49,7 +49,6 @@ async function handleSubmit() {
         id: props.formData.id,
         name: values.name || '',
         ybNo: values.ybNo || '',
-        busNo: values.busNo || '',
         amount: Number(values.amount) || 0,
       };
       await updateRegistrationTypeApi(params);
@@ -58,7 +57,6 @@ async function handleSubmit() {
       const params: AddRegistrationTypeParams = {
         name: values.name || '',
         ybNo: values.ybNo || '',
-        busNo: values.busNo || '',
         amount: Number(values.amount) || 0,
         activeFlag: values.activeFlag ?? REGISTRATION_TYPE_ACTIVE_FLAG.ACTIVE,
       };
@@ -84,14 +82,12 @@ async function resetForm() {
     await formApi.setValues({
       name: form.name || '',
       ybNo: form.ybNo || '',
-      busNo: form.busNo || '',
       amount: form.amount || 0,
     });
   } else {
     await formApi.setValues({
       name: '',
       ybNo: '',
-      busNo: '',
       amount: 0,
       activeFlag: REGISTRATION_TYPE_ACTIVE_FLAG.ACTIVE,
     });
@@ -139,16 +135,6 @@ const formConfig = reactive({
         placeholder: '请输入医保编码',
       },
       rules: z.string().min(1, { message: '请输入医保编码' }),
-    },
-    {
-      component: 'Input',
-      fieldName: 'busNo',
-      label: '业务编码',
-      required: true,
-      componentProps: {
-        placeholder: '请输入业务编码',
-        disabled: isEditMode.value,
-      },
     },
     {
       component: 'InputNumber',

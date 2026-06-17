@@ -13,7 +13,6 @@ export const INBOUND_RECEIPT_PRODUCT_PICK_TABLE_COLUMNS = [
   { prop: 'productName', label: '项目名称', width: 180 },
   { prop: 'manufacturer', label: '厂家/产地', width: 180 },
   { prop: 'purchasePrice', label: '进货价', width: 96 },
-  { prop: 'price', label: '零售价', width: 96 },
   { prop: 'packageUnitName', label: '包装单位', width: 96 },
   { prop: 'splitUnitName', label: '最小单位', width: 96 },
   { prop: 'totalVolume', label: '规格', width: 120 },

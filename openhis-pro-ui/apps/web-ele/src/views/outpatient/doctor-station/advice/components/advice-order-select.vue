@@ -27,6 +27,8 @@ interface ProductColumn {
 
 type AdviceCategory = '全部' | '耗材' | '药品' | '诊疗';
 
+defineOptions({ name: 'AdviceOrderSelect' });
+
 const props = withDefaults(
   defineProps<{
     columns: ProductColumn[];

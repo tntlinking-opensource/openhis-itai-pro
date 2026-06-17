@@ -9,7 +9,7 @@ import type {
 } from '#/api/inpatient-registration';
 import type { PatientItemDto } from '#/api/outpatient-registration';
 
-import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 import { useUserStore } from '@vben/stores';
@@ -28,7 +28,6 @@ import {
 } from 'element-plus';
 
 import { useVbenForm } from '#/adapter/form';
-import { wardBedInitApi } from '#/api/basic/ward-bed';
 import { httpGetConditionDefinitionMetadata } from '#/api/doctor-station/diagnosis.http';
 import {
   httpCancelInpatientRegistration,
@@ -46,13 +45,16 @@ import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
 import RegisterListToolbar from './components/register-list-toolbar.vue';
 import {
-  ADMISSION_TYPE_OPTIONS,
+  type InpatientSettleInsuranceContext,
+  resolveInpatientSettleInsuranceContext,
+} from '../settle/use-inpatient-settle-insurance';
+import {
   DEFAULT_DIAGNOSIS_CATEGORY,
+  DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER,
   DEFAULT_PAY_CHANNEL_CODE,
   DIAGNOSIS_CATEGORY_OPTIONS,
   ENCOUNTER_STATUS,
   GENDER_OPTIONS,
-  IN_WAY_OPTIONS,
   PATIENT_CONDITION_OPTIONS,
   PAY_CHANNEL_OPTIONS,
   REGISTRATION_LIST_STATUS,
@@ -80,10 +82,14 @@ const queryParams = reactive({
 
 const organizationOptions = ref<OptionDto[]>([]);
 const contractOptions = ref<OptionDto[]>([]);
+const inWayCodeOptions = ref<OptionDto[]>([]);
+const admitSourceCodeOptions = ref<OptionDto[]>([]);
 const admissionDiagnosisOptions = ref<OptionDto[]>([]);
 /** 入院病区下拉（与入院科室同为 label/value 结构） */
 const wardOptions = ref<OptionDto[]>([]);
 const wardCapacityHint = ref('');
+const insuranceCardLoading = ref(false);
+const insuranceCtx = ref<InpatientSettleInsuranceContext | null>(null);
 const genderSelectOptions = GENDER_OPTIONS.filter((item) => item.value !== 'UNKNOWN').map(
   (item) => ({
     label: item.label,
@@ -124,7 +130,7 @@ const registerForm = reactive({
   admissionCount: '',
   organizationId: '',
   wardId: '',
-  bedCountDisplay: '',
+  assignedBedDisplay: '',
   outpatientDoctor: '',
   diagnosisCategoryCode: DEFAULT_DIAGNOSIS_CATEGORY,
   conditionDefinitionId: '',
@@ -137,6 +143,36 @@ const registerForm = reactive({
   advanceDepositAmount: 0,
   payChannelCode: DEFAULT_PAY_CHANNEL_CODE,
 });
+
+function resolveContractLabel(contractId: string | undefined): string {
+  if (!contractId) {
+    return '';
+  }
+  const opt = contractOptions.value.find((item) => String(item.value) === String(contractId));
+  return String(opt?.label ?? '');
+}
+
+const isInsuranceContractSelected = computed(() => {
+  const label = resolveContractLabel(registerForm.contractId);
+  if (!label) {
+    return false;
+  }
+  if (label.includes('自费') || label.includes('现金')) {
+    return false;
+  }
+  return label.includes('医保');
+});
+
+function clearInsuranceCardState() {
+  insuranceCtx.value = null;
+}
+
+watch(
+  () => registerForm.contractId,
+  () => {
+    clearInsuranceCardState();
+  },
+);
 
 /** 从大陆居民身份证解析出生日期 */
 function parseChineseIdBirth(idRaw: string): null | string {
@@ -189,13 +225,18 @@ function mapGenderFromPatient(genderCode?: string): string {
   return 'MALE';
 }
 
-/** 清空患者下拉与基础信息中的患者字段 */
-function clearPatientSelectState() {
+/** 清空患者下拉选中态（不抹掉手工填写的姓名） */
+function clearPatientSelectionOnly() {
   selectedPatientId.value = '';
   selectedPatientLabel.value = '';
   patientSelectError.value = '';
   patientRowById.value = {};
   dialogContext.patientId = undefined;
+}
+
+/** 清空患者下拉与基础信息中的患者姓名 */
+function clearPatientSelectState() {
+  clearPatientSelectionOnly();
   registerForm.patientName = '';
 }
 
@@ -229,6 +270,9 @@ async function queryPatientOptions({
 /** 未选中档案行时，将检索框内文字作为患者姓名（无 patientId 直登） */
 function applyManualPatientNameFromSearch(draft: string) {
   const name = draft.trim();
+  if (!name) {
+    return;
+  }
   patientSelectError.value = '';
   dialogContext.patientId = undefined;
   registerForm.patientName = name;
@@ -259,6 +303,12 @@ async function handlePatientSelect(value: string | string[]) {
   patientSelectError.value = '';
   const patientId = Array.isArray(value) ? value[0] : value;
   if (!patientId) {
+    const draft = (patientSelectRef.value?.getKeywordDraft?.() ?? '').trim();
+    if (draft) {
+      applyManualPatientNameFromSearch(draft);
+      clearPatientSelectionOnly();
+      return;
+    }
     clearPatientSelectState();
     registerForm.genderEnum = 'MALE';
     registerForm.phone = '';
@@ -495,11 +545,22 @@ const [InpatientInfoForm, inpatientInfoFormApi] = useVbenForm(
       },
       {
         component: 'Input',
-        fieldName: 'bedCountDisplay',
-        label: '床位数',
+        fieldName: 'assignedBedDisplay',
+        label: '入科床位',
+        dependencies: {
+          triggerFields: ['assignedBedDisplay'],
+          if(values) {
+            return Boolean(String(values.assignedBedDisplay ?? '').trim());
+          },
+        },
         componentProps: { disabled: true, placeholder: '-' },
       },
-      { component: 'Input', fieldName: 'outpatientDoctor', label: '门诊医生' },
+      {
+        component: 'Input',
+        fieldName: 'outpatientDoctor',
+        label: '门诊医生',
+        componentProps: { disabled: true, placeholder: '-' },
+      },
       {
         component: 'Select',
         fieldName: 'diagnosisCategoryCode',
@@ -543,7 +604,7 @@ const [InpatientInfoForm, inpatientInfoFormApi] = useVbenForm(
         componentProps: {
           clearable: true,
           placeholder: '请选择',
-          options: ADMISSION_TYPE_OPTIONS.map((item) => ({ label: item.label, value: item.value })),
+          options: [],
         },
       },
       {
@@ -553,7 +614,7 @@ const [InpatientInfoForm, inpatientInfoFormApi] = useVbenForm(
         componentProps: {
           clearable: true,
           placeholder: '请选择',
-          options: IN_WAY_OPTIONS.map((item) => ({ label: item.label, value: item.value })),
+          options: [],
         },
       },
       {
@@ -592,6 +653,24 @@ function applyContractOptionsFromList(options?: OptionDto[]) {
     value: String(item.value),
     disabled: item.disabled,
   }));
+}
+
+/** 将登记上下文中的入院方式/类型术语下拉写入页面级缓存。 */
+function applyAdmissionTerminologyOptionsFromContext(context: LoadRegistrationContextResult) {
+  if (context.inWayCodeOptions?.length) {
+    inWayCodeOptions.value = context.inWayCodeOptions.map((item) => ({
+      label: item.label,
+      value: String(item.value),
+      disabled: item.disabled,
+    }));
+  }
+  if (context.admitSourceCodeOptions?.length) {
+    admitSourceCodeOptions.value = context.admitSourceCodeOptions.map((item) => ({
+      label: item.label,
+      value: String(item.value),
+      disabled: item.disabled,
+    }));
+  }
 }
 
 /** 费用性质未选时默认取第一项（仅无档登记弹窗）。 */
@@ -633,11 +712,30 @@ function buildAdmissionDiagnosesForSubmit(): AdmissionDiagnosisSubmitDto[] | und
   ];
 }
 
+/** 护士分床后拼接「病区 / 床位」展示文案；未分床返回空串以隐藏表单项。 */
+function resolveAssignedBedDisplay(encounter?: LoadRegistrationContextResult['encounter']): string {
+  const bedId = preserveApiIdForRequest(encounter?.bedId);
+  const bedName = encounter?.bedName?.trim();
+  if (!bedId && !bedName) {
+    return '';
+  }
+  const wardName = encounter?.wardName?.trim();
+  if (wardName && bedName) {
+    return `${wardName} / ${bedName}`;
+  }
+  if (bedName) {
+    return bedName;
+  }
+  if (wardName) {
+    return wardName;
+  }
+  return '';
+}
+
 /** 重置住院信息扩展字段为默认值 */
 function resetInpatientInfoExtendedFields() {
   registerForm.admissionCount = '';
-  registerForm.bedCountDisplay = '';
-  registerForm.outpatientDoctor = '';
+  registerForm.assignedBedDisplay = '';
   registerForm.diagnosisCategoryCode = DEFAULT_DIAGNOSIS_CATEGORY;
   registerForm.conditionDefinitionId = '';
   registerForm.diagnosisDescription = '';
@@ -665,6 +763,13 @@ function normalizeStartTimeForSubmit(startTime: string) {
 async function applyContextToDialog(context: LoadRegistrationContextResult) {
   dialogReadOnly.value = Boolean(context.readOnly);
   applyContractOptionsFromList(context.contractOptions);
+  applyAdmissionTerminologyOptionsFromContext(context);
+  if (context.organizationOptions?.length) {
+    organizationOptions.value = context.organizationOptions.map((item) => ({
+      label: item.label,
+      value: String(item.value),
+    }));
+  }
   const patient = context.patient;
   const encounter = context.encounter;
   dialogContext.encounterId = preserveApiIdForRequest(encounter?.encounterId);
@@ -688,15 +793,18 @@ async function applyContextToDialog(context: LoadRegistrationContextResult) {
   registerForm.inWayCode = encounter?.inWayCode ?? '';
   registerForm.priorityEnum = encounter?.priorityEnum ?? '';
   resetInpatientInfoExtendedFields();
+  registerForm.outpatientDoctor = encounter?.outpatientDoctorName?.trim() ?? '';
+  registerForm.assignedBedDisplay = resolveAssignedBedDisplay(encounter);
   registerForm.conditionDefinitionId =
     preserveApiIdForRequest(encounter?.primaryConditionDefinitionId) ?? '';
   registerForm.diagnosisDescription = encounter?.primaryConditionDefinitionName?.trim() ?? '';
   registerForm.admissionCount = '-';
-  registerForm.bedCountDisplay = '-';
   registerForm.advanceDepositAmount = 0;
   registerForm.payChannelCode = DEFAULT_PAY_CHANNEL_CODE;
+  clearInsuranceCardState();
   await refreshContractOptionsSchema();
   await refreshAdmissionDiagnosisOptionsSchema();
+  await refreshAdmissionTerminologyOptionsSchema();
   await refreshOrganizationOptionsSchema();
   await loadWardSelectOptions();
   await syncDialogFormsFromModel();
@@ -727,14 +835,16 @@ async function resetDialogForNoRecord() {
   registerForm.admitSourceCode = '';
   registerForm.inWayCode = '';
   registerForm.priorityEnum = '';
+  registerForm.outpatientDoctor = '';
   resetInpatientInfoExtendedFields();
   registerForm.admissionCount = '-';
-  registerForm.bedCountDisplay = '-';
   registerForm.advanceDepositAmount = 0;
   registerForm.payChannelCode = DEFAULT_PAY_CHANNEL_CODE;
   wardCapacityHint.value = '';
+  clearInsuranceCardState();
   await refreshContractOptionsSchema();
   await refreshAdmissionDiagnosisOptionsSchema();
+  await refreshAdmissionTerminologyOptionsSchema();
   await loadWardSelectOptions();
   await syncDialogFormsFromModel();
   await setDialogFormsDisabled(false);
@@ -779,7 +889,7 @@ async function syncDialogFormsFromModel() {
     admissionCount: registerForm.admissionCount || '-',
     organizationId: registerForm.organizationId,
     wardId: registerForm.wardId,
-    bedCountDisplay: registerForm.bedCountDisplay || '-',
+    assignedBedDisplay: registerForm.assignedBedDisplay,
     outpatientDoctor: registerForm.outpatientDoctor,
     diagnosisCategoryCode: registerForm.diagnosisCategoryCode,
     conditionDefinitionId: registerForm.conditionDefinitionId,
@@ -806,7 +916,6 @@ async function syncModelFromDialogForms() {
   registerForm.birthDate = String(basicInfoValues.birthDate ?? '');
   registerForm.organizationId = String(inpatientInfoValues.organizationId ?? '');
   registerForm.wardId = String(inpatientInfoValues.wardId ?? '');
-  registerForm.outpatientDoctor = String(inpatientInfoValues.outpatientDoctor ?? '');
   registerForm.diagnosisCategoryCode = String(
     inpatientInfoValues.diagnosisCategoryCode ?? DEFAULT_DIAGNOSIS_CATEGORY,
   );
@@ -895,7 +1004,6 @@ async function setDialogFormsDisabled(disabled: boolean) {
   const inpatientEditableFields = [
     'organizationId',
     'wardId',
-    'outpatientDoctor',
     'diagnosisCategoryCode',
     'conditionDefinitionId',
     'diagnosisDescription',
@@ -944,6 +1052,28 @@ async function refreshAdmissionDiagnosisOptionsSchema() {
   ]);
 }
 
+/** 刷新入院方式/入院类型下拉 schema。 */
+async function refreshAdmissionTerminologyOptionsSchema() {
+  await inpatientInfoFormApi.updateSchema([
+    {
+      fieldName: 'admitSourceCode',
+      componentProps: {
+        clearable: true,
+        placeholder: '请选择',
+        options: admitSourceCodeOptions.value,
+      },
+    },
+    {
+      fieldName: 'inWayCode',
+      componentProps: {
+        clearable: true,
+        placeholder: '请选择',
+        options: inWayCodeOptions.value,
+      },
+    },
+  ]);
+}
+
 /** 刷新住院科室下拉 schema。 */
 async function refreshOrganizationOptionsSchema() {
   await inpatientInfoFormApi.updateSchema([
@@ -979,7 +1109,6 @@ async function handleOrganizationChange(organizationId: string) {
   registerForm.wardId = '';
   registerForm.contractId = '';
   wardCapacityHint.value = '';
-  registerForm.bedCountDisplay = '-';
   await reloadContractOptionsByOrganization(organizationId);
   applyDefaultContractIdIfEmpty();
   await loadWardSelectOptions();
@@ -992,8 +1121,6 @@ async function onWardIdFieldChange(selectedWardId: string) {
   const normalized = preserveApiIdForRequest(selectedWardId) ?? '';
   registerForm.wardId = normalized;
   wardCapacityHint.value = '';
-  registerForm.bedCountDisplay = '-';
-  await inpatientInfoFormApi.setFieldValue('bedCountDisplay', '-');
   if (!normalized) {
     return;
   }
@@ -1003,8 +1130,6 @@ async function onWardIdFieldChange(selectedWardId: string) {
     const total = Number(capacity.totalBedCount ?? 0);
     if (Number.isFinite(vacant) && Number.isFinite(total)) {
       wardCapacityHint.value = `空床 ${vacant} / 总床 ${total}`;
-      registerForm.bedCountDisplay = String(vacant);
-      await inpatientInfoFormApi.setFieldValue('bedCountDisplay', registerForm.bedCountDisplay);
     }
   } catch {
     void 0;
@@ -1058,8 +1183,6 @@ async function applyWardIdEcho(wardIdRaw?: string) {
     await onWardIdFieldChange(wardId);
   } else {
     wardCapacityHint.value = '';
-    registerForm.bedCountDisplay = '-';
-    await inpatientInfoFormApi.setFieldValue('bedCountDisplay', '-');
   }
 }
 
@@ -1081,13 +1204,15 @@ async function handleQuery() {
   }
 }
 
-/** 加载住院科室下拉（病区主数据初始化，后端登记服务未提供科室列表）。 */
+/** 加载住院科室与入院方式/类型术语下拉。 */
 async function loadOrganizationOptions() {
-  const init = await wardBedInitApi();
-  organizationOptions.value = (init.organizationOptions ?? []).map((item) => ({
+  const context = await httpLoadInpatientRegistrationContext({});
+  organizationOptions.value = (context.organizationOptions ?? []).map((item) => ({
     label: item.label,
     value: String(item.value),
   }));
+  applyAdmissionTerminologyOptionsFromContext(context);
+  await refreshAdmissionTerminologyOptionsSchema();
 }
 
 /** 打开登记弹窗并加载上下文。 */
@@ -1123,6 +1248,52 @@ async function handleOpenNoRecordRegister() {
 /** 关闭登记弹窗。 */
 function handleCloseRegisterDialog() {
   registerDialogVisible.value = false;
+  clearInsuranceCardState();
+}
+
+/** 医保读卡（登记 2401 前置）。 */
+async function handleReadInsuranceCard() {
+  const contractId = preserveApiIdForRequest(registerForm.contractId);
+  if (!contractId) {
+    ElMessage.warning('请先选择费用性质');
+    return;
+  }
+  insuranceCardLoading.value = true;
+  try {
+    insuranceCtx.value = await resolveInpatientSettleInsuranceContext(contractId);
+    if (!insuranceCtx.value) {
+      ElMessage.warning('本机 OpenHIS.Win 未启动，无法进行医保读卡');
+      return;
+    }
+    ElMessage.success(`读卡成功，人员编号：${insuranceCtx.value.psnNo}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '医保读卡失败';
+    ElMessage.error(message);
+  } finally {
+    insuranceCardLoading.value = false;
+  }
+}
+
+async function resolveInsuranceFieldsForSubmit(contractId: string) {
+  if (!insuranceCtx.value) {
+    insuranceCardLoading.value = true;
+    try {
+      insuranceCtx.value = await resolveInpatientSettleInsuranceContext(contractId);
+    } finally {
+      insuranceCardLoading.value = false;
+    }
+  }
+  const ctx = insuranceCtx.value;
+  if (!ctx) {
+    throw new Error('本机 OpenHIS.Win 未启动，医保登记须先读卡');
+  }
+  return {
+    insuplcAdmdvs: ctx.insuplcAdmdvs,
+    insutype: ctx.insutype,
+    psnNo: ctx.psnNo,
+    ybCardInfo: ctx.ybCardInfo,
+    ybMediumType: ctx.ybMediumType,
+  };
 }
 
 /** 校验登记弹窗两块表单，未通过时由 vben 在对应表单项下展示错误 */
@@ -1187,6 +1358,16 @@ async function handleSubmitRegister() {
   }
   dialogSubmitting.value = true;
   try {
+    let insuranceFields: Record<string, string | undefined> = {};
+    if (isInsuranceContractSelected.value) {
+      try {
+        insuranceFields = await resolveInsuranceFieldsForSubmit(contractId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '医保读卡失败';
+        ElMessage.error(message);
+        return;
+      }
+    }
     const advanceAmount = Number(registerForm.advanceDepositAmount ?? 0);
     const body = {
       encounterId: dialogContext.encounterId,
@@ -1215,9 +1396,14 @@ async function handleSubmitRegister() {
               },
             ]
           : undefined,
+      ...insuranceFields,
     };
     const result = await httpSubmitInpatientRegistration(body);
-    ElMessage.success(`登记成功，住院号 ${result.encounterBusNo}`);
+    let successMsg = `登记成功，住院号 ${result.encounterBusNo}`;
+    if (result.ybMdtrtId) {
+      successMsg += `（医保就诊ID：${result.ybMdtrtId}）`;
+    }
+    ElMessage.success(successMsg);
     registerDialogVisible.value = false;
     await handleQuery();
   } catch (error: unknown) {
@@ -1282,9 +1468,12 @@ function canRegister(row: RegistrationQueueItemDto) {
   return row.statusEnum === ENCOUNTER_STATUS.PLANNED;
 }
 
-/** 是否展示「查看」按钮。 */
+/** 是否展示「查看」按钮（待入科、已入科）。 */
 function canView(row: RegistrationQueueItemDto) {
-  return row.statusEnum === ENCOUNTER_STATUS.IN_PROGRESS;
+  return (
+    row.statusEnum === ENCOUNTER_STATUS.REGISTERED ||
+    row.statusEnum === ENCOUNTER_STATUS.IN_PROGRESS
+  );
 }
 
 onMounted(() => {
@@ -1377,24 +1566,38 @@ onMounted(() => {
         </section>
 
         <footer v-if="!dialogReadOnly" class="register-footer">
-          <div class="register-footer__payment">
-            <span class="register-footer__label">预交金</span>
-            <ElInputNumber
-              v-model="registerForm.advanceDepositAmount"
-              :precision="2"
-              :step="100"
-              :min="0"
-              controls-position="right"
-            />
-            <ElRadioGroup v-model="registerForm.payChannelCode">
-              <ElRadio v-for="item in PAY_CHANNEL_OPTIONS" :key="item.value" :label="item.value">
-                {{ item.label }}
-              </ElRadio>
-            </ElRadioGroup>
+          <div class="register-footer__left">
+            <div class="register-footer__payment">
+              <span class="register-footer__label">预交金</span>
+              <ElInputNumber
+                v-model="registerForm.advanceDepositAmount"
+                :precision="2"
+                :step="100"
+                :min="0"
+                controls-position="right"
+              />
+              <ElRadioGroup v-model="registerForm.payChannelCode">
+                <ElRadio v-for="item in PAY_CHANNEL_OPTIONS" :key="item.value" :label="item.value">
+                  {{ item.label }}
+                </ElRadio>
+              </ElRadioGroup>
+            </div>
+            <div v-if="isInsuranceContractSelected" class="register-footer__insurance">
+              <ElButton :loading="insuranceCardLoading" @click="handleReadInsuranceCard">
+                医保读卡
+              </ElButton>
+              <ElTag v-if="insuranceCtx?.psnNo" type="success" effect="plain">
+                已读卡 {{ insuranceCtx.psnNo }}
+              </ElTag>
+            </div>
           </div>
           <div class="flex gap-2">
             <ElButton @click="handleCloseRegisterDialog">取消</ElButton>
-            <ElButton type="primary" :loading="dialogSubmitting" @click="handleSubmitRegister">
+            <ElButton
+              type="primary"
+              :loading="dialogSubmitting || insuranceCardLoading"
+              @click="handleSubmitRegister"
+            >
               登记
             </ElButton>
           </div>
@@ -1492,6 +1695,18 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.register-footer__left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.register-footer__insurance {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .register-footer__label {

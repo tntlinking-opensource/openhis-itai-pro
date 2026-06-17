@@ -103,7 +103,9 @@ const emit = defineEmits([
 ]);
 
 const formKeyboardAreaRef = ref<HTMLElement | null>(null);
-const { handleFormKeydown } = useFormKeyboardNavigation(formKeyboardAreaRef);
+const { handleFormKeydown } = useFormKeyboardNavigation(formKeyboardAreaRef, {
+  selectPolicy: true,
+});
 
 const loading = ref(false);
 const localAuditForm = ref<Record<string, unknown>>({});
@@ -765,7 +767,7 @@ defineExpose({
     ref="formKeyboardAreaRef"
     class="purchase-request-order-detail flex h-full min-h-0 flex-1 flex-col gap-1.5"
     tabindex="-1"
-    @keydown="handleFormKeydown"
+    @keydown.capture="handleFormKeydown"
   >
     <WarehouseDocOrderHeadPanel
       :title="headPanelTitle ?? '单据信息'"

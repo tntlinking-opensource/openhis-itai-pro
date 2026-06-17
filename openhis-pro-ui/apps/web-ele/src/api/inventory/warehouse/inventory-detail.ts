@@ -55,10 +55,8 @@ export interface InventoryDetailListRowDto {
   pyStr?: string;
   wbStr?: string;
   lotNumber?: string;
-  /** 拆零持久化数量（内部；界面用 displayQuantity） */
-  quantity?: number | string;
-  displayQuantity?: number | string;
-  displayUnitName?: string;
+  /** 库存数量展示串（如 2盒3片，后端拼接） */
+  displayQuantityText?: string;
   displayCostUnitPrice?: number | string | null;
   displayCostUnitName?: string;
   displayPriceUnitPrice?: number | string | null;

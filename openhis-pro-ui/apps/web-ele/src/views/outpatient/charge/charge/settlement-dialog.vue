@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import type { PreSettleChargeLinePreviewDto } from '#/api/outpatient-charge/outpatient-charge.types';
+import type {
+  OpInsurancePreSettleGroupDto,
+  PreSettleChargeLinePreviewDto,
+} from '#/api/outpatient-charge/outpatient-charge.types';
 
 import { computed, ref, watch } from 'vue';
 
@@ -38,6 +41,8 @@ const props = withDefaults(
     dialogTitle?: string;
     displayAmount?: number | string;
     insuranceBreakdownItems?: InsuranceBreakdownItem[];
+    /** 多账户混合结算时的医保分组（仅多 account 时展示） */
+    insuranceGroups?: OpInsurancePreSettleGroupDto[];
     loading?: boolean;
     payChannelOptions?: PayChannelOption[];
     previews?: PreSettleChargeLinePreviewDto[];
@@ -55,6 +60,7 @@ const props = withDefaults(
     dialogTitle: '确认收费',
     displayAmount: 0,
     insuranceBreakdownItems: () => [],
+    insuranceGroups: () => [],
     loading: false,
     payChannelOptions: () => [],
     previews: () => [],
@@ -88,6 +94,16 @@ function formatMoney(value: null | number | string | undefined) {
   return Number.isFinite(n) ? n.toFixed(2) : '0.00';
 }
 
+/** 数量展示：拼接单位，如「1支」 */
+function formatQuantityWithUnit(row: PreSettleChargeLinePreviewDto) {
+  const display = String(row.quantityDisplay ?? '').trim();
+  if (!display) {
+    return '—';
+  }
+  const unit = String(row.quantityUnit ?? '').trim();
+  return unit ? `${display}${unit}` : display;
+}
+
 const displayAmountNum = computed(() => Number(props.displayAmount ?? 0));
 
 const previewsTotal = computed(() => {
@@ -117,6 +133,8 @@ const feeDetailDisplayRows = computed(() => {
   }
   return rows;
 });
+
+const showInsuranceGroups = computed(() => (props.insuranceGroups?.length ?? 0) > 0);
 
 const quickDiscounts = [
   { label: '95折', value: '95' },
@@ -222,6 +240,32 @@ const handleCancel = () => {
         </div>
       </div>
 
+      <div v-if="showInsuranceGroups" class="copy-card">
+        <div class="copy-card-title">医保分组（多账户混合）</div>
+        <ElTable :data="props.insuranceGroups" border size="small" row-key="groupIndex">
+          <ElTableColumn label="组" width="48" align="center">
+            <template #default="{ row }">{{ row.groupIndex ?? '—' }}</template>
+          </ElTableColumn>
+          <ElTableColumn label="医疗类别" min-width="108">
+            <template #default="{ row }">
+              {{ row.medTypeDisplay || row.medType || '—' }}
+            </template>
+          </ElTableColumn>
+          <ElTableColumn label="医疗费" width="96" align="right">
+            <template #default="{ row }">¥{{ formatMoney(row.medfeeSumamt) }}</template>
+          </ElTableColumn>
+          <ElTableColumn label="统筹" width="88" align="right">
+            <template #default="{ row }">¥{{ formatMoney(row.fundPaySumamt) }}</template>
+          </ElTableColumn>
+          <ElTableColumn label="个账" width="88" align="right">
+            <template #default="{ row }">¥{{ formatMoney(row.acctPay) }}</template>
+          </ElTableColumn>
+          <ElTableColumn label="现金" width="88" align="right">
+            <template #default="{ row }">¥{{ formatMoney(row.psnCashPay) }}</template>
+          </ElTableColumn>
+        </ElTable>
+      </div>
+
       <!-- 中部：收费项目 -->
       <div class="copy-card">
         <div class="copy-card-title">{{ props.projectTableTitle }}</div>
@@ -242,7 +286,7 @@ const handleCancel = () => {
             <template #default="{ row }">¥{{ formatMoney(row.lineAmount) }}</template>
           </ElTableColumn>
           <ElTableColumn label="数量" width="70" align="center">
-            <template #default>1</template>
+            <template #default="{ row }">{{ formatQuantityWithUnit(row) }}</template>
           </ElTableColumn>
           <ElTableColumn label="金额" width="105" align="right">
             <template #default="{ row }">¥{{ formatMoney(row.lineAmount) }}</template>

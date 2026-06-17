@@ -1,3 +1,4 @@
+/** @deprecated EMR 打印已切 OpenHIS.Win printClient；保留供 hiprint 占位回退。 */
 import { ElMessage } from 'element-plus';
 
 import { isHiprintAutoConnectDisabled } from '#/utils/hiprint-connect-pref';

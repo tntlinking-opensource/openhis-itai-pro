@@ -3,12 +3,13 @@
 -->
 <script setup lang="ts">
 import type { VxeGridProps, VxeGridPropTypes } from '#/adapter/vxe-table';
+import type { ChargeType } from '#/api/core/common';
 import type { PharmacyLocationOptionDto } from '#/api/inventory/pharmacy/requisition';
 import type { WarehouseOptionDto } from '#/api/inventory/warehouse/stock-out';
 import type { ApiOptionItem } from '#/types/api-response';
 import type { InboundProductUnitBand } from '#/utils/inventory/inbound-product-unit-bands';
 
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
@@ -35,6 +36,7 @@ import {
 } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import { getChargeTypeListApi } from '#/api/core/common';
 import { getPharmacyRequisitionDetailApi } from '#/api/inventory/pharmacy/requisition';
 import {
   agreeStockOutApi,
@@ -51,7 +53,19 @@ import {
   type StockOutListRowDto,
   type StockOutProductCatalogDto,
 } from '#/api/inventory/warehouse/stock-out';
+import {
+  filterInsuranceChargeTypes,
+  resolveDefaultInsuranceBusNo,
+} from '#/chs/constants/insurance-contract';
 import SectionTitle from '#/components/layouts/section-title.vue';
+import StockOutBatchAddDialog from '#/views/inventory/warehouse/stock-out/stock-out-batch-add-dialog.vue';
+import {
+  collectFormFocusableElements,
+  EXTENDED_FORM_KEYBOARD_SELECTORS,
+  focusFormControl,
+  isFormSelectDropdownTarget,
+  isFormSelectExpanded,
+} from '#/hooks/use-form-keyboard-navigation';
 import { decimalMul } from '#/utils/decimal-util';
 import { resolveLoginPractitionerIdForRequest } from '#/utils/preserve-api-id';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
@@ -71,6 +85,7 @@ import {
   stockOutStatusLabel,
 } from '#/utils/inventory/stock-out-doc-actions';
 import {
+  inventoryPickAvailableQtyAsStockDisplay,
   inventoryPickMedicineCell,
   inventoryPickNumberField,
   inventoryPickStringField,
@@ -94,7 +109,7 @@ interface StockOutboundPreviewRow {
   spec: string;
   manufacturer: string;
   /** 与后端 {@code StockOutLineDto.itemQuantity} 一致 */
-  itemQuantity: number;
+  itemQuantity?: number;
   /** 与后端 {@code StockOutLineDto.unitCode} 一致（当前计量带对应的单位编码） */
   unitCode: string;
   unitBands?: InboundProductUnitBand[];
@@ -226,6 +241,9 @@ const headItemTableType = ref(firstItemTableTypeValue());
 
 const saving = ref(false);
 
+const insuranceContractBusNo = ref<string>();
+const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
+
 const linkQlVisible = ref(false);
 const linkQlKeyword = ref('');
 const linkQlLoading = ref(false);
@@ -257,6 +275,21 @@ const docActionFlags = computed(() => {
 });
 
 const canEditOriginalBusNo = computed(() => documentEditable.value && isNewDraft.value);
+
+async function loadInsuranceContractBusNo() {
+  try {
+    const chargeTypes = await getChargeTypeListApi();
+    const eligible = filterInsuranceChargeTypes(chargeTypes);
+    insuranceChargeTypeOptions.value = eligible;
+    insuranceContractBusNo.value = resolveDefaultInsuranceBusNo(
+      eligible,
+      insuranceContractBusNo.value,
+    );
+  } catch {
+    insuranceContractBusNo.value = undefined;
+    insuranceChargeTypeOptions.value = [];
+  }
+}
 
 const paneFlashActive = ref(false);
 let paneFlashTimer: ReturnType<typeof setTimeout> | undefined;
@@ -338,6 +371,8 @@ function syncRowFromStockOutboundMedicinePick(
     row.price = inventoryPickNumberField(pick, 'purchaseUnitPrice');
   }
   row.lotNumber = inventoryPickStringField(pick, 'lotNumber');
+  const availQty = inventoryPickAvailableQtyAsStockDisplay(pick);
+  row.itemQuantity = Number.isFinite(availQty) ? availQty : undefined;
   recalcStockOutboundLineTotal(row);
 }
 
@@ -350,7 +385,7 @@ function createEmptyStockOutboundRow(): StockOutboundPreviewRow {
     inventoryItemId: undefined,
     spec: '',
     manufacturer: '',
-    itemQuantity: 0,
+    itemQuantity: undefined,
     unitCode: '',
     selectedBandKind: 'LEGACY',
     unitList: [{ value: 'LEGACY', label: '单位' }],
@@ -587,16 +622,318 @@ const gridOptions: VxeGridProps<StockOutboundPreviewRow> = reactive({
   editConfig: {
     enabled: true,
     trigger: 'click',
-    mode: 'row',
+    mode: 'cell',
+    autoClear: true,
     beforeEditMethod: () => documentEditable.value,
   },
   columns,
   pagerConfig: { enabled: false },
 });
 
+const STOCK_OUT_EDITABLE_COLUMN_FIELDS = new Set(['_qtyUnit', 'medicinePick', 'remark']);
+
+const STOCK_OUT_EDIT_FIELD_ORDER = ['medicinePick', '_qtyUnit', 'remark'] as const;
+
+type StockOutEditField = (typeof STOCK_OUT_EDIT_FIELD_ORDER)[number];
+
+/** 支持方向键上下换行的列（不含项目名称，避免误聚焦选品下拉） */
+const STOCK_OUT_VERTICAL_NAV_FIELDS = new Set<StockOutEditField>(['_qtyUnit', 'remark']);
+
+const stockOutGridKeyboardRef = ref<HTMLElement | null>(null);
+const stockOutLastEditField = ref<StockOutEditField | undefined>(undefined);
+
+type StockOutGridVm = {
+  clearEdit?: () => void | Promise<void>;
+  getEditRecord?: () => { column?: { field?: string }; row?: StockOutboundPreviewRow } | null;
+  getFullData?: () => StockOutboundPreviewRow[];
+  getRowNode?: (tr: Element) => { row?: StockOutboundPreviewRow } | null;
+  scrollToRow?: (row: StockOutboundPreviewRow) => void | Promise<void>;
+  setEditCell?: (row: StockOutboundPreviewRow, field: string) => void | Promise<void>;
+};
+
+function stockOutGridVm(): StockOutGridVm | undefined {
+  return gridApi?.grid as unknown as StockOutGridVm | undefined;
+}
+
+function clearStockOutGridEdit() {
+  void stockOutGridVm()?.clearEdit?.();
+}
+
+function isStockOutEditableColumn(column?: { field?: string; type?: string }): boolean {
+  if (!column || column.type === 'checkbox' || column.type === 'seq') return false;
+  const field = column.field;
+  return field ? STOCK_OUT_EDITABLE_COLUMN_FIELDS.has(field) : false;
+}
+
+/** 解析当前编辑列（vxe 行编辑模式下 getEditRecord.column 不可靠，辅以最近点击列） */
+function resolveStockOutActiveEditField(
+  editRec?: { column?: { field?: string } } | null,
+): StockOutEditField | undefined {
+  const fromRec = editRec?.column?.field;
+  if (fromRec && STOCK_OUT_EDITABLE_COLUMN_FIELDS.has(fromRec)) {
+    return fromRec as StockOutEditField;
+  }
+  return stockOutLastEditField.value;
+}
+
+/** 点击可编辑列：同行切换列 / 跨行切换至点击列 */
+function handleStockOutGridCellClick(params: {
+  column?: { field?: string; type?: string };
+  row: StockOutboundPreviewRow;
+}) {
+  if (!documentEditable.value) return;
+  const g = stockOutGridVm();
+  if (!g?.setEditCell) return;
+  if (!isStockOutEditableColumn(params.column)) return;
+  const field = params.column?.field as StockOutEditField | undefined;
+  if (!field) return;
+
+  const editingRow = g.getEditRecord?.()?.row;
+  if (editingRow && editingRow !== params.row) {
+    void g.clearEdit?.();
+  }
+  stockOutLastEditField.value = field;
+  void nextTick(() => {
+    void g.setEditCell?.(params.row, field);
+  });
+}
+
+function handleStockOutSurfaceMouseDown(ev: MouseEvent) {
+  if (!documentEditable.value) return;
+  const target = ev.target as HTMLElement;
+  if (target.closest('.el-popper, .el-select__popper, .el-picker-panel, .el-dialog, .el-overlay')) {
+    return;
+  }
+  const g = stockOutGridVm();
+  if (!g) return;
+  const editingRow = g.getEditRecord?.()?.row;
+  if (!editingRow) return;
+  const rowEl = target.closest('tr.vxe-body--row');
+  if (rowEl) {
+    const node = g.getRowNode?.(rowEl);
+    if (node?.row === editingRow) return;
+    return;
+  }
+  clearStockOutGridEdit();
+}
+
+/** 输入框内仍有可移动光标时不抢方向键 */
+function shouldKeepStockOutCaretNavigation(event: KeyboardEvent, target: HTMLElement): boolean {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+    return false;
+  }
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
+    return false;
+  }
+  if (target.readOnly || target.disabled || target.closest('.el-select, .el-tree-select')) {
+    return false;
+  }
+  const { selectionEnd, selectionStart, value } = target;
+  if (selectionStart === null || selectionEnd === null || selectionStart !== selectionEnd) {
+    return selectionStart !== selectionEnd;
+  }
+  if (event.key === 'ArrowLeft') {
+    return selectionStart > 0;
+  }
+  return selectionEnd < value.length;
+}
+
+/** 在表格 DOM 中定位指定数据行对应的 tr */
+function findStockOutGridRowElement(row: StockOutboundPreviewRow): HTMLElement | null {
+  const wrap = stockOutGridKeyboardRef.value;
+  const g = stockOutGridVm();
+  if (!wrap || !g?.getRowNode) return null;
+  for (const tr of wrap.querySelectorAll('tr.vxe-body--row')) {
+    const node = g.getRowNode(tr);
+    if (node?.row === row) {
+      return tr as HTMLElement;
+    }
+  }
+  return null;
+}
+
+/** 编辑格激活后聚焦数量等输入控件 */
+async function focusStockOutEditCell(field?: StockOutEditField, row?: StockOutboundPreviewRow) {
+  await nextTick();
+  await nextTick();
+  const wrap = stockOutGridKeyboardRef.value;
+  if (!wrap) return;
+  const rowEl = row ? findStockOutGridRowElement(row) : null;
+  const activeCell = (rowEl?.querySelector(
+    '.vxe-body--column.col--active, .vxe-body--column.col--edit',
+  ) ?? wrap.querySelector('.vxe-body--column.col--active')) as HTMLElement | null;
+  const scope = activeCell ?? wrap;
+  const focusables = collectFormFocusableElements(scope, EXTENDED_FORM_KEYBOARD_SELECTORS, true);
+  if (!focusables.length) return;
+  let target = focusables[0];
+  if (field === '_qtyUnit') {
+    target =
+      focusables.find((el) => !!el.closest('.el-input-number')) ??
+      focusables.find((el) => el.tagName === 'INPUT') ??
+      focusables[0];
+  }
+  focusFormControl(target);
+  if (target instanceof HTMLInputElement && target.type !== 'hidden') {
+    target.select();
+  }
+}
+
+/** 关闭行内选品下拉（避免 autofocus 抢焦点） */
+function dismissStockOutMedicinePickDropdown() {
+  for (const pulldown of document.querySelectorAll('.vxe-pulldown.is--active')) {
+    const input = pulldown.querySelector('.vxe-input--inner') as HTMLElement | null;
+    input?.blur();
+  }
+}
+
+/** 定位指定行数量列内的数字输入框 */
+function findStockOutQtyInput(row: StockOutboundPreviewRow): HTMLInputElement | null {
+  const rowEl = findStockOutGridRowElement(row);
+  if (!rowEl) return null;
+  const qtyCell = rowEl.querySelector('td[colid="_qtyUnit"]') as HTMLElement | null;
+  const scope = qtyCell ?? rowEl;
+  return scope.querySelector('.el-input-number input:not([disabled])') as HTMLInputElement | null;
+}
+
+/** 强制聚焦数量输入（覆盖 vxe 默认 autofocus 到项目名称） */
+function forceFocusStockOutQtyInput(row: StockOutboundPreviewRow) {
+  dismissStockOutMedicinePickDropdown();
+  const input = findStockOutQtyInput(row);
+  if (!input) return;
+  input.focus({ preventScroll: true });
+  input.select();
+}
+
+/** 批量回填后：定位到指定行数量列并聚焦 */
+async function focusStockOutRowQtyCell(row: StockOutboundPreviewRow) {
+  const g = stockOutGridVm();
+  if (!g?.setEditCell) return;
+  clearStockOutGridEdit();
+  await nextTick();
+  stockOutLastEditField.value = '_qtyUnit';
+  await g.setEditCell(row, '_qtyUnit');
+  await nextTick();
+  forceFocusStockOutQtyInput(row);
+  requestAnimationFrame(() => {
+    forceFocusStockOutQtyInput(row);
+    setTimeout(() => forceFocusStockOutQtyInput(row), 40);
+  });
+}
+
+/** 切换到指定行/列并聚焦（项目名称列不主动抢焦点，保留选品下拉回显） */
+async function activateStockOutEditCell(row: StockOutboundPreviewRow, field: StockOutEditField) {
+  const g = stockOutGridVm();
+  if (!g?.setEditCell) return;
+  stockOutLastEditField.value = field;
+  await g.setEditCell(row, field);
+  if (field !== 'medicinePick') {
+    await focusStockOutEditCell(field);
+  }
+}
+
+/** 查找同列上/下一行（跳过未选品空行） */
+function findStockOutNeighborRow(
+  rows: StockOutboundPreviewRow[],
+  rowIndex: number,
+  delta: -1 | 1,
+): StockOutboundPreviewRow | undefined {
+  for (let i = rowIndex + delta; i >= 0 && i < rows.length; i += delta) {
+    const row = rows[i];
+    if (row && isPresentItemId(row.itemId)) {
+      return row;
+    }
+  }
+  return undefined;
+}
+
+/** 明细表方向键：同列上下行、同行左右列 */
+async function handleStockOutGridKeydown(event: KeyboardEvent) {
+  if (!documentEditable.value) return;
+  const key = event.key;
+  if (!['ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp'].includes(key)) {
+    return;
+  }
+  const target = event.target as HTMLElement;
+  if (
+    isFormSelectDropdownTarget(target) ||
+    isFormSelectExpanded(target) ||
+    target.closest('.el-picker-panel, .el-date-picker, .vxe-pulldown, .vxe-pulldown--panel')
+  ) {
+    return;
+  }
+  const g = stockOutGridVm();
+  const editRec = g?.getEditRecord?.();
+  const currentRow = editRec?.row;
+  const currentField = resolveStockOutActiveEditField(editRec);
+  if (!g?.setEditCell || !currentRow || !currentField) {
+    return;
+  }
+  if (!STOCK_OUT_EDITABLE_COLUMN_FIELDS.has(currentField)) {
+    return;
+  }
+  if (currentField === 'medicinePick') {
+    return;
+  }
+
+  const rows = g.getFullData?.() ?? collectGridRows();
+  const rowIndex = rows.findIndex((row) => row === currentRow);
+  if (rowIndex < 0) {
+    return;
+  }
+
+  if (key === 'ArrowUp' || key === 'ArrowDown') {
+    if (!STOCK_OUT_VERTICAL_NAV_FIELDS.has(currentField)) {
+      return;
+    }
+    const neighbor = findStockOutNeighborRow(rows, rowIndex, key === 'ArrowUp' ? -1 : 1);
+    if (!neighbor) return;
+    event.preventDefault();
+    event.stopPropagation();
+    await activateStockOutEditCell(neighbor, currentField);
+    return;
+  }
+
+  if (shouldKeepStockOutCaretNavigation(event, target)) {
+    return;
+  }
+
+  const activeCell = target.closest('.vxe-body--column') as HTMLElement | null;
+  if (activeCell) {
+    const focusables = collectFormFocusableElements(
+      activeCell,
+      EXTENDED_FORM_KEYBOARD_SELECTORS,
+      true,
+    );
+    const currentIndex = focusables.findIndex((el) => el === target || el.contains(target));
+    if (currentIndex >= 0) {
+      const delta = key === 'ArrowRight' ? 1 : -1;
+      const nextIndex = currentIndex + delta;
+      if (nextIndex >= 0 && nextIndex < focusables.length) {
+        event.preventDefault();
+        event.stopPropagation();
+        focusFormControl(focusables[nextIndex]);
+        return;
+      }
+    }
+  }
+
+  const fieldIndex = STOCK_OUT_EDIT_FIELD_ORDER.indexOf(currentField);
+  if (fieldIndex < 0) {
+    return;
+  }
+  const nextFieldIndex = key === 'ArrowRight' ? fieldIndex + 1 : fieldIndex - 1;
+  if (nextFieldIndex < 0 || nextFieldIndex >= STOCK_OUT_EDIT_FIELD_ORDER.length) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  await activateStockOutEditCell(currentRow, STOCK_OUT_EDIT_FIELD_ORDER[nextFieldIndex]);
+}
+
 const [Grid, gridApi] = useVbenVxeGrid<StockOutboundPreviewRow>({
   gridOptions,
   gridEvents: {
+    cellClick: handleStockOutGridCellClick,
     editClosed(params: { row: StockOutboundPreviewRow }) {
       recalcStockOutboundLineTotal(params.row);
     },
@@ -610,7 +947,8 @@ function patchStockOutGridEditConfig() {
     ...gridOptions.editConfig,
     enabled: documentEditable.value,
     trigger: 'click',
-    mode: 'row',
+    mode: 'cell',
+    autoClear: true,
     beforeEditMethod: () => documentEditable.value,
   };
 }
@@ -937,6 +1275,10 @@ async function handleWithdraw() {
 async function handleApprove() {
   const no = headerBusNo.value;
   if (!no) return;
+  if (!insuranceContractBusNo.value?.trim()) {
+    ElMessage.warning('请选择医保契约');
+    return;
+  }
   const approverId = resolveLoginPractitionerIdForRequest(
     userStore.userInfo as null | Record<string, unknown>,
   );
@@ -945,6 +1287,7 @@ async function handleApprove() {
       busNo: no,
       approverId,
       approvalClock: nowIsoLocal(),
+      contractBusNo: insuranceContractBusNo.value,
     });
     ElMessage.success('审批同意');
     await loadDetail(no);
@@ -1000,6 +1343,62 @@ async function deleteItem(row: 'select' | StockOutboundPreviewRow) {
   const checked = $grid.getCheckboxRecords() as StockOutboundPreviewRow[];
   if (row === 'select' && checked.length === 0) return;
   await $grid.remove(row === 'select' ? checked : row);
+}
+
+/** 未选品的空行（批量回填前清理，避免多出一行） */
+function isStockOutRowWithoutProduct(row: StockOutboundPreviewRow): boolean {
+  return !isPresentItemId(row.itemId);
+}
+
+/** 移除明细表中未选品的空行 */
+async function removeEmptyStockOutRows() {
+  const $grid = gridApi?.grid;
+  if (!$grid) return;
+  const rows = ($grid.getFullData?.() ?? []) as StockOutboundPreviewRow[];
+  const emptyRows = rows.filter(isStockOutRowWithoutProduct);
+  if (!emptyRows.length) return;
+  await $grid.remove(emptyRows);
+}
+
+const batchDialogVisible = ref(false);
+
+/** 打开批量选品弹窗（与单行选品共用 sourceLocationId / productTableName） */
+function openBatchDialog() {
+  if (!documentEditable.value) return;
+  const src = detailSourceLocationId.value;
+  if (src === undefined || src === null || String(src).trim() === '') {
+    ElMessage.warning('请先选择源药库');
+    return;
+  }
+  const productTableName = String(headItemTableType.value ?? '').trim();
+  if (!productTableName) {
+    ElMessage.warning('请先选择项目类型');
+    return;
+  }
+  batchDialogVisible.value = true;
+}
+
+/** 批量选品确认：逐条新建行并写入选品信息（等同多次单行选择） */
+async function handleBatchConfirm(products: Record<string, unknown>[]) {
+  if (!products.length) return;
+  const $grid = gridApi?.grid;
+  if (!$grid) return;
+  clearStockOutGridEdit();
+  await removeEmptyStockOutRows();
+  for (const product of products) {
+    const record = createEmptyStockOutboundRow();
+    syncRowFromStockOutboundMedicinePick(product, record);
+    await $grid.insertAt(record, null);
+  }
+  await $grid.$nextTick();
+  await nextTick();
+  const allRows = ($grid.getFullData?.() ?? collectGridRows()) as StockOutboundPreviewRow[];
+  const firstInserted = allRows[Math.max(0, allRows.length - products.length)];
+  if (firstInserted && isPresentItemId(firstInserted.itemId)) {
+    await $grid.scrollToRow(firstInserted);
+    await focusStockOutRowQtyCell(firstInserted);
+  }
+  ElMessage.success(`已添加 ${products.length} 条药品，请补充数量等信息`);
 }
 
 async function openLinkQlDialog() {
@@ -1153,6 +1552,10 @@ watch(
     headApplyTime.value = s.includes('T') ? s.replace('T', ' ') : s;
   },
 );
+
+onMounted(() => {
+  void loadInsuranceContractBusNo();
+});
 </script>
 
 <template>
@@ -1162,19 +1565,47 @@ watch(
   >
     <InvMainShell>
       <template #actionBar>
-        <InvDocActions
-          v-bind="docActionFlags"
-          @approve="handleApprove"
-          @reject="handleReject"
-          @remove-doc="handleRemoveDoc"
-          @save="handleSaveDoc"
-          @save-and-submit="handleSaveAndSubmitDoc"
-          @submit-approval="handleSubmitApproval"
-          @withdraw="handleWithdraw"
-        />
+        <div class="flex w-full flex-col gap-2">
+          <div
+            v-if="insuranceChargeTypeOptions.length > 0"
+            class="flex flex-wrap items-center gap-2"
+          >
+            <span class="text-xs text-[var(--el-text-color-secondary)]">医保契约</span>
+            <ElSelect
+              v-model="insuranceContractBusNo"
+              class="!w-72"
+              placeholder="请选择医保契约"
+              filterable
+              clearable
+              :disabled="docActionFlags.approveDisabled"
+            >
+              <ElOption
+                v-for="item in insuranceChargeTypeOptions"
+                :key="item.busNo"
+                :label="item.busNo ? `${item.label}（${item.busNo}）` : item.label"
+                :value="item.busNo"
+              />
+            </ElSelect>
+          </div>
+          <div class="flex w-full flex-wrap items-center justify-end gap-2">
+            <InvDocActions
+              v-bind="docActionFlags"
+              @approve="handleApprove"
+              @reject="handleReject"
+              @remove-doc="handleRemoveDoc"
+              @save="handleSaveDoc"
+              @save-and-submit="handleSaveAndSubmitDoc"
+              @submit-approval="handleSubmitApproval"
+              @withdraw="handleWithdraw"
+            />
+          </div>
+        </div>
       </template>
 
-      <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2">
+      <div
+        class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2"
+        @mousedown="handleStockOutSurfaceMouseDown"
+      >
         <div class="stock-out-head-panel shrink-0">
           <div
             class="stock-out-head-panel__bar flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
@@ -1279,7 +1710,11 @@ watch(
           </ElForm>
         </div>
 
-        <div class="stock-out-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          ref="stockOutGridKeyboardRef"
+          class="stock-out-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col"
+          @keydown.capture="handleStockOutGridKeydown"
+        >
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>
               <ElButton
@@ -1290,6 +1725,9 @@ watch(
                 @click="addItem"
               >
                 添加行
+              </ElButton>
+              <ElButton class="mr-2" :disabled="!documentEditable" @click="openBatchDialog">
+                批量添加
               </ElButton>
               <ElButton
                 type="danger"
@@ -1315,6 +1753,13 @@ watch(
         </div>
       </div>
     </InvMainShell>
+
+    <StockOutBatchAddDialog
+      v-model:visible="batchDialogVisible"
+      :source-location-id="detailSourceLocationId"
+      :product-table-name="headItemTableType"
+      @confirm="handleBatchConfirm"
+    />
 
     <ElDialog
       v-model="linkQlVisible"

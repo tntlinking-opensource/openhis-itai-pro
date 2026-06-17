@@ -3,9 +3,14 @@ import { computed } from 'vue';
 
 import { pageProductsForPharmacyStockInApi } from '#/api/inventory/pharmacy/stock-in';
 import { pageProductsForPharmacyStocktakeApi } from '#/api/inventory/pharmacy/stocktake';
+import { pageProductsForDeptStocktakeApi } from '#/api/inventory/department/stocktake';
 import { pageProductsForInboundReceiptApi } from '#/api/inventory/warehouse/inbound-receipt';
 import { pageProductsForWarehouseStocktakeApi } from '#/api/inventory/warehouse/stocktake';
 import { pageProductsForPurchaseApi } from '#/api/inventory/warehouse/purchase-order';
+import { pageProductsForReturnToSupplierApi } from '#/api/inventory/warehouse/return-to-supplier';
+import { pageProductsForReturnUpstreamApi } from '#/api/inventory/pharmacy/return-upstream';
+import { pageProductsForReturnFromDownstreamApi } from '#/api/inventory/warehouse/return-from-downstream';
+import { pageProductsForDeptReturnApi } from '#/api/inventory/department/dept-return';
 import { pageProductsForStockOutApi } from '#/api/inventory/warehouse/stock-out';
 import { pageGainLossMedicationApi } from '#/api/warehouse/gain-loss';
 import { pagePurchaseOrderMedicationApi } from '#/api/warehouse/purchase-request';
@@ -40,7 +45,12 @@ interface Props {
     | 'inventory-products'
     | 'pharmacy-stock-in'
     | 'pharmacy-stocktake'
+    | 'dept-stocktake'
     | 'purchase-request'
+    | 'return-to-supplier'
+    | 'return-upstream'
+    | 'return-from-downstream'
+    | 'dept-return'
     | 'stock-out'
     | 'warehouse-stocktake';
 }
@@ -152,6 +162,51 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
     return mapInventoryPickListResponse(res.data);
   }
 
+  if (props.listSource === 'return-to-supplier') {
+    const productTableName = (q.productTableName as string | undefined)?.trim();
+    const sourceLocationId = resolveSourceLocationId(q);
+    if (sourceLocationId === undefined || !productTableName) {
+      return { content: [], totalElements: 0 };
+    }
+    const res = await pageProductsForReturnToSupplierApi({
+      productTableName,
+      keyword: params.keyword?.trim() || undefined,
+      supplierId: q.supplierId as number | undefined,
+      includeInventory: true,
+      pageNo: params.pageNo,
+      pageSize: params.pageSize,
+      activeFlag: true,
+    });
+    return mapInventoryPickListResponse(res.data);
+  }
+
+  if (
+    props.listSource === 'return-upstream' ||
+    props.listSource === 'return-from-downstream' ||
+    props.listSource === 'dept-return'
+  ) {
+    const productTableName = (q.productTableName as string | undefined)?.trim();
+    const sourceLocationId = resolveSourceLocationId(q);
+    if (sourceLocationId === undefined || !productTableName) {
+      return { content: [], totalElements: 0 };
+    }
+    const common = {
+      productTableName,
+      keyword: params.keyword?.trim() || undefined,
+      includeInventory: true,
+      pageNo: params.pageNo,
+      pageSize: params.pageSize,
+      activeFlag: true,
+    };
+    const res =
+      props.listSource === 'return-upstream'
+        ? await pageProductsForReturnUpstreamApi(common)
+        : props.listSource === 'return-from-downstream'
+          ? await pageProductsForReturnFromDownstreamApi(common)
+          : await pageProductsForDeptReturnApi(common);
+    return mapInventoryPickListResponse(res.data);
+  }
+
   if (props.listSource === 'pharmacy-stock-in') {
     const productTableName = (q.productTableName as string | undefined)?.trim();
     const sourceLocationId = resolveSourceLocationId(q);
@@ -168,7 +223,11 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
     return mapInventoryPickListResponse(res.data);
   }
 
-  if (props.listSource === 'warehouse-stocktake' || props.listSource === 'pharmacy-stocktake') {
+  if (
+    props.listSource === 'warehouse-stocktake' ||
+    props.listSource === 'pharmacy-stocktake' ||
+    props.listSource === 'dept-stocktake'
+  ) {
     const productTableName = (q.productTableName as string | undefined)?.trim();
     const purposeLocationId = resolvePurposeLocationId(q);
     if (purposeLocationId === undefined || !productTableName) {
@@ -183,13 +242,21 @@ async function handleRemoteMethod(params: { keyword?: string; pageNo: number; pa
             pageNo: params.pageNo,
             pageSize: params.pageSize,
           })
-        : await pageProductsForWarehouseStocktakeApi({
-            purposeLocationId,
-            productTableName,
-            keyword: params.keyword?.trim() || undefined,
-            pageNo: params.pageNo,
-            pageSize: params.pageSize,
-          });
+        : props.listSource === 'dept-stocktake'
+          ? await pageProductsForDeptStocktakeApi({
+              purposeLocationId,
+              productTableName,
+              keyword: params.keyword?.trim() || undefined,
+              pageNo: params.pageNo,
+              pageSize: params.pageSize,
+            })
+          : await pageProductsForWarehouseStocktakeApi({
+              purposeLocationId,
+              productTableName,
+              keyword: params.keyword?.trim() || undefined,
+              pageNo: params.pageNo,
+              pageSize: params.pageSize,
+            });
     return mapInventoryPickListResponse(res.data);
   }
 

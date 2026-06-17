@@ -33,6 +33,7 @@ export interface InpatientSettleQueueItemDto {
   ageText?: string;
   bedName?: string;
   contractDisplay?: string;
+  contractId?: string;
   encounterBusNo: string;
   encounterId: string;
   genderEnum?: string;
@@ -123,16 +124,34 @@ export interface QueryInpatientSettleChargesResponse {
 
 /** 住院预结算请求 */
 export interface PreSettleInpatientChargesRequest {
+  acctUsedFlag?: string;
   chargeItemIds: string[];
+  contractId?: string;
   encounterId: string;
+  insuplcAdmdvs?: string;
+  insutype?: string;
   patientId: string;
+  psnNo?: string;
+  psnSetlway?: string;
+  settleMode?: string;
+  ybCardInfo?: string;
+  ybMediumType?: string;
 }
 
 /** 住院预结算响应 */
 export interface PreSettleInpatientChargesResponse {
+  displayAmount?: null | number | string;
+  insurancePreSettled?: boolean;
   paymentDraftId: string;
   previewText?: string;
   receivableTotal: number | string;
+  settlementComposition?: string;
+  settleMode?: string;
+  ybAcctPay?: null | number | string;
+  ybFundPaySumamt?: null | number | string;
+  ybMedfeeSumamt?: null | number | string;
+  ybPreSettleId?: string;
+  ybPsnCashPay?: null | number | string;
 }
 
 /** 住院结算支付明细分录 */
@@ -149,14 +168,21 @@ export interface ConfirmInpatientSettleRequest {
   patientId: string;
   paymentDetails: InpatientSettlePaymentDetailDto[];
   paymentDraftId: string;
+  ybPreSettleId?: string;
 }
 
 /** 确认住院结算响应 */
 export interface ConfirmInpatientSettleResponse {
-  dischargeFullSettle: boolean;
-  invoiceDraftId: string;
+  advanceRefundPaymentId?: string;
+  coordinationIds?: string[];
+  dischargeFullSettle?: boolean;
+  insuranceSettled?: boolean;
+  invoiceDraftId?: string;
   paymentId: string;
+  paymentStatus?: string;
+  settlementMode?: string;
   successMessageCode?: string;
+  ybSetlId?: string;
 }
 
 /** 已结算支付单简要信息 */
@@ -186,4 +212,18 @@ export interface LoadSettledInpatientPaymentViewResponse {
   payments: SettledPaymentBriefDto[];
   receivableTotal?: null | number | string;
   settleTime?: string;
+}
+
+/** 取消住院结算请求（CHS Wave 2 外挂） */
+export interface CancelInpatientSettleRequest {
+  encounterId: string;
+  patientId: string;
+  paymentId: string;
+}
+
+/** 取消住院结算响应 */
+export interface CancelInpatientSettleResponse {
+  insuranceRevoked?: boolean;
+  refundPaymentId?: string;
+  ybSetlId?: string;
 }

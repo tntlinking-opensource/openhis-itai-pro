@@ -2,10 +2,12 @@ import type { Router } from 'vue-router';
 
 import { useAccessStore } from '@vben/stores';
 
-import { getMenuTreeApi } from '#/api';
+import { getMenuTreeByLoginUserApi } from '#/api';
+import { bootstrapImpersonationMeta } from '#/composables/use-impersonation';
 import { accessRoutes } from '#/router/routes';
 import { useAuthStore } from '#/store';
 import { convertMenuData } from '#/utils/convert-menu-data';
+import { requireLoginScopeReady } from '#/utils/require-login-scope-ready';
 
 import { generateAccess } from './access';
 
@@ -31,8 +33,9 @@ async function ensureAccessRoutes(router: Router) {
   if (!accessInitPromise) {
     accessInitPromise = (async () => {
       const authStore = useAuthStore();
+      await requireLoginScopeReady();
       const menuRequestStartAt = Date.now();
-      const menus = await getMenuTreeApi();
+      const menus = await getMenuTreeByLoginUserApi();
       let menuData = Array.isArray(menus) ? menus : [];
       menuData = convertMenuData(menuData);
       console.warn('[access-init] menu loaded', {
@@ -54,6 +57,7 @@ async function ensureAccessRoutes(router: Router) {
       accessStore.setAccessMenus(accessibleMenus);
       accessStore.setAccessRoutes(accessibleRoutes);
       accessStore.setIsAccessChecked(true);
+      // 触发从 localStorage 恢复租户列表（供布局等读取）
       authStore.getTenantList();
     })().finally(() => {
       accessInitPromise = null;
@@ -77,11 +81,13 @@ async function prefetchAccessRoutes(router: Router) {
   const tenantList = authStore.getTenantList();
   const selectedTenant = authStore.getSelectedTenant();
   const selectedOrganization = authStore.getSelectedOrganization();
-  if (tenantList.length > 0 && (!selectedTenant || !selectedOrganization)) {
+  const bootstrapReady = authStore.isOrganizationUnitSkipped();
+  if (tenantList.length > 0 && (!selectedTenant || (!selectedOrganization && !bootstrapReady))) {
     return;
   }
 
   try {
+    await bootstrapImpersonationMeta();
     await ensureAccessRoutes(router);
   } catch (error) {
     console.error('[access-init] prefetch failed', error);

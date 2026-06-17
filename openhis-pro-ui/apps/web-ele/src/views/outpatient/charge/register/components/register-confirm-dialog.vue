@@ -137,6 +137,7 @@ async function executeRegisterPayment() {
   payLoading.value = true;
   try {
     await payRegisterFee({
+      appointmentId: pre.appointmentId != null ? String(pre.appointmentId) : undefined,
       paymentDetails: [
         {
           payAmount: d.totalAmount,

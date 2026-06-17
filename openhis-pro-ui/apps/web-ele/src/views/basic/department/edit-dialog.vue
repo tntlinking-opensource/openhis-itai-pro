@@ -26,10 +26,6 @@ interface Props {
   practitionerOptions?: PractitionerOption[];
 }
 
-interface FormApiWithValidateField {
-  validateField?: (fields: string[]) => Promise<void>;
-}
-
 type DepartmentApiResponse = Department | { data?: Department };
 
 const props = withDefaults(defineProps<Props>(), {
@@ -45,6 +41,11 @@ const emit = defineEmits<{
   success: [];
   'update:visible': [value: boolean];
 }>();
+
+defineOptions({ name: 'DepartmentEditDialog' });
+
+const fullWidthStyle = { width: '100%' };
+const sectionTitleClass = 'col-span-2 !mb-0 !pb-0 dept-form-dialog__section-title';
 
 const originalData = ref<Partial<Department>>({});
 
@@ -78,6 +79,26 @@ function unwrapDepartmentResponse(response: DepartmentApiResponse): Department |
     return response.data;
   }
   return response;
+}
+
+// 下拉绑定值统一转 string，与 ElSelectV2 option.value 严格匹配。
+function toSelectString(value: unknown): string | undefined {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
+  }
+  return String(value).trim();
+}
+
+function toDepartmentFormValues(
+  value: Partial<Department>,
+): Partial<Department> & { parentId?: string } {
+  return {
+    ...value,
+    parentId: resolveParentId(value),
+    typeEnum: toSelectString(value.typeEnum),
+    classEnum: toSelectString(value.classEnum),
+    defDoctorId: toSelectString(value.defDoctorId),
+  };
 }
 
 // 递归过滤树形数据，移除指定 ID 的节点及其子节点
@@ -164,50 +185,42 @@ function toComparableParentId(value: unknown): string {
   return String(value).trim();
 }
 
-async function updateHospitalFieldVisibility(typeEnum: unknown) {
-  const isHospital = isHospitalType(typeEnum);
-  const medinsTypeField = formConfig.schema.find((item) => item.fieldName === 'medinsType') as
+// 医院类型下不展示的科室专属字段。
+const HOSPITAL_HIDDEN_FIELDS = ['parentId', 'classEnum', 'defDoctorId', 'caty'] as const;
+// 仅医院类型展示的医保字段。
+const HOSPITAL_ONLY_FIELDS = ['medinsType', 'medinsLv'] as const;
+
+function setSchemaFieldHide(fieldName: string, hide: boolean) {
+  const field = formConfig.schema.find((item) => item.fieldName === fieldName) as
     | undefined
     | { hide?: boolean };
-  if (medinsTypeField) {
-    medinsTypeField.hide = !isHospital;
-  }
-  const medinsLvField = formConfig.schema.find((item) => item.fieldName === 'medinsLv') as
-    | undefined
-    | { hide?: boolean };
-  if (medinsLvField) {
-    medinsLvField.hide = !isHospital;
-  }
-  // 切换为非医院时主动清空医院专属字段，避免隐藏字段残留旧值被提交。
-  if (!isHospital) {
-    formApi.setFieldValue('medinsType', undefined);
-    formApi.setFieldValue('medinsLv', undefined);
-    return;
-  }
-  // 切回医院时立即触发一次校验，给出必填红框反馈。
-  const formApiWithValidate = formApi as FormApiWithValidateField;
-  if (formApiWithValidate.validateField) {
-    await formApiWithValidate.validateField(['medinsType', 'medinsLv']);
+  if (field) {
+    field.hide = hide;
   }
 }
 
-function validateHospitalFields(formValues: DepartmentParams): boolean {
-  if (!isHospitalType(formValues.typeEnum)) {
-    return true;
+async function updateHospitalFieldVisibility(typeEnum: unknown) {
+  const isHospital = isHospitalType(typeEnum);
+
+  for (const fieldName of HOSPITAL_HIDDEN_FIELDS) {
+    setSchemaFieldHide(fieldName, isHospital);
   }
-  if (!String(formValues.ybNo ?? '').trim()) {
-    ElMessage.warning('机构类型为医院时，医保机构登记不能为空');
-    return false;
+  for (const fieldName of HOSPITAL_ONLY_FIELDS) {
+    setSchemaFieldHide(fieldName, !isHospital);
   }
-  if (!String(formValues.medinsType ?? '').trim()) {
-    ElMessage.warning('机构类型为医院时，医保机构类型不能为空');
-    return false;
+
+  if (isHospital) {
+    // 医院为根节点且无科室属性，切换时清空不适用字段。
+    for (const fieldName of HOSPITAL_HIDDEN_FIELDS) {
+      formApi.setFieldValue(fieldName, undefined);
+    }
+    return;
   }
-  if (!String(formValues.medinsLv ?? '').trim()) {
-    ElMessage.warning('机构类型为医院时，医保机构等级不能为空');
-    return false;
+
+  // 切换为非医院时清空医院专属字段，避免隐藏字段残留旧值被提交。
+  for (const fieldName of HOSPITAL_ONLY_FIELDS) {
+    formApi.setFieldValue(fieldName, undefined);
   }
-  return true;
 }
 
 async function handleSubmit() {
@@ -219,12 +232,16 @@ async function handleSubmit() {
   modalApi.lock(true);
   try {
     const formValues = (await formApi.getValues()) as DepartmentParams;
-    if (!validateHospitalFields(formValues)) {
-      return;
-    }
     const submitData: DepartmentParams = {
       ...formValues,
     };
+    // 医院须为根节点且无科室属性，提交前剔除不适用字段。
+    if (isHospitalType(submitData.typeEnum)) {
+      submitData.parentId = undefined;
+      submitData.classEnum = undefined;
+      submitData.defDoctorId = undefined;
+      submitData.caty = undefined;
+    }
 
     if (isEditMode.value) {
       submitData.id = props.formData?.id ?? originalData.value?.id;
@@ -275,11 +292,7 @@ async function loadFormData() {
       const data = unwrapDepartmentResponse(response as DepartmentApiResponse);
       if (data) {
         originalData.value = { ...data };
-        const parentId = resolveParentId(data);
-        const formData = {
-          ...data,
-          parentId,
-        };
+        const formData = toDepartmentFormValues(data);
         formApi.setValues(formData);
         updateHospitalFieldVisibility(formData.typeEnum);
       } else {
@@ -297,11 +310,7 @@ async function loadFormData() {
   } else {
     if (props.formData && Object.keys(props.formData).length > 0) {
       originalData.value = { ...props.formData };
-      const parentId = resolveParentId(props.formData);
-      const formData = {
-        ...props.formData,
-        parentId,
-      };
+      const formData = toDepartmentFormValues(props.formData);
       formApi.setValues(formData);
       updateHospitalFieldVisibility(formData.typeEnum);
     } else {
@@ -318,6 +327,7 @@ const [Modal, modalApi] = useVbenModal({
   },
   onOpened: async () => {
     updateFormSchema();
+    await nextTick();
     await loadFormData();
   },
   onConfirm: handleSubmit,
@@ -329,18 +339,23 @@ const [Modal, modalApi] = useVbenModal({
 
 const formConfig = reactive({
   commonConfig: {
+    labelWidth: 96,
+    labelClass: 'justify-start text-left',
     componentProps: {
-      style: { width: '220px' },
+      style: fullWidthStyle,
     },
   },
   layout: 'horizontal' as const,
+  wrapperClass: 'dept-form-dialog__grid grid grid-cols-2 gap-x-6',
   schema: [
     {
-      component: 'Input',
-      fieldName: 'busNo',
-      label: '科室编号',
+      component: 'SectionTitle',
+      fieldName: '__sectionBasic',
+      label: '基本信息',
+      hideLabel: true,
+      formItemClass: sectionTitleClass,
       componentProps: {
-        placeholder: '可手填，不填自动生成',
+        title: '基本信息',
       },
     },
     {
@@ -348,6 +363,9 @@ const formConfig = reactive({
       fieldName: 'name',
       label: '名称',
       rules: 'required',
+      componentProps: {
+        placeholder: '请输入',
+      },
     },
     {
       component: 'Select',
@@ -356,6 +374,7 @@ const formConfig = reactive({
       componentProps: {
         options: props.departmentTypeOptions,
         filterable: true,
+        placeholder: '请选择',
         onChange: async (value: unknown) => {
           await updateHospitalFieldVisibility(value);
         },
@@ -368,64 +387,112 @@ const formConfig = reactive({
       componentProps: {
         options: props.departmentClassOptions,
         filterable: true,
+        placeholder: '请选择',
       },
     },
     {
       component: 'TreeSelect',
       fieldName: 'parentId',
       label: '上级组织',
+      formItemClass: 'col-span-2',
       componentProps: {
         data: props.departmentOptions,
         checkStrictly: true,
         filterable: true,
         clearable: true,
+        placeholder: '请选择',
         props: {
           value: 'value',
           label: 'label',
           children: 'children',
         },
         nodeKey: 'value',
+        style: fullWidthStyle,
+      },
+    },
+    {
+      component: 'SectionTitle',
+      fieldName: '__sectionYb',
+      label: '医保信息',
+      hideLabel: true,
+      formItemClass: sectionTitleClass,
+      componentProps: {
+        title: '医保信息',
       },
     },
     {
       component: 'Input',
       fieldName: 'ybNo',
       label: '医保编码',
+      componentProps: {
+        placeholder: '请输入',
+      },
     },
     {
       component: 'Input',
       fieldName: 'ybName',
       label: '医保名称',
+      componentProps: {
+        placeholder: '请输入',
+      },
     },
     {
       component: 'Input',
       fieldName: 'medinsId',
-      label: '医保机构标识',
+      label: '机构标识',
+      componentProps: {
+        placeholder: '请输入',
+      },
     },
     {
       component: 'Input',
       fieldName: 'medinsAdmdvs',
       label: '医保区划',
+      componentProps: {
+        placeholder: '请输入',
+      },
     },
     {
       component: 'Input',
       fieldName: 'medinsType',
-      label: '医保机构类型',
+      label: '机构类型',
+      componentProps: {
+        placeholder: '请输入',
+      },
     },
     {
       component: 'Input',
       fieldName: 'medinsLv',
-      label: '医保机构等级',
+      label: '机构等级',
+      componentProps: {
+        placeholder: '请输入',
+      },
+    },
+    {
+      component: 'SectionTitle',
+      fieldName: '__sectionOther',
+      label: '其他',
+      hideLabel: true,
+      formItemClass: sectionTitleClass,
+      componentProps: {
+        title: '其他',
+      },
     },
     {
       component: 'Input',
       fieldName: 'pyStr',
       label: '拼音',
+      componentProps: {
+        placeholder: '请输入',
+      },
     },
     {
       component: 'Input',
       fieldName: 'wbStr',
       label: '五笔',
+      componentProps: {
+        placeholder: '请输入',
+      },
     },
     {
       component: 'Select',
@@ -435,12 +502,16 @@ const formConfig = reactive({
         options: props.practitionerOptions,
         filterable: true,
         clearable: true,
+        placeholder: '请选择',
       },
     },
     {
       component: 'Input',
       fieldName: 'caty',
       label: '科别',
+      componentProps: {
+        placeholder: '请输入',
+      },
     },
     {
       component: 'InputNumber',
@@ -448,6 +519,8 @@ const formConfig = reactive({
       label: '显示顺序',
       componentProps: {
         min: 0,
+        controlsPosition: 'right',
+        style: fullWidthStyle,
       },
     },
   ],
@@ -483,6 +556,39 @@ watch(
   { immediate: true },
 );
 
+// init 下拉就绪后重新写入枚举/医师字段，避免 options 为空时 setValues 无法匹配 label。
+watch(
+  () =>
+    [
+      props.departmentTypeOptions.length,
+      props.departmentClassOptions.length,
+      props.practitionerOptions.length,
+    ] as const,
+  async () => {
+    if (!originalData.value || Object.keys(originalData.value).length === 0) {
+      return;
+    }
+    if (
+      props.departmentTypeOptions.length === 0 &&
+      props.departmentClassOptions.length === 0 &&
+      props.practitionerOptions.length === 0
+    ) {
+      return;
+    }
+    await nextTick();
+    const { typeEnum, classEnum, defDoctorId } = toDepartmentFormValues(originalData.value);
+    if (typeEnum !== undefined) {
+      formApi.setFieldValue('typeEnum', typeEnum);
+    }
+    if (classEnum !== undefined) {
+      formApi.setFieldValue('classEnum', classEnum);
+    }
+    if (defDoctorId !== undefined) {
+      formApi.setFieldValue('defDoctorId', defDoctorId);
+    }
+  },
+);
+
 watch(
   () => props.practitionerOptions,
   () => {
@@ -502,7 +608,7 @@ watch(
 
 <template>
   <Modal
-    class="w-[500px]"
+    class="dept-form-dialog w-[820px] max-w-[96vw]"
     :title="isEditMode ? '编辑科室' : '新增科室'"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
@@ -510,3 +616,22 @@ watch(
     <Form />
   </Modal>
 </template>
+
+<style scoped>
+.dept-form-dialog :deep(.dept-form-dialog__grid) {
+  align-items: start;
+}
+
+.dept-form-dialog :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+
+.dept-form-dialog :deep(.dept-form-dialog__section-title) {
+  margin-top: 2px;
+  padding-bottom: 0 !important;
+}
+
+.dept-form-dialog :deep(.dept-form-dialog__section-title .el-form-item__content) {
+  min-height: 0;
+}
+</style>

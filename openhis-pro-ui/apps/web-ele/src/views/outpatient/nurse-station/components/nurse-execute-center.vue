@@ -11,6 +11,8 @@ import SectionTitle from '#/components/layouts/section-title.vue';
 import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display-cell.vue';
 import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
 
+import { isNurseExecuteMedicationRow } from '../services/map-nurse-station-api';
+
 defineOptions({
   name: 'NurseExecuteCenter',
 });
@@ -72,14 +74,14 @@ const onSelectionChange = (selection: NurseAdviceExecuteRow[]) => {
 
 /** 药品行仅展示，不参与勾选与执行 */
 const executeRowSelectable = (row: NurseAdviceExecuteRow) =>
-  row.type !== '药品' && row.status !== '已完成';
+  !isNurseExecuteMedicationRow(row) && row.status !== '已完成';
 
 const executeRowClassName = ({ row }: { row: NurseAdviceExecuteRow; rowIndex: number }) => {
   const parts: string[] = [];
   if (row.status === '已完成') {
     parts.push('is-nurse-execute-done-row');
   }
-  if (row.type === '药品') {
+  if (isNurseExecuteMedicationRow(row)) {
     parts.push('is-nurse-execute-med-display-only-row');
   }
   return parts.join(' ');
@@ -156,11 +158,12 @@ defineExpose({
         />
         <ElTableColumn prop="status" label="状态" width="90" align="center">
           <template #default="{ row }">
-            <template v-if="row.type !== '药品'">
+            <template v-if="!isNurseExecuteMedicationRow(row)">
               <ElTag size="small" effect="light" :type="getStatusTagType(row.status)">
                 {{ row.status }}
               </ElTag>
             </template>
+            <template v-else>—</template>
           </template>
         </ElTableColumn>
         <ElTableColumn prop="content" label="医嘱内容" min-width="420">
@@ -178,9 +181,10 @@ defineExpose({
         </ElTableColumn>
         <ElTableColumn label="已执行次数" width="100" align="center">
           <template #default="{ row }">
-            <template v-if="row.type !== '药品'">
+            <template v-if="!isNurseExecuteMedicationRow(row)">
               {{ row.executedCountDisplay ?? '—' }}
             </template>
+            <template v-else>—</template>
           </template>
         </ElTableColumn>
         <ElTableColumn label="执行人" width="130" align="center">

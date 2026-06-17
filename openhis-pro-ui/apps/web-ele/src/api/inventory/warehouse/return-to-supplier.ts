@@ -169,6 +169,10 @@ export interface AgreeReturnToSupplierRequest {
   busNo: string;
   approverId?: string;
   approvalClock?: string;
+  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
+  medicareUploadEnabled?: boolean;
+  /** 医保契约 busNo；上传进销存时使用 */
+  contractBusNo?: string;
 }
 
 export interface RejectReturnToSupplierRequest {

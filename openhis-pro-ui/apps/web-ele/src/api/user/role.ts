@@ -4,7 +4,6 @@ import { publicRequestClient } from '#/api/request';
 
 export interface RoleListParams extends PageParams {
   keyword?: string;
-  isDefault?: string;
   isStatic?: string;
 }
 
@@ -25,29 +24,33 @@ export interface RoleInfo {
   permissionNames?: string[];
 }
 
-export interface CreateRoleParams {
-  isDefault: string;
-  isStatic: string;
-  code: string;
+/** 岗位分配可选内置角色（服务端解析 id，勿写死种子 id） */
+export interface RoleOptionDto {
+  id: string;
   displayName: string;
-  name: string;
-  description: string;
-  permissions?: string[];
+  builtIn?: boolean;
+  /** 服务端 code，仅逻辑判断，不在界面展示 */
+  code?: string;
+  assignmentScopes?: string[];
+}
+
+export interface CreateRoleParams {
+  displayName: string;
+  description?: string;
+  isDefault?: boolean;
 }
 
 export interface UpdateRoleParams {
-  id: number;
-  isDefault: string;
+  id: string;
   displayName: string;
   description: string;
-  permissions?: string[];
 }
 
 /**
  * 绑定权限参数
  */
 export interface AssignPermissionsParams {
-  id: number;
+  id: string;
   request: {
     permissionNames: string[];
   };
@@ -77,6 +80,26 @@ export async function updateRoleApi(params: UpdateRoleParams) {
  */
 export async function assignPermissionsApi(params: AssignPermissionsParams): Promise<void> {
   return publicRequestClient.post('/role/assignPermissions', params);
+}
+
+/** 获取角色的岗位范围声明（AssignmentScope） */
+export async function getAssignmentScopesApi(roleId: string) {
+  return publicRequestClient.post<string[]>('/role/getAssignmentScopes', { id: roleId });
+}
+
+/** 全量替换角色的岗位范围声明 */
+export async function assignAssignmentScopesApi(roleId: string, scopeCodes: string[]) {
+  return publicRequestClient.post('/role/assignAssignmentScopes', { id: roleId, scopeCodes });
+}
+
+/** 获取角色的管理能力声明（StaffScope） */
+export async function getStaffScopesApi(roleId: string) {
+  return publicRequestClient.post<string[]>('/role/getStaffScopes', { id: roleId });
+}
+
+/** 全量替换角色的管理能力声明 */
+export async function assignStaffScopesApi(roleId: string, scopeCodes: string[]) {
+  return publicRequestClient.post('/role/assignStaffScopes', { id: roleId, scopeCodes });
 }
 
 /**

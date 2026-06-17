@@ -12,6 +12,7 @@ import type {
   PrepickedProductKeyDto,
   TerminologyOptionDto,
 } from '#/api/doctor-station/advice.types';
+import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 import type {
   InpatientDoctorStationAdviceCatalogRowDto,
   InpatientDoctorStationAdviceDraftLineRequest,
@@ -47,7 +48,7 @@ import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 import { ENSURE_CLINICAL_RECEPTION_KEY } from '#/components/doctor-station/clinical-reception-context';
-import { firstTerminologyCode, mapPatientServiceTypeToFeeNature } from '../services/advice-format';
+import { defaultContractSelection, firstTerminologyCode } from '../services/advice-format';
 import {
   flattenAdviceRowsForResourceOps,
   getAdviceStatusTagType,
@@ -74,7 +75,6 @@ import {
 } from '../services/advice-row';
 import {
   ADVICE_ESC_OVERLAY_SELECTOR,
-  ADVICE_PRICING_SOURCE_CODE,
   ADVICE_PRODUCT_COLUMNS,
   INPATIENT_ADVICE_CATALOG_TABLE_NAMES,
 } from '../services/advice-tab.constants';
@@ -84,7 +84,6 @@ import { calcAdviceTotalFee } from './use-advice-drug-list';
 export interface UseInpatientAdviceTabProps {
   encounterId?: string;
   patientId?: string;
-  patientServiceTypeName?: string;
 }
 
 /** 住院医生站「开立医嘱」页签：与门诊同构的独立实现，对接住院医嘱开立应用服务 */
@@ -94,6 +93,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
 
   const medicationRateOptions = ref<TerminologyOptionDto[]>([]);
   const medicationRouteOptions = ref<TerminologyOptionDto[]>([]);
+  const feeNatureOptions = ref<TerminologyOptionDto[]>([]);
 
   const adviceTableRef = ref<InstanceType<typeof ElTable>>();
   const tableSelection = ref<AdviceRowItem[]>([]);
@@ -111,8 +111,8 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
 
   const productColumns = ADVICE_PRODUCT_COLUMNS;
 
-  const defaultFeeNatureFromPatient = computed(() =>
-    mapPatientServiceTypeToFeeNature(props.patientServiceTypeName ?? ''),
+  const defaultContractSelectionRef = computed(() =>
+    defaultContractSelection(feeNatureOptions.value),
   );
 
   /** 表格遮罩：纯列表拉取或写操作任一进行中 */
@@ -129,18 +129,22 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
   }
 
   /** 新开西药编辑卡时顶栏表单初始状态 */
-  const createEditForm = (): AdviceEditForm => ({
-    orderType: '',
-    selectedId: '',
-    diagnosis: '',
-    feeNature: defaultFeeNatureFromPatient.value,
-    pharmacy: '',
-    singleDose: undefined,
-    frequency: terminologyDefaults().frequency,
-    usage: terminologyDefaults().usage,
-    medicationDays: undefined,
-    totalAmount: undefined,
-  });
+  const createEditForm = (): AdviceEditForm => {
+    const def = defaultContractSelectionRef.value;
+    return {
+      orderType: '',
+      selectedId: '',
+      diagnosis: '',
+      contractId: def.contractId || undefined,
+      feeNature: def.feeNature,
+      pharmacy: '',
+      singleDose: undefined,
+      frequency: terminologyDefaults().frequency,
+      usage: terminologyDefaults().usage,
+      medicationDays: undefined,
+      totalAmount: undefined,
+    };
+  };
 
   const editorForm = ref<AdviceEditForm>(createEditForm());
   const editorPatientDiagnoses = ref<DiagnosisItem[]>([]);
@@ -154,11 +158,13 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
   /** 暂存成功后保留编辑区时的空白药品行 */
   function createEmptyWesternDrugLine(): AdviceDrugItem {
     const t = terminologyDefaults();
+    const def = defaultContractSelectionRef.value;
     return {
       orderType: '',
       selectedId: '',
       diagnosis: '',
-      feeNature: defaultFeeNatureFromPatient.value,
+      contractId: def.contractId || undefined,
+      feeNature: def.feeNature,
       skinTest: false,
       pharmacy: '',
       singleDose: undefined,
@@ -493,7 +499,6 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         const res = await httpSaveInpatientDoctorStationAdviceDraftBatch({
           encounterId,
           patientId,
-          pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
           lines,
         });
         if (res.success === false) {
@@ -661,15 +666,18 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     if (!encounterId || !patientId) {
       medicationRateOptions.value = [];
       medicationRouteOptions.value = [];
+      feeNatureOptions.value = [];
       return;
     }
     try {
       const res = await httpInitInpatientDoctorStationAdvice({ encounterId, patientId });
       medicationRateOptions.value = res.medicationRateOptions ?? [];
       medicationRouteOptions.value = res.medicationRouteOptions ?? [];
+      feeNatureOptions.value = res.feeNatureOptions ?? [];
     } catch {
       medicationRateOptions.value = [];
       medicationRouteOptions.value = [];
+      feeNatureOptions.value = [];
     }
   }
 
@@ -700,7 +708,6 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         pageNo: params.pageNo,
         pageSize: params.pageSize,
         productTableNames: catalogTables,
-        pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
       });
       const { content: rawRows, totalCount } =
         parsePagedRowsFromApiData<InpatientDoctorStationAdviceCatalogRowDto>(res);
@@ -731,7 +738,6 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         pageNo: 1,
         pageSize: Math.max(keys.length, 20),
         prepickedProductKeys: keys,
-        pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
         productTableNames: [...INPATIENT_ADVICE_CATALOG_TABLE_NAMES],
       });
       const { content: rawRows } =
@@ -754,7 +760,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
       if (id && tbl) catalogMap.set(`${tbl}:${id}`, opt);
     }
     const ctx = {
-      defaultFeeNature: defaultFeeNatureFromPatient.value,
+      feeNatureOptions: feeNatureOptions.value,
       medicationRateOptions: medicationRateOptions.value,
       medicationRouteOptions: medicationRouteOptions.value,
     };
@@ -825,7 +831,10 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
   }
 
   /** 编辑卡「保存」 */
-  const handleSaveGroup = async (groupItems: AdviceDrugItem[]) => {
+  const handleSaveGroup = async (
+    groupItems: AdviceDrugItem[],
+    encounterDiagnosisRows: EncounterDiagnosisRowDto[] = [],
+  ) => {
     if (groupItems.length === 0) return;
     const encounterId = props.encounterId?.trim() || '';
     const patientId = props.patientId?.trim() || '';
@@ -867,7 +876,9 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     }
     let lines: InpatientDoctorStationAdviceDraftLineRequest[];
     try {
-      lines = buildAdviceDraftLines(groupItems, editorPatientDiagnoses.value);
+      lines = buildAdviceDraftLines(groupItems, editorPatientDiagnoses.value, {
+        encounterDiagnosisRows,
+      });
     } catch (error) {
       ElMessage.error(error instanceof Error ? error.message : '请求组包失败');
       return;
@@ -877,7 +888,6 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         const res = await httpSaveInpatientDoctorStationAdviceDraftBatch({
           encounterId,
           patientId,
-          pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
           lines,
         });
         if (res.success === false) {
@@ -998,7 +1008,8 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     bumpOrderSelectFocusTrigger,
     calcDrugLineTotalFee,
     clearAdviceTableSelection,
-    defaultFeeNatureFromPatient,
+    defaultContractSelectionRef,
+    feeNatureOptions,
     editorDirty,
     editorForm,
     editorInitialGroup,

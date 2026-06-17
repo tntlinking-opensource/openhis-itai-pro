@@ -7,6 +7,7 @@ import type { ChargeType } from '#/api/core/common';
 import type { PageParams } from '#/types/api-response';
 
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -24,12 +25,11 @@ import {
 
 import { getChargeTypeListApi } from '#/api/core/common';
 import {
-  insuranceSignInApi,
   listDownloadCursorsApi,
   pageNationalCatalogApi,
   refreshFromPlatform1312Api,
 } from '#/chs/api';
-import { resolveSignEndpointForSignIn } from '#/chs/utils/yb-plugin';
+import { ensureInsuranceSignIn } from '#/chs/utils/ensure-insurance-sign-in';
 import {
   CATALOG_1312_SCOPE_HINT,
   formatCatalogListType,
@@ -42,14 +42,22 @@ import {
   YB_VALI_FLAG_OPTIONS,
 } from '#/chs/constants/catalog-list-type';
 import { pickCatalog1312Filter } from '#/chs/constants/catalog-1312-filter';
+import {
+  filterInsuranceChargeTypes,
+  resolveDefaultInsuranceBusNo,
+} from '#/chs/constants/insurance-contract';
 import AppDialog from '#/components/app-dialog.vue';
 import { useRequest } from '#/hooks/use-request';
 
 defineOptions({ name: 'ChsNationalCatalogPage' });
 
+const router = useRouter();
+
 interface NationalCatalogQuery extends PageParams, Catalog1312FilterParams {
   contractBusNo?: string;
   queryPlatformIfMiss?: boolean;
+  aprvno?: string;
+  spec?: string;
 }
 
 const default1312Filter = (): Catalog1312FilterParams => ({
@@ -95,12 +103,10 @@ const formItems = computed<FormItemConfig[]>(() => [
     placeholder: '请选择医保契约',
     clearable: false,
     multiple: false,
-    options: chargeTypeOptions.value
-      .filter((item) => item.busNo)
-      .map((item) => ({
-        label: item.busNo ? `${item.label}（${item.busNo}）` : item.label,
-        value: item.busNo,
-      })),
+    options: chargeTypeOptions.value.map((item) => ({
+      label: item.busNo ? `${item.label}（${item.busNo}）` : item.label,
+      value: item.busNo,
+    })),
   },
   {
     type: 'select',
@@ -184,6 +190,20 @@ const formItems = computed<FormItemConfig[]>(() => [
     })),
   },
   {
+    type: 'input',
+    prop: 'aprvno',
+    label: '批准文号',
+    placeholder: '1301 明细模糊匹配',
+    clearable: true,
+  },
+  {
+    type: 'input',
+    prop: 'spec',
+    label: '规格',
+    placeholder: '1301 明细模糊匹配',
+    clearable: true,
+  },
+  {
     type: 'date',
     prop: 'queryDate',
     label: '查询时间点',
@@ -240,6 +260,10 @@ const tableColumns: TableColumn[] = [
     headerAlign: 'center',
     slot: 'chrgitmLv',
   },
+  { prop: 'dosform', label: '剂型', width: 88, showOverflowTooltip: true },
+  { prop: 'aprvno', label: '批准文号', width: 140, showOverflowTooltip: true },
+  { prop: 'prodentpName', label: '生产企业', minWidth: 140, showOverflowTooltip: true },
+  { prop: 'spec', label: '规格', width: 100, showOverflowTooltip: true },
   {
     prop: 'lmtUsedFlag',
     label: '限制使用',
@@ -286,7 +310,7 @@ const { run: runRefresh1312, loading: refreshLoading } = useRequest(refreshFromP
   },
 });
 
-const { run: runSignIn, loading: signInLoading } = useRequest(insuranceSignInApi, {
+const { run: runSignIn, loading: signInLoading } = useRequest(ensureInsuranceSignIn, {
   manual: true,
   showErrorMessage: true,
   onSuccess: (signNo) => {
@@ -319,6 +343,8 @@ function buildPageParams(): Parameters<typeof pageNationalCatalogApi>[0] | undef
   return {
     contractBusNo,
     ...pickCatalog1312Filter(queryParams.value),
+    aprvno: queryParams.value.aprvno,
+    spec: queryParams.value.spec,
     queryPlatformIfMiss: queryParams.value.queryPlatformIfMiss ?? false,
     pageNo: queryParams.value.pageNo ?? 1,
     pageSize: queryParams.value.pageSize ?? 50,
@@ -340,6 +366,8 @@ function applyFilterParams(params: Record<string, unknown>) {
     'lmtUsedFlag',
     'queryDate',
     'begndate',
+    'aprvno',
+    'spec',
   ] as const;
   for (const key of stringFields) {
     if (params[key] === undefined) continue;
@@ -400,6 +428,11 @@ async function handleRefreshFromPlatform() {
   } catch {
     return;
   }
+  try {
+    await runSignIn(contractBusNo);
+  } catch {
+    return;
+  }
   await runRefresh1312({
     contractBusNo,
     ...pickCatalog1312Filter(queryParams.value),
@@ -408,31 +441,11 @@ async function handleRefreshFromPlatform() {
   });
 }
 
-/** 9001 签到：本机 OpenHIS.Win 优先，否则由服务端 sign_mac / yb_plugin_url 回退 */
+/** 9001 签到 */
 async function handleSignIn() {
   const contractBusNo = requireContractBusNo();
   if (!contractBusNo) return;
-
-  const endpoint = await resolveSignEndpointForSignIn();
-  if (!endpoint.fromPlugin) {
-    const reason = endpoint.fallbackReason ?? '';
-    const message = endpoint.pluginOnline
-      ? `本机 HeaSec 获取签到 MAC 失败：${reason}。将改由服务端 sign_mac 完成签到。`
-      : `本机读卡插件未启动：${reason}。将改由服务端 sign_mac 完成签到。`;
-    ElMessage.warning({
-      message,
-      duration: 8000,
-      showClose: true,
-    });
-    await runSignIn({ contractBusNo });
-    return;
-  }
-
-  await runSignIn({
-    contractBusNo,
-    mac: endpoint.mac,
-    ip: endpoint.ip,
-  });
+  await runSignIn(contractBusNo);
 }
 
 /** 查看目录下载游标 */
@@ -442,6 +455,24 @@ async function handleShowDownloadCursors() {
   await runListCursors(contractBusNo);
 }
 
+/** 跳转 13xx 文件型目录下载页 */
+function handleGoCatalogDownload() {
+  const busNo = queryParams.value.contractBusNo;
+  void router.push({
+    path: '/chs/catalog-download',
+    query: busNo ? { contractBusNo: String(busNo) } : undefined,
+  });
+}
+
+/** 跳转医保目录对码 Workbench */
+function handleGoMappingWorkbench() {
+  const busNo = queryParams.value.contractBusNo;
+  void router.push({
+    path: '/chs/catalog-mapping-workbench',
+    query: busNo ? { contractBusNo: String(busNo) } : undefined,
+  });
+}
+
 /** 有效标志对应 Tag 类型 */
 function valiFlagTagType(code?: string): 'danger' | 'info' | 'success' {
   if (code === '1') return 'success';
@@ -449,16 +480,19 @@ function valiFlagTagType(code?: string): 'danger' | 'info' | 'success' {
   return 'info';
 }
 
-/** 加载医保契约下拉（费用性质主数据） */
+/** 加载医保契约下拉（排除 SELF_CHARGE / 历史自费码） */
 async function loadChargeTypes() {
   try {
-    chargeTypeOptions.value = await getChargeTypeListApi();
-    const firstWithBusNo = chargeTypeOptions.value.find((item) => item.busNo);
-    if (!queryParams.value.contractBusNo && firstWithBusNo?.busNo) {
-      queryParams.value.contractBusNo = firstWithBusNo.busNo;
-    }
+    const all = await getChargeTypeListApi();
+    const eligible = filterInsuranceChargeTypes(all);
+    chargeTypeOptions.value = eligible;
+    queryParams.value.contractBusNo = resolveDefaultInsuranceBusNo(
+      eligible,
+      queryParams.value.contractBusNo,
+    );
   } catch {
     chargeTypeOptions.value = [];
+    queryParams.value.contractBusNo = undefined;
   }
 }
 
@@ -499,6 +533,8 @@ onMounted(async () => {
             <ElButton plain :loading="cursorLoading" @click="handleShowDownloadCursors">
               下载游标
             </ElButton>
+            <ElButton plain @click="handleGoCatalogDownload"> 目录文件下载 </ElButton>
+            <ElButton plain @click="handleGoMappingWorkbench"> 对码工作台 </ElButton>
           </div>
         </div>
       </template>

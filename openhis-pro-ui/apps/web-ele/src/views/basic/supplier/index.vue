@@ -16,11 +16,19 @@ import {
   batchDisableSupplierApi,
   batchEnableSupplierApi,
   deleteSupplierApi,
+  getSupplierApi,
   getSupplierListApi,
   initSupplierApi,
 } from '#/api';
+import {
+  isSupplierActive,
+  SupplierStatusCode,
+  supplierStatusLabel,
+} from '#/constants/domain/supplier-status';
 
 import EditDialog from './edit-dialog.vue';
+
+defineOptions({ name: 'BasicSupplier' });
 
 const queryParams = ref<PageParams & { keyword?: string; typeEnum?: Array<number | string> }>({
   pageNo: 1,
@@ -62,21 +70,25 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'address',
     label: '地址',
+    showOverflowTooltip: true,
   },
   {
     prop: 'phone',
     label: '电话',
+    showOverflowTooltip: true,
   },
   {
     prop: 'email',
     label: '邮箱',
+    showOverflowTooltip: true,
   },
   {
-    prop: 'activeFlag',
+    prop: 'statusEnum',
     label: '是否启用',
-    slot: 'activeFlag',
+    slot: 'statusEnum',
     width: 100,
     align: 'center',
+    headerAlign: 'center',
   },
   {
     prop: 'action',
@@ -172,9 +184,19 @@ const handleAdd = () => {
   dialogVisible.value = true;
 };
 
-const handleEdit = (row: Supplier) => {
-  dialogFormData.value = { ...row };
-  dialogVisible.value = true;
+const handleEdit = async (row: Supplier) => {
+  if (!row.id) {
+    ElMessage.warning('缺少供应商ID');
+    return;
+  }
+  try {
+    const detail = await getSupplierApi(String(row.id));
+    dialogFormData.value = detail ?? { ...row };
+    dialogVisible.value = true;
+  } catch (error) {
+    console.error('获取供应商详情失败:', error);
+    ElMessage.error('获取供应商详情失败，请稍后重试');
+  }
 };
 
 const handleDialogSuccess = () => {
@@ -218,7 +240,7 @@ const handleBatchStart = async () => {
   }
 
   const ids = selectedRows.value
-    .filter((row) => row.activeFlag !== 1 && row.id)
+    .filter((row) => !isSupplierActive(row.statusEnum) && row.id)
     .map((row) => row.id);
 
   if (ids.length === 0) {
@@ -244,7 +266,7 @@ const handleBatchStop = async () => {
   }
 
   const ids = selectedRows.value
-    .filter((row) => row.activeFlag === 1 && row.id)
+    .filter((row) => isSupplierActive(row.statusEnum) && row.id)
     .map((row) => row.id);
 
   if (ids.length === 0) {
@@ -360,19 +382,27 @@ initPage();
         {{ getSupplierTypeLabel(row.typeEnum) }}
       </template>
 
-      <template #activeFlag="{ row }">
-        <ElTag :type="row.activeFlag === 1 ? 'success' : 'info'">
-          {{ row.activeFlag === 1 ? '是' : '否' }}
+      <template #statusEnum="{ row }">
+        <ElTag :type="isSupplierActive(row.statusEnum) ? 'success' : 'info'">
+          {{ supplierStatusLabel(row.statusEnum, row.statusEnum_enumText) }}
         </ElTag>
       </template>
 
       <template #action="{ row }">
         <ElButton type="primary" link @click.stop="handleEdit(row)"> 编辑 </ElButton>
-        <ElButton v-if="row.activeFlag === 1" type="warning" link @click.stop="handleStop(row)">
+        <ElButton
+          v-if="isSupplierActive(row.statusEnum)"
+          type="warning"
+          link
+          @click.stop="handleStop(row)"
+        >
           停用
         </ElButton>
         <ElButton
-          v-else-if="row.activeFlag !== 1"
+          v-else-if="
+            row.statusEnum === SupplierStatusCode.SUSPENDED ||
+            row.statusEnum === SupplierStatusCode.DRAFT
+          "
           type="success"
           link
           @click.stop="handleStart(row)"

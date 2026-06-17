@@ -85,7 +85,6 @@ export interface InpatientDoctorStationAdviceDraftLineRequest
 export interface SaveInpatientDoctorStationAdviceDraftBatchRequest {
   encounterId: string;
   patientId: string;
-  pricingSourceCode?: string;
   lines: InpatientDoctorStationAdviceDraftLineRequest[];
 }
 

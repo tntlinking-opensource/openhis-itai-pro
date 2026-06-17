@@ -1,5 +1,5 @@
 /**
- * 病案首页打印 API（待后端 generateHomepagePdf 落地）
+ * 病案首页打印 API（OpenPDF · MRMS 包内实现）
  */
 
 import type { PdfGenerateResultDto } from './types';

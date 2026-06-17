@@ -1,13 +1,14 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { TableColumn } from '@vben-core/table-layout-ui';
+
+import type { BatchAddConfirmPayload } from './batch-add-dialog.vue';
 
 import type {
-  BatchCreateExecuteLocationParams,
   CreateExecuteLocationParams,
+  ExecuteLocationItem,
   PageActivityDefinitionParams,
   PageExecuteLocationParams,
   UpdateExecuteLocationParams,
-  ExecuteLocationItem,
 } from '#/api/basic/execute-location';
 import type { ApiOptionItem } from '#/types/api-response';
 
@@ -17,10 +18,9 @@ import { Page } from '@vben/common-ui';
 
 import { TableLayout } from '@vben-core/table-layout-ui';
 
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 
 import {
-  batchCreateExecuteLocationApi,
   createExecuteLocationApi,
   deleteExecuteLocationApi,
   initExecuteLocationApi,
@@ -30,22 +30,30 @@ import {
 } from '#/api/basic/execute-location';
 import { useRequest } from '#/hooks/use-request';
 
+import BatchAddDialog from './batch-add-dialog.vue';
+
+defineOptions({ name: 'BasicExecuteLocation' });
+
 interface OrgTreeNode {
   id: string;
   name: string;
   children?: OrgTreeNode[];
 }
 
-interface TableLayoutFormModel {
-  activityCategoryCode?: string;
-  [key: string]: unknown;
+interface ExecuteLocationOrgOption extends ApiOptionItem {
+  children?: ExecuteLocationOrgOption[];
+}
+
+/** 表格行：未落库行用 _clientKey 作为稳定 row-key */
+interface ExecuteLocationTableRow extends ExecuteLocationItem {
+  _clientKey: string;
 }
 
 const orgTree = ref<OrgTreeNode[]>([]);
 const currentOrgId = ref<string>('');
 const treeLoading = ref(false);
 
-const list = ref<ExecuteLocationItem[]>([]);
+const list = ref<ExecuteLocationTableRow[]>([]);
 const loading = ref(false);
 const total = ref(0);
 
@@ -57,38 +65,116 @@ const queryParams = reactive<PageExecuteLocationParams>({
 
 const activityCategoryOptions = ref<ApiOptionItem[]>([]);
 const rowActivityDefinitionOptions = ref<Record<string, ApiOptionItem[]>>({});
-const batchActivityDefinitionOptions = ref<ApiOptionItem[]>([]);
-const rowOptionKeyMap = new WeakMap<ExecuteLocationItem, string>();
-let rowOptionKeySeed = 0;
+const batchDialogVisible = ref(false);
+let clientKeySeed = 0;
 let listRequestSeq = 0;
 
-function getRowOptionKey(row: ExecuteLocationItem) {
-  const cached = rowOptionKeyMap.get(row);
-  if (cached) {
-    return cached;
+/** Long/主键字段转 string，空值返回 undefined */
+function toOptionalIdString(value: null | number | string | undefined): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
   }
-  const key = `row:${++rowOptionKeySeed}`;
-  rowOptionKeyMap.set(row, key);
-  return key;
+  return String(value);
 }
 
-function setRowActivityDefinitionOptions(row: ExecuteLocationItem, options: ApiOptionItem[]) {
-  const key = getRowOptionKey(row);
+/** 项目 ID 转 string，空值返回空串 */
+function toActivityDefinitionIdString(value: null | number | string | undefined): string {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  return String(value);
+}
+
+/** 生成未落库行的本地主键 */
+function nextClientKey() {
+  return `draft:${++clientKeySeed}`;
+}
+
+/** 规范化项目下拉 value/label，避免 ElSelect 因类型不一致无法回显名称 */
+function normalizeActivityDefinitionOptions(options: ApiOptionItem[]): ApiOptionItem[] {
+  return options.map((option) => ({
+    label: String(option.label ?? option.value ?? ''),
+    value: String(option.value ?? ''),
+  }));
+}
+
+function setRowActivityDefinitionOptions(row: ExecuteLocationTableRow, options: ApiOptionItem[]) {
   rowActivityDefinitionOptions.value = {
     ...rowActivityDefinitionOptions.value,
-    [key]: options,
+    [row._clientKey]: normalizeActivityDefinitionOptions(options),
   };
 }
 
-function clearRowActivityDefinitionOptions(row: ExecuteLocationItem) {
-  const key = getRowOptionKey(row);
-  const { [key]: _removed, ...rest } = rowActivityDefinitionOptions.value;
+function clearRowActivityDefinitionOptions(row: ExecuteLocationTableRow) {
+  const { [row._clientKey]: _removed, ...rest } = rowActivityDefinitionOptions.value;
   rowActivityDefinitionOptions.value = rest;
 }
 
-function getActivityDefinitionOptionsForRow(row: ExecuteLocationItem) {
-  const key = getRowOptionKey(row);
-  return rowActivityDefinitionOptions.value[key] || [];
+function getActivityDefinitionOptionsForRow(row: ExecuteLocationTableRow) {
+  return rowActivityDefinitionOptions.value[row._clientKey] || [];
+}
+
+/** 用列表行自带的 activityDefinitionName 预填项目下拉 */
+function hydrateRowActivityDefinitionOption(row: ExecuteLocationTableRow) {
+  const defId = toActivityDefinitionIdString(row.activityDefinitionId);
+  if (!defId) {
+    return;
+  }
+  const label = row.activityDefinitionName?.trim() || defId;
+  setRowActivityDefinitionOptions(row, [{ value: defId, label }]);
+}
+
+/** 将后端 LocalTime / 字符串统一为 HH:mm:ss */
+function formatExecuteLocationTime(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (Array.isArray(value) && value.length >= 2) {
+    const [hour, minute, second = 0] = value;
+    return [hour, minute, second].map((part) => String(part).padStart(2, '0')).join(':');
+  }
+  if (typeof value === 'object') {
+    const parts = value as { hour?: number; minute?: number; second?: number };
+    if (typeof parts.hour === 'number' && typeof parts.minute === 'number') {
+      const second = typeof parts.second === 'number' ? parts.second : 0;
+      return [parts.hour, parts.minute, second]
+        .map((part) => String(part).padStart(2, '0'))
+        .join(':');
+    }
+  }
+  return String(value);
+}
+
+/** 规范化列表行中的 Long / 时间 / 名称字段 */
+function normalizeExecuteLocationRow(item: ExecuteLocationItem): ExecuteLocationItem {
+  const activityDefinitionName =
+    item.activityDefinitionName?.trim() ||
+    (
+      item as ExecuteLocationItem & { activityDefinitionId_dictText?: string }
+    ).activityDefinitionId_dictText?.trim();
+
+  return {
+    ...item,
+    id: toOptionalIdString(item.id),
+    activityDefinitionId: toOptionalIdString(item.activityDefinitionId),
+    activityDefinitionName: activityDefinitionName || undefined,
+    executionOrgId: toOptionalIdString(item.executionOrgId),
+    executionLocationId: toOptionalIdString(item.executionLocationId),
+    startTime: formatExecuteLocationTime(item.startTime),
+    endTime: formatExecuteLocationTime(item.endTime),
+  };
+}
+
+/** 接口行转为表格行（含稳定 row-key） */
+function toTableRow(item: ExecuteLocationItem): ExecuteLocationTableRow {
+  const normalized = normalizeExecuteLocationRow(item);
+  return {
+    ...normalized,
+    _clientKey: normalized.id ? `persisted:${normalized.id}` : nextClientKey(),
+  };
 }
 
 function parseTimeToSeconds(time: string | undefined): number | undefined {
@@ -132,91 +218,55 @@ const { run: runDelete, loading: deleteLoading } = useRequest(deleteExecuteLocat
     getList();
   },
 });
-const { run: runBatchCreate, loading: batchLoading } = useRequest(batchCreateExecuteLocationApi, {
-  manual: true,
-  onSuccess: () => {
-    ElMessage.success('批量新增成功');
-    batchDialogVisible.value = false;
-    getList();
-  },
-});
 
 watch(
-  [pageLoading, createLoading, updateLoading, deleteLoading, batchLoading],
+  [pageLoading, createLoading, updateLoading, deleteLoading],
   () => {
     loading.value =
       !!pageLoading.value ||
       !!createLoading.value ||
       !!updateLoading.value ||
-      !!deleteLoading.value ||
-      !!batchLoading.value;
+      !!deleteLoading.value;
   },
   { immediate: true },
 );
 
-const formItems = computed<FormItemConfig[]>(() => [
-  {
-    label: '诊疗大类',
-    prop: 'activityCategoryCode',
-    type: 'select',
-    options: activityCategoryOptions.value,
-    clearable: true,
-  },
-]);
+/** 当前科室已配置的项目 ID，供批量添加去重 */
+const boundActivityDefinitionIds = computed(() =>
+  list.value.map((row) => String(row.activityDefinitionId ?? '')).filter((id) => id.length > 0),
+);
 
 const tableColumns: TableColumn[] = [
-  { type: 'selection', width: 50, align: 'center' },
   {
     type: 'index',
     label: '序号',
-    width: 60,
+    width: '6%',
     align: 'center',
   },
   {
     prop: 'activityCategoryCode',
     label: '诊疗大类',
-    width: 180,
+    width: '20%',
     align: 'center',
     slot: 'activityCategory',
   },
   {
     prop: 'activityDefinitionId',
     label: '项目名称',
-    minWidth: 260,
+    width: '18%',
     align: 'center',
     slot: 'activityDefinition',
   },
   {
-    prop: 'startTime',
-    label: '开始时间',
-    width: 140,
+    prop: 'timeRange',
+    label: '生效时段',
+    width: '40%',
     align: 'center',
-    slot: 'startTime',
-  },
-  {
-    prop: 'endTime',
-    label: '结束时间',
-    width: 140,
-    align: 'center',
-    slot: 'endTime',
-  },
-  {
-    prop: 'priority',
-    label: '优先级',
-    width: 100,
-    align: 'center',
-  },
-  {
-    prop: 'remark',
-    label: '备注',
-    minWidth: 180,
-    align: 'center',
-    showOverflowTooltip: true,
+    slot: 'timeRange',
   },
   {
     label: '操作',
-    minWidth: 160,
-    fixed: 'right',
+    width: '16%',
     align: 'center',
     slot: 'actions',
   },
@@ -229,21 +279,19 @@ async function initPage() {
 
     // 使用执行科室选项构造左侧树结构
     orgTree.value =
-      (initData.executionOrgOptions || []).map((item) => ({
+      ((initData.executionOrgOptions || []) as ExecuteLocationOrgOption[]).map((item) => ({
         id: String(item.value),
         name: item.label,
         children:
-          item.children?.map((child: ApiOptionItem) => ({
+          item.children?.map((child) => ({
             id: String(child.value),
             name: child.label,
             children:
-              (child as ApiOptionItem & { children?: ApiOptionItem[] }).children?.map(
-                (grand: ApiOptionItem) => ({
-                  id: String(grand.value),
-                  name: grand.label,
-                  children: [],
-                }),
-              ) ?? [],
+              child.children?.map((grand) => ({
+                id: String(grand.value),
+                name: grand.label,
+                children: [],
+              })) ?? [],
           })) ?? [],
       })) || [];
 
@@ -253,7 +301,7 @@ async function initPage() {
   }
 }
 
-async function loadActivityDefinitionsForRow(row: ExecuteLocationItem) {
+async function loadActivityDefinitionsForRow(row: ExecuteLocationTableRow) {
   if (!currentOrgId.value || !row.activityCategoryCode) {
     clearRowActivityDefinitionOptions(row);
     return;
@@ -265,15 +313,25 @@ async function loadActivityDefinitionsForRow(row: ExecuteLocationItem) {
     pageSize: 100,
   };
   const resp = await pageActivityDefinitionForExecuteLocationApi(params);
-  setRowActivityDefinitionOptions(row, resp.content || []);
+  const options = normalizeActivityDefinitionOptions(resp.content || []);
+  const defId = toActivityDefinitionIdString(row.activityDefinitionId);
+  // 当前选中项若不在分页结果中，用列表接口返回的名称回显
+  if (defId && !options.some((item) => item.value === defId)) {
+    options.unshift({
+      value: defId,
+      label: row.activityDefinitionName?.trim() || defId,
+    });
+  }
+  setRowActivityDefinitionOptions(row, options);
 }
 
-function onActivityCategoryChange(row: ExecuteLocationItem) {
+function onActivityCategoryChange(row: ExecuteLocationTableRow) {
   row.activityDefinitionId = undefined;
   clearRowActivityDefinitionOptions(row);
 }
 
-async function getList(formModel?: TableLayoutFormModel) {
+/** 加载当前科室执行规则列表 */
+async function getList() {
   const requestSeq = ++listRequestSeq;
   if (!currentOrgId.value) {
     list.value = [];
@@ -281,16 +339,10 @@ async function getList(formModel?: TableLayoutFormModel) {
     return;
   }
   queryParams.executionOrgId = currentOrgId.value;
-  // TableLayout 顶部查询条件：诊疗大类
-  if (formModel && Object.prototype.hasOwnProperty.call(formModel, 'activityCategoryCode')) {
-    queryParams.activityCategoryCode =
-      (formModel.activityCategoryCode as string | undefined) || undefined;
-  }
   const params: PageExecuteLocationParams = {
     executionOrgId: queryParams.executionOrgId,
     pageNo: queryParams.pageNo,
     pageSize: queryParams.pageSize,
-    activityCategoryCode: queryParams.activityCategoryCode,
   };
 
   try {
@@ -298,8 +350,12 @@ async function getList(formModel?: TableLayoutFormModel) {
     if (requestSeq !== listRequestSeq) {
       return;
     }
-    list.value = (resp.content || []) as ExecuteLocationItem[];
+    list.value = (resp.content || []).map((item) => toTableRow(item));
     total.value = resp.totalCount || 0;
+    rowActivityDefinitionOptions.value = {};
+    for (const row of list.value) {
+      hydrateRowActivityDefinitionOption(row);
+    }
   } catch {
     if (requestSeq !== listRequestSeq) {
       return;
@@ -310,32 +366,32 @@ async function getList(formModel?: TableLayoutFormModel) {
   }
 }
 
-function handleReset() {
-  getList();
-}
-
 function handlePagination(pagination: { limit: number; page: number }) {
   queryParams.pageNo = pagination.page;
   queryParams.pageSize = pagination.limit;
   getList();
 }
 
-function handleOrgNodeClick(node: OrgTreeNode, meta: { children?: OrgTreeNode[] }) {
-  if (meta?.children && meta.children?.length > 0) {
+function isOrgTreeLeafNode(data: OrgTreeNode, treeNode: { isLeaf?: boolean }): boolean {
+  if (treeNode.isLeaf === false) {
+    return false;
+  }
+  const children = data.children;
+  return !children || children.length === 0;
+}
+
+function handleOrgNodeClick(data: OrgTreeNode, treeNode: { isLeaf?: boolean }) {
+  if (!isOrgTreeLeafNode(data, treeNode)) {
     return;
   }
-  currentOrgId.value = node.id;
+  currentOrgId.value = data.id;
   queryParams.pageNo = 1;
   getList();
 }
 
-function validateRow(row: ExecuteLocationItem): boolean {
+function validateRow(row: ExecuteLocationTableRow): boolean {
   if (!row.activityCategoryCode) {
     ElMessage.error('诊疗大类不能为空');
-    return false;
-  }
-  if (!row.activityDefinitionId) {
-    ElMessage.error('项目名称不能为空');
     return false;
   }
   if (!row.startTime || !row.endTime) {
@@ -361,6 +417,7 @@ function handleAddRow() {
     return;
   }
   list.value.unshift({
+    _clientKey: nextClientKey(),
     activityCategoryCode: undefined,
     activityDefinitionId: undefined,
     executionOrgId: currentOrgId.value,
@@ -370,7 +427,7 @@ function handleAddRow() {
   });
 }
 
-async function handleSaveRow(row: ExecuteLocationItem) {
+async function handleSaveRow(row: ExecuteLocationTableRow) {
   if (!currentOrgId.value) {
     ElMessage.warning('请先选择执行科室');
     return;
@@ -382,7 +439,7 @@ async function handleSaveRow(row: ExecuteLocationItem) {
   }
 
   // 只有当 id 是纯数字（后端生成的 Long）时，才认为是已存在记录需要走更新
-  const normalizedId = row.id && /^\d+$/.test(String(row.id)) ? String(row.id) : undefined;
+  const normalizedId = isPersistedRowId(row.id) ? String(row.id) : undefined;
 
   const activityCategoryCode = String(row.activityCategoryCode ?? '');
   const executionOrgId = String(row.executionOrgId ?? '');
@@ -397,9 +454,8 @@ async function handleSaveRow(row: ExecuteLocationItem) {
     executionLocationId: row.executionLocationId,
     startTime,
     endTime,
-    priority: row.priority ?? 1,
+    priority: 1,
     displayOrder: row.displayOrder,
-    remark: row.remark,
   };
 
   await (normalizedId
@@ -407,77 +463,37 @@ async function handleSaveRow(row: ExecuteLocationItem) {
     : runCreate(payload as CreateExecuteLocationParams));
 }
 
-async function handleDeleteRow(row: ExecuteLocationItem, index: number) {
-  try {
-    await ElMessageBox.confirm('确认删除该执行规则吗？', '提示', {
-      type: 'warning',
-    });
-    if (row.id) {
-      await runDelete(row.id);
-    } else {
-      list.value.splice(index, 1);
-      clearRowActivityDefinitionOptions(row);
-    }
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('删除失败，请稍后重试');
-    }
-  }
+function isPersistedRowId(id: ExecuteLocationItem['id']): id is string {
+  return id !== undefined && id !== null && /^\d+$/.test(String(id));
 }
 
-const batchDialogVisible = ref(false);
-const batchSelectedDefinitions = ref<string[]>([]);
-const batchForm = reactive<{
-  activityCategoryCode?: string;
-  endTime: string;
-  startTime: string;
-}>({
-  activityCategoryCode: undefined,
-  startTime: '00:00:00',
-  endTime: '23:59:59',
-});
+async function handleDeleteRow(row: ExecuteLocationTableRow, index: number) {
+  const persistedId = isPersistedRowId(row.id) ? String(row.id) : undefined;
 
-async function loadBatchActivityDefinitions() {
-  if (!currentOrgId.value || !batchForm.activityCategoryCode) {
-    batchActivityDefinitionOptions.value = [];
+  if (persistedId) {
+    await runDelete(persistedId);
     return;
   }
-  const params: PageActivityDefinitionParams = {
-    executionOrgId: currentOrgId.value,
-    activityCategoryCode: batchForm.activityCategoryCode,
-    pageNo: 1,
-    pageSize: 200,
-  };
-  const resp = await pageActivityDefinitionForExecuteLocationApi(params);
-  batchActivityDefinitionOptions.value = resp.content || [];
+
+  list.value.splice(index, 1);
+  clearRowActivityDefinitionOptions(row);
 }
 
+/** 打开批量添加弹窗 */
 function openBatchDialog() {
   if (!currentOrgId.value) {
-    ElMessage.warning('请先选择执行科室');
+    ElMessage.warning('请先在左侧选择一个具体科室');
     return;
   }
-  batchSelectedDefinitions.value = [];
-  batchForm.activityCategoryCode = undefined;
-  batchForm.startTime = '00:00:00';
-  batchForm.endTime = '23:59:59';
-  batchActivityDefinitionOptions.value = [];
   batchDialogVisible.value = true;
 }
 
-async function handleBatchSubmit() {
-  if (!batchForm.activityCategoryCode) {
-    ElMessage.error('诊疗大类不能为空');
-    return;
-  }
-  if (batchSelectedDefinitions.value.length === 0) {
-    ElMessage.error('请至少选择一个诊疗项目');
-    return;
-  }
-  const startSeconds = parseTimeToSeconds(batchForm.startTime);
-  const endSeconds = parseTimeToSeconds(batchForm.endTime);
+/** 批量添加确认：写入表格草稿行，由用户逐条保存 */
+function handleBatchConfirm(payload: BatchAddConfirmPayload) {
+  const startSeconds = parseTimeToSeconds(payload.startTime);
+  const endSeconds = parseTimeToSeconds(payload.endTime);
   if (startSeconds === undefined || endSeconds === undefined) {
-    ElMessage.error('时间格式不正确');
+    ElMessage.error('生效时段格式不正确');
     return;
   }
   if (startSeconds > endSeconds) {
@@ -485,16 +501,25 @@ async function handleBatchSubmit() {
     return;
   }
 
-  const params: BatchCreateExecuteLocationParams = {
-    executionOrgId: currentOrgId.value,
-    activityCategoryCode: batchForm.activityCategoryCode,
-    activityDefinitionIds: batchSelectedDefinitions.value,
-    startTime: batchForm.startTime,
-    endTime: batchForm.endTime,
-    priority: 1,
-  };
-
-  await runBatchCreate(params);
+  for (const item of payload.items) {
+    const option = normalizeActivityDefinitionOptions([item])[0];
+    if (!option) {
+      continue;
+    }
+    const row: ExecuteLocationTableRow = {
+      _clientKey: nextClientKey(),
+      activityCategoryCode: payload.activityCategoryCode,
+      activityDefinitionId: option.value,
+      activityDefinitionName: option.label,
+      executionOrgId: currentOrgId.value,
+      startTime: payload.startTime,
+      endTime: payload.endTime,
+      priority: 1,
+    };
+    list.value.unshift(row);
+    setRowActivityDefinitionOptions(row, [option]);
+  }
+  ElMessage.success(`已添加 ${payload.items.length} 条项目配置，请核对后逐条保存`);
 }
 
 onMounted(async () => {
@@ -522,33 +547,30 @@ onActivated(() => {
             :props="{ label: 'name', children: 'children' }"
             highlight-current
             default-expand-all
+            :expand-on-click-node="false"
             @node-click="handleOrgNodeClick"
           />
         </div>
       </div>
 
-      <div class="min-w-0 flex-1">
+      <div class="execute-location-panel min-w-0 flex-1">
         <TableLayout
+          class="execute-location-table"
           :table-data="list"
           :loading="loading"
           :total="total"
           :query-params="queryParams"
-          :form-items="formItems"
           :table-columns="tableColumns"
-          :show-top-query="true"
+          :show-top-query="false"
           :show-pagination="true"
-          row-key="id"
-          @query="getList"
-          @reset="handleReset"
+          row-key="_clientKey"
           @pagination="handlePagination"
         >
           <template #toolbar-actions>
             <ElButton type="primary" @click="handleAddRow" :disabled="!currentOrgId">
               添加新项目
             </ElButton>
-            <ElButton type="primary" plain @click="openBatchDialog" :disabled="!currentOrgId">
-              批量新增项目配置
-            </ElButton>
+            <ElButton @click="openBatchDialog" :disabled="!currentOrgId"> 批量添加项目 </ElButton>
           </template>
 
           <template #activityCategory="{ row }">
@@ -556,7 +578,7 @@ onActivated(() => {
               v-model="row.activityCategoryCode"
               placeholder="请选择诊疗大类"
               clearable
-              style="width: 160px"
+              class="cell-control"
               @change="() => onActivityCategoryChange(row)"
             >
               <ElOption
@@ -573,8 +595,8 @@ onActivated(() => {
               v-model="row.activityDefinitionId"
               filterable
               clearable
-              placeholder="请选择项目"
-              style="width: 260px"
+              placeholder="可选，不选表示大类默认"
+              class="cell-control"
               @visible-change="(visible: boolean) => visible && loadActivityDefinitionsForRow(row)"
             >
               <ElOption
@@ -586,21 +608,24 @@ onActivated(() => {
             </ElSelect>
           </template>
 
-          <template #startTime="{ row }">
-            <ElTimePicker
-              v-model="row.startTime"
-              placeholder="开始时间"
-              format="HH:mm:ss"
-              value-format="HH:mm:ss"
-            />
-          </template>
-          <template #endTime="{ row }">
-            <ElTimePicker
-              v-model="row.endTime"
-              placeholder="结束时间"
-              format="HH:mm:ss"
-              value-format="HH:mm:ss"
-            />
+          <template #timeRange="{ row }">
+            <div class="execute-time-row">
+              <ElTimePicker
+                v-model="row.startTime"
+                placeholder="开始"
+                format="HH:mm:ss"
+                value-format="HH:mm:ss"
+                class="execute-time-input"
+              />
+              <span class="execute-time-sep">~</span>
+              <ElTimePicker
+                v-model="row.endTime"
+                placeholder="结束"
+                format="HH:mm:ss"
+                value-format="HH:mm:ss"
+                class="execute-time-input"
+              />
+            </div>
           </template>
 
           <template #actions="{ row, rowIndex }">
@@ -611,71 +636,67 @@ onActivated(() => {
       </div>
     </div>
 
-    <ElDialog
-      v-model="batchDialogVisible"
-      title="批量新增执行科室配置"
-      width="600px"
-      destroy-on-close
-    >
-      <ElForm label-width="90px">
-        <ElFormItem label="诊疗大类">
-          <ElSelect
-            v-model="batchForm.activityCategoryCode"
-            placeholder="请选择诊疗大类"
-            style="width: 100%"
-            @change="
-              () => {
-                batchSelectedDefinitions = [];
-                loadBatchActivityDefinitions();
-              }
-            "
-          >
-            <ElOption
-              v-for="item in activityCategoryOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </ElSelect>
-        </ElFormItem>
-        <ElFormItem label="项目列表">
-          <ElSelect
-            v-model="batchSelectedDefinitions"
-            multiple
-            filterable
-            style="width: 100%"
-            placeholder="请选择诊疗项目"
-          >
-            <ElOption
-              v-for="item in batchActivityDefinitionOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </ElSelect>
-        </ElFormItem>
-        <ElFormItem label="时间段">
-          <ElTimePicker
-            v-model="batchForm.startTime"
-            format="HH:mm:ss"
-            value-format="HH:mm:ss"
-            placeholder="开始时间"
-          />
-          <span style="margin: 0 8px">~</span>
-          <ElTimePicker
-            v-model="batchForm.endTime"
-            format="HH:mm:ss"
-            value-format="HH:mm:ss"
-            placeholder="结束时间"
-          />
-        </ElFormItem>
-      </ElForm>
-      <template #footer>
-        <span class="dialog-footer">
-          <ElButton @click="batchDialogVisible = false">取 消</ElButton>
-          <ElButton type="primary" @click="handleBatchSubmit">确 定</ElButton>
-        </span>
-      </template>
-    </ElDialog>
+    <BatchAddDialog
+      v-model:visible="batchDialogVisible"
+      :execution-org-id="currentOrgId"
+      :activity-category-options="activityCategoryOptions"
+      :bound-activity-definition-ids="boundActivityDefinitionIds"
+      @confirm="handleBatchConfirm"
+    />
   </Page>
 </template>
+
+<style scoped lang="scss">
+.execute-location-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.execute-location-table {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+
+  :deep(.vxe-grid),
+  :deep(.vxe-table),
+  :deep(.vxe-table--render-wrapper),
+  :deep(.vxe-table--main-wrapper),
+  :deep(.vxe-table--header),
+  :deep(.vxe-table--body),
+  :deep(.vxe-table--header-wrapper table),
+  :deep(.vxe-table--body-wrapper table) {
+    width: 100% !important;
+  }
+
+  :deep(.cell-control) {
+    width: 100%;
+  }
+
+  :deep(.vxe-body--column),
+  :deep(.vxe-header--column) {
+    overflow: visible;
+  }
+}
+
+.execute-time-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding-inline: 8px;
+  box-sizing: border-box;
+}
+
+.execute-time-input {
+  flex: 1;
+  min-width: 0;
+  max-width: 168px;
+}
+
+.execute-time-sep {
+  color: var(--el-text-color-regular);
+  flex-shrink: 0;
+}
+</style>

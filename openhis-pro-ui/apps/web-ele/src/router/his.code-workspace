@@ -9,6 +9,9 @@
     {
       "path": "../../../../../whale-sever",
     },
+    {
+      "path": "../../../../../whale-report",
+    },
   ],
   "settings": {},
 }

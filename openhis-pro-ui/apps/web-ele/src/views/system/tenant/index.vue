@@ -207,7 +207,7 @@ const handleDelete = async (row: TenantInfo) => {
       cancelButtonText: '取消',
       type: 'warning',
     });
-    await deleteTenantApi({ value: row.id });
+    await deleteTenantApi(row.id);
     ElMessage.success('删除成功');
     loadData();
   } catch (error: any) {

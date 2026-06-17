@@ -11,9 +11,8 @@ const props = withDefaults(
   defineProps<{
     encounterId?: string;
     patientId?: string;
-    patientServiceTypeName?: string;
   }>(),
-  { encounterId: '', patientId: '', patientServiceTypeName: '' },
+  { encounterId: '', patientId: '' },
 );
 
 const emit = defineEmits<{

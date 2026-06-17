@@ -1,4 +1,3 @@
-import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
 import type {
   AdviceDrugItem,
   AdviceEditForm,
@@ -16,11 +15,11 @@ import type {
   TerminologyOptionDto,
 } from '#/api/doctor-station/advice.types';
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
+import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
 import type { DrugGroupDisplayItem } from '#/utils/drug-group-table';
 
 import {
   computed,
-  inject,
   nextTick,
   onActivated,
   onDeactivated,
@@ -41,11 +40,25 @@ import {
   httpUpdateDoctorStationMedicationAdviceGroups,
   httpWithdrawDoctorStationAdviceBatch,
 } from '#/api/doctor-station/advice.http';
+import { useEnsureClinicalReception } from '#/components/doctor-station/use-ensure-clinical-reception';
+import {
+  useExamApplyFormPrint,
+  useLabApplyFormPrint,
+} from '#/composables/use-service-apply-form-print';
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import {
+  groupDoctorStationExamApplyPrintTarget,
+  groupDoctorStationLabApplyPrintTarget,
+} from '#/utils/report/doctor-station-print-targets';
 
-import { ENSURE_CLINICAL_RECEPTION_KEY } from '#/components/doctor-station/clinical-reception-context';
-import { firstTerminologyCode, mapPatientServiceTypeToFeeNature } from '../services/advice-format';
+import { createAdviceDrugItem, inferDoseBandConvertK } from '../services/advice-edit';
+import {
+  buildAdviceDrugItemSeedFromListRow,
+  mergeCatalogIntoAdviceDrugItemForEdit,
+  prepickedKeyFromListRow,
+} from '../services/advice-edit-hydrate';
+import { defaultContractSelection, firstTerminologyCode } from '../services/advice-format';
 import {
   flattenAdviceRowsForResourceOps,
   getAdviceStatusTagType,
@@ -53,12 +66,6 @@ import {
   mergeMedicationAdviceRowsForListDisplay,
 } from '../services/advice-list';
 import { buildAdviceDraftLines } from '../services/advice-medication-draft';
-import { createAdviceDrugItem, inferDoseBandConvertK } from '../services/advice-edit';
-import {
-  buildAdviceDrugItemSeedFromListRow,
-  mergeCatalogIntoAdviceDrugItemForEdit,
-  prepickedKeyFromListRow,
-} from '../services/advice-edit-hydrate';
 import {
   inferAdviceLineEditorKind,
   productTableNameForAdviceRow,
@@ -71,16 +78,14 @@ import {
 } from '../services/advice-row';
 import {
   ADVICE_ESC_OVERLAY_SELECTOR,
-  ADVICE_PRICING_SOURCE_CODE,
   ADVICE_PRODUCT_COLUMNS,
+  WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES,
 } from '../services/advice-tab.constants';
 import { calcAdviceTotalFee } from './use-advice-drug-list';
 
 export interface UseAdviceTabProps {
   encounterId?: string;
   patientId?: string;
-  /** IF-DOR-01 就诊列表 `serviceTypeName`，用于医嘱默认「费用性质」 */
-  patientServiceTypeName?: string;
 }
 
 /**
@@ -88,10 +93,13 @@ export interface UseAdviceTabProps {
  */
 export function useAdviceTab(props: UseAdviceTabProps) {
   const authStore = useAuthStore();
-  const ensureClinicalReception = inject(ENSURE_CLINICAL_RECEPTION_KEY, undefined);
+  const { ensureReceptionBeforeClinicalWork } = useEnsureClinicalReception();
+  const { printServiceApplyForm: printLabApplyForm } = useLabApplyFormPrint();
+  const { printServiceApplyForm: printExamApplyForm } = useExamApplyFormPrint();
 
   const medicationRateOptions = ref<TerminologyOptionDto[]>([]);
   const medicationRouteOptions = ref<TerminologyOptionDto[]>([]);
+  const feeNatureOptions = ref<TerminologyOptionDto[]>([]);
 
   const adviceTableRef = ref<InstanceType<typeof ElTable>>();
   const tableSelection = ref<AdviceRowItem[]>([]);
@@ -101,16 +109,16 @@ export function useAdviceTab(props: UseAdviceTabProps) {
   const adviceListLoading = ref(false);
   /** 保存 / 签发 / 撤回 / 删除 / 刷新 等写操作进行中（含紧随的列表刷新） */
   const adviceMutationLoading = ref(false);
+  const printApplyFormLoading = ref(false);
   const showEditor = ref(false);
   const editorDirty = ref(false);
   const editorInitialGroup = ref<AdviceDrugItem[]>([]);
   const editorOpening = ref(false);
-  const tcmDialogVisible = ref(false);
 
   const productColumns = ADVICE_PRODUCT_COLUMNS;
 
-  const defaultFeeNatureFromPatient = computed(() =>
-    mapPatientServiceTypeToFeeNature(props.patientServiceTypeName ?? ''),
+  const defaultContractSelectionRef = computed(() =>
+    defaultContractSelection(feeNatureOptions.value),
   );
 
   /** 表格遮罩：纯列表拉取或写操作任一进行中 */
@@ -127,18 +135,22 @@ export function useAdviceTab(props: UseAdviceTabProps) {
   }
 
   /** 新开西药编辑卡时顶栏表单初始状态 */
-  const createEditForm = (): AdviceEditForm => ({
-    orderType: '',
-    selectedId: '',
-    diagnosis: '',
-    feeNature: defaultFeeNatureFromPatient.value,
-    pharmacy: '',
-    singleDose: undefined,
-    frequency: terminologyDefaults().frequency,
-    usage: terminologyDefaults().usage,
-    medicationDays: undefined,
-    totalAmount: undefined,
-  });
+  const createEditForm = (): AdviceEditForm => {
+    const def = defaultContractSelectionRef.value;
+    return {
+      orderType: '',
+      selectedId: '',
+      diagnosis: '',
+      contractId: def.contractId || undefined,
+      feeNature: def.feeNature,
+      pharmacy: '',
+      singleDose: undefined,
+      frequency: terminologyDefaults().frequency,
+      usage: terminologyDefaults().usage,
+      medicationDays: undefined,
+      totalAmount: undefined,
+    };
+  };
 
   const editorForm = ref<AdviceEditForm>(createEditForm());
   const editorPatientDiagnoses = ref<DiagnosisItem[]>([]);
@@ -152,11 +164,13 @@ export function useAdviceTab(props: UseAdviceTabProps) {
   /** 暂存成功后保留编辑区时的空白药品行 */
   function createEmptyWesternDrugLine(): AdviceDrugItem {
     const t = terminologyDefaults();
+    const def = defaultContractSelectionRef.value;
     return {
       orderType: '',
       selectedId: '',
       diagnosis: '',
-      feeNature: defaultFeeNatureFromPatient.value,
+      contractId: def.contractId || undefined,
+      feeNature: def.feeNature,
       skinTest: false,
       pharmacy: '',
       singleDose: undefined,
@@ -203,12 +217,6 @@ export function useAdviceTab(props: UseAdviceTabProps) {
   }
 
   const calcDrugLineTotalFee = calcAdviceTotalFee;
-
-  /** 解析辅文时的用法/频次回退（依赖当前术语缓存） */
-  function extensionParseFallbacks() {
-    const t = terminologyDefaults();
-    return { usage: t.usage, frequency: t.frequency };
-  }
 
   /** 列表 `groupItems` 是否已是编辑卡可识别的 `AdviceDrugItem`（与 DrugGroupDisplayItem 区分） */
   function isAdviceDrugEditorLine(
@@ -258,10 +266,8 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       ElMessage.warning('当前编辑卡片有未保存数据，请先保存或关闭');
       return;
     }
-    if (ensureClinicalReception) {
-      const ok = await ensureClinicalReception();
-      if (!ok) return;
-    }
+    const ok = await ensureReceptionBeforeClinicalWork();
+    if (!ok) return;
     editingAdviceResourceType.value = '';
     editorInitialGroup.value = [];
     showEditor.value = true;
@@ -357,9 +363,6 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       ElMessage.warning('请勾选至少一条已签发且可签退的医嘱');
       return;
     }
-    if (targets.length < flatSel.length) {
-      ElMessage.warning('已跳过不可签退行');
-    }
     await withAdviceMutationLoading(async () => {
       try {
         const res = await httpWithdrawDoctorStationAdviceBatch({
@@ -411,15 +414,11 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       ElMessage.warning('请勾选至少一条可删除的草稿医嘱');
       return;
     }
-    if (lines.length < flatSelDel.length) {
-      ElMessage.warning('已跳过不可删除行（仅草稿可删）');
-    }
     await withAdviceMutationLoading(async () => {
       try {
         const res = await httpSaveDoctorStationAdviceDraftBatch({
           encounterId,
           patientId,
-          pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
           lines,
         });
         if (res.success === false) {
@@ -441,6 +440,94 @@ export function useAdviceTab(props: UseAdviceTabProps) {
 
   function handleToolbarPlaceholder(featureLabel: string) {
     ElMessage.info(`${featureLabel}功能开发中`);
+  }
+
+  function resolveApplyPrintSourceRows(): AdviceRowItem[] {
+    if (tableSelection.value.length > 0) {
+      return tableSelection.value;
+    }
+    return rows.value;
+  }
+
+  function resolveApplyPrintSelectedKeys(): string[] | undefined {
+    if (tableSelection.value.length === 0) {
+      return undefined;
+    }
+    return tableSelection.value.map((row) => row.key);
+  }
+
+  async function handlePrintLabApplyForm() {
+    const encounterId = props.encounterId?.trim() || '';
+    if (!encounterId) {
+      ElMessage.warning('缺少就诊信息，无法打印检验申请单');
+      return;
+    }
+    if (showEditor.value && editorDirty.value) {
+      ElMessage.warning('请先保存或关闭当前编辑卡片');
+      return;
+    }
+    const target = groupDoctorStationLabApplyPrintTarget(
+      resolveApplyPrintSourceRows(),
+      resolveApplyPrintSelectedKeys(),
+    );
+    if (!target) {
+      ElMessage.warning(
+        tableSelection.value.length > 0
+          ? '所选医嘱中没有可打印的检验申请'
+          : '当前没有可打印的已签发检验医嘱',
+      );
+      return;
+    }
+    printApplyFormLoading.value = true;
+    try {
+      await printLabApplyForm({
+        encounterId,
+        target,
+        jobName: '检验申请单',
+      });
+      ElMessage.success('已发送检验申请单');
+    } catch {
+      // composable 已记录日志
+    } finally {
+      printApplyFormLoading.value = false;
+    }
+  }
+
+  async function handlePrintExamApplyForm() {
+    const encounterId = props.encounterId?.trim() || '';
+    if (!encounterId) {
+      ElMessage.warning('缺少就诊信息，无法打印检查申请单');
+      return;
+    }
+    if (showEditor.value && editorDirty.value) {
+      ElMessage.warning('请先保存或关闭当前编辑卡片');
+      return;
+    }
+    const target = groupDoctorStationExamApplyPrintTarget(
+      resolveApplyPrintSourceRows(),
+      resolveApplyPrintSelectedKeys(),
+    );
+    if (!target) {
+      ElMessage.warning(
+        tableSelection.value.length > 0
+          ? '所选医嘱中没有可打印的检查申请'
+          : '当前没有可打印的已签发检查医嘱',
+      );
+      return;
+    }
+    printApplyFormLoading.value = true;
+    try {
+      await printExamApplyForm({
+        encounterId,
+        target,
+        jobName: '检查申请单',
+      });
+      ElMessage.success('已发送检查申请单');
+    } catch {
+      // composable 已记录日志
+    } finally {
+      printApplyFormLoading.value = false;
+    }
   }
 
   /** 勾选行中：西药 + 草稿 + 有 `requestId`（IF-DOR-17 仅药品申请主键可操作组号）。 */
@@ -481,9 +568,6 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       ElMessage.warning('请勾选已并组（带组号）的草稿药品医嘱');
       return;
     }
-    if (withGroup.length < flatUg.length) {
-      ElMessage.warning('已跳过非药品、非草稿或无组号的行');
-    }
     const clearGroupIds = withGroup.map((r) => String(r.requestId).trim());
     try {
       const res = await httpUpdateDoctorStationMedicationAdviceGroups({
@@ -522,9 +606,6 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       ElMessage.warning('请勾选至少一条草稿药品医嘱（需已暂存含 requestId）');
       return;
     }
-    if (meds.length < flatAg.length) {
-      ElMessage.warning('已跳过非药品或非草稿的行');
-    }
     /** 每组并组操作使用新的毫秒时间戳，保证与近期其他并组组号不冲突 */
     const groupIdRaw = String(Date.now());
     try {
@@ -550,10 +631,6 @@ export function useAdviceTab(props: UseAdviceTabProps) {
           : '并组失败';
       ElMessage.error(msg);
     }
-  };
-
-  const handleOpenTcmDialog = () => {
-    tcmDialogVisible.value = true;
   };
 
   /** 选中就诊变化时拉取医嘱主表 */
@@ -588,15 +665,18 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     if (!encounterId || !patientId) {
       medicationRateOptions.value = [];
       medicationRouteOptions.value = [];
+      feeNatureOptions.value = [];
       return;
     }
     try {
       const res = await httpInitDoctorStationAdvice({ encounterId, patientId });
       medicationRateOptions.value = res.medicationRateOptions ?? [];
       medicationRouteOptions.value = res.medicationRouteOptions ?? [];
+      feeNatureOptions.value = res.feeNatureOptions ?? [];
     } catch {
       medicationRateOptions.value = [];
       medicationRouteOptions.value = [];
+      feeNatureOptions.value = [];
     }
   }
 
@@ -621,7 +701,9 @@ export function useAdviceTab(props: UseAdviceTabProps) {
         pageNo: params.pageNo,
         pageSize: params.pageSize,
         productTableNames: params.productTableNames,
-        pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
+        excludeMedicationCategoryCodes: [
+          ...WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES,
+        ],
       });
       const { content: rawRows, totalCount } =
         parsePagedRowsFromApiData<DoctorStationAdviceCatalogRowDto>(res);
@@ -653,7 +735,6 @@ export function useAdviceTab(props: UseAdviceTabProps) {
         pageNo: 1,
         pageSize: Math.max(keys.length, 20),
         prepickedProductKeys: keys,
-        pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
       });
       const { content: rawRows } = parsePagedRowsFromApiData<DoctorStationAdviceCatalogRowDto>(res);
       return rawRows.map((item) => mapCatalogRowToOption(item));
@@ -665,7 +746,7 @@ export function useAdviceTab(props: UseAdviceTabProps) {
   /** 编辑回填：目录基础信息 + 列表行已开立字段（含单次剂量换算） */
   async function hydrateAdviceDrugItemsForEdit(rows: AdviceRowItem[]): Promise<AdviceDrugItem[]> {
     const keys = rows
-      .map(prepickedKeyFromListRow)
+      .map((row) => prepickedKeyFromListRow(row))
       .filter((k): k is PrepickedProductKeyDto => k !== null);
     const catalogList = await fetchCatalogOptionsByPrepickedKeys(keys);
     const catalogMap = new Map<string, AdviceProductOption>();
@@ -675,7 +756,7 @@ export function useAdviceTab(props: UseAdviceTabProps) {
       if (id && tbl) catalogMap.set(`${tbl}:${id}`, opt);
     }
     const ctx = {
-      defaultFeeNature: defaultFeeNatureFromPatient.value,
+      feeNatureOptions: feeNatureOptions.value,
       medicationRateOptions: medicationRateOptions.value,
       medicationRouteOptions: medicationRouteOptions.value,
     };
@@ -776,6 +857,7 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     try {
       lines = buildAdviceDraftLines(groupItems, editorPatientDiagnoses.value, {
         encounterDiagnosisRows,
+        existingAdviceRows: rows.value,
       });
     } catch (error) {
       ElMessage.error(error instanceof Error ? error.message : '请求组包失败');
@@ -786,7 +868,6 @@ export function useAdviceTab(props: UseAdviceTabProps) {
         const res = await httpSaveDoctorStationAdviceDraftBatch({
           encounterId,
           patientId,
-          pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
           lines,
         });
         if (res.success === false) {
@@ -858,6 +939,24 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     }
   };
 
+  /** Tab 激活或切换患者后：先接诊再拉列表 */
+  async function loadAdviceTabData() {
+    const encounterId = props.encounterId?.trim() || '';
+    const patientId = props.patientId?.trim() || '';
+    if (!encounterId || !patientId) {
+      rows.value = [];
+      medicationRateOptions.value = [];
+      medicationRouteOptions.value = [];
+      feeNatureOptions.value = [];
+      return;
+    }
+    const receptionOk = await ensureReceptionBeforeClinicalWork();
+    if (!receptionOk) {
+      return;
+    }
+    await Promise.all([loadAdviceList(), loadAdviceInit()]);
+  }
+
   watch(
     () => [props.encounterId, props.patientId],
     () => {
@@ -867,19 +966,18 @@ export function useAdviceTab(props: UseAdviceTabProps) {
         editingAdviceResourceType.value = '';
       }
       clearAdviceTableSelection();
-      void loadAdviceList();
-      void loadAdviceInit();
+      void loadAdviceTabData();
     },
   );
 
   onMounted(() => {
     attachAdviceEscKeydown();
-    void loadAdviceList();
-    void loadAdviceInit();
+    void loadAdviceTabData();
   });
 
   onActivated(() => {
     attachAdviceEscKeydown();
+    void loadAdviceTabData();
   });
 
   onDeactivated(() => {
@@ -893,7 +991,7 @@ export function useAdviceTab(props: UseAdviceTabProps) {
   /** 对外：父级 KeepAlive 刷新 */
   async function reload() {
     await withAdviceMutationLoading(async () => {
-      await Promise.all([loadAdviceList(), loadAdviceInit()]);
+      await loadAdviceTabData();
     });
   }
 
@@ -906,7 +1004,8 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     bumpOrderSelectFocusTrigger,
     calcDrugLineTotalFee,
     clearAdviceTableSelection,
-    defaultFeeNatureFromPatient,
+    defaultContractSelectionRef,
+    feeNatureOptions,
     editorDirty,
     editorForm,
     editorInitialGroup,
@@ -922,7 +1021,8 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     handleEditorDirtyChange,
     handleMedicationAssignGroup,
     handleMedicationUngroup,
-    handleOpenTcmDialog,
+    handlePrintExamApplyForm,
+    handlePrintLabApplyForm,
     handleRowDblclick,
     handleSaveGroup,
     handleSign,
@@ -937,11 +1037,11 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     orderSelectExpandNonce,
     orderSelectFocusNonce,
     patientId: computed(() => props.patientId ?? ''),
+    printApplyFormLoading,
     productColumns,
     queryProductOptions,
     reload,
     showEditor,
-    tcmDialogVisible,
     validateWesternRow,
   };
 }

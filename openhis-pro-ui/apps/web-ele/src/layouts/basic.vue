@@ -11,6 +11,7 @@ import { preferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
 
 import SelectDepartment from '#/components/select-department.vue';
+import ImpersonationBanner from '#/components/impersonation-banner.vue';
 import { $t } from '#/locales';
 import { useAuthStore } from '#/store';
 import LoginForm from '#/views/_core/authentication/login.vue';
@@ -159,37 +160,40 @@ watch(
 </script>
 
 <template>
-  <BasicLayout @clear-preferences-and-logout="handleLogout">
-    <template #user-dropdown>
-      <UserDropdown
-        :avatar
-        :menus
-        :text="userStore.userInfo?.realName"
-        :description="userStore.userInfo?.email"
-        tag-text="Pro"
-        @logout="handleLogout"
-      />
-    </template>
-    <template #notification>
-      <Notification
-        :dot="showDot"
-        :notifications="notifications"
-        @clear="handleNoticeClear"
-        @read="(item) => item.id && markRead(item.id)"
-        @remove="(item) => item.id && remove(item.id)"
-        @make-all="handleMakeAll"
-      />
-    </template>
-    <template #extra>
-      <AuthenticationLoginExpiredModal v-model:open="accessStore.loginExpired" :avatar>
-        <LoginForm />
-      </AuthenticationLoginExpiredModal>
-    </template>
-    <template #lock-screen>
-      <LockScreen :avatar @to-login="handleLogout" />
-    </template>
-    <template #department-selector>
-      <SelectDepartment class="mr-1 sm:mr-4" />
-    </template>
-  </BasicLayout>
+  <div class="flex h-full min-h-0 flex-col">
+    <ImpersonationBanner />
+    <BasicLayout class="min-h-0 flex-1" @clear-preferences-and-logout="handleLogout">
+      <template #user-dropdown>
+        <UserDropdown
+          :avatar
+          :menus
+          :text="userStore.userInfo?.realName"
+          :description="userStore.userInfo?.email"
+          tag-text="Pro"
+          @logout="handleLogout"
+        />
+      </template>
+      <template #notification>
+        <Notification
+          :dot="showDot"
+          :notifications="notifications"
+          @clear="handleNoticeClear"
+          @read="(item) => item.id && markRead(item.id)"
+          @remove="(item) => item.id && remove(item.id)"
+          @make-all="handleMakeAll"
+        />
+      </template>
+      <template #extra>
+        <AuthenticationLoginExpiredModal v-model:open="accessStore.loginExpired" :avatar>
+          <LoginForm />
+        </AuthenticationLoginExpiredModal>
+      </template>
+      <template #lock-screen>
+        <LockScreen :avatar @to-login="handleLogout" />
+      </template>
+      <template #department-selector>
+        <SelectDepartment class="mr-1 sm:mr-4" />
+      </template>
+    </BasicLayout>
+  </div>
 </template>

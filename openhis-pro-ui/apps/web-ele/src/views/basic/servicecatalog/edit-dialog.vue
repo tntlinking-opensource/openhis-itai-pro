@@ -1,16 +1,36 @@
 <script lang="ts" setup>
 import type { ServiceCatalogInitResponse, ServiceCatalogItem } from '#/api';
 
+import type { NationalCatalogItem } from '#/chs/api';
+
 import { computed, reactive, ref, watch } from 'vue';
 
 import { useVbenModal } from '@vben/common-ui';
 
 import { Delete, Plus } from '@element-plus/icons-vue';
-import { ElMessage } from 'element-plus';
+import { ElButton, ElMessage, ElMessageBox } from 'element-plus';
 
 import { useVbenForm } from '#/adapter/form';
+import {
+  EXTENDED_FORM_KEYBOARD_SELECTORS,
+  FORM_KEYBOARD_GRID_NAV_KEYS,
+  useFormKeyboardNavigation,
+} from '#/hooks/use-form-keyboard-navigation';
 import { createServiceCatalogApi, getServiceCatalogApi, updateServiceCatalogApi } from '#/api';
+import { getChargeTypeListApi } from '#/api/core/common';
+import { revokeActivityCatalog3302Api, uploadActivityCatalog3301Api } from '#/chs/api';
+import MedicationCatalogPickerDialog from '#/chs/components/medication-catalog-picker-dialog.vue';
+import { catalogChrgitmLvToFormValue } from '#/chs/constants/catalog-chrgitm-lv';
+import {
+  filterInsuranceChargeTypes,
+  resolveDefaultInsuranceBusNo,
+} from '#/chs/constants/insurance-contract';
+import { ensureInsuranceSignIn } from '#/chs/utils/ensure-insurance-sign-in';
 import ServiceCatalogSelect from '#/components/select-service-catalog.vue';
+
+defineOptions({
+  name: 'ServiceCatalogEditDialog',
+});
 
 interface Props {
   visible?: boolean;
@@ -30,11 +50,164 @@ const emit = defineEmits<{
 }>();
 
 const loading = ref(false);
+const upload3301Loading = ref(false);
+const revoke3302Loading = ref(false);
+const pickerVisible = ref(false);
+const defaultContractBusNo = ref<string>();
 const originalData = ref<Partial<ServiceCatalogItem>>({});
+const insuranceFormData = ref<Partial<ServiceCatalogItem>>({});
+const formAreaRef = ref<HTMLElement | null>(null);
+
+const { handleFormKeydown: handleServiceFormKeydown } = useFormKeyboardNavigation(formAreaRef, {
+  selectors: EXTENDED_FORM_KEYBOARD_SELECTORS,
+  keys: FORM_KEYBOARD_GRID_NAV_KEYS,
+  selectPolicy: true,
+  navigationMode: 'grid',
+});
 
 const isEditMode = computed(() => {
   return !!props.formData?.id;
 });
+
+const activityDefId = computed(() => originalData.value?.id ?? props.formData?.id);
+
+const pickerContext = computed(() => ({
+  name: String(insuranceFormData.value?.name ?? ''),
+  listType: '201',
+}));
+
+const canUpload3301 = computed(
+  () => isEditMode.value && Boolean(String(insuranceFormData.value?.ybNo ?? '').trim()),
+);
+
+const canRevoke3302 = computed(
+  () =>
+    isEditMode.value &&
+    Boolean(String(insuranceFormData.value?.ybNo ?? '').trim()) &&
+    isYbMatched(insuranceFormData.value?.ybMatchFlag),
+);
+
+function isYbMatched(value: unknown): boolean {
+  return value === true || value === 1 || value === '1' || value === 'YES';
+}
+
+function syncInsuranceFormData(data: Record<string, unknown>) {
+  insuranceFormData.value = {
+    name: data.name as string | undefined,
+    ybNo: data.ybNo as string | undefined,
+    ybMatchFlag: data.ybMatchFlag as ServiceCatalogItem['ybMatchFlag'],
+    chrgitmLv: data.chrgitmLv as ServiceCatalogItem['chrgitmLv'],
+  };
+}
+
+async function loadDefaultContractBusNo() {
+  try {
+    const list = await getChargeTypeListApi();
+    const eligible = filterInsuranceChargeTypes(list ?? []);
+    defaultContractBusNo.value = resolveDefaultInsuranceBusNo(eligible, defaultContractBusNo.value);
+  } catch {
+    defaultContractBusNo.value = undefined;
+  }
+}
+
+function openCatalogPicker() {
+  pickerVisible.value = true;
+}
+
+function applyCatalogSelection(row: NationalCatalogItem) {
+  formApi.setFieldValue('ybNo', row.hilistCode ?? '');
+  const lv = catalogChrgitmLvToFormValue(row.chrgitmLv);
+  if (lv !== undefined) {
+    formApi.setFieldValue('chrgitmLv', lv);
+  }
+  formApi.setFieldValue('ybMatchFlag', 'NO');
+  syncInsuranceFormData({
+    ...insuranceFormData.value,
+    ybNo: row.hilistCode,
+    chrgitmLv: lv,
+    ybMatchFlag: 'NO',
+  });
+  ElMessage.success(`已选用医保编码 ${row.hilistCode}，保存诊疗后可上传 3301`);
+}
+
+async function handleUpload3301() {
+  const id = activityDefId.value;
+  if (!id) {
+    ElMessage.warning('请先保存诊疗后再上传 3301');
+    return;
+  }
+  await loadDefaultContractBusNo();
+  if (!defaultContractBusNo.value) {
+    ElMessage.warning('未配置医保契约');
+    return;
+  }
+  const signedIn = await ensureInsuranceSignIn(defaultContractBusNo.value);
+  if (!signedIn) return;
+  upload3301Loading.value = true;
+  try {
+    const result = await uploadActivityCatalog3301Api({
+      contractBusNo: defaultContractBusNo.value,
+      activityDefId: id,
+      listType: '201',
+    });
+    if (result.allSuccess) {
+      ElMessage.success(result.summary ?? '3301 上传成功');
+      formApi.setFieldValue('ybMatchFlag', 'YES');
+      syncInsuranceFormData({ ...insuranceFormData.value, ybMatchFlag: 'YES' });
+    } else {
+      ElMessage.error(result.summary ?? '3301 上传失败');
+    }
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : '3301 上传失败';
+    ElMessage.error(msg);
+  } finally {
+    upload3301Loading.value = false;
+  }
+}
+
+async function handleRevoke3302() {
+  const id = activityDefId.value;
+  if (!id) {
+    ElMessage.warning('请先保存诊疗后再撤销 3302');
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      '将撤销该诊疗项目在医保平台的目录对照，本地「医保对码」将取消勾选。是否继续？',
+      '撤销医保对照(3302)',
+      { type: 'warning', confirmButtonText: '撤销', cancelButtonText: '取消' },
+    );
+  } catch {
+    return;
+  }
+  await loadDefaultContractBusNo();
+  if (!defaultContractBusNo.value) {
+    ElMessage.warning('未配置医保契约');
+    return;
+  }
+  const signedIn = await ensureInsuranceSignIn(defaultContractBusNo.value);
+  if (!signedIn) return;
+  revoke3302Loading.value = true;
+  try {
+    const result = await revokeActivityCatalog3302Api({
+      contractBusNo: defaultContractBusNo.value,
+      activityDefId: id,
+      listType: '201',
+    });
+    if (result.allSuccess) {
+      ElMessage.success(result.summary ?? '3302 撤销成功');
+      formApi.setFieldValue('ybMatchFlag', 'NO');
+      syncInsuranceFormData({ ...insuranceFormData.value, ybMatchFlag: 'NO' });
+    } else {
+      ElMessage.error(result.summary ?? '3302 撤销失败');
+    }
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : '3302 撤销失败';
+    ElMessage.error(msg);
+  } finally {
+    revoke3302Loading.value = false;
+  }
+}
 
 const defaultChildrenRow = () => ({
   childrenId: undefined as string | undefined,
@@ -45,6 +218,7 @@ const defaultChildrenRow = () => ({
 /** 清空弹窗表单与子项列表 */
 async function resetFormState() {
   originalData.value = {};
+  insuranceFormData.value = {};
   await formApi.resetForm();
   childrenList.value = [defaultChildrenRow()];
 }
@@ -81,6 +255,14 @@ async function handleSubmit() {
 
     mapLegacyPackageUnitFields(mergedData);
     delete mergedData.salesUnitCode;
+    const normalizedYbFlag = normalizeWhetherFlagForSubmit(mergedData.ybFlag);
+    if (normalizedYbFlag !== undefined) {
+      mergedData.ybFlag = normalizedYbFlag;
+    }
+    const normalizedYbMatchFlag = normalizeWhetherFlagForSubmit(mergedData.ybMatchFlag);
+    if (normalizedYbMatchFlag !== undefined) {
+      mergedData.ybMatchFlag = normalizedYbMatchFlag;
+    }
 
     const submitData: Partial<ServiceCatalogItem> = {};
     Object.keys(mergedData).forEach((key) => {
@@ -120,20 +302,17 @@ async function loadFormData() {
         const normalizedData = normalizeFormSelectValues(data as Record<string, unknown>);
         originalData.value = { ...normalizedData };
         formApi.setValues(normalizedData);
+        syncInsuranceFormData(normalizedData);
         childrenList.value =
-          (data.children as Array<{
-            childrenId: null | string;
-            childrenName: string;
-            childrenNum: null | number;
-          }>) && Array.isArray(data.children)
-            ? [...data.children]
-            : [
-                {
-                  childrenId: null,
-                  childrenName: '',
-                  childrenNum: null,
-                },
-              ];
+          Array.isArray(data.children) && data.children.length > 0
+            ? data.children.map((child) => ({
+                ...child,
+                childrenId:
+                  child.childrenId !== null && child.childrenId !== undefined
+                    ? String(child.childrenId)
+                    : undefined,
+              }))
+            : [defaultChildrenRow()];
       } else {
         ElMessage.warning('未找到服务目录信息');
         modalApi.close();
@@ -151,6 +330,7 @@ async function loadFormData() {
       const normalizedData = normalizeFormSelectValues(props.formData as Record<string, unknown>);
       originalData.value = { ...normalizedData };
       formApi.setValues(normalizedData);
+      syncInsuranceFormData(normalizedData);
       // 初始化子项列表
       childrenList.value =
         props.formData.children && Array.isArray(props.formData.children)
@@ -187,6 +367,7 @@ const [Modal, modalApi] = useVbenModal({
   showConfirmButton: true,
   confirmText: '确定',
   cancelText: '取消',
+  contentClass: 'service-catalog-form-dialog__content',
 });
 
 // 转换选项格式
@@ -223,11 +404,34 @@ function mapLegacyPackageUnitFields(data: Record<string, unknown>) {
   }
 }
 
+function coerceWhetherOptionValue(value: unknown): string | undefined {
+  if (value === true || value === 1 || value === '1') {
+    return 'YES';
+  }
+  if (value === false || value === 0 || value === '0') {
+    return 'NO';
+  }
+  if (value === 'YES' || value === 'NO') {
+    return value;
+  }
+  return undefined;
+}
+
+function normalizeWhetherFlagForSubmit(value: unknown): number | undefined {
+  if (value === true || value === 1 || value === '1' || value === 'YES') {
+    return 1;
+  }
+  if (value === false || value === 0 || value === '0' || value === 'NO') {
+    return 0;
+  }
+  return undefined;
+}
+
 function normalizeFormSelectValues(data: Record<string, unknown>) {
   const next = { ...data };
   mapLegacyPackageUnitFields(next);
   // 这些字段在表单里是 Select，需要和 options.value 类型保持一致
-  ['typeEnum', 'chrgitmLv', 'packageUnitCode', 'categoryCode', 'orgId', 'ruleId', 'ybType'].forEach(
+  ['typeEnum', 'chrgitmLv', 'packageUnitCode', 'categoryCode', 'itemTypeCode', 'ybType'].forEach(
     (field) => {
       const v = next[field];
       if (v !== undefined && v !== null && v !== '') {
@@ -235,6 +439,14 @@ function normalizeFormSelectValues(data: Record<string, unknown>) {
       }
     },
   );
+  const ybFlag = coerceWhetherOptionValue(next.ybFlag);
+  if (ybFlag !== undefined) {
+    next.ybFlag = ybFlag;
+  }
+  const ybMatchFlag = coerceWhetherOptionValue(next.ybMatchFlag);
+  if (ybMatchFlag !== undefined) {
+    next.ybMatchFlag = ybMatchFlag;
+  }
   return next;
 }
 
@@ -267,14 +479,32 @@ const convertTreeOptions = (options: unknown): TreeOption[] => {
 
 const [Form, formApi] = useVbenForm(
   reactive({
+    layout: 'horizontal',
     commonConfig: {
+      labelClass: 'justify-start text-left',
+      formFieldProps: {
+        validateOnBlur: false,
+        validateOnChange: false,
+        validateOnInput: false,
+        validateOnModelUpdate: false,
+      },
       componentProps: {
-        style: { width: '220px' },
+        validateEvent: false,
+        class: 'w-full',
       },
     },
-    layout: 'horizontal',
-    wrapperClass: 'flex flex-wrap flex-row ',
+    wrapperClass: 'grid grid-cols-3 gap-x-4',
     schema: computed(() => [
+      {
+        component: 'SectionTitle',
+        fieldName: '__section_basic',
+        label: '基础信息',
+        hideLabel: true,
+        formItemClass: 'col-span-full !mb-0 !pb-0 service-catalog-form-dialog__section-title',
+        componentProps: {
+          title: '基础信息',
+        },
+      },
       {
         component: 'Input',
         fieldName: 'name',
@@ -282,33 +512,26 @@ const [Form, formApi] = useVbenForm(
         rules: 'required',
       },
       {
-        component: 'Input',
-        fieldName: 'busNo',
-        label: '业务编号',
+        component: 'Select',
+        fieldName: 'categoryCode',
+        label: '目录分类',
+        rules: 'required',
         componentProps: {
-          disabled: true,
-          placeholder: '系统自动生成',
+          options: convertOptions(props.initOptions?.diagnosisCategoryOptions),
+          filterable: true,
+          placeholder: '请选择目录分类',
+          clearable: true,
         },
       },
       {
         component: 'Select',
-        fieldName: 'categoryCode',
-        label: '目录分类',
+        fieldName: 'typeEnum',
+        label: '业务类型',
+        rules: 'required',
         componentProps: {
-          options: convertOptions(props.initOptions?.diagnosisCategoryOptions),
-          filterable: true,
-          placeholder: '请选择类别',
-        },
-      },
-      {
-        component: 'ApiTreeSelect',
-        fieldName: 'orgId',
-        label: '部门',
-        componentProps: {
-          data: convertTreeOptions(props.initOptions?.exeOrganizations),
-          filterable: true,
-          placeholder: '请选择部门',
-          checkStrictly: true,
+          options: convertOptions(props.initOptions?.typeEnumOptions),
+          placeholder: '请选择业务类型',
+          clearable: true,
         },
       },
       {
@@ -320,6 +543,7 @@ const [Form, formApi] = useVbenForm(
           filterable: true,
           placeholder: '请选择销售/计价单位',
           checkStrictly: true,
+          clearable: true,
         },
       },
       {
@@ -333,6 +557,70 @@ const [Form, formApi] = useVbenForm(
         label: '五笔',
       },
       {
+        component: 'Select',
+        fieldName: 'itemTypeCode',
+        label: '财务类型',
+        componentProps: {
+          options: convertOptions(props.initOptions?.finTypeCodeOptions),
+          filterable: true,
+          placeholder: '请选择财务类型',
+          clearable: true,
+        },
+      },
+      {
+        component: 'InputNumber',
+        fieldName: 'purchasePrice',
+        label: '成本价',
+        componentProps: {
+          precision: 2,
+          min: 0,
+          controlsPosition: 'right',
+          placeholder: '请输入成本价',
+        },
+      },
+      {
+        component: 'InputNumber',
+        fieldName: 'retailPrice',
+        label: '零售价',
+        componentProps: {
+          precision: 2,
+          min: 0,
+          controlsPosition: 'right',
+          placeholder: '请输入零售价',
+        },
+      },
+      {
+        component: 'InputNumber',
+        fieldName: 'maximumRetailPrice',
+        label: '最高零售价',
+        componentProps: {
+          precision: 2,
+          min: 0,
+          controlsPosition: 'right',
+          placeholder: '请输入最高零售价',
+        },
+      },
+      {
+        component: 'InputArea',
+        fieldName: 'descriptionText',
+        label: '描述',
+        formItemClass: 'col-span-full',
+        componentProps: {
+          rows: 3,
+          class: 'w-full',
+        },
+      },
+      {
+        component: 'SectionTitle',
+        fieldName: '__section_yb',
+        label: '医保信息',
+        hideLabel: true,
+        formItemClass: 'col-span-full !mb-0 !pb-0 service-catalog-form-dialog__section-title',
+        componentProps: {
+          title: '医保信息',
+        },
+      },
+      {
         component: 'RadioGroup',
         fieldName: 'ybFlag',
         label: '医保标志',
@@ -344,6 +632,11 @@ const [Form, formApi] = useVbenForm(
         component: 'Input',
         fieldName: 'ybNo',
         label: '医保编号',
+        componentProps: {
+          onInput: (value: string) => {
+            syncInsuranceFormData({ ...insuranceFormData.value, ybNo: value });
+          },
+        },
       },
       {
         component: 'Select',
@@ -353,6 +646,7 @@ const [Form, formApi] = useVbenForm(
           options: convertOptions(props.initOptions?.medChrgitmTypeOptions),
           filterable: true,
           placeholder: '请选择医保类别',
+          clearable: true,
         },
       },
       {
@@ -365,83 +659,30 @@ const [Form, formApi] = useVbenForm(
       },
       {
         component: 'Select',
-        fieldName: 'ruleId',
-        label: '财务类型',
-        componentProps: {
-          options: convertOptions(props.initOptions?.finTypeCodeOptions),
-          filterable: true,
-          placeholder: '请选择财务类型',
-        },
-      },
-      {
-        component: 'Select',
-        fieldName: 'typeEnum',
-        label: '业务类型',
-        componentProps: {
-          options: convertOptions(props.initOptions?.typeEnumOptions),
-          placeholder: '请选择类型',
-        },
-      },
-      {
-        component: 'Select',
         fieldName: 'chrgitmLv',
         label: '医保等级',
         componentProps: {
           options: convertOptions(props.initOptions?.chrgitmLvOptions),
           placeholder: '请选择医保等级',
+          clearable: true,
         },
       },
       {
-        component: 'InputNumber',
-        fieldName: 'purchasePrice',
-        label: '成本价',
+        component: 'SectionTitle',
+        fieldName: '__section_children',
+        label: '子项',
+        hideLabel: true,
+        formItemClass: 'col-span-full !mb-0 !pb-0 service-catalog-form-dialog__section-title',
         componentProps: {
-          precision: 2,
-          min: 0,
-          placeholder: '请输入成本价',
-        },
-      },
-      {
-        component: 'InputNumber',
-        fieldName: 'retailPrice',
-        label: '零售价',
-        componentProps: {
-          precision: 2,
-          min: 0,
-          placeholder: '请输入零售价',
-        },
-      },
-      {
-        component: 'InputNumber',
-        fieldName: 'maximumRetailPrice',
-        label: '最高零售价',
-        componentProps: {
-          precision: 2,
-          min: 0,
-          placeholder: '请输入最高零售价',
-        },
-      },
-      {
-        component: 'RadioGroup',
-        fieldName: 'pricingFlag',
-        label: '划价标记',
-        componentProps: {
-          options: convertOptions(props.initOptions?.statusWeatherOption),
-        },
-      },
-      {
-        component: 'InputArea',
-        fieldName: 'descriptionText',
-        label: '描述',
-        componentProps: {
-          rows: 3,
+          title: '子项',
         },
       },
       {
         component: 'custom',
         fieldName: 'children',
-        label: '诊疗子项',
-        showLabel: false,
+        label: '子项',
+        hideLabel: true,
+        formItemClass: 'col-span-full !mb-0',
         slot: 'children',
       },
     ]),
@@ -512,60 +753,132 @@ watch(
 
 <template>
   <Modal
-    class="w-[750px]"
-    :title="isEditMode ? '编辑' : '新增'"
+    class="service-catalog-form-dialog w-[960px] max-w-[98vw]"
+    :title="isEditMode ? '编辑诊疗' : '新增诊疗'"
     :close-on-click-modal="false"
     :close-on-press-escape="false"
   >
-    <Form>
-      <template #children>
-        <div class="w-full space-y-2">
-          <div class="flex items-center justify-between">
-            <el-button type="primary" :icon="Plus" @click="addChild"> 添加子项 </el-button>
-          </div>
+    <div ref="formAreaRef" @keydown.capture="handleServiceFormKeydown">
+      <Form>
+        <template #children>
           <div class="w-full space-y-2">
-            <div
-              v-for="(item, index) in childrenList"
-              :key="index"
-              class="flex w-full items-center gap-2 rounded border border-gray-200 bg-gray-50 p-2"
-            >
-              <div class="flex flex-1 items-center gap-2">
+            <div class="flex items-center justify-start">
+              <el-button type="primary" :icon="Plus" @click="addChild">添加子项</el-button>
+            </div>
+            <div class="w-full space-y-2">
+              <div
+                v-for="(item, index) in childrenList"
+                :key="index"
+                class="service-catalog-form-dialog__child-row flex w-full items-center gap-2 rounded border p-2"
+              >
                 <div class="flex flex-1 items-center gap-2">
-                  <label class="w-16 flex-shrink-0 text-sm text-gray-600">名称:</label>
-                  <div class="flex-1">
+                  <label class="w-12 flex-shrink-0 text-sm">名称</label>
+                  <div class="min-w-0 flex-1">
                     <ServiceCatalogSelect
                       v-model="item.childrenId"
                       :exclude-id="isEditMode ? originalData.id : null"
+                      :selected-label="item.childrenName"
                       placeholder="请选择诊疗项目"
-                      @change="(items) => (item.childrenName = items[0]?.name)"
-                      :is-selectable="true"
                       :multiple="false"
+                      @change="(items) => (item.childrenName = items[0]?.name)"
                     />
                   </div>
                 </div>
-                <div class="flex flex-1 items-center gap-2">
-                  <label class="w-20 flex-shrink-0 text-sm text-gray-600">执行次数:</label>
+                <div class="flex w-[200px] items-center gap-2">
+                  <label class="w-16 flex-shrink-0 text-sm">执行次数</label>
                   <el-input-number
                     v-model="item.childrenNum"
                     :min="0"
                     :precision="0"
-                    placeholder="请输入执行次数"
-                    class="flex-1"
+                    placeholder="次数"
+                    class="min-w-0 flex-1"
                     controls-position="right"
                   />
                 </div>
+                <el-button
+                  type="danger"
+                  :icon="Delete"
+                  circle
+                  class="flex-shrink-0"
+                  @click="removeChild(index)"
+                />
               </div>
-              <el-button
-                type="danger"
-                :icon="Delete"
-                circle
-                class="flex-shrink-0"
-                @click="removeChild(index)"
-              />
             </div>
           </div>
-        </div>
-      </template>
-    </Form>
+        </template>
+      </Form>
+      <div
+        v-if="isEditMode"
+        class="mt-3 flex flex-wrap gap-2 border-t border-[var(--el-border-color-lighter)] pt-3"
+      >
+        <ElButton type="success" plain @click="openCatalogPicker">从国家目录选择</ElButton>
+        <ElButton
+          v-if="canUpload3301"
+          type="warning"
+          plain
+          :loading="upload3301Loading"
+          @click="handleUpload3301"
+        >
+          上传医保对照(3301)
+        </ElButton>
+        <ElButton
+          v-if="canRevoke3302"
+          type="danger"
+          plain
+          :loading="revoke3302Loading"
+          @click="handleRevoke3302"
+        >
+          撤销医保对照(3302)
+        </ElButton>
+      </div>
+    </div>
+    <MedicationCatalogPickerDialog
+      v-model="pickerVisible"
+      :context="pickerContext"
+      @confirm="applyCatalogSelection"
+    />
   </Modal>
 </template>
+
+<style scoped>
+.service-catalog-form-dialog__child-row {
+  border-color: var(--el-border-color-lighter);
+  background-color: var(--el-fill-color-lighter);
+}
+
+.service-catalog-form-dialog__child-row label {
+  color: var(--el-text-color-regular);
+}
+</style>
+
+<style>
+.service-catalog-form-dialog {
+  max-height: 94vh !important;
+}
+
+.service-catalog-form-dialog__content {
+  overflow: visible !important;
+}
+
+.service-catalog-form-dialog .service-catalog-form-dialog__section-title {
+  margin-top: 0;
+  padding-bottom: 0 !important;
+}
+
+.service-catalog-form-dialog .service-catalog-form-dialog__section-title:not(:first-child) {
+  margin-top: 8px;
+}
+
+.service-catalog-form-dialog :deep(.el-form-item) {
+  margin-bottom: 14px;
+}
+
+.service-catalog-form-dialog :deep(.el-input-number) {
+  width: 100%;
+  max-width: 100%;
+}
+
+.service-catalog-form-dialog :deep(.el-input-number .el-input__wrapper) {
+  width: 100%;
+}
+</style>

@@ -35,6 +35,8 @@ export interface ChargeType {
   value: string;
   label: string;
   busNo: string;
+  /** 费用性质分类（ContractCategory code，如 SELF_CHARGE） */
+  categoryEnum?: string;
   children: ChargeType[];
 }
 
@@ -91,6 +93,7 @@ export async function getTreeForResponsibilityDeptApi() {
 export async function getChargeTypeListApi() {
   type ContractItem = {
     busNo?: string;
+    categoryEnum?: string;
     displayOrder?: number;
     id: string;
     name: string;
@@ -105,6 +108,7 @@ export async function getChargeTypeListApi() {
     label: item.name ?? '',
     // busNo：费用性质业务编码
     busNo: item.busNo ?? '',
+    categoryEnum: item.categoryEnum,
     // children：当前为平铺结构，无子节点
     children: [],
   }));

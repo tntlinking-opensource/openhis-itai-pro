@@ -210,6 +210,9 @@ export interface AgreeStockOutRequest {
   busNo: string;
   approverId?: string;
   approvalClock?: string;
+  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
+  medicareUploadEnabled?: boolean;
+  contractBusNo?: string;
 }
 
 export interface RejectStockOutRequest {

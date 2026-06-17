@@ -13,6 +13,7 @@ const loadNursingRecordModule = () => import('./nursing-record/index.vue');
 const loadOrderAuditModule = () => import('./order-audit/index.vue');
 const loadOrderExecuteModule = () => import('./order-execute/index.vue');
 const loadOrderViewModule = () => import('./order-view/index.vue');
+const loadMedicalRecordReviewModule = () => import('./medical-record-review/index.vue');
 const loadTemperatureSheetModule = () => import('./temperature-sheet/index.vue');
 
 const DailySettlementModule = defineAsyncComponent(loadDailySettlementModule);
@@ -24,6 +25,7 @@ const NursingRecordModule = defineAsyncComponent(loadNursingRecordModule);
 const OrderAuditModule = defineAsyncComponent(loadOrderAuditModule);
 const OrderExecuteModule = defineAsyncComponent(loadOrderExecuteModule);
 const OrderViewModule = defineAsyncComponent(loadOrderViewModule);
+const MedicalRecordReviewModule = defineAsyncComponent(loadMedicalRecordReviewModule);
 const TemperatureSheetModule = defineAsyncComponent(loadTemperatureSheetModule);
 
 export const operationTabs = [
@@ -67,6 +69,7 @@ export const operationComponentByTab: Partial<Record<OperationTab, Component>> =
   体温单: TemperatureSheetModule,
   住院记账: InpatientBillingModule,
   费用明细: CostDetailsModule,
+  病历调阅: MedicalRecordReviewModule,
 };
 
 export const operationLoaderByTab: Partial<Record<OperationTab, () => Promise<unknown>>> = {
@@ -80,4 +83,5 @@ export const operationLoaderByTab: Partial<Record<OperationTab, () => Promise<un
   体温单: loadTemperatureSheetModule,
   住院记账: loadInpatientBillingModule,
   费用明细: loadCostDetailsModule,
+  病历调阅: loadMedicalRecordReviewModule,
 };

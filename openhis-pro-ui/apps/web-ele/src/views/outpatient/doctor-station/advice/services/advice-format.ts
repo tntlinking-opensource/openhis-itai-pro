@@ -2,7 +2,7 @@ import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 
 /** 金额、术语、费用性质等展示/默认值 */
 
-export function formatUnitPriceYuan(value: number | string | null | undefined): string {
+export function formatUnitPriceYuan(value: null | number | string | undefined): string {
   if (value === null || value === undefined || String(value).trim() === '') return '—';
   const n = typeof value === 'number' ? value : Number(String(value).trim());
   if (!Number.isFinite(n)) return '—';
@@ -43,4 +43,30 @@ export function terminologyLabel(
   const hit = (options ?? []).find((o) => String(o.value ?? '').trim() === c);
   const lb = String(hit?.label ?? '').trim();
   return lb || c;
+}
+
+/** init 返回的费用性质下拉：取首项作为新开医嘱默认 contractId + 展示名。 */
+export function defaultContractSelection(options: TerminologyOptionDto[] | undefined): {
+  contractId: string;
+  feeNature: string;
+} {
+  const contractId = firstTerminologyCode(options);
+  const label = terminologyLabel(options, contractId);
+  return {
+    contractId,
+    feeNature: label === '—' ? '' : label,
+  };
+}
+
+/** 用户选择费用性质后同步 contractId 与展示名 feeNature。 */
+export function contractSelectionFromValue(
+  contractId: string,
+  options: TerminologyOptionDto[] | undefined,
+): { contractId: string; feeNature: string } {
+  const id = String(contractId ?? '').trim();
+  const label = terminologyLabel(options, id);
+  return {
+    contractId: id,
+    feeNature: label === '—' ? id : label,
+  };
 }

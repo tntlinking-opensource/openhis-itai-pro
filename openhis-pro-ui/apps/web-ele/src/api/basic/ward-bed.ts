@@ -1,3 +1,5 @@
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+
 import { publicRequestClient } from '../request';
 
 /** 物理形式 code，与领域 LocationForm 一致。 */
@@ -44,13 +46,12 @@ export interface WardBed {
   parentId?: string;
   typeCode?: string;
   formEnum?: string;
-  organizationId?: number;
+  organizationId?: number | string;
   statusEnum?: string;
   operationalEnum?: string;
   name?: string;
   busNo?: string;
   wbStr?: string;
-  bedCount?: number;
   parent?: WardBed;
   [key: string]: unknown;
 }
@@ -58,7 +59,7 @@ export interface WardBed {
 export interface CreateWardBedParams {
   name: string;
   formEnum: string;
-  organizationId: number;
+  organizationId: number | string;
   parentId?: string;
   displayOrder?: number;
   typeJson?: string;
@@ -68,7 +69,6 @@ export interface CreateWardBedParams {
   operationalEnum?: string;
   busNo?: string;
   wbStr?: string;
-  bedCount?: number;
 }
 
 export interface WardBedInitResponse {
@@ -85,16 +85,16 @@ export async function createWardBedApi(params: CreateWardBedParams) {
   return publicRequestClient.post<WardBed>('/wardBed/create', params);
 }
 
-export async function getWardBedByIdApi(id: string) {
-  return publicRequestClient.post<WardBed>('/wardBed/getById', { value: id });
+export async function getWardBedByIdApi(id: number | string) {
+  return publicRequestClient.post<WardBed>('/wardBed/getById', preserveApiIdForRequest(id));
 }
 
-export async function enableWardBedApi(params: string) {
-  return publicRequestClient.post('/wardBed/enableLocation', params);
+export async function enableWardBedApi(id: number | string) {
+  return publicRequestClient.post('/wardBed/enableLocation', preserveApiIdForRequest(id));
 }
 
-export async function disableWardBedApi(params: string) {
-  return publicRequestClient.post('/wardBed/deactivateLocation', params);
+export async function disableWardBedApi(id: number | string) {
+  return publicRequestClient.post('/wardBed/deactivateLocation', preserveApiIdForRequest(id));
 }
 
 export async function editWardBedApi(params: CreateWardBedParams & { id: string }) {
@@ -113,8 +113,8 @@ export async function deleteWardBedApi(params: string) {
   });
 }
 
-export async function getWardListApi() {
-  return publicRequestClient.post<WardBed[]>('/wardBed/getWardList');
+export async function getWardListApi(params?: { id?: string }) {
+  return publicRequestClient.post<WardBed[]>('/wardBed/getWardList', params ?? {});
 }
 
 export async function getWardBedPageApi(params?: { id?: string }) {

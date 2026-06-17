@@ -10,7 +10,12 @@ import { computed, ref, watch } from 'vue';
 import { ElInput, ElInputNumber, ElOption, ElSelect } from 'element-plus';
 
 import { httpListInpatientActivityExecutionLocations } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.http';
-import { useAuthStore } from '#/store';
+import {
+  loadAllDepartmentPerformOrgOptions,
+  mapActivityExecutionRulesToPerformOrgOptions,
+  mergeCurrentPerformOrgIntoOptions,
+  type PerformOrgOption,
+} from '#/views/doctor-station/advice-shared/perform-org-options.service';
 
 import { parseOptionalNumberInput } from '../services/advice-edit';
 import { formatMoneyStrYuan, formatUnitPriceYuan } from '../services/advice-format';
@@ -45,8 +50,6 @@ const hideServiceExecutionCount = computed(
     isInpatientLongTermMedicationTherapy(props.therapyType ?? props.item.therapyEnum),
 );
 
-const authStore = useAuthStore();
-
 const productInfoTitle = computed(() => (props.editorKind === 'DEVICE' ? '耗材信息' : '诊疗信息'));
 
 const calcTotalFee = computed(() => {
@@ -74,8 +77,8 @@ const deviceUnitOptions = computed(() => {
   return [{ value: code, label: name }];
 });
 
-/** 接口返回的诊疗可执行科室（去重后）；耗材或非诊疗表名时保持空。 */
-const serviceExecutionOrgOptions = ref<{ label: string; value: string }[]>([]);
+/** 接口返回的诊疗可执行科室（去重后）；无配置时回落全院科室。 */
+const serviceExecutionOrgOptions = ref<PerformOrgOption[]>([]);
 const serviceExecutionOrgLoading = ref(false);
 let serviceFetchToken = 0;
 
@@ -106,17 +109,12 @@ async function refreshServiceExecutionOrgOptions() {
     });
     if (token !== serviceFetchToken) return;
 
-    const rules = res.rules ?? [];
-    const seenIds = new Set<string>();
-    const opts: { label: string; value: string }[] = [];
-    for (const r of rules) {
-      const vid = String(r.executionOrgId ?? '').trim();
-      if (!vid || seenIds.has(vid)) continue;
-      seenIds.add(vid);
-      opts.push({
-        value: vid,
-        label: String(r.executionOrgName ?? '').trim() || vid,
-      });
+    const ruleOpts = mapActivityExecutionRulesToPerformOrgOptions(res.rules);
+    let opts: PerformOrgOption[];
+    if (ruleOpts.length > 0) {
+      opts = ruleOpts;
+    } else {
+      opts = await loadAllDepartmentPerformOrgOptions();
     }
     serviceExecutionOrgOptions.value = opts;
 
@@ -128,14 +126,19 @@ async function refreshServiceExecutionOrgOptions() {
         props.setField('performOrgId', only.value as AdviceDrugItem['performOrgId']);
         props.setField('performOrgName', only.label as AdviceDrugItem['performOrgName']);
       }
-    } else if (opts.length > 1 && cur && !opts.some((o) => o.value === cur)) {
+    } else if (
+      ruleOpts.length > 0 &&
+      opts.length > 1 &&
+      cur &&
+      !opts.some((o) => o.value === cur)
+    ) {
       const first = opts[0]!;
       props.setField('performOrgId', first.value as AdviceDrugItem['performOrgId']);
       props.setField('performOrgName', first.label as AdviceDrugItem['performOrgName']);
     }
   } catch {
     if (token === serviceFetchToken) {
-      serviceExecutionOrgOptions.value = [];
+      serviceExecutionOrgOptions.value = await loadAllDepartmentPerformOrgOptions();
     }
   } finally {
     if (token === serviceFetchToken) {
@@ -160,26 +163,19 @@ watch(
 );
 
 const performOrgSelectOptions = computed(() => {
-  if (props.editorKind === 'SERVICE' && serviceExecutionOrgOptions.value.length > 0) {
-    const list = serviceExecutionOrgOptions.value.map((o) => ({ ...o }));
-    const id = String(props.item.performOrgId ?? '').trim();
-    const name = String(props.item.performOrgName ?? '').trim();
-    if (id && !list.some((o) => o.value === id)) {
-      list.unshift({ value: id, label: name || id });
-    }
-    return list;
+  if (props.editorKind === 'SERVICE') {
+    return mergeCurrentPerformOrgIntoOptions(
+      serviceExecutionOrgOptions.value,
+      props.item.performOrgId,
+      props.item.performOrgName,
+    );
   }
-  const list: { label: string; value: string }[] = [];
   const id = String(props.item.performOrgId ?? '').trim();
   const name = String(props.item.performOrgName ?? '').trim();
-  if (id) {
-    list.push({ value: id, label: name || id });
+  if (!id) {
+    return [];
   }
-  const authId = String(authStore.getSelectedOrganization?.() ?? '').trim();
-  if (authId && !list.some((o) => o.value === authId)) {
-    list.push({ value: authId, label: '当前登录机构' });
-  }
-  return list;
+  return [{ value: id, label: name || id }];
 });
 
 /** 用户切换执行科室：同步展示名。 */

@@ -1,6 +1,7 @@
 import type { PageApiResponse, PageParams } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
 export interface PageSettingsParams extends PageParams {
   sortDirection?: string;
@@ -34,10 +35,6 @@ export interface UpdateSettingParams {
     description: string;
     value: string;
   };
-}
-
-export interface DeleteSettingParams {
-  value: number;
 }
 
 export interface SettingProvider {
@@ -84,8 +81,8 @@ export const updateSettingApi = async (params: UpdateSettingParams) => {
 /**
  * 删除设置
  */
-export const deleteSettingApi = async (params: DeleteSettingParams) => {
-  return publicRequestClient.post('/setting/delete', params);
+export const deleteSettingApi = async (id: number | string) => {
+  return publicRequestClient.post('/setting/delete', preserveApiIdForRequest(id));
 };
 
 /**

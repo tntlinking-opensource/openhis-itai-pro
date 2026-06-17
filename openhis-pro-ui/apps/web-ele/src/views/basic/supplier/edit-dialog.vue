@@ -76,10 +76,10 @@ async function handleSubmit() {
 
 async function loadFormData() {
   const id = props.formData?.id;
-  if (id && typeof id === 'string') {
+  if (id !== undefined && id !== null && String(id).trim() !== '') {
     modalApi.setState({ loading: true });
     try {
-      const response = await getSupplierApi(id);
+      const response = await getSupplierApi(String(id));
       const data = response;
       if (data) {
         originalData.value = { ...data };
@@ -111,7 +111,7 @@ async function loadFormData() {
     } else {
       originalData.value = {};
       await formApi.resetForm();
-      formApi.setValues({ activeFlag: 1 });
+      formApi.setValues({});
     }
   }
 }

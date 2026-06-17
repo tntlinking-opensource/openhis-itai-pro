@@ -9,7 +9,9 @@ import type {
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import { useDebounceFn } from '@vueuse/core';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus';
+
+import { getChargeTypeListApi } from '#/api/core/common';
 
 import { MED_MEDICATION_REQUEST_TABLE } from '#/api/outpatient-pharmacy-return-medicine/outpatient-pharmacy-return-medicine.types';
 import {
@@ -19,6 +21,11 @@ import {
   httpPageReturnPatientQueue,
 } from '#/api/outpatient-pharmacy-return-medicine/outpatient-pharmacy-return-medicine.http';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
+import {
+  filterInsuranceChargeTypes,
+  resolveDefaultInsuranceBusNo,
+  type ChargeType,
+} from '#/chs/constants/insurance-contract';
 import { parseListItemsFromApiData } from '#/utils/api/unwrap-list-response';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { formatLocalDateYmd } from '#/utils/date-range-quick';
@@ -57,6 +64,8 @@ const queueLoading = ref(false);
 const detailLoading = ref(false);
 const initLoading = ref(false);
 const submitLoading = ref(false);
+const insuranceContractBusNo = ref<string>();
+const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
 
 /** 后端队列含待退/已退混合，按 Tab 过滤展示 */
 const filteredQueuePatients = computed(() =>
@@ -191,11 +200,17 @@ async function handleConfirmReturn() {
     const res = await httpConfirmMedicineReturn({
       items,
       confirmType: 'CONFIRM',
+      contractBusNo: insuranceContractBusNo.value,
     });
     if (res.success === false && (res.failedItems?.length ?? 0) > 0) {
       ElMessage.error(res.message?.trim() || '退药失败，请刷新后重试');
     } else {
-      ElMessage.success(res.message?.trim() || '退药成功');
+      const message = res.message?.trim() || '退药成功';
+      if (message.includes('EX-OPP-207')) {
+        ElMessage.warning(message);
+      } else {
+        ElMessage.success(message);
+      }
     }
     await reloadDetail();
     await reloadQueue();
@@ -258,6 +273,15 @@ async function handleDeclineReturn() {
 
 onMounted(async () => {
   await loadPageInit();
+  try {
+    const chargeTypes = await getChargeTypeListApi();
+    const eligible = filterInsuranceChargeTypes(chargeTypes);
+    insuranceChargeTypeOptions.value = eligible;
+    insuranceContractBusNo.value = resolveDefaultInsuranceBusNo(eligible);
+  } catch {
+    insuranceContractBusNo.value = undefined;
+    insuranceChargeTypeOptions.value = [];
+  }
   await reloadQueue();
 });
 </script>
@@ -276,17 +300,43 @@ onMounted(async () => {
       center-track="minmax(0, 1fr)"
     >
       <template #left>
-        <ReturnMedicineQueuePanel
-          v-model:keyword="keyword"
-          v-model:queue-date="selectedQueueListDate"
-          v-model:queue-scope="queueScope"
-          :filtered-patients="filteredQueuePatients"
-          :loading-queue="queueLoading"
-          :selected-patient-id="selectedPatientId"
-          @queue-date-change="handleQueueListDateChange"
-          @refresh="reloadQueue"
-          @select-patient="handleQueueCardSelect"
-        />
+        <div class="flex h-full min-h-0 flex-col">
+          <div
+            v-if="insuranceChargeTypeOptions.length > 0"
+            class="border-b border-solid border-[var(--el-border-color-lighter)] px-2 pb-2"
+          >
+            <div class="flex min-w-0 items-center gap-1.5">
+              <span class="shrink-0 text-xs text-[var(--el-text-color-secondary)]">医保契约</span>
+              <ElSelect
+                v-model="insuranceContractBusNo"
+                class="!min-w-0 flex-1"
+                placeholder="请选择医保契约"
+                filterable
+                clearable
+              >
+                <ElOption
+                  v-for="item in insuranceChargeTypeOptions"
+                  :key="item.busNo"
+                  :label="item.busNo ? `${item.label}（${item.busNo}）` : item.label"
+                  :value="item.busNo"
+                />
+              </ElSelect>
+            </div>
+          </div>
+          <div class="min-h-0 flex-1 overflow-hidden">
+            <ReturnMedicineQueuePanel
+              v-model:keyword="keyword"
+              v-model:queue-date="selectedQueueListDate"
+              v-model:queue-scope="queueScope"
+              :filtered-patients="filteredQueuePatients"
+              :loading-queue="queueLoading"
+              :selected-patient-id="selectedPatientId"
+              @queue-date-change="handleQueueListDateChange"
+              @refresh="reloadQueue"
+              @select-patient="handleQueueCardSelect"
+            />
+          </div>
+        </div>
       </template>
 
       <template #center>

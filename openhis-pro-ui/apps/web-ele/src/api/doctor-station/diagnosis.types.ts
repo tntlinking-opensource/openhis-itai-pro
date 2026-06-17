@@ -20,6 +20,16 @@ export interface EncounterDiagnosisRowDto {
   diagnosisKindText?: null | string;
   /** WESTERN | TCM */
   medicineType?: null | string;
+  /** 与 medicineType 同义，读模型快照字段 */
+  diagnosisKind?: null | string;
+  /** 中医病证组号（同组病+证共用） */
+  tcmSyndromeGroup?: null | string;
+  /** 目录来源码：tcm_dx / tcm_syndrome 等 */
+  sourceEnum?: null | string;
+  /** 合并展示行：证候事实 id */
+  syndromeConditionId?: null | string;
+  /** 合并展示行：证候目录 id */
+  syndromeDefinitionId?: null | string;
   verificationStatusEnum?: null | number;
   verificationStatusEnumText?: null | string;
   mainDiagnosisFlag?: null | number;
@@ -45,11 +55,22 @@ export interface GetConditionDefinitionBusinessClassRequest {
 
 export interface CommonDiagnosisRowDto {
   conditionDefinitionId?: null | string;
+  syndromeDefinitionId?: null | string;
   conditionCode?: null | string;
+  conditionDefinitionName?: null | string;
+  /** 兼容旧读模型字段 */
   conditionName?: null | string;
   medicineType?: null | string;
+  diagnosisKind?: null | string;
+  tcmSyndromeGroup?: null | string;
   sourceEnum?: null | number;
   sourceEnumText?: null | string;
+}
+
+/** 与后端 OptionDto 对齐 */
+export interface DiagnosisOptionDto {
+  value?: null | string;
+  label?: null | string;
 }
 
 export interface CommonDiagnosesResponse {
@@ -57,11 +78,18 @@ export interface CommonDiagnosesResponse {
   doctorCommonUseList?: CommonDiagnosisRowDto[] | null;
   userPersonalList?: CommonDiagnosisRowDto[] | null;
   organizationList?: CommonDiagnosisRowDto[] | null;
+  /** 住院医生站：诊断类型列（患者疾病诊断类型）下拉 */
+  iptDiseaseTypeOptions?: DiagnosisOptionDto[] | null;
 }
 
 /** getConditionDefinitionMetadata */
 export interface GetConditionDefinitionMetadataRequest {
+  /**
+   * 中西医筛选：`1` 西医，`2` 中医全量；`5` 中医疾病，`6` 中医证候（与后端 diagnosisKindCode 对齐）。
+   * @deprecated 请使用 {@link diagnosisKindCode}
+   */
   medicineTypeCode?: null | string;
+  diagnosisKindCode?: null | string;
   keyword?: null | string;
   pageNo: number;
   pageSize: number;

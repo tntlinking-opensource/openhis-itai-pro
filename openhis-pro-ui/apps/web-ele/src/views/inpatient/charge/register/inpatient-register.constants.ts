@@ -14,6 +14,7 @@ export const REGISTRATION_LIST_STATUS_OPTIONS = [
 /** 就诊状态 code（EncounterStatus） */
 export const ENCOUNTER_STATUS = {
   PLANNED: 'PLANNED',
+  REGISTERED: 'REGISTERED',
   IN_PROGRESS: 'IN_PROGRESS',
   CANCELLED: 'CANCELLED',
 } as const;
@@ -55,20 +56,8 @@ export const DIAGNOSIS_CATEGORY_OPTIONS = [
 
 export const DEFAULT_DIAGNOSIS_CATEGORY = 'GENERAL';
 
-/** 入院类型（联调前静态选项） */
-export const ADMISSION_TYPE_OPTIONS = [
-  { label: '门诊', value: 'OUTPATIENT' },
-  { label: '急诊', value: 'EMERGENCY' },
-  { label: '其他医疗机构转入', value: 'TRANSFER' },
-] as const;
-
-/** 入院方式（联调前静态选项） */
-export const IN_WAY_OPTIONS = [
-  { label: '步行', value: 'WALK' },
-  { label: '轮椅', value: 'WHEELCHAIR' },
-  { label: '平车', value: 'STRETCHER' },
-  { label: '担架', value: 'LITTER' },
-] as const;
+/** 门诊转住院默认入院方式码（与后端 in_way_code 术语 code=1 对齐） */
+export const DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER = '1';
 
 /** 患者病情（联调前静态选项） */
 export const PATIENT_CONDITION_OPTIONS = [

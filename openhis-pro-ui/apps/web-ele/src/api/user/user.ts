@@ -25,8 +25,6 @@ export interface UserInfo {
   tenantId: string;
   updatedAt: string;
   userName: string;
-  ukeyId: null | string;
-  ukeySrcId: null | string;
 }
 
 export interface CreateUserParams {
@@ -37,8 +35,6 @@ export interface CreateUserParams {
   userName: string;
   isActive: string;
   email: string;
-  ukeyId?: string;
-  ukeySrcId?: string;
 }
 
 export interface UpdateUserParams {
@@ -48,10 +44,8 @@ export interface UpdateUserParams {
     isActive: string;
     name: string;
     phoneNumber: string;
-    ukeyId?: string;
-    ukeySrcId?: string;
   };
-  id: number;
+  id: string;
 }
 
 export async function getUserListApi(params: UserListParams) {
@@ -105,7 +99,7 @@ export interface AssignRolesParams {
  * 查询用户角色参数
  */
 export interface GetUserRolesParams {
-  value: number;
+  value: string;
 }
 
 /**

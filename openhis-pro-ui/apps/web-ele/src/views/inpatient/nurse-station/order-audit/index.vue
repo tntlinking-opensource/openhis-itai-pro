@@ -11,7 +11,18 @@ import {
   httpVerifyNurseStationOrders,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-audit.http';
 import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display-cell.vue';
+import { adviceTherapyTypeClass } from '#/views/inpatient/doctor-station/advice/services/advice-list';
+import { useBedsideSpecimenBarcodePrint } from '#/composables/use-bedside-specimen-barcode-print';
+import { useIvInfusionLabelPrint } from '#/composables/use-iv-infusion-label-print';
+import { useNursePrescriptionPrint } from '#/composables/use-nurse-prescription-print';
+import { useTreatmentExecuteSheetPrint } from '#/composables/use-treatment-execute-sheet-print';
 import { useRequest } from '#/hooks/use-request';
+import {
+  groupInpatientAuditInfusionLabelPrintTargets,
+  groupInpatientAuditMedicationRequestIds,
+  groupInpatientAuditSpecimenBarcodePrintTargets,
+  groupInpatientAuditTreatmentExecutePrintTargets,
+} from '#/utils/report/inpatient-order-audit-print-targets';
 
 import type { NurseStationModulePatient } from '../components/nurse-station-module-patient.types';
 import { nurseStationPatientListPanelContextKey } from '../components/patient-list-panel.context';
@@ -63,6 +74,11 @@ const ordersByEncounterId = ref<Map<string, NurseStationOrderAuditTableRow[]>>(n
 const listRequest = useRequest(httpListNurseStationOrderAudit, { manual: true });
 const verifyRequest = useRequest(httpVerifyNurseStationOrders, { manual: true });
 const rejectRequest = useRequest(httpRejectNurseStationOrders, { manual: true });
+const { printIvInfusionLabels } = useIvInfusionLabelPrint();
+const { printBedsideSpecimenBarcodes } = useBedsideSpecimenBarcodePrint();
+const { printTreatmentExecuteSheet } = useTreatmentExecuteSheetPrint();
+const { printNursePrescriptions } = useNursePrescriptionPrint();
+const printActionLoading = ref(false);
 
 const encounterIds = computed(() =>
   props.patients.map((p) => String(p.id).trim()).filter((id) => id.length > 0),
@@ -105,13 +121,18 @@ watch(
   { deep: true },
 );
 
+/** 勾选当前 Tab 下全部医嘱行 */
+function selectAllVisibleOrderRows() {
+  selectedRowKeys.value = new Set(allVisibleOrderRows.value.map((row) => row.id));
+}
+
 /** 全选开关：打开则选中当前列表全部行，关闭则清空勾选 */
 function handleSelectedAllChange(on: boolean) {
   if (!on) {
     selectedRowKeys.value = new Set();
     return;
   }
-  selectedRowKeys.value = new Set(allVisibleOrderRows.value.map((row) => row.id));
+  selectAllVisibleOrderRows();
 }
 
 /** 患者或筛选变化时默认展开全部卡片 */
@@ -177,6 +198,7 @@ async function loadAuditList() {
     therapyType: activeTimeType.value,
   });
   ordersByEncounterId.value = indexAuditGroupsByEncounterId(res.groups);
+  selectAllVisibleOrderRows();
 }
 
 /** 工具栏「查询」：显式刷新列表 */
@@ -253,12 +275,119 @@ async function handleRejectOrders() {
   const n = res.processedCount ?? rows.length;
   await afterWriteSuccess(`已成功退回 ${n} 条医嘱`);
 }
+
+function resolveSelectedRowKeys(): Set<string> | undefined {
+  if (selectedRowKeys.value.size === 0) {
+    return undefined;
+  }
+  return selectedRowKeys.value;
+}
+
+async function handlePrintOrderAudit(label: string) {
+  const cards = visibleCards.value.filter((card) => card.orders.length > 0);
+  if (!cards.length) {
+    ElMessage.warning('当前没有可打印的医嘱');
+    return;
+  }
+  const rowFilter = resolveSelectedRowKeys();
+
+  printActionLoading.value = true;
+  try {
+    if (label === '打印瓶贴') {
+      let totalGroups = 0;
+      for (const card of cards) {
+        const groups = groupInpatientAuditInfusionLabelPrintTargets(card.orders, rowFilter);
+        if (!groups.length) continue;
+        await printIvInfusionLabels({
+          encounterId: card.patient.id,
+          groups,
+          jobName: `输液瓶贴-${card.patient.name}`,
+        });
+        totalGroups += groups.length;
+      }
+      if (!totalGroups) {
+        ElMessage.warning('没有可打印的药品医嘱');
+        return;
+      }
+      ElMessage.success(`已发送 ${totalGroups} 张输液瓶贴`);
+      return;
+    }
+
+    if (label === '打印采血码') {
+      let totalTargets = 0;
+      for (const card of cards) {
+        const targets = groupInpatientAuditSpecimenBarcodePrintTargets(card.orders, rowFilter);
+        if (!targets.length) continue;
+        await printBedsideSpecimenBarcodes({
+          encounterId: card.patient.id,
+          targets,
+          jobName: `采血条码-${card.patient.name}`,
+        });
+        totalTargets += targets.length;
+      }
+      if (!totalTargets) {
+        ElMessage.warning('没有可打印的采血/检验医嘱');
+        return;
+      }
+      ElMessage.success(`已发送 ${totalTargets} 张采血条码`);
+      return;
+    }
+
+    if (label === '打印处置单') {
+      let printed = 0;
+      for (const card of cards) {
+        const target = groupInpatientAuditTreatmentExecutePrintTargets(card.orders, rowFilter);
+        if (!target) continue;
+        await printTreatmentExecuteSheet({
+          encounterId: card.patient.id,
+          target,
+          jobName: `处置执行单-${card.patient.name}`,
+        });
+        printed += 1;
+      }
+      if (!printed) {
+        ElMessage.warning('没有可打印的处置医嘱');
+        return;
+      }
+      ElMessage.success(`已发送 ${printed} 份处置执行单`);
+      return;
+    }
+
+    if (label === '打印处方单') {
+      let totalPrescriptions = 0;
+      for (const card of cards) {
+        const medicationRequestIds = groupInpatientAuditMedicationRequestIds(
+          card.orders,
+          rowFilter,
+        );
+        if (!medicationRequestIds.length) continue;
+        const count = await printNursePrescriptions({
+          encounterId: card.patient.id,
+          medicationRequestIds,
+        });
+        totalPrescriptions += count;
+      }
+      if (!totalPrescriptions) {
+        ElMessage.warning('没有可打印的药品处方');
+        return;
+      }
+      ElMessage.success(`已发送 ${totalPrescriptions} 份处方单`);
+    }
+  } catch {
+    // composable 已记录日志
+  } finally {
+    printActionLoading.value = false;
+  }
+}
 </script>
 
 <template>
   <div
     v-loading="
-      listRequest.loading.value || verifyRequest.loading.value || rejectRequest.loading.value
+      listRequest.loading.value ||
+      verifyRequest.loading.value ||
+      rejectRequest.loading.value ||
+      printActionLoading
     "
     class="audit-module flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden rounded-md bg-[#eef9fd]"
   >
@@ -304,6 +433,10 @@ async function handleRejectOrders() {
         <ElButton type="danger" plain :disabled="!writeActionsEnabled" @click="handleRejectOrders">
           退回
         </ElButton>
+        <ElButton plain @click="handlePrintOrderAudit('打印瓶贴')">打印瓶贴</ElButton>
+        <ElButton plain @click="handlePrintOrderAudit('打印采血码')">打印采血码</ElButton>
+        <ElButton plain @click="handlePrintOrderAudit('打印处置单')">打印处置单</ElButton>
+        <ElButton plain @click="handlePrintOrderAudit('打印处方单')">打印处方单</ElButton>
       </div>
     </section>
 
@@ -336,7 +469,20 @@ async function handleRejectOrders() {
                   />
                 </template>
               </ElTableColumn>
-              <ElTableColumn prop="typeLabel" align="center" label="类型" min-width="108" />
+              <ElTableColumn align="center" label="类型" min-width="108">
+                <template #default="{ row }">
+                  <span>{{ row.orderKindLabel }}</span>
+                  <template v-if="row.therapyLabel">
+                    <span class="ip-advice-type-sep"> / </span>
+                    <span
+                      class="ip-advice-therapy-text"
+                      :class="adviceTherapyTypeClass(row.therapyTypeCode)"
+                    >
+                      {{ row.therapyLabel }}
+                    </span>
+                  </template>
+                </template>
+              </ElTableColumn>
               <ElTableColumn label="医嘱内容" min-width="360">
                 <template #default="{ row }">
                   <div class="order-time">

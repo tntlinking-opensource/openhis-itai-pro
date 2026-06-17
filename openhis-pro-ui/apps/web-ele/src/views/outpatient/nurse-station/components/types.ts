@@ -56,15 +56,29 @@ export interface NurseAdviceExecuteRow {
   netPerformCount?: number;
   /** 是否展示「取消执行」 */
   canCancelExecute?: boolean;
+  /** 药品成组主键（输液组） */
+  groupId?: string;
+  /** 处方号（药品医嘱） */
+  prescriptionNo?: string;
+  /** 药品类目展示文案 */
+  medCategoryCodeText?: string;
+  /** 诊疗类目 code（检验/处置等） */
+  serviceCategoryCode?: string;
+  /** 诊疗类目展示文案 */
+  serviceCategoryCodeText?: string;
 }
 
 export interface SupplyItem {
   id: string;
+  /** 发放单主键（IF-NUR-05 取消执行） */
+  dispenseId?: string;
   name: string;
   spec: string;
   usage: string;
   quantity: number;
-  status: '已发放' | '待发放';
+  status: '待发放' | '已配药' | '已发放';
+  /** 护士执行后可取消（PREPARED / COMPLETED / PART_COMPLETED） */
+  canCancelExecute?: boolean;
 }
 
 export interface ActionRecord {

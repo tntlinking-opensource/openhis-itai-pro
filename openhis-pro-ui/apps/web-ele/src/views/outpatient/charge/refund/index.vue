@@ -20,6 +20,7 @@ import {
   ElButton,
   ElCard,
   ElDatePicker,
+  ElLoading,
   ElMessage,
   ElMessageBox,
   ElPagination,
@@ -42,6 +43,7 @@ import SectionTitle from '#/components/layouts/section-title.vue';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import SelectFuzzyInput from '#/components/select-fuzzy-input.vue';
 import { useRequest } from '#/hooks/use-request';
+import { useOutpatientRefundReceiptPrint } from '#/composables/use-outpatient-refund-receipt-print';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import { decimalAdd } from '#/utils/decimal-util';
 
@@ -54,6 +56,10 @@ import {
   REFUND_LINE_STATUS_LABEL_TAG,
   REFUND_REJECT_REASON_MESSAGES,
 } from './outpatient-refund.constants';
+import {
+  isOutpatientInsuranceAsyncRevokeResponse,
+  pollOutpatientInsuranceRevokeStatus,
+} from './use-outpatient-refund-insurance';
 
 defineOptions({
   name: 'ChargeOpRefund',
@@ -95,6 +101,8 @@ const selectedDetailRows = ref<RefundDetailTableRow[]>([]);
 const settlementVisible = ref(false);
 const openSettlementLoading = ref(false);
 const confirmRefundLoading = ref(false);
+
+const { printOutpatientRefundReceipt } = useOutpatientRefundReceiptPrint();
 
 /** 确认退费弹窗快照（锁定原支付与拟退行，避免弹窗打开后勾选变化） */
 const settlementSnapshot = ref<null | {
@@ -591,6 +599,47 @@ const handleOpenSettlement = async () => {
 };
 
 /** 按原支付执行退费（含半退保留行再结算由后端编排） */
+const buildRefundRequest = (snap: NonNullable<typeof settlementSnapshot.value>, eid: string) => ({
+  billDate: dayjs().format('YYYY-MM-DD HH:mm:ss'),
+  encounterId: eid,
+  originalPaymentId: snap.originalPaymentId,
+  refundingChargeItemIds: snap.refundingChargeItemIds,
+  preservedNewChargeItemIds:
+    snap.preservedNewChargeItemIds.length > 0 ? snap.preservedNewChargeItemIds : undefined,
+  refundPaymentDetails: [
+    {
+      amount: snap.displayAmount,
+      payChannelCode: paymentForm.payChannelCode,
+    },
+  ],
+});
+
+/** 退费成功后的列表刷新与票据打印 */
+const finalizeRefundSuccess = async (
+  res: Awaited<ReturnType<typeof httpExecuteOutpatientBillRefundByPayment>>,
+  snap: NonNullable<typeof settlementSnapshot.value>,
+  eid: string,
+) => {
+  if (res.success) {
+    ElMessage.success(res.halfRefundExecuted ? '退费已完成（含保留项再结算）' : '退费已完成');
+    if (res.reversePaymentId) {
+      void printOutpatientRefundReceipt({
+        paymentId: res.reversePaymentId,
+        encounterId: eid,
+        originalPaymentId: snap.originalPaymentId,
+        chargeItemIds: snap.refundingChargeItemIds,
+      });
+    }
+  }
+  settlementVisible.value = false;
+  settlementSnapshot.value = null;
+  if (queueTabCode.value === QUEUE_TAB.PENDING) {
+    queueTabCode.value = QUEUE_TAB.SETTLED;
+  }
+  await loadRefundQueue();
+  await loadExecutionDetailForSelectedEncounter(QUEUE_TAB.SETTLED);
+};
+
 const handleConfirmRefund = async () => {
   const snap = settlementSnapshot.value;
   const eid = selectedEncounterId.value;
@@ -598,33 +647,25 @@ const handleConfirmRefund = async () => {
     return;
   }
   confirmRefundLoading.value = true;
+  let asyncLoading: ReturnType<typeof ElLoading.service> | null = null;
   try {
-    const res = await httpExecuteOutpatientBillRefundByPayment({
-      billDate: dayjs().format('YYYY-MM-DD HH:mm:ss'),
-      encounterId: eid,
-      originalPaymentId: snap.originalPaymentId,
-      refundingChargeItemIds: snap.refundingChargeItemIds,
-      preservedNewChargeItemIds:
-        snap.preservedNewChargeItemIds.length > 0 ? snap.preservedNewChargeItemIds : undefined,
-      refundPaymentDetails: [
-        {
-          amount: snap.displayAmount,
-          payChannelCode: paymentForm.payChannelCode,
-        },
-      ],
-    });
-    if (res.success) {
-      ElMessage.success(res.halfRefundExecuted ? '退费已完成（含保留项再结算）' : '退费已完成');
+    const refundBody = buildRefundRequest(snap, eid);
+    let res = await httpExecuteOutpatientBillRefundByPayment(refundBody);
+    if (isOutpatientInsuranceAsyncRevokeResponse(res)) {
+      asyncLoading = ElLoading.service({
+        lock: true,
+        text: '医保协同单撤销处理中，请稍候…',
+        background: 'rgba(0, 0, 0, 0.35)',
+      });
+      await pollOutpatientInsuranceRevokeStatus(String(snap.originalPaymentId));
+      res = await httpExecuteOutpatientBillRefundByPayment(refundBody);
     }
-    settlementVisible.value = false;
-    settlementSnapshot.value = null;
-    // 拟退行已 REFUNDED：待退费页签 SQL 不再命中，切到已退费以便左侧队列仍能选中该就诊
-    if (queueTabCode.value === QUEUE_TAB.PENDING) {
-      queueTabCode.value = QUEUE_TAB.SETTLED;
-    }
-    await loadRefundQueue();
-    await loadExecutionDetailForSelectedEncounter(QUEUE_TAB.SETTLED);
+    await finalizeRefundSuccess(res, snap, eid);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '退费失败';
+    ElMessage.error(message);
   } finally {
+    asyncLoading?.close();
     confirmRefundLoading.value = false;
   }
 };

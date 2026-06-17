@@ -103,24 +103,54 @@ async function loadSettings() {
   }
 }
 
-async function handleCreate() {
+/** 提交左侧表单；可选保存成功后关闭弹窗。 */
+async function persistForm(closeAfterSave: boolean): Promise<boolean> {
   const { valid } = await formApi.validate();
-  if (!valid) return;
+  if (!valid) return false;
 
-  const v = await formApi.getValues();
-  await createSettingApi({
-    name: nameText.value,
-    description: titleText.value,
-    value: v.value || '',
-    providerName: v.providerName,
-    providerKey: v.providerName === 'G' ? '' : v.providerKey,
-  });
-  ElMessage.success('保存成功');
-  await loadSettings();
-  await formApi.setValues({
-    providerKey: '',
-    value: '',
-  });
+  modalApi.lock(true);
+  try {
+    const v = await formApi.getValues();
+    await createSettingApi({
+      name: nameText.value,
+      description: titleText.value,
+      value: v.value || '',
+      providerName: v.providerName,
+      providerKey: v.providerName === 'G' ? '' : v.providerKey,
+    });
+    ElMessage.success('保存成功');
+    await loadSettings();
+    await formApi.setValues({
+      providerKey: '',
+      value: '',
+    });
+    if (closeAfterSave) {
+      modalApi.close();
+    }
+    return true;
+  } catch (error: unknown) {
+    const err = error as { message?: string; msg?: string };
+    ElMessage.error(err?.msg || err?.message || '保存失败，请稍后重试');
+    return false;
+  } finally {
+    modalApi.unlock();
+  }
+}
+
+/** 保存当前配置并保持弹窗打开，便于继续维护 G/U/R/T。 */
+async function handleSave() {
+  await persistForm(false);
+}
+
+/** 确定：有未提交的值则先保存再关闭，否则直接关闭。 */
+async function handleConfirm() {
+  const values = await formApi.getValues();
+  const hasPendingInput = Boolean((values.value || '').trim());
+  if (!hasPendingInput) {
+    modalApi.close();
+    return;
+  }
+  await persistForm(true);
 }
 
 function startEdit(row: Setting) {
@@ -147,7 +177,7 @@ async function saveEdit(row: Setting) {
 }
 
 async function handleDelete(row: Setting) {
-  await deleteSettingApi({ value: row.id });
+  await deleteSettingApi(row.id);
   ElMessage.success('删除成功');
   await loadSettings();
 }
@@ -163,6 +193,13 @@ const [Modal, modalApi] = useVbenModal({
     await formApi.setValues({ providerName: 'G', providerKey: '', value: '' });
     await loadSettings();
   },
+  onConfirm: handleConfirm,
+  showCancelButton: true,
+  showConfirmButton: true,
+  confirmText: '确定',
+  cancelText: '关闭',
+  destroyOnClose: false,
+  closeOnClickModal: false,
 });
 
 const [Form, formApi] = useVbenForm({
@@ -243,7 +280,7 @@ watch(
         <div class="mb-2 text-xs text-gray-500">取值优先级：U &gt; R &gt; T &gt; G</div>
         <Form />
         <div class="mt-3 flex justify-end">
-          <ElButton type="primary" @click="handleCreate">新增/保存</ElButton>
+          <ElButton type="primary" @click="handleSave">保存</ElButton>
         </div>
       </div>
       <div class="w-[420px]">

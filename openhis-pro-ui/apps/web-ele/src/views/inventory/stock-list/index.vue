@@ -31,6 +31,7 @@ import {
   sumInventoryDetailCurrentApi,
 } from '#/api/inventory/warehouse/inventory-detail';
 import AppDialog from '#/components/app-dialog.vue';
+import { PublicationStatusCode } from '#/constants/domain/publication-status';
 import { useRequest } from '#/hooks/use-request';
 
 defineOptions({ name: 'InventoryWarehouseInventoryDetailPage' });
@@ -72,14 +73,9 @@ function optionDtosToSelectItems(list?: OptionDto[]): ApiOptionItem[] {
   }));
 }
 
-/** 数量 + 单位：后端已换算为库存展示单位。 */
+/** 数量：后端已拼接展示串，前端直接显示。 */
 function fmtDisplayQuantityCell(row: InventoryDetailListRowDto): string {
-  const qty = fmtAmt(row.displayQuantity);
-  const unit = String(row.displayUnitName ?? '').trim();
-  if (!qty && !unit) return '';
-  if (!unit) return qty;
-  if (!qty) return unit;
-  return `${qty} ${unit}`;
+  return String(row.displayQuantityText ?? '').trim();
 }
 
 /** 单价 + 单位名（元/单位）。 */
@@ -295,7 +291,7 @@ const tableColumns: TableColumn[] = [
     showOverflowTooltip: true,
   },
   {
-    prop: 'displayQuantity',
+    prop: 'displayQuantityText',
     label: '库存数量',
     minWidth: 120,
     align: 'right',
@@ -488,11 +484,11 @@ function handleCurrentPageChange(page: number) {
 }
 
 function canRetireInventoryRow(row: InventoryDetailListRowDto): boolean {
-  return row.inventoryStatusEnum === 'ACTIVE';
+  return row.inventoryStatusEnum === PublicationStatusCode.ACTIVE;
 }
 
 function canResumeInventoryRow(row: InventoryDetailListRowDto): boolean {
-  return row.inventoryStatusEnum === 'RETIRED';
+  return row.inventoryStatusEnum === PublicationStatusCode.INACTIVE;
 }
 
 // 打开追溯码弹窗：无 traceNo 时提示待后端字段。

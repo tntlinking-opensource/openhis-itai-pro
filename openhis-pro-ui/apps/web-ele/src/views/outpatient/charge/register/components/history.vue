@@ -15,6 +15,7 @@ import { ElButton, ElCard, ElDatePicker, ElMessage, ElTag } from 'element-plus';
 import AppDialog from '#/components/app-dialog.vue';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import SelectFuzzyInput from '#/components/select-fuzzy-input.vue';
+import { useRegistrationReceiptPrint } from '#/composables/use-registration-receipt-print';
 import { getDateRangeQuick } from '#/utils/date-range-quick';
 import { tagTypeByCode } from '#/utils/status-tag';
 
@@ -32,6 +33,10 @@ defineOptions({
 });
 
 const loading = ref(false);
+
+const { printRegistrationReceipt, isPrinting: reprintLoading } = useRegistrationReceiptPrint();
+
+const reprintEncounterId = ref<string | null>(null);
 
 /** 收费 / 退号共用一个核对弹窗 */
 const historyActionDialogVisible = ref(false);
@@ -140,7 +145,7 @@ const tableColumns: TableColumn[] = [
     prop: 'action',
     label: '操作',
     fixed: 'right',
-    width: 100,
+    width: 150,
     slot: 'action',
     align: 'center',
     headerAlign: 'center',
@@ -226,6 +231,35 @@ function onHistoryActionDialogClosed() {
 }
 
 /**
+ * 是否可补打挂号小票（已产生成功支付流水）。
+ */
+function canReprintReceipt(row: RegisterHistoryTableRow): boolean {
+  return Boolean(String(row.paymentId ?? '').trim());
+}
+
+/**
+ * 补打挂号小票。
+ */
+async function handleReprintReceipt(row: RegisterHistoryTableRow) {
+  const paymentId = String(row.paymentId ?? '').trim();
+  const encounterId = String(row.encounterId ?? '').trim();
+  if (!paymentId) {
+    ElMessage.warning('暂无支付单号，无法补打挂号小票');
+    return;
+  }
+  reprintEncounterId.value = encounterId || null;
+  try {
+    await printRegistrationReceipt({
+      paymentId,
+      encounterId: encounterId || undefined,
+      jobName: '挂号小票（补打）',
+    });
+  } finally {
+    reprintEncounterId.value = null;
+  }
+}
+
+/**
  * 打开收费核对弹窗（正式结算前由用户确认）。
  */
 function handleCharge(row: RegisterHistoryTableRow) {
@@ -290,13 +324,18 @@ async function executeCancelRegister() {
   }
   actionDialogLoading.value = true;
   try {
-    await cancelRegisterEncounter({
+    const result = await cancelRegisterEncounter({
       cancelReason: '窗口退号',
       encounterId: row.encounterId,
     });
     historyActionDialogVisible.value = false;
     historyActionRow.value = null;
     ElMessage.success('退号成功');
+    if (result.appointmentReleaseMessage) {
+      ElMessage.info(result.appointmentReleaseMessage);
+    } else if (row.hasLinkedAppointment) {
+      ElMessage.info('关联预约已按院点策略释放');
+    }
     await handleQuery();
   } finally {
     actionDialogLoading.value = false;
@@ -414,6 +453,15 @@ defineExpose({
               @click="handleCharge(row)"
             >
               收费
+            </ElButton>
+            <ElButton
+              type="primary"
+              link
+              :disabled="!canReprintReceipt(row)"
+              :loading="reprintLoading && reprintEncounterId === String(row.encounterId ?? '')"
+              @click="handleReprintReceipt(row)"
+            >
+              补打
             </ElButton>
             <ElButton
               type="danger"

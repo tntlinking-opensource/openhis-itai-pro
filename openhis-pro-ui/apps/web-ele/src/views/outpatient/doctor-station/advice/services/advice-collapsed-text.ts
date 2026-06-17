@@ -1,7 +1,8 @@
+import type { AdviceLineEditorKind } from './advice-row';
+import type { AdviceDrugItem } from './advice.types';
+
 import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 
-import type { AdviceDrugItem } from './advice.types';
-import type { AdviceLineEditorKind } from './advice-row';
 import { formatMoneyStrYuan, formatUnitPriceYuan, terminologyLabel } from './advice-format';
 import { totalAmountUnitDisplayLabel } from './medication-unit-bands';
 

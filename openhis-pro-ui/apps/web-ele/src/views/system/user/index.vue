@@ -16,22 +16,35 @@ import {
   disableUserApi,
   enableUserApi,
   getUserListApi,
+  getUserRolesApi,
   unlockUserApi,
 } from '#/api/user/user';
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+
+import { useAccess } from '@vben/access';
 
 import ChangePasswordDialog from './components/change-password-dialog.vue';
+import ImpersonateConfirmDialog from './components/impersonate-confirm-dialog.vue';
 import UserFormDialog from './components/user-form-dialog.vue';
 
 defineOptions({
   name: 'UserList',
 });
 
+const { hasAccessByCodes } = useAccess();
+const canImpersonate = computed(() => hasAccessByCodes(['Identity.Users.Impersonate']));
+
+/** 列表行：在用户基础信息上附带角色展示名 */
+interface UserTableRow extends UserInfo {
+  roleNames?: string;
+}
+
 const queryParams = ref<UserListParams>({
   pageNo: 1,
   pageSize: 50,
 });
 
-const tableData = ref<UserInfo[]>([]);
+const tableData = ref<UserTableRow[]>([]);
 const loading = ref(false);
 const total = ref(0);
 
@@ -55,6 +68,12 @@ const tableColumns: TableColumn[] = [
     prop: 'name',
     label: '姓名',
     width: 80,
+  },
+  {
+    prop: 'roleNames',
+    label: '角色',
+    slot: 'roleNames',
+    minWidth: 140,
   },
   {
     prop: 'phoneNumber',
@@ -107,9 +126,38 @@ const tableColumns: TableColumn[] = [
     label: '操作',
     fixed: 'right',
     slot: 'action',
-    width: 180,
+    width: 280,
+    showOverflowTooltip: false,
   },
 ];
+
+/** 批量补全用户角色展示名 */
+async function enrichUsersWithRoles(users: UserInfo[]): Promise<UserTableRow[]> {
+  if (!users.length) {
+    return [];
+  }
+  return Promise.all(
+    users.map(async (user) => {
+      try {
+        const roles = await getUserRolesApi({
+          value: preserveApiIdForRequest(user.id) ?? user.id,
+        });
+        const names = (Array.isArray(roles) ? roles : [])
+          .map((role) => role.displayName || role.name)
+          .filter(Boolean);
+        return {
+          ...user,
+          roleNames: names.length ? names.join('、') : '-',
+        };
+      } catch {
+        return {
+          ...user,
+          roleNames: '-',
+        };
+      }
+    }),
+  );
+}
 
 const formItems = computed<FormItemConfig[]>(() => [
   {
@@ -154,7 +202,7 @@ const loadData = async () => {
       keyword: queryParams.value.keyword,
       isActive: queryParams.value.isActive,
     });
-    tableData.value = response.content;
+    tableData.value = await enrichUsersWithRoles(response.content ?? []);
     total.value = response.totalCount;
   } catch {
     ElMessage.error('加载数据失败，请稍后重试');
@@ -200,6 +248,9 @@ const currentUser = ref<null | UserInfo>(null);
 const changePasswordDialogVisible = ref(false);
 const currentPasswordUser = ref<null | UserInfo>(null);
 
+const impersonateDialogVisible = ref(false);
+const impersonateTargetUser = ref<null | UserInfo>(null);
+
 const handleAdd = () => {
   currentUser.value = null;
   dialogVisible.value = true;
@@ -213,6 +264,15 @@ const handleEdit = (row: UserInfo) => {
 const handleChangePassword = (row: UserInfo) => {
   currentPasswordUser.value = row;
   changePasswordDialogVisible.value = true;
+};
+
+const handleImpersonate = (row: UserInfo) => {
+  if (!row.isActive) {
+    ElMessage.warning('该用户已禁用，无法代理登录');
+    return;
+  }
+  impersonateTargetUser.value = row;
+  impersonateDialogVisible.value = true;
 };
 
 const handleDialogSuccess = () => {
@@ -360,33 +420,47 @@ onMounted(() => {
         </ElTag>
       </template>
 
+      <template #roleNames="{ row }">
+        <span class="text-[var(--el-text-color-regular)]">{{ row.roleNames || '-' }}</span>
+      </template>
+
       <template #action="{ row }">
-        <ElButton link type="primary" @click="handleEdit(row)">编辑</ElButton>
-        <ElButton v-if="!isAdminUser(row)" link type="primary" @click="handleChangePassword(row)">
-          改密
-        </ElButton>
-        <ElButton v-if="row.isLockedOut" link type="info" @click="handleUnlock(row)">
-          解锁
-        </ElButton>
-        <ElButton
-          v-if="!row.isActive && !isAdminUser(row)"
-          link
-          type="success"
-          @click="handleEnable(row)"
-        >
-          启用
-        </ElButton>
-        <ElButton
-          v-if="row.isActive && !isAdminUser(row)"
-          link
-          type="warning"
-          @click="handleDisable(row)"
-        >
-          停用
-        </ElButton>
-        <ElButton v-if="!isAdminUser(row)" link type="danger" @click="handleDelete(row)">
-          删除
-        </ElButton>
+        <div class="user-list__actions inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+          <ElButton link type="primary" @click="handleEdit(row)">编辑</ElButton>
+          <ElButton
+            v-if="canImpersonate && row.isActive"
+            link
+            type="warning"
+            @click="handleImpersonate(row)"
+          >
+            代理登录
+          </ElButton>
+          <ElButton v-if="!isAdminUser(row)" link type="primary" @click="handleChangePassword(row)">
+            改密
+          </ElButton>
+          <ElButton v-if="row.isLockedOut" link type="info" @click="handleUnlock(row)">
+            解锁
+          </ElButton>
+          <ElButton
+            v-if="!row.isActive && !isAdminUser(row)"
+            link
+            type="success"
+            @click="handleEnable(row)"
+          >
+            启用
+          </ElButton>
+          <ElButton
+            v-if="row.isActive && !isAdminUser(row)"
+            link
+            type="warning"
+            @click="handleDisable(row)"
+          >
+            停用
+          </ElButton>
+          <ElButton v-if="!isAdminUser(row)" link type="danger" @click="handleDelete(row)">
+            删除
+          </ElButton>
+        </div>
       </template>
     </TableLayout>
 
@@ -396,5 +470,12 @@ onMounted(() => {
       :user="currentPasswordUser"
       @success="handleChangePasswordSuccess"
     />
+    <ImpersonateConfirmDialog v-model="impersonateDialogVisible" :user="impersonateTargetUser" />
   </Page>
 </template>
+
+<style scoped>
+.user-list__actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+</style>

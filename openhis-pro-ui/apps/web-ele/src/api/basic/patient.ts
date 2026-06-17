@@ -1,4 +1,7 @@
-import type { ApiOptionItem, PageApiResponse, PageParams } from '#/types/api-response';
+import type { ApiOptionItem, PageParams } from '#/types/api-response';
+
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
 import { publicRequestClient } from '../request';
 
@@ -15,7 +18,7 @@ export interface Patient {
   name: string;
   age: null | number;
   birthDate: null | string;
-  genderEnum: number;
+  genderEnum: string;
   genderEnumText?: string;
   phone?: string;
   linkName?: string;
@@ -116,12 +119,13 @@ export interface SavePatientStudentParams {
 }
 
 export async function getPatientListApi(params: GetPatientPageParams) {
-  return publicRequestClient.post<PageApiResponse<Patient>>('/patient/getPatientPage', params);
+  const data = await publicRequestClient.post<unknown>('/patient/getPatientPage', params);
+  return parsePagedRowsFromApiData<Patient>(data);
 }
 
 /** 按主键获取患者详情（含其他证件列表 patientIdInfoList），用于编辑回显 */
-export async function getPatientApi(value: string) {
-  return publicRequestClient.post<Patient>('/patient/getPatient', { value });
+export async function getPatientApi(id: number | string) {
+  return publicRequestClient.post<Patient>('/patient/getPatient', preserveApiIdForRequest(id));
 }
 
 /** 患者管理页初始化：拉取性别、婚姻、职业、血型、证件类型等枚举选项 */
@@ -147,7 +151,7 @@ export interface PatientIdInfo {
 export interface CreatePatientParams {
   /** 基本信息 */
   name: string;
-  genderEnum?: number;
+  genderEnum?: string;
   age?: number;
 
   /** 联系方式 */
@@ -195,23 +199,25 @@ export async function editPatientApi(params: EditPatientParams) {
   return publicRequestClient.post('/patient/editPatient', params);
 }
 
-export interface DeletePatientParams {
-  value: string;
-}
-
-export async function deletePatientApi(params: DeletePatientParams) {
-  return publicRequestClient.post('/patient/deletePatient', params);
+export async function deletePatientApi(id: number | string) {
+  return publicRequestClient.post('/patient/deletePatient', preserveApiIdForRequest(id));
 }
 
 /** 学籍回显（需患者已维护证件号） */
-export async function getPatientStudentApi(value: string) {
-  return publicRequestClient.post<PatientStudentDto>('/patient/getPatientStudent', { value });
+export async function getPatientStudentApi(patientId: number | string) {
+  return publicRequestClient.post<PatientStudentDto>(
+    '/patient/getPatientStudent',
+    preserveApiIdForRequest(patientId),
+  );
 }
 
 export async function savePatientStudentApi(params: SavePatientStudentParams) {
   return publicRequestClient.post<PatientStudentDto>('/patient/savePatientStudent', params);
 }
 
-export async function deletePatientStudentApi(params: { value: string }) {
-  return publicRequestClient.post('/patient/deletePatientStudent', params);
+export async function deletePatientStudentApi(patientId: number | string) {
+  return publicRequestClient.post(
+    '/patient/deletePatientStudent',
+    preserveApiIdForRequest(patientId),
+  );
 }

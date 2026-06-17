@@ -52,6 +52,16 @@ function mapOccupantCell(dto: BedBoardOccupantDto): BedBoardOccupantCell {
 }
 
 /** 按病房 id 聚合床位列表行 */
+export function isBedOperationalInUse(operationalEnum: string | undefined): boolean {
+  return (operationalEnum ?? '').trim() === 'IN_USE';
+}
+
+/** 空床判定：以 location.operationalEnum 为准（BR-IP-ATD-001），不得仅凭 occupant 有无。 */
+export function isBedVacant(bed: Pick<BedBoardBedCell, 'operationalEnum'>): boolean {
+  return !isBedOperationalInUse(bed.operationalEnum);
+}
+
+/** 按病房 id 聚合床位列表行 */
 export function mapBedBoardItemsToHouseGroups(
   items: BedBoardItemDto[],
   wardOptions: WardItem[],

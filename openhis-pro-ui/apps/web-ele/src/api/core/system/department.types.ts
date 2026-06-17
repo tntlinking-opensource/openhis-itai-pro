@@ -8,7 +8,7 @@ export interface Department {
   code?: string;
   typeEnum?: number | string;
   typeEnum_dictText?: string;
-  classEnum?: number;
+  classEnum?: number | string;
   classEnum_dictText?: string;
   ybNo?: string;
   ybName?: string;
@@ -18,8 +18,8 @@ export interface Department {
   medinsLv?: string;
   defDoctorId?: number | string;
   caty?: string;
-  activeFlag?: number;
-  activeFlag_dictText?: string;
+  statusEnum?: string;
+  statusEnum_dictText?: string;
   busNo?: string;
   parentId?: null | string;
   parentDisplayName?: null | string;
@@ -52,13 +52,13 @@ export interface PractitionerOption {
 
 export interface DepartmentClassOption {
   label: string;
-  value: number;
+  value: string;
   sort?: number;
 }
 
 export interface DepartmentTypeOption {
   label: string;
-  value: number | string;
+  value: string;
   sort?: number;
 }
 
@@ -69,11 +69,18 @@ export interface InitDepartmentResponse {
   practitionerOptions: PractitionerOption[];
 }
 
+export interface QueryDepartmentListParams {
+  keyword?: string;
+  typeEnum?: number | string;
+  classEnum?: number | string;
+  statusEnum?: string;
+}
+
 export interface DepartmentParams {
   id?: number | string;
   name: string;
   typeEnum?: number | string;
-  classEnum?: number;
+  classEnum?: number | string;
   ybNo?: string;
   ybName?: string;
   medinsId?: string;
@@ -90,10 +97,6 @@ export interface DepartmentParams {
   wbStr?: string;
   displayOrder?: number;
   [key: string]: unknown;
-}
-
-export interface PageDepartmentParams {
-  keyword?: string;
 }
 
 export type DepartmentTree = Department;

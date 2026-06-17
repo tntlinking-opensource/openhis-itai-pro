@@ -104,6 +104,7 @@ function withExpandedIndex(items: AdviceDrugItem[], index: number): AdviceDrugIt
 function seedFromLastRow(last: AdviceDrugItem): Partial<AdviceDrugItem> {
   return {
     diagnosis: last.diagnosis,
+    contractId: last.contractId,
     feeNature: lastItemField(last, 'feeNature'),
     frequency: last.frequency,
     medicationDays: last.medicationDays,

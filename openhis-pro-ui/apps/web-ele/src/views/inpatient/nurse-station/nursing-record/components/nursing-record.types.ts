@@ -21,6 +21,8 @@ export interface NursingRecordRow {
   pulse: string;
   respiratory: string;
   bloodPressure: string;
+  pupilLeft: string;
+  pupilRight: string;
   oxygenSaturation: string;
   oxygenRate: string;
   oxygenMode: string;
@@ -39,7 +41,22 @@ export interface NursingRecordRow {
   nurseSignature: string;
 }
 
+export type NursingRecordRowType = 'extra' | 'skeleton';
+
+export interface NursingRecordPaperHeader {
+  admitAt?: string;
+  age?: number | string;
+  bedNo?: string;
+  dischargeAt?: string;
+  gender?: string;
+  inpatientNo?: string;
+  name?: string;
+  wardName?: string;
+}
+
 export interface NursingRecordViewRow extends NursingRecordRow {
+  isDirty?: boolean;
   isEditing?: boolean;
   isNew?: boolean;
+  rowType?: NursingRecordRowType;
 }

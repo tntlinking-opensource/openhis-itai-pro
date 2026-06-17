@@ -18,7 +18,6 @@ export const EMR_TEMPLATE_SCOPE_LEVEL_OPTIONS = [
 export const EMR_TEMPLATE_ENCOUNTER_CLASS = {
   AMB: 'AMB',
   IMP: 'IMP',
-  EMER: 'EMER',
   OBSENC: 'OBSENC',
 } as const;
 
@@ -28,7 +27,6 @@ export type EmrTemplateEncounterClassCode =
 export const EMR_TEMPLATE_ENCOUNTER_CLASS_OPTIONS = [
   { label: '门诊', value: EMR_TEMPLATE_ENCOUNTER_CLASS.AMB },
   { label: '住院', value: EMR_TEMPLATE_ENCOUNTER_CLASS.IMP },
-  { label: '急诊', value: EMR_TEMPLATE_ENCOUNTER_CLASS.EMER },
   { label: '留观', value: EMR_TEMPLATE_ENCOUNTER_CLASS.OBSENC },
 ] as const;
 

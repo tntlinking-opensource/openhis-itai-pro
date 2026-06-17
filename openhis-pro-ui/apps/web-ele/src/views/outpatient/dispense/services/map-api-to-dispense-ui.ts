@@ -17,7 +17,7 @@ function scalarToTrimmedString(value: null | number | string | undefined): strin
 }
 
 /** 是否按中药分组/展示（tcmFlag 为空时退回文案） */
-function isHerbalSlipRow(row: EncounterMedicationDispenseSlipRowDto): boolean {
+export function isHerbalSlipRow(row: EncounterMedicationDispenseSlipRowDto): boolean {
   if (row.tcmFlag === true) return true;
   if (row.tcmFlag === false) return false;
   const text = `${row.tcmFlagText ?? ''}${row.medicationCategoryText ?? ''}`;
@@ -58,17 +58,26 @@ function blockStatusFromRows(
   return 'blocking';
 }
 
-/** 将发放行列表聚合成处方块（按处方号/组号/单条兜底分组） */
+/** 处方区块标题：仅 med_medication_request.prescription_no，禁止回落发放 busNo */
+function resolvePrescriptionBlockNo(row: EncounterMedicationDispenseSlipRowDto): string {
+  const prescriptionNo = row.prescriptionNo?.trim();
+  if (prescriptionNo) {
+    return prescriptionNo;
+  }
+  return '—';
+}
+
+/** 将发放行列表聚合成处方块（按 prescription_no 分块；无处方号时按发放行兜底） */
 export function mapSlipRowsToPrescriptionBlocks(
   rows: EncounterMedicationDispenseSlipRowDto[],
 ): DispensePrescriptionBlock[] {
   const groups = new Map<string, EncounterMedicationDispenseSlipRowDto[]>();
   for (const r of rows) {
     const tcm = isHerbalSlipRow(r);
-    const key =
-      (r.prescriptionNo?.trim() && `${r.prescriptionNo.trim()}|${tcm ? 't' : 'w'}`) ||
-      (r.prescriptionGroupId != null && `${String(r.prescriptionGroupId)}|${tcm ? 't' : 'w'}`) ||
-      `dispense|${r.dispenseId}`;
+    const prescriptionNo = r.prescriptionNo?.trim();
+    const key = prescriptionNo
+      ? `${prescriptionNo}|${tcm ? 't' : 'w'}`
+      : `dispense|${r.dispenseId}`;
     const list = groups.get(key);
     if (list) list.push(r);
     else groups.set(key, [r]);
@@ -82,7 +91,7 @@ export function mapSlipRowsToPrescriptionBlocks(
     const head = groupRows[0];
     if (!head) continue;
     const tcm = isHerbalSlipRow(head);
-    const rxNo = head.prescriptionNo?.trim() || head.busNo?.trim() || `发放-${head.dispenseId}`;
+    const rxNo = resolvePrescriptionBlockNo(head);
     const issued =
       head.requestAuthoredTime != null && head.requestAuthoredTime !== ''
         ? formatDateTime(head.requestAuthoredTime)

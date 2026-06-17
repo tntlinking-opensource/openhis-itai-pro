@@ -53,17 +53,26 @@ function blockStatusFromRows(
   return 'blocking';
 }
 
-/** 将发放行列表聚合成处方块（住院：库房/批号只读，无库存候选） */
+/** 处方区块标题：仅 prescription_no，禁止回落发放 busNo */
+function resolvePrescriptionBlockNo(row: EncounterMedicationDispenseSlipRowDto): string {
+  const prescriptionNo = row.prescriptionNo?.trim();
+  if (prescriptionNo) {
+    return prescriptionNo;
+  }
+  return '—';
+}
+
+/** 将发放行列表聚合成处方块（按 prescription_no 分块） */
 export function mapInpatientSlipRowsToPrescriptionBlocks(
   rows: EncounterMedicationDispenseSlipRowDto[],
 ): DispensePrescriptionBlock[] {
   const groups = new Map<string, EncounterMedicationDispenseSlipRowDto[]>();
   for (const r of rows) {
     const tcm = isHerbalSlipRow(r);
-    const key =
-      (r.prescriptionNo?.trim() && `${r.prescriptionNo.trim()}|${tcm ? 't' : 'w'}`) ||
-      (r.prescriptionGroupId != null && `${String(r.prescriptionGroupId)}|${tcm ? 't' : 'w'}`) ||
-      `dispense|${r.dispenseId}`;
+    const prescriptionNo = r.prescriptionNo?.trim();
+    const key = prescriptionNo
+      ? `${prescriptionNo}|${tcm ? 't' : 'w'}`
+      : `dispense|${r.dispenseId}`;
     const list = groups.get(key);
     if (list) list.push(r);
     else groups.set(key, [r]);
@@ -77,7 +86,7 @@ export function mapInpatientSlipRowsToPrescriptionBlocks(
     const head = groupRows[0];
     if (!head) continue;
     const tcm = isHerbalSlipRow(head);
-    const rxNo = head.prescriptionNo?.trim() || head.busNo?.trim() || `发放-${head.dispenseId}`;
+    const rxNo = resolvePrescriptionBlockNo(head);
     const issued =
       head.requestAuthoredTime != null && head.requestAuthoredTime !== ''
         ? formatDateTime(head.requestAuthoredTime)

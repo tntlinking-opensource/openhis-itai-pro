@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { ElCheckbox, ElTag } from 'element-plus';
+import { ElButton, ElCheckbox, ElTag } from 'element-plus';
 
 export interface SupplyItem {
   id: string;
@@ -9,7 +9,8 @@ export interface SupplyItem {
   spec: string;
   usage: string;
   quantity: number;
-  status: '已发放' | '待发放';
+  status: '待发放' | '已配药' | '已发放';
+  canCancelExecute?: boolean;
 }
 
 interface Props {
@@ -27,12 +28,14 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   (e: 'change', id: string, checked: boolean): void;
+  (e: 'cancel', id: string): void;
 }>();
 
-const isDispatched = computed(() => props.item.status === '已发放');
+/** 已执行态不可再勾选随批执行 */
+const isExecuted = computed(() => props.item.status === '已配药' || props.item.status === '已发放');
 
 const cardClass = computed(() => {
-  if (isDispatched.value) {
+  if (isExecuted.value) {
     return 'supply-item-card--dispatched';
   }
   if (props.selectable && props.selected) {
@@ -44,16 +47,21 @@ const cardClass = computed(() => {
 const statusTagType = computed(() => {
   const s = props.item.status;
   if (s === '已发放') return 'success';
+  if (s === '已配药') return 'warning';
   return 'primary';
 });
 
 const handleCardClick = () => {
-  if (!props.selectable || isDispatched.value) return;
+  if (!props.selectable || isExecuted.value) return;
   emit('change', props.item.id, !props.selected);
 };
 
 const handleCheckboxChange = (val: boolean | number | string) => {
   emit('change', props.item.id, Boolean(val));
+};
+
+const handleCancelClick = () => {
+  emit('cancel', props.item.id);
 };
 </script>
 
@@ -63,7 +71,7 @@ const handleCheckboxChange = (val: boolean | number | string) => {
       v-if="selectable"
       class="supply-item-card__checkbox shrink-0"
       :model-value="selected"
-      :disabled="isDispatched"
+      :disabled="isExecuted"
       @click.stop
       @change="handleCheckboxChange"
     />
@@ -73,9 +81,20 @@ const handleCheckboxChange = (val: boolean | number | string) => {
         {{ item.spec }} · {{ item.usage }} · ×{{ item.quantity }}
       </div>
     </div>
-    <ElTag size="small" class="shrink-0 self-center" :type="statusTagType">
-      {{ item.status }}
-    </ElTag>
+    <div class="flex shrink-0 flex-col items-end gap-1 self-center">
+      <ElTag size="small" :type="statusTagType">
+        {{ item.status }}
+      </ElTag>
+      <ElButton
+        v-if="item.canCancelExecute"
+        type="danger"
+        link
+        size="small"
+        @click.stop="handleCancelClick"
+      >
+        取消执行
+      </ElButton>
+    </div>
   </div>
 </template>
 
@@ -118,12 +137,12 @@ const handleCheckboxChange = (val: boolean | number | string) => {
   background-color: color-mix(in srgb, var(--el-color-primary) 8%, transparent);
 }
 
-/* 已发放：置灰不可交互 */
+/* 已配药/已发放：置灰不可勾选 */
 .supply-item-card--dispatched {
-  cursor: not-allowed;
+  cursor: default;
   border-color: var(--el-border-color-lighter);
   background-color: var(--el-fill-color-light);
-  color: var(--el-text-color-placeholder);
+  color: var(--el-text-color-regular);
 }
 
 .supply-item-card__checkbox :deep(.el-checkbox__input) {

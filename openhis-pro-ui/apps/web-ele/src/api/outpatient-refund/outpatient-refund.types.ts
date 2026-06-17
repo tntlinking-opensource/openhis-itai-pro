@@ -116,7 +116,10 @@ export interface ExecuteOutpatientBillRefundByPaymentRequest {
 
 /** 按原支付执行门诊账单退费响应 */
 export interface ExecuteOutpatientBillRefundByPaymentResponse {
+  coordinationIds?: string[];
   halfRefundExecuted?: boolean;
+  insuranceRevokeMode?: string;
+  insuranceRevoked?: boolean;
   originalPaymentId?: string;
   reversePaymentId?: string;
   success: boolean;

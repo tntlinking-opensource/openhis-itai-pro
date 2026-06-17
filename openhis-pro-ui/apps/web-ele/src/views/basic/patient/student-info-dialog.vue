@@ -192,7 +192,7 @@ async function handleDelete() {
       cancelButtonText: '取消',
     });
     modalApi.lock(true);
-    await deletePatientStudentApi({ value: form.patientId });
+    await deletePatientStudentApi(form.patientId);
     ElMessage.success('已删除学籍');
     emit('success');
     modalApi.close();

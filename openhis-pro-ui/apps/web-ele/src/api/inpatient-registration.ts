@@ -32,6 +32,7 @@ export interface RegistrationQueueItemDto {
   encounterBusNo: string;
   encounterId: string;
   inWayCode?: string;
+  inWayCodeText?: string;
   organizationId?: string;
   organizationName?: string;
   patientId: string;
@@ -62,12 +63,16 @@ export interface RegistrationPatientDto {
 /** 登记弹窗住院就诊 */
 export interface RegistrationEncounterDto {
   admitSourceCode?: string;
+  admitSourceCodeText?: string;
   ambEncounterId?: string;
   encounterBusNo?: string;
   encounterId?: string;
   inWayCode?: string;
+  inWayCodeText?: string;
   organizationId?: string;
   organizationName?: string;
+  /** 源门诊接诊医生姓名（门诊转住院只读展示） */
+  outpatientDoctorName?: string;
   primaryConditionDefinitionId?: string;
   primaryConditionDefinitionName?: string;
   priorityEnum?: string;
@@ -75,11 +80,19 @@ export interface RegistrationEncounterDto {
   statusEnum?: string;
   wardId?: string;
   wardName?: string;
+  /** 护士分床后的床位 ID */
+  bedId?: string;
+  /** 护士分床后的床位名称 */
+  bedName?: string;
 }
 
 /** 登记上下文加载响应 */
 export interface LoadRegistrationContextResult {
+  admitSourceCodeOptions?: OptionDto[];
   contractOptions: OptionDto[];
+  /** 入院科室下拉（类别=住院） */
+  organizationOptions?: OptionDto[];
+  inWayCodeOptions?: OptionDto[];
   encounter?: RegistrationEncounterDto | null;
   patient?: RegistrationPatientDto | null;
   readOnly: boolean;
@@ -110,7 +123,10 @@ export interface SubmitRegistrationParams {
   encounterId?: string;
   genderEnum?: string;
   idCard?: string;
+  insuplcAdmdvs?: string;
+  insutype?: string;
   inWayCode?: string;
+  medType?: string;
   operatorId: string;
   organizationId: string;
   patientId?: string;
@@ -118,9 +134,12 @@ export interface SubmitRegistrationParams {
   paymentDetails?: PaymentDetailDto[];
   phone?: string;
   priorityEnum?: string;
+  psnNo?: string;
   startTime: string;
   updatePatientFromIdCard?: boolean;
   wardId: string;
+  ybCardInfo?: string;
+  ybMediumType?: string;
 }
 
 /** 提交住院登记响应 */
@@ -130,6 +149,7 @@ export interface SubmitRegistrationResult {
   encounterId: string;
   paymentId?: string;
   statusEnum: string;
+  ybMdtrtId?: string;
 }
 
 /** 取消住院登记请求 */

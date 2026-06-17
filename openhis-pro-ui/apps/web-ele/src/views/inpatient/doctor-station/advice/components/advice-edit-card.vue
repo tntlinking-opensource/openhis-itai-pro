@@ -20,7 +20,10 @@ import { ElButton, ElMessage, ElRadio, ElRadioGroup } from 'element-plus';
 
 import { httpGetInpatientEncounterDiagnosis } from '#/api/inpatient/doctor-station/inpatient-doctor-station-diagnosis.http';
 import { DiagnosisPickerDialog } from '#/components/doctor-station/diagnosis';
-import { useAuthStore } from '#/store';
+import {
+  mapEncounterRowToDiagnosisItem,
+  resolveEncounterDiagnosisDisplayRows,
+} from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
 
 import { useAdviceDrugFormKeyboard } from '../composables/use-advice-drug-form-keyboard';
 import { calcAdviceTotalFee } from '../composables/use-advice-drug-list';
@@ -36,7 +39,6 @@ import {
   buildWesternProductSelectPatch,
   createAdviceDrugItem,
   inferDoseBandConvertK,
-  mapEncounterRowToDiagnosisItem,
   pickMainDiagnosisDisplayName,
 } from '../services/advice-edit';
 import {
@@ -61,7 +63,7 @@ import AdviceWesternDrugFormPanel from './advice-western-drug-form-panel.vue';
 
 const props = withDefaults(
   defineProps<{
-    defaultFeeNature?: string;
+    feeNatureOptions?: TerminologyOptionDto[];
     encounterId?: string;
     initialGroup?: AdviceDrugItem[];
     medicationRateOptions?: TerminologyOptionDto[];
@@ -82,7 +84,7 @@ const props = withDefaults(
     variant?: 'tcm' | 'western';
   }>(),
   {
-    defaultFeeNature: '',
+    feeNatureOptions: () => [],
     encounterId: '',
     medicationRateOptions: () => [],
     medicationRouteOptions: () => [],
@@ -98,7 +100,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   close: [];
   editorDirtyChange: [value: boolean];
-  saveGroup: [value: AdviceDrugItem[]];
+  saveGroup: [value: AdviceDrugItem[], encounterDiagnosisRows: EncounterDiagnosisRowDto[]];
 }>();
 
 const patientDiagnoses = defineModel<DiagnosisItem[]>('patientDiagnoses', { default: () => [] });
@@ -129,7 +131,6 @@ watch(
 );
 
 const { productColumns, queryProductOptions } = props;
-const authStore = useAuthStore();
 
 const encounterDiagnosisSnapshot = ref<EncounterDiagnosisRowDto[]>([]);
 
@@ -143,9 +144,9 @@ async function loadEncounterDiagnosisOptions() {
   }
   try {
     const res = await httpGetInpatientEncounterDiagnosis({ encounterId, patientId });
-    const list = res.diagnosisList ?? [];
-    encounterDiagnosisSnapshot.value = list;
-    patientDiagnoses.value = list
+    const displayList = resolveEncounterDiagnosisDisplayRows(res.diagnosisList ?? []);
+    encounterDiagnosisSnapshot.value = displayList;
+    patientDiagnoses.value = displayList
       .map((row) => mapEncounterRowToDiagnosisItem(row))
       .filter((item): item is DiagnosisItem => item !== null);
     applyMainDiagnosisDefaultToDrugRowsAfterLoad();
@@ -175,7 +176,7 @@ const diagnosisAutoPromptMuted = ref(false);
 
 const createDrugItem = (seed?: Partial<AdviceDrugItem>): AdviceDrugItem =>
   createAdviceDrugItem(seed, {
-    defaultFeeNature: props.defaultFeeNature ?? '',
+    feeNatureOptions: props.feeNatureOptions ?? [],
     medicationRateOptions: props.medicationRateOptions ?? [],
     medicationRouteOptions: props.medicationRouteOptions ?? [],
   });
@@ -361,11 +362,8 @@ const handleProductSelect = (index: number, row: AdviceProductOption) => {
       ...buildTcmProductSelectPatch(row),
     });
   } else if (tbl === 'wkf_activity_definition') {
-    const authOrg = String(authStore.getSelectedOrganization() ?? '').trim();
-    const orgId = String(row.defaultPerformOrgId ?? '').trim() || authOrg;
-    const orgName =
-      String(row.defaultPerformOrgName ?? '').trim() ||
-      (orgId && orgId === authOrg ? '当前登录机构' : '');
+    const orgId = String(row.defaultPerformOrgId ?? '').trim();
+    const orgName = String(row.defaultPerformOrgName ?? '').trim();
     const catalogRate = String(row.rateCode ?? '').trim();
     const defaultRate = firstTerminologyCode(props.medicationRateOptions ?? []);
     const uCode = String(row.defaultUnitCode ?? '').trim() || '次';
@@ -580,7 +578,7 @@ const handleSaveGroup = () => {
     }
     return item;
   });
-  emit('saveGroup', rows);
+  emit('saveGroup', rows, encounterDiagnosisSnapshot.value);
 };
 
 function patchRowFromSlot(index: number, payload: AdviceDrugPatchPayload) {
@@ -770,6 +768,7 @@ onMounted(() => {
               :hide-total-amount="isInpatientLongTermMedicationTherapy(therapyType)"
               :form-handlers="westernFormHandlers(index)"
               :item="item"
+              :fee-nature-options="feeNatureOptions"
               :medication-rate-options="medicationRateOptions"
               :medication-route-options="medicationRouteOptions"
               :patient-diagnoses="patientDiagnoses"

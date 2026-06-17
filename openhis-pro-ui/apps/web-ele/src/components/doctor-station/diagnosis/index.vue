@@ -15,10 +15,12 @@ import DiagnosisQuickTree from './components/diagnosis-quick-tree.vue';
 import DiagnosisSavedTable from './components/diagnosis-saved-table.vue';
 import {
   deleteEncounterDiagnosisRow,
+  deleteTcmDiagnosisGroupRow,
   fetchEncounterDiagnosisTabData,
   saveEncounterDiagnosisRows,
   type DoctorStationDiagnosisScope,
 } from './services/encounter-diagnosis.service';
+import { appendTcmDiagnosisGroupBatch } from './services/tcm-diagnosis-groups.service';
 
 defineOptions({ name: 'DoctorStationDiagnosisList' });
 
@@ -37,6 +39,7 @@ const props = withDefaults(
 );
 
 const diagnosisRows = ref<EncounterDiagnosisRowDto[]>([]);
+const displayDiagnosisRows = ref<EncounterDiagnosisRowDto[]>([]);
 const businessClass = ref<CommonDiagnosesResponse | null>(null);
 const listLoading = ref(false);
 const quickSaveLoading = ref(false);
@@ -52,6 +55,7 @@ const contextReady = computed(
 async function reload() {
   if (!contextReady.value) {
     diagnosisRows.value = [];
+    displayDiagnosisRows.value = [];
     businessClass.value = null;
     return;
   }
@@ -66,10 +70,12 @@ async function reload() {
     );
     if (!data) {
       diagnosisRows.value = [];
+      displayDiagnosisRows.value = [];
       businessClass.value = null;
       return;
     }
     diagnosisRows.value = data.diagnosisList;
+    displayDiagnosisRows.value = data.displayDiagnosisList;
     businessClass.value = data.businessClass;
   } finally {
     listLoading.value = false;
@@ -130,16 +136,90 @@ async function handleQuickAppend(append: EncounterDiagnosisRowDto) {
     const ok = await ensureClinicalReception();
     if (!ok) return;
   }
+  const encounterId = props.encounterId?.trim();
+  const patientId = props.patientId?.trim();
+  const diseaseId = append.conditionDefinitionId?.trim();
+  const syndromeId = append.syndromeDefinitionId?.trim();
+  const isTcmPair = Boolean(diseaseId && syndromeId);
+
+  if (isTcmPair && encounterId && patientId && props.stationScope === 'outpatient') {
+    quickSaveLoading.value = true;
+    try {
+      const result = await appendTcmDiagnosisGroupBatch(
+        encounterId,
+        patientId,
+        {
+          conditionDefinitionId: diseaseId!,
+          conditionCode: append.conditionCode ?? '',
+          conditionName: append.conditionDefinitionName ?? '',
+        },
+        {
+          conditionDefinitionId: syndromeId!,
+          conditionCode: '',
+          conditionName: '',
+        },
+        diagnosisRows.value.length === 0,
+      );
+      if (result === 'duplicate') {
+        ElMessage.info('该中医病证组已在当前列表中');
+        return;
+      }
+      ElMessage.success('诊断已保存');
+      await reload();
+    } finally {
+      quickSaveLoading.value = false;
+    }
+    return;
+  }
+
   await persistMergedRows([...diagnosisRows.value, append]);
 }
 
-/** 删除已持久化行 */
+function isSameDiagnosisRow(a: EncounterDiagnosisRowDto, b: EncounterDiagnosisRowDto): boolean {
+  if (a.conditionId && b.conditionId && a.conditionId === b.conditionId) {
+    return true;
+  }
+  if (
+    a.conditionDefinitionId &&
+    b.conditionDefinitionId &&
+    a.conditionDefinitionId === b.conditionDefinitionId
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** 住院：诊断类型变更后全量保存 */
+async function handleIptTypeChange(row: EncounterDiagnosisRowDto, code: string | undefined) {
+  const opt = businessClass.value?.iptDiseaseTypeOptions?.find((o) => o.value === code);
+  const next = diagnosisRows.value.map((item) => {
+    if (!isSameDiagnosisRow(item, row)) {
+      return item;
+    }
+    return {
+      ...item,
+      iptDiseaseTypeCode: code ?? null,
+      iptDiseaseTypeText: opt?.label ?? null,
+    };
+  });
+  diagnosisRows.value = next;
+  await persistMergedRows(next);
+}
+
+/** 删除已持久化行（中医病证组走 IF-DOR-33，西医走单条删除） */
 async function handleRemove(row: EncounterDiagnosisRowDto) {
   const encounterId = props.encounterId?.trim();
-  const cid = row.conditionId;
-  if (!cid || !encounterId) return;
+  const patientId = props.patientId?.trim();
+  const groupKey = row.tcmSyndromeGroup?.trim();
+  if (!encounterId) return;
   try {
-    await deleteEncounterDiagnosisRow(encounterId, cid, props.stationScope);
+    if (groupKey && patientId) {
+      await deleteTcmDiagnosisGroupRow(encounterId, patientId, groupKey);
+    } else {
+      const cid = row.conditionId;
+      if (!cid) return;
+      await deleteEncounterDiagnosisRow(encounterId, cid, props.stationScope);
+    }
     ElMessage.success('已删除');
     await reload();
   } catch {
@@ -162,13 +242,16 @@ async function handleRemove(row: EncounterDiagnosisRowDto) {
       <div class="diagnosis-list-body">
         <DiagnosisQuickTree
           :business-class="businessClass"
-          :rows="diagnosisRows"
+          :display-rows="displayDiagnosisRows"
           @append="handleQuickAppend"
         />
         <DiagnosisSavedTable
-          :rows="diagnosisRows"
+          :rows="displayDiagnosisRows"
+          :station-scope="props.stationScope"
+          :ipt-disease-type-options="businessClass?.iptDiseaseTypeOptions ?? []"
           @add-click="handleAddDiagnosisClick"
           @remove="handleRemove"
+          @ipt-type-change="handleIptTypeChange"
         />
       </div>
       <DiagnosisPickerDialog

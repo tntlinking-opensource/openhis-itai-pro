@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type {
   ChargeItemPreviewDto,
+  OutpatientBookingSnapshotDto,
   PatientItemDto,
   PreRegisterSettlementResult,
   RegisterConfirmDetail,
@@ -13,7 +14,12 @@ import { ElButton, ElCard, ElMessage } from 'element-plus';
 
 import SelectTable from '#/components/select-table.vue';
 
-import { pageRegisterPatientsForSelect, preRegisterSettlement } from '../services/register.service';
+import {
+  pageRegisterPatientsForSelect,
+  preRegisterFromAppointment,
+  preRegisterSettlement,
+} from '../services/register.service';
+import AppointmentLoadBar from './appointment-load-bar.vue';
 import RegisterConfirmDialog from './register-confirm-dialog.vue';
 import RegisterFormArea from './register-form-area.vue';
 
@@ -28,9 +34,11 @@ const emit = defineEmits<{
 
 const registerFormAreaRef = ref<null | RegisterFormAreaExpose>(null);
 const confirmDialogRef = ref<InstanceType<typeof RegisterConfirmDialog> | null>(null);
+const appointmentLoadBarRef = ref<InstanceType<typeof AppointmentLoadBar> | null>(null);
 
 const selectedPatientId = ref('');
 const selectedPatientLabel = ref('');
+const loadedAppointmentId = ref('');
 const patientSelectColumns = [
   { prop: 'patientBusNo', label: '病历号', width: 120 },
   { prop: 'name', label: '姓名', width: 100 },
@@ -109,16 +117,40 @@ const handlePatientSelect = async (value: string | string[]) => {
  */
 const handleClear = () => {
   registerFormAreaRef.value?.resetForClear();
+  appointmentLoadBarRef.value?.clear();
+  loadedAppointmentId.value = '';
   selectedPatientId.value = '';
   selectedPatientLabel.value = '';
   patientRowById.value = {};
 };
 
 /**
+ * 预约加载成功：预填表单并锁定三要素。
+ */
+async function handleAppointmentLoaded(snapshot: OutpatientBookingSnapshotDto) {
+  loadedAppointmentId.value = String(snapshot.appointmentId ?? '');
+  await registerFormAreaRef.value?.applyBookingSnapshot({
+    healthcareServiceId: snapshot.healthcareServiceId,
+    organizationId: snapshot.organizationId,
+    practitionerId: snapshot.practitionerId,
+  });
+}
+
+/**
+ * 清除预约带入：解除表单锁定。
+ */
+function handleAppointmentCleared() {
+  loadedAppointmentId.value = '';
+  registerFormAreaRef.value?.clearBookingLock();
+}
+
+/**
  * 正式结算成功后：重置表单与患者选择，并通知外层刷新就诊记录。
  */
 async function onRegisterPaidSuccess() {
   await registerFormAreaRef.value?.resetForSubmitSuccess();
+  appointmentLoadBarRef.value?.clear();
+  loadedAppointmentId.value = '';
   selectedPatientId.value = '';
   selectedPatientLabel.value = '';
   emit('registerSuccess');
@@ -156,7 +188,8 @@ const handleSubmit = async () => {
 
   loading.value = true;
   try {
-    const pre: PreRegisterSettlementResult = await preRegisterSettlement({
+    const preRegisterBody = {
+      appointmentId: loadedAppointmentId.value || undefined,
       birthDate: patientBirthday,
       contractId,
       gender: patientGender,
@@ -167,7 +200,10 @@ const handleSubmit = async () => {
       phone: patientPhone,
       practitionerId,
       serviceTypeId,
-    });
+    };
+    const pre: PreRegisterSettlementResult = loadedAppointmentId.value
+      ? await preRegisterFromAppointment(preRegisterBody)
+      : await preRegisterSettlement(preRegisterBody);
     const preRaw = pre as unknown;
     const chargeItems: ChargeItemPreviewDto[] = Array.isArray(preRaw)
       ? preRaw
@@ -219,20 +255,27 @@ const handleSubmit = async () => {
       body-class="!px-2 !py-1"
     >
       <template #header>
-        <div class="flex items-center gap-2">
-          <SelectTable
-            v-model="selectedPatientId"
-            style="width: 260px"
-            placeholder="搜索患者（姓名/病历号/证件号）"
-            :columns="patientSelectColumns"
-            :remote-method="queryPatientOptions"
-            value-key="patientId"
-            label-key="name"
-            :selected-label="selectedPatientLabel"
-            @change="handlePatientSelect"
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center gap-2">
+            <SelectTable
+              v-model="selectedPatientId"
+              style="width: 260px"
+              placeholder="搜索患者（姓名/病历号/证件号）"
+              :columns="patientSelectColumns"
+              :remote-method="queryPatientOptions"
+              value-key="patientId"
+              label-key="name"
+              :selected-label="selectedPatientLabel"
+              @change="handlePatientSelect"
+            />
+            <ElButton type="primary" @click="handleClear"> 清空 </ElButton>
+          </div>
+          <AppointmentLoadBar
+            ref="appointmentLoadBarRef"
+            :patient-id="selectedPatientId"
+            @cleared="handleAppointmentCleared"
+            @loaded="handleAppointmentLoaded"
           />
-          <div class="flex-1"></div>
-          <ElButton type="primary" @click="handleClear"> 清空 </ElButton>
         </div>
       </template>
 

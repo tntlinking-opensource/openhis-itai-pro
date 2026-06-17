@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn, TreeNodeData } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 
 import type { MedicationCatalogInitResponse, MedicationCatalogItem } from '#/api';
 
@@ -9,9 +9,10 @@ import { Page } from '@vben/common-ui';
 
 import { TableLayout } from '@vben-core/table-layout-ui';
 
-import { ElButton, ElMessage, ElTag } from 'element-plus';
+import { ElButton, ElMessage, ElMessageBox, ElTag } from 'element-plus';
 
 import {
+  deleteMedicationCatalogApi,
   medicationCatalogInitApi,
   pageMedicationCatalogApi,
   startMedicationCatalogApi,
@@ -25,12 +26,9 @@ function isMedicationPublicationActive(row: MedicationCatalogItem): boolean {
   return row.statusEnum === PublicationStatusCode.ACTIVE;
 }
 
-/** 后端启用接口仅允许 RETIRED；INACTIVE 视为同类停用态 */
+/** 后端启用接口仅允许 INACTIVE 停用态 */
 function isMedicationPublicationRetired(row: MedicationCatalogItem): boolean {
-  return (
-    row.statusEnum === PublicationStatusCode.RETIRED ||
-    row.statusEnum === PublicationStatusCode.INACTIVE
-  );
+  return row.statusEnum === PublicationStatusCode.INACTIVE;
 }
 
 const queryParams = ref({
@@ -45,51 +43,45 @@ const tableData = ref<MedicationCatalogItem[]>([]);
 
 const loading = ref(false);
 const total = ref(0);
-const sideQueryLoading = ref(false);
 const initOptions = ref<MedicationCatalogInitResponse>({} as MedicationCatalogInitResponse);
 
 const catalogEditOpen = ref(false);
 const catalogEditMedId = ref<string>('');
 
-const convertOptionsToTree = (
-  options:
-    | Array<{
-        children?: unknown[];
-        info?: string;
-        label?: string;
-        name?: string;
-        text?: string;
-        value: number | string;
-      }>
-    | null
-    | undefined,
-): TreeNodeData[] => {
+interface CategoryOptionItem {
+  children?: CategoryOptionItem[];
+  info?: string;
+  label?: string;
+  name?: string;
+  text?: string;
+  value: number | string;
+}
+
+/** 将树形分类选项展平为下拉框选项（保留层级缩进） */
+function flattenCategorySelectOptions(
+  options: CategoryOptionItem[] | null | undefined,
+  depth = 0,
+): Array<{ label: string; value: string }> {
   if (!options || !Array.isArray(options)) {
     return [];
   }
-  return options.map((item) => ({
-    id: item.value,
-    label: item.label || item.info || item.text || item.name || String(item.value),
-    value: item.value,
-    children: item.children ? convertOptionsToTree(item.children as typeof options) : undefined,
-  }));
-};
+  const prefix = depth > 0 ? `${'　'.repeat(depth)}` : '';
+  const result: Array<{ label: string; value: string }> = [];
+  for (const item of options) {
+    const label = item.label || item.info || item.text || item.name || String(item.value);
+    result.push({ label: `${prefix}${label}`, value: String(item.value) });
+    if (item.children?.length) {
+      result.push(...flattenCategorySelectOptions(item.children, depth + 1));
+    }
+  }
+  return result;
+}
 
-// 药品分类树形数据
-const siderData = computed(() => {
-  const options = initOptions.value?.medicationCategoryCodeOptions as
-    | Array<{
-        children?: unknown[];
-        info?: string;
-        label?: string;
-        name?: string;
-        text?: string;
-        value: number | string;
-      }>
-    | null
-    | undefined;
-  return convertOptionsToTree(options);
-});
+const categoryCodeOptions = computed(() =>
+  flattenCategorySelectOptions(
+    initOptions.value?.medicationCategoryCodeOptions as CategoryOptionItem[] | undefined,
+  ),
+);
 
 const tableColumns: TableColumn[] = [
   {
@@ -101,72 +93,77 @@ const tableColumns: TableColumn[] = [
   {
     type: 'index',
     label: '序号',
+    width: 60,
+    align: 'center',
   },
   {
     prop: 'busNo',
-    label: '药品编号',
-    width: 180,
+    label: '编码',
+    width: 150,
+    showOverflowTooltip: true,
   },
   {
     prop: 'name',
-    label: '药品名称',
+    label: '项目名',
     slot: 'name',
-    width: 200,
+    minWidth: 160,
+    showOverflowTooltip: true,
   },
   {
     prop: 'specification',
     label: '规格',
-    width: 80,
+    width: 120,
+    showOverflowTooltip: true,
   },
   {
-    prop: 'statusEnum_enumText',
-    label: '药品状态',
+    prop: 'statusEnum',
+    label: '状态',
     slot: 'statusEnum',
-    width: 80,
+    width: 90,
     align: 'center',
   },
   {
     prop: 'categoryCode_dictText',
-    width: 110,
-    label: '药品分类',
+    label: '分类',
+    width: 120,
+    showOverflowTooltip: true,
   },
   {
-    prop: 'ybNo',
-    width: 110,
-    label: '医保编码',
-  },
-  {
-    prop: 'ybMatchFlag',
-    label: '医保是否对码',
-    slot: 'ybMatchFlag',
-    width: 110,
-    align: 'center',
-  },
-  {
-    prop: 'nationalDrugCode',
-    label: '69码',
-    width: 130,
-  },
-  {
-    prop: 'purchasePrice',
-    label: '采购价',
-    width: 110,
+    prop: 'manufacturerText',
+    label: '生产厂家',
+    minWidth: 160,
+    showOverflowTooltip: true,
   },
   {
     prop: 'retailPrice',
-    label: '售价',
-    width: 110,
+    label: '价格',
+    width: 120,
+    align: 'right',
+    headerAlign: 'right',
+    slot: 'retailPrice',
   },
   {
     prop: 'action',
     label: '操作',
     fixed: 'right',
     slot: 'action',
-    width: 220,
+    width: 200,
+    align: 'center',
+    headerAlign: 'center',
   },
 ];
 
-const formItems: FormItemConfig[] = [
+function formatRetailPriceWithUnit(price: unknown, unitText: unknown): string {
+  if (price === null || price === undefined || price === '') {
+    return '';
+  }
+  const num = Number(price);
+  const formatted = Number.isFinite(num) ? num.toFixed(2) : String(price);
+  const unit = typeof unitText === 'string' && unitText.trim() ? unitText.trim() : '';
+  return unit ? `${formatted}/${unit}` : formatted;
+}
+
+const formItems = computed<FormItemConfig[]>(() => [
   {
     type: 'input',
     prop: 'keyword',
@@ -181,7 +178,16 @@ const formItems: FormItemConfig[] = [
     placeholder: '请输入药品名称',
     clearable: true,
   },
-];
+  {
+    type: 'select',
+    prop: 'categoryCode',
+    label: '药品分类',
+    placeholder: '请选择药品分类',
+    clearable: true,
+    filterable: true,
+    options: categoryCodeOptions.value,
+  },
+]);
 
 const handleQuery = async (params: Record<string, unknown>) => {
   loading.value = true;
@@ -242,31 +248,6 @@ const selectedRows = ref<MedicationCatalogItem[]>([]);
 
 const handleSelectionChange = (selection: MedicationCatalogItem[]) => {
   selectedRows.value = selection;
-};
-
-// 处理侧边筛选器选择
-const handleSideQuery = (node: TreeNodeData) => {
-  queryParams.value.categoryCode = node.id === '__ALL__' ? '' : node.value || node.id;
-  queryParams.value.pageNo = 1;
-  handleQuery(queryParams.value);
-};
-
-// 刷新侧边树形组件数据
-const handleRefreshSideQuery = async () => {
-  sideQueryLoading.value = true;
-  try {
-    const response = await medicationCatalogInitApi();
-    const data: MedicationCatalogInitResponse =
-      response.data || ({} as MedicationCatalogInitResponse);
-    if (data) {
-      initOptions.value = data;
-    }
-  } catch (error) {
-    console.error('刷新树形数据失败:', error);
-    ElMessage.error('刷新失败，请稍后重试');
-  } finally {
-    sideQueryLoading.value = false;
-  }
 };
 
 /** 打开新增/编辑弹窗（不走路由） */
@@ -374,29 +355,63 @@ const handleBatchStop = async () => {
   }
 };
 
+const doDeleteByIds = async (ids: string[]) => {
+  if (ids.length === 0) {
+    ElMessage.warning('请先选择要删除的药品');
+    return;
+  }
+  await ElMessageBox.confirm(`确定要删除选中的 ${ids.length} 条药品吗？删除后无法恢复！`, '提示', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning',
+  });
+  await deleteMedicationCatalogApi(ids);
+  ElMessage.success('删除成功');
+  await handleQuery(queryParams.value);
+  selectedRows.value = [];
+};
+
+const handleDelete = async () => {
+  const ids = selectedRows.value
+    .map((row) => row.medicationDefId)
+    .filter(Boolean)
+    .map(String);
+  try {
+    await doDeleteByIds(ids);
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除失败:', error);
+      ElMessage.error('删除失败，请稍后重试');
+    }
+  }
+};
+
+const handleRowDelete = async (row: MedicationCatalogItem) => {
+  if (!row.medicationDefId) {
+    ElMessage.warning('缺少药品ID');
+    return;
+  }
+  try {
+    await doDeleteByIds([String(row.medicationDefId)]);
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除失败:', error);
+      ElMessage.error('删除失败，请稍后重试');
+    }
+  }
+};
+
 const getStatusTagType = (statusEnum: unknown): 'danger' | 'info' | 'success' | 'warning' => {
   if (statusEnum === PublicationStatusCode.ACTIVE) {
     return 'success';
   }
-  if (
-    statusEnum === PublicationStatusCode.RETIRED ||
-    statusEnum === PublicationStatusCode.INACTIVE
-  ) {
+  if (statusEnum === PublicationStatusCode.INACTIVE) {
     return 'warning';
   }
   if (statusEnum === PublicationStatusCode.DISCARDED) {
     return 'danger';
   }
   return 'info';
-};
-
-/** 布尔或与后端历史 0/1、'1' 兼容 */
-function isTruthyFlag(value: unknown): boolean {
-  return value === true || value === 1 || value === '1';
-}
-
-const getYbMatchFlagTagType = (value: unknown): 'success' | 'warning' => {
-  return isTruthyFlag(value) ? 'success' : 'warning';
 };
 
 const initPage = async () => {
@@ -434,10 +449,7 @@ initPage();
       :form-items="formItems"
       :table-columns="tableColumns"
       :show-top-query="true"
-      :show-side-query="true"
       :show-pagination="true"
-      :sider-data="siderData"
-      :side-query-loading="sideQueryLoading"
       row-key="medicationDefId"
       border
       stripe
@@ -446,13 +458,12 @@ initPage();
       @reset="handleReset"
       @pagination="handlePagination"
       @selection-change="handleSelectionChange"
-      @side-query="handleSideQuery"
-      @refresh-side-query="handleRefreshSideQuery"
     >
       <template #toolbar-actions>
         <ElButton type="primary" @click="handleAdd">新增</ElButton>
         <ElButton type="success" @click="handleBatchStart">批量启用</ElButton>
         <ElButton type="warning" @click="handleBatchStop">批量停用</ElButton>
+        <ElButton type="danger" @click="handleDelete">删除</ElButton>
       </template>
 
       <template #name="{ row }">
@@ -474,33 +485,31 @@ initPage();
         </ElTag>
       </template>
 
-      <template #ybMatchFlag="{ row }">
-        <ElTag :type="getYbMatchFlagTagType(row.ybMatchFlag)" effect="dark">
-          {{ isTruthyFlag(row.ybMatchFlag) ? '是' : '否' }}
-        </ElTag>
+      <template #retailPrice="{ row }">
+        {{ formatRetailPriceWithUnit(row.retailPrice, row.packageUnitCode_dictText) }}
       </template>
 
       <template #action="{ row }">
-        <ElButton type="primary" link @click="handleRowClick(row)"> 编辑 </ElButton>
-        <ElButton
-          v-if="isMedicationPublicationActive(row)"
-          type="warning"
-          link
-          @click="handleStop(row)"
-        >
-          停用
-        </ElButton>
-        <ElButton
-          v-else-if="isMedicationPublicationRetired(row)"
-          type="success"
-          link
-          @click="handleStart(row)"
-        >
-          启用
-        </ElButton>
-        <ElButton type="danger" link @click="() => ElMessage.warning(`删除 ${row.name || row.id}`)">
-          删除
-        </ElButton>
+        <div class="flex items-center justify-center gap-1">
+          <ElButton type="primary" link @click="handleRowClick(row)">编辑</ElButton>
+          <ElButton
+            v-if="isMedicationPublicationActive(row)"
+            type="warning"
+            link
+            @click="handleStop(row)"
+          >
+            停用
+          </ElButton>
+          <ElButton
+            v-else-if="isMedicationPublicationRetired(row)"
+            type="success"
+            link
+            @click="handleStart(row)"
+          >
+            启用
+          </ElButton>
+          <ElButton type="danger" link @click="handleRowDelete(row)">删除</ElButton>
+        </div>
       </template>
     </TableLayout>
 

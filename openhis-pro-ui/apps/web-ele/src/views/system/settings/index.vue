@@ -113,10 +113,6 @@ const handleConfig = (row: SettingDefinition) => {
   dialogVisible.value = true;
 };
 
-const handleDialogClose = (v: boolean) => {
-  dialogVisible.value = v;
-};
-
 onMounted(() => {
   loadInit().then(handleQuery);
 });
@@ -143,10 +139,6 @@ onMounted(() => {
       </template>
     </TableLayout>
 
-    <ConfigDialog
-      v-model:visible="dialogVisible"
-      :definition="currentDefinition"
-      @update:visible="handleDialogClose"
-    />
+    <ConfigDialog v-model:visible="dialogVisible" :definition="currentDefinition" />
   </Page>
 </template>

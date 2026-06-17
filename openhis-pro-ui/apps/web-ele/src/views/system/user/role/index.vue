@@ -46,40 +46,22 @@ const tableColumns: TableColumn[] = [
     label: '序号',
   },
   {
-    prop: 'code',
-    label: '角色编码',
-    width: 150,
-  },
-  {
-    prop: 'name',
-    label: '角色名称',
-    width: 150,
-  },
-  {
     prop: 'displayName',
-    label: '显示名称',
-    width: 150,
+    label: '角色名称',
+    minWidth: 160,
+  },
+  {
+    prop: 'isStatic',
+    label: '角色类型',
+    slot: 'roleType',
+    align: 'center',
+    width: 110,
   },
   {
     prop: 'description',
     label: '描述',
     minWidth: 200,
   },
-  {
-    prop: 'isDefault',
-    label: '是否默认',
-    slot: 'isDefault',
-    align: 'center',
-    width: 100,
-  },
-  {
-    prop: 'isStatic',
-    label: '是否内置',
-    slot: 'isStatic',
-    align: 'center',
-    width: 100,
-  },
-
   {
     prop: 'createdBy',
     label: '创建人',
@@ -114,31 +96,19 @@ const formItems = computed<FormItemConfig[]>(() => [
     type: 'input',
     prop: 'keyword',
     label: '关键词',
-    placeholder: '请输入角色名称或显示名称',
+    placeholder: '请输入角色名称',
     clearable: true,
-  },
-  {
-    type: 'select',
-    prop: 'isDefault',
-    label: '是否默认',
-    placeholder: '请选择是否默认',
-    clearable: true,
-    multiple: false,
-    options: [
-      { label: '是', value: 'true' },
-      { label: '否', value: 'false' },
-    ],
   },
   {
     type: 'select',
     prop: 'isStatic',
-    label: '是否内置',
-    placeholder: '请选择是否内置',
+    label: '角色类型',
+    placeholder: '请选择角色类型',
     clearable: true,
     multiple: false,
     options: [
-      { label: '是', value: 'true' },
-      { label: '否', value: 'false' },
+      { label: '内置', value: 'true' },
+      { label: '自定义', value: 'false' },
     ],
   },
 ]);
@@ -150,7 +120,6 @@ const loadData = async () => {
       pageNo: queryParams.value.pageNo,
       pageSize: queryParams.value.pageSize,
       keyword: queryParams.value.keyword,
-      isDefault: queryParams.value.isDefault,
       isStatic: queryParams.value.isStatic,
     });
     tableData.value = response.content;
@@ -164,12 +133,9 @@ const loadData = async () => {
   }
 };
 
-const handleQuery = (params: { isDefault?: string; isStatic?: string; keyword?: string }) => {
+const handleQuery = (params: { isStatic?: string; keyword?: string }) => {
   if (params.keyword !== undefined) {
     queryParams.value.keyword = params.keyword || '';
-  }
-  if (params.isDefault !== undefined) {
-    queryParams.value.isDefault = params.isDefault;
   }
   if (params.isStatic !== undefined) {
     queryParams.value.isStatic = params.isStatic;
@@ -183,7 +149,6 @@ const handleReset = () => {
     pageNo: 1,
     pageSize: 50,
     keyword: '',
-    isDefault: undefined,
     isStatic: undefined,
   };
   loadData();
@@ -212,15 +177,9 @@ const handleDialogSuccess = () => {
   loadData();
 };
 
-// 判断是否为系统管理员角色
-const isSystemAdminRole = (row: RoleInfo) => {
-  // 系统管理员角色：isStatic 为 true 或者 name 为 'admin' 或者 code 为 'ROLE_ADMIN'
-  return row.isStatic || row.name === 'admin' || row.code === 'ROLE_ADMIN';
-};
-
 const handleDelete = async (row: RoleInfo) => {
-  if (isSystemAdminRole(row)) {
-    ElMessage.warning('系统管理员角色不能删除');
+  if (row.isStatic) {
+    ElMessage.warning('内置角色不能删除');
     return;
   }
   if (!row.id) {
@@ -270,21 +229,15 @@ onMounted(() => {
         <ElButton type="primary" @click="handleAdd">新增</ElButton>
       </template>
 
-      <template #isDefault="{ row }">
-        <ElTag :type="row.isDefault ? 'success' : 'info'">
-          {{ row.isDefault ? '是' : '否' }}
-        </ElTag>
-      </template>
-
-      <template #isStatic="{ row }">
-        <ElTag :type="row.isStatic ? 'success' : 'info'">
-          {{ row.isStatic ? '是' : '否' }}
+      <template #roleType="{ row }">
+        <ElTag :type="row.isStatic ? 'warning' : 'info'">
+          {{ row.isStatic ? '内置' : '自定义' }}
         </ElTag>
       </template>
 
       <template #action="{ row }">
         <ElButton link type="primary" @click="handleEdit(row)">编辑</ElButton>
-        <ElButton v-if="!isSystemAdminRole(row)" link type="danger" @click="handleDelete(row)">
+        <ElButton v-if="!row.isStatic" link type="danger" @click="handleDelete(row)">
           删除
         </ElButton>
       </template>

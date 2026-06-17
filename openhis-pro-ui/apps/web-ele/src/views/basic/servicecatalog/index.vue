@@ -1,17 +1,18 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn, TreeNodeData } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 
 import type { ServiceCatalogInitResponse, ServiceCatalogItem } from '#/api';
 
-import { nextTick, ref } from 'vue';
+import { computed, nextTick, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
 import { TableLayout } from '@vben-core/table-layout-ui';
 
-import { ElButton, ElMessage } from 'element-plus';
+import { ElButton, ElMessage, ElMessageBox } from 'element-plus';
 
 import {
+  deleteServiceCatalogApi,
   pageServiceCatalogApi,
   serviceCatalogInitApi,
   startServiceCatalogApi,
@@ -26,7 +27,7 @@ const queryParams = ref({
   pageSize: 50,
   keyword: '',
   name: '',
-  categoryCode: undefined as string | undefined,
+  categoryCode: '',
 });
 
 const tableData = ref<ServiceCatalogItem[]>([]);
@@ -43,37 +44,66 @@ const tableColumns: TableColumn[] = [
   {
     type: 'index',
     label: '序号',
+    width: 60,
+    align: 'center',
   },
   {
     prop: 'busNo',
-    label: '业务编号',
+    label: '编码',
+    minWidth: 140,
+    align: 'center',
+    showOverflowTooltip: true,
   },
   {
     prop: 'name',
-    label: '诊疗名称',
+    label: '项目名',
     slot: 'name',
-  },
-  {
-    prop: 'categoryCode_dictText',
-    label: '目录分类',
+    minWidth: 220,
+    showOverflowTooltip: true,
   },
   {
     prop: 'statusEnum',
     label: '状态',
-    width: 80,
+    width: 100,
     align: 'center',
+    headerAlign: 'center',
     slot: 'statusEnum',
+  },
+  {
+    prop: 'categoryCode_dictText',
+    label: '分类',
+    minWidth: 120,
+    align: 'center',
+    showOverflowTooltip: true,
+  },
+  {
+    prop: 'retailPrice',
+    label: '价格',
+    minWidth: 100,
+    align: 'right',
+    headerAlign: 'right',
+    slot: 'retailPrice',
   },
   {
     prop: 'action',
     label: '操作',
     fixed: 'right',
     slot: 'action',
-    width: 220,
+    width: 180,
+    align: 'center',
+    headerAlign: 'center',
   },
 ];
 
-const formItems: FormItemConfig[] = [
+function formatRetailPrice(price: unknown): string {
+  if (price === null || price === undefined || price === '') {
+    return '';
+  }
+  const num = Number(price);
+  return Number.isFinite(num) ? num.toFixed(2) : String(price);
+}
+
+const formItems = computed<FormItemConfig[]>(() => [
   {
     type: 'input',
     prop: 'keyword',
@@ -81,7 +111,16 @@ const formItems: FormItemConfig[] = [
     placeholder: '请输入诊疗名称或编码',
     clearable: true,
   },
-];
+  {
+    type: 'select',
+    prop: 'categoryCode',
+    label: '目录分类',
+    placeholder: '请选择目录分类',
+    clearable: true,
+    filterable: true,
+    options: categoryCodeOptions.value,
+  },
+]);
 
 const handleQuery = async (params: Record<string, unknown>) => {
   loading.value = true;
@@ -127,7 +166,7 @@ const handleReset = () => {
     pageSize: 50,
     keyword: '',
     name: '',
-    categoryCode: undefined,
+    categoryCode: '',
   };
   handleQuery(queryParams.value);
 };
@@ -248,6 +287,64 @@ const handleStop = async (row: ServiceCatalogItem) => {
   }
 };
 
+const doDeleteByIds = async (ids: string[]) => {
+  if (ids.length === 0) {
+    ElMessage.warning('请先选择要删除的数据');
+    return;
+  }
+  await ElMessageBox.confirm(
+    `确定要删除选中的 ${ids.length} 条诊疗项目吗？删除后无法恢复！`,
+    '提示',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    },
+  );
+  await deleteServiceCatalogApi(ids);
+  ElMessage.success('删除成功');
+  await handleQuery(queryParams.value);
+  selectedRows.value = [];
+  await nextTick();
+  const gridApi = tableLayoutRef.value?.gridApi;
+  if (gridApi) {
+    const grid = gridApi.grid || gridApi;
+    if (typeof grid.clearCheckboxRow === 'function') {
+      grid.clearCheckboxRow();
+    }
+  }
+};
+
+const handleDelete = async () => {
+  const ids = selectedRows.value
+    .map((row) => row.id)
+    .filter(Boolean)
+    .map(String);
+  try {
+    await doDeleteByIds(ids);
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除失败:', error);
+      ElMessage.error('删除失败，请稍后重试');
+    }
+  }
+};
+
+const handleRowDelete = async (row: ServiceCatalogItem) => {
+  if (!row.id) {
+    ElMessage.warning('缺少ID');
+    return;
+  }
+  try {
+    await doDeleteByIds([String(row.id)]);
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除失败:', error);
+      ElMessage.error('删除失败，请稍后重试');
+    }
+  }
+};
+
 const handleEdit = (row: ServiceCatalogItem) => {
   editFormData.value = { ...row };
   editDialogVisible.value = true;
@@ -258,21 +355,30 @@ const editFormData = ref<Partial<ServiceCatalogItem>>({});
 
 // 初始化选项数据
 const initOptions = ref<ServiceCatalogInitResponse>({} as ServiceCatalogInitResponse);
-const treeData = ref<Array<{ id: number | string; label: string; value: number | string }>>([]);
 
-const convertOptionsToTree = (
-  options: Array<{ children?: unknown[]; label: string; value: number | string }>,
-): Array<{ id: number | string; label: string; value: number | string }> => {
+/** 将 init 接口分类选项转为下拉框格式 */
+function convertCategoryOptions(options: unknown): Array<{ label: string; value: string }> {
   if (!options || !Array.isArray(options)) {
     return [];
   }
-  return options.map((item) => ({
-    id: item.value,
-    label: item.label,
-    value: item.value,
-    children: null,
-  }));
-};
+  return options
+    .filter(
+      (item): item is { label: string; value: number | string } =>
+        typeof item === 'object' &&
+        item !== null &&
+        'label' in item &&
+        'value' in item &&
+        (typeof item.value === 'string' || typeof item.value === 'number'),
+    )
+    .map((item) => ({
+      label: item.label,
+      value: String(item.value),
+    }));
+}
+
+const categoryCodeOptions = computed(() =>
+  convertCategoryOptions(initOptions.value?.diagnosisCategoryOptions),
+);
 
 const loadInitOptions = async () => {
   try {
@@ -280,24 +386,10 @@ const loadInitOptions = async () => {
     const data: ServiceCatalogInitResponse = response.data || ({} as ServiceCatalogInitResponse);
     if (data) {
       initOptions.value = data;
-      treeData.value = convertOptionsToTree(
-        (data.diagnosisCategoryOptions as Array<{ label: string; value: number | string }>) || [],
-      );
     }
   } catch (error) {
     console.error('获取初始化选项失败:', error);
     ElMessage.error('获取初始化选项失败，请稍后重试');
-  }
-};
-
-const handleSideQuery = (node: TreeNodeData) => {
-  if (node) {
-    const nodeId = node.id as string | undefined;
-    const nodeValue = node.value as number | string | undefined;
-    queryParams.value.categoryCode =
-      nodeId === '__ALL__' ? undefined : nodeValue ? String(nodeValue) : undefined;
-    queryParams.value.pageNo = 1;
-    handleQuery(queryParams.value);
   }
 };
 
@@ -308,6 +400,7 @@ const handleEditSuccess = () => {
 
 const initPage = async () => {
   await loadInitOptions();
+  await handleQuery(queryParams.value);
 };
 
 initPage();
@@ -324,9 +417,7 @@ initPage();
       :form-items="formItems"
       :table-columns="tableColumns"
       :show-top-query="true"
-      :show-side-query="true"
       :show-pagination="true"
-      :sider-data="treeData"
       row-key="id"
       border
       stripe
@@ -336,12 +427,12 @@ initPage();
       @pagination="handlePagination"
       @selection-change="handleSelectionChange"
       @sort-change="handleSortChange"
-      @side-query="handleSideQuery"
     >
       <template #toolbar-actions>
         <ElButton type="primary" @click="handleAdd">新增</ElButton>
         <ElButton type="success" @click="handleEnable">批量启用</ElButton>
         <ElButton type="warning" @click="handleDisable">批量停用</ElButton>
+        <ElButton type="danger" @click="handleDelete">删除</ElButton>
       </template>
 
       <template #name="{ row }">
@@ -358,17 +449,21 @@ initPage();
         <StatusEnumTag :status-enum="row.statusEnum" :status-text="row.statusEnum_enumText" />
       </template>
 
+      <template #retailPrice="{ row }">
+        {{ formatRetailPrice(row.retailPrice) }}
+      </template>
+
       <template #action="{ row }">
-        <ElButton type="primary" link @click="handleEdit(row)"> 编辑 </ElButton>
-        <ElButton v-if="row.statusEnum !== 2" type="success" link @click="handleStart(row)">
-          启用
-        </ElButton>
-        <ElButton v-else-if="row.statusEnum === 2" type="warning" link @click="handleStop(row)">
-          停用
-        </ElButton>
-        <ElButton type="danger" link @click="() => ElMessage.warning(`删除 ${row.name || row.id}`)">
-          删除
-        </ElButton>
+        <div class="flex items-center justify-center gap-1">
+          <ElButton type="primary" link @click="handleEdit(row)">编辑</ElButton>
+          <ElButton v-if="row.statusEnum !== 2" type="success" link @click="handleStart(row)">
+            启用
+          </ElButton>
+          <ElButton v-else-if="row.statusEnum === 2" type="warning" link @click="handleStop(row)">
+            停用
+          </ElButton>
+          <ElButton type="danger" link @click="handleRowDelete(row)">删除</ElButton>
+        </div>
       </template>
     </TableLayout>
 

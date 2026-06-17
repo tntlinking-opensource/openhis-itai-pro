@@ -2,8 +2,12 @@ import type {
   CancelWithRefundResult,
   ListPractitionersParams,
   ListPractitionersResult,
+  LoadAppointmentForRegisterParams,
+  ListBookableSlotHintsParams,
+  ListBookableSlotHintsResult,
   LoadRegisterFormInitParams,
   LoadRegisterFormInitResult,
+  OutpatientBookingSnapshotDto,
   PagePatientsForSelectResult,
   PatientItemDto,
   PayRegisterFeeParams,
@@ -16,10 +20,13 @@ import type {
 import {
   httpCancelWithRefund,
   httpListPractitioners,
+  httpListBookableSlotHints,
+  httpLoadAppointmentForRegister,
   httpLoadRegisterFormInit,
   httpPageClinicRegisters,
   httpPagePatientsForSelect,
   httpPayRegisterFee,
+  httpPreRegisterFromAppointment,
   httpPreRegisterSettlement,
   httpValidateCancelable,
 } from '#/api/outpatient-registration';
@@ -68,6 +75,27 @@ export async function preRegisterSettlement(
   body: PreRegisterSettlementParams,
 ): Promise<PreRegisterSettlementResult> {
   return httpPreRegisterSettlement(body);
+}
+
+/** IF-REG-13：预约转挂号预结算 */
+export async function preRegisterFromAppointment(
+  body: PreRegisterSettlementParams,
+): Promise<PreRegisterSettlementResult> {
+  return httpPreRegisterFromAppointment(body);
+}
+
+/** IF-REG-12：加载有效预约 */
+export async function loadAppointmentForRegister(
+  body: LoadAppointmentForRegisterParams,
+): Promise<OutpatientBookingSnapshotDto> {
+  return httpLoadAppointmentForRegister(body);
+}
+
+/** IF-REG-14：可约时段摘要 */
+export async function listBookableSlotHints(
+  body: ListBookableSlotHintsParams,
+): Promise<ListBookableSlotHintsResult> {
+  return httpListBookableSlotHints(body);
 }
 
 /** 执行挂号费正式结算 */

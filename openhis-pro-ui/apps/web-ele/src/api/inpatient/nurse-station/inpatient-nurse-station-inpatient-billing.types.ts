@@ -6,7 +6,6 @@ export interface PageNurseStationPricingCatalogRequest extends PageParams {
   patientId?: string;
   keyword?: string;
   productTableNames?: string[];
-  pricingSourceCode?: string;
   organizationUnitId?: string;
   pharmacyLocationId?: string;
   sortMode?: string;
@@ -35,7 +34,6 @@ export interface NurseStationPricingCatalogRowDto {
   unitBands?: NurseStationPricingCatalogUnitBandDto[];
   chargeItemDefinitionId?: string;
   unitPrice?: number | string;
-  pricingSourceCode?: string;
   /** 读模型 product_id；部分接口与 activityId/deviceDefId 同义 */
   productId?: string;
   activityId?: string;

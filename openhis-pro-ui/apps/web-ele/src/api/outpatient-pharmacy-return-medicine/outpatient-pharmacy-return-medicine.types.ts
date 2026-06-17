@@ -101,6 +101,9 @@ export interface ReturnMedicineItemRequest {
 export interface ConfirmMedicineReturnRequest {
   items: ReturnMedicineItemRequest[];
   confirmType: 'CONFIRM' | 'DECLINE';
+  /** @deprecated CHS 启用即上传，请使用 contractBusNo */
+  medicareUploadEnabled?: boolean;
+  contractBusNo?: string;
   reason?: null | string;
 }
 

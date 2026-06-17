@@ -356,7 +356,7 @@ setupVbenVxeTable({
           min: 0,
           modelValue: qtyModel,
           'onUpdate:modelValue': (val: number | undefined) => {
-            row[qtyField] = val === undefined || val === null ? 0 : val;
+            row[qtyField] = val === undefined || val === null ? undefined : val;
           },
         });
 

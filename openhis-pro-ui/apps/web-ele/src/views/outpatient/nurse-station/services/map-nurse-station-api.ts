@@ -1,11 +1,11 @@
 import type { ActionRecord } from '../components/types';
+import type { NurseAdviceExecuteRow, NursePatient, SupplyItem } from '../components/types';
+
 import type {
   NurseStationPatientQueueItemDto,
   NurseStationTreatmentLineDto,
   OrderExecutionSheetItemDto,
 } from '#/api/outpatient-nurse-station/outpatient-nurse-station.types';
-
-import type { NurseAdviceExecuteRow, NursePatient, SupplyItem } from '../components/types';
 
 import { formatDateTime } from '@vben/utils';
 
@@ -35,6 +35,17 @@ function isServiceRequestTable(requestTable: string): boolean {
 function isMedicationRequestTable(requestTable: string): boolean {
   const u = requestTable.trim().toUpperCase();
   return u === 'MEDICATION' || u.includes('MEDICATION_REQUEST');
+}
+
+/** 护士执行表行是否为药品医嘱（requestTable / MR: 行主键，勿用 type 展示文案） */
+export function isNurseExecuteMedicationRow(
+  row: Pick<NurseAdviceExecuteRow, 'key' | 'requestTable'>,
+): boolean {
+  const table = String(row.requestTable ?? '').trim();
+  if (table && isMedicationRequestTable(table)) {
+    return true;
+  }
+  return row.key.startsWith('MR:');
 }
 
 /** 判断处置行是否属于耗材请求表 */
@@ -118,12 +129,6 @@ function buildExecutedCountDisplay(row: NurseStationTreatmentLineDto): string {
       return `${net}/${planned}`;
     }
   }
-  if (isMedicationRequestTable(table)) {
-    const plan = row.medicationExecuteNum;
-    if (plan !== null && plan !== undefined && plan > 0) {
-      return `${net}/${plan}`;
-    }
-  }
   return `${performed}`;
 }
 
@@ -181,6 +186,109 @@ function buildContent(row: NurseStationTreatmentLineDto): string {
   return name || spec || '—';
 }
 
+function trimDisplayText(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '';
+  }
+  return String(value).trim();
+}
+
+/** 药品单次剂量与总量行（对齐医生站 BR-ORD-022 展示口径） */
+function buildMedicationDosageText(row: NurseStationTreatmentLineDto): string {
+  const qtyRaw = row.quantity;
+  const unit = trimDisplayText(row.unitName ?? row.unitCode);
+  const right =
+    qtyRaw !== null && qtyRaw !== undefined && trimDisplayText(qtyRaw) !== '' && unit
+      ? `共${qtyRaw}${unit}`
+      : qtyRaw !== null && qtyRaw !== undefined && trimDisplayText(qtyRaw) !== ''
+        ? `共${qtyRaw}`
+        : '';
+  const doseRaw = row.dose;
+  const doseU = trimDisplayText(row.doseUnitName ?? row.doseUnitCode);
+  const left =
+    doseRaw !== null && doseRaw !== undefined && trimDisplayText(doseRaw) !== '' && doseU
+      ? `${doseRaw}${doseU}/次`
+      : doseRaw !== null && doseRaw !== undefined && trimDisplayText(doseRaw) !== ''
+        ? `${doseRaw}/次`
+        : '';
+  if (left && right) {
+    return `${left}，${right}。`;
+  }
+  if (left) {
+    return `${left}。`;
+  }
+  if (right) {
+    return `${right}。`;
+  }
+  return '';
+}
+
+/** 药品用法、频次与天数行（对齐医生站 extension 口径） */
+function buildMedicationUsageText(row: NurseStationTreatmentLineDto): string {
+  const method = trimDisplayText(row.methodName ?? row.methodCode);
+  const rate = trimDisplayText(row.rateName ?? row.rateCode);
+  const durRaw = row.dispensePerDuration;
+  let dayPart = '';
+  if (durRaw !== null && durRaw !== undefined) {
+    const d = Number(durRaw);
+    if (Number.isFinite(d) && d > 0) {
+      dayPart = ` (${Math.trunc(d)}天)`;
+    }
+  }
+  if (method && rate) {
+    return `${method}, ${rate}${dayPart}`;
+  }
+  if (method) {
+    return `${method}${dayPart}`;
+  }
+  if (rate) {
+    return `${rate}${dayPart}`;
+  }
+  return dayPart.trim();
+}
+
+function formatDisplayTotalPriceYuan(
+  value: NurseStationTreatmentLineDto['displayTotalPrice'],
+): string {
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return '';
+  }
+  const n = typeof value === 'number' ? value : Number(String(value).trim());
+  if (!Number.isFinite(n)) {
+    return '';
+  }
+  return `${n.toFixed(2)}元`;
+}
+
+function buildChargeExtension(row: NurseStationTreatmentLineDto): string {
+  const parts: string[] = [];
+  const chargeText = (row.chargeStatusEnumText ?? '').trim();
+  const chargeCode = (row.chargeStatusEnum ?? '').trim();
+  if (chargeText) {
+    parts.push(chargeText);
+  } else if (chargeCode) {
+    parts.push(chargeCode);
+  }
+  const priceText = formatDisplayTotalPriceYuan(row.displayTotalPrice);
+  if (priceText) {
+    parts.push(priceText);
+  }
+  return parts.join('；');
+}
+
+function buildMedicationExtension(row: NurseStationTreatmentLineDto): string {
+  const parts: string[] = [];
+  const usage = buildMedicationUsageText(row);
+  if (usage) {
+    parts.push(usage);
+  }
+  const charge = buildChargeExtension(row);
+  if (charge) {
+    parts.push(charge);
+  }
+  return parts.join('；');
+}
+
 function buildDosageText(row: NurseStationTreatmentLineDto): string {
   const table = String(row.requestTable ?? '');
   if (isServiceRequestTable(table)) {
@@ -191,29 +299,11 @@ function buildDosageText(row: NurseStationTreatmentLineDto): string {
       return `计划${p}次，已完成${c}次，取消${a}次。`;
     }
   }
-  if (isMedicationRequestTable(table)) {
-    const n = row.medicationExecuteNum;
-    if (n !== null && n !== undefined) {
-      return `执行次数上限 ${n}。`;
-    }
-  }
   return '';
 }
 
 function buildExtension(row: NurseStationTreatmentLineDto): string {
-  const parts: string[] = [];
-  const chargeText = (row.chargeStatusEnumText ?? '').trim();
-  const chargeCode = (row.chargeStatusEnum ?? '').trim();
-  if (chargeText) {
-    parts.push(`计费 ${chargeText}`);
-  } else if (chargeCode) {
-    parts.push(`计费状态 ${chargeCode}`);
-  }
-  const price = row.displayTotalPrice;
-  if (price !== null && price !== undefined && String(price) !== '') {
-    parts.push(`金额 ${String(price)}`);
-  }
-  return parts.join('；');
+  return buildChargeExtension(row);
 }
 
 /** 将处置单诊疗/药品行映射为护士执行表行 */
@@ -235,15 +325,53 @@ export function mapTreatmentLineToExecuteRow(
     signer: '—',
     department: '—',
     stopOrVoid: '',
-    extension: buildExtension(row),
-    dosageText: buildDosageText(row),
-    executedCountDisplay: buildExecutedCountDisplay(row),
+    extension: isMedication ? buildMedicationExtension(row) : buildExtension(row),
+    dosageText: isMedication ? buildMedicationDosageText(row) : buildDosageText(row),
+    executedCountDisplay: isMedication ? undefined : buildExecutedCountDisplay(row),
     performerDisplay: '—',
     requestId: String(row.requestId ?? '').trim() || undefined,
     requestTable: normalizeNurseStationRequestTableForApi(table) || undefined,
     netPerformCount,
     canCancelExecute: !isMedication && netPerformCount > 0,
+    groupId: row.groupId != null ? String(row.groupId) : undefined,
+    prescriptionNo: (row.prescriptionNo ?? '').trim() || undefined,
+    medCategoryCodeText: (row.medCategoryCodeText ?? '').trim() || undefined,
+    serviceCategoryCode: (row.serviceCategoryCode ?? '').trim() || undefined,
+    serviceCategoryCodeText: (row.serviceCategoryCodeText ?? '').trim() || undefined,
   };
+}
+
+function nurseMedicationLineSortSeq(raw: NurseStationTreatmentLineDto['sortNumber']): number {
+  if (raw === null || raw === undefined) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+}
+
+function nurseMedicationGroupSortKey(row: NurseStationTreatmentLineDto): string {
+  const gid = String(row.groupId ?? '').trim();
+  return gid === '' ? '\uFFFF' : gid;
+}
+
+/** 药品行排序：与医生站 BR-ORD-018 一致（sortNumber 升序 → 成组聚邻 → requestId） */
+function sortNurseStationMedicationLines(
+  lines: NurseStationTreatmentLineDto[],
+): NurseStationTreatmentLineDto[] {
+  return [...lines].toSorted((a, b) => {
+    const sa = nurseMedicationLineSortSeq(a.sortNumber);
+    const sb = nurseMedicationLineSortSeq(b.sortNumber);
+    if (sa !== sb) {
+      return sa - sb;
+    }
+
+    const gcmp = nurseMedicationGroupSortKey(a).localeCompare(nurseMedicationGroupSortKey(b));
+    if (gcmp !== 0) {
+      return gcmp;
+    }
+
+    return String(a.requestId ?? '').localeCompare(String(b.requestId ?? ''));
+  });
 }
 
 /** 仅映射诊疗与药品行；耗材行在侧栏以发放维度展示 */
@@ -255,15 +383,49 @@ export function mapTreatmentSheetToExecuteRows(
   for (const line of serviceLines) {
     rows.push(mapTreatmentLineToExecuteRow(line));
   }
-  for (const line of medicationLines) {
+  for (const line of sortNurseStationMedicationLines(medicationLines)) {
     rows.push(mapTreatmentLineToExecuteRow(line));
   }
   return rows;
 }
 
-const DISPENSE_DONE_HINTS = ['COMPLETED', 'DISPENSED', 'DONE', 'CLOSED', 'FINISHED'];
+const DISPENSE_PENDING_CODES = ['DRAFT', 'PREPARATION', 'IN_PROGRESS'];
 
-/** 根据发放状态码推断侧栏卡片是否已发放 */
+/** 解析侧栏耗材发放展示态与是否可取消执行 */
+function resolveSupplyDisplayStatus(
+  row: NurseStationTreatmentLineDto,
+): Pick<SupplyItem, 'status' | 'canCancelExecute'> {
+  const code = String(row.dispenseStatusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  const statusText = (row.dispenseStatusEnumText ?? '').trim();
+  if (code === 'PREPARED' || statusText.includes('已配')) {
+    return { status: '已配药', canCancelExecute: true };
+  }
+  if (
+    code === 'COMPLETED' ||
+    code === 'PART_COMPLETED' ||
+    statusText.includes('已发') ||
+    statusText.includes('部分发')
+  ) {
+    return { status: '已发放', canCancelExecute: true };
+  }
+  if (
+    DISPENSE_PENDING_CODES.includes(code) ||
+    statusText.includes('待配') ||
+    statusText.includes('待发')
+  ) {
+    return { status: '待发放', canCancelExecute: false };
+  }
+  if (isDispenseDoneCode(code)) {
+    return { status: '已发放', canCancelExecute: false };
+  }
+  return { status: '待发放', canCancelExecute: false };
+}
+
+const DISPENSE_DONE_HINTS = ['COMPLETED', 'DISPENSED', 'DONE', 'CLOSED', 'FINISHED', 'PREPARED'];
+
+/** 根据发放状态码推断是否为终态/已处理（非待执行勾选） */
 function isDispenseDoneCode(code: string): boolean {
   const u = code.trim().toUpperCase();
   if (!u) {
@@ -272,28 +434,39 @@ function isDispenseDoneCode(code: string): boolean {
   return DISPENSE_DONE_HINTS.some((h) => u.includes(h));
 }
 
+/** 从侧栏耗材项解析 IF-NUR-05 所需发放单 id */
+export function resolveSupplyDispenseIdForApi(item: SupplyItem): string {
+  const fromField = String(item.dispenseId ?? '').trim();
+  if (/^\d+$/.test(fromField)) {
+    return fromField;
+  }
+  const raw = String(item.id ?? '').trim();
+  if (/^\d+$/.test(raw)) {
+    return raw;
+  }
+  if (raw.startsWith('DD:')) {
+    return raw.slice(3);
+  }
+  return '';
+}
+
 /** 耗材发放行映射为侧栏耗材卡片 */
 export function mapDeviceLineToSupplyItem(row: NurseStationTreatmentLineDto): SupplyItem {
   const dispenseId = String(row.dispenseId ?? '').trim();
   const id = dispenseId || `DR:${String(row.requestId)}`;
-  const code = String(row.dispenseStatusEnum ?? '').trim();
-  const statusText = (row.dispenseStatusEnumText ?? '').trim();
-  const status: SupplyItem['status'] =
-    statusText && (statusText.includes('已发') || statusText.includes('完成'))
-      ? '已发放'
-      : isDispenseDoneCode(code)
-        ? '已发放'
-        : '待发放';
+  const { status, canCancelExecute } = resolveSupplyDisplayStatus(row);
   const qtyRaw = row.quantity;
   const quantity =
     typeof qtyRaw === 'number' ? qtyRaw : Number.parseFloat(String(qtyRaw ?? '0')) || 0;
   return {
     id,
+    dispenseId: dispenseId || undefined,
     name: (row.itemName ?? '').trim() || '—',
     spec: (row.specText ?? '').trim() || '—',
     usage: (row.deviceCategoryCode ?? '').trim() || '耗材',
     quantity,
     status,
+    canCancelExecute,
   };
 }
 

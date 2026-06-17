@@ -2,6 +2,7 @@
 import type {
   DispensePrescriptionBlock,
   DispenseQueuePatient,
+  DispenseRxKindBadgeCounts,
   DispenseRxTableRow,
 } from './components/types';
 
@@ -14,7 +15,9 @@ import type {
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import { useDebounceFn } from '@vueuse/core';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus';
+
+import { getChargeTypeListApi } from '#/api/core/common';
 
 import {
   httpDispenseOutpatientMedications,
@@ -24,6 +27,11 @@ import {
   httpSavePrepareOutpatientMedicationDispense,
 } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.http';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
+import {
+  filterInsuranceChargeTypes,
+  resolveDefaultInsuranceBusNo,
+  type ChargeType,
+} from '#/chs/constants/insurance-contract';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 import DispenseQueuePanel from './components/dispense-queue-panel.vue';
@@ -35,6 +43,14 @@ import {
   mapPendingQueueRowToPatient,
   mapSlipRowsToPrescriptionBlocks,
 } from './services/map-api-to-dispense-ui';
+import { loadEncounterRxKindSummary } from './services/resolve-default-rx-kind';
+import { useDispenseSlipPrint } from '#/composables/use-dispense-slip-print';
+import { useOutpatientPrescriptionPrint } from '#/composables/use-outpatient-prescription-print';
+import {
+  DISPENSE_SLIP_TEMPLATE,
+  resolveOutpatientPrescriptionTemplateCode,
+} from '#/utils/report/outpatient-prescription-print-config';
+import { isNarcoticSlipRow } from '#/utils/report/prescription-print-kind';
 
 defineOptions({
   name: 'PharmacyDispenseOutpatient',
@@ -45,6 +61,7 @@ const today = new Date().toISOString().slice(0, 10);
 const queueDateRange = ref<[string, string] | null>([today, today]);
 const selectedPatientId = ref<null | string>(null);
 const activeRxKind = ref<'herbal' | 'western'>('western');
+const rxKindBadgeCounts = ref<DispenseRxKindBadgeCounts>({ western: 0, herbal: 0 });
 const selectedPrescriptionId = ref<null | string>(null);
 const selectedDispenserId = ref<string | undefined>(undefined);
 
@@ -68,6 +85,10 @@ const queueLoading = ref(false);
 const slipLoading = ref(false);
 const batchSubmitting = ref(false);
 const initLoading = ref(false);
+const insuranceContractBusNo = ref<string>();
+const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
+
+const { isPrinting, previewLoading, printDispenseSlip } = useDispenseSlipPrint();
 
 const selectedPatient = computed(() => {
   const id = selectedPatientId.value;
@@ -163,6 +184,17 @@ const debouncedReloadQueue = useDebounceFn(() => {
   void reloadQueue();
 }, 400);
 
+/** 同步当前就诊中西药处方块角标，并返回默认 tab */
+async function syncEncounterRxKindSummary(enc: string, scope: 'completed' | 'pending') {
+  const dispenseStatusEnumIn = scope === 'pending' ? ['PREPARATION', 'IN_PROGRESS'] : ['COMPLETED'];
+  const summary = await loadEncounterRxKindSummary({
+    encounterId: enc,
+    dispenseStatusEnumIn,
+  });
+  rxKindBadgeCounts.value = summary.badgeCounts;
+  return summary;
+}
+
 /** 当前就诊下的发放明细（分页首屏） */
 async function reloadSlips() {
   const enc = selectedPatientId.value;
@@ -239,7 +271,20 @@ watch(
 
 watch(
   () => [selectedPatientId.value, activeRxKind.value, queueScope.value] as const,
-  () => {
+  async ([enc, kind, scope], old) => {
+    if (!enc) {
+      slipRows.value = [];
+      rxKindBadgeCounts.value = { western: 0, herbal: 0 };
+      return;
+    }
+    const [oldEnc, , oldScope] = old ?? [null, kind, scope];
+    if (enc !== oldEnc || scope !== oldScope) {
+      const summary = await syncEncounterRxKindSummary(enc, scope);
+      if (summary.defaultKind !== kind) {
+        activeRxKind.value = summary.defaultKind;
+        return;
+      }
+    }
     void reloadSlips();
   },
 );
@@ -258,6 +303,8 @@ watch(keyword, () => {
 watch(queueScope, () => {
   selectedPatientId.value = null;
   slipRows.value = [];
+  activeRxKind.value = 'western';
+  rxKindBadgeCounts.value = { western: 0, herbal: 0 };
 });
 
 function handleQueueCardSelect(patient: { id: string }) {
@@ -310,7 +357,55 @@ async function handleViewPrescription() {
 }
 
 function handlePrintPrescription() {
-  // TODO: 打印处方单
+  const enc = selectedPatientId.value;
+  const rxId = selectedPrescriptionId.value;
+  if (!enc) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  if (!rxId) {
+    ElMessage.warning('请先选择处方');
+    return;
+  }
+  const block = prescriptionBlocks.value.find((b) => b.id === rxId);
+  if (!block) {
+    ElMessage.warning('未找到所选处方');
+    return;
+  }
+  const firstLineId = block.items[0]?.id;
+  const slip = firstLineId
+    ? slipRows.value.find((r) => String(r.dispenseId) === firstLineId)
+    : undefined;
+  const dispenseStatusEnumIn =
+    queueScope.value === 'pending' ? ['PREPARATION', 'IN_PROGRESS'] : ['COMPLETED'];
+  const narcoticOnly = slip ? isNarcoticSlipRow(slip) : false;
+  const tcmOnly = !narcoticOnly && block.rxType === 'herbal';
+  const templateCode = resolveOutpatientPrescriptionTemplateCode({ narcoticOnly, tcmOnly });
+  const printParams = {
+    encounterId: enc,
+    prescriptionNo: block.rxNo,
+    prescriptionGroupId:
+      slip?.prescriptionGroupId != null ? String(slip.prescriptionGroupId) : undefined,
+    westernOnly: block.rxType === 'western',
+    tcmOnly,
+    dispenseStatusEnumIn,
+  };
+  if (templateCode === DISPENSE_SLIP_TEMPLATE) {
+    void printDispenseSlip({
+      ...printParams,
+      jobName: `发药单-${block.rxNo}`,
+    });
+    return;
+  }
+  void printPrescription({
+    ...printParams,
+    templateCode,
+    jobName: narcoticOnly
+      ? `麻精处方-${block.rxNo}`
+      : tcmOnly
+        ? `中药处方-${block.rxNo}`
+        : `门诊处方-${block.rxNo}`,
+  });
 }
 
 /** 先保存配药再发药：仅处理 PREPARATION / IN_PROGRESS 行 */
@@ -403,14 +498,21 @@ async function handleBatchDispense() {
     const dispenseIds = [
       ...new Set([...alreadyProgressIds, ...prepLines.map((l) => l.dispenseId)]),
     ];
-    await httpDispenseOutpatientMedications({
+    const res = await httpDispenseOutpatientMedications({
       encounterId: enc,
+      contractBusNo: insuranceContractBusNo.value,
       lines: dispenseIds.map((dispenseId) => ({ dispenseId })),
     });
-    ElMessage.success('发药提交成功');
+    const message = res.message?.trim() || '发药提交成功';
+    if (message.includes('EX-OPP-207')) {
+      ElMessage.warning(message);
+    } else {
+      ElMessage.success(message);
+    }
     traceCodeByLineId.value = {};
     inventoryPickByLineId.value = {};
     await reloadSlips();
+    await syncEncounterRxKindSummary(enc, queueScope.value);
     await reloadQueue();
     await nextTick(() => {
       rxCenterRef.value?.clearRxTableSelection();
@@ -424,6 +526,15 @@ async function handleBatchDispense() {
 
 onMounted(async () => {
   await loadPageInit();
+  try {
+    const chargeTypes = await getChargeTypeListApi();
+    const eligible = filterInsuranceChargeTypes(chargeTypes);
+    insuranceChargeTypeOptions.value = eligible;
+    insuranceContractBusNo.value = resolveDefaultInsuranceBusNo(eligible);
+  } catch {
+    insuranceContractBusNo.value = undefined;
+    insuranceChargeTypeOptions.value = [];
+  }
   await reloadQueue();
 });
 </script>
@@ -442,17 +553,43 @@ onMounted(async () => {
       center-track="minmax(0, 1fr)"
     >
       <template #left>
-        <DispenseQueuePanel
-          v-model:keyword="keyword"
-          v-model:queue-date-range="queueDateRange"
-          v-model:queue-scope="queueScope"
-          :filtered-patients="filteredQueuePatients"
-          :loading-queue="queueLoading"
-          :selected-patient-id="selectedPatientId"
-          @queue-date-range-change="handleQueueDateRangeChange"
-          @refresh="reloadQueue"
-          @select-patient="handleQueueCardSelect"
-        />
+        <div class="flex h-full min-h-0 flex-col">
+          <div
+            v-if="insuranceChargeTypeOptions.length > 0"
+            class="border-b border-solid border-[var(--el-border-color-lighter)] px-2 pb-2"
+          >
+            <div class="flex min-w-0 items-center gap-1.5">
+              <span class="shrink-0 text-xs text-[var(--el-text-color-secondary)]">医保契约</span>
+              <ElSelect
+                v-model="insuranceContractBusNo"
+                class="!min-w-0 flex-1"
+                placeholder="请选择医保契约"
+                filterable
+                clearable
+              >
+                <ElOption
+                  v-for="item in insuranceChargeTypeOptions"
+                  :key="item.busNo"
+                  :label="item.busNo ? `${item.label}（${item.busNo}）` : item.label"
+                  :value="item.busNo"
+                />
+              </ElSelect>
+            </div>
+          </div>
+          <div class="min-h-0 flex-1 overflow-hidden">
+            <DispenseQueuePanel
+              v-model:keyword="keyword"
+              v-model:queue-date-range="queueDateRange"
+              v-model:queue-scope="queueScope"
+              :filtered-patients="filteredQueuePatients"
+              :loading-queue="queueLoading"
+              :selected-patient-id="selectedPatientId"
+              @queue-date-range-change="handleQueueDateRangeChange"
+              @refresh="reloadQueue"
+              @select-patient="handleQueueCardSelect"
+            />
+          </div>
+        </div>
       </template>
 
       <template #center>
@@ -469,6 +606,8 @@ onMounted(async () => {
           :display-table-rows="displayTableRows"
           :prescription-row-count="prescriptionList.length"
           :dispenser-options="dispenserOptions"
+          :prescription-print-loading="isPrinting || previewLoading"
+          :rx-kind-badge-counts="rxKindBadgeCounts"
           @batch-dispense="handleBatchDispense"
           @batch-trace-scan="handleBatchTraceScan"
           @view-prescription="handleViewPrescription"

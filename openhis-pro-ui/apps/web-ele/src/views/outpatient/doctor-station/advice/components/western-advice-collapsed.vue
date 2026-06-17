@@ -6,6 +6,8 @@ import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 import { formatMoneyStrYuan, formatUnitPriceYuan } from '../services/advice-format';
 import { totalAmountUnitDisplayLabel } from '../services/medication-unit-bands';
 
+defineOptions({ name: 'WesternAdviceCollapsed' });
+
 const props = withDefaults(
   defineProps<{
     calcTotalFee: (item: AdviceDrugItem) => string;

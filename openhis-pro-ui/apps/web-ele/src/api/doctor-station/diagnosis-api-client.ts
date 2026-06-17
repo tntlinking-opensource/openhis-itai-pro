@@ -5,6 +5,7 @@ import type {
   ConditionDefinitionRowResponse,
   DeleteEncounterDiagnosisRequest,
   DeleteEncounterDiagnosisResponse,
+  DiagnosisOptionDto,
   EncounterDiagnosisResponse,
   EncounterDiagnosisRowDto,
   GetConditionDefinitionBusinessClassRequest,
@@ -80,7 +81,8 @@ function mapEncounterDiagnosisApiRow(raw: Record<string, unknown>): EncounterDia
         ? String(nameRaw).trim()
         : undefined,
     diagnosisKindText: optStr(raw.diagnosisKindText),
-    medicineType: optStr(raw.medicineType),
+    medicineType: optStr(raw.medicineType ?? raw.diagnosisKind),
+    diagnosisKind: optStr(raw.diagnosisKind ?? raw.medicineType),
     verificationStatusEnum: optNum(raw.verificationStatusEnum),
     verificationStatusEnumText: optStr(raw.verificationStatusEnumText),
     mainDiagnosisFlag: optNum(raw.mainDiagnosisFlag),
@@ -89,6 +91,8 @@ function mapEncounterDiagnosisApiRow(raw: Record<string, unknown>): EncounterDia
     diagnosisDesc: optStr(raw.diagnosisDesc),
     iptDiseaseTypeCode: optStr(raw.iptDiseaseTypeCode),
     iptDiseaseTypeText: optStr(raw.iptDiseaseTypeText),
+    tcmSyndromeGroup: optStr(raw.tcmSyndromeGroup),
+    sourceEnum: optStr(raw.sourceEnum),
   };
 }
 
@@ -104,11 +108,17 @@ function mapCommonDiagnosisApiRow(raw: Record<string, unknown>): CommonDiagnosis
     const n = Number(v);
     return Number.isFinite(n) ? n : undefined;
   };
+  const nameRaw = raw.conditionDefinitionName ?? raw.conditionName;
+  const name = optStr(nameRaw);
   return {
     conditionDefinitionId: optStr(raw.conditionDefinitionId ?? raw.definitionId),
+    syndromeDefinitionId: optStr(raw.syndromeDefinitionId),
     conditionCode: optStr(raw.conditionCode),
-    conditionName: optStr(raw.conditionName),
-    medicineType: optStr(raw.medicineType),
+    conditionDefinitionName: name,
+    conditionName: name,
+    medicineType: optStr(raw.medicineType ?? raw.diagnosisKind),
+    diagnosisKind: optStr(raw.diagnosisKind ?? raw.medicineType),
+    tcmSyndromeGroup: optStr(raw.tcmSyndromeGroup),
     sourceEnum: optNum(raw.sourceEnum),
     sourceEnumText: optStr(raw.sourceEnumText),
   };
@@ -120,12 +130,21 @@ function mapCommonDiagnosesResponsePayload(payload: unknown): CommonDiagnosesRes
     if (!Array.isArray(list)) return list as null | undefined;
     return list.filter(isRecord).map((row) => mapCommonDiagnosisApiRow(row));
   };
+  const mapOptions = (list: unknown): DiagnosisOptionDto[] | null | undefined => {
+    if (!Array.isArray(list)) return list as null | undefined;
+    return list.filter(isRecord).map((row) => ({
+      value: row.value !== undefined && row.value !== null ? String(row.value) : undefined,
+      label: row.label !== undefined && row.label !== null ? String(row.label) : undefined,
+    }));
+  };
   return {
     ...payload,
     patientHistoryList: mapList(payload.patientHistoryList) ?? payload.patientHistoryList,
     doctorCommonUseList: mapList(payload.doctorCommonUseList) ?? payload.doctorCommonUseList,
     userPersonalList: mapList(payload.userPersonalList) ?? payload.userPersonalList,
     organizationList: mapList(payload.organizationList) ?? payload.organizationList,
+    iptDiseaseTypeOptions:
+      mapOptions(payload.iptDiseaseTypeOptions) ?? payload.iptDiseaseTypeOptions,
   } as CommonDiagnosesResponse;
 }
 

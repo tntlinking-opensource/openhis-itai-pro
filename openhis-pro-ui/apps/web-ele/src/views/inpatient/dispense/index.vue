@@ -10,12 +10,22 @@ import type {
   PendingDispenseInpatientEncounterQueueRowDto,
   PractitionerOptionDto,
 } from '#/api/inpatient-pharmacy-dispense/inpatient-pharmacy-dispense.types';
+import type {
+  InpatientPharmacySummaryDispenseItemDto,
+  InpatientPharmacySummarySlipHeaderDto,
+} from '#/api/inpatient-pharmacy-dispense/inpatient-pharmacy-summary-dispense.types';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import { useDebounceFn } from '@vueuse/core';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
+import type { ChargeType } from '#/api/core/common';
+import { getChargeTypeListApi } from '#/api/core/common';
+import {
+  filterInsuranceChargeTypes,
+  resolveDefaultInsuranceBusNo,
+} from '#/chs/constants/insurance-contract';
 import {
   httpDispenseInpatientMedications,
   httpLoadInpatientPharmacyDispensePageInit,
@@ -23,6 +33,13 @@ import {
   httpPagePendingDispenseInpatientEncounterQueue,
   httpSavePrepareInpatientMedicationDispense,
 } from '#/api/inpatient-pharmacy-dispense/inpatient-pharmacy-dispense.http';
+import {
+  httpDispenseSummaryMedications,
+  httpGetMedicationSummaryDispenseDetail,
+  httpPagePendingMedicationSummarySlips,
+  httpRejectSummaryDispense,
+} from '#/api/inpatient-pharmacy-dispense/inpatient-pharmacy-summary-dispense.http';
+import { useRequest } from '#/hooks/use-request';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
@@ -30,16 +47,42 @@ import DispenseRxCenter from '#/views/outpatient/dispense/components/dispense-rx
 import { flattenPrescriptionBlocks } from '#/views/outpatient/dispense/components/dispense-rx-helpers';
 import TraceScanDialog from '#/views/outpatient/dispense/components/trace-scan-dialog.vue';
 
+import InpatientDispenseModeSwitch from './components/inpatient-dispense-mode-switch.vue';
 import InpatientDispenseQueuePanel from './components/inpatient-dispense-queue-panel.vue';
+import InpatientDispenseSummaryCenter from './components/inpatient-dispense-summary-center.vue';
+import InpatientDispenseSummaryQueuePanel from './components/inpatient-dispense-summary-queue-panel.vue';
 import type { InpatientDispenseQueuePatient } from './components/types';
+import { useDispenseSlipPrint } from '#/composables/use-dispense-slip-print';
+import { useOutpatientPrescriptionPrint } from '#/composables/use-outpatient-prescription-print';
+import {
+  DISPENSE_SLIP_TEMPLATE,
+  resolveOutpatientPrescriptionTemplateCode,
+} from '#/utils/report/outpatient-prescription-print-config';
+import { isNarcoticSlipRow } from '#/utils/report/prescription-print-kind';
+
 import {
   mapInpatientPendingQueueRowToPatient,
   mapInpatientSlipRowsToPrescriptionBlocks,
 } from './services/map-api-to-inpatient-dispense-ui';
+import {
+  buildSummaryDispenseTraceLines,
+  buildSummaryMergedLineDisplayRows,
+  buildSummarySlipListDateRange,
+  groupSummaryDispenseItemsByPatient,
+  mapSummaryDispenseItemsToTraceLines,
+  normalizeSummaryDispenseItems,
+  type SummaryMergedLineDisplayRow,
+} from './services/map-summary-dispense-ui';
 
 defineOptions({
   name: 'DispenseIp',
 });
+
+type DispenseMode = 'patient' | 'summary';
+
+const SUMMARY_PAGE_SIZE = 100;
+
+const dispenseMode = ref<DispenseMode>('summary');
 
 const keyword = ref('');
 const today = new Date().toISOString().slice(0, 10);
@@ -48,6 +91,7 @@ const selectedPatientId = ref<null | string>(null);
 const activeRxKind = ref<'herbal' | 'western'>('western');
 const selectedPrescriptionId = ref<null | string>(null);
 const selectedDispenserId = ref<string | undefined>(undefined);
+const selectedReceiverId = ref<string | undefined>(undefined);
 const selectedWardId = ref<string | undefined>(undefined);
 
 const rxCenterRef = ref<InstanceType<typeof DispenseRxCenter> | null>(null);
@@ -58,6 +102,8 @@ const traceScanVisible = ref(false);
 const traceCodeByLineId = ref<Record<string, string>>({});
 /** 住院侧无库房改选，保持与 DispenseRxCenter v-model 兼容 */
 const inventoryPickByLineId = ref<Record<string, string>>({});
+const insuranceContractBusNo = ref<string>();
+const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
 
 const dispenserOptions = ref<{ label: string; value: string }[]>([]);
 const wardOptions = ref<{ label: string; value: string }[]>([]);
@@ -67,10 +113,40 @@ const queueScope = ref<'completed' | 'pending'>('pending');
 const queuePatients = ref<InpatientDispenseQueuePatient[]>([]);
 const slipRows = ref<EncounterMedicationDispenseSlipRowDto[]>([]);
 
+const summaryKeyword = ref('');
+const summaryDateRange = ref<[string, string] | null>([today, today]);
+const summaryScope = ref<'completed' | 'pending'>('pending');
+const summarySlipRows = ref<InpatientPharmacySummarySlipHeaderDto[]>([]);
+const summaryTotalCount = ref(0);
+const selectedSummaryNo = ref<null | string>(null);
+const summaryDetailHeader = ref<InpatientPharmacySummarySlipHeaderDto | null>(null);
+const summaryMergedLines = ref<SummaryMergedLineDisplayRow[]>([]);
+const summaryDispenseItems = ref<InpatientPharmacySummaryDispenseItemDto[]>([]);
+const summaryTraceCodeByLineId = ref<Record<string, string>>({});
+
 const queueLoading = ref(false);
 const slipLoading = ref(false);
 const batchSubmitting = ref(false);
+const summaryBatchSubmitting = ref(false);
 const initLoading = ref(false);
+
+const summaryListRequest = useRequest(httpPagePendingMedicationSummarySlips, { manual: true });
+const summaryDetailRequest = useRequest(httpGetMedicationSummaryDispenseDetail, { manual: true });
+const summaryDispenseRequest = useRequest(httpDispenseSummaryMedications, { manual: true });
+const summaryRejectRequest = useRequest(httpRejectSummaryDispense, { manual: true });
+const {
+  isPrinting: slipPrinting,
+  previewLoading: slipPreviewLoading,
+  printDispenseSlip,
+} = useDispenseSlipPrint();
+const {
+  isPrinting: prescriptionPrinting,
+  previewLoading: prescriptionPreviewLoading,
+  printPrescription,
+} = useOutpatientPrescriptionPrint();
+
+const isPrinting = computed(() => slipPrinting.value || prescriptionPrinting.value);
+const previewLoading = computed(() => slipPreviewLoading.value || prescriptionPreviewLoading.value);
 
 /** 复用门诊处方区组件：映射为 DispenseQueuePatient */
 const selectedPatientForRxCenter = computed<DispenseQueuePatient | null>(() => {
@@ -90,6 +166,32 @@ const selectedPatientForRxCenter = computed<DispenseQueuePatient | null>(() => {
 });
 
 const filteredQueuePatients = computed(() => queuePatients.value);
+
+/** 汇总发放明细按患者分组 */
+const summaryPatientGroups = computed(() =>
+  groupSummaryDispenseItemsByPatient(summaryDispenseItems.value),
+);
+
+/** 追溯码弹窗数据源（当前查看汇总单的发放行） */
+const summaryTraceDialogLines = computed(() =>
+  mapSummaryDispenseItemsToTraceLines(summaryDispenseItems.value),
+);
+
+/** 领药人候选（调配药师列表；申请人不在列表时补入选项以便回显） */
+const receiverOptions = computed(() => {
+  const options = [...dispenserOptions.value];
+  const header = summaryDetailHeader.value;
+  const applicantId = String(header?.applicantId ?? '').trim();
+  if (!applicantId || options.some((opt) => opt.value === applicantId)) {
+    return options;
+  }
+  const applicantName = String(header?.applicantName ?? '').trim();
+  options.push({
+    value: applicantId,
+    label: applicantName || applicantId,
+  });
+  return options;
+});
 
 const prescriptionBlocks = computed(() => {
   if (!selectedPatientId.value) return [];
@@ -264,10 +366,227 @@ watch(keyword, () => {
   debouncedReloadQueue();
 });
 
+const debouncedReloadSummarySlips = useDebounceFn(() => {
+  void reloadSummarySlips(true);
+}, 400);
+
+watch(summaryKeyword, () => {
+  debouncedReloadSummarySlips();
+});
+
+watch(summaryScope, () => {
+  selectedSummaryNo.value = null;
+  summaryDetailHeader.value = null;
+  summaryMergedLines.value = [];
+  summaryDispenseItems.value = [];
+  void reloadSummarySlips(true);
+});
+
+watch(
+  () => summaryDateRange.value,
+  () => {
+    if (dispenseMode.value === 'summary') {
+      void reloadSummarySlips(true);
+    }
+  },
+);
+
 watch(queueScope, () => {
   selectedPatientId.value = null;
   slipRows.value = [];
 });
+
+/** 切换发药模式时清空对侧选中态 */
+watch(dispenseMode, (mode) => {
+  if (mode === 'patient') {
+    selectedSummaryNo.value = null;
+    summaryDetailHeader.value = null;
+    summaryMergedLines.value = [];
+    summaryDispenseItems.value = [];
+    summaryTraceCodeByLineId.value = {};
+    return;
+  }
+  selectedPatientId.value = null;
+  slipRows.value = [];
+  traceCodeByLineId.value = {};
+  void reloadSummarySlips(true);
+});
+
+watch(selectedSummaryNo, (summaryNo) => {
+  if (!summaryNo) {
+    summaryDetailHeader.value = null;
+    summaryMergedLines.value = [];
+    summaryDispenseItems.value = [];
+    return;
+  }
+  void loadSummaryDetail(summaryNo);
+});
+
+/** 加载汇总单列表（IF-IPS-01）：待发 APPROVAL / 已发 AGREE */
+async function reloadSummarySlips(clearSelection = false) {
+  const prevSelected = clearSelection ? null : selectedSummaryNo.value;
+  const supplyStatusEnumIn = summaryScope.value === 'pending' ? ['APPROVAL'] : ['AGREE'];
+  const res = await summaryListRequest.run({
+    pageNo: 1,
+    pageSize: SUMMARY_PAGE_SIZE,
+    keyword: summaryKeyword.value.trim() || undefined,
+    supplyStatusEnumIn,
+    ...buildSummarySlipListDateRange(summaryDateRange.value),
+  });
+  const { content: rows, totalCount } =
+    parsePagedRowsFromApiData<InpatientPharmacySummarySlipHeaderDto>(res);
+  summarySlipRows.value = rows;
+  summaryTotalCount.value = totalCount;
+
+  if (rows.length === 0) {
+    selectedSummaryNo.value = null;
+    summaryDetailHeader.value = null;
+    summaryMergedLines.value = [];
+    summaryDispenseItems.value = [];
+    return;
+  }
+
+  const stillVisible =
+    prevSelected && rows.some((r) => String(r.busNo ?? '').trim() === prevSelected);
+  selectedSummaryNo.value = stillVisible
+    ? prevSelected
+    : String(rows[0]?.busNo ?? '').trim() || null;
+}
+
+/** 领药人默认取当前汇总单申请人 */
+function applyReceiverDefaultFromApplicant(header: InpatientPharmacySummarySlipHeaderDto | null) {
+  const applicantId = String(header?.applicantId ?? '').trim();
+  if (!applicantId) {
+    return;
+  }
+  selectedReceiverId.value = applicantId;
+}
+
+/** 加载选中汇总单详情（IF-IPS-02） */
+async function loadSummaryDetail(summaryNo: string) {
+  const res = await summaryDetailRequest.run({ summaryNo });
+  summaryDetailHeader.value = res.header ?? null;
+  const dispenseItems = normalizeSummaryDispenseItems(res.dispenseItems);
+  summaryDispenseItems.value = dispenseItems;
+  // 合并行批号由底层发放行聚合展示（合并 DTO 本身不含 lotNumber）
+  summaryMergedLines.value = buildSummaryMergedLineDisplayRows(res.mergedLines, dispenseItems);
+  applyReceiverDefaultFromApplicant(summaryDetailHeader.value);
+}
+
+/** 左侧汇总单卡片单击（已选中再次点击仍刷新详情） */
+function handleSummarySelect(summaryNo: string) {
+  if (selectedSummaryNo.value === summaryNo) {
+    void loadSummaryDetail(summaryNo);
+    return;
+  }
+  selectedSummaryNo.value = summaryNo;
+}
+
+/** 汇总模式打开追溯码弹窗 */
+function handleSummaryBatchTraceScan() {
+  if (summaryDispenseItems.value.length === 0) {
+    ElMessage.warning('当前汇总单无发放明细');
+    return;
+  }
+  traceScanVisible.value = true;
+}
+
+/** 汇总核对发药（当前选中单张汇总单） */
+async function handleSummaryBatchDispense() {
+  const summaryNo = selectedSummaryNo.value?.trim();
+  if (!summaryNo) {
+    ElMessage.warning('请先选择汇总单');
+    return;
+  }
+  const summaryNos = [summaryNo];
+  const preparerId = selectedDispenserId.value;
+  const receiverId = selectedReceiverId.value;
+  if (!preparerId) {
+    ElMessage.warning('请选择调配药师');
+    return;
+  }
+  if (!receiverId) {
+    ElMessage.warning('请选择领药人');
+    return;
+  }
+
+  try {
+    await ElMessageBox.confirm(`确认对汇总单 ${summaryNo} 核对发药？`, '核对发药', {
+      type: 'warning',
+    });
+  } catch {
+    return;
+  }
+
+  summaryBatchSubmitting.value = true;
+  try {
+    if (!insuranceContractBusNo.value?.trim()) {
+      ElMessage.warning('请选择医保契约');
+      return;
+    }
+    const traceLines = buildSummaryDispenseTraceLines(summaryTraceCodeByLineId.value);
+
+    const res = await summaryDispenseRequest.run({
+      summaryNos,
+      receiverId: preserveApiIdForRequest(receiverId) ?? receiverId,
+      preparerPractitionerId: preserveApiIdForRequest(preparerId) ?? preparerId,
+      traceLines: traceLines.length > 0 ? traceLines : undefined,
+      contractBusNo: insuranceContractBusNo.value,
+    });
+    const message = res.message?.trim() || '核对发药成功';
+    if (message.includes('EX-OPP-207')) {
+      ElMessage.warning(message);
+    } else {
+      ElMessage.success(message);
+    }
+    summaryTraceCodeByLineId.value = {};
+    await reloadSummarySlips(true);
+  } catch {
+    /* 拦截器提示 */
+  } finally {
+    summaryBatchSubmitting.value = false;
+  }
+}
+
+/** 汇总驳回（当前选中单张汇总单） */
+async function handleSummaryBatchReject() {
+  const summaryNo = selectedSummaryNo.value?.trim();
+  if (!summaryNo) {
+    ElMessage.warning('请先选择汇总单');
+    return;
+  }
+  const summaryNos = [summaryNo];
+
+  try {
+    await ElMessageBox.confirm(
+      `确认驳回汇总单 ${summaryNo}？驳回后护士站可重新汇总。`,
+      '驳回汇总单',
+      { type: 'warning' },
+    );
+  } catch {
+    return;
+  }
+
+  summaryBatchSubmitting.value = true;
+  try {
+    const res = await summaryRejectRequest.run({ summaryNos });
+    ElMessage.success(res.message?.trim() || '驳回成功');
+    await reloadSummarySlips(true);
+  } catch {
+    /* 拦截器提示 */
+  } finally {
+    summaryBatchSubmitting.value = false;
+  }
+}
+
+/** 打印汇总单（IF-IPS-06：复用 IF-IPS-02 详情数据） */
+function handlePrintSummarySheet() {
+  if (!selectedSummaryNo.value) {
+    ElMessage.warning('请先选择汇总单');
+    return;
+  }
+  ElMessage.info('打印模板待接入，当前数据已加载至详情区');
+}
 
 function handleQueueCardSelect(patient: { id: string }) {
   selectedPatientId.value = patient.id;
@@ -319,7 +638,55 @@ async function handleViewPrescription() {
 }
 
 function handlePrintPrescription() {
-  // TODO: 打印处方单
+  const enc = selectedPatientId.value;
+  const rxId = selectedPrescriptionId.value;
+  if (!enc) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  if (!rxId) {
+    ElMessage.warning('请先选择处方');
+    return;
+  }
+  const block = prescriptionBlocks.value.find((b) => b.id === rxId);
+  if (!block) {
+    ElMessage.warning('未找到所选处方');
+    return;
+  }
+  const firstLineId = block.items[0]?.id;
+  const slip = firstLineId
+    ? slipRows.value.find((r) => String(r.dispenseId) === firstLineId)
+    : undefined;
+  const dispenseStatusEnumIn =
+    queueScope.value === 'pending' ? ['PREPARATION', 'IN_PROGRESS'] : ['COMPLETED'];
+  const narcoticOnly = slip ? isNarcoticSlipRow(slip) : false;
+  const tcmOnly = !narcoticOnly && block.rxType === 'herbal';
+  const templateCode = resolveOutpatientPrescriptionTemplateCode({ narcoticOnly, tcmOnly });
+  const printParams = {
+    encounterId: enc,
+    prescriptionNo: block.rxNo,
+    prescriptionGroupId:
+      slip?.prescriptionGroupId != null ? String(slip.prescriptionGroupId) : undefined,
+    westernOnly: block.rxType === 'western',
+    tcmOnly,
+    dispenseStatusEnumIn,
+  };
+  if (templateCode === DISPENSE_SLIP_TEMPLATE) {
+    void printDispenseSlip({
+      ...printParams,
+      jobName: `住院发药单-${block.rxNo}`,
+    });
+    return;
+  }
+  void printPrescription({
+    ...printParams,
+    templateCode,
+    jobName: narcoticOnly
+      ? `住院麻精处方-${block.rxNo}`
+      : tcmOnly
+        ? `住院中药处方-${block.rxNo}`
+        : `住院处方-${block.rxNo}`,
+  });
 }
 
 /** 保存配药并发药：住院侧仅提交 dispenseId 与追溯码，不改库房/批号/数量 */
@@ -357,6 +724,10 @@ async function handleBatchDispense() {
   }
   batchSubmitting.value = true;
   try {
+    if (!insuranceContractBusNo.value?.trim()) {
+      ElMessage.warning('请选择医保契约');
+      return;
+    }
     const prepLines: { dispenseId: string; traceNo?: string }[] = [];
     const alreadyProgressIds: string[] = [];
     for (const id of actionable) {
@@ -381,11 +752,17 @@ async function handleBatchDispense() {
     const dispenseIds = [
       ...new Set([...alreadyProgressIds, ...prepLines.map((l) => l.dispenseId)]),
     ];
-    await httpDispenseInpatientMedications({
+    const res = await httpDispenseInpatientMedications({
       encounterId: enc,
+      contractBusNo: insuranceContractBusNo.value,
       lines: dispenseIds.map((dispenseId) => ({ dispenseId })),
     });
-    ElMessage.success('发药提交成功');
+    const message = res.message?.trim() || '发药提交成功';
+    if (message.includes('EX-OPP-207')) {
+      ElMessage.warning(message);
+    } else {
+      ElMessage.success(message);
+    }
     traceCodeByLineId.value = {};
     await reloadSlips();
     await reloadQueue();
@@ -400,8 +777,21 @@ async function handleBatchDispense() {
 }
 
 onMounted(async () => {
+  try {
+    const chargeTypes = await getChargeTypeListApi();
+    const eligible = filterInsuranceChargeTypes(chargeTypes);
+    insuranceChargeTypeOptions.value = eligible;
+    insuranceContractBusNo.value = resolveDefaultInsuranceBusNo(eligible);
+  } catch {
+    insuranceContractBusNo.value = undefined;
+    insuranceChargeTypeOptions.value = [];
+  }
   await loadPageInit();
-  await reloadQueue();
+  if (dispenseMode.value === 'summary') {
+    await reloadSummarySlips(true);
+  } else {
+    await reloadQueue();
+  }
 });
 </script>
 
@@ -419,23 +809,64 @@ onMounted(async () => {
       center-track="minmax(0, 1fr)"
     >
       <template #left>
-        <InpatientDispenseQueuePanel
-          v-model:keyword="keyword"
-          v-model:queue-date-range="queueDateRange"
-          v-model:queue-scope="queueScope"
-          v-model:selected-ward-id="selectedWardId"
-          :filtered-patients="filteredQueuePatients"
-          :loading-queue="queueLoading"
-          :selected-patient-id="selectedPatientId"
-          :ward-options="wardOptions"
-          @queue-date-range-change="handleQueueDateRangeChange"
-          @refresh="reloadQueue"
-          @select-patient="handleQueueCardSelect"
-        />
+        <div class="flex h-full min-h-0 flex-col">
+          <InpatientDispenseModeSwitch v-model:dispense-mode="dispenseMode" />
+          <div
+            v-if="insuranceChargeTypeOptions.length > 0"
+            class="border-b border-solid border-[var(--el-border-color-lighter)] px-2 pb-2"
+          >
+            <div class="flex min-w-0 items-center gap-1.5">
+              <span class="shrink-0 text-xs text-[var(--el-text-color-secondary)]">医保契约</span>
+              <ElSelect
+                v-model="insuranceContractBusNo"
+                class="!min-w-0 flex-1"
+                placeholder="请选择医保契约"
+                filterable
+                clearable
+              >
+                <ElOption
+                  v-for="item in insuranceChargeTypeOptions"
+                  :key="item.busNo"
+                  :label="item.busNo ? `${item.label}（${item.busNo}）` : item.label"
+                  :value="item.busNo"
+                />
+              </ElSelect>
+            </div>
+          </div>
+          <div class="min-h-0 flex-1 overflow-hidden">
+            <InpatientDispenseQueuePanel
+              v-if="dispenseMode === 'patient'"
+              v-model:keyword="keyword"
+              v-model:queue-date-range="queueDateRange"
+              v-model:queue-scope="queueScope"
+              v-model:selected-ward-id="selectedWardId"
+              :filtered-patients="filteredQueuePatients"
+              :loading-queue="queueLoading"
+              :selected-patient-id="selectedPatientId"
+              :ward-options="wardOptions"
+              @queue-date-range-change="handleQueueDateRangeChange"
+              @refresh="reloadQueue"
+              @select-patient="handleQueueCardSelect"
+            />
+            <InpatientDispenseSummaryQueuePanel
+              v-else
+              v-model:keyword="summaryKeyword"
+              v-model:summary-date-range="summaryDateRange"
+              v-model:summary-scope="summaryScope"
+              :slip-rows="summarySlipRows"
+              :total-count="summaryTotalCount"
+              :loading="summaryListRequest.loading.value"
+              :selected-summary-no="selectedSummaryNo"
+              @refresh="reloadSummarySlips(false)"
+              @select-summary="handleSummarySelect"
+            />
+          </div>
+        </div>
       </template>
 
       <template #center>
         <DispenseRxCenter
+          v-if="dispenseMode === 'patient'"
           ref="rxCenterRef"
           v-model:active-rx-kind="activeRxKind"
           v-model:inventory-pick-by-line-id="inventoryPickByLineId"
@@ -447,20 +878,48 @@ onMounted(async () => {
           :prescription-sheet-blocks="sheetViewBlocks"
           :display-table-rows="displayTableRows"
           :prescription-row-count="prescriptionList.length"
+          :prescription-print-loading="isPrinting || previewLoading"
           :dispenser-options="dispenserOptions"
           @batch-dispense="handleBatchDispense"
           @batch-trace-scan="handleBatchTraceScan"
           @view-prescription="handleViewPrescription"
           @print-prescription="handlePrintPrescription"
         />
+        <InpatientDispenseSummaryCenter
+          v-else
+          v-model:selected-dispenser-id="selectedDispenserId"
+          v-model:selected-receiver-id="selectedReceiverId"
+          :batch-submitting="summaryBatchSubmitting"
+          :detail-loading="summaryDetailRequest.loading.value"
+          :dispenser-options="dispenserOptions"
+          :read-only="summaryScope === 'completed'"
+          :receiver-options="receiverOptions"
+          :header="summaryDetailHeader"
+          :merged-lines="summaryMergedLines"
+          :patient-groups="summaryPatientGroups"
+          :selected-summary-no="selectedSummaryNo"
+          :trace-code-by-line-id="summaryTraceCodeByLineId"
+          @batch-dispense="handleSummaryBatchDispense"
+          @batch-reject="handleSummaryBatchReject"
+          @batch-trace-scan="handleSummaryBatchTraceScan"
+          @print-summary="handlePrintSummarySheet"
+        />
       </template>
     </StationTriPaneLayout>
 
     <TraceScanDialog
+      v-if="dispenseMode === 'patient'"
       v-model="traceScanVisible"
       v-model:trace-by-line-id="traceCodeByLineId"
       :lines="prescriptionList"
       :patient-name="selectedPatientForRxCenter?.patientName ?? ''"
+    />
+    <TraceScanDialog
+      v-else
+      v-model="traceScanVisible"
+      v-model:trace-by-line-id="summaryTraceCodeByLineId"
+      :lines="summaryTraceDialogLines"
+      :patient-name="summaryDetailHeader?.applicantName ?? ''"
     />
   </div>
 </template>

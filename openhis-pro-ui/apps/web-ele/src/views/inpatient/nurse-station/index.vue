@@ -92,7 +92,8 @@ const currentOperationProps = computed<Record<string, unknown>>(() => {
     activeOperationTab.value === '住院日结' ||
     activeOperationTab.value === '体温单' ||
     activeOperationTab.value === '住院记账' ||
-    activeOperationTab.value === '费用明细'
+    activeOperationTab.value === '费用明细' ||
+    activeOperationTab.value === '病历调阅'
   ) {
     return { patients: singlePanelPatients.value };
   }

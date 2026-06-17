@@ -3,11 +3,26 @@ import type { InpatientSettleChargeLineDto } from '#/api/inpatient-settle';
 
 import { computed } from 'vue';
 
-import { ElButton, ElRadioButton, ElRadioGroup, ElTable, ElTableColumn } from 'element-plus';
+import {
+  ElButton,
+  ElDescriptions,
+  ElDescriptionsItem,
+  ElRadioButton,
+  ElRadioGroup,
+  ElTable,
+  ElTableColumn,
+  ElTag,
+} from 'element-plus';
 
 import AppDialog from '#/components/app-dialog.vue';
 
 type PayChannelOption = { label: string; value: string };
+
+interface InsuranceBreakdownItem {
+  key: string;
+  label: string;
+  value: number | string;
+}
 
 defineOptions({
   name: 'InpatientSettleDialog',
@@ -16,17 +31,27 @@ defineOptions({
 const props = withDefaults(
   defineProps<{
     chargeLines?: InpatientSettleChargeLineDto[];
+    confirmLoading?: boolean;
+    displayAmount?: number | string;
+    insuranceBreakdownItems?: InsuranceBreakdownItem[];
+    insurancePreSettled?: boolean;
     loading?: boolean;
     payChannelOptions?: PayChannelOption[];
     previewText?: string;
     receivableTotal?: number | string;
+    settleModeLabel?: string;
   }>(),
   {
     chargeLines: () => [],
+    confirmLoading: false,
+    displayAmount: 0,
+    insuranceBreakdownItems: () => [],
+    insurancePreSettled: false,
     loading: false,
     payChannelOptions: () => [],
     previewText: '',
     receivableTotal: 0,
+    settleModeLabel: '',
   },
 );
 
@@ -37,32 +62,54 @@ const emit = defineEmits<{
 const visible = defineModel<boolean>({ required: true });
 const payChannelCode = defineModel<string>('payChannelCode', { required: true });
 
-/** 金额格式化为两位小数展示 */
 function formatMoney(value: null | number | string | undefined) {
   const n = Number(value ?? 0);
   return Number.isFinite(n) ? n.toFixed(2) : '0.00';
 }
 
-const receivableDisplay = computed(() => formatMoney(props.receivableTotal));
+const payableDisplay = computed(() => {
+  if (props.insurancePreSettled && props.displayAmount != null) {
+    return formatMoney(props.displayAmount);
+  }
+  return formatMoney(props.receivableTotal);
+});
 
-/** 关闭弹窗 */
 function handleCancel() {
   visible.value = false;
 }
 </script>
 
 <template>
-  <AppDialog v-model="visible" title="确认住院结算" width="720px" destroy-on-close>
+  <AppDialog v-model="visible" title="确认住院结算" width="760px" destroy-on-close>
     <div class="settle-dialog-body">
+      <div v-if="settleModeLabel" class="settle-dialog-tags">
+        <ElTag type="warning" effect="plain">{{ settleModeLabel }}</ElTag>
+        <ElTag v-if="insurancePreSettled" type="success" effect="plain">医保预结算</ElTag>
+      </div>
       <p
-        v-if="props.previewText"
+        v-if="previewText"
         class="settle-dialog-preview text-sm text-[var(--el-text-color-regular)]"
       >
-        {{ props.previewText }}
+        {{ previewText }}
       </p>
       <div class="settle-dialog-amount">
-        <span class="text-[var(--el-text-color-regular)]">本次应收</span>
-        <strong class="text-[var(--el-color-primary)]">¥{{ receivableDisplay }}</strong>
+        <span class="text-[var(--el-text-color-regular)]">患者实付</span>
+        <strong class="text-[var(--el-color-primary)]">¥{{ payableDisplay }}</strong>
+        <span v-if="insurancePreSettled" class="text-xs text-[var(--el-text-color-secondary)]">
+          原价合计 ¥{{ formatMoney(receivableTotal) }}
+        </span>
+      </div>
+      <div v-if="insuranceBreakdownItems.length > 0" class="settle-dialog-section">
+        <div class="settle-dialog-section__title">医保分项</div>
+        <ElDescriptions :column="2" border size="small">
+          <ElDescriptionsItem
+            v-for="item in insuranceBreakdownItems"
+            :key="item.key"
+            :label="item.label"
+          >
+            ¥{{ formatMoney(item.value) }}
+          </ElDescriptionsItem>
+        </ElDescriptions>
       </div>
       <div class="settle-dialog-section">
         <div class="settle-dialog-section__title">支付方式</div>
@@ -90,7 +137,9 @@ function handleCancel() {
     </div>
     <template #footer>
       <ElButton @click="handleCancel">取消</ElButton>
-      <ElButton type="primary" :loading="loading" @click="emit('confirm')">确认结算</ElButton>
+      <ElButton type="primary" :loading="confirmLoading || loading" @click="emit('confirm')">
+        确认结算
+      </ElButton>
     </template>
   </AppDialog>
 </template>
@@ -100,6 +149,12 @@ function handleCancel() {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.settle-dialog-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .settle-dialog-preview {

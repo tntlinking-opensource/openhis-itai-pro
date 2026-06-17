@@ -6,7 +6,7 @@ import type { VxeGridProps, VxeGridPropTypes } from '#/adapter/vxe-table';
 import type { ApiOptionItem } from '#/types/api-response';
 import type { InboundProductUnitBand } from '#/utils/inventory/inbound-product-unit-bands';
 
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 
 import { Trash2 } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
@@ -41,6 +41,19 @@ import {
   type PharmacyStocktakeLocationOption,
 } from '#/api/inventory/pharmacy/stocktake';
 import {
+  agreeDeptStocktakeApi,
+  createDeptStocktakeApi,
+  getDeptStocktakeDetailApi,
+  DEP_STOCKTAKE_CATEGORY_ENUM,
+  rejectDeptStocktakeApi,
+  removeDeptStocktakeApi,
+  submitDeptStocktakeApprovalApi,
+  updateDeptStocktakeApi,
+  withdrawDeptStocktakeApprovalApi,
+  type DeptStocktakeLineDto,
+  type DeptStocktakeLocationOption,
+} from '#/api/inventory/department/stocktake';
+import {
   agreeWarehouseStocktakeApi,
   createWarehouseStocktakeApi,
   getWarehouseStocktakeDetailApi,
@@ -53,6 +66,12 @@ import {
   type StocktakeLineDto,
   type WarehouseStocktakeLocationOption,
 } from '#/api/inventory/warehouse/stocktake';
+import { getChargeTypeListApi } from '#/api/core/common';
+import {
+  filterInsuranceChargeTypes,
+  resolveDefaultInsuranceBusNo,
+  type ChargeType,
+} from '#/chs/constants/insurance-contract';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { decimalMul, decimalSub } from '#/utils/decimal-util';
 import {
@@ -110,12 +129,15 @@ interface StocktakePreviewRow {
 }
 
 interface Props {
-  variant: 'pharmacy' | 'warehouse';
+  variant: 'department' | 'pharmacy' | 'warehouse';
   busNo?: string;
   isDraftOrder?: boolean;
   resetKey?: number;
   sidebarPurposeLocationId?: number | string;
-  locationOptions: PharmacyStocktakeLocationOption[] | WarehouseStocktakeLocationOption[];
+  locationOptions:
+    | DeptStocktakeLocationOption[]
+    | PharmacyStocktakeLocationOption[]
+    | WarehouseStocktakeLocationOption[];
   itemTableTypeOptions?: ApiOptionItem[];
   /** 单头区库房标签 */
   locationFieldLabel?: string;
@@ -141,9 +163,11 @@ const emit = defineEmits<{
 
 const userStore = useUserStore();
 
-const categoryEnum = computed(() =>
-  props.variant === 'pharmacy' ? PHA_STOCKTAKE_CATEGORY_ENUM : WHS_STOCKTAKE_CATEGORY_ENUM,
-);
+const categoryEnum = computed(() => {
+  if (props.variant === 'pharmacy') return PHA_STOCKTAKE_CATEGORY_ENUM;
+  if (props.variant === 'department') return DEP_STOCKTAKE_CATEGORY_ENUM;
+  return WHS_STOCKTAKE_CATEGORY_ENUM;
+});
 
 function firstItemTableTypeValue(): string {
   const o = props.itemTableTypeOptions?.[0];
@@ -191,6 +215,24 @@ const docActionFlags = computed(() => {
     saveAndSubmitDisabled: base.saveAndSubmitDisabled || busy,
   };
 });
+
+const insuranceContractBusNo = ref<string>();
+const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
+
+async function loadInsuranceContractBusNo() {
+  try {
+    const chargeTypes = await getChargeTypeListApi();
+    const eligible = filterInsuranceChargeTypes(chargeTypes);
+    insuranceChargeTypeOptions.value = eligible;
+    insuranceContractBusNo.value = resolveDefaultInsuranceBusNo(
+      eligible,
+      insuranceContractBusNo.value,
+    );
+  } catch {
+    insuranceContractBusNo.value = undefined;
+    insuranceChargeTypeOptions.value = [];
+  }
+}
 
 const paneFlashActive = ref(false);
 let paneFlashTimer: ReturnType<typeof setTimeout> | undefined;
@@ -420,7 +462,12 @@ const columns: VxeGridPropTypes.Column[] = [
     editRender: {
       name: 'PurchaseOrderMedicineSelect',
       props: {
-        listSource: props.variant === 'pharmacy' ? 'pharmacy-stocktake' : 'warehouse-stocktake',
+        listSource:
+          props.variant === 'pharmacy'
+            ? 'pharmacy-stocktake'
+            : props.variant === 'department'
+              ? 'dept-stocktake'
+              : 'warehouse-stocktake',
         query: async () => ({
           productTableName: headItemTableType.value || undefined,
           purposeLocationId: purposeLocationId.value ?? props.sidebarPurposeLocationId,
@@ -622,7 +669,9 @@ async function loadDetail(busNo: string) {
     const res =
       props.variant === 'pharmacy'
         ? await getPharmacyStocktakeDetailApi({ busNo })
-        : await getWarehouseStocktakeDetailApi({ busNo });
+        : props.variant === 'department'
+          ? await getDeptStocktakeDetailApi({ busNo })
+          : await getWarehouseStocktakeDetailApi({ busNo });
     const data = res.data;
     if (!data?.busNo) {
       ElMessage.warning('未获取到盘点单详情');
@@ -650,7 +699,7 @@ async function loadDetail(busNo: string) {
 
 function buildLinesPayload(
   rows: StocktakePreviewRow[],
-): StocktakeLineDto[] | PharmacyStocktakeLineDto[] {
+): StocktakeLineDto[] | PharmacyStocktakeLineDto[] | DeptStocktakeLineDto[] {
   const now = formatDateTime(new Date());
   return rows.map((r) => {
     recalcStocktakeLine(r);
@@ -759,6 +808,8 @@ async function persistStocktake(): Promise<string | undefined> {
     if (headerBusNo.value) {
       if (props.variant === 'pharmacy') {
         await updatePharmacyStocktakeApi({ busNo: headerBusNo.value, ...common });
+      } else if (props.variant === 'department') {
+        await updateDeptStocktakeApi({ busNo: headerBusNo.value, ...common });
       } else {
         await updateWarehouseStocktakeApi({ busNo: headerBusNo.value, ...common });
       }
@@ -771,7 +822,9 @@ async function persistStocktake(): Promise<string | undefined> {
     const res =
       props.variant === 'pharmacy'
         ? await createPharmacyStocktakeApi(common)
-        : await createWarehouseStocktakeApi(common);
+        : props.variant === 'department'
+          ? await createDeptStocktakeApi(common)
+          : await createWarehouseStocktakeApi(common);
     const no = res.data?.busNo;
     ElMessage.success('新建成功');
     if (no) {
@@ -824,6 +877,8 @@ async function handleRemoveDoc() {
   try {
     if (props.variant === 'pharmacy') {
       await removePharmacyStocktakeApi({ busNo: no });
+    } else if (props.variant === 'department') {
+      await removeDeptStocktakeApi({ busNo: no });
     } else {
       await removeWarehouseStocktakeApi({ busNo: no });
     }
@@ -842,7 +897,9 @@ async function handleSubmitApproval() {
     const res =
       props.variant === 'pharmacy'
         ? await submitPharmacyStocktakeApprovalApi({ busNo: no })
-        : await submitWarehouseStocktakeApprovalApi({ busNo: no });
+        : props.variant === 'department'
+          ? await submitDeptStocktakeApprovalApi({ busNo: no })
+          : await submitWarehouseStocktakeApprovalApi({ busNo: no });
     if (res.data?.statusEnum !== undefined && res.data.statusEnum !== null) {
       detailStatusEnum.value = normalizeStocktakeStatusSort(res.data.statusEnum);
     }
@@ -861,7 +918,9 @@ async function handleWithdraw() {
     const res =
       props.variant === 'pharmacy'
         ? await withdrawPharmacyStocktakeApprovalApi({ busNo: no })
-        : await withdrawWarehouseStocktakeApprovalApi({ busNo: no });
+        : props.variant === 'department'
+          ? await withdrawDeptStocktakeApprovalApi({ busNo: no })
+          : await withdrawWarehouseStocktakeApprovalApi({ busNo: no });
     if (res.data?.statusEnum !== undefined && res.data.statusEnum !== null) {
       detailStatusEnum.value = normalizeStocktakeStatusSort(res.data.statusEnum);
     }
@@ -876,11 +935,26 @@ async function handleWithdraw() {
 async function handleApprove() {
   const no = headerBusNo.value;
   if (!no) return;
+  if (!insuranceContractBusNo.value?.trim()) {
+    ElMessage.warning('请先选择医保契约');
+    return;
+  }
   try {
     if (props.variant === 'pharmacy') {
-      await agreePharmacyStocktakeApi({ busNo: no });
+      await agreePharmacyStocktakeApi({
+        busNo: no,
+        contractBusNo: insuranceContractBusNo.value,
+      });
+    } else if (props.variant === 'department') {
+      await agreeDeptStocktakeApi({
+        busNo: no,
+        contractBusNo: insuranceContractBusNo.value,
+      });
     } else {
-      await agreeWarehouseStocktakeApi({ busNo: no });
+      await agreeWarehouseStocktakeApi({
+        busNo: no,
+        contractBusNo: insuranceContractBusNo.value,
+      });
     }
     ElMessage.success('审批同意');
     await loadDetail(no);
@@ -902,6 +976,8 @@ async function handleReject() {
     });
     if (props.variant === 'pharmacy') {
       await rejectPharmacyStocktakeApi({ busNo: no, changeReason: value });
+    } else if (props.variant === 'department') {
+      await rejectDeptStocktakeApi({ busNo: no, changeReason: value });
     } else {
       await rejectWarehouseStocktakeApi({ busNo: no, changeReason: value });
     }
@@ -979,6 +1055,10 @@ watch(
   },
   { deep: true },
 );
+
+onMounted(() => {
+  void loadInsuranceContractBusNo();
+});
 </script>
 
 <template>
@@ -988,16 +1068,41 @@ watch(
   >
     <InvMainShell>
       <template #actionBar>
-        <InvDocActions
-          v-bind="docActionFlags"
-          @approve="handleApprove"
-          @reject="handleReject"
-          @remove-doc="handleRemoveDoc"
-          @save="handleSaveDoc"
-          @save-and-submit="handleSaveAndSubmitDoc"
-          @submit-approval="handleSubmitApproval"
-          @withdraw="handleWithdraw"
-        />
+        <div class="flex w-full flex-col gap-2">
+          <div
+            v-if="insuranceChargeTypeOptions.length > 0"
+            class="flex flex-wrap items-center gap-2"
+          >
+            <span class="text-xs text-[var(--el-text-color-secondary)]">医保契约</span>
+            <ElSelect
+              v-model="insuranceContractBusNo"
+              class="!w-72"
+              placeholder="请选择医保契约"
+              filterable
+              clearable
+              :disabled="docActionFlags.approveDisabled"
+            >
+              <ElOption
+                v-for="item in insuranceChargeTypeOptions"
+                :key="item.busNo"
+                :label="item.busNo ? `${item.label}（${item.busNo}）` : item.label"
+                :value="item.busNo"
+              />
+            </ElSelect>
+          </div>
+          <div class="flex w-full flex-wrap items-center justify-end gap-2">
+            <InvDocActions
+              v-bind="docActionFlags"
+              @approve="handleApprove"
+              @reject="handleReject"
+              @remove-doc="handleRemoveDoc"
+              @save="handleSaveDoc"
+              @save-and-submit="handleSaveAndSubmitDoc"
+              @submit-approval="handleSubmitApproval"
+              @withdraw="handleWithdraw"
+            />
+          </div>
+        </div>
       </template>
 
       <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2">

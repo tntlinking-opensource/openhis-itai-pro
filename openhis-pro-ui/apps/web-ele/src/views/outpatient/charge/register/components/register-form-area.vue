@@ -14,7 +14,11 @@ import {
 } from '#/hooks/use-form-keyboard-navigation';
 import { calcAgeFromBirthDate, parseChineseIdCard18 } from '#/utils/id-card-cn';
 
-import { listPractitioners, loadRegisterFormInit } from '../services/register.service';
+import {
+  listPractitioners,
+  listBookableSlotHints,
+  loadRegisterFormInit,
+} from '../services/register.service';
 
 defineOptions({
   name: 'RegisterFormArea',
@@ -32,8 +36,17 @@ const contractOptions = ref<OptionDto[]>([]);
 /** IF-REG-01 号源类型（OptionDto.value 即 serviceTypeId） */
 const serviceTypeOptions = ref<OptionDto[]>([]);
 
+/** 号源类型主键 → 挂号费销售价（元），来自初始化接口 */
+const serviceTypeFeeById = ref<Record<string, number | string>>({});
+
 /** 初始化接口下发的患者性别字典（Radio 选项） */
 const genderOptions = ref<OptionDto[]>([]);
+
+/** 预约带入后锁定科室/医生/号源类型 */
+const bookingLocked = ref(false);
+
+/** 当日可约时段摘要（无预约现场挂号提示） */
+const slotHints = ref<string[]>([]);
 
 /** 表单区展示用金额占位（实际金额以预结算 / 正式结算接口为准） */
 const registerFeeAmount = ref(0);
@@ -56,7 +69,23 @@ const refreshDoctorOptions = async (organizationId?: string) => {
     },
   ]);
   registerFormApi.setFieldValue('doctorId', undefined);
+  slotHints.value = [];
 };
+
+/**
+ * 医师变更：收窄号源类型并刷新时段提示。
+ */
+async function handleDoctorChange(value: string | undefined) {
+  if (bookingLocked.value) {
+    return;
+  }
+  const values = await registerFormApi.getValues();
+  const organizationId = String(values.departmentId ?? '').trim();
+  await refreshServiceTypeOptions(organizationId || undefined, value || undefined);
+  registerFormApi.setFieldValue('serviceTypeId', undefined);
+  registerFeeAmount.value = 0;
+  slotHints.value = [];
+}
 
 const formWrapperClass = 'grid grid-cols-2 gap-x-2 gap-y-1';
 const formAreaRef = ref<HTMLElement | null>(null);
@@ -66,6 +95,7 @@ const registerFormKeyboardSelectors = `${DEFAULT_FORM_KEYBOARD_SELECTORS},[tabin
 
 const { handleFormKeydown } = useFormKeyboardNavigation(formAreaRef, {
   selectors: registerFormKeyboardSelectors,
+  selectPolicy: true,
   shouldIgnoreEvent: (_event, target) => {
     if (target.tagName === 'TEXTAREA') {
       return true;
@@ -116,7 +146,158 @@ function handleIdCardInput(value: string) {
  * 科室变更：按 IF-REG-05 重拉医生下拉。
  */
 async function handleDepartmentChange(value: string) {
+  if (bookingLocked.value) {
+    return;
+  }
   await refreshDoctorOptions(value || undefined);
+  await refreshServiceTypeOptions(value || undefined, undefined);
+  slotHints.value = [];
+}
+
+/**
+ * 按科室/医师收窄号源类型下拉（booking 启用时与当日放号求交）。
+ */
+async function refreshServiceTypeOptions(organizationId?: string, practitionerId?: string) {
+  const init = await loadRegisterFormInit({
+    organizationId: organizationId || undefined,
+    practitionerId: practitionerId || undefined,
+  });
+  serviceTypeOptions.value = [...init.serviceTypeOptions];
+  serviceTypeFeeById.value = { ...(init.serviceTypeFeeById ?? {}) };
+  registerFormApi.updateSchema([
+    {
+      fieldName: 'serviceTypeId',
+      componentProps: {
+        disabled: bookingLocked.value,
+        options: serviceTypeOptions.value,
+        onChange: handleServiceTypeChange,
+      },
+    },
+  ]);
+}
+
+/**
+ * 选齐科室/医师/号源后拉取可约时段摘要。
+ */
+async function refreshSlotHints() {
+  if (bookingLocked.value) {
+    slotHints.value = [];
+    return;
+  }
+  const values = await registerFormApi.getValues();
+  const organizationId = String(values.departmentId ?? '').trim();
+  const practitionerId = String(values.doctorId ?? '').trim();
+  const serviceTypeId = String(values.serviceTypeId ?? '').trim();
+  if (!organizationId || !serviceTypeId) {
+    slotHints.value = [];
+    return;
+  }
+  try {
+    const res = await listBookableSlotHints({
+      healthcareServiceId: serviceTypeId,
+      organizationId,
+      practitionerId: practitionerId || undefined,
+    });
+    const hints = res.hints ?? [];
+    slotHints.value = hints.slice(0, 6).map((item) => {
+      const start = String(item.slotStart ?? '')
+        .replace('T', ' ')
+        .slice(0, 16);
+      const end = String(item.slotEnd ?? '')
+        .replace('T', ' ')
+        .slice(11, 16);
+      const remain =
+        item.remainingCount == null || item.remainingCount === ''
+          ? ''
+          : ` 余${item.remainingCount}`;
+      return `${start}${end ? `-${end}` : ''}${remain}`;
+    });
+    if (hints.length > 6) {
+      slotHints.value.push(`…共 ${hints.length} 个时段可约`);
+    }
+  } catch {
+    slotHints.value = [];
+  }
+}
+
+/**
+ * 更新挂号区三要素字段的禁用态（预约带入后锁定）。
+ */
+function syncBookingFieldLockState() {
+  const disabled = bookingLocked.value;
+  registerFormApi.updateSchema([
+    {
+      fieldName: 'departmentId',
+      componentProps: {
+        disabled,
+        options: departmentOptions.value,
+        onChange: handleDepartmentChange,
+      },
+    },
+    {
+      fieldName: 'doctorId',
+      componentProps: {
+        disabled,
+        options: doctorOptions.value,
+        onChange: handleDoctorChange,
+      },
+    },
+    {
+      fieldName: 'serviceTypeId',
+      componentProps: {
+        disabled,
+        options: serviceTypeOptions.value,
+        onChange: handleServiceTypeChange,
+      },
+    },
+  ]);
+}
+
+/**
+ * 预约快照预填科室/医生/号源并锁定。
+ */
+async function applyBookingSnapshot(snapshot: {
+  healthcareServiceId: number | string;
+  organizationId: number | string;
+  practitionerId?: null | number | string;
+}) {
+  bookingLocked.value = true;
+  const organizationId = String(snapshot.organizationId ?? '');
+  await refreshDoctorOptions(organizationId || undefined);
+  registerFormApi.setFieldValue('departmentId', organizationId || undefined);
+  registerFormApi.setFieldValue(
+    'doctorId',
+    snapshot.practitionerId != null && String(snapshot.practitionerId) !== ''
+      ? String(snapshot.practitionerId)
+      : undefined,
+  );
+  registerFormApi.setFieldValue('serviceTypeId', String(snapshot.healthcareServiceId ?? ''));
+  handleServiceTypeChange(String(snapshot.healthcareServiceId ?? ''));
+  syncBookingFieldLockState();
+}
+
+/**
+ * 解除预约锁定。
+ */
+function clearBookingLock() {
+  bookingLocked.value = false;
+  slotHints.value = [];
+  syncBookingFieldLockState();
+}
+
+/**
+ * 号源类型变更：按初始化下发的销售价映射刷新展示用挂号费。
+ */
+function handleServiceTypeChange(value: string | undefined) {
+  if (!value) {
+    registerFeeAmount.value = 0;
+    slotHints.value = [];
+    return;
+  }
+  const raw = serviceTypeFeeById.value[value];
+  const fee = Number(raw);
+  registerFeeAmount.value = Number.isFinite(fee) ? fee : 0;
+  void refreshSlotHints();
 }
 
 const [PatientForm, patientFormApi] = useVbenForm(
@@ -247,6 +428,7 @@ const [RegisterForm, registerFormApi] = useVbenForm(
         required: true,
         componentProps: {
           options: serviceTypeOptions.value,
+          onChange: handleServiceTypeChange,
         },
       },
     ]),
@@ -374,19 +556,25 @@ function getServiceTypeLabel(serviceTypeId: unknown): string | undefined {
  * 提交成功后的局部重置：清空患者与挂号表单，再刷新医生下拉并重置展示用挂号费（不预填挂号区）。
  */
 async function resetForSubmitSuccess() {
+  bookingLocked.value = false;
   patientFormApi.resetForm();
   registerFormApi.resetForm();
+  registerFeeAmount.value = 0;
+  patientInfo.value = emptyPatientInfo();
   await refreshDoctorsAndResetFeeDisplay();
+  syncBookingFieldLockState();
 }
 
 /**
  * 整页清空：表单与就诊信息展示区清空；医生下拉恢复为不按科室过滤的全量列表。
  */
 function resetForClear() {
+  bookingLocked.value = false;
   patientFormApi.resetForm();
   registerFormApi.resetForm();
   patientInfo.value = emptyPatientInfo();
   void refreshDoctorsAndResetFeeDisplay();
+  syncBookingFieldLockState();
 }
 
 /**
@@ -418,7 +606,9 @@ function applyPatientRecord(patient: RegisterPatientRecord) {
 }
 
 defineExpose<RegisterFormAreaExpose>({
+  applyBookingSnapshot,
   applyPatientRecord,
+  clearBookingLock,
   clearPatientFields,
   focusFirstField,
   getContractLabel,
@@ -439,6 +629,7 @@ onMounted(async () => {
   departmentOptions.value = [...init.departmentOptions];
   contractOptions.value = [...init.contractOptions];
   serviceTypeOptions.value = [...init.serviceTypeOptions];
+  serviceTypeFeeById.value = { ...(init.serviceTypeFeeById ?? {}) };
   genderOptions.value = [...init.genderOptions];
   await refreshDoctorOptions();
   patientFormApi.updateSchema([
@@ -466,12 +657,14 @@ onMounted(async () => {
       fieldName: 'serviceTypeId',
       componentProps: {
         options: serviceTypeOptions.value,
+        onChange: handleServiceTypeChange,
       },
     },
     {
       fieldName: 'doctorId',
       componentProps: {
         options: doctorOptions.value,
+        onChange: handleDoctorChange,
       },
     },
   ]);
@@ -483,7 +676,7 @@ onMounted(async () => {
   <div
     ref="formAreaRef"
     class="reg-bill-form-area flex flex-1 flex-col overflow-auto px-2 py-1"
-    @keydown="handleFormKeydown"
+    @keydown.capture="handleFormKeydown"
   >
     <div class="space-y-2">
       <div>
@@ -506,6 +699,12 @@ onMounted(async () => {
           </div>
         </div>
         <RegisterForm />
+        <div
+          v-if="slotHints.length > 0"
+          class="mt-1 rounded border border-dashed border-gray-200 px-2 py-1 text-xs text-gray-600"
+        >
+          当日可约：{{ slotHints.join(' · ') }}
+        </div>
         <div class="ml-auto mt-2 flex w-1/2 items-baseline justify-end gap-2">
           <span class="shrink-0 text-base text-gray-500">挂号费用</span>
           <span class="text-xl font-semibold tabular-nums text-[var(--el-color-primary)]">

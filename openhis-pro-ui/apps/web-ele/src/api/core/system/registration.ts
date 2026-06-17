@@ -1,4 +1,5 @@
 import { publicRequestClient } from '#/api/request';
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
 export const REGISTRATION_TYPE_ACTIVE_FLAG = {
   ACTIVE: 1,
@@ -16,10 +17,9 @@ export interface RegistrationType {
 
 export interface AddRegistrationTypeParams {
   ybNo: string;
-  busNo: string;
   amount: number;
   name: string;
-  activeFlag: number;
+  activeFlag?: number;
 }
 
 export async function getRegistrationTypeListApi() {
@@ -34,6 +34,9 @@ export async function updateRegistrationTypeApi(data: RegistrationType & { id: s
   return publicRequestClient.post('/registrationType/updateRegistrationType', data);
 }
 
-export async function deleteRegistrationTypeApi(value: string) {
-  return publicRequestClient.post('/registrationType/deleteRegistrationType', { value });
+export async function deleteRegistrationTypeApi(id: number | string) {
+  return publicRequestClient.post(
+    '/registrationType/deleteRegistrationType',
+    preserveApiIdForRequest(id),
+  );
 }

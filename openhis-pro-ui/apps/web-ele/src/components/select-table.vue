@@ -18,6 +18,7 @@ interface TableColumn {
   prop: string;
   label: string;
   width?: number | string;
+  minWidth?: number | string;
   align?: 'center' | 'left' | 'right';
 }
 
@@ -105,6 +106,7 @@ const gridOptions = reactive<VxeGridProps & { pagerConfig: VxeGridPropTypes.Page
     field: c.prop,
     title: c.label,
     width: c.width,
+    minWidth: c.minWidth,
     align: c.align,
     showOverflow: true,
   })),
@@ -125,7 +127,14 @@ const selectedLabelText = computed(() => {
 
 const inputValue = computed({
   get() {
-    return showPopup.value ? keyword.value : selectedLabelText.value;
+    if (showPopup.value) {
+      return keyword.value;
+    }
+    if (isSelected.value) {
+      return selectedLabelText.value;
+    }
+    // 未选中档案时保留检索框内手工输入，避免下拉关闭后文案被清空
+    return keyword.value;
   },
   set(v: string) {
     keyword.value = v;
@@ -187,7 +196,15 @@ const loadData = async () => {
     gridOptions.loading = false;
   }
   const rows = (gridOptions.data as OptionItem[]) || [];
-  keyboardRowIndex.value = rows.length > 0 ? 0 : -1;
+  if (isSelected.value && props.modelValue !== undefined && props.modelValue !== '') {
+    const selectedIdx = rows.findIndex((it) => {
+      const key = it?.[props.valueKey];
+      return key != null && String(key) === String(props.modelValue);
+    });
+    keyboardRowIndex.value = selectedIdx >= 0 ? selectedIdx : rows.length > 0 ? 0 : -1;
+  } else {
+    keyboardRowIndex.value = rows.length > 0 ? 0 : -1;
+  }
   await nextTick();
   await syncGridCurrentRow();
 };
@@ -201,9 +218,20 @@ watch(
   () => showPopup.value,
   async (visible: boolean) => {
     if (visible) {
+      if (isSelected.value) {
+        const label =
+          props.selectedLabel !== undefined && String(props.selectedLabel).trim() !== ''
+            ? String(props.selectedLabel).trim()
+            : selectedLabelText.value;
+        if (label) {
+          keyword.value = label;
+        }
+      }
       await loadData();
     } else {
-      keyword.value = '';
+      if (isSelected.value) {
+        keyword.value = '';
+      }
       keyboardRowIndex.value = -1;
       await nextTick(() => gridRef.value?.clearCurrentRow());
     }
@@ -354,13 +382,14 @@ defineExpose({ getKeywordDraft });
 
     <template #dropdown>
       <div
-        class="h-[300px] border border-[#dcdfe6] bg-white shadow-[0_0_6px_2px_rgb(0_0_0_/_10%)]"
+        class="h-[300px] w-full border border-[#dcdfe6] bg-white shadow-[0_0_6px_2px_rgb(0_0_0_/_10%)]"
         :style="{
           width: typeof panelWidth === 'number' ? `${panelWidth}px` : String(panelWidth || '800px'),
         }"
       >
         <VxeGrid
           ref="gridRef"
+          class="select-table-dropdown-grid"
           v-bind="gridOptions"
           :loading="loading || isBeforeClosePending"
           @cell-click="selectEvent"
@@ -370,3 +399,13 @@ defineExpose({ getKeywordDraft });
     </template>
   </VxePulldown>
 </template>
+
+<style scoped>
+.select-table-dropdown-grid {
+  width: 100%;
+}
+
+.select-table-dropdown-grid :deep(.vxe-table) {
+  width: 100% !important;
+}
+</style>

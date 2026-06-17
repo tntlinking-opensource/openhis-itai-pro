@@ -1,4 +1,5 @@
 export type {
+  BookableSlotHintDto,
   CancelWithRefundResult,
   ChargeItemPreviewDto,
   ClinicRegisterItemDto,
@@ -7,6 +8,7 @@ export type {
   LoadRegisterFormInitParams,
   LoadRegisterFormInitResult,
   OptionDto,
+  OutpatientBookingSnapshotDto,
   PatientItemDto,
   PayRegisterFeeParams,
   PayRegisterFeeResult,
@@ -29,10 +31,12 @@ export { ENCOUNTER_STATUS_CODE, ENCOUNTER_STATUS_EL_TAG_MAP } from './encounter-
 export {
   cancelRegisterEncounter,
   DEFAULT_REGISTER_PAY_CHANNEL_CODE,
+  listBookableSlotHints,
   listPractitioners,
   loadRegisterFormInit,
   pageRegisterHistoryForTable,
   pageRegisterPatientsForSelect,
   payRegisterFee,
+  preRegisterFromAppointment,
   preRegisterSettlement,
 } from './register.service';

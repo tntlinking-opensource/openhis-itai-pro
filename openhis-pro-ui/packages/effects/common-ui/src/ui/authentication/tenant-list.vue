@@ -91,17 +91,17 @@ function handleSelectTenant(tenant: Tenant) {
         </VbenButton>
       </div>
       <h3 class="text-foreground text-start text-xl font-semibold">
-        {{ '医院' }}
+        {{ '租户' }}
       </h3>
       <p class="text-muted-foreground mt-1 text-start text-sm">
-        {{ '请选择您要登录的医院' }}
+        {{ '请选择您要登录的租户' }}
       </p>
     </div>
 
     <div class="mb-4 w-full flex-shrink-0">
       <Input
         v-model="searchKeyword"
-        :placeholder="$t('common.search') || '搜索医院名称、代码...'"
+        :placeholder="$t('common.search') || '搜索租户名称、代码...'"
         class="w-full"
       />
     </div>
@@ -117,7 +117,7 @@ function handleSelectTenant(tenant: Tenant) {
       class="flex-center flex flex-1 items-center justify-center"
     >
       <div class="text-muted-foreground text-center text-sm">
-        {{ searchKeyword ? '未找到匹配的医院' : $t('page.auth.noTenant') || '暂无租户' }}
+        {{ searchKeyword ? '未找到匹配的租户' : $t('page.auth.noTenant') || '暂无租户' }}
       </div>
     </div>
 

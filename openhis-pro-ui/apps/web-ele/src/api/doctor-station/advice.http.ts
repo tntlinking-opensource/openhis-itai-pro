@@ -6,6 +6,7 @@ export const httpInitDoctorStationAdvice = outpatientAdviceHttp.httpInitDoctorSt
 export const httpComputeMedicationFrequencyExecutions =
   outpatientAdviceHttp.httpComputeMedicationFrequencyExecutions;
 export const httpListDoctorStationAdvice = outpatientAdviceHttp.httpListDoctorStationAdvice;
+export const httpPageDoctorStationAdvice = outpatientAdviceHttp.httpPageDoctorStationAdvice;
 export const httpPageDoctorStationAdviceCatalog =
   outpatientAdviceHttp.httpPageDoctorStationAdviceCatalog;
 export const httpGetDoctorStationAdviceOrderBindInfo =
@@ -22,3 +23,9 @@ export const httpUpdateDoctorStationMedicationAdviceGroups =
   outpatientAdviceHttp.httpUpdateDoctorStationMedicationAdviceGroups;
 export const httpListActivityExecutionLocations =
   outpatientAdviceHttp.httpListActivityExecutionLocations;
+export const httpListDoctorStationServiceApplyForms =
+  outpatientAdviceHttp.httpListDoctorStationServiceApplyForms;
+export const httpSaveDoctorStationServiceApplyForm =
+  outpatientAdviceHttp.httpSaveDoctorStationServiceApplyForm;
+export const httpPageEncounterMedicationPrescriptionSlips =
+  outpatientAdviceHttp.httpPageEncounterMedicationPrescriptionSlips;

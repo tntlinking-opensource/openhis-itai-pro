@@ -1,6 +1,7 @@
 import type { ApiOptionItem } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
+import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
 export interface ChargeType {
   id: string;
@@ -48,6 +49,6 @@ export async function updateChargeTypeApi(data: CreateChargeTypeParams & { id: s
   return publicRequestClient.post('/chargeType/updateChargeType', data);
 }
 
-export async function deleteChargeTypeApi(value: string) {
-  return publicRequestClient.post('/chargeType/deleteChargeType', { value });
+export async function deleteChargeTypeApi(id: number | string) {
+  return publicRequestClient.post('/chargeType/deleteChargeType', preserveApiIdForRequest(id));
 }

@@ -7,7 +7,10 @@ import type {
 
 import type { DoctorStationDiagnosisHttpClient } from '#/api/doctor-station/diagnosis-api-client';
 import { createDoctorStationDiagnosisHttpClient } from '#/api/doctor-station/diagnosis-api-client';
+import { httpDeleteTcmDiagnosisGroup } from '#/api/doctor-station/tcm.http';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+
+import { mergeEncounterDiagnosisListForDisplay } from './merge-encounter-diagnosis-display';
 
 /** 诊断接口作用域：门诊医生站 / 住院医生站 */
 export type DoctorStationDiagnosisScope = 'inpatient' | 'outpatient';
@@ -48,6 +51,7 @@ export async function fetchEncounterDiagnosisTabData(
     enc.diagnosisList ?? enc.content ?? (parsedRows.content.length > 0 ? parsedRows.content : []);
   return {
     diagnosisList,
+    displayDiagnosisList: mergeEncounterDiagnosisListForDisplay(diagnosisList),
     businessClass: biz,
   };
 }
@@ -99,4 +103,17 @@ export async function deleteEncounterDiagnosisRow(
 ): Promise<void> {
   const http = resolveDiagnosisHttp(scope);
   await http.httpDelEncounterDiagnosis({ conditionId, encounterId });
+}
+
+/** 删除中医病证组（整组病+证） */
+export async function deleteTcmDiagnosisGroupRow(
+  encounterId: string,
+  patientId: string,
+  tcmSyndromeGroup: string,
+): Promise<void> {
+  await httpDeleteTcmDiagnosisGroup({
+    encounterId,
+    patientId,
+    tcmSyndromeGroup,
+  });
 }

@@ -1,10 +1,16 @@
+import type { AdviceDrugItem, AdviceProductOption } from './advice.types';
+
 import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 
-import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
+import {
+  mapEncounterRowToDiagnosisItem,
+  pickMainDiagnosisDisplayName,
+  resolveConditionDefinitionIdFromEncounterRows,
+  resolveEncounterDiagnosisIdFromEncounterRows,
+} from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
 
-import type { AdviceDrugItem, AdviceProductOption } from './advice.types';
-import { firstTerminologyCode } from './advice-format';
+import { defaultContractSelection, firstTerminologyCode, terminologyLabel } from './advice-format';
 import {
   defaultTotalAmountUnitCode,
   doseConvertRatioSplitToDose,
@@ -23,7 +29,7 @@ export interface WesternProductSelectPatchOptions {
 }
 
 export interface CreateAdviceDrugItemContext {
-  defaultFeeNature: string;
+  feeNatureOptions: TerminologyOptionDto[];
   medicationRateOptions: TerminologyOptionDto[];
   medicationRouteOptions: TerminologyOptionDto[];
 }
@@ -54,14 +60,25 @@ export function createAdviceDrugItem(
     return Number.isFinite(x) ? x : undefined;
   }
 
+  const contractFromSeed = String(seed?.contractId ?? '').trim();
   const feeFromSeed = String(seed?.feeNature ?? '').trim();
-  const feeDefault = String(ctx.defaultFeeNature ?? '').trim();
+  let contractId = contractFromSeed;
+  let feeNature = feeFromSeed;
+  if (!contractId) {
+    const def = defaultContractSelection(ctx.feeNatureOptions);
+    contractId = def.contractId;
+    feeNature = def.feeNature;
+  } else if (!feeNature) {
+    const label = terminologyLabel(ctx.feeNatureOptions, contractId);
+    feeNature = label === '—' ? contractId : label;
+  }
 
   return {
     orderType: String(seed?.orderType ?? '').trim(),
     selectedId: seed?.selectedId || '',
     diagnosis: seed?.diagnosis || '',
-    feeNature: feeFromSeed || feeDefault,
+    contractId: contractId || undefined,
+    feeNature,
     skinTest: seed?.skinTest || false,
     pharmacy: String(seed?.pharmacy ?? '').trim(),
     singleDose: numFromSeed('singleDose'),
@@ -96,11 +113,11 @@ export function createAdviceDrugItem(
     })(),
     groupId: (() => {
       const g = String(s?.groupId ?? '').trim();
-      return g !== '' ? g : undefined;
+      return g === '' ? undefined : g;
     })(),
     performOrgId: (() => {
       const x = String(s?.performOrgId ?? '').trim();
-      return x !== '' ? x : undefined;
+      return x === '' ? undefined : x;
     })(),
     performOrgName: String(s?.performOrgName ?? '').trim() || undefined,
   };
@@ -207,14 +224,12 @@ export function inferDoseBandConvertK(row: AdviceDrugItem): AdviceDrugItem {
   return row;
 }
 
-export function pickMainDiagnosisDisplayName(rows: EncounterDiagnosisRowDto[]): string {
-  const named = rows.filter((r) => (r.conditionDefinitionName ?? '').trim());
-  if (named.length === 0) return '';
-  const mains = named.filter((r) => Number(r.mainDiagnosisFlag) === 1);
-  const pool = mains.length > 0 ? mains : named;
-  pool.sort((a, b) => Number(a.diagnosisSortNo ?? 0) - Number(b.diagnosisSortNo ?? 0));
-  return String(pool[0]?.conditionDefinitionName ?? '').trim();
-}
+export {
+  mapEncounterRowToDiagnosisItem,
+  pickMainDiagnosisDisplayName,
+  resolveConditionDefinitionIdFromEncounterRows,
+  resolveEncounterDiagnosisIdFromEncounterRows,
+};
 
 /** 药品行诊断展示名：保留已选，否则回落就诊主诊断。 */
 export function resolveDefaultDrugRowDiagnosisName(
@@ -226,34 +241,34 @@ export function resolveDefaultDrugRowDiagnosisName(
   return pickMainDiagnosisDisplayName(encounterRows);
 }
 
-export function resolveConditionDefinitionIdFromEncounterRows(
+/** 组包药品草稿：优先按行诊断名匹配，再回落就诊诊断快照 / 主诊断 / 唯一诊断。 */
+export function resolveMedicationEncounterDiagnosisId(
   diagnosisName: string,
-  encounterRows: EncounterDiagnosisRowDto[],
+  encounterRows: EncounterDiagnosisRowDto[] = [],
 ): string | undefined {
-  const name = diagnosisName.trim();
-  if (!name || encounterRows.length === 0) return undefined;
-  const hit = encounterRows.find((r) => (r.conditionDefinitionName ?? '').trim() === name);
-  const did = String(hit?.conditionDefinitionId ?? '').trim();
-  return did || undefined;
+  const name = String(diagnosisName ?? '').trim();
+  if (name) {
+    const fromEncounter = resolveEncounterDiagnosisIdFromEncounterRows(name, encounterRows);
+    if (fromEncounter) return fromEncounter;
+  }
+
+  const mainName = pickMainDiagnosisDisplayName(encounterRows);
+  if (mainName) {
+    const mainFromEncounter = resolveEncounterDiagnosisIdFromEncounterRows(mainName, encounterRows);
+    if (mainFromEncounter) return mainFromEncounter;
+  }
+
+  if (encounterRows.length === 1) {
+    const only = String(encounterRows[0]?.encounterDiagnosisId ?? '').trim();
+    if (only) return only;
+  }
+  return undefined;
 }
 
-export function mapEncounterRowToDiagnosisItem(
-  row: EncounterDiagnosisRowDto,
-): DiagnosisItem | null {
-  const name = (row.conditionDefinitionName ?? '').trim();
-  if (!name) return null;
-  const id =
-    (row.encounterDiagnosisId ?? row.conditionId ?? row.conditionDefinitionId ?? '').trim() ||
-    `${(row.conditionCode ?? '').trim()}-${name}`;
-  const code = (row.conditionCode ?? '').trim();
-  const mtRaw = String(row.medicineType ?? 'WESTERN').toUpperCase();
-  const medicineType = mtRaw === 'TCM' ? 'tcm' : 'western';
-  const conditionDefinitionId = (row.conditionDefinitionId ?? '').trim() || undefined;
-  return {
-    id: id || `${code}-${name}`,
-    code,
-    name,
-    medicineType,
-    ...(conditionDefinitionId ? { conditionDefinitionId } : {}),
-  };
+/** 从编辑行解析合同主键（落库 contract_id）。 */
+export function resolveMedicationContractId(
+  item: Pick<AdviceDrugItem, 'contractId'>,
+): string | undefined {
+  const explicit = String(item.contractId ?? '').trim();
+  return explicit || undefined;
 }

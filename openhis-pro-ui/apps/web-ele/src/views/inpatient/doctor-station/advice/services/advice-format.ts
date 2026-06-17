@@ -44,3 +44,27 @@ export function terminologyLabel(
   const lb = String(hit?.label ?? '').trim();
   return lb || c;
 }
+
+export function defaultContractSelection(options: TerminologyOptionDto[] | undefined): {
+  contractId: string;
+  feeNature: string;
+} {
+  const contractId = firstTerminologyCode(options);
+  const label = terminologyLabel(options, contractId);
+  return {
+    contractId,
+    feeNature: label === '—' ? '' : label,
+  };
+}
+
+export function contractSelectionFromValue(
+  contractId: string,
+  options: TerminologyOptionDto[] | undefined,
+): { contractId: string; feeNature: string } {
+  const id = String(contractId ?? '').trim();
+  const label = terminologyLabel(options, id);
+  return {
+    contractId: id,
+    feeNature: label === '—' ? id : label,
+  };
+}

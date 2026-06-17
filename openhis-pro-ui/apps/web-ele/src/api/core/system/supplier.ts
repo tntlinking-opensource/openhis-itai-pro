@@ -17,11 +17,16 @@ export interface Supplier {
   id: number | string;
   busNo: string;
   name: string;
-  typeEnum: number;
+  typeEnum: number | string;
   address?: string;
   phone?: string;
   email?: string;
-  activeFlag: boolean | number;
+  /** 状态编码，与后端 SupplierStatus#getCode() 一致 */
+  statusEnum?: string;
+  statusEnum_enumText?: string;
+  orgId?: number | string;
+  pyStr?: string;
+  wbStr?: string;
   [key: string]: unknown;
 }
 

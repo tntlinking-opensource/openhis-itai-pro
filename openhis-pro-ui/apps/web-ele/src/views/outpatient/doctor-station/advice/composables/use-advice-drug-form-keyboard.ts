@@ -1,6 +1,6 @@
-import type { FormKeyboardNavigationContext } from '#/hooks/use-form-keyboard-navigation';
-
 import type { Ref } from 'vue';
+
+import type { FormKeyboardNavigationContext } from '#/hooks/use-form-keyboard-navigation';
 
 import { ElButton } from 'element-plus';
 

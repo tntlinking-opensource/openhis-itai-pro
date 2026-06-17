@@ -1,6 +1,7 @@
+import type { AdviceDrugItem, AdviceRowItem } from './advice.types';
+
 import type { DoctorStationAdviceResourceKeyDto } from '#/api/doctor-station/advice.types';
 
-import type { AdviceDrugItem, AdviceRowItem } from './advice.types';
 import { ADVICE_ROW_PRODUCT_TABLE_FALLBACK } from './advice-tab.constants';
 
 /** 复合 selectedId：`{productTableName}:{definitionId}` */
@@ -16,7 +17,7 @@ export function parseProductTableNameFromSelectedId(selectedId: string): string 
 export function parseColonDefinitionId(selectedId: string): string | undefined {
   const s = String(selectedId || '').trim();
   const idx = s.indexOf(':');
-  if (idx < 0 || idx >= s.length - 1) return undefined;
+  if (idx === -1 || idx >= s.length - 1) return undefined;
   const id = s.slice(idx + 1).trim();
   return id || undefined;
 }
@@ -46,7 +47,7 @@ function validateWesternMedicationLineItem(item: AdviceDrugItem): boolean {
   return Boolean(
     item.selectedId &&
       item.diagnosis &&
-      item.feeNature &&
+      item.contractId &&
       item.usage &&
       item.frequency &&
       Number(item.singleDose) > 0 &&

@@ -1,7 +1,8 @@
+import type { WesternProductSelectPatchOptions } from './advice-edit';
+import type { AdviceDrugItem, AdviceProductOption, AdviceRowItem } from './advice.types';
+
 import type { PrepickedProductKeyDto } from '#/api/doctor-station/advice.types';
 
-import type { AdviceDrugItem, AdviceProductOption, AdviceRowItem } from './advice.types';
-import type { WesternProductSelectPatchOptions } from './advice-edit';
 import { buildWesternProductSelectPatch } from './advice-edit';
 import {
   hydrateAdviceRowDoseFromBackend,
@@ -14,7 +15,7 @@ type AdviceDrugItemSeed = Partial<AdviceDrugItem> & {
 };
 
 /** 列表行 → 目录 prepicked 键 */
-export function prepickedKeyFromListRow(row: AdviceRowItem): PrepickedProductKeyDto | null {
+export function prepickedKeyFromListRow(row: AdviceRowItem): null | PrepickedProductKeyDto {
   const productDefinitionId = String(row.productDefinitionId ?? '').trim();
   const productTableName = String(row.productTableName ?? '').trim();
   if (!productDefinitionId || !productTableName) return null;
@@ -33,14 +34,17 @@ function positiveInt(raw: unknown): number | undefined {
 }
 
 /** 列表行结构化字段 → 编辑卡种子（不含目录 unitBands） */
-export function buildAdviceDrugItemSeedFromListRow(row: AdviceRowItem): AdviceDrugItemSeed {
+export function buildAdviceDrugItemSeedFromListRow(
+  row: AdviceRowItem,
+  options?: { reuseAsNew?: boolean },
+): AdviceDrugItemSeed {
   const defId = String(row.productDefinitionId ?? '').trim();
   const tbl = String(row.productTableName ?? '').trim();
   const selectedId = defId && tbl ? `${tbl}:${defId}` : `fallback-${row.key}`;
   const rt = String(row.resourceType ?? '')
     .trim()
     .toUpperCase();
-  const isService = rt === 'SERVICE';
+  const isService = rt === 'SERVICE' || tbl.toLowerCase() === 'wkf_activity_definition';
   const qty = row.listQuantity;
   const unitCode = String(row.listUnitCode ?? '').trim();
   const diagnosisRaw = String(row.conditionDefinitionName ?? row.diagnosisSummary ?? '').trim();
@@ -65,13 +69,18 @@ export function buildAdviceDrugItemSeedFromListRow(row: AdviceRowItem): AdviceDr
     sortNumber: row.sortNumber,
     groupId: String(row.groupId ?? '').trim() || undefined,
     therapyEnum: String(row.therapyTypeCode ?? '').trim() || undefined,
-    medicationRequestId: String(row.requestId ?? '').trim() || undefined,
+    medicationRequestId: options?.reuseAsNew
+      ? undefined
+      : String(row.requestId ?? '').trim() || undefined,
     listDose: row.listDose,
     listDoseUnitCode: row.listDoseUnitCode,
     ...(isService
       ? {
-          serviceQuantity: qty,
+          serviceQuantity: qty ?? 1,
+          totalAmount: positiveInt(row.listExecutionCount) ?? 1,
           totalAmountUnit: unitCode || '次',
+          performOrgId: String(row.performOrgId ?? '').trim() || undefined,
+          performOrgName: String(row.performOrgName ?? '').trim() || undefined,
         }
       : {
           totalAmount: qty,
@@ -121,9 +130,15 @@ export function mergeCatalogIntoAdviceDrugItemForEdit(
   };
 
   if (tbl === 'wkf_activity_definition') {
+    const performOrgId =
+      String(seed.performOrgId ?? catalog.defaultPerformOrgId ?? '').trim() || undefined;
+    const performOrgName =
+      String(seed.performOrgName ?? catalog.defaultPerformOrgName ?? '').trim() || undefined;
     return {
       ...base,
       ...preserved,
+      performOrgId,
+      performOrgName,
       selectedDrugPrice: catalog.price ?? seed.selectedDrugPrice ?? '',
     };
   }

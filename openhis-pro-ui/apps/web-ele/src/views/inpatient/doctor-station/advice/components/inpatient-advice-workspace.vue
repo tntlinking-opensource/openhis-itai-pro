@@ -21,7 +21,6 @@ defineOptions({ name: 'InpatientDoctorStationAdviceWorkspace' });
 const props = withDefaults(defineProps<UseInpatientAdviceTabProps>(), {
   encounterId: '',
   patientId: '',
-  patientServiceTypeName: '',
 });
 
 const emit = defineEmits<{
@@ -34,7 +33,7 @@ const {
   adviceWorkspaceTableLoading,
   addDrugGuardWestern,
   calcDrugLineTotalFee,
-  defaultFeeNatureFromPatient,
+  feeNatureOptions,
   editorForm,
   editorInitialGroup,
   editorOpening,
@@ -140,7 +139,7 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
               v-loading="editorOpening"
               v-model="editorForm"
               v-model:patient-diagnoses="editorPatientDiagnoses"
-              :default-fee-nature="defaultFeeNatureFromPatient"
+              :fee-nature-options="feeNatureOptions"
               :encounter-id="encounterId"
               :medication-rate-options="medicationRateOptions"
               :medication-route-options="medicationRouteOptions"
@@ -160,6 +159,7 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
               <template #detail="scope">
                 <WesternAdviceDetailForm
                   :item="scope.item"
+                  :fee-nature-options="feeNatureOptions"
                   :medication-rate-options="medicationRateOptions"
                   :medication-route-options="medicationRouteOptions"
                   :patient-diagnoses="scope.patientDiagnoses"
@@ -229,7 +229,7 @@ function handleQuickAction(action: InpatientAdviceQuickAction) {
       append-to-body
     >
       <div class="h-[78vh] min-h-[560px]">
-        <TcmAdvice />
+        <TcmAdvice :encounter-id="encounterId" :patient-id="patientId" />
       </div>
     </AppDialog>
   </div>

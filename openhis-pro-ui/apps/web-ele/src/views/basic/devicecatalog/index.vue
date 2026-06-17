@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn, TreeNodeData } from '@vben-core/table-layout-ui';
+import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 
 import type { DeviceCatalogInitResponse, DeviceCatalogItem } from '#/api';
 
@@ -25,7 +25,6 @@ import DeviceCatalogEditDialog from './[id]/index.vue';
 function isDevicePublicationActive(row: DeviceCatalogItem): boolean {
   const status = row.statusEnum;
   if (
-    status === PublicationStatusCode.RETIRED ||
     status === PublicationStatusCode.INACTIVE ||
     status === PublicationStatusCode.DISCARDED ||
     status === 3 ||
@@ -46,8 +45,8 @@ const queryParams = ref({
   pageNo: 1,
   pageSize: 50,
   keyword: '',
-  /** 耗材类型侧栏筛选；空字符串表示「全部」，与药品 categoryCode 约定一致 */
-  typeCode: '',
+  /** 耗材分类筛选；空字符串表示「全部」 */
+  categoryCode: '',
 });
 
 const tableData = ref<DeviceCatalogItem[]>([]);
@@ -56,50 +55,44 @@ const total = ref(0);
 const selectedRows = ref<DeviceCatalogItem[]>([]);
 const tableLayoutRef = ref<InstanceType<typeof TableLayout> | null>(null);
 
-const sideQueryLoading = ref(false);
 const initOptions = ref<DeviceCatalogInitResponse>({} as DeviceCatalogInitResponse);
 const catalogEditOpen = ref(false);
 const catalogEditId = ref<string>('');
 
-const convertOptionsToTree = (
-  options:
-    | Array<{
-        children?: unknown[];
-        info?: string;
-        label?: string;
-        name?: string;
-        text?: string;
-        value: number | string;
-      }>
-    | null
-    | undefined,
-): TreeNodeData[] => {
+interface CategoryOptionItem {
+  children?: CategoryOptionItem[];
+  info?: string;
+  label?: string;
+  name?: string;
+  text?: string;
+  value: number | string;
+}
+
+/** 将树形分类选项展平为下拉框选项（保留层级缩进） */
+function flattenCategorySelectOptions(
+  options: CategoryOptionItem[] | null | undefined,
+  depth = 0,
+): Array<{ label: string; value: string }> {
   if (!options || !Array.isArray(options)) {
     return [];
   }
-  return options.map((item) => ({
-    id: item.value,
-    label: item.label || item.info || item.text || item.name || String(item.value),
-    value: item.value,
-    children: item.children ? convertOptionsToTree(item.children as typeof options) : undefined,
-  }));
-};
+  const prefix = depth > 0 ? `${'　'.repeat(depth)}` : '';
+  const result: Array<{ label: string; value: string }> = [];
+  for (const item of options) {
+    const label = item.label || item.info || item.text || item.name || String(item.value);
+    result.push({ label: `${prefix}${label}`, value: String(item.value) });
+    if (item.children?.length) {
+      result.push(...flattenCategorySelectOptions(item.children, depth + 1));
+    }
+  }
+  return result;
+}
 
-/** 耗材类型树（与药品侧 medicationCategoryCodeOptions → siderData 同源思路） */
-const siderData = computed(() => {
-  const options = initOptions.value?.equipmentTypes as
-    | Array<{
-        children?: unknown[];
-        info?: string;
-        label?: string;
-        name?: string;
-        text?: string;
-        value: number | string;
-      }>
-    | null
-    | undefined;
-  return convertOptionsToTree(options);
-});
+const categoryCodeOptions = computed(() =>
+  flattenCategorySelectOptions(
+    initOptions.value?.deviceCategories as CategoryOptionItem[] | undefined,
+  ),
+);
 
 const tableColumns: TableColumn[] = [
   {
@@ -118,64 +111,19 @@ const tableColumns: TableColumn[] = [
     prop: 'busNo',
     label: '编码',
     width: 150,
-    align: 'center',
     showOverflowTooltip: true,
   },
   {
     prop: 'name',
-    label: '耗材名称',
-    width: 100,
-    align: 'center',
+    label: '项目名',
+    minWidth: 160,
     showOverflowTooltip: true,
     slot: 'name',
   },
   {
-    prop: 'size',
-    label: '包装规格',
-    width: 100,
-    align: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'categoryCode_dictText',
-    label: '耗材分类',
-    width: 100,
-    align: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'unitCode_dictText',
-    label: '采购单位',
-    width: 100,
-    align: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'minUnitCode_dictText',
-    label: '最小使用单位',
-    width: 100,
-    align: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'packageUnitCode_dictText',
-    label: '包装单位',
-    width: 100,
-    align: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'ybNo',
-    label: '医保编码',
-    width: 110,
-    align: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'ybOrgNo',
-    label: '医药机构目录编码',
-    width: 130,
-    align: 'center',
+    prop: 'specification',
+    label: '规格',
+    width: 120,
     showOverflowTooltip: true,
   },
   {
@@ -186,44 +134,47 @@ const tableColumns: TableColumn[] = [
     slot: 'statusEnum',
   },
   {
+    prop: 'categoryCode_dictText',
+    label: '分类',
+    width: 120,
+    showOverflowTooltip: true,
+  },
+  {
     prop: 'manufacturerText',
     label: '生产厂家',
-    width: 200,
-    align: 'center',
+    minWidth: 160,
     showOverflowTooltip: true,
   },
   {
     prop: 'retailPrice',
-    label: '售价',
-    width: 90,
-    align: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'itemTypeCode_dictText',
-    label: '财务类别',
-    width: 90,
-    align: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'hvcmFlag_enumText',
-    label: '高值耗材标志',
+    label: '价格',
     width: 120,
-    align: 'center',
-    showOverflowTooltip: true,
+    align: 'right',
+    headerAlign: 'right',
+    slot: 'retailPrice',
   },
   {
     prop: 'action',
     label: '操作',
     fixed: 'right',
     slot: 'action',
-    width: 150,
+    width: 200,
     align: 'center',
+    headerAlign: 'center',
   },
 ];
 
-const formItems: FormItemConfig[] = [
+function formatRetailPriceWithUnit(price: unknown, unitText: unknown): string {
+  if (price === null || price === undefined || price === '') {
+    return '';
+  }
+  const num = Number(price);
+  const formatted = Number.isFinite(num) ? num.toFixed(2) : String(price);
+  const unit = typeof unitText === 'string' && unitText.trim() ? unitText.trim() : '';
+  return unit ? `${formatted}/${unit}` : formatted;
+}
+
+const formItems = computed<FormItemConfig[]>(() => [
   {
     type: 'input',
     prop: 'keyword',
@@ -231,9 +182,18 @@ const formItems: FormItemConfig[] = [
     placeholder: '请输入耗材名称或编码',
     clearable: true,
   },
-];
+  {
+    type: 'select',
+    prop: 'categoryCode',
+    label: '耗材分类',
+    placeholder: '请选择耗材分类',
+    clearable: true,
+    filterable: true,
+    options: categoryCodeOptions.value,
+  },
+]);
 
-function normalizeTypeCodeForApi(raw: unknown): string | undefined {
+function normalizeCategoryCodeForApi(raw: unknown): string | undefined {
   if (raw === undefined || raw === null) {
     return undefined;
   }
@@ -244,10 +204,10 @@ function normalizeTypeCodeForApi(raw: unknown): string | undefined {
 const handleQuery = async (params: Record<string, unknown>) => {
   loading.value = true;
   try {
-    const mergedTypeRaw =
-      typeof params.typeCode === 'string' && params.typeCode
-        ? params.typeCode
-        : queryParams.value.typeCode || '';
+    const mergedCategoryRaw =
+      typeof params.categoryCode === 'string' && params.categoryCode
+        ? params.categoryCode
+        : queryParams.value.categoryCode || '';
     const response = await pageDeviceCatalogApi({
       pageNo: typeof params.pageNo === 'number' ? params.pageNo : queryParams.value.pageNo,
       pageSize: typeof params.pageSize === 'number' ? params.pageSize : queryParams.value.pageSize,
@@ -255,7 +215,7 @@ const handleQuery = async (params: Record<string, unknown>) => {
         typeof params.keyword === 'string' && params.keyword
           ? params.keyword
           : queryParams.value.keyword || undefined,
-      typeCode: normalizeTypeCodeForApi(mergedTypeRaw),
+      categoryCode: normalizeCategoryCodeForApi(mergedCategoryRaw),
     });
 
     const responseData = response.data;
@@ -281,7 +241,7 @@ const handleReset = () => {
     pageNo: 1,
     pageSize: 50,
     keyword: '',
-    typeCode: '',
+    categoryCode: '',
   };
   handleQuery(queryParams.value);
 };
@@ -297,31 +257,6 @@ const handleSelectionChange = (selection: DeviceCatalogItem[]) => {
 };
 
 const handleSortChange = (_sortInfo: { column: unknown; order: string; prop: string }) => {};
-
-const handleSideQuery = (node: TreeNodeData) => {
-  queryParams.value.typeCode =
-    !node || node.id === '__ALL__' ? '' : String(node.value ?? node.id ?? '');
-  queryParams.value.pageNo = 1;
-  handleQuery(queryParams.value);
-};
-
-const handleRefreshSideQuery = async () => {
-  sideQueryLoading.value = true;
-  try {
-    const res = await initDeviceCatalogApi();
-    const data: DeviceCatalogInitResponse =
-      ((res as unknown as { data?: DeviceCatalogInitResponse })
-        ?.data as DeviceCatalogInitResponse) ||
-      (res as unknown as DeviceCatalogInitResponse) ||
-      ({} as DeviceCatalogInitResponse);
-    initOptions.value = data;
-  } catch (error) {
-    console.error('刷新耗材类型失败:', error);
-    ElMessage.error('刷新失败，请稍后重试');
-  } finally {
-    sideQueryLoading.value = false;
-  }
-};
 
 function openCatalogEditor(id: string) {
   catalogEditId.value = id;
@@ -496,10 +431,7 @@ initPage();
       :form-items="formItems"
       :table-columns="tableColumns"
       :show-top-query="true"
-      :show-side-query="true"
       :show-pagination="true"
-      :sider-data="siderData"
-      :side-query-loading="sideQueryLoading"
       row-key="id"
       border
       stripe
@@ -509,13 +441,7 @@ initPage();
       @pagination="handlePagination"
       @selection-change="handleSelectionChange"
       @sort-change="handleSortChange"
-      @side-query="handleSideQuery"
-      @refresh-side-query="handleRefreshSideQuery"
     >
-      <template #side-header>
-        <div class="text-muted-foreground px-1 text-sm font-medium">耗材类型</div>
-      </template>
-
       <template #toolbar-actions>
         <ElButton type="primary" @click="handleAdd">新增</ElButton>
         <ElButton type="success" @click="handleEnable">批量启用</ElButton>
@@ -537,18 +463,24 @@ initPage();
         <StatusEnumTag :status-enum="row.statusEnum" :status-text="row.statusEnum_enumText" />
       </template>
 
+      <template #retailPrice="{ row }">
+        {{ formatRetailPriceWithUnit(row.retailPrice, row.packageUnitCode_dictText) }}
+      </template>
+
       <template #action="{ row }">
-        <ElButton type="primary" link @click="handleRowClick(row)"> 编辑 </ElButton>
-        <ElButton
-          v-if="!isDevicePublicationActive(row)"
-          type="success"
-          link
-          @click="handleStart(row)"
-        >
-          启用
-        </ElButton>
-        <ElButton v-else type="warning" link @click="handleStop(row)"> 停用 </ElButton>
-        <ElButton type="danger" link @click="handleRowDelete(row)"> 删除 </ElButton>
+        <div class="flex items-center justify-center gap-1">
+          <ElButton type="primary" link @click="handleRowClick(row)">编辑</ElButton>
+          <ElButton
+            v-if="!isDevicePublicationActive(row)"
+            type="success"
+            link
+            @click="handleStart(row)"
+          >
+            启用
+          </ElButton>
+          <ElButton v-else type="warning" link @click="handleStop(row)">停用</ElButton>
+          <ElButton type="danger" link @click="handleRowDelete(row)">删除</ElButton>
+        </div>
       </template>
     </TableLayout>
 

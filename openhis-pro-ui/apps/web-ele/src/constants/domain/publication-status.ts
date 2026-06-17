@@ -5,7 +5,6 @@ export const PublicationStatusCode = {
   DRAFT: 'DRAFT',
   ACTIVE: 'ACTIVE',
   INACTIVE: 'INACTIVE',
-  RETIRED: 'RETIRED',
   DISCARDED: 'DISCARDED',
 } as const;
 

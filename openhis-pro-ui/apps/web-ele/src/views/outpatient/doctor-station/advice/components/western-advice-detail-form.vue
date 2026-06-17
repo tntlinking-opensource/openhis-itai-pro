@@ -1,45 +1,61 @@
 <script setup lang="ts">
-import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
-
-import type { DiagnosisConfirmPayload, DiagnosisItem } from '#/components/doctor-station/diagnosis';
 import type { AdviceDrugItem, AdviceDrugPatchPayload } from '../services/advice.types';
+
+import type { TerminologyOptionDto } from '#/api/doctor-station/advice.types';
+import type { DiagnosisConfirmPayload, DiagnosisItem } from '#/components/doctor-station/diagnosis';
 
 import { ref } from 'vue';
 
 import { ElButton, ElCheckbox, ElInputNumber, ElMessage, ElOption, ElSelect } from 'element-plus';
 
 import { DiagnosisPickerDialog } from '#/components/doctor-station/diagnosis';
-import { formatMoneyStrYuan, formatUnitPriceYuan } from '../services/advice-format';
+
+import {
+  contractSelectionFromValue,
+  formatMoneyStrYuan,
+  formatUnitPriceYuan,
+} from '../services/advice-format';
 import {
   convertTotalAmountWhenUnitChanges,
   resolveAdviceLineUnitPrice,
   totalUnitSelectOptions,
 } from '../services/medication-unit-bands';
 
+defineOptions({ name: 'WesternAdviceDetailForm' });
+
 const props = withDefaults(
   defineProps<{
+    calcTotalFee: (item: AdviceDrugItem) => string;
+    /** init 返回的费用性质（合同）下拉 */
+    feeNatureOptions?: TerminologyOptionDto[];
     item: AdviceDrugItem;
     /** IF-DOR-18 频次选项（与父级 `initDoctorStationAdvice` 一致） */
     medicationRateOptions?: TerminologyOptionDto[];
     /** IF-DOR-18 用法选项 */
     medicationRouteOptions?: TerminologyOptionDto[];
     patientDiagnoses: DiagnosisItem[];
-    calcTotalFee: (item: AdviceDrugItem) => string;
   }>(),
   {
     medicationRateOptions: () => [],
     medicationRouteOptions: () => [],
+    feeNatureOptions: () => [],
   },
 );
 
 const emit = defineEmits<{
-  'update:patientDiagnoses': [value: DiagnosisItem[]];
   patch: [payload: AdviceDrugPatchPayload];
+  'update:patientDiagnoses': [value: DiagnosisItem[]];
 }>();
 
 const patch = <K extends keyof AdviceDrugItem>(key: K, value: AdviceDrugItem[K]) => {
   emit('patch', { key, value });
 };
+
+function patchContract(contractId: string) {
+  const sel = contractSelectionFromValue(contractId, props.feeNatureOptions);
+  patch('contractId', sel.contractId);
+  patch('feeNature', sel.feeNature);
+}
 
 function handleTotalAmountUnitChange(value: unknown) {
   const nu = String(value ?? '').trim();
@@ -162,12 +178,16 @@ function handleDiagnosisDialogVisibleChange(visible: boolean) {
       <div class="field-item">
         <span class="meta-label">费用性质</span>
         <ElSelect
-          :model-value="item.feeNature"
+          :model-value="item.contractId"
           placeholder="请选择"
-          @update:model-value="(value: unknown) => patch('feeNature', String(value || ''))"
+          @update:model-value="(value: unknown) => patchContract(String(value || ''))"
         >
-          <ElOption label="自费" value="自费" />
-          <ElOption label="医保" value="医保" />
+          <ElOption
+            v-for="opt in feeNatureOptions"
+            :key="String(opt.value ?? '')"
+            :label="String(opt.label ?? opt.value ?? '')"
+            :value="String(opt.value ?? '')"
+          />
         </ElSelect>
       </div>
       <div class="field-item skin-test-item">
