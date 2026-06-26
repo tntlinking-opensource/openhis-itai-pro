@@ -3,7 +3,7 @@
   <groupId>com.openhis</groupId>
   <artifactId>whale-permission</artifactId>
   <versioning>
-    <lastUpdated>20260626102451</lastUpdated>
+    <lastUpdated>20260626112114</lastUpdated>
     <snapshot>
       <localCopy>true</localCopy>
     </snapshot>
@@ -11,12 +11,12 @@
       <snapshotVersion>
         <extension>jar</extension>
         <value>2.0.2-SNAPSHOT</value>
-        <updated>20260626102451</updated>
+        <updated>20260626112114</updated>
       </snapshotVersion>
       <snapshotVersion>
         <extension>pom</extension>
         <value>2.0.2-SNAPSHOT</value>
-        <updated>20260626102451</updated>
+        <updated>20260626112114</updated>
       </snapshotVersion>
     </snapshotVersions>
   </versioning>

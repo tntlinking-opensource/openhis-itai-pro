@@ -1899,6 +1899,7 @@ WHERE NOT EXISTS (
 -- Whale Report V4：种子后处理（表头 lines 规范化、默认租户复制、状态兜底）
 
 -- 表头 JSON 升级为 lines[] 动态行（兼容旧 leftText/rightText）
+UPDATE rpt_definition
 SET header_json = jsonb_build_object(
         'title', COALESCE(header_json::jsonb ->> 'title', name),
         'subtitle', COALESCE(header_json::jsonb ->> 'subtitle', '{{dateRange}}'),

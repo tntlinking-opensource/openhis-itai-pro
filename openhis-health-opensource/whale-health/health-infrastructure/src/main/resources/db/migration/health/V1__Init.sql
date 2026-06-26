@@ -71,330 +71,6 @@ COMMENT ON COLUMN whale_users.deleted_by IS '删除人';
 COMMENT ON COLUMN whale_users.ukey_id IS 'UKey 标识';
 COMMENT ON COLUMN whale_users.ukey_src_id IS 'UKey 来源标识';
 
-COMMENT ON TABLE whale_roles IS '系统角色';
-COMMENT ON COLUMN whale_roles.id IS '主键';
-COMMENT ON COLUMN whale_roles.name IS '角色名称（唯一）';
-COMMENT ON COLUMN whale_roles.display_name IS '显示名称';
-COMMENT ON COLUMN whale_roles.code IS '角色编码';
-COMMENT ON COLUMN whale_roles.description IS '描述';
-COMMENT ON COLUMN whale_roles.is_default IS '是否默认角色';
-COMMENT ON COLUMN whale_roles.is_static IS '是否静态角色（不可删）';
-COMMENT ON COLUMN whale_roles.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_roles.created_at IS '创建时间';
-COMMENT ON COLUMN whale_roles.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_roles.created_by IS '创建人';
-COMMENT ON COLUMN whale_roles.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_roles.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_roles.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_roles.deleted_by IS '删除人';
-
-COMMENT ON TABLE whale_user_roles IS '用户角色关联';
-COMMENT ON COLUMN whale_user_roles.id IS '主键';
-COMMENT ON COLUMN whale_user_roles.user_id IS '用户标识';
-COMMENT ON COLUMN whale_user_roles.role_id IS '角色标识';
-COMMENT ON COLUMN whale_user_roles.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_user_roles.created_at IS '创建时间';
-COMMENT ON COLUMN whale_user_roles.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_user_roles.created_by IS '创建人';
-COMMENT ON COLUMN whale_user_roles.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_user_roles.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_user_roles.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_user_roles.deleted_by IS '删除人';
-
-COMMENT ON TABLE whale_permissions IS '权限定义';
-COMMENT ON COLUMN whale_permissions.id IS '主键';
-COMMENT ON COLUMN whale_permissions.name IS '权限名称（唯一）';
-COMMENT ON COLUMN whale_permissions.display_name IS '显示名称';
-COMMENT ON COLUMN whale_permissions.parent_name IS '父权限名称';
-COMMENT ON COLUMN whale_permissions.description IS '描述';
-COMMENT ON COLUMN whale_permissions.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_permissions.created_at IS '创建时间';
-COMMENT ON COLUMN whale_permissions.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_permissions.created_by IS '创建人';
-COMMENT ON COLUMN whale_permissions.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_permissions.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_permissions.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_permissions.deleted_by IS '删除人';
-
-COMMENT ON TABLE whale_permission_grants IS '权限授权';
-COMMENT ON COLUMN whale_permission_grants.id IS '主键';
-COMMENT ON COLUMN whale_permission_grants.permission_name IS '权限名称';
-COMMENT ON COLUMN whale_permission_grants.provider_name IS '授权主体类型（R=角色/U=用户）';
-COMMENT ON COLUMN whale_permission_grants.provider_key IS '授权主体键';
-COMMENT ON COLUMN whale_permission_grants.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_permission_grants.created_at IS '创建时间';
-COMMENT ON COLUMN whale_permission_grants.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_permission_grants.created_by IS '创建人';
-COMMENT ON COLUMN whale_permission_grants.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_permission_grants.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_permission_grants.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_permission_grants.deleted_by IS '删除人';
-
-COMMENT ON TABLE whale_security_logs IS '安全审计日志';
-COMMENT ON COLUMN whale_security_logs.id IS '主键';
-COMMENT ON COLUMN whale_security_logs.user_id IS '用户标识';
-COMMENT ON COLUMN whale_security_logs.user_name IS '用户名称';
-COMMENT ON COLUMN whale_security_logs.action IS '操作动作';
-COMMENT ON COLUMN whale_security_logs.client_ip IS '客户端ip';
-COMMENT ON COLUMN whale_security_logs.user_agent IS '用户agent';
-COMMENT ON COLUMN whale_security_logs.result IS '结果';
-COMMENT ON COLUMN whale_security_logs.failure_reason IS 'failure原因';
-COMMENT ON COLUMN whale_security_logs.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_security_logs.extra_properties IS '扩展属性 JSON';
-COMMENT ON COLUMN whale_security_logs.created_at IS '创建时间';
-COMMENT ON COLUMN whale_security_logs.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_security_logs.created_by IS '创建人';
-COMMENT ON COLUMN whale_security_logs.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_security_logs.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_security_logs.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_security_logs.deleted_by IS '删除人';
-
-COMMENT ON TABLE whale_organization_units IS '组织机构单元';
-COMMENT ON COLUMN whale_organization_units.id IS '主键';
-COMMENT ON COLUMN whale_organization_units.code IS '编码';
-COMMENT ON COLUMN whale_organization_units.display_name IS '显示名称';
-COMMENT ON COLUMN whale_organization_units.parent_id IS '父节点标识';
-COMMENT ON COLUMN whale_organization_units.sort_order IS '排序号';
-COMMENT ON COLUMN whale_organization_units.is_enabled IS '是否启用，语义等同 { PublicationStatus.ACTIVE}（见 health-domain-shared）';
-COMMENT ON COLUMN whale_organization_units.remark IS '备注';
-COMMENT ON COLUMN whale_organization_units.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_organization_units.created_at IS '创建时间';
-COMMENT ON COLUMN whale_organization_units.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_organization_units.created_by IS '创建人';
-COMMENT ON COLUMN whale_organization_units.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_organization_units.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_organization_units.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_organization_units.deleted_by IS '删除人';
-
-COMMENT ON TABLE whale_user_organization_units IS '用户组织单元关联';
-COMMENT ON COLUMN whale_user_organization_units.id IS '主键';
-COMMENT ON COLUMN whale_user_organization_units.user_id IS '用户标识';
-COMMENT ON COLUMN whale_user_organization_units.organization_unit_id IS '组织单元标识';
-COMMENT ON COLUMN whale_user_organization_units.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_user_organization_units.created_at IS '创建时间';
-COMMENT ON COLUMN whale_user_organization_units.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_user_organization_units.created_by IS '创建人';
-COMMENT ON COLUMN whale_user_organization_units.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_user_organization_units.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_user_organization_units.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_user_organization_units.deleted_by IS '删除人';
-
-COMMENT ON TABLE whale_user_claims IS '用户声明';
-COMMENT ON COLUMN whale_user_claims.id IS '主键';
-COMMENT ON COLUMN whale_user_claims.user_id IS '用户标识';
-COMMENT ON COLUMN whale_user_claims.claim_type IS '声明类型';
-COMMENT ON COLUMN whale_user_claims.claim_value IS '声明值';
-COMMENT ON COLUMN whale_user_claims.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_user_claims.created_at IS '创建时间';
-COMMENT ON COLUMN whale_user_claims.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_user_claims.created_by IS '创建人';
-COMMENT ON COLUMN whale_user_claims.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_user_claims.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_user_claims.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_user_claims.deleted_by IS '删除人';
-
-COMMENT ON TABLE whale_role_claims IS '角色声明';
-COMMENT ON COLUMN whale_role_claims.id IS '主键';
-COMMENT ON COLUMN whale_role_claims.role_id IS '角色标识';
-COMMENT ON COLUMN whale_role_claims.claim_type IS '声明类型';
-COMMENT ON COLUMN whale_role_claims.claim_value IS '声明值';
-COMMENT ON COLUMN whale_role_claims.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_role_claims.created_at IS '创建时间';
-COMMENT ON COLUMN whale_role_claims.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_role_claims.created_by IS '创建人';
-COMMENT ON COLUMN whale_role_claims.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_role_claims.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_role_claims.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_role_claims.deleted_by IS '删除人';
-
-COMMENT ON TABLE whale_qrtz_locks IS 'Quartz 调度锁';
-COMMENT ON COLUMN whale_qrtz_locks.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_locks.lock_name IS '锁名称';
-
-COMMENT ON TABLE whale_qrtz_job_details IS 'Quartz 作业详情';
-COMMENT ON COLUMN whale_qrtz_job_details.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_job_details.job_name IS '作业名称';
-COMMENT ON COLUMN whale_qrtz_job_details.job_group IS '作业组';
-COMMENT ON COLUMN whale_qrtz_job_details.description IS '描述';
-COMMENT ON COLUMN whale_qrtz_job_details.job_class_name IS '作业类名';
-COMMENT ON COLUMN whale_qrtz_job_details.is_durable IS '是否持久化';
-COMMENT ON COLUMN whale_qrtz_job_details.is_nonconcurrent IS '是否禁止并发';
-COMMENT ON COLUMN whale_qrtz_job_details.is_update_data IS '是否更新数据';
-COMMENT ON COLUMN whale_qrtz_job_details.requests_recovery IS '是否请求恢复';
-COMMENT ON COLUMN whale_qrtz_job_details.job_data IS '作业数据（BLOB）';
-
-COMMENT ON TABLE whale_qrtz_triggers IS 'Quartz 触发器';
-COMMENT ON COLUMN whale_qrtz_triggers.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_triggers.trigger_name IS '触发器名称';
-COMMENT ON COLUMN whale_qrtz_triggers.trigger_group IS '触发器组';
-COMMENT ON COLUMN whale_qrtz_triggers.job_name IS '关联作业名称';
-COMMENT ON COLUMN whale_qrtz_triggers.job_group IS '关联作业组';
-COMMENT ON COLUMN whale_qrtz_triggers.description IS '描述';
-COMMENT ON COLUMN whale_qrtz_triggers.next_fire_time IS '下次触发时间（毫秒）';
-COMMENT ON COLUMN whale_qrtz_triggers.prev_fire_time IS '上次触发时间（毫秒）';
-COMMENT ON COLUMN whale_qrtz_triggers.priority IS '优先级';
-COMMENT ON COLUMN whale_qrtz_triggers.trigger_state IS '触发器状态';
-COMMENT ON COLUMN whale_qrtz_triggers.trigger_type IS '触发器类型';
-COMMENT ON COLUMN whale_qrtz_triggers.start_time IS '开始时间（毫秒）';
-COMMENT ON COLUMN whale_qrtz_triggers.end_time IS '结束时间（毫秒）';
-COMMENT ON COLUMN whale_qrtz_triggers.calendar_name IS '日历名称';
-COMMENT ON COLUMN whale_qrtz_triggers.misfire_instr IS '错失触发策略';
-COMMENT ON COLUMN whale_qrtz_triggers.job_data IS '触发器数据（BLOB）';
-
-COMMENT ON TABLE whale_qrtz_cron_triggers IS 'Quartz Cron 触发器';
-COMMENT ON COLUMN whale_qrtz_cron_triggers.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_cron_triggers.trigger_name IS '触发器名称';
-COMMENT ON COLUMN whale_qrtz_cron_triggers.trigger_group IS '触发器组';
-COMMENT ON COLUMN whale_qrtz_cron_triggers.cron_expression IS 'Cron 表达式';
-COMMENT ON COLUMN whale_qrtz_cron_triggers.time_zone_id IS '时区 ID';
-
-COMMENT ON TABLE whale_qrtz_simple_triggers IS 'Quartz 简单触发器';
-COMMENT ON COLUMN whale_qrtz_simple_triggers.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_simple_triggers.trigger_name IS '触发器名称';
-COMMENT ON COLUMN whale_qrtz_simple_triggers.trigger_group IS '触发器组';
-COMMENT ON COLUMN whale_qrtz_simple_triggers.repeat_count IS '重复次数';
-COMMENT ON COLUMN whale_qrtz_simple_triggers.repeat_interval IS '重复间隔（毫秒）';
-COMMENT ON COLUMN whale_qrtz_simple_triggers.times_triggered IS '已触发次数';
-
-COMMENT ON TABLE whale_qrtz_blob_triggers IS 'Quartz BLOB 触发器';
-COMMENT ON COLUMN whale_qrtz_blob_triggers.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_blob_triggers.trigger_name IS '触发器名称';
-COMMENT ON COLUMN whale_qrtz_blob_triggers.trigger_group IS '触发器组';
-COMMENT ON COLUMN whale_qrtz_blob_triggers.blob_data IS '触发器 BLOB 数据';
-
-COMMENT ON TABLE whale_qrtz_calendars IS 'Quartz 日历';
-COMMENT ON COLUMN whale_qrtz_calendars.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_calendars.calendar_name IS '日历名称';
-COMMENT ON COLUMN whale_qrtz_calendars.calendar IS '日历对象（BLOB）';
-
-COMMENT ON TABLE whale_qrtz_paused_trigger_grps IS 'Quartz 暂停触发器组';
-COMMENT ON COLUMN whale_qrtz_paused_trigger_grps.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_paused_trigger_grps.trigger_group IS '触发器组';
-
-COMMENT ON TABLE whale_qrtz_scheduler_state IS 'Quartz 调度器状态';
-COMMENT ON COLUMN whale_qrtz_scheduler_state.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_scheduler_state.instance_name IS '实例名称';
-COMMENT ON COLUMN whale_qrtz_scheduler_state.last_checkin_time IS '最后检入时间（毫秒）';
-COMMENT ON COLUMN whale_qrtz_scheduler_state.checkin_interval IS '检入间隔（毫秒）';
-
-COMMENT ON TABLE whale_qrtz_fired_triggers IS 'Quartz 已触发记录';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.entry_id IS '条目 ID';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.trigger_name IS '触发器名称';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.trigger_group IS '触发器组';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.instance_name IS '实例名称';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.fired_time IS '触发时间（毫秒）';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.sched_time IS '计划时间（毫秒）';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.priority IS '优先级';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.state IS '状态';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.job_name IS '作业名称';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.job_group IS '作业组';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.is_nonconcurrent IS '是否禁止并发';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.requests_recovery IS '是否请求恢复';
-
-COMMENT ON TABLE whale_tenants IS '租户';
-COMMENT ON COLUMN whale_tenants.id IS '主键';
-COMMENT ON COLUMN whale_tenants.name IS '租户名称';
-COMMENT ON COLUMN whale_tenants.code IS '租户代码';
-COMMENT ON COLUMN whale_tenants.description IS '租户描述';
-COMMENT ON COLUMN whale_tenants.is_active IS '是否启用';
-COMMENT ON COLUMN whale_tenants.extra_properties IS '扩展属性';
-COMMENT ON COLUMN whale_tenants.created_at IS '创建时间';
-COMMENT ON COLUMN whale_tenants.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_tenants.created_by IS '创建人';
-COMMENT ON COLUMN whale_tenants.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_tenants.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_tenants.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_tenants.deleted_by IS '删除人';
-
-COMMENT ON TABLE whale_user_tenants IS '用户租户关联';
-COMMENT ON COLUMN whale_user_tenants.id IS '主键';
-COMMENT ON COLUMN whale_user_tenants.user_id IS '用户标识';
-COMMENT ON COLUMN whale_user_tenants.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_user_tenants.created_at IS '创建时间';
-COMMENT ON COLUMN whale_user_tenants.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_user_tenants.created_by IS '创建人';
-COMMENT ON COLUMN whale_user_tenants.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_user_tenants.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_user_tenants.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_user_tenants.deleted_by IS '删除人';
-
-COMMENT ON TABLE whale_settings IS '系统设置';
-COMMENT ON COLUMN whale_settings.id IS '主键';
-COMMENT ON COLUMN whale_settings.name IS '设置键';
-COMMENT ON COLUMN whale_settings.value IS '设置值';
-COMMENT ON COLUMN whale_settings.provider_name IS '提供者类型';
-COMMENT ON COLUMN whale_settings.provider_key IS '提供者键';
-COMMENT ON COLUMN whale_settings.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_settings.description IS '描述';
-COMMENT ON COLUMN whale_settings.created_at IS '创建时间';
-COMMENT ON COLUMN whale_settings.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_settings.created_by IS '创建人';
-COMMENT ON COLUMN whale_settings.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_settings.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_settings.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_settings.deleted_by IS '删除人';
-
-COMMENT ON TABLE whale_menus IS '菜单';
-COMMENT ON COLUMN whale_menus.id IS '主键';
-COMMENT ON COLUMN whale_menus.code IS '菜单编码';
-COMMENT ON COLUMN whale_menus.name IS '菜单名称';
-COMMENT ON COLUMN whale_menus.display_name IS '显示名称';
-COMMENT ON COLUMN whale_menus.icon IS '图标';
-COMMENT ON COLUMN whale_menus.path IS '路由路径';
-COMMENT ON COLUMN whale_menus.component IS '前端组件路径';
-COMMENT ON COLUMN whale_menus.permission_name IS '关联权限名称';
-COMMENT ON COLUMN whale_menus.parent_id IS '父菜单 ID';
-COMMENT ON COLUMN whale_menus.sort_order IS '排序号';
-COMMENT ON COLUMN whale_menus.is_enabled IS '是否启用';
-COMMENT ON COLUMN whale_menus.is_hidden IS '是否隐藏';
-COMMENT ON COLUMN whale_menus.is_external IS '是否外链';
-COMMENT ON COLUMN whale_menus.external_url IS '外链 URL';
-COMMENT ON COLUMN whale_menus.menu_type IS '菜单类型（menu/directory）';
-COMMENT ON COLUMN whale_menus.remark IS '备注';
-COMMENT ON COLUMN whale_menus.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_menus.created_at IS '创建时间';
-COMMENT ON COLUMN whale_menus.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_menus.created_by IS '创建人';
-COMMENT ON COLUMN whale_menus.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_menus.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_menus.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_menus.deleted_by IS '删除人';
-COMMENT ON COLUMN whale_menus.keep_alive IS '是否缓存页面';
-
-COMMENT ON TABLE whale_sequence IS '业务序号表，按 key 记录当前序号';
-COMMENT ON COLUMN whale_sequence.seq_key IS '序号键（如 ORDER、PATIENT、或 ORDER:2025-01-30 表示按天）';
-COMMENT ON COLUMN whale_sequence.current_value IS '当前序号值（递增后返回）';
-COMMENT ON COLUMN whale_sequence.updated_at IS '最后更新时间';
-
-COMMENT ON TABLE whale_audit_logs IS '实体变更审计日志';
-COMMENT ON COLUMN whale_audit_logs.id IS '主键';
-COMMENT ON COLUMN whale_audit_logs.entity_type IS '实体类型';
-COMMENT ON COLUMN whale_audit_logs.entity_id IS '实体 ID';
-COMMENT ON COLUMN whale_audit_logs.operation_type IS '操作类型';
-COMMENT ON COLUMN whale_audit_logs.user_id IS '操作人';
-COMMENT ON COLUMN whale_audit_logs.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_audit_logs.ip_address IS 'IP 地址';
-COMMENT ON COLUMN whale_audit_logs.user_agent IS '用户agent';
-COMMENT ON COLUMN whale_audit_logs.changes IS '变更内容';
-COMMENT ON COLUMN whale_audit_logs.created_at IS '创建时间';
-
-COMMENT ON TABLE whale_framework_runtime_state IS '框架运行时状态';
-COMMENT ON COLUMN whale_framework_runtime_state.id IS '主键';
-COMMENT ON COLUMN whale_framework_runtime_state.insight_code IS '洞察编码';
-COMMENT ON COLUMN whale_framework_runtime_state.category IS '分类';
-COMMENT ON COLUMN whale_framework_runtime_state.runtime_version IS '运行时版本';
-COMMENT ON COLUMN whale_framework_runtime_state.operator_user_id IS '操作人用户标识';
-COMMENT ON COLUMN whale_framework_runtime_state.session_started_at IS '会话开始时间';
-COMMENT ON COLUMN whale_framework_runtime_state.org_category IS '机构类别';
-COMMENT ON COLUMN whale_framework_runtime_state.org_name IS '机构名称';
-COMMENT ON COLUMN whale_framework_runtime_state.deployment_fingerprint IS '部署指纹';
-COMMENT ON COLUMN whale_framework_runtime_state.license_customer IS '许可证客户';
-COMMENT ON COLUMN whale_framework_runtime_state.license_not_after IS '许可证失效时间';
-COMMENT ON COLUMN whale_framework_runtime_state.payload_json IS '载荷 JSON';
-COMMENT ON COLUMN whale_framework_runtime_state.observed_at IS '观测时间';
-COMMENT ON COLUMN whale_framework_runtime_state.received_at IS '接收时间';
-
 -- seed: whale_users
 INSERT INTO "whale_users" ("id", "user_name", "email", "phone_number", "password_hash", "name", "surname", "is_active", "is_locked_out", "lockout_end", "access_failed_count", "extra_properties", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "ukey_id", "ukey_src_id")
 VALUES
@@ -1406,6 +1082,334 @@ CREATE INDEX IF NOT EXISTS idx_fw_runtime_state_insight_code ON whale_framework_
 CREATE INDEX IF NOT EXISTS idx_fw_runtime_state_fingerprint ON whale_framework_runtime_state(deployment_fingerprint);
 
 CREATE INDEX IF NOT EXISTS idx_fw_runtime_state_received_at ON whale_framework_runtime_state(received_at DESC);
+
+-- ========== 表/列注释（须在 CREATE TABLE 之后执行）==========
+
+COMMENT ON TABLE whale_roles IS '系统角色';
+COMMENT ON COLUMN whale_roles.id IS '主键';
+COMMENT ON COLUMN whale_roles.name IS '角色名称（唯一）';
+COMMENT ON COLUMN whale_roles.display_name IS '显示名称';
+COMMENT ON COLUMN whale_roles.code IS '角色编码';
+COMMENT ON COLUMN whale_roles.description IS '描述';
+COMMENT ON COLUMN whale_roles.is_default IS '是否默认角色';
+COMMENT ON COLUMN whale_roles.is_static IS '是否静态角色（不可删）';
+COMMENT ON COLUMN whale_roles.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_roles.created_at IS '创建时间';
+COMMENT ON COLUMN whale_roles.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_roles.created_by IS '创建人';
+COMMENT ON COLUMN whale_roles.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_roles.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_roles.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_roles.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_user_roles IS '用户角色关联';
+COMMENT ON COLUMN whale_user_roles.id IS '主键';
+COMMENT ON COLUMN whale_user_roles.user_id IS '用户标识';
+COMMENT ON COLUMN whale_user_roles.role_id IS '角色标识';
+COMMENT ON COLUMN whale_user_roles.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_user_roles.created_at IS '创建时间';
+COMMENT ON COLUMN whale_user_roles.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_user_roles.created_by IS '创建人';
+COMMENT ON COLUMN whale_user_roles.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_user_roles.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_user_roles.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_user_roles.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_permissions IS '权限定义';
+COMMENT ON COLUMN whale_permissions.id IS '主键';
+COMMENT ON COLUMN whale_permissions.name IS '权限名称（唯一）';
+COMMENT ON COLUMN whale_permissions.display_name IS '显示名称';
+COMMENT ON COLUMN whale_permissions.parent_name IS '父权限名称';
+COMMENT ON COLUMN whale_permissions.description IS '描述';
+COMMENT ON COLUMN whale_permissions.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_permissions.created_at IS '创建时间';
+COMMENT ON COLUMN whale_permissions.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_permissions.created_by IS '创建人';
+COMMENT ON COLUMN whale_permissions.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_permissions.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_permissions.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_permissions.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_permission_grants IS '权限授权';
+COMMENT ON COLUMN whale_permission_grants.id IS '主键';
+COMMENT ON COLUMN whale_permission_grants.permission_name IS '权限名称';
+COMMENT ON COLUMN whale_permission_grants.provider_name IS '授权主体类型（R=角色/U=用户）';
+COMMENT ON COLUMN whale_permission_grants.provider_key IS '授权主体键';
+COMMENT ON COLUMN whale_permission_grants.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_permission_grants.created_at IS '创建时间';
+COMMENT ON COLUMN whale_permission_grants.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_permission_grants.created_by IS '创建人';
+COMMENT ON COLUMN whale_permission_grants.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_permission_grants.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_permission_grants.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_permission_grants.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_security_logs IS '安全审计日志';
+COMMENT ON COLUMN whale_security_logs.id IS '主键';
+COMMENT ON COLUMN whale_security_logs.user_id IS '用户标识';
+COMMENT ON COLUMN whale_security_logs.user_name IS '用户名称';
+COMMENT ON COLUMN whale_security_logs.action IS '操作动作';
+COMMENT ON COLUMN whale_security_logs.client_ip IS '客户端ip';
+COMMENT ON COLUMN whale_security_logs.user_agent IS '用户agent';
+COMMENT ON COLUMN whale_security_logs.result IS '结果';
+COMMENT ON COLUMN whale_security_logs.failure_reason IS 'failure原因';
+COMMENT ON COLUMN whale_security_logs.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_security_logs.extra_properties IS '扩展属性 JSON';
+COMMENT ON COLUMN whale_security_logs.created_at IS '创建时间';
+COMMENT ON COLUMN whale_security_logs.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_security_logs.created_by IS '创建人';
+COMMENT ON COLUMN whale_security_logs.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_security_logs.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_security_logs.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_security_logs.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_organization_units IS '组织机构单元';
+COMMENT ON COLUMN whale_organization_units.id IS '主键';
+COMMENT ON COLUMN whale_organization_units.code IS '编码';
+COMMENT ON COLUMN whale_organization_units.display_name IS '显示名称';
+COMMENT ON COLUMN whale_organization_units.parent_id IS '父节点标识';
+COMMENT ON COLUMN whale_organization_units.sort_order IS '排序号';
+COMMENT ON COLUMN whale_organization_units.is_enabled IS '是否启用，语义等同 { PublicationStatus.ACTIVE}（见 health-domain-shared）';
+COMMENT ON COLUMN whale_organization_units.remark IS '备注';
+COMMENT ON COLUMN whale_organization_units.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_organization_units.created_at IS '创建时间';
+COMMENT ON COLUMN whale_organization_units.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_organization_units.created_by IS '创建人';
+COMMENT ON COLUMN whale_organization_units.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_organization_units.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_organization_units.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_organization_units.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_user_organization_units IS '用户组织单元关联';
+COMMENT ON COLUMN whale_user_organization_units.id IS '主键';
+COMMENT ON COLUMN whale_user_organization_units.user_id IS '用户标识';
+COMMENT ON COLUMN whale_user_organization_units.organization_unit_id IS '组织单元标识';
+COMMENT ON COLUMN whale_user_organization_units.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_user_organization_units.created_at IS '创建时间';
+COMMENT ON COLUMN whale_user_organization_units.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_user_organization_units.created_by IS '创建人';
+COMMENT ON COLUMN whale_user_organization_units.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_user_organization_units.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_user_organization_units.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_user_organization_units.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_user_claims IS '用户声明';
+COMMENT ON COLUMN whale_user_claims.id IS '主键';
+COMMENT ON COLUMN whale_user_claims.user_id IS '用户标识';
+COMMENT ON COLUMN whale_user_claims.claim_type IS '声明类型';
+COMMENT ON COLUMN whale_user_claims.claim_value IS '声明值';
+COMMENT ON COLUMN whale_user_claims.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_user_claims.created_at IS '创建时间';
+COMMENT ON COLUMN whale_user_claims.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_user_claims.created_by IS '创建人';
+COMMENT ON COLUMN whale_user_claims.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_user_claims.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_user_claims.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_user_claims.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_role_claims IS '角色声明';
+COMMENT ON COLUMN whale_role_claims.id IS '主键';
+COMMENT ON COLUMN whale_role_claims.role_id IS '角色标识';
+COMMENT ON COLUMN whale_role_claims.claim_type IS '声明类型';
+COMMENT ON COLUMN whale_role_claims.claim_value IS '声明值';
+COMMENT ON COLUMN whale_role_claims.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_role_claims.created_at IS '创建时间';
+COMMENT ON COLUMN whale_role_claims.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_role_claims.created_by IS '创建人';
+COMMENT ON COLUMN whale_role_claims.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_role_claims.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_role_claims.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_role_claims.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_qrtz_locks IS 'Quartz 调度锁';
+COMMENT ON COLUMN whale_qrtz_locks.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_locks.lock_name IS '锁名称';
+
+COMMENT ON TABLE whale_qrtz_job_details IS 'Quartz 作业详情';
+COMMENT ON COLUMN whale_qrtz_job_details.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_job_details.job_name IS '作业名称';
+COMMENT ON COLUMN whale_qrtz_job_details.job_group IS '作业组';
+COMMENT ON COLUMN whale_qrtz_job_details.description IS '描述';
+COMMENT ON COLUMN whale_qrtz_job_details.job_class_name IS '作业类名';
+COMMENT ON COLUMN whale_qrtz_job_details.is_durable IS '是否持久化';
+COMMENT ON COLUMN whale_qrtz_job_details.is_nonconcurrent IS '是否禁止并发';
+COMMENT ON COLUMN whale_qrtz_job_details.is_update_data IS '是否更新数据';
+COMMENT ON COLUMN whale_qrtz_job_details.requests_recovery IS '是否请求恢复';
+COMMENT ON COLUMN whale_qrtz_job_details.job_data IS '作业数据（BLOB）';
+
+COMMENT ON TABLE whale_qrtz_triggers IS 'Quartz 触发器';
+COMMENT ON COLUMN whale_qrtz_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_triggers.job_name IS '关联作业名称';
+COMMENT ON COLUMN whale_qrtz_triggers.job_group IS '关联作业组';
+COMMENT ON COLUMN whale_qrtz_triggers.description IS '描述';
+COMMENT ON COLUMN whale_qrtz_triggers.next_fire_time IS '下次触发时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_triggers.prev_fire_time IS '上次触发时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_triggers.priority IS '优先级';
+COMMENT ON COLUMN whale_qrtz_triggers.trigger_state IS '触发器状态';
+COMMENT ON COLUMN whale_qrtz_triggers.trigger_type IS '触发器类型';
+COMMENT ON COLUMN whale_qrtz_triggers.start_time IS '开始时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_triggers.end_time IS '结束时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_triggers.calendar_name IS '日历名称';
+COMMENT ON COLUMN whale_qrtz_triggers.misfire_instr IS '错失触发策略';
+COMMENT ON COLUMN whale_qrtz_triggers.job_data IS '触发器数据（BLOB）';
+
+COMMENT ON TABLE whale_qrtz_cron_triggers IS 'Quartz Cron 触发器';
+COMMENT ON COLUMN whale_qrtz_cron_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_cron_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_cron_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_cron_triggers.cron_expression IS 'Cron 表达式';
+COMMENT ON COLUMN whale_qrtz_cron_triggers.time_zone_id IS '时区 ID';
+
+COMMENT ON TABLE whale_qrtz_simple_triggers IS 'Quartz 简单触发器';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.repeat_count IS '重复次数';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.repeat_interval IS '重复间隔（毫秒）';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.times_triggered IS '已触发次数';
+
+COMMENT ON TABLE whale_qrtz_blob_triggers IS 'Quartz BLOB 触发器';
+COMMENT ON COLUMN whale_qrtz_blob_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_blob_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_blob_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_blob_triggers.blob_data IS '触发器 BLOB 数据';
+
+COMMENT ON TABLE whale_qrtz_calendars IS 'Quartz 日历';
+COMMENT ON COLUMN whale_qrtz_calendars.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_calendars.calendar_name IS '日历名称';
+COMMENT ON COLUMN whale_qrtz_calendars.calendar IS '日历对象（BLOB）';
+
+COMMENT ON TABLE whale_qrtz_paused_trigger_grps IS 'Quartz 暂停触发器组';
+COMMENT ON COLUMN whale_qrtz_paused_trigger_grps.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_paused_trigger_grps.trigger_group IS '触发器组';
+
+COMMENT ON TABLE whale_qrtz_scheduler_state IS 'Quartz 调度器状态';
+COMMENT ON COLUMN whale_qrtz_scheduler_state.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_scheduler_state.instance_name IS '实例名称';
+COMMENT ON COLUMN whale_qrtz_scheduler_state.last_checkin_time IS '最后检入时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_scheduler_state.checkin_interval IS '检入间隔（毫秒）';
+
+COMMENT ON TABLE whale_qrtz_fired_triggers IS 'Quartz 已触发记录';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.entry_id IS '条目 ID';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.instance_name IS '实例名称';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.fired_time IS '触发时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.sched_time IS '计划时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.priority IS '优先级';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.state IS '状态';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.job_name IS '作业名称';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.job_group IS '作业组';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.is_nonconcurrent IS '是否禁止并发';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.requests_recovery IS '是否请求恢复';
+
+COMMENT ON TABLE whale_tenants IS '租户';
+COMMENT ON COLUMN whale_tenants.id IS '主键';
+COMMENT ON COLUMN whale_tenants.name IS '租户名称';
+COMMENT ON COLUMN whale_tenants.code IS '租户代码';
+COMMENT ON COLUMN whale_tenants.description IS '租户描述';
+COMMENT ON COLUMN whale_tenants.is_active IS '是否启用';
+COMMENT ON COLUMN whale_tenants.extra_properties IS '扩展属性';
+COMMENT ON COLUMN whale_tenants.created_at IS '创建时间';
+COMMENT ON COLUMN whale_tenants.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_tenants.created_by IS '创建人';
+COMMENT ON COLUMN whale_tenants.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_tenants.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_tenants.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_tenants.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_user_tenants IS '用户租户关联';
+COMMENT ON COLUMN whale_user_tenants.id IS '主键';
+COMMENT ON COLUMN whale_user_tenants.user_id IS '用户标识';
+COMMENT ON COLUMN whale_user_tenants.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_user_tenants.created_at IS '创建时间';
+COMMENT ON COLUMN whale_user_tenants.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_user_tenants.created_by IS '创建人';
+COMMENT ON COLUMN whale_user_tenants.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_user_tenants.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_user_tenants.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_user_tenants.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_settings IS '系统设置';
+COMMENT ON COLUMN whale_settings.id IS '主键';
+COMMENT ON COLUMN whale_settings.name IS '设置键';
+COMMENT ON COLUMN whale_settings.value IS '设置值';
+COMMENT ON COLUMN whale_settings.provider_name IS '提供者类型';
+COMMENT ON COLUMN whale_settings.provider_key IS '提供者键';
+COMMENT ON COLUMN whale_settings.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_settings.description IS '描述';
+COMMENT ON COLUMN whale_settings.created_at IS '创建时间';
+COMMENT ON COLUMN whale_settings.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_settings.created_by IS '创建人';
+COMMENT ON COLUMN whale_settings.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_settings.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_settings.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_settings.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_menus IS '菜单';
+COMMENT ON COLUMN whale_menus.id IS '主键';
+COMMENT ON COLUMN whale_menus.code IS '菜单编码';
+COMMENT ON COLUMN whale_menus.name IS '菜单名称';
+COMMENT ON COLUMN whale_menus.display_name IS '显示名称';
+COMMENT ON COLUMN whale_menus.icon IS '图标';
+COMMENT ON COLUMN whale_menus.path IS '路由路径';
+COMMENT ON COLUMN whale_menus.component IS '前端组件路径';
+COMMENT ON COLUMN whale_menus.permission_name IS '关联权限名称';
+COMMENT ON COLUMN whale_menus.parent_id IS '父菜单 ID';
+COMMENT ON COLUMN whale_menus.sort_order IS '排序号';
+COMMENT ON COLUMN whale_menus.is_enabled IS '是否启用';
+COMMENT ON COLUMN whale_menus.is_hidden IS '是否隐藏';
+COMMENT ON COLUMN whale_menus.is_external IS '是否外链';
+COMMENT ON COLUMN whale_menus.external_url IS '外链 URL';
+COMMENT ON COLUMN whale_menus.menu_type IS '菜单类型（menu/directory）';
+COMMENT ON COLUMN whale_menus.remark IS '备注';
+COMMENT ON COLUMN whale_menus.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_menus.created_at IS '创建时间';
+COMMENT ON COLUMN whale_menus.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_menus.created_by IS '创建人';
+COMMENT ON COLUMN whale_menus.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_menus.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_menus.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_menus.deleted_by IS '删除人';
+COMMENT ON COLUMN whale_menus.keep_alive IS '是否缓存页面';
+
+COMMENT ON TABLE whale_sequence IS '业务序号表，按 key 记录当前序号';
+COMMENT ON COLUMN whale_sequence.seq_key IS '序号键（如 ORDER、PATIENT、或 ORDER:2025-01-30 表示按天）';
+COMMENT ON COLUMN whale_sequence.current_value IS '当前序号值（递增后返回）';
+COMMENT ON COLUMN whale_sequence.updated_at IS '最后更新时间';
+
+COMMENT ON TABLE whale_audit_logs IS '实体变更审计日志';
+COMMENT ON COLUMN whale_audit_logs.id IS '主键';
+COMMENT ON COLUMN whale_audit_logs.entity_type IS '实体类型';
+COMMENT ON COLUMN whale_audit_logs.entity_id IS '实体 ID';
+COMMENT ON COLUMN whale_audit_logs.operation_type IS '操作类型';
+COMMENT ON COLUMN whale_audit_logs.user_id IS '操作人';
+COMMENT ON COLUMN whale_audit_logs.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_audit_logs.ip_address IS 'IP 地址';
+COMMENT ON COLUMN whale_audit_logs.user_agent IS '用户agent';
+COMMENT ON COLUMN whale_audit_logs.changes IS '变更内容';
+COMMENT ON COLUMN whale_audit_logs.created_at IS '创建时间';
+
+COMMENT ON TABLE whale_framework_runtime_state IS '框架运行时状态';
+COMMENT ON COLUMN whale_framework_runtime_state.id IS '主键';
+COMMENT ON COLUMN whale_framework_runtime_state.insight_code IS '洞察编码';
+COMMENT ON COLUMN whale_framework_runtime_state.category IS '分类';
+COMMENT ON COLUMN whale_framework_runtime_state.runtime_version IS '运行时版本';
+COMMENT ON COLUMN whale_framework_runtime_state.operator_user_id IS '操作人用户标识';
+COMMENT ON COLUMN whale_framework_runtime_state.session_started_at IS '会话开始时间';
+COMMENT ON COLUMN whale_framework_runtime_state.org_category IS '机构类别';
+COMMENT ON COLUMN whale_framework_runtime_state.org_name IS '机构名称';
+COMMENT ON COLUMN whale_framework_runtime_state.deployment_fingerprint IS '部署指纹';
+COMMENT ON COLUMN whale_framework_runtime_state.license_customer IS '许可证客户';
+COMMENT ON COLUMN whale_framework_runtime_state.license_not_after IS '许可证失效时间';
+COMMENT ON COLUMN whale_framework_runtime_state.payload_json IS '载荷 JSON';
+COMMENT ON COLUMN whale_framework_runtime_state.observed_at IS '观测时间';
+COMMENT ON COLUMN whale_framework_runtime_state.received_at IS '接收时间';
+
+
 
 
 
@@ -2742,7 +2746,7 @@ INSERT INTO whale_permissions (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
 )
 VALUES (
-    '310700000000000016', 'Navigation.ChsPlatformDict', '平台字典(1901)', 'Navigation',
+    '310700000000000019', 'Navigation.ChsPlatformDict', '平台字典(1901)', 'Navigation',
     '菜单入口: ChsPlatformDict — 1901 参保地医保区划字典', NULL,
     TIMESTAMP '2026-06-24 12:00:00+00', TIMESTAMP '2026-06-24 12:00:00+00', 1, 1, FALSE, NULL, NULL
 )
@@ -2753,7 +2757,7 @@ INSERT INTO whale_permission_grants (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
 )
 VALUES (
-    '310800000000000016', 'Navigation.ChsPlatformDict', 'R', '1', NULL,
+    '310800000000000038', 'Navigation.ChsPlatformDict', 'R', '1', NULL,
     TIMESTAMP '2026-06-24 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
 )
 ON CONFLICT (permission_name, provider_name, provider_key) DO NOTHING;
@@ -2782,80 +2786,3 @@ INSERT INTO whale_role_claims (
      '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL)
 ON CONFLICT (id) DO NOTHING;
 
--- ----- seed sync from DB (whale_permission_grants, 19 rows) -----
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('310800000000000035', 'Booking.SlotCalendar.View', 'R', '323022177255297024', '1', '2026-06-25 04:00:00.000+00', NULL, '1', NULL, false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('310800000000000036', 'Booking.SlotCalendar.View', 'R', '10', '1', '2026-06-25 04:00:00.000+00', NULL, '1', NULL, false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('310800000000000037', 'Booking.SlotCalendar.View', 'R', '1', NULL, '2026-06-25 04:00:00.000+00', NULL, '1', NULL, false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376340131614720', 'Navigation.ChsCatalogDownload', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.424+00', '2026-06-25 03:30:20.424+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376340148391936', 'Navigation.ChsInventoryOps', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.428+00', '2026-06-25 03:30:20.428+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376340169363456', 'Print.PrintBinding.View', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.433+00', '2026-06-25 03:30:20.433+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376340186140672', 'Navigation.SpecimenDefinition', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.437+00', '2026-06-25 03:30:20.437+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376340202917888', 'Navigation.ChsReconciliation', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.441+00', '2026-06-25 03:30:20.441+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376340223889408', 'Navigation.ChsCatalogMappingWorkbench', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.446+00', '2026-06-25 03:30:20.446+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376340240666624', 'Print.Templates.View', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.450+00', '2026-06-25 03:30:20.450+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376340257443840', 'Print.PrintLog.View', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.454+00', '2026-06-25 03:30:20.454+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376340274221056', 'Navigation.ChsNationalCatalog', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.458+00', '2026-06-25 03:30:20.458+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376340290998272', 'Navigation.ChsMedicalInfoQuery', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.463+00', '2026-06-25 03:30:20.463+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376340311969792', 'Booking.Template.View', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.467+00', '2026-06-25 03:30:20.467+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376340328747008', 'Navigation.JobManagement', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.471+00', '2026-06-25 03:30:20.471+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376340349718528', 'Booking.OutpatientSchedule.View', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.476+00', '2026-06-25 04:00:00.000+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376340366495744', 'Navigation.Opfeedetail', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.480+00', '2026-06-25 03:30:20.480+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376625457532928', 'Booking.OutpatientSchedule.View', 'R', '10', '1', '2026-06-25 03:31:28.451+00', '2026-06-25 04:00:00.000+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
-
-INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
-VALUES ('328376866273497088', 'Navigation.WarehouseManagement', 'R', '13', '1', '2026-06-25 03:32:25.866+00', '2026-06-25 03:32:25.866+00', '1', '1', false, NULL, NULL)
-ON CONFLICT ("id") DO NOTHING;
