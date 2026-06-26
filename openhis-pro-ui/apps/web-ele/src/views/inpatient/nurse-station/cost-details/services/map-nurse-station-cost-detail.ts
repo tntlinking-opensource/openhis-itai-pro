@@ -4,7 +4,7 @@ import type {
   NurseStationCostSummaryLineDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-cost-detail.types';
 
-import { decimalToFixed } from '#/utils/decimal-util';
+import { decimalToFixed } from '#/utils/format/decimal-util';
 
 /** 明细行表格 row-key */
 export function buildCostDetailLineRowKey(row: NurseStationCostDetailLineDto): string {

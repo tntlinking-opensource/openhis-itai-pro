@@ -22,7 +22,7 @@ import {
 } from 'element-plus';
 
 import PatientCard from '#/components/outpatient/patient-card.vue';
-import { encounterQueueStatusDisplayText } from '#/utils/encounter-queue-status-text';
+import { encounterQueueStatusDisplayText } from '#/utils/outpatient/encounter-queue-status-text';
 
 /* eslint-disable vue/define-macros-order -- defineModel 未列入团队 eslint 顺序表，与 defineEmits 交叉时误报 */
 

@@ -1,7 +1,7 @@
 import type { ApiOptionItem, PageParams } from '#/types/api-response';
 
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import { publicRequestClient } from '../request';
 

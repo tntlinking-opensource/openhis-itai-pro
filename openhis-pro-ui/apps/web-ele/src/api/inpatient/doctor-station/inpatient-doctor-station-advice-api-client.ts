@@ -17,8 +17,14 @@ import type {
   SaveInpatientDoctorStationAdviceDraftBatchResponse,
   SignInpatientDoctorStationAdviceBatchRequest,
   SignInpatientDoctorStationAdviceBatchResponse,
+  ListInpatientDoctorStationServiceApplyFormsRequest,
+  ListInpatientDoctorStationServiceApplyFormsResponse,
+  SaveInpatientDoctorStationServiceApplyFormRequest,
+  SaveInpatientDoctorStationServiceApplyFormResponse,
   StopLongTermInpatientDoctorStationAdviceRequest,
   StopLongTermInpatientDoctorStationAdviceResponse,
+  CancelStopLongTermInpatientDoctorStationAdviceRequest,
+  CancelStopLongTermInpatientDoctorStationAdviceResponse,
   UpdateInpatientDoctorStationMedicationAdviceGroupsRequest,
   UpdateInpatientDoctorStationMedicationAdviceGroupsResponse,
   WithdrawInpatientDoctorStationAdviceBatchRequest,
@@ -58,9 +64,18 @@ export interface InpatientDoctorStationAdviceHttpClient {
   httpStopLongTermInpatientDoctorStationAdvice: (
     body: StopLongTermInpatientDoctorStationAdviceRequest,
   ) => Promise<StopLongTermInpatientDoctorStationAdviceResponse>;
+  httpCancelStopLongTermInpatientDoctorStationAdvice: (
+    body: CancelStopLongTermInpatientDoctorStationAdviceRequest,
+  ) => Promise<CancelStopLongTermInpatientDoctorStationAdviceResponse>;
   httpCreateDischargeInpatientDoctorStationAdvice: (
     body: CreateDischargeInpatientDoctorStationAdviceRequest,
   ) => Promise<CreateDischargeInpatientDoctorStationAdviceResponse>;
+  httpSaveInpatientDoctorStationServiceApplyForm: (
+    body: SaveInpatientDoctorStationServiceApplyFormRequest,
+  ) => Promise<SaveInpatientDoctorStationServiceApplyFormResponse>;
+  httpListInpatientDoctorStationServiceApplyForms: (
+    body: ListInpatientDoctorStationServiceApplyFormsRequest,
+  ) => Promise<ListInpatientDoctorStationServiceApplyFormsResponse>;
   /** 频次推算总量：SDD 未单列 IF，与门诊同方法名挂住院前缀（联调以 Swagger 为准） */
   httpComputeMedicationFrequencyExecutions: (
     body: ComputeMedicationFrequencyExecutionsRequest,
@@ -93,8 +108,14 @@ export function createInpatientDoctorStationAdviceHttpClient(
       post('updateInpatientDoctorStationMedicationAdviceGroups', body),
     httpStopLongTermInpatientDoctorStationAdvice: (body) =>
       post('stopLongTermInpatientDoctorStationAdvice', body),
+    httpCancelStopLongTermInpatientDoctorStationAdvice: (body) =>
+      post('cancelStopLongTermInpatientDoctorStationAdvice', body),
     httpCreateDischargeInpatientDoctorStationAdvice: (body) =>
       post('createDischargeInpatientDoctorStationAdvice', body),
+    httpSaveInpatientDoctorStationServiceApplyForm: (body) =>
+      post('saveInpatientDoctorStationServiceApplyForm', body),
+    httpListInpatientDoctorStationServiceApplyForms: (body) =>
+      post('listInpatientDoctorStationServiceApplyForms', body),
     httpComputeMedicationFrequencyExecutions: (body) =>
       post('computeMedicationFrequencyExecutions', body),
   };

@@ -3,14 +3,22 @@ import type {
   BatchCancelDispositionResponse,
   BatchPerformDispositionRequest,
   BatchPerformDispositionResponse,
+  DeleteOutpatientSkinTestRecordRequest,
+  DeleteOutpatientSkinTestRecordResponse,
+  ListManagedSupplyRoomOptionsResponse,
   ListNetRemainingProcedureRecordsForNurseStationRequest,
   ListNetRemainingProcedureRecordsForNurseStationResponse,
+  ListOutpatientSkinTestRowsRequest,
+  ListOutpatientSkinTestRowsResponse,
   ListProcedureRecordsForNurseStationRequest,
   ListProcedureRecordsForNurseStationResponse,
+  LoadOutpatientSkinTestInitResponse,
   PageNurseStationPatientQueueRequest,
   PageNurseStationPatientQueueResponse,
   QueryEncounterTreatmentSheetRequest,
   QueryEncounterTreatmentSheetResponse,
+  SaveOutpatientSkinTestRecordRequest,
+  SaveOutpatientSkinTestRecordResponse,
 } from './outpatient-nurse-station.types';
 
 import { publicRequestClient } from '#/api/request';
@@ -32,6 +40,14 @@ export async function httpQueryEncounterTreatmentSheet(
   return publicRequestClient.post<QueryEncounterTreatmentSheetResponse>(
     '/outpatientNurseStationTreatment/queryEncounterTreatmentSheet',
     body,
+  );
+}
+
+/** 加载登录者管辖药房作为耗材房下拉 */
+export async function httpListManagedSupplyRoomOptions(): Promise<ListManagedSupplyRoomOptionsResponse> {
+  return publicRequestClient.post<ListManagedSupplyRoomOptionsResponse>(
+    '/outpatientNurseStationTreatment/listManagedSupplyRoomOptions',
+    {},
   );
 }
 
@@ -71,6 +87,44 @@ export async function httpBatchCancelDisposition(
 ): Promise<BatchCancelDispositionResponse> {
   return publicRequestClient.post<BatchCancelDispositionResponse>(
     '/outpatientNurseStationTreatment/batchCancelDisposition',
+    body,
+  );
+}
+
+/** 加载皮试登记表单枚举选项 */
+export async function httpLoadOutpatientSkinTestInit(): Promise<LoadOutpatientSkinTestInitResponse> {
+  return publicRequestClient.post<LoadOutpatientSkinTestInitResponse>(
+    '/outpatientNurseStationSkinTest/loadOutpatientSkinTestInit',
+    {},
+  );
+}
+
+/** 按就诊查询皮试待登记/已登记列表 */
+export async function httpListOutpatientSkinTestRows(
+  body: ListOutpatientSkinTestRowsRequest,
+): Promise<ListOutpatientSkinTestRowsResponse> {
+  return publicRequestClient.post<ListOutpatientSkinTestRowsResponse>(
+    '/outpatientNurseStationSkinTest/listOutpatientSkinTestRows',
+    body,
+  );
+}
+
+/** 保存皮试临床结果（双签） */
+export async function httpSaveOutpatientSkinTestRecord(
+  body: SaveOutpatientSkinTestRecordRequest,
+): Promise<SaveOutpatientSkinTestRecordResponse> {
+  return publicRequestClient.post<SaveOutpatientSkinTestRecordResponse>(
+    '/outpatientNurseStationSkinTest/saveOutpatientSkinTestRecord',
+    body,
+  );
+}
+
+/** 删除误录皮试记录 */
+export async function httpDeleteOutpatientSkinTestRecord(
+  body: DeleteOutpatientSkinTestRecordRequest,
+): Promise<DeleteOutpatientSkinTestRecordResponse> {
+  return publicRequestClient.post<DeleteOutpatientSkinTestRecordResponse>(
+    '/outpatientNurseStationSkinTest/deleteOutpatientSkinTestRecord',
     body,
   );
 }

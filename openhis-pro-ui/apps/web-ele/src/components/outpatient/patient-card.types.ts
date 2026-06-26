@@ -31,6 +31,11 @@ export interface InpatientPatientCardPayload {
   isRegistered?: boolean;
   pendingExecuteCount?: number;
   riskHint?: string;
+  /** 账户余额主文案（住院医生站等） */
+  accountBalanceSummary?: string;
+  /** 账户余额副文案 */
+  accountBalanceSub?: string;
+  lowBalanceWarning?: boolean;
 }
 
 export type PatientCardPatient = InpatientPatientCardPayload | OutpatientPatientCardPayload;

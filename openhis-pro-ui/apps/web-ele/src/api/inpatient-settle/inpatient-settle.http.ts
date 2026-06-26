@@ -1,6 +1,6 @@
 import type {
-  CancelInpatientSettleRequest,
-  CancelInpatientSettleResponse,
+  ReverseInpatientSettleRequest,
+  ReverseInpatientSettleResponse,
   ConfirmInpatientSettleRequest,
   ConfirmInpatientSettleResponse,
   LoadInpatientSettlePageInitResponse,
@@ -88,12 +88,12 @@ export async function httpLoadSettledInpatientPaymentView(
   );
 }
 
-/** 取消住院结算（CHS Wave 2 外挂；医保患者将同步撤销 2305/2405/2302） */
-export async function httpCancelInpatientSettle(
-  body: CancelInpatientSettleRequest,
-): Promise<CancelInpatientSettleResponse> {
-  return publicRequestClient.post<CancelInpatientSettleResponse>(
-    `${BASE}/cancelInpatientSettle`,
+/** 住院反结（IF-IP-RVS-01） */
+export async function httpReverseInpatientSettle(
+  body: ReverseInpatientSettleRequest,
+): Promise<ReverseInpatientSettleResponse> {
+  return publicRequestClient.post<ReverseInpatientSettleResponse>(
+    `${BASE}/reverseInpatientSettle`,
     body,
   );
 }

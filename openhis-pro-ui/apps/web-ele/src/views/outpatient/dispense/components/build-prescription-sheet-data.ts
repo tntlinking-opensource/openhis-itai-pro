@@ -1,7 +1,7 @@
 import type { PrescriptionSheetData } from './prescription-sheet.types';
 import type { DispensePrescriptionBlock, DispenseQueuePatient } from './types';
 
-import { decimalAdd } from '#/utils/decimal-util';
+import { decimalAdd } from '#/utils/format/decimal-util';
 
 export interface BuildPrescriptionSheetDataOptions {
   hospitalName?: string;
@@ -23,7 +23,7 @@ function toDatePart(isoLike: string): string {
 
 /** 明细金额累加：非数字占位（如「—」）不计入，避免 Decimal 抛错 */
 function amountToSumNumber(raw: string | undefined): number {
-  const s = (raw ?? '').trim().replace(/,/g, '');
+  const s = (raw ?? '').trim().replaceAll(',', '');
   if (!s) return 0;
   const n = Number(s);
   return Number.isFinite(n) ? n : 0;

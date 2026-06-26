@@ -1,5 +1,6 @@
 import type {
   NurseStationPricedOrderRowDto,
+  NurseStationPricingCancelItemDto,
   NurseStationPricingCatalogRowDto,
   NurseStationPricingParentRequestAnchorDto,
   NurseStationPricingPatientGroupDto,
@@ -10,13 +11,21 @@ import type {
 
 import { formatDateTime } from '@vben/utils';
 
-import { decimalMul } from '#/utils/decimal-util';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { decimalMul } from '#/utils/format/decimal-util';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 划价确费列表行（表格展示） */
 export interface PricingConfirmationTableRow {
   id: string;
   encounterId: string;
+  /** 诊疗/耗材请求主键（取消划价 requestId） */
+  requestId: string;
+  /** SERVICE_REQUEST / DEVICE_REQUEST */
+  orderType: string;
+  /** 费用状态 code */
+  chargeStatusEnum?: string;
+  /** 是否允许取消划价（仅待结算） */
+  canCancel: boolean;
   pricingContent: string;
   quantityText: string;
   unitPrice: number;
@@ -26,6 +35,8 @@ export interface PricingConfirmationTableRow {
   pricingModeDisplay: string;
   parentAdviceDisplayName: string;
 }
+
+export const PRICING_CANCEL_BATCH_LIMIT = 50;
 
 export const PRICING_PRODUCT_TABLE_DEVICE = 'adm_device_definition';
 export const PRICING_PRODUCT_TABLE_SERVICE = 'wkf_activity_definition';
@@ -101,6 +112,13 @@ export function normalizePricingCatalogRow(
     (productTableName === PRICING_PRODUCT_TABLE_DEVICE
       ? (productId ?? productDefinitionId)
       : undefined);
+  const defaultDispenseLocationId = preserveApiIdForRequest(
+    readCatalogField(row, 'defaultDispenseLocationId', 'default_dispense_location_id'),
+  );
+  const defaultDispenseLocationName =
+    String(
+      readCatalogField(row, 'defaultDispenseLocationName', 'default_dispense_location_name') ?? '',
+    ).trim() || undefined;
   const unitPriceRaw = readCatalogField(row, 'unitPrice', 'unit_price');
   const unitPrice =
     unitPriceRaw === undefined || unitPriceRaw === null
@@ -116,6 +134,8 @@ export function normalizePricingCatalogRow(
     productId,
     activityId,
     deviceDefId,
+    defaultDispenseLocationId,
+    defaultDispenseLocationName,
     unitPrice,
     busNo: String(readCatalogField(row, 'busNo', 'bus_no') ?? row.busNo ?? '').trim() || undefined,
     name: String(readCatalogField(row, 'name') ?? row.name ?? '').trim() || undefined,
@@ -589,12 +609,32 @@ function formatPricedOrderQuantityText(
   return unitText ? `${quantity} ${unitText}` : String(quantity);
 }
 
+/** 已划价行是否可取消（关联费用须待结算，BR-IP-PRC-023） */
+export function resolvePricingRowCanCancel(dto: NurseStationPricedOrderRowDto): boolean {
+  const orderType = String(dto.orderType ?? '')
+    .trim()
+    .toUpperCase();
+  if (orderType !== 'SERVICE_REQUEST' && orderType !== 'DEVICE_REQUEST') {
+    return false;
+  }
+  const chargeCode = String(dto.chargeStatusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (chargeCode === 'PENDING_SETTLEMENT') {
+    return true;
+  }
+  const display = String(dto.chargeStatusDisplay ?? '').trim();
+  return display.includes('待结算');
+}
+
 /** 单条已划价 DTO → 表格行 */
 export function mapPricedOrderRowToTableRow(
   dto: NurseStationPricedOrderRowDto,
   fallbackEncounterId = '',
 ): PricingConfirmationTableRow {
   const encounterId = preserveApiIdForRequest(dto.encounterId) ?? fallbackEncounterId;
+  const requestId = preserveApiIdForRequest(dto.orderId) ?? '';
+  const orderType = String(dto.orderType ?? '').trim();
   const listRowKey = String(dto.listRowKey ?? dto.orderId ?? '').trim();
   const chargeStatus = String(dto.chargeStatusDisplay ?? '').trim();
   const dispenseStatus = String(dto.dispenseStatusDisplay ?? '').trim();
@@ -607,6 +647,10 @@ export function mapPricedOrderRowToTableRow(
   return {
     id: listRowKey || `${encounterId}-${dto.orderId ?? ''}`,
     encounterId,
+    requestId,
+    orderType,
+    chargeStatusEnum: String(dto.chargeStatusEnum ?? '').trim() || undefined,
+    canCancel: resolvePricingRowCanCancel(dto),
     pricingContent: String(dto.productDisplayName ?? '').trim() || '—',
     quantityText,
     unitPrice: Number(dto.unitPrice ?? 0) || 0,
@@ -616,6 +660,70 @@ export function mapPricedOrderRowToTableRow(
     pricingModeDisplay: String(dto.pricingModeDisplay ?? '').trim() || '—',
     parentAdviceDisplayName: String(dto.parentAdviceDisplayName ?? '').trim(),
   };
+}
+
+/** 表格行 → 取消划价写行 */
+export function mapPricingTableRowToCancelItem(
+  row: PricingConfirmationTableRow,
+): NurseStationPricingCancelItemDto | null {
+  const requestId = preserveApiIdForRequest(row.requestId);
+  const encounterId = preserveApiIdForRequest(row.encounterId);
+  const orderType = String(row.orderType ?? '')
+    .trim()
+    .toUpperCase();
+  if (!requestId || !encounterId) {
+    return null;
+  }
+  if (orderType !== 'SERVICE_REQUEST' && orderType !== 'DEVICE_REQUEST') {
+    return null;
+  }
+  return {
+    orderType,
+    requestId,
+    encounterId,
+  };
+}
+
+/** 已选表格行 → 取消划价 items（去重、保序） */
+export function mapSelectedPricingRowsToCancelItems(
+  rows: PricingConfirmationTableRow[],
+  selectedRowIds: Set<string>,
+): NurseStationPricingCancelItemDto[] {
+  const items: NurseStationPricingCancelItemDto[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (!selectedRowIds.has(row.id) || !row.canCancel) {
+      continue;
+    }
+    const item = mapPricingTableRowToCancelItem(row);
+    if (!item) {
+      continue;
+    }
+    const key = `${item.orderType}\u0001${item.requestId}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    items.push(item);
+  }
+  return items;
+}
+
+/** 解析耗材发放库房：显式入参优先，否则取目录 defaultDispenseLocationId。 */
+export function resolvePricingCatalogPerformLocation(
+  catalogRow: NurseStationPricingCatalogRowDto,
+  performLocation?: string,
+  categoryHint?: PricingCatalogCategory,
+): string | undefined {
+  const normalized = normalizePricingCatalogRow(catalogRow, categoryHint);
+  if (!isPricingDeviceCatalogRow(normalized, categoryHint)) {
+    return undefined;
+  }
+  return (
+    preserveApiIdForRequest(performLocation) ??
+    preserveApiIdForRequest(normalized.defaultDispenseLocationId) ??
+    undefined
+  );
 }
 
 interface BuildDirectPricingWriteItemOptions {
@@ -667,6 +775,9 @@ export function listDirectPricingWriteItemMissingFields(
     if (!preserveApiIdForRequest(catalogRow.deviceDefId)) {
       missing.push('耗材定义ID');
     }
+    if (!resolvePricingCatalogPerformLocation(catalogRow, options.performLocation, categoryHint)) {
+      missing.push('发放库房');
+    }
   } else if (!preserveApiIdForRequest(catalogRow.activityId)) {
     missing.push('诊疗活动ID');
   }
@@ -694,7 +805,11 @@ export function buildDirectPricingWriteItem(
   const isDevice = isPricingDeviceCatalogRow(catalogRow, categoryHint);
   const activityId = preserveApiIdForRequest(catalogRow.activityId);
   const deviceDefId = preserveApiIdForRequest(catalogRow.deviceDefId);
-  const performLocationId = preserveApiIdForRequest(performLocation);
+  const performLocationId = resolvePricingCatalogPerformLocation(
+    catalogRow,
+    performLocation,
+    categoryHint,
+  );
 
   if (
     !productTableName ||

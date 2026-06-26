@@ -3,6 +3,7 @@
  */
 import { publicRequestClient } from '#/api/request';
 
+import type { BookingEntityId } from './booking-id';
 import type { BookingOptionDto, BookingPagedResult } from './booking-types';
 
 export interface SlotProvisionTemplateItemDto {
@@ -12,8 +13,8 @@ export interface SlotProvisionTemplateItemDto {
 }
 
 export interface SlotProvisionTemplateDto {
-  id?: number;
-  organizationId?: number;
+  id?: BookingEntityId;
+  organizationId?: BookingEntityId;
   templateCode?: string;
   templateName?: string;
   slotTemplates?: SlotProvisionTemplateItemDto[];
@@ -21,35 +22,35 @@ export interface SlotProvisionTemplateDto {
 }
 
 export interface ScheduleTemplateDto {
-  id?: number;
-  organizationId?: number;
+  id?: BookingEntityId;
+  organizationId?: BookingEntityId;
   templateCode?: string;
   templateName?: string;
   scheduleMode?: string;
-  practitionerId?: number;
-  locationId?: number;
-  healthcareServiceId?: number;
-  slotProvisionTemplateId?: number;
-  defaultReleasePolicyId?: number;
+  practitionerId?: BookingEntityId;
+  locationId?: BookingEntityId;
+  healthcareServiceId?: BookingEntityId;
+  slotProvisionTemplateId?: BookingEntityId;
+  defaultReleasePolicyId?: BookingEntityId;
   effectiveStart?: string;
   effectiveEnd?: string;
   priority?: number;
-  sourcePractitionerRoleId?: number;
+  sourcePractitionerRoleId?: BookingEntityId;
   enabled?: boolean;
 }
 
 export interface WeekScheduleTemplateItemDto {
   id?: number;
   weekday?: number;
-  dayScheduleTemplateId?: number;
+  dayScheduleTemplateId?: BookingEntityId;
   dayScheduleTemplateName?: string;
   sortNo?: number;
   enabled?: boolean;
 }
 
 export interface WeekScheduleTemplateDto {
-  id?: number;
-  organizationId?: number;
+  id?: BookingEntityId;
+  organizationId?: BookingEntityId;
   templateCode?: string;
   templateName?: string;
   fallbackBookable?: boolean;
@@ -61,32 +62,32 @@ export interface WeekScheduleTemplateDto {
 }
 
 export interface PageTemplatesRequest {
-  organizationId?: number;
+  organizationId?: BookingEntityId;
   keyword?: string;
   pageNo: number;
   pageSize: number;
 }
 
 export interface SaveSlotProvisionTemplateRequest {
-  id?: number;
-  organizationId?: number;
-  templateCode: string;
+  id?: BookingEntityId;
+  organizationId?: BookingEntityId;
+  templateCode?: string;
   templateName: string;
   slotTemplates: SlotProvisionTemplateItemDto[];
   enabled: boolean;
 }
 
 export interface SaveScheduleTemplateRequest {
-  id?: number;
-  organizationId: number;
-  templateCode: string;
+  id?: BookingEntityId;
+  organizationId: BookingEntityId;
+  templateCode?: string;
   templateName: string;
   scheduleMode: string;
-  practitionerId?: number;
-  locationId?: number;
-  healthcareServiceId: number;
-  slotProvisionTemplateId?: number;
-  defaultReleasePolicyId?: number;
+  practitionerId?: BookingEntityId;
+  locationId?: BookingEntityId;
+  healthcareServiceId: BookingEntityId;
+  slotProvisionTemplateId?: BookingEntityId;
+  defaultReleasePolicyId?: BookingEntityId;
   effectiveStart?: string;
   effectiveEnd?: string;
   priority?: number;
@@ -108,7 +109,7 @@ export async function loadSlotProvisionTemplateApi(params: { id: number }) {
 }
 
 export async function saveSlotProvisionTemplateApi(params: SaveSlotProvisionTemplateRequest) {
-  return publicRequestClient.post<{ id?: number }>(
+  return publicRequestClient.post<{ id?: BookingEntityId }>(
     '/scheduleTemplate/saveSlotProvisionTemplate',
     params,
   );
@@ -118,7 +119,9 @@ export async function deleteSlotProvisionTemplateApi(params: { id: number }) {
   return publicRequestClient.post<void>('/scheduleTemplate/deleteSlotProvisionTemplate', params);
 }
 
-export async function listSlotProvisionTemplateOptionsApi(params: { organizationId?: number }) {
+export async function listSlotProvisionTemplateOptionsApi(params: {
+  organizationId?: BookingEntityId;
+}) {
   return publicRequestClient.post<{ options?: BookingOptionDto[] }>(
     '/scheduleTemplate/listSlotProvisionTemplateOptions',
     params,
@@ -140,7 +143,7 @@ export async function loadScheduleTemplateApi(params: { id: number }) {
 }
 
 export async function saveScheduleTemplateApi(params: SaveScheduleTemplateRequest) {
-  return publicRequestClient.post<{ id?: number }>(
+  return publicRequestClient.post<{ id?: BookingEntityId }>(
     '/scheduleTemplate/saveScheduleTemplate',
     params,
   );
@@ -151,8 +154,8 @@ export async function deleteScheduleTemplateApi(params: { id: number }) {
 }
 
 export interface ImportFromPractitionerRoleRequest {
-  organizationId: number;
-  practitionerId: number;
+  organizationId: BookingEntityId;
+  practitionerId: BookingEntityId;
   templateCode?: string;
   templateName?: string;
 }
@@ -171,8 +174,8 @@ export async function importFromPractitionerRoleApi(params: ImportFromPractition
 
 export interface SaveWeekScheduleTemplateRequest {
   id?: number;
-  organizationId: number;
-  templateCode: string;
+  organizationId: BookingEntityId;
+  templateCode?: string;
   templateName: string;
   fallbackBookable?: boolean;
   isDefault?: boolean;
@@ -181,7 +184,7 @@ export interface SaveWeekScheduleTemplateRequest {
   effectiveEnd?: string;
   items?: Array<{
     weekday: number;
-    dayScheduleTemplateId: number;
+    dayScheduleTemplateId: BookingEntityId;
     sortNo?: number;
     enabled?: boolean;
   }>;
@@ -202,7 +205,7 @@ export async function loadWeekScheduleTemplateApi(params: { id: number }) {
 }
 
 export async function saveWeekScheduleTemplateApi(params: SaveWeekScheduleTemplateRequest) {
-  return publicRequestClient.post<{ id?: number }>(
+  return publicRequestClient.post<{ id?: BookingEntityId }>(
     '/scheduleTemplate/saveWeekScheduleTemplate',
     params,
   );

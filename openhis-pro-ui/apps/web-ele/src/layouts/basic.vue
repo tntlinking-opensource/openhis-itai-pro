@@ -11,6 +11,7 @@ import { preferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
 
 import SelectDepartment from '#/components/select-department.vue';
+import EinvoiceCompensationAlert from '#/components/einvoice/EinvoiceCompensationAlert.vue';
 import ImpersonationBanner from '#/components/impersonation-banner.vue';
 import { $t } from '#/locales';
 import { useAuthStore } from '#/store';
@@ -83,6 +84,13 @@ const menus = computed(() => [
     },
     icon: 'lucide:user',
     text: $t('page.auth.profile'),
+  },
+  {
+    handler: () => {
+      router.push({ name: 'Profile', query: { tab: 'print' } });
+    },
+    icon: 'lucide:printer',
+    text: '打印设置',
   },
   // {
   //   handler: () => {
@@ -162,6 +170,7 @@ watch(
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <ImpersonationBanner />
+    <EinvoiceCompensationAlert />
     <BasicLayout class="min-h-0 flex-1" @clear-preferences-and-logout="handleLogout">
       <template #user-dropdown>
         <UserDropdown

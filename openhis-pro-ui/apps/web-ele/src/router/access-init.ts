@@ -2,17 +2,20 @@ import type { Router } from 'vue-router';
 
 import { useAccessStore } from '@vben/stores';
 
-import { getMenuTreeByLoginUserApi } from '#/api';
+import { getMenuTreeByLoginUserApi } from '#/api/core/system/menu';
 import { bootstrapImpersonationMeta } from '#/composables/use-impersonation';
-import { accessRoutes } from '#/router/routes';
+import { getAccessRoutes } from '#/router/routes';
 import { useAuthStore } from '#/store';
-import { convertMenuData } from '#/utils/convert-menu-data';
-import { requireLoginScopeReady } from '#/utils/require-login-scope-ready';
+import { convertMenuData } from '#/utils/auth/convert-menu-data';
+import { refreshEinvoiceCompensationMenuBadge } from '#/composables/use-einvoice-compensation-badge';
+import { requireLoginScopeReady } from '#/utils/auth/require-login-scope-ready';
 
 import { generateAccess } from './access';
-
-/** 首次导航命中兜底 404 时的路由名 */
-const NOT_FOUND_ROUTE_NAMES = new Set(['FallbackNotFound', 'NotFound']);
+import {
+  BOOTSTRAP_PREFETCH_TIMEOUT_MS,
+  AccessInitTimeoutError,
+  withAccessInitTimeout,
+} from './access-init-guard';
 
 let accessInitPromise: null | Promise<void> = null;
 
@@ -43,6 +46,7 @@ async function ensureAccessRoutes(router: Router) {
         elapsedMs: Date.now() - menuRequestStartAt,
       });
 
+      const accessRoutes = await getAccessRoutes();
       const { accessibleMenus, accessibleRoutes } = await generateAccess({
         menuData,
         roles: [],
@@ -57,6 +61,10 @@ async function ensureAccessRoutes(router: Router) {
       accessStore.setAccessMenus(accessibleMenus);
       accessStore.setAccessRoutes(accessibleRoutes);
       accessStore.setIsAccessChecked(true);
+      void import('#/utils/print/runtime/hiprint-client').then(({ warmupHiprintClient }) => {
+        warmupHiprintClient();
+      });
+      void refreshEinvoiceCompensationMenuBadge();
       // 触发从 localStorage 恢复租户列表（供布局等读取）
       authStore.getTenantList();
     })().finally(() => {
@@ -69,6 +77,7 @@ async function ensureAccessRoutes(router: Router) {
 
 /**
  * 应用启动时预注册动态路由，避免首次点击需接口的菜单时才阻塞导航。
+ * 仅用于 mount 之后的后台任务，带短超时。
  */
 async function prefetchAccessRoutes(router: Router) {
   const accessStore = useAccessStore();
@@ -87,9 +96,19 @@ async function prefetchAccessRoutes(router: Router) {
   }
 
   try {
-    await bootstrapImpersonationMeta();
-    await ensureAccessRoutes(router);
+    await withAccessInitTimeout(
+      (async () => {
+        await bootstrapImpersonationMeta();
+        await ensureAccessRoutes(router);
+      })(),
+      BOOTSTRAP_PREFETCH_TIMEOUT_MS,
+      resetAccessInit,
+    );
   } catch (error) {
+    if (error instanceof AccessInitTimeoutError) {
+      console.warn('[access-init] prefetch timeout, skip until navigation retry');
+      return;
+    }
     console.error('[access-init] prefetch failed', error);
   }
 }
@@ -103,14 +122,4 @@ async function resetAndRefreshAccessRoutes(router: Router) {
   await ensureAccessRoutes(router);
 }
 
-function isNotFoundRouteName(name: unknown): boolean {
-  return typeof name === 'string' && NOT_FOUND_ROUTE_NAMES.has(name);
-}
-
-export {
-  ensureAccessRoutes,
-  isNotFoundRouteName,
-  prefetchAccessRoutes,
-  resetAccessInit,
-  resetAndRefreshAccessRoutes,
-};
+export { ensureAccessRoutes, prefetchAccessRoutes, resetAccessInit, resetAndRefreshAccessRoutes };

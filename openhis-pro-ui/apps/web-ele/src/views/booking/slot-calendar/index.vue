@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import type { SlotDetailDto, SlotListItemDto } from '#/api/booking/slot-manage';
 
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
+import {
+  bookingOptionValue,
+  isSameBookingId,
+  toBookingId,
+  type BookingEntityId,
+} from '#/api/booking/booking-id';
+import type { BookingOptionDto } from '#/api/booking/booking-types';
 import {
   blockSlotsApi,
   loadSlotDetailApi,
@@ -17,60 +24,147 @@ import {
   previewStopClinicImpactApi,
   releaseStopClinicPreviewFreezeApi,
 } from '#/api/booking/outpatient-schedule';
-import type { BookingOptionDto } from '#/api/booking/booking-types';
+import { addDaysIso, todayLocalDateIso } from '#/api/booking/booking-constants';
 import StopClinicWizard from '#/views/booking/components/stop-clinic-wizard.vue';
 import { useBookingOrganization } from '#/views/booking/composables/use-booking-organization';
 import { useRequest } from '#/hooks/use-request';
+import { Refresh } from '@element-plus/icons-vue';
 import {
   ElButton,
   ElDatePicker,
   ElDescriptions,
   ElDescriptionsItem,
   ElDrawer,
+  ElEmpty,
   ElMessage,
   ElMessageBox,
   ElOption,
+  ElPagination,
   ElSelect,
   ElTable,
   ElTableColumn,
+  ElTag,
 } from 'element-plus';
 
 defineOptions({ name: 'BookingSlotCalendar' });
 
-const { organizationId } = useBookingOrganization();
+const { organizationId: loginOrganizationId } = useBookingOrganization();
+/** 查询科室：默认同登录科室，可在页内切换（与门诊排班一致） */
+const queryOrganizationId = ref<BookingEntityId | undefined>();
 const list = ref<SlotListItemDto[]>([]);
 const total = ref(0);
 const selectedRows = ref<SlotListItemDto[]>([]);
 const practitioners = ref<BookingOptionDto[]>([]);
+const departments = ref<BookingOptionDto[]>([]);
 const detailVisible = ref(false);
 const detail = ref<SlotDetailDto | null>(null);
 
 const stopWizardVisible = ref(false);
-const wizardScheduleId = ref<number>();
-const wizardSlotIds = ref<number[]>([]);
+const wizardScheduleId = ref<BookingEntityId>();
+const wizardSlotIds = ref<BookingEntityId[]>([]);
 const wizardCompleted = ref(false);
 let wizardPromise: { resolve: () => void; reject: () => void } | null = null;
 
 const query = reactive({
   pageNo: 1,
-  pageSize: 20,
-  date: '',
-  practitionerId: undefined as number | undefined,
+  pageSize: 50,
+  date: todayLocalDateIso(),
+  practitionerId: undefined as BookingEntityId | undefined,
+  statusFilter: '' as '' | '可约' | '已满' | '停诊',
 });
 
 const selectedSlotIds = computed(() =>
-  selectedRows.value.map((row) => row.slotId).filter((id): id is number => !!id),
+  selectedRows.value.map((row) => row.slotId).filter((id): id is BookingEntityId => !!id),
 );
 
 const wizardSchedule = computed(() =>
   wizardScheduleId.value ? { scheduleId: wizardScheduleId.value } : null,
 );
 
+const currentOrgLabel = computed(() => {
+  const hit = departments.value.find((item) =>
+    isSameBookingId(item.value, queryOrganizationId.value),
+  );
+  return hit?.label ?? '';
+});
+
+const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+const dateLabel = computed(() => formatDateLabel(query.date));
+
+/** 医师下拉：主数据 + 当日号源回显并集 */
+const practitionerFilterOptions = computed(() => {
+  const map = new Map<string, BookingOptionDto>();
+  for (const item of practitioners.value) {
+    const id = toBookingId(item.value);
+    if (!id) continue;
+    map.set(id, { ...item, value: id });
+  }
+  for (const row of list.value) {
+    const id = toBookingId(row.practitionerId);
+    if (!id) continue;
+    if (!map.has(id)) {
+      map.set(id, { value: id, label: row.practitionerName || '医师待定' });
+    }
+  }
+  return [...map.values()];
+});
+
+const summary = computed(() => {
+  let capacity = 0;
+  let booked = 0;
+  let remaining = 0;
+  let blocked = 0;
+  for (const row of filteredList.value) {
+    capacity += Number(row.capacity ?? 0);
+    booked += Number(row.bookedCount ?? 0);
+    remaining += Number(row.remainingCount ?? 0);
+    if (row.displayStatus === '停诊') {
+      blocked += 1;
+    }
+  }
+  return { capacity, booked, remaining, blocked, count: filteredList.value.length };
+});
+
+/** 停诊可走服务端 statusCode；可约/已满为展示态，仅本页前端收窄 */
+function resolveServerStatusCode(): string | undefined {
+  if (query.statusFilter === '停诊') {
+    return 'BUSY_UNAVAILABLE';
+  }
+  return undefined;
+}
+
+const filteredList = computed(() => {
+  if (!query.statusFilter || query.statusFilter === '停诊') {
+    return list.value;
+  }
+  return list.value.filter((row) => row.displayStatus === query.statusFilter);
+});
+
+/** 分页总数：停诊/无筛选用服务端；可约/已满用本页筛选后条数 */
+const displayTotal = computed(() => {
+  if (query.statusFilter === '可约' || query.statusFilter === '已满') {
+    return filteredList.value.length;
+  }
+  return total.value;
+});
+
+const emptyDescription = computed(() => {
+  if (!queryOrganizationId.value) {
+    return '请先选择查询科室';
+  }
+  if (!query.date) {
+    return '请选择查询日期';
+  }
+  return `${query.date} 暂无号源`;
+});
+
 const { run: runPage, loading } = useRequest(pageSlotsByDateApi, {
   manual: true,
   onSuccess: (res) => {
     list.value = res.content ?? [];
     total.value = Number(res.totalCount ?? 0);
+    selectedRows.value = [];
   },
 });
 
@@ -83,17 +177,18 @@ const { run: runDetail, loading: detailLoading } = useRequest(loadSlotDetailApi,
 });
 
 function groupSelectedBySchedule(rows: SlotListItemDto[]) {
-  const groups = new Map<number, SlotListItemDto[]>();
+  const groups = new Map<string, SlotListItemDto[]>();
   for (const row of rows) {
-    if (!row.scheduleId || !row.slotId) continue;
-    const bucket = groups.get(row.scheduleId) ?? [];
+    const scheduleId = toBookingId(row.scheduleId);
+    if (!scheduleId || !row.slotId) continue;
+    const bucket = groups.get(scheduleId) ?? [];
     bucket.push(row);
-    groups.set(row.scheduleId, bucket);
+    groups.set(scheduleId, bucket);
   }
   return groups;
 }
 
-function openStopWizard(scheduleId: number, slotIds: number[]) {
+function openStopWizard(scheduleId: BookingEntityId, slotIds: BookingEntityId[]) {
   return new Promise<void>((resolve, reject) => {
     wizardScheduleId.value = scheduleId;
     wizardSlotIds.value = slotIds;
@@ -117,13 +212,13 @@ watch(stopWizardVisible, (visible) => {
   }
 });
 
-async function blockSlotsDirect(slotIds: number[], reason: string) {
+async function blockSlotsDirect(slotIds: BookingEntityId[], reason: string) {
   await blockSlotsApi({ slotIds, reason: reason || '停诊' });
 }
 
 async function handleBlock() {
-  if (!organizationId.value) {
-    ElMessage.warning('请先选择登录科室');
+  if (!queryOrganizationId.value) {
+    ElMessage.warning('请先选择查询科室');
     return;
   }
   if (!selectedSlotIds.value.length) {
@@ -144,9 +239,9 @@ async function handleBlock() {
     const reason = value || '停诊';
 
     for (const [scheduleId, rows] of groups) {
-      const slotIds = rows.map((row) => row.slotId!).filter(Boolean);
+      const slotIds = rows.map((row) => toBookingId(row.slotId)!).filter(Boolean);
       const preview = await previewStopClinicImpactApi({
-        organizationId: organizationId.value,
+        organizationId: queryOrganizationId.value,
         scheduleId,
         slotIds,
       });
@@ -156,7 +251,7 @@ async function handleBlock() {
       } else {
         if (preview?.sourceSlotsFrozen) {
           await releaseStopClinicPreviewFreezeApi({
-            organizationId: organizationId.value,
+            organizationId: queryOrganizationId.value,
             scheduleId,
             slotIds,
           });
@@ -173,8 +268,9 @@ async function handleBlock() {
 }
 
 async function loadData() {
-  if (!organizationId.value) {
-    ElMessage.warning('请先选择登录科室');
+  if (!queryOrganizationId.value) {
+    list.value = [];
+    total.value = 0;
     return;
   }
   if (!query.date) {
@@ -182,18 +278,76 @@ async function loadData() {
     return;
   }
   await runPage({
-    organizationId: organizationId.value,
+    organizationId: queryOrganizationId.value,
     date: query.date,
     practitionerId: query.practitionerId,
+    statusCode: resolveServerStatusCode(),
     pageNo: query.pageNo,
     pageSize: query.pageSize,
   });
 }
 
-async function initFilters() {
-  if (!organizationId.value) return;
-  const res = await loadScheduleFormInitApi({ organizationId: organizationId.value });
+/** 从科室下拉解析默认查询科室（优先登录科室，否则取列表首项） */
+function pickQueryOrganizationId(
+  departmentOptions: BookingOptionDto[] | undefined,
+  preferred?: BookingEntityId,
+): BookingEntityId | undefined {
+  const pref = toBookingId(preferred);
+  if (pref && departmentOptions?.some((item) => isSameBookingId(item.value, pref))) {
+    return pref;
+  }
+  return toBookingId(departmentOptions?.[0]?.value) ?? pref;
+}
+
+async function initFilters(preferredOrganizationId?: BookingEntityId) {
+  const candidate =
+    preferredOrganizationId ?? queryOrganizationId.value ?? loginOrganizationId.value;
+  if (!candidate) {
+    practitioners.value = [];
+    departments.value = [];
+    queryOrganizationId.value = undefined;
+    return;
+  }
+  let res = await loadScheduleFormInitApi({ organizationId: candidate });
+  const resolved = pickQueryOrganizationId(res?.departments, candidate);
+  if (resolved !== undefined && resolved !== candidate) {
+    res = await loadScheduleFormInitApi({ organizationId: resolved });
+  }
+  queryOrganizationId.value = resolved;
   practitioners.value = res?.practitioners ?? [];
+  departments.value = res?.departments ?? [];
+}
+
+/** 切换查询科室：重置医师筛选并重新拉取 */
+async function handleOrganizationChange() {
+  query.practitionerId = undefined;
+  query.pageNo = 1;
+  selectedRows.value = [];
+  await initFilters(queryOrganizationId.value);
+  await loadData();
+}
+
+function handleSearch() {
+  query.pageNo = 1;
+  selectedRows.value = [];
+  void loadData();
+}
+
+/** 可约/已满仅前端筛：变更时清空勾选，避免与可见行不一致 */
+function handleStatusFilterChange() {
+  selectedRows.value = [];
+  if (query.statusFilter === '停诊') {
+    handleSearch();
+  }
+}
+
+function openDetail(row: SlotListItemDto) {
+  if (!row.slotId) return;
+  void runDetail({ slotId: row.slotId });
+}
+
+function handleRowDblClick(row: SlotListItemDto) {
+  openDetail(row);
 }
 
 function handleSelectionChange(rows: SlotListItemDto[]) {
@@ -211,8 +365,9 @@ async function handleUnblock() {
 }
 
 async function handleToggleOverbook(row: SlotListItemDto, overbooked: boolean) {
-  if (!row.slotId) return;
-  await setOverbookedApi({ slotId: row.slotId, overbookedFlag: overbooked });
+  const slotId = row.slotId;
+  if (!slotId) return;
+  await setOverbookedApi({ slotId, overbookedFlag: overbooked });
   ElMessage.success(overbooked ? '已标记超售' : '已取消超售');
   await loadData();
 }
@@ -222,17 +377,126 @@ function handlePageChange(page: number) {
   void loadData();
 }
 
-onMounted(async () => {
-  query.date = new Date().toISOString().slice(0, 10);
+function handlePageSizeChange(size: number) {
+  query.pageSize = size;
+  query.pageNo = 1;
+  void loadData();
+}
+
+function setToday() {
+  query.date = todayLocalDateIso();
+  handleSearch();
+}
+
+function shiftDate(days: number) {
+  query.date = addDaysIso(query.date || todayLocalDateIso(), days);
+  handleSearch();
+}
+
+function formatTime(value?: string) {
+  if (!value) return '—';
+  return String(value).replace('T', ' ').slice(11, 16);
+}
+
+function formatDateLabel(date: string) {
+  if (!date) return '';
+  const parsed = new Date(`${date}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  return `${date} ${WEEKDAY_LABELS[parsed.getDay()]}`;
+}
+
+function resolveOptionLabel(options: BookingOptionDto[], id?: unknown) {
+  const idText = toBookingId(id);
+  if (!idText) return '';
+  return options.find((item) => isSameBookingId(item.value, idText))?.label ?? '';
+}
+
+function organizationLabel(row: SlotListItemDto | SlotDetailDto) {
+  return (
+    row.organizationName ||
+    resolveOptionLabel(departments.value, row.organizationId) ||
+    currentOrgLabel.value ||
+    '—'
+  );
+}
+
+function practitionerLabel(row: SlotListItemDto | SlotDetailDto) {
+  return (
+    row.practitionerName ||
+    resolveOptionLabel(practitioners.value, row.practitionerId) ||
+    '医师待定'
+  );
+}
+
+function serviceTypeLabel(row: SlotListItemDto | SlotDetailDto) {
+  return row.healthcareServiceName || '—';
+}
+
+function statusTagType(status?: string): 'danger' | 'info' | 'success' | 'warning' {
+  if (status === '停诊') return 'danger';
+  if (status === '已满') return 'info';
+  return 'success';
+}
+
+function rowClassName({ row }: { row: SlotListItemDto }) {
+  return row.displayStatus === '停诊' ? 'slot-calendar-page__row--blocked' : '';
+}
+
+watch(loginOrganizationId, (organizationId) => {
+  const id = toBookingId(organizationId);
+  if (!id) {
+    return;
+  }
+  const departmentOptions = departments.value;
+  if (
+    departmentOptions.length &&
+    !departmentOptions.some((item) => isSameBookingId(item.value, id))
+  ) {
+    return;
+  }
+  if (isSameBookingId(queryOrganizationId.value, id)) {
+    return;
+  }
+  queryOrganizationId.value = id;
+  void handleOrganizationChange();
+});
+
+watch(
+  () => query.date,
+  (nextDate, prevDate) => {
+    if (!nextDate || !prevDate || nextDate === prevDate) {
+      return;
+    }
+    handleSearch();
+  },
+);
+
+async function bootstrapPage() {
   await initFilters();
   await loadData();
-});
+}
+
+void bootstrapPage();
 </script>
 
 <template>
   <Page auto-content-height>
     <div class="slot-calendar-page">
       <header class="slot-calendar-page__toolbar">
+        <ElSelect
+          v-model="queryOrganizationId"
+          filterable
+          placeholder="查询科室"
+          style="width: 180px"
+          @change="handleOrganizationChange"
+        >
+          <ElOption
+            v-for="item in departments"
+            :key="item.value"
+            :label="item.label"
+            :value="bookingOptionValue(item.value)"
+          />
+        </ElSelect>
         <ElDatePicker
           v-model="query.date"
           type="date"
@@ -240,49 +504,114 @@ onMounted(async () => {
           placeholder="日期"
           style="width: 160px"
         />
+        <ElButton @click="setToday">今天</ElButton>
+        <ElButton @click="shiftDate(1)">明天</ElButton>
+        <ElButton @click="shiftDate(-1)">昨天</ElButton>
         <ElSelect
           v-model="query.practitionerId"
           clearable
           filterable
           placeholder="医师"
           style="width: 180px"
+          @change="handleSearch"
         >
           <ElOption
-            v-for="item in practitioners"
+            v-for="item in practitionerFilterOptions"
             :key="item.value"
             :label="item.label"
-            :value="Number(item.value)"
+            :value="bookingOptionValue(item.value)"
           />
         </ElSelect>
-        <ElButton type="primary" :loading="loading" @click="loadData">查询</ElButton>
+        <ElSelect
+          v-model="query.statusFilter"
+          clearable
+          placeholder="状态"
+          style="width: 120px"
+          @change="handleStatusFilterChange"
+        >
+          <ElOption label="可约" value="可约" />
+          <ElOption label="已满" value="已满" />
+          <ElOption label="停诊" value="停诊" />
+        </ElSelect>
+        <ElButton type="primary" :loading="loading" @click="handleSearch">查询</ElButton>
+        <ElButton :icon="Refresh" circle :loading="loading" @click="loadData" />
         <ElButton :disabled="!selectedSlotIds.length" @click="handleBlock">封锁选中</ElButton>
         <ElButton :disabled="!selectedSlotIds.length" @click="handleUnblock">解封选中</ElButton>
+        <span v-if="selectedSlotIds.length" class="slot-calendar-page__selection-hint">
+          已选 {{ selectedSlotIds.length }} 条
+        </span>
+        <span v-if="currentOrgLabel" class="slot-calendar-page__org-hint">
+          当前科室：{{ currentOrgLabel }}
+        </span>
       </header>
+
+      <div class="slot-calendar-page__summary">
+        <span v-if="dateLabel" class="slot-calendar-page__date-label">{{ dateLabel }}</span>
+        <span>本页 {{ summary.count }} 个时段</span>
+        <span v-if="query.statusFilter" class="slot-calendar-page__filter-hint">
+          状态「{{ query.statusFilter }}」（本页筛选）
+        </span>
+        <span>容量 {{ summary.capacity }}</span>
+        <span>已约 {{ summary.booked }}</span>
+        <span>剩余 {{ summary.remaining }}</span>
+        <span v-if="summary.blocked">停诊 {{ summary.blocked }}</span>
+        <span class="slot-calendar-page__summary-total">共 {{ displayTotal }} 条（分页）</span>
+      </div>
 
       <ElTable
         v-loading="loading"
-        :data="list"
+        class="slot-calendar-page__table"
+        :data="filteredList"
         border
         stripe
+        :row-class-name="rowClassName"
         @selection-change="handleSelectionChange"
+        @row-dblclick="handleRowDblClick"
       >
-        <ElTableColumn type="selection" width="48" />
-        <ElTableColumn prop="startTime" label="开始" min-width="160" />
-        <ElTableColumn prop="endTime" label="结束" min-width="160" />
-        <ElTableColumn prop="displayStatus" label="状态" width="100" />
-        <ElTableColumn prop="capacity" label="容量" width="80" />
-        <ElTableColumn prop="bookedCount" label="已约" width="80" />
-        <ElTableColumn prop="remainingCount" label="剩余" width="80" />
-        <ElTableColumn label="超售" width="80">
+        <ElTableColumn type="selection" width="48" fixed="left" />
+        <ElTableColumn label="科室" min-width="120" fixed="left" show-overflow-tooltip>
+          <template #default="{ row }">{{ organizationLabel(row) }}</template>
+        </ElTableColumn>
+        <ElTableColumn label="医师" min-width="100" fixed="left" show-overflow-tooltip>
+          <template #default="{ row }">{{ practitionerLabel(row) }}</template>
+        </ElTableColumn>
+        <ElTableColumn label="号源类型" min-width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ serviceTypeLabel(row) }}</template>
+        </ElTableColumn>
+        <ElTableColumn label="时段" min-width="120">
           <template #default="{ row }">
-            {{ row.overbookedFlag ? '是' : '否' }}
+            {{ formatTime(row.startTime) }} — {{ formatTime(row.endTime) }}
           </template>
         </ElTableColumn>
-        <ElTableColumn label="操作" width="160" fixed="right">
+        <ElTableColumn label="状态" width="88" align="center">
           <template #default="{ row }">
-            <ElButton link type="primary" @click="row.slotId && runDetail({ slotId: row.slotId })">
-              详情
-            </ElButton>
+            <ElTag :type="statusTagType(row.displayStatus)" size="small" effect="light">
+              {{ row.displayStatus || '—' }}
+            </ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn prop="capacity" label="容量" width="72" align="center" />
+        <ElTableColumn prop="bookedCount" label="已约" width="72" align="center" />
+        <ElTableColumn label="剩余" width="72" align="center">
+          <template #default="{ row }">
+            <span
+              :class="{
+                'slot-calendar-page__remaining--zero': Number(row.remainingCount ?? 0) <= 0,
+              }"
+            >
+              {{ row.remainingCount ?? '—' }}
+            </span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="超售" width="72" align="center">
+          <template #default="{ row }">
+            <ElTag v-if="row.overbookedFlag" type="warning" size="small">是</ElTag>
+            <span v-else>—</span>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="操作" width="168" fixed="right">
+          <template #default="{ row }">
+            <ElButton link type="primary" @click="openDetail(row)"> 详情 </ElButton>
             <ElButton
               v-if="row.slotId"
               link
@@ -293,44 +622,52 @@ onMounted(async () => {
             </ElButton>
           </template>
         </ElTableColumn>
+        <template #empty>
+          <ElEmpty :description="emptyDescription" :image-size="80" />
+        </template>
       </ElTable>
 
       <div class="slot-calendar-page__pager">
-        <span>共 {{ total }} 条</span>
-        <ElButton :disabled="query.pageNo <= 1" @click="handlePageChange(query.pageNo - 1)">
-          上一页
-        </ElButton>
-        <span>第 {{ query.pageNo }} 页</span>
-        <ElButton
-          :disabled="query.pageNo * query.pageSize >= total"
-          @click="handlePageChange(query.pageNo + 1)"
-        >
-          下一页
-        </ElButton>
+        <ElPagination
+          :current-page="query.pageNo"
+          :page-size="query.pageSize"
+          :total="total"
+          :page-sizes="[20, 50, 100, 200]"
+          layout="total, sizes, prev, pager, next"
+          background
+          @current-change="handlePageChange"
+          @size-change="handlePageSizeChange"
+        />
       </div>
 
-      <ElDrawer v-model="detailVisible" title="号源详情" size="420px">
+      <ElDrawer v-model="detailVisible" title="号源详情" size="440px">
         <ElDescriptions v-if="detail" v-loading="detailLoading" :column="1" border>
-          <ElDescriptionsItem label="号源 ID">{{ detail.slotId }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="日程 ID">{{ detail.scheduleId }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="状态">{{
-            detail.displayStatus || detail.statusCode
-          }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="开始">{{ detail.startTime }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="结束">{{ detail.endTime }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="科室">{{ organizationLabel(detail) }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="医师">{{ practitionerLabel(detail) }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="号源类型">{{ serviceTypeLabel(detail) }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="状态">
+            <ElTag :type="statusTagType(detail.displayStatus)" size="small">
+              {{ detail.displayStatus || detail.statusCode }}
+            </ElTag>
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="时段">
+            {{ formatTime(detail.startTime) }} — {{ formatTime(detail.endTime) }}
+          </ElDescriptionsItem>
           <ElDescriptionsItem label="容量">{{ detail.capacity }}</ElDescriptionsItem>
           <ElDescriptionsItem label="已约">{{ detail.bookedCount }}</ElDescriptionsItem>
           <ElDescriptionsItem label="剩余">{{ detail.remainingCount }}</ElDescriptionsItem>
           <ElDescriptionsItem label="超售">{{
             detail.overbookedFlag ? '是' : '否'
           }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="备注">{{ detail.commentText || '-' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="备注">{{ detail.commentText || '—' }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="号源 ID">{{ detail.slotId }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="日程 ID">{{ detail.scheduleId }}</ElDescriptionsItem>
         </ElDescriptions>
       </ElDrawer>
 
       <StopClinicWizard
         v-model:visible="stopWizardVisible"
-        :organization-id="organizationId"
+        :organization-id="queryOrganizationId"
         :schedule="wizardSchedule"
         :slot-ids="wizardSlotIds"
         :practitioners="practitioners"
@@ -346,6 +683,7 @@ onMounted(async () => {
   flex-direction: column;
   gap: 12px;
   height: 100%;
+  min-height: 0;
 }
 
 .slot-calendar-page__toolbar {
@@ -355,10 +693,58 @@ onMounted(async () => {
   align-items: center;
 }
 
+.slot-calendar-page__org-hint {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.slot-calendar-page__selection-hint {
+  font-size: 13px;
+  color: var(--el-color-primary);
+}
+
+.slot-calendar-page__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  background: var(--el-fill-color-blank);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+}
+
+.slot-calendar-page__date-label {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.slot-calendar-page__filter-hint {
+  color: var(--el-color-warning);
+}
+
+.slot-calendar-page__summary-total {
+  margin-left: auto;
+  color: var(--el-text-color-secondary);
+}
+
+.slot-calendar-page__table {
+  flex: 1;
+  min-height: 0;
+}
+
 .slot-calendar-page__pager {
   display: flex;
-  gap: 8px;
-  align-items: center;
   justify-content: flex-end;
+}
+
+.slot-calendar-page__remaining--zero {
+  color: var(--el-text-color-placeholder);
+}
+
+:deep(.slot-calendar-page__row--blocked) {
+  opacity: 0.72;
 }
 </style>

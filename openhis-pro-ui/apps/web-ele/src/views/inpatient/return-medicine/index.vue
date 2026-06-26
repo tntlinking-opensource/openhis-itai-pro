@@ -27,7 +27,7 @@ import {
 } from '#/chs/constants/insurance-contract';
 import { parseListItemsFromApiData } from '#/utils/api/unwrap-list-response';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import InpatientReturnMedicineDetailCenter from './components/inpatient-return-medicine-detail-center.vue';
 import InpatientReturnMedicineQueuePanel from './components/inpatient-return-medicine-queue-panel.vue';

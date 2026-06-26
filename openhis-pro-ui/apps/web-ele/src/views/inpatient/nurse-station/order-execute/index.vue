@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { NurseStationModulePatient } from '../components/nurse-station-module-patient.types';
-import type { NurseStationOrderExecuteTab } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-execute.types';
+import type {
+  NurseStationOrderExecuteMedicineCategoryTab,
+  NurseStationOrderExecuteTab,
+} from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-execute.types';
 import type {
   NurseStationOrderExecutePlanSlot,
   NurseStationOrderExecuteTableRow,
@@ -18,37 +21,12 @@ import {
   httpSkipNurseStationOrderSlots,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-order-execute.http';
 import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display-cell.vue';
-import { adviceTherapyTypeClass } from '#/views/inpatient/doctor-station/advice/services/advice-list';
-import { useBedsideSpecimenBarcodePrint } from '#/composables/use-bedside-specimen-barcode-print';
-import { useIvInfusionExecuteSheetPrint } from '#/composables/use-iv-infusion-execute-sheet-print';
-import { useIvInfusionLabelPrint } from '#/composables/use-iv-infusion-label-print';
 import {
-  useInjectionLabelPrint,
-  useNebulizationLabelPrint,
-  useOralDrugLabelPrint,
-  useSkinTestLabelPrint,
-} from '#/composables/use-medication-label-print';
-import { useNursePrescriptionPrint } from '#/composables/use-nurse-prescription-print';
-import { useOrderExecuteSheetPrint } from '#/composables/use-order-execute-sheet-print';
-import {
-  useExamApplyFormPrint,
-  useLabApplyFormPrint,
-  useProcedureApplyFormPrint,
-} from '#/composables/use-service-apply-form-print';
-import { useTreatmentExecuteSheetPrint } from '#/composables/use-treatment-execute-sheet-print';
+  adviceTherapyTypeClass,
+  getAdviceStatusTagType,
+} from '#/views/inpatient/doctor-station/advice/services/advice-list';
 import { useRequest } from '#/hooks/use-request';
-import {
-  groupInpatientExamApplyPrintTarget,
-  groupInpatientInfusionLabelPrintTargets,
-  groupInpatientLabApplyPrintTarget,
-  groupInpatientMedicationExecuteRequestIds,
-  groupInpatientMedicationLabelPrintTargets,
-  groupInpatientOrderExecuteSheetListRowKeys,
-  groupInpatientProcedureApplyPrintTarget,
-  groupInpatientSpecimenBarcodePrintTargets,
-  groupInpatientTreatmentExecutePrintTargets,
-} from '#/utils/report/inpatient-nurse-station-print-targets';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import NurseStationPatientOrderCollapseTitle from '../components/nurse-station-patient-order-collapse-title.vue';
 import { nurseStationPatientListPanelContextKey } from '../components/patient-list-panel.context';
@@ -85,6 +63,14 @@ const props = withDefaults(defineProps<Props>(), {
 
 const WRITE_BATCH_LIMIT = 50;
 
+const drugCategoryTabs: Array<{
+  label: string;
+  value: NurseStationOrderExecuteMedicineCategoryTab;
+}> = [
+  { label: '西药', value: 'west' },
+  { label: '中药', value: 'tcm' },
+];
+
 const listPanelContext = inject(nurseStationPatientListPanelContextKey, null);
 
 const statusTabs: Array<{ label: string; value: ExecuteTab }> = [
@@ -95,6 +81,7 @@ const statusTabs: Array<{ label: string; value: ExecuteTab }> = [
 ];
 
 const activeStatus = ref<ExecuteTab>('pending');
+const activeDrugCategoryTab = ref<NurseStationOrderExecuteMedicineCategoryTab>('west');
 const activeTimeType = ref<TimeTypeFilter>('all');
 /** 槽位勾选态（按 slotKey 存，避免每次勾选克隆 Set 触发整表重渲染） */
 const slotSelectionByKey = ref<Record<string, boolean>>({});
@@ -105,20 +92,6 @@ const listRequest = useRequest(httpListNurseStationOrderExecute, { manual: true 
 const executeRequest = useRequest(httpExecuteNurseStationOrders, { manual: true });
 const skipRequest = useRequest(httpSkipNurseStationOrderSlots, { manual: true });
 const cancelExecuteRequest = useRequest(httpCancelNurseStationOrderExecutions, { manual: true });
-const { printIvInfusionLabels } = useIvInfusionLabelPrint();
-const { printIvInfusionExecuteSheet } = useIvInfusionExecuteSheetPrint();
-const { printMedicationLabels: printInjectionLabels } = useInjectionLabelPrint();
-const { printMedicationLabels: printOralDrugLabels } = useOralDrugLabelPrint();
-const { printMedicationLabels: printSkinTestLabels } = useSkinTestLabelPrint();
-const { printMedicationLabels: printNebulizationLabels } = useNebulizationLabelPrint();
-const { printBedsideSpecimenBarcodes } = useBedsideSpecimenBarcodePrint();
-const { printTreatmentExecuteSheet } = useTreatmentExecuteSheetPrint();
-const { printServiceApplyForm: printLabApplyForm } = useLabApplyFormPrint();
-const { printServiceApplyForm: printExamApplyForm } = useExamApplyFormPrint();
-const { printServiceApplyForm: printProcedureApplyForm } = useProcedureApplyFormPrint();
-const { printOrderExecuteSheet } = useOrderExecuteSheetPrint();
-const { printNursePrescriptions, resolving: prescriptionResolving } = useNursePrescriptionPrint();
-const printActionLoading = ref(false);
 
 const encounterIds = computed(() =>
   props.patients.map((p) => String(p.id).trim()).filter((id) => id.length > 0),
@@ -198,7 +171,7 @@ const selectedAll = computed(() => {
   return total > 0 && selectedSlotCount.value === total;
 });
 
-/** 写路径/打印过滤用：已勾选 slotKey 集合 */
+/** 写路径过滤用：已勾选 slotKey 集合 */
 function buildSelectedSlotKeySet(): Set<string> {
   const keys = new Set<string>();
   const selection = slotSelectionByKey.value;
@@ -246,7 +219,7 @@ watch(
 );
 
 watch(
-  [encounterIds, activeStatus, activeTimeType, executeDeadline],
+  [encounterIds, activeStatus, activeDrugCategoryTab, activeTimeType, executeDeadline],
   () => {
     void loadExecuteList();
   },
@@ -258,6 +231,15 @@ function executeOrderDisplayedContent(item: NurseStationOrderExecuteTableRow): s
   const c = item.content?.trim();
   if (c && c.length > 0) return item.content;
   return item.typeLabel;
+}
+
+/** 医嘱状态 Tag 颜色（已停嘱用红色） */
+function getExecuteStatusTagType(row: NurseStationOrderExecuteTableRow) {
+  if (row.halted) return 'danger';
+  return getAdviceStatusTagType({
+    statusEnum: row.statusEnum,
+    status: row.statusDisplay,
+  });
 }
 
 /** 是否药嘱行（绑定项下沉到用法频次下方） */
@@ -328,6 +310,7 @@ async function loadExecuteList() {
     encounterIds: encounterIds.value,
     executeTab: activeStatus.value,
     therapyType: activeTimeType.value,
+    medicineCategoryTab: activeDrugCategoryTab.value,
     executionDeadline: deadline,
   });
   ordersByEncounterId.value = indexExecuteGroupsByEncounterId(res.groups, activeStatus.value);
@@ -461,364 +444,12 @@ async function handleCancelExecute() {
   const summaryHint = (res.rebuiltSummaryNos?.length ?? 0) > 0 ? '，已自动重建汇总单' : '';
   await afterWriteSuccess(res.message?.trim() || `已成功取消 ${n} 个计划点${summaryHint}`);
 }
-
-function resolveSelectedSlotKeys(): Set<string> | undefined {
-  const keys = buildSelectedSlotKeySet();
-  if (keys.size === 0) {
-    return undefined;
-  }
-  return keys;
-}
-
-async function handlePrintOrderExecuteSheet() {
-  const cards = visibleCards.value.filter((card) => card.orders.length > 0);
-  if (!cards.length) {
-    ElMessage.warning('当前没有可打印的医嘱');
-    return;
-  }
-  const deadline = String(executeDeadline.value ?? '').trim();
-  if (!deadline) {
-    ElMessage.warning('请先选择截止时间');
-    return;
-  }
-  const slotFilter = resolveSelectedSlotKeys();
-
-  printActionLoading.value = true;
-  try {
-    let printed = 0;
-    for (const card of cards) {
-      const listRowKeys = groupInpatientOrderExecuteSheetListRowKeys(card.orders, slotFilter);
-      if (slotFilter && !listRowKeys?.length) {
-        continue;
-      }
-      await printOrderExecuteSheet({
-        encounterId: card.patient.id,
-        executeTab: activeStatus.value,
-        therapyType: activeTimeType.value,
-        executionDeadline: deadline,
-        listRowKeys,
-        jobName: `医嘱执行单-${card.patient.name}`,
-      });
-      printed += 1;
-    }
-    if (!printed) {
-      ElMessage.warning('没有可打印的医嘱');
-      return;
-    }
-    ElMessage.success(`已发送 ${printed} 份医嘱执行单`);
-  } catch {
-    // composable 已记录日志
-  } finally {
-    printActionLoading.value = false;
-  }
-}
-
-async function handlePrintIvInfusionExecuteSheet() {
-  const cards = visibleCards.value.filter((card) => card.orders.length > 0);
-  if (!cards.length) {
-    ElMessage.warning('当前没有可打印的医嘱');
-    return;
-  }
-  const deadline = String(executeDeadline.value ?? '').trim();
-  if (!deadline) {
-    ElMessage.warning('请先选择截止时间');
-    return;
-  }
-  const slotFilter = resolveSelectedSlotKeys();
-
-  printActionLoading.value = true;
-  try {
-    let printed = 0;
-    for (const card of cards) {
-      const listRowKeys = groupInpatientOrderExecuteSheetListRowKeys(card.orders, slotFilter);
-      if (slotFilter && !listRowKeys?.length) {
-        continue;
-      }
-      await printIvInfusionExecuteSheet({
-        encounterId: card.patient.id,
-        executeTab: activeStatus.value,
-        therapyType: activeTimeType.value,
-        executionDeadline: deadline,
-        listRowKeys,
-        jobName: `输液执行单-${card.patient.name}`,
-      });
-      printed += 1;
-    }
-    if (!printed) {
-      ElMessage.warning('没有可打印的输液医嘱');
-      return;
-    }
-    ElMessage.success(`已发送 ${printed} 份输液执行单`);
-  } catch {
-    // composable 已记录日志
-  } finally {
-    printActionLoading.value = false;
-  }
-}
-
-async function handlePrintOrderExecute(label: string) {
-  const rows = collectAllTableRows();
-  if (!rows.length) {
-    ElMessage.warning('当前没有可打印的医嘱');
-    return;
-  }
-  const slotFilter = resolveSelectedSlotKeys();
-  const cards = visibleCards.value.filter((card) => card.orders.length > 0);
-  if (!cards.length) {
-    ElMessage.warning('当前没有可打印的医嘱');
-    return;
-  }
-
-  printActionLoading.value = true;
-  try {
-    if (label === '打印瓶贴') {
-      let totalGroups = 0;
-      for (const card of cards) {
-        const groups = groupInpatientInfusionLabelPrintTargets(card.orders, slotFilter);
-        if (!groups.length) continue;
-        await printIvInfusionLabels({
-          encounterId: card.patient.id,
-          groups,
-          jobName: `输液瓶贴-${card.patient.name}`,
-        });
-        totalGroups += groups.length;
-      }
-      if (!totalGroups) {
-        ElMessage.warning('没有可打印的药品医嘱');
-        return;
-      }
-      ElMessage.success(`已发送 ${totalGroups} 张输液瓶贴`);
-      return;
-    }
-
-    if (label === '打印采血码') {
-      let totalTargets = 0;
-      for (const card of cards) {
-        const targets = groupInpatientSpecimenBarcodePrintTargets(card.orders, slotFilter);
-        if (!targets.length) continue;
-        await printBedsideSpecimenBarcodes({
-          encounterId: card.patient.id,
-          targets,
-          jobName: `采血条码-${card.patient.name}`,
-        });
-        totalTargets += targets.length;
-      }
-      if (!totalTargets) {
-        ElMessage.warning('没有可打印的采血/检验医嘱');
-        return;
-      }
-      ElMessage.success(`已发送 ${totalTargets} 张采血条码`);
-      return;
-    }
-
-    if (label === '打印处置单') {
-      let printed = 0;
-      for (const card of cards) {
-        const target = groupInpatientTreatmentExecutePrintTargets(card.orders, slotFilter);
-        if (!target) continue;
-        await printTreatmentExecuteSheet({
-          encounterId: card.patient.id,
-          target,
-          jobName: `处置执行单-${card.patient.name}`,
-        });
-        printed += 1;
-      }
-      if (!printed) {
-        ElMessage.warning('没有可打印的处置医嘱');
-        return;
-      }
-      ElMessage.success(`已发送 ${printed} 份处置执行单`);
-      return;
-    }
-
-    if (label === '打印处方单') {
-      let totalPrescriptions = 0;
-      for (const card of cards) {
-        const medicationRequestIds = groupInpatientMedicationExecuteRequestIds(
-          card.orders,
-          slotFilter,
-        );
-        if (!medicationRequestIds.length) continue;
-        const count = await printNursePrescriptions({
-          encounterId: card.patient.id,
-          medicationRequestIds,
-        });
-        totalPrescriptions += count;
-      }
-      if (!totalPrescriptions) {
-        ElMessage.warning('没有可打印的药品处方');
-        return;
-      }
-      ElMessage.success(`已发送 ${totalPrescriptions} 份处方单`);
-      return;
-    }
-
-    if (label === '打印注射标签') {
-      let totalGroups = 0;
-      for (const card of cards) {
-        const groups = groupInpatientMedicationLabelPrintTargets(
-          card.orders,
-          slotFilter,
-          'injection',
-        );
-        if (!groups.length) continue;
-        await printInjectionLabels({
-          encounterId: card.patient.id,
-          groups,
-          jobName: `注射标签-${card.patient.name}`,
-        });
-        totalGroups += groups.length;
-      }
-      if (!totalGroups) {
-        ElMessage.warning('没有可打印的注射用药医嘱');
-        return;
-      }
-      ElMessage.success(`已发送 ${totalGroups} 张注射标签`);
-      return;
-    }
-
-    if (label === '打印口服标签') {
-      let totalGroups = 0;
-      for (const card of cards) {
-        const groups = groupInpatientMedicationLabelPrintTargets(card.orders, slotFilter, 'oral');
-        if (!groups.length) continue;
-        await printOralDrugLabels({
-          encounterId: card.patient.id,
-          groups,
-          jobName: `口服药标签-${card.patient.name}`,
-        });
-        totalGroups += groups.length;
-      }
-      if (!totalGroups) {
-        ElMessage.warning('没有可打印的口服药医嘱');
-        return;
-      }
-      ElMessage.success(`已发送 ${totalGroups} 张口服药标签`);
-      return;
-    }
-
-    if (label === '打印检验申请单') {
-      let printed = 0;
-      for (const card of cards) {
-        const target = groupInpatientLabApplyPrintTarget(card.orders, slotFilter);
-        if (!target) continue;
-        await printLabApplyForm({
-          encounterId: card.patient.id,
-          target,
-          jobName: `检验申请单-${card.patient.name}`,
-        });
-        printed += 1;
-      }
-      if (!printed) {
-        ElMessage.warning('没有可打印的检验医嘱');
-        return;
-      }
-      ElMessage.success(`已发送 ${printed} 份检验申请单`);
-      return;
-    }
-
-    if (label === '打印检查申请单') {
-      let printed = 0;
-      for (const card of cards) {
-        const target = groupInpatientExamApplyPrintTarget(card.orders, slotFilter);
-        if (!target) continue;
-        await printExamApplyForm({
-          encounterId: card.patient.id,
-          target,
-          jobName: `检查申请单-${card.patient.name}`,
-        });
-        printed += 1;
-      }
-      if (!printed) {
-        ElMessage.warning('没有可打印的检查医嘱');
-        return;
-      }
-      ElMessage.success(`已发送 ${printed} 份检查申请单`);
-      return;
-    }
-
-    if (label === '打印皮试标签') {
-      let totalGroups = 0;
-      for (const card of cards) {
-        const groups = groupInpatientMedicationLabelPrintTargets(
-          card.orders,
-          slotFilter,
-          'skin_test',
-        );
-        if (!groups.length) continue;
-        await printSkinTestLabels({
-          encounterId: card.patient.id,
-          groups,
-          jobName: `皮试标签-${card.patient.name}`,
-        });
-        totalGroups += groups.length;
-      }
-      if (!totalGroups) {
-        ElMessage.warning('没有可打印的皮试医嘱');
-        return;
-      }
-      ElMessage.success(`已发送 ${totalGroups} 张皮试标签`);
-      return;
-    }
-
-    if (label === '打印雾化标签') {
-      let totalGroups = 0;
-      for (const card of cards) {
-        const groups = groupInpatientMedicationLabelPrintTargets(
-          card.orders,
-          slotFilter,
-          'nebulization',
-        );
-        if (!groups.length) continue;
-        await printNebulizationLabels({
-          encounterId: card.patient.id,
-          groups,
-          jobName: `雾化标签-${card.patient.name}`,
-        });
-        totalGroups += groups.length;
-      }
-      if (!totalGroups) {
-        ElMessage.warning('没有可打印的雾化/吸入医嘱');
-        return;
-      }
-      ElMessage.success(`已发送 ${totalGroups} 张雾化标签`);
-      return;
-    }
-
-    if (label === '打印处置申请单') {
-      let printed = 0;
-      for (const card of cards) {
-        const target = groupInpatientProcedureApplyPrintTarget(card.orders, slotFilter);
-        if (!target) continue;
-        await printProcedureApplyForm({
-          encounterId: card.patient.id,
-          target,
-          jobName: `处置申请单-${card.patient.name}`,
-        });
-        printed += 1;
-      }
-      if (!printed) {
-        ElMessage.warning('没有可打印的治疗/处置医嘱');
-        return;
-      }
-      ElMessage.success(`已发送 ${printed} 份治疗/处置申请单`);
-    }
-  } catch {
-    // composable 已记录日志
-  } finally {
-    printActionLoading.value = false;
-  }
-}
 </script>
 
 <template>
   <div
     v-loading="
-      listRequest.loading.value ||
-      executeRequest.loading.value ||
-      skipRequest.loading.value ||
-      printActionLoading ||
-      prescriptionResolving
+      listRequest.loading.value || executeRequest.loading.value || skipRequest.loading.value
     "
     class="execute-module flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden rounded-md bg-[#eef9fd]"
   >
@@ -829,6 +460,11 @@ async function handlePrintOrderExecute(label: string) {
         <ElRadioGroup v-model="activeStatus" class="execute-status-radio shrink-0">
           <ElRadioButton v-for="status in statusTabs" :key="status.value" :label="status.value">
             {{ status.label }}
+          </ElRadioButton>
+        </ElRadioGroup>
+        <ElRadioGroup v-model="activeDrugCategoryTab" class="execute-drug-category-radio shrink-0">
+          <ElRadioButton v-for="tab in drugCategoryTabs" :key="tab.value" :label="tab.value">
+            {{ tab.label }}
           </ElRadioButton>
         </ElRadioGroup>
         <ElRadioGroup
@@ -874,19 +510,6 @@ async function handlePrintOrderExecute(label: string) {
         <ElButton type="warning" plain :disabled="!skipActionsEnabled" @click="handleSkipOrders">
           不执行
         </ElButton>
-        <ElButton plain @click="handlePrintOrderExecuteSheet">打印执行单</ElButton>
-        <ElButton plain @click="handlePrintIvInfusionExecuteSheet">打印输液卡</ElButton>
-        <ElButton plain @click="handlePrintOrderExecute('打印瓶贴')">打印瓶贴</ElButton>
-        <ElButton plain @click="handlePrintOrderExecute('打印注射标签')">打印注射标签</ElButton>
-        <ElButton plain @click="handlePrintOrderExecute('打印口服标签')">打印口服标签</ElButton>
-        <ElButton plain @click="handlePrintOrderExecute('打印采血码')">打印采血码</ElButton>
-        <ElButton plain @click="handlePrintOrderExecute('打印检验申请单')">打印检验申请单</ElButton>
-        <ElButton plain @click="handlePrintOrderExecute('打印检查申请单')">打印检查申请单</ElButton>
-        <ElButton plain @click="handlePrintOrderExecute('打印处置单')">打印处置单</ElButton>
-        <ElButton plain @click="handlePrintOrderExecute('打印处置申请单')">处置申请单</ElButton>
-        <ElButton plain @click="handlePrintOrderExecute('打印皮试标签')">皮试标签</ElButton>
-        <ElButton plain @click="handlePrintOrderExecute('打印雾化标签')">雾化标签</ElButton>
-        <ElButton plain @click="handlePrintOrderExecute('打印处方单')">打印处方单</ElButton>
         <ElButton
           type="danger"
           plain
@@ -918,6 +541,21 @@ async function handlePrintOrderExecute(label: string) {
               stripe
               row-key="id"
             >
+              <ElTableColumn align="center" label="状态" width="96">
+                <template #default="{ row }">
+                  <div v-memo="[row.id, row.statusEnum, row.statusDisplay, row.halted]">
+                    <ElTag
+                      v-if="row.statusDisplay && row.statusDisplay !== '—'"
+                      size="small"
+                      effect="light"
+                      :type="getExecuteStatusTagType(row)"
+                    >
+                      {{ row.statusDisplay }}
+                    </ElTag>
+                    <span v-else class="text-[var(--el-text-color-secondary)]">—</span>
+                  </div>
+                </template>
+              </ElTableColumn>
               <ElTableColumn align="center" label="类型" min-width="108">
                 <template #default="{ row }">
                   <div v-memo="[row.id, row.orderKindLabel, row.therapyLabel, row.therapyTypeCode]">
@@ -945,7 +583,7 @@ async function handlePrintOrderExecute(label: string) {
                       bindQuantityEditable,
                       bindItemsQuantitySig(row),
                     ]"
-                    class="order-execute-content-cell"
+                    class="nurse-order-content-cell"
                   >
                     <template v-if="isExecuteMedicineOrder(row)">
                       <AdviceOrderDisplayCell
@@ -1104,43 +742,6 @@ async function handlePrintOrderExecute(label: string) {
   border-radius: var(--el-border-radius-small);
   font-size: 14px;
   color: var(--el-text-color-regular);
-}
-
-.order-execute-content-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  min-width: 0;
-}
-
-.advice-order-line-row {
-  align-items: baseline;
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  min-width: 0;
-  width: 100%;
-}
-
-.drug-main-text {
-  color: var(--el-text-color-primary);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.group-drug-dose {
-  color: var(--el-text-color-regular);
-  flex: 0 0 auto;
-  font-size: 12px;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.normal-drug-shared {
-  border-top: 1px dashed #cbd5e1;
-  color: #2563eb;
-  font-size: 12px;
-  padding-top: 3px;
 }
 
 .order-execute-bind-follow {

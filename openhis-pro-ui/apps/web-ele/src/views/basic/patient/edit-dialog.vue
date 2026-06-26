@@ -27,7 +27,7 @@ import countryList from 'province-city-china/dist/country.json';
 import { useVbenForm, z } from '#/adapter/form';
 import { createPatientApi, editPatientApi } from '#/api/basic/patient';
 import SelectArea from '#/components/select-area.vue';
-import { parseChineseIdCard18 } from '#/utils/id-card-cn';
+import { parseChineseIdCard18 } from '#/utils/format/id-card-cn';
 
 const props = withDefaults(defineProps<Props>(), {
   visible: false,
@@ -115,7 +115,7 @@ function idCardFilled(values: Record<string, unknown>): boolean {
   return !!String(values?.idCard ?? '').trim();
 }
 
-/** 用证件号同步出生日期、年龄、性别（18 位规则与门诊挂号一致，见 `#/utils/id-card-cn`） */
+/** 用证件号同步出生日期、年龄、性别（18 位规则与门诊挂号一致，见 `#/utils/format/id-card-cn`） */
 function syncBirthAgeFromIdCardInput(raw: string) {
   const trimmed = String(raw ?? '').trim();
   if (!trimmed) return;

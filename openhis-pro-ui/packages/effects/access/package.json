@@ -17,6 +17,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./es/directive": {
+      "types": "./src/directive.ts",
+      "default": "./src/directive.ts"
     }
   },
   "dependencies": {

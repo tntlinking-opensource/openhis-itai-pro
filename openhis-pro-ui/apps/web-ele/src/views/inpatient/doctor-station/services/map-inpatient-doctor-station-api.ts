@@ -2,7 +2,7 @@ import type { InpatientDoctorStationPatientDto } from '#/api/inpatient/doctor-st
 
 import type { InpatientDoctorStationPatient } from '../doctorPatientStore';
 
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 读侧 Long 主键入页面前统一为 string */
 function toIdString(raw: unknown): string {
@@ -21,6 +21,10 @@ export function mapDoctorStationPatientQueueRow(
 ): InpatientDoctorStationPatient {
   return {
     accountBalance: dto.accountBalance,
+    accountBalanceDisplayMode: dto.accountBalanceDisplayMode,
+    accountBalanceSubText: dto.accountBalanceSubText,
+    accountBalanceSummaryText: dto.accountBalanceSummaryText,
+    availableBalance: dto.availableBalance,
     admissionTime: dto.admissionTime,
     ageText: dto.ageText,
     arrearsAmount: dto.arrearsAmount,
@@ -42,8 +46,10 @@ export function mapDoctorStationPatientQueueRow(
     patientId: toIdString(dto.patientId),
     patientName: dto.patientName ?? '',
     pinyinCode: dto.pinyinCode,
+    prepayNetBalance: dto.prepayNetBalance,
     primaryNurseName: dto.primaryNurseName,
     priorityEnum: dto.priorityEnum,
+    pendingSettlementTotal: dto.pendingSettlementTotal,
     startTime: dto.startTime,
     statusEnum: dto.statusEnum,
     statusEnumText: dto.statusEnumText,

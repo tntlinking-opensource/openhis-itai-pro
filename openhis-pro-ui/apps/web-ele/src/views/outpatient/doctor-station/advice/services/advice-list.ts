@@ -4,17 +4,26 @@ import type {
   DoctorStationAdviceCatalogRowDto,
   DoctorStationAdviceRowDto,
 } from '#/api/doctor-station/advice.types';
-import type { DrugGroupDisplayItem, DrugGroupKey } from '#/utils/drug-group-table';
+import type { DrugGroupDisplayItem, DrugGroupKey } from '#/utils/doctor-station/drug-group-table';
 
 import { formatDateTime } from '@vben/utils';
 
-import { mergeConsecutiveRowsByDrugGroup } from '#/utils/drug-group-table';
-import { convertProductUnitPriceForDisplay } from '#/utils/product-unit-band-price';
+import { mergeConsecutiveRowsByDrugGroup } from '#/utils/doctor-station/drug-group-table';
+import { convertProductUnitPriceForDisplay } from '#/utils/doctor-station/product-unit-band-price';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  resolveServiceApplyFormNo,
+  resolveServiceApplyFormSortKey,
+} from '#/utils/service-apply-form-group-display';
+import { buildServiceApplyFormExtensionText } from '#/utils/service-apply-display';
 
 import { formatUnitPriceYuan } from './advice-format';
 import { normalizeCatalogUnitBands } from './medication-unit-bands';
 
 /** 医嘱列表映射、成组合并、目录选品、库存展示、旧行回填 */
+
+/** 与主数据「皮试检查」诊疗项目名称一致 */
+const SKIN_TEST_INSPECTION_ACTIVITY_NAME = '皮试检查';
 
 function resourceTypeToTypeLabel(resourceType: string): string {
   const rt = resourceType.toUpperCase();
@@ -47,6 +56,134 @@ function buildAdviceContentTitle(dto: DoctorStationAdviceRowDto): string {
   const spec = String(dto.specificationText ?? '').trim();
   if (name && spec) return `${name}【${spec}】`;
   return name || spec;
+}
+
+/** 判断是否为后端联动的「皮试检查」诊疗行 */
+function isSkinTestInspectionServiceRow(dto: DoctorStationAdviceRowDto): boolean {
+  if (inferAdviceRowResourceType(dto) !== 'SERVICE') return false;
+  const name = String(dto.adviceDisplayName ?? dto.contentSummary ?? '').trim();
+  if (!name) return false;
+  if (name === SKIN_TEST_INSPECTION_ACTIVITY_NAME) return true;
+  return name.startsWith(`${SKIN_TEST_INSPECTION_ACTIVITY_NAME}(`);
+}
+
+/** 解析皮试检查行锚定的皮试药 requestId（优先 API 字段，缺省启发式配对） */
+function resolveSkinTestCompanionMedicationRequestId(
+  dto: DoctorStationAdviceRowDto,
+  heuristicByServiceRequestId: ReadonlyMap<string, string>,
+): string {
+  const fromApi = preserveApiIdForRequest(dto.basedOnMedicationRequestId);
+  if (fromApi) return fromApi;
+  const serviceRequestId = preserveApiIdForRequest(dto.requestId);
+  if (!serviceRequestId) return '';
+  return heuristicByServiceRequestId.get(serviceRequestId) ?? '';
+}
+
+/** 按开立时间与 requestId 稳定排序，供皮试药与 companion 启发式配对 */
+function compareAdviceRowAuthoredOrder(
+  a: { authoredAt: string; requestId: string },
+  b: { authoredAt: string; requestId: string },
+): number {
+  const authCmp = a.authoredAt.localeCompare(b.authoredAt);
+  if (authCmp !== 0) return authCmp;
+  return a.requestId.localeCompare(b.requestId);
+}
+
+/**
+ * 无 basedOnMedicationRequestId 时：皮试药与「皮试检查」按开立时间一一配对（同时间优先）。
+ */
+function buildSkinTestCompanionHeuristicMap(
+  rows: readonly DoctorStationAdviceRowDto[],
+): Map<string, string> {
+  const result = new Map<string, string>();
+  const usedMedicationRequestIds = new Set<string>();
+
+  const skinTestMedications = rows
+    .filter((d) => inferAdviceRowResourceType(d) === 'MEDICATION' && d.skinTestFlag === true)
+    .map((d) => ({
+      requestId: preserveApiIdForRequest(d.requestId) ?? '',
+      authoredAt: String(d.authoredAt ?? '').trim(),
+    }))
+    .filter((item) => item.requestId !== '');
+
+  const companions = rows
+    .filter(
+      (d) =>
+        isSkinTestInspectionServiceRow(d) && !preserveApiIdForRequest(d.basedOnMedicationRequestId),
+    )
+    .map((d) => ({
+      requestId: preserveApiIdForRequest(d.requestId) ?? '',
+      authoredAt: String(d.authoredAt ?? '').trim(),
+    }))
+    .filter((item) => item.requestId !== '');
+
+  // 第一遍：开立时间完全一致时配对
+  for (const companion of companions) {
+    const hit = skinTestMedications.find(
+      (med) =>
+        !usedMedicationRequestIds.has(med.requestId) &&
+        med.authoredAt !== '' &&
+        med.authoredAt === companion.authoredAt,
+    );
+    if (!hit) continue;
+    result.set(companion.requestId, hit.requestId);
+    usedMedicationRequestIds.add(hit.requestId);
+  }
+
+  // 第二遍：剩余按时间序一一配对
+  const remainingMedications = skinTestMedications
+    .filter((med) => !usedMedicationRequestIds.has(med.requestId))
+    .toSorted(compareAdviceRowAuthoredOrder);
+  const remainingCompanions = companions
+    .filter((comp) => !result.has(comp.requestId))
+    .toSorted(compareAdviceRowAuthoredOrder);
+  const pairCount = Math.min(remainingMedications.length, remainingCompanions.length);
+  for (let i = 0; i < pairCount; i += 1) {
+    const med = remainingMedications[i];
+    const comp = remainingCompanions[i];
+    if (!med || !comp) continue;
+    result.set(comp.requestId, med.requestId);
+  }
+
+  return result;
+}
+
+/** 皮试检查行医嘱内容追加来源药品名：皮试检查(药品名) */
+function enrichSkinTestCompanionDisplayNames(
+  rows: readonly DoctorStationAdviceRowDto[],
+): DoctorStationAdviceRowDto[] {
+  const medicationNameByRequestId = new Map<string, string>();
+  for (const dto of rows) {
+    if (inferAdviceRowResourceType(dto) !== 'MEDICATION') continue;
+    const requestId = preserveApiIdForRequest(dto.requestId);
+    if (!requestId) continue;
+    const name = String(dto.adviceDisplayName ?? dto.contentSummary ?? '').trim();
+    if (name) medicationNameByRequestId.set(requestId, name);
+  }
+
+  const heuristicMap = buildSkinTestCompanionHeuristicMap(rows);
+
+  return rows.map((dto) => {
+    if (!isSkinTestInspectionServiceRow(dto)) return dto;
+
+    const medicationRequestId = resolveSkinTestCompanionMedicationRequestId(dto, heuristicMap);
+    if (!medicationRequestId) return dto;
+
+    const medicationName = medicationNameByRequestId.get(medicationRequestId);
+    if (!medicationName) return dto;
+
+    const baseName = String(
+      dto.adviceDisplayName ?? dto.contentSummary ?? SKIN_TEST_INSPECTION_ACTIVITY_NAME,
+    ).trim();
+    const suffix = `${SKIN_TEST_INSPECTION_ACTIVITY_NAME}(${medicationName})`;
+    if (baseName === suffix || baseName.includes(`(${medicationName})`)) return dto;
+
+    return {
+      ...dto,
+      adviceDisplayName: suffix,
+      contentSummary: suffix,
+    };
+  });
 }
 
 function buildAdviceDosageSummaryLine(dto: DoctorStationAdviceRowDto): string {
@@ -87,6 +224,18 @@ function buildAdviceMethodRateDurationLine(dto: DoctorStationAdviceRowDto): stri
   return dayPart.trim();
 }
 
+/** 医嘱内容 extension：申请单样本/部位/备注 + 用法频次天数 */
+function buildAdviceListExtensionLine(dto: DoctorStationAdviceRowDto): string {
+  const usageLine = buildAdviceMethodRateDurationLine(dto);
+  return buildServiceApplyFormExtensionText(
+    {
+      remark: dto.remark,
+      serviceRequestDetails: dto.serviceRequestDetails,
+    },
+    usageLine ? [usageLine] : [],
+  );
+}
+
 function formatAdviceRowTotalPrice(dto: DoctorStationAdviceRowDto): string {
   const v = dto.lineDisplayTotalPrice;
   if (v !== null && v !== undefined && String(v).trim() !== '') {
@@ -104,7 +253,9 @@ function normalizedListSortNumber(
 }
 
 function skinTestDisplayText(dto: DoctorStationAdviceRowDto): string {
-  const t = String(dto.skinTestFlagText ?? dto.skinTestOutcomeText ?? '').trim();
+  const outcome = String(dto.skinTestOutcomeText ?? '').trim();
+  if (outcome) return outcome;
+  const t = String(dto.skinTestFlagText ?? '').trim();
   if (t) return t;
   if (dto.skinTestFlag === true) return '是';
   if (dto.skinTestFlag === false) return '否';
@@ -128,7 +279,7 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
   const startTime = authoredRaw ? formatDateTime(authoredRaw) : '';
   const content = buildAdviceContentTitle(dto);
   const dosageLine = buildAdviceDosageSummaryLine(dto);
-  const extension = buildAdviceMethodRateDurationLine(dto);
+  const extension = buildAdviceListExtensionLine(dto);
   const typeLabel =
     String(dto.catalogCategoryName ?? '').trim() || resourceTypeToTypeLabel(resourceType);
 
@@ -149,6 +300,7 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
       ).trim() || '—',
     orderingDoctor: (dto.authoredByName || '').trim() || '—',
     skinTestText: skinTestDisplayText(dto),
+    skinTestOutcomeCode: String(dto.skinTestOutcomeCode ?? '').trim() || undefined,
     dosageText: dosageLine || undefined,
     productTableName: String(dto.productTableName ?? '').trim() || undefined,
     sortNumber: normalizedListSortNumber(dto.sortNumber),
@@ -189,6 +341,10 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
     })(),
     performOrgId: String(dto.performLocationId ?? '').trim() || undefined,
     performOrgName: String(dto.performLocationName ?? '').trim() || undefined,
+    basedOnMedicationRequestId:
+      preserveApiIdForRequest(dto.basedOnMedicationRequestId) || undefined,
+    basedOnServiceRequestId: preserveApiIdForRequest(dto.basedOnServiceRequestId) || undefined,
+    applyFormNo: resolveServiceApplyFormNo(dto.prescriptionNo),
   };
 }
 
@@ -289,6 +445,26 @@ export function getAdviceStatusTagType(
   return 'info';
 }
 
+/** 皮试列 Tag 类型：优先临床结果 code，再按展示文案回退 */
+export function getSkinTestDisplayTagType(
+  row: Pick<AdviceRowItem, 'skinTestFlag' | 'skinTestOutcomeCode' | 'skinTestText'>,
+): 'danger' | 'info' | 'primary' | 'success' | 'warning' | null {
+  const code = String(row.skinTestOutcomeCode ?? '')
+    .trim()
+    .toLowerCase();
+  const text = String(row.skinTestText ?? '').trim();
+
+  if (code === 'active' || text === '阳性') return 'danger';
+  if (code === 'inactive' || text === '阴性') return 'success';
+  if (code === 'resolved' || text === '已解决') return 'info';
+  if (code === 'unknown' || text === '未知') return 'warning';
+
+  if (text === '是' || row.skinTestFlag === true) return 'primary';
+  if (text === '否') return 'info';
+  if (!text || text === '—') return null;
+  return 'info';
+}
+
 // —— 成组合并 ——
 
 export function flattenAdviceRowsForResourceOps(rows: AdviceRowItem[]): AdviceRowItem[] {
@@ -311,6 +487,13 @@ function sortDoctorStationAdviceRowsStable(
   rows: readonly DoctorStationAdviceRowDto[],
 ): DoctorStationAdviceRowDto[] {
   return [...rows].toSorted((a, b) => {
+    const leftFormKey = resolveServiceApplyFormSortKey(a.prescriptionNo);
+    const rightFormKey = resolveServiceApplyFormSortKey(b.prescriptionNo);
+    const formCompare = leftFormKey.localeCompare(rightFormKey);
+    if (formCompare !== 0) {
+      return formCompare;
+    }
+
     const sa = dtoSortSeq(a.sortNumber);
     const sb = dtoSortSeq(b.sortNumber);
     if (sa !== sb) return sa - sb;
@@ -372,7 +555,8 @@ function sumSliceLinePriceY(slice: readonly DoctorStationAdviceRowDto[]): string
 export function mergeMedicationAdviceRowsForListDisplay(
   rows: readonly DoctorStationAdviceRowDto[],
 ): AdviceRowItem[] {
-  const sorted = sortDoctorStationAdviceRowsStable(rows);
+  const enrichedRows = enrichSkinTestCompanionDisplayNames(rows);
+  const sorted = sortDoctorStationAdviceRowsStable(enrichedRows);
   return mergeConsecutiveRowsByDrugGroup(sorted, {
     getGroupKey: medicationGroupMergeKey,
     toGroupItem: doctorStationAdviceRowDtoToDrugGroupItem,

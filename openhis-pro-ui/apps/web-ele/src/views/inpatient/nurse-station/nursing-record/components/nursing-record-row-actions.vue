@@ -13,7 +13,6 @@ const emit = defineEmits<{
   copy: [];
   delete: [];
   edit: [];
-  print: [];
   save: [];
 }>();
 </script>
@@ -24,7 +23,6 @@ const emit = defineEmits<{
     <ElButton link type="primary" @click="emit('copy')">复制</ElButton>
     <ElButton link type="primary" :disabled="props.editing" @click="emit('edit')"> 编辑 </ElButton>
     <ElButton link type="danger" @click="emit('delete')">删除</ElButton>
-    <ElButton link type="primary" @click="emit('print')">打印</ElButton>
     <template v-if="props.editing">
       <ElButton type="primary" plain @click="emit('save')">保存</ElButton>
       <ElButton plain @click="emit('cancel')">取消</ElButton>

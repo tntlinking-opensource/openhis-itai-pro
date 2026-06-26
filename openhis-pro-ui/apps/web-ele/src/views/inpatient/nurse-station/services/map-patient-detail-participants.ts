@@ -3,7 +3,7 @@ import type {
   ParticipantDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station.types';
 
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import { NURSE_STATION_PARTICIPANT_ROLE } from '../components/patient-admission-bed-dialog.constants';
 

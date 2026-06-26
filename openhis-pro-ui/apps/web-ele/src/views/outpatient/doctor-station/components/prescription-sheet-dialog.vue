@@ -11,7 +11,7 @@ import { computed, ref, watch } from 'vue';
 
 import { ElDialog, ElEmpty, ElMessage, ElRadioButton, ElRadioGroup } from 'element-plus';
 
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import PrescriptionSheetView from '#/views/outpatient/dispense/components/prescription-sheet-view.vue';
 
 import {

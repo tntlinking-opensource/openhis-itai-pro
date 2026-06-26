@@ -11,7 +11,6 @@ export const TerminologyCodeSystemName = {
   PART_ATTRIBUTE_ENUM: 'part_attribute_enum',
   THO_PART_ATTRIBUTE_ENUM: 'tho_part_attribute_enum',
   CHRGITM_LV: 'chrgitm_lv',
-  MED_CATEGORY_CODE: 'med_category_code',
   SYSTEM_CATEGORIES: 'system_categories',
   MEDICINE_PROPERTIES: 'medicine_properties',
   DOSE_FORM_CODE: 'dose_form_code',
@@ -36,4 +35,8 @@ export const TerminologyCodeSystemName = {
   /** 耗材种类/类型 → 实体 type_code */
   IN_WAY_CODE: 'in_way_code',
   ADMIT_SOURCE_CODE: 'admit_source_code',
+  /** 生命体征项编码（护士站/体温单，对应 dia_vital_sign.vital_signs_code） */
+  VITAL_SIGNS_CODE: 'vital_signs_code',
+  /** 体温单特殊事件（对应 dia_vital_sign_detail term_code=special_event_code） */
+  SPECIAL_EVENT_CODE: 'special_event_code',
 } as const;

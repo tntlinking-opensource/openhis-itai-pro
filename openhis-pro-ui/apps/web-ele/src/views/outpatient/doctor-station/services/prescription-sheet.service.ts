@@ -2,6 +2,7 @@ import type {
   DoctorStationAdviceRowDto,
   PrescriptionScopeTabCode,
 } from '#/api/doctor-station/advice.types';
+
 import { mapPrescriptionScopeToAdviceScopeTab } from '#/api/doctor-station/advice.types';
 
 import { fetchDoctorStationAdviceFlatRows } from '../advice/services/history-advice.service';

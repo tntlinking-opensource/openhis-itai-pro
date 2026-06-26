@@ -26,6 +26,7 @@ const props = withDefaults(defineProps<Props>(), {
   collapse: false,
   mode: 'vertical',
   rounded: true,
+  scrollable: false,
   theme: 'dark',
   scrollToActive: false,
 });
@@ -58,6 +59,9 @@ const getSlot = computed(() => {
   const defaultSlots: VNodeArrayChildren = slots.default?.() ?? [];
 
   const originalSlot = flattedChildren(defaultSlots) as VNodeArrayChildren;
+  if (props.scrollable && props.mode === 'horizontal') {
+    return { showSlotMore: false, slotDefault: originalSlot, slotMore: [] };
+  }
   const slotDefault =
     sliceIndex.value === -1 ? originalSlot : originalSlot.slice(0, sliceIndex.value);
 
@@ -87,7 +91,7 @@ watch(
 
 let resizeStopper: UseResizeObserverReturn['stop'];
 watchEffect(() => {
-  if (props.mode === 'horizontal') {
+  if (props.mode === 'horizontal' && !props.scrollable) {
     resizeStopper = useResizeObserver(menu, handleResize).stop;
   } else {
     resizeStopper?.();

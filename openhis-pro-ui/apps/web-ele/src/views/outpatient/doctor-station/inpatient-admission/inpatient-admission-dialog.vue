@@ -37,7 +37,7 @@ import { useRequest } from '#/hooks/use-request';
 import {
   preserveApiIdForRequest,
   resolveLoginPractitionerIdForRequest,
-} from '#/utils/preserve-api-id';
+} from '#/utils/format/preserve-api-id';
 import {
   DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER,
   PATIENT_CONDITION_OPTIONS,
@@ -381,7 +381,6 @@ watch(
     append-to-body
     destroy-on-close
     @update:model-value="onDialogModelValue"
-    @open="onDialogOpen"
   >
     <div v-loading="dialogLoading" class="flex flex-col gap-3">
       <div

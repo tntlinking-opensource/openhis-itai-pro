@@ -24,6 +24,8 @@ export interface LoadInventoryDetailFormInitResponse {
   inventoryStatusOptions?: OptionDto[];
   medicationCategoryOptions?: OptionDto[];
   deviceCategoryOptions?: OptionDto[];
+  /** inventory_range 术语：2=数量等于0，3=数量大于0 */
+  inventoryRangeOptions?: OptionDto[];
 }
 
 /** IF-INV-DTL-02 分页入参（与 AbstractPageQuery + PageInventoryDetailCurrentRequest 对齐）。 */
@@ -37,7 +39,7 @@ export interface PageInventoryDetailCurrentRequest {
   warehouseIds?: string[];
   supplierIds?: string[];
   chrgitmLvList?: number[];
-  /** true 仅零库存；false 仅正库存；不传不限 */
+  /** true 数量等于0；false 数量大于0；不传不限 */
   zeroStockOnly?: boolean;
   /** BR-003 剩余天数 ≤ 参数 */
   expireWithinDays?: number;

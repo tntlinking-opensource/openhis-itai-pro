@@ -11,6 +11,7 @@ import type {
   PendingDispenseEncounterQueueRowDto,
   PractitionerOptionDto,
 } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.types';
+import type { ChargeType } from '#/chs/constants/insurance-contract';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
@@ -18,7 +19,6 @@ import { useDebounceFn } from '@vueuse/core';
 import { ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus';
 
 import { getChargeTypeListApi } from '#/api/core/common';
-
 import {
   httpDispenseOutpatientMedications,
   httpLoadPharmacyDispensePageInit,
@@ -26,13 +26,13 @@ import {
   httpPagePendingDispenseEncounterQueue,
   httpSavePrepareOutpatientMedicationDispense,
 } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.http';
-import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import {
   filterInsuranceChargeTypes,
   resolveDefaultInsuranceBusNo,
-  type ChargeType,
 } from '#/chs/constants/insurance-contract';
+import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { PRINT_SCENARIO, groupSlipRowsByPrescriptionNo, print } from '#/utils/print/runtime';
 
 import DispenseQueuePanel from './components/dispense-queue-panel.vue';
 import DispenseRxCenter from './components/dispense-rx-center.vue';
@@ -43,14 +43,10 @@ import {
   mapPendingQueueRowToPatient,
   mapSlipRowsToPrescriptionBlocks,
 } from './services/map-api-to-dispense-ui';
-import { loadEncounterRxKindSummary } from './services/resolve-default-rx-kind';
-import { useDispenseSlipPrint } from '#/composables/use-dispense-slip-print';
-import { useOutpatientPrescriptionPrint } from '#/composables/use-outpatient-prescription-print';
 import {
-  DISPENSE_SLIP_TEMPLATE,
-  resolveOutpatientPrescriptionTemplateCode,
-} from '#/utils/report/outpatient-prescription-print-config';
-import { isNarcoticSlipRow } from '#/utils/report/prescription-print-kind';
+  computeRxKindSummaryFromSlips,
+  filterSlipRowsByRxKind,
+} from './services/resolve-default-rx-kind';
 
 defineOptions({
   name: 'PharmacyDispenseOutpatient',
@@ -79,16 +75,17 @@ const dispenserOptions = ref<{ label: string; value: string }[]>([]);
 const queueScope = ref<'completed' | 'pending'>('pending');
 
 const queuePatients = ref<DispenseQueuePatient[]>([]);
+/** 当前就诊下全量发放行（未按中西药 tab 过滤，供角标与 tab 切换复用） */
+const allSlipRowsForEncounter = ref<EncounterMedicationDispenseSlipRowDto[]>([]);
 const slipRows = ref<EncounterMedicationDispenseSlipRowDto[]>([]);
 
 const queueLoading = ref(false);
 const slipLoading = ref(false);
 const batchSubmitting = ref(false);
+const printSubmitting = ref(false);
 const initLoading = ref(false);
 const insuranceContractBusNo = ref<string>();
 const insuranceChargeTypeOptions = ref<ChargeType[]>([]);
-
-const { isPrinting, previewLoading, printDispenseSlip } = useDispenseSlipPrint();
 
 const selectedPatient = computed(() => {
   const id = selectedPatientId.value;
@@ -184,22 +181,20 @@ const debouncedReloadQueue = useDebounceFn(() => {
   void reloadQueue();
 }, 400);
 
-/** 同步当前就诊中西药处方块角标，并返回默认 tab */
-async function syncEncounterRxKindSummary(enc: string, scope: 'completed' | 'pending') {
-  const dispenseStatusEnumIn = scope === 'pending' ? ['PREPARATION', 'IN_PROGRESS'] : ['COMPLETED'];
-  const summary = await loadEncounterRxKindSummary({
-    encounterId: enc,
-    dispenseStatusEnumIn,
-  });
-  rxKindBadgeCounts.value = summary.badgeCounts;
-  return summary;
+function applySlipRowsForActiveKind(all: EncounterMedicationDispenseSlipRowDto[]) {
+  slipRows.value = filterSlipRowsByRxKind(all, activeRxKind.value);
 }
 
-/** 当前就诊下的发放明细（分页首屏） */
-async function reloadSlips() {
+/**
+ * 拉取当前就诊发放明细（单次请求）：更新角标缓存，并按需切换默认 tab 或刷新当前 tab 列表。
+ * @param resetRxKind 切换就诊/队列范围时为 true，按数据推断默认中西药 tab
+ */
+async function reloadEncounterSlipsFromServer(resetRxKind = false) {
   const enc = selectedPatientId.value;
   if (!enc) {
+    allSlipRowsForEncounter.value = [];
     slipRows.value = [];
+    rxKindBadgeCounts.value = { western: 0, herbal: 0 };
     return;
   }
   slipLoading.value = true;
@@ -208,16 +203,22 @@ async function reloadSlips() {
       queueScope.value === 'pending' ? ['PREPARATION', 'IN_PROGRESS'] : ['COMPLETED'];
     const res = await httpPageEncounterMedicationDispenseSlips({
       encounterId: enc,
-      tcmOnly: activeRxKind.value === 'herbal' ? true : undefined,
-      westernOnly: activeRxKind.value === 'western' ? true : undefined,
       dispenseStatusEnumIn,
       pageNo: 1,
       pageSize: 200,
     });
     const { content: slipList } =
       parsePagedRowsFromApiData<EncounterMedicationDispenseSlipRowDto>(res);
-    slipRows.value = slipList;
+    allSlipRowsForEncounter.value = slipList;
+    const summary = computeRxKindSummaryFromSlips(slipList);
+    rxKindBadgeCounts.value = summary.badgeCounts;
+    if (resetRxKind && summary.defaultKind !== activeRxKind.value) {
+      activeRxKind.value = summary.defaultKind;
+    } else {
+      applySlipRowsForActiveKind(slipList);
+    }
   } catch {
+    allSlipRowsForEncounter.value = [];
     slipRows.value = [];
   } finally {
     slipLoading.value = false;
@@ -232,7 +233,7 @@ watch(filteredQueuePatients, (list) => {
   }
 });
 
-watch([selectedPatientId, activeRxKind], () => {
+function clearRxWorkbenchTransientState() {
   sheetViewBlocks.value = [];
   selectedPrescriptionId.value = null;
   traceCodeByLineId.value = {};
@@ -240,6 +241,10 @@ watch([selectedPatientId, activeRxKind], () => {
   void nextTick(() => {
     rxCenterRef.value?.clearRxTableSelection();
   });
+}
+
+watch([selectedPatientId, activeRxKind], () => {
+  clearRxWorkbenchTransientState();
 });
 
 watch(
@@ -270,24 +275,24 @@ watch(
 );
 
 watch(
-  () => [selectedPatientId.value, activeRxKind.value, queueScope.value] as const,
-  async ([enc, kind, scope], old) => {
+  () => [selectedPatientId.value, queueScope.value] as const,
+  async ([enc, scope], old) => {
     if (!enc) {
+      allSlipRowsForEncounter.value = [];
       slipRows.value = [];
       rxKindBadgeCounts.value = { western: 0, herbal: 0 };
       return;
     }
-    const [oldEnc, , oldScope] = old ?? [null, kind, scope];
-    if (enc !== oldEnc || scope !== oldScope) {
-      const summary = await syncEncounterRxKindSummary(enc, scope);
-      if (summary.defaultKind !== kind) {
-        activeRxKind.value = summary.defaultKind;
-        return;
-      }
-    }
-    void reloadSlips();
+    const [oldEnc, oldScope] = old ?? [null, scope];
+    const encounterChanged = enc !== oldEnc || scope !== oldScope;
+    await reloadEncounterSlipsFromServer(encounterChanged);
   },
 );
+
+watch(activeRxKind, () => {
+  if (!selectedPatientId.value) return;
+  applySlipRowsForActiveKind(allSlipRowsForEncounter.value);
+});
 
 watch(
   () => [queueDateRange.value, queueScope.value] as const,
@@ -302,13 +307,21 @@ watch(keyword, () => {
 
 watch(queueScope, () => {
   selectedPatientId.value = null;
+  allSlipRowsForEncounter.value = [];
   slipRows.value = [];
   activeRxKind.value = 'western';
   rxKindBadgeCounts.value = { western: 0, herbal: 0 };
 });
 
+/** 选中卡片切换当前就诊；再次点击已选患者仍刷新处方明细（避免 ref 不变导致 watch 不触发） */
 function handleQueueCardSelect(patient: { id: string }) {
-  selectedPatientId.value = patient.id;
+  const id = patient.id;
+  if (selectedPatientId.value === id) {
+    clearRxWorkbenchTransientState();
+    void reloadEncounterSlipsFromServer(false);
+    return;
+  }
+  selectedPatientId.value = id;
 }
 
 /** 时间范围变更：清空时回退为当天 */
@@ -356,56 +369,37 @@ async function handleViewPrescription() {
   rxCenterRef.value?.openSheetViewMode();
 }
 
-function handlePrintPrescription() {
-  const enc = selectedPatientId.value;
-  const rxId = selectedPrescriptionId.value;
-  if (!enc) {
-    ElMessage.warning('请先选择患者');
+/** 多选处方：每张处方号静默打印一次 */
+async function handlePrintPrescriptions() {
+  const selectedLineIds = rxCenterRef.value?.getSelectedDispenseLineIds() ?? [];
+  if (selectedLineIds.length === 0) {
+    ElMessage.warning('请先勾选要打印的处方');
     return;
   }
-  if (!rxId) {
-    ElMessage.warning('请先选择处方');
+  const selectedSet = new Set(selectedLineIds);
+  const selectedSlips = slipRows.value.filter((row) => selectedSet.has(row.dispenseId));
+  const groups = groupSlipRowsByPrescriptionNo(selectedSlips);
+  if (groups.length === 0) {
+    ElMessage.warning('未找到可打印的处方数据');
     return;
   }
-  const block = prescriptionBlocks.value.find((b) => b.id === rxId);
-  if (!block) {
-    ElMessage.warning('未找到所选处方');
-    return;
+  const encounterId = selectedPatientId.value;
+  printSubmitting.value = true;
+  try {
+    for (const group of groups) {
+      const prescriptionNo = group[0]?.prescriptionNo?.trim() ?? '';
+      await print({
+        scenarioCode: PRINT_SCENARIO.outpatientRx,
+        source: group,
+        bizRef: {
+          encounterId: encounterId ?? undefined,
+          prescriptionNo: prescriptionNo || undefined,
+        },
+      });
+    }
+  } finally {
+    printSubmitting.value = false;
   }
-  const firstLineId = block.items[0]?.id;
-  const slip = firstLineId
-    ? slipRows.value.find((r) => String(r.dispenseId) === firstLineId)
-    : undefined;
-  const dispenseStatusEnumIn =
-    queueScope.value === 'pending' ? ['PREPARATION', 'IN_PROGRESS'] : ['COMPLETED'];
-  const narcoticOnly = slip ? isNarcoticSlipRow(slip) : false;
-  const tcmOnly = !narcoticOnly && block.rxType === 'herbal';
-  const templateCode = resolveOutpatientPrescriptionTemplateCode({ narcoticOnly, tcmOnly });
-  const printParams = {
-    encounterId: enc,
-    prescriptionNo: block.rxNo,
-    prescriptionGroupId:
-      slip?.prescriptionGroupId != null ? String(slip.prescriptionGroupId) : undefined,
-    westernOnly: block.rxType === 'western',
-    tcmOnly,
-    dispenseStatusEnumIn,
-  };
-  if (templateCode === DISPENSE_SLIP_TEMPLATE) {
-    void printDispenseSlip({
-      ...printParams,
-      jobName: `发药单-${block.rxNo}`,
-    });
-    return;
-  }
-  void printPrescription({
-    ...printParams,
-    templateCode,
-    jobName: narcoticOnly
-      ? `麻精处方-${block.rxNo}`
-      : tcmOnly
-        ? `中药处方-${block.rxNo}`
-        : `门诊处方-${block.rxNo}`,
-  });
 }
 
 /** 先保存配药再发药：仅处理 PREPARATION / IN_PROGRESS 行 */
@@ -511,8 +505,7 @@ async function handleBatchDispense() {
     }
     traceCodeByLineId.value = {};
     inventoryPickByLineId.value = {};
-    await reloadSlips();
-    await syncEncounterRxKindSummary(enc, queueScope.value);
+    await reloadEncounterSlipsFromServer(false);
     await reloadQueue();
     await nextTick(() => {
       rxCenterRef.value?.clearRxTableSelection();
@@ -600,18 +593,18 @@ onMounted(async () => {
           v-model:selected-dispenser-id="selectedDispenserId"
           v-model:selected-prescription-id="selectedPrescriptionId"
           :batch-dispense-disabled="queueScope === 'completed' || batchSubmitting || slipLoading"
+          :print-prescriptions-disabled="printSubmitting || slipLoading"
           :selected-patient="selectedPatient"
           :prescription-blocks="prescriptionBlocks"
           :prescription-sheet-blocks="sheetViewBlocks"
           :display-table-rows="displayTableRows"
           :prescription-row-count="prescriptionList.length"
           :dispenser-options="dispenserOptions"
-          :prescription-print-loading="isPrinting || previewLoading"
           :rx-kind-badge-counts="rxKindBadgeCounts"
           @batch-dispense="handleBatchDispense"
           @batch-trace-scan="handleBatchTraceScan"
           @view-prescription="handleViewPrescription"
-          @print-prescription="handlePrintPrescription"
+          @print-prescriptions="handlePrintPrescriptions"
         />
       </template>
     </StationTriPaneLayout>

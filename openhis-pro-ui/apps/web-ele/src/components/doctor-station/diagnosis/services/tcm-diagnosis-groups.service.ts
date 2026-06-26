@@ -3,13 +3,25 @@ import type {
   TcmDiagnosisGroupRowDto,
 } from '#/api/doctor-station/tcm.types';
 
+import type { DoctorStationTcmHttpClient } from '#/api/doctor-station/tcm-api-client';
 import {
-  httpListTcmDiagnosisGroups,
-  httpSaveTcmDiagnosisGroupsBatch,
-} from '#/api/doctor-station/tcm.http';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+  createDoctorStationTcmHttpClient,
+  createInpatientDoctorStationTcmHttpClient,
+} from '#/api/doctor-station/tcm-api-client';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
+import type { DoctorStationDiagnosisScope } from './encounter-diagnosis.service';
 import { formatTcmDiagnosisDisplayName, type TcmDiagnosisPick } from './tcm-diagnosis-display';
+
+const tcmHttpByScope: Record<DoctorStationDiagnosisScope, DoctorStationTcmHttpClient> = {
+  outpatient: createDoctorStationTcmHttpClient('/doctorStationTcm'),
+  inpatient: createInpatientDoctorStationTcmHttpClient(),
+};
+
+/** 按门诊/住院作用域解析中医 Tab HTTP 客户端 */
+export function resolveTcmDiagnosisHttp(scope: DoctorStationDiagnosisScope = 'outpatient') {
+  return tcmHttpByScope[scope];
+}
 
 /** 病证组是否同一对病名+证候目录 */
 export function isSameTcmDiagnosisGroupPair(
@@ -68,14 +80,16 @@ export async function appendTcmDiagnosisGroupBatch(
   disease: TcmDiagnosisPick,
   syndrome: TcmDiagnosisPick,
   saveAsMainDiagnosis: boolean,
+  scope: DoctorStationDiagnosisScope = 'outpatient',
 ): Promise<'duplicate' | 'saved'> {
+  const tcmHttp = resolveTcmDiagnosisHttp(scope);
   const diseaseDefinitionId = preserveApiIdForRequest(disease.conditionDefinitionId) ?? '';
   const syndromeDefinitionId = preserveApiIdForRequest(syndrome.conditionDefinitionId) ?? '';
   if (!diseaseDefinitionId || !syndromeDefinitionId) {
     throw new Error('中医病证目录未选择完整');
   }
 
-  const listRes = await httpListTcmDiagnosisGroups({ encounterId, patientId });
+  const listRes = await tcmHttp.httpListTcmDiagnosisGroups({ encounterId, patientId });
   const existingRows = listRes.groups ?? [];
 
   if (
@@ -103,7 +117,7 @@ export async function appendTcmDiagnosisGroupBatch(
     }),
   );
 
-  await httpSaveTcmDiagnosisGroupsBatch({
+  await tcmHttp.httpSaveTcmDiagnosisGroupsBatch({
     encounterId,
     patientId,
     groups,

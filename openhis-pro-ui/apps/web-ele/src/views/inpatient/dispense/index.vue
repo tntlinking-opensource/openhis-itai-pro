@@ -41,7 +41,7 @@ import {
 } from '#/api/inpatient-pharmacy-dispense/inpatient-pharmacy-summary-dispense.http';
 import { useRequest } from '#/hooks/use-request';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import DispenseRxCenter from '#/views/outpatient/dispense/components/dispense-rx-center.vue';
 import { flattenPrescriptionBlocks } from '#/views/outpatient/dispense/components/dispense-rx-helpers';
@@ -52,13 +52,6 @@ import InpatientDispenseQueuePanel from './components/inpatient-dispense-queue-p
 import InpatientDispenseSummaryCenter from './components/inpatient-dispense-summary-center.vue';
 import InpatientDispenseSummaryQueuePanel from './components/inpatient-dispense-summary-queue-panel.vue';
 import type { InpatientDispenseQueuePatient } from './components/types';
-import { useDispenseSlipPrint } from '#/composables/use-dispense-slip-print';
-import { useOutpatientPrescriptionPrint } from '#/composables/use-outpatient-prescription-print';
-import {
-  DISPENSE_SLIP_TEMPLATE,
-  resolveOutpatientPrescriptionTemplateCode,
-} from '#/utils/report/outpatient-prescription-print-config';
-import { isNarcoticSlipRow } from '#/utils/report/prescription-print-kind';
 
 import {
   mapInpatientPendingQueueRowToPatient,
@@ -134,19 +127,6 @@ const summaryListRequest = useRequest(httpPagePendingMedicationSummarySlips, { m
 const summaryDetailRequest = useRequest(httpGetMedicationSummaryDispenseDetail, { manual: true });
 const summaryDispenseRequest = useRequest(httpDispenseSummaryMedications, { manual: true });
 const summaryRejectRequest = useRequest(httpRejectSummaryDispense, { manual: true });
-const {
-  isPrinting: slipPrinting,
-  previewLoading: slipPreviewLoading,
-  printDispenseSlip,
-} = useDispenseSlipPrint();
-const {
-  isPrinting: prescriptionPrinting,
-  previewLoading: prescriptionPreviewLoading,
-  printPrescription,
-} = useOutpatientPrescriptionPrint();
-
-const isPrinting = computed(() => slipPrinting.value || prescriptionPrinting.value);
-const previewLoading = computed(() => slipPreviewLoading.value || prescriptionPreviewLoading.value);
 
 /** 复用门诊处方区组件：映射为 DispenseQueuePatient */
 const selectedPatientForRxCenter = computed<DispenseQueuePatient | null>(() => {
@@ -323,7 +303,7 @@ watch(filteredQueuePatients, (list) => {
   }
 });
 
-watch([selectedPatientId, activeRxKind], () => {
+function clearRxWorkbenchTransientState() {
   sheetViewBlocks.value = [];
   selectedPrescriptionId.value = null;
   traceCodeByLineId.value = {};
@@ -331,6 +311,10 @@ watch([selectedPatientId, activeRxKind], () => {
   void nextTick(() => {
     rxCenterRef.value?.clearRxTableSelection();
   });
+}
+
+watch([selectedPatientId, activeRxKind], () => {
+  clearRxWorkbenchTransientState();
 });
 
 watch(
@@ -579,17 +563,15 @@ async function handleSummaryBatchReject() {
   }
 }
 
-/** 打印汇总单（IF-IPS-06：复用 IF-IPS-02 详情数据） */
-function handlePrintSummarySheet() {
-  if (!selectedSummaryNo.value) {
-    ElMessage.warning('请先选择汇总单');
+/** 选中卡片切换当前就诊；再次点击已选患者仍刷新处方明细（避免 ref 不变导致 watch 不触发） */
+function handleQueueCardSelect(patient: { id: string }) {
+  const id = patient.id;
+  if (selectedPatientId.value === id) {
+    clearRxWorkbenchTransientState();
+    void reloadSlips();
     return;
   }
-  ElMessage.info('打印模板待接入，当前数据已加载至详情区');
-}
-
-function handleQueueCardSelect(patient: { id: string }) {
-  selectedPatientId.value = patient.id;
+  selectedPatientId.value = id;
 }
 
 /** 时间范围变更：清空时回退为当天 */
@@ -635,58 +617,6 @@ async function handleViewPrescription() {
     return;
   }
   rxCenterRef.value?.openSheetViewMode();
-}
-
-function handlePrintPrescription() {
-  const enc = selectedPatientId.value;
-  const rxId = selectedPrescriptionId.value;
-  if (!enc) {
-    ElMessage.warning('请先选择患者');
-    return;
-  }
-  if (!rxId) {
-    ElMessage.warning('请先选择处方');
-    return;
-  }
-  const block = prescriptionBlocks.value.find((b) => b.id === rxId);
-  if (!block) {
-    ElMessage.warning('未找到所选处方');
-    return;
-  }
-  const firstLineId = block.items[0]?.id;
-  const slip = firstLineId
-    ? slipRows.value.find((r) => String(r.dispenseId) === firstLineId)
-    : undefined;
-  const dispenseStatusEnumIn =
-    queueScope.value === 'pending' ? ['PREPARATION', 'IN_PROGRESS'] : ['COMPLETED'];
-  const narcoticOnly = slip ? isNarcoticSlipRow(slip) : false;
-  const tcmOnly = !narcoticOnly && block.rxType === 'herbal';
-  const templateCode = resolveOutpatientPrescriptionTemplateCode({ narcoticOnly, tcmOnly });
-  const printParams = {
-    encounterId: enc,
-    prescriptionNo: block.rxNo,
-    prescriptionGroupId:
-      slip?.prescriptionGroupId != null ? String(slip.prescriptionGroupId) : undefined,
-    westernOnly: block.rxType === 'western',
-    tcmOnly,
-    dispenseStatusEnumIn,
-  };
-  if (templateCode === DISPENSE_SLIP_TEMPLATE) {
-    void printDispenseSlip({
-      ...printParams,
-      jobName: `住院发药单-${block.rxNo}`,
-    });
-    return;
-  }
-  void printPrescription({
-    ...printParams,
-    templateCode,
-    jobName: narcoticOnly
-      ? `住院麻精处方-${block.rxNo}`
-      : tcmOnly
-        ? `住院中药处方-${block.rxNo}`
-        : `住院处方-${block.rxNo}`,
-  });
 }
 
 /** 保存配药并发药：住院侧仅提交 dispenseId 与追溯码，不改库房/批号/数量 */
@@ -878,12 +808,10 @@ onMounted(async () => {
           :prescription-sheet-blocks="sheetViewBlocks"
           :display-table-rows="displayTableRows"
           :prescription-row-count="prescriptionList.length"
-          :prescription-print-loading="isPrinting || previewLoading"
           :dispenser-options="dispenserOptions"
           @batch-dispense="handleBatchDispense"
           @batch-trace-scan="handleBatchTraceScan"
           @view-prescription="handleViewPrescription"
-          @print-prescription="handlePrintPrescription"
         />
         <InpatientDispenseSummaryCenter
           v-else
@@ -902,7 +830,6 @@ onMounted(async () => {
           @batch-dispense="handleSummaryBatchDispense"
           @batch-reject="handleSummaryBatchReject"
           @batch-trace-scan="handleSummaryBatchTraceScan"
-          @print-summary="handlePrintSummarySheet"
         />
       </template>
     </StationTriPaneLayout>

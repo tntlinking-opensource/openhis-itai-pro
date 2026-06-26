@@ -10,6 +10,7 @@ export type OutpatientRefundQueueTabCode = 'ALL' | 'PENDING' | 'SETTLED';
 /** 退费页初始化返回 */
 export interface LoadOutpatientRefundPageInitResponse {
   chargeItemStatusOptions: OptionDto[];
+  paymentChannelOptions?: OptionDto[];
 }
 
 /** 退费页初始化请求 */
@@ -66,6 +67,8 @@ export interface OutpatientRefundLineItemDto {
 /** 按原支付分组的退费执行明细 */
 export interface OutpatientRefundPaymentGroupDto {
   halfRefundOnPayment: boolean;
+  /** 原支付落库渠道码（fin_payment_rec_detail.pay_enum 去重） */
+  originalPayChannelCodes?: string[];
   paymentBusNo?: null | string;
   paymentId: string;
   paymentStatusEnum?: null | string;
@@ -84,6 +87,11 @@ export interface LoadOutpatientRefundExecutionDetailRequest {
 /** 加载就诊待执行退费明细响应 */
 export interface LoadOutpatientRefundExecutionDetailResponse {
   paymentGroups: OutpatientRefundPaymentGroupDto[];
+}
+
+/** 查询原支付落库渠道码请求 */
+export interface ListOriginalPayChannelCodesRequest {
+  paymentId: string;
 }
 
 /** 执行前可退门禁请求 */
@@ -107,6 +115,7 @@ export interface RefundPaymentDetailSubmitDto {
 /** 按原支付执行门诊账单退费请求 */
 export interface ExecuteOutpatientBillRefundByPaymentRequest {
   billDate?: null | string;
+  clientRefundResult?: import('#/api/payment/payment.types').ClientRefundResultDto;
   encounterId: string;
   originalPaymentId: string;
   preservedNewChargeItemIds?: string[];
@@ -116,9 +125,7 @@ export interface ExecuteOutpatientBillRefundByPaymentRequest {
 
 /** 按原支付执行门诊账单退费响应 */
 export interface ExecuteOutpatientBillRefundByPaymentResponse {
-  coordinationIds?: string[];
   halfRefundExecuted?: boolean;
-  insuranceRevokeMode?: string;
   insuranceRevoked?: boolean;
   originalPaymentId?: string;
   reversePaymentId?: string;

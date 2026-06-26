@@ -1,13 +1,20 @@
 <script lang="ts" setup>
-import { useElementPlusDesignTokens } from '@vben/hooks';
+import { ref } from 'vue';
+
+import { useElementPlusDesignTokens } from '@vben/hooks/es/use-design-tokens';
 
 import { ElConfigProvider } from 'element-plus';
-
-import { elementLocale } from '#/locales';
+import defaultLocale from 'element-plus/es/locale/lang/zh-cn';
 
 defineOptions({ name: 'App' });
 
 useElementPlusDesignTokens();
+
+const elementLocale = ref(defaultLocale);
+
+void import('#/locales').then((mod) => {
+  elementLocale.value = mod.elementLocale.value;
+});
 </script>
 
 <template>

@@ -69,7 +69,7 @@ import {
   normalizeStockOutStatusSort,
   stockOutStatusLabel,
 } from '#/utils/inventory/stock-out-doc-actions';
-import { resolveLoginPractitionerIdForRequest } from '#/utils/preserve-api-id';
+import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
 import { useUserStore } from '@vben/stores';
 
 defineOptions({ name: 'InventoryTransferMainPane' });

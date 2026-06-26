@@ -49,6 +49,12 @@ interface MenuProps {
   scrollToActive?: boolean;
 
   /**
+   * @zh_CN 横向菜单是否启用滚动（禁用溢出折叠为「…」）
+   * @default false
+   */
+  scrollable?: boolean;
+
+  /**
    * @zh_CN 菜单主题
    * @default dark
    */

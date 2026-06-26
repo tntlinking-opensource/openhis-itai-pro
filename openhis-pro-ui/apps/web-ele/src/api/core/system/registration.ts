@@ -1,5 +1,5 @@
 import { publicRequestClient } from '#/api/request';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 export const REGISTRATION_TYPE_ACTIVE_FLAG = {
   ACTIVE: 1,

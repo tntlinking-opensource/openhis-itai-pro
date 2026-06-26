@@ -10,10 +10,15 @@ export type {
   DoctorStationAdviceResourceKeyDto,
   ListActivityExecutionLocationsRequest,
   ListActivityExecutionLocationsResponse,
+  ListDoctorStationServiceApplyFormsRequest,
+  ListDoctorStationServiceApplyFormsResponse,
   PrepickedProductKeyDto,
   SaveDeviceAdviceDraftLinePayload,
+  SaveDoctorStationServiceApplyFormRequest,
+  SaveDoctorStationServiceApplyFormResponse,
   SaveMedicationAdviceDraftLinePayload,
   SaveServiceAdviceDraftLinePayload,
+  ServiceApplyFormHeaderDto,
   TerminologyOptionDto,
 } from '#/api/doctor-station/advice.types';
 
@@ -27,10 +32,14 @@ import type {
   GetDoctorStationAdviceOrderBindInfoResponse,
   InitDoctorStationAdviceRequest,
   InitDoctorStationAdviceResponse,
+  ListDoctorStationServiceApplyFormsRequest,
+  ListDoctorStationServiceApplyFormsResponse,
   PageDoctorStationAdviceCatalogRequest,
   PageDoctorStationAdviceCatalogResponse,
   SaveDoctorStationAdviceDraftBatchRequest,
   SaveDoctorStationAdviceDraftBatchResponse,
+  SaveDoctorStationServiceApplyFormRequest,
+  SaveDoctorStationServiceApplyFormResponse,
   SignDoctorStationAdviceBatchRequest,
   SignDoctorStationAdviceBatchResponse,
   UpdateDoctorStationMedicationAdviceGroupsRequest,
@@ -45,7 +54,6 @@ export interface InpatientDoctorStationAdviceRowDto extends DoctorStationAdviceR
   generateSourceEnum?: string;
   stopTime?: string;
   conditionDefinitionId?: string;
-  signCode?: string;
 }
 
 /** 加载当前住院就诊医嘱统一列表 */
@@ -122,6 +130,23 @@ export interface StopLongTermInpatientDoctorStationAdviceResponse {
   message?: string;
 }
 
+/** 取消停嘱（仅长期且已停嘱） */
+export interface CancelStopLongTermAdviceLineRequest {
+  requestId: string;
+  productTableName: string;
+}
+
+export interface CancelStopLongTermInpatientDoctorStationAdviceRequest {
+  encounterId: string;
+  patientId: string;
+  lines: CancelStopLongTermAdviceLineRequest[];
+}
+
+export interface CancelStopLongTermInpatientDoctorStationAdviceResponse {
+  success?: boolean;
+  message?: string;
+}
+
 /** 开立出院医嘱 */
 export interface CreateDischargeInpatientDoctorStationAdviceRequest {
   encounterId: string;
@@ -141,3 +166,13 @@ export interface CreateDischargeInpatientDoctorStationAdviceResponse {
   success?: boolean;
   message?: string;
 }
+
+/** 住院检查检验申请单：请求/响应与门诊同构（后端子类继承） */
+export type SaveInpatientDoctorStationServiceApplyFormRequest =
+  SaveDoctorStationServiceApplyFormRequest;
+export type SaveInpatientDoctorStationServiceApplyFormResponse =
+  SaveDoctorStationServiceApplyFormResponse;
+export type ListInpatientDoctorStationServiceApplyFormsRequest =
+  ListDoctorStationServiceApplyFormsRequest;
+export type ListInpatientDoctorStationServiceApplyFormsResponse =
+  ListDoctorStationServiceApplyFormsResponse;

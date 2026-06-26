@@ -3,7 +3,7 @@ import type { ApiOptionItem } from '#/types/api-response';
 
 import { ORDER_TEMPLATE_LINE_KIND_MEDICATION } from '#/api/basic/order-template';
 import { getMedicationCatalogApi } from '#/api/core/system/catalog';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   convertTotalAmountWhenUnitChanges,
   defaultTotalAmountUnitCode,

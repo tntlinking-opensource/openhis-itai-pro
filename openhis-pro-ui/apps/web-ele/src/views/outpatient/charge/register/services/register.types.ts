@@ -46,6 +46,54 @@ export interface RegisterHistoryExpose {
   refresh: () => Promise<void>;
 }
 
+/** 右侧容器对外暴露能力（统计 + 当前 Tab） */
+export type RegisterRightPanelExpose = RegisterHistoryExpose;
+
+/** 当日号源点选后带入左侧挂号的上下文 */
+export interface RegisterSlotSelectionPayload {
+  healthcareServiceId: number | string;
+  organizationId: number | string;
+  practitionerId?: null | number | string;
+  slotEnd?: string;
+  slotId: number | string;
+  slotStart?: string;
+}
+
+/** 下方「待遇确认」只读展示区（费用性质切换后异步灌入） */
+export interface RegisterBenefitDisplayPayload {
+  kind?: '' | 'INSURANCE' | 'STUDENT';
+  areaHint?: string;
+  balc?: number | string;
+  cardNo?: string;
+  certno?: string;
+  /** 02=身份证凭证，03=社保卡 */
+  mediumType?: string;
+  college?: string;
+  eligibilityMessage?: string;
+  eligible?: boolean;
+  insuplcAdmdvs?: string;
+  insutype?: string;
+  mdtrtareaAdmdvs?: string;
+  psnInsuStas?: string;
+  psnName?: string;
+  psnNo?: string;
+  psnType?: string;
+  specialDisease?: string;
+  studentName?: string;
+  studentNo?: string;
+  treatmentBlocked?: boolean;
+}
+
+/** 下方 Tab 切换险种时重查 2001 的上下文 */
+export interface RegisterBenefitPreviewContext {
+  contractId?: string;
+  ybCardInfo?: string;
+  ybCardSn?: string;
+  ybCertno?: string;
+  ybMediumType?: string;
+  ybPsnName?: string;
+}
+
 /** 父组件通过 ref 调用的挂号表单区能力 */
 export interface RegisterFormAreaExpose {
   /** 预约快照预填并锁定三要素 */
@@ -54,6 +102,8 @@ export interface RegisterFormAreaExpose {
     organizationId: number | string;
     practitionerId?: null | number | string;
   }) => Promise<void>;
+  /** 号源日历点选预填三要素（不锁定，可微调） */
+  applySlotSelection: (payload: RegisterSlotSelectionPayload) => Promise<void>;
   /** 把选中患者写入患者信息表单 */
   applyPatientRecord: (patient: RegisterPatientRecord) => void;
   /** 解除预约锁定并保留已填值 */
@@ -68,11 +118,35 @@ export interface RegisterFormAreaExpose {
   getDoctorLabel: (doctorId: unknown) => string | undefined;
   /** 按费用性质 id 解析下拉展示名 */
   getContractLabel: (contractId: unknown) => string | undefined;
+  /** 按费用性质 id 解析合同类别编码 */
+  getContractCategory: (contractId: unknown) => string | undefined;
+  /** 取首个医保类费用性质，供读卡后引导 1101 */
+  findBootstrapInsuranceContractId: () => string | undefined;
+  /** 按发卡地推荐医保费用性质（优先于 findBootstrapInsuranceContractId） */
+  findBootstrapInsuranceContractIdByInsuplc: (insuplcAdmdvs?: string) => string | undefined;
+  /** 费用性质 → chs-contract bus_no（9001 签到） */
+  getContractBusNo: (contractId: unknown) => string | undefined;
+  /** 切换费用性质并通知父组件 */
+  applyContractId: (contractId: string) => Promise<void>;
+  /** 写入参保地匹配结果 */
+  applyContractMatch: (
+    match: import('#/api/outpatient-registration').RegisterContractMatchDto | null | undefined,
+  ) => void;
+  /** 一键切换到推荐费用性质 */
+  applyRecommendedContract: () => Promise<void>;
+  /** 待遇确认后刷新下方待遇展示区 */
+  applyBenefitPreview: (
+    payload: RegisterBenefitDisplayPayload,
+    ybPreview?: import('#/api/outpatient-registration').YbRegisterBenefitPreviewDto,
+    refreshContext?: RegisterBenefitPreviewContext,
+  ) => void;
+  /** 清空下方待遇确认展示块 */
+  clearBenefitPreview: () => void;
   /** 按号源类型 id 解析下拉展示名（挂号类型） */
   getServiceTypeLabel: (serviceTypeId: unknown) => string | undefined;
   /** 汇总患者区、挂号区字段及挂号费、号源类型 id，供提交 */
   getSubmitValues: () => Promise<Record<string, unknown>>;
-  /** 清空挂号 + 患者信息，并清空下方就诊信息展示块 */
+  /** 清空挂号 + 患者信息，并清空下方待遇确认展示块 */
   resetForClear: () => void;
   /** 提交成功后重置表单并刷新医生下拉；不预填挂号区首条主数据 */
   resetForSubmitSuccess: () => Promise<void>;

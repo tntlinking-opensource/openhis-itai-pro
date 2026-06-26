@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type {
+  AdmissionVitalSignSubmitDto,
   OptionDto,
   PatientDetailDto,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station.types';
@@ -11,7 +12,6 @@ import { computed, reactive, ref, watch } from 'vue';
 import dayjs from 'dayjs';
 import {
   ElButton,
-  ElCheckbox,
   ElForm,
   ElFormItem,
   ElInput,
@@ -28,8 +28,6 @@ import {
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station.http';
 import { httpExecuteBedOperation } from '#/api/inpatient/nurse-station/inpatient-nurse-station-atd.http';
 import AppDialog from '#/components/app-dialog.vue';
-import { useAdmissionCertificatePrint } from '#/composables/use-inpatient-certificate-print';
-import { usePatientWristbandPrint } from '#/composables/use-patient-wristband-print';
 import { useRequest } from '#/hooks/use-request';
 import { PATIENT_CONDITION_OPTIONS } from '#/views/inpatient/charge/register/inpatient-register.constants';
 
@@ -75,8 +73,6 @@ const emit = defineEmits<{
 const detail = ref<PatientDetailDto | null>(null);
 const doctorOptions = ref<OptionDto[]>([]);
 const primaryNurseOptions = ref<OptionDto[]>([]);
-const printWristband = ref(false);
-const printAdmissionCertOnSave = ref(false);
 
 const vitalForm = reactive({
   heightCm: '',
@@ -100,27 +96,13 @@ const admissionForm = reactive({
 const detailRequest = useRequest(httpGetPatientDetail, { manual: true });
 const saveRequest = useRequest(httpSavePatientInfo, { manual: true });
 const bedOperationRequest = useRequest(httpExecuteBedOperation, { manual: true });
-const {
-  isPrinting: wristbandPrinting,
-  previewLoading: wristbandPreviewLoading,
-  printPatientWristband,
-} = usePatientWristbandPrint();
-const {
-  isPrinting: admissionCertPrinting,
-  previewLoading: admissionCertPreviewLoading,
-  printAdmissionCertificate,
-} = useAdmissionCertificatePrint();
 
 const dialogTitle = computed(() => admissionBedDialogTitle(props.bedOperation));
 const confirmButtonLabel = computed(() => admissionBedConfirmLabel(props.bedOperation));
 
 const dialogLoading = computed(
   () =>
-    detailRequest.loading.value ||
-    saveRequest.loading.value ||
-    bedOperationRequest.loading.value ||
-    wristbandPreviewLoading.value ||
-    admissionCertPreviewLoading.value,
+    detailRequest.loading.value || saveRequest.loading.value || bedOperationRequest.loading.value,
 );
 
 const encounterId = computed(() => props.patient?.id ?? '');
@@ -285,6 +267,32 @@ function resetForms() {
   admissionForm.admissionTimeDisplay = '';
 }
 
+/** 体征表单 → 提交块；全空时返回 undefined */
+function buildAdmissionVitalSignsFromForm(): AdmissionVitalSignSubmitDto | undefined {
+  const dto: AdmissionVitalSignSubmitDto = {
+    heightCm: vitalForm.heightCm.trim() || undefined,
+    weightKg: vitalForm.weightKg.trim() || undefined,
+    temperature: vitalForm.temperature.trim() || undefined,
+    heartRate: vitalForm.heartRate.trim() || undefined,
+    pulse: vitalForm.pulse.trim() || undefined,
+    bloodPressureHigh: vitalForm.bloodPressureHigh.trim() || undefined,
+    bloodPressureLow: vitalForm.bloodPressureLow.trim() || undefined,
+  };
+  const hasAny = Object.values(dto).some((value) => Boolean(value));
+  return hasAny ? dto : undefined;
+}
+
+/** 详情回填块 → 体征表单 */
+function applyAdmissionVitalSignsToForm(vitals?: AdmissionVitalSignSubmitDto) {
+  vitalForm.heightCm = (vitals?.heightCm ?? '').trim();
+  vitalForm.weightKg = (vitals?.weightKg ?? '').trim();
+  vitalForm.temperature = (vitals?.temperature ?? '').trim();
+  vitalForm.heartRate = (vitals?.heartRate ?? '').trim();
+  vitalForm.pulse = (vitals?.pulse ?? '').trim();
+  vitalForm.bloodPressureHigh = (vitals?.bloodPressureHigh ?? '').trim();
+  vitalForm.bloodPressureLow = (vitals?.bloodPressureLow ?? '').trim();
+}
+
 /** 关闭弹窗 */
 function closeDialog() {
   visible.value = false;
@@ -341,6 +349,7 @@ async function loadDetailAndForm() {
   admissionForm.chiefDoctorId = participantIds.chiefDoctorId;
   admissionForm.primaryNurseId = participantIds.primaryNurseId;
   admissionForm.priorityEnum = (row.priorityEnum ?? '').trim();
+  applyAdmissionVitalSignsToForm(row.admissionVitalSigns);
   const admissionRaw = row.admissionTime ?? row.startTime;
   if (admissionRaw) {
     const parsed = dayjs(admissionRaw);
@@ -381,18 +390,22 @@ async function handleAdmit() {
     chiefDoctorId: admissionForm.chiefDoctorId,
     primaryNurseId: admissionForm.primaryNurseId,
   });
+  const op = props.bedOperation;
+  const vitalPayload = buildAdmissionVitalSignsFromForm();
+  const assignWithBed = op?.type === 'assign';
   await saveRequest.run({
     encounterId: id,
     priorityEnum: admissionForm.priorityEnum || undefined,
     participants: participants.length > 0 ? participants : undefined,
+    admissionVitalSigns: assignWithBed ? undefined : vitalPayload,
   });
-  const op = props.bedOperation;
   if (op) {
     const execBody = buildExecuteBedOperationFromIntent(
       op,
       id,
       participants,
       admissionForm.priorityEnum || undefined,
+      assignWithBed ? vitalPayload : undefined,
     );
     await bedOperationRequest.run(execBody);
     ElMessage.success(
@@ -401,32 +414,8 @@ async function handleAdmit() {
   } else {
     ElMessage.success('患者信息已保存');
   }
-  if (printWristband.value) {
-    await printPatientWristband({ encounterId: id, jobName: '患者腕带' });
-  }
-  if (printAdmissionCertOnSave.value) {
-    await printAdmissionCertificate({ encounterId: id, jobName: '入院证' });
-  }
   emit('saved');
   closeDialog();
-}
-
-async function handlePrintWristband() {
-  const id = encounterId.value?.trim();
-  if (!id) {
-    ElMessage.warning('缺少就诊信息，无法打印腕带');
-    return;
-  }
-  await printPatientWristband({ encounterId: id, jobName: '患者腕带' });
-}
-
-async function handlePrintAdmissionCertificate() {
-  const id = encounterId.value?.trim();
-  if (!id) {
-    ElMessage.warning('缺少就诊信息，无法打印入院证');
-    return;
-  }
-  await printAdmissionCertificate({ encounterId: id, jobName: '入院证' });
 }
 
 watch(visible, (open) => {
@@ -638,21 +627,7 @@ watch(visible, (open) => {
 
     <template #footer>
       <div class="admission-dialog__footer">
-        <ElCheckbox v-model="printWristband">打印腕带</ElCheckbox>
-        <ElCheckbox v-model="printAdmissionCertOnSave">打印入院证</ElCheckbox>
         <div class="admission-dialog__footer-actions">
-          <ElButton
-            :loading="wristbandPrinting || wristbandPreviewLoading"
-            @click="handlePrintWristband"
-          >
-            打印腕带
-          </ElButton>
-          <ElButton
-            :loading="admissionCertPrinting || admissionCertPreviewLoading"
-            @click="handlePrintAdmissionCertificate"
-          >
-            打印入院证
-          </ElButton>
           <ElButton @click="closeDialog">取消</ElButton>
           <ElButton type="primary" :loading="dialogLoading" @click="handleAdmit">
             {{ confirmButtonLabel }}

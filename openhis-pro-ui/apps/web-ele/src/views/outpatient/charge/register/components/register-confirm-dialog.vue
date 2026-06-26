@@ -5,12 +5,29 @@ import type {
   RegisterConfirmDetail,
 } from '../services';
 
-import { computed, ref } from 'vue';
+import type { PayChannelOption } from '#/utils/payment/payment-channel-options';
 
-import { ElButton, ElMessage } from 'element-plus';
+import { computed, onMounted, ref } from 'vue';
+
+import { ElAlert, ElButton, ElInput, ElMessage, ElRadioButton, ElRadioGroup } from 'element-plus';
 
 import AppDialog from '#/components/app-dialog.vue';
+import { isScanPayChannel, useUnionPayScanPay } from '#/composables/payment/useUnionPayScanPay';
+import {
+  FALLBACK_PAY_CHANNEL_OPTIONS,
+  optionDtosToPayChannelOptions,
+} from '#/utils/payment/payment-channel-options';
+import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
+import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
+import { schedulePrintRegistrationReceipt } from '#/utils/print/print-registration-receipt';
 
+import { loadRegisterFormInit } from '../services/register.service';
+import {
+  formatInsuranceCredentialExpiredHint,
+  isEcVoucherMediumType,
+  isEcVoucherStale,
+  isInsuranceCredentialExpiredError,
+} from '../services/register-insurance-credential';
 import { DEFAULT_REGISTER_PAY_CHANNEL_CODE, payRegisterFee } from '../services/register.service';
 
 defineOptions({
@@ -18,20 +35,85 @@ defineOptions({
 });
 
 const emit = defineEmits<{
-  /** 正式结算成功且弹窗已关闭后，由父级重置表单并刷新就诊记录 */
+  cancel: [];
   success: [];
 }>();
 
+type RescanRefreshHandler = (
+  currentPre: PreRegisterSettlementResult,
+) => Promise<null | PreRegisterSettlementResult>;
+
 const visible = ref(false);
 const payLoading = ref(false);
-const detail = ref<null | RegisterConfirmDetail>(null);
+const refreshLoading = ref(false);
+const credentialExpiredHint = ref(false);
+const payChannelCode = ref(DEFAULT_REGISTER_PAY_CHANNEL_CODE);
+const scanCode = ref('');
+const scanStatusText = ref('');
+const payChannelOptions = ref<PayChannelOption[]>([...FALLBACK_PAY_CHANNEL_OPTIONS]);
+
+const { scanPayEnabled, effectivePayChannelOptions, refreshUnionPayCapabilities } =
+  useUnionPayScanPay(() => payChannelOptions.value);
+
+const showScanPaySection = computed(
+  () => scanPayEnabled.value && isScanPayChannel(payChannelCode.value),
+);
 const pendingPreSettlement = ref<null | PreRegisterSettlementResult>(null);
+const detail = ref<null | RegisterConfirmDetail>(null);
+const insuranceMediumType = ref('');
+const ybCredentialReadAt = ref<null | number>(null);
+const rescanAndRefreshHandler = ref<null | RescanRefreshHandler>(null);
+
+const insurancePreSettled = computed(() =>
+  Boolean(
+    (pendingPreSettlement.value as null | { insurancePreSettled?: boolean })?.insurancePreSettled,
+  ),
+);
+const insuranceFundPay = computed(() =>
+  Number(
+    (pendingPreSettlement.value as null | { ybFundPaySumamt?: unknown })?.ybFundPaySumamt ?? 0,
+  ),
+);
+const insuranceAcctPay = computed(() =>
+  Number((pendingPreSettlement.value as null | { ybAcctPay?: unknown })?.ybAcctPay ?? 0),
+);
+const payableCashAmount = computed(() => {
+  const raw = pendingPreSettlement.value as null | {
+    totalAmount?: unknown;
+    ybPsnCashPay?: unknown;
+  };
+  if (insurancePreSettled.value) {
+    const cash = Number(raw?.ybPsnCashPay ?? 0);
+    return Number.isFinite(cash) ? Math.max(0, cash) : 0;
+  }
+  const total = Number(raw?.totalAmount ?? detail.value?.totalAmount ?? 0);
+  return Number.isFinite(total) ? Math.max(0, total) : 0;
+});
+const showCashPaySection = computed(() => payableCashAmount.value > 0.001);
+const ecVoucherStale = computed(
+  () =>
+    insurancePreSettled.value &&
+    isEcVoucherMediumType(insuranceMediumType.value) &&
+    isEcVoucherStale(ybCredentialReadAt.value),
+);
+const showRescanSection = computed(
+  () => insurancePreSettled.value && isEcVoucherMediumType(insuranceMediumType.value),
+);
+
+onMounted(() => {
+  void (async () => {
+    try {
+      const init = await loadRegisterFormInit({});
+      payChannelOptions.value = optionDtosToPayChannelOptions(init.paymentChannelOptions);
+    } catch {
+      payChannelOptions.value = [...FALLBACK_PAY_CHANNEL_OPTIONS];
+    }
+    await refreshUnionPayCapabilities();
+  })();
+});
 
 const registerIntro = '请核对以下信息，确认后将按预结算金额发起收费。';
 
-/**
- * 将性别编码转为弹窗展示文案。
- */
 function formatGenderForConfirm(code: string): string {
   const c = String(code ?? '').trim();
   if (c === 'MALE' || c === '1') {
@@ -46,17 +128,11 @@ function formatGenderForConfirm(code: string): string {
   return c || '—';
 }
 
-/**
- * 空串统一为「—」。
- */
 function displayDash(value: null | string | undefined): string {
   const t = String(value ?? '').trim();
   return t || '—';
 }
 
-/**
- * 将当前核对明细映射为共用「分区块 + 栅格」结构。
- */
 const confirmSections = computed<ConfirmDetailSection[]>(() => {
   const d = detail.value;
   if (!d) {
@@ -98,60 +174,196 @@ const confirmSections = computed<ConfirmDetailSection[]>(() => {
   ];
 });
 
-/**
- * 由父组件在预结算成功后打开：写入展示明细与草稿上下文。
- */
-function open(nextDetail: RegisterConfirmDetail, pre: PreRegisterSettlementResult) {
+function applyPreSettlement(pre: PreRegisterSettlementResult) {
+  pendingPreSettlement.value = pre;
+  let cash = Number(pre.totalAmount ?? 0);
+  if (pre.insurancePreSettled) {
+    const psnCash = Number((pre as { ybPsnCashPay?: unknown }).ybPsnCashPay ?? 0);
+    cash = Number.isFinite(psnCash) ? psnCash : cash;
+  }
+  if (detail.value) {
+    detail.value = { ...detail.value, totalAmount: Number.isFinite(cash) ? cash : 0 };
+  }
+  credentialExpiredHint.value = false;
+}
+
+function open(
+  nextDetail: RegisterConfirmDetail,
+  pre: PreRegisterSettlementResult,
+  options?: {
+    insuranceMediumType?: string;
+    rescanAndRefresh?: RescanRefreshHandler;
+    ybCredentialReadAt?: null | number;
+  },
+) {
   detail.value = nextDetail;
   pendingPreSettlement.value = pre;
+  insuranceMediumType.value = options?.insuranceMediumType ?? '';
+  ybCredentialReadAt.value = options?.ybCredentialReadAt ?? null;
+  rescanAndRefreshHandler.value = options?.rescanAndRefresh ?? null;
+  credentialExpiredHint.value = false;
+  scanCode.value = '';
+  scanStatusText.value = '';
+  payChannelCode.value = DEFAULT_REGISTER_PAY_CHANNEL_CODE;
   visible.value = true;
 }
 
-/**
- * 关闭弹窗并清空暂存的预结算上下文（取消或成功收尾）。
- */
 function resetState() {
   visible.value = false;
   detail.value = null;
   pendingPreSettlement.value = null;
+  rescanAndRefreshHandler.value = null;
+  credentialExpiredHint.value = false;
 }
 
-/**
- * 弹窗关闭动画结束后释放引用，避免误用过期预结算。
- */
+function handleCancelDialog() {
+  visible.value = false;
+  emit('cancel');
+}
+
 function onDialogClosed() {
   detail.value = null;
   pendingPreSettlement.value = null;
+  rescanAndRefreshHandler.value = null;
   payLoading.value = false;
+  refreshLoading.value = false;
+  scanCode.value = '';
+  scanStatusText.value = '';
+  credentialExpiredHint.value = false;
 }
 
-/**
- * 弹窗内确认缴费：调用正式结算后通知父级做表单与列表收尾。
- */
+function resolvePayError(error: unknown): { code?: string; message: string } {
+  if (error && typeof error === 'object') {
+    const row = error as {
+      code?: string;
+      message?: string;
+      response?: { data?: { code?: string; message?: string } };
+    };
+    const data = row.response?.data;
+    return {
+      code: data?.code ?? row.code,
+      message: String(data?.message ?? row.message ?? ''),
+    };
+  }
+  return { message: String(error ?? '') };
+}
+
+async function handleRescanAndRefresh() {
+  const handler = rescanAndRefreshHandler.value;
+  const pre = pendingPreSettlement.value;
+  if (!handler || !pre) {
+    ElMessage.warning('当前无法刷新预结算，请关闭弹窗后重新确认挂号');
+    return;
+  }
+  refreshLoading.value = true;
+  try {
+    const nextPre = await handler(pre);
+    if (!nextPre) {
+      return;
+    }
+    applyPreSettlement(nextPre);
+    ybCredentialReadAt.value = Date.now();
+    ElMessage.success('已刷新医保预结算');
+  } finally {
+    refreshLoading.value = false;
+  }
+}
+
+function ensureCredentialFreshBeforePay(): boolean {
+  if (ecVoucherStale.value) {
+    credentialExpiredHint.value = true;
+    ElMessage.warning(formatInsuranceCredentialExpiredHint());
+    return false;
+  }
+  return true;
+}
+
 async function executeRegisterPayment() {
   const pre = pendingPreSettlement.value;
   const d = detail.value;
   if (!pre?.paymentDraftId || !d) {
     return;
   }
+  if (!ensureCredentialFreshBeforePay()) {
+    return;
+  }
+  if (isScanPayChannel(payChannelCode.value) && !scanCode.value.trim()) {
+    ElMessage.warning('请输入付款码');
+    return;
+  }
   payLoading.value = true;
+  scanStatusText.value = '';
   try {
-    await payRegisterFee({
-      appointmentId: pre.appointmentId != null ? String(pre.appointmentId) : undefined,
-      paymentDetails: [
-        {
-          payAmount: d.totalAmount,
-          payChannelCode: DEFAULT_REGISTER_PAY_CHANNEL_CODE,
-        },
-      ],
-      paymentDraftId: pre.paymentDraftId,
-    });
-    resetState();
+    let clientScanResult;
+    if (isScanPayChannel(payChannelCode.value)) {
+      if (!scanPayEnabled.value) {
+        ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
+        return;
+      }
+      scanStatusText.value = '等待支付结果…';
+      const scanOutcome = await submitScanPayment({
+        paymentDraftId: pre.paymentDraftId,
+        amount: payableCashAmount.value,
+        scanCode: scanCode.value,
+      });
+      clientScanResult = scanOutcome.clientScanResult;
+    }
+
+    const result = clientScanResult
+      ? await settleWithScanRecovery(clientScanResult, () =>
+          payRegisterFee({
+            appointmentId:
+              pre.appointmentId === null || pre.appointmentId === undefined
+                ? undefined
+                : String(pre.appointmentId),
+            paymentDetails: showCashPaySection.value
+              ? [
+                  {
+                    payAmount: payableCashAmount.value,
+                    payChannelCode: payChannelCode.value,
+                  },
+                ]
+              : [],
+            paymentDraftId: pre.paymentDraftId,
+            clientScanResult,
+          }),
+        )
+      : await payRegisterFee({
+          appointmentId:
+            pre.appointmentId === null || pre.appointmentId === undefined
+              ? undefined
+              : String(pre.appointmentId),
+          paymentDetails: showCashPaySection.value
+            ? [
+                {
+                  payAmount: payableCashAmount.value,
+                  payChannelCode: payChannelCode.value,
+                },
+              ]
+            : [],
+          paymentDraftId: pre.paymentDraftId,
+        });
     ElMessage.success('挂号成功！');
-    emit('success');
+    finishAfterPay();
+    schedulePrintRegistrationReceipt({
+      encounterId: result?.encounterId ?? pre.encounterId,
+      paymentId: result?.paymentId,
+      jobName: '挂号小票',
+    });
+  } catch (error) {
+    const { code, message } = resolvePayError(error);
+    if (isInsuranceCredentialExpiredError(code, message)) {
+      credentialExpiredHint.value = true;
+      ElMessage.warning(formatInsuranceCredentialExpiredHint());
+    }
   } finally {
     payLoading.value = false;
   }
+}
+
+function finishAfterPay() {
+  resetState();
+  emit('success');
 }
 
 defineExpose({
@@ -175,10 +387,8 @@ defineExpose({
 
       <template v-for="(section, sIdx) in confirmSections" :key="`${section.title}-${sIdx}`">
         <div
-          :class="[
-            'mb-1 border-0 border-b border-solid border-[var(--el-border-color-lighter)] pb-1 text-[14px] font-semibold text-[var(--el-text-color-primary)]',
-            sIdx > 0 ? 'mt-4' : '',
-          ]"
+          class="mb-1 border-0 border-b border-solid border-[var(--el-border-color-lighter)] pb-1 text-[14px] font-semibold text-[var(--el-text-color-primary)]"
+          :class="[sIdx > 0 ? 'mt-4' : '']"
         >
           {{ section.title }}
         </div>
@@ -186,11 +396,8 @@ defineExpose({
           <template v-for="row in section.rows" :key="row.label">
             <span class="text-[var(--el-text-color-regular)]">{{ row.label }}</span>
             <span
-              :class="[
-                'text-[var(--el-text-color-primary)]',
-                row.breakAll ? 'break-all' : '',
-                row.medium ? 'font-medium' : '',
-              ]"
+              class="text-[var(--el-text-color-primary)]"
+              :class="[row.breakAll ? 'break-all' : '', row.medium ? 'font-medium' : '']"
             >
               {{ row.value }}
             </span>
@@ -201,14 +408,80 @@ defineExpose({
       <div
         class="mt-4 rounded bg-[var(--el-fill-color-light)] px-2 py-2 text-[14px] font-semibold text-[var(--el-color-primary)]"
       >
-        挂号金额（预结算）：¥{{ detail.totalAmount.toFixed(2) }}
+        挂号金额（预结算）：¥{{ payableCashAmount.toFixed(2) }}
+      </div>
+
+      <template v-if="insurancePreSettled">
+        <div class="mt-3 space-y-1 text-[13px] text-[var(--el-text-color-regular)]">
+          <div>基金支付：¥{{ insuranceFundPay.toFixed(2) }}</div>
+          <div>个账支付：¥{{ insuranceAcctPay.toFixed(2) }}</div>
+          <div class="font-medium text-[var(--el-color-primary)]">
+            个人现金应付：¥{{ payableCashAmount.toFixed(2) }}
+          </div>
+        </div>
+      </template>
+
+      <ElAlert
+        v-if="showRescanSection && (ecVoucherStale || credentialExpiredHint)"
+        class="mt-3"
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="formatInsuranceCredentialExpiredHint()"
+      />
+
+      <div v-if="showRescanSection" class="mt-3">
+        <ElButton
+          type="warning"
+          plain
+          :loading="refreshLoading"
+          :disabled="payLoading"
+          @click="handleRescanAndRefresh"
+        >
+          重新扫医保码并刷新预结算
+        </ElButton>
+      </div>
+
+      <div v-if="showCashPaySection" class="mt-4">
+        <div class="mb-2 text-[14px] font-semibold text-[var(--el-text-color-primary)]">
+          支付方式
+        </div>
+        <ElRadioGroup v-model="payChannelCode" class="flex flex-wrap gap-2">
+          <ElRadioButton
+            v-for="opt in effectivePayChannelOptions"
+            :key="opt.value"
+            :value="opt.value"
+          >
+            {{ opt.label }}
+          </ElRadioButton>
+        </ElRadioGroup>
+      </div>
+
+      <div v-if="showScanPaySection" class="mt-3">
+        <div class="mb-2 text-[14px] font-semibold text-[var(--el-text-color-primary)]">
+          扫码支付
+        </div>
+        <ElInput
+          v-model="scanCode"
+          placeholder="请扫码或输入付款码"
+          clearable
+          @keyup.enter="executeRegisterPayment"
+        />
+        <p v-if="scanStatusText" class="mt-2 text-[13px] text-blue-600">{{ scanStatusText }}</p>
       </div>
     </div>
 
     <template #footer>
       <div class="flex justify-end gap-2">
-        <ElButton :disabled="payLoading" @click="visible = false"> 取消 </ElButton>
-        <ElButton type="primary" :loading="payLoading" @click="executeRegisterPayment">
+        <ElButton :disabled="payLoading || refreshLoading" @click="handleCancelDialog">
+          取消
+        </ElButton>
+        <ElButton
+          type="primary"
+          :loading="payLoading"
+          :disabled="refreshLoading"
+          @click="executeRegisterPayment"
+        >
           确认缴费
         </ElButton>
       </div>

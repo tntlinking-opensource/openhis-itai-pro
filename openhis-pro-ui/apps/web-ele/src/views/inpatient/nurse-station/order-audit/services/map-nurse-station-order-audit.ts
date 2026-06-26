@@ -6,7 +6,7 @@ import type {
 
 import { formatDateTime } from '@vben/utils';
 
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 表格行：与 AdviceOrderDisplayCell 及校对页列展示对齐 */
 export interface NurseStationOrderAuditTableRow {
@@ -30,6 +30,9 @@ export interface NurseStationOrderAuditTableRow {
   executeTime: string;
   halted?: boolean;
   statusEnum?: string;
+  tcmFlag?: boolean;
+  prescriptionNo?: string;
+  lineRequestIds?: string[];
 }
 
 function orderTypeToShortLabel(orderType: string): string {
@@ -86,12 +89,40 @@ function buildAuditTypeLabel(dto: NurseStationOrderAuditRowDto): string {
   return therapy || kind || '—';
 }
 
-/** 医嘱名称摘要：名称 + 规格 */
+/** 医嘱名称摘要：名称 + 规格；中药方折叠行仅用方级展示名 */
 function buildAuditContentTitle(dto: NurseStationOrderAuditRowDto): string {
+  if (dto.tcmFlag === true) {
+    const collapsedName = String(dto.adviceDisplayName ?? '').trim();
+    if (collapsedName) return collapsedName;
+  }
   const name = String(dto.adviceDisplayName ?? '').trim();
   const spec = String(dto.specificationText ?? '').trim();
   if (name && spec) return `${name}【${spec}】`;
   return name || spec || '—';
+}
+
+/** 剂量/数量：中药方展示各味单次量 + 付数 */
+function buildAuditDosageDisplay(dto: NurseStationOrderAuditRowDto): string {
+  if (dto.tcmFlag === true) {
+    const singleDose = String(dto.dosageDisplay ?? '').trim();
+    const fuCount = dto.chineseHerbsDoseQuantity;
+    const fuText = fuCount != null && String(fuCount).trim() ? `${String(fuCount).trim()}付` : '';
+    if (singleDose && fuText) {
+      return `${singleDose} ${fuText}`;
+    }
+    return singleDose || fuText || '—';
+  }
+  return String(dto.dosageDisplay ?? '').trim() || '—';
+}
+
+function mapAuditLineRequestIds(
+  ids: NurseStationOrderAuditRowDto['lineRequestIds'],
+): string[] | undefined {
+  if (!ids?.length) return undefined;
+  const mapped = ids
+    .map((id) => preserveApiIdForRequest(id) ?? String(id ?? '').trim())
+    .filter((id) => id.length > 0);
+  return mapped.length > 0 ? mapped : undefined;
 }
 
 /** 用法、频次拼成扩展行 */
@@ -138,12 +169,15 @@ export function mapAuditRowDtoToTableRow(
     therapyTypeCode: resolveAuditTherapyTypeCode(dto) || undefined,
     therapyLabel: resolveAuditTherapyLabel(dto) || undefined,
     content: buildAuditContentTitle(dto),
-    dosage: String(dto.dosageDisplay ?? '').trim() || '—',
+    dosage: buildAuditDosageDisplay(dto),
     extension: buildAuditExtensionLine(dto) || undefined,
     executor: String(dto.performerLocationDisplay ?? '').trim() || '—',
     executeTime: authoredRaw ? formatDateTime(authoredRaw) : '—',
     halted: statusEnum === 'STOPPED',
     statusEnum,
+    tcmFlag: dto.tcmFlag === true ? true : undefined,
+    prescriptionNo: String(dto.prescriptionNo ?? '').trim() || undefined,
+    lineRequestIds: mapAuditLineRequestIds(dto.lineRequestIds),
   };
 }
 

@@ -1,5 +1,9 @@
-import type { ActionRecord } from '../components/types';
-import type { NurseAdviceExecuteRow, NursePatient, SupplyItem } from '../components/types';
+import type {
+  ActionRecord,
+  NurseAdviceExecuteRow,
+  NursePatient,
+  SupplyItem,
+} from '../components/types';
 
 import type {
   NurseStationPatientQueueItemDto,
@@ -9,7 +13,56 @@ import type {
 
 import { formatDateTime } from '@vben/utils';
 
-/** 处置单 DTO 展示短码 → cln_procedure / IF-NUR-03B 持久化 request_table */
+import { buildServiceApplyFormExtensionText } from '#/utils/service-apply-display';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+/** 解析 IF-NUR-02 处置单响应（兼容 publicRequestClient 已解包或仍多包一层 data） */
+export function parseTreatmentSheetFromApiData(data: unknown): {
+  deviceLines: NurseStationTreatmentLineDto[];
+  medicationLines: NurseStationTreatmentLineDto[];
+  serviceLines: NurseStationTreatmentLineDto[];
+} {
+  if (!isRecord(data)) {
+    return { serviceLines: [], medicationLines: [], deviceLines: [] };
+  }
+  const body =
+    isRecord(data.data) &&
+    !Array.isArray(data.serviceLines) &&
+    !Array.isArray(data.medicationLines) &&
+    !Array.isArray(data.deviceLines)
+      ? data.data
+      : data;
+  const readLines = (key: string): NurseStationTreatmentLineDto[] => {
+    const raw = body[key];
+    return Array.isArray(raw) ? (raw as NurseStationTreatmentLineDto[]) : [];
+  };
+  return {
+    serviceLines: readLines('serviceLines'),
+    medicationLines: readLines('medicationLines'),
+    deviceLines: readLines('deviceLines'),
+  };
+}
+
+/** 检验/检查/治疗申请单号前缀（与后端 AggregateTypeConstants.REQUISITION_APPLICATION 一致） */
+export const NURSE_STATION_APPLY_FORM_NO_PREFIX = 'AR';
+
+/** 判断 prescriptionNo 是否为 AR 前缀申请单整单号 */
+export function isNurseStationApplyFormPrescriptionNo(prescriptionNo?: null | string): boolean {
+  const value = String(prescriptionNo ?? '').trim();
+  return value.length > 0 && value.startsWith(NURSE_STATION_APPLY_FORM_NO_PREFIX);
+}
+
+/** 解析护士执行表「申请单号」列展示值 */
+export function resolveNurseExecuteApplyFormNo(prescriptionNo?: null | string): string | undefined {
+  if (!isNurseStationApplyFormPrescriptionNo(prescriptionNo)) {
+    return undefined;
+  }
+  return String(prescriptionNo).trim();
+}
 export function normalizeNurseStationRequestTableForApi(requestTable: string): string {
   const raw = requestTable.trim();
   if (!raw) {
@@ -56,7 +109,7 @@ function isDeviceRequestTable(requestTable: string): boolean {
 
 /** 表格行主键：与批量执行请求中的 id 列表一一对应 */
 export function treatmentLineToExecuteKey(row: NurseStationTreatmentLineDto): string {
-  const rid = String(row.requestId ?? '').trim();
+  const rid = preserveApiIdForRequest(row.requestId) ?? '';
   const table = String(row.requestTable ?? '').trim();
   if (isServiceRequestTable(table)) {
     return `SR:${rid}`;
@@ -64,7 +117,7 @@ export function treatmentLineToExecuteKey(row: NurseStationTreatmentLineDto): st
   if (isMedicationRequestTable(table)) {
     return `MR:${rid}`;
   }
-  const dispenseId = String(row.dispenseId ?? '').trim();
+  const dispenseId = preserveApiIdForRequest(row.dispenseId) ?? '';
   if (dispenseId) {
     return `DD:${dispenseId}`;
   }
@@ -303,7 +356,14 @@ function buildDosageText(row: NurseStationTreatmentLineDto): string {
 }
 
 function buildExtension(row: NurseStationTreatmentLineDto): string {
-  return buildChargeExtension(row);
+  const charge = buildChargeExtension(row);
+  return buildServiceApplyFormExtensionText(
+    {
+      remark: row.remark,
+      serviceRequestDetails: row.serviceRequestDetails,
+    },
+    charge ? [charge] : [],
+  );
 }
 
 /** 将处置单诊疗/药品行映射为护士执行表行 */
@@ -328,13 +388,14 @@ export function mapTreatmentLineToExecuteRow(
     extension: isMedication ? buildMedicationExtension(row) : buildExtension(row),
     dosageText: isMedication ? buildMedicationDosageText(row) : buildDosageText(row),
     executedCountDisplay: isMedication ? undefined : buildExecutedCountDisplay(row),
-    performerDisplay: '—',
-    requestId: String(row.requestId ?? '').trim() || undefined,
+    performerDisplay: String(row.lastPerformerDisplay ?? '').trim() || '—',
+    requestId: preserveApiIdForRequest(row.requestId) ?? undefined,
     requestTable: normalizeNurseStationRequestTableForApi(table) || undefined,
     netPerformCount,
     canCancelExecute: !isMedication && netPerformCount > 0,
-    groupId: row.groupId != null ? String(row.groupId) : undefined,
+    groupId: row.groupId === null || row.groupId === undefined ? undefined : String(row.groupId),
     prescriptionNo: (row.prescriptionNo ?? '').trim() || undefined,
+    applyFormNo: resolveNurseExecuteApplyFormNo(row.prescriptionNo),
     medCategoryCodeText: (row.medCategoryCodeText ?? '').trim() || undefined,
     serviceCategoryCode: (row.serviceCategoryCode ?? '').trim() || undefined,
     serviceCategoryCodeText: (row.serviceCategoryCodeText ?? '').trim() || undefined,
@@ -374,13 +435,45 @@ function sortNurseStationMedicationLines(
   });
 }
 
+/** 诊疗行按申请单号聚邻（与后端 IF-NUR-02 BR-NUR-015 一致） */
+function sortNurseStationServiceLinesForApplyForm(
+  lines: NurseStationTreatmentLineDto[],
+): NurseStationTreatmentLineDto[] {
+  return [...lines].toSorted((left, right) => {
+    const leftFormKey = resolveServiceLineApplyFormSortKey(left.prescriptionNo);
+    const rightFormKey = resolveServiceLineApplyFormSortKey(right.prescriptionNo);
+    const formCompare = leftFormKey.localeCompare(rightFormKey);
+    if (formCompare !== 0) {
+      return formCompare;
+    }
+    const leftSort = left.sortNumber ?? Number.MAX_SAFE_INTEGER;
+    const rightSort = right.sortNumber ?? Number.MAX_SAFE_INTEGER;
+    if (leftSort !== rightSort) {
+      return leftSort - rightSort;
+    }
+    return String(left.requestId ?? '').localeCompare(String(right.requestId ?? ''));
+  });
+}
+
+/** 申请单聚邻排序键：AR 前缀申请单优先成组 */
+function resolveServiceLineApplyFormSortKey(prescriptionNo?: null | string): string {
+  if (isNurseStationApplyFormPrescriptionNo(prescriptionNo)) {
+    return `0_${String(prescriptionNo).trim()}`;
+  }
+  const trimmed = String(prescriptionNo ?? '').trim();
+  if (trimmed) {
+    return `1_${trimmed}`;
+  }
+  return '2_';
+}
+
 /** 仅映射诊疗与药品行；耗材行在侧栏以发放维度展示 */
 export function mapTreatmentSheetToExecuteRows(
   serviceLines: NurseStationTreatmentLineDto[],
   medicationLines: NurseStationTreatmentLineDto[],
 ): NurseAdviceExecuteRow[] {
   const rows: NurseAdviceExecuteRow[] = [];
-  for (const line of serviceLines) {
+  for (const line of sortNurseStationServiceLinesForApplyForm(serviceLines)) {
     rows.push(mapTreatmentLineToExecuteRow(line));
   }
   for (const line of sortNurseStationMedicationLines(medicationLines)) {
@@ -389,12 +482,12 @@ export function mapTreatmentSheetToExecuteRows(
   return rows;
 }
 
-const DISPENSE_PENDING_CODES = ['DRAFT', 'PREPARATION', 'IN_PROGRESS'];
+const DISPENSE_PENDING_CODES = new Set(['DRAFT', 'IN_PROGRESS', 'PREPARATION']);
 
 /** 解析侧栏耗材发放展示态与是否可取消执行 */
 function resolveSupplyDisplayStatus(
   row: NurseStationTreatmentLineDto,
-): Pick<SupplyItem, 'status' | 'canCancelExecute'> {
+): Pick<SupplyItem, 'canCancelExecute' | 'status'> {
   const code = String(row.dispenseStatusEnum ?? '')
     .trim()
     .toUpperCase();
@@ -411,7 +504,7 @@ function resolveSupplyDisplayStatus(
     return { status: '已发放', canCancelExecute: true };
   }
   if (
-    DISPENSE_PENDING_CODES.includes(code) ||
+    DISPENSE_PENDING_CODES.has(code) ||
     statusText.includes('待配') ||
     statusText.includes('待发')
   ) {
@@ -471,7 +564,7 @@ export function mapDeviceLineToSupplyItem(row: NurseStationTreatmentLineDto): Su
 }
 
 export function mapDeviceLinesToSupplyItems(rows: NurseStationTreatmentLineDto[]): SupplyItem[] {
-  return rows.map(mapDeviceLineToSupplyItem);
+  return rows.map((row) => mapDeviceLineToSupplyItem(row));
 }
 
 /** 队列 DTO → 护士站患者卡片数据 */
@@ -482,7 +575,7 @@ export function mapQueueItemToNursePatient(
   const encounterTime = (dto.encounterTime ?? '').trim();
   const dayPart = encounterTime.length >= 10 ? encounterTime.slice(0, 10) : encounterTime;
   return {
-    id: String(dto.encounterId),
+    id: preserveApiIdForRequest(dto.encounterId) ?? '',
     name: (dto.patientName ?? '').trim() || '—',
     encounterBusNo: (dto.slipNo ?? '').trim() || undefined,
     genderEnumText: (dto.genderEnumText ?? '').trim() || undefined,
@@ -503,43 +596,22 @@ export function mapQueueItemToNursePatient(
   };
 }
 
-function formatRequestExtensionsHint(ext: OrderExecutionSheetItemDto['requestExtensions']): string {
-  if (!ext) {
-    return '';
-  }
-  if (ext.entries?.length) {
-    try {
-      return JSON.stringify(ext.entries[0]);
-    } catch {
-      return '';
-    }
-  }
-  const rawText = ext.attributes?.rawText;
-  if (typeof rawText === 'string') {
-    return rawText.trim();
-  }
-  if (ext.attributes && Object.keys(ext.attributes).length > 0) {
-    try {
-      return JSON.stringify(ext.attributes);
-    } catch {
-      return '';
-    }
-  }
-  return '';
-}
-
-/** 执行单读模型行 → 侧栏/抽屉展示用本地记录形状 */
+/** 执行单读模型行 → 侧栏/抽屉展示用本地记录形状（展示列由后端 IF-NUR-03 直接下发） */
 export function mapOrderExecutionToActionRecord(row: OrderExecutionSheetItemDto): ActionRecord {
   const timeRaw = (row.occurrenceTime ?? row.recordedTime ?? '').trim();
   const time = timeRaw ? formatDateTime(timeRaw) : '—';
-  const contentHint = formatRequestExtensionsHint(row.requestExtensions);
-  const target = contentHint.length > 40 ? `${contentHint.slice(0, 40)}…` : contentHint || '—';
+  const targetRaw = String(row.orderItemDisplayName ?? '').trim();
+  const target = targetRaw.length > 40 ? `${targetRaw.slice(0, 40)}…` : targetRaw || '—';
+  const operator = String(row.operatorDisplayName ?? '').trim() || '—';
+  const operatorLabel = String(row.operatorRoleDisplayText ?? '').trim() || '执行人';
+  const action = String(row.actionDisplayText ?? '').trim() || '执行登记';
   return {
     id: `srv-${row.procedureId}`,
     time,
-    operator: '—',
+    operator,
+    operatorLabel,
     type: '执行',
-    action: (row.resultText ?? row.categoryEnum ?? '执行登记').trim() || '执行登记',
+    action,
     target,
     result: '成功',
   };

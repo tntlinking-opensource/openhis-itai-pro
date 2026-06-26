@@ -9,7 +9,7 @@ import type { NurseStationModulePatient } from '../../components/nurse-station-m
 import { formatDateTime } from '@vben/utils';
 import dayjs from 'dayjs';
 
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 勾选槽位（仅 UI 状态键，字段来自后端 timePoints） */
 export interface DispenseSummarySelectableSlot {

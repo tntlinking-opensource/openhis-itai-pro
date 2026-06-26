@@ -10,7 +10,7 @@ const SCHEDULE_STATUS_LABEL: Record<string, string> = {
   active: '已发布',
   inactive: '已停用',
   retired: '已废弃',
-  FROM_TEMPLATE: '模板',
+  FROM_TEMPLATE: '占位预览',
 };
 
 export function formatScheduleStatus(code?: string) {
@@ -26,16 +26,33 @@ export function scheduleStatusClass(code?: string) {
   return '';
 }
 
+/** 本地日历日 → yyyy-MM-dd（避免 toISOString 在 UTC+ 时区偏移一天） */
+export function formatLocalDateIso(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/** 今日本地日期 yyyy-MM-dd */
+export function todayLocalDateIso(): string {
+  return formatLocalDateIso(new Date());
+}
+
+function parseLocalDate(dateStr: string): Date {
+  return new Date(`${dateStr}T00:00:00`);
+}
+
 /** ISO 日期加减天数 */
 export function addDaysIso(dateStr: string, days: number) {
-  const date = new Date(`${dateStr}T00:00:00`);
+  const date = parseLocalDate(dateStr);
   date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
+  return formatLocalDateIso(date);
 }
 
 /** 周一为一周起点 */
 export function weekRangeAround(dateStr: string) {
-  const date = new Date(`${dateStr}T00:00:00`);
+  const date = parseLocalDate(dateStr);
   const day = date.getDay();
   const diffToMonday = day === 0 ? -6 : 1 - day;
   const monday = new Date(date);
@@ -43,13 +60,45 @@ export function weekRangeAround(dateStr: string) {
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
   return {
-    rangeStart: monday.toISOString().slice(0, 10),
-    rangeEnd: sunday.toISOString().slice(0, 10),
+    rangeStart: formatLocalDateIso(monday),
+    rangeEnd: formatLocalDateIso(sunday),
   };
 }
 
+/** 锚点周 + 下一周（共 14 天） */
+export function twoWeekRangeAround(dateStr: string) {
+  const { rangeStart: anchorMonday, rangeEnd: anchorSunday } = weekRangeAround(dateStr);
+  return {
+    anchorMonday,
+    rangeStart: anchorMonday,
+    rangeEnd: addDaysIso(anchorSunday, 7),
+  };
+}
+
+/** ISO 周次（周一为一周起点，与 weekRangeAround 一致） */
+export function isoWeekInfo(dateStr: string) {
+  const date = new Date(`${dateStr}T12:00:00`);
+  const target = new Date(date);
+  const dayNum = target.getDay() || 7;
+  target.setDate(target.getDate() + 4 - dayNum);
+  const weekYear = target.getFullYear();
+  const jan1 = new Date(weekYear, 0, 1);
+  const weekNumber = Math.ceil(((target.getTime() - jan1.getTime()) / 86400000 + 1) / 7);
+  return { weekYear, weekNumber };
+}
+
+export function formatIsoWeekLabel(dateStr: string) {
+  const { weekYear, weekNumber } = isoWeekInfo(dateStr);
+  return `${weekYear}年第${weekNumber}周`;
+}
+
+export function weekRangeLabel(mondayStr: string) {
+  const sunday = addDaysIso(mondayStr, 6);
+  return `${mondayStr.slice(5)} ~ ${sunday.slice(5)}`;
+}
+
 /** 当前日所在自然月 yyyy-MM */
-export function currentYearMonth(dateStr = new Date().toISOString().slice(0, 10)) {
+export function currentYearMonth(dateStr = todayLocalDateIso()) {
   return dateStr.slice(0, 7);
 }
 
@@ -82,7 +131,7 @@ export function monthRangeIso(yearMonth: string) {
 
 export function dayLabel(dateStr: string) {
   const labels = ['日', '一', '二', '三', '四', '五', '六'];
-  const date = new Date(`${dateStr}T00:00:00`);
+  const date = parseLocalDate(dateStr);
   return `${dateStr.slice(5)} 周${labels[date.getDay()]}`;
 }
 

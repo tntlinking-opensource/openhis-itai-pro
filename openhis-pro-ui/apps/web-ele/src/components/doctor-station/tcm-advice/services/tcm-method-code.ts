@@ -46,6 +46,26 @@ export function resolveTcmRateLabel(
   return fb || trimmed;
 }
 
+/** 新建处方默认频次：住院临嘱优先 STAT，长期优先 QD */
+export function resolveDefaultTcmRateCodeForTherapy(
+  therapyEnum: string | undefined,
+  options: TerminologyOptionDto[] | undefined,
+): string {
+  const therapy = String(therapyEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (therapy === 'TEMPORARY') {
+    const hasStat = (options ?? []).some(
+      (opt) =>
+        String(opt.value ?? '')
+          .trim()
+          .toUpperCase() === 'STAT',
+    );
+    if (hasStat) return 'STAT';
+  }
+  return resolveDefaultTcmRateCode(options);
+}
+
 /** 新建处方默认频次：优先 QD，否则字典首项 */
 export function resolveDefaultTcmRateCode(options: TerminologyOptionDto[] | undefined): string {
   const hasDefault = (options ?? []).some(

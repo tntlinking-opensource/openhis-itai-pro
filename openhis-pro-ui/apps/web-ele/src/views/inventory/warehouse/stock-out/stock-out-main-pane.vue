@@ -66,8 +66,8 @@ import {
   isFormSelectDropdownTarget,
   isFormSelectExpanded,
 } from '#/hooks/use-form-keyboard-navigation';
-import { decimalMul } from '#/utils/decimal-util';
-import { resolveLoginPractitionerIdForRequest } from '#/utils/preserve-api-id';
+import { decimalMul } from '#/utils/format/decimal-util';
+import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import {
   convertInboundQtyBetweenBandKinds,

@@ -4,6 +4,8 @@ import type {
   ScheduleCalendarCellDto,
 } from '#/api/booking/outpatient-schedule';
 import type { BookingOptionDto } from '#/api/booking/booking-types';
+import type { BookingEntityId } from '#/api/booking/booking-id';
+import { bookingOptionValue, toBookingId } from '#/api/booking/booking-id';
 
 import { computed, ref, watch } from 'vue';
 
@@ -28,10 +30,10 @@ import {
 
 const props = defineProps<{
   visible: boolean;
-  organizationId?: number;
+  organizationId?: BookingEntityId;
   schedule?: ScheduleCalendarCellDto | null;
   /** 部分停诊时的号源主键列表；空表示整日停诊。 */
-  slotIds?: number[];
+  slotIds?: BookingEntityId[];
   practitioners?: BookingOptionDto[];
 }>();
 
@@ -41,7 +43,7 @@ const emit = defineEmits<{
 }>();
 
 const dispositionMode = ref<'TRANSFER' | 'CANCEL' | 'MANUAL'>('TRANSFER');
-const targetPractitionerId = ref<number>();
+const targetPractitionerId = ref<BookingEntityId>();
 const deferManualHandling = ref(false);
 const stopReason = ref('停诊');
 const preview = ref<PreviewStopClinicImpactResponse>();
@@ -228,7 +230,7 @@ async function handleExecute() {
             v-for="item in practitioners || []"
             :key="item.value"
             :label="item.label"
-            :value="Number(item.value)"
+            :value="bookingOptionValue(item.value)"
           />
         </ElSelect>
         <span v-if="preview?.transferMatchRule" class="stop-clinic-wizard__hint">

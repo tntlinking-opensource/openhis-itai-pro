@@ -21,3 +21,4 @@ export {
 } from './diagnosis/services/encounter-diagnosis.service';
 
 export { default as TcmAdvice } from './tcm-advice/tcm-advice.vue';
+export { default as ElepAdvice } from './elep-advice/elep-advice.vue';

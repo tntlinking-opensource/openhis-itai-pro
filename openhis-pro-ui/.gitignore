@@ -4,6 +4,8 @@ node_modules
 dist
 dist-ssr
 dist.zip
+openhis-web-deploy.zip
+scripts/deploy/cache/
 dist.tar
 dist.war
 .nitro
@@ -54,3 +56,4 @@ vite.config.ts.*
 *.sln
 *.sw?
 .history
+/pnpm-lock.yaml

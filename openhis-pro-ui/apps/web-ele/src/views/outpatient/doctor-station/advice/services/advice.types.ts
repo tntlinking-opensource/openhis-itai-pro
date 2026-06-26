@@ -2,7 +2,7 @@ import type {
   DoctorStationAdviceInventoryRowDto,
   DoctorStationMedicationUnitBandDto,
 } from '#/api/doctor-station/advice.types';
-import type { DrugGroupDisplayItem } from '#/utils/drug-group-table';
+import type { DrugGroupDisplayItem } from '#/utils/doctor-station/drug-group-table';
 
 /** 编辑卡、嘱保存、目录选品共用类型 */
 
@@ -70,7 +70,7 @@ export interface ProductQueryParams {
   pageSize: number;
   keyword?: string;
   productTableNames?: string[];
-  /** 排除药品 med_category_code（如开立西药医嘱传 ["4"] 排除中草药） */
+  /** 排除药品 medication_category_code（如开立西药医嘱传 ["4"] 排除中草药） */
   excludeMedicationCategoryCodes?: string[];
 }
 
@@ -110,6 +110,7 @@ export interface AdviceRowItem {
   diagnosisSummary: string;
   orderingDoctor: string;
   skinTestText: string;
+  skinTestOutcomeCode?: string;
   dosageText?: string;
   groupItems?: Array<AdviceDrugItem | DrugGroupDisplayItem>;
   mergedAdviceRows?: AdviceRowItem[];
@@ -136,4 +137,10 @@ export interface AdviceRowItem {
   listExecutionCount?: number;
   performOrgId?: string;
   performOrgName?: string;
+  /** 派生行锚定药品申请（用法绑定带出项等） */
+  basedOnMedicationRequestId?: string;
+  /** 派生行锚定诊疗申请 */
+  basedOnServiceRequestId?: string;
+  /** 申请单整单号（诊疗 AR 前缀 prescriptionNo，同单多行共享） */
+  applyFormNo?: string;
 }

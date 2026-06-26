@@ -2,7 +2,7 @@ import type { UserListParams } from '#/api/user/user';
 import type { ApiResponse } from '#/types/api-response';
 
 import { requestClient } from '#/api/request';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 岗位工作台左侧用户行（与 PositionUserWorkbenchRowDto 一致） */
 export interface PositionUserWorkbenchRow {

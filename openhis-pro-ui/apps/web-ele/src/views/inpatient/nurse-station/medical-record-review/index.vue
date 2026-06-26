@@ -9,9 +9,8 @@ import { ElButton, ElEmpty, ElMessage, ElTag } from 'element-plus';
 
 import { getCaseRecordByEncounterApi } from '#/api/mrms';
 import InpatientPatientInfoHeader from '#/components/inpatient/patient-info-header.vue';
-import { useMrmsHomepagePrint } from '#/composables/use-mrms-homepage-print';
 import { useRequest } from '#/hooks/use-request';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import {
   CASE_RECORD_STATUS_LABEL,
   CASE_RECORD_STATUS_TAG,
@@ -37,12 +36,6 @@ const loadRequest = useRequest(getCaseRecordByEncounterApi, {
   manual: true,
   showErrorMessage: false,
 });
-const {
-  isPrinting: homepagePrinting,
-  previewLoading: homepagePreviewLoading,
-  previewHomepagePdf,
-  printHomepagePdf,
-} = useMrmsHomepagePrint();
 
 const canOperate = computed(() => props.patients.length === 1);
 
@@ -50,7 +43,7 @@ const selectedPatient = computed(() => (canOperate.value ? props.patients[0] : u
 
 const selectedEncounterId = computed(() => preserveApiIdForRequest(selectedPatient.value?.id));
 
-const caseRecordId = computed(() => preserveApiIdForRequest(caseRecord.value?.id));
+const caseRecordId = computed(() => preserveApiIdForRequest(caseRecord.value?.caseRecordId));
 
 const stickyPatientInfo = computed(() => {
   if (props.patients.length === 0) {
@@ -106,25 +99,6 @@ async function loadCaseRecord() {
   }
 }
 
-async function handlePreviewHomepage() {
-  const id = caseRecordId.value;
-  if (!id) {
-    ElMessage.warning('暂无病案主档，无法预览');
-    return;
-  }
-  await previewHomepagePdf(id);
-}
-
-async function handlePrintHomepage() {
-  const id = caseRecordId.value;
-  if (!id) {
-    ElMessage.warning('暂无病案主档，无法打印');
-    return;
-  }
-  const patientName = caseRecord.value?.patientName ?? selectedPatient.value?.name ?? undefined;
-  await printHomepagePdf(id, patientName);
-}
-
 function openHomepageEditor() {
   const id = caseRecordId.value;
   if (!id) {
@@ -174,21 +148,6 @@ watch(
         </div>
         <div class="review-panel__actions">
           <ElButton @click="openHomepageEditor">打开病案首页</ElButton>
-          <ElButton
-            :disabled="!caseRecordId"
-            :loading="homepagePreviewLoading"
-            @click="handlePreviewHomepage"
-          >
-            PDF 预览
-          </ElButton>
-          <ElButton
-            type="primary"
-            :disabled="!caseRecordId"
-            :loading="homepagePrinting || homepagePreviewLoading"
-            @click="handlePrintHomepage"
-          >
-            打印病案首页
-          </ElButton>
         </div>
       </header>
 
@@ -204,33 +163,30 @@ watch(
           </div>
           <div class="review-summary-item">
             <dt>住院号</dt>
-            <dd>{{ caseRecord.inpatientNo || '—' }}</dd>
+            <dd>{{ selectedPatient?.id || '—' }}</dd>
           </div>
           <div class="review-summary-item">
             <dt>患者姓名</dt>
-            <dd>{{ caseRecord.patientName || selectedPatient?.name || '—' }}</dd>
+            <dd>{{ selectedPatient?.name || '—' }}</dd>
           </div>
           <div class="review-summary-item">
-            <dt>科室</dt>
-            <dd>{{ caseRecord.deptName || '—' }}</dd>
+            <dt>科室/病区</dt>
+            <dd>{{ selectedPatient?.wardName || selectedPatient?.regionName || '—' }}</dd>
           </div>
           <div class="review-summary-item">
             <dt>入院时间</dt>
-            <dd>{{ caseRecord.admissionAt || '—' }}</dd>
+            <dd>—</dd>
           </div>
           <div class="review-summary-item">
             <dt>出院时间</dt>
-            <dd>{{ caseRecord.dischargeAt || '—' }}</dd>
+            <dd>—</dd>
           </div>
           <div class="review-summary-item review-summary-item--span2">
             <dt>主诊断</dt>
-            <dd>{{ caseRecord.primaryDiagnosisText || '—' }}</dd>
+            <dd>{{ selectedPatient?.diagnosis || '—' }}</dd>
           </div>
         </dl>
-        <p class="review-panel__hint">
-          护士站可预览/打印病案首页 PDF（MRMS OpenPDF + OpenHIS.Win
-          printClient）。完整编辑请点「打开病案首页」。
-        </p>
+        <p class="review-panel__hint">完整编辑请点「打开病案首页」进入病案首页页面。</p>
       </div>
 
       <div v-else class="review-panel__body">

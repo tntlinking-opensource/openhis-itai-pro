@@ -26,15 +26,10 @@ export const GENDER_OPTIONS = [
   { label: '未知', value: 'UNKNOWN' },
 ] as const;
 
-/** 预交金支付渠道 code */
-export const PAY_CHANNEL_OPTIONS = [
-  { label: '现金', value: 'CASH' },
-  { label: '支付宝', value: 'ALIPAY' },
-  { label: '微信', value: 'WECHAT' },
-  { label: '银行卡', value: 'BANK_CARD' },
-] as const;
-
-export const DEFAULT_PAY_CHANNEL_CODE = 'CASH';
+export {
+  FALLBACK_DEFAULT_PAY_CHANNEL as DEFAULT_PAY_CHANNEL_CODE,
+  FALLBACK_PAY_CHANNEL_OPTIONS as PAY_CHANNEL_OPTIONS,
+} from '#/utils/payment/payment-channel-options';
 
 /** 民族（联调前静态选项） */
 export const ETHNICITY_OPTIONS = [
@@ -47,7 +42,10 @@ export const ETHNICITY_OPTIONS = [
   { label: '其他', value: '其他' },
 ] as const;
 
-/** 诊断类别（联调前静态选项） */
+/** 住院医保医疗类别：普通住院（2401 默认 med_type=21）。 */
+export const INPATIENT_MED_TYPE = '21';
+
+/** 诊断类别（联调前静态选项，页面已不展示） */
 export const DIAGNOSIS_CATEGORY_OPTIONS = [
   { label: '普通住院', value: 'GENERAL' },
   { label: '日间手术', value: 'DAY_SURGERY' },

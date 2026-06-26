@@ -70,6 +70,13 @@ export interface TableLayoutProps {
   };
   /** 行的类名函数 */
   rowClassName?: (params: { row: Record<string, any>; rowIndex: number }) => string;
+  /** 单元格合并（VxeGrid spanMethod） */
+  spanMethod?: (params: {
+    column: Record<string, any>;
+    columnIndex: number;
+    row: Record<string, any>;
+    rowIndex: number;
+  }) => { colspan?: number; rowspan?: number } | undefined | void;
   /** 行键 */
   rowKey?: ((row: Record<string, any>) => string) | string;
   /** 是否显示"全部"节点（仅在 showSideQuery 为 true 时有效） */

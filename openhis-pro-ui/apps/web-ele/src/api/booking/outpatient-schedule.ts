@@ -3,10 +3,11 @@
  */
 import { publicRequestClient } from '#/api/request';
 
+import type { BookingEntityId } from './booking-id';
 import type { BookingOptionDto } from './booking-types';
 
 export interface LoadScheduleFormInitRequest {
-  organizationId?: number;
+  organizationId?: BookingEntityId;
 }
 
 export interface LoadScheduleFormInitResponse {
@@ -18,35 +19,38 @@ export interface LoadScheduleFormInitResponse {
 }
 
 export interface PageSchedulesByCalendarRequest {
-  organizationId: number;
+  organizationId: BookingEntityId;
   rangeStart: string;
   rangeEnd: string;
-  practitionerId?: number;
-  locationId?: number;
-  healthcareServiceId?: number;
+  practitionerId?: BookingEntityId;
+  locationId?: BookingEntityId;
+  healthcareServiceId?: BookingEntityId;
 }
 
 export interface ScheduleActorDto {
   actorType?: number;
-  actorId?: number;
+  actorId?: BookingEntityId;
   sortNo?: number;
 }
 
 export interface ScheduleCalendarCellDto {
-  scheduleId?: number;
+  scheduleId?: BookingEntityId;
   name?: string;
   statusEnum?: string;
   planningHorizonStart?: string;
   planningHorizonEnd?: string;
-  healthcareServiceId?: number;
+  healthcareServiceId?: BookingEntityId;
   actors?: ScheduleActorDto[];
   fromTemplate?: boolean;
-  weekScheduleTemplateId?: number;
-  dayScheduleTemplateId?: number;
+  weekScheduleTemplateId?: BookingEntityId;
+  dayScheduleTemplateId?: BookingEntityId;
   bookable?: boolean;
-  substitutePractitionerId?: number;
-  originalPractitionerId?: number;
+  substitutePractitionerId?: BookingEntityId;
+  originalPractitionerId?: BookingEntityId;
   substituteDisplay?: string;
+  practitionerName?: string;
+  locationName?: string;
+  healthcareServiceName?: string;
 }
 
 export interface ScheduleCalendarDayDto {
@@ -59,11 +63,11 @@ export interface PageSchedulesByCalendarResponse {
 }
 
 export interface PageSchedulesByMonthRequest {
-  organizationId: number;
+  organizationId: BookingEntityId;
   yearMonth: string;
-  practitionerId?: number;
-  locationId?: number;
-  healthcareServiceId?: number;
+  practitionerId?: BookingEntityId;
+  locationId?: BookingEntityId;
+  healthcareServiceId?: BookingEntityId;
 }
 
 export interface ScheduleCalendarMonthDayDto {
@@ -96,22 +100,26 @@ export interface PageSchedulesByMonthResponse {
 
 export interface ScheduleActorRequest {
   actorType: number;
-  actorId: number;
+  actorId: BookingEntityId;
   sortNo?: number;
 }
 
 export interface CreateScheduleRequest {
-  organizationId: number;
+  organizationId: BookingEntityId;
   name?: string;
   actors: ScheduleActorRequest[];
+  /** 规划窗口起；新建草稿须绑定才能在周历占格 */
+  planningHorizonStart?: string;
+  planningHorizonEnd?: string;
 }
 
 export interface CreateScheduleResponse {
-  scheduleId?: number;
+  scheduleId?: BookingEntityId;
 }
 
 export interface UpdateScheduleDraftRequest {
-  scheduleId: number;
+  scheduleId: BookingEntityId;
+  name?: string;
   actors?: ScheduleActorRequest[];
   planningHorizonStart?: string;
   planningHorizonEnd?: string;
@@ -119,7 +127,7 @@ export interface UpdateScheduleDraftRequest {
 }
 
 export interface PublishScheduleRequest {
-  scheduleId: number;
+  scheduleId: BookingEntityId;
   planningHorizonStart: string;
   planningHorizonEnd: string;
   acknowledgeConflictWarnings?: boolean;
@@ -132,37 +140,23 @@ export interface SlotTemplateRequest {
 }
 
 export interface ProvisionSlotBatchRequest {
-  scheduleId: number;
-  organizationId: number;
+  scheduleId: BookingEntityId;
+  organizationId: BookingEntityId;
   slotTemplates: SlotTemplateRequest[];
 }
 
 export interface ProvisionSlotBatchResponse {
-  slotIds?: number[];
+  slotIds?: BookingEntityId[];
   generatedCount?: number;
 }
 
 export interface DeactivateScheduleRequest {
-  scheduleId: number;
+  scheduleId: BookingEntityId;
   reason?: string;
 }
 
-export interface GenerateFromPractitionerTemplateRequest {
-  organizationId: number;
-  practitionerId: number;
-  locationId?: number;
-  healthcareServiceId?: number;
-  rangeStart: string;
-  rangeEnd: string;
-}
-
-export interface GenerateFromPractitionerTemplateResponse {
-  scheduleIds?: number[];
-  generatedCount?: number;
-}
-
 export interface CopyScheduleToNextWeekRequest {
-  organizationId: number;
+  organizationId: BookingEntityId;
   sourceRangeStart: string;
   sourceRangeEnd: string;
   targetRangeStart: string;
@@ -176,10 +170,10 @@ export interface CopyScheduleToNextWeekResponse {
 }
 
 export interface PreviewStopClinicImpactRequest {
-  organizationId: number;
-  scheduleId: number;
-  slotIds?: number[];
-  targetPractitionerId?: number;
+  organizationId: BookingEntityId;
+  scheduleId: BookingEntityId;
+  slotIds?: BookingEntityId[];
+  targetPractitionerId?: BookingEntityId;
   dispositionMode?: 'TRANSFER' | 'CANCEL' | 'MANUAL';
 }
 
@@ -199,7 +193,7 @@ export interface StopClinicImpactItemDto {
 }
 
 export interface PreviewStopClinicImpactResponse {
-  scheduleId?: number;
+  scheduleId?: BookingEntityId;
   scheduleCount?: number;
   slotCount?: number;
   appointmentCount?: number;
@@ -221,20 +215,20 @@ export interface StopClinicTransferItemRequest {
 }
 
 export interface TransferAppointmentsOnStopClinicRequest {
-  organizationId: number;
-  scheduleId: number;
-  slotIds?: number[];
+  organizationId: BookingEntityId;
+  scheduleId: BookingEntityId;
+  slotIds?: BookingEntityId[];
   dispositionMode: 'TRANSFER' | 'CANCEL' | 'MANUAL';
-  targetPractitionerId?: number;
+  targetPractitionerId?: BookingEntityId;
   transferItems?: StopClinicTransferItemRequest[];
   reason?: string;
   deferManualHandling?: boolean;
 }
 
 export interface ReleaseStopClinicPreviewFreezeRequest {
-  organizationId: number;
-  scheduleId: number;
-  slotIds?: number[];
+  organizationId: BookingEntityId;
+  scheduleId: BookingEntityId;
+  slotIds?: BookingEntityId[];
 }
 
 export interface StopClinicTransferResultItemDto {
@@ -253,9 +247,9 @@ export interface TransferAppointmentsOnStopClinicResponse {
 }
 
 export interface GenerateFromTemplateRequest {
-  organizationId: number;
-  scheduleTemplateId?: number;
-  weekScheduleTemplateId?: number;
+  organizationId: BookingEntityId;
+  scheduleTemplateId?: BookingEntityId;
+  weekScheduleTemplateId?: BookingEntityId;
   templateKind?: 'DAY' | 'WEEK';
   rangeStart: string;
   rangeEnd: string;
@@ -264,32 +258,14 @@ export interface GenerateFromTemplateRequest {
 }
 
 export interface GenerateFromTemplateResponse {
-  scheduleIds?: number[];
+  scheduleIds?: BookingEntityId[];
   generatedCount?: number;
   skippedCount?: number;
   provisionedSlotCount?: number;
 }
 
-export interface GenerateDepartmentFromPractitionerRolesRequest {
-  organizationId: number;
-  practitionerIds?: number[];
-}
-
-export interface DepartmentPractitionerGenerateItemDto {
-  practitionerId?: number;
-  practitionerName?: string;
-  scheduleIds?: number[];
-  message?: string;
-}
-
-export interface GenerateDepartmentFromPractitionerRolesResponse {
-  successItems?: DepartmentPractitionerGenerateItemDto[];
-  failedItems?: DepartmentPractitionerGenerateItemDto[];
-  totalScheduleCount?: number;
-}
-
 export interface PreviewPublishScheduleConflictsRequest {
-  scheduleId: number;
+  scheduleId: BookingEntityId;
   planningHorizonStart: string;
   planningHorizonEnd: string;
 }
@@ -308,13 +284,13 @@ export interface PreviewPublishScheduleConflictsResponse {
 }
 
 export interface SubstitutePractitionerRequest {
-  scheduleId: number;
+  scheduleId: BookingEntityId;
   substitutePractitionerId?: number;
   reason?: string;
 }
 
 export interface SubstitutePractitionerResponse {
-  scheduleId?: number;
+  scheduleId?: BookingEntityId;
   originalPractitionerId?: number;
   substitutePractitionerId?: number;
   substituteReason?: string;
@@ -329,26 +305,17 @@ export async function substitutePractitionerApi(params: SubstitutePractitionerRe
 }
 
 export interface ReactivateScheduleRequest {
-  scheduleId: number;
+  scheduleId: BookingEntityId;
 }
 
 export interface ReactivateScheduleResponse {
-  scheduleId?: number;
+  scheduleId?: BookingEntityId;
   needReprovision?: boolean;
 }
 
 export async function reactivateScheduleApi(params: ReactivateScheduleRequest) {
   return publicRequestClient.post<ReactivateScheduleResponse>(
     '/outpatientSchedule/reactivateSchedule',
-    params,
-  );
-}
-
-export async function generateDepartmentFromPractitionerRolesApi(
-  params: GenerateDepartmentFromPractitionerRolesRequest,
-) {
-  return publicRequestClient.post<GenerateDepartmentFromPractitionerRolesResponse>(
-    '/outpatientSchedule/generateDepartmentFromPractitionerRoles',
     params,
   );
 }
@@ -414,15 +381,6 @@ export async function provisionSlotBatchApi(params: ProvisionSlotBatchRequest) {
 
 export async function deactivateScheduleApi(params: DeactivateScheduleRequest) {
   return publicRequestClient.post<void>('/outpatientSchedule/deactivateSchedule', params);
-}
-
-export async function generateFromPractitionerTemplateApi(
-  params: GenerateFromPractitionerTemplateRequest,
-) {
-  return publicRequestClient.post<GenerateFromPractitionerTemplateResponse>(
-    '/outpatientSchedule/generateFromPractitionerTemplate',
-    params,
-  );
 }
 
 export async function copyScheduleToNextWeekApi(params: CopyScheduleToNextWeekRequest) {

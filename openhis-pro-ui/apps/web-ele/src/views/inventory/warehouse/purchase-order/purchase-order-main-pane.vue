@@ -46,8 +46,8 @@ import {
   withdrawPurchaseOrderApprovalApi,
 } from '#/api/inventory/warehouse/purchase-order';
 import SectionTitle from '#/components/layouts/section-title.vue';
-import { decimalMul } from '#/utils/decimal-util';
-import { resolveLoginPractitionerIdForRequest } from '#/utils/preserve-api-id';
+import { decimalMul } from '#/utils/format/decimal-util';
+import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
 
 interface Props {
   busNo?: string;

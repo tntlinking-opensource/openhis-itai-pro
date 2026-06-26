@@ -1,10 +1,10 @@
 import type { DoctorStationMedicationUnitBandDto } from '#/api/doctor-station/advice.types';
 
-import { decimalDiv, decimalMul } from '#/utils/decimal-util';
+import { decimalDiv, decimalMul } from '#/utils/format/decimal-util';
 import {
   convertProductUnitPriceBetweenBandKinds,
   PRODUCT_CATALOG_PRICE_SOURCE_BAND_KIND,
-} from '#/utils/product-unit-band-price';
+} from '#/utils/doctor-station/product-unit-band-price';
 
 /** 解析目录行上的多计量带（数组或 JSON 字符串） */
 export function normalizeCatalogUnitBands(

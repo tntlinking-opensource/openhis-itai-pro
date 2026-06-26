@@ -76,13 +76,101 @@ const onSelectionChange = (selection: NurseAdviceExecuteRow[]) => {
 const executeRowSelectable = (row: NurseAdviceExecuteRow) =>
   !isNurseExecuteMedicationRow(row) && row.status !== '已完成';
 
-const executeRowClassName = ({ row }: { row: NurseAdviceExecuteRow; rowIndex: number }) => {
+/** 同一申请单首行：用于组间分隔线 */
+const isApplyFormGroupStart = (row: NurseAdviceExecuteRow, rowIndex: number): boolean => {
+  const formNo = row.applyFormNo?.trim();
+  if (!formNo) {
+    return false;
+  }
+  if (rowIndex <= 0) {
+    return true;
+  }
+  const previous = props.executeItems[rowIndex - 1];
+  return previous?.applyFormNo?.trim() !== formNo;
+};
+
+/** 同一申请单末行：用于闭合左侧聚组竖线 */
+const isApplyFormGroupEnd = (row: NurseAdviceExecuteRow, rowIndex: number): boolean => {
+  const formNo = row.applyFormNo?.trim();
+  if (!formNo) {
+    return false;
+  }
+  const next = props.executeItems[rowIndex + 1];
+  return next?.applyFormNo?.trim() !== formNo;
+};
+
+/** 同一申请单续行（非首行）：用于去掉行间横线以衔接左侧竖线 */
+const isApplyFormGroupContinue = (row: NurseAdviceExecuteRow, rowIndex: number): boolean => {
+  const formNo = row.applyFormNo?.trim();
+  if (!formNo || rowIndex <= 0) {
+    return false;
+  }
+  return props.executeItems[rowIndex - 1]?.applyFormNo?.trim() === formNo;
+};
+
+const executeRowClassName = ({
+  row,
+  rowIndex,
+}: {
+  row: NurseAdviceExecuteRow;
+  rowIndex: number;
+}) => {
   const parts: string[] = [];
   if (row.status === '已完成') {
     parts.push('is-nurse-execute-done-row');
   }
   if (isNurseExecuteMedicationRow(row)) {
     parts.push('is-nurse-execute-med-display-only-row');
+  }
+  if (row.applyFormNo?.trim()) {
+    parts.push('is-nurse-apply-form-member');
+  }
+  if (isApplyFormGroupStart(row, rowIndex)) {
+    parts.push('is-nurse-apply-form-group-start');
+  }
+  if (isApplyFormGroupEnd(row, rowIndex)) {
+    parts.push('is-nurse-apply-form-group-end');
+  }
+  if (isApplyFormGroupContinue(row, rowIndex)) {
+    parts.push('is-nurse-apply-form-group-continue');
+  }
+  return parts.join(' ');
+};
+
+/** 申请单聚组：全表 cell-class-name（四边框住整组行） */
+const APPLY_FORM_TABLE_EDGE_LEFT_INDEX = 0;
+const APPLY_FORM_TABLE_EDGE_RIGHT_INDEX = 5;
+
+const executeTableCellClassName = ({
+  row,
+  rowIndex,
+  column,
+  columnIndex,
+}: {
+  row: NurseAdviceExecuteRow;
+  rowIndex: number;
+  column?: { fixed?: boolean | string; property?: string };
+  columnIndex: number;
+}) => {
+  if (!row?.applyFormNo?.trim()) {
+    return '';
+  }
+  const parts = ['nurse-apply-form-cell'];
+  if (isApplyFormGroupStart(row, rowIndex)) {
+    parts.push('is-group-start');
+  }
+  if (isApplyFormGroupEnd(row, rowIndex)) {
+    parts.push('is-group-end');
+  }
+  if (isApplyFormGroupContinue(row, rowIndex)) {
+    parts.push('is-group-continue');
+  }
+  if (columnIndex === APPLY_FORM_TABLE_EDGE_LEFT_INDEX) {
+    parts.push('is-group-edge-left');
+  }
+  const columnFixed = String(column?.fixed ?? '').trim();
+  if (columnIndex === APPLY_FORM_TABLE_EDGE_RIGHT_INDEX || columnFixed === 'right') {
+    parts.push('is-group-edge-right');
   }
   return parts.join(' ');
 };
@@ -144,6 +232,7 @@ defineExpose({
         :data="executeItems"
         row-key="key"
         :row-class-name="executeRowClassName"
+        :cell-class-name="executeTableCellClassName"
         border
         stripe
         height="100%"
@@ -167,8 +256,16 @@ defineExpose({
           </template>
         </ElTableColumn>
         <ElTableColumn prop="content" label="医嘱内容" min-width="420">
-          <template #default="{ row }">
-            <div class="execute-order-content-wrap">
+          <template #default="{ row, $index }">
+            <div
+              class="execute-order-content-wrap"
+              :class="{ 'is-apply-form-block': Boolean(row.applyFormNo?.trim()) }"
+            >
+              <div v-if="isApplyFormGroupStart(row, $index)" class="nurse-apply-form-group-label">
+                <ElTag size="small" effect="plain" type="primary">
+                  申请单 {{ row.applyFormNo }}
+                </ElTag>
+              </div>
               <AdviceOrderDisplayCell
                 :row-key="row.key"
                 :group-items="row.groupItems"
@@ -225,5 +322,60 @@ defineExpose({
       .el-checkbox
   ) {
   display: none !important;
+}
+
+/* 同一申请单多行：浅底 + 四边框成一组；组间顶部分隔；组内无横线 */
+.nurse-execute-advice-table :deep(td.nurse-apply-form-cell) {
+  background-color: var(--el-color-primary-light-9) !important;
+}
+
+.nurse-execute-advice-table :deep(td.nurse-apply-form-cell.is-group-edge-left) {
+  border-left: 2px solid var(--el-color-primary-light-5) !important;
+}
+
+.nurse-execute-advice-table :deep(td.nurse-apply-form-cell.is-group-edge-right) {
+  border-right: 2px solid var(--el-color-primary-light-5) !important;
+}
+
+.nurse-execute-advice-table :deep(td.nurse-apply-form-cell.is-group-start) {
+  border-top: 2px solid var(--el-color-primary-light-5) !important;
+}
+
+.nurse-execute-advice-table :deep(td.nurse-apply-form-cell.is-group-end) {
+  border-bottom: 2px solid var(--el-color-primary-light-5) !important;
+}
+
+/* 组内续行：去掉行间横线，避免组内虚线/断框 */
+.nurse-execute-advice-table :deep(td.nurse-apply-form-cell.is-group-continue) {
+  border-top: none !important;
+}
+
+.nurse-execute-advice-table :deep(td.nurse-apply-form-cell:not(.is-group-end)) {
+  border-bottom: none !important;
+}
+
+/* 组框圆角（仅四角单元格） */
+.nurse-execute-advice-table :deep(td.nurse-apply-form-cell.is-group-start.is-group-edge-left) {
+  border-top-left-radius: 4px;
+}
+
+.nurse-execute-advice-table :deep(td.nurse-apply-form-cell.is-group-start.is-group-edge-right) {
+  border-top-right-radius: 4px;
+}
+
+.nurse-execute-advice-table :deep(td.nurse-apply-form-cell.is-group-end.is-group-edge-left) {
+  border-bottom-left-radius: 4px;
+}
+
+.nurse-execute-advice-table :deep(td.nurse-apply-form-cell.is-group-end.is-group-edge-right) {
+  border-bottom-right-radius: 4px;
+}
+
+.execute-order-content-wrap.is-apply-form-block {
+  padding-left: 8px;
+}
+
+.nurse-apply-form-group-label {
+  margin-bottom: 4px;
 }
 </style>

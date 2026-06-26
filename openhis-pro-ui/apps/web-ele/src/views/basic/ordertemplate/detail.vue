@@ -42,7 +42,7 @@ import {
 import SelectTable from '#/components/select-table.vue';
 import { useRequest } from '#/hooks/use-request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import { buildLineKindSelectOptions } from './order-template-lines';
 

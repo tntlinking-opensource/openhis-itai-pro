@@ -11,10 +11,10 @@ import {
   ORDER_TEMPLATE_SOURCE_FROM_ADVICE,
   ORDER_TEMPLATE_SOURCE_MAINTAINED,
 } from '#/api/basic/order-template';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 绑定范围（对齐后端 OrderTemplateBinding） */
-export type OrderTemplateBindingScope = 'DEPARTMENT' | 'HOSPITAL' | 'PERSONAL';
+export type OrderTemplateBindingScope = 'AGREEMENT' | 'DEPARTMENT' | 'HOSPITAL' | 'PERSONAL';
 
 /** 侧栏树节点 */
 export interface OrderTemplateTreeNode {
@@ -36,16 +36,20 @@ export interface DoctorStationOrderTemplateSelection {
   lines: OrderTemplateLineRowItem[];
 }
 
-/** 绑定维度分组元数据（对齐 SDD personal → department → hospital） */
+/** 绑定维度分组元数据（对齐 SDD agreement → personal → department → hospital） */
 export const ORDER_TEMPLATE_BINDING_GROUP_META: Array<{
   bindingScope: OrderTemplateBindingScope;
   label: string;
   listKey: keyof OrderTemplateBindingGroup;
 }> = [
+  { bindingScope: 'AGREEMENT', label: '协定处方', listKey: 'agreementList' },
   { bindingScope: 'PERSONAL', label: '个人组套', listKey: 'personalList' },
   { bindingScope: 'DEPARTMENT', label: '科室组套', listKey: 'departmentList' },
   { bindingScope: 'HOSPITAL', label: '全院组套', listKey: 'hospitalList' },
 ];
+
+/** 医生站开立医嘱侧栏不展示的绑定范围（协定处方仅在组套维护页维护） */
+export const DOCTOR_STATION_EXCLUDED_BINDING_SCOPES: OrderTemplateBindingScope[] = ['AGREEMENT'];
 
 /** 明细行摘要（预览条/Tooltip） */
 export function buildOrderTemplateLineSummary(lines: OrderTemplateLineRowItem[]): string {
@@ -87,8 +91,13 @@ export function resolveOrderTemplateTreeLabel(header: OrderTemplateHeaderItem): 
 /** 后端分段列表 → ElTree 数据 */
 export function buildOrderTemplateTreeFromGroups(
   groups: OrderTemplateBindingGroup | undefined,
+  options?: { excludeBindingScopes?: OrderTemplateBindingScope[] },
 ): OrderTemplateTreeNode[] {
-  return ORDER_TEMPLATE_BINDING_GROUP_META.map((group) => {
+  const excludedScopes = new Set(options?.excludeBindingScopes);
+  const groupMeta = ORDER_TEMPLATE_BINDING_GROUP_META.filter(
+    (group) => !excludedScopes.has(group.bindingScope),
+  );
+  return groupMeta.map((group) => {
     const headers = groups?.[group.listKey] ?? [];
     const children = headers.map<OrderTemplateTreeNode>((header) => {
       const templateId = preserveApiIdForRequest(header.orderTemplateId);
@@ -147,6 +156,7 @@ export function mergeDoctorStationOrderTemplateGroups(
     right: OrderTemplateHeaderItem[] | undefined,
   ) => [...(left ?? []), ...(right ?? [])];
   return {
+    agreementList: mergeLists(maintained?.agreementList, fromAdvice?.agreementList),
     personalList: mergeLists(maintained?.personalList, fromAdvice?.personalList),
     departmentList: mergeLists(maintained?.departmentList, fromAdvice?.departmentList),
     hospitalList: mergeLists(maintained?.hospitalList, fromAdvice?.hospitalList),

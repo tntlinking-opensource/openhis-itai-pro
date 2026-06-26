@@ -5,8 +5,8 @@ import type { AdviceProductOption } from '#/views/outpatient/doctor-station/advi
 
 import { ORDER_TEMPLATE_LINE_KIND_MEDICATION } from '#/api/basic/order-template';
 import { resolveTcmDoseUnitFromProduct } from '#/components/doctor-station/tcm-advice/services/tcm-prescription.service';
-import { decimalMul } from '#/utils/decimal-util';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { decimalMul } from '#/utils/format/decimal-util';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import {
   buildDosageText,

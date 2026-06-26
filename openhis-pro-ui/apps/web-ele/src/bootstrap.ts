@@ -1,32 +1,17 @@
 import { createApp, watchEffect } from 'vue';
 
-import { registerAccessDirective } from '@vben/access';
-import { registerLoadingDirective } from '@vben/common-ui';
-import { preferences } from '@vben/preferences';
-import { initStores, useAccessStore } from '@vben/stores';
-import '@vben/styles';
-import '@vben/styles/ele';
+import { unmountGlobalLoading } from '@vben/utils/es/helpers/unmount-global-loading';
 
 import { useTitle } from '@vueuse/core';
 import ElementPlus, { ElLoading } from 'element-plus';
 
-import { $t, setupI18n } from '#/locales';
-
-import { initComponentAdapter } from './adapter/component';
-import { initSetupVbenForm } from './adapter/form';
 import App from './app.vue';
-import ProductSelectTable from './components/select-product.vue';
-import { router } from './router';
-import {
-  applyHiprintAutoConnectPolicy,
-  isHiprintAutoConnectDisabled,
-} from './utils/hiprint-connect-pref';
 
-// 初始化 vxe-table，确保 useTableForm 被正确初始化
-import './adapter/vxe-table';
-
-// 导入 Element Plus 基础样式
+// 全局主题样式必须在 mount 前同步加载；异步 import 会导致生产环境 CSS chunk 晚于首屏，样式爆炸
+import '@vben/styles';
+import '@vben/styles/ele';
 import 'element-plus/dist/index.css';
+import './styles/persistent-error-messagebox.css';
 
 async function bootstrap(namespace: string) {
   // 添加全局错误处理，捕获 Element Plus useKeydown.ts 中的 querySelectorAll 错误
@@ -64,20 +49,6 @@ async function bootstrap(namespace: string) {
     });
   }
 
-  // 初始化组件适配器
-  await initComponentAdapter();
-
-  // 初始化表单组件
-  await initSetupVbenForm();
-
-  // // 设置弹窗的默认配置
-  // setDefaultModalProps({
-  //   fullscreenButton: false,
-  // });
-  // // 设置抽屉的默认配置
-  // setDefaultDrawerProps({
-  //   zIndex: 2000,
-  // });
   const app = createApp(App);
 
   // 配置 Vue 错误处理，捕获 Element Plus useKeydown.ts 中的错误
@@ -103,78 +74,68 @@ async function bootstrap(namespace: string) {
   // 注册Element Plus提供的v-loading指令
   app.directive('loading', ElLoading.directive);
 
-  // 注册Vben提供的v-loading和v-spinning指令
-  registerLoadingDirective(app, {
-    loading: false, // Vben提供的v-loading指令和Element Plus提供的v-loading指令二选一即可，此处false表示不注册Vben提供的v-loading指令
-    spinning: 'spinning',
-  });
-
-  // 国际化 i18n 配置
-  await setupI18n(app);
-
   // 配置 pinia-tore
+  const [{ initStores }, { router }] = await Promise.all([
+    import('@vben/stores'),
+    import('./router'),
+  ]);
   await initStores(app, { namespace });
 
-  // 切回标签页时静默恢复服务端租户/科室会话（应对后端重启而前端未刷新）
-  if (typeof document !== 'undefined') {
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState !== 'visible') {
-        return;
-      }
-      const accessStore = useAccessStore();
-      if (!accessStore.accessToken) {
-        return;
-      }
-      void import('#/utils/restore-login-scope').then(({ restoreLoginScopeOnce }) =>
-        restoreLoginScopeOnce().catch(() => {}),
-      );
-    });
-  }
-
-  // 安装权限指令
-  registerAccessDirective(app);
-
-  // 全局注册 ProductSelectTable 组件
-  app.component('ProductSelectTable', ProductSelectTable);
-
-  // 初始化 tippy
-  const { initTippy } = await import('@vben/common-ui/es/tippy');
-  initTippy(app);
-
-  // 配置路由及路由守卫（须在 prefetchAccessRoutes 之前安装，保证 store 内可安全使用 router）
+  // 配置路由及路由守卫
   app.use(router);
 
-  // 已登录时预拉菜单并注册动态路由，避免首次点击需后端菜单的页面时才阻塞导航
-  const { prefetchAccessRoutes } = await import('./router/access-init');
-  await prefetchAccessRoutes(router);
-
-  // 配置Motion插件
-  const { MotionPlugin } = await import('@vben/plugins/motion');
-  app.use(MotionPlugin);
-
-  // 注册 Hiprint 插件（可在个人中心 → 客户端 中屏蔽 17521 自动连接）
-  try {
-    const disableHiprintConnect = isHiprintAutoConnectDisabled();
-    const { hiPrintPlugin, defaultElementTypeProvider } = await import('vue-plugin-hiprint');
-    app.use(hiPrintPlugin, '$hiprint', !disableHiprintConnect);
-    app.use(defaultElementTypeProvider, '$defaultElementTypeProvider');
-    if (disableHiprintConnect) {
-      await applyHiprintAutoConnectPolicy();
-    }
-  } catch (error) {
-    console.warn('Hiprint 插件注册失败:', error);
-  }
-
-  // 动态更新标题
-  watchEffect(() => {
-    if (preferences.app.dynamicTitle) {
-      const routeTitle = router.currentRoute.value.meta?.title;
-      const pageTitle = (routeTitle ? `${$t(routeTitle)} - ` : '') + preferences.app.name;
-      useTitle(pageTitle);
-    }
-  });
-
+  // 先挂载并关闭全局 Loading，重型依赖在首屏之后加载
   app.mount('#app');
+  unmountGlobalLoading();
+
+  // mount 后分批初始化：P0 适配器有依赖顺序；P1 插件可并行；P2 菜单预拉独立
+  void (async () => {
+    try {
+      const { initComponentAdapter } = await import('./adapter/component');
+      initComponentAdapter();
+      const { initSetupVbenForm } = await import('./adapter/form');
+      await initSetupVbenForm();
+      await import('./adapter/vxe-table');
+    } catch (error) {
+      console.error('[bootstrap] form/vxe adapter init failed', error);
+    }
+
+    try {
+      const [localesMod] = await Promise.all([
+        import('#/locales'),
+        import('@vben/common-ui/es/tippy').then(({ initTippy }) => {
+          initTippy(app);
+        }),
+        import('@vben/access/es/directive').then(({ registerAccessDirective }) => {
+          registerAccessDirective(app);
+        }),
+        import('@vben/common-ui/es/loading').then(({ registerLoadingDirective }) => {
+          registerLoadingDirective(app, { loading: false, spinning: 'spinning' });
+        }),
+        import('@vben/plugins/motion').then(({ MotionPlugin }) => {
+          app.use(MotionPlugin);
+        }),
+      ]);
+      const { setupI18n, $t } = localesMod;
+      const { preferences } = await import('@vben/preferences/es/preferences-manager');
+      await setupI18n(app);
+      watchEffect(() => {
+        if (preferences.app.dynamicTitle) {
+          const routeTitle = router.currentRoute.value.meta?.title;
+          const pageTitle = (routeTitle ? `${$t(routeTitle)} - ` : '') + preferences.app.name;
+          useTitle(pageTitle);
+        }
+      });
+    } catch (error) {
+      console.error('[bootstrap] app plugin init failed', error);
+    }
+  })();
+
+  void import('./router/access-init').then(({ prefetchAccessRoutes }) =>
+    prefetchAccessRoutes(router).catch((error) => {
+      console.warn('[bootstrap] background prefetch failed', error);
+    }),
+  );
 }
 
 export { bootstrap };

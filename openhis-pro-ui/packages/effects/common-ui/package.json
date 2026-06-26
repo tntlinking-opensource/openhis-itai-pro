@@ -25,6 +25,10 @@
     "./es/loading": {
       "types": "./src/components/loading/index.ts",
       "default": "./src/components/loading/index.ts"
+    },
+    "./es/authentication": {
+      "types": "./src/ui/authentication/index.ts",
+      "default": "./src/ui/authentication/index.ts"
     }
   },
   "dependencies": {

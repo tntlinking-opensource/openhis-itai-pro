@@ -16,7 +16,7 @@ import { unwrapApiList } from '#/utils/api/unwrap-api-list';
 import {
   preserveApiIdForRequest,
   resolveLoginPractitionerIdForRequest,
-} from '#/utils/preserve-api-id';
+} from '#/utils/format/preserve-api-id';
 
 import { computed, reactive, ref, watch } from 'vue';
 

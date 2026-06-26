@@ -10,7 +10,7 @@ import type {
 import { formatDateTime } from '@vben/utils';
 import dayjs from 'dayjs';
 
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 表格行：医嘱展示 + 当前 Tab 对应槽位分组 */
 export interface NurseStationOrderExecuteTableRow {
@@ -34,8 +34,17 @@ export interface NurseStationOrderExecuteTableRow {
   dosage: string;
   extension?: string;
   startStopText: string;
+  /** 请求状态 code */
+  statusEnum?: string;
+  /** 请求状态展示 */
+  statusDisplay: string;
+  /** 是否已停嘱 */
+  halted: boolean;
   planSchedules: NurseStationOrderExecutePlanSchedule[];
   bindItems: NurseStationOrderExecuteBindItemDto[];
+  tcmFlag?: boolean;
+  prescriptionNo?: string;
+  lineRequestIds?: string[];
 }
 
 /** 按日期分组的槽位（用于「预计执行时点」列） */
@@ -111,12 +120,40 @@ function buildExecuteTypeLabel(dto: NurseStationOrderExecuteRowDto): string {
   return therapy !== '—' ? therapy : kind || '—';
 }
 
-/** 医嘱名称摘要：名称 + 规格 */
+/** 医嘱名称摘要：名称 + 规格；中药方折叠行仅用方级展示名 */
 function buildExecuteContentTitle(dto: NurseStationOrderExecuteRowDto): string {
+  if (dto.tcmFlag === true) {
+    const collapsedName = String(dto.adviceDisplayName ?? '').trim();
+    if (collapsedName) return collapsedName;
+  }
   const name = String(dto.adviceDisplayName ?? '').trim();
   const spec = String(dto.specificationText ?? '').trim();
   if (name && spec) return `${name}【${spec}】`;
   return name || spec || '—';
+}
+
+/** 剂量/数量：中药方展示各味单次量 + 付数 */
+function buildExecuteDosageDisplay(dto: NurseStationOrderExecuteRowDto): string {
+  if (dto.tcmFlag === true) {
+    const singleDose = String(dto.dosageDisplay ?? '').trim();
+    const fuCount = dto.chineseHerbsDoseQuantity;
+    const fuText = fuCount != null && String(fuCount).trim() ? `${String(fuCount).trim()}付` : '';
+    if (singleDose && fuText) {
+      return `${singleDose} ${fuText}`;
+    }
+    return singleDose || fuText || '—';
+  }
+  return String(dto.dosageDisplay ?? '').trim() || '—';
+}
+
+function mapLineRequestIds(
+  ids: NurseStationOrderExecuteRowDto['lineRequestIds'],
+): string[] | undefined {
+  if (!ids?.length) return undefined;
+  const mapped = ids
+    .map((id) => preserveApiIdForRequest(id) ?? String(id ?? '').trim())
+    .filter((id) => id.length > 0);
+  return mapped.length > 0 ? mapped : undefined;
 }
 
 /** 用法、频次拼成扩展行 */
@@ -280,6 +317,10 @@ export function mapExecuteRowDtoToTableRow(
       ? `${orderId}${SLOT_KEY_SEP}${orderType}`
       : `execute-${orderId || Date.now()}`);
   const tabSlots = resolveSlotsForTab(dto, executeTab);
+  const statusEnum = String(dto.statusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  const statusDisplay = String(dto.statusEnumText ?? '').trim() || '—';
 
   return {
     id,
@@ -296,11 +337,17 @@ export function mapExecuteRowDtoToTableRow(
       return label === '—' ? undefined : label;
     })(),
     content: buildExecuteContentTitle(dto),
-    dosage: String(dto.dosageDisplay ?? '').trim() || '—',
+    dosage: buildExecuteDosageDisplay(dto),
     extension: buildExecuteExtensionLine(dto) || undefined,
     startStopText: buildStartStopText(dto),
+    statusEnum: statusEnum || undefined,
+    statusDisplay,
+    halted: statusEnum === 'STOPPED',
     planSchedules: groupSlotsByDate(orderId, orderType, tabSlots),
     bindItems: dto.bindItems ?? [],
+    tcmFlag: dto.tcmFlag === true ? true : undefined,
+    prescriptionNo: String(dto.prescriptionNo ?? '').trim() || undefined,
+    lineRequestIds: mapLineRequestIds(dto.lineRequestIds),
   };
 }
 
@@ -366,6 +413,12 @@ export function mapSelectedSlotsToWriteItems(
             unitCode_dictText: bind.unitCode_dictText,
             priority: bind.priority,
           }));
+        }
+        if (row.lineRequestIds?.length) {
+          item.lineRequestIds = [...row.lineRequestIds];
+        }
+        if (row.prescriptionNo) {
+          item.prescriptionNo = row.prescriptionNo;
         }
         items.push(item);
       }

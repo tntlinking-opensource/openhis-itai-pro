@@ -1,4 +1,4 @@
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { unwrapApiList } from '#/utils/api/unwrap-api-list';
 
 import { publicRequestClient } from '../request';
@@ -13,6 +13,7 @@ export interface BodyItem {
   statusEnumText?: string;
   pyStr?: string;
   wbStr?: string;
+  children?: BodyItem[];
 }
 
 export interface CreateBodyParams {

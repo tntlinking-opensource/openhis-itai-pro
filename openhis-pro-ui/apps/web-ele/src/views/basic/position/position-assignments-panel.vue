@@ -35,7 +35,7 @@ import {
 import { getDepartmentTreeApi } from '#/api/core/system/department';
 import { getRegistrationTypeListApi } from '#/api/core/system/registration';
 import SectionTitle from '#/components/layouts/section-title.vue';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import {
   ElAlert,

@@ -17,6 +17,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./es/authentication": {
+      "types": "./src/authentication/index.ts",
+      "default": "./src/authentication/index.ts"
     }
   },
   "dependencies": {

@@ -9,8 +9,8 @@ import {
   impersonateApi,
   stopImpersonatingApi,
 } from '#/api/core/auth';
-import { canSkipLoginDepartmentSelection } from '#/utils/platform-admin';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { canSkipLoginDepartmentSelection } from '#/utils/auth/platform-admin';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { useAuthStore } from '#/store/auth';
 
 const IMPERSONATOR_BACKUP_KEY = 'whale:impersonator:backup';
@@ -157,10 +157,25 @@ export function useImpersonation() {
       accessStore.setRefreshToken(data.refreshToken);
       accessStore.setIsAccessChecked(false);
 
-      authStore.setSelectedTenant('');
+      const effectiveTenantId =
+        data.configuration?.currentTenant?.id ??
+        data.configuration?.currentUser?.tenantId ??
+        tenantId;
+      if (
+        effectiveTenantId !== null &&
+        effectiveTenantId !== undefined &&
+        String(effectiveTenantId).trim() !== ''
+      ) {
+        authStore.setSelectedTenant(String(effectiveTenantId));
+      } else {
+        authStore.setSelectedTenant('');
+      }
       authStore.setSelectedHospital('');
       authStore.setSelectedOrganization('');
       authStore.setOrganizationUnitSkipped(false);
+      void import('#/utils/auth/require-login-scope-ready').then(({ resetLoginScopeSync }) =>
+        resetLoginScopeSync(),
+      );
 
       applyConfiguration(data.configuration, data.user);
 

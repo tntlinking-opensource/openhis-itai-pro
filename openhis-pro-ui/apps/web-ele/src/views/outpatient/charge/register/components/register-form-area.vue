@@ -1,9 +1,21 @@
 <script setup lang="ts">
-import type { OptionDto, RegisterFormAreaExpose, RegisterPatientRecord } from '../services';
+import type {
+  OptionDto,
+  RegisterBenefitDisplayPayload,
+  RegisterBenefitPreviewContext,
+  RegisterFormAreaExpose,
+  RegisterPatientRecord,
+  RegisterSlotSelectionPayload,
+} from '../services';
 
-import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+import type {
+  RegisterContractMatchDto,
+  YbRegisterBenefitPreviewDto,
+} from '#/api/outpatient-registration';
 
-import { ElButton } from 'element-plus';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+
+import { ElAlert, ElButton, ElTabPane, ElTabs } from 'element-plus';
 
 import { useVbenForm } from '#/adapter/form';
 import SectionTitle from '#/components/layouts/section-title.vue';
@@ -12,17 +24,53 @@ import {
   DEFAULT_FORM_KEYBOARD_SELECTORS,
   useFormKeyboardNavigation,
 } from '#/hooks/use-form-keyboard-navigation';
-import { calcAgeFromBirthDate, parseChineseIdCard18 } from '#/utils/id-card-cn';
+import { calcAgeFromBirthDate, parseChineseIdCard18 } from '#/utils/format/id-card-cn';
 
 import {
-  listPractitioners,
-  listBookableSlotHints,
-  loadRegisterFormInit,
-} from '../services/register.service';
+  inferInsuranceCategoryFromInsuplc,
+  INSURANCE_CONTRACT_CATEGORY_PRIORITY,
+  normalizeInsuplcAdmdvs,
+} from '../services/charge-type-category';
+import {
+  enrichInsuranceBenefitPreview,
+  isInsuranceContractCategory,
+} from '../services/register-benefit.service';
+import { listPractitioners, loadRegisterFormInit } from '../services/register.service';
+import { displayBenefitDash } from './register-benefit-display.utils';
+import RegisterBenefitPreviewPanel from './register-benefit-preview-panel.vue';
+import RegisterPatientEncounterHistory from './register-patient-encounter-history.vue';
 
 defineOptions({
   name: 'RegisterFormArea',
 });
+
+const props = defineProps<{
+  /** 当前选中患者，供历史就诊 Tab 查询 */
+  activePatientId?: string;
+  /** 待遇信息后台拉取中（含读卡/扫码） */
+  benefitLoading?: boolean;
+  benefitLoadingText?: string;
+}>();
+
+const emit = defineEmits<{
+  contractChange: [category: string];
+  departmentChange: [organizationId: string];
+  doctorChange: [practitionerId: string];
+  serviceTypeChange: [serviceTypeId: string];
+}>();
+
+function handleContractChange(contractId: unknown) {
+  const category = getContractCategory(contractId) ?? '';
+  emit('contractChange', category);
+}
+
+function handleRegisterValuesChange(values: Record<string, unknown>, fieldsChanged: string[]) {
+  if (!fieldsChanged.includes('contractId')) {
+    return;
+  }
+  const category = getContractCategory(values.contractId) ?? '';
+  emit('contractChange', category);
+}
 
 /** 科室下拉：label 展示名，value 与主数据 id 一致 */
 const departmentOptions = ref<OptionDto[]>([]);
@@ -32,6 +80,17 @@ const doctorOptions = ref<OptionDto[]>([]);
 
 /** 费用性质下拉 */
 const contractOptions = ref<OptionDto[]>([]);
+
+/** 费用性质主键 → 合同类别 */
+const contractCategoryById = ref<Record<string, string>>({});
+
+/** 费用性质主键 → 医保通道概要 */
+const contractInsuranceProfileById = ref<
+  Record<string, import('#/api/outpatient-registration').ContractInsuranceProfileDto>
+>({});
+
+/** 参保地与所选费用性质匹配结果 */
+const contractMatch = ref<null | RegisterContractMatchDto>(null);
 
 /** IF-REG-01 号源类型（OptionDto.value 即 serviceTypeId） */
 const serviceTypeOptions = ref<OptionDto[]>([]);
@@ -44,9 +103,6 @@ const genderOptions = ref<OptionDto[]>([]);
 
 /** 预约带入后锁定科室/医生/号源类型 */
 const bookingLocked = ref(false);
-
-/** 当日可约时段摘要（无预约现场挂号提示） */
-const slotHints = ref<string[]>([]);
 
 /** 表单区展示用金额占位（实际金额以预结算 / 正式结算接口为准） */
 const registerFeeAmount = ref(0);
@@ -69,7 +125,6 @@ const refreshDoctorOptions = async (organizationId?: string) => {
     },
   ]);
   registerFormApi.setFieldValue('doctorId', undefined);
-  slotHints.value = [];
 };
 
 /**
@@ -79,12 +134,13 @@ async function handleDoctorChange(value: string | undefined) {
   if (bookingLocked.value) {
     return;
   }
+  emit('doctorChange', value || '');
   const values = await registerFormApi.getValues();
   const organizationId = String(values.departmentId ?? '').trim();
   await refreshServiceTypeOptions(organizationId || undefined, value || undefined);
   registerFormApi.setFieldValue('serviceTypeId', undefined);
+  emit('serviceTypeChange', '');
   registerFeeAmount.value = 0;
-  slotHints.value = [];
 }
 
 const formWrapperClass = 'grid grid-cols-2 gap-x-2 gap-y-1';
@@ -130,7 +186,7 @@ async function focusFirstField() {
 }
 
 /**
- * 身份证号输满 18 位时写入性别、出生日期、年龄（规则见 `#/utils/id-card-cn`）。
+ * 身份证号输满 18 位时写入性别、出生日期、年龄（规则见 `#/utils/format/id-card-cn`）。
  */
 function handleIdCardInput(value: string) {
   const parsed = parseChineseIdCard18(value);
@@ -149,9 +205,11 @@ async function handleDepartmentChange(value: string) {
   if (bookingLocked.value) {
     return;
   }
+  emit('departmentChange', value || '');
+  emit('doctorChange', '');
+  emit('serviceTypeChange', '');
   await refreshDoctorOptions(value || undefined);
   await refreshServiceTypeOptions(value || undefined, undefined);
-  slotHints.value = [];
 }
 
 /**
@@ -163,7 +221,7 @@ async function refreshServiceTypeOptions(organizationId?: string, practitionerId
     practitionerId: practitionerId || undefined,
   });
   serviceTypeOptions.value = [...init.serviceTypeOptions];
-  serviceTypeFeeById.value = { ...(init.serviceTypeFeeById ?? {}) };
+  serviceTypeFeeById.value = { ...init.serviceTypeFeeById };
   registerFormApi.updateSchema([
     {
       fieldName: 'serviceTypeId',
@@ -174,50 +232,6 @@ async function refreshServiceTypeOptions(organizationId?: string, practitionerId
       },
     },
   ]);
-}
-
-/**
- * 选齐科室/医师/号源后拉取可约时段摘要。
- */
-async function refreshSlotHints() {
-  if (bookingLocked.value) {
-    slotHints.value = [];
-    return;
-  }
-  const values = await registerFormApi.getValues();
-  const organizationId = String(values.departmentId ?? '').trim();
-  const practitionerId = String(values.doctorId ?? '').trim();
-  const serviceTypeId = String(values.serviceTypeId ?? '').trim();
-  if (!organizationId || !serviceTypeId) {
-    slotHints.value = [];
-    return;
-  }
-  try {
-    const res = await listBookableSlotHints({
-      healthcareServiceId: serviceTypeId,
-      organizationId,
-      practitionerId: practitionerId || undefined,
-    });
-    const hints = res.hints ?? [];
-    slotHints.value = hints.slice(0, 6).map((item) => {
-      const start = String(item.slotStart ?? '')
-        .replace('T', ' ')
-        .slice(0, 16);
-      const end = String(item.slotEnd ?? '')
-        .replace('T', ' ')
-        .slice(11, 16);
-      const remain =
-        item.remainingCount == null || item.remainingCount === ''
-          ? ''
-          : ` 余${item.remainingCount}`;
-      return `${start}${end ? `-${end}` : ''}${remain}`;
-    });
-    if (hints.length > 6) {
-      slotHints.value.push(`…共 ${hints.length} 个时段可约`);
-    }
-  } catch {
-    slotHints.value = [];
-  }
 }
 
 /**
@@ -265,14 +279,49 @@ async function applyBookingSnapshot(snapshot: {
   const organizationId = String(snapshot.organizationId ?? '');
   await refreshDoctorOptions(organizationId || undefined);
   registerFormApi.setFieldValue('departmentId', organizationId || undefined);
+  emit('departmentChange', organizationId);
   registerFormApi.setFieldValue(
     'doctorId',
-    snapshot.practitionerId != null && String(snapshot.practitionerId) !== ''
+    snapshot.practitionerId !== null &&
+      snapshot.practitionerId !== undefined &&
+      String(snapshot.practitionerId) !== ''
       ? String(snapshot.practitionerId)
       : undefined,
   );
+  emit(
+    'doctorChange',
+    snapshot.practitionerId !== null &&
+      snapshot.practitionerId !== undefined &&
+      String(snapshot.practitionerId) !== ''
+      ? String(snapshot.practitionerId)
+      : '',
+  );
   registerFormApi.setFieldValue('serviceTypeId', String(snapshot.healthcareServiceId ?? ''));
+  emit('serviceTypeChange', String(snapshot.healthcareServiceId ?? ''));
   handleServiceTypeChange(String(snapshot.healthcareServiceId ?? ''));
+  syncBookingFieldLockState();
+}
+
+/**
+ * 号源日历点选：仅预填左侧科室/医师/号源类型，不锁定以便收费员微调；
+ * 不向右侧当日号源同步筛选条件，避免点选后上方查询条被改写。
+ */
+async function applySlotSelection(payload: RegisterSlotSelectionPayload) {
+  bookingLocked.value = false;
+  const organizationId = String(payload.organizationId ?? '');
+  const practitionerId =
+    payload.practitionerId !== null &&
+    payload.practitionerId !== undefined &&
+    String(payload.practitionerId) !== ''
+      ? String(payload.practitionerId)
+      : undefined;
+  const healthcareServiceId = String(payload.healthcareServiceId ?? '');
+  await refreshDoctorOptions(organizationId || undefined);
+  await refreshServiceTypeOptions(organizationId || undefined, practitionerId);
+  registerFormApi.setFieldValue('departmentId', organizationId || undefined);
+  registerFormApi.setFieldValue('doctorId', practitionerId);
+  registerFormApi.setFieldValue('serviceTypeId', healthcareServiceId || undefined);
+  updateRegisterFeeDisplay(healthcareServiceId || undefined);
   syncBookingFieldLockState();
 }
 
@@ -281,23 +330,26 @@ async function applyBookingSnapshot(snapshot: {
  */
 function clearBookingLock() {
   bookingLocked.value = false;
-  slotHints.value = [];
   syncBookingFieldLockState();
+}
+
+/** 按号源类型刷新展示用挂号费（不触发右侧筛选同步） */
+function updateRegisterFeeDisplay(value: string | undefined) {
+  if (!value) {
+    registerFeeAmount.value = 0;
+    return;
+  }
+  const raw = serviceTypeFeeById.value[value];
+  const fee = Number(raw);
+  registerFeeAmount.value = Number.isFinite(fee) ? fee : 0;
 }
 
 /**
  * 号源类型变更：按初始化下发的销售价映射刷新展示用挂号费。
  */
 function handleServiceTypeChange(value: string | undefined) {
-  if (!value) {
-    registerFeeAmount.value = 0;
-    slotHints.value = [];
-    return;
-  }
-  const raw = serviceTypeFeeById.value[value];
-  const fee = Number(raw);
-  registerFeeAmount.value = Number.isFinite(fee) ? fee : 0;
-  void refreshSlotHints();
+  emit('serviceTypeChange', value || '');
+  updateRegisterFeeDisplay(value);
 }
 
 const [PatientForm, patientFormApi] = useVbenForm(
@@ -384,6 +436,7 @@ const [RegisterForm, registerFormApi] = useVbenForm(
         style: { width: '100%' },
       },
     },
+    handleValuesChange: handleRegisterValuesChange,
     layout: 'horizontal',
     wrapperClass: formWrapperClass,
     schema: computed(() => [
@@ -419,6 +472,7 @@ const [RegisterForm, registerFormApi] = useVbenForm(
           placeholder: '请选择费用性质',
           filterable: true,
           options: contractOptions.value,
+          onChange: handleContractChange,
         },
       },
       {
@@ -436,51 +490,51 @@ const [RegisterForm, registerFormApi] = useVbenForm(
   }),
 );
 
-/** 下方「就诊信息」只读展示区数据源（后续可接读卡/查询结果灌入） */
-const patientInfo = ref({
-  medicalRecordNo: '',
-  cardNo: '',
-  age: '',
-  visitType: '',
-  insuranceBalance: undefined as number | undefined,
-  insuranceType: '',
-  insuranceName: '',
-  insuranceRegion: '',
-  debtLimit: undefined as number | undefined,
-  feeType: '',
-  visitReason: '',
-  priority: '',
-  departmentName: '',
-  registerTypeText: '',
-  doctorName: '',
-  specialDisease: '',
-  registerFee: undefined as number | undefined,
-  treatmentFee: undefined as number | undefined,
-  totalAmount: undefined as number | undefined,
+/** 下方「待遇确认」只读展示区（费用性质切换后异步灌入） */
+function emptyBenefitInfo(): RegisterBenefitDisplayPayload {
+  return { kind: '' };
+}
+
+const benefitInfo = ref<RegisterBenefitDisplayPayload>(emptyBenefitInfo());
+
+/** 1101/2001/5301/5206 完整预览（下方 Tab 展示） */
+const benefitYbPreview = ref<null | YbRegisterBenefitPreviewDto>(null);
+
+/** 切换多险种时重查 2001 */
+const benefitRefreshContext = ref<RegisterBenefitPreviewContext>({});
+
+const benefitSectionTab = ref<'benefit' | 'history'>('benefit');
+
+watch(
+  () => props.benefitLoading,
+  (loading) => {
+    if (loading) {
+      benefitSectionTab.value = 'benefit';
+    }
+  },
+);
+
+/** 无档案患者：用证件号查历史就诊 */
+const historyPatientKeyword = ref('');
+
+const hasBenefitDisplay = computed(() => {
+  const info = benefitInfo.value;
+  if (info.kind === 'INSURANCE') {
+    return Boolean(benefitYbPreview.value?.psnNo || info.psnNo || info.cardNo || info.psnName);
+  }
+  if (info.kind === 'STUDENT') {
+    return Boolean(info.studentNo || info.studentName);
+  }
+  return false;
 });
 
-/** 生成空的就诊信息展示对象，用于清空 */
-const emptyPatientInfo = () => ({
-  medicalRecordNo: '',
-  cardNo: '',
-  age: '',
-  visitType: '',
-  insuranceBalance: undefined as number | undefined,
-  insuranceType: '',
-  insuranceName: '',
-  insuranceRegion: '',
-  debtLimit: undefined as number | undefined,
-  feeType: '',
-  visitReason: '',
-  priority: '',
-  departmentName: '',
-  registerTypeText: '',
-  doctorName: '',
-  specialDisease: '',
-  registerFee: undefined as number | undefined,
-  treatmentFee: undefined as number | undefined,
-  totalAmount: undefined as number | undefined,
-});
+const showContractMismatch = computed(
+  () => Boolean(contractMatch.value?.matchStatus) && contractMatch.value?.matchStatus !== 'MATCH',
+);
+
+function displayBenefitDashLocal(value: null | number | string | undefined): string {
+  return displayBenefitDash(value);
+}
 
 /**
  * 快捷按钮：写入科室并触发与手动选科室相同的医生列表联动。
@@ -545,6 +599,132 @@ function getContractLabel(contractId: unknown): string | undefined {
   return contractOptions.value.find((d) => d.value === String(contractId ?? ''))?.label;
 }
 
+function getContractCategory(contractId: unknown): string | undefined {
+  return contractCategoryById.value[String(contractId ?? '')];
+}
+
+function findBootstrapInsuranceContractId(): string | undefined {
+  for (const code of INSURANCE_CONTRACT_CATEGORY_PRIORITY) {
+    const matched = Object.entries(contractCategoryById.value).find(([, cat]) => cat === code);
+    if (matched) {
+      return matched[0];
+    }
+  }
+  return Object.entries(contractCategoryById.value).find(([, cat]) =>
+    isInsuranceContractCategory(cat),
+  )?.[0];
+}
+
+/** 按发卡地/参保地前缀推荐医保费用性质（读卡后首次 1101 用）。 */
+function findBootstrapInsuranceContractIdByInsuplc(insuplcAdmdvs?: string): string | undefined {
+  const insu = normalizeInsuplcAdmdvs(insuplcAdmdvs);
+  if (insu.length >= 4) {
+    const preferredCategory = inferInsuranceCategoryFromInsuplc(insu);
+    if (preferredCategory) {
+      const matched = Object.entries(contractCategoryById.value).find(
+        ([, cat]) => cat === preferredCategory,
+      );
+      if (matched) {
+        return matched[0];
+      }
+    }
+    let bestId: string | undefined;
+    let bestLen = -1;
+    for (const [id, profile] of Object.entries(contractInsuranceProfileById.value)) {
+      const treatment = normalizeInsuplcAdmdvs(profile.treatmentAreaCode);
+      if (!treatment || !isInsuranceContractCategory(contractCategoryById.value[id])) {
+        continue;
+      }
+      let len = 0;
+      while (len < Math.min(insu.length, treatment.length) && insu[len] === treatment[len]) {
+        len += 1;
+      }
+      if (len > bestLen) {
+        bestLen = len;
+        bestId = id;
+      }
+    }
+    if (bestId && bestLen >= 4) {
+      return bestId;
+    }
+  }
+  return findBootstrapInsuranceContractId();
+}
+
+function getContractBusNo(contractId: unknown): string | undefined {
+  const profile = contractInsuranceProfileById.value[String(contractId ?? '')];
+  return profile?.busNo?.trim() || undefined;
+}
+
+function applyContractMatch(match: null | RegisterContractMatchDto | undefined) {
+  contractMatch.value = match ?? null;
+}
+
+async function applyContractId(contractId: string) {
+  registerFormApi.setFieldValue('contractId', contractId);
+  handleContractChange(contractId);
+}
+
+async function applyRecommendedContract() {
+  const recommendedId = contractMatch.value?.recommendedContractId;
+  if (!recommendedId) {
+    return;
+  }
+  await applyContractId(recommendedId);
+}
+
+async function applyBenefitPreview(
+  payload: RegisterBenefitDisplayPayload,
+  ybPreview?: YbRegisterBenefitPreviewDto,
+  refreshContext?: RegisterBenefitPreviewContext,
+) {
+  benefitRefreshContext.value = refreshContext ?? {};
+  if (payload.kind === 'INSURANCE') {
+    const patientValues = await patientFormApi.getValues();
+    const registerValues = await registerFormApi.getValues();
+    const patientFallback = {
+      patientBirthday: String(patientValues.patientBirthday ?? '').trim() || undefined,
+      patientGender: String(patientValues.patientGender ?? '').trim() || undefined,
+      patientIdCard: String(patientValues.patientIdCard ?? '').trim() || undefined,
+      patientName: String(patientValues.patientName ?? '').trim() || undefined,
+    };
+    const enriched: RegisterBenefitDisplayPayload = { ...payload };
+    if (!enriched.psnName?.trim()) {
+      enriched.psnName = patientFallback.patientName;
+    }
+    if (!enriched.certno?.trim()) {
+      enriched.certno = patientFallback.patientIdCard;
+    }
+    benefitInfo.value = {
+      ...emptyBenefitInfo(),
+      ...enriched,
+    };
+    benefitYbPreview.value = ybPreview
+      ? enrichInsuranceBenefitPreview(ybPreview, patientFallback)
+      : null;
+    if (!benefitRefreshContext.value.contractId) {
+      benefitRefreshContext.value = {
+        ...benefitRefreshContext.value,
+        contractId: String(registerValues.contractId ?? '').trim() || undefined,
+      };
+    }
+    return;
+  }
+  benefitInfo.value = {
+    ...emptyBenefitInfo(),
+    ...payload,
+  };
+  benefitYbPreview.value = null;
+  benefitRefreshContext.value = {};
+}
+
+function clearBenefitPreview() {
+  benefitInfo.value = emptyBenefitInfo();
+  benefitYbPreview.value = null;
+  benefitRefreshContext.value = {};
+  contractMatch.value = null;
+}
+
 /**
  * 按号源类型下拉 value 取展示用 label（挂号类型展示名）。
  */
@@ -560,19 +740,27 @@ async function resetForSubmitSuccess() {
   patientFormApi.resetForm();
   registerFormApi.resetForm();
   registerFeeAmount.value = 0;
-  patientInfo.value = emptyPatientInfo();
+  benefitInfo.value = emptyBenefitInfo();
+  benefitYbPreview.value = null;
+  benefitRefreshContext.value = {};
+  contractMatch.value = null;
+  historyPatientKeyword.value = '';
   await refreshDoctorsAndResetFeeDisplay();
   syncBookingFieldLockState();
 }
 
 /**
- * 整页清空：表单与就诊信息展示区清空；医生下拉恢复为不按科室过滤的全量列表。
+ * 整页清空：表单与待遇确认展示区清空；医生下拉恢复为不按科室过滤的全量列表。
  */
 function resetForClear() {
   bookingLocked.value = false;
   patientFormApi.resetForm();
   registerFormApi.resetForm();
-  patientInfo.value = emptyPatientInfo();
+  benefitInfo.value = emptyBenefitInfo();
+  benefitYbPreview.value = null;
+  benefitRefreshContext.value = {};
+  contractMatch.value = null;
+  historyPatientKeyword.value = '';
   void refreshDoctorsAndResetFeeDisplay();
   syncBookingFieldLockState();
 }
@@ -581,6 +769,7 @@ function resetForClear() {
  * 仅清空患者信息表单（患者下拉被清空时由父组件调用）。
  */
 function clearPatientFields() {
+  historyPatientKeyword.value = '';
   patientFormApi.setValues({
     patientName: '',
     patientPhone: '',
@@ -595,6 +784,7 @@ function clearPatientFields() {
  * 把父页选中的患者写入患者信息表单。
  */
 function applyPatientRecord(patient: RegisterPatientRecord) {
+  historyPatientKeyword.value = (patient.patientIdCard ?? '').trim();
   patientFormApi.setValues({
     patientName: patient.patientName,
     patientPhone: patient.patientPhone,
@@ -607,10 +797,20 @@ function applyPatientRecord(patient: RegisterPatientRecord) {
 
 defineExpose<RegisterFormAreaExpose>({
   applyBookingSnapshot,
+  applySlotSelection,
   applyPatientRecord,
+  applyBenefitPreview,
+  applyContractId,
+  applyContractMatch,
+  applyRecommendedContract,
+  clearBenefitPreview,
   clearBookingLock,
   clearPatientFields,
+  findBootstrapInsuranceContractId,
+  findBootstrapInsuranceContractIdByInsuplc,
+  getContractBusNo,
   focusFirstField,
+  getContractCategory,
   getContractLabel,
   getDepartmentLabel,
   getDoctorLabel,
@@ -628,8 +828,10 @@ onMounted(async () => {
   const init = await loadRegisterFormInit({});
   departmentOptions.value = [...init.departmentOptions];
   contractOptions.value = [...init.contractOptions];
+  contractCategoryById.value = { ...init.contractCategoryById };
+  contractInsuranceProfileById.value = { ...init.contractInsuranceProfileById };
   serviceTypeOptions.value = [...init.serviceTypeOptions];
-  serviceTypeFeeById.value = { ...(init.serviceTypeFeeById ?? {}) };
+  serviceTypeFeeById.value = { ...init.serviceTypeFeeById };
   genderOptions.value = [...init.genderOptions];
   await refreshDoctorOptions();
   patientFormApi.updateSchema([
@@ -651,6 +853,7 @@ onMounted(async () => {
       fieldName: 'contractId',
       componentProps: {
         options: contractOptions.value,
+        onChange: handleContractChange,
       },
     },
     {
@@ -675,7 +878,7 @@ onMounted(async () => {
 <template>
   <div
     ref="formAreaRef"
-    class="reg-bill-form-area flex flex-1 flex-col overflow-auto px-2 py-1"
+    class="reg-bill-form-area flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-1"
     @keydown.capture="handleFormKeydown"
   >
     <div class="space-y-2">
@@ -699,12 +902,6 @@ onMounted(async () => {
           </div>
         </div>
         <RegisterForm />
-        <div
-          v-if="slotHints.length > 0"
-          class="mt-1 rounded border border-dashed border-gray-200 px-2 py-1 text-xs text-gray-600"
-        >
-          当日可约：{{ slotHints.join(' · ') }}
-        </div>
         <div class="ml-auto mt-2 flex w-1/2 items-baseline justify-end gap-2">
           <span class="shrink-0 text-base text-gray-500">挂号费用</span>
           <span class="text-xl font-semibold tabular-nums text-[var(--el-color-primary)]">
@@ -713,68 +910,97 @@ onMounted(async () => {
         </div>
       </div>
 
-      <SectionTitle class="mb-1" title="就诊信息" />
-      <div class="border-t bg-[#f8fafc] px-2 pb-2 pt-2">
-        <div class="grid grid-cols-3 gap-x-2 gap-y-1 text-sm">
-          <div>
-            <div class="mb-0.5 text-gray-500">病历号</div>
-            <div class="font-medium">{{ patientInfo.medicalRecordNo || '-' }}</div>
-          </div>
-          <div>
-            <div class="mb-0.5 text-gray-500">卡号</div>
-            <div class="font-medium">{{ patientInfo.cardNo || '-' }}</div>
-          </div>
-
-          <div>
-            <div class="mb-0.5 text-gray-500">年龄</div>
-            <div class="font-medium">
-              {{ patientInfo.age ? `${patientInfo.age}岁` : '-' }}
+      <ElTabs v-model="benefitSectionTab" class="benefit-section-tabs">
+        <ElTabPane label="待遇信息" name="benefit">
+          <div
+            v-loading="benefitLoading"
+            :element-loading-text="benefitLoadingText || '正在拉取待遇信息…'"
+            class="benefit-tab-panel min-h-[140px] border-t bg-[#f8fafc] px-2 pb-2 pt-2"
+          >
+            <div
+              v-if="!benefitLoading && !hasBenefitDisplay"
+              class="py-6 text-center text-sm text-gray-400"
+            >
+              切换医保/公费费用性质后将自动加载；医保类请先读身份证、医保卡或医保码
+            </div>
+            <div v-else-if="hasBenefitDisplay" class="benefit-tab-body space-y-2">
+              <template v-if="benefitInfo.kind === 'INSURANCE'">
+                <ElAlert
+                  v-if="showContractMismatch && contractMatch?.hintMessage"
+                  type="warning"
+                  :closable="false"
+                  show-icon
+                >
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span>{{ contractMatch.hintMessage }}</span>
+                    <ElButton
+                      v-if="contractMatch.recommendedContractName"
+                      link
+                      type="primary"
+                      @click="applyRecommendedContract"
+                    >
+                      改用 {{ contractMatch.recommendedContractName }}
+                    </ElButton>
+                  </div>
+                </ElAlert>
+                <RegisterBenefitPreviewPanel
+                  v-if="benefitYbPreview"
+                  :preview="benefitYbPreview"
+                  :card-no="benefitInfo.cardNo"
+                  :medium-type="benefitInfo.mediumType"
+                  :contract-id="benefitRefreshContext.contractId"
+                  :yb-card-info="benefitRefreshContext.ybCardInfo"
+                  :yb-card-sn="benefitRefreshContext.ybCardSn"
+                  :yb-certno="benefitRefreshContext.ybCertno"
+                  :yb-medium-type="benefitRefreshContext.ybMediumType"
+                  :scrollable-tables="false"
+                />
+              </template>
+              <div
+                v-else-if="benefitInfo.kind === 'STUDENT'"
+                class="grid grid-cols-3 gap-x-2 gap-y-1 text-sm"
+              >
+                <div>
+                  <div class="mb-0.5 text-gray-500">姓名</div>
+                  <div class="font-medium">
+                    {{ displayBenefitDashLocal(benefitInfo.studentName) }}
+                  </div>
+                </div>
+                <div>
+                  <div class="mb-0.5 text-gray-500">学号</div>
+                  <div class="font-medium">
+                    {{ displayBenefitDashLocal(benefitInfo.studentNo) }}
+                  </div>
+                </div>
+                <div>
+                  <div class="mb-0.5 text-gray-500">院系</div>
+                  <div class="font-medium">{{ displayBenefitDashLocal(benefitInfo.college) }}</div>
+                </div>
+                <div class="col-span-3">
+                  <div class="mb-0.5 text-gray-500">公费资格</div>
+                  <div class="font-medium">
+                    {{
+                      benefitInfo.eligible === true
+                        ? '符合'
+                        : benefitInfo.eligible === false
+                          ? displayBenefitDashLocal(benefitInfo.eligibilityMessage || '不符合')
+                          : '—'
+                    }}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-          <div>
-            <div class="mb-0.5 text-gray-500">初复诊</div>
-            <div class="font-medium">
-              {{
-                patientInfo.visitType === '1'
-                  ? '初诊'
-                  : patientInfo.visitType === '2'
-                    ? '复诊'
-                    : '-'
-              }}
-            </div>
+        </ElTabPane>
+        <ElTabPane label="历史就诊" name="history">
+          <div class="border-t bg-[#f8fafc] px-2 pb-2 pt-2">
+            <RegisterPatientEncounterHistory
+              :patient-id="props.activePatientId"
+              :patient-keyword="historyPatientKeyword"
+            />
           </div>
-
-          <div>
-            <div class="mb-0.5 text-gray-500">医保余额</div>
-            <div class="font-medium text-orange-600">
-              {{
-                patientInfo.insuranceBalance !== undefined
-                  ? `¥${patientInfo.insuranceBalance}`
-                  : '-'
-              }}
-            </div>
-          </div>
-
-          <div>
-            <div class="mb-0.5 text-gray-500">费用性质</div>
-            <div class="font-medium">{{ patientInfo.feeType || '-' }}</div>
-          </div>
-
-          <div>
-            <div class="mb-0.5 text-gray-500">就诊科室</div>
-            <div class="font-medium">{{ patientInfo.departmentName || '-' }}</div>
-          </div>
-          <div>
-            <div class="mb-0.5 text-gray-500">挂号类型</div>
-            <div class="font-medium">{{ patientInfo.registerTypeText || '-' }}</div>
-          </div>
-
-          <div>
-            <div class="mb-0.5 text-gray-500">医生</div>
-            <div class="font-medium">{{ patientInfo.doctorName || '-' }}</div>
-          </div>
-        </div>
-      </div>
+        </ElTabPane>
+      </ElTabs>
     </div>
   </div>
 </template>
@@ -810,6 +1036,16 @@ onMounted(async () => {
 .reg-bill-form-area :deep(.el-radio) {
   margin-right: 14px;
   height: 28px;
+}
+
+.benefit-section-tabs :deep(.el-tabs__header) {
+  margin-bottom: 0;
+}
+
+.benefit-section-tabs :deep(.el-tabs__item) {
+  height: 32px;
+  line-height: 32px;
+  font-size: 13px;
 }
 
 .reg-bill-form-area :deep(.el-form-item:last-child) {

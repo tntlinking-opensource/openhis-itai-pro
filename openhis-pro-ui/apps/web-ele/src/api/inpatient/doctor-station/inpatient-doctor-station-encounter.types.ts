@@ -11,6 +11,10 @@ export interface PageInpatientDoctorStationPatientQueueRequest extends PageParam
  */
 export interface InpatientDoctorStationPatientDto {
   accountBalance?: number | string;
+  accountBalanceDisplayMode?: string;
+  accountBalanceSubText?: string;
+  accountBalanceSummaryText?: string;
+  availableBalance?: number | string;
   admissionTime?: string;
   ageText?: string;
   arrearsAmount?: number | string;
@@ -32,7 +36,9 @@ export interface InpatientDoctorStationPatientDto {
   paidAmount?: number | string;
   patientId: string;
   patientName: string;
+  pendingSettlementTotal?: number | string;
   pinyinCode?: string;
+  prepayNetBalance?: number | string;
   primaryNurseName?: string;
   priorityEnum?: string;
   startTime?: string;

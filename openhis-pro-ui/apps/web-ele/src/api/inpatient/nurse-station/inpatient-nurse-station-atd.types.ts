@@ -1,4 +1,7 @@
-import type { ParticipantSubmitDto } from './inpatient-nurse-station.types';
+import type {
+  AdmissionVitalSignSubmitDto,
+  ParticipantSubmitDto,
+} from './inpatient-nurse-station.types';
 
 /** 床位列表面板：入科 / 出 Tab */
 export type BedBoardPanel = 'admission' | 'discharge';
@@ -55,6 +58,7 @@ export type BedOperationType = 'ASSIGN' | 'SWAP' | 'TRANSFER';
 
 /** 分床换床互换提交 */
 export interface ExecuteBedOperationRequest {
+  admissionVitalSigns?: AdmissionVitalSignSubmitDto;
   bedLocationId?: string;
   encounterId: string;
   encounterIdB?: string;
@@ -91,6 +95,19 @@ export interface ClearDischargedBedRequest {
 export interface ClearDischargedBedResponse {
   encounterId?: string;
   succeeded?: boolean;
+}
+
+/** 出院召回 */
+export interface RecallInpatientDischargeRequest {
+  encounterId: string;
+}
+
+/** 出院召回响应 */
+export interface RecallInpatientDischargeResponse {
+  encounterId?: string;
+  requiresBedAssignment?: boolean;
+  succeeded?: boolean;
+  targetStatusEnum?: string;
 }
 
 /** 出院前待执行医嘱列表 */

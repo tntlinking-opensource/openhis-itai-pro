@@ -16,6 +16,8 @@ import {
   TimezoneButton,
 } from '../../widgets';
 
+import { useHeaderMenuScroll } from './use-header-menu-scroll';
+
 interface Props {
   /**
    * Logo 主题
@@ -126,6 +128,8 @@ const leftSlots = computed(() => {
 function clearPreferencesAndLogout() {
   emit('clearPreferencesAndLogout');
 }
+
+const { handleMenuWheel, menuScrollRef } = useHeaderMenuScroll();
 </script>
 
 <template>
@@ -151,8 +155,10 @@ function clearPreferencesAndLogout() {
     <slot :name="slot.name"></slot>
   </template>
   <div
+    ref="menuScrollRef"
     :class="`menu-align-${preferences.header.menuAlign}`"
-    class="flex h-full min-w-0 flex-1 items-center"
+    class="header-menu-scroll flex h-full min-w-0 flex-1 items-center"
+    @wheel="handleMenuWheel"
   >
     <slot name="menu"></slot>
   </div>
@@ -205,5 +211,22 @@ function clearPreferencesAndLogout() {
 
 .menu-align-end {
   --menu-align: end;
+}
+
+.header-menu-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  will-change: scroll-position;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  :deep(.vben-menu.is-horizontal) {
+    flex-shrink: 0;
+    width: max-content;
+    max-width: none;
+  }
 }
 </style>

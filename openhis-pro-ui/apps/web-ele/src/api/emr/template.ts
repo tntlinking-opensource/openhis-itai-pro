@@ -5,7 +5,7 @@
 import type { PageApiResponse } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import type { DocumentTypeDto, QueryDocumentTypeParams } from './document-type';
 

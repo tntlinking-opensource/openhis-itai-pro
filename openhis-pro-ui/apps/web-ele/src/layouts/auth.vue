@@ -1,8 +1,8 @@
 <script lang="ts" setup>
 import { computed } from 'vue';
 
-import { AuthPageLayout } from '@vben/layouts';
-import { preferences } from '@vben/preferences';
+import { AuthPageLayout } from '@vben/layouts/es/authentication';
+import { preferences } from '@vben/preferences/es/preferences-manager';
 
 const appName = computed(() => preferences.app.name);
 const logo = computed(() => preferences.logo.source);

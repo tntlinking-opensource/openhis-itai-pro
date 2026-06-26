@@ -3,13 +3,23 @@ import type { JSONContent } from '@tiptap/core';
 
 import type { EmrTemplateTreeNode } from './build-emr-template-tree';
 
+import type { DocumentSummaryDto } from '#/api/emr/document';
 import type { ApplyEmrTemplatePayload } from '#/emrEditor';
+import type { EmrTemplateStationKind } from '#/views/basic/emr-template/emr-template-scope.constants';
 
-import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue';
+import {
+  computed,
+  inject,
+  onActivated,
+  onDeactivated,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+} from 'vue';
 import { onBeforeRouteLeave } from 'vue-router';
 
 import { ChevronLeft, ChevronRight } from '@vben/icons';
-
 import { useUserStore } from '@vben/stores';
 
 import { ElButton, ElMessage, ElMessageBox } from 'element-plus';
@@ -19,45 +29,46 @@ import {
   getDocumentContentApi,
   getDocumentListApi,
   saveDocumentApi,
-  type DocumentSummaryDto,
 } from '#/api/emr/document';
 import {
   createTemplateApi,
   getTemplateContentApi,
   serializeEmrTemplateContent,
 } from '#/api/emr/template';
-import {
-  preserveApiIdForRequest,
-  resolveLoginPractitionerIdForRequest,
-} from '#/utils/preserve-api-id';
 import { ENSURE_CLINICAL_RECEPTION_KEY } from '#/components/doctor-station';
 import {
   buildMetadataValuesFromPatientInfo,
-  EmrPdfPreviewDialog,
-  normalizeEmrRootDoc,
   isForceLogoutSession,
+  normalizeEmrRootDoc,
   registerEmrUnsavedGuard,
   SimpleEditor,
-  useEmrPdfPreview,
 } from '#/emrEditor';
 import {
   defaultEmrEditorDoc,
   EDITOR_PAGE_MARGIN_PRESETS,
 } from '#/emrEditor/components/simple-editor/editor-defaults';
-
+import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import {
+  preserveApiIdForRequest,
+  resolveLoginPractitionerIdForRequest,
+} from '#/utils/format/preserve-api-id';
+import { EMR_DOCUMENT_TYPE_PROGRESS_NOTE } from '#/views/basic/emr-template/emr-progress-note.constants';
 import {
   EMR_TEMPLATE_ENCOUNTER_CLASS,
   EMR_TEMPLATE_SCOPE_LEVEL,
   EMR_TEMPLATE_STATION_KIND,
-  type EmrTemplateStationKind,
 } from '#/views/basic/emr-template/emr-template-scope.constants';
-import { EMR_DOCUMENT_TYPE_PROGRESS_NOTE } from '#/views/basic/emr-template/emr-progress-note.constants';
-import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
 import HistoryTemplatePanel from './history-template-panel.vue';
 
 defineOptions({
   name: 'MedicalRecordForm',
+});
+
+const props = withDefaults(defineProps<Props>(), {
+  stationKind: undefined,
+  patientId: '',
+  encounterId: '',
 });
 
 interface Props {
@@ -75,12 +86,6 @@ interface Props {
   encounterId?: string;
 }
 
-const props = withDefaults(defineProps<Props>(), {
-  stationKind: undefined,
-  patientId: '',
-  encounterId: '',
-});
-
 const ensureClinicalReception = inject(ENSURE_CLINICAL_RECEPTION_KEY, undefined);
 const userStore = useUserStore();
 
@@ -95,14 +100,11 @@ const documentReadOnly = ref(false);
 const documentTypeCode = ref('');
 const documentTitle = ref('');
 const documentLoading = ref(false);
-const pdfPreviewVisible = ref(false);
-const pdfPreviewLoading = ref(false);
-/** 单份文书预览 vs 本就诊病程合并 */
-const pdfPreviewMode = ref<'merge' | 'single'>('single');
 
-const printStandardMargins =
-  EDITOR_PAGE_MARGIN_PRESETS.find((p) => p.label === '打印标准')?.value ??
-  EDITOR_PAGE_MARGIN_PRESETS[2]!.value;
+const printStandardMargins = EDITOR_PAGE_MARGIN_PRESETS.find((p) => p.label === '打印标准')
+  ?.value ??
+  EDITOR_PAGE_MARGIN_PRESETS[2]?.value ??
+  EDITOR_PAGE_MARGIN_PRESETS[0]?.value ?? { top: 0, right: 0, bottom: 0, left: 0 };
 
 const editorPageMargins = ref({ ...printStandardMargins });
 const saveLoading = ref(false);
@@ -150,62 +152,6 @@ const remoteSaveHandler = computed(() =>
 
 const historyTemplateTab = ref<'history' | 'template'>('template');
 
-const {
-  loading: pdfPreviewComposableLoading,
-  pdfBlobUrl: pdfPreviewBlobUrl,
-  previewStale: pdfPreviewStale,
-  pageCount: pdfPreviewPageCount,
-  previewTruncated: pdfPreviewTruncated,
-  renderedAtLabel: pdfPreviewRenderedAtLabel,
-  errorMessage: pdfPreviewErrorMessage,
-  markPreviewStale,
-  refreshPreview: refreshPdfPreview,
-  openPreviewInNewTab,
-  exportPdf: exportPdfFromPreview,
-  printFormal: printFormalFromPreview,
-  printFormalSilent: printFormalSilentFromPreview,
-  refreshMergedPreview,
-  exportMergedPdf,
-  printMergedFormal,
-  printMergedFormalSilent,
-  isSilentPrinting: pdfSilentPrinting,
-} = useEmrPdfPreview({
-  getContentJson: () => editorRef.value?.getJSON?.() ?? recordDoc.value,
-  getDocumentId: () => documentId.value,
-  getPatientId: () => (props.patientId ?? '').trim(),
-  getEncounterId: () => (props.encounterId ?? '').trim(),
-  getDocumentTitle: () => documentTitle.value,
-  getDocumentTypeName: () => documentTypeCode.value,
-  getPageMargins: () => editorPageMargins.value,
-  getMetadata: () => editorMetaValues.value,
-  getPatientInfo: () => props.patientInfo,
-  isDirty: () => isEditorDirty(),
-});
-
-const pdfPreviewDialogLoading = computed(
-  () => pdfPreviewComposableLoading.value || pdfPreviewLoading.value,
-);
-
-const pdfPreviewDialogSilentPrinting = computed(
-  () => pdfSilentPrinting.value || pdfPreviewLoading.value,
-);
-
-const canPreviewPdf = computed(
-  () => Boolean(recordDoc.value) && Boolean((props.patientId ?? '').trim()),
-);
-
-const pdfPreviewDialogTitle = computed(() =>
-  pdfPreviewMode.value === 'merge' ? '病程合并打印预览' : '打印预览',
-);
-
-const canMergeProgressNotesPrint = computed(
-  () =>
-    isInpatientStation.value &&
-    Boolean((props.patientId ?? '').trim()) &&
-    Boolean((props.encounterId ?? '').trim()) &&
-    progressNoteNavList.value.length > 0,
-);
-
 /** 住院：当前就诊下病程记录列表（按创建时间升序，用于上一张/下一张） */
 const progressNoteNavList = ref<DocumentSummaryDto[]>([]);
 
@@ -214,7 +160,7 @@ const isInpatientStation = computed(
 );
 
 function sortDocumentsByCreatedAtAsc(rows: DocumentSummaryDto[]): DocumentSummaryDto[] {
-  return [...rows].sort((a, b) => {
+  return [...rows].toSorted((a, b) => {
     const ta = Date.parse(a.createdAt ?? '') || 0;
     const tb = Date.parse(b.createdAt ?? '') || 0;
     return ta - tb;
@@ -400,7 +346,6 @@ function resetDocumentSession() {
   documentTypeCode.value = '';
   documentTitle.value = '';
   serverMetadataValues.value = {};
-  markPreviewStale();
   const blank = structuredClone(defaultEmrEditorDoc);
   recordDoc.value = blank;
   captureContentSnapshot(blank);
@@ -449,7 +394,7 @@ async function applyTemplateLocally(
 }
 
 /** 保存前确保已有服务端文书：未创建则按待选模板 create */
-async function ensureDocumentCreated(): Promise<string | null> {
+async function ensureDocumentCreated(): Promise<null | string> {
   if (documentId.value) return documentId.value;
   const tplId = pendingTemplateId.value;
   const typeCode = documentTypeCode.value.trim();
@@ -561,8 +506,8 @@ function resolveEncounterClassForStation(): string {
 
 function suggestDoctorStationTemplateCode(name: string): string {
   const base = (name.trim() || 'tpl')
-    .replace(/\s+/g, '_')
-    .replace(/[^\w-]/g, '')
+    .replaceAll(/\s+/g, '_')
+    .replaceAll(/[^\w-]/g, '')
     .slice(0, 32);
   return `${base}_ds_${String(Date.now()).slice(-8)}`.slice(0, 64);
 }
@@ -789,9 +734,16 @@ function handleTabChange(tab: 'history' | 'template') {
 
 /** 切换患者/就诊时清空会话并（住院）加载最新病程 */
 let skipPatientEncounterWatch = true;
+const isTabActive = ref(false);
+const pendingPatientEncounterReload = ref(false);
+
 watch(
   () => [props.patientId, props.encounterId] as const,
   async ([nextPatientId, nextEncounterId], [prevPatientId, prevEncounterId]) => {
+    if (!isTabActive.value) {
+      pendingPatientEncounterReload.value = true;
+      return;
+    }
     if (skipPatientEncounterWatch) {
       skipPatientEncounterWatch = false;
       if (isInpatientStation.value && nextPatientId) {
@@ -807,6 +759,30 @@ watch(
     }
   },
 );
+
+onActivated(() => {
+  isTabActive.value = true;
+  if (!pendingPatientEncounterReload.value && !skipPatientEncounterWatch) return;
+  pendingPatientEncounterReload.value = false;
+  void (async () => {
+    if (skipPatientEncounterWatch) {
+      skipPatientEncounterWatch = false;
+      if (isInpatientStation.value && props.patientId) {
+        await loadInpatientLatestProgressNote({ silent: true });
+      }
+      return;
+    }
+    resetDocumentSession();
+    progressNoteNavList.value = [];
+    if (isInpatientStation.value && props.patientId) {
+      await loadInpatientLatestProgressNote({ silent: true });
+    }
+  })();
+});
+
+onDeactivated(() => {
+  isTabActive.value = false;
+});
 
 onMounted(() => {
   registerEmrUnsavedGuard(confirmDiscardUnsavedIfNeeded);
@@ -824,210 +800,6 @@ onBeforeRouteLeave(async (_to, _from, next) => {
   const ok = await confirmDiscardUnsavedIfNeeded();
   next(ok);
 });
-
-/** 编辑变更后标记 PDF 预览过期 */
-watch(
-  () => recordDoc.value,
-  () => {
-    markPreviewStale();
-  },
-  { deep: true },
-);
-
-async function ensureSavedBeforeFormalPdf(): Promise<boolean> {
-  if (!isEditorDirty()) return true;
-  try {
-    await ElMessageBox.confirm('当前病历有未保存的修改，是否先保存后再导出/打印？', '未保存提示', {
-      type: 'warning',
-      confirmButtonText: '保存并继续',
-      cancelButtonText: '取消',
-    });
-    await handleSave();
-    return !isEditorDirty();
-  } catch {
-    return false;
-  }
-}
-
-function collectProgressNoteDocumentIds(): string[] {
-  return progressNoteNavList.value
-    .map((row) => preserveApiIdForRequest(row.id))
-    .filter((id): id is string => Boolean(id));
-}
-
-/** 合并打印前：刷新病程列表；未保存时提示 */
-async function ensureReadyForMergePrint(): Promise<boolean> {
-  if (!requireEncounterIdForDocument()) return false;
-  await refreshProgressNoteNavList();
-  const ids = collectProgressNoteDocumentIds();
-  if (!ids.length) {
-    ElMessage.warning('当前就诊暂无已保存的病程记录');
-    return false;
-  }
-  if (isEditorDirty()) {
-    try {
-      await ElMessageBox.confirm(
-        '当前病历有未保存修改。合并打印仅包含已保存的病程，是否先保存？',
-        '未保存提示',
-        {
-          type: 'warning',
-          confirmButtonText: '保存后继续',
-          cancelButtonText: '仍要合并',
-        },
-      );
-      await handleSave();
-    } catch {
-      // 用户选择仍要合并：仅使用已落库病程
-    }
-  }
-  return true;
-}
-
-async function handlePrintPreview() {
-  if (!canPreviewPdf.value) {
-    ElMessage.warning('请先选择患者并编辑病历内容');
-    return;
-  }
-  if (!requireEncounterIdForDocument()) return;
-  pdfPreviewMode.value = 'single';
-  pdfPreviewVisible.value = true;
-  pdfPreviewLoading.value = true;
-  try {
-    await refreshPdfPreview({ force: true });
-  } catch {
-    // 错误由 request 拦截器或 composable 提示
-  } finally {
-    pdfPreviewLoading.value = false;
-  }
-}
-
-async function handleMergeProgressNotesPreview() {
-  if (!canMergeProgressNotesPrint.value) {
-    ElMessage.warning('当前就诊暂无已保存的病程记录');
-    return;
-  }
-  const ok = await ensureReadyForMergePrint();
-  if (!ok) return;
-  const ids = collectProgressNoteDocumentIds();
-  pdfPreviewMode.value = 'merge';
-  pdfPreviewVisible.value = true;
-  pdfPreviewLoading.value = true;
-  try {
-    await refreshMergedPreview(ids);
-  } catch {
-    // 错误由 request 拦截器提示
-  } finally {
-    pdfPreviewLoading.value = false;
-  }
-}
-
-async function handleRefreshPdfPreview() {
-  pdfPreviewLoading.value = true;
-  try {
-    if (pdfPreviewMode.value === 'merge') {
-      await refreshProgressNoteNavList();
-      await refreshMergedPreview(collectProgressNoteDocumentIds());
-    } else {
-      await refreshPdfPreview({ force: true });
-    }
-  } finally {
-    pdfPreviewLoading.value = false;
-  }
-}
-
-async function handleDialogExportPdf() {
-  if (pdfPreviewMode.value === 'merge') {
-    const ok = await ensureReadyForMergePrint();
-    if (!ok) return;
-    pdfPreviewLoading.value = true;
-    try {
-      await exportMergedPdf(collectProgressNoteDocumentIds());
-    } finally {
-      pdfPreviewLoading.value = false;
-    }
-    return;
-  }
-  await handleExportPdf();
-}
-
-async function handleDialogPrintPdf() {
-  if (pdfPreviewMode.value === 'merge') {
-    const ok = await ensureReadyForMergePrint();
-    if (!ok) return;
-    pdfPreviewLoading.value = true;
-    try {
-      await printMergedFormalSilent(collectProgressNoteDocumentIds());
-    } finally {
-      pdfPreviewLoading.value = false;
-    }
-    return;
-  }
-  await handlePrintPdf();
-}
-
-async function handleDialogSilentPrintPdf() {
-  if (pdfPreviewMode.value === 'merge') {
-    const ok = await ensureReadyForMergePrint();
-    if (!ok) return;
-    pdfPreviewLoading.value = true;
-    try {
-      await printMergedFormalSilent(collectProgressNoteDocumentIds());
-    } finally {
-      pdfPreviewLoading.value = false;
-    }
-    return;
-  }
-  if (!canPreviewPdf.value) {
-    ElMessage.warning('请先选择患者并编辑病历内容');
-    return;
-  }
-  if (!requireEncounterIdForDocument()) return;
-  const ok = await ensureSavedBeforeFormalPdf();
-  if (!ok) return;
-  pdfPreviewLoading.value = true;
-  try {
-    await printFormalSilentFromPreview();
-  } finally {
-    pdfPreviewLoading.value = false;
-  }
-}
-
-async function handleExportPdf() {
-  if (!canPreviewPdf.value) {
-    ElMessage.warning('请先选择患者并编辑病历内容');
-    return;
-  }
-  if (!requireEncounterIdForDocument()) return;
-  const ok = await ensureSavedBeforeFormalPdf();
-  if (!ok) return;
-  pdfPreviewLoading.value = true;
-  try {
-    await exportPdfFromPreview();
-  } finally {
-    pdfPreviewLoading.value = false;
-  }
-}
-
-async function handlePrintPdf() {
-  await handleSilentPrintPdf();
-}
-
-/** 服务端 PDF 经 OpenHIS.Win 静默打印（与预览同源） */
-async function handleSilentPrintPdf() {
-  if (!canPreviewPdf.value) {
-    ElMessage.warning('请先选择患者并编辑病历内容');
-    return;
-  }
-  if (!requireEncounterIdForDocument()) return;
-  const ok = await ensureSavedBeforeFormalPdf();
-  if (!ok) return;
-  pdfPreviewLoading.value = true;
-  try {
-    await printFormalSilentFromPreview();
-  } finally {
-    pdfPreviewLoading.value = false;
-  }
-}
 
 defineExpose({
   applyEmrTemplate,
@@ -1102,35 +874,6 @@ defineExpose({
         >
           保存
         </ElButton>
-        <ElButton
-          v-if="isInpatientStation"
-          :disabled="!canMergeProgressNotesPrint"
-          :loading="pdfPreviewLoading"
-          @click="handleMergeProgressNotesPreview"
-        >
-          本就诊全部病程合并打印
-        </ElButton>
-        <ElButton
-          :disabled="!canPreviewPdf"
-          :loading="pdfPreviewLoading"
-          @click="handlePrintPreview"
-        >
-          打印预览
-        </ElButton>
-        <ElButton
-          :disabled="!canPreviewPdf || documentReadOnly"
-          :loading="pdfPreviewLoading"
-          @click="handleExportPdf"
-        >
-          导出 PDF
-        </ElButton>
-        <ElButton
-          :disabled="!canPreviewPdf || documentReadOnly"
-          :loading="pdfPreviewDialogSilentPrinting"
-          @click="handleSilentPrintPdf"
-        >
-          打印
-        </ElButton>
         <span
           v-if="documentReadOnly"
           class="ml-2 text-xs"
@@ -1161,24 +904,6 @@ defineExpose({
         </div>
       </div>
     </div>
-
-    <EmrPdfPreviewDialog
-      v-model:visible="pdfPreviewVisible"
-      :title="pdfPreviewDialogTitle"
-      :loading="pdfPreviewDialogLoading"
-      :silent-printing="pdfPreviewDialogSilentPrinting"
-      :pdf-blob-url="pdfPreviewBlobUrl"
-      :preview-stale="pdfPreviewMode === 'single' && pdfPreviewStale"
-      :preview-truncated="pdfPreviewTruncated"
-      :page-count="pdfPreviewPageCount"
-      :rendered-at-label="pdfPreviewRenderedAtLabel"
-      :error-message="pdfPreviewErrorMessage"
-      @refresh="handleRefreshPdfPreview"
-      @open-new-tab="openPreviewInNewTab"
-      @export-pdf="handleDialogExportPdf"
-      @print="handleDialogPrintPdf"
-      @silent-print="handleDialogSilentPrintPdf"
-    />
   </div>
 </template>
 

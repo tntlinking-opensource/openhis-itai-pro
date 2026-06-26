@@ -13,6 +13,8 @@ export interface NursingRecordPatient {
 
 export interface NursingRecordRow {
   id: string;
+  /** 已落库主表 id */
+  vitalSignId?: string;
   recordDate: string;
   recordTime: string;
   consciousness: string;

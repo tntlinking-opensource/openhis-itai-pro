@@ -43,8 +43,12 @@ export interface EditableTableProps {
   rowKey?: string;
   /** 是否显示添加按钮 */
   showAddButton?: boolean;
+  /** 是否显示左侧多选列 */
+  showCheckboxColumn?: boolean;
   /** 是否显示删除按钮 */
   showDeleteButton?: boolean;
+  /** 是否显示序号列 */
+  showSeqColumn?: boolean;
   /** 表格尺寸 */
   size?: 'default' | 'large' | 'small';
   /** 是否显示斑马纹 */

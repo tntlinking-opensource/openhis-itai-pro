@@ -10,7 +10,10 @@
       "path": "../../../../../whale-sever",
     },
     {
-      "path": "../../../../../whale-report",
+      "path": "../../../../../whale-sever/whale-report",
+    },
+    {
+      "path": "../../../../../openhis-pro-win",
     },
   ],
   "settings": {},

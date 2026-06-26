@@ -16,18 +16,9 @@ import type {
 } from '#/api/doctor-station/advice.types';
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 import type { DiagnosisItem } from '#/components/doctor-station/diagnosis';
-import type { DrugGroupDisplayItem } from '#/utils/drug-group-table';
+import type { DrugGroupDisplayItem } from '#/utils/doctor-station/drug-group-table';
 
-import {
-  computed,
-  nextTick,
-  onActivated,
-  onDeactivated,
-  onMounted,
-  onUnmounted,
-  ref,
-  watch,
-} from 'vue';
+import { computed, nextTick, onActivated, onDeactivated, onUnmounted, ref, watch } from 'vue';
 
 import { ElMessage, ElTable } from 'element-plus';
 
@@ -41,17 +32,10 @@ import {
   httpWithdrawDoctorStationAdviceBatch,
 } from '#/api/doctor-station/advice.http';
 import { useEnsureClinicalReception } from '#/components/doctor-station/use-ensure-clinical-reception';
-import {
-  useExamApplyFormPrint,
-  useLabApplyFormPrint,
-} from '#/composables/use-service-apply-form-print';
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import {
-  groupDoctorStationExamApplyPrintTarget,
-  groupDoctorStationLabApplyPrintTarget,
-} from '#/utils/report/doctor-station-print-targets';
 
+import { saveAdviceDraftBatchWithBindResolution } from '../services/advice-draft-bind.service';
 import { createAdviceDrugItem, inferDoseBandConvertK } from '../services/advice-edit';
 import {
   buildAdviceDrugItemSeedFromListRow,
@@ -94,8 +78,6 @@ export interface UseAdviceTabProps {
 export function useAdviceTab(props: UseAdviceTabProps) {
   const authStore = useAuthStore();
   const { ensureReceptionBeforeClinicalWork } = useEnsureClinicalReception();
-  const { printServiceApplyForm: printLabApplyForm } = useLabApplyFormPrint();
-  const { printServiceApplyForm: printExamApplyForm } = useExamApplyFormPrint();
 
   const medicationRateOptions = ref<TerminologyOptionDto[]>([]);
   const medicationRouteOptions = ref<TerminologyOptionDto[]>([]);
@@ -109,7 +91,6 @@ export function useAdviceTab(props: UseAdviceTabProps) {
   const adviceListLoading = ref(false);
   /** 保存 / 签发 / 撤回 / 删除 / 刷新 等写操作进行中（含紧随的列表刷新） */
   const adviceMutationLoading = ref(false);
-  const printApplyFormLoading = ref(false);
   const showEditor = ref(false);
   const editorDirty = ref(false);
   const editorInitialGroup = ref<AdviceDrugItem[]>([]);
@@ -440,94 +421,6 @@ export function useAdviceTab(props: UseAdviceTabProps) {
 
   function handleToolbarPlaceholder(featureLabel: string) {
     ElMessage.info(`${featureLabel}功能开发中`);
-  }
-
-  function resolveApplyPrintSourceRows(): AdviceRowItem[] {
-    if (tableSelection.value.length > 0) {
-      return tableSelection.value;
-    }
-    return rows.value;
-  }
-
-  function resolveApplyPrintSelectedKeys(): string[] | undefined {
-    if (tableSelection.value.length === 0) {
-      return undefined;
-    }
-    return tableSelection.value.map((row) => row.key);
-  }
-
-  async function handlePrintLabApplyForm() {
-    const encounterId = props.encounterId?.trim() || '';
-    if (!encounterId) {
-      ElMessage.warning('缺少就诊信息，无法打印检验申请单');
-      return;
-    }
-    if (showEditor.value && editorDirty.value) {
-      ElMessage.warning('请先保存或关闭当前编辑卡片');
-      return;
-    }
-    const target = groupDoctorStationLabApplyPrintTarget(
-      resolveApplyPrintSourceRows(),
-      resolveApplyPrintSelectedKeys(),
-    );
-    if (!target) {
-      ElMessage.warning(
-        tableSelection.value.length > 0
-          ? '所选医嘱中没有可打印的检验申请'
-          : '当前没有可打印的已签发检验医嘱',
-      );
-      return;
-    }
-    printApplyFormLoading.value = true;
-    try {
-      await printLabApplyForm({
-        encounterId,
-        target,
-        jobName: '检验申请单',
-      });
-      ElMessage.success('已发送检验申请单');
-    } catch {
-      // composable 已记录日志
-    } finally {
-      printApplyFormLoading.value = false;
-    }
-  }
-
-  async function handlePrintExamApplyForm() {
-    const encounterId = props.encounterId?.trim() || '';
-    if (!encounterId) {
-      ElMessage.warning('缺少就诊信息，无法打印检查申请单');
-      return;
-    }
-    if (showEditor.value && editorDirty.value) {
-      ElMessage.warning('请先保存或关闭当前编辑卡片');
-      return;
-    }
-    const target = groupDoctorStationExamApplyPrintTarget(
-      resolveApplyPrintSourceRows(),
-      resolveApplyPrintSelectedKeys(),
-    );
-    if (!target) {
-      ElMessage.warning(
-        tableSelection.value.length > 0
-          ? '所选医嘱中没有可打印的检查申请'
-          : '当前没有可打印的已签发检查医嘱',
-      );
-      return;
-    }
-    printApplyFormLoading.value = true;
-    try {
-      await printExamApplyForm({
-        encounterId,
-        target,
-        jobName: '检查申请单',
-      });
-      ElMessage.success('已发送检查申请单');
-    } catch {
-      // composable 已记录日志
-    } finally {
-      printApplyFormLoading.value = false;
-    }
   }
 
   /** 勾选行中：西药 + 草稿 + 有 `requestId`（IF-DOR-17 仅药品申请主键可操作组号）。 */
@@ -865,10 +758,11 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     }
     await withAdviceMutationLoading(async () => {
       try {
-        const res = await httpSaveDoctorStationAdviceDraftBatch({
+        const res = await saveAdviceDraftBatchWithBindResolution({
           encounterId,
           patientId,
           lines,
+          existingAdviceRows: rows.value,
         });
         if (res.success === false) {
           ElMessage.error(String(res.message || '').trim() || '保存失败');
@@ -957,9 +851,13 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     await Promise.all([loadAdviceList(), loadAdviceInit()]);
   }
 
+  /** KeepAlive 内仅激活页签拉数；换患者时由 watch 刷新当前可见 Tab */
+  const isTabActive = ref(false);
+
   watch(
     () => [props.encounterId, props.patientId],
     () => {
+      if (!isTabActive.value) return;
       if (showEditor.value) {
         showEditor.value = false;
         editorDirty.value = false;
@@ -970,17 +868,14 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     },
   );
 
-  onMounted(() => {
-    attachAdviceEscKeydown();
-    void loadAdviceTabData();
-  });
-
   onActivated(() => {
+    isTabActive.value = true;
     attachAdviceEscKeydown();
     void loadAdviceTabData();
   });
 
   onDeactivated(() => {
+    isTabActive.value = false;
     detachAdviceEscKeydown();
   });
 
@@ -1021,8 +916,6 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     handleEditorDirtyChange,
     handleMedicationAssignGroup,
     handleMedicationUngroup,
-    handlePrintExamApplyForm,
-    handlePrintLabApplyForm,
     handleRowDblclick,
     handleSaveGroup,
     handleSign,
@@ -1037,7 +930,6 @@ export function useAdviceTab(props: UseAdviceTabProps) {
     orderSelectExpandNonce,
     orderSelectFocusNonce,
     patientId: computed(() => props.patientId ?? ''),
-    printApplyFormLoading,
     productColumns,
     queryProductOptions,
     reload,

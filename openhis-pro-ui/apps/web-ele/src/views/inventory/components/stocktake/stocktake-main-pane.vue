@@ -73,7 +73,7 @@ import {
   type ChargeType,
 } from '#/chs/constants/insurance-contract';
 import SectionTitle from '#/components/layouts/section-title.vue';
-import { decimalMul, decimalSub } from '#/utils/decimal-util';
+import { decimalMul, decimalSub } from '#/utils/format/decimal-util';
 import {
   buildStocktakeDocActionFlags,
   normalizeStocktakeStatusSort,
@@ -95,7 +95,7 @@ import {
   inventoryPickNumberField,
   inventoryPickStringField,
 } from '#/utils/inventory/inventory-product-pick-list';
-import { resolveLoginPractitionerIdForRequest } from '#/utils/preserve-api-id';
+import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
 
 defineOptions({ name: 'InventoryStocktakeMainPane' });
 

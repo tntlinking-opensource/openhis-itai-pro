@@ -7,7 +7,7 @@ import { ElInput, ElMessage, ElMessageBox, ElPopover, ElTree } from 'element-plu
 
 import { getAvailableOrganizationUnitsApi } from '#/api';
 import { useAuthStore } from '#/store';
-import { switchOrganizationUnitSession } from '#/utils/switch-organization-unit-session';
+import { switchOrganizationUnitSession } from '#/utils/auth/switch-organization-unit-session';
 
 defineOptions({
   name: 'DepartmentSelector',

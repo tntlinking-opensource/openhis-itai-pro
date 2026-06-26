@@ -80,7 +80,7 @@ import {
   normalizeStocktakeStatusSort,
   stocktakeStatusLabel,
 } from '#/utils/inventory/stocktake-doc-actions';
-import { resolveLoginPractitionerIdForRequest } from '#/utils/preserve-api-id';
+import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
 import { useUserStore } from '@vben/stores';
 
 defineOptions({ name: 'InventoryGainLossMainPane' });

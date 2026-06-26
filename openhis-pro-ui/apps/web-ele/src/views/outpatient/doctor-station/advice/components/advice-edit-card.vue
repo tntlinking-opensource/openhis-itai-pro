@@ -17,12 +17,9 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import { ElButton, ElMessage } from 'element-plus';
 
-import { httpGetEncounterDiagnosis } from '#/api/doctor-station/diagnosis.http';
 import { DiagnosisPickerDialog } from '#/components/doctor-station/diagnosis';
-import {
-  mapEncounterRowToDiagnosisItem,
-  resolveEncounterDiagnosisDisplayRows,
-} from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
+import { fetchEncounterDiagnosisDisplayList } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis.service';
+import { mapEncounterRowToDiagnosisItem } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
 
 import { useAdviceDrugFormKeyboard } from '../composables/use-advice-drug-form-keyboard';
 import { calcAdviceTotalFee } from '../composables/use-advice-drug-list';
@@ -43,6 +40,7 @@ import {
 } from '../services/advice-edit';
 import { formatMoneyStrYuan, formatUnitPriceYuan } from '../services/advice-format';
 import { isAdviceCatalogZeroStock } from '../services/advice-list';
+import { validateMedicationGroupSharedFields } from '../services/advice-medication-draft';
 import { inferAdviceLineEditorKind, validateWesternEditLineItem } from '../services/advice-row';
 import {
   convertTotalAmountWhenUnitChanges,
@@ -115,8 +113,10 @@ async function loadEncounterDiagnosisOptions() {
     return;
   }
   try {
-    const res = await httpGetEncounterDiagnosis({ encounterId, patientId });
-    const displayList = resolveEncounterDiagnosisDisplayRows(res.diagnosisList ?? []);
+    const displayList = await fetchEncounterDiagnosisDisplayList(
+      { encounterId, patientId },
+      'outpatient',
+    );
     encounterDiagnosisSnapshot.value = displayList;
     patientDiagnoses.value = displayList
       .map((row) => mapEncounterRowToDiagnosisItem(row))
@@ -553,6 +553,11 @@ const handleSaveGroup = () => {
   const invalidIndex = drugItems.value.findIndex((item) => !assertRowValid(item));
   if (invalidIndex !== -1) {
     ElMessage.warning(`第${invalidIndex + 1}条医嘱必填项未完成`);
+    return;
+  }
+  const groupValidationError = validateMedicationGroupSharedFields(drugItems.value);
+  if (groupValidationError) {
+    ElMessage.warning(groupValidationError);
     return;
   }
   emit('saveGroup', drugItems.value, encounterDiagnosisSnapshot.value);

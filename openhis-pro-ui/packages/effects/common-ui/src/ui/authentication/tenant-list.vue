@@ -107,9 +107,7 @@ function handleSelectTenant(tenant: Tenant) {
     </div>
 
     <div v-if="loading" class="flex-center flex flex-1 items-center justify-center">
-      <div class="text-muted-foreground text-sm">
-        {{ $t('common.loading') || '加载中...' }}
-      </div>
+      <div class="text-muted-foreground text-sm">加载中...</div>
     </div>
 
     <div

@@ -2,7 +2,7 @@ import type {
   DoctorStationAdviceInventoryRowDto,
   DoctorStationMedicationUnitBandDto,
 } from '#/api/doctor-station/advice.types';
-import type { DrugGroupDisplayItem } from '#/utils/drug-group-table';
+import type { DrugGroupDisplayItem } from '#/utils/doctor-station/drug-group-table';
 
 /** 编辑卡、嘱保存、目录选品共用类型 */
 
@@ -140,4 +140,6 @@ export interface AdviceRowItem {
   listDoseUnitCode?: string;
   listUnitCode?: string;
   dispensePerDuration?: number;
+  /** 申请单整单号（诊疗 AR 前缀 prescriptionNo，同单多行共享） */
+  applyFormNo?: string;
 }

@@ -17,6 +17,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./es/helpers/unmount-global-loading": {
+      "types": "./src/helpers/unmount-global-loading.ts",
+      "default": "./src/helpers/unmount-global-loading.ts"
     }
   },
   "dependencies": {

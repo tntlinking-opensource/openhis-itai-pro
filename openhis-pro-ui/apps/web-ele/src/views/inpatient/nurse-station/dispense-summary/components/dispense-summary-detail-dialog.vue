@@ -27,10 +27,6 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
 });
 
-const emit = defineEmits<{
-  print: [];
-}>();
-
 const visible = defineModel<boolean>('visible', { required: true });
 
 /** 状态文案 */
@@ -58,11 +54,6 @@ const headerInfoItems = computed(() => {
 /** 关闭弹窗 */
 function handleClose() {
   visible.value = false;
-}
-
-/** 触发打印 */
-function handlePrint() {
-  emit('print');
 }
 </script>
 
@@ -150,9 +141,6 @@ function handlePrint() {
     <template #footer>
       <div class="summary-detail-dialog__footer">
         <ElButton @click="handleClose">关闭</ElButton>
-        <ElButton type="primary" plain :disabled="!props.header" @click="handlePrint">
-          打印
-        </ElButton>
       </div>
     </template>
   </ElDialog>

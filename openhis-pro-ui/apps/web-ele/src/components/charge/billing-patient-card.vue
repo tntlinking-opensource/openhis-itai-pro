@@ -123,6 +123,24 @@ const handleClick = () => {
           <span class="text-gray-400">{{ departmentLabel }}</span>
           {{ patient.visitDepartment }}
         </div>
+        <div
+          v-if="patient.accountBalanceSummary"
+          class="flex min-w-0 items-start justify-between gap-2 text-xs leading-tight"
+        >
+          <span class="shrink-0 text-gray-400">账户余额</span>
+          <span
+            class="min-w-0 text-right font-medium"
+            :class="patient.lowBalanceWarning ? 'text-red-600' : 'text-gray-800'"
+          >
+            <span>{{ patient.accountBalanceSummary }}</span>
+            <span
+              v-if="patient.accountBalanceSub"
+              class="mt-0.5 block text-[11px] font-normal text-gray-500"
+            >
+              {{ patient.accountBalanceSub }}
+            </span>
+          </span>
+        </div>
       </div>
     </div>
   </div>

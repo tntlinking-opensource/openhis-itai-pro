@@ -9,7 +9,7 @@ import type {
 } from '#/api/basic/service-device-binding';
 import type { ApiOptionItem } from '#/types/api-response';
 
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -36,6 +36,7 @@ import {
   SERVICE_DEVICE_TARGET_TABLE_DEVICE,
   deleteServiceDeviceBindingApi,
   initServiceDeviceBindingApi,
+  listDeviceDefOptionsApi,
   pageServiceDeviceBindingApi,
   saveServiceDeviceBindingApi,
   serviceDeviceBindingUnitOptionsByTargetApi,
@@ -220,6 +221,22 @@ function getTargetIdOptions(targetTable: string | undefined): SourceOptionItem[]
     }));
   }
   return [];
+}
+
+/** 从服务端刷新耗材绑定目标下拉 */
+async function refreshDeviceDefOptions() {
+  try {
+    const options = (await listDeviceDefOptionsApi()) ?? [];
+    initOptions.value = {
+      ...initOptions.value,
+      deviceDefOptions: options,
+    };
+  } catch {
+    initOptions.value = {
+      ...initOptions.value,
+      deviceDefOptions: [],
+    };
+  }
 }
 
 /** 加载页面初始化下拉 */
@@ -493,12 +510,27 @@ async function handleDelete(row: EditableRow) {
   }
 }
 
-/** 目标表变更时清空目标与单位 */
-function handleTargetTableChange(row: EditableRow) {
+/** 目标表变更时清空目标与单位，并在选耗材时实时刷新候选 */
+async function handleTargetTableChange(row: EditableRow) {
   row.devActId = undefined;
   row.unitCode = undefined;
   row.__unitOptions = undefined;
+  if (String(row.devActTable ?? '').trim() === SERVICE_DEVICE_TARGET_TABLE_DEVICE) {
+    await refreshDeviceDefOptions();
+  }
 }
+
+/** KeepAlive 切回时刷新下拉候选（耗材/诊疗目录可能在其他 Tab 已新增） */
+onActivated(async () => {
+  const prevSourceId = selectedSourceId.value;
+  await loadInit();
+  if (prevSourceId && currentSourceOptions.value.some((o) => o.value === prevSourceId)) {
+    selectedSourceId.value = prevSourceId;
+    await loadData();
+    return;
+  }
+  selectFirstSource();
+});
 
 onMounted(async () => {
   await loadInit();

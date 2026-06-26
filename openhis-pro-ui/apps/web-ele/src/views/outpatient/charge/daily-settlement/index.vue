@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import type { ReportQueryPageResultDto } from '#/api/report/report-query';
+import type {
+  DailySettlementChannelRowDto,
+  DailySettlementSummaryDto,
+  LoadOutpatientDailySettlementPageInitResponse,
+  PreviewOutpatientDailySettlementResponse,
+} from '#/api/outpatient/daily-settlement';
+import type { ApiOptionItem } from '#/types/api-response';
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -10,27 +16,31 @@ import {
   ElButton,
   ElCard,
   ElDatePicker,
+  ElEmpty,
   ElForm,
   ElFormItem,
+  ElInput,
   ElMessage,
+  ElMessageBox,
   ElOption,
   ElSelect,
+  ElTooltip,
 } from 'element-plus';
 
 import {
-  downloadReportExportFile,
-  reportExportExcelApi,
-  reportQueryPageApi,
-} from '#/api/report/report-query';
-import { useReportTemplatePrint } from '#/composables/use-report-template-print';
+  DAILY_SETTLEMENT_SUMMARY_DISPLAY,
+  loadOutpatientDailySettlementPageInitApi,
+  normalizePreviewOutpatientDailySettlementResponse,
+  previewOutpatientDailySettlementApi,
+  submitOutpatientDailySettlementApi,
+} from '#/api/outpatient/daily-settlement';
 import { useRequest } from '#/hooks/use-request';
+import { useAuthStore } from '#/store/auth';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 defineOptions({
   name: 'ChargeOpDailySettlement',
 });
-
-const REPORT_CODE = 'outpatient_daily_settlement';
-const PDF_TEMPLATE = 'outpatient_daily_settlement_pdf';
 
 interface SummaryItem {
   label: string;
@@ -40,7 +50,7 @@ interface SummaryItem {
 interface QueryFormState {
   dateRange: [string, string];
   expenseProperty: string;
-  cashier: string;
+  cashierId: string;
 }
 
 interface ReconciliationFormState {
@@ -53,19 +63,31 @@ interface ReconciliationFormState {
   cashPayTotal: string;
 }
 
+const authStore = useAuthStore();
+
 const today = dayjs().format('YYYY-MM-DD');
 const queryForm = reactive<QueryFormState>({
   dateRange: [today, today],
-  expenseProperty: 'selfPay',
-  cashier: '',
+  expenseProperty: '',
+  cashierId: '',
 });
 
-const queryResult = ref<ReportQueryPageResultDto | null>(null);
-const { printReportTemplate, isPrinting } = useReportTemplatePrint();
-const { run: runQuery, loading: queryLoading } = useRequest(reportQueryPageApi, { manual: true });
-const { run: runExportExcel, loading: exportLoading } = useRequest(reportExportExcelApi, {
+const pageInit = ref<LoadOutpatientDailySettlementPageInitResponse | null>(null);
+const previewResult = ref<null | PreviewOutpatientDailySettlementResponse>(null);
+const hasQueried = ref(false);
+
+const { run: runInit, loading: initLoading } = useRequest(
+  loadOutpatientDailySettlementPageInitApi,
+  {
+    manual: true,
+    showErrorMessage: true,
+  },
+);
+const { run: runPreview, loading: queryLoading } = useRequest(previewOutpatientDailySettlementApi, {
   manual: true,
-  onSuccess: (data) => downloadReportExportFile(data),
+});
+const { run: runSubmit, loading: submitLoading } = useRequest(submitOutpatientDailySettlementApi, {
+  manual: true,
 });
 
 const reconciliationForm = reactive<ReconciliationFormState>({
@@ -78,6 +100,25 @@ const reconciliationForm = reactive<ReconciliationFormState>({
   cashPayTotal: '0',
 });
 
+const expensePropertyOptions = computed<ApiOptionItem[]>(
+  () => pageInit.value?.expensePropertyOptions ?? [],
+);
+
+const cashierOptions = computed<ApiOptionItem[]>(() => pageInit.value?.cashierOptions ?? []);
+
+const financialDelegateEnabled = computed(() => pageInit.value?.financialDelegateEnabled === true);
+
+const selectedCashierLabel = computed(() => {
+  const matched = cashierOptions.value.find((item) => item.value === queryForm.cashierId);
+  return matched?.label?.trim() || '—';
+});
+
+const canSubmitSettlement = computed(() => {
+  const count = previewResult.value?.paymentCount ?? 0;
+  return hasQueried.value && count > 0 && !queryLoading.value && !submitLoading.value;
+});
+
+// 将渠道行与汇总字段拆成多列网格，便于日结单式展示（非表格）。
 function chunkItems<T>(items: T[], size: number): T[][] {
   const rows: T[][] = [];
   for (let i = 0; i < items.length; i += size) {
@@ -86,97 +127,190 @@ function chunkItems<T>(items: T[], size: number): T[][] {
   return rows;
 }
 
-const feeSummaryColumns = computed<SummaryItem[][]>(() => {
-  const rows = queryResult.value?.rows ?? [];
-  const items = rows.map((row) => ({
-    label: String(row.category ?? '—'),
-    value: `${row.amount ?? '0.00'} ${row.unit ?? '元'}`,
+// 格式化渠道汇总行：后端返回 category + amount + unit。
+function formatChannelRow(row: DailySettlementChannelRowDto): SummaryItem {
+  const amount = row.amount ?? '0.00';
+  const unit = row.unit ?? '元';
+  return {
+    label: row.category?.trim() || '—',
+    value: `${amount} ${unit}`,
+  };
+}
+
+const resolvedSummary = computed<DailySettlementSummaryDto | undefined>(
+  () => previewResult.value?.summary,
+);
+
+const channelSummaryColumns = computed<SummaryItem[][]>(() => {
+  const rows = previewResult.value?.rows ?? [];
+  const items = rows.map((row) => formatChannelRow(row));
+  return chunkItems(items, 4);
+});
+
+const hasFinTypeDisplay = computed(
+  () => hasQueried.value && channelSummaryColumns.value.length > 0,
+);
+
+// 将 summary 各字段映射为「项目名 + 金额/人次」展示项。
+function formatSummaryFieldValue(
+  key: (typeof DAILY_SETTLEMENT_SUMMARY_DISPLAY)[number]['key'],
+  summary: DailySettlementSummaryDto,
+  unit: string,
+): string {
+  const raw = summary[key];
+  if (raw === undefined || raw === null) {
+    return unit === '人' ? '0 人' : `0.00 ${unit}`;
+  }
+  if (unit === '人') {
+    return `${raw} ${unit}`;
+  }
+  return `${raw} ${unit}`;
+}
+
+const summaryDisplayColumns = computed<SummaryItem[][]>(() => {
+  const summary = resolvedSummary.value;
+  if (!summary) {
+    return [];
+  }
+  const items: SummaryItem[] = DAILY_SETTLEMENT_SUMMARY_DISPLAY.map(({ key, label, unit }) => ({
+    label,
+    value: formatSummaryFieldValue(key, summary, unit),
   }));
   return chunkItems(items, 4);
 });
 
-const incomeSummaryColumns = computed<SummaryItem[][]>(() => {
-  const summary = queryResult.value?.summary;
-  if (!summary) {
-    return [];
-  }
-  const items: SummaryItem[] = [
-    { label: '总收入', value: `${summary.totalIncome ?? '0.00'} 元` },
-    { label: '应收金额', value: `${summary.receivableAmount ?? '0.00'} 元` },
-    { label: '优惠金额', value: `${summary.discountAmount ?? '0.00'} 元` },
-    { label: '实收金额', value: `${summary.actualAmount ?? '0.00'} 元` },
-    { label: '微信', value: `${summary.wechatAmount ?? '0.00'} 元` },
-    { label: '现金', value: `${summary.cashAmount ?? '0.00'} 元` },
-    { label: '自费人次', value: `${summary.selfPayCount ?? 0} 人` },
-    { label: '医保人次', value: `${summary.insuranceCount ?? 0} 人` },
-  ];
-  return chunkItems(items, 4);
-});
+const hasSummaryDisplay = computed(() => summaryDisplayColumns.value.length > 0);
 
 const headerDateRangeText = computed(() => {
-  const summaryRange = queryResult.value?.summary?.dateRange;
+  const summaryRange = resolvedSummary.value?.dateRange;
   if (summaryRange) {
     return String(summaryRange);
   }
   const [from, to] = queryForm.dateRange;
-  return from && to ? (from === to ? from : `${from}~${to}`) : '—';
+  return from && to ? (from === to ? from : `${from} ~ ${to}`) : '—';
 });
 
+const paymentCountText = computed(() => {
+  if (!hasQueried.value) {
+    return '—';
+  }
+  return String(previewResult.value?.paymentCount ?? 0);
+});
+
+/** 总收入是否为 0（含 0 元收费、一收一退抵净场景）。 */
+const isZeroNetIncome = computed(() => {
+  const incomeText = resolvedSummary.value?.totalIncome;
+  if (!incomeText) {
+    return false;
+  }
+  const income = Number.parseFloat(incomeText);
+  return !Number.isNaN(income) && income === 0;
+});
+
+// 组装预览请求体：日期、收款人与费用性质展示过滤。
+function buildPreviewRequest() {
+  const [dateFrom, dateTo] = queryForm.dateRange;
+  return {
+    dateFrom,
+    dateTo,
+    cashierId: preserveApiIdForRequest(queryForm.cashierId),
+    expenseProperty: queryForm.expenseProperty?.trim() || undefined,
+  };
+}
+
+// 加载页初始化数据并回填默认筛选项。
+async function loadPageInit() {
+  const data = await runInit();
+  pageInit.value = data;
+  if (data.defaultDateFrom && data.defaultDateTo) {
+    queryForm.dateRange = [data.defaultDateFrom, data.defaultDateTo];
+  }
+  if (data.expensePropertyOptions?.length) {
+    const firstValue = data.expensePropertyOptions[0]?.value;
+    if (firstValue) {
+      queryForm.expenseProperty = firstValue;
+    }
+  }
+  const defaultCashierId = preserveApiIdForRequest(data.currentCashierId);
+  if (defaultCashierId) {
+    queryForm.cashierId = defaultCashierId;
+  } else if (data.cashierOptions?.[0]?.value) {
+    queryForm.cashierId = data.cashierOptions[0].value;
+  }
+}
+
+// 按当前筛选条件查询未交账汇总。
 async function handleSearch() {
   const [dateFrom, dateTo] = queryForm.dateRange;
   if (!dateFrom || !dateTo) {
     ElMessage.warning('请选择查询日期');
     return;
   }
+  if (!queryForm.expenseProperty?.trim()) {
+    ElMessage.warning('请选择费用性质');
+    return;
+  }
+  if (!queryForm.cashierId?.trim()) {
+    ElMessage.warning('请选择收款人');
+    return;
+  }
   try {
-    queryResult.value = await runQuery({
-      reportCode: REPORT_CODE,
-      pageNo: 1,
-      pageSize: 200,
-      dateFrom,
-      dateTo,
-      keyword: queryForm.cashier?.trim() || undefined,
-    });
+    const raw = await runPreview(buildPreviewRequest());
+    previewResult.value = normalizePreviewOutpatientDailySettlementResponse(
+      raw as DailySettlementSummaryDto & PreviewOutpatientDailySettlementResponse,
+    );
+    hasQueried.value = true;
   } catch {
-    queryResult.value = null;
+    previewResult.value = null;
+    hasQueried.value = true;
   }
 }
 
-async function handleExportExcel() {
+// 二次确认后提交交账，成功后刷新预览。
+async function handleSubmitSettlement() {
   const [dateFrom, dateTo] = queryForm.dateRange;
   if (!dateFrom || !dateTo) {
     ElMessage.warning('请选择查询日期');
     return;
   }
-  await runExportExcel({
-    reportCode: REPORT_CODE,
-    pageNo: 1,
-    pageSize: 5000,
-    dateFrom,
-    dateTo,
-    keyword: queryForm.cashier?.trim() || undefined,
-  });
-}
-
-async function handlePrint() {
-  const [dateFrom, dateTo] = queryForm.dateRange;
-  await printReportTemplate({
-    templateCode: PDF_TEMPLATE,
-    jobName: '门诊日结报表',
-    params: {
-      reportCode: REPORT_CODE,
+  const orgId = preserveApiIdForRequest(authStore.getSelectedOrganization());
+  if (!orgId) {
+    ElMessage.warning('请先选择交账科室');
+    return;
+  }
+  if ((previewResult.value?.paymentCount ?? 0) <= 0) {
+    ElMessage.warning('当前没有可交账流水');
+    return;
+  }
+  const pendingCount = previewResult.value?.paymentCount ?? 0;
+  let confirmMessage = '请确认账是否正确，交账后归档不可操作';
+  if (pendingCount > 0 && isZeroNetIncome.value) {
+    confirmMessage += `。本次共 ${pendingCount} 笔流水须归档（含 0 元或收支抵净流水，无实收金额亦须交账）`;
+  }
+  try {
+    await ElMessageBox.confirm(confirmMessage, '确认交账', {
+      confirmButtonText: '确认交账',
+      cancelButtonText: '取消',
+      type: 'warning',
+    });
+  } catch {
+    return;
+  }
+  try {
+    const result = await runSubmit({
       dateFrom,
       dateTo,
-      cashier: queryForm.cashier?.trim(),
-    },
-  });
+      cashierId: preserveApiIdForRequest(queryForm.cashierId),
+      orgId,
+    });
+    ElMessage.success(`交账成功，单号 ${result.busNo ?? '—'}`);
+    await handleSearch();
+  } catch {
+    // 错误提示由 useRequest 拦截器处理
+  }
 }
 
-onMounted(() => {
-  void handleSearch();
-});
-
-// 清空医保对账输入区。
+// 清空医保对账输入区（占位）。
 function handleClearReconciliation() {
   reconciliationForm.chargeTotal = '0';
   reconciliationForm.fundTotal = '0';
@@ -184,10 +318,30 @@ function handleClearReconciliation() {
   reconciliationForm.cashPayTotal = '0';
 }
 
-// 提交医保对账清算，后续可接入结算接口。
+// 提交医保对账清算（占位，后续接入）。
 function handleSubmitReconciliation() {
-  // 仅绘制页面结构，当前保留占位行为。
+  // 仅保留页面结构
 }
+
+onMounted(async () => {
+  try {
+    await loadPageInit();
+    await handleSearch();
+  } catch {
+    // init 失败时不自动查询
+  }
+});
+
+// 切换费用性质后自动刷新展示汇总（不改变交账候选集口径）。
+watch(
+  () => queryForm.expenseProperty,
+  () => {
+    if (!hasQueried.value || initLoading.value) {
+      return;
+    }
+    void handleSearch();
+  },
+);
 </script>
 
 <template>
@@ -210,37 +364,79 @@ function handleSubmitReconciliation() {
                 class="!w-[360px]"
               />
             </ElFormItem>
-            <ElFormItem label="费用性质">
-              <ElSelect v-model="queryForm.expenseProperty" class="!w-[120px]">
-                <ElOption label="自费" value="selfPay" />
-                <ElOption label="医保" value="insurance" />
+            <ElFormItem label="费用性质" required>
+              <ElSelect
+                v-model="queryForm.expenseProperty"
+                placeholder="请选择费用性质"
+                class="!w-[140px]"
+                filterable
+              >
+                <ElOption
+                  v-for="item in expensePropertyOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
               </ElSelect>
             </ElFormItem>
-            <ElFormItem label="经办人">
-              <ElSelect v-model="queryForm.cashier" placeholder="经办人" class="!w-[120px]">
-                <ElOption label="经办人A" value="cashierA" />
-                <ElOption label="经办人B" value="cashierB" />
+            <ElFormItem label="收款人" required>
+              <ElSelect
+                v-model="queryForm.cashierId"
+                placeholder="请选择收款人"
+                class="!w-[140px]"
+                filterable
+                :disabled="!financialDelegateEnabled && cashierOptions.length <= 1"
+              >
+                <ElOption
+                  v-for="item in cashierOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
               </ElSelect>
             </ElFormItem>
             <div class="ml-auto flex shrink-0 items-center gap-2">
-              <ElButton type="primary" :loading="queryLoading" @click="handleSearch">查询</ElButton>
-              <ElButton :loading="exportLoading" @click="handleExportExcel">导出 Excel</ElButton>
-              <ElButton :loading="isPrinting" @click="handlePrint">打印 PDF</ElButton>
+              <ElButton type="primary" :loading="queryLoading || initLoading" @click="handleSearch">
+                查询
+              </ElButton>
+              <ElButton
+                type="primary"
+                plain
+                :loading="submitLoading"
+                :disabled="!canSubmitSettlement"
+                @click="handleSubmitSettlement"
+              >
+                确认交账
+              </ElButton>
             </div>
           </ElForm>
         </ElCard>
 
         <ElCard shadow="never" class="daily-settlement-card min-h-0 flex-1">
           <div class="flex h-full min-h-0 flex-col gap-4">
-            <h3 class="text-center text-xl font-semibold tracking-wide">门诊收费日结单</h3>
+            <h3
+              class="text-center text-xl font-semibold tracking-wide text-[var(--el-text-color-primary)]"
+            >
+              门诊收费日结单
+            </h3>
 
             <div
               class="grid grid-cols-5 gap-4 border-b border-[var(--el-border-color)] pb-3 text-sm"
             >
-              <div><span class="text-[var(--el-text-color-regular)]">经办人姓名：</span> 全部</div>
-              <div><span class="text-[var(--el-text-color-regular)]">科室：</span></div>
               <div>
-                <span class="text-[var(--el-text-color-regular)]">机构：</span> 长春大学医院
+                <span class="text-[var(--el-text-color-regular)]">收款人姓名：</span>
+                {{ selectedCashierLabel }}
+              </div>
+              <div>
+                <ElTooltip
+                  content="按 payment 流水条数计，含 0 元收费与一收一退抵净流水，须归档后才会从待交账列表消失"
+                  placement="top"
+                >
+                  <span class="cursor-help text-[var(--el-text-color-regular)]"
+                    >待交账流水笔数：</span
+                  >
+                </ElTooltip>
+                {{ paymentCountText }}
               </div>
               <div class="col-span-2">
                 <span class="text-[var(--el-text-color-regular)]">时间：</span>
@@ -248,38 +444,58 @@ function handleSubmitReconciliation() {
               </div>
             </div>
 
-            <div class="flex flex-col gap-3 border-b border-[var(--el-border-color)] pb-4">
-              <div
-                v-for="(row, rowIndex) in feeSummaryColumns"
-                :key="`fee-${rowIndex}`"
-                class="grid grid-cols-4 gap-x-6 gap-y-2 text-sm"
-              >
-                <div v-for="item in row" :key="item.label" class="flex justify-between gap-2">
-                  <span>{{ item.label }}：</span>
-                  <span class="font-medium">{{ item.value }}</span>
+            <template v-if="hasFinTypeDisplay">
+              <div class="flex flex-col gap-3 border-b border-[var(--el-border-color)] pb-4">
+                <div
+                  v-for="(row, rowIndex) in channelSummaryColumns"
+                  :key="`fin-type-${rowIndex}`"
+                  class="grid grid-cols-4 gap-x-6 gap-y-2 text-sm"
+                >
+                  <div
+                    v-for="item in row"
+                    :key="item.label"
+                    class="flex justify-between gap-2 text-[var(--el-text-color-primary)]"
+                  >
+                    <span class="text-[var(--el-text-color-regular)]">{{ item.label }}：</span>
+                    <span class="font-medium">{{ item.value }}</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            </template>
 
-            <div class="flex flex-col gap-3">
-              <div
-                v-for="(row, rowIndex) in incomeSummaryColumns"
-                :key="`income-${rowIndex}`"
-                class="grid grid-cols-4 gap-x-6 gap-y-2 text-sm"
-              >
-                <div v-for="item in row" :key="item.label" class="flex justify-between gap-2">
-                  <span>{{ item.label }}：</span>
-                  <span class="font-medium">{{ item.value }}</span>
+            <template v-if="hasQueried && hasSummaryDisplay">
+              <div class="flex flex-col gap-3">
+                <div
+                  v-for="(row, rowIndex) in summaryDisplayColumns"
+                  :key="`summary-${rowIndex}`"
+                  class="grid grid-cols-4 gap-x-6 gap-y-2 text-sm"
+                >
+                  <div
+                    v-for="item in row"
+                    :key="item.label"
+                    class="flex justify-between gap-2 text-[var(--el-text-color-primary)]"
+                  >
+                    <span class="text-[var(--el-text-color-regular)]">{{ item.label }}：</span>
+                    <span class="font-medium">{{ item.value }}</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            </template>
+
+            <ElEmpty
+              v-if="hasQueried && !queryLoading && !hasFinTypeDisplay && !hasSummaryDisplay"
+              description="当前条件下暂无未交账汇总"
+              class="py-8"
+            />
           </div>
         </ElCard>
       </div>
 
       <ElCard shadow="never" class="daily-settlement-card h-full min-h-0">
         <div class="flex h-full min-h-0 flex-col">
-          <div class="mb-3 border-b border-[var(--el-border-color)] pb-2 text-sm font-medium">
+          <div
+            class="mb-3 border-b border-[var(--el-border-color)] pb-2 text-sm font-medium text-[var(--el-text-color-primary)]"
+          >
             医保对账
           </div>
           <ElForm :model="reconciliationForm" label-width="108px" class="grid grid-cols-1 gap-2">

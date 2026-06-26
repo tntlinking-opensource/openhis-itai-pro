@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type {
+  ReportColumnDto,
   ReportDefinitionItemDto,
   ReportFilterFieldDto,
   ReportQueryPageResultDto,
-} from '#/api/report/report-query';
+} from '#/api/report/report';
 
 import { computed, ref, watch } from 'vue';
 
@@ -12,7 +13,9 @@ import { Page } from '@vben/common-ui';
 import {
   ElButton,
   ElCard,
+  ElCheckbox,
   ElDatePicker,
+  ElDialog,
   ElInput,
   ElMessage,
   ElOption,
@@ -23,14 +26,16 @@ import {
 
 import {
   downloadReportExportFile,
+  getReportColumnOverrideApi,
   listReportDefinitionsApi,
   parseReportFilters,
+  resolveDefinitionFilters,
   reportExportExcelApi,
   reportQueryPageApi,
+  resetReportColumnOverrideApi,
   resolveReportHeaderLines,
-} from '#/api/report/report-query';
-import ReportPdfPreviewDialog from '#/components/report/ReportPdfPreviewDialog.vue';
-import { useReportCClassPdf } from '#/composables/use-report-cclass-pdf';
+  saveReportColumnOverrideApi,
+} from '#/api/report/report';
 import { useRequest } from '#/hooks/use-request';
 
 defineOptions({
@@ -40,16 +45,17 @@ defineOptions({
 const definitions = ref<ReportDefinitionItemDto[]>([]);
 const selectedReportCode = ref('');
 const queryResult = ref<ReportQueryPageResultDto | null>(null);
-const previewVisible = ref(false);
-const filterValues = ref<Record<string, string>>({});
-
-const { previewLoading, previewBlob, previewPdf, downloadPdf, printPdf, isPrinting } =
-  useReportCClassPdf();
+const filterValues = ref<Record<string, string | string[]>>({});
+const columnDialogVisible = ref(false);
+const columnDraft = ref<ReportColumnDto[]>([]);
+const columnSaving = ref(false);
+const columnLoading = ref(false);
 
 const { run: runListDefinitions, loading: definitionsLoading } = useRequest(
   listReportDefinitionsApi,
   {
     manual: true,
+    showErrorMessage: false,
     onSuccess: (rows) => {
       definitions.value = Array.isArray(rows) ? rows : [];
       if (!selectedReportCode.value && definitions.value.length > 0) {
@@ -61,6 +67,7 @@ const { run: runListDefinitions, loading: definitionsLoading } = useRequest(
 
 const { run: runExportExcel, loading: exportLoading } = useRequest(reportExportExcelApi, {
   manual: true,
+  showErrorMessage: false,
   onSuccess: (data) => {
     downloadReportExportFile(data);
   },
@@ -68,6 +75,7 @@ const { run: runExportExcel, loading: exportLoading } = useRequest(reportExportE
 
 const { run: runQueryPage, loading: queryLoading } = useRequest(reportQueryPageApi, {
   manual: true,
+  showErrorMessage: false,
   onSuccess: (data) => {
     queryResult.value = data ?? null;
   },
@@ -77,12 +85,10 @@ const activeDefinition = computed(() =>
   definitions.value.find((item) => item.reportCode === selectedReportCode.value),
 );
 
-const filterFields = computed(() => parseReportFilters(activeDefinition.value?.filterJson));
+const filterFields = computed(() => resolveDefinitionFilters(activeDefinition.value));
 
-const pdfEnabled = computed(
-  () =>
-    Boolean(activeDefinition.value?.exportPdfEnabled) &&
-    Boolean(activeDefinition.value?.pdfTemplateCode?.trim()),
+const columnCustomizeEnabled = computed(
+  () => activeDefinition.value?.allowColumnCustomize !== false,
 );
 
 const tableColumns = computed(
@@ -110,10 +116,10 @@ const summaryEntries = computed(() => {
 });
 
 function resetFiltersForDefinition(def?: ReportDefinitionItemDto | null) {
-  const next: Record<string, string> = {};
-  for (const field of parseReportFilters(def?.filterJson)) {
+  const next: Record<string, string | string[]> = {};
+  for (const field of resolveDefinitionFilters(def)) {
     if (field.field) {
-      next[field.field] = '';
+      next[field.field] = field.type === 'daterange' ? [] : '';
     }
   }
   filterValues.value = next;
@@ -123,36 +129,50 @@ watch(activeDefinition, (def) => {
   resetFiltersForDefinition(def);
 });
 
+watch(selectedReportCode, () => {
+  queryResult.value = null;
+});
+
+function buildFilterParams(): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(filterValues.value)) {
+    if (key === 'dateFrom' || key === 'dateTo' || key === 'keyword') {
+      continue;
+    }
+    if (value == null || value === '') {
+      continue;
+    }
+    if (Array.isArray(value)) {
+      const cleaned = value.filter((item) => item != null && item !== '');
+      if (cleaned.length === 0) {
+        continue;
+      }
+      params[key] = cleaned.join(',');
+      continue;
+    }
+    params[key] = value;
+  }
+  return params;
+}
+
+function filterValueAsString(key: string): string {
+  const value = filterValues.value[key];
+  if (Array.isArray(value)) {
+    return value[0] ?? '';
+  }
+  return value ?? '';
+}
+
 function buildQueryRequest() {
   const reportCode = selectedReportCode.value?.trim();
-  const params: Record<string, unknown> = { ...filterValues.value };
   return {
     reportCode: reportCode ?? '',
     pageNo: 1,
     pageSize: 200,
-    dateFrom: filterValues.value.dateFrom || undefined,
-    dateTo: filterValues.value.dateTo || undefined,
-    keyword: filterValues.value.keyword || undefined,
-    params,
-  };
-}
-
-function buildPdfParams() {
-  const pdfCode = activeDefinition.value?.pdfTemplateCode?.trim();
-  if (!pdfCode) {
-    return null;
-  }
-  const req = buildQueryRequest();
-  return {
-    pdfTemplateCode: pdfCode,
-    reportCode: req.reportCode,
-    reportName: activeDefinition.value?.name ?? req.reportCode,
-    params: {
-      ...req.params,
-      dateFrom: req.dateFrom,
-      dateTo: req.dateTo,
-      reportCode: req.reportCode,
-    },
+    dateFrom: filterValueAsString('dateFrom') || undefined,
+    dateTo: filterValueAsString('dateTo') || undefined,
+    keyword: filterValueAsString('keyword') || undefined,
+    params: buildFilterParams(),
   };
 }
 
@@ -169,50 +189,105 @@ async function handleExportExcel() {
     ElMessage.warning('请选择报表');
     return;
   }
-  await runExportExcel({ ...buildQueryRequest(), pageSize: 5000 });
+  const total = queryResult.value?.totalCount;
+  const rowCount = queryResult.value?.rows?.length ?? 0;
+  if ((total != null && total >= 5000) || rowCount >= 5000) {
+    ElMessage.warning('导出数据最多 5000 行，超出部分不会包含在文件中');
+  }
+  await runExportExcel(buildQueryRequest());
 }
 
-async function handlePreviewPdf() {
-  const pdfParams = buildPdfParams();
-  if (!pdfParams) {
-    ElMessage.warning('当前报表未配置 PDF 模板');
+async function openColumnSettings() {
+  const reportCode = selectedReportCode.value?.trim();
+  if (!reportCode) {
+    ElMessage.warning('请选择报表');
     return;
   }
-  previewVisible.value = true;
-  await previewPdf(pdfParams);
-}
-
-async function handleRefreshPreview() {
-  const pdfParams = buildPdfParams();
-  if (pdfParams) {
-    await previewPdf(pdfParams);
+  columnLoading.value = true;
+  try {
+    const result = await getReportColumnOverrideApi({ reportCode });
+    columnDraft.value = (result.columns ?? []).map((col) => ({
+      ...col,
+      visible: col.visible !== false,
+    }));
+    columnDialogVisible.value = true;
+  } finally {
+    columnLoading.value = false;
   }
 }
 
-async function handleDownloadPdf() {
-  const pdfParams = buildPdfParams();
-  if (!pdfParams) {
-    ElMessage.warning('当前报表未配置 PDF 模板');
+function moveColumn(index: number, delta: number) {
+  const nextIndex = index + delta;
+  if (nextIndex < 0 || nextIndex >= columnDraft.value.length) {
     return;
   }
-  await downloadPdf(pdfParams, `${pdfParams.reportCode ?? 'report'}.pdf`);
-}
-
-async function handlePrintPdf() {
-  const pdfParams = buildPdfParams();
-  if (!pdfParams) {
-    ElMessage.warning('当前报表未配置 PDF 模板');
+  const rows = [...columnDraft.value];
+  const [row] = rows.splice(index, 1);
+  if (!row) {
     return;
   }
-  await printPdf(pdfParams);
+  rows.splice(nextIndex, 0, row);
+  columnDraft.value = rows;
 }
 
-function renderFilterControl(field: ReportFilterFieldDto) {
-  const key = field.field ?? '';
-  if (field.type === 'date') {
-    return 'date';
+async function handleSaveColumnSettings() {
+  const reportCode = selectedReportCode.value?.trim();
+  if (!reportCode) {
+    return;
   }
-  return 'text';
+  columnSaving.value = true;
+  try {
+    await saveReportColumnOverrideApi({
+      reportCode,
+      columns: columnDraft.value.map((col) => ({
+        ...col,
+        visible: col.visible !== false,
+      })),
+    });
+    ElMessage.success('列设置已保存');
+    columnDialogVisible.value = false;
+    if (queryResult.value) {
+      await runQueryPage(buildQueryRequest());
+    }
+  } finally {
+    columnSaving.value = false;
+  }
+}
+
+async function handleResetColumnSettings() {
+  const reportCode = selectedReportCode.value?.trim();
+  if (!reportCode) {
+    return;
+  }
+  columnSaving.value = true;
+  try {
+    await resetReportColumnOverrideApi({ reportCode });
+    const result = await getReportColumnOverrideApi({ reportCode });
+    columnDraft.value = (result.columns ?? []).map((col) => ({
+      ...col,
+      visible: col.visible !== false,
+    }));
+    ElMessage.success('已恢复默认列');
+    if (queryResult.value) {
+      await runQueryPage(buildQueryRequest());
+    }
+  } finally {
+    columnSaving.value = false;
+  }
+}
+
+function filterControlType(field: ReportFilterFieldDto): string {
+  return field.type ?? 'text';
+}
+
+function resolveFilterSelectOptions(field: ReportFilterFieldDto) {
+  if (!Array.isArray(field.options)) {
+    return [];
+  }
+  return field.options.map((opt) => ({
+    label: opt.label ?? opt.value ?? '',
+    value: opt.value ?? '',
+  }));
 }
 
 void runListDefinitions({ status: 'published' });
@@ -238,10 +313,16 @@ void runListDefinitions({ status: 'published' });
                 :value="item.reportCode ?? ''"
               />
             </ElSelect>
+            <span
+              v-if="!definitionsLoading && definitions.length === 0"
+              class="text-xs text-[var(--el-text-color-secondary)]"
+            >
+              暂无已发布报表，请先在报表模板中发布
+            </span>
           </div>
 
           <template v-for="field in filterFields" :key="field.field">
-            <div v-if="renderFilterControl(field) === 'date'" class="flex min-w-40 flex-col gap-1">
+            <div v-if="filterControlType(field) === 'date'" class="flex min-w-40 flex-col gap-1">
               <span class="text-xs text-[var(--el-text-color-secondary)]">
                 {{ field.label ?? field.field }}
               </span>
@@ -253,22 +334,87 @@ void runListDefinitions({ status: 'published' });
                 clearable
               />
             </div>
+            <div
+              v-else-if="filterControlType(field) === 'month'"
+              class="flex min-w-40 flex-col gap-1"
+            >
+              <span class="text-xs text-[var(--el-text-color-secondary)]">
+                {{ field.label ?? field.field }}
+              </span>
+              <ElDatePicker
+                v-model="filterValues[field.field!]"
+                type="month"
+                value-format="YYYY-MM"
+                class="!w-full"
+                clearable
+              />
+            </div>
+            <div
+              v-else-if="filterControlType(field) === 'daterange'"
+              class="flex min-w-72 flex-col gap-1"
+            >
+              <span class="text-xs text-[var(--el-text-color-secondary)]">
+                {{ field.label ?? field.field }}
+              </span>
+              <ElDatePicker
+                v-model="filterValues[field.field!]"
+                type="daterange"
+                value-format="YYYY-MM-DD"
+                class="!w-full"
+                range-separator="至"
+                start-placeholder="开始"
+                end-placeholder="结束"
+                clearable
+              />
+            </div>
+            <div
+              v-else-if="filterControlType(field) === 'select'"
+              class="flex min-w-44 flex-col gap-1"
+            >
+              <span class="text-xs text-[var(--el-text-color-secondary)]">
+                {{ field.label ?? field.field }}
+              </span>
+              <ElSelect
+                v-model="filterValues[field.field!]"
+                class="!w-full"
+                clearable
+                filterable
+                placeholder="请选择"
+              >
+                <ElOption
+                  v-for="opt in resolveFilterSelectOptions(field)"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </ElSelect>
+            </div>
             <div v-else class="flex min-w-44 flex-col gap-1">
               <span class="text-xs text-[var(--el-text-color-secondary)]">
                 {{ field.label ?? field.field }}
               </span>
-              <ElInput v-model="filterValues[field.field!]" clearable />
+              <ElInput
+                :model-value="String(filterValues[field.field!] ?? '')"
+                clearable
+                @update:model-value="
+                  (v: string) => {
+                    if (field.field) filterValues[field.field] = v;
+                  }
+                "
+              />
             </div>
           </template>
 
           <div class="flex flex-wrap gap-2 pb-0.5">
             <ElButton type="primary" :loading="queryLoading" @click="handleQuery">查询</ElButton>
             <ElButton :loading="exportLoading" @click="handleExportExcel">导出 Excel</ElButton>
-            <template v-if="pdfEnabled">
-              <ElButton :loading="previewLoading" @click="handlePreviewPdf">打印预览</ElButton>
-              <ElButton :loading="previewLoading" @click="handleDownloadPdf">导出 PDF</ElButton>
-              <ElButton type="primary" :loading="isPrinting" @click="handlePrintPdf">打印</ElButton>
-            </template>
+            <ElButton
+              v-if="columnCustomizeEnabled"
+              :loading="columnLoading"
+              @click="openColumnSettings"
+            >
+              列设置
+            </ElButton>
           </div>
         </div>
       </ElCard>
@@ -347,12 +493,41 @@ void runListDefinitions({ status: 'published' });
       </ElCard>
     </div>
 
-    <ReportPdfPreviewDialog
-      v-model="previewVisible"
-      :loading="previewLoading"
-      :pdf-blob="previewBlob"
-      :title="`打印预览 — ${activeDefinition?.name ?? selectedReportCode}`"
-      @refresh="handleRefreshPreview"
-    />
+    <ElDialog v-model="columnDialogVisible" title="列设置" width="520px" destroy-on-close>
+      <ElTable :data="columnDraft" border size="small" max-height="360">
+        <ElTableColumn label="显示" width="72" align="center">
+          <template #default="{ row }">
+            <ElCheckbox v-model="row.visible" />
+          </template>
+        </ElTableColumn>
+        <ElTableColumn prop="label" label="列名" min-width="160">
+          <template #default="{ row }">
+            {{ row.label ?? row.field }}
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="顺序" width="120" align="center">
+          <template #default="{ $index }">
+            <ElButton link size="small" :disabled="$index === 0" @click="moveColumn($index, -1)">
+              上移
+            </ElButton>
+            <ElButton
+              link
+              size="small"
+              :disabled="$index === columnDraft.length - 1"
+              @click="moveColumn($index, 1)"
+            >
+              下移
+            </ElButton>
+          </template>
+        </ElTableColumn>
+      </ElTable>
+      <template #footer>
+        <ElButton @click="handleResetColumnSettings" :loading="columnSaving">恢复默认</ElButton>
+        <ElButton @click="columnDialogVisible = false">取消</ElButton>
+        <ElButton type="primary" :loading="columnSaving" @click="handleSaveColumnSettings">
+          保存
+        </ElButton>
+      </template>
+    </ElDialog>
   </Page>
 </template>

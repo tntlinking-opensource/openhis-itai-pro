@@ -1,6 +1,6 @@
 import type { ApiOptionItem } from '#/types/api-response';
 
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import { publicRequestClient } from '../request';
 

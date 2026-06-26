@@ -9,7 +9,7 @@ export interface SupplyItem {
   spec: string;
   usage: string;
   quantity: number;
-  status: '待发放' | '已配药' | '已发放';
+  status: '已发放' | '已配药' | '待发放';
   canCancelExecute?: boolean;
 }
 

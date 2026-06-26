@@ -136,7 +136,6 @@ async function loadFormData() {
   originalData.value = {};
   await formApi.resetForm();
   await formApi.setValues({
-    busNo: '',
     name: '',
     parentId: undefined,
   });
@@ -153,15 +152,18 @@ const formConfig = reactive({
   layout: 'horizontal' as const,
   wrapperClass: 'body-form-dialog__grid grid grid-cols-1',
   schema: computed(() => [
-    {
-      component: 'Input',
-      fieldName: 'busNo',
-      label: '业务编号',
-      componentProps: {
-        placeholder: '系统自动生成',
-        disabled: true,
-      },
-    },
+    ...(isEditMode.value
+      ? [
+          {
+            component: 'Input' as const,
+            fieldName: 'busNo',
+            label: '业务编号',
+            componentProps: {
+              disabled: true,
+            },
+          },
+        ]
+      : []),
     {
       component: 'Input',
       fieldName: 'name',

@@ -77,8 +77,6 @@ async function handleSubmit() {
     const payload: CreateSpecimenDefinitionParams = {
       name: String(merged.name ?? '').trim(),
       typeEnum: String(merged.typeEnum ?? '').trim(),
-      pyStr: merged.pyStr ? String(merged.pyStr).trim() : undefined,
-      wbStr: merged.wbStr ? String(merged.wbStr).trim() : undefined,
     };
 
     if (isEditMode.value) {
@@ -116,8 +114,6 @@ async function loadFormData() {
     await formApi.setValues({
       name: formData.name ?? '',
       typeEnum: formData.typeEnum ?? '',
-      pyStr: formData.pyStr ?? '',
-      wbStr: formData.wbStr ?? '',
     });
   } else {
     originalData.value = {};
@@ -125,8 +121,6 @@ async function loadFormData() {
     await formApi.setValues({
       name: '',
       typeEnum: '',
-      pyStr: '',
-      wbStr: '',
     });
   }
 }
@@ -159,22 +153,6 @@ const formConfig = reactive({
       componentProps: {
         options: typeEnumOptions.value,
         placeholder: '请选择标本种类',
-      },
-    },
-    {
-      component: 'Input',
-      fieldName: 'pyStr',
-      label: '拼音码',
-      componentProps: {
-        placeholder: '可空，空则按名称自动生成',
-      },
-    },
-    {
-      component: 'Input',
-      fieldName: 'wbStr',
-      label: '五笔码',
-      componentProps: {
-        placeholder: '可空，空则按名称自动生成',
       },
     },
   ]),

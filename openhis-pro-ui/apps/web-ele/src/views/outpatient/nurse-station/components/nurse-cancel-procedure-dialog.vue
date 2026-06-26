@@ -13,12 +13,6 @@ defineOptions({
   name: 'NurseCancelProcedureDialog',
 });
 
-interface Props {
-  itemLabel?: string;
-  records: NetRemainingProcedureRecordItemDto[];
-  submitting?: boolean;
-}
-
 const props = withDefaults(defineProps<Props>(), {
   itemLabel: '',
   submitting: false,
@@ -27,6 +21,12 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   confirm: [procedureIds: string[]];
 }>();
+
+interface Props {
+  itemLabel?: string;
+  records: NetRemainingProcedureRecordItemDto[];
+  submitting?: boolean;
+}
 
 const open = defineModel<boolean>('open', { default: false });
 

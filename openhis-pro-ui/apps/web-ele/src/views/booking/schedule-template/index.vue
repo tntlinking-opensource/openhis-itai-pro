@@ -13,10 +13,13 @@ import type {
   WeekScheduleTemplateDto,
   WeekScheduleTemplateItemDto,
 } from '#/api/booking/schedule-template';
+import type { BookingEntityId } from '#/api/booking/booking-id';
+import { bookingOptionValue, toBookingId } from '#/api/booking/booking-id';
 import type { LoadScheduleFormInitResponse } from '#/api/booking/outpatient-schedule';
 import type { ReleasePolicyDto } from '#/api/booking/booking-policy';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
@@ -38,7 +41,6 @@ import {
   saveScheduleTemplateApi,
   saveSlotProvisionTemplateApi,
   saveWeekScheduleTemplateApi,
-  importFromPractitionerRoleApi,
 } from '#/api/booking/schedule-template';
 import {
   calendarExceptionTypeLabel,
@@ -51,15 +53,17 @@ import {
 } from '#/api/booking/calendar-exception';
 import { useBookingOrganization } from '#/views/booking/composables/use-booking-organization';
 import CalendarExceptionMonth from '#/views/booking/components/calendar-exception-month.vue';
+import ReleasePolicyPanel from '#/views/booking/components/release-policy-panel.vue';
+import ScheduleTemplateGuide from '#/views/booking/components/schedule-template-guide.vue';
 import { useRequest } from '#/hooks/use-request';
 import {
+  ElAlert,
   ElButton,
   ElDatePicker,
   ElDialog,
   ElForm,
   ElFormItem,
   ElInput,
-  ElInputNumber,
   ElMessage,
   ElMessageBox,
   ElOption,
@@ -71,8 +75,9 @@ import {
 
 defineOptions({ name: 'BookingScheduleTemplate' });
 
+const router = useRouter();
 const { organizationId } = useBookingOrganization();
-const activeTab = ref('schedule');
+const activeTab = ref('slot');
 
 const t1List = ref<SlotProvisionTemplateDto[]>([]);
 const t1Total = ref(0);
@@ -99,12 +104,10 @@ const t3Form = ref<Partial<CalendarExceptionDto>>({
   exceptionType: 'CLOSED',
   autoApplyOnGenerate: true,
 });
-const t2Options = ref<{ value: number; label: string }[]>([]);
+const t2Options = ref<{ value: BookingEntityId; label: string }[]>([]);
 
 const t1EditVisible = ref(false);
 const t2EditVisible = ref(false);
-const importPractitionerId = ref<number>();
-const importVisible = ref(false);
 const twEditVisible = ref(false);
 const t1Form = ref<Partial<SlotProvisionTemplateDto>>({ enabled: true, slotTemplates: [] });
 const t2Form = ref<Partial<ScheduleTemplateDto>>({
@@ -115,7 +118,7 @@ const t2Form = ref<Partial<ScheduleTemplateDto>>({
 const twForm = ref<Partial<WeekScheduleTemplateDto>>({
   enabled: true,
   fallbackBookable: false,
-  isDefault: false,
+  isDefault: true,
   items: [],
 });
 
@@ -140,24 +143,20 @@ const t2FormItems: FormItemConfig[] = [
 ];
 
 const t1Columns: TableColumn[] = [
-  { prop: 'templateCode', label: '编码', minWidth: 120 },
-  { prop: 'templateName', label: '名称', minWidth: 140 },
+  { prop: 'templateName', label: '名称', minWidth: 160 },
   { prop: 'enabled', label: '启用', width: 80, slot: 'enabled' },
   { prop: 'actions', label: '操作', width: 140, slot: 'actions' },
 ];
 
 const t2Columns: TableColumn[] = [
-  { prop: 'templateCode', label: '编码', minWidth: 110 },
-  { prop: 'templateName', label: '名称', minWidth: 120 },
+  { prop: 'templateName', label: '名称', minWidth: 140 },
   { prop: 'scheduleMode', label: '模式', width: 100 },
-  { prop: 'priority', label: '优先级', width: 80 },
   { prop: 'enabled', label: '启用', width: 80, slot: 'enabled' },
   { prop: 'actions', label: '操作', width: 140, slot: 'actions' },
 ];
 
 const twColumns: TableColumn[] = [
-  { prop: 'templateCode', label: '编码', minWidth: 110 },
-  { prop: 'templateName', label: '名称', minWidth: 140 },
+  { prop: 'templateName', label: '名称', minWidth: 160 },
   { prop: 'isDefault', label: '默认', width: 70, slot: 'isDefault' },
   { prop: 'fallbackBookable', label: '可约', width: 70, slot: 'fallbackBookable' },
   { prop: 'enabled', label: '启用', width: 70, slot: 'enabled' },
@@ -271,16 +270,53 @@ async function loadT3Data() {
   await Promise.all([loadT3List(), loadT3Month()]);
 }
 
+function normalizeScheduleTemplateForm(dto: ScheduleTemplateDto): Partial<ScheduleTemplateDto> {
+  return {
+    ...dto,
+    healthcareServiceId: toBookingId(dto.healthcareServiceId),
+    practitionerId: toBookingId(dto.practitionerId),
+    locationId: toBookingId(dto.locationId),
+    slotProvisionTemplateId: toBookingId(dto.slotProvisionTemplateId),
+    defaultReleasePolicyId: toBookingId(dto.defaultReleasePolicyId),
+  };
+}
+
+/** 排班模板按登录科室隔离，未选科室时阻断保存类操作 */
+function ensureOrganizationId(): boolean {
+  if (!organizationId.value) {
+    ElMessage.warning('请先在系统顶部选择登录科室');
+    return false;
+  }
+  return true;
+}
+
+/** 周明细里的日排班主键与下拉选项统一为 string，避免 Long 精度丢失 */
+function normalizeTwFormItems(
+  items?: WeekScheduleTemplateItemDto[],
+): WeekScheduleTemplateItemDto[] {
+  if (!items?.length) {
+    return [];
+  }
+  return items.map((row) => ({
+    ...row,
+    dayScheduleTemplateId: toBookingId(row.dayScheduleTemplateId),
+  }));
+}
+
 async function loadAuxData() {
   if (!organizationId.value) return;
   const [init, t1Opts, policies] = await Promise.all([
     loadScheduleFormInitApi({ organizationId: organizationId.value }),
     listSlotProvisionTemplateOptionsApi({ organizationId: organizationId.value }),
-    pageReleasePoliciesApi({ pageNo: 1, pageSize: 100 }),
+    pageReleasePoliciesApi({
+      organizationId: organizationId.value,
+      pageNo: 1,
+      pageSize: 100,
+    }),
   ]);
   initData.value = init ?? {};
   t1Options.value = (t1Opts?.options ?? []).map((o) => ({
-    value: String(o.value),
+    value: bookingOptionValue(o.value),
     label: String(o.label ?? o.value),
   }));
   releasePolicies.value = policies?.content ?? [];
@@ -292,8 +328,8 @@ async function loadAuxData() {
         pageSize: 200,
       })
     )?.content?.map((item) => ({
-      value: item.id!,
-      label: `${item.templateName} (${item.templateCode})`,
+      value: toBookingId(item.id)!,
+      label: item.templateName ?? String(item.id),
     })) ?? [];
 }
 
@@ -324,8 +360,8 @@ function removeSlotRow(index: number) {
 
 async function handleSaveT1() {
   const form = t1Form.value;
-  if (!form.templateCode?.trim() || !form.templateName?.trim()) {
-    ElMessage.warning('请填写编码与名称');
+  if (!form.templateName?.trim()) {
+    ElMessage.warning('请填写名称');
     return;
   }
   if (!form.slotTemplates?.length) {
@@ -335,12 +371,11 @@ async function handleSaveT1() {
   await saveSlotProvisionTemplateApi({
     id: form.id,
     organizationId: organizationId.value,
-    templateCode: form.templateCode.trim(),
     templateName: form.templateName.trim(),
     slotTemplates: form.slotTemplates as SlotProvisionTemplateItemDto[],
     enabled: form.enabled !== false,
   });
-  ElMessage.success('放号时段模板已保存');
+  ElMessage.success('放号时段已保存');
   t1EditVisible.value = false;
   await loadT1List();
   await loadAuxData();
@@ -349,7 +384,7 @@ async function handleSaveT1() {
 async function handleDeleteT1(row: SlotProvisionTemplateDto) {
   if (!row.id) return;
   try {
-    await ElMessageBox.confirm(`确认删除「${row.templateName}」？`, '删除模板');
+    await ElMessageBox.confirm(`确认删除「${row.templateName}」？`, '删除');
     await deleteSlotProvisionTemplateApi({ id: row.id });
     ElMessage.success('已删除');
     await loadT1List();
@@ -358,11 +393,11 @@ async function handleDeleteT1(row: SlotProvisionTemplateDto) {
   }
 }
 
-function openT2Create() {
-  if (!organizationId.value) {
-    ElMessage.warning('请先选择登录科室');
+async function openT2Create() {
+  if (!ensureOrganizationId()) {
     return;
   }
+  await loadAuxData();
   t2Form.value = {
     enabled: true,
     organizationId: organizationId.value,
@@ -374,24 +409,24 @@ function openT2Create() {
 
 async function openT2Edit(row: ScheduleTemplateDto) {
   if (!row.id) return;
-  t2Form.value = await loadScheduleTemplateApi({ id: row.id });
+  await loadAuxData();
+  const loaded = await loadScheduleTemplateApi({ id: row.id });
+  t2Form.value = normalizeScheduleTemplateForm(loaded);
   t2EditVisible.value = true;
 }
 
 async function handleSaveT2() {
   const form = t2Form.value;
-  if (!organizationId.value) {
-    ElMessage.warning('请先选择登录科室');
+  if (!ensureOrganizationId()) {
     return;
   }
-  if (!form.templateCode?.trim() || !form.templateName?.trim() || !form.healthcareServiceId) {
-    ElMessage.warning('请填写编码、名称并选择号源类型');
+  if (!form.templateName?.trim() || !form.healthcareServiceId) {
+    ElMessage.warning('请填写名称并选择号源类型');
     return;
   }
   await saveScheduleTemplateApi({
     id: form.id,
     organizationId: organizationId.value,
-    templateCode: form.templateCode.trim(),
     templateName: form.templateName.trim(),
     scheduleMode: form.scheduleMode ?? 'MODE-A',
     practitionerId: form.practitionerId,
@@ -404,7 +439,7 @@ async function handleSaveT2() {
     priority: Number(form.priority ?? 0),
     enabled: form.enabled !== false,
   });
-  ElMessage.success('日程模板已保存');
+  ElMessage.success('日排班已保存');
   t2EditVisible.value = false;
   await loadT2List();
 }
@@ -412,36 +447,13 @@ async function handleSaveT2() {
 async function handleDeleteT2(row: ScheduleTemplateDto) {
   if (!row.id) return;
   try {
-    await ElMessageBox.confirm(`确认删除「${row.templateName}」？`, '删除模板');
+    await ElMessageBox.confirm(`确认删除「${row.templateName}」？`, '删除');
     await deleteScheduleTemplateApi({ id: row.id });
     ElMessage.success('已删除');
     await loadT2List();
   } catch {
     // cancel
   }
-}
-
-function openImportFromRole() {
-  if (!organizationId.value) {
-    ElMessage.warning('请先选择登录科室');
-    return;
-  }
-  importPractitionerId.value = undefined;
-  importVisible.value = true;
-}
-
-async function handleImportFromRole() {
-  if (!organizationId.value || !importPractitionerId.value) {
-    ElMessage.warning('请选择医师');
-    return;
-  }
-  const res = await importFromPractitionerRoleApi({
-    organizationId: organizationId.value,
-    practitionerId: importPractitionerId.value,
-  });
-  ElMessage.success(`已导入 T2 草稿：${res?.templateCode ?? ''}`);
-  importVisible.value = false;
-  await loadT2List();
 }
 
 function openT3Create(date?: string) {
@@ -476,7 +488,7 @@ async function handleSaveT3() {
     return;
   }
   if (t3NeedsOverrideTemplate.value && !form.overrideScheduleTemplateId) {
-    ElMessage.warning('REDUCED/OVERRIDE/EXTRA 须选择替换日程模板 (T2)');
+    ElMessage.warning('REDUCED/OVERRIDE/EXTRA 须选择替换日排班');
     return;
   }
   await saveCalendarExceptionApi({
@@ -506,20 +518,44 @@ async function handleDeleteT3(row: CalendarExceptionDto) {
   }
 }
 
-function openTwCreate() {
+/** 打开周排班编辑前刷新日排班下拉，并校验前置数据 */
+async function prepareTwDialog(): Promise<boolean> {
+  if (!ensureOrganizationId()) {
+    return false;
+  }
+  await loadAuxData();
+  if (t2Options.value.length === 0) {
+    ElMessage.warning('请先在「② 日排班」中新建至少一条日排班');
+    activeTab.value = 'schedule';
+    return false;
+  }
+  return true;
+}
+
+async function openTwCreate() {
+  if (!(await prepareTwDialog())) {
+    return;
+  }
   twForm.value = {
     enabled: true,
     fallbackBookable: false,
-    isDefault: false,
+    isDefault: true,
     organizationId: organizationId.value,
-    items: [],
+    items: [{ weekday: 1, enabled: true, sortNo: 0 }],
   };
   twEditVisible.value = true;
 }
 
 async function openTwEdit(row: WeekScheduleTemplateDto) {
   if (!row.id) return;
-  twForm.value = await loadWeekScheduleTemplateApi({ id: row.id });
+  if (!(await prepareTwDialog())) {
+    return;
+  }
+  const loaded = await loadWeekScheduleTemplateApi({ id: row.id });
+  twForm.value = {
+    ...loaded,
+    items: normalizeTwFormItems(loaded.items),
+  };
   twEditVisible.value = true;
 }
 
@@ -533,38 +569,64 @@ function removeTwItemRow(index: number) {
   twForm.value.items?.splice(index, 1);
 }
 
+/** 保存后引导去门诊排班落地 */
+async function promptGoOutpatientSchedule() {
+  try {
+    await ElMessageBox.confirm(
+      '模板已保存，患者尚不可约。请前往「门诊排班」→「生成正式排班」选择日期，再逐条发布并放号。',
+      '下一步：门诊排班',
+      { confirmButtonText: '前往门诊排班', cancelButtonText: '稍后', type: 'info' },
+    );
+    await router.push('/booking/outpatient-schedule');
+  } catch {
+    // 用户选择稍后
+  }
+}
+
 async function handleSaveTw() {
   const form = twForm.value;
-  if (!organizationId.value || !form.templateCode?.trim() || !form.templateName?.trim()) {
-    ElMessage.warning('请填写编码与名称');
+  if (!ensureOrganizationId()) {
     return;
+  }
+  if (!form.templateName?.trim()) {
+    ElMessage.warning('请填写名称');
+    return;
+  }
+  const items = form.items ?? [];
+  if (items.length === 0) {
+    ElMessage.warning('请至少添加一行周明细');
+    return;
+  }
+  for (const row of items) {
+    if (!row.weekday || !row.dayScheduleTemplateId) {
+      ElMessage.warning('周明细每一行都须选择「星期几」和「日排班」');
+      return;
+    }
   }
   await saveWeekScheduleTemplateApi({
     id: form.id,
     organizationId: organizationId.value,
-    templateCode: form.templateCode.trim(),
     templateName: form.templateName.trim(),
-    fallbackBookable: form.fallbackBookable === true,
-    isDefault: form.isDefault === true,
+    fallbackBookable: false,
+    isDefault: form.isDefault !== false,
     enabled: form.enabled !== false,
-    effectiveStart: form.effectiveStart,
-    effectiveEnd: form.effectiveEnd,
-    items: (form.items ?? []).map((row: WeekScheduleTemplateItemDto) => ({
+    items: items.map((row: WeekScheduleTemplateItemDto) => ({
       weekday: row.weekday!,
-      dayScheduleTemplateId: row.dayScheduleTemplateId!,
+      dayScheduleTemplateId: toBookingId(row.dayScheduleTemplateId)!,
       sortNo: row.sortNo,
       enabled: row.enabled !== false,
     })),
   });
-  ElMessage.success('周模板已保存');
+  ElMessage.success('周排班已保存');
   twEditVisible.value = false;
   await loadTwList();
+  await promptGoOutpatientSchedule();
 }
 
 async function handleDeleteTw(row: WeekScheduleTemplateDto) {
   if (!row.id) return;
   try {
-    await ElMessageBox.confirm(`确认删除周模板「${row.templateName}」？`, '删除');
+    await ElMessageBox.confirm(`确认删除周排班「${row.templateName}」？`, '删除');
     await deleteWeekScheduleTemplateApi({ id: row.id });
     ElMessage.success('已删除');
     await loadTwList();
@@ -581,87 +643,39 @@ onMounted(async () => {
   await loadT3Data();
 });
 
+watch(organizationId, () => {
+  void loadT1List();
+  void loadT2List();
+  void loadTwList();
+  void loadAuxData();
+});
+
 watch(t3Month, () => {
   void loadT3Month();
+});
+
+const twDaySchedulePlaceholder = computed(() => {
+  if (!t2Options.value.length) {
+    return '请先在「② 日排班」新建日排班';
+  }
+  return '选择日排班';
 });
 </script>
 
 <template>
   <Page auto-content-height>
     <div class="schedule-template-page">
+      <ScheduleTemplateGuide />
+      <ElAlert
+        v-if="!organizationId"
+        type="warning"
+        :closable="false"
+        show-icon
+        title="请先在系统顶部选择登录科室，否则无法保存排班模板"
+        class="schedule-template-page__org-alert"
+      />
       <ElTabs v-model="activeTab">
-        <ElTabPane label="日模板 (T2)" name="schedule">
-          <TableLayout
-            v-model:query-params="t2Query"
-            :form-items="t2FormItems"
-            :table-columns="t2Columns"
-            :table-data="t2List"
-            :total="t2Total"
-            :loading="t2Loading"
-            @search="
-              () => {
-                t2Query.pageNo = 1;
-                loadT2List();
-              }
-            "
-            @pagination="
-              (p) => {
-                t2Query.pageNo = p.page;
-                t2Query.pageSize = p.limit;
-                loadT2List();
-              }
-            "
-          >
-            <template #toolbar-actions>
-              <ElButton type="primary" @click="openT2Create">新建日程模板</ElButton>
-              <ElButton @click="openImportFromRole">从岗位导入</ElButton>
-            </template>
-            <template #enabled="{ row }">{{ row.enabled ? '是' : '否' }}</template>
-            <template #actions="{ row }">
-              <ElButton link type="primary" @click="openT2Edit(row)">编辑</ElButton>
-              <ElButton link type="danger" @click="handleDeleteT2(row)">删除</ElButton>
-            </template>
-          </TableLayout>
-        </ElTabPane>
-
-        <ElTabPane label="周模板 (TW)" name="week">
-          <TableLayout
-            v-model:query-params="twQuery"
-            :form-items="twFormItems"
-            :table-columns="twColumns"
-            :table-data="twList"
-            :total="twTotal"
-            :loading="twLoading"
-            @search="
-              () => {
-                twQuery.pageNo = 1;
-                loadTwList();
-              }
-            "
-            @pagination="
-              (p) => {
-                twQuery.pageNo = p.page;
-                twQuery.pageSize = p.limit;
-                loadTwList();
-              }
-            "
-          >
-            <template #toolbar-actions>
-              <ElButton type="primary" @click="openTwCreate">新建周模板</ElButton>
-            </template>
-            <template #isDefault="{ row }">{{ row.isDefault ? '是' : '否' }}</template>
-            <template #fallbackBookable="{ row }">{{
-              row.fallbackBookable ? '是' : '否'
-            }}</template>
-            <template #enabled="{ row }">{{ row.enabled ? '是' : '否' }}</template>
-            <template #actions="{ row }">
-              <ElButton link type="primary" @click="openTwEdit(row)">编辑</ElButton>
-              <ElButton link type="danger" @click="handleDeleteTw(row)">删除</ElButton>
-            </template>
-          </TableLayout>
-        </ElTabPane>
-
-        <ElTabPane label="放号时段 (T1)" name="slot">
+        <ElTabPane label="① 放号时段" name="slot">
           <TableLayout
             v-model:query-params="t1Query"
             :form-items="t1FormItems"
@@ -694,7 +708,81 @@ watch(t3Month, () => {
           </TableLayout>
         </ElTabPane>
 
-        <ElTabPane label="日历例外 (T3)" name="exception">
+        <ElTabPane label="② 日排班" name="schedule">
+          <TableLayout
+            v-model:query-params="t2Query"
+            :form-items="t2FormItems"
+            :table-columns="t2Columns"
+            :table-data="t2List"
+            :total="t2Total"
+            :loading="t2Loading"
+            @search="
+              () => {
+                t2Query.pageNo = 1;
+                loadT2List();
+              }
+            "
+            @pagination="
+              (p) => {
+                t2Query.pageNo = p.page;
+                t2Query.pageSize = p.limit;
+                loadT2List();
+              }
+            "
+          >
+            <template #toolbar-actions>
+              <ElButton type="primary" @click="openT2Create">新建日排班</ElButton>
+            </template>
+            <template #enabled="{ row }">{{ row.enabled ? '是' : '否' }}</template>
+            <template #actions="{ row }">
+              <ElButton link type="primary" @click="openT2Edit(row)">编辑</ElButton>
+              <ElButton link type="danger" @click="handleDeleteT2(row)">删除</ElButton>
+            </template>
+          </TableLayout>
+        </ElTabPane>
+
+        <ElTabPane label="③ 周排班" name="week">
+          <TableLayout
+            v-model:query-params="twQuery"
+            :form-items="twFormItems"
+            :table-columns="twColumns"
+            :table-data="twList"
+            :total="twTotal"
+            :loading="twLoading"
+            @search="
+              () => {
+                twQuery.pageNo = 1;
+                loadTwList();
+              }
+            "
+            @pagination="
+              (p) => {
+                twQuery.pageNo = p.page;
+                twQuery.pageSize = p.limit;
+                loadTwList();
+              }
+            "
+          >
+            <template #toolbar-actions>
+              <ElButton type="primary" @click="openTwCreate">新建周排班</ElButton>
+            </template>
+            <template #isDefault="{ row }">{{ row.isDefault ? '是' : '否' }}</template>
+            <template #fallbackBookable="{ row }">{{
+              row.fallbackBookable ? '是' : '否'
+            }}</template>
+            <template #enabled="{ row }">{{ row.enabled ? '是' : '否' }}</template>
+            <template #actions="{ row }">
+              <ElButton link type="primary" @click="openTwEdit(row)">编辑</ElButton>
+              <ElButton link type="danger" @click="handleDeleteTw(row)">删除</ElButton>
+            </template>
+          </TableLayout>
+        </ElTabPane>
+
+        <ElTabPane label="放号策略（可选）" name="releasePolicy">
+          <ReleasePolicyPanel @changed="loadAuxData" />
+        </ElTabPane>
+
+        <ElTabPane label="节假日例外（可选）" name="exception">
           <div class="t3-layout">
             <aside class="t3-layout__calendar">
               <div class="t3-layout__calendar-toolbar">
@@ -752,41 +840,14 @@ watch(t3Month, () => {
         </ElTabPane>
       </ElTabs>
 
-      <ElDialog v-model="importVisible" title="从岗位导入 T2" width="420px">
-        <ElForm label-width="80px">
-          <ElFormItem label="医师" required>
-            <ElSelect
-              v-model="importPractitionerId"
-              filterable
-              placeholder="选择医师"
-              style="width: 100%"
-            >
-              <ElOption
-                v-for="item in initData.practitioners || []"
-                :key="item.value"
-                :label="item.label"
-                :value="Number(item.value)"
-              />
-            </ElSelect>
-          </ElFormItem>
-        </ElForm>
-        <template #footer>
-          <ElButton @click="importVisible = false">取消</ElButton>
-          <ElButton type="primary" @click="handleImportFromRole">导入</ElButton>
-        </template>
-      </ElDialog>
-
       <ElDialog
         v-model="t1EditVisible"
-        :title="t1Form.id ? '编辑放号时段模板' : '新建放号时段模板'"
+        :title="t1Form.id ? '编辑放号时段' : '新建放号时段'"
         width="560px"
       >
         <ElForm label-width="88px">
-          <ElFormItem label="编码" required>
-            <ElInput v-model="t1Form.templateCode" placeholder="如 AM_DEFAULT" />
-          </ElFormItem>
           <ElFormItem label="名称" required>
-            <ElInput v-model="t1Form.templateName" placeholder="上午默认放号" />
+            <ElInput v-model="t1Form.templateName" placeholder="如：上午20号" />
           </ElFormItem>
           <ElFormItem label="启用">
             <ElSwitch v-model="t1Form.enabled" />
@@ -812,15 +873,12 @@ watch(t3Month, () => {
 
       <ElDialog
         v-model="t2EditVisible"
-        :title="t2Form.id ? '编辑日模板' : '新建日模板'"
+        :title="t2Form.id ? '编辑日排班' : '新建日排班'"
         width="560px"
       >
         <ElForm label-width="100px">
-          <ElFormItem label="编码" required>
-            <ElInput v-model="t2Form.templateCode" />
-          </ElFormItem>
           <ElFormItem label="名称" required>
-            <ElInput v-model="t2Form.templateName" />
+            <ElInput v-model="t2Form.templateName" placeholder="如：张医生专家号" />
           </ElFormItem>
           <ElFormItem label="模式" required>
             <ElSelect v-model="t2Form.scheduleMode" style="width: 100%">
@@ -838,7 +896,7 @@ watch(t3Month, () => {
                 v-for="item in initData.healthcareServices || []"
                 :key="item.value"
                 :label="item.label"
-                :value="Number(item.value)"
+                :value="bookingOptionValue(item.value)"
               />
             </ElSelect>
           </ElFormItem>
@@ -848,7 +906,7 @@ watch(t3Month, () => {
                 v-for="item in initData.practitioners || []"
                 :key="item.value"
                 :label="item.label"
-                :value="Number(item.value)"
+                :value="bookingOptionValue(item.value)"
               />
             </ElSelect>
           </ElFormItem>
@@ -858,22 +916,23 @@ watch(t3Month, () => {
                 v-for="item in initData.clinicLocations || []"
                 :key="item.value"
                 :label="item.label"
-                :value="Number(item.value)"
+                :value="bookingOptionValue(item.value)"
               />
             </ElSelect>
           </ElFormItem>
-          <ElFormItem label="放号时段 T1">
+          <ElFormItem label="放号时段">
             <ElSelect
               v-model="t2Form.slotProvisionTemplateId"
               clearable
               filterable
+              :placeholder="t1Options.length ? '请选择' : '请先在「放号时段」页新建并启用'"
               style="width: 100%"
             >
               <ElOption
                 v-for="item in t1Options"
                 :key="item.value"
                 :label="item.label"
-                :value="Number(item.value)"
+                :value="item.value"
               />
             </ElSelect>
           </ElFormItem>
@@ -882,35 +941,20 @@ watch(t3Month, () => {
               v-model="t2Form.defaultReleasePolicyId"
               clearable
               filterable
+              :placeholder="
+                releasePolicies.length
+                  ? '可选：未选放号时段时才需要'
+                  : '请先在「放号策略」Tab 新建（通常可不选）'
+              "
               style="width: 100%"
             >
               <ElOption
                 v-for="item in releasePolicies"
                 :key="item.id"
                 :label="item.policyName"
-                :value="item.id!"
+                :value="toBookingId(item.id)!"
               />
             </ElSelect>
-          </ElFormItem>
-          <ElFormItem label="有效期">
-            <ElDatePicker
-              v-model="t2Form.effectiveStart"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="起"
-              style="width: 140px"
-            />
-            <span style="margin: 0 8px">—</span>
-            <ElDatePicker
-              v-model="t2Form.effectiveEnd"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="止"
-              style="width: 140px"
-            />
-          </ElFormItem>
-          <ElFormItem label="优先级">
-            <ElInputNumber v-model="t2Form.priority" :min="0" :max="999" />
           </ElFormItem>
           <ElFormItem label="启用">
             <ElSwitch v-model="t2Form.enabled" />
@@ -924,44 +968,30 @@ watch(t3Month, () => {
 
       <ElDialog
         v-model="twEditVisible"
-        :title="twForm.id ? '编辑周模板' : '新建周模板'"
+        :title="twForm.id ? '编辑周排班' : '新建周排班'"
         width="680px"
       >
         <ElForm label-width="120px">
-          <ElFormItem label="编码" required>
-            <ElInput v-model="twForm.templateCode" placeholder="如 DEFAULT_WEEK" />
-          </ElFormItem>
           <ElFormItem label="名称" required>
             <ElInput v-model="twForm.templateName" placeholder="内科默认周排班" />
           </ElFormItem>
           <ElFormItem label="科室默认">
             <ElSwitch v-model="twForm.isDefault" />
-          </ElFormItem>
-          <ElFormItem label="无排班时可约">
-            <ElSwitch v-model="twForm.fallbackBookable" />
+            <p class="schedule-template-page__hint">
+              建议开启：门诊排班周历上才会显示<strong>预览格</strong>（尚未生成正式排班时的惯例提示）
+            </p>
           </ElFormItem>
           <ElFormItem label="启用">
             <ElSwitch v-model="twForm.enabled" />
           </ElFormItem>
-          <ElFormItem label="有效期">
-            <ElDatePicker
-              v-model="twForm.effectiveStart"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="起"
-              style="width: 140px"
-            />
-            <span style="margin: 0 8px">—</span>
-            <ElDatePicker
-              v-model="twForm.effectiveEnd"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="止"
-              style="width: 140px"
-            />
-          </ElFormItem>
-          <ElFormItem label="周明细">
+          <ElFormItem label="周明细" required>
             <div class="slot-rows">
+              <p
+                v-if="!t2Options.length"
+                class="schedule-template-page__hint schedule-template-page__hint--warn"
+              >
+                暂无日排班可选，请先到「② 日排班」Tab 新建。
+              </p>
               <div v-for="(row, idx) in twForm.items" :key="idx" class="slot-row tw-item-row">
                 <ElSelect v-model="row.weekday" style="width: 88px">
                   <ElOption
@@ -971,7 +1001,13 @@ watch(t3Month, () => {
                     :value="wIdx + 1"
                   />
                 </ElSelect>
-                <ElSelect v-model="row.dayScheduleTemplateId" filterable style="width: 280px">
+                <ElSelect
+                  v-model="row.dayScheduleTemplateId"
+                  filterable
+                  :placeholder="twDaySchedulePlaceholder"
+                  :disabled="!t2Options.length"
+                  style="width: 280px"
+                >
                   <ElOption
                     v-for="item in t2Options"
                     :key="item.value"
@@ -981,7 +1017,9 @@ watch(t3Month, () => {
                 </ElSelect>
                 <ElButton link type="danger" @click="removeTwItemRow(idx)">删</ElButton>
               </div>
-              <ElButton link type="primary" @click="addTwItemRow">+ 添加 weekday 行</ElButton>
+              <ElButton link type="primary" @click="addTwItemRow"
+                >+ 添加一行（星期几 + 日排班）</ElButton
+              >
             </div>
           </ElFormItem>
         </ElForm>
@@ -1024,7 +1062,7 @@ watch(t3Month, () => {
               style="width: 100%"
             />
           </ElFormItem>
-          <ElFormItem v-if="t3NeedsOverrideTemplate" label="替换 T2" required>
+          <ElFormItem v-if="t3NeedsOverrideTemplate" label="替换日排班" required>
             <ElSelect v-model="t3Form.overrideScheduleTemplateId" filterable style="width: 100%">
               <ElOption
                 v-for="item in t2Options"
@@ -1055,6 +1093,22 @@ watch(t3Month, () => {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+.schedule-template-page__org-alert {
+  margin-bottom: 12px;
+}
+
+.schedule-template-page__hint {
+  width: 100%;
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--el-text-color-secondary);
+}
+
+.schedule-template-page__hint--warn {
+  color: var(--el-color-warning);
 }
 
 .slot-rows {

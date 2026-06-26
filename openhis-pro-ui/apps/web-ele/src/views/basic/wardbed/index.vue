@@ -19,7 +19,7 @@ import {
   WARD_BED_STATUS_CODE,
 } from '#/api/basic/ward-bed';
 import { unwrapApiList } from '#/utils/api/unwrap-api-list';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import EditDialog from './edit-dialog.vue';
 

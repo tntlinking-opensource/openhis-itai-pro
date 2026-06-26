@@ -13,42 +13,58 @@ export type CaseRecordStatusCode =
   | 'returned'
   | 'submitted';
 
-export interface CaseRecordSummaryDto {
-  id?: string;
-  encounterId?: string;
-  patientId?: string;
+/** 病案检索列表行（CaseRecordListItemDto） */
+export interface CaseRecordListItemDto {
+  caseRecordId?: string;
   medcasno?: string;
+  psnName?: string;
+  iptNo?: string;
+  gendCode?: string;
+  admTime?: string;
+  dscgTime?: string;
+  admCatyName?: string;
+  dscgCatyName?: string;
+  chfdrName?: string;
+  mainDiagName?: string;
   statusCode?: CaseRecordStatusCode | string;
-  patientName?: string;
-  genderCode?: string;
-  inpatientNo?: string;
-  deptName?: string;
-  admissionAt?: string;
-  dischargeAt?: string;
-  primaryDiagnosisText?: string;
+  statusLabel?: string;
 }
 
-export interface CaseRecordDetailDto extends CaseRecordSummaryDto {
+/** @deprecated 使用 CaseRecordListItemDto */
+export type CaseRecordSummaryDto = CaseRecordListItemDto;
+
+/** 病案主档详情（CaseRecordDetailDto · loadPage / lookup） */
+export interface CaseRecordDetailDto {
+  caseRecordId?: string;
+  patientId?: string;
+  encounterId?: string;
+  medcasno?: string;
+  statusCode?: CaseRecordStatusCode | string;
+  statusLabel?: string;
   patnIptCnt?: number;
-  deptCode?: string;
-  attendingPractitionerId?: string;
-  attendingPractitionerName?: string;
   returnReason?: string;
-  qualityGradeCode?: string;
 }
 
 export interface QueryCaseRecordParams extends PageParams {
   keyword?: string;
   statusCode?: string;
-  deptCode?: string;
-  dischargeFrom?: string;
-  dischargeTo?: string;
+  /** 多状态 IN 过滤（与 statusCode 二选一，优先 statusCodes） */
+  statusCodes?: string[];
+  /** 入院科别名称过滤 */
+  admCatyName?: string;
+  /** 主治医师 practitionerId 过滤 */
+  attendingPractitionerId?: string;
+  /** 出院日期起 */
+  dscgFrom?: string;
+  /** 出院日期止 */
+  dscgTo?: string;
 }
 
 export interface HomepageDto {
   caseRecordId?: string;
   versionNo?: number;
   frozen?: boolean;
+  iptMedcasHmpgSn?: string;
   psnName?: string;
   gendCode?: string;
   brdy?: string;
@@ -70,7 +86,7 @@ export interface HomepageDto {
   dscgCatyName?: string;
   admTime?: string;
   dscgTime?: string;
-  actIptDays?: number;
+  iptDays?: number;
   dscgWayCode?: string;
   transferDeptSummary?: string;
   deptDirectorName?: string;
@@ -82,6 +98,12 @@ export interface HomepageDto {
   extension?: Record<string, unknown>;
   diagnoses?: DiagnosisLineDto[];
   procedures?: ProcedureLineDto[];
+}
+
+/** 首页编辑页 loadPage 出参（HomepagePageDto） */
+export interface HomepagePageDto {
+  caseRecord?: CaseRecordDetailDto;
+  homepage?: HomepageDto;
 }
 
 export interface DiagnosisLineDto {
@@ -111,6 +133,26 @@ export interface SaveHomepageParams {
   gendCode?: string;
   brdy?: string;
   certno?: string;
+  iptNo?: string;
+  admWayCode?: string;
+  admCatyCode?: string;
+  admTime?: string;
+  dscgCatyCode?: string;
+  dscgTime?: string;
+  iptDays?: number;
+  dscgWayCode?: string;
+  chfdrName?: string;
+  atddrName?: string;
+  iptDrName?: string;
+  extension?: Record<string, unknown>;
+  diagnoses?: DiagnosisLineDto[];
+  procedures?: ProcedureLineDto[];
+  /** 前端表单扩展字段（保存时写入 extension） */
+  admCatyName?: string;
+  dscgCatyName?: string;
+  transferDeptSummary?: string;
+  deptDirectorName?: string;
+  respNursName?: string;
   ntlyCode?: string;
   natyCode?: string;
   prfsCode?: string;
@@ -120,25 +162,6 @@ export interface SaveHomepageParams {
   conerName?: string;
   conerTel?: string;
   conerAddr?: string;
-  iptNo?: string;
-  admWayCode?: string;
-  admCatyCode?: string;
-  admCatyName?: string;
-  dscgCatyCode?: string;
-  dscgCatyName?: string;
-  admTime?: string;
-  dscgTime?: string;
-  actIptDays?: number;
-  dscgWayCode?: string;
-  transferDeptSummary?: string;
-  deptDirectorName?: string;
-  chfdrName?: string;
-  atddrName?: string;
-  iptDrName?: string;
-  respNursName?: string;
-  extension?: Record<string, unknown>;
-  diagnoses?: DiagnosisLineDto[];
-  procedures?: ProcedureLineDto[];
 }
 
 export type RefreshSectionCode =
@@ -162,20 +185,20 @@ export interface SearchIcdParams {
 }
 
 export interface IcdItemDto {
-  id?: string;
   code?: string;
   name?: string;
   pyStr?: string;
-  wbStr?: string;
 }
 
-export interface CaseRecordActionParams {
+export interface ReturnHomepageParams {
   caseRecordId: string;
-  reason?: string;
+  returnReason: string;
 }
 
 export interface PdfGenerateResultDto {
-  url?: string;
   pdfBase64?: string;
   pageCount?: number;
+  renderedAt?: string;
+  /** @deprecated 后端未返回，打印日志可选 */
+  contentHash?: string;
 }

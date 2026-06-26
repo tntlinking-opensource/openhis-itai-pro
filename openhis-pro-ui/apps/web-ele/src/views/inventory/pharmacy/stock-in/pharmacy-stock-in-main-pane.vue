@@ -62,8 +62,8 @@ import {
   resolveDefaultInsuranceBusNo,
 } from '#/chs/constants/insurance-contract';
 import SectionTitle from '#/components/layouts/section-title.vue';
-import { decimalMul } from '#/utils/decimal-util';
-import { resolveLoginPractitionerIdForRequest } from '#/utils/preserve-api-id';
+import { decimalMul } from '#/utils/format/decimal-util';
+import { resolveLoginPractitionerIdForRequest } from '#/utils/format/preserve-api-id';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 import {
   convertInboundQtyBetweenBandKinds,

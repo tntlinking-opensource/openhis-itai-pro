@@ -10,7 +10,7 @@ import type { ApiResponse } from '#/types/api-response';
 
 import { requestClient } from '#/api/request';
 import { unwrapApiList } from '#/utils/api/unwrap-api-list';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 export async function getDepartmentTreeApi(): Promise<DepartmentTree[]> {
   const res = await requestClient.post<DepartmentTree[]>('/department/getTree');

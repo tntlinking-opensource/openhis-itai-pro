@@ -11,8 +11,12 @@ import type { AdviceProductOption } from '#/views/outpatient/doctor-station/advi
 import { pageFrequencyApi } from '#/api/basic/frequency';
 import { ORDER_TEMPLATE_LINE_KIND_MEDICATION } from '#/api/basic/order-template';
 import { httpPageTcmHerbalMedicationCatalog } from '#/api/doctor-station/tcm.http';
+import type {
+  PageTcmMedCatalogRequest,
+  PageTcmMedCatalogResponse,
+} from '#/api/doctor-station/tcm.types';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { parseDosageTextParts } from '#/views/basic/ordertemplate/order-template-medication-units';
 import { mapCatalogRowToOption } from '#/views/outpatient/doctor-station/advice/services/advice-list';
 
@@ -65,6 +69,7 @@ async function fetchTcmCatalogByPrepickedKeys(
   keys: PrepickedProductKeyDto[],
   encounterId: string,
   patientId: string,
+  pageCatalog?: (body: PageTcmMedCatalogRequest) => Promise<PageTcmMedCatalogResponse>,
 ): Promise<{
   catalogOptions: AdviceProductOption[];
   locationByDefId: Map<string, string>;
@@ -72,7 +77,7 @@ async function fetchTcmCatalogByPrepickedKeys(
   if (keys.length === 0) {
     return { catalogOptions: [], locationByDefId: new Map() };
   }
-  const res = await httpPageTcmHerbalMedicationCatalog({
+  const res = await (pageCatalog ?? httpPageTcmHerbalMedicationCatalog)({
     encounterId,
     patientId,
     pageNo: 1,
@@ -164,6 +169,9 @@ export async function applyTcmOrderTemplateToPrescription(params: {
   medicationRateOptions?: TerminologyOptionDto[];
   patientId: string;
   prescription: TcmPrescriptionUi;
+  pageTcmHerbalMedicationCatalog?: (
+    body: PageTcmMedCatalogRequest,
+  ) => Promise<PageTcmMedCatalogResponse>;
 }): Promise<{ appliedLineCount: number }> {
   const encounterId = params.encounterId.trim();
   const patientId = params.patientId.trim();
@@ -191,6 +199,7 @@ export async function applyTcmOrderTemplateToPrescription(params: {
     prepickedKeys,
     encounterId,
     patientId,
+    params.pageTcmHerbalMedicationCatalog,
   );
   const catalogByKey = new Map<string, AdviceProductOption>();
   for (const option of catalogOptions) {

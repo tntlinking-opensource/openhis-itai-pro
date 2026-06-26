@@ -17,6 +17,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./es/use-design-tokens": {
+      "types": "./src/use-design-tokens.ts",
+      "default": "./src/use-design-tokens.ts"
     }
   },
   "dependencies": {

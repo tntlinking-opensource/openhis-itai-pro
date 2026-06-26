@@ -1,7 +1,7 @@
 <script lang="ts" setup>
-import type { VbenFormSchema } from '@vben/common-ui';
+import type { VbenFormSchema } from '@vben-core/form-ui';
 
-import type { AuthApi } from '#/api';
+import type { AuthApi } from '#/api/core/auth';
 
 import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -11,25 +11,24 @@ import {
   AuthenticationLogin,
   AuthenticationOrganizationList,
   AuthenticationTenantList,
-  z,
-} from '@vben/common-ui';
+} from '@vben/common-ui/es/authentication';
 import { $t } from '@vben/locales';
 import { useAccessStore, useUserStore } from '@vben/stores';
 
-import { ElButton, ElMessage } from 'element-plus';
+import { Loading } from '@element-plus/icons-vue';
+import { ElButton, ElIcon, ElMessage } from 'element-plus';
+import { z } from 'zod';
 
 import {
-  getMenuTreeByLoginUserApi,
   loginByOrgApi,
   selectHospitalApi,
   skipOrganizationUnitSelectionApi,
-} from '#/api';
+} from '#/api/core/auth';
+import { getMenuTreeByLoginUserApi } from '#/api/core/system/menu';
 import { resolvePostLoginPath } from '#/constants/app';
-import { generateAccess } from '#/router/access';
-import { accessRoutes } from '#/router/routes';
 import { useAuthStore } from '#/store';
-import { convertMenuData } from '#/utils/convert-menu-data';
-import type { LoginScopeHospital, LoginScopeOrganization } from '#/utils/login-scope-flow';
+import { convertMenuData } from '#/utils/auth/convert-menu-data';
+import type { LoginScopeHospital, LoginScopeOrganization } from '#/utils/auth/login-scope-flow';
 
 import {
   LOGIN_DEPARTMENT_LOAD_FAILED_MESSAGE,
@@ -38,9 +37,9 @@ import {
   LOGIN_PLATFORM_ADMIN_BOOTSTRAP_MESSAGE,
   resolveHospitalsAfterTenant,
   resolveLoginDepartmentStep,
-} from '#/utils/login-scope-flow';
-import { canSkipLoginDepartmentSelection } from '#/utils/platform-admin';
-import { requireLoginScopeReady } from '#/utils/require-login-scope-ready';
+} from '#/utils/auth/login-scope-flow';
+import { canSkipLoginDepartmentSelection } from '#/utils/auth/platform-admin';
+import { requireLoginScopeReady } from '#/utils/auth/require-login-scope-ready';
 
 defineOptions({ name: 'Login' });
 
@@ -91,6 +90,8 @@ const hospitals = ref<LoginScopeHospital[]>([]);
 const organizations = ref<LoginScopeOrganization[]>([]);
 /** 科室步骤为空或失败时的说明，展示在科室列表上方 */
 const departmentStepHint = ref('');
+/** 登录范围解析过渡页文案（自动选租户/医院/科室时不展示具体步骤面板） */
+const scopeLoadingMessage = ref('正在进入系统...');
 
 /** 已登录但尚未展示任一步骤面板（租户/医院/科室），用于避免步骤切换间隙白屏 */
 const showScopeLoading = computed(
@@ -136,29 +137,33 @@ function revertAfterNoDepartment(options?: { fromHospital?: boolean }) {
   loginSuccess.value = false;
 }
 
-/** 进入科室选择：先展示科室面板与加载态，无科室时保留返回入口 */
+/** 进入科室选择：仅多科室或异常时才展示科室面板，单科室自动进入系统 */
 async function enterDepartmentStep() {
-  showOrganizationList.value = true;
+  showOrganizationList.value = false;
   organizationLoading.value = true;
+  scopeLoadingMessage.value = '正在获取可登录科室...';
   departmentStepHint.value = '';
   try {
     const outcome = await resolveLoginDepartmentStep();
     if (outcome.kind === 'auto') {
+      scopeLoadingMessage.value = '正在进入系统...';
       await handleOrganizationChange(outcome.department);
       return;
     }
     if (outcome.kind === 'pick') {
       organizations.value = outcome.departments;
+      showOrganizationList.value = true;
       await nextTick();
       return;
     }
     organizations.value = [];
     if (outcome.kind === 'empty') {
       if (shouldSkipLoginDepartmentSelection()) {
-        departmentStepHint.value = LOGIN_PLATFORM_ADMIN_BOOTSTRAP_MESSAGE;
+        scopeLoadingMessage.value = LOGIN_PLATFORM_ADMIN_BOOTSTRAP_MESSAGE;
         await proceedToSystemWithoutOrganization();
         return;
       }
+      showOrganizationList.value = true;
       const hasSelectedHospital = !!selectedHospitalId.value || !!authStore.getSelectedHospital();
       departmentStepHint.value = hasSelectedHospital
         ? LOGIN_NO_DEPARTMENT_FOR_HOSPITAL_MESSAGE
@@ -166,6 +171,7 @@ async function enterDepartmentStep() {
       ElMessage.warning(departmentStepHint.value);
       return;
     }
+    showOrganizationList.value = true;
     departmentStepHint.value = outcome.message || LOGIN_DEPARTMENT_LOAD_FAILED_MESSAGE;
     ElMessage.error(departmentStepHint.value);
   } finally {
@@ -213,6 +219,7 @@ async function handleLogin(values: any) {
         userStore.setUserInfo(userInfo as any);
       }
       loginSuccess.value = true;
+      scopeLoadingMessage.value = '正在准备登录环境...';
       if (tenantsList && tenantsList.length > 0) {
         tenants.value = transformTenantData(tenantsList);
 
@@ -276,6 +283,7 @@ async function handleTenantSelect(tenant: any) {
   showHospitalList.value = false;
   showOrganizationList.value = false;
   organizationLoading.value = true;
+  scopeLoadingMessage.value = '正在准备登录环境...';
 
   try {
     const hospitalList = await resolveHospitalsAfterTenant(tenant.id);
@@ -314,6 +322,7 @@ async function handleHospitalSelect(hospital: LoginScopeHospital) {
   selectedHospitalId.value = hospital.id;
   authStore.setSelectedHospital(String(hospital.id));
   showHospitalList.value = false;
+  scopeLoadingMessage.value = '正在获取可登录科室...';
   try {
     await selectHospitalApi({ hospitalId: hospital.id });
     await enterDepartmentStep();
@@ -344,6 +353,7 @@ function handleBackFromHospitalList() {
 function handleScopeLoadingBack() {
   organizationLoading.value = false;
   departmentStepHint.value = '';
+  scopeLoadingMessage.value = '正在进入系统...';
   if (hospitals.value.length > 1) {
     showHospitalList.value = true;
     return;
@@ -362,6 +372,7 @@ function handleBackToLoginForm() {
   showOrganizationList.value = false;
   organizationLoading.value = false;
   departmentStepHint.value = '';
+  scopeLoadingMessage.value = '正在进入系统...';
   selectedTenantId.value = undefined;
   selectedHospitalId.value = undefined;
   selectedOrganizationId.value = undefined;
@@ -460,16 +471,25 @@ async function finishLoginAndNavigate() {
 
   accessStore.setIsAccessChecked(false);
 
+  const [{ generateAccess }, { getAccessRoutes }] = await Promise.all([
+    import('#/router/access'),
+    import('#/router/routes'),
+  ]);
+
   const { accessibleMenus, accessibleRoutes } = await generateAccess({
     roles: [],
     router,
-    routes: accessRoutes,
+    routes: await getAccessRoutes(),
     menuData: convertedMenus,
   });
 
   accessStore.setAccessMenus(accessibleMenus);
   accessStore.setAccessRoutes(accessibleRoutes);
   accessStore.setIsAccessChecked(true);
+
+  void import('#/utils/print/runtime/hiprint-client').then(({ warmupHiprintClient }) => {
+    warmupHiprintClient();
+  });
 
   await nextTick();
   const redirectParam = router.currentRoute.value.query?.redirect as string | undefined;
@@ -621,7 +641,12 @@ const formSchema = computed((): VbenFormSchema[] => {
       v-else-if="showScopeLoading"
       class="mx-auto flex h-full w-full flex-col items-center justify-center gap-4 sm:max-w-3xl"
     >
-      <div class="text-sm" style="color: var(--el-text-color-regular)">加载中...</div>
+      <ElIcon :size="28" class="is-loading" style="color: var(--el-color-primary)">
+        <Loading />
+      </ElIcon>
+      <div class="text-sm" style="color: var(--el-text-color-regular)">
+        {{ scopeLoadingMessage }}
+      </div>
       <ElButton link type="primary" @click="handleScopeLoadingBack">返回</ElButton>
     </div>
 

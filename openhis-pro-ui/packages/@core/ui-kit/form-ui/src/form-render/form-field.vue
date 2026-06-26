@@ -15,6 +15,7 @@ import {
   VbenRenderContent,
   VbenTooltip,
 } from '@vben-core/shadcn-ui';
+import { globalShareState } from '@vben-core/shared/global-state';
 import { cn, isFunction, isObject, isString } from '@vben-core/shared/utils';
 
 import { toTypedSchema } from '@vee-validate/zod';
@@ -65,12 +66,20 @@ const compact = computed(() => formRenderProps.compact);
 const isInValid = computed(() => errors.value?.length > 0);
 
 const FieldComponent = computed(() => {
-  const finalComponent = isString(component) ? componentMap.value[component] : component;
-  if (!finalComponent) {
-    // 组件未注册
-    console.warn(`Component ${component} is not registered`);
+  if (!isString(component)) {
+    return component;
   }
-  return finalComponent;
+  const mapped = componentMap.value[component];
+  if (mapped) {
+    return mapped;
+  }
+  // 适配器晚于首屏 mount 注册时，从 globalShareState 兜底（避免表单只显示标签）
+  const shared = globalShareState.getComponents()[component];
+  if (shared) {
+    return shared;
+  }
+  console.warn(`Component ${component} is not registered`);
+  return undefined;
 });
 
 const { dynamicComponentProps, dynamicRules, isDisabled, isIf, isRequired, isShow } =

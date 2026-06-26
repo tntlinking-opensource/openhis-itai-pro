@@ -3,11 +3,12 @@
  */
 import { publicRequestClient } from '#/api/request';
 
+import type { BookingEntityId } from './booking-id';
 import type { BookingPagedResult } from './booking-types';
 
 export interface PageQueueRequest {
-  organizationId: number;
-  destinationLocationId: number;
+  organizationId: BookingEntityId;
+  destinationLocationId: BookingEntityId;
   pageNo: number;
   pageSize: number;
 }

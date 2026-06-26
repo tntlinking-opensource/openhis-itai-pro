@@ -47,7 +47,7 @@
   只要在 #line / #shared / #main 里按该结构取值即可。
 
   ---------------------------------------------------------------------------
-  示例 2 — 接口按「每条一行药品」返回、先合并再塞进 items（见 #/utils/drug-group-table）：
+  示例 2 — 接口按「每条一行药品」返回、先合并再塞进 items（见 #/utils/doctor-station/drug-group-table）：
 
   原始行（连续相同 groupId 会被合并为一行）：
 
@@ -71,13 +71,13 @@ defineOptions({ name: 'DrugOrderGroupCell' });
 
 const props = withDefaults(
   defineProps<{
-    /** 表格行主键，用于组内 v-for 的 :key 前缀 */
-    rowKey: string;
     /**
      * 本行药品列表；元素类型由业务自定，组件仅做长度分支与透传给插槽。
      * 见文件顶部注释中的示例 JSON。
      */
-    items?: readonly unknown[] | null;
+    items?: null | readonly unknown[];
+    /** 表格行主键，用于组内 v-for 的 :key 前缀 */
+    rowKey: string;
   }>(),
   {
     items: undefined,
@@ -102,27 +102,27 @@ const normalizedItems = computed(() => {
   <div v-if="normalizedItems.length > 1" class="group-content-cell">
     <div class="group-drug-list">
       <div v-for="(item, idx) in normalizedItems" :key="`${rowKey}-${idx}`" class="group-drug-line">
-        <slot name="line" :item="item" :index="idx" />
+        <slot name="line" :item="item" :index="idx"></slot>
       </div>
     </div>
     <div class="group-drug-shared">
-      <slot name="shared" :items="normalizedItems" />
+      <slot name="shared" :items="normalizedItems"></slot>
     </div>
   </div>
 
   <!-- 单条结构化：#main + #shared -->
   <div v-else-if="normalizedItems.length === 1" class="normal-content-cell">
     <div class="drug-main-row">
-      <slot name="main" :item="normalizedItems[0]!" />
+      <slot name="main" :item="normalizedItems[0]!"></slot>
     </div>
     <div class="normal-drug-shared">
-      <slot name="shared" :items="normalizedItems" />
+      <slot name="shared" :items="normalizedItems"></slot>
     </div>
   </div>
 
   <!-- 无 items：整格交给调用方（建议在 #fallback 内使用 class drug-main-text / normal-drug-shared，见下方 :deep 样式） -->
   <div v-else class="normal-content-cell normal-content-cell--fallback">
-    <slot name="fallback" />
+    <slot name="fallback"></slot>
   </div>
 </template>
 

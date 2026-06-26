@@ -1,6 +1,6 @@
-import type { OutpatientPatientCardPayload } from '#/components/outpatient/patient-card.types';
-
 import type { ReturnMedicineQueuePatient } from './types';
+
+import type { OutpatientPatientCardPayload } from '#/components/outpatient/patient-card.types';
 
 /** 退药队列行 → 门诊患者卡片（展示退药状态标签） */
 export function toReturnPatientCardModel(

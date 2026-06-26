@@ -17,18 +17,16 @@ export type {
   RegisterHistoryTableRow,
 } from '#/api/outpatient-registration';
 
-export type {
-  ConfirmDetailSection,
-  ConfirmDetailSectionRow,
-  RegisterConfirmDetail,
-  RegisterFormAreaExpose,
-  RegisterHistoryExpose,
-  RegisterPatientRecord,
-} from './register.types';
+export {
+  ENCOUNTER_CANCELABLE_STATUS_CODES,
+  ENCOUNTER_STATUS_CODE,
+  ENCOUNTER_STATUS_EL_TAG_MAP,
+} from './encounter-status';
 
-export { ENCOUNTER_STATUS_CODE, ENCOUNTER_STATUS_EL_TAG_MAP } from './encounter-status';
+export { loadTodayRegisterSummary } from './register-stats.service';
 
 export {
+  cancelPlannedRegisterEncounter,
   cancelRegisterEncounter,
   DEFAULT_REGISTER_PAY_CHANNEL_CODE,
   listBookableSlotHints,
@@ -39,4 +37,18 @@ export {
   payRegisterFee,
   preRegisterFromAppointment,
   preRegisterSettlement,
+  refreshRegisterFeeInsurancePreSettle,
 } from './register.service';
+
+export type {
+  ConfirmDetailSection,
+  ConfirmDetailSectionRow,
+  RegisterBenefitDisplayPayload,
+  RegisterBenefitPreviewContext,
+  RegisterConfirmDetail,
+  RegisterFormAreaExpose,
+  RegisterHistoryExpose,
+  RegisterPatientRecord,
+  RegisterRightPanelExpose,
+  RegisterSlotSelectionPayload,
+} from './register.types';

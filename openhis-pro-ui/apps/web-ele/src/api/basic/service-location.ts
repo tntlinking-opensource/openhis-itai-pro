@@ -1,7 +1,7 @@
 import type { ApiOptionItem } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 export interface ServiceLocationItem {
   id?: string;
@@ -63,7 +63,7 @@ export const SERVICE_LOCATION_ITEM_TABLE_MEDICATION = 'med_medication_definition
 /** 物品表：耗材定义 */
 export const SERVICE_LOCATION_ITEM_TABLE_DEVICE = 'adm_device_definition';
 
-/** 中草药发放类别码（med_category_code，与后端 DoctorStationTcmConstants.HERBAL_CATEGORY_CODE 一致） */
+/** 中草药发放类别码（medication_category_code，与后端 DoctorStationTcmConstants.HERBAL_CATEGORY_CODE 一致） */
 export const SERVICE_LOCATION_HERBAL_CATEGORY_CODE = '4';
 
 /** 规范化下拉选项 value/label 为 string */

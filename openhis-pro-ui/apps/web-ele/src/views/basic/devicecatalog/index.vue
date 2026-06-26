@@ -221,7 +221,7 @@ const handleQuery = async (params: Record<string, unknown>) => {
     const responseData = response.data;
     if (responseData) {
       tableData.value = responseData.content || [];
-      total.value = responseData.totalElements || 0;
+      total.value = Number(responseData.totalCount ?? responseData.totalElements ?? 0);
     } else {
       tableData.value = [];
       total.value = 0;

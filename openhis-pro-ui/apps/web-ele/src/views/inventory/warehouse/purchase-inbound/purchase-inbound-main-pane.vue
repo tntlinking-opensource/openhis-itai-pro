@@ -49,7 +49,7 @@ import {
 } from '#/api/inventory/warehouse/inbound-receipt';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import PurchaseInboundBatchAddDialog from '#/views/inventory/warehouse/purchase-inbound/purchase-inbound-batch-add-dialog.vue';
-import { decimalMul } from '#/utils/decimal-util';
+import { decimalMul } from '#/utils/format/decimal-util';
 import {
   canConvertDisplayQtyToSplitForBands,
   convertInboundQtyBetweenBandKinds,

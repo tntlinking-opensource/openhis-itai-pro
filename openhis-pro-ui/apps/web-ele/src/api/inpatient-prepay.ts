@@ -3,6 +3,7 @@
  */
 
 import type { PageApiResponse, PageParams } from '#/types/api-response';
+import type { OptionDto } from '#/api/outpatient-registration';
 
 import { publicRequestClient } from '#/api/request';
 
@@ -14,18 +15,25 @@ export interface PagePrepayPatientQueueParams extends PageParams {
 
 /** 在院患者队列行 */
 export interface PrepayQueueItemDto {
-  accountBalance: number | string;
+  accountBalance?: number | string;
+  accountBalanceDisplayMode?: string;
+  accountBalanceSubText?: string;
+  accountBalanceSummaryText?: string;
+  availableBalance?: number | string;
   ageText?: string;
-  arrearsAlert?: boolean;
   bedName?: string;
   contractDisplay?: string;
   encounterBusNo: string;
   encounterId: string;
   genderEnum?: string;
   genderEnumText?: string;
+  lowBalanceWarning?: boolean;
   organizationName?: string;
   patientId: string;
   patientName: string;
+  pendingSettlementTotal?: number | string;
+  /** 库内可退余额（退费上限） */
+  prepayNetBalance?: number | string;
   startTime?: string;
   statusEnum: string;
   statusEnumText: string;
@@ -71,6 +79,8 @@ export interface CollectPrepayAdvanceDepositParams {
   patientId: string;
   paymentCode?: string;
   paymentDetails: PrepayPaymentDetailDto[];
+  paymentDraftId?: string;
+  clientScanResult?: import('#/api/payment/payment.types').ClientScanResultDto;
   operatorId?: string;
   remark?: string;
 }
@@ -81,6 +91,11 @@ export interface CollectPrepayAdvanceDepositResult {
   paymentId: string;
 }
 
+/** 预交金扫码预下单响应 */
+export interface PreparePrepayAdvanceDepositResult {
+  paymentDraftId: string;
+}
+
 /** 退预交金请求 */
 export interface RefundPrepayAdvanceDepositParams {
   encounterId: string;
@@ -89,12 +104,32 @@ export interface RefundPrepayAdvanceDepositParams {
   operatorId?: string;
   refundAmount: number | string;
   remark?: string;
+  originalPaymentId?: string;
+  clientRefundResult?: import('#/api/payment/payment.types').ClientRefundResultDto;
 }
 
 /** 退预交金响应 */
 export interface RefundPrepayAdvanceDepositResult {
   accountBalance: number | string;
   paymentId: string;
+}
+
+/** 预交金页初始化请求 */
+export type LoadInpatientPrepayPageInitRequest = Record<string, never>;
+
+/** 预交金页初始化响应 */
+export interface LoadInpatientPrepayPageInitResponse {
+  paymentChannelOptions?: OptionDto[];
+}
+
+/** 预交金页初始化 */
+export async function httpLoadInpatientPrepayPageInit(
+  params: LoadInpatientPrepayPageInitRequest = {},
+): Promise<LoadInpatientPrepayPageInitResponse> {
+  return publicRequestClient.post<LoadInpatientPrepayPageInitResponse>(
+    '/inpatientPrepay/loadInpatientPrepayPageInit',
+    params,
+  );
 }
 
 /** 在院患者队列分页查询 */
@@ -123,6 +158,16 @@ export async function httpCollectPrepayAdvanceDeposit(
 ): Promise<CollectPrepayAdvanceDepositResult> {
   return publicRequestClient.post<CollectPrepayAdvanceDepositResult>(
     '/inpatientPrepay/collectPrepayAdvanceDeposit',
+    body,
+  );
+}
+
+/** 预交金扫码预下单（落 DRAFT） */
+export async function httpPreparePrepayAdvanceDeposit(
+  body: CollectPrepayAdvanceDepositParams,
+): Promise<PreparePrepayAdvanceDepositResult> {
+  return publicRequestClient.post<PreparePrepayAdvanceDepositResult>(
+    '/inpatientPrepay/preparePrepayAdvanceDeposit',
     body,
   );
 }

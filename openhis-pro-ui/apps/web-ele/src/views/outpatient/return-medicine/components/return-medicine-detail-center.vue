@@ -20,7 +20,7 @@ const props = withDefaults(
     detailRows: ReturnMedicineDetailRow[];
     /** PENDING_REFUND | REFUNDED */
     refundQueueStatus: string;
-    selectedPatient: ReturnMedicineQueuePatient | null;
+    selectedPatient: null | ReturnMedicineQueuePatient;
   }>(),
   {
     actionDisabled: false,

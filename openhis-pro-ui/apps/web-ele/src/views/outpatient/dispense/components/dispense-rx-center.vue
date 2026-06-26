@@ -10,7 +10,7 @@ import type {
   DispenseRxTableSpacerRow,
 } from './types';
 
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import {
   ElButton,
@@ -26,13 +26,6 @@ import {
 } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
-
-import {
-  ensureOutpatientPrescriptionPrintBindingLoaded,
-  getOutpatientPrescriptionTemplateCode,
-  OUTPATIENT_PRESCRIPTION_TEMPLATE_OPTIONS,
-  setOutpatientPrescriptionTemplateCode,
-} from '#/utils/report/outpatient-prescription-print-config';
 
 import { buildPrescriptionSheetData } from './build-prescription-sheet-data';
 import PrescriptionSheetView from './prescription-sheet-view.vue';
@@ -52,23 +45,22 @@ const props = withDefaults(
     prescriptionRowCount: number;
     /** 处方单弹窗：就诊下全部处方块（由父级单独拉全量 slip 后传入） */
     prescriptionSheetBlocks?: DispensePrescriptionBlock[];
-    /** 处方打印进行中（preview + Win 出纸） */
-    prescriptionPrintLoading?: boolean;
+    printPrescriptionsDisabled?: boolean;
     /** 中西药 tab 角标（处方块数） */
     rxKindBadgeCounts?: DispenseRxKindBadgeCounts;
     selectedPatient: DispenseQueuePatient | null;
   }>(),
   {
     prescriptionSheetBlocks: () => [],
-    prescriptionPrintLoading: false,
     rxKindBadgeCounts: () => ({ western: 0, herbal: 0 }),
+    printPrescriptionsDisabled: false,
   },
 );
 
 const emit = defineEmits<{
   batchDispense: [];
   batchTraceScan: [];
-  printPrescription: [];
+  printPrescriptions: [];
   viewPrescription: [];
 }>();
 
@@ -99,19 +91,6 @@ const inventoryPickSelectRef = ref<null | { focus?: () => void }>(null);
 
 /** 纸质处方单在弹窗中展示 */
 const prescriptionSheetDialogVisible = ref(false);
-
-const prescriptionTemplateCode = ref(getOutpatientPrescriptionTemplateCode());
-
-onMounted(() => {
-  void (async () => {
-    await ensureOutpatientPrescriptionPrintBindingLoaded();
-    prescriptionTemplateCode.value = getOutpatientPrescriptionTemplateCode();
-  })();
-});
-
-async function handlePrescriptionTemplateChange(code: string) {
-  await setOutpatientPrescriptionTemplateCode(code);
-}
 
 watch(
   () => props.selectedPatient?.id,
@@ -352,25 +331,10 @@ function handleRxTableRowClick(row: DispenseRxTableRow) {
             <ElButton plain :disabled="!props.selectedPatient" @click="emit('viewPrescription')">
               处方查看
             </ElButton>
-            <ElSelect
-              v-model="prescriptionTemplateCode"
-              class="dispense-rx-template-select !w-36 shrink-0"
-              size="default"
-              :disabled="!props.selectedPatient || props.prescriptionPrintLoading"
-              @change="handlePrescriptionTemplateChange"
-            >
-              <ElOption
-                v-for="opt in OUTPATIENT_PRESCRIPTION_TEMPLATE_OPTIONS"
-                :key="opt.value"
-                :label="opt.label"
-                :value="opt.value"
-              />
-            </ElSelect>
             <ElButton
               plain
-              :disabled="!props.selectedPatient"
-              :loading="props.prescriptionPrintLoading"
-              @click="emit('printPrescription')"
+              :disabled="!props.selectedPatient || props.printPrescriptionsDisabled"
+              @click="emit('printPrescriptions')"
             >
               处方打印
             </ElButton>

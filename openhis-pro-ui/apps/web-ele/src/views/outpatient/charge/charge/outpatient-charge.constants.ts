@@ -1,5 +1,10 @@
 import type { TagProps } from 'element-plus';
 
+import {
+  FALLBACK_DEFAULT_PAY_CHANNEL,
+  FALLBACK_PAY_CHANNEL_OPTIONS,
+} from '#/utils/payment/payment-channel-options';
+
 /** 收费项状态（与域枚举 `ChargeItemStatus` code 一致）→ 文案 + 标签类型 */
 export const CHARGE_ITEM_STATUS_LABEL_TAG: Record<
   string,
@@ -15,16 +20,11 @@ export const CHARGE_ITEM_STATUS_LABEL_TAG: Record<
 /** 正式结算支付结果枚举编码（与支付流水域 `PaymentOutcome` 表 4.4 一致：`COMPLETED`=1） */
 export const OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED = '1';
 
-/** 默认支付渠道（与挂号收费窗口占位一致，字典就绪后由初始化接口替换） */
-export const DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE = 'CASH';
+/** 默认支付渠道 */
+export const DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE = FALLBACK_DEFAULT_PAY_CHANNEL;
 
-/** 结算弹窗可选渠道编码（展示中文，提交编码） */
-export const OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS: { label: string; value: string }[] = [
-  { label: '现金', value: 'CASH' },
-  { label: '微信', value: 'WECHAT' },
-  { label: '支付宝', value: 'ALIPAY' },
-  { label: '银行卡', value: 'BANK_CARD' },
-];
+/** 结算弹窗可选渠道（API 不可用时的 fallback，不含 SCAN_PAY） */
+export const OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS = [...FALLBACK_PAY_CHANNEL_OPTIONS];
 
 /** 确认收费弹窗「费用明细」固定字段（常显；金额由 `insuranceBreakdownItems` 按 key 覆盖，缺省为 0） */
 export const OUTPATIENT_CHARGE_FEE_DETAIL_FIELD_DEFS: readonly { key: string; label: string }[] = [

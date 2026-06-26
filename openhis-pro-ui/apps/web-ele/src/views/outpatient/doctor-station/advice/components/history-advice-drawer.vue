@@ -21,8 +21,9 @@ import {
 } from 'element-plus';
 
 import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display-cell.vue';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
+import { getSkinTestDisplayTagType } from '../services/advice-list';
 import {
   fetchPatientHistoryDoctorStationAdvice,
   sortHistoryEncounterList,
@@ -305,7 +306,19 @@ watch(open, (visible) => {
               <ElTableColumn prop="startTime" label="开立时间" width="160" align="center" />
               <ElTableColumn prop="diagnosisSummary" label="诊断" min-width="120" align="center" />
               <ElTableColumn prop="orderingDoctor" label="医生" width="80" align="center" />
-              <ElTableColumn prop="skinTestText" label="皮试" width="64" align="center" />
+              <ElTableColumn prop="skinTestText" label="皮试" width="72" align="center">
+                <template #default="{ row }">
+                  <ElTag
+                    v-if="getSkinTestDisplayTagType(row)"
+                    :type="getSkinTestDisplayTagType(row)!"
+                    size="small"
+                    effect="light"
+                  >
+                    {{ row.skinTestText }}
+                  </ElTag>
+                  <span v-else>{{ row.skinTestText }}</span>
+                </template>
+              </ElTableColumn>
               <ElTableColumn label="操作" width="72" align="center" fixed="right">
                 <template #default="{ row }">
                   <ElButton

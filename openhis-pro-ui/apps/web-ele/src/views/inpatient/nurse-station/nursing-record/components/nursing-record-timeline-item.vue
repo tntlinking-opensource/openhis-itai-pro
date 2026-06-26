@@ -18,7 +18,6 @@ const emit = defineEmits<{
   copy: [row: NursingRecordViewRow];
   delete: [row: NursingRecordViewRow];
   edit: [row: NursingRecordViewRow];
-  print: [row: NursingRecordViewRow];
   save: [row: NursingRecordViewRow];
 }>();
 
@@ -87,7 +86,6 @@ function formatRecordDateTime(row: NursingRecordViewRow) {
               @copy="emit('copy', props.row)"
               @delete="emit('delete', props.row)"
               @edit="emit('edit', props.row)"
-              @print="emit('print', props.row)"
               @save="emit('save', props.row)"
             />
           </template>
@@ -99,7 +97,6 @@ function formatRecordDateTime(row: NursingRecordViewRow) {
               @copy="emit('copy', props.row)"
               @delete="emit('delete', props.row)"
               @edit="emit('edit', props.row)"
-              @print="emit('print', props.row)"
             />
           </template>
         </div>

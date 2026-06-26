@@ -4,21 +4,27 @@
 import { publicRequestClient } from '#/api/request';
 
 import type { BookingPagedResult } from './booking-types';
+import type { BookingEntityId } from './booking-id';
 
 export interface PageSlotsByDateRequest {
-  organizationId: number;
+  organizationId: BookingEntityId;
   date: string;
-  practitionerId?: number;
-  scheduleId?: number;
+  practitionerId?: BookingEntityId;
+  scheduleId?: BookingEntityId;
   statusCode?: string;
   pageNo: number;
   pageSize: number;
 }
 
 export interface SlotListItemDto {
-  slotId?: number;
-  scheduleId?: number;
-  organizationId?: number;
+  slotId?: BookingEntityId;
+  scheduleId?: BookingEntityId;
+  organizationId?: BookingEntityId;
+  practitionerId?: BookingEntityId;
+  healthcareServiceId?: BookingEntityId;
+  practitionerName?: string;
+  healthcareServiceName?: string;
+  organizationName?: string;
   startTime?: string;
   endTime?: string;
   statusCode?: string;
@@ -30,9 +36,14 @@ export interface SlotListItemDto {
 }
 
 export interface SlotDetailDto {
-  slotId?: number;
-  scheduleId?: number;
-  organizationId?: number;
+  slotId?: BookingEntityId;
+  scheduleId?: BookingEntityId;
+  organizationId?: BookingEntityId;
+  practitionerId?: BookingEntityId;
+  healthcareServiceId?: BookingEntityId;
+  practitionerName?: string;
+  healthcareServiceName?: string;
+  organizationName?: string;
   startTime?: string;
   endTime?: string;
   statusCode?: string;
@@ -45,16 +56,20 @@ export interface SlotDetailDto {
 }
 
 export interface BlockSlotsRequest {
-  slotIds: number[];
+  slotIds: BookingEntityId[];
   reason?: string;
 }
 
 export interface UnblockSlotsRequest {
-  slotIds: number[];
+  slotIds: BookingEntityId[];
+}
+
+export interface DeleteSlotsRequest {
+  slotIds: BookingEntityId[];
 }
 
 export interface SetOverbookedRequest {
-  slotId: number;
+  slotId: BookingEntityId;
   overbookedFlag: boolean;
 }
 
@@ -65,7 +80,7 @@ export async function pageSlotsByDateApi(params: PageSlotsByDateRequest) {
   );
 }
 
-export async function loadSlotDetailApi(params: { slotId: number }) {
+export async function loadSlotDetailApi(params: { slotId: BookingEntityId }) {
   return publicRequestClient.post<SlotDetailDto>('/slotManage/loadSlotDetail', params);
 }
 
@@ -75,6 +90,10 @@ export async function blockSlotsApi(params: BlockSlotsRequest) {
 
 export async function unblockSlotsApi(params: UnblockSlotsRequest) {
   return publicRequestClient.post<void>('/slotManage/unblockSlots', params);
+}
+
+export async function deleteSlotsApi(params: DeleteSlotsRequest) {
+  return publicRequestClient.post<void>('/slotManage/deleteSlots', params);
 }
 
 export async function setOverbookedApi(params: SetOverbookedRequest) {

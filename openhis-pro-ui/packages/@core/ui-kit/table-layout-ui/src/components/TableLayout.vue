@@ -555,6 +555,7 @@ defineExpose({
           :max-height="maxHeight"
           :row-key="rowKey"
           :row-class-name="rowClassName"
+          :span-method="spanMethod"
           :highlight-current-row="highlightCurrentRow"
           :table-columns="tableColumns"
           :show-pagination="showPagination"

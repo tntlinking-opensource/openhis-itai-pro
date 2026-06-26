@@ -10,7 +10,6 @@ import { computed, ref, watch } from 'vue';
 
 import { ElMessage, ElMessageBox } from 'element-plus';
 
-import { useDischargeCertificatePrint } from '#/composables/use-inpatient-certificate-print';
 import { useRequest } from '#/hooks/use-request';
 
 import { submitClearDischargedBed } from '../services/clear-discharged-bed';
@@ -70,22 +69,13 @@ const medicationsRequest = useRequest(listDischargePendingMedications, {
 });
 const dischargeRequest = useRequest(submitInpatientDischarge, { manual: true });
 const clearBedRequest = useRequest(submitClearDischargedBed, { manual: true });
-const {
-  isPrinting: dischargeCertPrinting,
-  previewLoading: dischargeCertPreviewLoading,
-  printDischargeCertificate,
-} = useDischargeCertificatePrint();
 
 const encounterId = computed(() => String(props.patient?.id ?? '').trim());
 const listLoading = computed(
   () => executionsRequest.loading.value || medicationsRequest.loading.value,
 );
 const actionLoading = computed(
-  () =>
-    dischargeRequest.loading.value ||
-    clearBedRequest.loading.value ||
-    dischargeCertPrinting.value ||
-    dischargeCertPreviewLoading.value,
+  () => dischargeRequest.loading.value || clearBedRequest.loading.value,
 );
 
 /** 出 Tab 已选中床位图内患者 */
@@ -187,17 +177,6 @@ async function handleDischarge() {
   }
 }
 
-async function handlePrintDischargeCertificate() {
-  if (!encounterId.value) {
-    ElMessage.warning('缺少就诊信息，无法打印出院证');
-    return;
-  }
-  await printDischargeCertificate({
-    encounterId: encounterId.value,
-    jobName: `出院证-${props.patient?.name ?? ''}`,
-  });
-}
-
 /** 清床离院 */
 async function handleClearBed() {
   if (!encounterId.value) return;
@@ -263,7 +242,6 @@ watch(
         </div>
         <div class="discharge-toolbar__right">
           <ElButton plain @click="loadDischargePending">刷新待办</ElButton>
-          <ElButton plain @click="handlePrintDischargeCertificate">打印出院证</ElButton>
           <ElButton type="success" :disabled="!dischargeEnabled" @click="handleDischarge">
             办理出院
           </ElButton>

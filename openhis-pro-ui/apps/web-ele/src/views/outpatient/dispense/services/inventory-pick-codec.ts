@@ -7,8 +7,8 @@ export interface InventoryPickPayload {
 }
 
 export function encodeInventoryPick(p: {
-  pharmacyOrganizationId: string;
   lotNumber?: null | string;
+  pharmacyOrganizationId: string;
 }): string {
   return JSON.stringify({
     pharmacyOrganizationId: String(p.pharmacyOrganizationId),
@@ -17,8 +17,8 @@ export function encodeInventoryPick(p: {
 }
 
 export function decodeInventoryPick(raw: string): {
-  pharmacyOrganizationId: string;
   lotNumber?: string;
+  pharmacyOrganizationId: string;
 } {
   const o = JSON.parse(raw) as InventoryPickPayload;
   const pharmacyOrganizationId = String(o.pharmacyOrganizationId);

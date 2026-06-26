@@ -256,8 +256,8 @@ const headerSlots = computed(() => {
             :default-active="headerActive"
             :menus="wrapperMenus(headerMenus)"
             :rounded="isMenuRounded"
+            scrollable
             :theme="headerTheme"
-            class="w-full"
             mode="horizontal"
             @select="handleMenuSelect"
           />

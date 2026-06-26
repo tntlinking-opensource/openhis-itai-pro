@@ -464,6 +464,15 @@ function handleGoCatalogDownload() {
   });
 }
 
+/** 跳转 1901 平台字典维护 */
+function handleGoPlatformDict() {
+  const busNo = queryParams.value.contractBusNo;
+  void router.push({
+    path: '/chs/platform-dict',
+    query: busNo ? { contractBusNo: String(busNo) } : undefined,
+  });
+}
+
 /** 跳转医保目录对码 Workbench */
 function handleGoMappingWorkbench() {
   const busNo = queryParams.value.contractBusNo;
@@ -534,6 +543,7 @@ onMounted(async () => {
               下载游标
             </ElButton>
             <ElButton plain @click="handleGoCatalogDownload"> 目录文件下载 </ElButton>
+            <ElButton plain @click="handleGoPlatformDict"> 平台字典(1901) </ElButton>
             <ElButton plain @click="handleGoMappingWorkbench"> 对码工作台 </ElButton>
           </div>
         </div>

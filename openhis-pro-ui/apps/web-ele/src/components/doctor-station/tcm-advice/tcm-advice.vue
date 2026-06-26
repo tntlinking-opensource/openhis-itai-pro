@@ -10,7 +10,7 @@ import type {
 import type { TcmDiagnosisGroupRowDto } from '#/api/doctor-station/tcm.types';
 import type { AdviceProductOption } from '#/views/outpatient/doctor-station/advice';
 
-import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onActivated, onDeactivated, reactive, ref, watch } from 'vue';
 
 import {
   ElButton,
@@ -18,6 +18,8 @@ import {
   ElInput,
   ElMessage,
   ElMessageBox,
+  ElRadioButton,
+  ElRadioGroup,
   ElScrollbar,
   ElTabPane,
   ElTabs,
@@ -29,25 +31,18 @@ import {
 import {
   ORDER_TEMPLATE_APPLY_CONTEXT_DOCTOR,
   ORDER_TEMPLATE_KIND_TCM,
+  ORDER_TEMPLATE_WORKSTATION_INPATIENT,
   ORDER_TEMPLATE_WORKSTATION_OUTPATIENT,
   previewOrderTemplateApplyApi,
 } from '#/api/basic/order-template';
-import {
-  httpInitDoctorStationTcm,
-  httpListPatientTcmHerbalPrescriptionHistory,
-  httpListTcmDiagnosisGroups,
-  httpListTcmHerbalPrescriptions,
-  httpPageTcmHerbalMedicationCatalog,
-  httpSaveTcmHerbalPrescriptionDraftBatch,
-  httpSignTcmHerbalPrescriptionBatch,
-  httpWithdrawOrDeleteTcmHerbalPrescription,
-} from '#/api/doctor-station/tcm.http';
+import * as outpatientTcmHttp from '#/api/doctor-station/tcm.http';
+import * as inpatientTcmHttp from '#/api/inpatient/doctor-station/inpatient-doctor-station-tcm.http';
 import { useEnsureClinicalReception } from '#/components/doctor-station/use-ensure-clinical-reception';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import { useRequest } from '#/hooks/use-request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { decimalMul } from '#/utils/decimal-util';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { decimalMul } from '#/utils/format/decimal-util';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { mapCatalogRowToOption } from '#/views/outpatient/doctor-station/advice/services/advice-list';
 import {
   fetchMergedDoctorStationOrderTemplateGroups,
@@ -58,22 +53,31 @@ import TcmHerbAddCard from './components/tcm-herb-add-card.vue';
 import TcmHerbCard from './components/tcm-herb-card.vue';
 import TcmPrescriptionHeader from './components/tcm-prescription-header.vue';
 import TcmPrescriptionSummary from './components/tcm-prescription-summary.vue';
-import { buildTcmMethodSelectOptions, buildTcmRateSelectOptions } from './services/tcm-method-code';
+import {
+  buildTcmMethodSelectOptions,
+  buildTcmRateSelectOptions,
+  resolveDefaultTcmRateCodeForTherapy,
+} from './services/tcm-method-code';
 import {
   applyTcmOrderTemplateToPrescription,
   TcmOrderTemplateApplyError,
 } from './services/tcm-order-template-apply.service';
 import {
   applyCatalogProductToLine,
+  buildCancelStopLongTermTcmRequest,
   buildDeleteDraftRequest,
   buildDraftSaveRequest,
   buildSignRequest,
+  buildStopLongTermTcmRequest,
   buildWithdrawRequest,
   calcSingleDoseAmount,
+  canCancelStopLongTermTcmPrescription,
+  canStopLongTermTcmPrescription,
   createEmptyLine,
   createEmptyPrescription,
   formatTcmSyndromeGroupOptionLabel,
   hasPersistableDraftChanges,
+  INPATIENT_IMMEDIATE_RATE_CODE,
   isTcmPrescriptionReadonly,
   loadHeaderFormFromPrescription,
   mapApiHeaderToUi,
@@ -85,6 +89,8 @@ import {
   resolveTcmRxStatusLabel,
   resolveTcmRxStatusTagType,
   syncHeaderFormToPrescription,
+  TCM_THERAPY_LONG_TERM,
+  TCM_THERAPY_TEMPORARY,
 } from './services/tcm-prescription.service';
 import {
   buildTcmSidebarTree,
@@ -93,19 +99,26 @@ import {
 } from './services/tcm-sidebar-tree.service';
 
 defineOptions({
-  name: 'OutpatientDoctorStationTcmAdvice',
+  name: 'DoctorStationTcmAdvice',
 });
 
 const props = withDefaults(
   defineProps<{
     encounterId?: string;
     patientId?: string;
+    /** 门诊 / 住院医生站 */
+    stationScope?: 'inpatient' | 'outpatient';
   }>(),
   {
     encounterId: '',
     patientId: '',
+    stationScope: 'outpatient',
   },
 );
+
+const isInpatientScope = computed(() => props.stationScope === 'inpatient');
+
+const tcmHttp = computed(() => (isInpatientScope.value ? inpatientTcmHttp : outpatientTcmHttp));
 
 const { ensureReceptionBeforeClinicalWork } = useEnsureClinicalReception();
 
@@ -180,11 +193,18 @@ const activePrescription = computed(() => {
 const isPrescriptionReadonly = computed(() => isTcmPrescriptionReadonly(activePrescription.value));
 
 const prescriptionStatusTagType = computed(() =>
-  resolveTcmRxStatusTagType(activePrescription.value?.statusEnum),
+  resolveTcmRxStatusTagType(
+    activePrescription.value?.statusEnum,
+    activePrescription.value?.displayStatusEnum,
+  ),
 );
 
 const prescriptionStatusLabel = computed(() =>
-  resolveTcmRxStatusLabel(activePrescription.value?.statusEnum),
+  resolveTcmRxStatusLabel(
+    activePrescription.value?.statusEnum,
+    activePrescription.value?.displayStatusEnumText,
+    activePrescription.value?.displayStatusEnum,
+  ),
 );
 
 /** 当前处方可见药材行 */
@@ -203,29 +223,63 @@ const totalPrescriptionAmount = computed(() => {
 
 const prescriptionForm = reactive(loadHeaderFormFromPrescription(null));
 
-const productColumns = [
-  { prop: 'code', label: '项目编码', width: 120 },
-  { prop: 'name', label: '项目名称', width: 200 },
-  { prop: 'category', label: '类别', width: 72 },
-  { prop: 'spec', label: '单位', width: 80 },
-  { prop: 'availableQuantity', label: '库存数量', width: 88 },
-  { prop: 'price', label: '单价', width: 72 },
-];
+/** 住院新建处方默认长期；门诊无方头长临 */
+function resolveDefaultTherapyEnumForNewPrescription(): string {
+  return isInpatientScope.value ? TCM_THERAPY_LONG_TERM : '';
+}
+
+function createEmptyPrescriptionForScope(tcmSyndromeGroup = ''): TcmPrescriptionUi {
+  const therapyEnum = resolveDefaultTherapyEnumForNewPrescription();
+  return createEmptyPrescription(
+    tcmSyndromeGroup,
+    1,
+    resolveDefaultTcmMethodCode(tcmMethodCodeOptions.value),
+    resolveDefaultTcmRateCodeForTherapy(therapyEnum, medicationRateOptions.value),
+    therapyEnum || undefined,
+  );
+}
+
+const canStopLongTermActivePrescription = computed(() =>
+  canStopLongTermTcmPrescription(activePrescription.value),
+);
+
+const canCancelStopLongTermActivePrescription = computed(() =>
+  canCancelStopLongTermTcmPrescription(activePrescription.value),
+);
+
+const productColumns = computed(() => {
+  const base = [
+    { prop: 'code', label: '项目编码', width: 120 },
+    { prop: 'name', label: '项目名称', width: 200 },
+    { prop: 'category', label: '类别', width: 72 },
+    { prop: 'spec', label: '单位', width: 80 },
+    { prop: 'availableQuantity', label: '库存数量', width: 88 },
+    { prop: 'price', label: '单价', width: 72 },
+  ];
+  if (isInpatientScope.value) {
+    return base.filter((col) => col.prop !== 'availableQuantity');
+  }
+  return base;
+});
 
 const { loading: pageLoading, run: runLoadTcmTab } = useRequest(
   async () => {
     const encounterId = props.encounterId.trim();
     const patientId = props.patientId.trim();
     const keyword = sidebarKeyword.value.trim() || undefined;
+    const api = tcmHttp.value;
     const [groupRes, rxRes, historyRes, initRes, templateGroupRes] = await Promise.all([
-      httpListTcmDiagnosisGroups({ encounterId, patientId }),
-      httpListTcmHerbalPrescriptions({ encounterId, patientId }),
-      httpListPatientTcmHerbalPrescriptionHistory({
+      api.httpListTcmDiagnosisGroups({ encounterId, patientId }),
+      api.httpListTcmHerbalPrescriptions({
+        encounterId,
+        patientId,
+      }),
+      api.httpListPatientTcmHerbalPrescriptionHistory({
         patientId,
         currentEncounterId: encounterId,
         keyword,
       }),
-      httpInitDoctorStationTcm({ encounterId, patientId }),
+      api.httpInitDoctorStationTcm({ encounterId, patientId }),
       fetchMergedDoctorStationOrderTemplateGroups({
         encounterId,
         patientId,
@@ -243,12 +297,7 @@ const { loading: pageLoading, run: runLoadTcmTab } = useRequest(
       mapHistoryRowToTreeItem(row, index),
     );
     if (mapped.length === 0) {
-      const empty = createEmptyPrescription(
-        syndromeGroupOptions.value[0]?.value ?? '',
-        1,
-        resolveDefaultTcmMethodCode(tcmMethodCodeOptions.value),
-        resolveDefaultTcmRateCode(medicationRateOptions.value),
-      );
+      const empty = createEmptyPrescriptionForScope(syndromeGroupOptions.value[0]?.value ?? '');
       prescriptions.value = [empty];
       activePrescriptionKey.value = empty.prescriptionGroupKey;
     } else if (!mapped.some((rx) => rx.prescriptionGroupKey === activePrescriptionKey.value)) {
@@ -265,22 +314,37 @@ const { loading: pageLoading, run: runLoadTcmTab } = useRequest(
 const sidebarLoading = computed(() => pageLoading.value || templateApplyLoading.value);
 
 const { loading: saveLoading, run: runSaveDraft } = useRequest(
-  httpSaveTcmHerbalPrescriptionDraftBatch,
+  (body) => tcmHttp.value.httpSaveTcmHerbalPrescriptionDraftBatch(body),
   { manual: true, showErrorMessage: true },
 );
 
-const { loading: signLoading, run: runSignBatch } = useRequest(httpSignTcmHerbalPrescriptionBatch, {
-  manual: true,
-  showErrorMessage: true,
-});
+const { loading: signLoading, run: runSignBatch } = useRequest(
+  (body) => tcmHttp.value.httpSignTcmHerbalPrescriptionBatch(body),
+  { manual: true, showErrorMessage: true },
+);
 
 const { loading: withdrawLoading, run: runWithdrawOrDelete } = useRequest(
-  httpWithdrawOrDeleteTcmHerbalPrescription,
+  (body) => tcmHttp.value.httpWithdrawOrDeleteTcmHerbalPrescription(body),
+  { manual: true, showErrorMessage: true },
+);
+
+const { loading: stopLongTermLoading, run: runStopLongTerm } = useRequest(
+  (body) => inpatientTcmHttp.httpStopLongTermTcmHerbalPrescription(body),
+  { manual: true, showErrorMessage: true },
+);
+
+const { loading: cancelStopLongTermLoading, run: runCancelStopLongTerm } = useRequest(
+  (body) => inpatientTcmHttp.httpCancelStopLongTermTcmHerbalPrescription(body),
   { manual: true, showErrorMessage: true },
 );
 
 const mutationLoading = computed(
-  () => saveLoading.value || signLoading.value || withdrawLoading.value,
+  () =>
+    saveLoading.value ||
+    signLoading.value ||
+    withdrawLoading.value ||
+    stopLongTermLoading.value ||
+    cancelStopLongTermLoading.value,
 );
 const autoSaveDraftInFlight = ref(false);
 
@@ -291,7 +355,10 @@ async function refreshPrescriptionsFromServer() {
   }
   const encounterId = props.encounterId.trim();
   const patientId = props.patientId.trim();
-  const rxRes = await httpListTcmHerbalPrescriptions({ encounterId, patientId });
+  const rxRes = await tcmHttp.value.httpListTcmHerbalPrescriptions({
+    encounterId,
+    patientId,
+  });
   const mapped = (rxRes.prescriptions ?? []).map((dto) => mapApiHeaderToUi(dto));
   const activeKey = activePrescriptionKey.value;
   prescriptions.value = mapped;
@@ -374,17 +441,22 @@ async function reload() {
 
 defineExpose({ reload });
 
-onMounted(() => {
+/** KeepAlive 内仅激活页签拉数；换患者时由 watch 刷新当前可见 Tab */
+const isTabActive = ref(false);
+
+onActivated(() => {
+  isTabActive.value = true;
   void reload();
 });
 
-onActivated(() => {
-  void reload();
+onDeactivated(() => {
+  isTabActive.value = false;
 });
 
 watch(
   () => [props.encounterId, props.patientId],
   () => {
+    if (!isTabActive.value) return;
     void reload();
   },
 );
@@ -402,6 +474,7 @@ watch(
 function loadActivePrescriptionForm() {
   const form = loadHeaderFormFromPrescription(activePrescription.value);
   prescriptionForm.tcmSyndromeGroup = form.tcmSyndromeGroup;
+  prescriptionForm.therapyEnum = form.therapyEnum ?? resolveDefaultTherapyEnumForNewPrescription();
   prescriptionForm.chineseHerbsDoseQuantity = form.chineseHerbsDoseQuantity;
   prescriptionForm.sufferingFlag = form.sufferingFlag;
   prescriptionForm.methodCode = form.methodCode;
@@ -415,7 +488,7 @@ async function queryProductOptions(params: { keyword?: string; pageNo: number; p
   if (!contextReady.value) {
     return { content: [] as AdviceProductOption[], totalElements: 0 };
   }
-  const res = await httpPageTcmHerbalMedicationCatalog({
+  const res = await tcmHttp.value.httpPageTcmHerbalMedicationCatalog({
     encounterId: props.encounterId.trim(),
     patientId: props.patientId.trim(),
     keyword: params.keyword?.trim() || undefined,
@@ -454,12 +527,7 @@ async function handleSwitchPrescription(id: number | string) {
 /** 新增处方页签 */
 function handleAddPrescription() {
   const defaultGroup = syndromeGroupOptions.value[0]?.value ?? '';
-  const newRx = createEmptyPrescription(
-    defaultGroup,
-    1,
-    resolveDefaultTcmMethodCode(tcmMethodCodeOptions.value),
-    resolveDefaultTcmRateCode(medicationRateOptions.value),
-  );
+  const newRx = createEmptyPrescriptionForScope(defaultGroup);
   prescriptions.value.push(newRx);
   activePrescriptionKey.value = newRx.prescriptionGroupKey;
   loadActivePrescriptionForm();
@@ -472,6 +540,13 @@ function validateActivePrescriptionForSave(): boolean {
   if (!rx.tcmSyndromeGroup.trim()) {
     ElMessage.warning('请先选择绑定的病证组');
     return false;
+  }
+  if (isInpatientScope.value) {
+    const therapy = String(rx.therapyEnum ?? prescriptionForm.therapyEnum ?? '').trim();
+    if (!therapy) {
+      ElMessage.warning('请选择医嘱类型（长期/临时）');
+      return false;
+    }
   }
   if (!String(rx.methodCode ?? '').trim()) {
     ElMessage.warning('请选择用法');
@@ -565,6 +640,58 @@ async function handleRevokePrescription() {
   await refreshPrescriptionsFromServer();
 }
 
+/** 停嘱：住院长期已签发方 */
+async function handleStopLongTermPrescription() {
+  if (!activePrescription.value || !canStopLongTermActivePrescription.value) {
+    ElMessage.warning('当前处方不可停嘱');
+    return;
+  }
+  const ok = await ensureReceptionBeforeWrite();
+  if (!ok) return;
+  const body = buildStopLongTermTcmRequest(
+    props.encounterId.trim(),
+    props.patientId.trim(),
+    activePrescription.value,
+  );
+  if (!body) {
+    ElMessage.warning('缺少处方号，无法停嘱');
+    return;
+  }
+  const res = await runStopLongTerm(body);
+  if (res?.success === false) {
+    ElMessage.error(String(res.message || '').trim() || '停嘱失败');
+    return;
+  }
+  ElMessage.success(String(res?.message || '').trim() || '停嘱成功');
+  await refreshPrescriptionsFromServer();
+}
+
+/** 取消停嘱：住院长期已停嘱方 */
+async function handleCancelStopLongTermPrescription() {
+  if (!activePrescription.value || !canCancelStopLongTermActivePrescription.value) {
+    ElMessage.warning('当前处方不可取消停嘱');
+    return;
+  }
+  const ok = await ensureReceptionBeforeWrite();
+  if (!ok) return;
+  const body = buildCancelStopLongTermTcmRequest(
+    props.encounterId.trim(),
+    props.patientId.trim(),
+    activePrescription.value,
+  );
+  if (!body) {
+    ElMessage.warning('缺少处方号，无法取消停嘱');
+    return;
+  }
+  const res = await runCancelStopLongTerm(body);
+  if (res?.success === false) {
+    ElMessage.error(String(res.message || '').trim() || '取消停嘱失败');
+    return;
+  }
+  ElMessage.success(String(res?.message || '').trim() || '取消停嘱成功');
+  await refreshPrescriptionsFromServer();
+}
+
 /** 删除处方页签或整方草稿 */
 async function handleDeletePrescription(targetKey?: string) {
   const removeKey = targetKey ?? activePrescriptionKey.value;
@@ -584,7 +711,7 @@ async function handleDeletePrescription(targetKey?: string) {
     await runWithdrawOrDelete(body);
   }
   if (prescriptions.value.length <= 1) {
-    const empty = createEmptyPrescription(syndromeGroupOptions.value[0]?.value ?? '');
+    const empty = createEmptyPrescriptionForScope(syndromeGroupOptions.value[0]?.value ?? '');
     prescriptions.value = [empty];
     activePrescriptionKey.value = empty.prescriptionGroupKey;
   } else {
@@ -725,6 +852,11 @@ function ensurePrescriptionHeaderForTemplateApply(rx: TcmPrescriptionUi) {
     rx.days = 1;
     rx.headerDirty = true;
   }
+  if (isInpatientScope.value && !String(rx.therapyEnum ?? '').trim()) {
+    rx.therapyEnum = resolveDefaultTherapyEnumForNewPrescription();
+    rx.rateCode = resolveDefaultTcmRateCodeForTherapy(rx.therapyEnum, medicationRateOptions.value);
+    rx.headerDirty = true;
+  }
 }
 
 /** 组套套用目标方：当前方已签发或无方时新建草稿方 */
@@ -798,7 +930,9 @@ async function handleSidebarTreeNodeClick(data: TcmSidebarTreeNode) {
       encounterId,
       patientId,
       applyContextCode: ORDER_TEMPLATE_APPLY_CONTEXT_DOCTOR,
-      workstationKindCode: ORDER_TEMPLATE_WORKSTATION_OUTPATIENT,
+      workstationKindCode: isInpatientScope.value
+        ? ORDER_TEMPLATE_WORKSTATION_INPATIENT
+        : ORDER_TEMPLATE_WORKSTATION_OUTPATIENT,
     });
     const lines = preview?.lines ?? [];
     const previewHeader = preview?.header ?? header;
@@ -810,6 +944,7 @@ async function handleSidebarTreeNodeClick(data: TcmSidebarTreeNode) {
       prescription: targetRx,
       catalogDispenseLocationMap: catalogDispenseLocationMap.value,
       medicationRateOptions: medicationRateOptions.value,
+      pageTcmHerbalMedicationCatalog: tcmHttp.value.httpPageTcmHerbalMedicationCatalog,
     });
     ensurePrescriptionHeaderForTemplateApply(targetRx);
     syncHeaderFormToPrescription(targetRx, prescriptionForm);
@@ -860,7 +995,7 @@ async function reloadSidebarSources() {
   const patientId = props.patientId.trim();
   const keyword = sidebarKeyword.value.trim() || undefined;
   const [historyRes, templateGroupRes] = await Promise.all([
-    httpListPatientTcmHerbalPrescriptionHistory({
+    tcmHttp.value.httpListPatientTcmHerbalPrescriptionHistory({
       patientId,
       currentEncounterId: encounterId,
       keyword,
@@ -878,6 +1013,28 @@ async function reloadSidebarSources() {
   templateGroups.value = templateGroupRes;
 }
 
+watch(
+  () => prescriptionForm.therapyEnum,
+  (therapy) => {
+    if (!isInpatientScope.value || !activePrescription.value || isPrescriptionReadonly.value) {
+      return;
+    }
+    const therapyCode = String(therapy ?? '')
+      .trim()
+      .toUpperCase();
+    if (therapyCode === TCM_THERAPY_TEMPORARY) {
+      prescriptionForm.rateCode = INPATIENT_IMMEDIATE_RATE_CODE;
+    } else if (therapyCode === TCM_THERAPY_LONG_TERM) {
+      const current = String(prescriptionForm.rateCode ?? '')
+        .trim()
+        .toUpperCase();
+      if (current === INPATIENT_IMMEDIATE_RATE_CODE) {
+        prescriptionForm.rateCode = resolveDefaultTcmRateCode(medicationRateOptions.value);
+      }
+    }
+  },
+);
+
 watch(sidebarKeyword, () => {
   scheduleSidebarSearchReload();
 });
@@ -889,7 +1046,6 @@ watch(sidebarKeyword, () => {
       class="tcm-advice-root__sidebar flex h-full min-h-0 flex-col border-r border-[var(--el-border-color-light)] p-1.5"
     >
       <ElInput v-model="sidebarKeyword" placeholder="搜索组套/历史处方" clearable class="mb-1.5" />
-      <p class="mb-1.5 text-xs text-[var(--el-text-color-secondary)]">点击组套名称带入当前处方</p>
 
       <ElScrollbar v-loading="sidebarLoading" class="min-h-0 flex-1">
         <ElTree
@@ -972,6 +1128,25 @@ watch(sidebarKeyword, () => {
             撤回
           </ElButton>
           <ElButton
+            v-if="isInpatientScope"
+            type="warning"
+            :loading="mutationLoading"
+            :disabled="!canStopLongTermActivePrescription"
+            @click="handleStopLongTermPrescription"
+          >
+            停嘱
+          </ElButton>
+          <ElButton
+            v-if="isInpatientScope"
+            type="warning"
+            plain
+            :loading="mutationLoading"
+            :disabled="!canCancelStopLongTermActivePrescription"
+            @click="handleCancelStopLongTermPrescription"
+          >
+            取消停嘱
+          </ElButton>
+          <ElButton
             type="danger"
             plain
             :loading="mutationLoading"
@@ -997,6 +1172,7 @@ watch(sidebarKeyword, () => {
               :syndrome-group-options="syndromeGroupOptions"
               :method-code-options="methodCodeOptions"
               :rate-code-options="rateCodeOptions"
+              :show-therapy-type="isInpatientScope"
               :disabled="isPrescriptionReadonly"
             />
           </div>

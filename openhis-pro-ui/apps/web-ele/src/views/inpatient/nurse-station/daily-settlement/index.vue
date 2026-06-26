@@ -4,9 +4,7 @@ import type { NurseStationModulePatient } from '../components/nurse-station-modu
 import { ref } from 'vue';
 
 import dayjs from 'dayjs';
-import { ElButton, ElDatePicker, ElMessage } from 'element-plus';
-
-import { useInpatientDailyChargePrint } from '#/composables/use-inpatient-daily-charge-print';
+import { ElDatePicker } from 'element-plus';
 
 interface Props {
   patients?: NurseStationModulePatient[];
@@ -21,28 +19,6 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const billDate = ref(dayjs().format('YYYY-MM-DD'));
-const { isPrinting, previewLoading, printInpatientDailyChargeLists } =
-  useInpatientDailyChargePrint();
-
-async function handlePrintDailyChargeList() {
-  if (!props.patients.length) {
-    ElMessage.warning('请先选择患者');
-    return;
-  }
-  const date = billDate.value?.trim() || dayjs().format('YYYY-MM-DD');
-  try {
-    await printInpatientDailyChargeLists(
-      props.patients.map((patient) => ({
-        encounterId: patient.id,
-        billDate: date,
-        jobName: `住院日费用清单-${patient.name}`,
-      })),
-    );
-    ElMessage.success(`已发送 ${props.patients.length} 份住院日费用清单`);
-  } catch {
-    // composable 已记录日志
-  }
-}
 </script>
 
 <template>
@@ -67,13 +43,6 @@ async function handlePrintDailyChargeList() {
           已选 {{ patients.length }} 位患者
         </span>
       </div>
-      <ElButton
-        type="primary"
-        :loading="isPrinting || previewLoading"
-        @click="handlePrintDailyChargeList"
-      >
-        打印日费用清单
-      </ElButton>
     </header>
 
     <section
@@ -89,9 +58,7 @@ async function handlePrintDailyChargeList() {
           <h3 class="text-8 font-600 m-0 text-[var(--el-text-color-primary)]">
             住院患者日费用清单
           </h3>
-          <p class="m-0 mt-1 text-sm text-[var(--el-text-color-secondary)]">
-            预览摘要（打印以 PDF 为准）
-          </p>
+          <p class="m-0 mt-1 text-sm text-[var(--el-text-color-secondary)]">预览摘要</p>
         </header>
 
         <div class="sheet-grid">
@@ -103,9 +70,7 @@ async function handlePrintDailyChargeList() {
           </div>
         </div>
 
-        <div class="sheet-note">
-          <span>说明：</span>点击「打印日费用清单」将按所选费用日期从收费系统取数生成 A4 PDF。
-        </div>
+        <div class="sheet-note"><span>说明：</span>按所选费用日期展示住院日费用清单摘要。</div>
       </article>
     </section>
     <section v-else class="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-[#eef9fd]">

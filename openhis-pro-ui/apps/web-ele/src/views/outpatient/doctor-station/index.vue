@@ -23,6 +23,7 @@ import {
 } from '#/api/doctor-station/encounter.http';
 import {
   DiagnosisList,
+  ElepAdvice,
   ENSURE_CLINICAL_RECEPTION_KEY,
   TcmAdvice,
 } from '#/components/doctor-station';
@@ -33,7 +34,10 @@ import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
 import { confirmEmrDiscardUnsaved } from '#/emrEditor';
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { formatLocalDateYmd, getLocalDayRangeDateTimeStrings } from '#/utils/date-range-quick';
+import {
+  formatLocalDateYmd,
+  getLocalDayRangeDateTimeStrings,
+} from '#/utils/format/date-range-quick';
 
 import { AdviceList } from './advice';
 import PrescriptionSheetDialog from './components/prescription-sheet-dialog.vue';
@@ -47,7 +51,6 @@ defineOptions({
   name: 'Doctor',
 });
 
-const QUEUE_REGISTERED = 'REGISTERED';
 const QUEUE_IN_PROGRESS = 'IN_PROGRESS';
 
 /**
@@ -77,35 +80,6 @@ function resolveStaffPractitionerIdForInProgressQueue(): string | undefined {
     return undefined;
   }
   return normalized;
-}
-
-/**
- * 接诊写库后从患者队列分页拉当前就诊行，拿到读模型投影的最新 statusEnum / statusEnumText 等。
- */
-async function fetchPatientRowFromDoctorStationList(
-  encounterId: string,
-): Promise<DoctorStationPatient | null> {
-  const organizationId = Number(authStore.getSelectedOrganization());
-  if (!organizationId || Number.isNaN(organizationId)) return null;
-  const staffPractitionerId = resolveStaffPractitionerIdForInProgressQueue();
-  if (!staffPractitionerId) return null;
-  const { startDate, endDate } = getLocalDayRangeDateTimeStrings(listDateStr.value);
-  try {
-    const res = await httpPageOutpatientInfoForDoctorStation({
-      organizationId,
-      staffPractitionerId,
-      startDate,
-      endDate,
-      pageNo: 1,
-      pageSize: 50,
-    });
-    const id = encounterId.trim();
-    const { content } = parsePagedRowsFromApiData<DoctorStationPatient>(res);
-    const hit = content.find((r) => String(r.encounterId ?? '').trim() === id);
-    return hit ?? null;
-  } catch {
-    return null;
-  }
 }
 
 /** 接诊分支用状态：与头信息条同源（同一就诊时取条上 `statusEnum`，否则取列表行）。 */
@@ -194,7 +168,7 @@ const tabComponents = computed<Record<DoctorTab, Component>>(() => {
     [DOCTOR_TABS.DIAGNOSIS]: DiagnosisList,
     [DOCTOR_TABS.ORDER]: AdviceList,
     [DOCTOR_TABS.TCM]: TcmAdvice,
-    [DOCTOR_TABS.PRESCRIPTION]: DiagnosisForm,
+    [DOCTOR_TABS.PRESCRIPTION]: ElepAdvice,
     [DOCTOR_TABS.REPORT_QUERY]: DiagnosisForm,
   };
 });
@@ -206,7 +180,8 @@ const doctorStationContextBindings = computed(() => {
   if (
     activeTab.value === DOCTOR_TABS.DIAGNOSIS ||
     activeTab.value === DOCTOR_TABS.ORDER ||
-    activeTab.value === DOCTOR_TABS.TCM
+    activeTab.value === DOCTOR_TABS.TCM ||
+    activeTab.value === DOCTOR_TABS.PRESCRIPTION
   ) {
     return {
       encounterId,
@@ -220,14 +195,16 @@ const doctorStationContextBindings = computed(() => {
 });
 
 /** 拉取患者队列分页（不传 encounterStatus，后端按 BR-DOR-009 返回挂当前医生号的各状态就诊；在诊 Tab 仍由本地维护）。 */
-async function loadDoctorStationLists(options?: { skipDefaultSelection?: boolean }) {
+async function loadDoctorStationLists(options?: {
+  skipDefaultSelection?: boolean;
+}): Promise<DoctorStationPatient[]> {
   const organizationId = Number(authStore.getSelectedOrganization());
   if (!organizationId || Number.isNaN(organizationId)) {
     ElMessage.warning('请先选择科室');
     waitingPatients.value = [];
     currentPatients.value = [];
     doctorPatientStore.setSelectedPatient(null);
-    return;
+    return [];
   }
 
   const staffPractitionerId = resolveStaffPractitionerIdForInProgressQueue();
@@ -236,7 +213,7 @@ async function loadDoctorStationLists(options?: { skipDefaultSelection?: boolean
     waitingPatients.value = [];
     currentPatients.value = [];
     doctorPatientStore.setSelectedPatient(null);
-    return;
+    return [];
   }
 
   const { startDate, endDate } = getLocalDayRangeDateTimeStrings(listDateStr.value);
@@ -257,11 +234,11 @@ async function loadDoctorStationLists(options?: { skipDefaultSelection?: boolean
     waitingPatients.value = waitingRows;
     currentPatients.value = [];
 
-    if (options?.skipDefaultSelection) return;
+    if (options?.skipDefaultSelection) return waitingRows;
 
     if (patientQueue.value === 'waiting') {
       await applySelectedPatientChange(waitingPatients.value[0] ?? null);
-      return;
+      return waitingRows;
     }
 
     const sel = selectedPatient.value;
@@ -271,6 +248,11 @@ async function loadDoctorStationLists(options?: { skipDefaultSelection?: boolean
     } else {
       await applySelectedPatientChange(null);
     }
+    return waitingRows;
+  } catch {
+    waitingPatients.value = [];
+    currentPatients.value = [];
+    return [];
   } finally {
     listLoading.value = false;
   }
@@ -301,20 +283,6 @@ const handleTabChange = async (tab: string) => {
     if (!ok) return;
   }
   activeTab.value = next;
-  if (next === DOCTOR_TABS.ORDER) {
-    await nextTick();
-    const inst = tabPanelRef.value as undefined | { loadAdviceInit?: () => Promise<void> };
-    if (inst && typeof inst.loadAdviceInit === 'function') {
-      void inst.loadAdviceInit();
-    }
-  }
-  if (next === DOCTOR_TABS.TCM) {
-    await nextTick();
-    const inst = tabPanelRef.value as undefined | { reload?: () => Promise<void> };
-    if (inst && typeof inst.reload === 'function') {
-      void inst.reload();
-    }
-  }
 };
 
 const handlePatientSelect = async (patient: DoctorStationPatient) => {
@@ -451,9 +419,10 @@ async function ensureReceptionForPatient(patient: DoctorStationPatient): Promise
       directFromPlanned: true,
     });
     ElMessage.success('接诊成功');
-    await loadDoctorStationLists({ skipDefaultSelection: true });
+    const waitingRows = await loadDoctorStationLists({ skipDefaultSelection: true });
     patientQueue.value = 'current';
-    const fresh = await fetchPatientRowFromDoctorStationList(patient.encounterId);
+    const encounterKey = patient.encounterId.trim();
+    const fresh = waitingRows.find((row) => String(row.encounterId ?? '').trim() === encounterKey);
     const inProgressPatient: DoctorStationPatient =
       fresh ??
       ({

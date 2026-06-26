@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import type { ReturnMedicineQueuePatient } from './types';
 
+import type {
+  OutpatientPatientCardPayload,
+  PatientCardPatient,
+} from '#/components/outpatient/patient-card.types';
+
 import { ref } from 'vue';
 
 import { RotateCw, Search } from '@vben/icons';
 
 import { ElButton, ElDatePicker, ElInput, ElRadio, ElRadioGroup } from 'element-plus';
-
-import type {
-  OutpatientPatientCardPayload,
-  PatientCardPatient,
-} from '#/components/outpatient/patient-card.types';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import PatientCard from '#/components/outpatient/patient-card.vue';
