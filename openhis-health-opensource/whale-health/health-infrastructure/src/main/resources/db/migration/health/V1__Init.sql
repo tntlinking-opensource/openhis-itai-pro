@@ -2551,6 +2551,188 @@ INSERT INTO whale_qrtz_cron_triggers (
     'Asia/Shanghai'
 ) ON CONFLICT (sched_name, trigger_name, trigger_group) DO NOTHING;
 
+-- ========== 菜单重组（原 V88–V91 + V96，删库重跑终态） ==========
+
+-- V88：基础数据「医嘱组套」菜单更名为「组套模板」
+
+UPDATE whale_permissions
+SET display_name = '组套模板',
+    updated_at   = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = 56
+  AND name = 'Navigation.OrderTemplate'
+  AND is_deleted = FALSE
+  AND display_name = '医嘱组套';
+
+UPDATE whale_menus
+SET display_name = '组套模板',
+    remark       = '基础数据-组套模板',
+    updated_at   = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = 316900463887929348
+  AND code = 'order_template'
+  AND is_deleted = FALSE
+  AND display_name = '医嘱组套';
+
+-- V89：移除「发药单据」菜单；门诊/住院发退药记录归入「发药管理」目录（不再挂在「药房管理」下）
+
+-- ---------------------------------------------------------------------------
+-- 1. 移除「发药单据」菜单与权限
+-- ---------------------------------------------------------------------------
+UPDATE whale_menus
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V89 菜单已移除'
+WHERE id = '310400000000000063'
+  AND code = 'DispenseDoc'
+  AND is_deleted = FALSE;
+
+UPDATE whale_permissions
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = 40
+  AND name = 'Navigation.Dispensedoc'
+  AND is_deleted = FALSE;
+
+UPDATE whale_permission_grants
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE permission_name = 'Navigation.Dispensedoc'
+  AND is_deleted = FALSE;
+
+-- ---------------------------------------------------------------------------
+-- 2. 门诊/住院发退药记录：parent 由「药房管理」改为「发药管理」
+-- ---------------------------------------------------------------------------
+UPDATE whale_menus
+SET parent_id  = '310400000000000060',
+    sort_order = 6,
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    remark     = '发药管理-门诊发退药记录查询与导出'
+WHERE id = '310400000000000118'
+  AND code = 'DispenseRecordOp'
+  AND is_deleted = FALSE
+  AND parent_id = '301696493912330240';
+
+UPDATE whale_menus
+SET parent_id  = '310400000000000060',
+    sort_order = 7,
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    remark     = '发药管理-住院发退药记录查询与导出'
+WHERE id = '310400000000000119'
+  AND code = 'DispenseRecordIp'
+  AND is_deleted = FALSE
+  AND parent_id = '301696493912330240';
+
+-- V90：库房管理侧栏精简 — 仅保留药库进货/出库/盘点与库存明细；移除误挂的科室盘点单；其余菜单先隐藏
+
+-- ---------------------------------------------------------------------------
+-- 1. 移除「科室盘点单」（误挂在库房管理下，后续按正确域再挂）
+-- ---------------------------------------------------------------------------
+UPDATE whale_menus
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V90 误挂库房管理，菜单已移除'
+WHERE id = '310400000000000107'
+  AND code = 'DeptStocktakeOrder'
+  AND is_deleted = FALSE;
+
+UPDATE whale_permissions
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = 62
+  AND name = 'Navigation.Deptstocktakeorder'
+  AND is_deleted = FALSE;
+
+UPDATE whale_permission_grants
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE permission_name = 'Navigation.Deptstocktakeorder'
+  AND is_deleted = FALSE;
+
+-- ---------------------------------------------------------------------------
+-- 2. 隐藏库房管理下其余菜单（保留权限定义，便于后续放开）
+-- ---------------------------------------------------------------------------
+UPDATE whale_menus
+SET is_hidden  = TRUE,
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V90 库房管理侧栏暂隐藏'
+WHERE parent_id = '284503862625177600'
+  AND is_deleted = FALSE
+  AND id NOT IN (
+      '312881978679496704', -- 药库进货单
+      '313234941086273536', -- 药库出库单
+      '316800463887929340', -- 药库盘点单
+      '313570119616827392'  -- 库存明细
+  );
+
+-- ---------------------------------------------------------------------------
+-- 3. 保留菜单：确保可见并重排 sort 1～4
+-- ---------------------------------------------------------------------------
+UPDATE whale_menus
+SET is_hidden  = FALSE,
+    sort_order = 1,
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = '312881978679496704'
+  AND code = 'WhPurchaseInbound'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET is_hidden  = FALSE,
+    sort_order = 2,
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = '313234941086273536'
+  AND code = 'WhStockOut'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET is_hidden  = FALSE,
+    sort_order = 3,
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = '316800463887929340'
+  AND code = 'WhStocktakeOrder'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET is_hidden  = FALSE,
+    sort_order = 4,
+    updated_at = TIMESTAMP '2026-06-24 00:00:00+00'
+WHERE id = '313570119616827392'
+  AND code = 'InvStockList'
+  AND is_deleted = FALSE;
+
+-- V91：菜单重组
+--   · 报表：隐藏「报表管理」整树；新建一级「报表中心」；门诊费用明细迁入；移除收费工作站「门诊报表」
+--   · 基础数据：配置类页面迁至一级「配置管理」；打印类页面迁至一级「打印管理」
+--   · 一级菜单 sort 定稿（业务菜单前置；配置/系统/打印置后；药库管理显示名）
+--   · 二级菜单 sort / 显示名 / 隐藏 / 删除（基础数据、收费、发药、药房、药库、打印、排班等）
+--   · 权限 display_name 与菜单显示名对齐
+--   · 信息科 / 医生 / 库管 / 财务 角色菜单权限补撤
+
+-- ---------------------------------------------------------------------------
+-- 1. 隐藏「报表管理」及其子菜单（保留权限定义，便于后续放开）
+-- ---------------------------------------------------------------------------
+UPDATE whale_menus
+SET is_hidden  = TRUE,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V91 报表管理侧栏暂隐藏'
+WHERE id = '310400000000000100'
+  AND code = 'ReportManagement'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET is_hidden  = TRUE,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V91 随报表管理暂隐藏'
+WHERE parent_id = '310400000000000100'
+  AND is_deleted = FALSE;
+
+-- ---------------------------------------------------------------------------
+-- 2. 新建一级「报表中心」
+-- ---------------------------------------------------------------------------
 INSERT INTO whale_menus (
     id, code, name, display_name, icon, path, component, permission_name, parent_id,
     sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
@@ -2562,8 +2744,51 @@ VALUES (
     TRUE, FALSE, FALSE, '', 'directory', 'HIS 报表中心（门诊费用明细等）', NULL,
     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
 
+-- ---------------------------------------------------------------------------
+-- 3. 「门诊费用明细」迁入一级「报表中心」
+-- ---------------------------------------------------------------------------
+UPDATE whale_menus
+SET parent_id  = '310400000000000122',
+    sort_order = 1,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '报表中心-门诊费用明细查询与导出'
+WHERE id = '310400000000000121'
+  AND code = 'OpFeeDetail'
+  AND is_deleted = FALSE;
+
+-- ---------------------------------------------------------------------------
+-- 4. 移除收费工作站「门诊报表」目录（子项已迁出）
+-- ---------------------------------------------------------------------------
+UPDATE whale_menus
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V91 门诊费用明细已迁至报表中心，目录已移除'
+WHERE id = '310400000000000120'
+  AND code = 'OpReport'
+  AND is_deleted = FALSE;
+
+-- ---------------------------------------------------------------------------
+-- 5. 新建一级「配置管理」
+-- ---------------------------------------------------------------------------
 INSERT INTO whale_menus (
     id, code, name, display_name, icon, path, component, permission_name, parent_id,
     sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
@@ -2575,8 +2800,27 @@ VALUES (
     TRUE, FALSE, FALSE, '', 'directory', 'HIS 配置管理（病历/执行地点/组套/取药科室/耗材绑定等）', NULL,
     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
 
+-- ---------------------------------------------------------------------------
+-- 6. 新建一级「打印管理」
+-- ---------------------------------------------------------------------------
 INSERT INTO whale_menus (
     id, code, name, display_name, icon, path, component, permission_name, parent_id,
     sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
@@ -2588,7 +2832,388 @@ VALUES (
     TRUE, FALSE, FALSE, '', 'directory', 'HIS 打印管理（模板/绑定/日志）', NULL,
     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+-- ---------------------------------------------------------------------------
+-- 7. 配置类页面：由「基础数据」迁至「配置管理」
+-- ---------------------------------------------------------------------------
+UPDATE whale_menus
+SET parent_id  = '310400000000000123',
+    sort_order = 1,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '配置管理-病历模版'
+WHERE id = '315372803691384832'
+  AND code = 'EmrTemplate'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+
+UPDATE whale_menus
+SET parent_id  = '310400000000000123',
+    sort_order = 2,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '配置管理-执行地点'
+WHERE id = '316900463887929347'
+  AND code = 'ExecuteLocation'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+
+UPDATE whale_menus
+SET parent_id  = '310400000000000123',
+    sort_order = 3,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '配置管理-组套模板'
+WHERE id = '316900463887929348'
+  AND code = 'order_template'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+
+UPDATE whale_menus
+SET parent_id  = '310400000000000123',
+    sort_order = 4,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '配置管理-取药科室'
+WHERE id = '316900463887929349'
+  AND code = 'service_location'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+
+UPDATE whale_menus
+SET parent_id  = '310400000000000123',
+    sort_order = 5,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '配置管理-诊疗耗材绑定'
+WHERE id = '316900463887929346'
+  AND code = 'ServiceDeviceBinding'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+
+-- ---------------------------------------------------------------------------
+-- 8. 打印类页面：由「基础数据」迁至「打印管理」
+-- ---------------------------------------------------------------------------
+UPDATE whale_menus
+SET parent_id  = '310400000000000124',
+    sort_order = 1,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '打印管理-PRT 画布打印模板（PrintJson）'
+WHERE id = '310600000000000101'
+  AND code = 'PrintTemplate'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+
+UPDATE whale_menus
+SET parent_id  = '310400000000000124',
+    sort_order = 2,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '打印管理-PRT bindingCode→busNo 租户绑定'
+WHERE id = '310600000000000104'
+  AND code = 'ReportPrintBinding'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+
+UPDATE whale_menus
+SET parent_id  = '310400000000000124',
+    sort_order = 3,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '打印管理-PRT 打印审计 prt_print_event_log'
+WHERE id = '310600000000000103'
+  AND code = 'ReportPrintLog'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+
+UPDATE whale_menus
+SET parent_id  = '310400000000000124',
+    sort_order = 4,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = '打印管理-隐藏：设计从列表进入 /basic/print-template/design'
+WHERE id = '310600000000000102'
+  AND code = 'PrintTemplateDesigner'
+  AND is_deleted = FALSE
+  AND parent_id = '2000';
+
+-- ---------------------------------------------------------------------------
+-- 9. 一级菜单 sort 定稿（0 概览；1 基础数据；2–9 业务；11–17 报表/配置/系统/排班/医保/打印/隐藏报表）
+-- ---------------------------------------------------------------------------
+UPDATE whale_menus
+SET sort_order = 1,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '2000'
+  AND code = 'basic_data'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 2,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000001'
+  AND code = 'ChargeStation'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 3,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000020'
+  AND code = 'OutpatientDoctorStation'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 4,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000040'
+  AND code = 'InpatientDoctorStation'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 5,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '301665359451131904'
+  AND code = 'OutpatientNurseStation'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 6,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '301666596158443520'
+  AND code = 'InpatientNurseStation'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 7,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000060'
+  AND code = 'MedicationDispense'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 8,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '301696493912330240'
+  AND code = 'Pharmacy'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET display_name = '药库管理',
+    sort_order   = 9,
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '284503862625177600'
+  AND code = 'Warehouse'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 11,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000122'
+  AND code = 'ReportCenterRoot'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 12,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000123'
+  AND code = 'ConfigManagementRoot'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 13,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '1000'
+  AND code = 'system_management'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 14,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310900000000000100'
+  AND code = 'BookingHub'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 15,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310500000000000100'
+  AND code = 'ChsManagement'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 16,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000124'
+  AND code = 'PrintManagementRoot'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET sort_order = 17,
+    is_hidden  = TRUE,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310400000000000100'
+  AND code = 'ReportManagement'
+  AND is_deleted = FALSE;
+
+-- ---------------------------------------------------------------------------
+-- 10. 二级菜单 sort / 显示名 / 隐藏 / 删除（对齐院点 UI 手工调整）
+-- ---------------------------------------------------------------------------
+
+-- 10.1 基础数据
+UPDATE whale_menus SET sort_order = 1,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284517877903003648' AND code = 'Medicine' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 2,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284519152342274048' AND code = 'Diagnosistreatment' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 3,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284518561658441728' AND code = 'Device' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 4,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284519592148602880' AND code = 'Disease' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 5,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2008' AND code = 'healthcare_service_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 6,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2007' AND code = 'dept_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 7,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2004' AND code = 'ward_location_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 8,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2003' AND code = 'warehouse_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 9,  updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2005' AND code = 'patient_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 10, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2002' AND code = 'bodystructure_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 11, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '317000463887929350' AND code = 'specimen_definition' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 12, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284501743746682880' AND code = 'Frequency' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 13, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '284502213630365696' AND code = 'Supplier' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 14, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2010' AND code = 'contract_management' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 99, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '2001' AND code = 'codesystem_management' AND is_deleted = FALSE;
+
+-- 10.2 收费工作站（预交金/结算顺序调整；住院费用管理隐藏）
+UPDATE whale_menus SET sort_order = 6, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000008' AND code = 'ChargeIpPrepay' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 7, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000007' AND code = 'ChargeIpSettle' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 8, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000117' AND code = 'ChargeIpDayClose' AND is_deleted = FALSE;
+UPDATE whale_menus
+SET sort_order      = 9,
+    is_hidden       = TRUE,
+    permission_name = NULL,
+    updated_at      = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark          = COALESCE(remark, '') || '；V91 侧栏暂隐藏'
+WHERE id = '310400000000000009'
+  AND code = 'ChargeIpFee'
+  AND is_deleted = FALSE;
+
+-- 10.3 发药管理（退药/发退药记录排序）
+UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 2, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '313945127476793344' AND code = 'MedicineReturnOp' AND is_deleted = FALSE;
+UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 3, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000062' AND code = 'DispenseIp' AND is_deleted = FALSE;
+UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 4, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000064' AND code = 'MedicineReturnIp' AND is_deleted = FALSE;
+UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 5, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000118' AND code = 'DispenseRecordOp' AND is_deleted = FALSE;
+UPDATE whale_menus SET parent_id = '310400000000000060', sort_order = 6, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000119' AND code = 'DispenseRecordIp' AND is_deleted = FALSE;
+
+-- 10.4 药房管理（损益/退库归位并隐藏）
+UPDATE whale_menus
+SET parent_id       = '301696493912330240',
+    display_name    = '药房损益单',
+    sort_order      = 9,
+    is_hidden       = TRUE,
+    permission_name = NULL,
+    updated_at      = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark          = COALESCE(remark, '') || '；V91 药房管理侧栏暂隐藏'
+WHERE id = '310400000000000109'
+  AND code = 'PhaGainLoss'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET parent_id       = '301696493912330240',
+    display_name    = '药房退库单',
+    sort_order      = 14,
+    is_hidden       = TRUE,
+    permission_name = NULL,
+    updated_at      = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark          = COALESCE(remark, '') || '；V91 药房管理侧栏暂隐藏'
+WHERE id = '310400000000000114'
+  AND code = 'PhaReturnUpstream'
+  AND is_deleted = FALSE;
+
+-- 10.5 药库管理（覆盖 V90 sort；库存明细置顶；调拨改名；移除科室/退库类单据）
+UPDATE whale_menus SET sort_order = 0, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '313570119616827392' AND code = 'InvStockList' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 1, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000081' AND code = 'WhPurchaseOrder' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 2, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '312881978679496704' AND code = 'WhPurchaseInbound' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 3, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000106' AND code = 'WhReturnToSupplier' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 4, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '313234941086273536' AND code = 'WhStockOut' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 5, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '316800463887929340' AND code = 'WhStocktakeOrder' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 6, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000108' AND code = 'WhGainLoss' AND is_deleted = FALSE;
+UPDATE whale_menus SET display_name = '药库调拨出库单', sort_order = 7, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000111' AND code = 'WhTransferOut' AND is_deleted = FALSE;
+UPDATE whale_menus SET display_name = '药库调拨入库单', sort_order = 8, is_hidden = TRUE, permission_name = NULL, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310400000000000112' AND code = 'WhTransferIn' AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V91 菜单已移除'
+WHERE id = '310400000000000110'
+  AND code = 'DeptGainLoss'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V91 菜单已移除'
+WHERE id = '310400000000000115'
+  AND code = 'WhReturnFromDownstream'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    remark     = COALESCE(remark, '') || '；V91 菜单已移除'
+WHERE id = '310400000000000116'
+  AND code = 'DeptReturn'
+  AND is_deleted = FALSE;
+
+-- 10.6 打印管理（设计器/模板排序；设计器侧栏可见）
+UPDATE whale_menus SET sort_order = 2,  is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310600000000000104' AND code = 'ReportPrintBinding' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 3,  is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310600000000000103' AND code = 'ReportPrintLog' AND is_deleted = FALSE;
+UPDATE whale_menus SET display_name = '打印设计器', sort_order = 24, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310600000000000102' AND code = 'PrintTemplateDesigner' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 25, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310600000000000101' AND code = 'PrintTemplate' AND is_deleted = FALSE;
+
+-- 10.7 排班预约（前三项改名重排；菜单与权限一一对应）
+UPDATE whale_menus SET display_name = '排班设置', sort_order = 1, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000112' AND code = 'BookingScheduleTemplate' AND is_deleted = FALSE;
+UPDATE whale_menus SET display_name = '门诊排班', sort_order = 2, permission_name = 'Booking.OutpatientSchedule.View', updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000101' AND code = 'BookingOutpatientSchedule' AND is_deleted = FALSE;
+UPDATE whale_menus SET display_name = '号源日历', sort_order = 3, permission_name = 'Booking.SlotCalendar.View', updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000102' AND code = 'BookingSlotCalendar' AND is_deleted = FALSE;
+
+-- ---------------------------------------------------------------------------
+-- 11. 权限 display_name 与菜单显示名对齐
+-- ---------------------------------------------------------------------------
+UPDATE whale_permissions
+SET display_name = '诊疗耗材绑定',
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name = 'Navigation.ActivityDeviceBinding'
+  AND is_deleted = FALSE;
+
+UPDATE whale_permissions
+SET display_name = '打印设计器',
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name = 'Print.Templates.Design'
+  AND is_deleted = FALSE;
+
+UPDATE whale_permissions
+SET display_name = '排班设置',
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name = 'Booking.Template.View'
+  AND is_deleted = FALSE;
+
+UPDATE whale_permissions
+SET display_name = '排班预约',
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name = 'Booking'
+  AND is_deleted = FALSE;
+
+-- 11.1 排班预约：原 Booking.Schedule.View 拆为门诊排班 / 号源日历（菜单与权限一一对应）
+UPDATE whale_permissions
+SET name         = 'Booking.OutpatientSchedule.View',
+    display_name = '门诊排班',
+    description  = '菜单入口: BookingOutpatientSchedule',
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name = 'Booking.Schedule.View'
+  AND is_deleted = FALSE;
 
 INSERT INTO whale_permissions (
     id, name, display_name, parent_name, description,
@@ -2599,23 +3224,21 @@ VALUES (
     '菜单入口: BookingSlotCalendar', NULL,
     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
 
-INSERT INTO whale_permissions (
-    id, name, display_name, parent_name, description,
-    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
-)
-VALUES
-    ('310700000000000016', 'ConfigManagement', '配置管理', NULL,
-     'HIS 配置管理入口权限分组（病历/执行地点/组套/取药科室/耗材绑定）', NULL,
-     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('310700000000000017', 'PrintManagement', '打印管理', NULL,
-     'HIS 打印管理入口权限分组（PRT 模板/绑定/日志）', NULL,
-     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('310700000000000018', 'ReportCenter', '报表中心', NULL,
-     'HIS 报表中心入口权限分组（门诊费用明细等）', NULL,
-     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL)
-ON CONFLICT (id) DO NOTHING;
+UPDATE whale_permission_grants
+SET permission_name = 'Booking.OutpatientSchedule.View',
+    updated_at      = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE permission_name = 'Booking.Schedule.View'
+  AND is_deleted = FALSE;
 
 INSERT INTO whale_permission_grants (
     id, permission_name, provider_name, provider_key,
@@ -2631,6 +3254,69 @@ WHERE NOT EXISTS (
       AND is_deleted = FALSE
 );
 
+-- ---------------------------------------------------------------------------
+-- 12. 权限分组：配置管理 / 打印管理 / 报表中心 + 子权限归组 + 管理员授权
+-- ---------------------------------------------------------------------------
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310700000000000016', 'ConfigManagement', '配置管理', NULL,
+     'HIS 配置管理入口权限分组（病历/执行地点/组套/取药科室/耗材绑定）', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000017', 'PrintManagement', '打印管理', NULL,
+     'HIS 打印管理入口权限分组（PRT 模板/绑定/日志）', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000018', 'ReportCenter', '报表中心', NULL,
+     'HIS 报表中心入口权限分组（门诊费用明细等）', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+-- 配置类 Navigation 权限归入 ConfigManagement
+UPDATE whale_permissions
+SET parent_name = 'ConfigManagement',
+    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name IN (
+    'Navigation.Emrtemplate',
+    'Navigation.Executelocation',
+    'Navigation.OrderTemplate',
+    'Navigation.ServiceLocation',
+    'Navigation.ActivityDeviceBinding'
+)
+  AND is_deleted = FALSE
+  AND parent_name = 'Navigation';
+
+-- 打印类 Print 权限归入 PrintManagement
+UPDATE whale_permissions
+SET parent_name = 'PrintManagement',
+    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name IN (
+    'Print.Templates.View',
+    'Print.Templates.Design',
+    'Print.PrintLog.View',
+    'Print.PrintBinding.View'
+)
+  AND is_deleted = FALSE
+  AND parent_name = 'BasicData';
+
+-- 门诊费用明细归入 ReportCenter
+UPDATE whale_permissions
+SET parent_name = 'ReportCenter',
+    updated_at  = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE name = 'Navigation.Opfeedetail'
+  AND is_deleted = FALSE
+  AND parent_name = 'Navigation';
+
+-- 管理员（R / 1）补三个一级分组授权
 INSERT INTO whale_permission_grants (
     id, permission_name, provider_name, provider_key,
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
@@ -2642,7 +3328,55 @@ VALUES
      TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('310800000000000018', 'ReportCenter', 'R', '1', NULL,
      TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
-ON CONFLICT (permission_name, provider_name, provider_key) DO NOTHING;
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00';
+
+-- ---------------------------------------------------------------------------
+-- 13. 撤销占位/废弃报表菜单权限（信息科、财务）
+-- ---------------------------------------------------------------------------
+UPDATE whale_permission_grants
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE provider_name = 'R'
+  AND provider_key = '323022177255297024'
+  AND permission_name IN (
+      'Navigation.Reportclinical',
+      'Navigation.Reportdean',
+      'Navigation.Reportfinance',
+      'Navigation.Reporthome',
+      'Navigation.Reporttemplatedesigner'
+  )
+  AND is_deleted = FALSE;
+
+UPDATE whale_permission_grants
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE provider_name = 'R'
+  AND provider_key = '14'
+  AND permission_name IN (
+      'Navigation.Reportclinical',
+      'Navigation.Reportdean',
+      'Navigation.Reportfinance',
+      'Navigation.Reporthome'
+  )
+  AND is_deleted = FALSE;
+
+-- ---------------------------------------------------------------------------
+-- 14. 库管：库房药房主数据；撤销已隐藏的药库订货单
+-- ---------------------------------------------------------------------------
+UPDATE whale_permission_grants
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE provider_name = 'R'
+  AND provider_key = '13'
+  AND permission_name = 'Navigation.Whpurchaseorder'
+  AND is_deleted = FALSE;
 
 INSERT INTO whale_permission_grants (
     id, permission_name, provider_name, provider_key,
@@ -2651,8 +3385,15 @@ INSERT INTO whale_permission_grants (
 VALUES
     ('310800000000000020', 'Navigation.WarehouseManagement', 'R', '13', '1',
      TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL)
-ON CONFLICT (permission_name, provider_name, provider_key) DO NOTHING;
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00';
 
+-- ---------------------------------------------------------------------------
+-- 15. 医生：门诊排班 + 号源日历
+-- ---------------------------------------------------------------------------
 INSERT INTO whale_permission_grants (
     id, permission_name, provider_name, provider_key,
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
@@ -2681,6 +3422,9 @@ WHERE NOT EXISTS (
       AND is_deleted = FALSE
 );
 
+-- ---------------------------------------------------------------------------
+-- 16. 信息科：配置/打印/报表/医保/排班/样本/任务 等菜单权限
+-- ---------------------------------------------------------------------------
 INSERT INTO whale_permission_grants (
     id, permission_name, provider_name, provider_key,
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
@@ -2712,7 +3456,11 @@ VALUES
      TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('310800000000000034', 'Print.Templates.View', 'R', '323022177255297024', '1',
      TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL)
-ON CONFLICT (permission_name, provider_name, provider_key) DO NOTHING;
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00';
 
 INSERT INTO whale_permission_grants (
     id, permission_name, provider_name, provider_key,
@@ -2728,6 +3476,8 @@ WHERE NOT EXISTS (
       AND is_deleted = FALSE
 );
 
+-- V96：1901 平台字典菜单（参保地医保区划）
+
 INSERT INTO whale_menus (
     id, code, name, display_name, icon, path, component, permission_name, parent_id,
     sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
@@ -2739,7 +3489,23 @@ VALUES (
     TRUE, FALSE, FALSE, '', 'menu', '1901 医保区划等字典手动同步与本地镜像查询', NULL,
     TIMESTAMP '2026-06-24 12:00:00+00', TIMESTAMP '2026-06-24 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
 
 INSERT INTO whale_permissions (
     id, name, display_name, parent_name, description,
@@ -2750,7 +3516,15 @@ VALUES (
     '菜单入口: ChsPlatformDict — 1901 参保地医保区划字典', NULL,
     TIMESTAMP '2026-06-24 12:00:00+00', TIMESTAMP '2026-06-24 12:00:00+00', 1, 1, FALSE, NULL, NULL
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
 
 INSERT INTO whale_permission_grants (
     id, permission_name, provider_name, provider_key,
@@ -2760,7 +3534,11 @@ VALUES (
     '310800000000000038', 'Navigation.ChsPlatformDict', 'R', '1', NULL,
     TIMESTAMP '2026-06-24 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
 )
-ON CONFLICT (permission_name, provider_name, provider_key) DO NOTHING;
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-24 12:00:00+00';
 
 INSERT INTO whale_roles (
     id, name, display_name, code, description, is_default, is_static,

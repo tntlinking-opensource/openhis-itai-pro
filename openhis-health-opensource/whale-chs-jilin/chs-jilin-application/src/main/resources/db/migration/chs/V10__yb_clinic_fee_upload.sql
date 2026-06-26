@@ -37,7 +37,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_yb_clinic_fee_upload_item
     WHERE is_deleted = FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_yb_clinic_fee_upload_bchno
-    ON yb_clinic_fee_upload (chrg_bchno, tenant_id)
+    ON yb_clinic_fee_upload (chrg_bchno, upload_status, tenant_id)
     WHERE is_deleted = FALSE;
 
 COMMENT ON TABLE yb_clinic_fee_upload IS '2204 门诊费用上传及平台分割结果';

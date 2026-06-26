@@ -1991,3 +1991,97 @@ WHERE src.tenant_id = 0
 -- V4/V5 merged outpatient_daily_settlement presentation
 
 -- NOTE: outpatient_daily_settlement / inpatient_daily_settlement rpt_definition seeds include final header_json and tenant_id=1.
+
+-- ========== 报表种子后处理（原 report V4） ==========
+
+-- 表头 JSON 升级为 lines[] 动态行（兼容旧 leftText/rightText）
+UPDATE rpt_definition
+SET header_json = jsonb_build_object(
+        'title', COALESCE(header_json::jsonb ->> 'title', name),
+        'subtitle', COALESCE(header_json::jsonb ->> 'subtitle', '{{dateRange}}'),
+        'lines', CASE
+            WHEN header_json IS NOT NULL
+                 AND jsonb_array_length(COALESCE(header_json::jsonb -> 'lines', '[]'::jsonb)) > 0
+                THEN header_json::jsonb -> 'lines'
+            WHEN COALESCE(header_json::jsonb ->> 'leftText', '') <> ''
+                 OR COALESCE(header_json::jsonb ->> 'rightText', '') <> ''
+                THEN jsonb_build_array(jsonb_build_object(
+                    'type', 'split',
+                    'left', COALESCE(header_json::jsonb ->> 'leftText', ''),
+                    'right', COALESCE(header_json::jsonb ->> 'rightText', '')
+                ))
+            ELSE jsonb_build_array(jsonb_build_object(
+                    'type', 'split',
+                    'left', '编制单位：________',
+                    'right', '打印日期：{{dateRange}}'
+                ))
+            END
+    )::text
+WHERE is_deleted = FALSE
+  AND source_type = 'sql'
+  AND header_json IS NOT NULL;
+
+-- 将平台出厂报表定义（tenant_id=0）复制到默认院点租户（whale_tenants.id=1）
+INSERT INTO rpt_definition (
+    id,
+    tenant_id,
+    report_code,
+    name,
+    loader_bean,
+    source_type,
+    status,
+    default_columns_json,
+    allow_column_customize,
+    export_pdf_enabled,
+    pdf_print_code,
+    query_sql,
+    header_json,
+    footer_json,
+    filter_json,
+    remark,
+    created_at,
+    updated_at,
+    created_by,
+    updated_by,
+    is_deleted,
+    deleted_at,
+    deleted_by
+)
+SELECT
+    src.id + 800000000000,
+    1,
+    src.report_code,
+    src.name,
+    src.loader_bean,
+    src.source_type,
+    src.status,
+    src.default_columns_json,
+    src.allow_column_customize,
+    src.export_pdf_enabled,
+    src.pdf_print_code,
+    src.query_sql,
+    src.header_json,
+    src.footer_json,
+    src.filter_json,
+    src.remark,
+    CURRENT_TIMESTAMP,
+    src.updated_at,
+    src.created_by,
+    src.updated_by,
+    FALSE,
+    NULL,
+    NULL
+FROM rpt_definition src
+WHERE src.tenant_id = 0
+  AND src.is_deleted = FALSE
+  AND NOT EXISTS (
+      SELECT 1
+      FROM rpt_definition d
+      WHERE d.tenant_id = 1
+        AND d.report_code = src.report_code
+        AND d.is_deleted = FALSE
+  );
+
+-- Loader 类定义 status/source_type 兜底
+UPDATE rpt_definition SET status = 'published' WHERE is_deleted = FALSE AND (status IS NULL OR status = '');
+UPDATE rpt_definition SET source_type = 'loader' WHERE is_deleted = FALSE AND (source_type IS NULL OR source_type = '');

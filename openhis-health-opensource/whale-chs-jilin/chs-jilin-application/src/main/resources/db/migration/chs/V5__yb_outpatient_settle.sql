@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS yb_encounter_platform_map (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_yb_encounter_platform_map
-    ON yb_encounter_platform_map (encounter_id, contract_id, tenant_id)
+    ON yb_encounter_platform_map (encounter_id, contract_id, med_type, tenant_id)
     WHERE is_deleted = FALSE;
 
 CREATE TABLE IF NOT EXISTS yb_clinic_pre_settle (
