@@ -26,9 +26,7 @@ CREATE TABLE IF NOT EXISTS "public"."cln_condition_definition" (
     "status_enum" varchar(255) NOT NULL,
     CONSTRAINT "cln_condition_definition_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE cln_condition_definition IS '临床 condition definition';
-
 COMMENT ON COLUMN cln_condition_definition.id IS '主键';
 COMMENT ON COLUMN cln_condition_definition.tenant_id IS '租户标识';
 COMMENT ON COLUMN cln_condition_definition.created_at IS '创建时间';
@@ -39,21 +37,29 @@ COMMENT ON COLUMN cln_condition_definition.is_deleted IS '软删标记';
 COMMENT ON COLUMN cln_condition_definition.deleted_at IS '删除时间';
 COMMENT ON COLUMN cln_condition_definition.deleted_by IS '删除人';
 COMMENT ON COLUMN cln_condition_definition.version IS '乐观锁版本号';
-COMMENT ON COLUMN cln_condition_definition.source_enum IS 'source enum';
-COMMENT ON COLUMN cln_condition_definition.condition_code IS 'condition code';
-COMMENT ON COLUMN cln_condition_definition.name IS 'name';
-COMMENT ON COLUMN cln_condition_definition.py_str IS 'py str';
-COMMENT ON COLUMN cln_condition_definition.wb_str IS 'wb str';
-COMMENT ON COLUMN cln_condition_definition.type_code IS 'type code';
-COMMENT ON COLUMN cln_condition_definition.description IS 'description';
-COMMENT ON COLUMN cln_condition_definition.yb_flag IS 'yb flag';
-COMMENT ON COLUMN cln_condition_definition.disease_code IS 'disease code';
-COMMENT ON COLUMN cln_condition_definition.yb_no IS 'yb no';
-COMMENT ON COLUMN cln_condition_definition.yb_match_flag IS 'yb match flag';
-COMMENT ON COLUMN cln_condition_definition.status_enum IS 'status enum';
+COMMENT ON COLUMN cln_condition_definition.source_enum IS '来源枚举值';
+COMMENT ON COLUMN cln_condition_definition.condition_code IS '病情编码';
+COMMENT ON COLUMN cln_condition_definition.name IS '名称';
+COMMENT ON COLUMN cln_condition_definition.py_str IS '拼音码';
+COMMENT ON COLUMN cln_condition_definition.wb_str IS '五笔码';
+COMMENT ON COLUMN cln_condition_definition.type_code IS '类型编码';
+COMMENT ON COLUMN cln_condition_definition.description IS '描述';
+COMMENT ON COLUMN cln_condition_definition.yb_flag IS '医保标志位';
+COMMENT ON COLUMN cln_condition_definition.disease_code IS 'disease编码';
+COMMENT ON COLUMN cln_condition_definition.yb_no IS '医保编号';
+COMMENT ON COLUMN cln_condition_definition.yb_match_flag IS '医保match标志位';
+COMMENT ON COLUMN cln_condition_definition.status_enum IS '状态枚举值';
 
 -- seed: cln_condition_definition
 INSERT INTO "cln_condition_definition" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "source_enum", "condition_code", "name", "py_str", "wb_str", "type_code", "description", "yb_flag", "disease_code", "yb_no", "yb_match_flag", "status_enum")
 VALUES
 ('317932056501817344', '1', '2026-05-27 07:48:29.162+00', '2026-05-27 07:48:29.162+00', '1', '1', false, NULL, NULL, 0, 'general_dx', 'CDF00000003', '感冒', 'GM', 'DJ', '1', NULL, NULL, NULL, '1.002', NULL, 'ACTIVE')
 ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "cln_condition_definition" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "source_enum", "condition_code", "name", "py_str", "wb_str", "type_code", "description", "yb_flag", "disease_code", "yb_no", "yb_match_flag", "status_enum") VALUES ('326944736955338752', '1', '2026-06-21 04:41:39.629+00', '2026-06-21 04:41:39.629+00', '1', '1', false, NULL, NULL, 0, 'tcm_syndrome', 'CDF00000001', '气血两虚证', 'QXLXZ', 'RTGHY', '3', NULL, NULL, NULL, NULL, NULL, 'ACTIVE') ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "cln_condition_definition" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "source_enum", "condition_code", "name", "py_str", "wb_str", "type_code", "description", "yb_flag", "disease_code", "yb_no", "yb_match_flag", "status_enum") VALUES ('326944883521097728', '1', '2026-06-21 04:42:14.573+00', '2026-06-21 04:42:14.573+00', '1', '1', false, NULL, NULL, 0, 'tcm_dx', 'CDF00000002', '眩晕', 'XY', 'HJ', '2', NULL, NULL, NULL, NULL, NULL, 'ACTIVE') ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "cln_condition_definition" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "source_enum", "condition_code", "name", "py_str", "wb_str", "type_code", "description", "yb_flag", "disease_code", "yb_no", "yb_match_flag", "status_enum") VALUES ('327720266247442432', '1', '2026-06-23 08:03:20.221+00', '2026-06-23 08:03:20.221+00', '1', '1', false, NULL, NULL, 0, 'general_dx', 'CDF00000003', '头疼', 'TT', 'UU', '1', NULL, NULL, NULL, NULL, NULL, 'ACTIVE') ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "cln_condition_definition" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "source_enum", "condition_code", "name", "py_str", "wb_str", "type_code", "description", "yb_flag", "disease_code", "yb_no", "yb_match_flag", "status_enum") VALUES ('327720343745597440', '1', '2026-06-23 08:03:38.698+00', '2026-06-23 08:03:38.698+00', '1', '1', false, NULL, NULL, 0, 'general_dx', 'CDF00000004', '高血压', 'GXY', 'YTD', '1', NULL, NULL, NULL, NULL, NULL, 'ACTIVE') ON CONFLICT ("id") DO NOTHING;

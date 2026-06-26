@@ -57,9 +57,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_charge_item" (
     "tcm_flag" bool,
     CONSTRAINT "adm_charge_item_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_charge_item IS '管理域 charge item';
-
 COMMENT ON COLUMN adm_charge_item.id IS '主键';
 COMMENT ON COLUMN adm_charge_item.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_charge_item.created_at IS '创建时间';
@@ -113,4 +111,3 @@ COMMENT ON COLUMN adm_charge_item.refund_id IS '退费关联主键（DM refund_i
 COMMENT ON COLUMN adm_charge_item.condition_id IS '病情/诊断条件关联（DM condition_id）';
 COMMENT ON COLUMN adm_charge_item.encounter_diagnosis_id IS '就诊诊断关联主键（DM encounter_diagnosis_id）';
 COMMENT ON COLUMN adm_charge_item.tcm_flag IS '是否中医相关标记（DM tcm_flag）';
-

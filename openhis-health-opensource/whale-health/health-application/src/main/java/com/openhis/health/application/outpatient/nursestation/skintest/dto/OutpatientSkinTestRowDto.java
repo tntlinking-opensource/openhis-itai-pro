@@ -34,6 +34,14 @@ public class OutpatientSkinTestRowDto {
     private String clinicalStatusText;
     private String verificationStatusCode;
     private String verificationStatusText;
+    /** 危险程度 code。 */
+    private String criticalityCode;
+    /** 危险程度展示文案。 */
+    private String criticalityText;
+    /** 严重程度 code。 */
+    private String severityCode;
+    /** 严重程度展示文案。 */
+    private String severityText;
     private Long practitionerId;
     private String practitionerName;
     private Long checkPractitionerId;

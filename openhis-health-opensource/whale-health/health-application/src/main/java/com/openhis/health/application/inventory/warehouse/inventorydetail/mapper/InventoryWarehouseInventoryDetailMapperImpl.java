@@ -125,7 +125,7 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
      * @param deviceCategoryCodes     耗材分类编码列表
      * @param supplierIds             供应商主键列表
      * @param chrgitmLvList           医保等级列表（与读模型列语义一致）
-     * @param zeroStockOnly           零库存筛选
+     * @param zeroStockOnly           库存范围（true 数量等于0，false 数量大于0）
      * @param expireWithinDays        近效期天数
      * @param inventoryStatusEnums    供应状态持久化码列表
      */

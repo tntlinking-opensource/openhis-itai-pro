@@ -17,6 +17,8 @@
 
 package com.openhis.health.module.common.assembler.advice;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.module.querysupport.advice.AdviceExtensionJsonSupport;
 import com.openhis.health.module.querysupport.advice.dto.ServiceChildOverrideHints;
@@ -105,7 +107,7 @@ public final class ServiceAdviceDraftCommandSupport {
         String childOverridesJson,
         ProductDefinitionDisplayDto productRm
     ) {
-        String unitCode = StringUtils.trimToNull(payloadUnitCode);
+        String unitCode = trimToNull(payloadUnitCode);
         if (unitCode != null) {
             return unitCode;
         }
@@ -114,7 +116,7 @@ public final class ServiceAdviceDraftCommandSupport {
             return hints.getUnitCode().trim();
         }
         if (productRm != null) {
-            unitCode = StringUtils.trimToNull(productRm.getPackageUnitCode());
+            unitCode = trimToNull(productRm.getPackageUnitCode());
         }
         if (unitCode == null) {
             throw new BusinessException(
@@ -128,12 +130,12 @@ public final class ServiceAdviceDraftCommandSupport {
      * 修改草稿时解析单位（无目录回落时仅使用载荷与子 JSON，不覆盖存量）。
      */
     public static String resolveUnitCodeForModify(String payloadUnitCode, String childOverridesJson) {
-        String unitCode = StringUtils.trimToNull(payloadUnitCode);
+        String unitCode = trimToNull(payloadUnitCode);
         if (unitCode != null) {
             return unitCode;
         }
         ServiceChildOverrideHints hints = AdviceExtensionJsonSupport.parseServiceChildOverrides(childOverridesJson);
-        return StringUtils.trimToNull(hints.getUnitCode());
+        return trimToNull(hints.getUnitCode());
     }
 
     /**

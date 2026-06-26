@@ -17,6 +17,8 @@
 
 package com.openhis.health.module.querysupport.product;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
 import com.openhis.health.domain.administration.devicedefinition.service.DeviceDefinitionQueryService;
@@ -58,7 +60,7 @@ public class ProductDefinitionPurchasePageLoader {
             query.setActiveFlag(Boolean.TRUE);
         }
         Pageable pageable = this.buildPageable(rmQuery);
-        String table = StringUtils.trimToNull(query.getProductTableName());
+        String table = trimToNull(query.getProductTableName());
         if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(table)) {
             return this.mapMedicationPage(medicationDefinitionQueryService.pageForPurchase(query, pageable));
         }

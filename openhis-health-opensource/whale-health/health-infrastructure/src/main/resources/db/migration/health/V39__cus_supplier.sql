@@ -30,9 +30,7 @@ CREATE TABLE IF NOT EXISTS "public"."cus_supplier" (
     "note" varchar(255),
     CONSTRAINT "cus_supplier_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE cus_supplier IS '自定义 supplier';
-
 COMMENT ON COLUMN cus_supplier.id IS '主键';
 COMMENT ON COLUMN cus_supplier.tenant_id IS '租户标识';
 COMMENT ON COLUMN cus_supplier.created_at IS '创建时间';
@@ -43,22 +41,22 @@ COMMENT ON COLUMN cus_supplier.is_deleted IS '软删标记';
 COMMENT ON COLUMN cus_supplier.deleted_at IS '删除时间';
 COMMENT ON COLUMN cus_supplier.deleted_by IS '删除人';
 COMMENT ON COLUMN cus_supplier.version IS '乐观锁版本号';
-COMMENT ON COLUMN cus_supplier.bus_no IS 'bus no';
-COMMENT ON COLUMN cus_supplier.name IS 'name';
-COMMENT ON COLUMN cus_supplier.type_enum IS 'type enum';
-COMMENT ON COLUMN cus_supplier.credit_code IS 'credit code';
-COMMENT ON COLUMN cus_supplier.legal_representative IS 'legal representative';
-COMMENT ON COLUMN cus_supplier.address IS 'address';
-COMMENT ON COLUMN cus_supplier.py_str IS 'py str';
-COMMENT ON COLUMN cus_supplier.wb_str IS 'wb str';
-COMMENT ON COLUMN cus_supplier.phone IS 'phone';
-COMMENT ON COLUMN cus_supplier.email IS 'email';
-COMMENT ON COLUMN cus_supplier.bank_name IS 'bank name';
-COMMENT ON COLUMN cus_supplier.bank_account IS 'bank account';
-COMMENT ON COLUMN cus_supplier.org_id IS 'org id';
-COMMENT ON COLUMN cus_supplier.display_order IS 'display order';
-COMMENT ON COLUMN cus_supplier.status_enum IS 'status enum';
-COMMENT ON COLUMN cus_supplier.note IS 'note';
+COMMENT ON COLUMN cus_supplier.bus_no IS '业务编号';
+COMMENT ON COLUMN cus_supplier.name IS '名称';
+COMMENT ON COLUMN cus_supplier.type_enum IS '类型枚举值';
+COMMENT ON COLUMN cus_supplier.credit_code IS 'credit编码';
+COMMENT ON COLUMN cus_supplier.legal_representative IS '法定代表人';
+COMMENT ON COLUMN cus_supplier.address IS '地址';
+COMMENT ON COLUMN cus_supplier.py_str IS '拼音码';
+COMMENT ON COLUMN cus_supplier.wb_str IS '五笔码';
+COMMENT ON COLUMN cus_supplier.phone IS '电话';
+COMMENT ON COLUMN cus_supplier.email IS '邮箱';
+COMMENT ON COLUMN cus_supplier.bank_name IS 'bank名称';
+COMMENT ON COLUMN cus_supplier.bank_account IS 'bank账户';
+COMMENT ON COLUMN cus_supplier.org_id IS '机构标识';
+COMMENT ON COLUMN cus_supplier.display_order IS '显示顺序';
+COMMENT ON COLUMN cus_supplier.status_enum IS '状态枚举值';
+COMMENT ON COLUMN cus_supplier.note IS '备注说明';
 
 -- seed: cus_supplier
 INSERT INTO "cus_supplier" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "bus_no", "name", "type_enum", "credit_code", "legal_representative", "address", "py_str", "wb_str", "phone", "email", "bank_name", "bank_account", "org_id", "display_order", "status_enum", "note")

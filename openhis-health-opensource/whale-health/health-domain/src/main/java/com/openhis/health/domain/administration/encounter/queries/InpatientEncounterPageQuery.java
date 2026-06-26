@@ -60,6 +60,14 @@ public class InpatientEncounterPageQuery extends AbstractPageQuery {
     private LocalDate nurseStationExecutionDate;
     /** 就诊主键白名单（{@code IN}）；批量卡片/勾选回显场景。 */
     private Collection<Long> encounterIdsIn;
+    /**
+     * 护士站列表状态筛选码（{@link com.openhis.health.domain.share.constants.InpatientNurseStationConstants} {@code STATUS_FILTER_*}）。
+     *
+     * <p>空=默认在院 {@code REGISTERED}～{@code COMPLETED}；{@code SETTLED_DISCHARGED}=已出院结算召回列表。</p>
+     */
+    private String nurseStationStatusFilter;
+    /** 就诊状态持久化码集合（{@code status_enum IN}）；由应用层或读侧解析 {@code nurseStationStatusFilter} 后写入。 */
+    private Collection<String> statusEnumIn;
     /** 为 {@code true} 时仅返回结算队列候选就诊。 */
     private Boolean settleQueue;
     /** 结算队列页签码（与 {@code domain.share.constants} 队列 tab 常量对齐）。 */

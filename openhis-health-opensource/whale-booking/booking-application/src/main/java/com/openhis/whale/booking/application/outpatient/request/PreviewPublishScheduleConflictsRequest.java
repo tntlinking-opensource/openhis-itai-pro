@@ -13,12 +13,15 @@ import java.time.LocalDateTime;
 @Setter
 public class PreviewPublishScheduleConflictsRequest {
 
+    /** 待发布日程主键。 */
     @NotNull
     private Long scheduleId;
 
+    /** 拟绑定规划窗口起。 */
     @NotNull
     private LocalDateTime planningHorizonStart;
 
+    /** 拟绑定规划窗口止。 */
     @NotNull
     private LocalDateTime planningHorizonEnd;
 }

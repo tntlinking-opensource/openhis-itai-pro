@@ -20,7 +20,6 @@ package com.openhis.health.application.inpatient.financial.settle.request;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -51,8 +50,8 @@ public class PreSettleInpatientChargesRequest {
     /** 患者 ID（业务字段）。 */
     private Long patientId;
 
-    /** 所选待结算收费明细 ID 列表。 */
-    @NotEmpty(message = "请选择待结算费用")
+    /** 所选待结算收费明细 ID 列表；零元出院全结时可为空数组。 */
+    @NotNull(message = "收费明细列表不能为 null")
     /** 所选收费明细 ID 列表。 */
     @Schema(description = "所选收费明细 ID 列表", requiredMode = Schema.RequiredMode.REQUIRED)
     /** 所选收费明细 ID 列表（业务字段）。 */

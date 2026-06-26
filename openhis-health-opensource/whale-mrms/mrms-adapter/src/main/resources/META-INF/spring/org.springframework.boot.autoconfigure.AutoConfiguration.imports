@@ -1,1 +1,1 @@
-com.openhis.whale.mrms.adapter.config.MrmsAdapterAutoConfiguration
+com.openhis.health.integration.mrms.config.MrmsAdapterAutoConfiguration

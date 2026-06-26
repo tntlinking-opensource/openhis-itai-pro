@@ -17,17 +17,15 @@
 
 package com.openhis.health.application.outpatient.nursestation.treatment.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.module.querysupport.advice.dto.AdviceRequestExtensionSnapshotDto;
-import com.openhis.health.module.querysupport.advice.dto.ProcedurePerformerItemDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * 医嘱执行单抽屉行 DTO（IF-NUR-03）。
@@ -93,14 +91,14 @@ public class OrderExecutionSheetItemDto {
     /**
      * 发生时间。
      */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "发生时间")
     private LocalDateTime occurrenceTime;
 
     /**
      * 记录时间。
      */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "记录时间")
     private LocalDateTime recordedTime;
 
@@ -117,9 +115,27 @@ public class OrderExecutionSheetItemDto {
     @Schema(description = "结果摘要")
     private String resultText;
 
-    @Schema(description = "医嘱内容扩展快照")
-    private AdviceRequestExtensionSnapshotDto requestExtensions;
+    /**
+     * 对应医嘱/项目展示名（读侧由目录定义回填，供执行记录抽屉「目标」列直接展示）。
+     */
+    @Schema(description = "对应医嘱/项目展示名")
+    private String orderItemDisplayName;
 
-    @Schema(description = "执行参与人列表")
-    private List<ProcedurePerformerItemDto> performers;
+    /**
+     * 操作展示文案（如「执行完成」「取消执行」，禁止前端解析 JSON 或自行拼接状态码）。
+     */
+    @Schema(description = "操作展示文案")
+    private String actionDisplayText;
+
+    /**
+     * 本条记录操作人展示名（完成时为执行人，取消时为取消执行人）。
+     */
+    @Schema(description = "操作人展示名")
+    private String operatorDisplayName;
+
+    /**
+     * 操作人列标题语义（「执行人」或「取消执行人」），与 {@link #operatorDisplayName} 成对下发。
+     */
+    @Schema(description = "操作人列标题语义")
+    private String operatorRoleDisplayText;
 }

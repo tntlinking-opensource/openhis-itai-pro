@@ -10,7 +10,9 @@ import lombok.Setter;
 @Setter
 public class CheckInDiagnosticResponse {
 
+    /** 预约主键。 */
     private Long appointmentId;
 
+    /** 报到排队序号。 */
     private Integer displayOrder;
 }

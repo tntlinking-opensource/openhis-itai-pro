@@ -26,9 +26,9 @@ import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PageWindowGate;
-import com.openhis.health.application.insurance.inventory.InventoryMedicareUploadSupport;
+import com.openhis.health.integration.support.insurance.inventory.InventoryMedicareUploadSupport;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.PharmacyStockInDetailLineDto;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.PharmacyStockInLineDto;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.PharmacyStockInListRowDto;
@@ -81,8 +81,8 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequ
 import com.openhis.health.domain.workflow.supplyrequest.support.SupplyPersistedSplitQuantity;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
-import com.openhis.whale.chs.jilin.port.InventoryInsurancePort;
-import com.openhis.whale.chs.jilin.port.model.UploadAfterTransferCommand;
+import com.openhis.health.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.integration.insurance.inventory.command.InventoryUploadAfterTransferCommand;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -112,11 +112,10 @@ public class InventoryPharmacyStockInAppService {
 
     private static final String INV_CHG_TYPE_TRANSFER_IN = "101";
 
-    @Autowired(required = false)
-    private InventoryInsurancePort inventoryInsurancePort;
+    private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     private final PageWindowGate pageWindowGate;
     private final SupplyRequestDomainService supplyRequestDomainService;
     private final SupplyRequestQueryService supplyRequestQueryService;
@@ -324,7 +323,7 @@ public class InventoryPharmacyStockInAppService {
         if (request.getPractitionerId() == null) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "经手人不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.PHA_IN_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_IN_101, "用户未登录");
         Long applicantId = this.requirePharmacyStockInApplicantPractitionerId(
             ErrorCodeConstants.PHA_IN_101,
             "用户未登录",
@@ -381,7 +380,7 @@ public class InventoryPharmacyStockInAppService {
         if (request.getPractitionerId() == null) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "经手人不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.PHA_IN_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_IN_101, "用户未登录");
         Long applicantId = this.requirePharmacyStockInApplicantPractitionerId(
             ErrorCodeConstants.PHA_IN_101,
             "用户未登录",
@@ -417,7 +416,7 @@ public class InventoryPharmacyStockInAppService {
         try {
             supplyRequestDomainService.submitApproval(
                 pharmacyStockInMapper.toSubmitApprovalCommand(request,
-                    currentOperatorResolver.requireOperatorId(ErrorCodeConstants.PHA_IN_101, "用户未登录"),
+                    currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_IN_101, "用户未登录"),
                     applicantId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.PHA_IN_003);
@@ -441,7 +440,7 @@ public class InventoryPharmacyStockInAppService {
         try {
             supplyRequestDomainService.withdrawApproval(
                 pharmacyStockInMapper.toWithdrawApprovalCommand(request,
-                    currentOperatorResolver.requireOperatorId(ErrorCodeConstants.PHA_IN_101, "用户未登录")));
+                    currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_IN_101, "用户未登录")));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.PHA_IN_003);
         }
@@ -461,7 +460,7 @@ public class InventoryPharmacyStockInAppService {
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "busNo 不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.PHA_IN_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_IN_101, "用户未登录");
 
 
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
@@ -638,14 +637,14 @@ public class InventoryPharmacyStockInAppService {
         if (lineIds.isEmpty()) {
             return;
         }
-        InventoryMedicareUploadSupport.uploadIfPortPresent(inventoryInsurancePort, () -> {
-            UploadAfterTransferCommand command = new UploadAfterTransferCommand()
+        InventoryMedicareUploadSupport.uploadIfEnabled(inventoryUploadExtension, () -> {
+            InventoryUploadAfterTransferCommand command = new InventoryUploadAfterTransferCommand()
                 .setTransferBusNo(request.getBusNo())
                 .setSupplyRequestLineIds(lineIds)
                 .setSupplyTypeCode(SupplyType.PHARMACY_STOCK_IN.getCode())
                 .setInvChgType(INV_CHG_TYPE_TRANSFER_IN)
                 .setContractBusNo(request.getContractBusNo());
-            inventoryInsurancePort.uploadAfterTransferAgree(command);
+            inventoryUploadExtension.uploadAfterTransferAgree(command);
         });
     }
 
@@ -661,7 +660,7 @@ public class InventoryPharmacyStockInAppService {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "busNo 不能为空");
         }
         // 驳回原因码/说明均可空；有值时由 Mapper 合并写入领域命令。
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.PHA_IN_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_IN_101, "用户未登录");
         try {
             supplyRequestDomainService.rejectRequest(pharmacyStockInMapper.toRejectRequestCommand(request, operatorId));
         } catch (BusinessException ex) {
@@ -682,7 +681,7 @@ public class InventoryPharmacyStockInAppService {
             throw new BusinessException(ErrorCodeConstants.PHA_IN_001, "请求不能为空");
         }
         this.gateBusNo(request.getBusNo());
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.PHA_IN_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_IN_101, "用户未登录");
         try {
             supplyRequestDomainService.removeByBusNo(pharmacyStockInMapper.toRemoveByBusNoCommand(request, operatorId));
         } catch (BusinessException ex) {
@@ -1018,15 +1017,7 @@ public class InventoryPharmacyStockInAppService {
         String notLoggedInErrorCode,
         String notLoggedInMessage,
         String noPractitionerMessage) {
-        Long userId = this.currentOperatorResolver.requireOperatorId(notLoggedInErrorCode, notLoggedInMessage);
-        Practitioner practitioner = this.practitionerQueryService.findByUserId(userId);
-        if (practitioner == null) {
-            throw new BusinessException(notLoggedInErrorCode, noPractitionerMessage);
-        }
-        if (practitioner.getId() == null) {
-            throw new BusinessException(notLoggedInErrorCode, noPractitionerMessage);
-        }
-        return practitioner.getId();
+        return this.currentPractitionerResolver.requirePractitionerId(notLoggedInErrorCode, noPractitionerMessage);
     }
 
     /**

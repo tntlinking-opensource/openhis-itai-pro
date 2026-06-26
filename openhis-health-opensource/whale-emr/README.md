@@ -19,7 +19,7 @@ Whale 电子病历（EMR）扩展包：TipTap 文书编辑、元数据解析、O
 | `emr-contracts` | Port 契约（`EmrMetadataContextPort`） |
 | `emr-domain` | 文书/模板/元数据实体、仓储、领域服务 |
 | `emr-application` | AppService、Flyway、TipTap → OpenPDF 渲染 |
-| `emr-adapter` | HIS 侧 Port 实现（`com.openhis.health.application.emr`） |
+| `emr-adapter` | HIS 侧 Port / Extension 实现（`com.openhis.health.integration.emr`） |
 | `emr-starter` | 安装入口（聚合 `emr-application` + `emr-adapter`） |
 
 依赖方向：`application` → `domain` → `contracts`；`adapter` → `contracts` + `health-domain`（**禁止**依赖 `emr-application`）。
@@ -30,7 +30,7 @@ Whale 电子病历（EMR）扩展包：TipTap 文书编辑、元数据解析、O
 
 - 开关：`openhis.modules.emr.enabled=true`
 - Application：`EmrAutoConfiguration` → 扫描 `com.openhis.whale.emr.application`
-- Adapter：`EmrAdapterAutoConfiguration` → 扫描 `com.openhis.health.application.emr`（条件：`EmrMetadataContextPort` 在 classpath）
+- Adapter：`EmrAdapterAutoConfiguration` → 扫描 `com.openhis.health.integration.emr`（条件：`EmrMetadataContextPort` 在 classpath）
 
 宿主工程引入 **`emr-starter`** 即可同时拉起 application 与 adapter。
 
@@ -102,8 +102,8 @@ EncounterMetadataAppService / DocumentAppService
 
 | 子包 | 内容 |
 |------|------|
-| `com.openhis.health.application.emr.metadata/` | 诊断贡献器等 |
-| `com.openhis.health.application.emr.metadata.port/` | `EmrMetadataContextPortAdapter` |
+| `com.openhis.health.integration.emr.metadata/` | 诊断贡献器等 |
+| `com.openhis.health.integration.emr.metadata.port/` | `EmrMetadataContextPortAdapter` |
 | `com.openhis.whale.emr.adapter.config/` | `EmrAdapterAutoConfiguration` |
 | `com.openhis.whale.emr.adapter.module/` | `EmrAdapterModuleDescriptor` |
 

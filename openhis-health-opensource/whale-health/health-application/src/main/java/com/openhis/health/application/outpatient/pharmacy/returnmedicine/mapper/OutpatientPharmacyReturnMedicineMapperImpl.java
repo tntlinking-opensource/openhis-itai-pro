@@ -30,8 +30,8 @@ import com.openhis.health.domain.medication.medicationdispense.query.ReturnMedic
 import com.openhis.health.domain.medication.medicationdispense.queries.model.ReturnMedicineDetailReadRow;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.ReturnMedicinePatientQueueRow;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
-import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.enums.DispenseStatus;
+import com.openhis.health.domain.share.utils.AdministrativeGenderDisplayUtil;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
@@ -142,7 +142,7 @@ public class OutpatientPharmacyReturnMedicineMapperImpl implements OutpatientPha
             if (StringUtils.isNotBlank(row.getGenderEnumText())) {
                 dto.setGenderEnumText(row.getGenderEnumText());
             } else {
-                dto.setGenderEnumText(this.toGenderText(row.getGenderEnum()));
+                dto.setGenderEnumText(AdministrativeGenderDisplayUtil.toDisplayText(row.getGenderEnum()));
             }
             dto.setAge(StringUtils.defaultString(row.getAge()));
             dto.setIdCard(this.maskIdCard(row.getIdCardRaw()));
@@ -193,23 +193,6 @@ public class OutpatientPharmacyReturnMedicineMapperImpl implements OutpatientPha
             list.add(dto);
         }
         return list;
-    }
-
-    /**
-     * 性别编码转展示名。
-     *
-     * @param genderEnum 编码
-     * @return 展示名
-     */
-    private String toGenderText(String genderEnum) {
-        AdministrativeGender g = EnumUtil.fromCode(AdministrativeGender.class, genderEnum);
-        if (g == null) {
-            if (genderEnum == null) {
-                return GeneralSharedConstants.EMPTY_STRING;
-            }
-            return genderEnum;
-        }
-        return g.getDisplay();
     }
 
     /**

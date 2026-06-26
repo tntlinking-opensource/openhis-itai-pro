@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.basic.ordertemplate.service;
 
+import com.openhis.health.application.basic.ordertemplate.dto.OrderTemplateLineRowDto;
 import com.openhis.health.application.basic.ordertemplate.dto.AdviceSourceLineKeyDto;
 import com.openhis.health.application.basic.ordertemplate.dto.OrderTemplateBindingGroupDto;
 import com.openhis.health.application.basic.ordertemplate.dto.OrderTemplateLineEditDto;
@@ -42,10 +43,9 @@ import com.openhis.health.application.basic.ordertemplate.response.PreviewOrderT
 import com.openhis.health.application.basic.ordertemplate.response.SaveMaintainedOrderTemplateHeaderResponse;
 import com.openhis.health.application.basic.ordertemplate.response.SaveMaintainedOrderTemplateLinesResponse;
 import com.openhis.health.application.basic.ordertemplate.response.SaveOrderTemplateFromAdviceResponse;
-import com.openhis.health.application.basic.ordertemplate.support.OrderTemplateCatalogEnrichSupport;
-import com.openhis.health.application.basic.ordertemplate.support.OrderTemplateScopeResolver;
-import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.querysupport.ordertemplate.OrderTemplateLineCatalogEnrichAssembler;
+import com.openhis.health.module.querysupport.ordertemplate.dto.OrderTemplateLineEnrichRow;
+import com.openhis.health.module.common.validator.ordertemplate.OrderTemplateScopeResolver;
 import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PageWindowGate;
 import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
@@ -93,6 +93,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -121,13 +122,13 @@ public class OrderTemplateAppService {
     private final OrderTemplateMapper orderTemplateMapper;
 
     /** 行目录 enrich。 */
-    private final OrderTemplateCatalogEnrichSupport orderTemplateCatalogEnrichSupport;
+    private final OrderTemplateLineCatalogEnrichAssembler orderTemplateLineCatalogEnrichAssembler;
 
     /** 绑定 → 归属对象 id。 */
     private final OrderTemplateScopeResolver orderTemplateScopeResolver;
 
-    /** 写路径操作人门控（B.6.1）。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    /** 写路径操作人门控（B.6.1）及当前医务人员解析。 */
+    private final CurrentPractitionerResolver currentPractitionerResolver;
 
     /** 分页入站门控（B.10.11）。 */
     private final PageWindowGate pageWindowGate;
@@ -137,12 +138,6 @@ public class OrderTemplateAppService {
 
     /** 患者与就诊一致性门控。 */
     private final PatientEncounterConsistencyGate patientEncounterConsistencyGate;
-
-    /** 当前医务人员解析。 */
-    private final CurrentPractitionerResolver currentPractitionerResolver;
-
-    /** 当前会话/管辖科室解析。 */
-    private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
 
     /** 药品申请读侧（IF-10）。 */
     private final MedicationRequestQueryService medicationRequestQueryService;
@@ -180,7 +175,7 @@ public class OrderTemplateAppService {
     }
 
     /**
-     * IF-BAS-OTL-02：维护端分页查询（固定 MAINTAINED + 当前 Tab kind）。
+     * IF-BAS-OTL-02：维护端分页查询（当前 Tab kind；来源默认含 MAINTAINED 与 FROM_ADVICE）。
      *
      * @param request 分页与筛选条件
      * @return 分页头列表
@@ -199,19 +194,20 @@ public class OrderTemplateAppService {
         String bindingFilter = normalizeOptionalCode(request.getBindingEnum());
         OrderTemplateScene sceneFilter = EnumUtil.fromCode(OrderTemplateScene.class, request.getSceneEnum());
         String statusFilter = normalizeOptionalCode(request.getStatusEnum());
+        String sourceFilter = normalizeOptionalCode(request.getTemplateSourceEnum());
         Pageable pageable = PageRequest.of(
             request.springPageIndex(),
             request.getBoundedPageSize(),
             Sort.by(Sort.Direction.ASC, FieldNameConstants.SORT_WEIGHT)
                 .and(Sort.by(Sort.Direction.ASC, FieldNameConstants.ID))
         );
-        // Pre：固定 MAINTAINED 来源 + kind 精确匹配（BR-BAS-OTL-007）
+        // Pre：kind 精确匹配；来源缺省不过滤，维护页可见医生站另存（FROM_ADVICE）（BR-BAS-OTL-007）
         Page<OrderTemplateHeaderQueryModel> page = orderTemplateQueryService.pageOrderTemplates(
             bindingFilter,
             sceneFilter,
             statusFilter,
             kind.getCode(),
-            OrderTemplateSource.MAINTAINED.getCode(),
+            sourceFilter,
             pageable
         );
         // Asm：映射为分页响应，并按 keyword/searchKey 过滤当前页（SDD searchKey 与 B.10.11 keyword 二选一）
@@ -235,7 +231,7 @@ public class OrderTemplateAppService {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_NOT_FOUND, "组套不存在或已删除");
         }
         // Asm：批量 enrich 目录/术语/执行科室展示
-        orderTemplateCatalogEnrichSupport.enrichLines(response.getLines(), null);
+        this.enrichOrderTemplateDetailLines(response.getLines());
         return response;
     }
 
@@ -253,7 +249,7 @@ public class OrderTemplateAppService {
         // Gate：解析归属对象（个人/科室/全院缺省补全）
         Long objectId = orderTemplateScopeResolver.resolveObjectId(request.getBindingEnum(), request.getObjectId());
         // Gate：写路径须已登录
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT,
             "未登录，无法保存组套");
         SaveMaintainedOrderTemplateHeaderResponse response = new SaveMaintainedOrderTemplateHeaderResponse();
@@ -299,7 +295,7 @@ public class OrderTemplateAppService {
             assertPricingLineKindAllowed(templateKind, line);
         }
         // Gate：写路径操作人
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT,
             "未登录，无法保存组套明细");
         // Pre：计算增删改集合（全量对齐）
@@ -351,7 +347,7 @@ public class OrderTemplateAppService {
             && !OrderTemplateConstants.LifecycleAction.DELETE.equals(normalizedAction)) {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_STATUS, "当前状态不允许该操作");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT,
             "未登录，无法变更组套状态");
         // Cmd：互斥执行单一生命周期动作
@@ -390,10 +386,14 @@ public class OrderTemplateAppService {
             request.getEncounterId(),
             request.getPatientId()
         );
-        Long practitionerId = currentPractitionerResolver.findPractitionerIdOrNull();
-        Long departmentOrgId = managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery();
-        Long hospitalOrgId = orderTemplateScopeResolver.resolveObjectId(
-            OrderTemplateBinding.HOSPITAL.getCode(), null);
+        Long practitionerId = orderTemplateScopeResolver.findObjectIdForTemplateList(
+            OrderTemplateBinding.PERSONAL.getCode());
+        Long departmentOrgId = orderTemplateScopeResolver.findObjectIdForTemplateList(
+            OrderTemplateBinding.DEPARTMENT.getCode());
+        Long hospitalOrgId = orderTemplateScopeResolver.findObjectIdForTemplateList(
+            OrderTemplateBinding.HOSPITAL.getCode());
+        Long agreementOrgId = orderTemplateScopeResolver.findObjectIdForTemplateList(
+            OrderTemplateBinding.AGREEMENT.getCode());
         String source = request.getTemplateSourceEnum().trim();
         String kind = request.getTemplateKindEnum().trim();
         List<OrderTemplateHeaderQueryModel> personalList = listTemplatesForOwner(
@@ -402,8 +402,10 @@ public class OrderTemplateAppService {
             departmentOrgId, OrderTemplateBinding.DEPARTMENT.getCode(), encounterContext.getScene(), kind, source);
         List<OrderTemplateHeaderQueryModel> hospitalList = listTemplatesForOwner(
             hospitalOrgId, OrderTemplateBinding.HOSPITAL.getCode(), encounterContext.getScene(), kind, source);
+        List<OrderTemplateHeaderQueryModel> agreementList = listTemplatesForOwner(
+            agreementOrgId, OrderTemplateBinding.AGREEMENT.getCode(), encounterContext.getScene(), kind, source);
         OrderTemplateBindingGroupDto groups = orderTemplateMapper.toListBindingGroupResponse(
-            personalList, departmentList, hospitalList, request.getSearchKey());
+            personalList, departmentList, hospitalList, agreementList, request.getSearchKey());
         ListDoctorStationOrderTemplateResponse response = new ListDoctorStationOrderTemplateResponse();
         response.setGroups(groups);
         return response;
@@ -475,7 +477,7 @@ public class OrderTemplateAppService {
             request.getEncounterId(),
             request.getPatientId()
         );
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT,
             "未登录，无法保存医嘱模板");
         // Pre：按绑定类型解析 object_id（个人→医务人员，科室→会话科室；BR-BAS-OTL-008）
@@ -541,18 +543,24 @@ public class OrderTemplateAppService {
         String kind = OrderTemplateKind.PRICING.getCode();
         String source = OrderTemplateSource.MAINTAINED.getCode();
         OrderTemplateScene scene = OrderTemplateScene.INPATIENT;
-        Long practitionerId = currentPractitionerResolver.findPractitionerIdOrNull();
-        Long departmentOrgId = managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery();
-        Long hospitalOrgId = orderTemplateScopeResolver.resolveObjectId(
-            OrderTemplateBinding.HOSPITAL.getCode(), null);
+        Long practitionerId = orderTemplateScopeResolver.findObjectIdForTemplateList(
+            OrderTemplateBinding.PERSONAL.getCode());
+        Long departmentOrgId = orderTemplateScopeResolver.findObjectIdForTemplateList(
+            OrderTemplateBinding.DEPARTMENT.getCode());
+        Long hospitalOrgId = orderTemplateScopeResolver.findObjectIdForTemplateList(
+            OrderTemplateBinding.HOSPITAL.getCode());
+        Long agreementOrgId = orderTemplateScopeResolver.findObjectIdForTemplateList(
+            OrderTemplateBinding.AGREEMENT.getCode());
         List<OrderTemplateHeaderQueryModel> personalList = listTemplatesForOwner(
             practitionerId, OrderTemplateBinding.PERSONAL.getCode(), scene, kind, source);
         List<OrderTemplateHeaderQueryModel> departmentList = listTemplatesForOwner(
             departmentOrgId, OrderTemplateBinding.DEPARTMENT.getCode(), scene, kind, source);
         List<OrderTemplateHeaderQueryModel> hospitalList = listTemplatesForOwner(
             hospitalOrgId, OrderTemplateBinding.HOSPITAL.getCode(), scene, kind, source);
+        List<OrderTemplateHeaderQueryModel> agreementList = listTemplatesForOwner(
+            agreementOrgId, OrderTemplateBinding.AGREEMENT.getCode(), scene, kind, source);
         OrderTemplateBindingGroupDto groups = orderTemplateMapper.toListBindingGroupResponse(
-            personalList, departmentList, hospitalList, request.getSearchKey());
+            personalList, departmentList, hospitalList, agreementList, request.getSearchKey());
         ListNurseStationPricingOrderTemplateResponse response = new ListNurseStationPricingOrderTemplateResponse();
         response.setGroups(groups);
         return response;
@@ -807,7 +815,7 @@ public class OrderTemplateAppService {
                 medication.getMethodCode(),
                 resolveFrequencyIdByRateCode(medication.getRateCode()),
                 medication.getDispensePerDuration(),
-                medication.getDosageInstruction(),
+                resolveDosageTextFromMedicationAdvice(medication),
                 resolveGroupKeyFromGroupId(medication.getGroupId()),
                 sortOrder,
                 medication.getChineseHerbsDoseQuantity(),
@@ -828,6 +836,10 @@ public class OrderTemplateAppService {
                 sortOrder,
                 service.getRemark()
             );
+            // 诊疗套用 totalAmount 取自 defaultDays（执行次数）；另存须从 executionCount 落库
+            if (service.getExecutionCount() != null && service.getExecutionCount() > 0) {
+                command.setDefaultDays(service.getExecutionCount());
+            }
             return command;
         }
         if (TableNameConstants.ADM_DEVICE_DEFINITION.equals(tableName)) {
@@ -907,6 +919,30 @@ public class OrderTemplateAppService {
     }
 
     /**
+     * IF-10：药品医嘱 → 模板行 dosageText（优先 dosageInstruction，回落 dose + doseUnitCode）。
+     *
+     * @param medication 药品申请聚合
+     * @return 剂量文本；均无有效剂量时 null
+     */
+    private String resolveDosageTextFromMedicationAdvice(MedicationRequest medication) {
+        if (medication == null) {
+            return null;
+        }
+        if (StringUtils.isNotBlank(medication.getDosageInstruction())) {
+            return medication.getDosageInstruction().trim();
+        }
+        // 门诊草稿常只写 dose/doseUnitCode，套用侧依赖 dosageText 解析 singleDose
+        if (medication.getDose() != null && medication.getDose().compareTo(BigDecimal.ZERO) > 0) {
+            String doseText = medication.getDose().stripTrailingZeros().toPlainString();
+            if (StringUtils.isNotBlank(medication.getDoseUnitCode())) {
+                return doseText + medication.getDoseUnitCode().trim();
+            }
+            return doseText;
+        }
+        return null;
+    }
+
+    /**
      * rateCode → frequencyId（IF-10 另存模板）。
      */
     private Long resolveFrequencyIdByRateCode(String rateCode) {
@@ -942,6 +978,72 @@ public class OrderTemplateAppService {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT, "套用上下文不能为空");
         }
         return applyContextCode.trim().toUpperCase();
+    }
+
+    private void enrichOrderTemplateDetailLines(List<OrderTemplateLineRowDto> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        // Pre：应用层 DTO 映射为 querysupport 富化行，避免 orchestration/querysupport 依赖 application DTO
+        List<OrderTemplateLineEnrichRow> enrichRows = new ArrayList<>();
+        for (OrderTemplateLineRowDto line : lines) {
+            enrichRows.add(toOrderTemplateLineEnrichRow(line));
+        }
+        // Asm：批量目录/术语/科室 enrich（只读）
+        orderTemplateLineCatalogEnrichAssembler.enrichLines(enrichRows, null);
+        for (int index = 0; index < lines.size(); index++) {
+            applyOrderTemplateLineEnrichRow(lines.get(index), enrichRows.get(index));
+        }
+    }
+
+    /**
+     * 将模板行 DTO 映射为 querysupport 富化中间行（边界转换，不含 I/O）。
+     *
+     * @param line 应用层模板行
+     * @return 富化中间行
+     */
+    private OrderTemplateLineEnrichRow toOrderTemplateLineEnrichRow(OrderTemplateLineRowDto line) {
+        if (line == null) {
+            return new OrderTemplateLineEnrichRow();
+        }
+        return new OrderTemplateLineEnrichRow()
+            .setLineKindEnum(line.getLineKindEnum())
+            .setMedicationDefinitionId(line.getMedicationDefinitionId())
+            .setActivityDefinitionId(line.getActivityDefinitionId())
+            .setDeviceDefinitionId(line.getDeviceDefinitionId())
+            .setProductTableName(line.getProductTableName())
+            .setProductName(line.getProductName())
+            .setProductSpec(line.getProductSpec())
+            .setCategoryCode(line.getCategoryCode())
+            .setDefaultUnitCode(line.getDefaultUnitCode())
+            .setDefaultUnitName(line.getDefaultUnitName())
+            .setFrequencyId(line.getFrequencyId())
+            .setFrequencyText(line.getFrequencyText())
+            .setRouteCode(line.getRouteCode())
+            .setRouteName(line.getRouteName())
+            .setDefaultPerformOrgId(line.getDefaultPerformOrgId())
+            .setDefaultPerformOrgName(line.getDefaultPerformOrgName());
+    }
+
+    /**
+     * 将富化结果写回应用层模板行 DTO（仅展示字段）。
+     *
+     * @param line      应用层模板行
+     * @param enrichRow 富化中间行
+     */
+    private void applyOrderTemplateLineEnrichRow(OrderTemplateLineRowDto line, OrderTemplateLineEnrichRow enrichRow) {
+        if (line == null || enrichRow == null) {
+            return;
+        }
+        line.setProductTableName(enrichRow.getProductTableName());
+        line.setProductName(enrichRow.getProductName());
+        line.setProductSpec(enrichRow.getProductSpec());
+        line.setCategoryCode(enrichRow.getCategoryCode());
+        line.setDefaultUnitCode(enrichRow.getDefaultUnitCode());
+        line.setDefaultUnitName(enrichRow.getDefaultUnitName());
+        line.setFrequencyText(enrichRow.getFrequencyText());
+        line.setRouteName(enrichRow.getRouteName());
+        line.setDefaultPerformOrgName(enrichRow.getDefaultPerformOrgName());
     }
 
     /**

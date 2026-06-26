@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inventory.warehouse.gainloss.request;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -37,7 +38,7 @@ public class AgreeGainLossRequest {
     private String busNo;
 
     /** 已废弃：审批时间由服务端写入。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 已废弃：审批时间由服务端写入。 */
     @Schema(description = "已废弃：审批时间由服务端写入", deprecated = true)
     private LocalDateTime approvalTime;

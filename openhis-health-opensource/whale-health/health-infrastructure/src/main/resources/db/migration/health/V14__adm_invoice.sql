@@ -19,16 +19,14 @@ CREATE TABLE IF NOT EXISTS "public"."adm_invoice" (
     "bill_no" varchar(255),
     "type_code" varchar(255),
     "cancelled_reason" varchar(255),
-    "charge_item_ids" varchar(255),
+    "charge_item_ids" text,
     "payment_terms" varchar(255),
     "amount" numeric(19,6),
     "status_enum" varchar(255),
     "issued_at" timestamptz(6),
     CONSTRAINT "adm_invoice_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_invoice IS '管理域 invoice';
-
 COMMENT ON COLUMN adm_invoice.id IS '主键';
 COMMENT ON COLUMN adm_invoice.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_invoice.created_at IS '创建时间';
@@ -45,10 +43,9 @@ COMMENT ON COLUMN adm_invoice.payment_id IS 'payment 标识';
 COMMENT ON COLUMN adm_invoice.bus_no IS '业务流水号（新建必填）';
 COMMENT ON COLUMN adm_invoice.bill_no IS 'bill 编号';
 COMMENT ON COLUMN adm_invoice.type_code IS 'type 代码';
-COMMENT ON COLUMN adm_invoice.cancelled_reason IS 'cancelledReason';
-COMMENT ON COLUMN adm_invoice.charge_item_ids IS 'chargeItemIds';
-COMMENT ON COLUMN adm_invoice.payment_terms IS 'paymentTerms';
+COMMENT ON COLUMN adm_invoice.cancelled_reason IS 'cancelled原因';
+COMMENT ON COLUMN adm_invoice.charge_item_ids IS '收费项ids';
+COMMENT ON COLUMN adm_invoice.payment_terms IS '支付terms';
 COMMENT ON COLUMN adm_invoice.amount IS '金额';
 COMMENT ON COLUMN adm_invoice.status_enum IS 'status 枚举值';
 COMMENT ON COLUMN adm_invoice.issued_at IS 'issued 时间';
-

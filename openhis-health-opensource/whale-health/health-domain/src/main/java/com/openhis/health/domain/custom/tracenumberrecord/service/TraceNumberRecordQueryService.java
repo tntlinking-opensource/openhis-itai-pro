@@ -113,6 +113,27 @@ public class TraceNumberRecordQueryService {
     }
 
     /**
+     * 按物品四维精确加载追溯码实体（adapter 读路径）。
+     */
+    public List<TraceNumberRecord> listEntitiesByItemTableAndItemIdAndLotNumberAndLocationId(
+        String itemTable,
+        Long itemId,
+        String lotNumber,
+        Long locationId
+    ) {
+        if (itemId == null || locationId == null || itemTable == null || itemTable.trim().isEmpty()) {
+            return new ArrayList<>();
+        }
+        String normalizedLot = lotNumber == null ? "" : lotNumber.trim();
+        return repository.findAllByItemTableAndItemIdAndLotNumberAndLocationId(
+            itemTable.trim(),
+            itemId,
+            normalizedLot,
+            locationId
+        );
+    }
+
+    /**
      * 将追溯码记录实体转换为查询模型。
      *
      * <p>职责：暴露追溯与库存维度字段，供药监追溯与院内核对使用。</p>

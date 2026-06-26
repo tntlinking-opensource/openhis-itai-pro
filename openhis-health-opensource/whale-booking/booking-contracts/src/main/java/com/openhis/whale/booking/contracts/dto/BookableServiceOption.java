@@ -8,6 +8,9 @@ import lombok.Setter;
 @Setter
 public class BookableServiceOption {
 
+    /** 号源类型（HealthcareService）主键。 */
     private Long healthcareServiceId;
+
+    /** 号源类型名称。 */
     private String serviceTypeName;
 }

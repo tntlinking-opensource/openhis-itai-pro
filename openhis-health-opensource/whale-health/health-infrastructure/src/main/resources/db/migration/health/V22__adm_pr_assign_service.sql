@@ -18,9 +18,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_pr_assign_service" (
 
     CONSTRAINT "adm_pr_assign_service_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_pr_assign_service IS '管理域 pr assign service';
-
 COMMENT ON COLUMN adm_pr_assign_service.id IS '主键';
 COMMENT ON COLUMN adm_pr_assign_service.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_pr_assign_service.created_at IS '创建时间';

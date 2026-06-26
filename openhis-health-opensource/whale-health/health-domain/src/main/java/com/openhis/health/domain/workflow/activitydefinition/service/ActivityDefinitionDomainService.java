@@ -18,6 +18,7 @@
 package com.openhis.health.domain.workflow.activitydefinition.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
+import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
@@ -66,7 +67,7 @@ public class ActivityDefinitionDomainService {
     private final ActivityDefinitionRepository activityDefinitionRepository;
     private final ActivityDefinitionChildRepository activityDefinitionChildRepository;
     private final IDomainEventPublisher domainEventPublisher;
-    /** 诊疗项目定义 busNo：主数据全局递增，前缀 {@link AggregateTypeConstants#ACTIVITY_DEFINITION}。 */
+    /** 诊疗项目定义 busNo：主数据全局递增，前缀 {@link AggregateTypeConstants#ACTIVITY_DEFINITION}，共 10 位。 */
     private final BusinessSequenceService businessSequenceService;
 
     /**
@@ -84,12 +85,8 @@ public class ActivityDefinitionDomainService {
         for (CreateActivityDefinitionCommand.CreateActivityDefinitionItemCommand item : items) {
             ActivityDefinition definition = new ActivityDefinition();
 
-            // 业务编码允许外部传入；若为空则系统生成稳定编码。
-            if (StringUtils.isBlank(item.getBusNo())) {
-                definition.setBusNo(this.generateBusNo());
-            } else {
-                definition.setBusNo(item.getBusNo().trim());
-            }
+            // 业务编码由领域层按日序列生成，禁止外部注入（B.10.9）。
+            definition.setBusNo(this.generateBusNo());
 
             definition.setCategoryCode(item.getCategoryCode());
             definition.setName(item.getName());
@@ -562,7 +559,7 @@ public class ActivityDefinitionDomainService {
                 // 业务分支处理。
                 if (target == null) {
                     ActivityDefinition created = new ActivityDefinition();
-                    created.setBusNo(busNo);
+                    created.setBusNo(this.generateBusNo());
                     created.setCategoryCode(row.getCategoryCode());
                     created.setName(row.getName());
                     created.setPackageUnitCode(row.getPackageUnitCode());
@@ -763,7 +760,8 @@ public class ActivityDefinitionDomainService {
      * @return 生成的业务编码
      */
     private String generateBusNo() {
-        return businessSequenceService.getSeq(AggregateTypeConstants.ACTIVITY_DEFINITION);
+        return businessSequenceService.getSeq(
+            AggregateTypeConstants.ACTIVITY_DEFINITION, BusinessSequenceConstants.CATALOG_DEFINITION_BUS_NO_SEQ_LENGTH);
     }
 
     /**

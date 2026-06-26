@@ -43,6 +43,11 @@ public class ConfirmInpatientSettleResponse {
     /** 发票草稿 ID（业务字段）。 */
     private Long invoiceDraftId;
 
+    /** 票据状态（DRAFT/ISSUED/CANCELLED）。 */
+    @Schema(description = "票据状态")
+    /** 票据状态（业务字段）。 */
+    private String invoiceStatus;
+
     /** 是否本次为出院全结。 */
     @Schema(description = "是否本次为出院全结")
     /** 是否本次为出院全结（业务字段）。 */
@@ -68,19 +73,4 @@ public class ConfirmInpatientSettleResponse {
     @Schema(description = "是否已完成医保正式结算")
     /** 是否已完成医保正式结算（业务字段）。 */
     private Boolean insuranceSettled;
-
-    /** 结算模式：SYNC | INSURANCE_ASYNC。 */
-    @Schema(description = "结算模式：SYNC | INSURANCE_ASYNC")
-    /** 结算模式：SYNC | INSURANCE_ASYNC（业务字段）。 */
-    private String settlementMode;
-
-    /** 支付状态：SETTLING | SUCCESS。 */
-    @Schema(description = "支付状态：SETTLING | SUCCESS")
-    /** 支付状态：SETTLING | SUCCESS（业务字段）。 */
-    private String paymentStatus;
-
-    /** 医保协同单 ID 列表。 */
-    @Schema(description = "医保协同单 ID 列表（异步模式）")
-    /** 医保协同单 ID 列表（异步模式）（业务字段）。 */
-    private java.util.List<Long> coordinationIds;
 }

@@ -17,9 +17,11 @@
 
 package com.openhis.health.application.inpatient.doctorstation.encountermanage.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayDtoApplier;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -38,7 +40,7 @@ import java.util.List;
 @Accessors(chain = true)
 /** 住院医生站在院患者列表行。 */
 @Schema(description = "住院医生站在院患者列表行")
-public class DoctorStationPatientQueueItemDto {
+public class DoctorStationPatientQueueItemDto implements InpatientAccountBalanceDisplayDtoApplier.AccountBalanceDisplayTarget {
 
     /**
      * 住院就诊主键：医生站患者卡片与后续诊断/医嘱操作的锚点。
@@ -151,14 +153,14 @@ public class DoctorStationPatientQueueItemDto {
      * 入院/就诊开始时间（读模型 {@code startTime}）。
      */
     @Schema(description = "入院时间")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime startTime;
 
     /**
      * 入科时间：读模型当前未投影，与护士站列表口径一致为 null。
      */
     @Schema(description = "入科时间")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime admissionTime;
 
     /**
@@ -180,10 +182,34 @@ public class DoctorStationPatientQueueItemDto {
     private BigDecimal arrearsAmount;
 
     /**
-     * 展示用账户余额：财务口径动态计算，非账户余额字段直出（BR-IP-DOR-006）。
+     * 展示用账户余额：财务口径动态计算（库内余额 − 待结算），非直出库字段（BR-IP-DOR-006）。
      */
     @Schema(description = "展示用账户余额")
     private BigDecimal accountBalance;
+
+    /** 账户余额展示模式。 */
+    @Schema(description = "账户余额展示模式")
+    private String accountBalanceDisplayMode;
+
+    /** 库内账户余额。 */
+    @Schema(description = "库内账户余额")
+    private BigDecimal prepayNetBalance;
+
+    /** 待结算费用合计。 */
+    @Schema(description = "待结算费用合计")
+    private BigDecimal pendingSettlementTotal;
+
+    /** 可用余额。 */
+    @Schema(description = "可用余额")
+    private BigDecimal availableBalance;
+
+    /** 账户余额主展示文案。 */
+    @Schema(description = "账户余额主展示文案")
+    private String accountBalanceSummaryText;
+
+    /** 账户余额副展示文案。 */
+    @Schema(description = "账户余额副展示文案")
+    private String accountBalanceSubText;
 
     /**
      * 低余额预警：展示余额低于 500 元时为 true。

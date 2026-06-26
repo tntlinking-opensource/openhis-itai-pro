@@ -41,6 +41,7 @@ public class DocumentStructureManager {
     private static final String CONTENT = "content";
     private static final String TYPE = "type";
     private static final String ATTR_NAME = "name";
+    private static final String ATTR_ELEMENT_ID = "elementId";
     private static final String ATTR_TITLE = "title";
     private static final String ATTR_VALUE = "value";
 
@@ -78,7 +79,8 @@ public class DocumentStructureManager {
     }
 
     /**
-     * 按数据项名批量写入 value。遍历 JSON，对 attrs.name 在 nameToValue 中的节点设置 attrs.value，返回新 JSON 字符串。
+     * 按数据项名批量写入 value。遍历 JSON，对 {@code attrs.name} 或 {@code attrs.elementId}
+     * 在 nameToValue 中的节点设置 attrs.value，返回新 JSON 字符串。
      */
     public String setValuesByNames(String contentJson, Map<String, Object> nameToValue) {
         if (contentJson == null || contentJson.isEmpty() || nameToValue == null || nameToValue.isEmpty()) {
@@ -128,14 +130,25 @@ public class DocumentStructureManager {
         }
     }
 
+    private Object resolveValueForAttrs(ObjectNode attrs, Map<String, Object> nameToValue) {
+        String name = attrs.path(ATTR_NAME).asText(null);
+        if (name != null && nameToValue.containsKey(name)) {
+            return nameToValue.get(name);
+        }
+        String elementId = attrs.path(ATTR_ELEMENT_ID).asText(null);
+        if (elementId != null && nameToValue.containsKey(elementId)) {
+            return nameToValue.get(elementId);
+        }
+        return null;
+    }
+
     private void applyValuesToNodes(JsonNode content, Map<String, Object> nameToValue) {
         for (JsonNode node : content) {
             if (!node.isObject()) continue;
             JsonNode attrs = node.get(ATTRS);
             if (attrs != null && attrs.isObject()) {
-                String name = attrs.path(ATTR_NAME).asText(null);
-                if (name != null && nameToValue.containsKey(name)) {
-                    Object val = nameToValue.get(name);
+                Object val = resolveValueForAttrs((ObjectNode) attrs, nameToValue);
+                if (val != null) {
                     ((ObjectNode) attrs).putPOJO(ATTR_VALUE, val);
                 }
             }

@@ -17,9 +17,11 @@
 
 package com.openhis.health.application.inpatient.financial.settle.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayDtoApplier;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -34,7 +36,8 @@ import java.time.LocalDateTime;
 @Accessors(chain = true)
 /** 住院结算队列行。 */
 @Schema(description = "住院结算队列行")
-public class InpatientSettleQueueItemDto {
+public class InpatientSettleQueueItemDto
+    implements InpatientAccountBalanceDisplayDtoApplier.AccountBalanceDisplayTarget {
 
     @Schema(description = "住院就诊 ID", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
@@ -99,7 +102,7 @@ public class InpatientSettleQueueItemDto {
 
     /** 入院时间。 */
     @Schema(description = "入院时间")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 入院时间（业务字段）。 */
     private LocalDateTime startTime;
 
@@ -110,7 +113,7 @@ public class InpatientSettleQueueItemDto {
 
     /** 最近一次成功结算时间（已结算页签展示）。 */
     @Schema(description = "最近结算时间（已结算页签）")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 最近结算时间（已结算页签）（业务字段）。 */
     private LocalDateTime lastSettleTime;
 
@@ -125,8 +128,32 @@ public class InpatientSettleQueueItemDto {
     /** 登记账户合同 ID（医保读卡用）（业务字段）。 */
     private Long contractId;
 
-    /** 展示余额：预交金净值 −（待结算 + 已结算占用）。 */
-    @Schema(description = "展示余额：预交金净值 −（待结算 + 已结算占用）")
-    /** 展示余额：预交金净值 −（待结算 + 已结算占用）（业务字段）。 */
+    /** 展示余额（与可用余额一致，兼容旧字段）。 */
+    @Schema(description = "展示余额（与可用余额一致）")
+    /** 展示余额（业务字段）。 */
     private BigDecimal accountBalance;
+
+    /** 账户余额展示模式。 */
+    @Schema(description = "账户余额展示模式")
+    private String accountBalanceDisplayMode;
+
+    /** 预交金净值。 */
+    @Schema(description = "预交金净值")
+    private BigDecimal prepayNetBalance;
+
+    /** 可用余额。 */
+    @Schema(description = "可用余额")
+    private BigDecimal availableBalance;
+
+    /** 账户余额主展示文案。 */
+    @Schema(description = "账户余额主展示文案")
+    private String accountBalanceSummaryText;
+
+    /** 账户余额副展示文案。 */
+    @Schema(description = "账户余额副展示文案")
+    private String accountBalanceSubText;
+
+    /** 低余额预警。 */
+    @Schema(description = "低余额预警")
+    private Boolean lowBalanceWarning;
 }

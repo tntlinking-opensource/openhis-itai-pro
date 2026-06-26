@@ -20,8 +20,12 @@ package com.openhis.health.domain.financial.paymentreconciliation.service;
 import com.openhis.health.domain.financial.paymentreconciliation.command.*;
 import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentRecDetail;
 import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentReconciliation;
+import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentYbSettlement;
+import com.openhis.health.domain.financial.paymentreconciliation.PaymentYbSettlementStatus;
 import com.openhis.health.domain.financial.paymentreconciliation.repository.PaymentRecDetailRepository;
 import com.openhis.health.domain.financial.paymentreconciliation.repository.PaymentReconciliationRepository;
+import com.openhis.health.domain.financial.paymentreconciliation.repository.PaymentYbSettlementRepository;
+import com.openhis.health.domain.financial.paymentreconciliation.support.PaymentYbSettlementSupport;
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -32,6 +36,7 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -58,6 +63,7 @@ import java.util.Map;
 public class PaymentReconciliationDomainService {
     private final PaymentReconciliationRepository paymentRepository;
     private final PaymentRecDetailRepository detailRepository;
+    private final PaymentYbSettlementRepository ybSettlementRepository;
     private final IDomainEventPublisher domainEventPublisher;
     /** 支付流水号：沿用展示前缀 PMR-，末段为 {@link AggregateTypeConstants#PAYMENT_RECONCILIATION} 序号去前缀后的 16 位数字。 */
     private final BusinessSequenceService businessSequenceService;
@@ -122,6 +128,25 @@ public class PaymentReconciliationDomainService {
     }
 
     /**
+     * 草稿态支付流水 contract_no 为空时补写费用性质合同业务号（日结/报表读侧口径）。
+     *
+     * @param paymentId  支付草稿主键
+     * @param contractNo 合同业务号（fin_contract.bus_no）；空则跳过
+     */
+    public void backfillPaymentContractNoIfBlank(Long paymentId, String contractNo) {
+        if (StringUtils.isBlank(contractNo)) {
+            return;
+        }
+        PaymentReconciliation payment = this.mustGetPayment(paymentId);
+        payment.assertStatusTransitionAllowed(PaymentStatus.DRAFT);
+        if (StringUtils.isNotBlank(payment.getContractNo())) {
+            return;
+        }
+        payment.setContractNo(contractNo.trim());
+        paymentRepository.save(payment);
+    }
+
+    /**
      * 完成门诊支付结算，将草稿推进为成功态并回写结算结果。
      *
      * @param cmd 门诊支付结算命令，包含支付主键、结算结果、医保结算号及渠道回执明细
@@ -130,23 +155,19 @@ public class PaymentReconciliationDomainService {
     public Long settleOutpatientPayment(SettleOutpatientPaymentCommand cmd) {
         // Pre：按主键加载支付主记录，不存在则抛出业务异常
         PaymentReconciliation payment = this.mustGetPayment(cmd.getPaymentId());
-        if (!PaymentStatus.DRAFT.equals(payment.getStatusEnum())
-            && !PaymentStatus.SETTLING.equals(payment.getStatusEnum())) {
-            payment.assertStatusTransitionAllowed(PaymentStatus.DRAFT);
-        }
+        payment.assertStatusTransitionAllowed(PaymentStatus.DRAFT);
         payment.setStatusEnum(PaymentStatus.SUCCESS);
         payment.setOutcomeEnum(cmd.getOutcomeEnum());
-        payment.setYbSettleIds(cmd.getYbSettleIds());
+        List<PaymentYbSettlementItemCommand> ybItems = this.persistYbSettlements(payment.getId(), cmd.getYbSettlements());
         payment.setBillDate(cmd.getBillDate());
         paymentRepository.save(payment);
-        // 业务分支处理：支付渠道返回明细时覆盖保存；无明细时保留草稿阶段已有明细
         if (cmd.getPayReceiptDetails() != null) {
             this.replaceDetails(payment.getId(), cmd.getPayReceiptDetails());
         }
-        // Event：支付流水落库完成后再投递结算事件；就诊状态不属于支付聚合边界，由就诊域在挂号确认路径单独发布
         OutpatientPaymentSettledEvent settledEvent = new OutpatientPaymentSettledEvent(
             payment.getId(), payment.getEncounterId(), payment.getChargeItemIds(),
             payment.getDisplayAmount(), payment.getBillDate(), payment.getEntererId());
+        settledEvent.setYbSettlements(PaymentYbSettlementSupport.toEventItems(ybItems));
         domainEventPublisher.publish(settledEvent);
         return payment.getId();
     }
@@ -158,119 +179,20 @@ public class PaymentReconciliationDomainService {
      * @return 支付主键
      */
     public Long settleInpatientPayment(SettleInpatientPaymentCommand cmd) {
-        // Pre：按主键加载支付主记录，不存在则抛出业务异常
         PaymentReconciliation payment = this.mustGetPayment(cmd.getPaymentId());
-        if (!PaymentStatus.DRAFT.equals(payment.getStatusEnum())
-            && !PaymentStatus.SETTLING.equals(payment.getStatusEnum())) {
-            payment.assertStatusTransitionAllowed(PaymentStatus.DRAFT);
-        }
+        payment.assertStatusTransitionAllowed(PaymentStatus.DRAFT);
         payment.setStatusEnum(PaymentStatus.SUCCESS);
         payment.setOutcomeEnum(cmd.getOutcomeEnum());
-        payment.setYbSettleIds(cmd.getYbSettleIds());
+        List<PaymentYbSettlementItemCommand> ybItems = this.persistYbSettlements(payment.getId(), cmd.getYbSettlements());
         payment.setBillDate(cmd.getBillDate());
         paymentRepository.save(payment);
-        // Asm：装配住院结算完成事件，回填所有展示字段
         InpatientPaymentSettledEvent event = new InpatientPaymentSettledEvent(
-            payment.getId(), payment.getEncounterId(), payment.getChargeItemIds(),
-            payment.getDisplayAmount(), payment.getYbSettleIds());
+            payment.getId(), payment.getEncounterId(), payment.getChargeItemIds(), payment.getDisplayAmount());
         event.setEntererId(payment.getEntererId());
         event.setBillDate(payment.getBillDate());
-        // Event：持久化完成后发布住院结算事件
+        event.setYbSettlements(PaymentYbSettlementSupport.toEventItems(ybItems));
         domainEventPublisher.publish(event);
         return payment.getId();
-    }
-
-    /**
-     * 住院医保协同单路径：支付草稿推进为 SETTLING，等待 Worker 完成本地落账。
-     *
-     * @param cmd 含支付主键与操作员
-     */
-    public void markInpatientPaymentSettling(MarkInpatientPaymentSettlingCommand cmd) {
-        // 前置校验：支付单须存在且允许 DRAFT→SETTLING 迁移
-        PaymentReconciliation payment = this.mustGetPayment(cmd.getPaymentId());
-        payment.assertStatusTransitionAllowed(PaymentStatus.DRAFT);
-        payment.setStatusEnum(PaymentStatus.SETTLING);
-        // 持久化：锁定支付单，防止并发重复结算
-        paymentRepository.save(payment);
-    }
-
-    /**
-     * 协同单失败时回退支付单 SETTLING → DRAFT，供用户重新预结算。
-     *
-     * @param cmd 含支付主键
-     */
-    public void revertInpatientPaymentFromSettling(RevertInpatientPaymentFromSettlingCommand cmd) {
-        // 前置校验：支付单须处于 SETTLING 方可回退
-        PaymentReconciliation payment = this.mustGetPayment(cmd.getPaymentId());
-        payment.assertStatusTransitionAllowed(PaymentStatus.SETTLING);
-        payment.setStatusEnum(PaymentStatus.DRAFT);
-        // 持久化：释放结算窗口，允许重新预结算
-        paymentRepository.save(payment);
-    }
-
-    /**
-     * 门诊医保协同单路径：支付草稿推进为 SETTLING，等待 Worker 完成本地落账。
-     *
-     * @param cmd 含支付主键与操作员
-     */
-    public void markOutpatientPaymentSettling(MarkOutpatientPaymentSettlingCommand cmd) {
-        // 前置校验：支付单须存在且允许 DRAFT→SETTLING 迁移
-        PaymentReconciliation payment = this.mustGetPayment(cmd.getPaymentId());
-        payment.assertStatusTransitionAllowed(PaymentStatus.DRAFT);
-        payment.setStatusEnum(PaymentStatus.SETTLING);
-        // 持久化：锁定支付单，防止并发重复结算
-        paymentRepository.save(payment);
-    }
-
-    /**
-     * 协同单失败时回退门诊支付单 SETTLING → DRAFT。
-     *
-     * @param cmd 含支付主键
-     */
-    public void revertOutpatientPaymentFromSettling(RevertOutpatientPaymentFromSettlingCommand cmd) {
-        // 前置校验：支付单须处于 SETTLING 方可回退
-        PaymentReconciliation payment = this.mustGetPayment(cmd.getPaymentId());
-        payment.assertStatusTransitionAllowed(PaymentStatus.SETTLING);
-        payment.setStatusEnum(PaymentStatus.DRAFT);
-        // 持久化：释放结算窗口，允许重新预结算
-        paymentRepository.save(payment);
-    }
-
-    /**
-     * 将支付单批量推进至“退款处理中”窗口状态。
-     *
-     * <p>用于在正式生成退款单前锁定可退费主单，避免并发重复退费。</p>
-     *
-     * @param cmd 退款受理命令，包含待受理的支付单主键列表
-     */
-    public void enterRefundProcessingWindow(EnterRefundProcessingWindowCommand cmd) {
-        // Pre：批量查询待受理退款的支付单
-        List<PaymentReconciliation> payments = paymentRepository.findByIdIn(cmd.getPaymentIds());
-        if (payments.size() != cmd.getPaymentIds().size()) {
-            throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_NOT_FOUND, "进入退款受理时存在无效支付流水");
-        }
-        // Pre：将查询结果按主键建索引，加速后续按 ID 定位
-        Map<Long, PaymentReconciliation> paymentMap = new HashMap<>();
-        for (PaymentReconciliation payment : payments) {
-            paymentMap.put(payment.getId(), payment);
-        }
-        List<PaymentReconciliation> toSave = new ArrayList<>();
-        // Loop：遍历入参主键列表，逐条校验并推进状态
-        for (Long id : cmd.getPaymentIds()) {
-            PaymentReconciliation payment = paymentMap.get(id);
-            payment.assertRefundRequestable();
-            payment.setStatusEnum(PaymentStatus.REFUND_PROCESSING);
-            toSave.add(payment);
-        }
-        paymentRepository.saveAll(toSave);
-        // Asm：取首条就诊 ID 作为事件上下文
-        Long firstEncounterId = null;
-        if (!toSave.isEmpty()) {
-            firstEncounterId = toSave.get(0).getEncounterId();
-        }
-        // Event：持久化完成后发布退款受理窗口进入事件
-        domainEventPublisher.publish(new RefundProcessingWindowEnteredEvent(
-            cmd.getPaymentIds().get(0), cmd.getPaymentIds(), firstEncounterId));
     }
 
     /**
@@ -280,7 +202,7 @@ public class PaymentReconciliationDomainService {
      * @return 新建退款支付单主键
      */
     public Long requestOutpatientRefund(RequestOutpatientRefundCommand cmd) {
-        if (paymentRepository.existsByRelationId(cmd.getRelationId())) {
+        if (this.existsActiveOutpatientRefundByRelationId(cmd.getRelationId())) {
             throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT, "原单已存在退款单");
         }
         PaymentReconciliation payment = new PaymentReconciliation();
@@ -295,6 +217,7 @@ public class PaymentReconciliationDomainService {
         payment.setPaymentEnum(cmd.getPaymentEnum());
         payment.setPaymentNo(this.nextPaymentNo());
         payment.initDraft();
+        // 逆向单进入退款受理中；收费原单保持 SUCCESS 不变
         payment.setStatusEnum(PaymentStatus.REFUND_PROCESSING);
         payment.assertHeaderCompleteBeforeNewPersist();
         payment.assertAmountNonNegative();
@@ -317,7 +240,7 @@ public class PaymentReconciliationDomainService {
         payment.assertStatusTransitionAllowed(PaymentStatus.REFUND_PROCESSING);
         payment.setStatusEnum(PaymentStatus.REFUNDED);
         payment.setOutcomeEnum(cmd.getOutcomeEnum());
-        payment.setYbSettleIds(cmd.getYbSettleIds());
+        this.persistYbSettlements(payment.getId(), cmd.getYbSettlements());
         payment.setBillDate(cmd.getBillDate());
         paymentRepository.save(payment);
         // Asm：装配门诊退款完成事件，回填所有展示与审计字段
@@ -331,77 +254,78 @@ public class PaymentReconciliationDomainService {
     }
 
     /**
-     * 门诊账单退费执行：将<strong>原支付主单</strong>从退款处理中收口为已退款（静默写库，不发退费完成事件）。
+     * 门诊账单退费失败时回滚逆向单：清空 {@code relation_id} 并置 {@link PaymentStatus#CANCELLED}，允许原单再次发起退费。
      *
-     * <p>产品半退场景下资金侧对该 payment 整单冲正后，原单终态为 {@link PaymentStatus#REFUNDED}。
-     * 须在逆向退款单 {@link #completeOutpatientRefund} 之前或与之同编排调用。
-     * 日结/对外退费完成事件<strong>仅</strong>由 {@link #completeOutpatientRefund} 在逆向单上发布一次。</p>
-     *
-     * <p><strong>退号（挂号 IF-REG-10）</strong>不得调用本方法，应使用
-     * {@link #completeRegistrationCancelRefund}。</p>
-     *
-     * @param cmd 原单收口命令
+     * @param reversePaymentId 逆向支付主键
      */
-    public void finalizeOriginalOutpatientPayment(FinalizeOriginalOutpatientPaymentCommand cmd) {
-        PaymentReconciliation original = this.mustGetPayment(cmd.getOriginalPaymentId());
-        original.assertStatusTransitionAllowed(PaymentStatus.REFUND_PROCESSING);
-        original.setStatusEnum(PaymentStatus.REFUNDED);
-        if (cmd.getOutcomeEnum() != null) {
-            original.setOutcomeEnum(cmd.getOutcomeEnum());
+    public void abortOutpatientRefundAttempt(Long reversePaymentId) {
+        if (reversePaymentId == null) {
+            return;
         }
-        if (cmd.getYbSettleIds() != null) {
-            original.setYbSettleIds(cmd.getYbSettleIds());
+        PaymentReconciliation reverse = this.mustGetPayment(reversePaymentId);
+        if (!PaymentStatus.REFUND_PROCESSING.equals(reverse.getStatusEnum())) {
+            // 已完成或已取消的逆向单无需回滚
+            return;
         }
-        LocalDateTime billDate = LocalDateTime.now();
-        if (cmd.getBillDate() != null) {
-            billDate = cmd.getBillDate();
-        }
-        original.setBillDate(billDate);
-        paymentRepository.save(original);
+        reverse.setStatusEnum(PaymentStatus.CANCELLED);
+        reverse.setRelationId(null);
+        paymentRepository.save(reverse);
     }
 
     /**
-     * 退号联动退费完成：原单与逆向单一并收口为已退款，并发布唯一退费完成事件（IF-REG-10）。
+     * 门诊账单退费执行：原支付主单收口（<strong>已废弃</strong>，原单不再改状态；保留空实现兼容旧编排引用）。
      *
-     * <p>挂号退号仅为<strong>整单全退</strong>，不存在产品「半退」、保留链再生或
-     * {@link #finalizeOriginalOutpatientPayment} 组合；与门诊账单退费（AS-OP-FIN-003）编排隔离。</p>
+     * @param cmd 原单收口命令（忽略）
+     * @deprecated 收费原单终态恒为 {@link PaymentStatus#SUCCESS}；冲退仅由逆向单表达
+     */
+    @Deprecated
+    public void finalizeOriginalOutpatientPayment(FinalizeOriginalOutpatientPaymentCommand cmd) {
+        if (cmd == null || cmd.getOriginalPaymentId() == null) {
+            return;
+        }
+        // 原单只读：不退费受理、不改 bill_date、不改 status
+    }
+
+    /**
+     * 退号联动退费完成：仅收口逆向单为 {@link PaymentStatus#REFUNDED} 并发布退费完成事件（IF-REG-10）。
+     *
+     * <p>收费原单保持 {@link PaymentStatus#SUCCESS}；与门诊账单退费共用 {@link #completeOutpatientRefund} 逆向收口。</p>
      *
      * @param cmd 退号退费完成命令
      */
     public void completeRegistrationCancelRefund(CompleteRegistrationCancelRefundCommand cmd) {
-        PaymentReconciliation original = this.mustGetPayment(cmd.getOriginalPaymentId());
-        PaymentReconciliation reverse = this.mustGetPayment(cmd.getReversePaymentId());
-        if (!original.getId().equals(reverse.getRelationId())) {
-            throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT, "退号退费逆向单与原支付主单关联不一致");
+        if (cmd == null || cmd.getReversePaymentId() == null) {
+            throw new IllegalArgumentException("registration cancel refund requires reversePaymentId");
         }
-        original.assertStatusTransitionAllowed(PaymentStatus.REFUND_PROCESSING);
-        reverse.assertStatusTransitionAllowed(PaymentStatus.REFUND_PROCESSING);
-        LocalDateTime billDate = LocalDateTime.now();
-        if (cmd.getBillDate() != null) {
-            billDate = cmd.getBillDate();
+        CompleteOutpatientRefundCommand completeCommand = new CompleteOutpatientRefundCommand();
+        completeCommand.setPaymentId(cmd.getReversePaymentId());
+        completeCommand.setOutcomeEnum(cmd.getOutcomeEnum());
+        completeCommand.setYbSettlements(cmd.getYbSettlements());
+        completeCommand.setBillDate(cmd.getBillDate());
+        this.completeOutpatientRefund(completeCommand);
+    }
+
+    /**
+     * 判断原支付是否已有进行中的逆向退费（{@code REFUND_PROCESSING} 或 {@code REFUNDED}）。
+     *
+     * @param relationId 原支付主键
+     * @return 存在有效逆向单时 {@code true}
+     */
+    private boolean existsActiveOutpatientRefundByRelationId(Long relationId) {
+        if (relationId == null) {
+            return false;
         }
-        original.setStatusEnum(PaymentStatus.REFUNDED);
-        reverse.setStatusEnum(PaymentStatus.REFUNDED);
-        if (cmd.getOutcomeEnum() != null) {
-            original.setOutcomeEnum(cmd.getOutcomeEnum());
-            reverse.setOutcomeEnum(cmd.getOutcomeEnum());
+        List<PaymentReconciliation> payments = paymentRepository.findByRelationId(relationId);
+        for (PaymentReconciliation payment : payments) {
+            if (payment == null || !relationId.equals(payment.getRelationId())) {
+                continue;
+            }
+            if (PaymentStatus.REFUND_PROCESSING.equals(payment.getStatusEnum())
+                || PaymentStatus.REFUNDED.equals(payment.getStatusEnum())) {
+                return true;
+            }
         }
-        if (cmd.getYbSettleIds() != null) {
-            original.setYbSettleIds(cmd.getYbSettleIds());
-            reverse.setYbSettleIds(cmd.getYbSettleIds());
-        }
-        original.setBillDate(billDate);
-        reverse.setBillDate(billDate);
-        List<PaymentReconciliation> toSave = new ArrayList<>();
-        toSave.add(original);
-        toSave.add(reverse);
-        paymentRepository.saveAll(toSave);
-        OutpatientRefundCompletedEvent event = new OutpatientRefundCompletedEvent(
-            reverse.getId(), original.getId(), reverse.getEncounterId(),
-            reverse.getDisplayAmount(), PaymentStatus.REFUNDED);
-        event.setEntererId(reverse.getEntererId());
-        event.setRefundTime(billDate);
-        domainEventPublisher.publish(event);
+        return false;
     }
 
     /**
@@ -435,7 +359,8 @@ public class PaymentReconciliationDomainService {
     }
 
     /**
-     * 住院取消结算收口：原单 SUCCESS 与逆向单 REFUND_PROCESSING 一并推进为 REFUNDED，并发布取消事件。
+     * 住院取消结算收口：逆向单 {@link PaymentStatus#REFUND_PROCESSING} → {@link PaymentStatus#REFUNDED}；
+     * 原正向结算单保持 {@link PaymentStatus#SUCCESS} 与原始 {@code bill_date}（与门诊退费 §6.1.6 对称）。
      *
      * @param cmd 收口命令
      */
@@ -445,28 +370,23 @@ public class PaymentReconciliationDomainService {
         if (!original.getId().equals(reverse.getRelationId())) {
             throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT, "取消结算逆向单与原支付主单关联不一致");
         }
-        original.assertStatusTransitionAllowed(PaymentStatus.SUCCESS);
+        if (!PaymentStatus.SUCCESS.equals(original.getStatusEnum())) {
+            throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT, "原结算单非成功态，不能收口反结");
+        }
         reverse.assertStatusTransitionAllowed(PaymentStatus.REFUND_PROCESSING);
         LocalDateTime billDate = LocalDateTime.now();
         if (cmd.getBillDate() != null) {
             billDate = cmd.getBillDate();
         }
-        original.setStatusEnum(PaymentStatus.REFUNDED);
         reverse.setStatusEnum(PaymentStatus.REFUNDED);
         if (cmd.getOutcomeEnum() != null) {
-            original.setOutcomeEnum(cmd.getOutcomeEnum());
             reverse.setOutcomeEnum(cmd.getOutcomeEnum());
         }
-        if (cmd.getYbSettleIds() != null) {
-            original.setYbSettleIds(cmd.getYbSettleIds());
-            reverse.setYbSettleIds(cmd.getYbSettleIds());
+        if (cmd.getYbSettlements() != null && !cmd.getYbSettlements().isEmpty()) {
+            this.persistYbSettlements(reverse.getId(), cmd.getYbSettlements());
         }
-        original.setBillDate(billDate);
         reverse.setBillDate(billDate);
-        List<PaymentReconciliation> toSave = new ArrayList<>();
-        toSave.add(original);
-        toSave.add(reverse);
-        paymentRepository.saveAll(toSave);
+        paymentRepository.save(reverse);
         InpatientSettleCancelledEvent event = new InpatientSettleCancelledEvent(
             reverse.getId(), reverse.getRelationId(), reverse.getEncounterId());
         event.setCancelledAmount(reverse.getDisplayAmount());
@@ -486,12 +406,13 @@ public class PaymentReconciliationDomainService {
         // Pre：保存变更前状态，用于事件追溯
         PaymentStatus beforeStatusEnum = payment.getStatusEnum();
         payment.setStatusEnum(cmd.getStatusEnum());
-        payment.setYbSettleIds(cmd.getYbSettleIds());
+        List<PaymentYbSettlementItemCommand> ybItems = this.persistYbSettlements(payment.getId(), cmd.getYbSettlements());
         payment.setOutcomeEnum(cmd.getOutcomeEnum());
         paymentRepository.save(payment);
-        // Event：持久化完成后发布状态编辑事件，携带变更前后状态供审计
-        domainEventPublisher.publish(new PaymentStatusEditedEvent(
-            payment.getId(), beforeStatusEnum, payment.getStatusEnum(), payment.getYbSettleIds()));
+        PaymentStatusEditedEvent editedEvent = new PaymentStatusEditedEvent(
+            payment.getId(), beforeStatusEnum, payment.getStatusEnum());
+        editedEvent.setYbSettlements(PaymentYbSettlementSupport.toEventItems(ybItems));
+        domainEventPublisher.publish(editedEvent);
     }
 
     /**
@@ -712,17 +633,59 @@ public class PaymentReconciliationDomainService {
         detailRepository.saveAll(toSave);
     }
 
+    private List<PaymentYbSettlementItemCommand> persistYbSettlements(
+        Long paymentId,
+        List<PaymentYbSettlementItemCommand> items) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        this.replaceYbSettlements(paymentId, items);
+        return items;
+    }
+
+    private void replaceYbSettlements(Long paymentId, List<PaymentYbSettlementItemCommand> items) {
+        ybSettlementRepository.deleteByReconciliationId(paymentId);
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<PaymentYbSettlement> toSave = new ArrayList<>();
+        for (PaymentYbSettlementItemCommand cmd : items) {
+            if (cmd == null || StringUtils.isBlank(cmd.getSetlId())) {
+                continue;
+            }
+            PaymentYbSettlement row = new PaymentYbSettlement();
+            row.setReconciliationId(paymentId);
+            row.setSetlId(cmd.getSetlId().trim());
+            if (StringUtils.isNotBlank(cmd.getChrgBchno())) {
+                row.setChrgBchno(cmd.getChrgBchno().trim());
+            }
+            if (StringUtils.isNotBlank(cmd.getMdtrtId())) {
+                row.setMdtrtId(cmd.getMdtrtId().trim());
+            }
+            row.setSettlementRecordId(cmd.getSettlementRecordId());
+            row.setAccountId(cmd.getAccountId());
+            if (StringUtils.isNotBlank(cmd.getStatus())) {
+                row.setStatus(cmd.getStatus().trim());
+            } else {
+                row.setStatus(PaymentYbSettlementStatus.CONFIRMED);
+            }
+            row.assertPersistableChildRow();
+            toSave.add(row);
+        }
+        ybSettlementRepository.saveAll(toSave);
+    }
+
     /**
      * 生成支付业务号。
      *
-     * <p>展示前缀 PMR-，末段为 {@link AggregateTypeConstants#PAYMENT_RECONCILIATION} 框架序号去前缀后的数字段。</p>
+     * <p>展示前缀 {@code PMR-}，末段为 {@link AggregateTypeConstants#PAYMENT_RECONCILIATION} 按日序号去前缀后的数字段（示例 {@code PMR-202506250001}）。</p>
      *
-     * @return 业务号（PMR- 前缀 + 16 位数字）
+     * @return 业务号（PMR- 前缀 + yyyyMMdd + 4 位当日序号）
      */
     private String nextPaymentNo() {
         String agg = AggregateTypeConstants.PAYMENT_RECONCILIATION;
-        String full = businessSequenceService.getSeq(agg, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
-        // Asm：拼接展示前缀 PMR- 与数字段，形成最终业务号
+        String full = businessSequenceService.getSeqByDay(agg, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
+        // Asm：拼接展示前缀 PMR- 与按日数字段，形成最终业务号
         return "PMR-" + full.substring(agg.length());
     }
 }

@@ -11,12 +11,15 @@ import lombok.Setter;
 @Setter
 public class JoinWaitlistRequest {
 
+    /** 机构/科室主键。 */
     @NotNull
     private Long organizationId;
 
+    /** 患者主键。 */
     @NotNull
     private Long patientId;
 
+    /** 已满号源主键（须处于可候补状态）。 */
     @NotNull
     private Long slotId;
 }

@@ -17,6 +17,10 @@
 
 package com.openhis.health.module.common.assembler.product;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.module.common.assembler.order.OrderCatalogDisplayAssembler;
 import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
@@ -75,7 +79,7 @@ public final class ProductDefinitionCatalogUnitBandsAssembler {
         if (productRow == null) {
             return null;
         }
-        return StringUtils.trimToNull(productRow.getPackageUnitCode());
+        return trimToNull(productRow.getPackageUnitCode());
     }
 
     /**
@@ -88,11 +92,11 @@ public final class ProductDefinitionCatalogUnitBandsAssembler {
         if (productRow == null) {
             return null;
         }
-        String unitCode = StringUtils.trimToNull(productRow.getPackageUnitCode());
+        String unitCode = trimToNull(productRow.getPackageUnitCode());
         if (unitCode == null) {
             return null;
         }
-        String dictText = StringUtils.trimToNull(productRow.getPackageUnitCodeDictText());
+        String dictText = trimToNull(productRow.getPackageUnitCodeDictText());
         if (dictText != null) {
             return dictText;
         }
@@ -130,7 +134,7 @@ public final class ProductDefinitionCatalogUnitBandsAssembler {
         if (!isPackagePersistedUnitPriceType(priceTypeCode) || productRow == null) {
             return null;
         }
-        return StringUtils.trimToNull(productRow.getPackageUnitCode());
+        return trimToNull(productRow.getPackageUnitCode());
     }
 
     /**
@@ -190,8 +194,8 @@ public final class ProductDefinitionCatalogUnitBandsAssembler {
         if (productRow == null || StringUtils.isBlank(doseUnitCode)) {
             return null;
         }
-        if (StringUtils.equals(doseUnitCode.trim(), StringUtils.trimToEmpty(productRow.getDoseUnitCode()))) {
-            return StringUtils.trimToNull(productRow.getDoseUnitCodeDictText());
+        if (StringUtils.equals(doseUnitCode.trim(), trimToEmpty(productRow.getDoseUnitCode()))) {
+            return trimToNull(productRow.getDoseUnitCodeDictText());
         }
         return null;
     }
@@ -260,25 +264,25 @@ public final class ProductDefinitionCatalogUnitBandsAssembler {
         }
         String normalized = unitCode.trim();
         if (StringUtils.equals(normalized, product.getPackageUnitCode())) {
-            return StringUtils.trimToNull(product.getPackageUnitCodeDictText());
+            return trimToNull(product.getPackageUnitCodeDictText());
         }
         if (StringUtils.equals(normalized, product.getSplitUnitCode())) {
-            return StringUtils.trimToNull(product.getSplitUnitCodeDictText());
+            return trimToNull(product.getSplitUnitCodeDictText());
         }
         if (StringUtils.equals(normalized, product.getPurchaseUnitCode())) {
-            return StringUtils.trimToNull(product.getPurchaseUnitCodeDictText());
+            return trimToNull(product.getPurchaseUnitCodeDictText());
         }
         if (StringUtils.equals(normalized, product.getStockUnitCode())) {
-            return StringUtils.trimToNull(product.getStockUnitCodeDictText());
+            return trimToNull(product.getStockUnitCodeDictText());
         }
         if (StringUtils.equals(normalized, product.getDoseUnitCode())) {
-            return StringUtils.trimToNull(product.getDoseUnitCodeDictText());
+            return trimToNull(product.getDoseUnitCodeDictText());
         }
         if (StringUtils.equals(normalized, product.getDefEncounterUnitCode())) {
-            return StringUtils.trimToNull(product.getDefEncounterUnitCodeDictText());
+            return trimToNull(product.getDefEncounterUnitCodeDictText());
         }
         if (StringUtils.equals(normalized, product.getDefInhospitalUnitCode())) {
-            return StringUtils.trimToNull(product.getDefInhospitalUnitCodeDictText());
+            return trimToNull(product.getDefInhospitalUnitCodeDictText());
         }
         return null;
     }

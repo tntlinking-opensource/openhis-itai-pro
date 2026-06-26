@@ -17,6 +17,10 @@
 
 package com.openhis.health.domain.administration.specimendefinition.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.domain.administration.specimendefinition.command.ActivateSpecimenDefinitionsCommand;
 import com.openhis.health.domain.administration.specimendefinition.command.CreateSpecimenDefinitionCommand;
 import com.openhis.health.domain.administration.specimendefinition.command.DeactivateSpecimenDefinitionsCommand;
@@ -63,7 +67,7 @@ public class SpecimenDefinitionDomainService {
     /**
      * 新建样本定义，初始化为启用态并发布创建事件。
      *
-     * @param command 新建命令，须含名称与标本种类；业务编码可省略，由系统按 SPD 前缀自动生成
+     * @param command 新建命令，须含名称与标本种类；业务编码由领域层按 SPD 前缀生成（禁止外部注入）
      * @return 新建主键
      * @throws BusinessException 命令为空、必填缺失、种类非法或业务编码冲突时
      */
@@ -73,11 +77,10 @@ public class SpecimenDefinitionDomainService {
         }
         // 加载/组装聚合：从命令装配主档字段，显式传入的检索码优先保留
         SpecimenDefinition entity = new SpecimenDefinition();
-        entity.setBusNo(StringUtils.defaultIfBlank(
-            StringUtils.trimToNull(command.getBusNo()),
-            businessSequenceService.getSeq(AggregateTypeConstants.SPECIMEN_DEFINITION, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH)));
-        entity.setName(StringUtils.trimToEmpty(command.getName()));
-        entity.setTypeEnum(StringUtils.trimToEmpty(command.getTypeEnum()));
+        entity.setBusNo(businessSequenceService.getSeq(
+            AggregateTypeConstants.SPECIMEN_DEFINITION, BusinessSequenceConstants.MASTER_DATA_3_PREFIX_SEQ_LENGTH));
+        entity.setName(trimToEmpty(command.getName()));
+        entity.setTypeEnum(trimToEmpty(command.getTypeEnum()));
         if (StringUtils.isNotBlank(command.getPyStr())) {
             entity.setPyStr(command.getPyStr().trim());
         }
@@ -113,13 +116,6 @@ public class SpecimenDefinitionDomainService {
         SpecimenDefinition entity = this.loadSpecimenDefinition(command.getId());
         List<String> changedFields = new ArrayList<>();
         String oldName = entity.getName();
-        if (command.getBusNo() != null) {
-            String newBusNo = command.getBusNo().trim();
-            if (!Objects.equals(entity.getBusNo(), newBusNo)) {
-                entity.setBusNo(newBusNo);
-                changedFields.add(FieldNameConstants.BUS_NO);
-            }
-        }
         if (command.getName() != null) {
             String newName = command.getName().trim();
             if (!Objects.equals(entity.getName(), newName)) {

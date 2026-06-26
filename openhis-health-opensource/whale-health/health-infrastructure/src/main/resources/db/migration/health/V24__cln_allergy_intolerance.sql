@@ -34,9 +34,7 @@ CREATE TABLE IF NOT EXISTS "public"."cln_allergy_intolerance" (
     "note" varchar(255),
     CONSTRAINT "cln_allergy_intolerance_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE cln_allergy_intolerance IS '临床 allergy intolerance';
-
 COMMENT ON COLUMN cln_allergy_intolerance.id IS '主键';
 COMMENT ON COLUMN cln_allergy_intolerance.tenant_id IS '租户标识';
 COMMENT ON COLUMN cln_allergy_intolerance.created_at IS '创建时间';
@@ -47,24 +45,23 @@ COMMENT ON COLUMN cln_allergy_intolerance.is_deleted IS '软删标记';
 COMMENT ON COLUMN cln_allergy_intolerance.deleted_at IS '删除时间';
 COMMENT ON COLUMN cln_allergy_intolerance.deleted_by IS '删除人';
 COMMENT ON COLUMN cln_allergy_intolerance.version IS '乐观锁版本号';
-COMMENT ON COLUMN cln_allergy_intolerance.request_id IS 'request id';
-COMMENT ON COLUMN cln_allergy_intolerance.encounter_id IS 'encounter id';
-COMMENT ON COLUMN cln_allergy_intolerance.patient_id IS 'patient id';
-COMMENT ON COLUMN cln_allergy_intolerance.medication_id IS 'medication id';
-COMMENT ON COLUMN cln_allergy_intolerance.lot_number IS 'lot number';
-COMMENT ON COLUMN cln_allergy_intolerance.clinical_status_enum IS 'clinical status enum';
-COMMENT ON COLUMN cln_allergy_intolerance.verification_status_enum IS 'verification status enum';
-COMMENT ON COLUMN cln_allergy_intolerance.type_enum IS 'type enum';
-COMMENT ON COLUMN cln_allergy_intolerance.category_code IS 'category code';
-COMMENT ON COLUMN cln_allergy_intolerance.criticality_enum IS 'criticality enum';
-COMMENT ON COLUMN cln_allergy_intolerance.code IS 'code';
-COMMENT ON COLUMN cln_allergy_intolerance.description IS 'description';
-COMMENT ON COLUMN cln_allergy_intolerance.severity_enum IS 'severity enum';
-COMMENT ON COLUMN cln_allergy_intolerance.onset_date_time IS 'onset date time';
-COMMENT ON COLUMN cln_allergy_intolerance.recorded_date IS 'recorded date';
-COMMENT ON COLUMN cln_allergy_intolerance.last_reaction_occurrence IS 'last reaction occurrence';
-COMMENT ON COLUMN cln_allergy_intolerance.exposure_route IS 'exposure route';
-COMMENT ON COLUMN cln_allergy_intolerance.practitioner_id IS 'practitioner id';
-COMMENT ON COLUMN cln_allergy_intolerance.check_practitioner_id IS 'check practitioner id';
-COMMENT ON COLUMN cln_allergy_intolerance.note IS 'note';
-
+COMMENT ON COLUMN cln_allergy_intolerance.request_id IS '申请标识';
+COMMENT ON COLUMN cln_allergy_intolerance.encounter_id IS '就诊标识';
+COMMENT ON COLUMN cln_allergy_intolerance.patient_id IS '患者标识';
+COMMENT ON COLUMN cln_allergy_intolerance.medication_id IS '药品标识';
+COMMENT ON COLUMN cln_allergy_intolerance.lot_number IS '批号';
+COMMENT ON COLUMN cln_allergy_intolerance.clinical_status_enum IS 'clinical状态枚举值';
+COMMENT ON COLUMN cln_allergy_intolerance.verification_status_enum IS 'verification状态枚举值';
+COMMENT ON COLUMN cln_allergy_intolerance.type_enum IS '类型枚举值';
+COMMENT ON COLUMN cln_allergy_intolerance.category_code IS 'category编码';
+COMMENT ON COLUMN cln_allergy_intolerance.criticality_enum IS 'criticality枚举值';
+COMMENT ON COLUMN cln_allergy_intolerance.code IS '编码';
+COMMENT ON COLUMN cln_allergy_intolerance.description IS '描述';
+COMMENT ON COLUMN cln_allergy_intolerance.severity_enum IS 'severity枚举值';
+COMMENT ON COLUMN cln_allergy_intolerance.onset_date_time IS 'onset日期时间';
+COMMENT ON COLUMN cln_allergy_intolerance.recorded_date IS '记录日期';
+COMMENT ON COLUMN cln_allergy_intolerance.last_reaction_occurrence IS '末次反应发生时间';
+COMMENT ON COLUMN cln_allergy_intolerance.exposure_route IS '暴露途径';
+COMMENT ON COLUMN cln_allergy_intolerance.practitioner_id IS '医护人员标识';
+COMMENT ON COLUMN cln_allergy_intolerance.check_practitioner_id IS 'check医护人员标识';
+COMMENT ON COLUMN cln_allergy_intolerance.note IS '备注说明';

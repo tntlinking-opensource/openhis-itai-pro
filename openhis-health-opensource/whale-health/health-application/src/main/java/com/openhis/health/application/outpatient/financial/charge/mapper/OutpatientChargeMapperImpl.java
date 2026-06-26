@@ -35,6 +35,7 @@ import com.openhis.health.domain.financial.paymentreconciliation.command.SettleO
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.constants.OutpatientChargeConstants;
+import com.openhis.health.domain.share.enums.InvoiceStatus;
 import com.openhis.health.domain.share.enums.PaymentChannel;
 import com.openhis.health.domain.share.constants.OutpatientChargeQueueTab;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
@@ -74,9 +75,12 @@ public class OutpatientChargeMapperImpl implements OutpatientChargeMapper {
      * @return 初始化响应
      */
     @Override
-    public LoadChargePageInitResponse toLoadChargePageInitResponse(List<OptionDto> chargeItemStatusOptions) {
+    public LoadChargePageInitResponse toLoadChargePageInitResponse(
+        List<OptionDto> chargeItemStatusOptions,
+        List<OptionDto> paymentChannelOptions) {
         LoadChargePageInitResponse response = new LoadChargePageInitResponse();
         response.setChargeItemStatusOptions(chargeItemStatusOptions);
+        response.setPaymentChannelOptions(paymentChannelOptions);
         return response;
     }
 
@@ -211,7 +215,6 @@ public class OutpatientChargeMapperImpl implements OutpatientChargeMapper {
         SettleOutpatientPaymentCommand command = new SettleOutpatientPaymentCommand();
         command.setPaymentId(request.getPaymentDraftId());
         command.setOutcomeEnum(request.getOutcomeEnum());
-        command.setYbSettleIds(request.getYbSettleIds());
         command.setBillDate(request.getBillDate());
         List<PaymentDetailItemCommand> items = new ArrayList<>();
         // 支付明细逐条装配：过滤空行，金额与主单结果态保持一致。
@@ -303,6 +306,7 @@ public class OutpatientChargeMapperImpl implements OutpatientChargeMapper {
         ConfirmOutpatientChargeSettlementResponse response = new ConfirmOutpatientChargeSettlementResponse();
         response.setPaymentId(paymentId);
         response.setInvoiceId(invoiceId);
+        response.setInvoiceStatus(InvoiceStatus.DRAFT.getCode());
         response.setSuccessMessageCode(OutpatientChargeConstants.MESSAGE_CODE_SETTLE_SUCCESS);
         return response;
     }

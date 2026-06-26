@@ -44,7 +44,7 @@ public class ChargeItemAutoGenEditedEvent extends DomainEvent {
     /**
      * 目标收费项定义主键。
      */
-    private Long targetDefinitionId;
+    private Long chargeDefinitionId;
 
     private Long operatorId;
 
@@ -61,24 +61,27 @@ public class ChargeItemAutoGenEditedEvent extends DomainEvent {
         String operation,
         String triggerSourceTable,
         Long triggerSourceId,
-        Long targetDefinitionId
+        Long chargeDefinitionId
     ) {
-        this(ruleId, operation, triggerSourceTable, triggerSourceId, targetDefinitionId, null);
+        this(ruleId, operation, triggerSourceTable, triggerSourceId, chargeDefinitionId, null);
     }
 
+    /**
+     * @param ruleId 聚合主键（= 表 {@code cus_charge_item_auto_gen.id}，落 {@link DomainEvent#aggregateId}）
+     */
     public ChargeItemAutoGenEditedEvent(
         Long ruleId,
         String operation,
         String triggerSourceTable,
         Long triggerSourceId,
-        Long targetDefinitionId,
+        Long chargeDefinitionId,
         Long operatorId
     ) {
         super(ruleId, AggregateTypeConstants.CHARGE_ITEM_AUTO_GEN);
         this.operation = operation;
         this.triggerSourceTable = triggerSourceTable;
         this.triggerSourceId = triggerSourceId;
-        this.targetDefinitionId = targetDefinitionId;
+        this.chargeDefinitionId = chargeDefinitionId;
         this.operatorId = operatorId;
     }
 }

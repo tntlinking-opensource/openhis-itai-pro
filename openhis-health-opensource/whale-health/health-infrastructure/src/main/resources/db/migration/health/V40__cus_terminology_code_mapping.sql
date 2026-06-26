@@ -19,9 +19,7 @@ CREATE TABLE IF NOT EXISTS "public"."cus_terminology_code_mapping" (
     "active_flag" bool NOT NULL,
     CONSTRAINT "cus_terminology_code_mapping_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE cus_terminology_code_mapping IS '自定义 terminology code mapping';
-
 COMMENT ON COLUMN cus_terminology_code_mapping.id IS '主键';
 COMMENT ON COLUMN cus_terminology_code_mapping.tenant_id IS '租户标识';
 COMMENT ON COLUMN cus_terminology_code_mapping.created_at IS '创建时间';
@@ -32,9 +30,8 @@ COMMENT ON COLUMN cus_terminology_code_mapping.is_deleted IS '软删标记';
 COMMENT ON COLUMN cus_terminology_code_mapping.deleted_at IS '删除时间';
 COMMENT ON COLUMN cus_terminology_code_mapping.deleted_by IS '删除人';
 COMMENT ON COLUMN cus_terminology_code_mapping.version IS '乐观锁版本号';
-COMMENT ON COLUMN cus_terminology_code_mapping.source_item_table IS 'source item table';
-COMMENT ON COLUMN cus_terminology_code_mapping.source_item_no IS 'source item no';
-COMMENT ON COLUMN cus_terminology_code_mapping.target_item_no IS 'target item no';
-COMMENT ON COLUMN cus_terminology_code_mapping.target_name IS 'target name';
-COMMENT ON COLUMN cus_terminology_code_mapping.active_flag IS 'active flag';
-
+COMMENT ON COLUMN cus_terminology_code_mapping.source_item_table IS '来源项table';
+COMMENT ON COLUMN cus_terminology_code_mapping.source_item_no IS '来源项编号';
+COMMENT ON COLUMN cus_terminology_code_mapping.target_item_no IS 'target项编号';
+COMMENT ON COLUMN cus_terminology_code_mapping.target_name IS 'target名称';
+COMMENT ON COLUMN cus_terminology_code_mapping.active_flag IS '是否启用';

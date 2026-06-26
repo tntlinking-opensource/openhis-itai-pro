@@ -71,6 +71,7 @@ public class EncounterMedicationDispenseSlipPageLoader {
     private final PharmacyDispenseSlipQuerySupport pharmacyDispenseSlipQuerySupport;
     private final InpatientMedicationDispenseChargePricingLoader inpatientMedicationDispenseChargePricingLoader;
     private final EncounterMedicationDispenseSlipReadAssembler encounterMedicationDispenseSlipReadAssembler;
+    private final EncounterMedicationDispenseSlipPrintEnricher encounterMedicationDispenseSlipPrintEnricher;
     private final FrequencyOptionLoader frequencyOptionLoader;
     private final TerminologyOptionLoader terminologyOptionLoader;
 
@@ -170,6 +171,11 @@ public class EncounterMedicationDispenseSlipPageLoader {
             partAttributeLabelByCode);
         if (patientHistoryScope) {
             applyEncounterBusNoPerRow(result.getContent());
+        } else if (result.getContent() != null && !result.getContent().isEmpty()) {
+            Map<Long, String> preparerPractitionerNameByDispenseId =
+                resolvePreparerPractitionerNames(slipPage.getContent());
+            encounterMedicationDispenseSlipPrintEnricher.enrichOutpatientPrintFields(
+                result.getContent(), outpatientSnapshot, preparerPractitionerNameByDispenseId);
         }
         return result;
     }
@@ -600,6 +606,27 @@ public class EncounterMedicationDispenseSlipPageLoader {
             orderingDepartmentNameByOrgId,
             orderingPractitionerNameById,
             dispenseLocationNameByLocationId);
+    }
+
+    private Map<Long, String> resolvePreparerPractitionerNames(List<MedicationDispenseSlipQueryModel> slipRows) {
+        Set<Long> preparerPractitionerIds = new LinkedHashSet<>();
+        for (MedicationDispenseSlipQueryModel slipRow : slipRows) {
+            if (slipRow != null && slipRow.getPreparerId() != null) {
+                preparerPractitionerIds.add(slipRow.getPreparerId());
+            }
+        }
+        Map<Long, Practitioner> preparerById = loadPractitionersByIds(preparerPractitionerIds);
+        Map<Long, String> preparerPractitionerNameByDispenseId = new HashMap<>();
+        for (MedicationDispenseSlipQueryModel slipRow : slipRows) {
+            if (slipRow == null || slipRow.getDispenseId() == null || slipRow.getPreparerId() == null) {
+                continue;
+            }
+            Practitioner preparer = preparerById.get(slipRow.getPreparerId());
+            if (preparer != null) {
+                preparerPractitionerNameByDispenseId.put(slipRow.getDispenseId(), preparer.getName());
+            }
+        }
+        return preparerPractitionerNameByDispenseId;
     }
 
     private static List<Long> collectDispenseIds(List<MedicationDispenseSlipQueryModel> slipRows) {

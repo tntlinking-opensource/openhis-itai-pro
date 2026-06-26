@@ -31,7 +31,6 @@ import com.openhis.health.application.outpatient.financial.refund.response.Verif
 import com.openhis.health.domain.administration.chargeitem.command.BatchChargeItemIdsCommand;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CompleteOutpatientRefundCommand;
-import com.openhis.health.domain.financial.paymentreconciliation.command.EnterRefundProcessingWindowCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.FinalizeOriginalOutpatientPaymentCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.PaymentDetailItemCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.RequestOutpatientRefundCommand;
@@ -54,9 +53,12 @@ public interface OutpatientRefundMapper {
      * 装配退费页初始化响应。
      *
      * @param chargeItemStatusOptions 收费项状态下拉
+     * @param paymentChannelOptions   用户可选支付渠道下拉
      * @return 初始化响应
      */
-    LoadOutpatientRefundPageInitResponse toLoadOutpatientRefundPageInitResponse(List<OptionDto> chargeItemStatusOptions);
+    LoadOutpatientRefundPageInitResponse toLoadOutpatientRefundPageInitResponse(
+        List<OptionDto> chargeItemStatusOptions,
+        List<OptionDto> paymentChannelOptions);
 
     /**
      * 将门诊信息读模型装配为退费队列行。
@@ -101,15 +103,6 @@ public interface OutpatientRefundMapper {
     VerifyRefundableBeforeExecutionResponse toVerifyRefundableBeforeExecutionResponse(
         boolean allowed,
         String rejectReasonCode);
-
-    /**
-     * 装配进入退款受理窗口命令。
-     *
-     * @param paymentIds 原支付主键列表
-     * @param operatorId 操作人
-     * @return 命令
-     */
-    EnterRefundProcessingWindowCommand toEnterRefundProcessingWindowCommand(List<Long> paymentIds, Long operatorId);
 
     /**
      * 装配门诊退费申请命令。
@@ -177,13 +170,6 @@ public interface OutpatientRefundMapper {
         Long reversePaymentId,
         Long originalPaymentId,
         boolean halfRefundExecuted);
-
-    /**
-     * 装配退费执行异步医保撤销响应。
-     */
-    ExecuteOutpatientBillRefundByPaymentResponse toExecuteOutpatientBillRefundInsuranceAsyncResponse(
-        Long originalPaymentId,
-        List<Long> coordinationIds);
 
     /**
      * 装配保留行账户切换响应。

@@ -18,4 +18,7 @@ public class WalkInSlotAllocateCommand {
 
     /** 操作人（占号审计）。 */
     private Long operatorId;
+
+    /** 指定占用的号源主键；为空时取当日首个可用号源。 */
+    private Long slotId;
 }

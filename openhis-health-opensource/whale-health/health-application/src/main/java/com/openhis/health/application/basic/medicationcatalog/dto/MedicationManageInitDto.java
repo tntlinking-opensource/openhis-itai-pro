@@ -75,12 +75,6 @@ public class MedicationManageInitDto {
     private List<OptionDto> chrgitmLvOptions;
 
     /**
-     * 药品分类选项：前端下拉或树形选择使用的药品分类字典列表（dictCode / dictLabel / dictValue 等）
-     */
-    @Schema(description = "药品分类字典选项（用于下拉/筛选）")
-    private List<OptionDto> medCategoryCodeOptions;
-
-    /**
      * 体系/系统分类选项：系统级别的分类字典列表（例如分类体系、科室体系等）
      */
     @Schema(description = "体系/系统分类字典选项")

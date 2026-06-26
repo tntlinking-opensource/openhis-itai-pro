@@ -407,6 +407,7 @@ public class MedicationDispenseDomainService {
         pending.toPendingRefund();
         pending.setLotNumber(origin.getLotNumber());
         pending.setTraceNo(origin.getTraceNo());
+        this.copyRefundDispensePresentationFieldsFromOrigin(pending, origin);
         if (command.getProcedureId() != null) {
             pending.setProcedureId(command.getProcedureId());
         }
@@ -461,7 +462,7 @@ public class MedicationDispenseDomainService {
      */
     public String summarizeMedicationDispenses(SummarizeMedicationDispensesCommand command) {
         String agg = AggregateTypeConstants.MEDICATION_DISPENSE;
-        String seqFull = businessSequenceService.getSeq(agg, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
+        String seqFull = businessSequenceService.getSeqByDay(agg, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
         String summaryNo = MedicationCommonConstants.SUMMARY_NO_PREFIX + seqFull.substring(agg.length());
         List<MedicationDispense> dispenses = medicationDispenseRepository.findByIdIn(command.getDispenseIds());
         List<Long> summarizedIds = new ArrayList<>();
@@ -631,5 +632,22 @@ public class MedicationDispenseDomainService {
         dispense.setDispenseEnum(dispenseEnum);
         dispense.setStatusChangedTime(LocalDateTime.now());
         return dispense;
+    }
+
+    /**
+     * 负向待退发放拷贝原正向发放展示字段（批号/追溯码由调用方单独处理）。
+     *
+     * @param pending 待退发放行
+     * @param origin  原正向发放行
+     */
+    private void copyRefundDispensePresentationFieldsFromOrigin(MedicationDispense pending, MedicationDispense origin) {
+        pending.setSummaryNo(origin.getSummaryNo());
+        pending.setDosageInstruction(origin.getDosageInstruction());
+        pending.setMethodCode(origin.getMethodCode());
+        pending.setFrequencyCode(origin.getFrequencyCode());
+        pending.setDose(origin.getDose());
+        pending.setDoseUnitCode(origin.getDoseUnitCode());
+        pending.setDesLocationId(origin.getDesLocationId());
+        pending.setPlannedDispenseTime(origin.getPlannedDispenseTime());
     }
 }

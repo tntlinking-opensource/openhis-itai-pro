@@ -12,5 +12,6 @@ import java.util.List;
 @Setter
 public class ListBookableServiceRequestsResponse {
 
+    /** 可预约医嘱列表。 */
     private List<ServiceRequestItemDto> items;
 }

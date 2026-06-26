@@ -1,0 +1,10 @@
+{
+  "moduleId": "elep",
+  "displayName": "电子处方（ELEP）",
+  "enabledProperty": "openhis.modules.elep.enabled",
+  "autoConfigurationClass": "com.openhis.elep.application.config.ElepAutoConfiguration",
+  "appServiceNames": [
+    "elepPrescription",
+    "elepCatalogSearch"
+  ]
+}

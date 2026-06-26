@@ -17,6 +17,8 @@
 
 package com.openhis.health.domain.custom.terminologycodemapping.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.domain.share.constants.CustomConstants;
 import com.openhis.health.domain.custom.terminologycodemapping.command.*;
 import com.openhis.health.domain.custom.terminologycodemapping.entity.TerminologyCodeMapping;
@@ -195,7 +197,7 @@ public class TerminologyCodeMappingDomainService {
             // 业务分支处理。
             if (existed != null) {
                 // 更新：仅当名称变化时才计数与落库。
-                if (!Objects.equals(StringUtils.trimToNull(item.getTargetName()), StringUtils.trimToNull(existed.getTargetName()))) {
+                if (!Objects.equals(trimToNull(item.getTargetName()), trimToNull(existed.getTargetName()))) {
                     existed.setTargetName(item.getTargetName());
                     toSave.add(existed);
                     updated++;
@@ -315,4 +317,3 @@ public class TerminologyCodeMappingDomainService {
         }
     }
 }
-

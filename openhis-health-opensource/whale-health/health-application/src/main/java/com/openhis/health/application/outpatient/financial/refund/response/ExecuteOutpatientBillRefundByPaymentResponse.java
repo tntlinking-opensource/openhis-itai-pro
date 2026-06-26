@@ -23,8 +23,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
-import java.util.List;
-
 /**
  * 按原支付执行门诊账单退费响应（IF-REF-05）。
  */
@@ -56,16 +54,6 @@ public class ExecuteOutpatientBillRefundByPaymentResponse {
     @Schema(description = "是否执行了半退再结算分支")
     /** 是否执行了半退再结算分支（业务字段）。 */
     private boolean halfRefundExecuted;
-
-    /** 医保撤销模式：SYNC / INSURANCE_ASYNC。 */
-    @Schema(description = "医保撤销模式")
-    /** 医保撤销模式（业务字段）。 */
-    private String insuranceRevokeMode;
-
-    /** 医保撤销协同单主键列表（异步时）。 */
-    @Schema(description = "医保撤销协同单主键列表")
-    /** 医保撤销协同单主键列表（业务字段）。 */
-    private List<Long> coordinationIds;
 
     /** 医保正式结算是否已撤销（同步完成或无需撤销时为 true）。 */
     @Schema(description = "医保正式结算是否已撤销")

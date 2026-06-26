@@ -39,9 +39,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_practitioner" (
     "pos_no" varchar(64),
     CONSTRAINT "adm_practitioner_pkey" PRIMARY KEY ("id")
 );
-
-COMMENT ON TABLE adm_practitioner IS '管理域 practitioner';
-
+COMMENT ON TABLE adm_practitioner IS '医务人员主数据';
 COMMENT ON COLUMN adm_practitioner.id IS '主键';
 COMMENT ON COLUMN adm_practitioner.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_practitioner.created_at IS '创建时间';
@@ -52,31 +50,31 @@ COMMENT ON COLUMN adm_practitioner.is_deleted IS '软删标记';
 COMMENT ON COLUMN adm_practitioner.deleted_at IS '删除时间';
 COMMENT ON COLUMN adm_practitioner.deleted_by IS '删除人';
 COMMENT ON COLUMN adm_practitioner.version IS '乐观锁版本号';
-COMMENT ON COLUMN adm_practitioner.name IS 'name';
-COMMENT ON COLUMN adm_practitioner.name_json IS 'name json';
-COMMENT ON COLUMN adm_practitioner.py_str IS 'py str';
-COMMENT ON COLUMN adm_practitioner.wb_str IS 'wb str';
-COMMENT ON COLUMN adm_practitioner.gender_enum IS 'gender enum';
-COMMENT ON COLUMN adm_practitioner.birth_date IS 'birth date';
-COMMENT ON COLUMN adm_practitioner.deceased_date IS 'deceased date';
-COMMENT ON COLUMN adm_practitioner.phone IS 'phone';
-COMMENT ON COLUMN adm_practitioner.address_province IS 'address province';
-COMMENT ON COLUMN adm_practitioner.address_city IS 'address city';
-COMMENT ON COLUMN adm_practitioner.address_district IS 'address district';
-COMMENT ON COLUMN adm_practitioner.address_street IS 'address street';
-COMMENT ON COLUMN adm_practitioner.address_json IS 'address json';
-COMMENT ON COLUMN adm_practitioner.status_enum IS 'status enum';
-COMMENT ON COLUMN adm_practitioner.active_flag IS 'active flag';
-COMMENT ON COLUMN adm_practitioner.bus_no IS 'bus no';
-COMMENT ON COLUMN adm_practitioner.yb_no IS 'yb no';
-COMMENT ON COLUMN adm_practitioner.user_id IS 'user id';
-COMMENT ON COLUMN adm_practitioner.org_id IS 'org id';
-COMMENT ON COLUMN adm_practitioner.dr_profttl_code IS 'dr profttl code';
-COMMENT ON COLUMN adm_practitioner.phar_prac_cert_no IS 'phar prac cert no';
-COMMENT ON COLUMN adm_practitioner.prsc_dr_cert_code IS 'prsc dr cert code';
-COMMENT ON COLUMN adm_practitioner.signature IS '医务人员聚合根实体';
-COMMENT ON COLUMN adm_practitioner.kpd_code IS 'kpd code';
-COMMENT ON COLUMN adm_practitioner.pos_no IS 'pos no';
+COMMENT ON COLUMN adm_practitioner.name IS '人员姓名';
+COMMENT ON COLUMN adm_practitioner.name_json IS '其他名称 JSON（曾用名、英文名等）';
+COMMENT ON COLUMN adm_practitioner.py_str IS '姓名拼音检索码';
+COMMENT ON COLUMN adm_practitioner.wb_str IS '姓名五笔检索码';
+COMMENT ON COLUMN adm_practitioner.gender_enum IS '行政性别编码';
+COMMENT ON COLUMN adm_practitioner.birth_date IS '出生日期';
+COMMENT ON COLUMN adm_practitioner.deceased_date IS '死亡时间';
+COMMENT ON COLUMN adm_practitioner.phone IS '联系电话';
+COMMENT ON COLUMN adm_practitioner.address_province IS '地址-省';
+COMMENT ON COLUMN adm_practitioner.address_city IS '地址-市';
+COMMENT ON COLUMN adm_practitioner.address_district IS '地址-区/县';
+COMMENT ON COLUMN adm_practitioner.address_street IS '地址-街道/详细地址';
+COMMENT ON COLUMN adm_practitioner.address_json IS '地址扩展 JSON';
+COMMENT ON COLUMN adm_practitioner.status_enum IS '人员状态（ACTIVE / INACTIVE / DISCARDED）';
+COMMENT ON COLUMN adm_practitioner.active_flag IS '是否启用（status_enum == ACTIVE 时为 true）';
+COMMENT ON COLUMN adm_practitioner.bus_no IS '院内工号/业务编号';
+COMMENT ON COLUMN adm_practitioner.yb_no IS '医保人员编码';
+COMMENT ON COLUMN adm_practitioner.user_id IS '关联平台用户主键（与 id 独立，无库表外键）';
+COMMENT ON COLUMN adm_practitioner.org_id IS '默认登录科室/当前工作科室（Organization 主键）';
+COMMENT ON COLUMN adm_practitioner.dr_profttl_code IS '职称编码';
+COMMENT ON COLUMN adm_practitioner.phar_prac_cert_no IS '医师/药师执业资格证编号';
+COMMENT ON COLUMN adm_practitioner.prsc_dr_cert_code IS '执业证件类型编码';
+COMMENT ON COLUMN adm_practitioner.signature IS '医生签名图片 Base64（可含 data:image/*;base64, 前缀）';
+COMMENT ON COLUMN adm_practitioner.kpd_code IS '开票点编码';
+COMMENT ON COLUMN adm_practitioner.pos_no IS 'POS 机终端编号';
 
 -- seed: adm_practitioner
 INSERT INTO "adm_practitioner" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "name", "name_json", "py_str", "wb_str", "gender_enum", "birth_date", "deceased_date", "phone", "address_province", "address_city", "address_district", "address_street", "address_json", "status_enum", "active_flag", "bus_no", "yb_no", "user_id", "org_id", "dr_profttl_code", "phar_prac_cert_no", "prsc_dr_cert_code", "signature", "kpd_code", "pos_no")

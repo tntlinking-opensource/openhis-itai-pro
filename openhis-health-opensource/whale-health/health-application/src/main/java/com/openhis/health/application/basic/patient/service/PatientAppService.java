@@ -39,11 +39,11 @@ import com.openhis.health.domain.administration.patient.service.PatientQueryServ
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.*;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
+import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.core.application.exception.ValidationException;
-import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import com.openhis.whale.setting.domain.SettingDefinitionEnum;
 import com.openhis.whale.setting.domain.service.SettingManager;
 import lombok.RequiredArgsConstructor;
@@ -78,8 +78,8 @@ public class PatientAppService {
     private final PatientStudentMapper patientStudentMapper;
     /** 全局开关：是否启用学籍维护（与前端表单显隐联动）。 */
     private final SettingManager settingManager;
-    /** 当前登录用户上下文（建档机构归属）。 */
-    private final ICurrentUser currentUser;
+    /** 写路径会话机构（B.6.5），禁止 AppService 直读 {@link com.openhis.whale.core.infrastructure.security.ICurrentUser}。 */
+    private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
 
     /**
      * 患者管理页初始化：下拉选项（含学籍维护所需的学历、学习形式、在校状态、体检结果等枚举）。
@@ -291,10 +291,8 @@ public class PatientAppService {
             throw new ValidationException("新增患者失败：命令组装失败");
         }
         // 建档机构归属当前登录机构，与门诊挂号新建患者主档一致，禁止由前端传入 organizationId。
-        Long organizationId = currentUser.getCurrentOrganizationUnitId();
-        if (organizationId == null) {
-            throw new ValidationException("新增患者失败：当前登录机构不能为空");
-        }
+        Long organizationId = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
+            ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "新增患者失败：当前登录机构不能为空");
         if (command.getItem() != null) {
             command.getItem().setOrganizationId(organizationId);
         }

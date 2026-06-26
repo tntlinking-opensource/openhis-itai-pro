@@ -108,8 +108,11 @@ class StopClinicSlotFreezeDomainServiceTest {
 
     @Test
     void findActiveFrozenSlotIds_delegatesToRepository() {
-        when(stopClinicSlotFreezeRepository.findActiveFrozenSlotIdsByScheduleId(eq(SCHEDULE_ID), any()))
-            .thenReturn(List.of(SLOT_ID, 301L));
+        StopClinicSlotFreeze first = activeFreeze(LocalDateTime.now().plusMinutes(10));
+        StopClinicSlotFreeze second = activeFreeze(LocalDateTime.now().plusMinutes(10));
+        second.setSlotId(301L);
+        when(stopClinicSlotFreezeRepository.findByScheduleIdAndIsDeletedFalseAndExpiresAtAfter(
+            eq(SCHEDULE_ID), any())).thenReturn(List.of(first, second));
 
         Set<Long> frozen = domainService.findActiveFrozenSlotIdsByScheduleId(SCHEDULE_ID);
 

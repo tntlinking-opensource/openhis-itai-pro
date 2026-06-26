@@ -64,4 +64,8 @@ public class PageNurseStationPricingCatalogRequest extends AbstractHealthPageReq
     /** 组套/历史行 ids 收窄目录；价与 defaultDispenseLocationId 由本 IF 读侧返回（IF-08 预览不提供）。 */
     @Schema(description = "预选产品键列表（快捷套用 ids 查目录）")
     private List<PrepickedProductKeyDto> prepickedProductKeys;
+
+    /** 诊疗目录 category_code 精确过滤（自动计费 Tab 传 51 床位服务）。 */
+    @Schema(description = "诊疗目录类别编码过滤")
+    private String categoryCode;
 }

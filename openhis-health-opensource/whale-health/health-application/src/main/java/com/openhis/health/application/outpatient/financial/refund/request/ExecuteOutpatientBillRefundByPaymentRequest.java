@@ -20,6 +20,7 @@ package com.openhis.health.application.outpatient.financial.refund.request;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.openhis.health.application.outpatient.financial.refund.dto.RefundPaymentDetailSubmitDto;
+import com.openhis.health.integration.payment.dto.ClientRefundResultDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -79,4 +80,8 @@ public class ExecuteOutpatientBillRefundByPaymentRequest {
     @Schema(description = "账单日，格式 yyyy-MM-dd HH:mm:ss")
     /** 账单日，格式 yyyy-MM-dd HH:mm:ss（业务字段）。 */
     private String billDate;
+
+    /** 银联退货 Win 回传（原扫码段原路退时必填）。 */
+    @Schema(description = "银联退货 Win 回传")
+    private ClientRefundResultDto clientRefundResult;
 }

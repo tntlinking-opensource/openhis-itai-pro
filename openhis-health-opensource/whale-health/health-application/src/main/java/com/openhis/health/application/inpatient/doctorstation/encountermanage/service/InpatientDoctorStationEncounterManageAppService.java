@@ -18,6 +18,9 @@
 package com.openhis.health.application.inpatient.doctorstation.encountermanage.service;
 
 import com.openhis.health.module.common.assembler.inpatient.AdmissionPrimaryDiagnosisAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayDtoApplier;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayResult;
 import com.openhis.health.module.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
 import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.module.common.pagination.PageQueryBinder;
@@ -39,6 +42,7 @@ import com.openhis.health.domain.administration.patient.queries.model.PatientDet
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientDoctorStationConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
@@ -88,6 +92,8 @@ public class InpatientDoctorStationEncounterManageAppService {
     private final InpatientInfoQueueDisplayAssembler inpatientInfoQueueDisplayAssembler;
     /** 入院主诊断展示：diagnosisJson 解析与摘要拼接。 */
     private final AdmissionPrimaryDiagnosisAssembler admissionPrimaryDiagnosisAssembler;
+    /** 支付读侧：反结待再结展示模式判定。 */
+    private final PaymentReconciliationQueryService paymentReconciliationQueryService;
 
     /**
      * 分页查询住院医生站在院患者队列（IF-IP-DOR-01）。
@@ -127,8 +133,12 @@ public class InpatientDoctorStationEncounterManageAppService {
                 inpatientInfoQueueDisplayAssembler.buildOverlay(page.getContent());
             Map<Long, DoctorStationQueueDisplayEnrichment> enrichmentByEncounterId =
                 this.buildDisplayEnrichment(page.getContent());
-            Map<Long, BigDecimal> chargedOccupancyByEncounterId =
-                chargeItemQueryService.mapInpatientChargedOccupancyTotalPriceByEncounterIds(pageEncounterIds);
+            Map<Long, BigDecimal> pendingByEncounterId =
+                chargeItemQueryService.mapPendingSettlementTotalPriceByEncounterIds(pageEncounterIds);
+            Map<Long, BigDecimal> settledByEncounterId =
+                chargeItemQueryService.mapSettledTotalPriceByEncounterIds(pageEncounterIds);
+            Set<Long> reversedPendingResettleEncounterIds =
+                paymentReconciliationQueryService.filterReversedPendingResettleEncounterIds(pageEncounterIds);
             List<DoctorStationPatientQueueItemDto> content = new ArrayList<>();
             for (InpatientEncounterContextQueryModel row : page.getContent()) {
                 // 跳过空行，避免装配脏分页结果。
@@ -145,31 +155,39 @@ public class InpatientDoctorStationEncounterManageAppService {
                     enrichment = enrichmentByEncounterId.get(row.getEncounterId());
                     priorityEnum = priorityEnumByEncounterId.get(row.getEncounterId());
                 }
-                // 展示余额 = 预交金净值 −（待结算 + 已结算占用）；PLANNED 待收费不扣减。
-                BigDecimal chargedOccupancy = BigDecimal.ZERO;
+                BigDecimal pending = BigDecimal.ZERO;
+                BigDecimal settled = BigDecimal.ZERO;
+                boolean reversedPendingResettle = false;
                 if (row.getEncounterId() != null) {
-                    BigDecimal total = chargedOccupancyByEncounterId.get(row.getEncounterId());
-                    if (total != null) {
-                        chargedOccupancy = total;
+                    BigDecimal pendingTotal = pendingByEncounterId.get(row.getEncounterId());
+                    if (pendingTotal != null) {
+                        pending = pendingTotal;
+                    }
+                    BigDecimal settledTotal = settledByEncounterId.get(row.getEncounterId());
+                    if (settledTotal != null) {
+                        settled = settledTotal;
+                    }
+                    if (reversedPendingResettleEncounterIds.contains(row.getEncounterId())) {
+                        reversedPendingResettle = true;
                     }
                 }
-                BigDecimal displayBalance =
-                    InpatientDisplayAccountBalanceAssembler.computeDisplayAccountBalance(
-                        account, chargedOccupancy);
-                boolean lowBalance = this.isLowBalanceWarning(displayBalance);
+                InpatientAccountBalanceDisplayResult accountBalanceDisplay =
+                    InpatientAccountBalanceDisplayAssembler.assemble(
+                        account, pending, settled, reversedPendingResettle);
                 List<String> diagnosisLines =
                     admissionPrimaryDiagnosisAssembler.resolveDiagnosisDisplayLines(row.getDiagnosisJson());
                 String diagnosisSummary =
                     admissionPrimaryDiagnosisAssembler.joinDiagnosisDisplayLines(diagnosisLines);
-                content.add(inpatientDoctorStationEncounterManageMapper.toDoctorStationPatientQueueItemDto(
-                    row,
-                    displayBalance,
-                    lowBalance,
-                    rowOverlay,
-                    priorityEnum,
-                    diagnosisLines,
-                    diagnosisSummary,
-                    enrichment));
+                DoctorStationPatientQueueItemDto item =
+                    inpatientDoctorStationEncounterManageMapper.toDoctorStationPatientQueueItemDto(
+                        row,
+                        rowOverlay,
+                        priorityEnum,
+                        diagnosisLines,
+                        diagnosisSummary,
+                        enrichment);
+                InpatientAccountBalanceDisplayDtoApplier.apply(item, accountBalanceDisplay);
+                content.add(item);
             }
             return inpatientDoctorStationEncounterManageMapper.toPagePatientQueueResponse(content, page);
         } catch (BusinessException ex) {
@@ -187,19 +205,11 @@ public class InpatientDoctorStationEncounterManageAppService {
     /**
      * 判断展示余额是否低于预警阈值（复用护士站 500 元口径）。
      *
-     * @param displayBalance 展示余额
+     * @param availableBalance 可用余额
      * @return true 表示需低余额预警
      */
-    private boolean isLowBalanceWarning(BigDecimal displayBalance) {
-        if (displayBalance == null) {
-            // 无展示余额时不预警。
-            return false;
-        }
-        if (displayBalance.compareTo(InpatientNurseStationConstants.LOW_BALANCE_WARNING_THRESHOLD) < 0) {
-            // 展示余额低于 500 元阈值时点亮低余额预警。
-            return true;
-        }
-        return false;
+    private boolean isLowBalanceWarning(BigDecimal availableBalance) {
+        return InpatientAccountBalanceDisplayAssembler.isLowBalanceWarning(availableBalance);
     }
 
     /**

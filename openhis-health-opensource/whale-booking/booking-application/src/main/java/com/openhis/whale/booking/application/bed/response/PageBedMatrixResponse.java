@@ -12,6 +12,9 @@ import java.util.List;
 @Setter
 public class PageBedMatrixResponse {
 
+    /** 日期列头列表。 */
     private List<String> dates;
+
+    /** 床位矩阵行列表。 */
     private List<BedMatrixRowDto> rows;
 }

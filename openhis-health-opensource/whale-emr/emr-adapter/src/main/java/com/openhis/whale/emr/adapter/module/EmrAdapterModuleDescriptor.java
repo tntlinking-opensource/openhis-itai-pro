@@ -14,7 +14,7 @@ public class EmrAdapterModuleDescriptor implements WhaleModuleDescriptor {
 
     @Override
     public String displayName() {
-        return "HIS-EMR Bridge";
+        return "HIS-EMR Adapter";
     }
 
     @Override
@@ -29,11 +29,11 @@ public class EmrAdapterModuleDescriptor implements WhaleModuleDescriptor {
 
     @Override
     public IntegrationMode integrationMode() {
-        return IntegrationMode.PORT;
+        return IntegrationMode.PUSH;
     }
 
     @Override
     public String[] featureKeys() {
-        return new String[] {"emr.metadata-port"};
+        return new String[] {"emr.metadata-reader"};
     }
 }

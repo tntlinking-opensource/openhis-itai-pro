@@ -4,8 +4,8 @@
 
 package com.openhis.health.application.inpatient.nursestation.orderexecute.assembler;
 
-import com.openhis.health.module.querysupport.procedure.NurseStationOrderExecuteListReadAssembler;
-import com.openhis.health.module.querysupport.procedure.dto.NurseStationOrderExecutePatientGroupDto;
+import com.openhis.health.module.querysupport.nursestation.NurseStationOrderExecuteListReadAssembler;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderExecutePatientGroupDto;
 import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecordQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
@@ -32,9 +32,11 @@ public class NurseStationOrderExecuteListAssembler {
         Map<Long, List<ServiceRequestListModel>> svcByEncounter,
         LocalDateTime executionDeadline,
         String executeTab,
-        Map<Long, Long> encounterOrgIds) {
+        Map<Long, Long> encounterOrgIds,
+        String medicineCategoryTab) {
         return readAssembler.assemblePatientGroups(
-            skeleton, medByEncounter, svcByEncounter, executionDeadline, executeTab, encounterOrgIds);
+            skeleton, medByEncounter, svcByEncounter, executionDeadline, executeTab, encounterOrgIds,
+            medicineCategoryTab);
     }
 
     /**

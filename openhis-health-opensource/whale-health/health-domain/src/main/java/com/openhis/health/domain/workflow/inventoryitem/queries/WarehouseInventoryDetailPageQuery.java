@@ -62,7 +62,7 @@ public class WarehouseInventoryDetailPageQuery extends AbstractPageQuery {
     private List<String> inventoryStatusEnums;
 
     /**
-     * 零库存筛选：{@code true} 仅账面为零；{@code false} 仅正库存；{@code null} 不按数量符号收窄。
+     * 库存范围筛选：{@code true} 数量等于 0；{@code false} 数量大于 0；{@code null} 不限。
      */
     private Boolean zeroStockOnly;
 

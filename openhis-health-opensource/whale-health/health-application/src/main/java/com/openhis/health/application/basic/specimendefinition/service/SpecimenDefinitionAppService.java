@@ -17,6 +17,8 @@
 
 package com.openhis.health.application.basic.specimendefinition.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.application.basic.specimendefinition.dto.SpecimenDefinitionDto;
 import com.openhis.health.application.basic.specimendefinition.dto.SpecimenDefinitionInitDto;
 import com.openhis.health.application.basic.specimendefinition.mapper.SpecimenDefinitionMapper;
@@ -36,7 +38,7 @@ import com.openhis.health.domain.administration.specimendefinition.service.Speci
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.enums.SpecimenType;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.core.application.exception.ValidationException;
@@ -68,7 +70,7 @@ public class SpecimenDefinitionAppService {
     private final SpecimenDefinitionMapper specimenDefinitionMapper;
     private final CodeSystemQueryService codeSystemQueryService;
     /** 写路径操作人门控（B.6.5），禁止 AppService 直读 ICurrentUser 或写死 operatorId。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
 
     /**
      * 返回样本定义维护页所需的下拉：标本种类、发布状态。
@@ -98,9 +100,9 @@ public class SpecimenDefinitionAppService {
         }
         // Pre：HTTP 请求转为领域分页查询入参
         PageSpecimenDefinitionQuery query = new PageSpecimenDefinitionQuery();
-        query.setKeyword(StringUtils.trimToNull(safeRequest.getKeyword()));
-        query.setStatusEnum(StringUtils.trimToNull(safeRequest.getStatusEnum()));
-        query.setTypeEnum(StringUtils.trimToNull(safeRequest.getTypeEnum()));
+        query.setKeyword(trimToNull(safeRequest.getKeyword()));
+        query.setStatusEnum(trimToNull(safeRequest.getStatusEnum()));
+        query.setTypeEnum(trimToNull(safeRequest.getTypeEnum()));
         // Cmd：单次 SQL 分页查询，排序默认由读服务补齐
         Page<SpecimenDefinitionDto> page = specimenDefinitionQueryService.pageSpecimenDefinition(
             query,
@@ -174,7 +176,7 @@ public class SpecimenDefinitionAppService {
             throw new ValidationException("删除样本定义失败：id 不能为空");
         }
         // Gate：删除须携带当前登录操作人，用于软删审计字段
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.SPECIMEN_DEFINITION_INVALID_ARGUMENT,
             "请先登录后再删除样本定义");
         // Cmd：批量命令形态下单条删除
@@ -273,9 +275,9 @@ public class SpecimenDefinitionAppService {
         }
         // Pre：HTTP 检索入参转为领域查询对象
         SearchSpecimenDefinitionQuery query = new SearchSpecimenDefinitionQuery();
-        query.setKeyword(StringUtils.trimToNull(safeRequest.getKeyword()));
-        query.setStatusEnum(StringUtils.trimToNull(safeRequest.getStatusEnum()));
-        query.setTypeEnum(StringUtils.trimToNull(safeRequest.getTypeEnum()));
+        query.setKeyword(trimToNull(safeRequest.getKeyword()));
+        query.setStatusEnum(trimToNull(safeRequest.getStatusEnum()));
+        query.setTypeEnum(trimToNull(safeRequest.getTypeEnum()));
         query.setLimit(safeRequest.getLimit());
         List<SpecimenDefinitionSearchItemQueryModel> models = specimenDefinitionQueryService.searchByKeyWord(query);
         // Asm：检索行批量投影为 DTO

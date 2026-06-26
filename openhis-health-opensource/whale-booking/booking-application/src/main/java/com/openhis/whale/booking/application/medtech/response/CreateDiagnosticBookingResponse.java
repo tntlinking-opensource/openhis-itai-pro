@@ -10,6 +10,9 @@ import lombok.Setter;
 @Setter
 public class CreateDiagnosticBookingResponse {
 
+    /** 预约主键。 */
     private Long appointmentId;
+
+    /** 预约业务流水号。 */
     private String busNo;
 }

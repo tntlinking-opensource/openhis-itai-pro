@@ -13,12 +13,15 @@ import java.time.LocalDate;
 @Setter
 public class ListDiagnosticBookableSlotsRequest {
 
+    /** 机构/科室主键。 */
     @NotNull
     private Long organizationId;
 
+    /** 医技医嘱主键。 */
     @NotNull
     private Long serviceRequestId;
 
+    /** 查询日期。 */
     @NotNull
     private LocalDate date;
 }

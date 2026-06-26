@@ -138,6 +138,21 @@ public interface DoctorStationAdviceConstants {
     /** 停嘱：非长期诊疗医嘱。 */
     String MSG_STOP_LONG_TERM_SERVICE_ONLY = "仅允许对长期诊疗医嘱执行停嘱";
 
+    /** 取消停嘱批次请求体为空。 */
+    String MSG_CANCEL_STOP_LONG_TERM_LINES_REQUIRED = "取消停嘱行不能为空";
+
+    /** 取消停嘱：非长期药品医嘱。 */
+    String MSG_CANCEL_STOP_LONG_TERM_MEDICATION_ONLY = "仅允许对长期药品医嘱取消停嘱";
+
+    /** 取消停嘱：非长期诊疗医嘱。 */
+    String MSG_CANCEL_STOP_LONG_TERM_SERVICE_ONLY = "仅允许对长期诊疗医嘱取消停嘱";
+
+    /** 取消停嘱：行状态非已停嘱。 */
+    String MSG_CANCEL_STOP_NOT_STOPPED = "仅已停嘱的长期医嘱可取消停嘱";
+
+    /** 取消停嘱：出院/转科门禁拦截。 */
+    String MSG_CANCEL_STOP_DISCHARGE_GATE = "存在出院或转科申请，无法取消停嘱";
+
     /** 药品草稿载荷缺失。 */
     String MSG_MEDICATION_DRAFT_PAYLOAD_REQUIRED = "药品草稿载荷不能为空";
 
@@ -265,6 +280,9 @@ public interface DoctorStationAdviceConstants {
 
     /** Bean Validation：停嘱批次行列表非空。 */
     String VALIDATION_STOP_LINES_REQUIRED = "停嘱行不能为空";
+
+    /** Bean Validation：取消停嘱批次行列表非空。 */
+    String VALIDATION_CANCEL_STOP_LINES_REQUIRED = "取消停嘱行不能为空";
 
     /** Bean Validation：出院方式必填。 */
     String VALIDATION_DISCHARGE_MODE_REQUIRED = "出院方式不能为空";

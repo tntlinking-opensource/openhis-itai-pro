@@ -11,8 +11,10 @@ import lombok.Setter;
 @Setter
 public class CancelWaitlistRequest {
 
+    /** 候补条目主键。 */
     @NotNull
     private Long waitlistEntryId;
 
+    /** 取消原因（可选）。 */
     private String reason;
 }

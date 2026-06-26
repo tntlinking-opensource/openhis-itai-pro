@@ -3,9 +3,13 @@ package com.openhis.whale.booking.application.healthcheckup.response;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * 团检批量预约响应（9.6）。
+ */
 @Getter
 @Setter
 public class BatchCreateHealthCheckupBookingResponse {
 
+    /** 已成功预约人数。 */
     private Integer bookedCount;
 }

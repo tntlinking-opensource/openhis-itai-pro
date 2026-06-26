@@ -70,6 +70,14 @@ public class CreateServiceRequestDraftCommand extends BatchCommand<CreateService
         private Long contractId;
         /** 申请单/处方号（持久化 {@code wkf_service_request.prescription_no}）。 */
         private String prescriptionNo;
+        /**
+         * 来源锚点表名（皮试检查 SR 锚定皮试药 {@code med_medication_request} 等；与 {@link #basedOnId} 成对）。
+         */
+        private String basedOnTable;
+        /**
+         * 来源锚点主键（与 {@link #basedOnTable} 成对）。
+         */
+        private Long basedOnId;
     }
 
     /** 明细行子命令（每行一个 target_table + target_id 引用）。 */

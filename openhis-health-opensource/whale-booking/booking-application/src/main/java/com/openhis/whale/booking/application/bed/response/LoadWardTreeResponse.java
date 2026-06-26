@@ -12,5 +12,6 @@ import java.util.List;
 @Setter
 public class LoadWardTreeResponse {
 
+    /** 病区树节点列表。 */
     private List<WardTreeNodeDto> wards;
 }

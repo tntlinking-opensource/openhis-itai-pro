@@ -18,15 +18,19 @@ import java.time.LocalDateTime;
 @Table(name = "bkg_stop_clinic_slot_freeze")
 public class StopClinicSlotFreeze extends BaseAuditedEntity {
 
+    /** 机构标识。 */
     @Column(name = "organization_id", nullable = false)
     private Long organizationId;
 
+    /** 被停诊日程主键。 */
     @Column(name = "schedule_id", nullable = false)
     private Long scheduleId;
 
+    /** 被冻结的源号源主键。 */
     @Column(name = "slot_id", nullable = false)
     private Long slotId;
 
+    /** 冻结过期时间（TTL 自动释放）。 */
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 }

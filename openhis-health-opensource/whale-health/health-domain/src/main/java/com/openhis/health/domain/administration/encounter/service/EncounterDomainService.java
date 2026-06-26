@@ -17,6 +17,8 @@
 
 package com.openhis.health.domain.administration.encounter.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.CustomConstants;
@@ -48,7 +50,6 @@ import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -287,6 +288,28 @@ public class EncounterDomainService {
     }
 
     /**
+     * 取消待挂号（PLANNED）就诊：预结算未缴费场景，不走 {@link #cancelOutpatientRegistration} 退号门禁。
+     *
+     * @param encounterId  就诊主键
+     * @param cancelReason 撤销原因
+     */
+    public void cancelPlannedOutpatientRegistration(Long encounterId, String cancelReason) {
+        Encounter encounter = encounterRepository.findById(encounterId)
+            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.ENCOUNTER_NOT_FOUND, "就诊记录不存在"));
+        encounter.assertClass(EncounterClass.AMB.getCode());
+        if (!EncounterStatus.PLANNED.getCode().equals(encounter.getStatusEnum())) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "仅待挂号状态可撤销");
+        }
+        encounter.transitToCancelled();
+        encounterRepository.save(encounter);
+        OutpatientRegistrationCancelledEvent cancelledEvent = new OutpatientRegistrationCancelledEvent(
+            encounter.getId(), encounter.getPatientId(), cancelReason);
+        cancelledEvent.setStatusEnum(encounter.getStatusEnum());
+        cancelledEvent.setCancelledAt(LocalDateTime.now());
+        domainEventPublisher.publish(cancelledEvent);
+    }
+
+    /**
      * 取消门诊就诊（退号）。
      *
      * <p>持久化取消态后发布 {@link OutpatientRegistrationCancelledEvent}，事件中携带 {@code statusEnum} 与
@@ -367,12 +390,15 @@ public class EncounterDomainService {
     }
 
     /**
-     * 批量维护就诊诊断关联（医生站保存诊断后的主路径：全量批次 + 软删未再出现的旧关联）。
+     * 批量维护就诊诊断关联（医生站保存**西医**诊断后的主路径：全量批次 + 软删未再出现的旧关联）。
      *
      * <p>对每个批次子项：校验规则 → 将存量关联装入 Map → 合并本批活动病情 id → 未再出现的存量行软删 →
      * {@code saveAll} → 构建一次就诊快照 → 对本批每条活动诊断各发一条 upsert 事件（事件内嵌同一快照 JSON）。</p>
      *
-     * @param command 含多条就诊子批次，每子批次带全量诊断项列表
+     * <p>与 {@link #batchUpsertTcmEncounterDiagnosisAssociation} 对称：本方法仅对齐 {@code tcm_flag=false}
+     * 的西医关联，**不**覆盖、**不**软删 {@code tcm_flag=true} 的中医病证组行（AS-OP-DOR-002 / BR-TCM-DIA-006）。</p>
+     *
+     * @param command 含多条就诊子批次，每子批次带全量西医诊断项列表
      * @throws BusinessException 集合规则或主诊约束失败
      */
     public void batchUpsertEncounterDiagnosisAssociation(BatchUpsertEncounterDiagnosisAssociationCommand command) {
@@ -388,6 +414,17 @@ public class EncounterDomainService {
             Set<Long> activeConditionIds = new HashSet<>();
             for (BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand diagnosisItem : item.getDiagnosisItems()) {
                 EncounterDiagnosis diagnosis = existsMap.get(diagnosisItem.getConditionId());
+                // 中医病证组由 IF-DOR-32 专管：西医批次不得覆盖存量中医关联（保留 tcm_syndrome_group 与 tcm_flag）。
+                if (diagnosis != null && Boolean.TRUE.equals(diagnosis.getTcmFlag())) {
+                    // 住院 IF-IP-DOR-05：批次若带入中医行，仅同步 diag_type_code，不拆病证组。
+                    String diagTypeCode = trimToNull(diagnosisItem.getDiagTypeCode());
+                    if (diagTypeCode != null) {
+                        diagnosis.setDiagTypeCode(diagTypeCode);
+                        toSave.add(diagnosis);
+                        activeConditionIds.add(diagnosisItem.getConditionId());
+                    }
+                    continue;
+                }
                 // 本批次首见该病情事实：新建关联；否则在存量行上覆盖写展示与主诊等字段。
                 if (diagnosis == null) {
                     diagnosis = new EncounterDiagnosis();
@@ -404,14 +441,15 @@ public class EncounterDomainService {
                 diagnosis.setConditionCode(diagnosisItem.getConditionCode());
                 diagnosis.setMedType(diagnosisItem.getMedType());
                 diagnosis.setHighestDiagFlag(diagnosisItem.getHighestDiagFlag());
-                diagnosis.setTcmSyndromeGroup(diagnosisItem.getTcmSyndromeGroup());
-                diagnosis.setTcmFlag(diagnosisItem.getTcmFlag());
+                // 西医批次写入行强制非中医，避免误清空后又被当作西医软删。
+                diagnosis.setTcmSyndromeGroup(null);
+                diagnosis.setTcmFlag(Boolean.FALSE);
                 toSave.add(diagnosis);
                 activeConditionIds.add(diagnosisItem.getConditionId());
             }
             for (EncounterDiagnosis old : exists) {
-                // 全量批次未再出现的病情事实：软删关联行，表示医生已从本次就诊诊断列表移除。
-                if (!activeConditionIds.contains(old.getConditionId())) {
+                // 全量批次未再出现的西医病情事实：软删关联行；中医病证组行保持不变。
+                if (!activeConditionIds.contains(old.getConditionId()) && !Boolean.TRUE.equals(old.getTcmFlag())) {
                     old.setIsDeleted(Boolean.TRUE);
                     old.setDeletedAt(LocalDateTime.now());
                     toSave.add(old);
@@ -637,7 +675,6 @@ public class EncounterDomainService {
      *
      * @param command 命令
      */
-    @Transactional
     public void registerInpatientEncounter(RegisterInpatientEncounterCommand command) {
         List<RegisterInpatientEncounterCommand.RegisterInpatientEncounterItemCommand> items = command.resolveItems();
         Map<Long, Encounter> encounterMap = this.loadEncounterMap(
@@ -683,7 +720,6 @@ public class EncounterDomainService {
      * @param command 命令（{@link RegisterInpatientEncounterCommand#getPatientId()} 必填）
      * @return 新建住院就诊标识
      */
-    @Transactional
     public Long registerDirectInpatientEncounter(RegisterInpatientEncounterCommand command) {
         if (command.getPatientId() == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "直登登记缺少患者标识");
@@ -1113,6 +1149,66 @@ public class EncounterDomainService {
     }
 
     /**
+     * 出院召回（DM-ADM-002 §6.1.25，AS-IP-NUR-002 IF-IP-NUR-ATD-07）。
+     *
+     * <p>仅 {@code DISCHARGED→REGISTERED} + INSERT 活动 {@code WARD}。
+     * 反结与撤销出院嘱由应用层 **AS-IP-FIN-004** 或 **ATD {@code RecallReverseSettleSupport}** 先行完成；本方法只迁移就诊主档与病区轨迹。</p>
+     *
+     * @param command 召回命令
+     */
+    public void recallInpatientDischarge(RecallInpatientDischargeCommand command) {
+        List<RecallInpatientDischargeCommand.RecallInpatientDischargeItemCommand> items = command.resolveItems();
+        Map<Long, Encounter> encounterMap = this.loadEncounterMap(
+            CommandBatchUtil.extractIds(
+                items,
+                RecallInpatientDischargeCommand.RecallInpatientDischargeItemCommand::getEncounterId));
+        List<Encounter> encountersToSave = new ArrayList<>();
+        List<EncounterLocation> locationsToSave = new ArrayList<>();
+        List<InpatientDischargeRecalledEvent> events = new ArrayList<>();
+        for (RecallInpatientDischargeCommand.RecallInpatientDischargeItemCommand item : items) {
+            Encounter encounter = this.requireEncounter(encounterMap, item.getEncounterId());
+            // 前置校验：仅住院线且处于已清床离院态。
+            encounter.assertClass(EncounterClass.IMP.getCode());
+            String previousStatus = encounter.getStatusEnum();
+            LocalDateTime recalledAt = this.defaultNow(item.getRecalledAt());
+            InpatientDischargeRecalledEvent event = new InpatientDischargeRecalledEvent(
+                encounter.getId(), encounter.getPatientId());
+            event.setPreviousStatusEnum(previousStatus);
+            if (EncounterStatus.DISCHARGED.getCode().equals(previousStatus)) {
+                // 已清床轨：回到待入科，须写入末次病区活动轨迹供二次分床。
+                if (item.getWardLocationId() == null) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
+                        "已清床出院召回须指定末次已完成病区");
+                }
+                encounter.recallFromDischargedToRegistered();
+                this.upsertActiveWard(item.getEncounterId(), item.getWardLocationId(), recalledAt, locationsToSave);
+                event.setStatusEnum(encounter.getStatusEnum());
+                event.setRequiresBedAssignment(Boolean.TRUE);
+                event.setWardLocationId(item.getWardLocationId());
+            } else {
+                throw new BusinessException(
+                    ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
+                    "仅已清床离院状态允许出院召回");
+            }
+            encountersToSave.add(encounter);
+            events.add(event);
+        }
+        // 持久化：已清床轨活动病区轨迹须先于就诊主档落库。
+        if (!locationsToSave.isEmpty()) {
+            locationRepository.saveAll(locationsToSave);
+        }
+        // 持久化：就诊状态回退与出院时间/离院方式清空。
+        if (!encountersToSave.isEmpty()) {
+            encounterRepository.saveAll(encountersToSave);
+        }
+        // 发布事件：投影刷新 001 列表与医嘱校对态。
+        for (InpatientDischargeRecalledEvent event : events) {
+            domainEventPublisher.publish(event);
+        }
+    }
+
+    /**
      * 清床。
      *
      * @param command 命令
@@ -1170,7 +1266,6 @@ public class EncounterDomainService {
      * @param command 保存命令
      * @return 首条就诊标识
      */
-    @Transactional
     public Long saveNurseStationPatient(SaveNurseStationPatientCommand command) {
         List<SaveNurseStationPatientCommand.ItemCommand> items = command.resolveItems();
         Map<Long, Encounter> encounterMap = this.loadEncounterMap(
@@ -1453,7 +1548,7 @@ public class EncounterDomainService {
         Set<String> processedGroups = new HashSet<>();
         for (BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand diagnosisItem : item.getDiagnosisItems()) {
             // 组键：有 tcm_syndrome_group 则按组计数；无组号退化为单行 condition 维度
-            String groupKey = StringUtils.trimToNull(diagnosisItem.getTcmSyndromeGroup());
+            String groupKey = trimToNull(diagnosisItem.getTcmSyndromeGroup());
             if (groupKey == null) {
                 groupKey = "condition:" + diagnosisItem.getConditionId();
             }

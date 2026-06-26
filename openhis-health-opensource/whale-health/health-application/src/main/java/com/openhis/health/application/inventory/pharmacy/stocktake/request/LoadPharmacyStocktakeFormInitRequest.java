@@ -33,7 +33,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Schema(description = "盘点页初始化 IF-PHA-ST-01")
 public class LoadPharmacyStocktakeFormInitRequest {
 
-    /** 兼容字段，服务端以 {@link com.openhis.whale.core.infrastructure.security.ICurrentUser} 为准。 */
+    /** 兼容字段，服务端以 {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver} 为准。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "兼容字段，服务端忽略")
     private Long organizationId;

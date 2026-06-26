@@ -1,11 +1,14 @@
 package com.openhis.health.application.inpatient.nursestation.encountermanage.service;
 
-import com.openhis.health.module.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayDtoApplier;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayResult;
 import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.module.common.dto.nursestation.AdmissionVitalSignSubmitDto;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.NurseStationQueueDisplayEnrichment;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.NurseStationTaskCountBundle;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.ParticipantDto;
@@ -21,6 +24,8 @@ import com.openhis.health.application.inpatient.nursestation.encountermanage.res
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.LoadWardTreeResponse;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.PagePatientQueueResponse;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.SavePatientInfoResponse;
+import com.openhis.health.module.orchestration.nursestation.AdmissionVitalSignSaveContext;
+import com.openhis.health.module.orchestration.nursestation.AdmissionVitalSignSupport;
 import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
@@ -45,6 +50,7 @@ import com.openhis.health.domain.medication.medicationrequest.entity.MedicationR
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
@@ -95,7 +101,9 @@ import java.util.Set;
 public class NurseStationEncounterManageAppService {
 
     /** 写路径操作人门控（B.6.1）。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
+
+    /** 当前登录医务人员主键（体征 recorder_id）。 */
 
     /** 分页窗口入站门控（B.10.11）。 */
     private final PageWindowGate pageWindowGate;
@@ -122,6 +130,9 @@ public class NurseStationEncounterManageAppService {
     /** 收费明细读侧（待结算合计 → 展示余额）。 */
     private final ChargeItemQueryService chargeItemQueryService;
 
+    /** 支付流水读侧（结算少补 → 展示余额扣减）。 */
+    private final PaymentReconciliationQueryService paymentReconciliationQueryService;
+
     /** 药品申请批量读侧。 */
     private final MedicationRequestQueryService medicationRequestQueryService;
 
@@ -142,6 +153,9 @@ public class NurseStationEncounterManageAppService {
 
     /** 岗位分配 → 医务人员范围解析。 */
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
+
+    /** 入科入院体征读回填与写编排（001/002 共用）。 */
+    private final AdmissionVitalSignSupport admissionVitalSignSupport;
 
     /**
      * IF-IP-NUR-01：病区病房树查询。
@@ -232,6 +246,8 @@ public class NurseStationEncounterManageAppService {
             // Gate：任务筛选 code 须在白名单内或为空（BR-IP-NUR-007）。
             String taskFilterCode = this.resolveNurseStationTaskFilterFromRequest(request);
             this.assertTaskFilterAllowed(taskFilterCode);
+            // Gate：列表状态筛选须在 STATUS_FILTER 白名单内或为空（BR-IP-NUR-012）。
+            this.assertNurseStationStatusFilterAllowed(request.getNurseStationStatusFilter());
             List<Location> managedWards = managedWardLocationIdsResolver.listManagedActiveWardsOrEmpty();
             List<Long> managedWardIds = this.extractWardLocationIds(managedWards);
             Map<String, String> houseNameByBusNo = this.buildHouseNameByBusNoIndex(managedWards);
@@ -278,8 +294,12 @@ public class NurseStationEncounterManageAppService {
                 inpatientInfoQueueDisplayAssembler.buildOverlay(page.getContent());
             Map<Long, NurseStationQueueDisplayEnrichment> enrichmentByEncounterId =
                 this.buildDisplayEnrichment(page.getContent(), houseNameByBusNo);
-            Map<Long, BigDecimal> chargedOccupancyByEncounterId =
-                chargeItemQueryService.mapInpatientChargedOccupancyTotalPriceByEncounterIds(pageEncounterIds);
+            Map<Long, BigDecimal> pendingSettlementByEncounterId =
+                chargeItemQueryService.mapPendingSettlementTotalPriceByEncounterIds(pageEncounterIds);
+            Map<Long, BigDecimal> settledTotalByEncounterId =
+                chargeItemQueryService.mapSettledTotalPriceByEncounterIds(pageEncounterIds);
+            Set<Long> reversedPendingResettleEncounterIds =
+                paymentReconciliationQueryService.filterReversedPendingResettleEncounterIds(pageEncounterIds);
             List<PatientQueueItemDto> content = new ArrayList<>();
             for (InpatientEncounterContextQueryModel row : page.getContent()) {
                 if (row == null) {
@@ -297,24 +317,22 @@ public class NurseStationEncounterManageAppService {
                     enrichment = enrichmentByEncounterId.get(row.getEncounterId());
                     priorityEnum = priorityEnumByEncounterId.get(row.getEncounterId());
                 }
-                // Asm：展示余额 = 预交金净值 −（待结算 + 已结算占用）；PLANNED 待收费不扣减。
-                BigDecimal chargedOccupancy = BigDecimal.ZERO;
-                if (row.getEncounterId() != null) {
-                    BigDecimal total = chargedOccupancyByEncounterId.get(row.getEncounterId());
-                    if (total != null) {
-                        chargedOccupancy = total;
-                    }
-                }
-                BigDecimal displayBalance =
-                    InpatientDisplayAccountBalanceAssembler.computeDisplayAccountBalance(
-                        account, chargedOccupancy);
-                boolean lowBalance = this.isLowBalanceWarning(displayBalance);
+                // Asm：账户余额展示（常态双数；反结后切换主展示文案，写侧多退少补不变）。
+                InpatientAccountBalanceDisplayResult accountBalanceDisplay =
+                    this.resolveAccountBalanceDisplay(
+                        row != null ? row.getEncounterId() : null,
+                        account,
+                        pendingSettlementByEncounterId,
+                        settledTotalByEncounterId,
+                        reversedPendingResettleEncounterIds);
                 Long accountId = null;
                 if (account != null) {
                     accountId = account.getId();
                 }
-                content.add(nurseStationEncounterManageMapper.toPatientQueueItemDto(
-                    row, counts, displayBalance, lowBalance, enrichment, rowOverlay, priorityEnum, accountId));
+                PatientQueueItemDto item = nurseStationEncounterManageMapper.toPatientQueueItemDto(
+                    row, counts, enrichment, rowOverlay, priorityEnum, accountId);
+                InpatientAccountBalanceDisplayDtoApplier.apply(item, accountBalanceDisplay);
+                content.add(item);
             }
             return nurseStationEncounterManageMapper.toPagePatientQueueResponse(content, page);
         } catch (BusinessException ex) {
@@ -367,12 +385,19 @@ public class NurseStationEncounterManageAppService {
                 inpatientInfoQueueDisplayAssembler.buildOverlay(Collections.singletonList(contextRow));
             Map<Long, NurseStationQueueDisplayEnrichment> enrichmentByEncounterId =
                 this.buildDisplayEnrichment(Collections.singletonList(contextRow), houseNameByBusNo);
-            BigDecimal chargedOccupancy =
-                chargeItemQueryService.sumInpatientChargedOccupancyTotalPriceByEncounterId(encounterId);
-            BigDecimal displayBalance =
-                InpatientDisplayAccountBalanceAssembler.computeDisplayAccountBalance(
-                    account, chargedOccupancy);
-            boolean lowBalance = this.isLowBalanceWarning(displayBalance);
+            Map<Long, BigDecimal> pendingSettlementByEncounterId =
+                chargeItemQueryService.mapPendingSettlementTotalPriceByEncounterIds(singleEncounter);
+            Map<Long, BigDecimal> settledTotalByEncounterId =
+                chargeItemQueryService.mapSettledTotalPriceByEncounterIds(singleEncounter);
+            Set<Long> reversedPendingResettleEncounterIds =
+                paymentReconciliationQueryService.filterReversedPendingResettleEncounterIds(singleEncounter);
+            InpatientAccountBalanceDisplayResult accountBalanceDisplay =
+                this.resolveAccountBalanceDisplay(
+                    encounterId,
+                    account,
+                    pendingSettlementByEncounterId,
+                    settledTotalByEncounterId,
+                    reversedPendingResettleEncounterIds);
             NurseStationTaskCountBundle counts = taskCounts.get(encounterId);
             InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay rowOverlay =
                 displayOverlay.get(encounterId);
@@ -384,12 +409,11 @@ public class NurseStationEncounterManageAppService {
             PatientQueueItemDto base = nurseStationEncounterManageMapper.toPatientQueueItemDto(
                 contextRow,
                 counts,
-                displayBalance,
-                lowBalance,
                 enrichment,
                 rowOverlay,
                 encounter.getPriorityEnum(),
                 accountId);
+            InpatientAccountBalanceDisplayDtoApplier.apply(base, accountBalanceDisplay);
             // Pre：全角色活动参与者与患者扩展档补全详情增量字段。
             List<EncounterParticipantQueryModel> participantRows =
                 encounterQueryService.listActiveEncounterParticipants(encounterId);
@@ -406,8 +430,15 @@ public class NurseStationEncounterManageAppService {
                 idCardMasked = this.maskIdCard(core.getIdCard());
             }
             GetPatientDetailResponse response = new GetPatientDetailResponse();
+            AdmissionVitalSignSubmitDto admissionVitalSigns = null;
+            // Pre：按 start_time 锚点加载入院体征（BR-IP-NUR-014；禁止 getLatestByEncounterId）
+            if (encounter.getStartTime() != null) {
+                admissionVitalSigns = admissionVitalSignSupport.toSubmitDto(
+                    encounterId, encounter.getStartTime());
+            }
+            // Asm：列表行 + 详情增量（含 admissionVitalSigns）装配响应
             response.setDetail(nurseStationEncounterManageMapper.toPatientDetailDto(
-                base, phone, idCardMasked, participants));
+                base, phone, idCardMasked, participants, admissionVitalSigns));
             return response;
         } catch (BusinessException ex) {
             throw ex;
@@ -432,7 +463,7 @@ public class NurseStationEncounterManageAppService {
                 "就诊标识不能为空");
         }
         // Gate：写路径须已登录操作人（B.6.1）。
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             InpatientNurseStationConstants.EX_IP_NUR_201,
             "保存失败，请联系管理员");
         try {
@@ -450,6 +481,8 @@ public class NurseStationEncounterManageAppService {
                 nurseStationEncounterManageMapper.toSaveNurseStationPatientCommand(request, operatorId);
             // Cmd：仅更新病情与责任医护；禁止改床与就诊状态（BR-IP-NUR-010）；读模型投影异步刷新。
             encounterDomainService.saveNurseStationPatient(command);
+            // Cmd：可选维护入院体征（须在 saveNurseStationPatient 成功后；规则同 002 BR-IP-ATD-023/024）
+            this.saveAdmissionVitalSignsIfPresent(request, encounter, operatorId);
             return nurseStationEncounterManageMapper.toSavePatientInfoResponse(encounterId);
         } catch (BusinessException ex) {
             // 患者不可用类错误须原样透出，便于前端刷新队列。
@@ -533,6 +566,24 @@ public class NurseStationEncounterManageAppService {
     }
 
     /**
+     * 校验护士站列表状态筛选 code（BR-IP-NUR-012）。
+     *
+     * @param statusFilter 请求中的 {@code nurseStationStatusFilter}
+     */
+    private void assertNurseStationStatusFilterAllowed(String statusFilter) {
+        if (StringUtils.isBlank(statusFilter)) {
+            return;
+        }
+        String trimmed = statusFilter.trim();
+        if (InpatientNurseStationConstants.STATUS_FILTER_SETTLED_DISCHARGED.equals(trimmed)) {
+            return;
+        }
+        throw new BusinessException(
+            ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
+            "列表状态筛选参数不合法");
+    }
+
+    /**
      * 护士站维护允许的就诊状态（BR-IP-NUR-010）。
      *
      * @param statusEnum 就诊状态 code
@@ -550,16 +601,43 @@ public class NurseStationEncounterManageAppService {
     }
 
     /**
-     * 展示余额是否低于预警阈值（BR-IP-NUR-006）。
+     * 解析单就诊账户余额展示读模型（批量 Map 预取，禁止 N+1）。
      *
-     * @param displayBalance 展示余额
-     * @return true 表示需预警
+     * @param encounterId                         就诊主键；可 null
+     * @param account                             个人现金户；可 null
+     * @param pendingSettlementByEncounterId      待结算合计 Map
+     * @param settledTotalByEncounterId           已结算合计 Map（已结清文案）
+     * @param reversedPendingResettleEncounterIds 反结待再结就诊集合
+     * @return 展示读模型
      */
-    private boolean isLowBalanceWarning(BigDecimal displayBalance) {
-        if (displayBalance == null) {
-            return false;
+    private InpatientAccountBalanceDisplayResult resolveAccountBalanceDisplay(
+        Long encounterId,
+        Account account,
+        Map<Long, BigDecimal> pendingSettlementByEncounterId,
+        Map<Long, BigDecimal> settledTotalByEncounterId,
+        Set<Long> reversedPendingResettleEncounterIds) {
+        BigDecimal pending = BigDecimal.ZERO;
+        BigDecimal settled = BigDecimal.ZERO;
+        boolean reversedPendingResettle = false;
+        if (encounterId != null) {
+            BigDecimal pendingTotal = pendingSettlementByEncounterId.get(encounterId);
+            if (pendingTotal != null) {
+                pending = pendingTotal;
+            }
+            BigDecimal settledTotal = settledTotalByEncounterId.get(encounterId);
+            if (settledTotal != null) {
+                settled = settledTotal;
+            }
+            if (reversedPendingResettleEncounterIds != null
+                && reversedPendingResettleEncounterIds.contains(encounterId)) {
+                reversedPendingResettle = true;
+            }
         }
-        return displayBalance.compareTo(InpatientNurseStationConstants.LOW_BALANCE_WARNING_THRESHOLD) < 0;
+        return InpatientAccountBalanceDisplayAssembler.assemble(
+            account,
+            pending,
+            settled,
+            reversedPendingResettle);
     }
 
     /**
@@ -978,6 +1056,46 @@ public class NurseStationEncounterManageAppService {
             result.add(dto);
         }
         return result;
+    }
+
+    /**
+     * IF-IP-NUR-04：维护路径写入入院体征（须已有 {@code start_time}；首次分床走 ATD-02 ASSIGN）。
+     *
+     * @param request    维护请求
+     * @param encounter  就诊详情（写前已加载）
+     * @param operatorId 操作人
+     */
+    private void saveAdmissionVitalSignsIfPresent(
+        SavePatientInfoRequest request,
+        EncounterDetailQueryModel encounter,
+        Long operatorId) {
+        // 业务分支：无有效测量项则跳过（BR-IP-ATD-024）
+        if (request == null || !admissionVitalSignSupport.hasAnySubmittedValue(request.getAdmissionVitalSigns())) {
+            return;
+        }
+        LocalDateTime recordedAt = encounter.getStartTime();
+        // 业务分支：未入科（无 start_time）时维护路径不写体征，避免时点与分床不一致
+        if (recordedAt == null) {
+            return;
+        }
+        Long bedLocationId = null;
+        // 业务分支：已入科时取当前活动床作 location_id；未分床可空
+        if (EncounterStatus.IN_PROGRESS.getCode().equals(encounter.getStatusEnum())) {
+            InpatientEncounterContextQueryModel contextRow =
+                encounterContextFacade.mustGetInpatientContextByEncounterId(encounter.getId());
+            if (contextRow != null) {
+                bedLocationId = contextRow.getBedId();
+            }
+        }
+        AdmissionVitalSignSaveContext context = new AdmissionVitalSignSaveContext()
+            .setEncounterId(encounter.getId())
+            .setPatientId(encounter.getPatientId())
+            .setRecordedAt(recordedAt)
+            .setLocationId(bedLocationId)
+            .setOperatorId(operatorId)
+            .setRecorderId(currentPractitionerResolver.findPractitionerIdOrNull())
+            .setSubmitDto(request.getAdmissionVitalSigns());
+        admissionVitalSignSupport.saveIfPresent(context);
     }
 
     /**

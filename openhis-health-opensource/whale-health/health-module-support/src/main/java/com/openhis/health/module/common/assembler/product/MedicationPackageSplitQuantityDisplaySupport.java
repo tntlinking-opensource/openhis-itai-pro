@@ -17,6 +17,8 @@
 
 package com.openhis.health.module.common.assembler.product;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import org.apache.commons.lang3.StringUtils;
 
@@ -53,7 +55,7 @@ public final class MedicationPackageSplitQuantityDisplaySupport {
         if (packageRatio == null || packageRatio.compareTo(BigDecimal.ZERO) <= 0) {
             return null;
         }
-        String packageUnitCode = StringUtils.trimToNull(product.getPackageUnitCode());
+        String packageUnitCode = trimToNull(product.getPackageUnitCode());
         if (packageUnitCode == null) {
             return null;
         }
@@ -64,7 +66,7 @@ public final class MedicationPackageSplitQuantityDisplaySupport {
             product.getSplitUnitCodeDictText(),
             ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
                 null, product.getSplitUnitCode(), product),
-            StringUtils.trimToNull(product.getSplitUnitCode()));
+            trimToNull(product.getSplitUnitCode()));
         // 满包整数向下取整，余量用拆零单位拼接
         int packageQty = splitQuantity.divide(packageRatio, 0, RoundingMode.DOWN).intValue();
         BigDecimal usedInPackages = packageRatio.multiply(BigDecimal.valueOf(packageQty));

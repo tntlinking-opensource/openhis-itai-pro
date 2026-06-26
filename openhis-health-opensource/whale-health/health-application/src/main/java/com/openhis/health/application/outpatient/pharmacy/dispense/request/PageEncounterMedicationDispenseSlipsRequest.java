@@ -30,7 +30,7 @@ import java.util.List;
 /**
  * 就诊下药品发药单分页请求。
  *
- * <p>分页与通用检索字段见 {@link AbstractPageQuery}（代码生成通用规范 B.10.11）；机构收窄由读模型查询侧基于 {@link com.openhis.whale.core.infrastructure.security.ICurrentUser} 处理，本请求不传 organizationId。</p>
+ * <p>分页与通用检索字段见 {@link AbstractPageQuery}（代码生成通用规范 B.10.11）；机构收窄由应用层 {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver#resolveOrganizationUnitIdForQuery()} 解析后传入读模型，本请求不传 organizationId。</p>
  */
 @Data
 @EqualsAndHashCode(callSuper = true)

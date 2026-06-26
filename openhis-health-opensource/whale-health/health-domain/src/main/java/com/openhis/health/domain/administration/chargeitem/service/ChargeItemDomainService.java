@@ -28,6 +28,7 @@ import com.openhis.health.domain.administration.chargeitem.command.CreateChargeI
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
 import com.openhis.health.domain.administration.chargeitem.command.SwitchChargeItemAccountCommand;
 import com.openhis.health.domain.administration.chargeitem.command.DeactivateChargeByExeCommand;
+import com.openhis.health.domain.administration.chargeitem.command.VoidNursePricingChargeItemsByServiceAnchorsCommand;
 import com.openhis.health.domain.administration.chargeitem.command.VoidOrderExecuteChargeItemsByProcedureIdsCommand;
 import com.openhis.health.domain.administration.chargeitem.command.VoidUnbilledDraftChargeItemsByServiceAnchorCommand;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
@@ -115,6 +116,18 @@ public class ChargeItemDomainService {
      */
     public Long priceByNurseStation(CreateChargeItemCommand cmd) {
         return this.createByCommand(cmd, ChargeItemStatus.PENDING_SETTLEMENT, ChargeItemEventType.NURSE_PRICING_CREATED);
+    }
+
+    /**
+     * 住院滚费创建收费明细，状态为待结算（statusEnum=PENDING_SETTLEMENT），并发布 AUTO_ROLL_CREATED 事件。
+     *
+     * <p>生成来源固定为 {@code auto-roll-fees}（DM-ADM-011 §6.1.3b；AS-IP-NUR-013 BR-IP-ARG-015）。</p>
+     *
+     * @param cmd 创建收费明细命令
+     * @return 首条新建明细主键
+     */
+    public Long priceByAutoRoll(CreateChargeItemCommand cmd) {
+        return this.createByCommand(cmd, ChargeItemStatus.PENDING_SETTLEMENT, ChargeItemEventType.AUTO_ROLL_CREATED);
     }
 
     /**
@@ -487,6 +500,104 @@ public class ChargeItemDomainService {
     }
 
     /**
+     * 按主键集合逻辑删除仍为待结算的 {@code ORDER_EXECUTE} 费用行（代煎费刷新等，仅删命中行）。
+     *
+     * @param chargeItemIds 收费明细主键集合
+     */
+    public void voidPendingOrderExecuteChargeItemsByChargeItemIds(Collection<Long> chargeItemIds) {
+        if (chargeItemIds == null || chargeItemIds.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long chargeItemId : chargeItemIds) {
+            if (chargeItemId != null) {
+                distinctIds.add(chargeItemId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return;
+        }
+        List<ChargeItem> rows = repository.findAllByIdIn(distinctIds);
+        List<ChargeItem> toDelete = new ArrayList<>();
+        for (ChargeItem row : rows) {
+            if (row == null) {
+                continue;
+            }
+            // 仅删仍为待结算的 ORDER_EXECUTE 行
+            if (!ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(row.getStatusEnum())) {
+                continue;
+            }
+            if (row.getGenerateSourceEnum() == null
+                || !GenerateSource.ORDER_EXECUTE.getCode().equals(row.getGenerateSourceEnum())) {
+                continue;
+            }
+            toDelete.add(row);
+        }
+        if (toDelete.isEmpty()) {
+            return;
+        }
+        repository.deleteAll(toDelete);
+        for (ChargeItem row : toDelete) {
+            domainEventPublisher.publish(new ChargeItemDomainEvents.ChargeItemExecutionCancelledEvent(row.getId()));
+        }
+    }
+
+    /**
+     * 按上游请求锚点逻辑删除护士划价待结算收费明细（generate_source=nurse-pricing，AS-IP-NUR-005 IF-IP-PRC-06）。
+     *
+     * <p>同锚点下若存在已结算/退费链路行则整批拒绝（BR-CHG-002）；无命中待结算行时静默跳过。</p>
+     *
+     * @param cmd 就诊、上游表名与主键集合
+     */
+    public void voidNursePricingChargeItemsByServiceAnchors(VoidNursePricingChargeItemsByServiceAnchorsCommand cmd) {
+        if (cmd == null || cmd.getEncounterId() == null || StringUtils.isBlank(cmd.getServiceTable())
+            || cmd.getServiceIds() == null || cmd.getServiceIds().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "撤销护士划价费用锚点参数不完整");
+        }
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (Long serviceId : cmd.getServiceIds()) {
+            if (serviceId != null) {
+                distinctIds.add(serviceId);
+            }
+        }
+        // 业务分支处理：去重后无有效锚点时静默跳过。
+        if (distinctIds.isEmpty()) {
+            return;
+        }
+        // Pre：加载本就诊、本表、多锚点下全部费用行，用于结算 Gate。
+        List<ChargeItem> linkedRows = repository.findAllByEncounterIdAndServiceTableAndServiceIdIn(
+            cmd.getEncounterId(), cmd.getServiceTable(), distinctIds);
+        for (ChargeItem row : linkedRows) {
+            if (this.isNonRollbackableChargeStatus(row.getStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
+                    "划价锚点关联费用已结算或退费中，不允许取消划价");
+            }
+        }
+        List<ChargeItem> toDelete = new ArrayList<>();
+        for (ChargeItem row : linkedRows) {
+            if (!ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(row.getStatusEnum())) {
+                continue;
+            }
+            if (row.getGenerateSourceEnum() == null
+                || !GenerateSource.NURSE_PRICING.getCode().equals(row.getGenerateSourceEnum())) {
+                continue;
+            }
+            toDelete.add(row);
+        }
+        // 业务分支处理：无待结算护士划价行时静默跳过。
+        if (toDelete.isEmpty()) {
+            return;
+        }
+        repository.deleteAll(toDelete);
+        // 发布事件：save 完成后逐条通知读侧剔除待结算占用。
+        for (ChargeItem row : toDelete) {
+            domainEventPublisher.publish(
+                new ChargeItemDomainEvents.NursePricingChargeItemRemovedEvent(row.getId(), row.getEncounterId()));
+        }
+    }
+
+    /**
      * 取消执行逆激活收费明细：PENDING_SETTLEMENT → PLANNED 并清 procedureId（临时医嘱，AS-IP-NUR-012 BR-IP-CXL-008）。
      *
      * @param cmd 批量收费明细主键命令
@@ -526,12 +637,41 @@ public class ChargeItemDomainService {
     }
 
     /**
-     * 门诊结算收费明细，状态迁移至已结算（statusEnum=SETTLED），并发布 SETTLED 事件。
+     * 门诊结算收费明细，状态迁移至已结算（statusEnum=SETTLED），落库收款人并发布 SETTLED 事件。
      *
-     * @param cmd 批量收费明细主键命令
+     * <p>收款人写入 {@code adm_charge_item.performer_id}（{@code adm_practitioner.id}），与
+     * {@code fin_payment_reconciliation.enterer_id} 及 IF-OPC-03 列表读口径一致（BR-OPC-016）。</p>
+     *
+     * @param cmd 批量收费明细主键命令，须含非空 {@code operatorId}（收款人医务人员主键）
+     * @throws BusinessException 入参为空或缺少收款人
      */
     public void settleChargeItems(BatchChargeItemIdsCommand cmd) {
-        this.batchUpdateStatus(cmd, ChargeItemStatus.SETTLED, ChargeItemEventType.SETTLED);
+        // Pre：从批量命令中提取收费明细 ID 列表。
+        List<Long> ids = this.extractIds(cmd);
+        if (ids.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细批量入参不能为空");
+        }
+        Long cashierPractitionerId = cmd.getOperatorId();
+        if (cashierPractitionerId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                "门诊收费结算须携带收款人（operatorId）");
+        }
+        // Pre：批量加载目标明细，确认记录存在。
+        Map<Long, ChargeItem> map = this.loadMap(ids);
+        List<ChargeItem> toSave = new ArrayList<>();
+        for (Long id : ids) {
+            ChargeItem row = require(map, id);
+            row.setStatusEnum(ChargeItemStatus.SETTLED.getCode());
+            // 落库收款人：与 payment.enterer_id 同源，供门诊收银列表 performer_id 回显。
+            row.setPerformerId(cashierPractitionerId);
+            toSave.add(row);
+        }
+        repository.saveAll(toSave);
+        // Event：SETTLED 为批量粒度事件，以首条 ID 代表整批次发布一次。
+        if (!ids.isEmpty()) {
+            this.publishByType(ChargeItemEventType.SETTLED, ids.get(0), ids);
+        }
     }
 
     /**
@@ -720,7 +860,7 @@ public class ChargeItemDomainService {
     }
 
     /**
-     * 取消住院结算时回退收费明细：SETTLED → PENDING_SETTLEMENT，供再次结算。
+     * 住院反结时回退收费明细：SETTLED → PENDING_SETTLEMENT，并发布 INPATIENT_ITEMS_REVERTED 事件。
      *
      * @param cmd 批量收费明细主键命令
      */
@@ -730,19 +870,16 @@ public class ChargeItemDomainService {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细批量入参不能为空");
         }
         Map<Long, ChargeItem> map = this.loadMap(ids);
-        List<ChargeItem> toSave = new ArrayList<>();
         for (Long id : ids) {
             ChargeItem row = require(map, id);
             // Pre：仅已结算行允许回退，与 settleInpatientChargeItems 对称。
             if (!ChargeItemStatus.SETTLED.getCode().equals(row.getStatusEnum())) {
                 throw new BusinessException(
                     ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
-                    "收费明细 " + id + " 状态非已结算，不允许取消结算回退");
+                    "收费明细 " + id + " 状态非已结算，不允许反结回退");
             }
-            row.setStatusEnum(ChargeItemStatus.PENDING_SETTLEMENT.getCode());
-            toSave.add(row);
         }
-        repository.saveAll(toSave);
+        this.batchUpdateStatus(cmd, ChargeItemStatus.PENDING_SETTLEMENT, ChargeItemEventType.INPATIENT_ITEMS_REVERTED);
     }
 
     /**
@@ -852,6 +989,9 @@ public class ChargeItemDomainService {
             row.setProductId(item.getProductId());
             row.setDispenseTable(item.getDispenseTable());
             row.setDispenseId(item.getDispenseId());
+            if (StringUtils.isNotBlank(item.getPrescriptionNo())) {
+                row.setPrescriptionNo(item.getPrescriptionNo().trim());
+            }
             row.setProcedureId(item.getProcedureId());
             Long refundRootChargeItemId = item.getRefundRootChargeItemId();
             // 业务分支处理：半退场景需记录源收费明细 ID，建立保留链。
@@ -917,6 +1057,8 @@ public class ChargeItemDomainService {
             row.setGenerateSourceEnum(GenerateSource.DOCTOR_PRESCRIPTION.getCode());
         } else if (eventType == ChargeItemEventType.NURSE_PRICING_CREATED) {
             row.setGenerateSourceEnum(GenerateSource.NURSE_PRICING.getCode());
+        } else if (eventType == ChargeItemEventType.AUTO_ROLL_CREATED) {
+            row.setGenerateSourceEnum(GenerateSource.AUTO_ROLL_FEES.getCode());
         } else if (eventType == ChargeItemEventType.ACTIVATED_BY_EXECUTION
             && GenerateSource.ORDER_EXECUTE.getCode().equals(item.getGenerateSourceEnum())) {
             row.setGenerateSourceEnum(GenerateSource.ORDER_EXECUTE.getCode());
@@ -1010,6 +1152,11 @@ public class ChargeItemDomainService {
             domainEventPublisher.publish(new ChargeItemDomainEvents.NursePricingChargeItemCreatedEvent(id));
             return;
         }
+        // Event：住院滚费收费项目已创建事件，来源 auto-roll-fees，不计入护士站 pending 计数。
+        if (eventType == ChargeItemEventType.AUTO_ROLL_CREATED) {
+            domainEventPublisher.publish(new ChargeItemDomainEvents.AutoRollChargeItemCreatedEvent(id));
+            return;
+        }
         // Event：执行激活收费项目事件，明细从草稿升级为计费中。
         if (eventType == ChargeItemEventType.ACTIVATED_BY_EXECUTION) {
             domainEventPublisher.publish(new ChargeItemDomainEvents.ChargeItemActivatedByExecutionEvent(id));
@@ -1041,6 +1188,11 @@ public class ChargeItemDomainService {
         // Event：住院收费项目批量结算事件。
         if (eventType == ChargeItemEventType.INPATIENT_ITEMS_SETTLED) {
             domainEventPublisher.publish(new ChargeItemDomainEvents.InpatientChargeItemsSettledEvent(id, ids));
+            return;
+        }
+        // Event：住院收费项目批量反结回退事件。
+        if (eventType == ChargeItemEventType.INPATIENT_ITEMS_REVERTED) {
+            domainEventPublisher.publish(new ChargeItemDomainEvents.InpatientChargeItemsRevertedEvent(id, ids));
             return;
         }
         // Event：住院账单退款申请事件（批量）。

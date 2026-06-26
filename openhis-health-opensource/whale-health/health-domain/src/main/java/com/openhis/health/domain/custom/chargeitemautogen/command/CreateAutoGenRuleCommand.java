@@ -33,9 +33,13 @@ public class CreateAutoGenRuleCommand {
      */
     private String ruleName;
     /**
-     * 状态枚举值（可空；为空时由领域默认 active）。
+     * 状态枚举值（可空；为空时由领域默认 ACTIVE）。
      */
     private String statusEnum;
+    /**
+     * 住院就诊标识。
+     */
+    private Long encounterId;
     /**
      * 触发来源表名。
      */
@@ -47,7 +51,7 @@ public class CreateAutoGenRuleCommand {
     /**
      * 目标收费项定义主键。
      */
-    private Long targetDefinitionId;
+    private Long chargeDefinitionId;
     /**
      * 执行科室/执行机构标识。
      */

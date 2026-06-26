@@ -237,6 +237,11 @@ public class DoctorStationAdviceRowDto {
     @Schema(description = "前置服务申请主键")
     private Long basedOnServiceRequestId;
 
+    /** 前置药品申请主键（皮试检查 SR 锚定皮试药 {@code med_medication_request.id}）。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "前置药品申请主键（皮试联动等）")
+    private Long basedOnMedicationRequestId;
+
     /** 备注。 */
     @Schema(description = "备注")
     private String remark;

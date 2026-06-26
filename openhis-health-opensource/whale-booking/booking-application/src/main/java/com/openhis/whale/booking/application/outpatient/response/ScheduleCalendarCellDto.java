@@ -54,4 +54,13 @@ public class ScheduleCalendarCellDto {
 
     /** 替诊展示文案（如「B替A」）。 */
     private String substituteDisplay;
+
+    /** 出诊医师展示名（由 actors 解析）。 */
+    private String practitionerName;
+
+    /** 诊室展示名（由 actors 解析）。 */
+    private String locationName;
+
+    /** 号源类型展示名（由 actors 解析）。 */
+    private String healthcareServiceName;
 }

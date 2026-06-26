@@ -26,7 +26,6 @@ import org.springframework.boot.web.servlet.context.ServletWebServerApplicationC
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
@@ -71,7 +70,6 @@ public class ApplicationInitializer {
      */
     @EventListener(ApplicationReadyEvent.class)
     @Order(Integer.MAX_VALUE)
-    @Async
     public void onApplicationReady(ApplicationReadyEvent event) {
         if (!startupInfoDisplayed) {
             displayStartupInfo();

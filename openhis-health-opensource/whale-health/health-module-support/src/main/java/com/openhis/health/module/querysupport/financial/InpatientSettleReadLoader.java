@@ -5,6 +5,8 @@
 package com.openhis.health.module.querysupport.financial;
 
 import com.openhis.health.module.common.assembler.financial.PaymentChannelDisplayAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayResult;
 import com.openhis.health.module.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
 import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
@@ -46,6 +48,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 住院结算读路径（IF-IP-STL-03/04/07），供 AppService 与 report-adapter 共用。
@@ -105,22 +108,34 @@ public class InpatientSettleReadLoader {
             List<ChargeItem> selectedItems = chargeItemQueryService.loadChargeItemsByIds(loadCmd);
             selectedTotal = sumChargeItemAmount(selectedItems);
         }
-        BigDecimal prepayNet = InpatientDisplayAccountBalanceAssembler.resolvePersonalCashPrepayNet(account);
         BigDecimal settledTotal =
             chargeItemQueryService.sumSettledTotalPriceByEncounterId(query.getEncounterId());
-        BigDecimal balanceHint = prepayNet.subtract(settledTotal).subtract(selectedTotal)
+        BigDecimal accountBalance = InpatientDisplayAccountBalanceAssembler.resolveAccountBalance(account);
+        BigDecimal balanceHint = accountBalance.subtract(selectedTotal)
             .setScale(InpatientSettleConstants.SETTLE_AMOUNT_COMPARE_SCALE, RoundingMode.HALF_UP);
-        BigDecimal chargedOccupancy =
-            chargeItemQueryService.sumInpatientChargedOccupancyTotalPriceByEncounterId(query.getEncounterId());
-        BigDecimal displayBalance = InpatientDisplayAccountBalanceAssembler.computeDisplayAccountBalance(
-            account, chargedOccupancy);
-        return inpatientSettleReadAssembler.toInpatientSettleSummaryResult(
+        Set<Long> reversedIds = paymentReconciliationQueryService.filterReversedPendingResettleEncounterIds(
+            Collections.singleton(query.getEncounterId()));
+        boolean reversedPendingResettle = reversedIds.contains(query.getEncounterId());
+        InpatientAccountBalanceDisplayResult accountBalanceDisplay =
+            InpatientAccountBalanceDisplayAssembler.assemble(
+                account,
+                pendingTotal,
+                settledTotal,
+                reversedPendingResettle);
+        BigDecimal displayBalance = accountBalanceDisplay.getAvailableBalance();
+        InpatientSettleSummaryResult summaryResult = inpatientSettleReadAssembler.toInpatientSettleSummaryResult(
             inpatientContext,
             pendingTotal,
             selectedTotal,
-            prepayNet,
+            accountBalance,
             balanceHint,
             displayBalance);
+        summaryResult.setAccountBalanceDisplayMode(accountBalanceDisplay.getAccountBalanceDisplayMode());
+        summaryResult.setAvailableBalance(accountBalanceDisplay.getAvailableBalance());
+        summaryResult.setAccountBalanceSummaryText(accountBalanceDisplay.getAccountBalanceSummaryText());
+        summaryResult.setAccountBalanceSubText(accountBalanceDisplay.getAccountBalanceSubText());
+        summaryResult.setLowBalanceWarning(accountBalanceDisplay.isLowBalanceWarning());
+        return summaryResult;
     }
 
     public InpatientSettleChargesResult queryInpatientSettleCharges(InpatientSettleChargesQuery query) {
@@ -202,11 +217,8 @@ public class InpatientSettleReadLoader {
             EncounterClass.IMP.getCode(),
             InpatientSettleConstants.EX_IP_STL_102,
             "重新选择");
-        if (!EncounterStatus.COMPLETED.getCode().equals(encounter.getStatusEnum())) {
-            throw new BusinessException(
-                InpatientSettleConstants.EX_IP_STL_102,
-                "请从已结算页签选择患者");
-        }
+        // Pre：反结后就诊回 PENDING 仍须只读展示一正一负历史；仅作废/预约态拒绝。
+        this.assertEncounterEligibleForSettlementHistoryRead(encounter);
         patientEncounterConsistencyGate.requireRequestPatientMatchesEncounter(
             query.getPatientId(),
             encounter.getPatientId(),
@@ -214,7 +226,8 @@ public class InpatientSettleReadLoader {
             "患者标识与就诊不一致");
         List<PaymentReconciliationQueryModel> allPayments =
             paymentReconciliationQueryService.findPaymentsByEncounter(query.getEncounterId());
-        List<PaymentReconciliationQueryModel> successPayments = new ArrayList<>();
+        // Pre：纳入 INPATIENT_CLINIC 且 SUCCESS/REFUNDED，展示一正一负历史（AS-IP-FIN-004 §3.2）。
+        List<PaymentReconciliationQueryModel> historyPayments = new ArrayList<>();
         for (PaymentReconciliationQueryModel payment : allPayments) {
             if (payment == null) {
                 continue;
@@ -222,17 +235,18 @@ public class InpatientSettleReadLoader {
             if (payment.getKindEnum() != PaymentKind.INPATIENT_CLINIC) {
                 continue;
             }
-            if (payment.getStatusEnum() != PaymentStatus.SUCCESS) {
+            if (payment.getStatusEnum() != PaymentStatus.SUCCESS
+                && payment.getStatusEnum() != PaymentStatus.REFUNDED) {
                 continue;
             }
-            successPayments.add(payment);
+            historyPayments.add(payment);
         }
-        if (successPayments.isEmpty()) {
+        if (historyPayments.isEmpty()) {
             throw new BusinessException(
                 InpatientSettleConstants.EX_IP_STL_110,
                 "无历史结算单");
         }
-        successPayments.sort(
+        historyPayments.sort(
             Comparator.comparing(
                 PaymentReconciliationQueryModel::getBillDate,
                 Comparator.nullsLast(Comparator.reverseOrder()))
@@ -240,7 +254,7 @@ public class InpatientSettleReadLoader {
                     PaymentReconciliationQueryModel::getId,
                     Comparator.nullsLast(Comparator.reverseOrder())));
         LinkedHashSet<Long> paymentIds = new LinkedHashSet<>();
-        for (PaymentReconciliationQueryModel payment : successPayments) {
+        for (PaymentReconciliationQueryModel payment : historyPayments) {
             if (payment.getId() != null) {
                 paymentIds.add(payment.getId());
             }
@@ -253,10 +267,11 @@ public class InpatientSettleReadLoader {
             payMethodDisplayByPaymentId.put(entry.getKey(), display);
         }
         List<SettledPaymentBriefDto> paymentBriefs =
-            inpatientSettleReadAssembler.toSettledPaymentBriefDtoList(successPayments, payMethodDisplayByPaymentId);
+            inpatientSettleReadAssembler.toSettledPaymentBriefDtoList(
+                historyPayments, payMethodDisplayByPaymentId, encounter, paymentReconciliationQueryService);
         Long activePaymentId = query.getPaymentId();
         if (activePaymentId == null) {
-            activePaymentId = successPayments.get(0).getId();
+            activePaymentId = historyPayments.get(0).getId();
         }
         PaymentReconciliationQueryModel activePayment =
             paymentReconciliationQueryService.mustGetPayment(activePaymentId);
@@ -329,6 +344,32 @@ public class InpatientSettleReadLoader {
             sum = sum.add(chargeItem.getTotalPrice());
         }
         return sum;
+    }
+
+    /**
+     * 结算历史只读门禁：允许在院 IMP（含反结后 {@code PENDING}、已结算 {@code COMPLETED}）。
+     *
+     * @param encounter 住院就诊快照
+     * @throws BusinessException {@code CANCELLED}/{@code PLANNED} 时拒绝
+     */
+    private void assertEncounterEligibleForSettlementHistoryRead(EncounterDetailQueryModel encounter) {
+        if (encounter == null) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_102,
+                "重新选择");
+        }
+        String statusEnum = encounter.getStatusEnum();
+        // Pre：作废/未入院预约态无有效结算上下文，禁止加载历史。
+        if (EncounterStatus.CANCELLED.getCode().equals(statusEnum)) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_102,
+                "重新选择");
+        }
+        if (EncounterStatus.PLANNED.getCode().equals(statusEnum)) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_102,
+                "重新选择");
+        }
     }
 
     private static List<Long> parseIds(String raw) {

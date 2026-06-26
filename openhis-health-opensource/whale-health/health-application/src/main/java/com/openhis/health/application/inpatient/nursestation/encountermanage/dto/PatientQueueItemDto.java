@@ -17,9 +17,11 @@
 
 package com.openhis.health.application.inpatient.nursestation.encountermanage.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayDtoApplier;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -35,7 +37,7 @@ import java.util.List;
 @Accessors(chain = true)
 /** 在院患者列表行。 */
 @Schema(description = "在院患者列表行")
-public class PatientQueueItemDto {
+public class PatientQueueItemDto implements InpatientAccountBalanceDisplayDtoApplier.AccountBalanceDisplayTarget {
 
     @Schema(description = "就诊主键")
     @JsonSerialize(using = ToStringSerializer.class)
@@ -116,13 +118,18 @@ public class PatientQueueItemDto {
 
     /** 入院时间。 */
     @Schema(description = "入院时间")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime startTime;
 
     /** 入科时间。 */
     @Schema(description = "入科时间")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime admissionTime;
+
+    /** 出院时间。 */
+    @Schema(description = "出院时间")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    private LocalDateTime endTime;
 
     /** 累计费用。 */
     @Schema(description = "累计费用")
@@ -136,9 +143,33 @@ public class PatientQueueItemDto {
     @Schema(description = "欠费金额")
     private BigDecimal arrearsAmount;
 
-    /** 展示用账户余额。 */
-    @Schema(description = "展示用账户余额")
+    /** 展示用账户余额（与可用余额一致，兼容旧字段）。 */
+    @Schema(description = "展示用账户余额（与可用余额一致）")
     private BigDecimal accountBalance;
+
+    /** 账户余额展示模式：NORMAL / REVERSED_PENDING_RESETTLE。 */
+    @Schema(description = "账户余额展示模式")
+    private String accountBalanceDisplayMode;
+
+    /** 预交金净值（个人现金户）。 */
+    @Schema(description = "预交金净值")
+    private BigDecimal prepayNetBalance;
+
+    /** 待结算费用合计。 */
+    @Schema(description = "待结算费用合计")
+    private BigDecimal pendingSettlementTotal;
+
+    /** 可用余额：预交金净值 − 费用占用。 */
+    @Schema(description = "可用余额")
+    private BigDecimal availableBalance;
+
+    /** 账户余额主展示文案。 */
+    @Schema(description = "账户余额主展示文案")
+    private String accountBalanceSummaryText;
+
+    /** 账户余额副展示文案。 */
+    @Schema(description = "账户余额副展示文案")
+    private String accountBalanceSubText;
 
     /** 低余额预警。 */
     @Schema(description = "低余额预警")
@@ -175,4 +206,12 @@ public class PatientQueueItemDto {
     /** 五笔码。 */
     @Schema(description = "五笔码")
     private String wubiCode;
+
+    /**
+     * 是否展示「出院召回」行操作（BR-IP-NUR-013）。
+     *
+     * <p>仅 {@code status_enum = DISCHARGED}（已清床离院）时为 {@code true}；未清床 {@code COMPLETED} 须收银台反结。</p>
+     */
+    @Schema(description = "是否可出院召回")
+    private Boolean recallEnabled;
 }

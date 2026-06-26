@@ -17,6 +17,8 @@
 
 package com.openhis.health.application.inpatient.doctorstation.encountermanage.mapper;
 
+import static com.openhis.whale.core.application.util.StringUtils.firstNonBlank;
+
 import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.dto.DoctorStationPatientQueueItemDto;
@@ -94,8 +96,6 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
     @Override
     public DoctorStationPatientQueueItemDto toDoctorStationPatientQueueItemDto(
         InpatientEncounterContextQueryModel row,
-        BigDecimal accountBalance,
-        boolean lowBalanceWarning,
         InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay displayOverlay,
         String priorityEnum,
         List<String> diagnosisList,
@@ -129,10 +129,10 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
         }
         DoctorStationPatientQueueItemDto dto = new DoctorStationPatientQueueItemDto();
         dto.setEncounterId(row.getEncounterId());
-        dto.setEncounterBusNo(this.firstNonBlank(row.getEncounterBusNo(), overlayBusNo));
+        dto.setEncounterBusNo(firstNonBlank(row.getEncounterBusNo(), overlayBusNo));
         dto.setStatusEnum(row.getStatusEnum());
         // BR-IP-DOR-008：IMP 状态展示须走 InpatientEncounterStatusDisplayUtil，读模型/overlay 缺省时回落。
-        String statusEnumText = this.firstNonBlank(row.getStatusEnumText(), overlayStatusText);
+        String statusEnumText = firstNonBlank(row.getStatusEnumText(), overlayStatusText);
         if (StringUtils.isBlank(statusEnumText)) {
             statusEnumText = InpatientEncounterStatusDisplayUtil.resolveDisplayTextForReadModel(
                 row.getStatusEnum(),
@@ -141,7 +141,7 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
         }
         dto.setStatusEnumText(statusEnumText);
         dto.setPatientId(row.getPatientId());
-        dto.setPatientName(this.firstNonBlank(row.getPatientName(), overlayPatientName));
+        dto.setPatientName(firstNonBlank(row.getPatientName(), overlayPatientName));
         dto.setGenderEnum(row.getGenderEnum());
         AdministrativeGender gender = EnumUtil.fromCode(AdministrativeGender.class, row.getGenderEnum());
         if (gender != null) {
@@ -149,12 +149,12 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
         }
         dto.setAgeText(row.getAgeText());
         dto.setWardId(row.getWardId());
-        dto.setWardName(this.firstNonBlank(row.getWardName(), overlayWardName));
+        dto.setWardName(firstNonBlank(row.getWardName(), overlayWardName));
         dto.setHouseName(enrichmentHouseName);
         dto.setBedId(row.getBedId());
-        dto.setBedName(this.firstNonBlank(row.getBedName(), overlayBedName));
+        dto.setBedName(firstNonBlank(row.getBedName(), overlayBedName));
         dto.setOrganizationId(row.getOrganizationId());
-        dto.setOrganizationName(this.firstNonBlank(row.getOrganizationName(), overlayOrgName));
+        dto.setOrganizationName(firstNonBlank(row.getOrganizationName(), overlayOrgName));
         dto.setPriorityEnum(priorityEnum);
         dto.setStartTime(row.getStartTime());
         // 入科时间：读模型当前未投影独立列，与护士站列表口径一致返回 null。
@@ -162,8 +162,6 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
         dto.setTotalAmount(row.getTotalAmount());
         dto.setPaidAmount(row.getPaidAmount());
         dto.setArrearsAmount(row.getArrearsAmount());
-        dto.setAccountBalance(accountBalance);
-        dto.setLowBalanceWarning(lowBalanceWarning);
         dto.setAttendingDoctorName(row.getAttendingDoctorName());
         dto.setPrimaryNurseName(row.getPrimaryNurseName());
         dto.setDiagnosisList(diagnosisList);
@@ -188,22 +186,5 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
         List<DoctorStationPatientQueueItemDto> rows,
         Page<InpatientEncounterContextQueryModel> page) {
         return PagedResultBuilder.build(new PagePatientQueueResponse(), rows, page);
-    }
-
-    /**
-     * 取第一个非空白字符串（读模型列与展示覆盖层之间的展示回落）。
-     *
-     * @param primary   优先值（通常为读模型投影列）
-     * @param fallback  回落值（通常为 overlay 补全列）
-     * @return 非空白字符串；两者皆空时返回 null
-     */
-    private String firstNonBlank(String primary, String fallback) {
-        if (StringUtils.isNotBlank(primary)) {
-            return primary;
-        }
-        if (StringUtils.isNotBlank(fallback)) {
-            return fallback;
-        }
-        return null;
     }
 }

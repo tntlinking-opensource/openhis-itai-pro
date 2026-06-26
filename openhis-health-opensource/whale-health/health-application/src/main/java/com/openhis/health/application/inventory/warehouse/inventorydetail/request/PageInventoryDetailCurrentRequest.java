@@ -56,8 +56,8 @@ public class PageInventoryDetailCurrentRequest extends AbstractHealthPageRequest
     @Schema(description = "医保等级多选")
     private List<Integer> chrgitmLvList;
 
-    /** true：仅零库存；false：仅正库存；null：不限。 */
-    @Schema(description = "零库存筛选：true 仅零库存，false 仅正库存，null 不限")
+    /** {@code true}：数量等于 0；{@code false}：数量大于 0；{@code null}：不限。 */
+    @Schema(description = "库存范围：true 数量等于0，false 数量大于0，null 不限")
     private Boolean zeroStockOnly;
 
     /** 近效期窗口天数。 */

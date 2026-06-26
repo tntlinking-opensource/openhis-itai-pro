@@ -17,6 +17,8 @@
 
 package com.openhis.health.application.inpatient.pharmacy.returnmedicine.assembler;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientPharmacyReturnQueueTab;
@@ -50,7 +52,7 @@ public class InpatientReturnMedicinePatientQueueAssembler {
         if (contexts == null || contexts.isEmpty()) {
             return rows;
         }
-        String normalizedTab = StringUtils.trimToEmpty(queueTab);
+        String normalizedTab = trimToEmpty(queueTab);
         if (normalizedTab.isEmpty()) {
             normalizedTab = InpatientPharmacyReturnQueueTab.PENDING;
         }

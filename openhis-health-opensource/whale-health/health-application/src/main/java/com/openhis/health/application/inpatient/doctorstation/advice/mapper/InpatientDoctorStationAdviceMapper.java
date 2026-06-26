@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.doctorstation.advice.mapper;
 
+import com.openhis.health.application.inpatient.doctorstation.advice.dto.CancelStopLongTermAdviceLineRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.InpatientDoctorStationAdviceDraftLineRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.StopLongTermAdviceLineRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.CreateDischargeInpatientDoctorStationAdviceRequest;
@@ -25,6 +26,7 @@ import com.openhis.health.application.inpatient.doctorstation.advice.request.Sav
 import com.openhis.health.application.inpatient.doctorstation.advice.response.CreateDischargeInpatientDoctorStationAdviceResponse;
 import com.openhis.health.domain.custom.encounterhistory.command.RecordDischargeMilestoneCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.AdjustMedicationOrderGroupCommand;
+import com.openhis.health.domain.medication.medicationrequest.command.CancelStopLongTermMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.ChangeMedicationOrderDraftCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.CreateMedicationOrderDraftCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.RemoveMedicationOrderDraftCommand;
@@ -33,6 +35,7 @@ import com.openhis.health.domain.medication.medicationrequest.command.SignOffMed
 import com.openhis.health.domain.medication.medicationrequest.command.StopLongTermMedicationOrderCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.domain.workflow.servicerequest.command.CancelStopServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateDischargeRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateServiceRequestDraftCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.ModifyServiceRequestDraftCommand;
@@ -235,6 +238,30 @@ public interface InpatientDoctorStationAdviceMapper {
      * @return 领域命令
      */
     StopServiceRequestCommand toStopServiceRequestCommand(StopLongTermAdviceLineRequest line, Long operatorId);
+
+    /**
+     * 装配长期药品取消停嘱命令（IF-IP-DOR-25）。
+     *
+     * @param line       取消停嘱行
+     * @param operatorId 操作人
+     * @return 领域命令
+     */
+    CancelStopLongTermMedicationOrderCommand toCancelStopLongTermMedicationOrderCommand(
+        CancelStopLongTermAdviceLineRequest line,
+        Long operatorId
+    );
+
+    /**
+     * 装配诊疗取消停嘱命令（IF-IP-DOR-25）。
+     *
+     * @param line       取消停嘱行
+     * @param operatorId 操作人
+     * @return 领域命令
+     */
+    CancelStopServiceRequestCommand toCancelStopServiceRequestCommand(
+        CancelStopLongTermAdviceLineRequest line,
+        Long operatorId
+    );
 
     /**
      * 装配出院服务申请命令（IF-IP-DOR-21）。

@@ -10,11 +10,15 @@ import lombok.Setter;
 @Setter
 public class HealthCheckPackageItemRequest {
 
+    /** 活动定义主键（检查项目）。 */
     private Long activityDefinitionId;
 
+    /** 项目名称。 */
     private String itemName;
 
+    /** 是否必检。 */
     private Boolean requiredFlag;
 
+    /** 排序序号。 */
     private Integer sortOrder;
 }

@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.financial.settle.request;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -61,13 +62,13 @@ public class QueryInpatientSettleChargesRequest {
 
     /** 费用业务日起。 */
     @Schema(description = "费用业务日起")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     /** 费用业务日起（业务字段）。 */
     private LocalDate chargeDateFrom;
 
     /** 费用业务日止。 */
     @Schema(description = "费用业务日止")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     /** 费用业务日止（业务字段）。 */
     private LocalDate chargeDateTo;
 }

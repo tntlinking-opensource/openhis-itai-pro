@@ -20,6 +20,7 @@ package com.openhis.health.domain.financial.paymentreconciliation.repository;
 import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentRecStatic;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -32,6 +33,14 @@ public interface PaymentRecStaticRepository extends JpaRepository<PaymentRecStat
      * @return 查询结果
      */
     List<PaymentRecStatic> findByReconciliationId(Long reconciliationId);
+
+    /**
+     * 按支付流水主键批量读取统计快照（日结财务类别汇总）。
+     *
+     * @param reconciliationIds 支付流水主键集合
+     * @return 快照行列表
+     */
+    List<PaymentRecStatic> findAllByReconciliationIdInAndIsDeletedFalse(Collection<Long> reconciliationIds);
 
     /**
      * 按条件删除（受软删底座约束）。

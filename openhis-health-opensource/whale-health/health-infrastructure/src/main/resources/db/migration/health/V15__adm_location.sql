@@ -26,9 +26,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_location" (
     "parent_id" int8,
     CONSTRAINT "adm_location_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_location IS '管理域 location';
-
 COMMENT ON COLUMN adm_location.id IS '主键';
 COMMENT ON COLUMN adm_location.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_location.created_at IS '创建时间';
@@ -47,9 +45,9 @@ COMMENT ON COLUMN adm_location.form_enum IS 'form 枚举值';
 COMMENT ON COLUMN adm_location.mode_enum IS 'mode 枚举值';
 COMMENT ON COLUMN adm_location.type_json IS 'type JSON 快照';
 COMMENT ON COLUMN adm_location.organization_id IS 'organization 标识';
-COMMENT ON COLUMN adm_location.display_order IS 'displayOrder';
-COMMENT ON COLUMN adm_location.py_str IS 'pyStr';
-COMMENT ON COLUMN adm_location.wb_str IS 'wbStr';
+COMMENT ON COLUMN adm_location.display_order IS '显示顺序';
+COMMENT ON COLUMN adm_location.py_str IS '拼音码';
+COMMENT ON COLUMN adm_location.wb_str IS '五笔码';
 COMMENT ON COLUMN adm_location.parent_id IS 'parent 标识';
 
 -- seed: adm_location

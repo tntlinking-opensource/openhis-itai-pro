@@ -36,6 +36,12 @@ public class HealthCheckupBookingMapper {
     private static final String CHECK_IN_ONLY_KIND = AppointmentKindConstants.CHECK_IN_ONLY;
     private static final String DEFAULT_ORIGIN_CHANNEL = "WINDOW";
 
+    /**
+     * 团检单位实体 → DTO。
+     *
+     * @param entity 团检单位实体
+     * @return 团检单位 DTO
+     */
     public GroupCheckupOrgDto toGroupCheckupOrgDto(GroupCheckupOrg entity) {
         GroupCheckupOrgDto dto = new GroupCheckupOrgDto();
         dto.setId(entity.getId());
@@ -48,6 +54,12 @@ public class HealthCheckupBookingMapper {
         return dto;
     }
 
+    /**
+     * 保存团检单位请求 → 领域实体。
+     *
+     * @param request 保存团检单位请求
+     * @return 团检单位实体
+     */
     public GroupCheckupOrg toGroupCheckupOrgEntity(SaveGroupCheckupOrgRequest request) {
         GroupCheckupOrg entity = new GroupCheckupOrg();
         entity.setId(request.getId());
@@ -60,6 +72,13 @@ public class HealthCheckupBookingMapper {
         return entity;
     }
 
+    /**
+     * 团检批次实体 → DTO（附加单位名称）。
+     *
+     * @param entity 团检批次实体
+     * @param orgName 团检单位名称
+     * @return 团检批次 DTO
+     */
     public GroupCheckupBatchDto toGroupCheckupBatchDto(GroupCheckupBatch entity, String orgName) {
         GroupCheckupBatchDto dto = new GroupCheckupBatchDto();
         dto.setId(entity.getId());
@@ -77,6 +96,12 @@ public class HealthCheckupBookingMapper {
         return dto;
     }
 
+    /**
+     * 保存团检批次请求 → 领域实体。
+     *
+     * @param request 保存团检批次请求
+     * @return 团检批次实体
+     */
     public GroupCheckupBatch toGroupCheckupBatchEntity(SaveGroupCheckupBatchRequest request) {
         GroupCheckupBatch entity = new GroupCheckupBatch();
         entity.setId(request.getId());
@@ -96,6 +121,12 @@ public class HealthCheckupBookingMapper {
         return entity;
     }
 
+    /**
+     * 团检花名册实体 → DTO。
+     *
+     * @param entity 团检花名册实体
+     * @return 团检花名册 DTO
+     */
     public GroupCheckupRosterDto toGroupCheckupRosterDto(GroupCheckupRoster entity) {
         GroupCheckupRosterDto dto = new GroupCheckupRosterDto();
         dto.setId(entity.getId());
@@ -110,6 +141,12 @@ public class HealthCheckupBookingMapper {
         return dto;
     }
 
+    /**
+     * 保存团检花名册请求 → 领域实体。
+     *
+     * @param request 保存团检花名册请求
+     * @return 团检花名册实体
+     */
     public GroupCheckupRoster toGroupCheckupRosterEntity(SaveGroupCheckupRosterRequest request) {
         GroupCheckupRoster entity = new GroupCheckupRoster();
         entity.setId(request.getId());
@@ -122,6 +159,13 @@ public class HealthCheckupBookingMapper {
         return entity;
     }
 
+    /**
+     * CSV 行 → 团检花名册实体。
+     *
+     * @param batchId 团检批次主键
+     * @param columns CSV 列数组
+     * @return 团检花名册实体
+     */
     public GroupCheckupRoster toGroupCheckupRosterFromCsvRow(Long batchId, String[] columns) {
         GroupCheckupRoster entity = new GroupCheckupRoster();
         entity.setBatchId(batchId);
@@ -140,6 +184,12 @@ public class HealthCheckupBookingMapper {
         return entity;
     }
 
+    /**
+     * 体检套餐实体 → DTO。
+     *
+     * @param entity 体检套餐实体
+     * @return 体检套餐 DTO
+     */
     public HealthCheckPackageDto toHealthCheckPackageDto(HealthCheckPackage entity) {
         HealthCheckPackageDto dto = new HealthCheckPackageDto();
         dto.setId(entity.getId());
@@ -154,6 +204,12 @@ public class HealthCheckupBookingMapper {
         return dto;
     }
 
+    /**
+     * 保存体检套餐请求 → 领域实体。
+     *
+     * @param request 保存体检套餐请求
+     * @return 体检套餐实体
+     */
     public HealthCheckPackage toHealthCheckPackageEntity(SaveHealthCheckPackageRequest request) {
         HealthCheckPackage entity = new HealthCheckPackage();
         entity.setId(request.getId());
@@ -172,6 +228,13 @@ public class HealthCheckupBookingMapper {
         return entity;
     }
 
+    /**
+     * 套餐明细请求 → 套餐明细实体列表。
+     *
+     * @param packageId 体检套餐主键
+     * @param items 套餐明细请求列表
+     * @return 体检套餐明细实体列表
+     */
     public List<HealthCheckPackageItem> toHealthCheckPackageItems(Long packageId, List<HealthCheckPackageItemRequest> items) {
         List<HealthCheckPackageItem> rows = new ArrayList<>();
         if (items == null) {
@@ -183,14 +246,29 @@ public class HealthCheckupBookingMapper {
             entity.setPackageId(packageId);
             entity.setActivityDefinitionId(item.getActivityDefinitionId());
             entity.setItemName(item.getItemName());
-            entity.setRequiredFlag(item.getRequiredFlag() == null ? Boolean.TRUE : item.getRequiredFlag());
-            entity.setSortOrder(item.getSortOrder() == null ? sort : item.getSortOrder());
+            if (item.getRequiredFlag() == null) {
+                entity.setRequiredFlag(Boolean.TRUE);
+            } else {
+                entity.setRequiredFlag(item.getRequiredFlag());
+            }
+            if (item.getSortOrder() == null) {
+                entity.setSortOrder(sort);
+            } else {
+                entity.setSortOrder(item.getSortOrder());
+            }
             rows.add(entity);
             sort++;
         }
         return rows;
     }
 
+    /**
+     * 占号命令。
+     *
+     * @param slotId 号源主键
+     * @param operatorId 操作人主键
+     * @return 占号命令
+     */
     public AllocateBookingCommand toAllocateBookingCommand(Long slotId, Long operatorId) {
         AllocateBookingCommand command = new AllocateBookingCommand();
         command.setOperatorId(operatorId);
@@ -202,6 +280,16 @@ public class HealthCheckupBookingMapper {
         return command;
     }
 
+    /**
+     * 团检批次 + 花名册 → 创建体检预约命令。
+     *
+     * @param batch 团检批次实体
+     * @param roster 团检花名册实体
+     * @param slot 目标号源明细
+     * @param organizationId 机构主键
+     * @param operatorId 操作人主键
+     * @return 创建预约命令
+     */
     public CreateAppointmentCommand toGroupHealthCheckupAppointmentCommand(
         GroupCheckupBatch batch,
         GroupCheckupRoster roster,
@@ -225,6 +313,14 @@ public class HealthCheckupBookingMapper {
         return command;
     }
 
+    /**
+     * 个人体检预约请求 → 创建预约命令。
+     *
+     * @param request 创建个人体检预约请求
+     * @param slot 目标号源明细
+     * @param operatorId 操作人主键
+     * @return 创建预约命令
+     */
     public CreateAppointmentCommand toIndividualHealthCheckupAppointmentCommand(
         CreateIndividualHealthCheckupBookingRequest request,
         SlotDetailModel slot,
@@ -250,6 +346,15 @@ public class HealthCheckupBookingMapper {
         return command;
     }
 
+    /**
+     * 预约主键 + 套餐/批次 → 体检预约扩展实体。
+     *
+     * @param appointmentId 预约主键
+     * @param packageId 体检套餐主键
+     * @param batchId 团检批次主键
+     * @param pkg 体检套餐实体
+     * @return 体检预约扩展实体
+     */
     public HealthCheckBookingExt toHealthCheckBookingExt(Long appointmentId, Long packageId, Long batchId, HealthCheckPackage pkg) {
         HealthCheckBookingExt ext = new HealthCheckBookingExt();
         ext.setAppointmentId(appointmentId);
@@ -262,6 +367,12 @@ public class HealthCheckupBookingMapper {
         return ext;
     }
 
+    /**
+     * 预约实体 → 创建个人体检预约响应。
+     *
+     * @param appointment 预约实体
+     * @return 创建个人体检预约响应
+     */
     public CreateIndividualHealthCheckupBookingResponse toCreateIndividualHealthCheckupBookingResponse(Appointment appointment) {
         CreateIndividualHealthCheckupBookingResponse response = new CreateIndividualHealthCheckupBookingResponse();
         response.setAppointmentId(appointment.getId());
@@ -269,6 +380,14 @@ public class HealthCheckupBookingMapper {
         return response;
     }
 
+    /**
+     * 预约详情 → 现场报到入队命令。
+     *
+     * @param booking 预约详情模型
+     * @param destinationLocationId 目的地位置主键
+     * @param operatorId 操作人主键
+     * @return 现场报到入队命令
+     */
     public CheckInToQueueCommand toCheckInToQueueCommand(
         AppointmentBookingDetailModel booking,
         Long destinationLocationId,

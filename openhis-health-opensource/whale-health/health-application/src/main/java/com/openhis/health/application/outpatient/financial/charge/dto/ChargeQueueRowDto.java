@@ -95,4 +95,8 @@ public class ChargeQueueRowDto {
     /** 收费状态汇总文案。 */
     @Schema(description = "收费状态汇总文案")
     private String cashierChargeRollupStatusText;
+
+    /** 最近一次成功支付流水主键（补打收费小票）。 */
+    @Schema(description = "最近一次成功支付流水ID")
+    private Long paymentId;
 }

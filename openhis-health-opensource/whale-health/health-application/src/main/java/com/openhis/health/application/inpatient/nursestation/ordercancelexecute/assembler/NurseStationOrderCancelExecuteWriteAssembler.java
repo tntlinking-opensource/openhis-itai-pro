@@ -22,7 +22,7 @@ import com.openhis.health.application.inpatient.nursestation.dispensesummary.ass
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.dto.CancelExecutionSummaryRebuildContext;
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.dto.SummaryRebuildHint;
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.mapper.NurseStationOrderCancelExecuteMapper;
-import com.openhis.health.module.querysupport.device.DeviceDispenseNurseWorkflowSupport;
+import com.openhis.health.module.orchestration.nursestation.DeviceDispenseNurseWorkflowSupport;
 import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;

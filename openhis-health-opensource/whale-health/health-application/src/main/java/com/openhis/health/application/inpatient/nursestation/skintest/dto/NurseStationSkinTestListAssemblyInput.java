@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * IF-IP-STK-02 列表装配入参：皮试药、nurse-pricing 皮试检查 SR、过敏记录、批号与人员展示名批量读侧结果。
+ * IF-IP-STK-02 列表装配入参：皮试药、doctor-prescription 皮试检查 SR、过敏记录、批号与人员展示名批量读侧结果。
  */
 @Getter
 @Setter
@@ -26,11 +26,11 @@ public class NurseStationSkinTestListAssemblyInput {
     /** 患者主键（卡片上下文）。 */
     private Long patientId;
 
-    /** 已校对皮试药医嘱行（BR-IP-STK-002 过滤后）。 */
+    /** 已校对皮试药医嘱行（BR-IP-STK-002 过滤后，且须存在 doctor 皮试检查 SR）。 */
     private List<MedicationRequestListQueryModel> skinTestMedicationRequests;
 
-    /** nurse-pricing 皮试检查 SR：皮试药医嘱 id → SR 列表模型。 */
-    private Map<Long, ServiceRequestListModel> nursePricingSkinTestSrByMedicationRequestId;
+    /** doctor-prescription 皮试检查 SR：皮试药医嘱 id → SR 列表模型（IF-IP-STK-02 索引口径）。 */
+    private Map<Long, ServiceRequestListModel> doctorPrescriptionSkinTestSrByMedicationRequestId;
 
     /** 过敏记录：皮试检查 SR id → 记录（request_id 锚定 SR）。 */
     private Map<Long, AllergyIntoleranceRecordQueryModel> allergyBySkinTestServiceRequestId;

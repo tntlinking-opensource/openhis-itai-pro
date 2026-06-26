@@ -89,7 +89,7 @@ public class ServiceLocationTemplateQueryService {
      * @param organizationId 开立或接诊科室（与 {@code cus_service_location_template.organization_id} 一致）
      * @param itemTable 物品主表名（如 {@code med_medication_definition}）
      * @param distributionCategoryCode 模板 {@code distribution_category_code}，须与产品目录 {@code categoryCode} 一致
-     *        （药品 {@code med_category_code} / 耗材 {@code device_category_code}，按 {@code itemTable} 区分码表）
+     *        （药品 {@code medication_category_code} / 耗材 {@code device_category_code}，按 {@code itemTable} 区分码表）
      * @param atTime 判定时段；空则当前时刻
      * @return 候选库房标识列表；参数不全时返回空列表
      */
@@ -116,7 +116,7 @@ public class ServiceLocationTemplateQueryService {
      * @param organizationId 开立或接诊科室标识
      * @param itemTable 物品主表名
      * @param distributionCategoryCode 模板 {@code distribution_category_code}，须与产品目录 {@code categoryCode} 一致
-     *        （药品 {@code med_category_code} / 耗材 {@code device_category_code}）
+     *        （药品 {@code medication_category_code} / 耗材 {@code device_category_code}）
      * @param itemDefinitionId 具体药品/耗材定义主键；模板通配行在 calcScore 中与之匹配
      * @param methodCode 给药途径等用法编码；耗材场景通常为 null，模板 {@code method_code} 通配行仍可命中
      * @param atTime 判定时段；空则当前时刻
@@ -180,7 +180,7 @@ public class ServiceLocationTemplateQueryService {
      * @param organizationId 开立/接诊科室标识
      * @param itemTable 物品主表名
      * @param distributionCategoryCode 模板 {@code distribution_category_code}，须与产品目录 {@code categoryCode} 一致
-     *        （药品 {@code med_category_code} / 耗材 {@code device_category_code}）
+     *        （药品 {@code medication_category_code} / 耗材 {@code device_category_code}）
      * @param itemDefinitionId 具体物品定义，可为空表示请求侧不约束具体项（仅匹配模板通配行）
      * @param methodCode 给药途径等细化条件，可为空表示请求侧不约束用法（仅匹配模板通配行）
      * @param atTime 判定生效时段的时刻；为空则取当前时刻

@@ -22,13 +22,14 @@ import com.openhis.health.application.basic.servicedevicebinding.dto.ServiceDevi
 import com.openhis.health.application.basic.servicedevicebinding.dto.ServiceDeviceBindingInitDto;
 import com.openhis.health.application.basic.servicedevicebinding.dto.ServiceDeviceBindingUnitOptionsDto;
 import com.openhis.health.application.basic.servicedevicebinding.mapper.ServiceDeviceBindingMapper;
+import com.openhis.health.application.basic.servicedevicebinding.request.ListDeviceDefOptionsRequest;
 import com.openhis.health.application.basic.servicedevicebinding.request.PageServiceDeviceBindingRequest;
 import com.openhis.health.application.basic.servicedevicebinding.request.SaveServiceDeviceBindingRequest;
 import com.openhis.health.application.basic.servicedevicebinding.request.ServiceDeviceBindingUnitOptionsByTargetRequest;
 import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
 import com.openhis.health.module.common.converter.TextValueConverter;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
 import com.openhis.health.domain.administration.devicedefinition.service.DeviceDefinitionQueryService;
 import com.openhis.health.domain.custom.servicedevicetemplate.command.DeleteBindingCommand;
@@ -87,7 +88,7 @@ public class ServiceDeviceBindingAppService {
     /** 服务设备模板写侧。 */
     private final ServiceDeviceTemplateDomainService serviceDeviceTemplateDomainService;
     /** 写路径操作人门控 B.6.1。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     /** 术语下拉（init 与单位选项）。 */
     private final TerminologyOptionLoader terminologyOptionLoader;
     /** 诊疗活动定义读侧：目标默认单位。 */
@@ -126,6 +127,20 @@ public class ServiceDeviceBindingAppService {
         dto.setDeviceDefOptions(serviceDeviceBindingDisplayAssembler.buildDeviceDefOptions());
         dto.setTargetTableOptions(serviceDeviceBindingDisplayAssembler.buildTargetTableOptions());
         return dto;
+    }
+
+    /**
+     * 返回绑定页耗材目标下拉（实时读库，支持关键字过滤）。
+     *
+     * @param request 可选关键字
+     * @return 耗材定义下拉项
+     */
+    public List<OptionDto> listDeviceDefOptions(ListDeviceDefOptionsRequest request) {
+        String keyword = null;
+        if (request != null) {
+            keyword = request.getKeyword();
+        }
+        return serviceDeviceBindingDisplayAssembler.buildDeviceDefOptions(keyword);
     }
 
     /**
@@ -219,7 +234,7 @@ public class ServiceDeviceBindingAppService {
      */
     public Long saveBinding(SaveServiceDeviceBindingRequest request) {
         this.validateSaveRequest(request);
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT,
             "请先登录后再保存诊疗耗材绑定");
         if (request.getId() == null) {
@@ -240,7 +255,7 @@ public class ServiceDeviceBindingAppService {
         if (id == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "删除失败：绑定ID不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT,
             "请先登录后再删除诊疗耗材绑定");
         DeleteBindingCommand command = new DeleteBindingCommand();

@@ -32,9 +32,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_organization" (
     "caty" varchar(255),
     CONSTRAINT "adm_organization_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_organization IS '管理域 organization';
-
 COMMENT ON COLUMN adm_organization.id IS '主键';
 COMMENT ON COLUMN adm_organization.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_organization.created_at IS '创建时间';
@@ -52,16 +50,16 @@ COMMENT ON COLUMN adm_organization.type_enum IS 'type 枚举值';
 COMMENT ON COLUMN adm_organization.class_enum IS 'class 枚举值';
 COMMENT ON COLUMN adm_organization.status_enum IS 'status 枚举值（{ PublicationStatus#getCode()}）';
 COMMENT ON COLUMN adm_organization.active_flag IS 'active 标志位';
-COMMENT ON COLUMN adm_organization.display_order IS 'displayOrder';
+COMMENT ON COLUMN adm_organization.display_order IS '显示顺序';
 COMMENT ON COLUMN adm_organization.def_doctor_id IS 'defDoctor 标识';
-COMMENT ON COLUMN adm_organization.py_str IS 'pyStr';
-COMMENT ON COLUMN adm_organization.wb_str IS 'wbStr';
+COMMENT ON COLUMN adm_organization.py_str IS '拼音码';
+COMMENT ON COLUMN adm_organization.wb_str IS '五笔码';
 COMMENT ON COLUMN adm_organization.yb_no IS 'yb 编号';
 COMMENT ON COLUMN adm_organization.yb_name IS 'yb 名称';
 COMMENT ON COLUMN adm_organization.medins_id IS 'medins 标识';
-COMMENT ON COLUMN adm_organization.medins_admdvs IS 'medinsAdmdvs';
-COMMENT ON COLUMN adm_organization.medins_type IS 'medinsType';
-COMMENT ON COLUMN adm_organization.medins_lv IS 'medinsLv';
+COMMENT ON COLUMN adm_organization.medins_admdvs IS '医疗机构医保区划';
+COMMENT ON COLUMN adm_organization.medins_type IS 'medins类型';
+COMMENT ON COLUMN adm_organization.medins_lv IS '医疗机构等级';
 COMMENT ON COLUMN adm_organization.caty IS '科别';
 
 -- seed: adm_organization

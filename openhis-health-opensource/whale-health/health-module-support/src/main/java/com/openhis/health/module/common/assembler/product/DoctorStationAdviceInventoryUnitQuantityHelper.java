@@ -173,7 +173,7 @@ public final class DoctorStationAdviceInventoryUnitQuantityHelper {
             if (row == null) {
                 continue;
             }
-            String occKey = tripleCompositeKey(itemTable, row.getItemId(), row.getLocationId());
+            String occKey = ProductTableNameSupport.tripleCompositeKey(itemTable, row.getItemId(), row.getLocationId());
             BigDecimal netSplit = row.getQuantity();
             if (netSplit == null) {
                 netSplit = BigDecimal.ZERO;
@@ -254,7 +254,7 @@ public final class DoctorStationAdviceInventoryUnitQuantityHelper {
             if (StringUtils.isNotBlank(row.getUnitCode()) && productRow != null) {
                 splitQty = businessQuantityToSplitUnit(productRow, row.getUnitCode(), businessQty);
             }
-            String key = tripleCompositeKey(itemTable, row.getMedicationId(), row.getLocationId());
+            String key = ProductTableNameSupport.tripleCompositeKey(itemTable, row.getMedicationId(), row.getLocationId());
             BigDecimal prev = acc.getOrDefault(key, BigDecimal.ZERO);
             acc.put(key, prev.add(splitQty));
         }
@@ -293,23 +293,10 @@ public final class DoctorStationAdviceInventoryUnitQuantityHelper {
             if (StringUtils.isNotBlank(row.getUnitCode()) && productRow != null) {
                 splitQty = businessQuantityToSplitUnit(productRow, row.getUnitCode(), businessQty);
             }
-            String key = tripleCompositeKey(itemTable, row.getDeviceDefId(), row.getLocationId());
+            String key = ProductTableNameSupport.tripleCompositeKey(itemTable, row.getDeviceDefId(), row.getLocationId());
             BigDecimal prev = acc.getOrDefault(key, BigDecimal.ZERO);
             acc.put(key, prev.add(splitQty));
         }
         return acc;
-    }
-
-    /**
-     * 库存预占复合键：表名、定义主键、库位。
-     *
-     * @param table      物品来源表名
-     * @param itemId     定义主键
-     * @param locationId 库位主键
-     * @return 内存 Map 键
-     */
-    private static String tripleCompositeKey(String table, Long itemId, Long locationId) {
-        char sep = GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR;
-        return table + sep + itemId + sep + locationId;
     }
 }

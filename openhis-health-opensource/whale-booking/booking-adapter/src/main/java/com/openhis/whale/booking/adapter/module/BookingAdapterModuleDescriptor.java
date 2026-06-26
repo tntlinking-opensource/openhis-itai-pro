@@ -14,7 +14,7 @@ public class BookingAdapterModuleDescriptor implements WhaleModuleDescriptor {
 
     @Override
     public String displayName() {
-        return "HIS-Booking Bridge";
+        return "HIS-Booking Adapter";
     }
 
     @Override
@@ -29,6 +29,6 @@ public class BookingAdapterModuleDescriptor implements WhaleModuleDescriptor {
 
     @Override
     public IntegrationMode integrationMode() {
-        return IntegrationMode.PORT;
+        return IntegrationMode.PUSH;
     }
 }

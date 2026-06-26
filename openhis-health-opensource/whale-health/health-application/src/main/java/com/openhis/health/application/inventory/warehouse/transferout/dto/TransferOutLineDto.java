@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inventory.warehouse.transferout.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -84,7 +85,7 @@ public class TransferOutLineDto {
     private String remake;
 
     /** 业务发生时间。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 业务发生时间。 */
     @Schema(description = "业务发生时间")
     private LocalDateTime occurrenceTime;

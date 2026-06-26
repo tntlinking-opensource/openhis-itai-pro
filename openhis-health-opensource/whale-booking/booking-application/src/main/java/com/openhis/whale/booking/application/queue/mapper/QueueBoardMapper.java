@@ -28,6 +28,7 @@ import java.util.Map;
 
 /**
  * 候诊叫号应用层映射器。
+ * <p>职责：报到/叫号/队列调序/叫号屏快照的 Request/Command/DTO 转换；不含业务门禁与事务。</p>
  */
 @Component
 public class QueueBoardMapper {
@@ -37,6 +38,10 @@ public class QueueBoardMapper {
 
     /**
      * 预约报到入队命令。
+     *
+     * @param request 报到请求
+     * @param operatorId 操作人主键
+     * @return 门诊预约报到命令
      */
     public CheckInOutpatientBookingCommand toCheckInOutpatientBookingCommand(CheckInRequest request, Long operatorId) {
         CheckInOutpatientBookingCommand command = new CheckInOutpatientBookingCommand();
@@ -52,6 +57,10 @@ public class QueueBoardMapper {
 
     /**
      * 现场报到入队命令。
+     *
+     * @param request 报到请求
+     * @param operatorId 操作人主键
+     * @return 现场报到入队命令
      */
     public CheckInToQueueCommand toCheckInToQueueCommand(CheckInRequest request, Long operatorId) {
         CheckInToQueueCommand command = new CheckInToQueueCommand();
@@ -76,6 +85,11 @@ public class QueueBoardMapper {
 
     /**
      * 叫号命令。
+     *
+     * @param appointmentId 预约主键
+     * @param practitionerId 医师主键
+     * @param operatorId 操作人主键
+     * @return 叫号命令
      */
     public CallToSeeCommand toCallToSeeCommand(Long appointmentId, Long practitionerId, Long operatorId) {
         CallToSeeCommand command = new CallToSeeCommand();
@@ -89,6 +103,11 @@ public class QueueBoardMapper {
 
     /**
      * 过号命令。
+     *
+     * @param appointmentId 预约主键
+     * @param reasonCode 过号原因编码
+     * @param operatorId 操作人主键
+     * @return 过号命令
      */
     public NoShowCommand toNoShowCommand(Long appointmentId, String reasonCode, Long operatorId) {
         NoShowCommand command = new NoShowCommand();
@@ -102,6 +121,9 @@ public class QueueBoardMapper {
 
     /**
      * 报到响应。
+     *
+     * @param appointment 预约实体
+     * @return 报到响应
      */
     public CheckInResponse toCheckInResponse(Appointment appointment) {
         CheckInResponse response = new CheckInResponse();
@@ -114,6 +136,12 @@ public class QueueBoardMapper {
 
     /**
      * 叫号响应（叫号前快照 + 叫号时间）。
+     *
+     * @param snapshot 队列分页模型快照
+     * @param patientName 患者姓名
+     * @param practitionerId 医师主键
+     * @param calledAt 叫号时间
+     * @return 叫号响应
      */
     public CallToSeeResponse toCallToSeeResponse(
         AppointmentQueuePageModel snapshot,
@@ -133,6 +161,10 @@ public class QueueBoardMapper {
 
     /**
      * 队列列表行。
+     *
+     * @param model 队列分页模型
+     * @param patientNames 患者主键 → 姓名映射
+     * @return 队列列表行 DTO
      */
     public QueueListItemDto toQueueListItemDto(AppointmentQueuePageModel model, Map<Long, String> patientNames) {
         QueueListItemDto dto = new QueueListItemDto();
@@ -151,6 +183,13 @@ public class QueueBoardMapper {
         return dto;
     }
 
+    /**
+     * 优先就诊请求 → 领域命令。
+     *
+     * @param request 优先就诊请求
+     * @param operatorId 操作人主键
+     * @return 优先就诊命令
+     */
     public PriorityTreatmentCommand toPriorityTreatmentCommand(PriorityTreatmentRequest request, Long operatorId) {
         PriorityTreatmentCommand command = new PriorityTreatmentCommand();
         command.setOperatorId(operatorId);
@@ -162,6 +201,13 @@ public class QueueBoardMapper {
         return command;
     }
 
+    /**
+     * 过号顺延请求 → 领域命令。
+     *
+     * @param request 过号顺延请求
+     * @param operatorId 操作人主键
+     * @return 过号顺延命令
+     */
     public ChangeOverCommand toChangeOverCommand(ChangeOverRequest request, Long operatorId) {
         ChangeOverCommand command = new ChangeOverCommand();
         command.setOperatorId(operatorId);
@@ -172,6 +218,13 @@ public class QueueBoardMapper {
         return command;
     }
 
+    /**
+     * 拖拽调序请求 → 领域命令。
+     *
+     * @param request 拖拽调序请求
+     * @param operatorId 操作人主键
+     * @return 拖拽调序命令
+     */
     public DragChangeOrderCommand toDragChangeOrderCommand(DragChangeOrderRequest request, Long operatorId) {
         DragChangeOrderCommand command = new DragChangeOrderCommand();
         command.setOperatorId(operatorId);
@@ -182,6 +235,14 @@ public class QueueBoardMapper {
         return command;
     }
 
+    /**
+     * 叫号屏配置 + 队列快照 → 展示响应（分离当前叫号与等候列表）。
+     *
+     * @param config 叫号屏展示配置
+     * @param snapshot 队列快照列表
+     * @param patientNames 患者主键 → 姓名映射
+     * @return 叫号屏展示快照响应
+     */
     public QueueDisplaySnapshotResponse toQueueDisplaySnapshotResponse(
         QueueDisplayConfig config,
         List<AppointmentQueuePageModel> snapshot,

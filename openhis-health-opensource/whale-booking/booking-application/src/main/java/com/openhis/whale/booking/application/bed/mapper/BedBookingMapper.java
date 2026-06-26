@@ -40,6 +40,12 @@ public class BedBookingMapper {
     private static final String STATUS_NOT_IN_USE = "NOT_IN_USE";
     private static final String STATUS_IN_USE = "IN_USE";
 
+    /**
+     * 病区主数据 → 病区树响应。
+     *
+     * @param wards 病区主数据选项列表
+     * @return 病区树响应
+     */
     public LoadWardTreeResponse toLoadWardTreeResponse(List<MasterDataOption> wards) {
         LoadWardTreeResponse response = new LoadWardTreeResponse();
         List<WardTreeNodeDto> nodes = new ArrayList<>();
@@ -56,6 +62,12 @@ public class BedBookingMapper {
         return response;
     }
 
+    /**
+     * 病区主数据 → 床位预约表单初始化响应。
+     *
+     * @param wards 病区主数据选项列表
+     * @return 床位预约表单初始化响应
+     */
     public LoadBedBookingFormInitResponse toLoadBedBookingFormInitResponse(List<MasterDataOption> wards) {
         LoadBedBookingFormInitResponse response = new LoadBedBookingFormInitResponse();
         LoadWardTreeResponse tree = this.toLoadWardTreeResponse(wards);
@@ -70,6 +82,13 @@ public class BedBookingMapper {
         return response;
     }
 
+    /**
+     * 构建日期区间表头（含起止日）。
+     *
+     * @param rangeStart 区间起始日期
+     * @param rangeEnd 区间结束日期
+     * @return 日期字符串列表
+     */
     public List<String> buildDateHeaders(LocalDate rangeStart, LocalDate rangeEnd) {
         List<String> dates = new ArrayList<>();
         LocalDate cursor = rangeStart;
@@ -80,6 +99,16 @@ public class BedBookingMapper {
         return dates;
     }
 
+    /**
+     * 组装床位矩阵行（床位 × 日期格子）。
+     *
+     * @param beds 床位摘要列表
+     * @param dates 日期表头
+     * @param reservations 床位预留扩展列表
+     * @param patientNames 患者主键 → 姓名映射
+     * @param today 当日日期（用于判定占用状态）
+     * @return 床位矩阵行构建结果
+     */
     public PageBedMatrixRows buildBedMatrixRows(
         List<BedLocationSummaryDto> beds,
         List<String> dates,
@@ -116,7 +145,12 @@ public class BedBookingMapper {
                         cell.setPatientName(patientNames.get(reservation.getPatientId()));
                     }
                 } else if (date.equals(today)) {
-                    String operational = bed.getOperationalEnum() != null ? bed.getOperationalEnum() : STATUS_NOT_IN_USE;
+                    String operational;
+                    if (bed.getOperationalEnum() != null) {
+                        operational = bed.getOperationalEnum();
+                    } else {
+                        operational = STATUS_NOT_IN_USE;
+                    }
                     cell.setOperationalCode(operational);
                     cell.setDisplayStatus(this.toDisplayStatus(operational));
                 } else {
@@ -131,6 +165,13 @@ public class BedBookingMapper {
         return new PageBedMatrixRows(rows);
     }
 
+    /**
+     * 预留床位请求 → 创建预约命令。
+     *
+     * @param request 预留床位请求
+     * @param operatorId 操作人主键
+     * @return 创建预约命令
+     */
     public CreateAppointmentCommand toCreateBedAppointmentCommand(ReserveBedRequest request, Long operatorId) {
         CreateAppointmentCommand command = new CreateAppointmentCommand();
         command.setOperatorId(operatorId);
@@ -149,6 +190,15 @@ public class BedBookingMapper {
         return command;
     }
 
+    /**
+     * 预留床位请求 → 床位预留扩展实体。
+     *
+     * @param request 预留床位请求
+     * @param appointmentId 预约主键
+     * @param wardLocationId 病区位置主键
+     * @param operatorId 操作人主键
+     * @return 床位预留扩展实体
+     */
     public BedReservationExt toBedReservationExt(
         ReserveBedRequest request, Long appointmentId, Long wardLocationId, Long operatorId) {
         BedReservationExt ext = new BedReservationExt();
@@ -161,6 +211,12 @@ public class BedBookingMapper {
         return ext;
     }
 
+    /**
+     * 预约实体 → 预留床位响应。
+     *
+     * @param appointment 预约实体
+     * @return 预留床位响应
+     */
     public ReserveBedResponse toReserveBedResponse(Appointment appointment) {
         ReserveBedResponse response = new ReserveBedResponse();
         response.setAppointmentId(appointment.getId());
@@ -168,6 +224,14 @@ public class BedBookingMapper {
         return response;
     }
 
+    /**
+     * 床位位置 → 预留床位契约命令。
+     *
+     * @param bedLocationId 床位位置主键
+     * @param operatorId 操作人主键
+     * @param reason 预留原因
+     * @return 预留床位契约命令
+     */
     public ReserveBedCommand toReserveBedCommand(Long bedLocationId, Long operatorId, String reason) {
         ReserveBedCommand command = new ReserveBedCommand();
         command.setOperatorId(operatorId);
@@ -178,6 +242,13 @@ public class BedBookingMapper {
         return command;
     }
 
+    /**
+     * 床位位置 → 释放床位预留契约命令。
+     *
+     * @param bedLocationId 床位位置主键
+     * @param operatorId 操作人主键
+     * @return 释放床位预留契约命令
+     */
     public ReleaseBedReservationCommand toReleaseBedReservationCommand(Long bedLocationId, Long operatorId) {
         ReleaseBedReservationCommand command = new ReleaseBedReservationCommand();
         command.setOperatorId(operatorId);
@@ -188,6 +259,13 @@ public class BedBookingMapper {
         return command;
     }
 
+    /**
+     * 取消床位预留请求 → 取消预约命令。
+     *
+     * @param request 取消床位预留请求
+     * @param operatorId 操作人主键
+     * @return 取消预约命令
+     */
     public CancelAppointmentCommand toCancelAppointmentCommand(CancelBedReservationRequest request, Long operatorId) {
         CancelAppointmentCommand command = new CancelAppointmentCommand();
         command.setOperatorId(operatorId);
@@ -198,13 +276,33 @@ public class BedBookingMapper {
         return command;
     }
 
+    /**
+     * 入院确认请求 → 取消预约命令（默认原因「入院确认」）。
+     *
+     * @param request 入院确认请求
+     * @param operatorId 操作人主键
+     * @return 取消预约命令
+     */
     public CancelAppointmentCommand toConfirmAdmissionCancelCommand(ConfirmAdmissionRequest request, Long operatorId) {
         CancelBedReservationRequest cancel = new CancelBedReservationRequest();
         cancel.setAppointmentId(request.getAppointmentId());
-        cancel.setReason(request.getReason() == null ? "入院确认" : request.getReason());
+        if (request.getReason() == null) {
+            cancel.setReason("入院确认");
+        } else {
+            cancel.setReason(request.getReason());
+        }
         return this.toCancelAppointmentCommand(cancel, operatorId);
     }
 
+    /**
+     * 床位预留扩展 + 预约详情 → 列表行 DTO。
+     *
+     * @param ext 床位预留扩展
+     * @param appointment 预约详情模型
+     * @param patientNames 患者主键 → 姓名映射
+     * @param bedNames 床位位置主键 → 床位名称映射
+     * @return 床位预留列表行 DTO
+     */
     public BedReservationListItemDto toBedReservationListItemDto(
         BedReservationExt ext,
         AppointmentBookingDetailModel appointment,
@@ -230,6 +328,12 @@ public class BedBookingMapper {
         return dto;
     }
 
+    /**
+     * 从床位预留列表提取患者主键。
+     *
+     * @param rows 床位预留扩展列表
+     * @return 患者主键列表
+     */
     public List<Long> collectPatientIds(List<BedReservationExt> rows) {
         List<Long> ids = new ArrayList<>();
         if (rows == null) {
@@ -243,6 +347,12 @@ public class BedBookingMapper {
         return ids;
     }
 
+    /**
+     * 从床位预留列表提取床位位置主键。
+     *
+     * @param rows 床位预留扩展列表
+     * @return 床位位置主键列表
+     */
     public List<Long> collectBedLocationIds(List<BedReservationExt> rows) {
         List<Long> ids = new ArrayList<>();
         if (rows == null) {
@@ -256,6 +366,12 @@ public class BedBookingMapper {
         return ids;
     }
 
+    /**
+     * 床位摘要列表 → 床位位置主键 → 名称索引。
+     *
+     * @param beds 床位摘要列表
+     * @return 床位位置主键 → 床位名称映射
+     */
     public Map<Long, String> indexBedNames(List<BedLocationSummaryDto> beds) {
         Map<Long, String> map = new LinkedHashMap<>();
         if (beds == null) {
@@ -285,10 +401,16 @@ public class BedBookingMapper {
     public static final class PageBedMatrixRows {
         private final List<BedMatrixRowDto> rows;
 
+        /**
+         * @param rows 床位矩阵行列表
+         */
         public PageBedMatrixRows(List<BedMatrixRowDto> rows) {
             this.rows = rows;
         }
 
+        /**
+         * @return 床位矩阵行列表
+         */
         public List<BedMatrixRowDto> getRows() {
             return rows;
         }

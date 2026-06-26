@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.openhis</groupId>
+        <artifactId>whale-einvoice-boss</artifactId>
+        <version>2.0.2-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>einvoice-boss-starter</artifactId>
+    <packaging>jar</packaging>
+    <name>EInvoice Boss Starter</name>
+    <description>博思电子票据模块安装入口（embedded）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>health-module-support</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>einvoice-boss-adapter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>einvoice-boss-application</artifactId>
+        </dependency>
+    </dependencies>
+</project>

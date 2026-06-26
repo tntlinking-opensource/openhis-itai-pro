@@ -1,24 +1,33 @@
 package com.openhis.health.application.inpatient.financial.prepay.service;
 
 import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.module.common.assembler.financial.PaymentChannelOptionProvider;
 import com.openhis.health.module.common.validator.PaymentChannelGate;
+import com.openhis.health.module.common.support.ThirdPartyPaymentSettleSupport;
+import com.openhis.health.module.common.support.ThirdPartyPaymentRefundSupport;
 import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayPaymentDetailDto;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayPaymentRecordDto;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayQueueItemDto;
 import com.openhis.health.application.inpatient.financial.prepay.mapper.InpatientPrepayMapper;
 import com.openhis.health.module.common.assembler.financial.PaymentChannelDisplayAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayDtoApplier;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayAssembler;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayResult;
 import com.openhis.health.module.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
 import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.application.inpatient.financial.prepay.request.CollectPrepayAdvanceDepositRequest;
+import com.openhis.health.application.inpatient.financial.prepay.request.LoadInpatientPrepayPageInitRequest;
 import com.openhis.health.application.inpatient.financial.prepay.request.ListPrepayPaymentRecordsRequest;
 import com.openhis.health.application.inpatient.financial.prepay.request.PagePrepayPatientQueueRequest;
 import com.openhis.health.application.inpatient.financial.prepay.request.RefundPrepayAdvanceDepositRequest;
 import com.openhis.health.application.inpatient.financial.prepay.response.CollectPrepayAdvanceDepositResponse;
+import com.openhis.health.application.inpatient.financial.prepay.response.LoadInpatientPrepayPageInitResponse;
 import com.openhis.health.application.inpatient.financial.prepay.response.ListPrepayPaymentRecordsResponse;
 import com.openhis.health.application.inpatient.financial.prepay.response.PagePrepayPatientQueueResponse;
+import com.openhis.health.application.inpatient.financial.prepay.response.PreparePrepayAdvanceDepositResponse;
 import com.openhis.health.application.inpatient.financial.prepay.response.RefundPrepayAdvanceDepositResponse;
 import com.openhis.health.domain.administration.account.command.AdjustAdvanceDepositBalanceCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
@@ -41,6 +50,8 @@ import com.openhis.health.domain.share.constants.InpatientPrepayConstants;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.PaymentKind;
+import com.openhis.health.domain.share.enums.PaymentStatus;
+import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -71,8 +82,7 @@ import java.util.Set;
  * <p>接入：{@code AppServiceControllerRegistrar} →
  * {@code POST /api/app/inpatientPrepay/{methodName}}；不另写 RestController。</p>
  *
- * <p>DOC-CONFLICT（事务）：产品期望收/退单事务；应用层不声明 {@code @Transactional}，
- * 事务由 {@link PaymentReconciliationDomainService}、{@link AccountDomainService} 各写方法承担。</p>
+ * <p>写路径事务由 {@link com.openhis.whale.core.infrastructure.transaction.AppServiceAspect} 统一管理 UoW。</p>
  */
 @Slf4j
 @Service
@@ -80,13 +90,20 @@ import java.util.Set;
 public class InpatientPrepayAppService {
 
     /** 写路径操作人门控（B.6.1）。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
 
     /** 分页窗口入站门控（B.10.11）。 */
     private final PageWindowGate pageWindowGate;
 
     /** 支付渠道入站门控。 */
     private final PaymentChannelGate paymentChannelGate;
+
+    /** 收银支付渠道下拉（477 ∩ Gate）。 */
+    private final PaymentChannelOptionProvider paymentChannelOptionProvider;
+
+    private final ThirdPartyPaymentSettleSupport thirdPartyPaymentSettleSupport;
+
+    private final ThirdPartyPaymentRefundSupport thirdPartyPaymentRefundSupport;
 
     /** 就诊读侧（队列与门禁）。 */
     private final EncounterQueryService encounterQueryService;
@@ -121,6 +138,28 @@ public class InpatientPrepayAppService {
 
     /** 收费明细读侧（待结算合计 → 展示余额）。 */
     private final ChargeItemQueryService chargeItemQueryService;
+
+    /**
+     * IF-IP-PREP-00：预交金页初始化。
+     *
+     * @param request 占位请求
+     * @return 用户可选支付渠道下拉
+     * @throws BusinessException 初始化失败时抛出 EX-IP-PREP-101
+     */
+    public LoadInpatientPrepayPageInitResponse loadInpatientPrepayPageInit(LoadInpatientPrepayPageInitRequest request) {
+        try {
+            // Pre：用户可选支付渠道与住院结算/门诊收费口径对齐（ADR-PAY-001）。
+            List<OptionDto> paymentChannels = paymentChannelOptionProvider.loadUserSelectableOptions();
+            // Asm：Mapper 装配支付渠道下拉。
+            return inpatientPrepayMapper.toLoadInpatientPrepayPageInitResponse(paymentChannels);
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw new BusinessException(
+                InpatientPrepayConstants.EX_IP_PREP_101,
+                "初始化失败，请稍后重试");
+        }
+    }
 
     /**
      * IF-IP-PREP-01：在院患者队列分页查询。
@@ -169,23 +208,43 @@ public class InpatientPrepayAppService {
             }
             Map<Long, InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay> displayOverlay =
                 inpatientInfoQueueDisplayAssembler.buildOverlay(page.getContent(), contractNoByEncounterId);
-            Map<Long, BigDecimal> chargedOccupancyByEncounterId =
-                chargeItemQueryService.mapInpatientChargedOccupancyTotalPriceByEncounterIds(encounterIds);
+            Map<Long, BigDecimal> pendingByEncounterId =
+                chargeItemQueryService.mapPendingSettlementTotalPriceByEncounterIds(encounterIds);
+            Map<Long, BigDecimal> settledByEncounterId =
+                chargeItemQueryService.mapSettledTotalPriceByEncounterIds(encounterIds);
+            Set<Long> reversedPendingResettleEncounterIds =
+                paymentReconciliationQueryService.filterReversedPendingResettleEncounterIds(encounterIds);
             List<PrepayQueueItemDto> content = new ArrayList<>();
             for (InpatientEncounterContextQueryModel row : page.getContent()) {
                 Account account = null;
                 InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay rowOverlay = null;
-                BigDecimal chargedOccupancy = BigDecimal.ZERO;
                 if (row.getEncounterId() != null) {
                     account = accountByEncounterId.get(row.getEncounterId());
                     rowOverlay = displayOverlay.get(row.getEncounterId());
-                    BigDecimal total = chargedOccupancyByEncounterId.get(row.getEncounterId());
-                    if (total != null) {
-                        chargedOccupancy = total;
+                }
+                BigDecimal pending = BigDecimal.ZERO;
+                BigDecimal settled = BigDecimal.ZERO;
+                boolean reversedPendingResettle = false;
+                if (row != null && row.getEncounterId() != null) {
+                    BigDecimal pendingTotal = pendingByEncounterId.get(row.getEncounterId());
+                    if (pendingTotal != null) {
+                        pending = pendingTotal;
+                    }
+                    BigDecimal settledTotal = settledByEncounterId.get(row.getEncounterId());
+                    if (settledTotal != null) {
+                        settled = settledTotal;
+                    }
+                    if (reversedPendingResettleEncounterIds.contains(row.getEncounterId())) {
+                        reversedPendingResettle = true;
                     }
                 }
-                content.add(inpatientPrepayMapper.toPrepayQueueItemDto(
-                    row, account, rowOverlay, chargedOccupancy));
+                PrepayQueueItemDto item = inpatientPrepayMapper.toPrepayQueueItemDto(
+                    row, account, rowOverlay);
+                InpatientAccountBalanceDisplayResult accountBalanceDisplay =
+                    InpatientAccountBalanceDisplayAssembler.assemble(
+                        account, pending, settled, reversedPendingResettle);
+                InpatientAccountBalanceDisplayDtoApplier.apply(item, accountBalanceDisplay);
+                content.add(item);
             }
             return inpatientPrepayMapper.toPagePrepayPatientQueueResponse(content, page);
         } catch (BusinessException ex) {
@@ -250,6 +309,22 @@ public class InpatientPrepayAppService {
     }
 
     /**
+     * IF-IP-PREP-03a：预交金扫码预下单（仅落 DRAFT，供 Win 被扫与 prepareConsumerScan）。
+     *
+     * @param request 与正式收取相同的就诊、金额与支付明细
+     * @return 预交金支付草稿 ID
+     */
+    public PreparePrepayAdvanceDepositResponse preparePrepayAdvanceDeposit(
+        CollectPrepayAdvanceDepositRequest request) {
+        // Gate/Pre：与收取共用校验（就诊、账户、明细合计）。
+        CollectPrepayAdvanceDepositContext ctx = this.buildCollectContext(request);
+        // Cmd：仅落 HOSPITAL_DEPOSIT DRAFT，不结算、不调账。
+        Long paymentId = paymentReconciliationDomainService.collectAdvanceDeposit(ctx.collectCommand());
+        // Asm：返回草稿 ID 供前端 prepareConsumerScan。
+        return new PreparePrepayAdvanceDepositResponse().setPaymentDraftId(paymentId);
+    }
+
+    /**
      * IF-IP-PREP-03：收取预交金（续收）。
      *
      * @param request 就诊、金额与支付明细
@@ -258,50 +333,30 @@ public class InpatientPrepayAppService {
      */
     public CollectPrepayAdvanceDepositResponse collectPrepayAdvanceDeposit(
         CollectPrepayAdvanceDepositRequest request) {
-        // Gate：患者与主金额合法，否则无法落收款事实。
-        this.validateCollectGate(request);
-        Long operatorId = this.resolveOperatorId(request.getOperatorId());
-        // Pre：住院就诊存在且处于可收退状态。
-        EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
-            request.getEncounterId(),
-            EncounterClass.IMP.getCode(),
-            InpatientPrepayConstants.EX_IP_PREP_102,
-            "就诊非住院或不存在，请刷新并重新选择患者");
-        this.requirePrepayEligibleEncounterStatus(encounter.getStatusEnum());
-        // Pre：卡片患者须与就诊主档一致，防止收错人。
-        patientEncounterConsistencyGate.requireRequestPatientMatchesEncounter(
-            request.getPatientId(),
-            encounter.getPatientId(),
-            InpatientPrepayConstants.EX_IP_PREP_001,
-            "请选择患者并输入正确金额");
-        // Pre：登记个人现金户须已开立。
-        Account account = accountQueryService.getRegistrationAccount(
-            request.getPatientId(),
-            request.getEncounterId());
-        if (account == null || account.getId() == null) {
-            throw new BusinessException(
-                InpatientPrepayConstants.EX_IP_PREP_002,
-                "请先完成住院登记");
-        }
-        CollectAdvanceDepositCommand collectCommand =
-            inpatientPrepayMapper.toCollectAdvanceDepositCommand(
-                request,
-                account.getId(),
-                operatorId);
+        CollectPrepayAdvanceDepositContext ctx = this.buildCollectContext(request);
         try {
-            // Cmd：落预交金 DRAFT 与明细。
-            Long paymentId = paymentReconciliationDomainService.collectAdvanceDeposit(collectCommand);
-            // Cmd：结算为 SUCCESS，对外展示为已收款。
+            Long paymentId = ctx.existingDraftId() != null
+                ? ctx.existingDraftId()
+                : paymentReconciliationDomainService.collectAdvanceDeposit(ctx.collectCommand());
+            thirdPartyPaymentSettleSupport.applyScanBeforeSettle(
+                paymentId,
+                ctx.collectCommand().getPaymentDetails(),
+                request.getClientScanResult(),
+                ctx.operatorId(),
+                null);
+            paymentReconciliationDomainService.refreshPaymentDraftPreSettleAmounts(
+                paymentId,
+                ctx.collectCommand().getDisplayAmount(),
+                ctx.collectCommand().getPaymentDetails());
             SettleInpatientPaymentCommand settleCommand =
                 inpatientPrepayMapper.toSettleInpatientPaymentCommand(paymentId);
             paymentReconciliationDomainService.settleInpatientPayment(settleCommand);
-            // Cmd：个人现金户余额增加，与支付结算同一请求顺序执行。
             AdjustAdvanceDepositBalanceCommand balanceCmd =
                 inpatientPrepayMapper.toCollectBalanceAdjustCommand(
                     request.getPatientId(),
                     request.getEncounterId(),
                     request.getAmount(),
-                    operatorId);
+                    ctx.operatorId());
             accountDomainService.adjustAdvanceDepositBalance(balanceCmd);
             BigDecimal displayBalance =
                 this.loadDisplayAccountBalance(request.getPatientId(), request.getEncounterId());
@@ -313,6 +368,72 @@ public class InpatientPrepayAppService {
                 InpatientPrepayConstants.EX_IP_PREP_004,
                 "收取或结算失败，请以流水为准并稍后重试");
         }
+    }
+
+    private CollectPrepayAdvanceDepositContext buildCollectContext(CollectPrepayAdvanceDepositRequest request) {
+        this.validateCollectGate(request);
+        Long operatorId = this.resolveOperatorId(request.getOperatorId());
+        EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
+            request.getEncounterId(),
+            EncounterClass.IMP.getCode(),
+            InpatientPrepayConstants.EX_IP_PREP_102,
+            "就诊非住院或不存在，请刷新并重新选择患者");
+        this.requirePrepayEligibleEncounterStatus(encounter.getStatusEnum());
+        patientEncounterConsistencyGate.requireRequestPatientMatchesEncounter(
+            request.getPatientId(),
+            encounter.getPatientId(),
+            InpatientPrepayConstants.EX_IP_PREP_001,
+            "请选择患者并输入正确金额");
+        Account account = accountQueryService.getRegistrationAccount(
+            request.getPatientId(),
+            request.getEncounterId());
+        if (account == null || account.getId() == null) {
+            throw new BusinessException(
+                InpatientPrepayConstants.EX_IP_PREP_002,
+                "请先完成住院登记");
+        }
+        if (request.getPaymentDraftId() != null) {
+            this.requirePrepayCollectDraft(
+                request.getPaymentDraftId(),
+                request.getEncounterId(),
+                request.getAmount());
+        }
+        CollectAdvanceDepositCommand collectCommand =
+            inpatientPrepayMapper.toCollectAdvanceDepositCommand(
+                request,
+                account.getId(),
+                operatorId);
+        return new CollectPrepayAdvanceDepositContext(
+            operatorId,
+            request.getPaymentDraftId(),
+            collectCommand);
+    }
+
+    private void requirePrepayCollectDraft(Long paymentDraftId, Long encounterId, BigDecimal amount) {
+        PaymentReconciliationQueryModel draft = paymentReconciliationQueryService.mustGetPayment(paymentDraftId);
+        if (draft.getKindEnum() != PaymentKind.HOSPITAL_DEPOSIT
+            || draft.getStatusEnum() != PaymentStatus.DRAFT) {
+            throw new BusinessException(
+                InpatientPrepayConstants.EX_IP_PREP_004,
+                "预交金支付草稿已失效，请重新扫码");
+        }
+        if (!encounterId.equals(draft.getEncounterId())) {
+            throw new BusinessException(
+                InpatientPrepayConstants.EX_IP_PREP_004,
+                "预交金草稿与就诊不一致");
+        }
+        if (amount != null && draft.getDisplayAmount() != null
+            && amount.compareTo(draft.getDisplayAmount()) != 0) {
+            throw new BusinessException(
+                InpatientPrepayConstants.EX_IP_PREP_001,
+                "收取金额与预下单不一致");
+        }
+    }
+
+    private record CollectPrepayAdvanceDepositContext(
+        Long operatorId,
+        Long existingDraftId,
+        CollectAdvanceDepositCommand collectCommand) {
     }
 
     /**
@@ -362,6 +483,18 @@ public class InpatientPrepayAppService {
                 account.getId(),
                 operatorId);
         try {
+            // Pre：扫码原路退须先 Win 退货并落 BPC 逆向单，失败则不进入本地退预交金。
+            if (request.getClientRefundResult() != null) {
+                if (request.getOriginalPaymentId() == null) {
+                    throw new BusinessException(
+                        InpatientPrepayConstants.EX_IP_PREP_001,
+                        "扫码原路退须指定原支付单");
+                }
+                thirdPartyPaymentRefundSupport.applyRefundBeforeLocalRefund(
+                    request.getOriginalPaymentId(),
+                    request.getClientRefundResult(),
+                    operatorId);
+            }
             // Cmd：落预交金退款 DRAFT（无 relation_id）。
             Long paymentId = paymentReconciliationDomainService.refundAdvanceDeposit(refundCommand);
             // Cmd：结算为 SUCCESS。
@@ -526,7 +659,7 @@ public class InpatientPrepayAppService {
     private Long resolveOperatorId(Long operatorIdFromRequest) {
         Long operatorId = operatorIdFromRequest;
         if (operatorId == null) {
-            operatorId = currentOperatorResolver.requireOperatorId(
+            operatorId = currentPractitionerResolver.requireOperatorId(
                 InpatientPrepayConstants.EX_IP_PREP_001,
                 "请选择患者并输入正确金额");
         }
@@ -534,20 +667,19 @@ public class InpatientPrepayAppService {
     }
 
     /**
-     * 加载患者栏展示余额：预交金净值 −（待结算 + 已结算占用）。
+     * 加载患者栏展示余额：库内账户余额 − 待结算。
      *
      * @param patientId   患者 ID
      * @param encounterId 就诊 ID
-     * @return 展示余额
+     * @return 展示可用余额
      */
     private BigDecimal loadDisplayAccountBalance(Long patientId, Long encounterId) {
         Account account = accountQueryService.getRegistrationAccount(patientId, encounterId);
-        BigDecimal chargedOccupancy = BigDecimal.ZERO;
+        BigDecimal pending = BigDecimal.ZERO;
         if (encounterId != null) {
-            chargedOccupancy =
-                chargeItemQueryService.sumInpatientChargedOccupancyTotalPriceByEncounterId(encounterId);
+            pending = chargeItemQueryService.sumPendingSettlementTotalPriceByEncounterId(encounterId);
         }
-        return InpatientDisplayAccountBalanceAssembler.computeDisplayAccountBalance(account, chargedOccupancy);
+        return InpatientDisplayAccountBalanceAssembler.computeDisplayAccountBalance(account, pending);
     }
 
     /**

@@ -1,9 +1,12 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ */
+
 package com.openhis.whale.mrms.domain.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.openhis.whale.mrms.domain.enums.FieldFillSource;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
@@ -13,47 +16,49 @@ import java.util.Map;
  * field_sources_json 读写辅助。
  */
 @Component
+@RequiredArgsConstructor
 public class FieldSourcesJsonHelper {
 
-    private static final TypeReference<Map<String, String>> MAP_TYPE = new TypeReference<>() {};
+    private static final TypeReference<Map<String, String>> MAP_TYPE = new TypeReference<>() {
+    };
 
     private final ObjectMapper objectMapper;
 
-    public FieldSourcesJsonHelper(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
-    }
-
+    /**
+     * 解析 JSON 为 Map。
+     *
+     * @param json 持久化 JSON
+     * @return 字段来源 Map
+     */
     public Map<String, String> parse(String json) {
         if (json == null || json.isBlank()) {
             return new HashMap<>();
         }
         try {
-            return new HashMap<>(objectMapper.readValue(json, MAP_TYPE));
-        } catch (JsonProcessingException e) {
+            Map<String, String> parsed = objectMapper.readValue(json, MAP_TYPE);
+            if (parsed == null) {
+                return new HashMap<>();
+            }
+            return parsed;
+        } catch (Exception ex) {
             return new HashMap<>();
         }
     }
 
-    public String serialize(Map<String, String> sources) {
+    /**
+     * 序列化为 JSON 字符串。
+     *
+     * @param sources 字段来源 Map
+     * @return JSON 字符串
+     */
+    public String toJson(Map<String, String> sources) {
         if (sources == null || sources.isEmpty()) {
             return null;
         }
         try {
             return objectMapper.writeValueAsString(sources);
-        } catch (JsonProcessingException e) {
+        } catch (Exception ex) {
             return null;
         }
-    }
-
-    public boolean isManual(Map<String, String> sources, String fieldKey) {
-        return FieldFillSource.MANUAL.getCode().equals(sources.get(fieldKey));
-    }
-
-    public void markAuto(Map<String, String> sources, String fieldKey) {
-        sources.put(fieldKey, FieldFillSource.AUTO.getCode());
-    }
-
-    public void markManual(Map<String, String> sources, String fieldKey) {
-        sources.put(fieldKey, FieldFillSource.MANUAL.getCode());
     }
 }

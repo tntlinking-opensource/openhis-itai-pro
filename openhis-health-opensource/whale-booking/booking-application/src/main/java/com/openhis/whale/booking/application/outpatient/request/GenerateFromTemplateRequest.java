@@ -34,9 +34,9 @@ public class GenerateFromTemplateRequest {
     @NotNull
     private LocalDate rangeEnd;
 
-    /** 生成后自动发布（默认仅草稿）。 */
+    /** 生成后是否自动发布为 active（默认 false；前端推荐开启）。 */
     private Boolean autoPublish;
 
-    /** 发布后按 T1/放号策略自动放号（须 autoPublish=true）。 */
+    /** 发布后是否按 T1/放号策略自动放号（须 {@link #autoPublish} 为 true）。 */
     private Boolean autoProvision;
 }

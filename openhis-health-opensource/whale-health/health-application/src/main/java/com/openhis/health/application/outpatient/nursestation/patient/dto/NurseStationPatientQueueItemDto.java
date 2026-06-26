@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.outpatient.nursestation.patient.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -64,7 +65,7 @@ public class NurseStationPatientQueueItemDto {
     /**
      * 出生日期。
      */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     @Schema(description = "出生日期")
     private LocalDate birthDate;
 
@@ -83,7 +84,7 @@ public class NurseStationPatientQueueItemDto {
     /**
      * 就诊时间（与门诊信息列表同源口径）。
      */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "就诊时间")
     private LocalDateTime encounterTime;
 }

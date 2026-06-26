@@ -23,6 +23,9 @@ public class UpdateScheduleDraftRequest {
     @Valid
     private List<ScheduleActorRequest> actors;
 
+    /** 日程显示名称（可选）。 */
+    private String name;
+
     /** 规划窗口起（可选）。 */
     private LocalDateTime planningHorizonStart;
 

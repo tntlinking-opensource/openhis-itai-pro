@@ -19,9 +19,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_encounter_reason" (
     "description" varchar(255),
     CONSTRAINT "adm_encounter_reason_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_encounter_reason IS '管理域 encounter reason';
-
 COMMENT ON COLUMN adm_encounter_reason.id IS '主键';
 COMMENT ON COLUMN adm_encounter_reason.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_encounter_reason.created_at IS '创建时间';
@@ -37,4 +35,3 @@ COMMENT ON COLUMN adm_encounter_reason.use_code IS '用途编码（如挂号原�
 COMMENT ON COLUMN adm_encounter_reason.reason_table IS '原因实体所在逻辑表名';
 COMMENT ON COLUMN adm_encounter_reason.reason_id IS '原因业务主键';
 COMMENT ON COLUMN adm_encounter_reason.description IS '原因描述';
-

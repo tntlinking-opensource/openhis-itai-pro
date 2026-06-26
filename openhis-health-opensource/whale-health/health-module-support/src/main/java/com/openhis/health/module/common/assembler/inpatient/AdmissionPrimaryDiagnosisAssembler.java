@@ -4,7 +4,7 @@
 
 package com.openhis.health.module.common.assembler.inpatient;
 
-import com.openhis.health.bridge.shared.diagnosis.DiagnosisSnapshotDisplayResolver;
+import com.openhis.health.module.shared.diagnosis.DiagnosisSnapshotDisplayResolver;
 import org.springframework.stereotype.Component;
 
 import java.util.List;

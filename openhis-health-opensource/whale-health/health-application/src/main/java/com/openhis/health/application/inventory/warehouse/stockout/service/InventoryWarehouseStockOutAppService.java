@@ -24,7 +24,7 @@ import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnit
 import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
-import com.openhis.health.application.insurance.inventory.InventoryMedicareUploadSupport;
+import com.openhis.health.integration.support.insurance.inventory.InventoryMedicareUploadSupport;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.mapper.InventoryWarehouseInboundReceiptMapper;
 import com.openhis.health.application.inventory.warehouse.stockout.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.stockout.dto.StockOutDetailLineDto;
@@ -35,7 +35,7 @@ import com.openhis.health.application.inventory.warehouse.stockout.request.*;
 import com.openhis.health.application.inventory.warehouse.stockout.response.*;
 import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PageWindowGate;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
@@ -84,8 +84,8 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequ
 import com.openhis.health.domain.workflow.supplyrequest.support.SupplyPersistedSplitQuantity;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
-import com.openhis.whale.chs.jilin.port.InventoryInsurancePort;
-import com.openhis.whale.chs.jilin.port.model.UploadAfterTransferCommand;
+import com.openhis.health.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.integration.insurance.inventory.command.InventoryUploadAfterTransferCommand;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -125,11 +125,10 @@ public class InventoryWarehouseStockOutAppService {
 
     private static final String INV_CHG_TYPE_TRANSFER_OUT = "102";
 
-    @Autowired(required = false)
-    private InventoryInsurancePort inventoryInsurancePort;
+    private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     private final PageWindowGate pageWindowGate;
     private final SupplyRequestDomainService supplyRequestDomainService;
     private final SupplyRequestQueryService supplyRequestQueryService;
@@ -363,7 +362,7 @@ public class InventoryWarehouseStockOutAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "经手人不能为空");
         }
         this.assertStockOutLinesOccurrencePresent(request.getLines());
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录");
         Long applicantId = this.requireWarehousePreparerPractitionerId(
             ErrorCodeConstants.WHS_SO_101,
             "用户未登录",
@@ -422,7 +421,7 @@ public class InventoryWarehouseStockOutAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "经手人不能为空");
         }
         this.assertStockOutLinesOccurrencePresent(request.getLines());
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录");
         Long applicantId = this.requireWarehousePreparerPractitionerId(
             ErrorCodeConstants.WHS_SO_101,
             "用户未登录",
@@ -463,7 +462,7 @@ public class InventoryWarehouseStockOutAppService {
             // Cmd：领域提交审批
             supplyRequestDomainService.submitApproval(
                 stockOutMapper.toSubmitApprovalCommand(request,
-                    currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录"),
+                    currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录"),
                     applicantId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_SO_003);
@@ -493,7 +492,7 @@ public class InventoryWarehouseStockOutAppService {
             // Cmd：领域撤回审批
             supplyRequestDomainService.withdrawApproval(
                 stockOutMapper.toWithdrawApprovalCommand(request,
-                    currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录")));
+                    currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录")));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_SO_003);
         }
@@ -507,7 +506,7 @@ public class InventoryWarehouseStockOutAppService {
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "busNo 不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录");
 
         // —— 同意出库单 ——
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
@@ -773,14 +772,14 @@ public class InventoryWarehouseStockOutAppService {
         if (lineIds.isEmpty()) {
             return;
         }
-        InventoryMedicareUploadSupport.uploadIfPortPresent(inventoryInsurancePort, () -> {
-            UploadAfterTransferCommand command = new UploadAfterTransferCommand()
+        InventoryMedicareUploadSupport.uploadIfEnabled(inventoryUploadExtension, () -> {
+            InventoryUploadAfterTransferCommand command = new InventoryUploadAfterTransferCommand()
                 .setTransferBusNo(request.getBusNo())
                 .setSupplyRequestLineIds(lineIds)
                 .setSupplyTypeCode(SupplyType.CABINET_STOCK_OUT.getCode())
                 .setInvChgType(INV_CHG_TYPE_TRANSFER_OUT)
                 .setContractBusNo(request.getContractBusNo());
-            inventoryInsurancePort.uploadAfterTransferAgree(command);
+            inventoryUploadExtension.uploadAfterTransferAgree(command);
         });
     }
 
@@ -802,7 +801,7 @@ public class InventoryWarehouseStockOutAppService {
         if (StringUtils.isBlank(request.getChangeReason()) && StringUtils.isBlank(request.getChangeReasonCode())) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "驳回原因不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录");
         // —— 领域驳回请求。——
         try {
             supplyRequestDomainService.rejectRequest(stockOutMapper.toRejectRequestCommand(request, operatorId));
@@ -829,7 +828,7 @@ public class InventoryWarehouseStockOutAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "请求不能为空");
         }
         this.gateBusNo(request.getBusNo());
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录");
         try {
             // Cmd：领域按 busNo 软删
             supplyRequestDomainService.removeByBusNo(stockOutMapper.toRemoveByBusNoCommand(request, operatorId));
@@ -1257,15 +1256,7 @@ public class InventoryWarehouseStockOutAppService {
         String notLoggedInErrorCode,
         String notLoggedInMessage,
         String noPractitionerMessage) {
-        Long userId = this.currentOperatorResolver.requireOperatorId(notLoggedInErrorCode, notLoggedInMessage);
-        Practitioner practitioner = this.practitionerQueryService.findByUserId(userId);
-        if (practitioner == null) {
-            throw new BusinessException(notLoggedInErrorCode, noPractitionerMessage);
-        }
-        if (practitioner.getId() == null) {
-            throw new BusinessException(notLoggedInErrorCode, noPractitionerMessage);
-        }
-        return practitioner.getId();
+        return this.currentPractitionerResolver.requirePractitionerId(notLoggedInErrorCode, noPractitionerMessage);
     }
 
     /**

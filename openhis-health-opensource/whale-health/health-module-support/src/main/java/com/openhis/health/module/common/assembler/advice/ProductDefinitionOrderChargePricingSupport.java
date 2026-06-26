@@ -17,6 +17,8 @@
 
 package com.openhis.health.module.common.assembler.advice;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
@@ -81,7 +83,7 @@ public final class ProductDefinitionOrderChargePricingSupport {
                 ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
                 DoctorStationAdviceConstants.MSG_CHARGE_QUANTITY_REQUIRED);
         }
-        String unitCode = StringUtils.trimToNull(quantityUnitCode);
+        String unitCode = trimToNull(quantityUnitCode);
         if (unitCode == null) {
             throw new BusinessException(
                 ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,

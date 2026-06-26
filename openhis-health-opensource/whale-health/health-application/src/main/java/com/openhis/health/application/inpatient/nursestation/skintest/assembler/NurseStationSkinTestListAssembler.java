@@ -9,6 +9,8 @@ import com.openhis.health.application.inpatient.nursestation.skintest.dto.NurseS
 import com.openhis.health.application.inpatient.nursestation.skintest.dto.NurseStationSkinTestRowDto;
 import com.openhis.health.domain.clinical.allergyintolerance.queries.model.AllergyIntoleranceRecordQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
+import com.openhis.health.domain.share.enums.AllergyCriticality;
+import com.openhis.health.domain.share.enums.AllergySeverity;
 import com.openhis.health.domain.share.enums.AllergyVerificationStatus;
 import com.openhis.health.domain.share.enums.ClinicalStatus;
 import com.openhis.health.domain.share.enums.EnumInterface;
@@ -21,7 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * IF-IP-STK-02 皮试列表行装配（皮试药 + nurse-pricing SR + 过敏记录 + 批号候选）。
+ * IF-IP-STK-02 皮试列表行装配（皮试药 + doctor-prescription SR + 过敏记录 + 批号候选）。
  */
 @Component
 public class NurseStationSkinTestListAssembler {
@@ -61,9 +63,9 @@ public class NurseStationSkinTestListAssembler {
             row.setPerformLocationId(performLocationId);
 
             ServiceRequestListModel skinTestServiceRequest = null;
-            if (input.getNursePricingSkinTestSrByMedicationRequestId() != null) {
+            if (input.getDoctorPrescriptionSkinTestSrByMedicationRequestId() != null) {
                 skinTestServiceRequest =
-                    input.getNursePricingSkinTestSrByMedicationRequestId().get(medicationRequest.getId());
+                    input.getDoctorPrescriptionSkinTestSrByMedicationRequestId().get(medicationRequest.getId());
             }
             if (skinTestServiceRequest != null) {
                 row.setSkinTestServiceRequestId(skinTestServiceRequest.getId());
@@ -90,6 +92,10 @@ public class NurseStationSkinTestListAssembler {
                 row.setVerificationStatusCode(allergy.getVerificationStatusEnum());
                 row.setVerificationStatusText(
                     this.resolveEnumDisplay(AllergyVerificationStatus.class, allergy.getVerificationStatusEnum()));
+                row.setCriticalityCode(allergy.getCriticalityEnum());
+                row.setCriticalityText(this.resolveEnumDisplay(AllergyCriticality.class, allergy.getCriticalityEnum()));
+                row.setSeverityCode(allergy.getSeverityEnum());
+                row.setSeverityText(this.resolveEnumDisplay(AllergySeverity.class, allergy.getSeverityEnum()));
                 row.setPractitionerId(allergy.getPractitionerId());
                 row.setCheckPractitionerId(allergy.getCheckPractitionerId());
                 row.setDescription(allergy.getDescription());

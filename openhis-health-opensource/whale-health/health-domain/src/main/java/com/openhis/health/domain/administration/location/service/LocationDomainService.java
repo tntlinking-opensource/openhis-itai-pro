@@ -424,7 +424,7 @@ public class LocationDomainService {
      */
     private String allocateLocationBusNoSegment() {
         String prefix = AggregateTypeConstants.LOCATION;
-        return businessSequenceService.getSeq(prefix, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
+        return businessSequenceService.getSeq(prefix, BusinessSequenceConstants.CASCADE_BUS_NO_SEGMENT_SEQ_LENGTH);
     }
 
     /**

@@ -17,8 +17,9 @@
 
 package com.openhis.health.application.inpatient.nursestation.dispensesummary.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
 import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
 import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PageWindowGate;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler.NurseStationDispenseSummaryListAssembler;
@@ -77,7 +78,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -108,9 +108,8 @@ import java.util.Set;
 public class NurseStationDispenseSummaryAppService {
 
     /** 写路径操作人门控（B.6.1）。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
-    /** 写路径医务人员/applicantId 解析。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
+    /** 写路径医务人员/applicantId 解析。 */
     /** 护士站管辖病区收窄（BR-IP-SUM-001）。 */
     private final CurrentManagedWardLocationIdsResolver managedWardLocationIdsResolver;
     /** 分页窗口 Gate（pageNo/pageSize 必填 IF）。 */
@@ -301,14 +300,13 @@ public class NurseStationDispenseSummaryAppService {
      * @param request 勾选发放行
      * @return 汇总单号列表
      */
-    @Transactional(rollbackFor = Exception.class)
     public CreateMedicationSummaryResponse createMedicationSummary(CreateMedicationSummaryRequest request) {
         // Gate ①：dispenseItems 1～500
         this.assertCreateSummaryRequestGate(request);
         // Gate ②：各 encounterId 可见性
         List<Long> encounterIds = this.collectEncounterIdsFromWriteRequest(request);
         this.requireVisibleEncounters(encounterIds);
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             InpatientNurseStationConstants.EX_IP_SUM_204,
             "未登录或登录已失效，无法汇总领药");
         Long applicantId = currentPractitionerResolver.requirePractitionerId(
@@ -378,10 +376,9 @@ public class NurseStationDispenseSummaryAppService {
      * @param request 汇总单号列表
      * @return 已发送汇总单号
      */
-    @Transactional(rollbackFor = Exception.class)
     public SubmitMedicationSummaryResponse submitMedicationSummary(SubmitMedicationSummaryRequest request) {
         this.assertSubmitSummaryRequestGate(request);
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             InpatientNurseStationConstants.EX_IP_SUM_205,
             "未登录或登录已失效，无法发送汇总单");
         Long applicantId = currentPractitionerResolver.requirePractitionerId(
@@ -413,10 +410,9 @@ public class NurseStationDispenseSummaryAppService {
      * @param request 汇总单号列表
      * @return 已撤销汇总单号
      */
-    @Transactional(rollbackFor = Exception.class)
     public CancelMedicationSummaryResponse cancelMedicationSummary(CancelMedicationSummaryRequest request) {
         this.assertCancelSummaryRequestGate(request);
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             InpatientNurseStationConstants.EX_IP_SUM_206,
             "未登录或登录已失效，无法撤销汇总单");
         List<String> summaryNos = this.distinctSummaryNos(request.getSummaryNos());
@@ -450,14 +446,14 @@ public class NurseStationDispenseSummaryAppService {
                 InpatientNurseStationConstants.EX_IP_SUM_101,
                 "请先选择患者或无权访问");
         }
-        String tab = StringUtils.trimToEmpty(request.getMedicineCategoryTab());
+        String tab = trimToEmpty(request.getMedicineCategoryTab());
         if (!InpatientNurseStationConstants.MEDICINE_CATEGORY_TAB_WEST.equals(tab)
             && !InpatientNurseStationConstants.MEDICINE_CATEGORY_TAB_TCM.equals(tab)) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_SUM_101,
                 "请先选择患者或无权访问");
         }
-        String therapy = StringUtils.trimToEmpty(request.getTherapyFilter());
+        String therapy = trimToEmpty(request.getTherapyFilter());
         if (!this.isAllowedTherapyFilter(therapy)) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_SUM_101,

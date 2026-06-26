@@ -23,7 +23,7 @@ import java.util.List;
  * 门诊医生站「诊断录入」跨层共享常量：中西医筛选入参、目录来源分组、快照空串、验证状态码等。
  *
  * <p>与 {@code DiagnosisJsonSnapshotParser}（读侧 JSON 数组元素）、
- * {@code BridgeEncounterDiagnosisSnapshotAssembler#buildSnapshot}（写侧物化）契约一致；修改须双端对齐。</p>
+ * {@code EncounterDiagnosisSnapshotAssembler#buildSnapshot}（写侧物化）契约一致；修改须双端对齐。</p>
  */
 public interface DoctorStationDiagnosisConstants {
 

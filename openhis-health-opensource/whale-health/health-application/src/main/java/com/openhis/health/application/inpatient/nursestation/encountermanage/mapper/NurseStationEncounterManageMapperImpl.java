@@ -17,6 +17,9 @@
 
 package com.openhis.health.application.inpatient.nursestation.encountermanage.mapper;
 
+import static com.openhis.whale.core.application.util.StringUtils.firstNonBlank;
+
+import com.openhis.health.module.common.dto.nursestation.AdmissionVitalSignSubmitDto;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.*;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.request.PagePatientQueueRequest;
@@ -34,6 +37,7 @@ import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
+import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
@@ -169,6 +173,7 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         query.setHouseId(request.getHouseId());
         query.setNurseStationTaskFilter(request.getNurseStationTaskFilter());
         query.setNurseStationExecutionDate(request.getNurseStationExecutionDate());
+        query.setNurseStationStatusFilter(request.getNurseStationStatusFilter());
         if (managedWardIds != null && !managedWardIds.isEmpty()) {
             query.setManagedWardIds(managedWardIds);
         }
@@ -179,12 +184,10 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
     }
 
     /**
-     * 读模型行 + 账户与任务计数 → 列表卡片 DTO。
+     * 读模型行 + 任务计数 → 列表卡片 DTO。
      *
      * @param row               住院信息读模型
      * @param counts            任务计数；可 null 时按 0
-     * @param accountBalance    展示余额
-     * @param lowBalanceWarning 低余额预警
      * @param enrichment        展示增补；可 null
      * @param displayOverlay    队列展示覆盖；可 null
      * @param priorityEnum      病情/优先级 code；可 null
@@ -195,8 +198,6 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
     public PatientQueueItemDto toPatientQueueItemDto(
         InpatientEncounterContextQueryModel row,
         NurseStationTaskCountBundle counts,
-        BigDecimal accountBalance,
-        boolean lowBalanceWarning,
         NurseStationQueueDisplayEnrichment enrichment,
         InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay displayOverlay,
         String priorityEnum,
@@ -229,11 +230,11 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         PatientQueueItemDto dto = new PatientQueueItemDto();
         dto.setEncounterId(row.getEncounterId());
         dto.setAccountId(accountId);
-        dto.setEncounterBusNo(this.firstNonBlank(row.getEncounterBusNo(), overlayBusNo));
+        dto.setEncounterBusNo(firstNonBlank(row.getEncounterBusNo(), overlayBusNo));
         dto.setStatusEnum(row.getStatusEnum());
-        dto.setStatusEnumText(this.firstNonBlank(row.getStatusEnumText(), overlayStatusText));
+        dto.setStatusEnumText(firstNonBlank(row.getStatusEnumText(), overlayStatusText));
         dto.setPatientId(row.getPatientId());
-        dto.setPatientName(this.firstNonBlank(row.getPatientName(), overlayPatientName));
+        dto.setPatientName(firstNonBlank(row.getPatientName(), overlayPatientName));
         dto.setGenderEnum(row.getGenderEnum());
         AdministrativeGender gender = EnumUtil.fromCode(AdministrativeGender.class, row.getGenderEnum());
         if (gender != null) {
@@ -241,21 +242,20 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         }
         dto.setAgeText(row.getAgeText());
         dto.setWardId(row.getWardId());
-        dto.setWardName(this.firstNonBlank(row.getWardName(), overlayWardName));
+        dto.setWardName(firstNonBlank(row.getWardName(), overlayWardName));
         dto.setHouseName(enrichmentHouseName);
         dto.setBedId(row.getBedId());
-        dto.setBedName(this.firstNonBlank(row.getBedName(), overlayBedName));
+        dto.setBedName(firstNonBlank(row.getBedName(), overlayBedName));
         dto.setOrganizationId(row.getOrganizationId());
-        dto.setOrganizationName(this.firstNonBlank(row.getOrganizationName(), overlayOrgName));
+        dto.setOrganizationName(firstNonBlank(row.getOrganizationName(), overlayOrgName));
         dto.setPriorityEnum(priorityEnum);
         dto.setStartTime(row.getStartTime());
-        // 入科时间：InpatientInfo 读模型当前未投影独立列，与 SDD §3.3 约定一致返回 null。
-        dto.setAdmissionTime(null);
+        // 入科时间：读模型未单独投影时与入院时间同源，供详情/表单回显。
+        dto.setAdmissionTime(row.getStartTime());
+        dto.setEndTime(row.getEndTime());
         dto.setTotalAmount(row.getTotalAmount());
         dto.setPaidAmount(row.getPaidAmount());
         dto.setArrearsAmount(row.getArrearsAmount());
-        dto.setAccountBalance(accountBalance);
-        dto.setLowBalanceWarning(lowBalanceWarning);
         int pendingAudit = 0;
         int pendingExecute = 0;
         if (counts != null) {
@@ -277,7 +277,19 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
             admissionPrimaryDiagnosisAssembler.joinDiagnosisDisplayLines(diagnosisLines));
         dto.setPinyinCode(enrichmentPinyin);
         dto.setWubiCode(enrichmentWubi);
+        // 已出院结算列表行展示召回入口（BR-IP-NUR-013）。
+        dto.setRecallEnabled(this.resolveRecallEnabled(row.getStatusEnum()));
         return dto;
+    }
+
+    /**
+     * 判断是否展示出院召回行操作（BR-IP-NUR-013）。
+     *
+     * @param statusEnum 就诊状态 code
+     * @return 仅 {@code DISCHARGED}（已清床离院）时为 true；{@code COMPLETED} 须收银台反结
+     */
+    private boolean resolveRecallEnabled(String statusEnum) {
+        return EncounterStatus.DISCHARGED.getCode().equals(statusEnum);
     }
 
     /**
@@ -300,7 +312,8 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
      * @param base          列表同源字段
      * @param patientPhone  电话
      * @param idCardNo      证件号（已脱敏）
-     * @param participants  全角色参与者
+     * @param participants        全角色参与者
+     * @param admissionVitalSigns 入科时点体征回填；未入科可 null
      * @return 详情 DTO
      */
     @Override
@@ -308,7 +321,8 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         PatientQueueItemDto base,
         String patientPhone,
         String idCardNo,
-        List<ParticipantDto> participants) {
+        List<ParticipantDto> participants,
+        AdmissionVitalSignSubmitDto admissionVitalSigns) {
         if (base == null) {
             return null;
         }
@@ -332,6 +346,7 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         detail.setPriorityEnum(base.getPriorityEnum());
         detail.setStartTime(base.getStartTime());
         detail.setAdmissionTime(base.getAdmissionTime());
+        detail.setEndTime(base.getEndTime());
         detail.setTotalAmount(base.getTotalAmount());
         detail.setPaidAmount(base.getPaidAmount());
         detail.setArrearsAmount(base.getArrearsAmount());
@@ -348,6 +363,7 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         detail.setPatientPhone(patientPhone);
         detail.setIdCardNo(idCardNo);
         detail.setParticipants(participants);
+        detail.setAdmissionVitalSigns(admissionVitalSigns);
         return detail;
     }
 
@@ -399,22 +415,5 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         response.setEncounterId(encounterId);
         response.setSaved(Boolean.TRUE);
         return response;
-    }
-
-    /**
-     * 读模型原值优先，空白时回落展示覆盖。
-     *
-     * @param fromRow     读模型字段
-     * @param fromOverlay 覆盖回填
-     * @return 展示字符串或 null
-     */
-    private String firstNonBlank(String fromRow, String fromOverlay) {
-        if (fromRow != null && !fromRow.isBlank()) {
-            return fromRow;
-        }
-        if (fromOverlay != null && !fromOverlay.isBlank()) {
-            return fromOverlay;
-        }
-        return null;
     }
 }

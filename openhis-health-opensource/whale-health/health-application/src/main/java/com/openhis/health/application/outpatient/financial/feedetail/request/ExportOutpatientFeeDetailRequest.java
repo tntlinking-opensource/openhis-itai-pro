@@ -1,0 +1,64 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ */
+
+package com.openhis.health.application.outpatient.financial.feedetail.request;
+
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.Data;
+import lombok.experimental.Accessors;
+
+import java.util.List;
+
+/**
+ * 导出门诊费用明细请求（IF-OP-FDT-03）；筛选字段与 IF-OP-FDT-02 同源。
+ */
+@Data
+@Accessors(chain = true)
+@Schema(description = "导出门诊费用明细请求")
+public class ExportOutpatientFeeDetailRequest {
+
+    /** 结算业务日起（yyyy-MM-dd，闭区间）。 */
+    @Schema(description = "结算业务日起（yyyy-MM-dd）", requiredMode = Schema.RequiredMode.REQUIRED)
+    private String dateFrom;
+
+    /** 结算业务日止（yyyy-MM-dd，闭区间）。 */
+    @Schema(description = "结算业务日止（yyyy-MM-dd）", requiredMode = Schema.RequiredMode.REQUIRED)
+    private String dateTo;
+
+    /** 挂号科室主键。 */
+    @Schema(description = "挂号科室主键")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long registrationDepartmentId;
+
+    /** 费用大类多选 code。 */
+    @Schema(description = "费用大类 code 多选")
+    private List<String> feeCategoryCodes;
+
+    /** 产品细分类字典 code 多选。 */
+    @Schema(description = "细分类 code 多选")
+    private List<String> subCategoryCodes;
+
+    /** 患者关键字。 */
+    @Schema(description = "患者关键字")
+    private String patientKeyword;
+
+    /** 项目名称关键字。 */
+    @Schema(description = "项目名称关键字")
+    private String productNameKeyword;
+
+    /** 项目编码关键字。 */
+    @Schema(description = "项目编码关键字")
+    private String productCodeKeyword;
+
+    /** 收费人主键。 */
+    @Schema(description = "收费人主键")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long cashierId;
+
+    /** 收退 Tab code。 */
+    @Schema(description = "收退 Tab code")
+    private String tradeDirection;
+}

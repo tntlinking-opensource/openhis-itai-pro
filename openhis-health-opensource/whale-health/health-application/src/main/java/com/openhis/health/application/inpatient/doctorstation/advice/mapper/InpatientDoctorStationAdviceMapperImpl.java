@@ -17,11 +17,15 @@
 
 package com.openhis.health.application.inpatient.doctorstation.advice.mapper;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
+import com.openhis.health.module.common.assembler.advice.ServiceAdviceCommandAssembler;
 import com.openhis.health.module.common.assembler.advice.ServiceAdviceDraftCommandSupport;
-import com.openhis.health.module.common.assembler.advice.ServiceApplyFormOrchestrationSupport;
+import com.openhis.health.module.orchestration.advice.ServiceApplyFormOrchestrationSupport;
 import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
+import com.openhis.health.application.inpatient.doctorstation.advice.dto.CancelStopLongTermAdviceLineRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.InpatientDoctorStationAdviceDraftLineRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.PrepickedProductKeyDto;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.SaveInpatientServiceAdviceDraftLinePayload;
@@ -37,11 +41,13 @@ import com.openhis.health.application.inpatient.doctorstation.advice.dto.StopLon
 import com.openhis.health.application.inpatient.doctorstation.advice.request.CreateDischargeInpatientDoctorStationAdviceRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.CreateDischargeInpatientDoctorStationAdviceResponse;
 import com.openhis.health.domain.custom.encounterhistory.command.RecordDischargeMilestoneCommand;
+import com.openhis.health.domain.medication.medicationrequest.command.CancelStopLongTermMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.StopLongTermMedicationOrderCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.workflow.servicerequest.command.CancelStopServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateDischargeRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.StopServiceRequestCommand;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
@@ -197,6 +203,10 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
                 lookups.add(l);
             }
             q.setPrepickedProductKeys(lookups);
+        }
+        // Pre：西药开立目录排除中草药等 medication_category_code（与门诊 IF-DOR-11 一致）
+        if (request.getExcludeMedicationCategoryCodes() != null && !request.getExcludeMedicationCategoryCodes().isEmpty()) {
+            q.setExcludeMedicationCategoryCodes(new ArrayList<>(request.getExcludeMedicationCategoryCodes()));
         }
         if (StringUtils.isNotBlank(request.getCategoryEnum())) {
             q.setCategoryCode(ServiceApplyFormOrchestrationSupport.resolveApplyFormCategoryCode(request.getCategoryEnum()));
@@ -430,12 +440,7 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
      */
     @Override
     public RemoveServiceRequestDraftCommand toRemoveServiceRequestDraftCommand(Long requestId, Long operatorId) {
-        RemoveServiceRequestDraftCommand cmd = new RemoveServiceRequestDraftCommand();
-        cmd.setOperatorId(operatorId);
-        RemoveServiceRequestDraftCommand.RemoveServiceRequestDraftItemCommand item = new RemoveServiceRequestDraftCommand.RemoveServiceRequestDraftItemCommand();
-        item.setId(requestId);
-        cmd.setItem(item);
-        return cmd;
+        return ServiceAdviceCommandAssembler.toRemoveServiceRequestDraftCommand(requestId, operatorId);
     }
 
     /**
@@ -498,12 +503,7 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
      */
     @Override
     public WithdrawSignedServiceRequestCommand toWithdrawServiceRequestCommand(Long id, Long operatorId) {
-        WithdrawSignedServiceRequestCommand cmd = new WithdrawSignedServiceRequestCommand();
-        cmd.setOperatorId(operatorId);
-        WithdrawSignedServiceRequestCommand.WithdrawSignedServiceRequestItemCommand item = new WithdrawSignedServiceRequestCommand.WithdrawSignedServiceRequestItemCommand();
-        item.setId(id);
-        cmd.setItem(item);
-        return cmd;
+        return ServiceAdviceCommandAssembler.toWithdrawServiceRequestCommand(id, operatorId);
     }
 
     /**
@@ -565,6 +565,44 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
             item.setStopTime(LocalDateTime.now());
         }
         cmd.setItems(List.of(item));
+        return cmd;
+    }
+
+    /**
+     * 装配长期药品取消停嘱命令（IF-IP-DOR-25）。
+     *
+     * @param line       取消停嘱行
+     * @param operatorId 操作人
+     * @return 领域命令
+     */
+    @Override
+    public CancelStopLongTermMedicationOrderCommand toCancelStopLongTermMedicationOrderCommand(
+        CancelStopLongTermAdviceLineRequest line,
+        Long operatorId
+    ) {
+        CancelStopLongTermMedicationOrderCommand cmd = new CancelStopLongTermMedicationOrderCommand();
+        cmd.setOperatorId(operatorId);
+        // 取消停嘱仅恢复状态，不携带停嘱时间等附加字段。
+        cmd.setId(line.getRequestId());
+        return cmd;
+    }
+
+    /**
+     * 装配诊疗取消停嘱命令（IF-IP-DOR-25）。
+     *
+     * @param line       取消停嘱行
+     * @param operatorId 操作人
+     * @return 领域命令
+     */
+    @Override
+    public CancelStopServiceRequestCommand toCancelStopServiceRequestCommand(
+        CancelStopLongTermAdviceLineRequest line,
+        Long operatorId
+    ) {
+        CancelStopServiceRequestCommand cmd = new CancelStopServiceRequestCommand();
+        cmd.setOperatorId(operatorId);
+        // 取消停嘱仅恢复状态，不携带停嘱时间等附加字段。
+        cmd.setId(line.getRequestId());
         return cmd;
     }
 
@@ -650,7 +688,7 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
      * @return {@link TherapyType#getCode()}
      */
     private String resolveTherapyTypeCode(InpatientDoctorStationAdviceDraftLineRequest line) {
-        String code = StringUtils.trimToEmpty(line.getTherapyTypeCode());
+        String code = trimToEmpty(line.getTherapyTypeCode());
         if (StringUtils.isBlank(code)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_THERAPY_TYPE_REQUIRED);
         }

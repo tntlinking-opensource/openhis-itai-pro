@@ -43,7 +43,7 @@ import com.openhis.health.application.inventory.warehouse.purchaseorder.response
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.WithdrawPurchaseOrderApprovalResponse;
 import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PageWindowGate;
 import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
@@ -103,7 +103,7 @@ public class InventoryWarehousePurchaseOrderAppService {
     public static final long ALL_WAREHOUSES_LIST_FILTER_LOCATION_ID = 0L;
 
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     private final PageWindowGate pageWindowGate;
     private final PractitionerQueryService practitionerQueryService;
     private final SupplyRequestDomainService supplyRequestDomainService;
@@ -271,7 +271,7 @@ public class InventoryWarehousePurchaseOrderAppService {
         // 明细行制单时刻 occurrence_time 由前端录入，落库供应请求行
         this.assertPurchaseOrderLinesOccurrencePresent(request.getLines());
 
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录");
         Long applicantId = this.requireWarehousePreparerPractitionerId(
             ErrorCodeConstants.WHS_PO_101,
             "用户未登录",
@@ -334,7 +334,7 @@ public class InventoryWarehousePurchaseOrderAppService {
         }
         this.assertPurchaseOrderLinesOccurrencePresent(request.getLines());
 
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录");
         Long applicantId = this.requireWarehousePreparerPractitionerId(
             ErrorCodeConstants.WHS_PO_101,
             "用户未登录",
@@ -371,7 +371,7 @@ public class InventoryWarehousePurchaseOrderAppService {
         try {
             // Cmd：领域提交审批
             supplyRequestDomainService.submitApproval(purchaseOrderMapper.toSubmitApprovalCommand(request,
-                currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录"),
+                currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录"),
                 applicantId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_PO_003);
@@ -394,7 +394,7 @@ public class InventoryWarehousePurchaseOrderAppService {
         this.gateBusNo(request.getBusNo());
         try {
             // Cmd：领域撤回审批
-            supplyRequestDomainService.withdrawApproval(purchaseOrderMapper.toWithdrawApprovalCommand(request, currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录")));
+            supplyRequestDomainService.withdrawApproval(purchaseOrderMapper.toWithdrawApprovalCommand(request, currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录")));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_PO_003);
         }
@@ -420,7 +420,7 @@ public class InventoryWarehousePurchaseOrderAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_104, "订货单已同意，禁止重复同意");
         }
 
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录");
 
         try {
             // Cmd：领域状态机同意订货单
@@ -447,7 +447,7 @@ public class InventoryWarehousePurchaseOrderAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_PO_001, "驳回原因不能为空");
         }
 
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录");
 
         try {
             // Cmd：领域驳回请求
@@ -473,7 +473,7 @@ public class InventoryWarehousePurchaseOrderAppService {
         this.gateBusNo(request.getBusNo());
         try {
             // Cmd：领域按 busNo 软删
-            supplyRequestDomainService.removeByBusNo(purchaseOrderMapper.toRemoveByBusNoCommand(request, currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录")));
+            supplyRequestDomainService.removeByBusNo(purchaseOrderMapper.toRemoveByBusNoCommand(request, currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_PO_101, "用户未登录")));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_PO_005);
         }
@@ -485,15 +485,7 @@ public class InventoryWarehousePurchaseOrderAppService {
         String notLoggedInErrorCode,
         String notLoggedInMessage,
         String noPractitionerMessage) {
-        Long userId = this.currentOperatorResolver.requireOperatorId(notLoggedInErrorCode, notLoggedInMessage);
-        Practitioner practitioner = this.practitionerQueryService.findByUserId(userId);
-        if (practitioner == null) {
-            throw new BusinessException(notLoggedInErrorCode, noPractitionerMessage);
-        }
-        if (practitioner.getId() == null) {
-            throw new BusinessException(notLoggedInErrorCode, noPractitionerMessage);
-        }
-        return practitioner.getId();
+        return this.currentPractitionerResolver.requirePractitionerId(notLoggedInErrorCode, noPractitionerMessage);
     }
 
     private void assertPurchaseOrderLinesOccurrencePresent(List<PurchaseOrderLineDto> lines) {

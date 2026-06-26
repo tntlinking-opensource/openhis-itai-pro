@@ -68,6 +68,18 @@ public class NurseStationSkinTestRowDto {
     /** 验证状态展示文案。 */
     private String verificationStatusText;
 
+    /** 危险程度 code。 */
+    private String criticalityCode;
+
+    /** 危险程度展示文案。 */
+    private String criticalityText;
+
+    /** 严重程度 code。 */
+    private String severityCode;
+
+    /** 严重程度展示文案。 */
+    private String severityText;
+
     /** 执行护士主键。 */
     private Long practitionerId;
 

@@ -320,11 +320,12 @@ public class OrderTemplateMapperImpl implements OrderTemplateMapper {
     }
 
     /**
-     * 三段绑定头列表 → 绑定分组 DTO，并按 searchKey 过滤各段。
+     * 四段绑定头列表 → 绑定分组 DTO，并按 searchKey 过滤各段。
      *
      * @param personalList 个人列表
      * @param departmentList 科室列表
      * @param hospitalList 全院列表
+     * @param agreementList 协定处方列表
      * @param searchKey 名称关键字
      * @return 分段 DTO
      */
@@ -333,12 +334,14 @@ public class OrderTemplateMapperImpl implements OrderTemplateMapper {
         List<OrderTemplateHeaderQueryModel> personalList,
         List<OrderTemplateHeaderQueryModel> departmentList,
         List<OrderTemplateHeaderQueryModel> hospitalList,
+        List<OrderTemplateHeaderQueryModel> agreementList,
         String searchKey
     ) {
         OrderTemplateBindingGroupDto dto = new OrderTemplateBindingGroupDto();
         dto.setPersonalList(filterHeaderRowsByKeyword(toHeaderRowDtos(personalList), normalizeSearchKey(searchKey)));
         dto.setDepartmentList(filterHeaderRowsByKeyword(toHeaderRowDtos(departmentList), normalizeSearchKey(searchKey)));
         dto.setHospitalList(filterHeaderRowsByKeyword(toHeaderRowDtos(hospitalList), normalizeSearchKey(searchKey)));
+        dto.setAgreementList(filterHeaderRowsByKeyword(toHeaderRowDtos(agreementList), normalizeSearchKey(searchKey)));
         return dto;
     }
 

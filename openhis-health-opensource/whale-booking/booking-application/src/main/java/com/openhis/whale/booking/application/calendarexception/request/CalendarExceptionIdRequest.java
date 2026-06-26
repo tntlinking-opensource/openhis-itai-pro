@@ -11,6 +11,7 @@ import lombok.Setter;
 @Setter
 public class CalendarExceptionIdRequest {
 
+    /** 日历例外主键。 */
     @NotNull
     private Long id;
 }

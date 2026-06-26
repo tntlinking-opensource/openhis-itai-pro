@@ -17,6 +17,9 @@
 
 package com.openhis.whale.emr.application.metadata.support;
 
+import static com.openhis.whale.core.application.util.StringUtils.firstNonBlankOrEmpty;
+import static com.openhis.whale.core.application.util.StringUtils.nullToEmpty;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openhis.whale.emr.domain.entity.MetadataFieldDef;
@@ -94,13 +97,13 @@ public class MetadataValueResolver {
         String key = def.getFieldKey();
         try {
             return switch (source) {
-                case REQUEST -> firstNonBlank(overrides.get(key), def.getDefaultValue());
+                case REQUEST -> firstNonBlankOrEmpty(overrides.get(key), def.getDefaultValue());
                 case MANUAL, CONST -> nullToEmpty(def.getDefaultValue());
                 case SYSTEM, PATIENT, ENCOUNTER, ADMISSION, INSURANCE, ORG, DEPT, WARD,
                         PRACTITIONER, USER, USER_DEPT, DOCUMENT, TEMPLATE, VERSION,
                         DIAGNOSIS, ALLERGY, VITAL_SIGN, LAB_SUMMARY, EXAM_SUMMARY,
                         DICT, READ_MODEL, SETTING, HTTP_API ->
-                        firstNonBlank(resolveFromPath(ctx, def.getSourcePath()), def.getDefaultValue());
+                        firstNonBlankOrEmpty(resolveFromPath(ctx, def.getSourcePath()), def.getDefaultValue());
                 case EXPR -> resolveExpr(def, ctx, overrides);
                 case FIELD_REF -> null;
             };
@@ -177,19 +180,5 @@ public class MetadataValueResolver {
         } catch (IllegalArgumentException ex) {
             return MetadataValueSource.CONST;
         }
-    }
-
-    private static String firstNonBlank(String primary, String fallback) {
-        if (StringUtils.hasText(primary)) {
-            return primary.trim();
-        }
-        return nullToEmpty(fallback);
-    }
-
-    private static String nullToEmpty(String v) {
-        if (v != null) {
-            return v;
-        }
-        return "";
     }
 }

@@ -68,11 +68,8 @@ public class OrganizationDomainService {
             this.fillInsurance(entity, item.getInsuranceInfo());
             entity.initAsActive();
             entity.assertCreateAllowed();
-            if (StringUtils.isBlank(item.getBusNo())) {
-                entity.setBusNo(this.buildBusNo(item.getParentId(), parentMap));
-            } else {
-                entity.setBusNo(item.getBusNo());
-            }
+            // 级联机构编码由父节点与子段序列拼接，禁止命令行注入（B.10.9）。
+            entity.setBusNo(this.buildBusNo(item.getParentId(), parentMap));
             toSave.add(entity);
         }
         List<Organization> saved = organizationRepository.saveAll(toSave);
@@ -119,9 +116,6 @@ public class OrganizationDomainService {
                 this.assertNameUnique(entity.getParentId(), item.getName(), entity.getId());
             }
             entity.setName(item.getName());
-            if (StringUtils.isNotBlank(item.getBusNo())) {
-                entity.setBusNo(item.getBusNo());
-            }
             entity.setClassEnum(item.getClassEnum());
             entity.setDisplayOrder(item.getDisplayOrder());
             entity.setDefDoctorId(item.getDefDoctorId());
@@ -377,7 +371,7 @@ public class OrganizationDomainService {
      */
     private String allocateOrganizationBusNoSegment() {
         String prefix = AggregateTypeConstants.ORGANIZATION;
-        return businessSequenceService.getSeq(prefix, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
+        return businessSequenceService.getSeq(prefix, BusinessSequenceConstants.CASCADE_BUS_NO_SEGMENT_SEQ_LENGTH);
     }
 
     /**

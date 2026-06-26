@@ -62,4 +62,24 @@ public class PreRegisterSettlementResponse {
     @Schema(description = "号源ID")
     /** 号源ID（业务字段）。 */
     private Long slotId;
+
+    /** 是否已完成医保预结算（2203→2206）。 */
+    @Schema(description = "是否已完成医保预结算")
+    private Boolean insurancePreSettled;
+
+    /** 医保批次号 chrg_bchno（缴费 confirm 2207 时使用）。 */
+    @Schema(description = "医保批次号")
+    private String ybChrgBchno;
+
+    @Schema(description = "医保医疗费总额")
+    private BigDecimal ybMedfeeSumamt;
+
+    @Schema(description = "医保基金支付")
+    private BigDecimal ybFundPaySumamt;
+
+    @Schema(description = "医保个人账户支付")
+    private BigDecimal ybAcctPay;
+
+    @Schema(description = "医保个人现金支付")
+    private BigDecimal ybPsnCashPay;
 }

@@ -17,6 +17,8 @@
 
 package com.openhis.health.domain.administration.specimendefinition.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
 import com.openhis.health.domain.administration.specimendefinition.entity.SpecimenDefinition;
 import com.openhis.health.domain.administration.specimendefinition.queries.PageSpecimenDefinitionQuery;
 import com.openhis.health.domain.administration.specimendefinition.queries.SearchSpecimenDefinitionQuery;
@@ -71,7 +73,7 @@ public class SpecimenDefinitionQueryService {
             safeQuery = new PageSpecimenDefinitionQuery();
         }
         // 构建查询条件：解析状态、种类与关键字过滤口径
-        final String keywordTrim = StringUtils.trimToEmpty(safeQuery.getKeyword());
+        final String keywordTrim = trimToEmpty(safeQuery.getKeyword());
         final String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keywordTrim);
         String statusEnumFilter = null;
         if (StringUtils.isNotBlank(safeQuery.getStatusEnum())) {
@@ -157,7 +159,7 @@ public class SpecimenDefinitionQueryService {
             statusEnumFilter = safeQuery.getStatusEnum().trim();
         }
         final String statusEnumForSpec = statusEnumFilter;
-        final String keywordTrim = StringUtils.trimToEmpty(safeQuery.getKeyword());
+        final String keywordTrim = trimToEmpty(safeQuery.getKeyword());
         final String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keywordTrim);
         String typeEnumFilter = null;
         if (StringUtils.isNotBlank(safeQuery.getTypeEnum())) {

@@ -23,10 +23,12 @@ import com.openhis.health.domain.diagnosis.bodystructure.service.BodyStructureQu
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
+import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequestDetail;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.InpatientAutoRollNursingLevelQueryModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestDetailListModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.OffsetVerificationModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestHistoryModel;
@@ -52,6 +54,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 服务申请读侧查询服务。
@@ -513,6 +516,110 @@ public class ServiceRequestQueryService {
                 "住院护士站已划价诊疗列表查询时 encounterIds 不能为空");
         }
         return this.mapListModels(this.findInpatientNursePricingOrders(encounterIds, pricedTimeFrom, pricedTimeTo, parentBasedOnId));
+    }
+
+    /**
+     * 按主键解析医嘱业务单号（Port 读路径）。
+     */
+    public String resolveBusNoByServiceRequestId(Long serviceRequestId) {
+        if (serviceRequestId == null) {
+            return null;
+        }
+        ServiceRequest request = serviceRequestRepository.findById(serviceRequestId).orElse(null);
+        if (request == null || Boolean.TRUE.equals(request.getIsDeleted())) {
+            return null;
+        }
+        return request.getBusNo();
+    }
+
+    /**
+     * 按主键解析医嘱所属就诊（Port 读路径）。
+     */
+    public Long resolveEncounterIdByServiceRequestId(Long serviceRequestId) {
+        if (serviceRequestId == null) {
+            return null;
+        }
+        ServiceRequest request = serviceRequestRepository.findById(serviceRequestId).orElse(null);
+        if (request == null || Boolean.TRUE.equals(request.getIsDeleted())) {
+            return null;
+        }
+        return request.getEncounterId();
+    }
+
+    /**
+     * 解析 billDate 当日最后有效校对护理级别（AS-IP-NUR-013 BR-IP-ARG-009；DM-WKF-004 §6.2.25）。
+     *
+     * <p>口径：医生开立 + category {@code 26}；须已校对（{@code check_time} 非空）；停嘱后 {@code occurrence_end_time}
+     * 早于 billDate 自然日则不再参与；同日内换级取 {@code check_time} 最大者。</p>
+     *
+     * @param encounterId 就诊主键
+     * @param billDate    滚费业务日（前一日自然日）
+     * @return 有效护理级别；无匹配时 empty
+     * @throws BusinessException {@code encounterId} 或 {@code billDate} 为空
+     */
+    public Optional<InpatientAutoRollNursingLevelQueryModel> findLastEffectiveNursingLevelForAutoRoll(
+        Long encounterId,
+        LocalDate billDate) {
+        if (encounterId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "解析滚费护理级别时 encounterId 不能为空");
+        }
+        if (billDate == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "解析滚费护理级别时 billDate 不能为空");
+        }
+        Specification<ServiceRequest> specification = (root, criteriaQuery, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(root.get(FieldNameConstants.ENCOUNTER_ID), encounterId),
+            cb.equal(root.get(FieldNameConstants.CATEGORY_ENUM), ServiceRequestCategoryConstants.SERVICE_CATEGORY_NURSING),
+            cb.equal(root.get(FieldNameConstants.GENERATE_SOURCE_ENUM), GenerateSource.DOCTOR_PRESCRIPTION.getCode()),
+            root.get(FieldNameConstants.STATUS_ENUM).in(
+                RequestStatus.VERIFIED.getCode(),
+                RequestStatus.STOPPED.getCode()));
+        List<ServiceRequest> rows = serviceRequestRepository.findAll(specification);
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+        // Loop：在 billDate 自然日口径下筛选有效护理级别，取 check_time 最大者（换级 stop-old-start-new）。
+        ServiceRequest best = null;
+        for (ServiceRequest row : rows) {
+            if (row == null || row.getCheckTime() == null) {
+                continue;
+            }
+            LocalDate verifiedDate = row.getCheckTime().toLocalDate();
+            // 校对日晚于 billDate 的医嘱在 billDate 尚未生效。
+            if (verifiedDate.isAfter(billDate)) {
+                continue;
+            }
+            // 停嘱止算：结束自然日早于 billDate 则 billDate 不再计费。
+            if (RequestStatus.STOPPED.getCode().equals(row.getStatusEnum())) {
+                LocalDateTime endTime = row.getOccurrenceEndTime();
+                if (endTime != null && endTime.toLocalDate().isBefore(billDate)) {
+                    continue;
+                }
+            }
+            if (best == null) {
+                best = row;
+                continue;
+            }
+            if (row.getCheckTime().isAfter(best.getCheckTime())) {
+                best = row;
+            }
+        }
+        if (best == null) {
+            return Optional.empty();
+        }
+        InpatientAutoRollNursingLevelQueryModel model = new InpatientAutoRollNursingLevelQueryModel();
+        model.setServiceRequestId(best.getId());
+        model.setActivityId(best.getActivityId());
+        model.setQuantity(best.getQuantity());
+        model.setUnitCode(best.getUnitCode());
+        model.setRequesterId(best.getRequesterId());
+        model.setCheckTime(best.getCheckTime());
+        model.setStatusEnum(best.getStatusEnum());
+        return Optional.of(model);
     }
 
     /**

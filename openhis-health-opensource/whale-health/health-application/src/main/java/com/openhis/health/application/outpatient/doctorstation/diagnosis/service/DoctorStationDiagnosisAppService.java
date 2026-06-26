@@ -18,7 +18,6 @@
 package com.openhis.health.application.outpatient.doctorstation.diagnosis.service;
 
 import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
 import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
@@ -38,15 +37,16 @@ import com.openhis.health.domain.custom.conditiontemplate.service.ConditionTempl
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.bridge.shared.diagnosis.BridgeEncounterDiagnosisSnapshotAssembler;
-import com.openhis.health.bridge.shared.diagnosis.PatientHistoryCommonDiagnosisAssembler;
-import com.openhis.health.bridge.shared.diagnosis.PatientHistoryCommonDiagnosisRow;
+import com.openhis.health.module.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
+import com.openhis.health.module.shared.diagnosis.PatientHistoryCommonDiagnosisAssembler;
+import com.openhis.health.module.shared.diagnosis.PatientHistoryCommonDiagnosisRow;
 import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.ConditionTemplateBinding;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
+import com.openhis.whale.core.application.session.CurrentOperatorResolver;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -67,7 +67,7 @@ public class DoctorStationDiagnosisAppService {
 
     private final EncounterQueryService encounterQueryService;
     private final EncounterContextFacade encounterContextFacade;
-    private final BridgeEncounterDiagnosisSnapshotAssembler bridgeEncounterDiagnosisSnapshotAssembler;
+    private final EncounterDiagnosisSnapshotAssembler encounterDiagnosisSnapshotAssembler;
     private final PatientHistoryCommonDiagnosisAssembler patientHistoryCommonDiagnosisAssembler;
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
     private final ConditionTemplateQueryService conditionTemplateQueryService;
@@ -76,6 +76,7 @@ public class DoctorStationDiagnosisAppService {
     private final EncounterDomainService encounterDomainService;
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     private final CurrentPractitionerResolver currentPractitionerResolver;
+    /** 登录用户个人模板读路径须用 {@code whale_users.id}，与医务人员模板主键分离。 */
     private final CurrentOperatorResolver currentOperatorResolver;
     private final CodeSystemQueryService codeSystemQueryService;
     private final DoctorStationDiagnosisMapper doctorStationDiagnosisMapper;
@@ -99,7 +100,7 @@ public class DoctorStationDiagnosisAppService {
         }
         // 实时扫表拼装诊断行，禁止仅依赖上下文 diagnosisJson 中转（读模型废止后 §四）。
         List<EncounterDiagnosisRowDto> rows = this.doctorStationDiagnosisMapper.parseDiagnosisJson(
-            this.bridgeEncounterDiagnosisSnapshotAssembler.buildSnapshot(request.getEncounterId()).diagnosisJson());
+            this.encounterDiagnosisSnapshotAssembler.buildSnapshot(request.getEncounterId()).diagnosisJson());
         return this.doctorStationDiagnosisMapper.toEncounterDiagnosisResponse(rows);
     }
 
@@ -201,7 +202,7 @@ public class DoctorStationDiagnosisAppService {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前就诊类别不允许在此保存门诊诊断");
         }
         // 解析当前操作人主键，未登录时阻断写操作
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请先登录后再操作");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请先登录后再操作");
         SaveEncounterDiagnosisResponse response;
         try {
             SaveDoctorDiagnosisCommand saveCmd =
@@ -246,7 +247,7 @@ public class DoctorStationDiagnosisAppService {
             throw new BusinessException(ErrorCodeConstants.CONDITION_RULE_CONFLICT, "先撤销或调整相关医嘱后再删");
         }
         // 解析当前操作人主键
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请先登录后再操作");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请先登录后再操作");
         try {
             RemoveEncounterDiagnosisAssociationCommand rmCmd = new RemoveEncounterDiagnosisAssociationCommand();
             RemoveEncounterDiagnosisAssociationCommand.RemoveEncounterDiagnosisAssociationItemCommand item =

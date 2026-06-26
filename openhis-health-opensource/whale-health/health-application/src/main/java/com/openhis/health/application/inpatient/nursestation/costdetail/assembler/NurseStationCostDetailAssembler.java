@@ -17,10 +17,10 @@
 
 package com.openhis.health.application.inpatient.nursestation.costdetail.assembler;
 
-import com.openhis.health.module.querysupport.financial.NurseStationCostDetailReadAssembler;
-import com.openhis.health.module.querysupport.financial.dto.NurseStationCostCategoryTotalDto;
-import com.openhis.health.module.querysupport.financial.dto.NurseStationCostDetailLineDto;
-import com.openhis.health.module.querysupport.financial.dto.NurseStationCostDetailTotalsDto;
+import com.openhis.health.module.querysupport.nursestation.NurseStationCostDetailReadAssembler;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationCostCategoryTotalDto;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationCostDetailLineDto;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationCostDetailTotalsDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostSummaryLineDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.InpatientNurseStationCostDetailChargeRow;

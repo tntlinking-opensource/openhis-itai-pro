@@ -21,6 +21,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * 按目标定价反查规则查询模型。
@@ -41,6 +42,10 @@ public class ChargeItemAutoGenRuleQueryModel {
      */
     private String ruleName;
     /**
+     * 住院就诊标识。
+     */
+    private Long encounterId;
+    /**
      * 触发来源表名。
      */
     private String triggerSourceTable;
@@ -51,7 +56,7 @@ public class ChargeItemAutoGenRuleQueryModel {
     /**
      * 目标收费项定义主键。
      */
-    private Long targetDefinitionId;
+    private Long chargeDefinitionId;
     /**
      * 执行机构标识。
      */
@@ -68,4 +73,8 @@ public class ChargeItemAutoGenRuleQueryModel {
      * 备注（可空）。
      */
     private String remark;
+    /**
+     * 创建时刻（滚费任务按创建日过滤，BR-IP-ARG-013）。
+     */
+    private LocalDateTime createdAt;
 }

@@ -13,7 +13,9 @@ import java.util.List;
 @Setter
 public class LoadMedTechFormInitResponse {
 
+    /** 诊室/执行地点选项。 */
     private List<OptionDto> clinicLocations;
 
+    /** 医疗服务选项。 */
     private List<OptionDto> healthcareServices;
 }

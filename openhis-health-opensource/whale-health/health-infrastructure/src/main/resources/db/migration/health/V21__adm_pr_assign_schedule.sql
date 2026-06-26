@@ -18,9 +18,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_pr_assign_schedule" (
 
     CONSTRAINT "adm_pr_assign_schedule_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_pr_assign_schedule IS '管理域 pr assign schedule';
-
 COMMENT ON COLUMN adm_pr_assign_schedule.id IS '主键';
 COMMENT ON COLUMN adm_pr_assign_schedule.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_pr_assign_schedule.created_at IS '创建时间';

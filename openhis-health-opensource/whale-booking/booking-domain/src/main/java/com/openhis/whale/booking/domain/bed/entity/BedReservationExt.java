@@ -18,21 +18,27 @@ import java.time.LocalDate;
 @Table(name = "bkg_bed_reservation_ext")
 public class BedReservationExt extends BaseAuditedEntity {
 
+    /** 关联预约主键（wkf_appointment_queue）。 */
     @Column(name = "appointment_id", nullable = false)
     private Long appointmentId;
 
+    /** 床位/房间 Location 主键。 */
     @Column(name = "location_id", nullable = false)
     private Long locationId;
 
+    /** 患者主键。 */
     @Column(name = "patient_id")
     private Long patientId;
 
+    /** 病区 Location 主键。 */
     @Column(name = "ward_location_id")
     private Long wardLocationId;
 
+    /** 拟入院日期。 */
     @Column(name = "intended_admission_date")
     private LocalDate intendedAdmissionDate;
 
+    /** 备注。 */
     @Column(name = "remark")
     private String remark;
 }

@@ -54,6 +54,12 @@ public class ChargeItemAutoGen extends BaseAuditedEntity {
     private String statusEnum;
 
     /**
+     * 住院就诊标识（adm_encounter.id）。
+     */
+    @Column(name = "encounter_id", nullable = false)
+    private Long encounterId;
+
+    /**
      * 触发来源表名（落库字符串须与来源聚合主表表名一致）。
      */
     @Column(name = "trigger_source_table", nullable = false)
@@ -66,10 +72,10 @@ public class ChargeItemAutoGen extends BaseAuditedEntity {
     private Long triggerSourceId;
 
     /**
-     * 目标定价标识。
+     * 收费项定价标识（adm_charge_item_definition.id）。
      */
-    @Column(name = "target_definition_id", nullable = false)
-    private Long targetDefinitionId;
+    @Column(name = "charge_definition_id", nullable = false)
+    private Long chargeDefinitionId;
 
     /**
      * 执行科室标识（为空表示全局规则）。
@@ -112,14 +118,17 @@ public class ChargeItemAutoGen extends BaseAuditedEntity {
         if (this.statusEnum == null) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_INVALID_ARGUMENT, "状态不能为空");
         }
+        if (this.encounterId == null) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_INVALID_ARGUMENT, "住院就诊标识不能为空");
+        }
         if (this.triggerSourceTable == null || this.triggerSourceTable.trim().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_INVALID_ARGUMENT, "触发来源表名不能为空");
         }
         if (this.triggerSourceId == null) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_INVALID_ARGUMENT, "触发来源主键不能为空");
         }
-        if (this.targetDefinitionId == null) {
-            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_INVALID_ARGUMENT, "目标定价标识不能为空");
+        if (this.chargeDefinitionId == null) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_INVALID_ARGUMENT, "收费项定价标识不能为空");
         }
         if (this.quantityValue == null) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_INVALID_ARGUMENT, "默认数量不能为空");

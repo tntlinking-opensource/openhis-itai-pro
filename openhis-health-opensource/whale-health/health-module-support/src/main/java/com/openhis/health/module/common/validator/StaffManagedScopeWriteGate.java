@@ -11,6 +11,7 @@ package com.openhis.health.module.common.validator;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.whale.core.application.session.CurrentOperatorResolver;
 import com.openhis.whale.core.infrastructure.multitenancy.PlatformTenantAccessPolicy;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import com.openhis.whale.core.infrastructure.security.ICurrentUser;

@@ -17,6 +17,8 @@
 
 package com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
 import com.openhis.health.module.common.assembler.product.MedicationPackageSplitQuantityDisplaySupport;
 import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummaryOrderRowDto;
@@ -71,7 +73,7 @@ public class NurseStationDispenseSummaryListAssembler {
         if (executeOrders == null || executeOrders.isEmpty()) {
             return result;
         }
-        String tab = StringUtils.trimToEmpty(medicineCategoryTab);
+        String tab = trimToEmpty(medicineCategoryTab);
         for (MedicationRequestListQueryModel row : executeOrders) {
             if (row == null || row.getId() == null) {
                 continue;

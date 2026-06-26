@@ -33,7 +33,6 @@ import com.openhis.health.domain.share.events.workflow.devicedispense.DeviceDisp
 import com.openhis.health.domain.share.events.workflow.devicedispense.DeviceDispenseSummaryCancelledEvent;
 import com.openhis.health.domain.share.events.workflow.devicedispense.DeviceDispenseSummaryCompletedEvent;
 import com.openhis.health.domain.share.events.workflow.devicedispense.DeviceDispensedEvent;
-import com.openhis.health.domain.workflow.devicedispense.command.AppendCompletedDeviceDispenseStepCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.CancelDeviceDispenseSummaryCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.CancelUndispensedDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.CreatePendingRefundDeviceDispenseCommand;
@@ -538,7 +537,7 @@ public class DeviceDispenseDomainService {
         source.assertPendingRefundCreatable(item.getRefundQuantity());
 
         DeviceDispense line = this.shallowCopyForNew(source);
-        line.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.DEVICE_DISPENSE, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH) + "-R");
+        line.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.DEVICE_DISPENSE, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         line.setBasedOnTable("wkf_device_dispense");
         line.setBasedOnId(source.getId());
         line.toPendingRefund(item.getRefundQuantity());
@@ -781,54 +780,6 @@ public class DeviceDispenseDomainService {
         dispense.completedToCancelled(command.getReason());
         deviceDispenseRepository.save(dispense);
         domainEventPublisher.publish(new DeviceDispenseCancelledEvent(dispense.getId(), dispense.getBusNo(), command.getOperatorId()));
-    }
-
-    /**
-     * 分次发放追加子单：子 busNo 为 {@code parentBusNo.stepNo}，父单累计部分完成，子单直接完成并发布发放事件。
-     *
-     * @param command 批次内一条，须含 parentBusNo、stepNo、数量及追溯信息
-     * @return 子单主键
-     * @throws BusinessException 父单不存在、分次号冲突或不可追加时
-     */
-    public Long appendCompletedDeviceDispenseStep(AppendCompletedDeviceDispenseStepCommand command) {
-        List<AppendCompletedDeviceDispenseStepCommand.AppendCompletedDeviceDispenseStepItemCommand> items = command.resolveItems();
-        // 业务分支处理。
-        if (items.size() != 1) {
-            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "一次仅允许追加一条分次记录");
-        }
-        AppendCompletedDeviceDispenseStepCommand.AppendCompletedDeviceDispenseStepItemCommand item = items.get(0);
-        // 业务分支处理。
-        if (item.getParentBusNo() == null || item.getParentBusNo().isBlank() || item.getStepNo() == null) {
-            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "parentBusNo 与 stepNo 不能为空");
-        }
-        // 业务分支处理。
-        if (item.getQuantity() == null || item.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "quantity 必须大于 0");
-        }
-        DeviceDispense parent = deviceDispenseRepository.findByBusNo(item.getParentBusNo().trim()).orElseThrow(
-            () -> new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "父发放单不存在"));
-        String childBusNo = item.getParentBusNo().trim() + "." + item.getStepNo();
-        parent.assertStepAppendable(childBusNo);
-        // 业务分支处理。
-        if (deviceDispenseRepository.findByBusNo(childBusNo).isPresent()) {
-            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_RULE_CONFLICT, "分次业务号已存在");
-        }
-
-        DeviceDispense child = this.shallowCopyForNew(parent);
-        child.setBusNo(childBusNo);
-        child.setQuantity(item.getQuantity());
-        child.setLotNumber(item.getLotNumber());
-        child.setTraceNo(item.getTraceNo());
-        LocalDateTime now = LocalDateTime.now();
-        child.initCompleted(command.getOperatorId(), item.getQuantity(), now);
-
-        DeviceDispense saved = deviceDispenseRepository.save(child);
-        parent.partCompletedAccumulate();
-        deviceDispenseRepository.save(parent);
-
-        domainEventPublisher.publish(new DeviceDispensedEvent(
-            saved.getId(), saved.getBusNo(), item.getQuantity(), saved.getLotNumber(), saved.getTraceNo(), command.getOperatorId()));
-        return saved.getId();
     }
 
     /**

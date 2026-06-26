@@ -29,14 +29,14 @@ import lombok.experimental.Accessors;
  * <p>继承 {@link AbstractHealthPageRequest}，统一分页契约：
  * {@code pageNo} 为 1-based，{@code pageSize} 经边界防护，{@code keyword} 为可选检索关键字。</p>
  *
- * <p><strong>注意</strong>：机构收窄通过 {@link com.openhis.whale.core.infrastructure.security.ICurrentUser}
- * 在查询服务层完成，请求中禁止承载 organizationId（B.10.11）。</p>
+ * <p><strong>注意</strong>：机构收窄由应用层 {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver#resolveOrganizationUnitIdForQuery()}
+ * 解析后传入查询服务，请求中禁止承载 organizationId（B.10.11）。</p>
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
 /** 分页查询门诊护士站患者队列请求。 */
-@Schema(description = "分页查询门诊护士站患者队列请求（B.10.11：机构由 ICurrentUser 在查询层收窄）")
+@Schema(description = "分页查询门诊护士站患者队列请求（B.10.11：机构由 CurrentManagedOrganizationIdsResolver 在应用层收窄）")
 public class PageNurseStationPatientQueueRequest extends AbstractHealthPageRequest {
 
     /**

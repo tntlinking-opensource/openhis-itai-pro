@@ -20,9 +20,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_encounter_location" (
     "end_time" timestamptz(6),
     CONSTRAINT "adm_encounter_location_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_encounter_location IS '管理域 encounter location';
-
 COMMENT ON COLUMN adm_encounter_location.id IS '主键';
 COMMENT ON COLUMN adm_encounter_location.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_encounter_location.created_at IS '创建时间';
@@ -33,10 +31,9 @@ COMMENT ON COLUMN adm_encounter_location.is_deleted IS '软删标记';
 COMMENT ON COLUMN adm_encounter_location.deleted_at IS '删除时间';
 COMMENT ON COLUMN adm_encounter_location.deleted_by IS '删除人';
 COMMENT ON COLUMN adm_encounter_location.version IS '乐观锁版本号';
-COMMENT ON COLUMN adm_encounter_location.encounter_id IS 'encounter id';
-COMMENT ON COLUMN adm_encounter_location.location_id IS 'location id';
-COMMENT ON COLUMN adm_encounter_location.form_enum IS 'form enum';
-COMMENT ON COLUMN adm_encounter_location.status_enum IS 'status enum';
-COMMENT ON COLUMN adm_encounter_location.start_time IS 'start time';
-COMMENT ON COLUMN adm_encounter_location.end_time IS 'end time';
-
+COMMENT ON COLUMN adm_encounter_location.encounter_id IS '就诊标识';
+COMMENT ON COLUMN adm_encounter_location.location_id IS '位置/科室标识';
+COMMENT ON COLUMN adm_encounter_location.form_enum IS 'form枚举值';
+COMMENT ON COLUMN adm_encounter_location.status_enum IS '状态枚举值';
+COMMENT ON COLUMN adm_encounter_location.start_time IS '开始时间';
+COMMENT ON COLUMN adm_encounter_location.end_time IS '结束时间';

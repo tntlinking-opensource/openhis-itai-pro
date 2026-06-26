@@ -27,6 +27,8 @@ import java.util.Set;
  * 从 {@link ICurrentUser} 解析当前操作者<strong>管辖病区</strong>（{@code adm_location.id}，{@code form_enum=WARD}；
  * {@code NURSE} 岗位在人员维护中绑定 {@code location_id}）。
  *
+ * <p>医院租户为硬权限：仅可见/可操作岗位绑定的病区；宿主租户无绑定时可回落机构/全院。</p>
+ *
  * <p>药库/药房同属 {@code adm_location} 但由 {@link CurrentManagedLocationIdsResolver} 解析，勿与本类混用。</p>
  */
 @Component
@@ -68,41 +70,46 @@ public class CurrentManagedWardLocationIdsResolver {
     }
 
     /**
-     * 解析启用态病区实体列表；无岗位分配时回落医院级病区列表。
+     * 解析启用态病区实体列表。
+     *
+     * <p>医院租户为<strong>硬权限</strong>：仅返回岗位绑定的启用态病区；未绑定或绑定均已停用时 empty，
+     * 不再回落机构/全院。宿主租户保留无绑定时回落机构/全院口径，便于平台运维。</p>
+     *
+     * @return 当前操作者可见的启用态病区；永不为 {@code null}
      */
     public List<Location> listManagedActiveWardsOrEmpty() {
         List<Long> wardIds = this.listManagedWardLocationIdsOrEmpty();
-        if (wardIds.isEmpty()) {
-            return this.listFallbackActiveWardsWhenNoManagedScope();
+        if (TenantUtils.isHost()) {
+            // 宿主租户：无岗位绑定时仍回落机构/全院，避免平台侧运维被误筛空。
+            if (wardIds.isEmpty()) {
+                return this.listFallbackActiveWardsWhenNoManagedScope();
+            }
+            List<Location> hostWards = locationQueryService.findActiveWardsByIds(wardIds);
+            if (hostWards.isEmpty()) {
+                return locationQueryService.listAllActiveWards();
+            }
+            return hostWards;
         }
-        List<Location> wards = locationQueryService.findActiveWardsByIds(wardIds);
-        if (wards.isEmpty() && this.isWardScopeEnforcementActive()) {
+        // 医院租户硬权限：查不到岗位病区时不展示任何病区，禁止回落全院。
+        if (wardIds.isEmpty()) {
             return List.of();
         }
-        if (wards.isEmpty()) {
-            return locationQueryService.listAllActiveWards();
-        }
-        return wards;
+        return locationQueryService.findActiveWardsByIds(wardIds);
     }
 
     /**
-     * 断言病区落在管辖范围内。
+     * 断言病区落在管辖范围内；医院租户未绑定岗位病区时一律拒绝。
+     *
+     * @param wardLocationId 待校验病区 {@code adm_location.id}
+     * @throws BusinessException 越权或病区主键为空时
      */
     public void assertWardInManagedScope(Long wardLocationId) {
-        if (!this.isWardScopeEnforcementActive()) {
+        if (TenantUtils.isHost()) {
             return;
         }
         List<Long> managed = this.listManagedWardLocationIdsOrEmpty();
         if (managed.isEmpty()) {
-            // 未绑定岗位病区：按医院级操作放行，仅校验病区落在回落机构范围内。
-            if (this.isWardAllowedWhenNoManagedScope(wardLocationId)) {
-                return;
-            }
-            if (wardLocationId == null) {
-                throw new BusinessException(
-                    ErrorCodeConstants.MANAGED_SCOPE_OUT_OF_SCOPE,
-                    "所选病区不在岗位管辖范围内");
-            }
+            // 医院租户未绑定管辖病区：写路径禁止操作任意病区。
             throw new BusinessException(
                 ErrorCodeConstants.MANAGED_SCOPE_OUT_OF_SCOPE,
                 "所选病区不在岗位管辖范围内");
@@ -134,21 +141,4 @@ public class CurrentManagedWardLocationIdsResolver {
         return locationQueryService.listAllActiveWards();
     }
 
-    /**
-     * 无岗位病区时，判定病区 id 是否落在回落机构（医院/会话科室）范围内。
-     *
-     * @param wardLocationId 待判定病区主键
-     * @return {@code true} 表示允许继续业务操作
-     */
-    private boolean isWardAllowedWhenNoManagedScope(Long wardLocationId) {
-        if (wardLocationId == null) {
-            return false;
-        }
-        for (Location ward : this.listFallbackActiveWardsWhenNoManagedScope()) {
-            if (ward != null && wardLocationId.equals(ward.getId())) {
-                return true;
-            }
-        }
-        return false;
-    }
 }

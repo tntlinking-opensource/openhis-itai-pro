@@ -19,6 +19,13 @@ public final class TemplateSlotJsonSupport {
     private TemplateSlotJsonSupport() {
     }
 
+    /**
+     * 解析 T1 时段 JSON 为时段项列表。
+     *
+     * @param json 时段 JSON 数组；空则返回空列表
+     * @return 时段项列表
+     * @throws BusinessException JSON 格式非法时
+     */
     public static List<SlotProvisionItemModel> parseSlotItems(String json) {
         if (json == null || json.isBlank()) {
             return new ArrayList<>();
@@ -27,7 +34,10 @@ public final class TemplateSlotJsonSupport {
             List<SlotProvisionItemModel> items = OBJECT_MAPPER.readValue(
                 json, new TypeReference<List<SlotProvisionItemModel>>() {
                 });
-            return items != null ? items : new ArrayList<>();
+            if (items != null) {
+                return items;
+            }
+            return new ArrayList<>();
         } catch (Exception ex) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "slotTemplates 格式非法");
         }

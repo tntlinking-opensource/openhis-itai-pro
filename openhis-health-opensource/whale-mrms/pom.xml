@@ -4,7 +4,7 @@
   <parent>
     <groupId>com.openhis</groupId>
     <artifactId>whale</artifactId>
-    <version>2.0.1-SNAPSHOT</version>
+    <version>2.0.2-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>whale-mrms</artifactId>
@@ -36,6 +36,26 @@
       <dependency>
         <groupId>com.openhis</groupId>
         <artifactId>health-module-support</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>mrms-contracts</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>mrms-domain</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>mrms-adapter</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>mrms-application</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

@@ -20,7 +20,10 @@ package com.openhis.whale.booking.domain.slot.service;
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.enums.ScheduleStatus;
 import com.openhis.health.domain.share.enums.SlotStatus;
+import com.openhis.whale.booking.domain.schedule.entity.Schedule;
+import com.openhis.whale.booking.domain.schedule.repository.ScheduleRepository;
 import com.openhis.whale.booking.domain.stopclinic.service.StopClinicSlotFreezeDomainService;
 import com.openhis.whale.booking.domain.slot.entity.Slot;
 import com.openhis.whale.booking.domain.slot.queries.FindBookableSlotsQuery;
@@ -31,6 +34,7 @@ import com.openhis.whale.booking.domain.slot.queries.model.SlotDetailModel;
 import com.openhis.whale.booking.domain.slot.repository.SlotRepository;
 import com.openhis.whale.core.application.exception.BusinessException;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -40,6 +44,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -48,12 +53,14 @@ import lombok.RequiredArgsConstructor;
  * 号源时段读侧查询服务（DM-WKF-010）。
  *
  * <p>职责：日程下时段检索、可预约筛选（状态与容量）、机构某日分页排班；参数校验失败抛业务异常，不写库。</p>
+ * <p>跨聚合读：可约查询按 B.6.4 校验所属 {@code wkf_schedule.status_enum}；机构日分页经 Schedule 解析当日日程主键再查 Slot。</p>
  */
 @Service
 @RequiredArgsConstructor
 public class SlotQueryService {
 
     private final SlotRepository slotRepository;
+    private final ScheduleRepository scheduleRepository;
     private final StopClinicSlotFreezeDomainService stopClinicSlotFreezeDomainService;
 
     /**
@@ -122,6 +129,10 @@ public class SlotQueryService {
         }
         if (query.getStartTime() == null || query.getEndTime() == null) {
             throw new BusinessException(ErrorCodeConstants.SLOT_INVALID_ARGUMENT, "startTime/endTime 不能为空");
+        }
+        // B.6.4 跨聚合读：可约查询须校验所属日程仍为 active（停诊后 slot 可能仍为 free）
+        if (!this.isScheduleBookable(query.getScheduleId())) {
+            return List.of();
         }
 
         List<String> statusCandidates = query.getStatusCodeList();
@@ -199,10 +210,37 @@ public class SlotQueryService {
         Sort sort = Sort.by(Sort.Direction.ASC, FieldNameConstants.START_TIME);
         Pageable pageable = PageRequest.of(pageNo - 1, pageSize, sort);
 
+        // Pre：先按机构+日历日解析有效日程主键，再查时段（与排班周历口径一致，避免仅依赖 Slot 冗余 organizationId）。
+        Set<Long> scheduleIdScope = this.resolveScheduleIdsForOrganizationAndDate(query.getOrganizationId(), date);
+        boolean useScheduleScope = !scheduleIdScope.isEmpty();
+        if (query.getScheduleIds() != null) {
+            // 医师等参与者筛选：与机构当日日程求交；空列表表示无匹配日程。
+            if (query.getScheduleIds().isEmpty()) {
+                return new PageImpl<>(List.of(), pageable, 0);
+            }
+            if (useScheduleScope) {
+                Set<Long> practitionerScope = new HashSet<>(query.getScheduleIds());
+                scheduleIdScope.retainAll(practitionerScope);
+                if (scheduleIdScope.isEmpty()) {
+                    return new PageImpl<>(List.of(), pageable, 0);
+                }
+            } else {
+                scheduleIdScope = new HashSet<>(query.getScheduleIds());
+                useScheduleScope = true;
+            }
+        }
+
+        final boolean filterByScheduleScope = useScheduleScope;
+        final Set<Long> finalScheduleIdScope = scheduleIdScope;
         Specification<Slot> specification = (root, cq, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
-            predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), query.getOrganizationId()));
+            if (filterByScheduleScope) {
+                predicates.add(root.get("scheduleId").in(finalScheduleIdScope));
+            } else {
+                // 无当日日程规划窗口时回退 Slot.organization_id，兼容已放号但窗口未维护的数据。
+                predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), query.getOrganizationId()));
+            }
             predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.START_TIME), from));
             predicates.add(cb.lessThan(root.get(FieldNameConstants.START_TIME), to));
             if (query.getScheduleId() != null) {
@@ -211,18 +249,48 @@ public class SlotQueryService {
             if (query.getStatusCode() != null && !query.getStatusCode().trim().isEmpty()) {
                 predicates.add(cb.equal(root.get("statusCode"), query.getStatusCode().trim()));
             }
-            if (query.getScheduleIds() != null) {
-                if (query.getScheduleIds().isEmpty()) {
-                    predicates.add(cb.disjunction());
-                } else {
-                    predicates.add(root.get("scheduleId").in(query.getScheduleIds()));
-                }
-            }
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
 
         Page<Slot> page = slotRepository.findAll(specification, pageable);
         return page.map(this::toDetailModel);
+    }
+
+    /**
+     * 解析机构在指定自然日有规划窗口重叠的日程主键集合。
+     *
+     * @param organizationId 机构主键
+     * @param date 日历日
+     * @return 日程主键集合；无匹配时为空集
+     */
+    private Set<Long> resolveScheduleIdsForOrganizationAndDate(Long organizationId, LocalDate date) {
+        if (organizationId == null || date == null) {
+            return Set.of();
+        }
+        LocalDateTime dayStart = date.atStartOfDay();
+        LocalDateTime dayEnd = date.plusDays(1).atStartOfDay();
+        // B.6.4 跨聚合读：机构当日日程范围经 Schedule 仓储解析，再下推 Slot IN 条件。
+        Specification<Schedule> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), organizationId));
+            jakarta.persistence.criteria.Predicate horizonOverlaps = cb.and(
+                cb.or(cb.isNull(root.get(FieldNameConstants.PLANNING_HORIZON_START)),
+                    cb.lessThan(root.get(FieldNameConstants.PLANNING_HORIZON_START), dayEnd)),
+                cb.or(cb.isNull(root.get(FieldNameConstants.PLANNING_HORIZON_END)),
+                    cb.greaterThan(root.get(FieldNameConstants.PLANNING_HORIZON_END), dayStart))
+            );
+            predicates.add(horizonOverlaps);
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        List<Schedule> schedules = scheduleRepository.findAll(specification);
+        Set<Long> scheduleIds = new HashSet<>();
+        for (Schedule schedule : schedules) {
+            if (schedule.getId() != null) {
+                scheduleIds.add(schedule.getId());
+            }
+        }
+        return scheduleIds;
     }
 
     /**
@@ -248,5 +316,25 @@ public class SlotQueryService {
         model.setAppointmentTypeJson(slot.getAppointmentTypeJson());
         model.setCommentText(slot.getCommentText());
         return model;
+    }
+
+    /**
+     * 判断日程是否仍可向患者开放预约（仅 active 且未软删）。
+     *
+     * @param scheduleId 日程主键
+     * @return 可约时 true
+     */
+    private boolean isScheduleBookable(Long scheduleId) {
+        if (scheduleId == null) {
+            return false;
+        }
+        Schedule schedule = scheduleRepository.findById(scheduleId).orElse(null);
+        if (schedule == null || Boolean.TRUE.equals(schedule.getIsDeleted())) {
+            return false;
+        }
+        if (!ScheduleStatus.ACTIVE.getCode().equals(schedule.getStatusEnum())) {
+            return false;
+        }
+        return Boolean.TRUE.equals(schedule.getActiveFlag());
     }
 }

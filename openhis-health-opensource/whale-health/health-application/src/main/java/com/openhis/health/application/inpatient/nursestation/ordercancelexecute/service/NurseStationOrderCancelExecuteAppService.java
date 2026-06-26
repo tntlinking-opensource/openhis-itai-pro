@@ -18,7 +18,6 @@
 package com.openhis.health.application.inpatient.nursestation.ordercancelexecute.service;
 
 import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
 import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.assembler.NurseStationOrderCancelExecuteWriteAssembler;
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.dto.CancelExecutionSummaryRebuildContext;
@@ -26,6 +25,7 @@ import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.request.CancelNurseStationOrderExecutionsRequest;
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.response.CancelNurseStationOrderExecutionsResponse;
 import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.module.querysupport.nursestation.InpatientNurseStationTcmSupport;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
@@ -35,9 +35,12 @@ import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecor
 import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
+import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
+import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.EventStatus;
+import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestListModel;
@@ -46,9 +49,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.*;
 
 /**
@@ -70,9 +73,8 @@ import java.util.*;
 public class NurseStationOrderCancelExecuteAppService {
 
     /** 写路径操作人门控（B.6.1）。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
-    /** 写路径医务人员/applicantId 解析（汇总重建建单）。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
+    /** 写路径医务人员/applicantId 解析（汇总重建建单）。 */
     /** 护士站管辖病区收窄（BR-IP-CXL-001）。 */
     private final CurrentManagedWardLocationIdsResolver managedWardLocationIdsResolver;
     /** 住院就诊上下文可见性。 */
@@ -90,6 +92,12 @@ public class NurseStationOrderCancelExecuteAppService {
     /** 写路径专项编排：Gate 后 Cmd 分轨与汇总重建。 */
     private final NurseStationOrderCancelExecuteWriteAssembler nurseStationOrderCancelExecuteWriteAssembler;
 
+    /** 中药整方扩行（同 planTime 取消执行）。 */
+    private final InpatientNurseStationTcmSupport inpatientNurseStationTcmSupport;
+
+    /** 药品申请读侧（方级扩行索引）。 */
+    private final MedicationRequestQueryService medicationRequestQueryService;
+
     /**
      * IF-IP-CXL-01：批量取消已执行医嘱计划点。
      *
@@ -97,7 +105,6 @@ public class NurseStationOrderCancelExecuteAppService {
      * @return 成功对冲 id 与可选重建 summaryNo
      * @throws BusinessException EX-IP-CXL-201～205
      */
-    @Transactional(rollbackFor = Exception.class)
     public CancelNurseStationOrderExecutionsResponse cancelNurseStationOrderExecutions(
         CancelNurseStationOrderExecutionsRequest request) {
         try {
@@ -118,7 +125,10 @@ public class NurseStationOrderCancelExecuteAppService {
                     InpatientNurseStationConstants.EX_IP_CXL_201,
                     "请选择已执行且未取消的计划点");
             }
-            Long operatorId = currentOperatorResolver.requireOperatorId(
+            // Pre·中药方：按 prescription_no + occurrence 扩全方已执行 procedureId（扩行前 Gate 已校验条数）
+            List<Long> expandedProcedureIds =
+                this.expandCancelProcedureIdsByTcmPrescription(distinctProcedureIds, visibleEncounterIds);
+            Long operatorId = currentPractitionerResolver.requireOperatorId(
                 InpatientNurseStationConstants.EX_IP_CXL_201,
                 "未登录或登录已失效，无法取消执行");
             Long applicantId = currentPractitionerResolver.requirePractitionerId(
@@ -128,7 +138,7 @@ public class NurseStationOrderCancelExecuteAppService {
             // Pre ③：批量加载 COMPLETED 行并校验可取消（EX-IP-CXL-202）
             Map<Long, ProcedureRecordQueryModel> completedRowByProcedureId = new HashMap<>();
             Map<String, Set<Long>> basedOnIdsByTable = new HashMap<>();
-            for (Long procedureId : distinctProcedureIds) {
+            for (Long procedureId : expandedProcedureIds) {
                 ProcedureRecordQueryModel row = this.mustResolveCancellableCompletedProcedure(
                     procedureId, visibleEncounterIds);
                 completedRowByProcedureId.put(procedureId, row);
@@ -143,7 +153,7 @@ public class NurseStationOrderCancelExecuteAppService {
             }
             // Pre ⑤⑥：主医嘱发放行与 Charge 索引
             List<MedicationDispense> dispensesByProcedure =
-                medicationDispenseQueryService.listMedicationDispensesByProcedureIds(distinctProcedureIds);
+                medicationDispenseQueryService.listMedicationDispensesByProcedureIds(expandedProcedureIds);
             Map<Long, List<MedicationDispense>> dispensesByProcedureId = new HashMap<>();
             for (MedicationDispense dispense : dispensesByProcedure) {
                 if (dispense == null || dispense.getProcedureId() == null) {
@@ -157,7 +167,7 @@ public class NurseStationOrderCancelExecuteAppService {
                 bucket.add(dispense);
             }
             List<ChargeItem> mainCharges =
-                chargeItemQueryService.listChargeItemsByProcedureIds(distinctProcedureIds);
+                chargeItemQueryService.listChargeItemsByProcedureIds(expandedProcedureIds);
             Map<Long, List<ChargeItem>> chargesByProcedureId = this.indexChargesByProcedureId(mainCharges);
             // Pre ⑧⑨：based_on 反查绑定诊疗/耗材（按 requestTable 批量 IN）
             List<ServiceRequest> bindingServiceRequests = new ArrayList<>();
@@ -211,7 +221,7 @@ public class NurseStationOrderCancelExecuteAppService {
             }
             List<Long> cancelledProcedureIds = new ArrayList<>();
             // Cmd ⑮～⑰：主医嘱 CANCEL 对冲 + Dispense/Charge 回退（按入参稳定顺序）
-            for (Long completedProcedureId : distinctProcedureIds) {
+            for (Long completedProcedureId : expandedProcedureIds) {
                 ProcedureRecordQueryModel completedRow = completedRowByProcedureId.get(completedProcedureId);
                 if (completedRow == null) {
                     continue;
@@ -254,7 +264,7 @@ public class NurseStationOrderCancelExecuteAppService {
                 "NurseStationOrderCancelExecute operatorId={} encounterIds={} procedureIds={} rebuiltSummaryNos={}",
                 operatorId,
                 requestedEncounterIds,
-                distinctProcedureIds,
+                expandedProcedureIds,
                 rebuiltSummaryNos);
             return nurseStationOrderCancelExecuteMapper.toCancelNurseStationOrderExecutionsResponse(
                 cancelledProcedureIds, rebuiltSummaryNos);
@@ -521,5 +531,187 @@ public class NurseStationOrderCancelExecuteAppService {
             bucket.add(charge);
         }
         return index;
+    }
+
+    /**
+     * 中药方勾选 procedureId 时按 prescription_no + occurrence 扩成全方同计划点可取消 procedureId。
+     *
+     * @param seedProcedureIds     前端勾选 procedureId（已去重）
+     * @param visibleEncounterIds  可见就诊
+     * @return 扩行后的 procedureId（去重保序）
+     */
+    private List<Long> expandCancelProcedureIdsByTcmPrescription(
+        List<Long> seedProcedureIds,
+        Set<Long> visibleEncounterIds) {
+        List<Long> expanded = new ArrayList<>();
+        if (seedProcedureIds == null || seedProcedureIds.isEmpty()) {
+            return expanded;
+        }
+        Set<Long> encounterIdsForMedLoad = new LinkedHashSet<>();
+        Map<Long, ProcedureRecordQueryModel> seedRowByProcedureId = new LinkedHashMap<>();
+        for (Long seedProcedureId : seedProcedureIds) {
+            if (seedProcedureId == null) {
+                continue;
+            }
+            ProcedureDetailQueryModel detail = procedureQueryService.loadProcedureById(seedProcedureId);
+            if (detail == null || detail.getProcedure() == null) {
+                continue;
+            }
+            ProcedureRecordQueryModel row = detail.getProcedure();
+            seedRowByProcedureId.put(seedProcedureId, row);
+            if (row.getEncounterId() != null && visibleEncounterIds.contains(row.getEncounterId())) {
+                encounterIdsForMedLoad.add(row.getEncounterId());
+            }
+        }
+        Map<Long, List<MedicationRequestListQueryModel>> medByEncounter =
+            this.loadMedByEncounterForCancelWrite(encounterIdsForMedLoad);
+        Set<String> dedupe = new LinkedHashSet<>();
+        for (Long seedProcedureId : seedProcedureIds) {
+            if (seedProcedureId == null) {
+                continue;
+            }
+            ProcedureRecordQueryModel seedRow = seedRowByProcedureId.get(seedProcedureId);
+            if (seedRow == null) {
+                continue;
+            }
+            if (!TableNameConstants.MED_MEDICATION_REQUEST.equals(seedRow.getRequestTable())) {
+                // 诊疗计划点不参与方级扩行
+                this.appendCancelProcedureDedupe(expanded, dedupe, seedProcedureId);
+                continue;
+            }
+            Long encounterId = seedRow.getEncounterId();
+            Long seedRequestId = seedRow.getRequestId();
+            LocalDateTime occurrenceTime = seedRow.getOccurrenceTime();
+            List<MedicationRequestListQueryModel> encounterMeds = null;
+            if (encounterId != null) {
+                encounterMeds = medByEncounter.get(encounterId);
+            }
+            MedicationRequestListQueryModel seedMed = this.findMedDetail(seedRequestId, encounterMeds);
+            if (seedMed == null || !Boolean.TRUE.equals(seedMed.getTcmFlag())) {
+                // 非中药或明细缺失时仅取消勾选行
+                this.appendCancelProcedureDedupe(expanded, dedupe, seedProcedureId);
+                continue;
+            }
+            List<Long> requestIds = inpatientNurseStationTcmSupport.expandMedRequestIdsByPrescriptionNo(
+                encounterId, seedRequestId, encounterMeds);
+            boolean expandedAny = false;
+            for (Long requestId : requestIds) {
+                Long resolvedProcedureId = this.resolveNetCompletedProcedureIdForCancel(
+                    requestId,
+                    TableNameConstants.MED_MEDICATION_REQUEST,
+                    occurrenceTime);
+                if (resolvedProcedureId == null) {
+                    continue;
+                }
+                this.appendCancelProcedureDedupe(expanded, dedupe, resolvedProcedureId);
+                expandedAny = true;
+            }
+            if (!expandedAny) {
+                // 方内无同 occurrence 可取消行时回退种子 procedureId
+                this.appendCancelProcedureDedupe(expanded, dedupe, seedProcedureId);
+            }
+        }
+        return expanded;
+    }
+
+    /**
+     * 加载取消写路径涉及的就诊药品明细（整方扩行用）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 就诊 → 药品明细
+     */
+    private Map<Long, List<MedicationRequestListQueryModel>> loadMedByEncounterForCancelWrite(Set<Long> encounterIds) {
+        Map<Long, List<MedicationRequestListQueryModel>> map = new HashMap<>();
+        if (encounterIds == null) {
+            return map;
+        }
+        String doctorSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
+        for (Long encounterId : encounterIds) {
+            if (encounterId == null) {
+                continue;
+            }
+            map.put(encounterId,
+                medicationRequestQueryService.listMedicationRequestsByEncounterForDoctorStation(
+                    encounterId, doctorSource));
+        }
+        return map;
+    }
+
+    /**
+     * 从就诊药品明细中定位单条申请。
+     *
+     * @param requestId     药品申请主键
+     * @param encounterMeds 本就诊药品明细
+     * @return 明细行；未命中 null
+     */
+    private MedicationRequestListQueryModel findMedDetail(
+        Long requestId,
+        List<MedicationRequestListQueryModel> encounterMeds) {
+        if (requestId == null || encounterMeds == null) {
+            return null;
+        }
+        for (MedicationRequestListQueryModel row : encounterMeds) {
+            if (row != null && requestId.equals(row.getId())) {
+                return row;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 解析同 request + occurrence 下可取消的净剩 COMPLETED procedureId。
+     *
+     * @param requestId      药品/诊疗申请主键
+     * @param requestTable   请求表名
+     * @param occurrenceTime 计划点 occurrence
+     * @return 可取消 procedureId；无则 null
+     */
+    private Long resolveNetCompletedProcedureIdForCancel(
+        Long requestId,
+        String requestTable,
+        LocalDateTime occurrenceTime) {
+        if (requestId == null || StringUtils.isBlank(requestTable) || occurrenceTime == null) {
+            return null;
+        }
+        List<ProcedureRecordQueryModel> rows = procedureQueryService.getProcedureRecords(requestId, requestTable);
+        Long candidate = null;
+        for (ProcedureRecordQueryModel row : rows) {
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            if (!EventStatus.COMPLETED.getCode().equals(row.getStatusEnum())) {
+                continue;
+            }
+            if (!occurrenceTime.equals(row.getOccurrenceTime())) {
+                continue;
+            }
+            if (nurseStationOrderCancelExecuteWriteAssembler.isProcedureAlreadyOffset(
+                requestId, requestTable, row.getId())) {
+                continue;
+            }
+            if (candidate == null || row.getId() > candidate) {
+                candidate = row.getId();
+            }
+        }
+        return candidate;
+    }
+
+    /**
+     * 按 procedureId 去重追加扩行结果。
+     *
+     * @param expanded     目标列表
+     * @param dedupe       去重键集合
+     * @param procedureId  procedure 主键
+     */
+    private void appendCancelProcedureDedupe(List<Long> expanded, Set<String> dedupe, Long procedureId) {
+        if (procedureId == null) {
+            return;
+        }
+        String key = String.valueOf(procedureId);
+        if (dedupe.contains(key)) {
+            return;
+        }
+        dedupe.add(key);
+        expanded.add(procedureId);
     }
 }

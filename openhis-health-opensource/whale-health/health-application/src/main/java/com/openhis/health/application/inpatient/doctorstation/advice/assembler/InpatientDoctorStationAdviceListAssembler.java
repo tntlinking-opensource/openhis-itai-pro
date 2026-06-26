@@ -17,7 +17,9 @@
 
 package com.openhis.health.application.inpatient.doctorstation.advice.assembler;
 
-import com.openhis.health.module.common.assembler.advice.ServiceApplyFormOrchestrationSupport;
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
+import com.openhis.health.module.orchestration.advice.ServiceApplyFormOrchestrationSupport;
 import com.openhis.health.module.common.assembler.advice.AdviceChargeDisplayStatusSupport;
 import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
 import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
@@ -35,6 +37,8 @@ import com.openhis.health.domain.administration.practitioner.entity.Practitioner
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
+import com.openhis.health.domain.clinical.allergyintolerance.queries.model.AllergyIntoleranceRecordQueryModel;
+import com.openhis.health.domain.clinical.allergyintolerance.service.AllergyIntoleranceQueryService;
 import com.openhis.health.domain.custom.encounterhistory.queries.model.EncounterHistoryMilestoneQueryModel;
 import com.openhis.health.domain.custom.encounterhistory.service.EncounterHistoryQueryService;
 import com.openhis.health.domain.share.constants.CustomConstants;
@@ -57,6 +61,8 @@ import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.ActivityType;
+import com.openhis.health.domain.share.enums.ClinicalStatus;
+import com.openhis.health.domain.share.enums.EnumInterface;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
@@ -66,9 +72,11 @@ import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
 import com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionChildQueryModel;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
+import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestDetailListModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
+import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
@@ -131,6 +139,8 @@ public class InpatientDoctorStationAdviceListAssembler {
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
     /** 申请单 DTO 与编排 Model 互转。 */
     private final ServiceApplyFormAssembler serviceApplyFormAssembler;
+    /** 皮试结果读侧：护士登记 AllergyIntolerance 回填列表。 */
+    private final AllergyIntoleranceQueryService allergyIntoleranceQueryService;
 
     /**
      * 装配住院医生站医嘱统一列表行。
@@ -147,7 +157,7 @@ public class InpatientDoctorStationAdviceListAssembler {
         List<InpatientOrderListSkeleton> orderRows,
         Long currentUserId
     ) {
-        return assembleAdviceQueryRows(encounterId, patientId, orderRows, currentUserId, null, null);
+        return assembleAdviceQueryRows(encounterId, patientId, orderRows, currentUserId, null, null, true);
     }
 
     /**
@@ -159,6 +169,7 @@ public class InpatientDoctorStationAdviceListAssembler {
      * @param currentUserId         当前用户（预留 onlyMine 扩展）
      * @param orderingDepartmentId  开单科室；{@code null} 不过滤
      * @param requestStatusEnumIn   请求态集合；空不过滤
+     * @param excludeTcmMedication  为 {@code true} 时排除 {@code tcmFlag=true} 的中药饮片行（开立 Tab 与中药 Tab 分域）
      * @return 已排序的列表行
      */
     public List<InpatientDoctorStationAdviceRowDto> assembleAdviceQueryRows(
@@ -167,7 +178,8 @@ public class InpatientDoctorStationAdviceListAssembler {
         List<InpatientOrderListSkeleton> orderRows,
         Long currentUserId,
         Long orderingDepartmentId,
-        List<String> requestStatusEnumIn
+        List<String> requestStatusEnumIn,
+        boolean excludeTcmMedication
     ) {
         // Pre：本就诊全部收费行，归并护士执行后 ORDER_EXECUTE 费用（开嘱侧不挂费）。
         ChargeItemQueryCommand chargeQuery = new ChargeItemQueryCommand();
@@ -184,6 +196,10 @@ public class InpatientDoctorStationAdviceListAssembler {
         String doctorSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
         List<MedicationRequestListQueryModel> medicationRows =
             medicationRequestQueryService.listMedicationRequestsByEncounterForDoctorStation(encounterId, doctorSource);
+        // Pre：开立 Tab 与中医 Tab 分域，排除 tcm_flag=true 饮片行（与门诊 IF-DOR-10 一致）
+        if (excludeTcmMedication) {
+            medicationRows = excludeTcmMedicationRows(medicationRows);
+        }
         List<ServiceRequestListModel> serviceRows =
             serviceRequestQueryService.listServiceRequestsByGenerateSource(encounterId, doctorSource);
         Map<Long, MedicationRequestListQueryModel> medicationDetailById = new HashMap<>();
@@ -330,6 +346,10 @@ public class InpatientDoctorStationAdviceListAssembler {
         }
         Map<Long, String> practitionerNameById = loadPractitionerNames(practitionerIds);
 
+        // Pre：皮试药 nurse 登记结果（companion doctor-prescription SR → AllergyIntolerance，BR-IP-ORD-016/024）
+        Map<Long, AllergyIntoleranceRecordQueryModel> skinTestOutcomeByMedicationRequestId =
+            this.loadSkinTestOutcomeByMedicationRequestId(encounterId, medicationRows);
+
         // Asm：按 OrderInfo 行类型分支映射；非药/诊类型跳过（读模型已过滤，此处防御性 continue）。
         List<InpatientDoctorStationAdviceRowDto> unifiedRows = new ArrayList<>();
         for (InpatientOrderListSkeleton order : orderRows) {
@@ -339,6 +359,11 @@ public class InpatientDoctorStationAdviceListAssembler {
             // 分支：药品医嘱行——明细、护士执行后费用与发放库位由 mapMedicationOrderLine 装配。
             if (ReadModelOrderTypeConstants.MED_REQUEST.equals(order.getOrderType())) {
                 MedicationRequestListQueryModel medDetail = medicationDetailById.get(order.getMedReqId());
+                if (excludeTcmMedication) {
+                    if (medDetail == null || Boolean.TRUE.equals(medDetail.getTcmFlag())) {
+                        continue;
+                    }
+                }
                 Long medOrgId = null;
                 String medStatusEnum = order.getStatusEnum();
                 if (medDetail != null) {
@@ -359,7 +384,8 @@ public class InpatientDoctorStationAdviceListAssembler {
                     medicationDetailById.get(order.getMedReqId()),
                     medicationDefinitionById, unitLabelByCode, methodLabelByCode, rateLabelByCode,
                     doseUnitLabelByCode, dosageInstructionLabelByCode, speedLabelByCode,
-                    medicationCategoryLabelByCode, conditionDefinitionDisplayById);
+                    medicationCategoryLabelByCode, conditionDefinitionDisplayById,
+                    skinTestOutcomeByMedicationRequestId);
             // 分支：诊疗医嘱行——套餐子项与出院/转科特规由 mapServiceOrderLine 装配。
             } else if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())) {
                 ServiceRequestListModel serviceDetail = serviceDetailById.get(order.getOrderId());
@@ -405,10 +431,13 @@ public class InpatientDoctorStationAdviceListAssembler {
                         applyFormDetailsByRequestId.get(serviceDetail.getId()))));
             }
         }
-        // 列表默认排序：组内序号升序，同组内按开立时间倒序（与医生站展示习惯一致）。
+        // 列表默认排序：申请单号聚邻后按 sortNumber、开立时间、requestId（BR-NUR-015 / 住院医生站展示习惯）。
         unifiedRows.sort(Comparator
-            .comparing(InpatientDoctorStationAdviceRowDto::getSortNumber, Comparator.nullsLast(Comparator.naturalOrder()))
-            .thenComparing(InpatientDoctorStationAdviceRowDto::getAuthoredAt, Comparator.nullsLast(Comparator.reverseOrder())));
+            .comparing((InpatientDoctorStationAdviceRowDto row) ->
+                ServiceApplyFormOrchestrationSupport.resolveApplyFormGroupingSortKey(row.getPrescriptionNo()))
+            .thenComparing(InpatientDoctorStationAdviceRowDto::getSortNumber, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(InpatientDoctorStationAdviceRowDto::getAuthoredAt, Comparator.nullsLast(Comparator.reverseOrder()))
+            .thenComparing(InpatientDoctorStationAdviceRowDto::getRequestId, Comparator.nullsLast(Comparator.naturalOrder())));
         return unifiedRows;
     }
 
@@ -435,7 +464,8 @@ public class InpatientDoctorStationAdviceListAssembler {
         Map<String, String> dosageInstructionLabelByCode,
         Map<String, String> speedLabelByCode,
         Map<String, String> medicationCategoryLabelByCode,
-        Map<Long, String> conditionDefinitionDisplayById
+        Map<Long, String> conditionDefinitionDisplayById,
+        Map<Long, AllergyIntoleranceRecordQueryModel> skinTestOutcomeByMedicationRequestId
     ) {
         Long requestId = order.getMedReqId();
         String productTable = TableNameConstants.MED_MEDICATION_DEFINITION;
@@ -485,6 +515,17 @@ public class InpatientDoctorStationAdviceListAssembler {
             line.setSpeedName(OrderCatalogDisplayAssembler.resolveCategoryDisplay(speedLabelByCode, medDetail.getSpeedCode()));
             line.setSkinTestFlag(medDetail.getSkinTestFlag());
             line.setSkinTestFlagText(formatYesNoChinese(medDetail.getSkinTestFlag()));
+            // 皮试结果回填（BR-IP-ORD-016）：锚 skin_test_flag，结果来自护士登记 AllergyIntolerance
+            if (Boolean.TRUE.equals(medDetail.getSkinTestFlag()) && requestId != null
+                && skinTestOutcomeByMedicationRequestId != null) {
+                AllergyIntoleranceRecordQueryModel skinTestOutcome =
+                    skinTestOutcomeByMedicationRequestId.get(requestId);
+                if (skinTestOutcome != null && StringUtils.isNotBlank(skinTestOutcome.getClinicalStatusEnum())) {
+                    line.setSkinTestOutcomeCode(skinTestOutcome.getClinicalStatusEnum());
+                    line.setSkinTestOutcomeText(
+                        this.resolveEnumCodeDisplay(ClinicalStatus.class, skinTestOutcome.getClinicalStatusEnum()));
+                }
+            }
             line.setInjectionFlag(medDetail.getInfusionFlag());
             line.setInjectionFlagText(formatYesNoChinese(medDetail.getInfusionFlag()));
             line.setConditionDefinitionId(medDetail.getConditionDefinitionId());
@@ -935,10 +976,97 @@ public class InpatientDoctorStationAdviceListAssembler {
         if (basedOnId == null) {
             return null;
         }
-        if (TableNameConstants.WKF_SERVICE_REQUEST.equalsIgnoreCase(StringUtils.trimToEmpty(basedOnTable))) {
+        if (TableNameConstants.WKF_SERVICE_REQUEST.equalsIgnoreCase(trimToEmpty(basedOnTable))) {
             return basedOnId;
         }
         return null;
+    }
+
+    /**
+     * 批量加载皮试药 nurse 登记结果：皮试药 id → AllergyIntolerance（经 doctor-prescription 皮试检查 SR 关联）。
+     *
+     * @param encounterId     就诊主键
+     * @param medicationRows  本就诊药品请求列表
+     * @return 皮试药 id → 过敏/皮试记录
+     */
+    private Map<Long, AllergyIntoleranceRecordQueryModel> loadSkinTestOutcomeByMedicationRequestId(
+        Long encounterId,
+        List<MedicationRequestListQueryModel> medicationRows
+    ) {
+        Map<Long, AllergyIntoleranceRecordQueryModel> outcomeByMedicationRequestId = new HashMap<>();
+        if (encounterId == null || medicationRows == null || medicationRows.isEmpty()) {
+            return outcomeByMedicationRequestId;
+        }
+        List<Long> skinTestMedicationRequestIds = new ArrayList<>();
+        for (MedicationRequestListQueryModel row : medicationRows) {
+            if (Boolean.TRUE.equals(row.getSkinTestFlag()) && row.getId() != null) {
+                skinTestMedicationRequestIds.add(row.getId());
+            }
+        }
+        if (skinTestMedicationRequestIds.isEmpty()) {
+            return outcomeByMedicationRequestId;
+        }
+        Long skinTestActivityId;
+        try {
+            skinTestActivityId = activityDefinitionQueryService.requireIdByExactName(
+                GeneralSharedConstants.SKIN_TEST_INSPECTION_ACTIVITY_NAME);
+        } catch (BusinessException ex) {
+            return outcomeByMedicationRequestId;
+        }
+        List<ServiceRequest> companionServiceRequests = serviceRequestQueryService.listServiceRequestsByBasedOnAnchors(
+            TableNameConstants.MED_MEDICATION_REQUEST, skinTestMedicationRequestIds);
+        Map<Long, Long> skinTestServiceRequestIdByMedicationRequestId = new HashMap<>();
+        String doctorPrescriptionSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
+        for (ServiceRequest companion : companionServiceRequests) {
+            if (companion == null || Boolean.TRUE.equals(companion.getIsDeleted())) {
+                continue;
+            }
+            if (!doctorPrescriptionSource.equals(companion.getGenerateSourceEnum())) {
+                continue;
+            }
+            if (!skinTestActivityId.equals(companion.getActivityId())) {
+                continue;
+            }
+            if (companion.getBasedOnId() != null && companion.getId() != null) {
+                skinTestServiceRequestIdByMedicationRequestId.putIfAbsent(companion.getBasedOnId(), companion.getId());
+            }
+        }
+        if (skinTestServiceRequestIdByMedicationRequestId.isEmpty()) {
+            return outcomeByMedicationRequestId;
+        }
+        Map<Long, AllergyIntoleranceRecordQueryModel> allergyByServiceRequestId = new HashMap<>();
+        List<AllergyIntoleranceRecordQueryModel> allergyRecords =
+            allergyIntoleranceQueryService.getRecordInfo(encounterId);
+        for (AllergyIntoleranceRecordQueryModel allergyRecord : allergyRecords) {
+            if (allergyRecord != null && allergyRecord.getRequestId() != null) {
+                allergyByServiceRequestId.put(allergyRecord.getRequestId(), allergyRecord);
+            }
+        }
+        for (Map.Entry<Long, Long> entry : skinTestServiceRequestIdByMedicationRequestId.entrySet()) {
+            AllergyIntoleranceRecordQueryModel allergy = allergyByServiceRequestId.get(entry.getValue());
+            if (allergy != null) {
+                outcomeByMedicationRequestId.put(entry.getKey(), allergy);
+            }
+        }
+        return outcomeByMedicationRequestId;
+    }
+
+    /**
+     * 持久化枚举 code → 展示文案（皮试临床状态等）。
+     *
+     * @param enumClass 枚举类型
+     * @param code      持久化码
+     * @return 展示名；未命中时 {@code null}
+     */
+    private <E extends Enum<E> & EnumInterface> String resolveEnumCodeDisplay(Class<E> enumClass, String code) {
+        if (StringUtils.isBlank(code)) {
+            return null;
+        }
+        E enumValue = EnumUtil.fromCode(enumClass, code);
+        if (enumValue == null) {
+            return null;
+        }
+        return enumValue.getDisplay();
     }
 
     /**
@@ -1003,7 +1131,7 @@ public class InpatientDoctorStationAdviceListAssembler {
      * @return 归一化后的 {@link TherapyType#getCode()}
      */
     private static String normalizeTherapyTypeCode(String therapyCode) {
-        if ("2".equals(StringUtils.trimToEmpty(therapyCode))) {
+        if ("2".equals(trimToEmpty(therapyCode))) {
             return TherapyType.TEMPORARY.getCode();
         }
         return therapyCode;
@@ -1198,6 +1326,28 @@ public class InpatientDoctorStationAdviceListAssembler {
             return status.getDisplay();
         }
         return statusCode;
+    }
+
+    /**
+     * 从药品请求列表剔除 {@code tcm_flag=true} 的中药饮片行（开立医嘱 Tab 与中医 Tab 分域）。
+     *
+     * @param rows 医生站来源药品请求；允许为 {@code null} 或空
+     * @return 非饮片行列表；入参为空时原样返回
+     */
+    private static List<MedicationRequestListQueryModel> excludeTcmMedicationRows(
+        List<MedicationRequestListQueryModel> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return rows;
+        }
+        List<MedicationRequestListQueryModel> result = new ArrayList<>();
+        for (MedicationRequestListQueryModel row : rows) {
+            // 饮片行由中药处方弹窗承载，避免开立 Tab 重复展示
+            if (Boolean.TRUE.equals(row.getTcmFlag())) {
+                continue;
+            }
+            result.add(row);
+        }
+        return result;
     }
 
     /**

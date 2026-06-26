@@ -48,7 +48,7 @@ public class CodeSystem extends BaseAuditedEntity implements IMultiTenant {
 
     /**
      * 编码系统名称（对应原来的dictType，唯一标识符）
-     * 例如：med_category_code
+     * 例如：medication_category_code
      */
     @Column(name = "name", nullable = false, unique = true, length = 100)
     private String name;

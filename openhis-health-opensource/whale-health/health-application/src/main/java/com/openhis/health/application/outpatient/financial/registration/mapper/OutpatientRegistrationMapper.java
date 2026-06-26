@@ -63,7 +63,6 @@ import com.openhis.health.domain.administration.practitioner.entity.Practitioner
 import com.openhis.health.domain.financial.contract.queries.model.ContractListItemQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CompleteRegistrationCancelRefundCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CreatePaymentDraftFromPreSettleCommand;
-import com.openhis.health.domain.financial.paymentreconciliation.command.EnterRefundProcessingWindowCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.PaymentDetailItemCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.RefreshRegistrationPaymentDraftCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.RequestOutpatientRefundCommand;
@@ -162,13 +161,13 @@ public interface OutpatientRegistrationMapper {
      * IF-REG-12：预约快照转挂号台响应。
      */
     LoadAppointmentForRegisterResponse toLoadAppointmentForRegisterResponse(
-        com.openhis.whale.booking.contracts.dto.OutpatientBookingSnapshot snapshot);
+        com.openhis.health.integration.booking.result.OutpatientBookingSnapshot snapshot);
 
     /**
      * IF-REG-14：可约时段摘要映射。
      */
     ListBookableSlotHintsResponse toListBookableSlotHintsResponse(
-        java.util.List<com.openhis.whale.booking.contracts.dto.BookableSlotHint> hints);
+        java.util.List<com.openhis.health.integration.booking.result.BookableSlotHintSnapshot> hints);
 
     /**
      * 组装挂号支付响应。
@@ -469,14 +468,6 @@ public interface OutpatientRegistrationMapper {
      * @return 退号命令
      */
     CancelOutpatientRegistrationCommand toCancelOutpatientRegistrationCommand(CancelWithRefundRequest request);
-
-    /**
-     * 构建进入退费处理窗口命令。
-     *
-     * @param paymentIds 支付 ID 列表
-     * @return 进入退费处理窗口命令
-     */
-    EnterRefundProcessingWindowCommand toEnterRefundProcessingWindowCommand(List<Long> paymentIds);
 
     /**
      * 构建门诊退费申请命令。

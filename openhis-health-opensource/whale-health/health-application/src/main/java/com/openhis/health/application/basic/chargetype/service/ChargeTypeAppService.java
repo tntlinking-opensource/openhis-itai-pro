@@ -28,7 +28,7 @@ import com.openhis.health.domain.financial.contract.service.ContractDomainServic
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.ChargeTypeCategory;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.ValidationException;
@@ -57,7 +57,7 @@ public class ChargeTypeAppService {
     /** 请求/读模型与 DTO、领域命令之间的装配。 */
     private final ChargeTypeMapper chargeTypeMapper;
     /** 写路径操作人门控（B.6.5）。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
 
     /**
      * 返回新建/编辑表单所需的分类下拉数据。
@@ -135,7 +135,7 @@ public class ChargeTypeAppService {
         if (id == null) {
             throw new ValidationException("删除费用性质失败：id 不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.CONTRACT_INVALID_ARGUMENT, "请先登录后再删除费用性质");
         DeleteContractCommand command = new DeleteContractCommand();
         command.setId(id);

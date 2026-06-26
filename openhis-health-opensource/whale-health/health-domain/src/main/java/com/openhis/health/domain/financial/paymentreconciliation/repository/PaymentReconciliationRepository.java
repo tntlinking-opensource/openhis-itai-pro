@@ -20,6 +20,7 @@ package com.openhis.health.domain.financial.paymentreconciliation.repository;
 import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentReconciliation;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -29,7 +30,8 @@ import java.util.Optional;
 /**
  * 支付流水仓储。
  */
-public interface PaymentReconciliationRepository extends JpaRepository<PaymentReconciliation, Long> {
+public interface PaymentReconciliationRepository extends JpaRepository<PaymentReconciliation, Long>,
+    JpaSpecificationExecutor<PaymentReconciliation> {
     /**
      * 按主键查询。
      * @param id 条件

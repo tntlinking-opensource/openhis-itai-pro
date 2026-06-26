@@ -290,6 +290,30 @@ public class MedicationRequestDomainService {
     }
 
     /**
+     * 取消长期医嘱停嘱：恢复为已校对或已发送，并清空结束时间（IF-IP-DOR-25 / BR-MRQ-006a）。
+     *
+     * @param command 取消停嘱命令，须含 id 与 operatorId
+     * @throws BusinessException 命令为空、非长期或非 STOPPED 时
+     */
+    public void cancelStopLongTermMedicationOrder(CancelStopLongTermMedicationOrderCommand command) {
+        if (command == null || command.getId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
+                "取消停嘱时 id 不能为空");
+        }
+        // 加载：按主键取药品申请聚合根。
+        MedicationRequest request = this.mustGet(command.getId());
+        // 前置校验：须为长期且当前 STOPPED。
+        request.ensureLongTermStoppedForCancelStop();
+        // 状态迁移：performer_check_id 非空→VERIFIED，否则→ACTIVE，并清空 effective_dose_end。
+        request.fromStopped();
+        // 持久化：先落库再发事件，避免投影读到旧态。
+        medicationRequestRepository.save(request);
+        domainEventPublisher.publish(new LongTermMedicationOrderStopCancelledEvent(
+            request.getId(), command.getOperatorId(), request.getStatusEnum()));
+    }
+
+    /**
      * 校对医嘱并推进到已校对状态。
      *
      * @param command 校对命令
@@ -400,8 +424,23 @@ public class MedicationRequestDomainService {
     public Long createRefundMedicationOrder(CreateRefundMedicationOrderCommand command) {
         MedicationRequest origin = this.mustGet(command.getOriginRequestId());
         MedicationRequest refund = new MedicationRequest();
-        // Pre：负向退药单保留来源链路，确保追溯可达。
         refund.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.MEDICATION_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
+        refund.setRefundMedicineId(origin.getId());
+        this.copyRefundMedicationOrderFieldsFromOrigin(refund, origin);
+        refund.markAsRefundFromPrescription(origin.getPrescriptionNo());
+        refund.initDraft();
+        MedicationRequest saved = medicationRequestRepository.save(refund);
+        domainEventPublisher.publish(new MedicationOrderRefundRequestedEvent(saved.getId(), origin.getId(), command.getOperatorId()));
+        return saved.getId();
+    }
+
+    /**
+     * 负向退药药嘱拷贝原正向药嘱临床/展示字段（新 busNo、refundMedicineId、处方号 T 前缀由调用方处理）。
+     *
+     * @param refund 待落库负向药嘱
+     * @param origin 原正向药嘱
+     */
+    private void copyRefundMedicationOrderFieldsFromOrigin(MedicationRequest refund, MedicationRequest origin) {
         refund.setEncounterId(origin.getEncounterId());
         refund.setPatientId(origin.getPatientId());
         refund.setMedicationId(origin.getMedicationId());
@@ -410,12 +449,56 @@ public class MedicationRequestDomainService {
         refund.setUnitCode(origin.getUnitCode());
         refund.setMethodCode(origin.getMethodCode());
         refund.setRateCode(origin.getRateCode());
-        refund.setRefundMedicineId(origin.getId());
         refund.setRequesterId(origin.getRequesterId());
-        refund.initDraft();
-        MedicationRequest saved = medicationRequestRepository.save(refund);
-        domainEventPublisher.publish(new MedicationOrderRefundRequestedEvent(saved.getId(), origin.getId(), command.getOperatorId()));
-        return saved.getId();
+        refund.setGroupId(origin.getGroupId());
+        refund.setPackageId(origin.getPackageId());
+        refund.setIntentEnum(origin.getIntentEnum());
+        refund.setCategoryEnum(origin.getCategoryEnum());
+        refund.setPriorityEnum(origin.getPriorityEnum());
+        refund.setPerformFlag(origin.getPerformFlag());
+        refund.setLocationId(origin.getLocationId());
+        refund.setOrgId(origin.getOrgId());
+        refund.setPerformLocation(origin.getPerformLocation());
+        refund.setPerformOrg(origin.getPerformOrg());
+        refund.setPerformerEnum(origin.getPerformerEnum());
+        refund.setPerformerId(origin.getPerformerId());
+        refund.setRecorderId(origin.getRecorderId());
+        refund.setReportFlag(origin.getReportFlag());
+        refund.setSupportInfo(origin.getSupportInfo());
+        refund.setReasonJson(origin.getReasonJson());
+        refund.setEffectiveDoseStart(origin.getEffectiveDoseStart());
+        refund.setExecuteNum(origin.getExecuteNum());
+        refund.setDose(origin.getDose());
+        refund.setDoseUnitCode(origin.getDoseUnitCode());
+        refund.setMaxDose(origin.getMaxDose());
+        refund.setFirstDose(origin.getFirstDose());
+        refund.setFirstDoseUnitCode(origin.getFirstDoseUnitCode());
+        refund.setFirstDuration(origin.getFirstDuration());
+        refund.setDispenseInterval(origin.getDispenseInterval());
+        refund.setDispensePerQuantity(origin.getDispensePerQuantity());
+        refund.setDispensePerDuration(origin.getDispensePerDuration());
+        refund.setLotNumber(origin.getLotNumber());
+        refund.setTraceNo(origin.getTraceNo());
+        refund.setSkinTestFlag(origin.getSkinTestFlag());
+        refund.setInfusionFlag(origin.getInfusionFlag());
+        refund.setSpeedCode(origin.getSpeedCode());
+        refund.setContractId(origin.getContractId());
+        refund.setConditionDefinitionId(origin.getConditionDefinitionId());
+        refund.setEncounterDiagnosisId(origin.getEncounterDiagnosisId());
+        refund.setPerformerCheckId(origin.getPerformerCheckId());
+        refund.setCheckTime(origin.getCheckTime());
+        refund.setRxTypeCode(origin.getRxTypeCode());
+        refund.setYbClassEnum(origin.getYbClassEnum());
+        refund.setDosageInstruction(origin.getDosageInstruction());
+        refund.setBasedOnTable(origin.getBasedOnTable());
+        refund.setBasedOnId(origin.getBasedOnId());
+        refund.setTcmFlag(origin.getTcmFlag());
+        refund.setContentJson(origin.getContentJson());
+        refund.setChineseHerbsDoseQuantity(origin.getChineseHerbsDoseQuantity());
+        refund.setSufferingFlag(origin.getSufferingFlag());
+        refund.setSortNumber(origin.getSortNumber());
+        refund.setGenerateSourceEnum(origin.getGenerateSourceEnum());
+        refund.setRemark(origin.getRemark());
     }
 
     /**

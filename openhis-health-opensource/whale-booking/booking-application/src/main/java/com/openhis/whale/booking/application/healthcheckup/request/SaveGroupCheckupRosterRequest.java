@@ -12,19 +12,26 @@ import lombok.Setter;
 @Setter
 public class SaveGroupCheckupRosterRequest {
 
+    /** 团检名单主键（更新时传入）。 */
     private Long id;
 
+    /** 团检批次主键。 */
     @NotNull
     private Long batchId;
 
+    /** 患者主键。 */
     private Long patientId;
 
+    /** 姓名。 */
     @NotBlank
     private String fullName;
 
+    /** 身份证号。 */
     private String idCardNo;
 
+    /** 学号。 */
     private String studentNo;
 
+    /** 手机号。 */
     private String mobilePhone;
 }

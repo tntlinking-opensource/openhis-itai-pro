@@ -22,8 +22,7 @@ public class SaveSlotProvisionTemplateRequest {
     /** 科室主键。 */
     private Long organizationId;
 
-    /** 模板编码。 */
-    @NotBlank
+    /** 模板编码（可选；留空时由领域层按 {@link com.openhis.whale.booking.domain.template.constants.BookingTemplateCodeConstants} 自动生成）。 */
     private String templateCode;
 
     /** 模板名称。 */

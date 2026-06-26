@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.request;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -45,13 +46,13 @@ public class ListNurseStationPricedOrdersRequest {
     private List<Long> encounterIds;
 
     /** 划价时间下限（含，对应 OrderInfo.createdAt）。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 划价时间起。 */
     @Schema(description = "划价时间起")
     private LocalDateTime pricedTimeFrom;
 
     /** 划价时间上限（含）。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 划价时间止。 */
     @Schema(description = "划价时间止")
     private LocalDateTime pricedTimeTo;

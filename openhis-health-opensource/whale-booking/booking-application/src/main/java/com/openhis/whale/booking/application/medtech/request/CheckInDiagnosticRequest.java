@@ -11,11 +11,14 @@ import lombok.Setter;
 @Setter
 public class CheckInDiagnosticRequest {
 
+    /** 机构/科室主键。 */
     @NotNull
     private Long organizationId;
 
+    /** 待报到预约主键。 */
     @NotNull
     private Long appointmentId;
 
+    /** 报到去向地点（可选）。 */
     private Long destinationLocationId;
 }

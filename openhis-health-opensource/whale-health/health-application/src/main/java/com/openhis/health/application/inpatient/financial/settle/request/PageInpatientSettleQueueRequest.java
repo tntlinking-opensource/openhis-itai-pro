@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.financial.settle.request;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -37,7 +38,7 @@ import java.time.LocalDate;
 public class PageInpatientSettleQueueRequest extends AbstractHealthPageRequest {
 
     @Schema(description = "入院日期筛选")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     /** 入院日期筛选（业务字段）。 */
     private LocalDate admissionDate;
 

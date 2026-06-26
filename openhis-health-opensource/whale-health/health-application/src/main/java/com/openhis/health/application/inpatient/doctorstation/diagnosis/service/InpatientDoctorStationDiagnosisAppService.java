@@ -18,7 +18,6 @@
 package com.openhis.health.application.inpatient.doctorstation.diagnosis.service;
 
 import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
 import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
@@ -47,7 +46,7 @@ import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionD
 import com.openhis.health.domain.custom.conditiontemplate.queries.model.ConditionTemplateQueryModel;
 import com.openhis.health.domain.custom.conditiontemplate.service.ConditionTemplateQueryService;
 import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.bridge.shared.diagnosis.BridgeEncounterDiagnosisSnapshotAssembler;
+import com.openhis.health.module.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -57,7 +56,9 @@ import com.openhis.health.domain.share.enums.ConditionTemplateBinding;
 import com.openhis.health.domain.share.enums.IptPatientDiseaseDiagType;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
+import com.openhis.health.integration.emr.EmrAdmissionDiagnosisSyncExtension;
 import com.openhis.whale.core.application.dto.OptionDto;
+import com.openhis.whale.core.application.session.CurrentOperatorResolver;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -84,7 +85,7 @@ import java.util.Set;
 public class InpatientDoctorStationDiagnosisAppService {
 
     private final EncounterContextFacade encounterContextFacade;
-    private final BridgeEncounterDiagnosisSnapshotAssembler bridgeEncounterDiagnosisSnapshotAssembler;
+    private final EncounterDiagnosisSnapshotAssembler encounterDiagnosisSnapshotAssembler;
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
     private final ConditionTemplateQueryService conditionTemplateQueryService;
     private final ConditionQueryService conditionQueryService;
@@ -92,9 +93,11 @@ public class InpatientDoctorStationDiagnosisAppService {
     private final EncounterDomainService encounterDomainService;
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     private final CurrentPractitionerResolver currentPractitionerResolver;
+    /** 登录用户个人模板读路径须用 {@code whale_users.id}。 */
     private final CurrentOperatorResolver currentOperatorResolver;
     private final CodeSystemQueryService codeSystemQueryService;
     private final InpatientDoctorStationDiagnosisMapper inpatientDoctorStationDiagnosisMapper;
+    private final EmrAdmissionDiagnosisSyncExtension emrAdmissionDiagnosisSyncExtension;
 
     /**
      *
@@ -109,7 +112,7 @@ public class InpatientDoctorStationDiagnosisAppService {
         inpatientDoctorStationDiagnosisMapper.validateInpatientEncounterClassImp(snapshot);
         // 实时扫表拼装诊断行，禁止仅依赖上下文内 diagnosisJson 中转（读模型废止后 §四）。
         List<EncounterDiagnosisRowDto> rows = inpatientDoctorStationDiagnosisMapper.parseDiagnosisJson(
-            bridgeEncounterDiagnosisSnapshotAssembler.buildSnapshot(request.getEncounterId()).diagnosisJson());
+            encounterDiagnosisSnapshotAssembler.buildSnapshot(request.getEncounterId()).diagnosisJson());
         return inpatientDoctorStationDiagnosisMapper.toEncounterDiagnosisResponse(rows);
     }
 
@@ -195,7 +198,7 @@ public class InpatientDoctorStationDiagnosisAppService {
         inpatientDoctorStationDiagnosisMapper.validateInpatientEncounterPatientGate(snapshot, request.getPatientId());
         inpatientDoctorStationDiagnosisMapper.validateInpatientEncounterClassImp(snapshot);
         inpatientDoctorStationDiagnosisMapper.validateInpatientEncounterWritableGate(snapshot);
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
             "请先选择患者");
         SaveEncounterDiagnosisResponse response;
@@ -214,6 +217,7 @@ public class InpatientDoctorStationDiagnosisAppService {
             log.warn("saveDoctorDiagnosis failed encounterId={}", request.getEncounterId(), ex);
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT, "保存失败，请稍后重试或联系管理员");
         }
+        syncAdmissionDiagnosisToEmrIfEnabled(request.getEncounterId(), request.getPatientId());
         return response;
     }
 
@@ -240,7 +244,7 @@ public class InpatientDoctorStationDiagnosisAppService {
         if (adviceCnt > 0) {
             throw new BusinessException(ErrorCodeConstants.CONDITION_RULE_CONFLICT, "先处理相关医嘱后再删");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
             "请先选择患者");
         try {
@@ -271,7 +275,19 @@ public class InpatientDoctorStationDiagnosisAppService {
             log.warn("delEncounterDiagnosis failed conditionId={}", request.getConditionId(), ex);
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT, "删除失败，请稍后重试或联系管理员");
         }
+        syncAdmissionDiagnosisToEmrIfEnabled(request.getEncounterId(), gatePatientId);
         return inpatientDoctorStationDiagnosisMapper.toDeleteEncounterDiagnosisResponse(true, "删除成功");
+    }
+
+    private void syncAdmissionDiagnosisToEmrIfEnabled(Long encounterId, Long patientId) {
+        if (!emrAdmissionDiagnosisSyncExtension.isEnabled()) {
+            return;
+        }
+        try {
+            emrAdmissionDiagnosisSyncExtension.syncAfterInpatientDiagnosisChanged(encounterId, patientId);
+        } catch (RuntimeException ex) {
+            log.warn("EMR admission diagnosis structured sync failed encounterId={}", encounterId, ex);
+        }
     }
 
     /**

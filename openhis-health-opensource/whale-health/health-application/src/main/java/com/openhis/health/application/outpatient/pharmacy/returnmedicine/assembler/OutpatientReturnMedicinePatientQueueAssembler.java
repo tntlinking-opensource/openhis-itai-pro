@@ -26,7 +26,6 @@ import com.openhis.health.domain.share.utils.EnumUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -36,9 +35,6 @@ import java.util.Map;
  */
 @Component
 public class OutpatientReturnMedicinePatientQueueAssembler {
-
-    private static final DateTimeFormatter RECEPTION_TIME_FMT =
-        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /**
      * 将门诊就诊上下文与就诊维度退药聚合码装配为退药队列行。
@@ -68,9 +64,9 @@ public class OutpatientReturnMedicinePatientQueueAssembler {
             row.setDepartmentName(info.getOrganizationName());
             row.setEncounterNo(info.getEncounterBusNo());
             if (info.getReceptionTime() != null) {
-                row.setReceptionTime(RECEPTION_TIME_FMT.format(info.getReceptionTime()));
+                row.setReceptionTime(GeneralSharedConstants.DATE_TIME_FORMATTER.format(info.getReceptionTime()));
             } else if (info.getStartTime() != null) {
-                row.setReceptionTime(RECEPTION_TIME_FMT.format(info.getStartTime()));
+                row.setReceptionTime(GeneralSharedConstants.DATE_TIME_FORMATTER.format(info.getStartTime()));
             } else {
                 row.setReceptionTime(GeneralSharedConstants.EMPTY_STRING);
             }

@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.outpatient.nursestation.treatment.request;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -69,14 +70,14 @@ public class ListProcedureRecordsForNurseStationRequest extends AbstractHealthPa
     /**
      * 时间范围下限（含）。
      */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "时间范围下限（含）")
     private LocalDateTime startTime;
 
     /**
      * 时间范围上限（含）。
      */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "时间范围上限（含）")
     private LocalDateTime endTime;
 

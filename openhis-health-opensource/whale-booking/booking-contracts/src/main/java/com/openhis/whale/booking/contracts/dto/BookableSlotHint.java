@@ -10,8 +10,15 @@ import java.time.LocalDateTime;
 @Setter
 public class BookableSlotHint {
 
+    /** 号源主键。 */
     private Long slotId;
+
+    /** 时段开始时刻。 */
     private LocalDateTime slotStart;
+
+    /** 时段结束时刻。 */
     private LocalDateTime slotEnd;
+
+    /** 剩余可约数量。 */
     private Integer remainingCount;
 }

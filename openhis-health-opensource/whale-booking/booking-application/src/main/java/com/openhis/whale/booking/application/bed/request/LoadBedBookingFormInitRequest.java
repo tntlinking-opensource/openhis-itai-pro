@@ -10,5 +10,6 @@ import lombok.Setter;
 @Setter
 public class LoadBedBookingFormInitRequest {
 
+    /** 机构/科室主键。 */
     private Long organizationId;
 }

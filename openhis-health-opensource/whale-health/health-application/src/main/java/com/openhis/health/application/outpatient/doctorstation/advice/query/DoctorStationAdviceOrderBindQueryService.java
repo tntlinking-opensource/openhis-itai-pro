@@ -19,7 +19,11 @@ package com.openhis.health.application.outpatient.doctorstation.advice.query;
 
 import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
 import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceDraftBindItemDto;
+import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceDraftLineRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceOrderBindRowDto;
+import com.openhis.health.application.outpatient.doctorstation.advice.dto.SaveMedicationAdviceDraftLinePayload;
+import com.openhis.health.application.outpatient.doctorstation.advice.dto.SaveServiceAdviceDraftLinePayload;
 import com.openhis.health.domain.custom.servicedevicetemplate.queries.model.ServiceDeviceTemplateQueryModel;
 import com.openhis.health.domain.custom.servicedevicetemplate.service.ServiceDeviceTemplateQueryService;
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
@@ -48,11 +52,14 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * IF-DOR-12：门诊医嘱绑定行只读装载。
+ * IF-DOR-12 / IF-DOR-23：门诊医嘱绑定行只读装载。
  *
  * <p>与住院 {@code InpatientDoctorStationAdviceOrderBindQueryService} 同构：用法来源键为
  * {@code method_code} 术语 code；诊疗来源键为活动定义主键字符串。经
  * {@link ServiceDeviceTemplateQueryService} 查询全院启用态模板，批量解析展示名（A.9.1）。</p>
+ *
+ * <p>应用层读服务：跨聚合读经域 {@code *QueryService} 与 {@code ProductDefinitionBatchLoader}，
+ * 不直接注入 Repository（B.6.4）。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -77,6 +84,7 @@ public class DoctorStationAdviceOrderBindQueryService {
         Long organizationUnitId
     ) {
         if (bindType == null || itemId == null) {
+            // 绑定类型或主键缺失时不查模板
             return new ArrayList<>();
         }
         return this.listBindingsBySourceItemKey(bindType, String.valueOf(itemId), organizationUnitId);
@@ -100,10 +108,205 @@ public class DoctorStationAdviceOrderBindQueryService {
     ) {
         List<DoctorStationAdviceOrderBindRowDto> rows = new ArrayList<>();
         if (bindType == null || StringUtils.isBlank(sourceItemKey)) {
+            // 来源键缺失时不查模板
+            return rows;
+        }
+        List<BindAssemblyRow> assemblyRows = this.assembleBindRows(bindType, sourceItemKey, organizationUnitId);
+        for (BindAssemblyRow assemblyRow : assemblyRows) {
+            rows.add(assemblyRow.row());
+        }
+        return rows;
+    }
+
+    /**
+     * IF-DOR-23：按暂存变更行解析直接绑定（不含级联、不去重）。
+     *
+     * @param lines              IF-DOR-14 同构暂存变更行
+     * @param organizationUnitId 机构单元过滤（预留，当前未参与模板查询）
+     * @return 绑定明细；跳过 DELETE 行及无法解析来源键的行
+     */
+    public List<DoctorStationAdviceDraftBindItemDto> listDraftBindItems(
+        List<DoctorStationAdviceDraftLineRequest> lines,
+        Long organizationUnitId
+    ) {
+        List<DoctorStationAdviceDraftBindItemDto> bindItems = new ArrayList<>();
+        // 空变更行集合不产生绑定解析，与 IF-DOR-14 空列表语义一致
+        if (lines == null || lines.isEmpty()) {
+            return bindItems;
+        }
+        for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
+            DoctorStationAdviceDraftLineRequest line = lines.get(lineIndex);
+            // 忽略前端误传的空行，避免 NPE 中断整批解析
+            if (line == null) {
+                continue;
+            }
+            String lineOp = StringUtils.upperCase(StringUtils.trimToEmpty(line.getLineOp()));
+            // DELETE 行不产生新的绑定解析结果
+            if (DoctorStationAdviceConstants.LINE_OP_DELETE.equals(lineOp)) {
+                continue;
+            }
+            String productTableName = StringUtils.trimToEmpty(line.getProductTableName());
+            // 药品行：按 method_code 查 USAGE 直接绑定（BR-ORD-029 禁止级联）
+            if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(productTableName)) {
+                this.appendMedicationLineBindItems(bindItems, line, lineIndex, lineOp, organizationUnitId);
+            } else if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(productTableName)) {
+                // 诊疗行：按 activityDefinitionId 查 ACTIVITY 直接绑定
+                this.appendServiceLineBindItems(bindItems, line, lineIndex, lineOp, organizationUnitId);
+            }
+        }
+        return bindItems;
+    }
+
+    /**
+     * 解析单条药品暂存行的 USAGE 直接绑定并追加到结果集。
+     *
+     * @param bindItems            输出集合
+     * @param line                 暂存变更行
+     * @param lineIndex            变更行在 Request.lines 中的下标
+     * @param lineOp               行操作码
+     * @param organizationUnitId   机构单元过滤（预留）
+     */
+    private void appendMedicationLineBindItems(
+        List<DoctorStationAdviceDraftBindItemDto> bindItems,
+        DoctorStationAdviceDraftLineRequest line,
+        int lineIndex,
+        String lineOp,
+        Long organizationUnitId
+    ) {
+        SaveMedicationAdviceDraftLinePayload payload = line.getMedicationPayload();
+        if (payload == null || StringUtils.isBlank(payload.getMethodCode())) {
+            // 未选用法时不触发 USAGE 绑定
+            return;
+        }
+        Long definitionId = payload.getMedicationDefinitionId();
+        if (definitionId == null) {
+            // 缺药品定义主键无法标注触发源，跳过该行
+            return;
+        }
+        List<BindAssemblyRow> assemblyRows = this.assembleBindRows(
+            DoctorStationAdviceConstants.BIND_TYPE_USAGE,
+            payload.getMethodCode().trim(),
+            organizationUnitId
+        );
+        this.appendDraftBindItems(
+            bindItems,
+            assemblyRows,
+            lineIndex,
+            lineOp,
+            TableNameConstants.MED_MEDICATION_DEFINITION,
+            definitionId,
+            line.getRequestId(),
+            TableNameConstants.MED_MEDICATION_REQUEST
+        );
+    }
+
+    /**
+     * 解析单条诊疗暂存行的 ACTIVITY 直接绑定并追加到结果集。
+     *
+     * @param bindItems            输出集合
+     * @param line                 暂存变更行
+     * @param lineIndex            变更行在 Request.lines 中的下标
+     * @param lineOp               行操作码
+     * @param organizationUnitId   机构单元过滤（预留）
+     */
+    private void appendServiceLineBindItems(
+        List<DoctorStationAdviceDraftBindItemDto> bindItems,
+        DoctorStationAdviceDraftLineRequest line,
+        int lineIndex,
+        String lineOp,
+        Long organizationUnitId
+    ) {
+        SaveServiceAdviceDraftLinePayload payload = line.getServicePayload();
+        if (payload == null || payload.getActivityDefinitionId() == null) {
+            // 缺诊疗载荷或活动定义主键时无法解析 ACTIVITY 绑定
+            return;
+        }
+        List<BindAssemblyRow> assemblyRows = this.assembleBindRows(
+            DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY,
+            String.valueOf(payload.getActivityDefinitionId()),
+            organizationUnitId
+        );
+        this.appendDraftBindItems(
+            bindItems,
+            assemblyRows,
+            lineIndex,
+            lineOp,
+            TableNameConstants.WKF_ACTIVITY_DEFINITION,
+            payload.getActivityDefinitionId(),
+            line.getRequestId(),
+            TableNameConstants.WKF_SERVICE_REQUEST
+        );
+    }
+
+    /**
+     * 将模板绑定行转为 IF-DOR-23 明细，并回填触发源与 based_on 锚点。
+     *
+     * @param bindItems              输出集合
+     * @param assemblyRows           模板绑定装配行
+     * @param lineIndex              触发变更行下标
+     * @param lineOp                 触发行操作码
+     * @param triggerProductTableName 触发主医嘱产品表
+     * @param triggerDefinitionId    触发主医嘱定义主键
+     * @param triggerRequestId       触发主医嘱请求主键（CREATE 可为空）
+     * @param basedOnTable           派生行 based_on 表名
+     */
+    private void appendDraftBindItems(
+        List<DoctorStationAdviceDraftBindItemDto> bindItems,
+        List<BindAssemblyRow> assemblyRows,
+        int lineIndex,
+        String lineOp,
+        String triggerProductTableName,
+        Long triggerDefinitionId,
+        Long triggerRequestId,
+        String basedOnTable
+    ) {
+        for (BindAssemblyRow assemblyRow : assemblyRows) {
+            DoctorStationAdviceOrderBindRowDto row = assemblyRow.row();
+            DoctorStationAdviceDraftBindItemDto item = new DoctorStationAdviceDraftBindItemDto();
+            item.setBindType(row.getBindType());
+            item.setSourceItemId(row.getSourceItemId());
+            item.setSourceItemName(row.getSourceItemName());
+            item.setTargetItemId(row.getTargetItemId());
+            item.setTargetItemName(row.getTargetItemName());
+            item.setTargetProductTableName(assemblyRow.targetProductTableName());
+            item.setQuantityNumerator(row.getQuantityNumerator());
+            item.setQuantityDenominator(row.getQuantityDenominator());
+            item.setUnitCode(row.getUnitCode());
+            item.setUnitName(row.getUnitName());
+            item.setPriority(row.getPriority());
+            item.setActiveFlag(row.getActiveFlag());
+            item.setTriggerLineIndex(lineIndex);
+            item.setTriggerLineOp(lineOp);
+            item.setTriggerProductTableName(triggerProductTableName);
+            item.setTriggerDefinitionId(triggerDefinitionId);
+            item.setTriggerRequestId(triggerRequestId);
+            item.setBasedOnTable(basedOnTable);
+            item.setBasedOnRequestId(triggerRequestId);
+            bindItems.add(item);
+        }
+    }
+
+    /**
+     * 按绑定类型与来源键装载模板行并批量解析展示名（IF-DOR-12/23 共用内核）。
+     *
+     * @param bindType           绑定类型业务码
+     * @param sourceItemKey      模板来源项键
+     * @param organizationUnitId 机构单元过滤（预留，当前未参与查询）
+     * @return 绑定装配行；未知类型或空来源时返回空列表
+     */
+    private List<BindAssemblyRow> assembleBindRows(
+        String bindType,
+        String sourceItemKey,
+        Long organizationUnitId
+    ) {
+        List<BindAssemblyRow> rows = new ArrayList<>();
+        if (bindType == null || StringUtils.isBlank(sourceItemKey)) {
+            // 来源键缺失时不查模板，避免全表误匹配
             return rows;
         }
         Optional<BindQueryContext> contextOpt = resolveBindContext(bindType);
         if (contextOpt.isEmpty()) {
+            // 非 USAGE/ACTIVITY 的 bindType 直接忽略
             return rows;
         }
         BindQueryContext context = contextOpt.get();
@@ -116,11 +319,13 @@ public class DoctorStationAdviceOrderBindQueryService {
             itemIdKey
         );
         if (bindings.isEmpty()) {
+            // 未配置绑定时返回空列表，由前端静默处理
             return rows;
         }
         int maxRows = DoctorStationAdviceConstants.ORDER_BIND_LIST_MAX_ROWS;
         int bound = bindings.size();
         if (bound > maxRows) {
+            // 超出上限时截断，防止异常配置拖垮接口
             bound = maxRows;
         }
         Map<String, String> methodLabelByCode = new HashMap<>();
@@ -134,6 +339,10 @@ public class DoctorStationAdviceOrderBindQueryService {
         int priority = 1;
         for (int i = 0; i < bound; i++) {
             ServiceDeviceTemplateQueryModel binding = bindings.get(i);
+            if (binding.getDevActId() == null || StringUtils.isBlank(binding.getDevActTable())) {
+                // 模板目标主键或表名缺失时跳过，避免返回不可落库行
+                continue;
+            }
             DoctorStationAdviceOrderBindRowDto row = new DoctorStationAdviceOrderBindRowDto();
             row.setBindType(bindType);
             row.setSourceItemId(resolveSourceItemIdForDisplay(context, itemIdKey));
@@ -151,7 +360,7 @@ public class DoctorStationAdviceOrderBindQueryService {
             row.setPriority(priority);
             priority = priority + 1;
             row.setActiveFlag(PublicationStatus.ACTIVE.getCode().equals(binding.getStatusEnum()));
-            rows.add(row);
+            rows.add(new BindAssemblyRow(row, binding.getDevActTable().trim()));
         }
         return rows;
     }
@@ -165,6 +374,7 @@ public class DoctorStationAdviceOrderBindQueryService {
             ));
         }
         if (DoctorStationAdviceConstants.BIND_TYPE_ACTIVITY.equals(bindType)) {
+            // 诊疗绑定来源键为 wkf_activity_definition.id 字符串
             return Optional.of(new BindQueryContext(
                 ServiceDeviceTemplateTypeCode.ACTIVITY.getCode(),
                 TableNameConstants.WKF_ACTIVITY_DEFINITION,
@@ -283,6 +493,11 @@ public class DoctorStationAdviceOrderBindQueryService {
         return targetProductByKey.get(key);
     }
 
+    /** 模板绑定类型与来源表解析上下文。 */
     private record BindQueryContext(String typeCode, String itemTable, boolean sourceIsMethodCode) {
+    }
+
+    /** IF-DOR-12 行 DTO 与目标产品表名成对，供 IF-DOR-23 回填 {@code targetProductTableName}。 */
+    private record BindAssemblyRow(DoctorStationAdviceOrderBindRowDto row, String targetProductTableName) {
     }
 }

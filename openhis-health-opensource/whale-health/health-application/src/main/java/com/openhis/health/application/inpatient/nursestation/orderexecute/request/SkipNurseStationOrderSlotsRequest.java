@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.orderexecute.request;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteWriteSlotDto;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -47,6 +48,6 @@ public class SkipNurseStationOrderSlotsRequest {
 
     /** 预留字段：写路径 Gate 不使用。 */
     @Schema(description = "预留；写路径不使用，仅列表查询用于展示窗口")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime executionDeadline;
 }

@@ -11,12 +11,16 @@ import lombok.Setter;
 @Setter
 public class CheckInHealthCheckupRequest {
 
+    /** 机构/科室主键。 */
     @NotNull
     private Long organizationId;
 
+    /** 预约主键（与 appointmentBusNo 二选一）。 */
     private Long appointmentId;
 
+    /** 预约业务流水号（与 appointmentId 二选一）。 */
     private String appointmentBusNo;
 
+    /** 到检签到去向诊室主键。 */
     private Long destinationLocationId;
 }

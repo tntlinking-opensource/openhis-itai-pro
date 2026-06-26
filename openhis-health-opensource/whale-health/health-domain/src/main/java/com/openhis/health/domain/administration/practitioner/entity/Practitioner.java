@@ -36,55 +36,103 @@ import java.time.LocalDateTime;
 @Table(name = "adm_practitioner")
 public class Practitioner extends BaseAuditedEntity {
 
+    /** 人员姓名。 */
     @Column(name = "name", nullable = false)
     private String name;
+
+    /** 其他名称 JSON（曾用名、英文名等）。 */
     @Column(name = "name_json")
     private String nameJson;
+
+    /** 行政性别编码（{@link com.openhis.health.domain.share.enums.AdministrativeGender}）。 */
     @Column(name = "gender_enum", nullable = false)
     private String genderEnum;
+
+    /** 出生日期。 */
     @Column(name = "birth_date")
     private LocalDate birthDate;
+
+    /** 死亡时间。 */
     @Column(name = "deceased_date")
     private LocalDateTime deceasedDate;
+
+    /** 联系电话。 */
     @Column(name = "phone")
     private String phone;
+
+    /** 人员状态（{@link PublicationStatus}：ACTIVE / INACTIVE / DISCARDED）。 */
     @Column(name = "status_enum", nullable = false)
     private String statusEnum;
+
+    /** 是否启用；{@code status_enum == ACTIVE} 时为 {@code true}。 */
     @Column(name = "active_flag", nullable = false)
     private Boolean activeFlag;
+
+    /** 院内工号/业务编号。 */
     @Column(name = "bus_no")
     private String busNo;
+
+    /** 关联平台用户主键（与 {@link #getId()} 独立，不设库表外键）。 */
     @Column(name = "user_id", nullable = false)
     private Long userId;
+
+    /** 默认登录科室/当前工作科室（Organization 主键）。 */
     @Column(name = "org_id")
     private Long orgId;
+
+    /** 地址-省。 */
     @Column(name = "address_province")
     private String addressProvince;
+
+    /** 地址-市。 */
     @Column(name = "address_city")
     private String addressCity;
+
+    /** 地址-区/县。 */
     @Column(name = "address_district")
     private String addressDistrict;
+
+    /** 地址-街道/详细地址。 */
     @Column(name = "address_street")
     private String addressStreet;
+
+    /** 地址扩展 JSON。 */
     @Column(name = "address_json")
     private String addressJson;
+
+    /** 医保人员编码。 */
     @Column(name = "yb_no")
     private String ybNo;
+
+    /** 职称编码。 */
     @Column(name = "dr_profttl_code")
     private Integer drProfttlCode;
+
+    /** 医师/药师执业资格证编号。 */
     @Column(name = "phar_prac_cert_no")
     private String pharPracCertNo;
+
+    /** 执业证件类型编码。 */
     @Column(name = "prsc_dr_cert_code")
     private String prscDrCertCode;
+
+    /** 开票点编码。 */
     @Column(name = "kpd_code")
     private String kpdCode;
+
+    /** POS 机终端编号。 */
     @Column(name = "pos_no")
     private String posNo;
-    /** 医生签名图片 Base64（可含 data:image/*;base64, 前缀）；库列为 PostgreSQL TEXT */
+
+    /** 医生签名图片 Base64（可含 {@code data:image/*;base64,} 前缀）；库列为 PostgreSQL TEXT。 */
     @Column(name = "signature", columnDefinition = "TEXT")
     private String signature;
+
+    /** 姓名拼音检索码。 */
     @Column(name = "py_str")
     private String pyStr;
+
+    /** 姓名五笔检索码。 */
     @Column(name = "wb_str")
     private String wbStr;
 

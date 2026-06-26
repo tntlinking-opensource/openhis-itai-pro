@@ -11,6 +11,7 @@ import lombok.Setter;
 @Setter
 public class GetScheduleChangePolicyRequest {
 
+    /** 科室/机构主键。 */
     @NotNull
     private Long organizationId;
 }

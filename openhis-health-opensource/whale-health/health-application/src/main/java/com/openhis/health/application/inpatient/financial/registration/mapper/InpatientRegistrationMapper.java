@@ -24,6 +24,7 @@ import com.openhis.health.application.inpatient.financial.registration.request.C
 import com.openhis.health.application.inpatient.financial.registration.request.SubmitRegistrationRequest;
 import com.openhis.health.application.inpatient.financial.registration.response.CancelRegistrationResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.ListWardsByDepartmentResponse;
+import com.openhis.health.application.inpatient.financial.registration.response.LoadInpatientRegistrationPageInitResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.LoadRegistrationContextResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.LoadWardBedCapacityResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.PageRegistrationQueueResponse;
@@ -51,6 +52,15 @@ import java.util.Map;
  * <p>禁止承载业务流程判断与不变式校验。</p>
  */
 public interface InpatientRegistrationMapper {
+
+    /**
+     * 装配住院登记页初始化响应。
+     *
+     * @param paymentChannelOptions 用户可选支付渠道下拉
+     * @return 初始化响应
+     */
+    LoadInpatientRegistrationPageInitResponse toLoadInpatientRegistrationPageInitResponse(
+        List<OptionDto> paymentChannelOptions);
 
     /**
      * 读模型列表 → 待办行 DTO 列表。

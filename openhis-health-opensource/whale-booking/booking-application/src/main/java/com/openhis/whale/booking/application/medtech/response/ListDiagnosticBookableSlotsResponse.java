@@ -13,5 +13,6 @@ import java.util.List;
 @Setter
 public class ListDiagnosticBookableSlotsResponse {
 
+    /** 可约号源列表。 */
     private List<BookableSlotDto> slots;
 }

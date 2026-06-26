@@ -18,7 +18,6 @@
 package com.openhis.health.application.outpatient.financial.refund.mapper;
 
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
-import com.openhis.health.domain.share.constants.InsuranceCoordinationConstants;
 import com.openhis.health.domain.share.constants.OutpatientRefundQueueTab;
 import com.openhis.health.application.outpatient.financial.refund.dto.OutpatientRefundLineItemDto;
 import com.openhis.health.application.outpatient.financial.refund.dto.OutpatientRefundPaymentGroupDto;
@@ -34,12 +33,12 @@ import com.openhis.health.application.outpatient.financial.refund.response.Verif
 import com.openhis.health.domain.administration.chargeitem.command.BatchChargeItemIdsCommand;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CompleteOutpatientRefundCommand;
-import com.openhis.health.domain.financial.paymentreconciliation.command.EnterRefundProcessingWindowCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.FinalizeOriginalOutpatientPaymentCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.PaymentDetailItemCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.RequestOutpatientRefundCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
+import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.health.domain.share.enums.PaymentType;
@@ -69,12 +68,16 @@ public class OutpatientRefundMapperImpl implements OutpatientRefundMapper {
      * 装配退费页初始化响应。
      *
      * @param chargeItemStatusOptions 收费项状态下拉
+     * @param paymentChannelOptions   用户可选支付渠道下拉
      * @return 初始化响应
      */
     @Override
-    public LoadOutpatientRefundPageInitResponse toLoadOutpatientRefundPageInitResponse(List<OptionDto> chargeItemStatusOptions) {
+    public LoadOutpatientRefundPageInitResponse toLoadOutpatientRefundPageInitResponse(
+        List<OptionDto> chargeItemStatusOptions,
+        List<OptionDto> paymentChannelOptions) {
         LoadOutpatientRefundPageInitResponse response = new LoadOutpatientRefundPageInitResponse();
         response.setChargeItemStatusOptions(chargeItemStatusOptions);
+        response.setPaymentChannelOptions(paymentChannelOptions);
         return response;
     }
 
@@ -99,6 +102,12 @@ public class OutpatientRefundMapperImpl implements OutpatientRefundMapper {
             row.setEncounterBusNo(baseRow.getEncounterBusNo());
             row.setPatientId(baseRow.getPatientId());
             row.setPatientName(baseRow.getPatientName());
+            row.setGenderCode(baseRow.getGenderEnum());
+            AdministrativeGender gender = EnumUtil.fromCode(AdministrativeGender.class, baseRow.getGenderEnum());
+            if (gender != null) {
+                row.setGenderEnumText(gender.getDisplay());
+            }
+            row.setAgeText(baseRow.getAgeText());
             row.setOrganizationName(baseRow.getOrganizationName());
             row.setDoctorName(baseRow.getDoctorName());
             row.setStartTime(baseRow.getStartTime());
@@ -160,21 +169,6 @@ public class OutpatientRefundMapperImpl implements OutpatientRefundMapper {
         response.setAllowed(allowed);
         response.setRejectReasonCode(rejectReasonCode);
         return response;
-    }
-
-    /**
-     * 装配进入退款受理窗口命令。
-     *
-     * @param paymentIds 原支付主键列表
-     * @param operatorId 操作人
-     * @return 命令
-     */
-    @Override
-    public EnterRefundProcessingWindowCommand toEnterRefundProcessingWindowCommand(List<Long> paymentIds, Long operatorId) {
-        EnterRefundProcessingWindowCommand command = new EnterRefundProcessingWindowCommand();
-        command.setPaymentIds(paymentIds);
-        command.setOperatorId(operatorId);
-        return command;
     }
 
     /**
@@ -289,28 +283,7 @@ public class OutpatientRefundMapperImpl implements OutpatientRefundMapper {
         response.setReversePaymentId(reversePaymentId);
         response.setOriginalPaymentId(originalPaymentId);
         response.setHalfRefundExecuted(halfRefundExecuted);
-        response.setInsuranceRevokeMode(InsuranceCoordinationConstants.SETTLEMENT_MODE_SYNC);
         response.setInsuranceRevoked(true);
-        return response;
-    }
-
-    /**
-     * 装配医保撤销异步协同响应（OP_SETTLE_REVERSE 已启动，本地退费尚未执行）。
-     *
-     * @param originalPaymentId 原支付单主键
-     * @param coordinationIds   已创建的协同单 ID 列表
-     * @return 异步退费响应（success=false，含 coordinationIds）
-     */
-    @Override
-    public ExecuteOutpatientBillRefundByPaymentResponse toExecuteOutpatientBillRefundInsuranceAsyncResponse(
-        Long originalPaymentId,
-        List<Long> coordinationIds) {
-        ExecuteOutpatientBillRefundByPaymentResponse response = new ExecuteOutpatientBillRefundByPaymentResponse();
-        response.setSuccess(false);
-        response.setOriginalPaymentId(originalPaymentId);
-        response.setInsuranceRevokeMode(InsuranceCoordinationConstants.SETTLEMENT_MODE_INSURANCE_ASYNC);
-        response.setCoordinationIds(coordinationIds);
-        response.setInsuranceRevoked(false);
         return response;
     }
 

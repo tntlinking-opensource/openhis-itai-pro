@@ -1,237 +1,304 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ */
+
 package com.openhis.whale.mrms.domain.service;
 
 import com.openhis.whale.mrms.domain.entity.CaseRecord;
 import com.openhis.whale.mrms.domain.entity.CaseRecordHomepage;
+import com.openhis.whale.mrms.domain.entity.HomepageDiagnosis;
+import com.openhis.whale.mrms.domain.entity.HomepageProcedure;
+import com.openhis.whale.mrms.domain.enums.FieldFillSource;
 import com.openhis.whale.mrms.domain.enums.HomepageDiagType;
-import com.openhis.whale.mrms.domain.model.HomepageSaveCommand.DiagnosisLineCommand;
-import com.openhis.whale.mrms.domain.model.HomepageSaveCommand.ProcedureLineCommand;
-import com.openhis.whale.mrms.port.DiagnosisProcedurePort;
-import com.openhis.whale.mrms.port.EncounterHistoryPort;
-import com.openhis.whale.mrms.port.PatientEncounterPort;
-import com.openhis.whale.mrms.port.model.DiagnosisLineSnapshot;
-import com.openhis.whale.mrms.port.model.EncounterSnapshot;
-import com.openhis.whale.mrms.port.model.PatientSnapshot;
-import com.openhis.whale.mrms.port.model.ProcedureLineSnapshot;
-import com.openhis.whale.mrms.port.model.TransferLineSnapshot;
+import com.openhis.whale.mrms.domain.repository.CaseRecordHomepageRepository;
+import com.openhis.whale.mrms.domain.support.HomepageChildTableSupport;
+import com.openhis.whale.mrms.contracts.reader.HealthDiagnosisProcedureReader;
+import com.openhis.whale.mrms.contracts.reader.HealthEncounterHistoryReader;
+import com.openhis.whale.mrms.contracts.reader.HealthPatientEncounterReader;
+import com.openhis.whale.mrms.contracts.snapshot.DiagnosisLineSnapshot;
+import com.openhis.whale.mrms.contracts.snapshot.EncounterSnapshot;
+import com.openhis.whale.mrms.contracts.snapshot.PatientSnapshot;
+import com.openhis.whale.mrms.contracts.snapshot.ProcedureLineSnapshot;
+import com.openhis.whale.mrms.contracts.snapshot.TransferLineSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
-import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
+
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 /**
- * 从 Port 拉取 HIS 数据合并到病案首页，维护 field_sources_json。
+ * 首页自动取值合并器：尊重 field_sources_json 中 manual 标记。
  */
 @Service
 @RequiredArgsConstructor
 public class HomepageAutoFillMerger {
 
-    private final PatientEncounterPort patientEncounterPort;
-    private final DiagnosisProcedurePort diagnosisProcedurePort;
-    private final EncounterHistoryPort encounterHistoryPort;
-    private final CaseRecordHomepageManager homepageManager;
+    private final HealthPatientEncounterReader healthPatientEncounterReader;
+    private final HealthDiagnosisProcedureReader healthDiagnosisProcedureReader;
+    private final HealthEncounterHistoryReader healthEncounterHistoryReader;
+    private final CaseRecordHomepageRepository homepageRepository;
+    private final HomepageChildTableSupport childTableSupport;
     private final FieldSourcesJsonHelper fieldSourcesJsonHelper;
 
+    /**
+     * 按段刷新自动取值。
+     *
+     * @param record 病案主档
+     * @param sections 刷新段列表
+     * @param forceOverwrite 是否强制覆盖 auto/mixed
+     * @param operatorId 操作人
+     * @return 刷新后首页
+     */
     @Transactional(rollbackFor = Exception.class)
-    public CaseRecordHomepage merge(CaseRecord caseRecord, List<String> sections, boolean forceOverwrite) {
-        CaseRecordHomepage homepage = homepageManager.requireByCaseRecordId(caseRecord.getId());
+    public CaseRecordHomepage merge(
+            CaseRecord record,
+            List<String> sections,
+            boolean forceOverwrite,
+            Long operatorId) {
+        CaseRecordHomepage homepage = homepageRepository
+                .findByCaseRecordIdAndIsDeletedFalse(record.getId())
+                .orElseThrow();
         Map<String, String> sources = fieldSourcesJsonHelper.parse(homepage.getFieldSourcesJson());
-        Set<String> sectionSet = normalizeSections(sections);
-        PatientSnapshot patient = patientEncounterPort.findPatient(caseRecord.getPatientId()).orElse(null);
-        EncounterSnapshot encounter = patientEncounterPort.findEncounter(caseRecord.getEncounterId()).orElse(null);
-
-        if (sectionSet.contains("basic") && patient != null) {
-            mergeBasic(homepage, sources, patient, forceOverwrite);
+        boolean all = sections != null && sections.contains("all");
+        if (all || containsSection(sections, "basic")) {
+            mergeBasic(record, homepage, sources, forceOverwrite);
         }
-        if (sectionSet.contains("inpatient") && encounter != null) {
-            mergeInpatient(homepage, sources, encounter, forceOverwrite);
+        if (all || containsSection(sections, "inpatient")) {
+            mergeInpatient(record, homepage, sources, forceOverwrite);
         }
-        if (sectionSet.contains("staff") && encounter != null) {
-            mergeStaff(homepage, sources, encounter, forceOverwrite);
+        if (all || containsSection(sections, "staff")) {
+            mergeStaff(record, homepage, sources, forceOverwrite);
         }
-        if (sectionSet.contains("diagnosis") && encounter != null) {
-            mergeDiagnoses(caseRecord, encounter.getEncounterId(), forceOverwrite);
-        }
-        if (sectionSet.contains("procedure") && encounter != null) {
-            mergeProcedures(caseRecord, encounter.getEncounterId(), forceOverwrite);
-        }
-        if (sectionSet.contains("inpatient")) {
-            mergeTransferSummary(homepage, sources, caseRecord.getEncounterId(), forceOverwrite);
-        }
-
-        homepage.setFieldSourcesJson(fieldSourcesJsonHelper.serialize(sources));
-        return homepageManager.saveScalarsOnly(homepage);
-    }
-
-    private Set<String> normalizeSections(List<String> sections) {
-        if (sections == null || sections.isEmpty()) {
-            return Set.of("all");
-        }
-        Set<String> normalized = new HashSet<>();
-        for (String section : sections) {
-            if ("all".equalsIgnoreCase(section)) {
-                return Set.of("basic", "inpatient", "diagnosis", "procedure", "staff");
+        if (all || containsSection(sections, "diagnosis")) {
+            if (mergeDiagnoses(record, homepage, forceOverwrite)) {
+                sources.put("diagnoses", FieldFillSource.AUTO.getCode());
             }
-            normalized.add(section.toLowerCase());
         }
-        return normalized;
+        if (all || containsSection(sections, "procedure")) {
+            if (mergeProcedures(record, homepage, forceOverwrite)) {
+                sources.put("procedures", FieldFillSource.AUTO.getCode());
+            }
+        }
+        homepage.setFieldSourcesJson(fieldSourcesJsonHelper.toJson(sources));
+        homepage.setUpdatedAt(LocalDateTime.now());
+        homepage.setUpdatedBy(operatorId);
+        return homepageRepository.save(homepage);
     }
 
-    private void mergeBasic(CaseRecordHomepage homepage, Map<String, String> sources, PatientSnapshot patient,
-            boolean force) {
-        setAutoField(homepage, sources, "psn_name", patient.getName(), force, homepage::setPsnName);
-        setAutoField(homepage, sources, "gend_code", patient.getGenderCode(), force, homepage::setGendCode);
-        if (patient.getBirthDate() != null && shouldOverwrite(sources, "brdy", force)) {
-            homepage.setBrdy(patient.getBirthDate());
-            fieldSourcesJsonHelper.markAuto(sources, "brdy");
-        }
-        setAutoField(homepage, sources, "certno", patient.getIdCard(), force, homepage::setCertno);
-        setAutoField(homepage, sources, "ntly_code", patient.getNationalityCode(), force, homepage::setNtlyCode);
-        setAutoField(homepage, sources, "prfs_code", patient.getOccupationCode(), force, homepage::setPrfsCode);
-        setAutoField(homepage, sources, "mrg_stas_code", patient.getMaritalStatusCode(), force, homepage::setMrgStasCode);
-        setAutoField(homepage, sources, "curr_addr", patient.getAddress(), force, homepage::setCurrAddr);
-        setAutoField(homepage, sources, "psn_tel", patient.getPhone(), force, homepage::setPsnTel);
-        setAutoField(homepage, sources, "coner_name", patient.getContactName(), force, homepage::setConerName);
-        setAutoField(homepage, sources, "coner_tel", patient.getContactPhone(), force, homepage::setConerTel);
-        setAutoField(homepage, sources, "coner_addr", patient.getContactAddress(), force, homepage::setConerAddr);
-    }
-
-    private void mergeInpatient(CaseRecordHomepage homepage, Map<String, String> sources, EncounterSnapshot encounter,
-            boolean force) {
-        setAutoField(homepage, sources, "ipt_no", encounter.getInpatientNo(), force, homepage::setIptNo);
-        setAutoField(homepage, sources, "adm_way_code", encounter.getAdmitWayCode(), force, homepage::setAdmWayCode);
-        setAutoField(homepage, sources, "adm_caty_code", encounter.getAdmitDeptCode(), force, homepage::setAdmCatyCode);
-        setAutoField(homepage, sources, "adm_caty_name", encounter.getAdmitDeptName(), force, homepage::setAdmCatyName);
-        setAutoField(homepage, sources, "dscg_caty_code", encounter.getDischargeDeptCode(), force, homepage::setDscgCatyCode);
-        setAutoField(homepage, sources, "dscg_caty_name", encounter.getDischargeDeptName(), force, homepage::setDscgCatyName);
-        if (encounter.getAdmissionAt() != null && shouldOverwrite(sources, "adm_time", force)) {
-            homepage.setAdmTime(encounter.getAdmissionAt());
-            fieldSourcesJsonHelper.markAuto(sources, "adm_time");
-        }
-        if (encounter.getDischargeAt() != null && shouldOverwrite(sources, "dscg_time", force)) {
-            homepage.setDscgTime(encounter.getDischargeAt());
-            fieldSourcesJsonHelper.markAuto(sources, "dscg_time");
-        }
-        String dischargeWay = encounterHistoryPort.resolveDischargeWayCode(encounter.getEncounterId())
-                .orElse(encounter.getDischargeWayCode());
-        setAutoField(homepage, sources, "dscg_way_code", dischargeWay, force, homepage::setDscgWayCode);
-        if (homepage.getAdmTime() != null && homepage.getDscgTime() != null && shouldOverwrite(sources, "act_ipt_days", force)) {
-            long days = ChronoUnit.DAYS.between(homepage.getAdmTime().toLocalDate(), homepage.getDscgTime().toLocalDate());
-            homepage.setActIptDays((int) Math.max(days, 1));
-            fieldSourcesJsonHelper.markAuto(sources, "act_ipt_days");
-        }
-    }
-
-    private void mergeStaff(CaseRecordHomepage homepage, Map<String, String> sources, EncounterSnapshot encounter,
-            boolean force) {
-        setAutoField(homepage, sources, "dept_director_name", encounter.getDeptDirectorName(), force,
-                homepage::setDeptDirectorName);
-        setAutoField(homepage, sources, "chfdr_name", encounter.getChiefDoctorName(), force, homepage::setChfdrName);
-        setAutoField(homepage, sources, "atddr_name", encounter.getAttendingPractitionerName(), force, homepage::setAtddrName);
-        setAutoField(homepage, sources, "ipt_dr_name", encounter.getResidentDoctorName(), force, homepage::setIptDrName);
-        setAutoField(homepage, sources, "resp_nurs_name", encounter.getPrimaryNurseName(), force, homepage::setRespNursName);
-    }
-
-    private void mergeTransferSummary(CaseRecordHomepage homepage, Map<String, String> sources, long encounterId,
-            boolean force) {
-        List<TransferLineSnapshot> transfers = encounterHistoryPort.listTransfers(encounterId);
-        if (transfers.isEmpty()) {
+    private void mergeBasic(CaseRecord record, CaseRecordHomepage homepage, Map<String, String> sources, boolean force) {
+        PatientSnapshot patient = healthPatientEncounterReader.loadPatient(record.getPatientId());
+        if (patient == null) {
             return;
         }
-        String summary = transfers.stream()
-                .map(t -> String.format("%s→%s", nullToEmpty(t.getFromDeptName()), nullToEmpty(t.getToDeptName())))
-                .collect(Collectors.joining("；"));
-        setAutoField(homepage, sources, "transfer_dept_summary", summary, force, homepage::setTransferDeptSummary);
+        putIfAllowed(homepage, sources, "psn_name", patient.getName(), force);
+        putIfAllowed(homepage, sources, "gend_code", patient.getGenderCode(), force);
+        putIfAllowed(homepage, sources, "brdy", patient.getBirthDate(), force);
+        putIfAllowed(homepage, sources, "certno", patient.getCertno(), force);
+        putIfAllowed(homepage, sources, "curr_addr", patient.getCurrAddr(), force);
+        putIfAllowed(homepage, sources, "psn_tel", patient.getPhone(), force);
+        putIfAllowed(homepage, sources, "coner_name", patient.getContactName(), force);
+        putIfAllowed(homepage, sources, "coner_tel", patient.getContactPhone(), force);
+        putIfAllowed(homepage, sources, "ntly_code", patient.getNationalityCode(), force);
+        putIfAllowed(homepage, sources, "naty_code", patient.getNatyCode(), force);
     }
 
-    private void mergeDiagnoses(CaseRecord caseRecord, long encounterId, boolean forceOverwrite) {
-        List<DiagnosisLineSnapshot> discharge = diagnosisProcedurePort.listDischargeDiagnoses(encounterId);
-        if (discharge.isEmpty()) {
+    private void mergeInpatient(CaseRecord record, CaseRecordHomepage homepage, Map<String, String> sources, boolean force) {
+        EncounterSnapshot enc = healthPatientEncounterReader.loadEncounter(record.getEncounterId());
+        if (enc == null) {
             return;
         }
-        List<DiagnosisLineCommand> mainLines = new ArrayList<>();
-        List<DiagnosisLineCommand> otherLines = new ArrayList<>();
-        int otherSort = 0;
-        for (DiagnosisLineSnapshot line : discharge) {
-            DiagnosisLineCommand cmd = toDiagnosisCommand(line);
-            if (line.isPrimary()) {
-                cmd.setDiagTypeCode(HomepageDiagType.DISCHARGE_MAIN.getCode());
-                cmd.setSortNo(0);
-                mainLines.add(cmd);
+        putIfAllowed(homepage, sources, "ipt_no", enc.getIptNo(), force);
+        putIfAllowed(homepage, sources, "adm_time", enc.getAdmTime(), force);
+        putIfAllowed(homepage, sources, "dscg_time", enc.getDscgTime(), force);
+        putIfAllowed(homepage, sources, "adm_caty_code", enc.getAdmCatyCode(), force);
+        putIfAllowed(homepage, sources, "adm_caty_name", enc.getAdmCatyName(), force);
+        putIfAllowed(homepage, sources, "dscg_caty_code", enc.getDscgCatyCode(), force);
+        putIfAllowed(homepage, sources, "dscg_caty_name", enc.getDscgCatyName(), force);
+        if (enc.getAdmTime() != null && enc.getDscgTime() != null) {
+            long days = ChronoUnit.DAYS.between(enc.getAdmTime().toLocalDate(), enc.getDscgTime().toLocalDate());
+            if (days < 1) {
+                days = 1;
+            }
+            putIfAllowed(homepage, sources, "ipt_days", (int) days, force);
+        }
+        String dscgWay = healthEncounterHistoryReader.resolveDischargeWayCode(record.getEncounterId());
+        putIfAllowed(homepage, sources, "dscg_way_code", dscgWay, force);
+        List<TransferLineSnapshot> transfers = healthEncounterHistoryReader.listTransfers(record.getEncounterId());
+        if (transfers != null && !transfers.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            for (TransferLineSnapshot line : transfers) {
+                if (sb.length() > 0) {
+                    sb.append("→");
+                }
+                sb.append(line.getToDeptName());
+            }
+            putIfAllowed(homepage, sources, "transfer_dept_summary", sb.toString(), force);
+        }
+    }
+
+    private void mergeStaff(CaseRecord record, CaseRecordHomepage homepage, Map<String, String> sources, boolean force) {
+        EncounterSnapshot enc = healthPatientEncounterReader.loadEncounter(record.getEncounterId());
+        if (enc == null) {
+            return;
+        }
+        putIfAllowed(homepage, sources, "dept_director_name", enc.getDeptDirectorName(), force);
+        putIfAllowed(homepage, sources, "chfdr_name", enc.getChfdrName(), force);
+        putIfAllowed(homepage, sources, "atddr_name", enc.getAtddrName(), force);
+        putIfAllowed(homepage, sources, "atddr_practitioner_id", enc.getAtddrPractitionerId(), force);
+        putIfAllowed(homepage, sources, "ipt_dr_name", enc.getIptDrName(), force);
+        putIfAllowed(homepage, sources, "resp_nurs_name", enc.getRespNursName(), force);
+    }
+
+    private boolean mergeDiagnoses(CaseRecord record, CaseRecordHomepage homepage, boolean force) {
+        if (!force && hasManualDiagnosis(homepage)) {
+            return false;
+        }
+        List<HomepageDiagnosis> lines = new ArrayList<>();
+        appendDiagLines(lines, HomepageDiagType.DISCHARGE_MAIN, healthDiagnosisProcedureReader.listDischargeDiagnoses(record.getEncounterId()), true);
+        appendDiagLines(lines, HomepageDiagType.DISCHARGE_OTHER, healthDiagnosisProcedureReader.listDischargeDiagnoses(record.getEncounterId()), false);
+        appendDiagLines(lines, HomepageDiagType.ADMISSION_MAIN, healthDiagnosisProcedureReader.listAdmissionDiagnoses(record.getEncounterId()), true);
+        appendDiagLines(lines, HomepageDiagType.ADMISSION_OTHER, healthDiagnosisProcedureReader.listAdmissionDiagnoses(record.getEncounterId()), false);
+        childTableSupport.replaceDiagnosisSnapshots(record.getId(), homepage.getTenantId(), lines);
+        return true;
+    }
+
+    private boolean mergeProcedures(CaseRecord record, CaseRecordHomepage homepage, boolean force) {
+        if (!force && hasManualProcedure(homepage)) {
+            return false;
+        }
+        List<ProcedureLineSnapshot> procLines = healthDiagnosisProcedureReader.listProcedures(record.getEncounterId());
+        List<HomepageProcedure> lines = new ArrayList<>();
+        int sort = 0;
+        for (ProcedureLineSnapshot snap : procLines) {
+            HomepageProcedure row = new HomepageProcedure();
+            row.setSortNo(sort++);
+            row.setOprnOprtCode(snap.getOprnCode());
+            row.setOprnOprtName(snap.getOprnName());
+            row.setOprnDate(snap.getOprnDate());
+            if (Boolean.TRUE.equals(snap.getMain())) {
+                row.setMainOprnFlag("1");
             } else {
-                cmd.setDiagTypeCode(HomepageDiagType.DISCHARGE_OTHER.getCode());
-                cmd.setSortNo(otherSort++);
-                otherLines.add(cmd);
+                row.setMainOprnFlag("0");
+            }
+            lines.add(row);
+        }
+        childTableSupport.replaceProcedureSnapshots(record.getId(), homepage.getTenantId(), lines);
+        return true;
+    }
+
+    private void appendDiagLines(
+            List<HomepageDiagnosis> target,
+            HomepageDiagType type,
+            List<DiagnosisLineSnapshot> snaps,
+            boolean mainOnly) {
+        if (snaps == null) {
+            return;
+        }
+        int sort = 0;
+        for (DiagnosisLineSnapshot snap : snaps) {
+            if (mainOnly && !Boolean.TRUE.equals(snap.getMain())) {
+                continue;
+            }
+            if (!mainOnly && Boolean.TRUE.equals(snap.getMain())) {
+                continue;
+            }
+            HomepageDiagnosis row = new HomepageDiagnosis();
+            row.setDiagTypeCode(type.getCode());
+            row.setSortNo(sort++);
+            row.setDiagCode(snap.getDiagCode());
+            row.setDiagName(snap.getDiagName());
+            row.setAdmCondCode(snap.getAdmCondCode());
+            if (Boolean.TRUE.equals(snap.getMain())) {
+                row.setMaindiagFlag("1");
+            } else {
+                row.setMaindiagFlag("0");
+            }
+            target.add(row);
+        }
+    }
+
+    private boolean hasManualDiagnosis(CaseRecordHomepage homepage) {
+        return isManualSection(homepage, "diagnoses");
+    }
+
+    private boolean hasManualProcedure(CaseRecordHomepage homepage) {
+        return isManualSection(homepage, "procedures");
+    }
+
+    private boolean isManualSection(CaseRecordHomepage homepage, String sectionKey) {
+        if (homepage == null) {
+            return false;
+        }
+        Map<String, String> sources = fieldSourcesJsonHelper.parse(homepage.getFieldSourcesJson());
+        return FieldFillSource.MANUAL.getCode().equals(sources.get(sectionKey));
+    }
+
+    private void putIfAllowed(
+            CaseRecordHomepage homepage,
+            Map<String, String> sources,
+            String fieldKey,
+            Object newVal,
+            boolean force) {
+        if (newVal == null) {
+            return;
+        }
+        String source = sources.get(fieldKey);
+        if (!force && FieldFillSource.MANUAL.getCode().equals(source)) {
+            return;
+        }
+        applyField(homepage, fieldKey, newVal);
+        sources.put(fieldKey, FieldFillSource.AUTO.getCode());
+    }
+
+    private void applyField(CaseRecordHomepage homepage, String fieldKey, Object value) {
+        switch (fieldKey) {
+            case "psn_name" -> homepage.setPsnName(String.valueOf(value));
+            case "gend_code" -> homepage.setGendCode(String.valueOf(value));
+            case "brdy" -> homepage.setBrdy((java.time.LocalDate) value);
+            case "certno" -> homepage.setCertno(String.valueOf(value));
+            case "curr_addr" -> homepage.setCurrAddr(String.valueOf(value));
+            case "psn_tel" -> homepage.setPsnTel(String.valueOf(value));
+            case "coner_name" -> homepage.setConerName(String.valueOf(value));
+            case "coner_tel" -> homepage.setConerTel(String.valueOf(value));
+            case "ntly_code" -> homepage.setNtlyCode(String.valueOf(value));
+            case "naty_code" -> homepage.setNatyCode(String.valueOf(value));
+            case "ipt_no" -> homepage.setIptNo(String.valueOf(value));
+            case "adm_time" -> homepage.setAdmTime((LocalDateTime) value);
+            case "dscg_time" -> homepage.setDscgTime((LocalDateTime) value);
+            case "adm_caty_code" -> homepage.setAdmCatyCode(String.valueOf(value));
+            case "adm_caty_name" -> homepage.setAdmCatyName(String.valueOf(value));
+            case "dscg_caty_code" -> homepage.setDscgCatyCode(String.valueOf(value));
+            case "dscg_caty_name" -> homepage.setDscgCatyName(String.valueOf(value));
+            case "ipt_days" -> homepage.setIptDays((Integer) value);
+            case "dscg_way_code" -> homepage.setDscgWayCode(String.valueOf(value));
+            case "transfer_dept_summary" -> homepage.setTransferDeptSummary(String.valueOf(value));
+            case "dept_director_name" -> homepage.setDeptDirectorName(String.valueOf(value));
+            case "chfdr_name" -> homepage.setChfdrName(String.valueOf(value));
+            case "atddr_name" -> homepage.setAtddrName(String.valueOf(value));
+            case "atddr_practitioner_id" -> homepage.setAtddrPractitionerId((Long) value);
+            case "ipt_dr_name" -> homepage.setIptDrName(String.valueOf(value));
+            case "resp_nurs_name" -> homepage.setRespNursName(String.valueOf(value));
+            default -> {
+                // 未注册字段忽略
             }
         }
-        if (!mainLines.isEmpty() && forceOverwrite) {
-            homepageManager.replaceDiagnosesByType(caseRecord.getId(), caseRecord.getTenantId(),
-                    HomepageDiagType.DISCHARGE_MAIN.getCode(), mainLines);
-        }
-        if (!otherLines.isEmpty() && forceOverwrite) {
-            homepageManager.replaceDiagnosesByType(caseRecord.getId(), caseRecord.getTenantId(),
-                    HomepageDiagType.DISCHARGE_OTHER.getCode(), otherLines);
-        }
     }
 
-    private void mergeProcedures(CaseRecord caseRecord, long encounterId, boolean forceOverwrite) {
-        if (!forceOverwrite) {
-            return;
+    private boolean containsSection(List<String> sections, String code) {
+        if (sections == null) {
+            return false;
         }
-        List<ProcedureLineSnapshot> procedures = diagnosisProcedurePort.listProcedures(encounterId);
-        if (procedures.isEmpty()) {
-            return;
+        for (String section : sections) {
+            if (code.equals(trimToNull(section))) {
+                return true;
+            }
         }
-        List<ProcedureLineCommand> lines = new ArrayList<>();
-        for (ProcedureLineSnapshot snapshot : procedures) {
-            ProcedureLineCommand cmd = new ProcedureLineCommand();
-            cmd.setSortNo(snapshot.getSortNo());
-            cmd.setOprnOprtCode(snapshot.getProcedureCode());
-            cmd.setOprnOprtName(snapshot.getProcedureName());
-            cmd.setOprnDate(snapshot.getProcedureDate());
-            cmd.setOprnLevelCode(snapshot.getLevelCode());
-            cmd.setOprnIncisionCode(snapshot.getIncisionCode());
-            cmd.setHealGradeCode(snapshot.getHealGradeCode());
-            cmd.setAnstWayCode(snapshot.getAnesthesiaCode());
-            lines.add(cmd);
-        }
-        homepageManager.replaceProcedures(caseRecord.getId(), caseRecord.getTenantId(), lines);
-    }
-
-    private DiagnosisLineCommand toDiagnosisCommand(DiagnosisLineSnapshot line) {
-        DiagnosisLineCommand cmd = new DiagnosisLineCommand();
-        cmd.setSortNo(line.getSortNo());
-        cmd.setDiagCode(line.getDiagCode());
-        cmd.setDiagName(line.getDiagName());
-        cmd.setAdmCondCode(line.getAdmCondCode());
-        return cmd;
-    }
-
-    private void setAutoField(CaseRecordHomepage homepage, Map<String, String> sources, String fieldKey, String value,
-            boolean force, java.util.function.Consumer<String> setter) {
-        if (!StringUtils.hasText(value) || !shouldOverwrite(sources, fieldKey, force)) {
-            return;
-        }
-        setter.accept(value);
-        fieldSourcesJsonHelper.markAuto(sources, fieldKey);
-    }
-
-    private boolean shouldOverwrite(Map<String, String> sources, String fieldKey, boolean force) {
-        if (force) {
-            return true;
-        }
-        return !fieldSourcesJsonHelper.isManual(sources, fieldKey);
-    }
-
-    private String nullToEmpty(String value) {
-        return value == null ? "" : value;
+        return false;
     }
 }

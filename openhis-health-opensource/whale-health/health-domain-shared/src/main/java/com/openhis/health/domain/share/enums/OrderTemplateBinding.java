@@ -32,7 +32,11 @@ public enum OrderTemplateBinding implements EnumInterface {
     /**
      * HOSPITAL。
      */
-    HOSPITAL(0L, "HOSPITAL", "全院", "", 3L);
+    HOSPITAL(0L, "HOSPITAL", "全院", "", 3L),
+    /**
+     * 协定处方模板。
+     */
+    AGREEMENT(0L, "AGREEMENT", "协定处方", "", 4L);
 
     private final Long codeSystemId;
     private final String code;

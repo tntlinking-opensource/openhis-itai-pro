@@ -53,4 +53,8 @@ public class ProcedurePerformerItemDto {
     /** 参与人来源机构标识（院外协作等场景）。 */
     @Schema(description = "来源机构标识")
     private String orgFromId;
+
+    /** 执业者展示姓名（读侧装配，不落库）。 */
+    @Schema(description = "执业者展示姓名")
+    private String practitionerName;
 }

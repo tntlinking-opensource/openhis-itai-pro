@@ -38,9 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_emr_document_tenant
 
 CREATE INDEX IF NOT EXISTS idx_emr_document_source_template
     ON emr_document (source_template_id);
-
 COMMENT ON TABLE emr_document IS '电子病历 document';
-
 COMMENT ON COLUMN emr_document.id IS '主键';
 COMMENT ON COLUMN emr_document.patient_id IS '电子病历文书实体';
 COMMENT ON COLUMN emr_document.encounter_id IS '就诊 ID';
@@ -57,4 +55,3 @@ COMMENT ON COLUMN emr_document.is_deleted IS '软删标记';
 COMMENT ON COLUMN emr_document.deleted_at IS '删除时间';
 COMMENT ON COLUMN emr_document.deleted_by IS '删除人';
 COMMENT ON COLUMN emr_document.tenant_id IS '租户标识';
-

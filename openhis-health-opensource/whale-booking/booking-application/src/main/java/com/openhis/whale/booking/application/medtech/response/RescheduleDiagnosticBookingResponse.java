@@ -10,7 +10,9 @@ import lombok.Setter;
 @Setter
 public class RescheduleDiagnosticBookingResponse {
 
+    /** 改约后预约主键。 */
     private Long appointmentId;
 
+    /** 改约后号源主键。 */
     private Long newSlotId;
 }

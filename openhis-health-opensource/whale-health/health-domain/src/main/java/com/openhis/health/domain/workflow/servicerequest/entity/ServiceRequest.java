@@ -18,6 +18,7 @@
 package com.openhis.health.domain.workflow.servicerequest.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -318,6 +319,22 @@ public class ServiceRequest extends BaseAuditedEntity {
     }
 
     /**
+     * 取消停嘱断言：须为长期且当前已停嘱。
+     *
+     * @throws BusinessException 状态或长临不允许
+     */
+    public void assertCancelStopAllowed() {
+        if (!TherapyType.LONG_TERM.getCode().equals(this.therapyEnum)) {
+            // 临时诊疗不可走取消停嘱，须签退或删除。
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "仅长期诊疗医嘱可取消停嘱");
+        }
+        if (!RequestStatus.STOPPED.getCode().equals(this.statusEnum)) {
+            // 非 STOPPED 不可取消停嘱，防止误恢复在执医嘱。
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "仅已停嘱的长期医嘱可取消停嘱");
+        }
+    }
+
+    /**
      * 取消断言（ACTIVE/COMPLETED -> CANCELLED）。
      *
      * @throws BusinessException 状态不允许
@@ -358,6 +375,27 @@ public class ServiceRequest extends BaseAuditedEntity {
         }
         if (!this.statusEnum.equals(RequestStatus.COMPLETED.getCode())) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "仅已完成态执行派生服务申请允许逻辑删除");
+        }
+    }
+
+    /**
+     * 护士划价可撤销断言（VERIFIED + nurse-pricing，AS-IP-NUR-005 IF-IP-PRC-06 BR-IP-PRC-022）。
+     *
+     * @throws BusinessException 来源或状态不允许
+     */
+    public void assertNursePricingRemovable() {
+        if (Boolean.TRUE.equals(this.getIsDeleted())) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "服务申请已删除");
+        }
+        if (this.statusEnum == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "服务申请状态不能为空");
+        }
+        if (!this.statusEnum.equals(RequestStatus.VERIFIED.getCode())) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "仅已校对态护士划价诊疗申请允许撤销");
+        }
+        if (this.generateSourceEnum == null
+            || !GenerateSource.NURSE_PRICING.getCode().equals(this.generateSourceEnum)) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "仅护士划价来源诊疗申请允许撤销");
         }
     }
 
@@ -429,6 +467,19 @@ public class ServiceRequest extends BaseAuditedEntity {
      */
     public void toStopped() {
         this.statusEnum = RequestStatus.STOPPED.getCode();
+    }
+
+    /**
+     * 取消停嘱：按校对痕迹恢复为已校对或已发送，并清空发生结束时间（BR-IP-ORD-025 / BR-SRQ-016a）。
+     */
+    public void fromStopped() {
+        // 护士已校对过则恢复 VERIFIED，否则恢复 ACTIVE（BR-IP-ORD-025 / BR-SRQ-016a）。
+        if (this.performerCheckId != null) {
+            this.statusEnum = RequestStatus.VERIFIED.getCode();
+        } else {
+            this.statusEnum = RequestStatus.ACTIVE.getCode();
+        }
+        this.occurrenceEndTime = null;
     }
 
     /**

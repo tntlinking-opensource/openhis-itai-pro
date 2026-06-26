@@ -20,7 +20,7 @@ Whale 打印与报表扩展包：B 类单证排版/预览、C 类查询报表、
 | `report-contracts` | Port 契约（`PrintDataPort`、`ReportTabularDataPort`、`ReportExternalDocumentPort`） |
 | `report-domain` | 模板/元素/绑定/打印日志实体、仓储、领域服务 |
 | `report-application` | AppService、ReportLoader、Flyway、布局模型、OpenPDF 渲染 |
-| `report-adapter` | HIS 侧 Port 实现（`com.openhis.health.application.report`） |
+| `report-adapter` | HIS 侧 Port 实现（`com.openhis.whale.report.adapter`） |
 | `report-starter` | 安装入口（聚合 `report-application` + `report-adapter`） |
 
 依赖方向：`application` → `domain` → `contracts`；`adapter` → `contracts` + `health-domain`（**禁止**依赖 `report-application`）。
@@ -31,7 +31,7 @@ Whale 打印与报表扩展包：B 类单证排版/预览、C 类查询报表、
 
 - 开关：`openhis.modules.report.enabled=true`
 - Application：`ReportAutoConfiguration` → 扫描 `com.openhis.whale.report.application`
-- Adapter：`ReportAdapterAutoConfiguration` → 扫描 `com.openhis.health.application.report`（条件：`PrintDataPort` 在 classpath）
+- Adapter：`ReportAdapterAutoConfiguration` → 扫描 `com.openhis.whale.report.adapter`（条件：`ReportTabularDataPort` 在 classpath）
 
 宿主工程引入 **`report-starter`** 即可同时拉起 application 与 adapter。
 
@@ -46,7 +46,7 @@ Whale 打印与报表扩展包：B 类单证排版/预览、C 类查询报表、
 | 排版设计器 | `ReportDesignAppService` | `POST /api/app/reportDesign/*` |
 | 模板管理 | `ReportTemplateAppService` | `POST /api/app/reportTemplate/*` |
 | 院点打印绑定 | `ReportPrintBindingAppService` | `POST /api/app/reportPrintBinding/*` |
-| C 类报表查询 / 设计 | `ReportQueryAppService` | `POST /api/app/reportQuery/*` |
+| C 类报表查询 / 设计 | `ReportAppService` | `POST /api/app/report/*` |
 | 打印日志 | `ReportPrintLogAppService` | `POST /api/app/reportPrintLog/*` |
 | D 类外系统报告 | `ReportExternalViewAppService` | `POST /api/app/reportExternalView/*` |
 
@@ -91,13 +91,13 @@ ReportDesignAppService.preview()
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| 报表列表 | `reportQuery/listDefinitions` | 可选 `status`、`keyword` |
-| 报表详情 | `reportQuery/getDefinition` | 设计器加载 |
+| 报表列表 | `report/listDefinitions` | 可选 `status`、`keyword` |
+| 报表详情 | `report/getDefinition` | 设计器加载 |
 | 新建/改/删 | `createDefinition` / `updateDefinition` / `deleteDefinition` | 报表模板 CRUD（SQL 报表） |
-| 保存设计 | `reportQuery/saveReportDesign` | SQL、表头/表底/筛选器 JSON |
-| 发布 / 撤回 | `reportQuery/publishDefinition` / `unpublishDefinition` | draft ↔ published |
-| 分页查询 | `reportQuery/queryPage` | Loader 或 SQL；未发布拒绝（`designPreview=true` 除外） |
-| 导出 | `reportQuery/exportExcel` | CSV Base64 |
+| 保存设计 | `report/saveReportDesign` | SQL、表头/表底/筛选器 JSON |
+| 发布 / 撤回 | `report/publishDefinition` / `unpublishDefinition` | draft ↔ published |
+| 分页查询 | `report/queryPage` | Loader 或 SQL；未发布拒绝（`designPreview=true` 除外） |
+| 导出 | `report/exportExcel` | CSV Base64 |
 
 ---
 
@@ -121,16 +121,16 @@ Flyway：**V19**（SQL/表头/表底字段）、**V18**（status）。
 ### 数据流
 
 ```
-ReportQueryAppService.queryPage()
+ReportAppService.queryPage()
   → ReportLoaderRegistry → *ReportLoader
       → ReportLoaderDataSupport.applyPortDataIfPresent()
-          → ReportTabularDataPort.load(reportCode, params)
+          → ReportTabularDataPort.load(ReportCode, params)
               → ReportTabularDataPortAdapter
                   → *ReportDatasetService.build()
       → 无 Port 数据时 Loader 内置样例兜底
 ```
 
-Loader 按领域分子包：`query/loader/{settlement,financial,warehouse,clinical}/`。
+Loader 按领域分子包：`report/loader/{settlement,financial,warehouse,clinical}/`。
 
 ---
 
@@ -151,10 +151,9 @@ Loader 按领域分子包：`query/loader/{settlement,financial,warehouse,clinic
 
 | 子包 | 内容 |
 |------|------|
-| `contracts/supply/` | `SupplyDocumentReportCatalog` — C 类供应单据 reportCode 目录 |
-| `domain.port.print/` | `PrintDataPort` |
-| `domain.port.tabular/` | `ReportTabularDataPort` |
-| `domain.port.external/` | `ReportExternalDocumentPort` |
+| `contracts/port/` | `ReportTabularDataPort`、`ReportExternalDocumentPort` |
+| `contracts/constants/` | 跨层通用技术契约（如 `ReportDatasetLimits` 行数上限） |
+| `contracts/catalog/supply/` | `SupplyDocumentReportCatalog` — C 类供应单据 ReportCode 目录 |
 
 ### report-domain
 
@@ -166,7 +165,7 @@ Loader 按领域分子包：`query/loader/{settlement,financial,warehouse,clinic
 | `repository/` | JPA 仓储 + `PrintEventLogSummaryDao` |
 | `service/` | `ReportTemplateManager`、`ReportDefinitionManager`、`PrintElementDefManager`、`PrintBindingManager`、`PrintEventLogManager` |
 | `binding/` | 绑定目录与定义 |
-| `constants/` | `ReportPackConstants`、`ReportPipelineConstants` 等 |
+| `constants/` | 领域专用业务常量：`ReportLoaderCodes`、`ReportPdfPrintCodes`、`ReportDefinitionStatus` 等 |
 
 ### report-application
 
@@ -177,7 +176,7 @@ Loader 按领域分子包：`query/loader/{settlement,financial,warehouse,clinic
 | `design/{service,request,response}` | 设计器用例 |
 | `template/{service,request,response}` | 模板管理 |
 | `binding/{service,request,response}` | 院点绑定 |
-| `query/{service,request,response,support,loader/*}` | C 类报表（含 `ReportDefinitionCatalogService`） |
+| `report/{service,request,response,support,loader/*}` | C 类报表（含 `ReportDefinitionCatalogService`） |
 | `printlog/{service,request,response}` | 打印日志 |
 | `external/{service,request,response}` | D 类外系统 |
 | `preview/` | `PreviewDatasetResolver`、`PreviewSampleRegistry`、`preview/sample/*` |
@@ -188,17 +187,38 @@ Loader 按领域分子包：`query/loader/{settlement,financial,warehouse,clinic
 
 ### report-adapter
 
-根包 `com.openhis.health.application.report`（HIS 桥接，不按门诊/住院再拆）：
+根包 `com.openhis.whale.report.adapter`（HIS 桥接，不按门诊/住院再拆）：
 
 | 子包 | 内容 |
 |------|------|
 | `support/` | `ReportDatasetParamSupport`、`ReportDatasetTextSupport` |
 | `print/dataset/` | B 类 `*PrintDatasetService` |
 | `print/port/` | `PrintDataPortAdapter` |
-| `tabular/dataset/` | C 类 `*ReportDatasetService` |
-| `tabular/port/` | `ReportTabularDataPortAdapter`、`ExternalReportDocumentPortAdapter` |
+| `dataset/` | C 类 `*ReportDatasetService` |
+| `port/` | `ReportTabularDataPortAdapter`、`ExternalReportDocumentPortAdapter` |
 
 配置类在 `com.openhis.whale.report.adapter.config`。
+
+---
+
+## 代码阅读指引
+
+各包根目录有 `package-info.java`，核心类有 JavaDoc。建议按场景阅读：
+
+| 场景 | 入口类 | 说明 |
+|------|--------|------|
+| C 类分页查询 | `ReportAppService` → `ReportQueryExecutionService` | SQL / Loader 双轨；列 override 在 execution 层 merge |
+| C 类 SQL | `ReportQueryService` → `ReportQueryExecutor` | 只读 SELECT + 命名参数；`ReportQueryValidator` 白名单 |
+| C 类 Loader | `ReportLoaderRegistry` → `*ReportLoader` | 按 ReportCode；内部调 `ReportTabularDataPort` |
+| 列定制 | `ReportColumnOverrideManager` | 用户 > 机构 > 默认；`ReportColumnMergeSupport` 转 DTO |
+| B 类预览/打印 | `ReportDesignAppService` → `PrintLayoutRenderService` | layoutJson + dataset → PDF 或 ESC/POS RAW |
+| 元素渲染 | `PrintElementLayoutRenderer` → `PrintElementRendererRegistry` | renderType 分发；table 处方固定行见 `PrescriptionDrugTableSupport` |
+| roll RAW | `LayoutJsonEscPosRenderer` → `EscPosElementRenderer` | `openhis.modules.report.roll-output=raw` |
+| Port 路由 | `PrintDataPortAdapter` / `ReportTabularDataPortAdapter` | adapter 按 packCode / ReportCode 进 dataset 包 |
+
+租户合并（definition/template/element）：`ReportDefinitionManager`、`ReportTemplateManager`、`PrintElementDefManager` 均 platform(0) + 院点覆盖。
+
+**出厂预制清单与维护分工**：见 [whale-doc/report/10-出厂预制与维护说明.md](../../whale-doc/report/10-出厂预制与维护说明.md)。
 
 ---
 
@@ -208,10 +228,13 @@ Loader 按领域分子包：`query/loader/{settlement,financial,warehouse,clinic
 
 | 版本 | 说明 |
 |------|------|
-| V1 | 全部表结构（`rpt_template` / `rpt_definition` 含设计期列 / `rpt_print_binding` 等） |
-| V2 | 全部出厂种子（含原 V3–V22 增量，清库后 V1→V2 即可） |
+| V1 | 表结构（含 `BaseAuditedEntity` 审计列） |
+| V2 | B 类打印种子（元素目录、模板、绑定） |
+| V3 | C 类 Loader 报表定义种子 |
+| V4 | 08-常用报表清单 SQL 类预制（draft） |
+| V5 | 种子后处理（表头 lines、默认租户复制、状态兜底） |
 
-发版整理：勿再新增 `ALTER TABLE` 版本；DDL 改 V1，种子改 V2。
+清库重跑：按 V1 → V5 顺序执行；勿保留旧版 `V20`/`V21` 独立脚本（已合并/删除）。
 
 ---
 
@@ -233,3 +256,15 @@ mvn -pl whale-report/report-starter -am compile -DskipTests
 ## 工具脚本
 
 `tools/` 目录为一次性迁移/维护脚本（非运行时依赖），例如 `restructure-packages.cjs`、`generate-v5-v6-seed.mjs`。
+
+---
+
+## 设计文档
+
+完整设计见 **`whale-doc/report/`**（入口 [README.md](../../whale-doc/report/README.md)）。
+
+| 文档 | 用途 |
+|------|------|
+| [09-场景维护指南](../../whale-doc/report/09-场景维护指南.md) | 日常维护：B/C/D 按场景改哪里 |
+| [03-详细设计与编码指导](../../whale-doc/report/03-详细设计与编码指导.md) | 任务分解、文件路径、验收 |
+| [07-开发人员指南](../../whale-doc/report/07-开发人员指南.md) | onboarding、表设计 |

@@ -10,8 +10,15 @@ import lombok.Setter;
 @Setter
 public class EncounterSummaryDto {
 
+    /** 就诊主键。 */
     private Long encounterId;
+
+    /** 患者主键。 */
     private Long patientId;
+
+    /** 科室/机构主键。 */
     private Long organizationId;
+
+    /** 就诊业务编号。 */
     private String busNo;
 }

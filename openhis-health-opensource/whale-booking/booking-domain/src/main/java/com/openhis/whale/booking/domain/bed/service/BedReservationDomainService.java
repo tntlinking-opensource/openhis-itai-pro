@@ -9,13 +9,27 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 
+/**
+ * 床位预约扩展写侧。
+ *
+ * <p>与 {@code Appointment} 床位形态配对，承载病区、意向入院日等扩展字段。</p>
+ */
 @Service
 @RequiredArgsConstructor
 public class BedReservationDomainService {
 
     private final BedReservationExtRepository repository;
 
+    /**
+     * 保存床位预约扩展。
+     *
+     * @param entity 扩展实体
+     * @param operatorId 操作人
+     * @return 落库后的实体
+     * @throws BusinessException 预约或床位未绑定时
+     */
     public BedReservationExt save(BedReservationExt entity, Long operatorId) {
+        // 前置校验：扩展须挂靠有效预约与床位
         if (entity.getAppointmentId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "appointmentId 不能为空");
         }
@@ -30,9 +44,16 @@ public class BedReservationDomainService {
         }
         entity.setUpdatedAt(now);
         entity.setUpdatedBy(operatorId);
+        // 持久化
         return repository.save(entity);
     }
 
+    /**
+     * 软删床位预约扩展。
+     *
+     * @param id 扩展主键
+     * @param operatorId 操作人
+     */
     public void softDelete(Long id, Long operatorId) {
         repository.findById(id).ifPresent(entity -> {
             entity.setIsDeleted(Boolean.TRUE);

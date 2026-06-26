@@ -47,6 +47,7 @@ public class CheckInToQueueCommand extends BatchCommand<CheckInToQueueCommand.Ch
         private Long encounterId;
         /** 患者主键。 */
         private Long patientId;
+        /** 渠道来源（会话、设备等审计信息）。 */
         private CreateAppointmentCommand.AppointmentOriginCommand origin;
     }
 }

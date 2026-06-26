@@ -51,4 +51,8 @@ public class ListNurseStationOrderAuditRequest {
     /** 长临筛选：all / long / temp；默认 all（BR-IP-AUD-004）。 */
     @Schema(description = "长临筛选：all / long / temp；默认 all")
     private String therapyType;
+
+    /** 中西药 Tab：west / tcm；默认 west（BR-IP-TCM 下游）。 */
+    @Schema(description = "中西药 Tab：west / tcm；默认 west")
+    private String medicineCategoryTab;
 }

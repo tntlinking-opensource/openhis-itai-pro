@@ -12,14 +12,18 @@ import lombok.Setter;
 @Setter
 public class PageWeekScheduleTemplatesRequest {
 
+    /** 科室主键；空=全院。 */
     private Long organizationId;
 
+    /** 模板编码/名称关键字。 */
     private String keyword;
 
+    /** 页码（1-based）。 */
     @NotNull
     @Min(1)
     private Integer pageNo = 1;
 
+    /** 页大小。 */
     @NotNull
     @Min(1)
     private Integer pageSize = 20;

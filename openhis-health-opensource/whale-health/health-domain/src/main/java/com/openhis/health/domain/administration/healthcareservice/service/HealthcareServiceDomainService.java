@@ -63,7 +63,7 @@ public class HealthcareServiceDomainService {
         if (items.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT, "创建医疗服务入参不能为空");
         }
-        List<String> busNos = businessSequenceService.getSeq(AggregateTypeConstants.HEALTHCARE_SERVICE, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH, items.size());
+        List<String> busNos = businessSequenceService.getSeq(AggregateTypeConstants.HEALTHCARE_SERVICE, BusinessSequenceConstants.MASTER_DATA_2_PREFIX_SEQ_LENGTH, items.size());
         // 逐条构建医疗服务实体，初始状态为草稿（DRAFT），尚不对外生效。
         List<HealthcareService> toSave = new ArrayList<>();
         int busIdx = 0;

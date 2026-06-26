@@ -17,9 +17,10 @@
 
 package com.openhis.health.application.outpatient.doctorstation.advice.mapper;
 
-import com.openhis.health.module.common.assembler.advice.ProductDefinitionOrderChargePricingSupport;
+import com.openhis.health.module.common.assembler.advice.OrderChargeDraftAssembler;
+import com.openhis.health.module.common.assembler.advice.ServiceAdviceCommandAssembler;
 import com.openhis.health.module.common.assembler.advice.ServiceAdviceDraftCommandSupport;
-import com.openhis.health.module.common.assembler.advice.ServiceApplyFormOrchestrationSupport;
+import com.openhis.health.module.orchestration.advice.ServiceApplyFormOrchestrationSupport;
 import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceDraftLineRequest;
@@ -39,12 +40,11 @@ import com.openhis.health.domain.medication.medicationrequest.command.SignOffMed
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
-import com.openhis.health.domain.share.constants.ChargeItemDmConstants;
-import com.openhis.health.domain.share.enums.GenerateSource;
-import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.TherapyType;
+import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.domain.workflow.devicerequest.command.ChangeDeviceOrderDraftCommand;
 import com.openhis.health.domain.workflow.devicerequest.command.CreateDeviceOrderDraftCommand;
 import com.openhis.health.domain.workflow.devicerequest.command.RemoveDeviceOrderDraftCommand;
@@ -136,7 +136,7 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
             }
             q.setPrepickedProductKeys(lookups);
         }
-        // Pre：西药开立目录排除中草药等 med_category_code（IF-DOR-11 excludeMedicationCategoryCodes）
+        // Pre：西药开立目录排除中草药等 medication_category_code（IF-DOR-11 excludeMedicationCategoryCodes）
         if (request.getExcludeMedicationCategoryCodes() != null && !request.getExcludeMedicationCategoryCodes().isEmpty()) {
             q.setExcludeMedicationCategoryCodes(new ArrayList<>(request.getExcludeMedicationCategoryCodes()));
         }
@@ -436,12 +436,7 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
      */
     @Override
     public RemoveServiceRequestDraftCommand toRemoveServiceRequestDraftCommand(Long requestId, Long operatorId) {
-        RemoveServiceRequestDraftCommand cmd = new RemoveServiceRequestDraftCommand();
-        cmd.setOperatorId(operatorId);
-        RemoveServiceRequestDraftCommand.RemoveServiceRequestDraftItemCommand item = new RemoveServiceRequestDraftCommand.RemoveServiceRequestDraftItemCommand();
-        item.setId(requestId);
-        cmd.setItem(item);
-        return cmd;
+        return ServiceAdviceCommandAssembler.toRemoveServiceRequestDraftCommand(requestId, operatorId);
     }
 
     /**
@@ -455,12 +450,7 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
      */
     @Override
     public VoidUnbilledDraftChargeItemsByServiceAnchorCommand toVoidDraftChargeAnchor(Long encounterId, String serviceTable, Long serviceId, Long operatorId) {
-        VoidUnbilledDraftChargeItemsByServiceAnchorCommand cmd = new VoidUnbilledDraftChargeItemsByServiceAnchorCommand();
-        cmd.setOperatorId(operatorId);
-        cmd.setEncounterId(encounterId);
-        cmd.setServiceTable(serviceTable);
-        cmd.setServiceId(serviceId);
-        return cmd;
+        return ServiceAdviceCommandAssembler.toVoidDraftChargeAnchor(encounterId, serviceTable, serviceId, operatorId);
     }
 
     /**
@@ -535,22 +525,9 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         String quantityUnit,
         ProductDefinitionDisplayDto productRow
     ) {
-        CreateChargeItemCommand.Item it = new CreateChargeItemCommand.Item();
-        it.setPatientId(patientId);
-        it.setEncounterId(encounterId);
-        it.setAccountId(accountId);
-        ProductDefinitionOrderChargePricingSupport.applyOrderChargePricing(
-            it, productRow, priceLine, quantity, quantityUnit);
-        it.setOccurrenceTime(LocalDateTime.now());
-        it.setServiceTable(serviceTable);
-        it.setServiceId(serviceId);
-        // 产品锚点：仅三大目录表名 + 定义主键（DM-ADM-011 / BR-CHG-001；与护士站费用明细 BR-IP-CDT-007 对齐）。
-        this.applyProductCatalogAnchor(it, productDefinitionTable, productDefinitionId);
-        it.setOrgId(orgId);
-        it.setRequestingOrgId(orgId);
-        it.setGenerateSourceEnum(GenerateSource.DOCTOR_PRESCRIPTION.getCode());
-        it.setContextEnum(resolveChargeContext(serviceTable));
-        return it;
+        return OrderChargeDraftAssembler.toCreateChargeItemDraftItemFromOrder(
+            encounterId, patientId, accountId, orgId, serviceId, serviceTable,
+            productDefinitionTable, productDefinitionId, priceLine, quantity, quantityUnit, productRow);
     }
 
     /**
@@ -591,55 +568,10 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         String quantityUnit,
         ProductDefinitionDisplayDto productRow
     ) {
-        CreateChargeItemCommand.Item it = this.toCreateChargeItemDraftItemFromOrder(
+        return OrderChargeDraftAssembler.toCreateChargeItemDraftItemForFifoDispenseSegment(
             encounterId, patientId, accountId, orgId, requestId, requestServiceTable,
-            productDefinitionTable, productDefinitionId, priceLine, quantity, quantityUnit, productRow);
-        // FIFO 分段：在 product_* 已落库基础上补 dispense_* 锚点（DM-ADM-011）。
-        it.setDispenseTable(dispenseTable);
-        it.setDispenseId(dispenseId);
-        return it;
-    }
-
-    /**
-     * 写入产品定义锚点：仅接受三大目录表名与对应定义主键。
-     *
-     * @param item                   费用草稿命令项
-     * @param productDefinitionTable 产品定义表名
-     * @param productDefinitionId    产品定义主键
-     */
-    private void applyProductCatalogAnchor(
-        CreateChargeItemCommand.Item item,
-        String productDefinitionTable,
-        Long productDefinitionId) {
-        if (item == null || productDefinitionId == null || StringUtils.isBlank(productDefinitionTable)) {
-            return;
-        }
-        String normalizedTable = productDefinitionTable.trim();
-        if (!TableNameConstants.MED_MEDICATION_DEFINITION.equals(normalizedTable)
-            && !TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(normalizedTable)
-            && !TableNameConstants.ADM_DEVICE_DEFINITION.equals(normalizedTable)) {
-            return;
-        }
-        item.setProductTable(normalizedTable);
-        item.setProductId(productDefinitionId);
-    }
-
-    /**
-     * 由医嘱锚点物理表名解析收费项上下文枚举，写入费用草稿供报表/结算分桶。
-     *
-     * @param serviceTable {@link TableNameConstants} 中与 {@code ChargeItem.serviceTable} 一致的表名
-     * @return {@link ChargeItemDmConstants} 中上下文码；未识别表名时按诊疗活动上下文处理
-     */
-    private static String resolveChargeContext(String serviceTable) {
-        if (TableNameConstants.MED_MEDICATION_REQUEST.equals(serviceTable)
-            || TableNameConstants.MED_MEDICATION_DISPENSE.equals(serviceTable)) {
-            return ChargeItemDmConstants.CONTEXT_MEDICATION;
-        }
-        if (TableNameConstants.WKF_DEVICE_REQUEST.equals(serviceTable)
-            || TableNameConstants.WKF_DEVICE_DISPENSE.equals(serviceTable)) {
-            return ChargeItemDmConstants.CONTEXT_DEVICE;
-        }
-        return ChargeItemDmConstants.CONTEXT_ACTIVITY;
+            productDefinitionTable, productDefinitionId, dispenseTable, dispenseId,
+            priceLine, quantity, quantityUnit, productRow);
     }
 
     /**
@@ -702,12 +634,7 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
      */
     @Override
     public WithdrawSignedServiceRequestCommand toWithdrawServiceRequestCommand(Long id, Long operatorId) {
-        WithdrawSignedServiceRequestCommand cmd = new WithdrawSignedServiceRequestCommand();
-        cmd.setOperatorId(operatorId);
-        WithdrawSignedServiceRequestCommand.WithdrawSignedServiceRequestItemCommand item = new WithdrawSignedServiceRequestCommand.WithdrawSignedServiceRequestItemCommand();
-        item.setId(id);
-        cmd.setItem(item);
-        return cmd;
+        return ServiceAdviceCommandAssembler.toWithdrawServiceRequestCommand(id, operatorId);
     }
 
     /**

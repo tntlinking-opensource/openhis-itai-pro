@@ -21,6 +21,7 @@ import com.openhis.health.module.common.assembler.product.ClinicalCatalogDispens
 import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
 import com.openhis.health.module.common.assembler.product.ClinicalCatalogUnitPriceCommand;
 import com.openhis.health.module.common.assembler.product.DoctorStationAdviceInventoryUnitQuantityHelper;
+import com.openhis.health.module.common.assembler.product.ProductTableNameSupport;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceCatalogRowDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceInventoryRowDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.PageDoctorStationAdviceCatalogRequest;
@@ -155,7 +156,7 @@ public class DoctorStationAdviceCatalogAssembler {
                 BigDecimal sumNetSplit = BigDecimal.ZERO;
                 int order = 0;
                 for (InventoryCatalogAvailabilityRowModel row : physical) {
-                    String k = tripleCompositeKey(row.getItemTable(), row.getItemId(), row.getLocationId());
+                    String k = ProductTableNameSupport.tripleCompositeKey(row.getItemTable(), row.getItemId(), row.getLocationId());
                     BigDecimal net = row.getQuantity();
                     if (net == null) {
                         net = BigDecimal.ZERO;
@@ -197,7 +198,7 @@ public class DoctorStationAdviceCatalogAssembler {
             boolean headerPriceFromInventoryLots = false;
             ChargeItemDefinition catalogPriceLine = null;
             List<DoctorStationAdviceInventoryRowDto> inventoryRows = dto.getInventoryList();
-            if (isMedicationOrDeviceDefinitionTable(productRow.getProductTableName())
+            if (ProductTableNameSupport.isMedicationOrDevice(productRow.getProductTableName())
                 && inventoryRows != null && !inventoryRows.isEmpty()) {
                 Map<String, ChargeItemDefinition> lotPriceIndex = clinicalCatalogPriceResolveSupport.indexLotNumberPriceRows(lines);
                 for (DoctorStationAdviceInventoryRowDto invRow : inventoryRows) {
@@ -240,11 +241,11 @@ public class DoctorStationAdviceCatalogAssembler {
                     if (productRow.getChargeItemDefinitionId() != null) {
                         fallback = fallbackPriceByDefId.get(productRow.getChargeItemDefinitionId());
                     }
-                    if (fallback != null && isActivityDefinitionTable(productRow.getProductTableName())
+                    if (fallback != null && ProductTableNameSupport.isActivity(productRow.getProductTableName())
                         && !PriceType.SALE.getCode().equals(fallback.getPriceTypeCode())) {
                         fallback = null;
                     }
-                    if (fallback != null && isMedicationOrDeviceDefinitionTable(productRow.getProductTableName())
+                    if (fallback != null && ProductTableNameSupport.isMedicationOrDevice(productRow.getProductTableName())
                         && !PriceType.LOT_NUMBER_PRICE.getCode().equals(fallback.getPriceTypeCode())) {
                         fallback = null;
                     }
@@ -373,7 +374,7 @@ public class DoctorStationAdviceCatalogAssembler {
     }
 
     /**
-     * 构建「同就诊、同候选库位」下已占用数量映射（拆零单位），键为 {@link #tripleCompositeKey}。
+     * 构建「同就诊、同候选库位」下已占用数量映射（拆零单位），键为 {@link ProductTableNameSupport#tripleCompositeKey}。
      *
      * @param encounterId    当前就诊，用于筛发放记录
      * @param productRow     当前目录产品（区分药品/耗材预占查询分支及单位换算）
@@ -398,31 +399,5 @@ public class DoctorStationAdviceCatalogAssembler {
                 occRows, productRow, productRow.getProductTableName());
         }
         return new LinkedHashMap<>();
-    }
-
-    /**
-     * 库存可用行与发放预减行的对齐键：表名、定义或物料主键、库位三维拼接，分隔符取 {@link GeneralSharedConstants#PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR}。
-     */
-    private static String tripleCompositeKey(String table, Long definitionOrItemId, Long locationId) {
-        char sep = GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR;
-        return table + sep + definitionOrItemId + sep + locationId;
-    }
-
-    private static boolean isActivityDefinitionTable(String productTableName) {
-        return productTableName != null
-            && TableNameConstants.WKF_ACTIVITY_DEFINITION.equalsIgnoreCase(productTableName);
-    }
-
-    private static boolean isMedicationOrDeviceDefinitionTable(String productTableName) {
-        if (productTableName == null) {
-            return false;
-        }
-        if (TableNameConstants.MED_MEDICATION_DEFINITION.equalsIgnoreCase(productTableName)) {
-            return true;
-        }
-        if (TableNameConstants.ADM_DEVICE_DEFINITION.equalsIgnoreCase(productTableName)) {
-            return true;
-        }
-        return false;
     }
 }

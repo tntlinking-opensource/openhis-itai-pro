@@ -62,7 +62,13 @@ public final class PractitionerRoleScheduleJsonSupport {
             periodsNode = node.get("time_periods");
         }
         if (periodsNode != null && !periodsNode.isNull()) {
-            dto.setTimePeriodsJson(periodsNode.isTextual() ? periodsNode.asText() : periodsNode.toString());
+            String timePeriodsJson;
+            if (periodsNode.isTextual()) {
+                timePeriodsJson = periodsNode.asText();
+            } else {
+                timePeriodsJson = periodsNode.toString();
+            }
+            dto.setTimePeriodsJson(timePeriodsJson);
         } else if (node.has("startTime") || node.has("endTime") || node.has("periods")) {
             dto.setTimePeriodsJson(node.toString());
         } else {

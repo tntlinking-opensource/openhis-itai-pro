@@ -52,6 +52,43 @@ public class ChargeItemAutoGenQueryService {
     private final ChargeItemAutoGenRepository repository;
 
     /**
+     * 按住院就诊查询自动计费配置（划价页「自动计费」Tab、定时滚费任务）。
+     *
+     * @param encounterId 住院就诊标识
+     * @return 未软删配置列表，按 priority、id 升序
+     */
+    public List<ChargeItemAutoGenRuleQueryModel> findRulesByEncounterId(Long encounterId) {
+        List<ChargeItemAutoGen> rows = repository.findAllByEncounterIdAndIsDeletedFalseOrderByPriorityAscIdAsc(encounterId);
+        List<ChargeItemAutoGenRuleQueryModel> result = new ArrayList<>();
+        for (ChargeItemAutoGen row : rows) {
+            result.add(toRuleModel(row));
+        }
+        return result;
+    }
+
+    /**
+     * 按住院就诊解析当前启用的自动计费配置。
+     *
+     * @param encounterId     住院就诊标识
+     * @param performingOrgId 上下文执行科室
+     * @return 激活规则列表
+     */
+    public List<ChargeItemAutoGenActiveRuleQueryModel> findActiveRulesByEncounter(Long encounterId, Long performingOrgId) {
+        List<ChargeItemAutoGen> candidates = repository.findAllByEncounterIdAndIsDeletedFalseOrderByPriorityAscIdAsc(encounterId);
+        List<ChargeItemAutoGenActiveRuleQueryModel> result = new ArrayList<>();
+        for (ChargeItemAutoGen row : candidates) {
+            if (!PublicationStatus.ACTIVE.getCode().equals(row.getStatusEnum())) {
+                continue;
+            }
+            if (!isOrgMatched(row.getPerformingOrgId(), performingOrgId)) {
+                continue;
+            }
+            result.add(toActiveRuleModel(row));
+        }
+        return result;
+    }
+
+    /**
      * 按触发源与执行科室解析当前可用的自动生成规则（已发布且科室匹配）。
      *
      * @param triggerSourceTable 触发来源表名
@@ -65,7 +102,7 @@ public class ChargeItemAutoGenQueryService {
         Long performingOrgId
     ) {
         // 查询：按触发键从数据库获取候选集，并保证优先级与稳定顺序（PR-CAG-002）
-        List<ChargeItemAutoGen> candidates = repository.findAllByTriggerSourceTableAndTriggerSourceIdOrderByPriorityAscIdAsc(
+        List<ChargeItemAutoGen> candidates = repository.findAllByTriggerSourceTableAndTriggerSourceIdAndIsDeletedFalseOrderByPriorityAscIdAsc(
             triggerSourceTable,
             triggerSourceId
         );
@@ -87,12 +124,12 @@ public class ChargeItemAutoGenQueryService {
     /**
      * 按目标收费项定义反查关联的生成规则（维护台「谁会在开单时带出本条价项」）。
      *
-     * @param targetDefinitionId 目标定价定义主键
+     * @param chargeDefinitionId 收费项定价定义主键
      * @return 规则视图列表，按 id 升序
      */
-    public List<ChargeItemAutoGenRuleQueryModel> findRulesByTargetDefinitionId(Long targetDefinitionId) {
+    public List<ChargeItemAutoGenRuleQueryModel> findRulesByChargeDefinitionId(Long chargeDefinitionId) {
         // 查询：按目标定价反查未软删规则
-        List<ChargeItemAutoGen> rows = repository.findAllByTargetDefinitionIdOrderByIdAsc(targetDefinitionId);
+        List<ChargeItemAutoGen> rows = repository.findAllByChargeDefinitionIdAndIsDeletedFalseOrderByIdAsc(chargeDefinitionId);
         List<ChargeItemAutoGenRuleQueryModel> result = new ArrayList<>();
         for (ChargeItemAutoGen row : rows) {
             result.add(toRuleModel(row));
@@ -116,14 +153,17 @@ public class ChargeItemAutoGenQueryService {
                 if (query.getStatusEnum() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), query.getStatusEnum()));
                 }
+                if (query.getEncounterId() != null) {
+                    predicates.add(cb.equal(root.get(FieldNameConstants.ENCOUNTER_ID), query.getEncounterId()));
+                }
                 if (query.getTriggerSourceTable() != null && !query.getTriggerSourceTable().trim().isEmpty()) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.TRIGGER_SOURCE_TABLE), query.getTriggerSourceTable().trim()));
                 }
                 if (query.getTriggerSourceId() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.TRIGGER_SOURCE_ID), query.getTriggerSourceId()));
                 }
-                if (query.getTargetDefinitionId() != null) {
-                    predicates.add(cb.equal(root.get(FieldNameConstants.TARGET_DEFINITION_ID), query.getTargetDefinitionId()));
+                if (query.getChargeDefinitionId() != null) {
+                    predicates.add(cb.equal(root.get(FieldNameConstants.CHARGE_DEFINITION_ID), query.getChargeDefinitionId()));
                 }
                 if (query.getPerformingOrgId() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.PERFORMING_ORG_ID), query.getPerformingOrgId()));
@@ -167,10 +207,13 @@ public class ChargeItemAutoGenQueryService {
         model.setId(row.getId());
         model.setStatusEnum(row.getStatusEnum());
         model.setRuleName(row.getRuleName());
+        model.setEncounterId(row.getEncounterId());
         model.setTriggerSourceTable(row.getTriggerSourceTable());
         model.setTriggerSourceId(row.getTriggerSourceId());
-        model.setTargetDefinitionId(row.getTargetDefinitionId());
+        model.setChargeDefinitionId(row.getChargeDefinitionId());
         model.setPerformingOrgId(row.getPerformingOrgId());
+        model.setQuantityValue(row.getQuantityValue());
+        model.setPriority(row.getPriority());
         return model;
     }
 
@@ -182,13 +225,15 @@ public class ChargeItemAutoGenQueryService {
         model.setId(row.getId());
         model.setStatusEnum(row.getStatusEnum());
         model.setRuleName(row.getRuleName());
+        model.setEncounterId(row.getEncounterId());
         model.setTriggerSourceTable(row.getTriggerSourceTable());
         model.setTriggerSourceId(row.getTriggerSourceId());
-        model.setTargetDefinitionId(row.getTargetDefinitionId());
+        model.setChargeDefinitionId(row.getChargeDefinitionId());
         model.setPerformingOrgId(row.getPerformingOrgId());
         model.setQuantityValue(row.getQuantityValue());
         model.setPriority(row.getPriority());
         model.setRemark(row.getRemark());
+        model.setCreatedAt(row.getCreatedAt());
         return model;
     }
 
@@ -200,9 +245,10 @@ public class ChargeItemAutoGenQueryService {
         model.setId(row.getId());
         model.setStatusEnum(row.getStatusEnum());
         model.setRuleName(row.getRuleName());
+        model.setEncounterId(row.getEncounterId());
         model.setTriggerSourceTable(row.getTriggerSourceTable());
         model.setTriggerSourceId(row.getTriggerSourceId());
-        model.setTargetDefinitionId(row.getTargetDefinitionId());
+        model.setChargeDefinitionId(row.getChargeDefinitionId());
         model.setPerformingOrgId(row.getPerformingOrgId());
         model.setQuantityValue(row.getQuantityValue());
         return model;

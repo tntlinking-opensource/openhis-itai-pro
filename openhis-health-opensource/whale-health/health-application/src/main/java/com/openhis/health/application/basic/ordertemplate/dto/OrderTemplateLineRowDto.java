@@ -28,7 +28,7 @@ import java.math.BigDecimal;
 /**
  * 组套模板明细行展示 DTO。
  *
- * <p>IF-BAS-OTL-03 维护详情：经 {@code OrderTemplateCatalogEnrichSupport} 回填目录/术语展示字段；
+ * <p>IF-BAS-OTL-03 维护详情：经 {@code OrderTemplateLineCatalogEnrichAssembler} 回填目录/术语展示字段；
  * IF-BAS-OTL-08 预览套用：仅填结构字段（定义 id、默认数量/用法等），<strong>不</strong> enrich、无价字段。</p>
  */
 @Data

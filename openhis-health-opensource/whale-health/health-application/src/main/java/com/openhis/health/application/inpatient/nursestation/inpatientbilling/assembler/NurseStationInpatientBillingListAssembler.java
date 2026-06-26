@@ -21,10 +21,10 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dt
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingPatientGroupDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationSupplementParentOrderRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.mapper.NurseStationInpatientBillingMapper;
-import com.openhis.health.module.querysupport.order.NurseStationOrderViewListAssembler;
-import com.openhis.health.module.querysupport.order.dto.NurseStationOrderViewDisplayContext;
-import com.openhis.health.module.querysupport.order.dto.NurseStationOrderViewDisplayCore;
-import com.openhis.health.module.querysupport.order.dto.NurseStationOrderViewListDetailIndex;
+import com.openhis.health.module.querysupport.nursestation.NurseStationOrderViewListAssembler;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewDisplayContext;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewDisplayCore;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewListDetailIndex;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;

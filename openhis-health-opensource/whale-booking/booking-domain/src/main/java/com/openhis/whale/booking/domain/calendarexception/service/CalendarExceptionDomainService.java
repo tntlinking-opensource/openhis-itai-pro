@@ -14,6 +14,8 @@ import java.time.LocalDateTime;
 
 /**
  * T3 日历例外写侧领域服务。
+ *
+ * <p>不变量：例外类型合法；REDUCED/OVERRIDE/EXTRA 须绑定替代日排班模板。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -23,25 +25,37 @@ public class CalendarExceptionDomainService {
 
     /**
      * 保存日历例外。
+     *
+     * @param entity 例外实体
+     * @param operatorId 操作人
+     * @return 落库后的实体
+     * @throws BusinessException 字段校验失败时
      */
     public CalendarException save(CalendarException entity, Long operatorId) {
+        // 前置校验：类型、日期区间与替代模板约束
         this.assertValid(entity);
         LocalDateTime now = LocalDateTime.now();
+        // 新建时补齐审计字段
         if (entity.getId() == null) {
             entity.setCreatedAt(now);
             entity.setCreatedBy(operatorId);
             entity.setIsDeleted(Boolean.FALSE);
         }
+        // 未显式指定时默认参与模板生成
         if (entity.getAutoApplyOnGenerate() == null) {
             entity.setAutoApplyOnGenerate(Boolean.TRUE);
         }
         entity.setUpdatedAt(now);
         entity.setUpdatedBy(operatorId);
+        // 持久化
         return calendarExceptionRepository.save(entity);
     }
 
     /**
      * 软删日历例外。
+     *
+     * @param id 例外主键
+     * @param operatorId 操作人
      */
     public void delete(Long id, Long operatorId) {
         calendarExceptionRepository.findById(id).ifPresent(row -> {
@@ -61,9 +75,11 @@ public class CalendarExceptionDomainService {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "exceptionType 非法");
         }
         entity.setExceptionType(entity.getExceptionType().trim());
+        // 区间止日不得早于起日
         if (entity.getRangeEnd() != null && entity.getRangeEnd().isBefore(entity.getExceptionDate())) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "rangeEnd 不能早于 exceptionDate");
         }
+        // 减量/覆盖/加号例外须指定替代日排班
         if (CalendarExceptionTypeConstants.requiresOverrideTemplate(entity.getExceptionType())
             && entity.getOverrideScheduleTemplateId() == null) {
             throw new BusinessException(

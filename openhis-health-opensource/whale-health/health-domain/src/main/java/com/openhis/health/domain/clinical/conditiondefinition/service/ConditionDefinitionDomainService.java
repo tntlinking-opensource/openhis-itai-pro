@@ -17,10 +17,13 @@
 
 package com.openhis.health.domain.clinical.conditiondefinition.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.clinical.conditiondefinition.command.*;
 import com.openhis.health.domain.clinical.conditiondefinition.entity.ConditionDefinition;
 import com.openhis.health.domain.clinical.conditiondefinition.repository.ConditionDefinitionRepository;
+import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.events.clinical.conditiondefinition.*;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -223,12 +226,12 @@ public class ConditionDefinitionDomainService {
      * @throws BusinessException 与存量编码冲突
      */
     private String resolveConditionCodeForCreate(String requestedCode) {
-        String trimmed = StringUtils.trimToNull(requestedCode);
+        String trimmed = trimToNull(requestedCode);
         if (trimmed != null) {
             assertCodeUnique(trimmed, null);
             return trimmed;
         }
-        return businessSequenceService.getSeq(AggregateTypeConstants.CONDITION_DEFINITION);
+        return businessSequenceService.getSeq(AggregateTypeConstants.CONDITION_DEFINITION, BusinessSequenceConstants.MASTER_DATA_3_PREFIX_SEQ_LENGTH);
     }
 
     /**
@@ -241,7 +244,7 @@ public class ConditionDefinitionDomainService {
      * @throws BusinessException 新编码与存量冲突
      */
     private String resolveConditionCodeForUpdate(String requestedCode, Long id, String currentCode) {
-        String trimmed = StringUtils.trimToNull(requestedCode);
+        String trimmed = trimToNull(requestedCode);
         if (trimmed == null) {
             return currentCode;
         }

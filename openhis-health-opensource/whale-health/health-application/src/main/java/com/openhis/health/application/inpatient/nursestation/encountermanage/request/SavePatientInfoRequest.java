@@ -19,6 +19,7 @@ package com.openhis.health.application.inpatient.nursestation.encountermanage.re
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.module.common.dto.nursestation.AdmissionVitalSignSubmitDto;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.ParticipantSubmitDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
@@ -49,4 +50,8 @@ public class SavePatientInfoRequest {
     /** 责任医护变更集。 */
     @Schema(description = "参与者变更列表")
     private List<ParticipantSubmitDto> participants;
+
+    /** 入院体征维护（仅维护路径；首次分床须随 ASSIGN 提交）。 */
+    @Schema(description = "入院体征提交块")
+    private AdmissionVitalSignSubmitDto admissionVitalSigns;
 }

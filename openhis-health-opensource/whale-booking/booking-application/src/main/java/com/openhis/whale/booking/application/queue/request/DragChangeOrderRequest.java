@@ -4,13 +4,18 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * 拖拽调序请求。
+ */
 @Getter
 @Setter
 public class DragChangeOrderRequest {
 
+    /** 候诊项主键。 */
     @NotNull
     private Long appointmentId;
 
+    /** 目标队列索引（0-based）。 */
     @NotNull
     private Integer targetIndex;
 }

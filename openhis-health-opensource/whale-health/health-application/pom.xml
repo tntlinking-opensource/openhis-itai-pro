@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
@@ -8,7 +8,7 @@
     <parent>
         <groupId>com.openhis</groupId>
         <artifactId>whale-health</artifactId>
-        <version>2.0.1-SNAPSHOT</version>
+        <version>2.0.2-SNAPSHOT</version>
     </parent>
     
     <artifactId>health-application</artifactId>
@@ -62,20 +62,11 @@
             <artifactId>whale-identity</artifactId>
         </dependency>
 
-        <!-- Booking 契约（挂号衔接 Port；实现由 booking-adapter 可选装配） -->
+        <!-- 中性集成契约（第三方结算 / 预约衔接 Extension；实现由 Module adapter 可选装配） -->
         <dependency>
             <groupId>com.openhis</groupId>
-            <artifactId>booking-contracts</artifactId>
+            <artifactId>health-integration-contracts</artifactId>
             <version>${project.version}</version>
-            <optional>true</optional>
-        </dependency>
-
-        <!-- CHS 吉林契约（门诊医保结算 Port；实现由 chs-jilin-adapter 可选装配） -->
-        <dependency>
-            <groupId>com.openhis</groupId>
-            <artifactId>chs-jilin-contracts</artifactId>
-            <version>${project.version}</version>
-            <optional>true</optional>
         </dependency>
 
         
@@ -154,6 +145,31 @@
                             <sources>
                                 <source>${project.build.directory}/generated-sources/annotations</source>
                             </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>ban-chs-jilin-from-health-application</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <message>health-application 不得依赖扩展 Module contracts，请改用 health-integration-contracts Extension</message>
+                                    <excludes>
+                                        <exclude>com.openhis:chs-jilin-*</exclude>
+                                        <exclude>com.openhis:booking-contracts</exclude>
+                                        <exclude>com.openhis:unionpay-bpc-*</exclude>
+                                    </excludes>
+                                </bannedDependencies>
+                            </rules>
                         </configuration>
                     </execution>
                 </executions>

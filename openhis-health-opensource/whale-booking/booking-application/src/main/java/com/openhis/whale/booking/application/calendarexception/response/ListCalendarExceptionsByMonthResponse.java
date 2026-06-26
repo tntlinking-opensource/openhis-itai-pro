@@ -13,5 +13,6 @@ import java.util.List;
 @Setter
 public class ListCalendarExceptionsByMonthResponse {
 
+    /** 月历每日标记列表。 */
     private List<CalendarExceptionMonthDayDto> days = new ArrayList<>();
 }

@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.orderexecute.response;
 
-import com.openhis.health.module.querysupport.procedure.dto.NurseStationOrderExecutePatientGroupDto;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderExecutePatientGroupDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;

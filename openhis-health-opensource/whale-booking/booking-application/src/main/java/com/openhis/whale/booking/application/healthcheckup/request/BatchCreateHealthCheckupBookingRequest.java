@@ -14,8 +14,10 @@ import java.util.List;
 @Setter
 public class BatchCreateHealthCheckupBookingRequest {
 
+    /** 团检批次主键。 */
     @NotNull
     private Long batchId;
 
+    /** 名单主键列表（为空则预约批次内全部待约名单）。 */
     private List<Long> rosterIds = new ArrayList<>();
 }

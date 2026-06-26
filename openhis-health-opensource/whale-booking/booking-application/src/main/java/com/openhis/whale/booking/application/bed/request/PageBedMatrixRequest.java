@@ -13,15 +13,19 @@ import java.time.LocalDate;
 @Setter
 public class PageBedMatrixRequest {
 
+    /** 机构/科室主键。 */
     @NotNull
     private Long organizationId;
 
+    /** 病区地点主键。 */
     @NotNull
     private Long wardLocationId;
 
+    /** 日期区间起始。 */
     @NotNull
     private LocalDate rangeStart;
 
+    /** 日期区间结束。 */
     @NotNull
     private LocalDate rangeEnd;
 }

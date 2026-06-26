@@ -46,8 +46,119 @@ CREATE TABLE IF NOT EXISTS "public"."wkf_appointment_queue" (
     CONSTRAINT "wkf_appointment_queue_pkey" PRIMARY KEY ("id")
 );
 
-COMMENT ON TABLE wkf_appointment_queue IS '预约与候诊队列（FHIR Appointment 语义）';
 
+CREATE TABLE IF NOT EXISTS "public"."wkf_schedule" (
+    "id" int8 NOT NULL,
+    "tenant_id" int8,
+    "created_at" timestamptz(6) NOT NULL,
+    "updated_at" timestamptz(6),
+    "created_by" int8,
+    "updated_by" int8,
+    "is_deleted" bool NOT NULL DEFAULT false,
+    "deleted_at" timestamptz(6),
+    "deleted_by" int8,
+    "version" int4 NOT NULL DEFAULT 0,
+    "organization_id" int8 NOT NULL,
+    "name" varchar(255),
+    "status_enum" varchar(255) NOT NULL,
+    "active_flag" bool NOT NULL,
+    "planning_horizon_start" timestamptz(6),
+    "planning_horizon_end" timestamptz(6),
+    "service_type_concept_json" varchar(255),
+    "healthcare_service_id" int8,
+    "service_category_json" varchar(255),
+    "specialty_json" varchar(255),
+    "comment_markdown" varchar(255),
+    "substitute_practitioner_id" int8,
+    "substitute_reason" varchar(255),
+    CONSTRAINT "wkf_schedule_pkey" PRIMARY KEY ("id")
+);
+
+
+CREATE TABLE IF NOT EXISTS "public"."wkf_schedule_actor" (
+    "id" int8 NOT NULL,
+    "tenant_id" int8,
+    "created_at" timestamptz(6) NOT NULL,
+    "updated_at" timestamptz(6),
+    "created_by" int8,
+    "updated_by" int8,
+    "is_deleted" bool NOT NULL DEFAULT false,
+    "deleted_at" timestamptz(6),
+    "deleted_by" int8,
+    "version" int4 NOT NULL DEFAULT 0,
+    "schedule_id" int8 NOT NULL,
+    "actor_type" int4 NOT NULL,
+    "actor_id" int8 NOT NULL,
+    "sort_no" int4 NOT NULL,
+    CONSTRAINT "wkf_schedule_actor_pkey" PRIMARY KEY ("id")
+);
+
+
+CREATE TABLE IF NOT EXISTS "public"."wkf_schedule_identifier" (
+    "id" int8 NOT NULL,
+    "tenant_id" int8,
+    "created_at" timestamptz(6) NOT NULL,
+    "updated_at" timestamptz(6),
+    "created_by" int8,
+    "updated_by" int8,
+    "is_deleted" bool NOT NULL DEFAULT false,
+    "deleted_at" timestamptz(6),
+    "deleted_by" int8,
+    "version" int4 NOT NULL DEFAULT 0,
+    "schedule_id" int8 NOT NULL,
+    "id_system" varchar(255) NOT NULL,
+    "id_value" varchar(255) NOT NULL,
+    "use_code" varchar(255),
+    CONSTRAINT "wkf_schedule_identifier_pkey" PRIMARY KEY ("id")
+);
+
+
+CREATE TABLE IF NOT EXISTS "public"."wkf_slot" (
+    "id" int8 NOT NULL,
+    "tenant_id" int8,
+    "created_at" timestamptz(6) NOT NULL,
+    "updated_at" timestamptz(6),
+    "created_by" int8,
+    "updated_by" int8,
+    "is_deleted" bool NOT NULL DEFAULT false,
+    "deleted_at" timestamptz(6),
+    "deleted_by" int8,
+    "version" int8 NOT NULL DEFAULT 0,
+    "organization_id" int8 NOT NULL,
+    "schedule_id" int8 NOT NULL,
+    "start_time" timestamptz(6) NOT NULL,
+    "end_time" timestamptz(6) NOT NULL,
+    "status_code" varchar(255) NOT NULL,
+    "capacity" int4 NOT NULL,
+    "booked_count" int4 NOT NULL,
+    "overbooked_flag" bool NOT NULL,
+    "service_category_json" varchar(255),
+    "service_type_json" varchar(255),
+    "specialty_json" varchar(255),
+    "appointment_type_json" varchar(255),
+    "comment_text" varchar(255),
+    CONSTRAINT "wkf_slot_pkey" PRIMARY KEY ("id")
+);
+
+
+CREATE TABLE IF NOT EXISTS "public"."wkf_slot_identifier" (
+    "id" int8 NOT NULL,
+    "tenant_id" int8,
+    "created_at" timestamptz(6) NOT NULL,
+    "updated_at" timestamptz(6),
+    "created_by" int8,
+    "updated_by" int8,
+    "is_deleted" bool NOT NULL DEFAULT false,
+    "deleted_at" timestamptz(6),
+    "deleted_by" int8,
+    "version" int4 NOT NULL DEFAULT 0,
+    "slot_id" int8 NOT NULL,
+    "id_system" varchar(255) NOT NULL,
+    "id_value" varchar(255) NOT NULL,
+    "use_code" varchar(255),
+    CONSTRAINT "wkf_slot_identifier_pkey" PRIMARY KEY ("id")
+);
+COMMENT ON TABLE wkf_appointment_queue IS '预约与候诊队列（FHIR Appointment 语义）';
 COMMENT ON COLUMN wkf_appointment_queue.id IS '主键';
 COMMENT ON COLUMN wkf_appointment_queue.tenant_id IS '租户标识';
 COMMENT ON COLUMN wkf_appointment_queue.created_at IS '创建时间';
@@ -84,39 +195,7 @@ COMMENT ON COLUMN wkf_appointment_queue.origin_source_device_id IS '来源设备
 COMMENT ON COLUMN wkf_appointment_queue.origin_operator_id IS '代操作操作者标识';
 COMMENT ON COLUMN wkf_appointment_queue.origin_client_app_version IS '客户端版本号';
 
--- ---------------------------------------------------------------------------
--- wkf_schedule · 号源日程（FHIR Schedule）
--- ---------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS "public"."wkf_schedule" (
-    "id" int8 NOT NULL,
-    "tenant_id" int8,
-    "created_at" timestamptz(6) NOT NULL,
-    "updated_at" timestamptz(6),
-    "created_by" int8,
-    "updated_by" int8,
-    "is_deleted" bool NOT NULL DEFAULT false,
-    "deleted_at" timestamptz(6),
-    "deleted_by" int8,
-    "version" int4 NOT NULL DEFAULT 0,
-    "organization_id" int8 NOT NULL,
-    "name" varchar(255),
-    "status_enum" varchar(255) NOT NULL,
-    "active_flag" bool NOT NULL,
-    "planning_horizon_start" timestamptz(6),
-    "planning_horizon_end" timestamptz(6),
-    "service_type_concept_json" varchar(255),
-    "healthcare_service_id" int8,
-    "service_category_json" varchar(255),
-    "specialty_json" varchar(255),
-    "comment_markdown" varchar(255),
-    "substitute_practitioner_id" int8,
-    "substitute_reason" varchar(255),
-    CONSTRAINT "wkf_schedule_pkey" PRIMARY KEY ("id")
-);
-
 COMMENT ON TABLE wkf_schedule IS '号源日程（FHIR Schedule 语义）';
-
 COMMENT ON COLUMN wkf_schedule.id IS '主键';
 COMMENT ON COLUMN wkf_schedule.tenant_id IS '租户标识';
 COMMENT ON COLUMN wkf_schedule.created_at IS '创建时间';
@@ -141,30 +220,7 @@ COMMENT ON COLUMN wkf_schedule.comment_markdown IS '可用性说明（Markdown�
 COMMENT ON COLUMN wkf_schedule.substitute_practitioner_id IS '替诊医师主键（顶班 B；原医师仍保留在 Actor）';
 COMMENT ON COLUMN wkf_schedule.substitute_reason IS '替诊原因说明';
 
--- ---------------------------------------------------------------------------
--- wkf_schedule_actor · 日程参与者
--- ---------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS "public"."wkf_schedule_actor" (
-    "id" int8 NOT NULL,
-    "tenant_id" int8,
-    "created_at" timestamptz(6) NOT NULL,
-    "updated_at" timestamptz(6),
-    "created_by" int8,
-    "updated_by" int8,
-    "is_deleted" bool NOT NULL DEFAULT false,
-    "deleted_at" timestamptz(6),
-    "deleted_by" int8,
-    "version" int4 NOT NULL DEFAULT 0,
-    "schedule_id" int8 NOT NULL,
-    "actor_type" int4 NOT NULL,
-    "actor_id" int8 NOT NULL,
-    "sort_no" int4 NOT NULL,
-    CONSTRAINT "wkf_schedule_actor_pkey" PRIMARY KEY ("id")
-);
-
 COMMENT ON TABLE wkf_schedule_actor IS '日程参与者（医师/诊室/设备等）';
-
 COMMENT ON COLUMN wkf_schedule_actor.id IS '主键';
 COMMENT ON COLUMN wkf_schedule_actor.tenant_id IS '租户标识';
 COMMENT ON COLUMN wkf_schedule_actor.created_at IS '创建时间';
@@ -180,30 +236,7 @@ COMMENT ON COLUMN wkf_schedule_actor.actor_type IS '参与者类型编码';
 COMMENT ON COLUMN wkf_schedule_actor.actor_id IS '参与者主键';
 COMMENT ON COLUMN wkf_schedule_actor.sort_no IS '排序号';
 
--- ---------------------------------------------------------------------------
--- wkf_schedule_identifier · 日程外部标识
--- ---------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS "public"."wkf_schedule_identifier" (
-    "id" int8 NOT NULL,
-    "tenant_id" int8,
-    "created_at" timestamptz(6) NOT NULL,
-    "updated_at" timestamptz(6),
-    "created_by" int8,
-    "updated_by" int8,
-    "is_deleted" bool NOT NULL DEFAULT false,
-    "deleted_at" timestamptz(6),
-    "deleted_by" int8,
-    "version" int4 NOT NULL DEFAULT 0,
-    "schedule_id" int8 NOT NULL,
-    "id_system" varchar(255) NOT NULL,
-    "id_value" varchar(255) NOT NULL,
-    "use_code" varchar(255),
-    CONSTRAINT "wkf_schedule_identifier_pkey" PRIMARY KEY ("id")
-);
-
 COMMENT ON TABLE wkf_schedule_identifier IS '日程外部标识（FHIR Identifier 语义）';
-
 COMMENT ON COLUMN wkf_schedule_identifier.id IS '主键';
 COMMENT ON COLUMN wkf_schedule_identifier.tenant_id IS '租户标识';
 COMMENT ON COLUMN wkf_schedule_identifier.created_at IS '创建时间';
@@ -219,39 +252,7 @@ COMMENT ON COLUMN wkf_schedule_identifier.id_system IS '标识体系 URI';
 COMMENT ON COLUMN wkf_schedule_identifier.id_value IS '标识值';
 COMMENT ON COLUMN wkf_schedule_identifier.use_code IS '用途编码';
 
--- ---------------------------------------------------------------------------
--- wkf_slot · 号源时段（FHIR Slot）
--- ---------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS "public"."wkf_slot" (
-    "id" int8 NOT NULL,
-    "tenant_id" int8,
-    "created_at" timestamptz(6) NOT NULL,
-    "updated_at" timestamptz(6),
-    "created_by" int8,
-    "updated_by" int8,
-    "is_deleted" bool NOT NULL DEFAULT false,
-    "deleted_at" timestamptz(6),
-    "deleted_by" int8,
-    "version" int8 NOT NULL DEFAULT 0,
-    "organization_id" int8 NOT NULL,
-    "schedule_id" int8 NOT NULL,
-    "start_time" timestamptz(6) NOT NULL,
-    "end_time" timestamptz(6) NOT NULL,
-    "status_code" varchar(255) NOT NULL,
-    "capacity" int4 NOT NULL,
-    "booked_count" int4 NOT NULL,
-    "overbooked_flag" bool NOT NULL,
-    "service_category_json" varchar(255),
-    "service_type_json" varchar(255),
-    "specialty_json" varchar(255),
-    "appointment_type_json" varchar(255),
-    "comment_text" varchar(255),
-    CONSTRAINT "wkf_slot_pkey" PRIMARY KEY ("id")
-);
-
 COMMENT ON TABLE wkf_slot IS '号源时段（FHIR Slot 语义）';
-
 COMMENT ON COLUMN wkf_slot.id IS '主键';
 COMMENT ON COLUMN wkf_slot.tenant_id IS '租户标识';
 COMMENT ON COLUMN wkf_slot.created_at IS '创建时间';
@@ -276,30 +277,7 @@ COMMENT ON COLUMN wkf_slot.specialty_json IS '专科快照 JSON';
 COMMENT ON COLUMN wkf_slot.appointment_type_json IS '预约类型/场景快照 JSON';
 COMMENT ON COLUMN wkf_slot.comment_text IS '备注';
 
--- ---------------------------------------------------------------------------
--- wkf_slot_identifier · 号源时段外部标识
--- ---------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS "public"."wkf_slot_identifier" (
-    "id" int8 NOT NULL,
-    "tenant_id" int8,
-    "created_at" timestamptz(6) NOT NULL,
-    "updated_at" timestamptz(6),
-    "created_by" int8,
-    "updated_by" int8,
-    "is_deleted" bool NOT NULL DEFAULT false,
-    "deleted_at" timestamptz(6),
-    "deleted_by" int8,
-    "version" int4 NOT NULL DEFAULT 0,
-    "slot_id" int8 NOT NULL,
-    "id_system" varchar(255) NOT NULL,
-    "id_value" varchar(255) NOT NULL,
-    "use_code" varchar(255),
-    CONSTRAINT "wkf_slot_identifier_pkey" PRIMARY KEY ("id")
-);
-
 COMMENT ON TABLE wkf_slot_identifier IS '号源时段外部标识（FHIR Identifier 语义）';
-
 COMMENT ON COLUMN wkf_slot_identifier.id IS '主键';
 COMMENT ON COLUMN wkf_slot_identifier.tenant_id IS '租户标识';
 COMMENT ON COLUMN wkf_slot_identifier.created_at IS '创建时间';
@@ -314,4 +292,3 @@ COMMENT ON COLUMN wkf_slot_identifier.slot_id IS '所属号源时段标识';
 COMMENT ON COLUMN wkf_slot_identifier.id_system IS '标识体系 URI';
 COMMENT ON COLUMN wkf_slot_identifier.id_value IS '标识值';
 COMMENT ON COLUMN wkf_slot_identifier.use_code IS '用途编码';
-

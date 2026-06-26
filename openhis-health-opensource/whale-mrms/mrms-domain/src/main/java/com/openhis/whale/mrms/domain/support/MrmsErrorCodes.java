@@ -1,18 +1,32 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ */
+
 package com.openhis.whale.mrms.domain.support;
 
 /**
- * MRMS 业务错误码。
+ * MRMS 模块业务错误码常量。
  */
 public final class MrmsErrorCodes {
 
     private MrmsErrorCodes() {
     }
 
-    public static final String CASE_RECORD_NOT_FOUND = "MRMS_CASE_NOT_FOUND";
-    public static final String CASE_RECORD_EXISTS = "MRMS_CASE_EXISTS";
-    public static final String HOMEPAGE_NOT_FOUND = "MRMS_HOMEPAGE_NOT_FOUND";
+    /** 病案主档不存在。 */
+    public static final String CASE_RECORD_NOT_FOUND = "MRMS_CASE_RECORD_NOT_FOUND";
+
+    /** 同一就诊已存在有效病案主档。 */
+    public static final String CASE_RECORD_DUPLICATE_ENCOUNTER = "MRMS_CASE_RECORD_DUPLICATE_ENCOUNTER";
+
+    /** 病案状态不允许当前操作。 */
+    public static final String CASE_RECORD_INVALID_STATUS = "MRMS_CASE_RECORD_INVALID_STATUS";
+
+    /** 首页已冻结不可编辑。 */
     public static final String HOMEPAGE_FROZEN = "MRMS_HOMEPAGE_FROZEN";
-    public static final String INVALID_STATUS = "MRMS_INVALID_STATUS";
-    public static final String NOT_EDITABLE = "MRMS_NOT_EDITABLE";
-    public static final String VALIDATION_FAILED = "MRMS_VALIDATION_FAILED";
+
+    /** 首页提交校验失败。 */
+    public static final String HOMEPAGE_SUBMIT_VALIDATION = "MRMS_HOMEPAGE_SUBMIT_VALIDATION";
+
+    /** 病案号发号失败。 */
+    public static final String MEDCASNO_GENERATE_FAILED = "MRMS_MEDCASNO_GENERATE_FAILED";
 }

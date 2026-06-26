@@ -49,9 +49,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_patient" (
     "merged_at" timestamptz(6),
     CONSTRAINT "adm_patient_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_patient IS '管理域 patient';
-
 COMMENT ON COLUMN adm_patient.id IS '主键';
 COMMENT ON COLUMN adm_patient.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_patient.created_at IS '创建时间';
@@ -74,23 +72,23 @@ COMMENT ON COLUMN adm_patient.id_card IS '身份证号';
 COMMENT ON COLUMN adm_patient.marital_status_enum IS '婚姻状态编码';
 COMMENT ON COLUMN adm_patient.prfs_enum IS '职业编码';
 COMMENT ON COLUMN adm_patient.phone IS '联系电话';
-COMMENT ON COLUMN adm_patient.address IS 'address';
-COMMENT ON COLUMN adm_patient.address_province IS 'address province';
-COMMENT ON COLUMN adm_patient.address_city IS 'address city';
-COMMENT ON COLUMN adm_patient.address_district IS 'address district';
-COMMENT ON COLUMN adm_patient.address_street IS 'address street';
+COMMENT ON COLUMN adm_patient.address IS '地址';
+COMMENT ON COLUMN adm_patient.address_province IS '地址province';
+COMMENT ON COLUMN adm_patient.address_city IS '地址city';
+COMMENT ON COLUMN adm_patient.address_district IS '地址district';
+COMMENT ON COLUMN adm_patient.address_street IS '地址street';
 COMMENT ON COLUMN adm_patient.address_extend_json IS '主要地址';
 COMMENT ON COLUMN adm_patient.nationality_code IS '民族编码';
 COMMENT ON COLUMN adm_patient.py_str IS '拼音码';
 COMMENT ON COLUMN adm_patient.wb_str IS '五笔码';
-COMMENT ON COLUMN adm_patient.blood_type_abo IS 'blood type abo';
-COMMENT ON COLUMN adm_patient.blood_type_rh IS 'blood type rh';
+COMMENT ON COLUMN adm_patient.blood_type_abo IS 'blood类型abo';
+COMMENT ON COLUMN adm_patient.blood_type_rh IS 'blood类型rh';
 COMMENT ON COLUMN adm_patient.work_company IS '血型';
 COMMENT ON COLUMN adm_patient.native_place IS '籍贯';
 COMMENT ON COLUMN adm_patient.country_code IS '国家地区编码';
-COMMENT ON COLUMN adm_patient.link_name IS 'link name';
-COMMENT ON COLUMN adm_patient.link_relation_code IS 'link relation code';
-COMMENT ON COLUMN adm_patient.link_telcom IS 'link telcom';
+COMMENT ON COLUMN adm_patient.link_name IS 'link名称';
+COMMENT ON COLUMN adm_patient.link_relation_code IS 'linkrelation编码';
+COMMENT ON COLUMN adm_patient.link_telcom IS '联系电话';
 COMMENT ON COLUMN adm_patient.link_jsons IS '主要联系人';
 COMMENT ON COLUMN adm_patient.deceased_date IS '死亡时间';
 COMMENT ON COLUMN adm_patient.deceased_reason IS '死亡原因';
@@ -98,3 +96,12 @@ COMMENT ON COLUMN adm_patient.organization_id IS '建档机构标识';
 COMMENT ON COLUMN adm_patient.merged_target_patient_id IS '合并目标患者标识';
 COMMENT ON COLUMN adm_patient.merged_at IS '合并时间';
 
+INSERT INTO "adm_patient" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "bus_no", "name", "name_json", "gender_enum", "birth_date", "status_enum", "active_flag", "temp_flag", "id_card", "marital_status_enum", "prfs_enum", "phone", "address", "address_province", "address_city", "address_district", "address_street", "address_extend_json", "nationality_code", "py_str", "wb_str", "blood_type_abo", "blood_type_rh", "work_company", "native_place", "country_code", "link_name", "link_relation_code", "link_telcom", "link_jsons", "deceased_date", "deceased_reason", "organization_id", "merged_target_patient_id", "merged_at") VALUES ('325580322788872192', '1', '2026-06-17 10:19:57.942+00', '2026-06-17 10:19:57.942+00', '1', '1', false, NULL, NULL, 0, 'PA0001', '李先生', NULL, 'MALE', '2000-12-31 16:00:00.000+00', 'ACTIVE', true, false, '220322200101012356', NULL, NULL, '', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'LXS', 'STT', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '322663218269917184', NULL, NULL) ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "adm_patient" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "bus_no", "name", "name_json", "gender_enum", "birth_date", "status_enum", "active_flag", "temp_flag", "id_card", "marital_status_enum", "prfs_enum", "phone", "address", "address_province", "address_city", "address_district", "address_street", "address_extend_json", "nationality_code", "py_str", "wb_str", "blood_type_abo", "blood_type_rh", "work_company", "native_place", "country_code", "link_name", "link_relation_code", "link_telcom", "link_jsons", "deceased_date", "deceased_reason", "organization_id", "merged_target_patient_id", "merged_at") VALUES ('325866857001652224', '1', '2026-06-18 05:18:33.022+00', '2026-06-18 05:18:33.022+00', '1', '1', false, NULL, NULL, 0, 'PA0002', '小王', NULL, 'MALE', '2000-12-31 16:00:00.000+00', 'ACTIVE', true, false, '220321200105064567', NULL, NULL, '13944894568', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'XW', 'IG', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '322663308812357632', NULL, NULL) ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "adm_patient" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "bus_no", "name", "name_json", "gender_enum", "birth_date", "status_enum", "active_flag", "temp_flag", "id_card", "marital_status_enum", "prfs_enum", "phone", "address", "address_province", "address_city", "address_district", "address_street", "address_extend_json", "nationality_code", "py_str", "wb_str", "blood_type_abo", "blood_type_rh", "work_company", "native_place", "country_code", "link_name", "link_relation_code", "link_telcom", "link_jsons", "deceased_date", "deceased_reason", "organization_id", "merged_target_patient_id", "merged_at") VALUES ('326264837641867264', '1', '2026-06-19 07:39:59.001+00', '2026-06-19 07:39:59.001+00', '322932211309350912', '322932211309350912', false, NULL, NULL, 0, 'PA0003', '小孙', NULL, 'MALE', '2000-12-31 16:00:00.000+00', 'ACTIVE', true, false, '220322200001012564', NULL, NULL, '13944897895', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'XS', 'IB', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '322663308812357632', NULL, NULL) ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "adm_patient" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "bus_no", "name", "name_json", "gender_enum", "birth_date", "status_enum", "active_flag", "temp_flag", "id_card", "marital_status_enum", "prfs_enum", "phone", "address", "address_province", "address_city", "address_district", "address_street", "address_extend_json", "nationality_code", "py_str", "wb_str", "blood_type_abo", "blood_type_rh", "work_company", "native_place", "country_code", "link_name", "link_relation_code", "link_telcom", "link_jsons", "deceased_date", "deceased_reason", "organization_id", "merged_target_patient_id", "merged_at") VALUES ('326270014617817088', '1', '2026-06-19 08:00:33.288+00', '2026-06-19 08:00:33.288+00', '322932211309350912', '322932211309350912', false, NULL, NULL, 0, 'PA0004', '小赵', NULL, 'MALE', NULL, 'ACTIVE', true, false, '220301200809021258', NULL, NULL, '13944254568', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'XZ', 'IF', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '322663308812357632', NULL, NULL) ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "adm_patient" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "bus_no", "name", "name_json", "gender_enum", "birth_date", "status_enum", "active_flag", "temp_flag", "id_card", "marital_status_enum", "prfs_enum", "phone", "address", "address_province", "address_city", "address_district", "address_street", "address_extend_json", "nationality_code", "py_str", "wb_str", "blood_type_abo", "blood_type_rh", "work_company", "native_place", "country_code", "link_name", "link_relation_code", "link_telcom", "link_jsons", "deceased_date", "deceased_reason", "organization_id", "merged_target_patient_id", "merged_at") VALUES ('326940849401761792', '1', '2026-06-21 04:26:12.764+00', '2026-06-21 04:26:12.764+00', '1', '1', false, NULL, NULL, 0, 'PA0005', '周女士', NULL, 'FEMALE', '2000-02-22 16:00:00.000+00', 'ACTIVE', true, false, '220322200002231548', NULL, NULL, '13854489876', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'ZNS', 'MVF', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '322663308812357632', NULL, NULL) ON CONFLICT ("id") DO NOTHING;

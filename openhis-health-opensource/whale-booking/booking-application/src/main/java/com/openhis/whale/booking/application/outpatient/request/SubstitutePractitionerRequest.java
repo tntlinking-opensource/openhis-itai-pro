@@ -11,6 +11,7 @@ import lombok.Setter;
 @Setter
 public class SubstitutePractitionerRequest {
 
+    /** 待替诊日程主键。 */
     @NotNull
     private Long scheduleId;
 

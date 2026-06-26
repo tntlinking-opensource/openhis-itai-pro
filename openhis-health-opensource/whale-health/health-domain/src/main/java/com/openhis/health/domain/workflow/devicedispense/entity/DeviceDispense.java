@@ -576,27 +576,6 @@ public class DeviceDispense extends BaseAuditedEntity {
     }
 
     /**
-     * 分次追加前置。
-     */
-    public void assertStepAppendable(String childBusNo) {
-        if (!statusEquals(DispenseStatus.COMPLETED) && !statusEquals(DispenseStatus.PART_COMPLETED)) {
-            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS, "父单状态不允许追加分次");
-        }
-        if (childBusNo == null || childBusNo.isBlank()) {
-            throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "子业务号不能为空");
-        }
-    }
-
-    /**
-     * 分次累计：父单由“整单已发”降为“部分发放”。
-     */
-    public void partCompletedAccumulate() {
-        if (statusEquals(DispenseStatus.COMPLETED)) {
-            this.statusEnum = DispenseStatus.PART_COMPLETED.getCode();
-        }
-    }
-
-    /**
      * 批量回退已配药 → 待发前置。
      */
     public void assertPreparedBatchRevertable() {

@@ -163,6 +163,11 @@ public class EncounterContextFacade {
         return this.clinicRegistrationLoader.pageClinicRegister(query);
     }
 
+    /** 门诊挂号列表计数。 */
+    public long countClinicRegister(ClinicRegisterPageQuery query) {
+        return this.clinicRegistrationLoader.countClinicRegister(query);
+    }
+
     /** 挂号单列表分页。 */
     public Page<RegistrationSlipQueryModel> pageRegistrationSlip(RegistrationSlipPageQuery query) {
         return this.clinicRegistrationLoader.pageRegistrationSlip(query);

@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
 import org.apache.commons.lang3.StringUtils;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.BaseAuditedEntity;
@@ -375,6 +376,22 @@ public class DeviceRequest extends BaseAuditedEntity {
     public void assertCompleted() {
         if (this.statusEnum == null || !this.statusEnum.equals(RequestStatus.COMPLETED.getCode())) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "仅已完成态允许执行撤销操作");
+        }
+    }
+
+    /**
+     * 护士划价耗材请求可撤销断言（COMPLETED + nurse-pricing，AS-IP-NUR-005 IF-IP-PRC-06 BR-IP-PRC-022）。
+     *
+     * @throws BusinessException 来源或状态不允许
+     */
+    public void assertNursePricingRevocable() {
+        if (Boolean.TRUE.equals(this.getIsDeleted())) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "耗材请求已删除");
+        }
+        this.assertCompleted();
+        if (this.generateSourceEnum == null
+            || !GenerateSource.NURSE_PRICING.getCode().equals(this.generateSourceEnum)) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "仅护士划价来源耗材请求允许撤销");
         }
     }
 

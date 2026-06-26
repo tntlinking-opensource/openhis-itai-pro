@@ -32,7 +32,7 @@ import com.openhis.health.application.basic.medicationcatalog.request.QueryMedic
 import com.openhis.health.application.basic.medicationcatalog.request.UpdateMedicationCatalogRequest;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
 import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
 import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
@@ -130,7 +130,7 @@ public class MedicationCatalogAppService {
     /** 废弃前跨聚合引用守卫。 */
     private final MedicationDefinitionExternalReferenceGuard medicationDefinitionExternalReferenceGuard;
     /** 写路径操作人门控（B.6.5）。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
 
     /**
      * 药品目录维护页初始化：返回各字典下拉项（术语编码系统）及供应商、库房等选项。
@@ -158,8 +158,6 @@ public class MedicationCatalogAppService {
         dto.setTempOrderSplitPropertyEnumOptions(orderCalcRuleOptions);
         dto.setChrgitmLvOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.CHRGITM_LV));
-        dto.setMedCategoryCodeOptions(
-            terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.MED_CATEGORY_CODE));
         dto.setSystemCategoriesOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.SYSTEM_CATEGORIES));
         dto.setMedicinePropertiesOptions(
@@ -314,7 +312,7 @@ public class MedicationCatalogAppService {
         if (file == null || file.isEmpty()) {
             throw new ValidationException("导入药品目录失败：文件不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.MEDICATION_DEFINITION_INVALID_ARGUMENT, "请先登录后再导入药品目录");
         ImportMedicationCatalogCommand command = new ImportMedicationCatalogCommand();
         command.setBatchNo("MED-IMPORT-" + UUID.randomUUID().toString().substring(0, 8));

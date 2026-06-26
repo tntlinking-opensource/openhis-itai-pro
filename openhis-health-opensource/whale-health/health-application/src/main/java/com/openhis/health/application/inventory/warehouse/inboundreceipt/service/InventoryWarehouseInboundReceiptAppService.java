@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.service;
 
-import com.openhis.health.application.insurance.inventory.InventoryMedicareUploadSupport;
+import com.openhis.health.integration.support.insurance.inventory.InventoryMedicareUploadSupport;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.InboundReceiptDetailLineDto;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.InboundReceiptLineDto;
@@ -27,7 +27,7 @@ import com.openhis.health.application.inventory.warehouse.inboundreceipt.request
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.response.*;
 import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PageWindowGate;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
@@ -85,8 +85,8 @@ import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDom
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
-import com.openhis.whale.chs.jilin.port.InventoryInsurancePort;
-import com.openhis.whale.chs.jilin.port.model.UploadAfterInboundCommand;
+import com.openhis.health.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.integration.insurance.inventory.command.InventoryUploadAfterInboundCommand;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.apache.commons.lang3.StringUtils;
@@ -116,11 +116,10 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class InventoryWarehouseInboundReceiptAppService {
 
-    @Autowired(required = false)
-    private InventoryInsurancePort inventoryInsurancePort;
+    private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     private final PageWindowGate pageWindowGate;
     private final SupplyRequestDomainService supplyRequestDomainService;
     private final SupplyRequestQueryService supplyRequestQueryService;
@@ -147,7 +146,7 @@ public class InventoryWarehouseInboundReceiptAppService {
      * @return 下拉选项与字典项
      */
     public LoadInboundReceiptFormInitResponse loadInboundReceiptFormInit(LoadInboundReceiptFormInitRequest request) {
-        // —— 经手人/库管等仍按会话机构收窄；药房与药库位置经 ICurrentUser#getManagedLocationIds 收窄（empty 时不收窄）。——
+        // —— 经手人/库管等仍按会话机构收窄；药房与药库位置经 CurrentManagedLocationIdsResolver 收窄（empty 时不收窄）。——
         Long resolvedOrg = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
             ErrorCodeConstants.WHS_IN_101, "机构上下文缺失");
         try {
@@ -420,7 +419,7 @@ public class InventoryWarehouseInboundReceiptAppService {
         this.assertInboundReceiptLinesOccurrencePresent(request.getLines());
 
         // —— 领域写路径：Mapper 将 HTTP 装配为 CreateInboundReceiptCommand，领域服务负责取号与落多行。——
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录");
         // —— 制单人（申请人/applicant_id）与会话用户绑定医务人员对齐，禁止沿用请求体代传（与列表按医务人员解析一致）。——
         Long applicantId = this.requireWarehousePreparerPractitionerId(
             ErrorCodeConstants.WHS_IN_101,
@@ -495,7 +494,7 @@ public class InventoryWarehouseInboundReceiptAppService {
         }
         this.assertInboundReceiptLinesOccurrencePresent(request.getLines());
 
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录");
         Long applicantId = this.requireWarehousePreparerPractitionerId(
             ErrorCodeConstants.WHS_IN_101,
             "用户未登录",
@@ -539,7 +538,7 @@ public class InventoryWarehouseInboundReceiptAppService {
             // Cmd：领域提交审批
             supplyRequestDomainService.submitApproval(
                 inboundReceiptMapper.toSubmitApprovalCommand(request,
-                    currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录"),
+                    currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录"),
                     applicantId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_IN_003);
@@ -565,7 +564,7 @@ public class InventoryWarehouseInboundReceiptAppService {
         try {
             // Cmd：领域撤回审批
             supplyRequestDomainService.withdrawApproval(
-                inboundReceiptMapper.toWithdrawApprovalCommand(request, currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录")));
+                inboundReceiptMapper.toWithdrawApprovalCommand(request, currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录")));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_IN_003);
         }
@@ -579,7 +578,7 @@ public class InventoryWarehouseInboundReceiptAppService {
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "busNo 不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录");
 
         // —— 同意进货单 ——
         // —— 2. 同意前读校验：单据须存在、类型须为药库进货；读侧防重复同意（双保险，避免双入账）。——
@@ -827,12 +826,12 @@ public class InventoryWarehouseInboundReceiptAppService {
         if (lineIds.isEmpty()) {
             return;
         }
-        InventoryMedicareUploadSupport.uploadIfPortPresent(inventoryInsurancePort, () -> {
-            UploadAfterInboundCommand command = new UploadAfterInboundCommand()
+        InventoryMedicareUploadSupport.uploadIfEnabled(inventoryUploadExtension, () -> {
+            InventoryUploadAfterInboundCommand command = new InventoryUploadAfterInboundCommand()
                 .setInboundBusNo(request.getBusNo())
                 .setSupplyRequestLineIds(lineIds)
                 .setContractBusNo(request.getContractBusNo());
-            inventoryInsurancePort.uploadAfterInboundAgree(command);
+            inventoryUploadExtension.uploadAfterInboundAgree(command);
         });
     }
 
@@ -855,7 +854,7 @@ public class InventoryWarehouseInboundReceiptAppService {
         // —— 驳回前仍须断言目标为药库进货单，避免对其它供应类型误走本入口。——
 
         // —— 审批人回落：与同意/提交路径一致，单岗可不传 approverId。——
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录");
         Long approverId = request.getApproverId();
         if (approverId == null) {
             approverId = operatorId;
@@ -886,7 +885,7 @@ public class InventoryWarehouseInboundReceiptAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_IN_001, "请求不能为空");
         }
         this.gateBusNo(request.getBusNo());
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_IN_101, "用户未登录");
         try {
             // Cmd：领域按 busNo 软删
             supplyRequestDomainService.removeByBusNo(
@@ -1226,15 +1225,7 @@ public class InventoryWarehouseInboundReceiptAppService {
         String notLoggedInErrorCode,
         String notLoggedInMessage,
         String noPractitionerMessage) {
-        Long userId = this.currentOperatorResolver.requireOperatorId(notLoggedInErrorCode, notLoggedInMessage);
-        Practitioner practitioner = this.practitionerQueryService.findByUserId(userId);
-        if (practitioner == null) {
-            throw new BusinessException(notLoggedInErrorCode, noPractitionerMessage);
-        }
-        if (practitioner.getId() == null) {
-            throw new BusinessException(notLoggedInErrorCode, noPractitionerMessage);
-        }
-        return practitioner.getId();
+        return this.currentPractitionerResolver.requirePractitionerId(notLoggedInErrorCode, noPractitionerMessage);
     }
 
     /**

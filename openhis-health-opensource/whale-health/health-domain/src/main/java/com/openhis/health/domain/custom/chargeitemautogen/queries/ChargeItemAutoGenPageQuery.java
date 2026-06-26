@@ -35,6 +35,10 @@ public class ChargeItemAutoGenPageQuery extends AbstractPageQuery {
      */
     private String statusEnum;
     /**
+     * 住院就诊标识过滤（可空表示不限）。
+     */
+    private Long encounterId;
+    /**
      * 触发来源表名过滤（可空表示不限）。
      */
     private String triggerSourceTable;
@@ -45,7 +49,7 @@ public class ChargeItemAutoGenPageQuery extends AbstractPageQuery {
     /**
      * 目标收费项定义主键过滤（可空表示不限）。
      */
-    private Long targetDefinitionId;
+    private Long chargeDefinitionId;
     /**
      * 执行机构过滤（可空表示不限）。
      */

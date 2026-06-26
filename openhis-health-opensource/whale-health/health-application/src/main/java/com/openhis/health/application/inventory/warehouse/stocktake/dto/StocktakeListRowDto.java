@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inventory.warehouse.stocktake.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -80,7 +81,7 @@ public class StocktakeListRowDto {
     private String applicantName;
 
     /** 申请时间。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 申请时间 applyTime。 */
     @Schema(description = "申请时间 applyTime")
     private LocalDateTime applyTime;
@@ -96,13 +97,13 @@ public class StocktakeListRowDto {
     private String approverName;
 
     /** 审批时间。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 审批时间 approvalTime。 */
     @Schema(description = "审批时间 approvalTime")
     private LocalDateTime approvalTime;
 
     /** 制单时间（明细 occurrence_time 组内最大值）。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 制单时间 occurrenceTime。 */
     @Schema(description = "制单时间 occurrenceTime")
     private LocalDateTime occurrenceTime;

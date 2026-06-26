@@ -19,60 +19,45 @@ package com.openhis.health.module.querysupport.encounter;
 
 import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
-import com.openhis.health.bridge.shared.diagnosis.BridgeEncounterDiagnosisSnapshotAssembler;
+import com.openhis.health.module.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
 import com.openhis.health.domain.administration.encounter.entity.EncounterLocation;
 import com.openhis.health.domain.administration.encounter.entity.EncounterParticipant;
+import com.openhis.health.domain.administration.encounter.queries.EncounterSessionScope;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.domain.administration.encounter.repository.EncounterLocationRepository;
-import com.openhis.health.domain.administration.encounter.repository.EncounterParticipantRepository;
-import com.openhis.health.domain.administration.encounter.repository.EncounterRepository;
+import com.openhis.health.domain.administration.encounter.service.EncounterContextPageQueryService;
+import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.location.entity.Location;
-import com.openhis.health.domain.administration.location.repository.LocationRepository;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.patient.entity.Patient;
-import com.openhis.health.domain.administration.patient.repository.PatientRepository;
+import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.custom.encounterhistory.entity.EncounterHistory;
-import com.openhis.health.domain.custom.encounterhistory.repository.EncounterHistoryRepository;
+import com.openhis.health.domain.custom.encounterhistory.service.EncounterHistoryQueryService;
 import com.openhis.health.domain.share.constants.CustomConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
-import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.InpatientRegistrationConstants;
 import com.openhis.health.domain.share.constants.InpatientSettleQueueTab;
-import com.openhis.health.domain.share.enums.EncounterActivityStatus;
-import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterParticipantRole;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.utils.AgeCalculatorUtil;
 import com.openhis.health.domain.share.utils.InpatientEncounterStatusDisplayUtil;
-import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.whale.core.application.exception.BusinessException;
-import jakarta.persistence.criteria.Predicate;
-import jakarta.persistence.criteria.Root;
-import jakarta.persistence.criteria.Subquery;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -84,25 +69,20 @@ import java.util.Set;
  * 住院就诊上下文读侧组装（由 {@link EncounterContextFacade} 委托，替代 {@code InpatientInfoRMQueryService}）。
  *
  * <p>分页/排序/机构收窄见 B.10.11；病区床位范围经 {@link LocationQueryService} 与就诊位置子表 EXISTS 收敛。</p>
- *
- * <p>DOC-CONFLICT：Criteria 暂经 {@link EncounterRepository} 等仓储；{@code diagnosisJson} 为 Loader 内部字段，
- * 对外须结构化（B.6.2、迁移文档 10 P4）。</p>
  */
 @Component
 @RequiredArgsConstructor
 public class InpatientEncounterContextLoader {
 
-    private final EncounterRepository encounterRepository;
-    private final EncounterLocationRepository encounterLocationRepository;
-    private final EncounterParticipantRepository participantRepository;
-    private final PatientRepository patientRepository;
-    private final LocationRepository locationRepository;
+    private final EncounterContextPageQueryService pageQueryService;
+    private final EncounterQueryService encounterQueryService;
     private final LocationQueryService locationQueryService;
     private final OrganizationQueryService organizationQueryService;
     private final PractitionerQueryService practitionerQueryService;
+    private final PatientQueryService patientQueryService;
     private final ChargeItemQueryService chargeItemQueryService;
-    private final BridgeEncounterDiagnosisSnapshotAssembler bridgeEncounterDiagnosisSnapshotAssembler;
-    private final EncounterHistoryRepository encounterHistoryRepository;
+    private final EncounterDiagnosisSnapshotAssembler encounterDiagnosisSnapshotAssembler;
+    private final EncounterHistoryQueryService encounterHistoryQueryService;
 
     /** 当前会话机构收窄（B.10.11，禁止经 PageQuery 传 organizationId）。 */
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
@@ -173,7 +153,7 @@ public class InpatientEncounterContextLoader {
     }
 
     /**
-     * 住院结算队列：待结算页签时先按待结算收费项收窄 encounterId 集合。
+     * 住院结算队列：待结算页签按「有待结算费用 ∪ 就诊 PENDING」收窄；已结算页签按 COMPLETED。
      *
      * @param query 分页、页签与筛选
      * @return 住院就诊上下文页
@@ -189,10 +169,6 @@ public class InpatientEncounterContextLoader {
         }
         if (InpatientSettleQueueTab.PENDING_SETTLE.equals(effective.getSettleQueueTab())) {
             List<Long> encounterIds = chargeItemQueryService.listEncounterIdsWithPendingSettlementCharges();
-            if (encounterIds.isEmpty()) {
-                Pageable pageable = this.resolvePageable(effective);
-                return Page.empty(pageable);
-            }
             effective.setEncounterIdsIn(encounterIds);
         }
         return this.pageInpatientEncounterContexts(effective);
@@ -205,11 +181,9 @@ public class InpatientEncounterContextLoader {
      * @return 住院就诊上下文页
      */
     public Page<InpatientEncounterContextQueryModel> pageInpatientEncounterContexts(InpatientEncounterPageQuery query) {
-        Pageable pageable = this.resolvePageable(query);
-        Specification<Encounter> specification = this.buildSpecification(query);
-        Page<Encounter> page = encounterRepository.findAll(specification, pageable);
+        Page<Encounter> page = pageQueryService.pageInpatientEncounterEntities(query, this.buildSessionScope());
         List<InpatientEncounterContextQueryModel> content = this.toContextModels(page.getContent());
-        return new PageImpl<>(content, pageable, page.getTotalElements());
+        return new PageImpl<>(content, page.getPageable(), page.getTotalElements());
     }
 
     /**
@@ -219,10 +193,15 @@ public class InpatientEncounterContextLoader {
      * @return 上下文行列表
      */
     public List<InpatientEncounterContextQueryModel> listInpatientEncounterContexts(InpatientEncounterPageQuery query) {
-        Specification<Encounter> specification = this.buildSpecification(query);
-        Sort sort = Sort.by(Sort.Order.desc(FieldNameConstants.CREATED_AT));
-        List<Encounter> rows = encounterRepository.findAll(specification, sort);
+        List<Encounter> rows = pageQueryService.listInpatientEncounterEntities(query, this.buildSessionScope());
         return this.toContextModels(rows);
+    }
+
+    private EncounterSessionScope buildSessionScope() {
+        return new EncounterSessionScope(
+            managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery(),
+            managedOrganizationIdsResolver.isOrganizationScopeEnforcementActive(),
+            this.extractWardLocationIds(managedWardLocationIdsResolver.listManagedActiveWardsOrEmpty()));
     }
 
     /**
@@ -235,7 +214,7 @@ public class InpatientEncounterContextLoader {
         if (encounterId == null) {
             return Optional.empty();
         }
-        return encounterRepository.findByIdAndClassEnum(encounterId, EncounterClass.IMP.getCode())
+        return encounterQueryService.findInpatientEncounterEntityById(encounterId)
             .map(encounter -> this.toContextModels(List.of(encounter)).get(0));
     }
 
@@ -251,7 +230,7 @@ public class InpatientEncounterContextLoader {
             return new ArrayList<>();
         }
         List<Encounter> loaded =
-            encounterRepository.findAllByIdInAndClassEnum(encounterIdsOrdered, EncounterClass.IMP.getCode());
+            encounterQueryService.listInpatientEncounterEntitiesByIds(encounterIdsOrdered);
         Map<Long, InpatientEncounterContextQueryModel> byEncounterId = new HashMap<>(loaded.size() * 2);
         for (InpatientEncounterContextQueryModel model : this.toContextModels(loaded)) {
             if (model.getEncounterId() != null) {
@@ -281,432 +260,6 @@ public class InpatientEncounterContextLoader {
                 "住院就诊上下文不存在"));
     }
 
-    /** 住院列表分页壳（B.10.11：{@code springPageIndex} + {@code getBoundedPageSize}）。 */
-    private Pageable resolvePageable(InpatientEncounterPageQuery query) {
-        int pageNo = 0;
-        int pageSize = 20;
-        if (query != null) {
-            pageNo = query.springPageIndex();
-            pageSize = query.getBoundedPageSize();
-        }
-        return PageRequest.of(pageNo, pageSize, this.resolveSort(query));
-    }
-
-    /** 按队列类型（医生站/护士站/预交金/结算）选择排序字段。 */
-    private Sort resolveSort(InpatientEncounterPageQuery query) {
-        if (query != null && Boolean.TRUE.equals(query.getDoctorStationQueue())) {
-            return Sort.by(
-                Sort.Order.asc(FieldNameConstants.BUS_NO),
-                Sort.Order.asc(FieldNameConstants.ID));
-        }
-        if (query != null
-            && (Boolean.TRUE.equals(query.getPrepayEligibleOnly())
-            || Boolean.TRUE.equals(query.getNurseStationQueue())
-            || Boolean.TRUE.equals(query.getSettleQueue()))) {
-            return Sort.by(
-                Sort.Order.desc(FieldNameConstants.START_TIME),
-                Sort.Order.desc(FieldNameConstants.ID));
-        }
-        return Sort.by(Sort.Order.desc(FieldNameConstants.CREATED_AT));
-    }
-
-    /**
-     * 住院上下文主 Criteria：按 {@code doctorStationQueue} / {@code nurseStationQueue} / {@code settleQueue} 等分支收窄。
-     */
-    private Specification<Encounter> buildSpecification(InpatientEncounterPageQuery query) {
-        return (root, criteriaQuery, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
-            predicates.add(cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.IMP.getCode()));
-            if (query == null) {
-                return cb.and(predicates.toArray(new Predicate[0]));
-            }
-            if (Boolean.TRUE.equals(query.getDoctorStationQueue())) {
-                this.applyDoctorStationVisibleStatus(predicates, root, cb);
-                this.applyDoctorStationOrganizationScope(predicates, root, cb);
-            } else if (Boolean.TRUE.equals(query.getNurseStationQueue())) {
-                this.applyNurseStationVisibleStatus(predicates, root, cb);
-                this.applyNurseStationGeographicScope(predicates, root, cb, criteriaQuery, query);
-                this.applyEncounterIdsIn(predicates, root, cb, query.getEncounterIdsIn());
-            } else if (Boolean.TRUE.equals(query.getSettleQueue())) {
-                this.applySettleQueueFilter(predicates, root, cb, query);
-                this.applyEncounterIdsIn(predicates, root, cb, query.getEncounterIdsIn());
-            } else {
-                if (query.getWardId() != null) {
-                    this.applyWardScope(predicates, root, cb, criteriaQuery, query.getWardId());
-                }
-                if (Boolean.TRUE.equals(query.getPrepayEligibleOnly())) {
-                    this.applyPrepayEligibleStatus(predicates, root, cb);
-                } else {
-                    this.applyRegistrationListStatus(predicates, root, cb, query);
-                }
-            }
-            if (query.getPatientId() != null) {
-                predicates.add(cb.equal(root.get(FieldNameConstants.PATIENT_ID), query.getPatientId()));
-            }
-            if (StringUtils.isNotBlank(query.getStatusEnum())) {
-                predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), query.getStatusEnum()));
-            }
-            this.applyAdmissionDate(predicates, root, cb, query);
-            this.applyKeyword(predicates, root, cb, criteriaQuery, query);
-            return cb.and(predicates.toArray(new Predicate[0]));
-        };
-    }
-
-    /** 医生站：在院/留观状态子集。 */
-    private void applyDoctorStationVisibleStatus(
-        List<Predicate> predicates,
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb) {
-        predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
-            EncounterStatus.IN_PROGRESS.getCode(),
-            EncounterStatus.ON_HOLD.getCode()));
-    }
-
-    /**
-     * 医生站队列：按当前登录科室收窄就诊机构（会话机构，非 HTTP 入参）。
-     */
-    private void applyDoctorStationOrganizationScope(
-        List<Predicate> predicates,
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb) {
-        Long organizationId = managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery();
-        if (organizationId != null) {
-            predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), organizationId));
-            return;
-        }
-        if (managedOrganizationIdsResolver.isOrganizationScopeEnforcementActive()) {
-            predicates.add(cb.disjunction());
-        }
-    }
-
-    /** 护士站：登记至出院前多状态子集。 */
-    private void applyNurseStationVisibleStatus(
-        List<Predicate> predicates,
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb) {
-        predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
-            EncounterStatus.REGISTERED.getCode(),
-            EncounterStatus.IN_PROGRESS.getCode(),
-            EncounterStatus.ON_HOLD.getCode(),
-            EncounterStatus.PENDING.getCode(),
-            EncounterStatus.COMPLETED.getCode()));
-    }
-
-    /**
-     * 护士站地理范围：病房下全部床位 / 单病区 / 管辖病区列表；须已挂入院病区或活动床位。
-     */
-    private void applyNurseStationGeographicScope(
-        List<Predicate> predicates,
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
-        InpatientEncounterPageQuery query) {
-        // 护士站列表不展示未挂入院病区且无活动床位的就诊（含待入科但未登记病区者）。
-        predicates.add(this.existsAnyActiveWardOrBed(root, cb, criteriaQuery));
-        if (query.getHouseId() != null) {
-            List<Location> beds = locationQueryService.listBedsUnderParent(query.getHouseId());
-            List<Long> bedIds = new ArrayList<>();
-            for (Location bed : beds) {
-                if (bed != null && bed.getId() != null) {
-                    bedIds.add(bed.getId());
-                }
-            }
-            if (bedIds.isEmpty()) {
-                predicates.add(cb.disjunction());
-                return;
-            }
-            predicates.add(this.existsActiveBedIn(root, cb, criteriaQuery, bedIds));
-            return;
-        }
-        if (query.getWardId() != null) {
-            predicates.add(this.buildWardScopePredicate(root, cb, criteriaQuery, query.getWardId()));
-            return;
-        }
-        List<Long> managedWardIds = query.getManagedWardIds();
-        if (managedWardIds == null || managedWardIds.isEmpty()) {
-            managedWardIds = this.extractWardLocationIds(
-                managedWardLocationIdsResolver.listManagedActiveWardsOrEmpty());
-        }
-        if (managedWardIds != null && !managedWardIds.isEmpty()) {
-            List<Long> wardIds = new ArrayList<>();
-            for (Long wardId : managedWardIds) {
-                if (wardId != null) {
-                    wardIds.add(wardId);
-                }
-            }
-            if (!wardIds.isEmpty()) {
-                // BR-IP-NUR-003：收窄至管理病区并集（活动病区轨迹或下属床位；已登记未分床但已挂入院病区者由 existsActiveWardLocation 覆盖）。
-                predicates.add(this.existsActiveWardIn(root, cb, criteriaQuery, wardIds));
-            } else {
-                predicates.add(cb.disjunction());
-            }
-            return;
-        }
-        predicates.add(cb.disjunction());
-    }
-
-    /** 外部分页后传入的 encounterId 白名单（护士站/结算队列）。 */
-    private void applyEncounterIdsIn(
-        List<Predicate> predicates,
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        Collection<Long> encounterIdsIn) {
-        if (encounterIdsIn == null) {
-            return;
-        }
-        predicates.add(root.get(FieldNameConstants.ID).in(encounterIdsIn));
-    }
-
-    /** 住院号 / 患者姓名 / 活动床位名 OR 模糊（B.2.1）。 */
-    private void applyKeyword(
-        List<Predicate> predicates,
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
-        InpatientEncounterPageQuery query) {
-        if (StringUtils.isBlank(query.getKeyword())) {
-            return;
-        }
-        String pattern = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
-        Predicate busNoLike = cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), pattern);
-        Predicate nameLike = this.existsPatientNameLike(root, cb, criteriaQuery, pattern);
-        Predicate bedLike = this.existsActiveBedNameLike(root, cb, criteriaQuery, pattern);
-        predicates.add(cb.or(busNoLike, nameLike, bedLike));
-    }
-
-    /** 患者姓名子串 EXISTS。 */
-    private Predicate existsPatientNameLike(
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
-        String pattern) {
-        Subquery<Long> sq = criteriaQuery.subquery(Long.class);
-        Root<Patient> patientRoot = sq.from(Patient.class);
-        sq.select(patientRoot.get(FieldNameConstants.ID));
-        sq.where(cb.and(
-            cb.equal(patientRoot.get(FieldNameConstants.ID), root.get(FieldNameConstants.PATIENT_ID)),
-            cb.isFalse(patientRoot.get(FieldNameConstants.IS_DELETED)),
-            cb.like(cb.lower(patientRoot.get(FieldNameConstants.NAME)), pattern)));
-        return cb.exists(sq);
-    }
-
-    /** 当前活动床位名称模糊 EXISTS。 */
-    private Predicate existsActiveBedNameLike(
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
-        String pattern) {
-        Subquery<Long> sq = criteriaQuery.subquery(Long.class);
-        Root<EncounterLocation> elRoot = sq.from(EncounterLocation.class);
-        Root<Location> locRoot = sq.from(Location.class);
-        sq.select(elRoot.get(FieldNameConstants.ENCOUNTER_ID));
-        sq.where(cb.and(
-            cb.equal(elRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
-            cb.equal(elRoot.get(FieldNameConstants.STATUS_ENUM), EncounterActivityStatus.ACTIVE.getCode()),
-            cb.equal(elRoot.get(FieldNameConstants.FORM_ENUM), LocationForm.BED.getCode()),
-            cb.equal(elRoot.get(FieldNameConstants.LOCATION_ID), locRoot.get(FieldNameConstants.ID)),
-            cb.isFalse(locRoot.get(FieldNameConstants.IS_DELETED)),
-            cb.like(cb.lower(locRoot.get(FieldNameConstants.NAME)), pattern)));
-        return cb.exists(sq);
-    }
-
-    /** 结算队列页签：已结算 / 待结算（排除取消与计划）。 */
-    private void applySettleQueueFilter(
-        List<Predicate> predicates,
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        InpatientEncounterPageQuery query) {
-        String tab = query.getSettleQueueTab();
-        if (InpatientSettleQueueTab.SETTLED.equals(tab)) {
-            predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), EncounterStatus.COMPLETED.getCode()));
-            return;
-        }
-        predicates.add(cb.notEqual(root.get(FieldNameConstants.STATUS_ENUM), EncounterStatus.CANCELLED.getCode()));
-        predicates.add(cb.notEqual(root.get(FieldNameConstants.STATUS_ENUM), EncounterStatus.PLANNED.getCode()));
-    }
-
-    /**
-     * 预交金队列可见态：自登记至清床前（与护士站在院口径一致，含 {@code COMPLETED} 待清床）。
-     *
-     * <p>不含 {@code DISCHARGED} / {@code PLANNED} / {@code CANCELLED}；收退写路径仍以 App 层四态白名单为准。</p>
-     */
-    private void applyPrepayEligibleStatus(
-        List<Predicate> predicates,
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb) {
-        predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
-            EncounterStatus.REGISTERED.getCode(),
-            EncounterStatus.IN_PROGRESS.getCode(),
-            EncounterStatus.ON_HOLD.getCode(),
-            EncounterStatus.PENDING.getCode(),
-            EncounterStatus.COMPLETED.getCode()));
-    }
-
-    /** 入院日过滤：按 {@code startTime} 落在当日。 */
-    private void applyAdmissionDate(
-        List<Predicate> predicates,
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        InpatientEncounterPageQuery query) {
-        LocalDate admissionDate = query.getAdmissionDate();
-        if (admissionDate == null) {
-            return;
-        }
-        LocalDateTime dayStart = admissionDate.atStartOfDay();
-        LocalDateTime dayEnd = admissionDate.plusDays(1).atStartOfDay();
-        predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.START_TIME), dayStart));
-        predicates.add(cb.lessThan(root.get(FieldNameConstants.START_TIME), dayEnd));
-    }
-
-    /** 入院登记列表虚拟状态 → 就诊 status_enum。 */
-    private void applyRegistrationListStatus(
-        List<Predicate> predicates,
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        InpatientEncounterPageQuery query) {
-        String listStatus = query.getRegistrationListStatus();
-        if (StringUtils.isBlank(listStatus)) {
-            return;
-        }
-        if (InpatientRegistrationConstants.LIST_STATUS_PLANNED.equals(listStatus)) {
-            predicates.add(cb.equal(
-                root.get(FieldNameConstants.STATUS_ENUM), EncounterStatus.PLANNED.getCode()));
-            return;
-        }
-        if (InpatientRegistrationConstants.LIST_STATUS_WAIT_ADMISSION.equals(listStatus)) {
-            predicates.add(cb.equal(
-                root.get(FieldNameConstants.STATUS_ENUM), EncounterStatus.REGISTERED.getCode()));
-            return;
-        }
-        if (InpatientRegistrationConstants.LIST_STATUS_ADMITTED.equals(listStatus)) {
-            predicates.add(cb.equal(
-                root.get(FieldNameConstants.STATUS_ENUM), EncounterStatus.IN_PROGRESS.getCode()));
-            return;
-        }
-        throw new BusinessException(
-            ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
-            "registrationListStatus 无效: " + listStatus);
-    }
-
-    /** 登记列表按病区收窄。 */
-    private void applyWardScope(
-        List<Predicate> predicates,
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
-        Long wardId) {
-        predicates.add(this.buildWardScopePredicate(root, cb, criteriaQuery, wardId));
-    }
-
-    /** 病区直接占床 OR 病区下任一活动床位。 */
-    private Predicate buildWardScopePredicate(
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
-        Long wardId) {
-        List<Long> bedIds = this.collectBedIdsUnderWard(wardId);
-        Predicate activeWard = this.existsActiveWardLocation(root, cb, criteriaQuery, wardId);
-        if (bedIds.isEmpty()) {
-            return activeWard;
-        }
-        return cb.or(activeWard, this.existsActiveBedIn(root, cb, criteriaQuery, bedIds));
-    }
-
-    /** 活动轨迹落在指定病区库位。 */
-    private Predicate existsActiveWardLocation(
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
-        Long wardId) {
-        Subquery<Long> sq = criteriaQuery.subquery(Long.class);
-        Root<EncounterLocation> elRoot = sq.from(EncounterLocation.class);
-        sq.select(elRoot.get(FieldNameConstants.ENCOUNTER_ID));
-        sq.where(cb.and(
-            cb.equal(elRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
-            cb.equal(elRoot.get(FieldNameConstants.STATUS_ENUM), EncounterActivityStatus.ACTIVE.getCode()),
-            cb.equal(elRoot.get(FieldNameConstants.FORM_ENUM), LocationForm.WARD.getCode()),
-            cb.equal(elRoot.get(FieldNameConstants.LOCATION_ID), wardId)));
-        return cb.exists(sq);
-    }
-
-    /** 是否存在任意活动病区轨迹（不限定具体病区 id）。 */
-    private Predicate existsAnyActiveWardLocation(
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery) {
-        Subquery<Long> sq = criteriaQuery.subquery(Long.class);
-        Root<EncounterLocation> elRoot = sq.from(EncounterLocation.class);
-        sq.select(elRoot.get(FieldNameConstants.ENCOUNTER_ID));
-        sq.where(cb.and(
-            cb.equal(elRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
-            cb.equal(elRoot.get(FieldNameConstants.STATUS_ENUM), EncounterActivityStatus.ACTIVE.getCode()),
-            cb.equal(elRoot.get(FieldNameConstants.FORM_ENUM), LocationForm.WARD.getCode())));
-        return cb.exists(sq);
-    }
-
-    /** 须已挂活动入院病区或已分活动床位，二者至少其一。 */
-    private Predicate existsAnyActiveWardOrBed(
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery) {
-        return cb.or(
-            this.existsAnyActiveWardLocation(root, cb, criteriaQuery),
-            this.existsActiveBed(root, cb, criteriaQuery));
-    }
-
-    /** 是否存在任意活动床位轨迹。 */
-    private Predicate existsActiveBed(
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery) {
-        Subquery<Long> sq = criteriaQuery.subquery(Long.class);
-        Root<EncounterLocation> elRoot = sq.from(EncounterLocation.class);
-        sq.select(elRoot.get(FieldNameConstants.ENCOUNTER_ID));
-        sq.where(cb.and(
-            cb.equal(elRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
-            cb.equal(elRoot.get(FieldNameConstants.STATUS_ENUM), EncounterActivityStatus.ACTIVE.getCode()),
-            cb.equal(elRoot.get(FieldNameConstants.FORM_ENUM), LocationForm.BED.getCode())));
-        return cb.exists(sq);
-    }
-
-    /** 活动床位落在给定床位 id 集合内。 */
-    private Predicate existsActiveBedIn(
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
-        Collection<Long> bedIds) {
-        Subquery<Long> sq = criteriaQuery.subquery(Long.class);
-        Root<EncounterLocation> elRoot = sq.from(EncounterLocation.class);
-        sq.select(elRoot.get(FieldNameConstants.ENCOUNTER_ID));
-        sq.where(cb.and(
-            cb.equal(elRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
-            cb.equal(elRoot.get(FieldNameConstants.STATUS_ENUM), EncounterActivityStatus.ACTIVE.getCode()),
-            cb.equal(elRoot.get(FieldNameConstants.FORM_ENUM), LocationForm.BED.getCode()),
-            elRoot.get(FieldNameConstants.LOCATION_ID).in(bedIds)));
-        return cb.exists(sq);
-    }
-
-    /** 活动轨迹落在多个病区之一（含下属床位）。 */
-    private Predicate existsActiveWardIn(
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
-        Collection<Long> wardIds) {
-        List<Long> allBedIds = new ArrayList<>();
-        for (Long wardId : wardIds) {
-            allBedIds.addAll(this.collectBedIdsUnderWard(wardId));
-        }
-        List<Predicate> parts = new ArrayList<>();
-        for (Long wardId : wardIds) {
-            parts.add(this.existsActiveWardLocation(root, cb, criteriaQuery, wardId));
-        }
-        if (!allBedIds.isEmpty()) {
-            parts.add(this.existsActiveBedIn(root, cb, criteriaQuery, allBedIds));
-        }
-        return cb.or(parts.toArray(new Predicate[0]));
-    }
-
     /** 由病区位置实体列表提取 id，与护士站树同一回落口径。 */
     private List<Long> extractWardLocationIds(List<Location> wards) {
         if (wards == null || wards.isEmpty()) {
@@ -721,30 +274,6 @@ public class InpatientEncounterContextLoader {
         return new ArrayList<>(wardIds);
     }
 
-    /** 病区 → 病房 → 床位 id 列表（登记/护士站地理筛选用）。 */
-    private List<Long> collectBedIdsUnderWard(Long wardId) {
-        List<Long> bedIds = new ArrayList<>();
-        if (wardId == null) {
-            return bedIds;
-        }
-        List<Location> rooms = locationRepository.findAllByParentIdAndFormEnum(
-            wardId, LocationForm.HOUSE.getCode());
-        for (Location room : rooms) {
-            if (room == null || Boolean.TRUE.equals(room.getIsDeleted()) || room.getId() == null) {
-                continue;
-            }
-            for (Location bed : locationQueryService.listBedsUnderParent(room.getId())) {
-                if (bed != null && bed.getId() != null) {
-                    bedIds.add(bed.getId());
-                }
-            }
-        }
-        return bedIds;
-    }
-
-    /**
-     * 批量装配住院上下文（患者/科室/床位/参与者/诊断快照/费用摘要字段）。
-     */
     private List<InpatientEncounterContextQueryModel> toContextModels(List<Encounter> encounters) {
         if (encounters == null || encounters.isEmpty()) {
             return List.of();
@@ -763,21 +292,13 @@ public class InpatientEncounterContextLoader {
                 organizationIds.add(encounter.getOrganizationId());
             }
         }
-        Map<Long, Patient> patientById = new HashMap<>();
-        if (!patientIds.isEmpty()) {
-            for (Patient patient : patientRepository.findAllByIdIn(patientIds)) {
-                if (patient.getId() != null) {
-                    patientById.put(patient.getId(), patient);
-                }
-            }
-        }
+        Map<Long, Patient> patientById = patientQueryService.loadPatientEntityMapByIds(patientIds);
         Map<Long, String> organizationNameById = organizationQueryService.mapNamesByIds(organizationIds);
 
-        String activeStatus = EncounterActivityStatus.ACTIVE.getCode();
         Map<Long, List<EncounterLocation>> locationsByEncounterId = new HashMap<>();
         if (!encounterIds.isEmpty()) {
-            for (EncounterLocation row : encounterLocationRepository.findAllByEncounterIdInAndStatusEnum(
-                encounterIds, activeStatus)) {
+            for (EncounterLocation row :
+                encounterQueryService.listActiveEncounterLocationEntitiesByEncounterIds(encounterIds)) {
                 if (row.getEncounterId() == null) {
                     continue;
                 }
@@ -795,14 +316,7 @@ public class InpatientEncounterContextLoader {
                 }
             }
         }
-        Map<Long, Location> locationById = new HashMap<>();
-        if (!locationIds.isEmpty()) {
-            for (Location location : locationRepository.findAllById(locationIds)) {
-                if (location.getId() != null) {
-                    locationById.put(location.getId(), location);
-                }
-            }
-        }
+        Map<Long, Location> locationById = new HashMap<>(locationQueryService.loadLocationEntityMapByIds(locationIds));
         Set<Long> wardParentIds = new LinkedHashSet<>();
         for (Location location : locationById.values()) {
             if (location.getParentId() != null
@@ -810,23 +324,14 @@ public class InpatientEncounterContextLoader {
                 wardParentIds.add(location.getParentId());
             }
         }
-        for (Long parentId : wardParentIds) {
-            if (!locationById.containsKey(parentId)) {
-                locationIds.add(parentId);
-            }
-        }
         if (!wardParentIds.isEmpty()) {
-            for (Location parent : locationRepository.findAllById(wardParentIds)) {
-                if (parent.getId() != null) {
-                    locationById.put(parent.getId(), parent);
-                }
-            }
+            locationById.putAll(locationQueryService.loadLocationEntityMapByIds(wardParentIds));
         }
 
         Map<Long, List<EncounterParticipant>> participantsByEncounterId = new HashMap<>();
         if (!encounterIds.isEmpty()) {
             for (EncounterParticipant participant :
-                participantRepository.findAllByEncounterIdInAndStatusEnum(encounterIds, activeStatus)) {
+                encounterQueryService.listActiveParticipantEntitiesByEncounterIds(encounterIds)) {
                 if (participant.getEncounterId() == null) {
                     continue;
                 }
@@ -886,11 +391,13 @@ public class InpatientEncounterContextLoader {
                 model,
                 participantsByEncounterId.get(encounter.getId()),
                 practitionerNameById);
-            BridgeEncounterDiagnosisSnapshotAssembler.DiagnosisSnapshot diagnosisSnapshot =
-                this.bridgeEncounterDiagnosisSnapshotAssembler.buildSnapshot(encounter.getId());
+            EncounterDiagnosisSnapshotAssembler.DiagnosisSnapshot diagnosisSnapshot =
+                this.encounterDiagnosisSnapshotAssembler.buildSnapshot(encounter.getId());
             model.setDiagnosisJson(diagnosisSnapshot.diagnosisJson());
             models.add(model);
         }
+        // 已清床离院无活动位置，按末次已完成 WARD 回填病区展示（AS-IP-NUR-001 BR-IP-NUR-012）。
+        this.applyLastCompletedWardForDischarged(models);
         // ON_HOLD 待转科/待出院分流列（替代 InpatientInfo 投影的 transfer_org_id、discharge_type_enum）。
         this.applyInpatientHoldRoutingFields(models, encounters);
         for (InpatientEncounterContextQueryModel model : models) {
@@ -929,7 +436,8 @@ public class InpatientEncounterContextLoader {
             return;
         }
         Map<Long, List<EncounterHistory>> historiesByEncounterId = new HashMap<>();
-        for (EncounterHistory row : encounterHistoryRepository.findAllByEncounterIdIn(onHoldEncounterIds)) {
+        for (EncounterHistory row : encounterHistoryQueryService.listEncounterHistoryEntitiesByEncounterIds(
+            onHoldEncounterIds)) {
             if (row == null || row.getEncounterId() == null) {
                 continue;
             }
@@ -1009,6 +517,51 @@ public class InpatientEncounterContextLoader {
             }
         }
         return false;
+    }
+
+    /**
+     * 已清床离院就诊无活动位置时，按末次已完成 WARD 轨迹回填病区展示字段。
+     *
+     * @param models 住院上下文行
+     */
+    private void applyLastCompletedWardForDischarged(List<InpatientEncounterContextQueryModel> models) {
+        if (models == null || models.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> dischargedEncounterIds = new LinkedHashSet<>();
+        for (InpatientEncounterContextQueryModel model : models) {
+            if (model == null || model.getEncounterId() == null || model.getWardId() != null) {
+                continue;
+            }
+            if (!EncounterStatus.DISCHARGED.getCode().equals(model.getStatusEnum())) {
+                continue;
+            }
+            dischargedEncounterIds.add(model.getEncounterId());
+        }
+        if (dischargedEncounterIds.isEmpty()) {
+            return;
+        }
+        Map<Long, Long> wardIdByEncounterId =
+            encounterQueryService.mapLastCompletedWardLocationIdByEncounterIds(dischargedEncounterIds);
+        if (wardIdByEncounterId.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> wardLocationIds = new LinkedHashSet<>(wardIdByEncounterId.values());
+        Map<Long, Location> wardById = locationQueryService.loadLocationEntityMapByIds(wardLocationIds);
+        for (InpatientEncounterContextQueryModel model : models) {
+            if (model == null || model.getEncounterId() == null || model.getWardId() != null) {
+                continue;
+            }
+            Long wardId = wardIdByEncounterId.get(model.getEncounterId());
+            if (wardId == null) {
+                continue;
+            }
+            model.setWardId(wardId);
+            Location ward = wardById.get(wardId);
+            if (ward != null && StringUtils.isNotBlank(ward.getName())) {
+                model.setWardName(ward.getName());
+            }
+        }
     }
 
     /** 回填病区/床位/房间展示字段（活动轨迹解析）。 */

@@ -43,7 +43,7 @@ public class PractitionerDomainService {
 
     private final PractitionerRepository practitionerRepository;
     private final IDomainEventPublisher domainEventPublisher;
-    /** 工号 busNo：主数据全局递增，前缀 {@link AggregateTypeConstants#PRACTITIONER}；入参非空时沿用外部工号。 */
+    /** 工号 busNo：主数据全局递增，前缀 {@link AggregateTypeConstants#PRACTITIONER}；新建禁止外部注入（B.10.9）。 */
     private final BusinessSequenceService businessSequenceService;
 
     /**
@@ -54,16 +54,12 @@ public class PractitionerDomainService {
      */
     public Long createPractitioner(CreatePractitionerCommand cmd) {
         List<CreatePractitionerCommand.CreatePractitionerItemCommand> items = cmd.resolveItems();
-        int blankBusNoCount = 0;
-        for (CreatePractitionerCommand.CreatePractitionerItemCommand item : items) {
-            if (StringUtils.isBlank(item.getBusNo())) {
-                blankBusNoCount++;
-            }
-        }
-        List<String> allocatedBusNos = businessSequenceService.getSeq(AggregateTypeConstants.PRACTITIONER, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH, blankBusNoCount);
-        int allocIdx = 0;
+        // 前置校验：本批医务人员工号一律由领域层批量采番，禁止命令行注入（B.10.9）。
+        List<String> allocatedBusNos = businessSequenceService.getSeq(
+            AggregateTypeConstants.PRACTITIONER, BusinessSequenceConstants.MASTER_DATA_2_PREFIX_SEQ_LENGTH, items.size());
         List<Practitioner> toSave = new ArrayList<>();
-        for (CreatePractitionerCommand.CreatePractitionerItemCommand item : items) {
+        for (int index = 0; index < items.size(); index++) {
+            CreatePractitionerCommand.CreatePractitionerItemCommand item = items.get(index);
             if (item.getUserId() == null) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "用户标识不能为空");
             }
@@ -71,12 +67,8 @@ public class PractitionerDomainService {
             if (practitionerRepository.findFirstByUserIdOrderByIdAsc(item.getUserId()).isPresent()) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_RULE_CONFLICT, "用户已绑定医务人员");
             }
-            String busNo = item.getBusNo();
-            if (StringUtils.isBlank(busNo)) {
-                busNo = allocatedBusNos.get(allocIdx);
-                allocIdx++;
-            }
-            // 业务分支处理。
+            String busNo = allocatedBusNos.get(index);
+            // 业务分支处理：序列碰撞时拒绝落库，避免静默覆盖既有工号。
             if (practitionerRepository.existsByBusNo(busNo)) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_BUS_NO_CONFLICT, "工号已存在");
             }
@@ -86,6 +78,9 @@ public class PractitionerDomainService {
             p.setGenderEnum(item.getGenderEnum());
             p.setBusNo(busNo);
             p.setOrgId(item.getOrgId());
+            p.setYbNo(item.getYbNo());
+            p.setDrProfttlCode(item.getDrProfttlCode());
+            p.setPharPracCertNo(item.getPharPracCertNo());
             p.assertCreateAllowed();
             p.initAsActive();
             toSave.add(p);
@@ -98,7 +93,7 @@ public class PractitionerDomainService {
     }
 
     /**
-     * 批量编辑医务人员基础信息（姓名、电话、工号、签名等），工号变更时防冲突。
+     * 批量编辑医务人员基础信息（姓名、电话、签名等）；工号创建后不可通过命令修改（B.10.9）。
      *
      * @param cmd 编辑命令（含变更字段清单供事件携带）
      */
@@ -109,10 +104,6 @@ public class PractitionerDomainService {
         for (EditPractitionerCommand.EditPractitionerItemCommand item : items) {
             Practitioner p = this.require(map, item.getPractitionerId());
             p.assertEditable();
-            // 业务分支处理。
-            if (item.getBusNo() != null && practitionerRepository.existsByBusNoAndIdNot(item.getBusNo(), p.getId())) {
-                throw new BusinessException(ErrorCodeConstants.PRACTITIONER_BUS_NO_CONFLICT, "工号已存在");
-            }
             p.setName(item.getName());
             if (item.getGenderEnum() != null) {
                 if (StringUtils.isBlank(item.getGenderEnum())) {
@@ -121,7 +112,9 @@ public class PractitionerDomainService {
                 p.setGenderEnum(item.getGenderEnum().trim());
             }
             p.setPhone(item.getPhone());
-            p.setBusNo(item.getBusNo());
+            p.setYbNo(item.getYbNo());
+            p.setDrProfttlCode(item.getDrProfttlCode());
+            p.setPharPracCertNo(item.getPharPracCertNo());
             p.setSignature(item.getSignature());
             toSave.add(p);
         }

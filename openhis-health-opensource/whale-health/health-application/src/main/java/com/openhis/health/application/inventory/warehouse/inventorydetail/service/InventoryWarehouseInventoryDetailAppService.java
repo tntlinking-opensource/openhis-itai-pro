@@ -17,10 +17,12 @@
 
 package com.openhis.health.application.inventory.warehouse.inventorydetail.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
 import com.openhis.whale.core.application.util.AnnotatedExcelExporter;
@@ -56,6 +58,7 @@ import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.InventoryWarehouseDetailConstants;
 import com.openhis.health.domain.share.constants.InventoryWarehouseDetailExportConstants;
 import com.openhis.health.domain.share.constants.ProductDefinitionCatalogUnitBandConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -102,7 +105,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class InventoryWarehouseInventoryDetailAppService {
 
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     private final TerminologyOptionLoader terminologyOptionLoader;
     private final LocationQueryService locationQueryService;
@@ -158,6 +161,25 @@ public class InventoryWarehouseInventoryDetailAppService {
                 terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.DEVICE_CATEGORY_CODE));
         } catch (RuntimeException ex) {
             log.warn("库存明细初始化：药品/耗材分类术语加载失败", ex);
+            throw new BusinessException(ErrorCodeConstants.WHS_DTL_201, "筛选项加载失败");
+        }
+        try {
+            // Pre：库存范围仅暴露「数量等于0 / 数量大于0」，排除「无限制」。
+            List<OptionDto> allRange =
+                terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.INVENTORY_RANGE);
+            List<OptionDto> filteredRange = new ArrayList<>();
+            for (OptionDto option : allRange) {
+                if (option == null) {
+                    continue;
+                }
+                if (InventoryWarehouseDetailConstants.INVENTORY_RANGE_ZERO_CODE.equals(option.getValue())
+                    || InventoryWarehouseDetailConstants.INVENTORY_RANGE_GT_ZERO_CODE.equals(option.getValue())) {
+                    filteredRange.add(option);
+                }
+            }
+            response.setInventoryRangeOptions(filteredRange);
+        } catch (RuntimeException ex) {
+            log.warn("库存明细初始化：库存范围术语加载失败", ex);
             throw new BusinessException(ErrorCodeConstants.WHS_DTL_201, "筛选项加载失败");
         }
         // Asm：映射页初始化响应
@@ -326,7 +348,7 @@ public class InventoryWarehouseInventoryDetailAppService {
         GatewayIdParseUtil.requireNonEmptyLongIds(request.getInventoryItemIds(), "停供：库存项主键列表不能为空");
         List<Long> merged = this.dedupeIds(request.getInventoryItemIds());
         StopSupplyCommand command = new StopSupplyCommand();
-        command.setOperatorId(this.currentOperatorResolver.requireOperatorId(
+        command.setOperatorId(this.currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.WHS_DTL_101,
             "登录上下文缺失"));
         List<StopSupplyCommand.StopSupplyItemCommand> items = new ArrayList<>();
@@ -364,7 +386,7 @@ public class InventoryWarehouseInventoryDetailAppService {
         GatewayIdParseUtil.requireNonEmptyLongIds(request.getInventoryItemIds(), "恢复供应：库存项主键列表不能为空");
         List<Long> merged = this.dedupeIds(request.getInventoryItemIds());
         ResumeSupplyCommand command = new ResumeSupplyCommand();
-        command.setOperatorId(this.currentOperatorResolver.requireOperatorId(
+        command.setOperatorId(this.currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.WHS_DTL_101,
             "登录上下文缺失"));
         List<ResumeSupplyCommand.ResumeSupplyItemCommand> items = new ArrayList<>();
@@ -391,7 +413,7 @@ public class InventoryWarehouseInventoryDetailAppService {
 
     /** 会话须具备用户主键，否则无法审计写路径与数据范围。 */
     private void assertGateUserPresent() {
-        this.currentOperatorResolver.requireOperatorId(
+        this.currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.WHS_DTL_101,
             "登录上下文缺失");
     }
@@ -623,10 +645,10 @@ public class InventoryWarehouseInventoryDetailAppService {
         }
         String splitUnitName = resolveBandUnitName(bands, ProductDefinitionCatalogUnitBandConstants.BAND_SPLIT);
         if (StringUtils.isBlank(splitUnitName)) {
-            splitUnitName = StringUtils.trimToNull(row.getUnitName());
+            splitUnitName = trimToNull(row.getUnitName());
         }
-        packageUnitName = StringUtils.trimToNull(packageUnitName);
-        splitUnitName = StringUtils.trimToNull(splitUnitName);
+        packageUnitName = trimToNull(packageUnitName);
+        splitUnitName = trimToNull(splitUnitName);
         BigDecimal splitQty = row.getQuantity();
         StringBuilder quantityText = new StringBuilder();
         if (splitQty != null) {

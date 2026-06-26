@@ -210,6 +210,16 @@ public class Schedule extends BaseAuditedEntity {
     }
 
     /**
+     * 更新日程显示名称。
+     *
+     * @param name 名称（可为空表示清除自定义名）
+     */
+    public void updateName(String name) {
+        this.assertNotRetired();
+        this.name = name;
+    }
+
+    /**
      * 停用前断言。
      */
     public void assertDeactivatable() {

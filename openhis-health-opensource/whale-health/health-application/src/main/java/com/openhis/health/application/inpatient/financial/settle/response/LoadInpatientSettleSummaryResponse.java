@@ -100,8 +100,28 @@ public class LoadInpatientSettleSummaryResponse {
     /** 差额提示：预交金净值 − 已结算占用 − 本次选中合计（业务字段）。 */
     private BigDecimal balanceHint;
 
-    /** 展示余额：预交金净值 −。 */
-    @Schema(description = "展示余额：预交金净值 −（待结算 + 已结算占用）")
-    /** 展示余额：预交金净值 −（待结算 + 已结算占用）（业务字段）。 */
+    /** 展示余额：与可用余额一致（兼容）。 */
+    @Schema(description = "展示余额：与可用余额一致")
+    /** 展示余额：与可用余额一致（业务字段）。 */
     private BigDecimal displayAccountBalance;
+
+    /** 账户余额展示模式。 */
+    @Schema(description = "账户余额展示模式")
+    private String accountBalanceDisplayMode;
+
+    /** 可用余额。 */
+    @Schema(description = "可用余额")
+    private BigDecimal availableBalance;
+
+    /** 账户余额主展示文案。 */
+    @Schema(description = "账户余额主展示文案")
+    private String accountBalanceSummaryText;
+
+    /** 账户余额副展示文案。 */
+    @Schema(description = "账户余额副展示文案")
+    private String accountBalanceSubText;
+
+    /** 低余额预警。 */
+    @Schema(description = "低余额预警")
+    private Boolean lowBalanceWarning;
 }

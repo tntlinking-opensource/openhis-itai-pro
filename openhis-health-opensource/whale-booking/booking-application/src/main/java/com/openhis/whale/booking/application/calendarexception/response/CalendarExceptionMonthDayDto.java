@@ -13,9 +13,12 @@ import java.util.List;
 @Setter
 public class CalendarExceptionMonthDayDto {
 
+    /** 日期（yyyy-MM-dd）。 */
     private String date;
 
+    /** 是否属于查询月份。 */
     private Boolean inMonth;
 
+    /** 当日例外类型列表。 */
     private List<String> exceptionTypes = new ArrayList<>();
 }

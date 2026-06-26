@@ -85,4 +85,40 @@ public class PreRegisterSettlementRequest {
     @Schema(description = "预约ID")
     /** 预约ID（业务字段）。 */
     private Long appointmentId;
+
+    /** 指定占用的号源主键（窗口从号源日历点选时传入）。 */
+    @Schema(description = "号源ID")
+    private Long slotId;
+
+    /** 就诊凭证类型（医保读卡）。 */
+    @Schema(description = "就诊凭证类型（医保读卡）")
+    private String ybMediumType;
+
+    /** 就诊凭证编号（医保读卡）。 */
+    @Schema(description = "就诊凭证编号（医保读卡）")
+    private String ybCardInfo;
+
+    /** 人员编号（1101）。 */
+    @Schema(description = "人员编号（1101）")
+    private String psnNo;
+
+    /** 参保地医保区划。 */
+    @Schema(description = "参保地医保区划")
+    private String insuplcAdmdvs;
+
+    /** 险种类型。 */
+    @Schema(description = "险种类型")
+    private String insutype;
+
+    /** 医疗类别，默认 11 普通门诊。 */
+    @Schema(description = "医疗类别，默认 11 普通门诊")
+    private String medType;
+
+    /** 挂号费是否走医保（2203→2206 预结算；缴费时 2207）。 */
+    @Schema(description = "挂号费是否走医保预结算")
+    private Boolean ybRegisterFee;
+
+    /** 医保预结算是否使用个人账户（acct_used_flag=1）；缺省 true。 */
+    @Schema(description = "医保预结算是否使用个人账户")
+    private Boolean ybUseAcctPay;
 }

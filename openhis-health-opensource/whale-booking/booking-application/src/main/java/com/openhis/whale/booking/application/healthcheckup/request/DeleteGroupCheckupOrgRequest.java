@@ -11,6 +11,7 @@ import lombok.Setter;
 @Setter
 public class DeleteGroupCheckupOrgRequest {
 
+    /** 团检单位主键。 */
     @NotNull
     private Long id;
 }

@@ -52,7 +52,7 @@ import com.openhis.health.domain.workflow.supplyrequest.support.SupplyPersistedS
 import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PageWindowGate;
 import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
@@ -92,7 +92,7 @@ public class InventoryWarehouseReturnFromDownstreamAppService {
     private static final long RETURN_FROM_DOWNSTREAM_TYPE_SORT = 5L;
 
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     private final PageWindowGate pageWindowGate;
     private final SupplyRequestDomainService supplyRequestDomainService;
     private final SupplyRequestQueryService supplyRequestQueryService;
@@ -262,7 +262,7 @@ public class InventoryWarehouseReturnFromDownstreamAppService {
         this.assertReturnFromDownstreamDraftLinesWithinSourceAvailableInventory(request.getSourceLocationId(), request.getLines());
         this.assertReturnFromDownstreamLinesOccurrencePresent(request.getLines());
 
-        Long operatorId = this.currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_RFD_101, "用户未登录");
+        Long operatorId = this.currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_RFD_101, "用户未登录");
         Long applicantId = this.requireWarehousePreparerPractitionerId(
             ErrorCodeConstants.WHS_RFD_101,
             "用户未登录",
@@ -321,7 +321,7 @@ public class InventoryWarehouseReturnFromDownstreamAppService {
         this.assertReturnFromDownstreamDraftLinesWithinSourceAvailableInventory(request.getSourceLocationId(), request.getLines());
         this.assertReturnFromDownstreamLinesOccurrencePresent(request.getLines());
 
-        Long operatorId = this.currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_RFD_101, "用户未登录");
+        Long operatorId = this.currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_RFD_101, "用户未登录");
         Long applicantId = this.requireWarehousePreparerPractitionerId(
             ErrorCodeConstants.WHS_RFD_101,
             "用户未登录",
@@ -361,7 +361,7 @@ public class InventoryWarehouseReturnFromDownstreamAppService {
             this.supplyRequestDomainService.submitApproval(
                 this.returnFromDownstreamMapper.toSubmitApprovalCommand(
                     request,
-                    this.currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_RFD_101, "用户未登录"),
+                    this.currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_RFD_101, "用户未登录"),
                     applicantId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_RFD_003);
@@ -388,7 +388,7 @@ public class InventoryWarehouseReturnFromDownstreamAppService {
             this.supplyRequestDomainService.withdrawApproval(
                 this.returnFromDownstreamMapper.toWithdrawApprovalCommand(
                     request,
-                    this.currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_RFD_101, "用户未登录")));
+                    this.currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_RFD_101, "用户未登录")));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_RFD_003);
         }
@@ -404,7 +404,7 @@ public class InventoryWarehouseReturnFromDownstreamAppService {
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_RFD_001, "busNo 不能为空");
         }
-        Long operatorId = this.currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_RFD_101, "用户未登录");
+        Long operatorId = this.currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_RFD_101, "用户未登录");
 
         // Pre：回读退库单并校验未重复同意
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
@@ -653,7 +653,7 @@ public class InventoryWarehouseReturnFromDownstreamAppService {
         if (StringUtils.isBlank(request.getRejectReason())) {
             throw new BusinessException(ErrorCodeConstants.WHS_RFD_001, "驳回原因不能为空");
         }
-        Long operatorId = this.currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_RFD_101, "用户未登录");
+        Long operatorId = this.currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_RFD_101, "用户未登录");
         try {
             this.supplyRequestDomainService.rejectRequest(
                 this.returnFromDownstreamMapper.toRejectRequestCommand(request, operatorId));
@@ -676,7 +676,7 @@ public class InventoryWarehouseReturnFromDownstreamAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_RFD_001, "请求不能为空");
         }
         this.gateBusNo(request.getBusNo());
-        Long operatorId = this.currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_RFD_101, "用户未登录");
+        Long operatorId = this.currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_RFD_101, "用户未登录");
         try {
             // Cmd：领域按 busNo 软删
             this.supplyRequestDomainService.removeByBusNo(
@@ -1089,12 +1089,7 @@ public class InventoryWarehouseReturnFromDownstreamAppService {
         String notLoggedInErrorCode,
         String notLoggedInMessage,
         String noPractitionerMessage) {
-        Long userId = this.currentOperatorResolver.requireOperatorId(notLoggedInErrorCode, notLoggedInMessage);
-        Practitioner practitioner = this.practitionerQueryService.findByUserId(userId);
-        if (practitioner == null || practitioner.getId() == null) {
-            throw new BusinessException(notLoggedInErrorCode, noPractitionerMessage);
-        }
-        return practitioner.getId();
+        return this.currentPractitionerResolver.requirePractitionerId(notLoggedInErrorCode, noPractitionerMessage);
     }
 
     private BusinessException mapSupplyWorkflowException(BusinessException ex, String defaultCode) {

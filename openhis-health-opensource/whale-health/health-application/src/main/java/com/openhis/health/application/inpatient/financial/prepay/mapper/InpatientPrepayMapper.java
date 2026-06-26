@@ -24,6 +24,7 @@ import com.openhis.health.application.inpatient.financial.prepay.request.Collect
 import com.openhis.health.application.inpatient.financial.prepay.request.PagePrepayPatientQueueRequest;
 import com.openhis.health.application.inpatient.financial.prepay.request.RefundPrepayAdvanceDepositRequest;
 import com.openhis.health.application.inpatient.financial.prepay.response.CollectPrepayAdvanceDepositResponse;
+import com.openhis.health.application.inpatient.financial.prepay.response.LoadInpatientPrepayPageInitResponse;
 import com.openhis.health.application.inpatient.financial.prepay.response.PagePrepayPatientQueueResponse;
 import com.openhis.health.application.inpatient.financial.prepay.response.RefundPrepayAdvanceDepositResponse;
 import com.openhis.health.domain.administration.account.command.AdjustAdvanceDepositBalanceCommand;
@@ -34,6 +35,7 @@ import com.openhis.health.domain.financial.paymentreconciliation.command.SettleI
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
 
 import java.math.BigDecimal;
@@ -48,6 +50,14 @@ import java.util.Map;
 public interface InpatientPrepayMapper {
 
     /**
+     * 装配预交金页初始化响应。
+     *
+     * @param paymentChannelOptions 用户可选支付渠道下拉
+     * @return 初始化响应
+     */
+    LoadInpatientPrepayPageInitResponse toLoadInpatientPrepayPageInitResponse(List<OptionDto> paymentChannelOptions);
+
+    /**
      * 队列分页请求 → 住院就诊上下文分页查询。
      */
     InpatientEncounterPageQuery toInpatientEncounterPageQuery(PagePrepayPatientQueueRequest request);
@@ -58,8 +68,7 @@ public interface InpatientPrepayMapper {
     PrepayQueueItemDto toPrepayQueueItemDto(
         InpatientEncounterContextQueryModel contextRow,
         Account account,
-        InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay displayOverlay,
-        BigDecimal chargedOccupancyTotal);
+        InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay displayOverlay);
 
     /**
      * 已装配队列行 + Spring 分页壳 → 分页响应。

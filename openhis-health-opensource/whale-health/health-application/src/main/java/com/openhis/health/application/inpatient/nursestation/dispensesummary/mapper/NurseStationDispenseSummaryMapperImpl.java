@@ -17,6 +17,8 @@
 
 package com.openhis.health.application.inpatient.nursestation.dispensesummary.mapper;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
 import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler.NurseStationDispenseSummaryListAssembler;
@@ -103,7 +105,7 @@ public class NurseStationDispenseSummaryMapperImpl implements NurseStationDispen
      */
     @Override
     public String resolveTherapyEnum(String therapyFilter) {
-        String normalized = StringUtils.trimToEmpty(therapyFilter);
+        String normalized = trimToEmpty(therapyFilter);
         if (StringUtils.isBlank(normalized)
             || InpatientNurseStationConstants.THERAPY_FILTER_ALL.equals(normalized)) {
             return null;

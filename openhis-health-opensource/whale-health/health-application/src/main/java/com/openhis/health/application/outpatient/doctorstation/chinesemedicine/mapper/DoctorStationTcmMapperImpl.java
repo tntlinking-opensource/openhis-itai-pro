@@ -3,6 +3,8 @@
  */
 package com.openhis.health.application.outpatient.doctorstation.chinesemedicine.mapper;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.alibaba.fastjson2.JSONObject;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.PageDoctorStationAdviceCatalogRequest;
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.dto.*;
@@ -197,7 +199,7 @@ public class DoctorStationTcmMapperImpl implements DoctorStationTcmMapper {
         }
         d.setRank(group.getRank());
         d.setDescription(group.getDiagnosisDesc());
-        String medTypeCode = StringUtils.trimToNull(group.getMedicalTypeCode());
+        String medTypeCode = trimToNull(group.getMedicalTypeCode());
         // 医疗类别缺省为普通门诊；非法码拒绝保存
         if (medTypeCode == null) {
             medTypeCode = YbMedType.GENERAL_OUTPATIENT.getCode();
@@ -378,7 +380,7 @@ public class DoctorStationTcmMapperImpl implements DoctorStationTcmMapper {
         if (line == null) {
             return null;
         }
-        return StringUtils.trimToNull(line.getDoseUnitCode());
+        return trimToNull(line.getDoseUnitCode());
     }
 
     /**
@@ -433,16 +435,14 @@ public class DoctorStationTcmMapperImpl implements DoctorStationTcmMapper {
      * 装配 IF-DOR-37 签发成功响应。
      *
      * @param prescriptionNoByGroupKey 方标识 → 处方号
-     * @param signCode                   批次签发码
      * @return 签发响应
      */
     @Override
     public SignTcmRxBatchResponse toSignTcmRxBatchResponse(
-        Map<String, String> prescriptionNoByGroupKey, String signCode) {
+        Map<String, String> prescriptionNoByGroupKey) {
         SignTcmRxBatchResponse response = new SignTcmRxBatchResponse();
         response.setSuccess(Boolean.TRUE);
         response.setPrescriptionNoByGroupKey(prescriptionNoByGroupKey);
-        response.setSignCode(signCode);
         return response;
     }
 

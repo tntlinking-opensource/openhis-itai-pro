@@ -19,10 +19,10 @@ package com.openhis.health.application.inpatient.nursestation.orderexecute.mappe
 
 import com.openhis.health.module.common.assembler.advice.ProductDefinitionOrderChargePricingSupport;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ListNurseStationOrderExecuteRequest;
-import com.openhis.health.module.querysupport.procedure.NurseStationOrderExecuteListQuery;
-import com.openhis.health.module.querysupport.procedure.NurseStationOrderExecuteListReadAssembler;
-import com.openhis.health.module.querysupport.procedure.NurseStationOrderExecuteListResult;
-import com.openhis.health.module.querysupport.procedure.dto.NurseStationOrderExecuteRowDto;
+import com.openhis.health.module.querysupport.nursestation.NurseStationOrderExecuteListQuery;
+import com.openhis.health.module.querysupport.nursestation.NurseStationOrderExecuteListReadAssembler;
+import com.openhis.health.module.querysupport.nursestation.NurseStationOrderExecuteListResult;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderExecuteRowDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteWriteSlotDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ExecuteNurseStationOrdersResponse;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ListNurseStationOrderExecuteResponse;
@@ -78,7 +78,8 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
             .setEncounterIds(request.getEncounterIds())
             .setExecuteTab(request.getExecuteTab())
             .setTherapyType(request.getTherapyType())
-            .setExecutionDeadline(request.getExecutionDeadline());
+            .setExecutionDeadline(request.getExecutionDeadline())
+            .setMedicineCategoryTab(request.getMedicineCategoryTab());
     }
 
     @Override

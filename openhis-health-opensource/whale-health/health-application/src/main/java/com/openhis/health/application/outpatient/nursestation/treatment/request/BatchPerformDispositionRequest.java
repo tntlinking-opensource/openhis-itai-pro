@@ -44,19 +44,12 @@ public class BatchPerformDispositionRequest {
     private Long encounterId;
 
     /**
-     * 操作护士主键：用于审计与领域命令 operatorId。
+     * 操作/执行医务人员主键（{@code adm_practitioner.id}，与执行人登记同口径）。
+     * 未传时由服务端经 {@code CurrentPractitionerResolver} 取当前登录绑定医务人员（B.6.5）。
      */
-    @NotNull(message = "operatorId 不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "操作护士主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "操作/执行医务人员主键（可选；未传则取当前登录医务人员）")
     private Long operatorId;
-
-    /**
-     * 覆盖执行人（可选）：允许入口指定执行护士/参与者。
-     */
-    @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "覆盖执行人（可选）")
-    private Long performerPractitionerId;
 
     /**
      * 耗材房库位主键（BR-NUR-006）：自动扣库时前端传入优先；未传时回落发放单已锁定 {@code location_id}。

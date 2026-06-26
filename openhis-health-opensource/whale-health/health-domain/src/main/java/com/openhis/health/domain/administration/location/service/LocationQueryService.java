@@ -607,12 +607,28 @@ public class LocationQueryService {
      * @return id → 名称；未命中或无名称时为 {@code null} 值
      */
     public Map<Long, String> mapNamesByIds(Collection<Long> locationIds) {
-        Map<Long, String> result = new HashMap<>();
+        Map<Long, Location> entities = this.loadLocationEntityMapByIds(locationIds);
+        Map<Long, String> result = new HashMap<>(entities.size());
+        for (Map.Entry<Long, Location> entry : entities.entrySet()) {
+            if (entry.getValue() != null) {
+                result.put(entry.getKey(), entry.getValue().getName());
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 按主键批量加载位置实体（querysupport 住院床位/病区展示）。
+     *
+     * @param locationIds 位置主键集合
+     * @return 位置 ID → 实体
+     */
+    public Map<Long, Location> loadLocationEntityMapByIds(Collection<Long> locationIds) {
+        Map<Long, Location> result = new HashMap<>();
         if (locationIds == null || locationIds.isEmpty()) {
             return result;
         }
         Set<Long> distinct = new LinkedHashSet<>();
-        // Loop：遍历入参集合，过滤 null 并去重
         for (Long id : locationIds) {
             if (id != null) {
                 distinct.add(id);
@@ -621,10 +637,10 @@ public class LocationQueryService {
         if (distinct.isEmpty()) {
             return result;
         }
-        List<Location> rows = locationRepository.findAllById(distinct);
-        // Loop：遍历查询结果，组装 id → 名称映射
-        for (Location loc : rows) {
-            result.put(loc.getId(), loc.getName());
+        for (Location row : locationRepository.findAllById(distinct)) {
+            if (row != null && row.getId() != null) {
+                result.put(row.getId(), row);
+            }
         }
         return result;
     }

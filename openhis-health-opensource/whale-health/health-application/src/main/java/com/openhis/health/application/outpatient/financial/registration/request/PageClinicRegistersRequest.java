@@ -43,4 +43,7 @@ public class PageClinicRegistersRequest extends AbstractHealthPageRequest {
     @Schema(description = "结束日期")
     /** 结束日期（业务字段）。 */
     private LocalDate dateTo;
+
+    @Schema(description = "患者主键（按人查历史挂号）")
+    private Long patientId;
 }

@@ -17,7 +17,8 @@
 
 package com.openhis.health.application.inpatient.nursestation.orderexecute.dto;
 
-import com.openhis.health.module.querysupport.procedure.dto.NurseStationOrderExecuteBindItemDto;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderExecuteBindItemDto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -58,12 +59,12 @@ public class NurseStationOrderExecuteWriteSlotDto {
     @NotNull(message = "计划执行时刻不能为空")
     /** 计划执行时刻。 */
     @Schema(description = "计划执行时刻", required = true)
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime planTime;
 
     /** 护士实际执行时刻（IF-IP-EXE-02 必填；不执行接口忽略）。 */
     @Schema(description = "护士实际执行时刻")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime actualTime;
 
     /**
@@ -74,6 +75,17 @@ public class NurseStationOrderExecuteWriteSlotDto {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long accountId;
 
+    /** 列表回传的绑定项（执行时按勾选派生写路径）。 */
     @Schema(description = "列表回传的绑定项")
     private List<NurseStationOrderExecuteBindItemDto> bindItems;
+
+    /**
+     * 中药方内全部 req id（列表 {@code lineRequestIds} 原样回传时可免后端按处方号扩行查库）。
+     */
+    @Schema(description = "中药方内全部药品申请主键（可选，列表 lineRequestIds 回传）")
+    private List<Long> lineRequestIds;
+
+    /** 处方号（可选；列表 prescriptionNo 回传，代煎费按方刷新）。 */
+    @Schema(description = "中药处方号（可选）")
+    private String prescriptionNo;
 }

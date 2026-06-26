@@ -27,6 +27,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.apache.commons.lang3.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -305,6 +306,17 @@ public class MedicationRequest extends BaseAuditedEntity {
     }
 
     /**
+     * 断言可取消停嘱：须为长期且当前已停嘱。
+     */
+    public void ensureLongTermStoppedForCancelStop() {
+        ensureLongTermForStop();
+        if (!RequestStatus.STOPPED.getCode().equals(this.statusEnum)) {
+            // 非 STOPPED 不可取消停嘱，防止误恢复在执医嘱。
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_STATUS, "仅已停嘱的长期医嘱可取消停嘱");
+        }
+    }
+
+    /**
      * 断言可校对。
      */
     public void ensureVerifiable() {
@@ -314,11 +326,15 @@ public class MedicationRequest extends BaseAuditedEntity {
     }
 
     /**
-     * 断言可退回。
+     * 断言可退回（护士校对退回或医生对已校对未执行行签退）。
+     *
+     * <p>允许 {@link RequestStatus#ACTIVE} 与 {@link RequestStatus#VERIFIED}；
+     * 后者对应住院医生站中医 IF-IP-TCM-38（BR-IP-TCM-009）。</p>
      */
     public void ensureRejectable() {
-        if (!RequestStatus.ACTIVE.getCode().equals(this.statusEnum)) {
-            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_STATUS, "仅已发送状态可退回");
+        if (!RequestStatus.ACTIVE.getCode().equals(this.statusEnum)
+            && !RequestStatus.VERIFIED.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_STATUS, "仅已发送或已校对状态可退回");
         }
     }
 
@@ -396,6 +412,20 @@ public class MedicationRequest extends BaseAuditedEntity {
     }
 
     /**
+     * 取消停嘱：按校对痕迹恢复为已校对或已发送，并清空服药结束时间（BR-IP-ORD-025 / BR-MRQ-006a）。
+     */
+    public void fromStopped() {
+        // 护士已校对过则恢复 VERIFIED，否则恢复 ACTIVE（BR-IP-ORD-025 / BR-MRQ-006a）。
+        if (this.performerCheckId != null) {
+            this.statusEnum = RequestStatus.VERIFIED.getCode();
+        } else {
+            this.statusEnum = RequestStatus.ACTIVE.getCode();
+        }
+        this.effectiveDoseEnd = null;
+        this.statusChangedTime = LocalDateTime.now();
+    }
+
+    /**
       * 执行状态流转。
      */
     public void toCancelled() {
@@ -430,5 +460,17 @@ public class MedicationRequest extends BaseAuditedEntity {
         this.setIsDeleted(Boolean.TRUE);
         this.setDeletedBy(operatorId);
         this.setDeletedAt(LocalDateTime.now());
+    }
+
+    /**
+     * 退药负向单处方号：在原处方号前加 {@code T} 前缀（与耗材退负向单 BR-DR-007 同构）。
+     *
+     * @param sourcePrescriptionNo 原正向药嘱处方号
+     */
+    public void markAsRefundFromPrescription(String sourcePrescriptionNo) {
+        if (StringUtils.isBlank(sourcePrescriptionNo)) {
+            return;
+        }
+        this.prescriptionNo = "T" + sourcePrescriptionNo.trim();
     }
 }

@@ -1,6 +1,6 @@
 package com.openhis.health.application.outpatient.doctorstation.refundapplication.service;
 
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.share.constants.DoctorStationRefundApplicationConstants;
 import com.openhis.health.application.outpatient.doctorstation.refundapplication.dto.OutpatientRefundApplicationPaymentSummaryDto;
 import com.openhis.health.application.outpatient.doctorstation.refundapplication.dto.RefundableChargeLineItemDto;
@@ -122,7 +122,7 @@ public class DoctorStationRefundApplicationAppService {
     /** 申请退费装配器。 */
     private final DoctorStationRefundApplicationMapper doctorStationRefundApplicationMapper;
     /** 写路径操作人主键门控（B.6.1）。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
 
     /**
      * IF-DRA-01：按就诊加载可申请退费账单行。
@@ -319,7 +319,7 @@ public class DoctorStationRefundApplicationAppService {
         if (request.getEncounterId() == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "就诊标识不能为空");
         }
-        return currentOperatorResolver.requireOperatorId(
+        return currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "当前会话操作人不能为空");
     }
 

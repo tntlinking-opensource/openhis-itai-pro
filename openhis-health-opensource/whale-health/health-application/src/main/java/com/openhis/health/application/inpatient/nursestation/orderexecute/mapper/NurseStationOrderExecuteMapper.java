@@ -19,9 +19,9 @@ package com.openhis.health.application.inpatient.nursestation.orderexecute.mappe
 
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ListNurseStationOrderExecuteRequest;
-import com.openhis.health.module.querysupport.procedure.NurseStationOrderExecuteListQuery;
-import com.openhis.health.module.querysupport.procedure.dto.NurseStationOrderExecuteRowDto;
-import com.openhis.health.module.querysupport.procedure.NurseStationOrderExecuteListResult;
+import com.openhis.health.module.querysupport.nursestation.NurseStationOrderExecuteListQuery;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderExecuteRowDto;
+import com.openhis.health.module.querysupport.nursestation.NurseStationOrderExecuteListResult;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteWriteSlotDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ExecuteNurseStationOrdersResponse;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ListNurseStationOrderExecuteResponse;

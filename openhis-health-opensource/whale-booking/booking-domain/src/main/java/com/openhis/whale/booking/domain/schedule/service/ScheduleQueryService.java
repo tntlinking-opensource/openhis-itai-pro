@@ -55,9 +55,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 号源日程读侧查询服务（DM-WKF-009）。
+ * 号源日程读侧查询服务（DM-WKF-009 §6.2）。
  *
- * <p>职责：加载日程详情（含参与人）、按执业者与日期解析当日可用日程、机构下启用日程分页；只读不写库。</p>
+ * <p>聚合边界：只读 {@link Schedule}、{@link ScheduleActor}、{@link Slot}，不写库、不发领域事件。</p>
+ * <p>职责：详情/日历列表、按参与者解析当日日程、替诊信息批量解析、机构下启用日程分页。</p>
+ * <p>过滤口径：软删行排除；日历须同时满足规划窗口与起止均非空（无窗口草稿不占格，SCH-01）。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -96,18 +98,22 @@ public class ScheduleQueryService {
     }
 
     /**
-     * 解析某执业者在指定日历日可排班的日程集合（计划窗口需覆盖该日全天）。
+     * 解析某执业者在指定日历日、指定机构下可排班的日程集合（规划窗口与该自然日有重叠即可）。
      *
      * @param actorType 参与者类型编码
-     * @param actorId 参与者主键
+     * @param actorId 参与者主键（医护人员 adm_practitioner.id，非 userId）
      * @param date 日历日
+     * @param organizationId 机构主键；非空时仅保留该科室下的日程，与号源分页机构口径一致
      * @return 日程摘要列表；入参不完整或无参与关系时为空
      */
-    public List<ScheduleActorDateModel> findSchedulesByActorAndDate(Integer actorType, Long actorId, LocalDate date) {
+    public List<ScheduleActorDateModel> findSchedulesByActorAndDate(
+        Integer actorType, Long actorId, LocalDate date, Long organizationId) {
+        // 入参不完整时返回空表，避免误查全量。
         if (actorType == null || actorId == null || date == null) {
             return new ArrayList<>();
         }
         List<ScheduleActor> actorRows = scheduleActorRepository.findByActorTypeAndActorIdOrderByScheduleIdAsc(actorType, actorId);
+        // 该参与者未关联任何日程。
         if (actorRows.isEmpty()) {
             return new ArrayList<>();
         }
@@ -129,11 +135,18 @@ public class ScheduleQueryService {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             predicates.add(root.get(FieldNameConstants.ID).in(scheduleIds));
-            jakarta.persistence.criteria.Predicate windowContains = cb.and(
-                cb.or(cb.isNull(root.get(FieldNameConstants.PLANNING_HORIZON_START)), cb.lessThanOrEqualTo(root.get(FieldNameConstants.PLANNING_HORIZON_START), dayStart)),
-                cb.or(cb.isNull(root.get(FieldNameConstants.PLANNING_HORIZON_END)), cb.greaterThan(root.get(FieldNameConstants.PLANNING_HORIZON_END), dayEnd))
+            // 规划窗口与该自然日有重叠（与周历 listSchedulesForCalendar 口径一致；不要求覆盖全天）。
+            jakarta.persistence.criteria.Predicate horizonOverlaps = cb.and(
+                cb.or(cb.isNull(root.get(FieldNameConstants.PLANNING_HORIZON_START)),
+                    cb.lessThan(root.get(FieldNameConstants.PLANNING_HORIZON_START), dayEnd)),
+                cb.or(cb.isNull(root.get(FieldNameConstants.PLANNING_HORIZON_END)),
+                    cb.greaterThan(root.get(FieldNameConstants.PLANNING_HORIZON_END), dayStart))
             );
-            predicates.add(windowContains);
+            predicates.add(horizonOverlaps);
+            // 号源日历按登录科室查：医师参与者可能挂多科室日程，须与 organizationId 求交。
+            if (organizationId != null) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), organizationId));
+            }
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
         List<Schedule> schedules = scheduleRepository.findAll(specification);
@@ -157,6 +170,7 @@ public class ScheduleQueryService {
      * @throws BusinessException 机构或日期区间非法时
      */
     public List<ScheduleCalendarItemModel> listSchedulesForCalendar(CalendarScheduleQuery query) {
+        // Gate：机构与日期区间必填，否则无法构造有效日历窗口。
         if (query == null || query.getOrganizationId() == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "organizationId 不能为空");
         }
@@ -169,12 +183,14 @@ public class ScheduleQueryService {
 
         LocalDateTime windowStart = query.getRangeStart().atStartOfDay();
         LocalDateTime windowEndExclusive = query.getRangeEnd().plusDays(1).atStartOfDay();
+        // Pre：按医师/诊室/号源类型组合求交集，无筛选时返回 null 表示不追加 IN。
         Set<Long> actorFilteredScheduleIds = this.resolveActorFilteredScheduleIds(query);
 
         Specification<Schedule> specification = (root, cq, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), query.getOrganizationId()));
+            // 规划窗口与查询区间有重叠即可出现在日历。
             jakarta.persistence.criteria.Predicate horizonOverlaps = cb.and(
                 cb.or(cb.isNull(root.get(FieldNameConstants.PLANNING_HORIZON_START)),
                     cb.lessThan(root.get(FieldNameConstants.PLANNING_HORIZON_START), windowEndExclusive)),
@@ -182,7 +198,15 @@ public class ScheduleQueryService {
                     cb.greaterThan(root.get(FieldNameConstants.PLANNING_HORIZON_END), windowStart))
             );
             predicates.add(horizonOverlaps);
+            // 无规划窗口的草稿不占周历格（起止均须非空）。
+            predicates.add(cb.or(
+                cb.and(
+                    cb.isNotNull(root.get(FieldNameConstants.PLANNING_HORIZON_START)),
+                    cb.isNotNull(root.get(FieldNameConstants.PLANNING_HORIZON_END))
+                )
+            ));
             if (actorFilteredScheduleIds != null) {
+                // 参与者组合无交集时强制空结果。
                 if (actorFilteredScheduleIds.isEmpty()) {
                     predicates.add(cb.disjunction());
                 } else {
@@ -193,6 +217,7 @@ public class ScheduleQueryService {
         };
 
         List<Schedule> schedules = scheduleRepository.findAll(specification);
+        // Asm：逐条加载参与者并映射为日历读模型。
         List<ScheduleCalendarItemModel> result = new ArrayList<>();
         for (Schedule schedule : schedules) {
             List<ScheduleActor> actors = scheduleActorRepository.findByScheduleIdOrderBySortNoAsc(schedule.getId());
@@ -244,9 +269,11 @@ public class ScheduleQueryService {
         if (query.getHealthcareServiceId() != null) {
             actorSets.add(this.scheduleIdsForActor(ScheduleActorKind.HEALTHCARE_SERVICE, query.getHealthcareServiceId()));
         }
+        // 未选任何参与者维度时不追加 IN 过滤。
         if (actorSets.isEmpty()) {
             return null;
         }
+        // 多维度取交集：须同时满足医师+诊室+号源类型（若均指定）。
         Set<Long> intersection = new HashSet<>(actorSets.get(0));
         for (int i = 1; i < actorSets.size(); i++) {
             intersection.retainAll(actorSets.get(i));

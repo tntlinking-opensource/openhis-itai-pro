@@ -17,9 +17,9 @@
 
 package com.openhis.health.application.inpatient.nursestation.costdetail.mapper;
 
-import com.openhis.health.module.querysupport.financial.dto.NurseStationCostDetailLineDto;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationCostDetailLineDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostDetailPresentationOptionDto;
-import com.openhis.health.module.querysupport.financial.dto.NurseStationCostDetailTotalsDto;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationCostDetailTotalsDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostSummaryLineDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.request.QueryNurseStationInpatientCostDetailRequest;
 import com.openhis.health.application.inpatient.nursestation.costdetail.response.LoadNurseStationCostDetailPageInitResponse;
@@ -27,7 +27,7 @@ import com.openhis.health.application.inpatient.nursestation.costdetail.response
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.query.InpatientNurseStationCostDetailChargeRow;
-import com.openhis.health.module.querysupport.financial.NurseStationCostDetailReadAssembler;
+import com.openhis.health.module.querysupport.nursestation.NurseStationCostDetailReadAssembler;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;

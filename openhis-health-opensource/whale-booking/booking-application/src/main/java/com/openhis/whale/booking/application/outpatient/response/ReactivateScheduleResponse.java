@@ -10,6 +10,7 @@ import lombok.Setter;
 @Setter
 public class ReactivateScheduleResponse {
 
+    /** 已恢复日程主键。 */
     private Long scheduleId;
 
     /** 提示：恢复后须手动重新放号。 */

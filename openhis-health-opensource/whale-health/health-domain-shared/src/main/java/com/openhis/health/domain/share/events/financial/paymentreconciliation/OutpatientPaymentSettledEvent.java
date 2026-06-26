@@ -24,6 +24,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 门诊支付已结算事件。
@@ -49,6 +50,9 @@ public class OutpatientPaymentSettledEvent extends DomainEvent {
 
     /** 收费员标识。 */
     private Long entererId;
+
+    /** 医保结算凭证行。 */
+    private List<PaymentYbSettlementEventItem> ybSettlements;
 
     /**
      * 无参构造（反序列化用）。

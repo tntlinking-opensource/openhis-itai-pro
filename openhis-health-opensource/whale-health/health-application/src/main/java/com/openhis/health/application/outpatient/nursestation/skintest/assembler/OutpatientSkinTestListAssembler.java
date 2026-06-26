@@ -9,6 +9,8 @@ import com.openhis.health.application.outpatient.nursestation.skintest.dto.Outpa
 import com.openhis.health.application.outpatient.nursestation.skintest.dto.OutpatientSkinTestRowDto;
 import com.openhis.health.domain.clinical.allergyintolerance.queries.model.AllergyIntoleranceRecordQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
+import com.openhis.health.domain.share.enums.AllergyCriticality;
+import com.openhis.health.domain.share.enums.AllergySeverity;
 import com.openhis.health.domain.share.enums.AllergyVerificationStatus;
 import com.openhis.health.domain.share.enums.ClinicalStatus;
 import com.openhis.health.domain.share.enums.EnumInterface;
@@ -86,6 +88,10 @@ public class OutpatientSkinTestListAssembler {
                 row.setVerificationStatusCode(allergy.getVerificationStatusEnum());
                 row.setVerificationStatusText(
                     this.resolveEnumDisplay(AllergyVerificationStatus.class, allergy.getVerificationStatusEnum()));
+                row.setCriticalityCode(allergy.getCriticalityEnum());
+                row.setCriticalityText(this.resolveEnumDisplay(AllergyCriticality.class, allergy.getCriticalityEnum()));
+                row.setSeverityCode(allergy.getSeverityEnum());
+                row.setSeverityText(this.resolveEnumDisplay(AllergySeverity.class, allergy.getSeverityEnum()));
                 row.setPractitionerId(allergy.getPractitionerId());
                 row.setCheckPractitionerId(allergy.getCheckPractitionerId());
                 row.setDescription(allergy.getDescription());

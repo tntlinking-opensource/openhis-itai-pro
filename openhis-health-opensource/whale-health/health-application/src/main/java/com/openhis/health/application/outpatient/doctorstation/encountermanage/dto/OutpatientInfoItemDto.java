@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.outpatient.doctorstation.encountermanage.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -79,7 +80,7 @@ public class OutpatientInfoItemDto {
     private String genderEnumText;
 
     /** 出生日期。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 出生日期。 */
     @Schema(description = "出生日期")
     private LocalDateTime birthDate;
@@ -127,19 +128,19 @@ public class OutpatientInfoItemDto {
     private String serviceTypeName;
 
     /** 就诊开始时间。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 就诊开始时间。 */
     @Schema(description = "就诊开始时间（挂号/预约）")
     private LocalDateTime startTime;
 
     /** 接诊时间。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 接诊时间。 */
     @Schema(description = "接诊时间")
     private LocalDateTime receptionTime;
 
     /** 结束时间。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 就诊结束时间。 */
     @Schema(description = "就诊结束时间")
     private LocalDateTime endTime;
@@ -173,7 +174,7 @@ public class OutpatientInfoItemDto {
     private Integer triageLevelEnum;
 
     /** 分诊时间。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 分诊时间。 */
     @Schema(description = "分诊时间")
     private LocalDateTime triageTime;

@@ -17,19 +17,27 @@
 
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.mapper;
 
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingCancelItemDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingParentRequestAnchorDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingWriteItemDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationSupplementParentOrderRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.PageNurseStationPricingCatalogRequest;
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
+import com.openhis.health.domain.administration.chargeitem.command.VoidNursePricingChargeItemsByServiceAnchorsCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
 import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.workflow.devicerequest.command.CreateExecutedDeviceOrderCommand;
+import com.openhis.health.domain.workflow.devicerequest.command.RevokeExecutedDeviceOrderCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.GenerateDeviceDispenseFromTemporaryPathCommand;
+import com.openhis.health.domain.workflow.devicedispense.command.RemoveUndispensedDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateFromNursePricingCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.RemoveFromNursePricingCommand;
+import com.openhis.health.domain.workflow.inventoryitem.command.IncreaseQuantityCommand;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 住院护士站划价 Request/Command 映射（AS-IP-NUR-005）。
@@ -171,4 +179,72 @@ public interface NurseStationInpatientBillingMapper {
      * @return 模式 code
      */
     String resolvePricingMode(InpatientOrderListSkeleton skeleton);
+
+    /**
+     * 取消划价入参 Gate（BR-IP-PRC-021）。
+     *
+     * @param items 取消行
+     */
+    void validateCancelPricingItems(List<NurseStationPricingCancelItemDto> items);
+
+    /**
+     * orderType → 上游 serviceTable（wkf_service_request / wkf_device_request）。
+     *
+     * @param orderType SERVICE_REQUEST / DEVICE_REQUEST
+     * @return 物理表名
+     */
+    String resolveCancelServiceTable(String orderType);
+
+    /**
+     * 批量软删护士划价诊疗请求命令。
+     *
+     * @param serviceRequestIds 诊疗请求 id
+     * @param operatorId        操作人
+     * @return 领域命令
+     */
+    RemoveFromNursePricingCommand toRemoveFromNursePricingCommand(List<Long> serviceRequestIds, Long operatorId);
+
+    /**
+     * 批量撤销已完成耗材请求命令。
+     *
+     * @param deviceRequestIds 耗材请求 id
+     * @param operatorId       操作人
+     * @return 领域命令
+     */
+    RevokeExecutedDeviceOrderCommand toRevokeExecutedDeviceOrderCommand(List<Long> deviceRequestIds, Long operatorId);
+
+    /**
+     * 按单锚点撤销护士划价待结算费用命令。
+     *
+     * @param encounterId  就诊
+     * @param serviceTable 上游表
+     * @param serviceId    上游 id
+     * @param operatorId   操作人
+     * @return 领域命令
+     */
+    VoidNursePricingChargeItemsByServiceAnchorsCommand toVoidNursePricingChargeItemsByServiceAnchorsCommand(
+        Long encounterId,
+        String serviceTable,
+        Long serviceId,
+        Long operatorId);
+
+    /**
+     * 软删耗材请求下未发放/已回退待发发放行。
+     *
+     * @param deviceRequestId 耗材请求 id
+     * @param operatorId      操作人
+     * @return 领域命令
+     */
+    RemoveUndispensedDeviceDispenseCommand toRemoveUndispensedDeviceDispenseCommand(
+        Long deviceRequestId,
+        Long operatorId);
+
+    /**
+     * 取消划价库存回补命令（已发 Dispense 路径累计量）。
+     *
+     * @param operatorId       操作人
+     * @param inventoryIdToQty 库存项 → 回补量
+     * @return 增加库存命令
+     */
+    IncreaseQuantityCommand toIncreaseQuantityCommand(Long operatorId, Map<Long, BigDecimal> inventoryIdToQty);
 }

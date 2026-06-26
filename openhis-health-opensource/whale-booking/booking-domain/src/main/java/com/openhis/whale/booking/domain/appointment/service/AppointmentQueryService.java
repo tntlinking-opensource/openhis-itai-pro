@@ -80,6 +80,7 @@ public class AppointmentQueryService {
      * @return 分页列表行
      */
     public Page<AppointmentBookingListModel> pageOutpatientBookings(AppointmentPageQuery query) {
+        // 分页查询须绑定机构，防止跨机构数据泄露
         if (query == null || query.getOrganizationId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "organizationId 不能为空");
         }
@@ -129,10 +130,12 @@ public class AppointmentQueryService {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "查询条件不能为空");
         }
         LocalDate registrationDate = query.getRegistrationDate();
+        // 未传挂号日时默认查当日预约
         if (registrationDate == null) {
             registrationDate = LocalDate.now();
         }
         boolean hasBusNo = StringUtils.isNotBlank(query.getAppointmentBusNo());
+        // 患者与单号至少其一，否则无法唯一定位预约
         if (!hasBusNo && query.getPatientId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "patientId 与 appointmentBusNo 至少传一个");
         }
@@ -148,6 +151,7 @@ public class AppointmentQueryService {
             if (hasBusNo) {
                 predicates.add(cb.equal(cb.lower(root.get("busNo")), query.getAppointmentBusNo().trim().toLowerCase()));
             } else {
+                // 无单号时按患者收窄当日预约
                 predicates.add(cb.equal(root.get("patientId"), query.getPatientId()));
             }
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
@@ -155,6 +159,7 @@ public class AppointmentQueryService {
 
         List<Appointment> rows = appointmentRepository.findAll(specification,
             Sort.by(Sort.Direction.ASC, "startInstant"));
+        // 当日无有效预约时返回空，由挂号台引导现场处理
         if (rows.isEmpty()) {
             return Optional.empty();
         }
@@ -173,6 +178,7 @@ public class AppointmentQueryService {
         }
         Appointment appointment = appointmentRepository.findById(appointmentId).orElseThrow(
             () -> new BusinessException(ErrorCodeConstants.APPOINTMENT_NOT_FOUND, "预约不存在"));
+        // 已软删视为终态，不可再作有效预约加载
         if (Boolean.TRUE.equals(appointment.getIsDeleted())) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_NOT_FOUND, "预约已取消或终态");
         }
@@ -181,6 +187,10 @@ public class AppointmentQueryService {
 
     /**
      * 按主键加载有效医技预约详情。
+     *
+     * @param appointmentId 预约主键
+     * @return 医技预约详情
+     * @throws BusinessException 非医技形态时
      */
     public AppointmentBookingDetailModel loadDiagnosticBookingById(Long appointmentId) {
         AppointmentBookingDetailModel model = this.loadOutpatientBookingById(appointmentId);
@@ -192,6 +202,10 @@ public class AppointmentQueryService {
 
     /**
      * 按主键加载有效床位预约详情。
+     *
+     * @param appointmentId 预约主键
+     * @return 床位预约详情
+     * @throws BusinessException 非床位形态时
      */
     public AppointmentBookingDetailModel loadBedBookingById(Long appointmentId) {
         AppointmentBookingDetailModel model = this.loadOutpatientBookingById(appointmentId);
@@ -203,6 +217,9 @@ public class AppointmentQueryService {
 
     /**
      * 批量解析医嘱对应的有效医技预约主键（appointmentTypeCode 存 serviceRequestId）。
+     *
+     * @param serviceRequestIds 医嘱主键集合
+     * @return 医嘱 id → 医技预约 id
      */
     public Map<Long, Long> mapActiveDiagnosticAppointmentIdsByServiceRequestIds(Collection<Long> serviceRequestIds) {
         Map<Long, Long> result = new HashMap<>();
@@ -242,6 +259,12 @@ public class AppointmentQueryService {
 
     /**
      * 分页查询有效医技预约列表。
+     *
+     * @param organizationId 机构主键
+     * @param encounterId 就诊主键（可选）
+     * @param pageNo 页码（1-based）
+     * @param pageSize 页大小
+     * @return 医技预约分页
      */
     public Page<AppointmentBookingListModel> pageDiagnosticBookings(
         Long organizationId, Long encounterId, Integer pageNo, Integer pageSize) {
@@ -267,6 +290,9 @@ public class AppointmentQueryService {
 
     /**
      * 重复预约校验：同一医嘱仅允许一条有效医技预约。
+     *
+     * @param serviceRequestId 医嘱主键
+     * @return 已存在预约详情；无则 empty
      */
     public Optional<AppointmentBookingDetailModel> findActiveDiagnosticBookingByServiceRequestId(Long serviceRequestId) {
         if (serviceRequestId == null) {
@@ -282,6 +308,10 @@ public class AppointmentQueryService {
 
     /**
      * 重复预约校验：同一床位同一意向入院日仅允许一条有效床位预约。
+     *
+     * @param bedLocationId 床位库位主键
+     * @param intendedDate 意向入院日
+     * @return 已存在预约详情；无则 empty
      */
     public Optional<AppointmentBookingDetailModel> findActiveBedBookingByBedAndDate(Long bedLocationId, LocalDate intendedDate) {
         if (bedLocationId == null || intendedDate == null) {
@@ -327,6 +357,7 @@ public class AppointmentQueryService {
         if (StringUtils.isBlank(busNo)) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "appointmentId 与 appointmentBusNo 至少传一个");
         }
+        // 按业务单号反查体检预约
         Specification<Appointment> specification = (root, cq, cb) -> cb.and(
             cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
             cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), organizationId),
@@ -393,6 +424,7 @@ public class AppointmentQueryService {
 
         Map<Long, Long> slotToHealthcareServiceId = this.resolveHealthcareServiceIdBySlotIds(slotIds);
         for (Appointment appointment : candidates) {
+            // 改约场景排除当前预约自身
             if (excludeAppointmentId != null && excludeAppointmentId.equals(appointment.getId())) {
                 continue;
             }
@@ -401,6 +433,7 @@ public class AppointmentQueryService {
                 continue;
             }
             Long resolvedServiceId = slotToHealthcareServiceId.get(slotId);
+            // 同日同患者同医疗服务视为重复预约
             if (healthcareServiceId.equals(resolvedServiceId)) {
                 return Optional.of(this.toBookingDetailModel(appointment));
             }
@@ -409,7 +442,8 @@ public class AppointmentQueryService {
     }
 
     /**
-     * 按就诊查询有效预约摘要；无记录时返回 null。     *
+     * 按就诊查询有效预约摘要；无记录时返回 null。
+     *
      * @param encounterId 就诊标识
      * @return 预约模型或 null
      */
@@ -442,6 +476,7 @@ public class AppointmentQueryService {
         if (Boolean.TRUE.equals(appointment.getIsDeleted())) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "候诊项已终态");
         }
+        // 未报到入队则无 displayOrder，不可参与叫号
         if (appointment.getDisplayOrder() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "候诊项尚未报到入队");
         }
@@ -450,6 +485,11 @@ public class AppointmentQueryService {
 
     /**
      * 分页查询已完成候诊项（叫号/过号/取消等终态，或已叫号）。
+     *
+     * @param organizationId 机构主键
+     * @param locationId 诊室主键
+     * @param pageable 分页
+     * @return 已完成队列分页
      */
     public Page<AppointmentQueuePageModel> pageCompletedQueue(
         Long organizationId, Long locationId, Pageable pageable) {
@@ -461,6 +501,7 @@ public class AppointmentQueryService {
             predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), organizationId));
             predicates.add(cb.equal(root.get("destinationLocationId"), locationId));
             predicates.add(cb.isNotNull(root.get("displayOrder")));
+            // 终态或已叫号均视为已完成候诊
             jakarta.persistence.criteria.Predicate terminal = cb.isTrue(root.get(FieldNameConstants.IS_DELETED));
             jakarta.persistence.criteria.Predicate called = cb.isNotNull(root.get("calledAt"));
             predicates.add(cb.or(terminal, called));
@@ -473,6 +514,10 @@ public class AppointmentQueryService {
 
     /**
      * 叫号大屏快照：当前叫号 + 等候队列（有效且已报到）。
+     *
+     * @param organizationId 机构主键
+     * @param locationId 诊室主键
+     * @return 按 displayOrder 升序的队列快照
      */
     public List<AppointmentQueuePageModel> listActiveQueueSnapshot(Long organizationId, Long locationId) {
         if (organizationId == null || locationId == null) {
@@ -658,6 +703,7 @@ public class AppointmentQueryService {
         List<Appointment> rows = appointmentRepository.findBySlotIdInAndIsDeletedFalse(distinctSlotIds);
         List<AppointmentBookingDetailModel> models = new ArrayList<>();
         for (Appointment appointment : rows) {
+            // 停诊扫描仅关心门诊预约形态
             if (!OUTPATIENT_BOOKING_KIND.equals(appointment.getAppointmentKind())) {
                 continue;
             }
@@ -679,6 +725,7 @@ public class AppointmentQueryService {
         if (organizationId == null || rangeStart == null || rangeEnd == null) {
             return 0;
         }
+        // 非法区间直接返回 0，避免误统计
         if (rangeEnd.isBefore(rangeStart)) {
             return 0;
         }
@@ -697,6 +744,7 @@ public class AppointmentQueryService {
     }
 
     /**
+     * 将预约实体映射为队列展示行。
      *
      * @param appointment 预约实体
      * @return 队列分页行模型

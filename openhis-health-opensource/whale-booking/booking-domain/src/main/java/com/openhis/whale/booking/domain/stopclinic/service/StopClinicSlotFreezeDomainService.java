@@ -36,7 +36,10 @@ public class StopClinicSlotFreezeDomainService {
         if (organizationId == null || scheduleId == null || slotIds == null || slotIds.isEmpty()) {
             return null;
         }
-        int safeTtl = ttlMinutes <= 0 ? 15 : ttlMinutes;
+        int safeTtl = ttlMinutes;
+        if (safeTtl <= 0) {
+            safeTtl = 15;
+        }
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime expiresAt = now.plusMinutes(safeTtl);
         LocalDateTime latestExpiresAt = expiresAt;
@@ -113,9 +116,15 @@ public class StopClinicSlotFreezeDomainService {
         if (scheduleId == null) {
             return Set.of();
         }
-        List<Long> slotIds = stopClinicSlotFreezeRepository.findActiveFrozenSlotIdsByScheduleId(
+        List<StopClinicSlotFreeze> rows = stopClinicSlotFreezeRepository.findByScheduleIdAndIsDeletedFalseAndExpiresAtAfter(
             scheduleId, LocalDateTime.now());
-        return new HashSet<>(slotIds);
+        Set<Long> slotIds = new HashSet<>();
+        for (StopClinicSlotFreeze row : rows) {
+            if (row.getSlotId() != null) {
+                slotIds.add(row.getSlotId());
+            }
+        }
+        return slotIds;
     }
 
     private List<Long> distinctIds(List<Long> slotIds) {

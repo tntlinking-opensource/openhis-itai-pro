@@ -28,9 +28,7 @@ CREATE TABLE IF NOT EXISTS "public"."cus_frequency" (
     "sort_no" int4,
     CONSTRAINT "cus_frequency_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE cus_frequency IS '自定义 frequency';
-
 COMMENT ON COLUMN cus_frequency.id IS '主键';
 COMMENT ON COLUMN cus_frequency.tenant_id IS '租户标识';
 COMMENT ON COLUMN cus_frequency.created_at IS '创建时间';

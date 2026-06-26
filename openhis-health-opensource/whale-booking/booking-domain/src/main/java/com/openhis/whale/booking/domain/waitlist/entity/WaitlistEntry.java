@@ -16,18 +16,23 @@ import lombok.Setter;
 @Table(name = "bkg_waitlist_entry")
 public class WaitlistEntry extends BaseAuditedEntity {
 
+    /** 机构标识。 */
     @Column(name = "organization_id", nullable = false)
     private Long organizationId;
 
+    /** 患者主键。 */
     @Column(name = "patient_id", nullable = false)
     private Long patientId;
 
+    /** 候补号源主键。 */
     @Column(name = "slot_id", nullable = false)
     private Long slotId;
 
+    /** 所属日程主键。 */
     @Column(name = "schedule_id", nullable = false)
     private Long scheduleId;
 
+    /** 同 slot 下排队序号，从 1 递增。 */
     @Column(name = "queue_position", nullable = false)
     private Integer queuePosition;
 
@@ -35,9 +40,11 @@ public class WaitlistEntry extends BaseAuditedEntity {
     @Column(name = "status", nullable = false)
     private String status;
 
+    /** 提升为正式预约后关联 appointmentId。 */
     @Column(name = "promoted_appointment_id")
     private Long promotedAppointmentId;
 
+    /** 取消原因。 */
     @Column(name = "cancel_reason")
     private String cancelReason;
 }

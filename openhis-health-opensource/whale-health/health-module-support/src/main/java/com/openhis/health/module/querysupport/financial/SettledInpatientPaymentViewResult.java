@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 已结算单查阅读结果（IF-IP-STL-07）。
+ * 已结算单查阅读结果（IF-IP-STL-07；含 AS-IP-FIN-004 netSettleTotal）。
  */
 @Data
 @Accessors(chain = true)
@@ -30,4 +30,7 @@ public class SettledInpatientPaymentViewResult {
     private String payMethodText;
     private List<InpatientSettleChargeLineDto> lines;
     private List<InpatientSettleCategorySummaryDto> categories;
+
+    /** 本就诊住院结算流水 signedAmount 代数和（一正一负抵净）。 */
+    private BigDecimal netSettleTotal;
 }

@@ -177,7 +177,22 @@ public class ServiceDeviceBindingDisplayAssembler {
      * @return 耗材目标候选
      */
     public List<OptionDto> buildDeviceDefOptions() {
-        List<DeviceDefinition> deviceList = deviceDefinitionQueryService.getDeviceManageInit();
+        return this.buildDeviceDefOptions(null);
+    }
+
+    /**
+     * 按关键字加载启用中的耗材定义为下拉项（绑定目标选择用）。
+     *
+     * @param keyword 综合关键字，空白则返回全部启用耗材
+     * @return 耗材目标候选
+     */
+    public List<OptionDto> buildDeviceDefOptions(String keyword) {
+        List<DeviceDefinition> deviceList;
+        if (StringUtils.isBlank(keyword)) {
+            deviceList = deviceDefinitionQueryService.getDeviceManageInit();
+        } else {
+            deviceList = deviceDefinitionQueryService.searchByKeyWord(keyword.trim());
+        }
         List<OptionDto> options = new ArrayList<>();
         for (DeviceDefinition item : deviceList) {
             if (item.getId() == null) {

@@ -11,12 +11,15 @@ import lombok.Setter;
 @Setter
 public class PageGroupCheckupRostersRequest {
 
+    /** 团检批次主键。 */
     @NotNull
     private Long batchId;
 
+    /** 页码（从 1 开始）。 */
     @NotNull
     private Integer pageNo;
 
+    /** 每页条数。 */
     @NotNull
     private Integer pageSize;
 }

@@ -11,6 +11,7 @@ import lombok.Setter;
 @Setter
 public class ListCalendarExceptionsByMonthRequest {
 
+    /** 科室主键；空=全院。 */
     private Long organizationId;
 
     /** 格式 yyyy-MM。 */

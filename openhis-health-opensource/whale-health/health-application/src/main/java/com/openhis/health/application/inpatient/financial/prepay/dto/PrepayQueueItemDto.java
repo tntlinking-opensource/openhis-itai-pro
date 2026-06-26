@@ -17,9 +17,11 @@
 
 package com.openhis.health.application.inpatient.financial.prepay.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayDtoApplier;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -34,7 +36,7 @@ import java.time.LocalDateTime;
 @Accessors(chain = true)
 /** 预交金在院患者队列行。 */
 @Schema(description = "预交金在院患者队列行")
-public class PrepayQueueItemDto {
+public class PrepayQueueItemDto implements InpatientAccountBalanceDisplayDtoApplier.AccountBalanceDisplayTarget {
 
     @Schema(description = "住院就诊 ID", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
@@ -87,12 +89,40 @@ public class PrepayQueueItemDto {
 
     /** 入院时间。 */
     @Schema(description = "入院时间")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime startTime;
 
-    /** 账户余额。 */
-    @Schema(description = "账户余额（展示）：预交金收退净值 − 在院累计费用，动态计算", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 账户余额展示模式（NORMAL / REVERSED_PENDING_RESETTLE）。 */
+    @Schema(description = "账户余额展示模式")
+    private String accountBalanceDisplayMode;
+
+    /** 库内账户余额（{@code adm_account.balance}）。 */
+    @Schema(description = "库内账户余额")
+    private BigDecimal prepayNetBalance;
+
+    /** 待结算费用合计。 */
+    @Schema(description = "待结算费用合计")
+    private BigDecimal pendingSettlementTotal;
+
+    /** 可用余额（展示）：库内余额 − 待结算。 */
+    @Schema(description = "可用余额（展示）")
+    private BigDecimal availableBalance;
+
+    /** 兼容字段：与可用余额一致。 */
+    @Schema(description = "账户余额（展示，与可用余额一致）", requiredMode = Schema.RequiredMode.REQUIRED)
     private BigDecimal accountBalance;
+
+    /** 账户余额主展示文案。 */
+    @Schema(description = "账户余额主展示文案")
+    private String accountBalanceSummaryText;
+
+    /** 账户余额副展示文案。 */
+    @Schema(description = "账户余额副展示文案")
+    private String accountBalanceSubText;
+
+    /** 低余额预警。 */
+    @Schema(description = "低余额预警")
+    private Boolean lowBalanceWarning;
 
     /** 费用性质/医保类型展示。 */
     @Schema(description = "费用性质/医保类型展示")

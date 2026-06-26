@@ -51,4 +51,8 @@ public class LoadInventoryDetailFormInitResponse {
     /** 耗材类型筛选项。 */
     @Schema(description = "耗材类型筛选项")
     private List<OptionDto> deviceCategoryOptions;
+
+    /** 库存范围筛选项（仅 {@code 2=数量等于0}、{@code 3=数量大于0}）。 */
+    @Schema(description = "库存范围筛选项（数量等于0 / 数量大于0）")
+    private List<OptionDto> inventoryRangeOptions;
 }

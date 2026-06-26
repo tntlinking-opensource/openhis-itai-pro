@@ -145,10 +145,10 @@ public class ClinicalCatalogPriceResolveSupport {
             return null;
         }
         // 诊疗目录：零售价 SALE 择优（无 FIFO / 库位维度）
-        if (isActivityDefinitionTable(productTableName)) {
+        if (ProductTableNameSupport.isActivity(productTableName)) {
             return selectBestSalePriceLine(lines);
         }
-        if (isMedicationOrDeviceDefinitionTable(productTableName)) {
+        if (ProductTableNameSupport.isMedicationOrDevice(productTableName)) {
             String lotNumber = command.getLeadingInventoryLotNumber();
             if (StringUtils.isBlank(lotNumber)) {
                 // 读/写侧：按 clientResolvedDispenseLocationId 或模板候选库位 FIFO 取首条批号
@@ -188,10 +188,10 @@ public class ClinicalCatalogPriceResolveSupport {
         if (lines == null || lines.isEmpty()) {
             return null;
         }
-        if (isActivityDefinitionTable(instanceTable)) {
+        if (ProductTableNameSupport.isActivity(instanceTable)) {
             return selectBestSalePriceLine(lines);
         }
-        if (isMedicationOrDeviceDefinitionTable(instanceTable)) {
+        if (ProductTableNameSupport.isMedicationOrDevice(instanceTable)) {
             return selectBestLotNumberPriceLine(lines);
         }
         return lines.get(0);
@@ -231,10 +231,10 @@ public class ClinicalCatalogPriceResolveSupport {
             return null;
         }
         // 诊疗暂存：SALE 择优，与目录读侧一致
-        if (isActivityDefinitionTable(productTableName)) {
+        if (ProductTableNameSupport.isActivity(productTableName)) {
             return selectFirstPriceLineForChargeDraft(productTableName, priceLines);
         }
-        if (isMedicationOrDeviceDefinitionTable(productTableName)) {
+        if (ProductTableNameSupport.isMedicationOrDevice(productTableName)) {
             String categoryCode = null;
             if (productRow != null) {
                 categoryCode = productRow.getCategoryCode();
@@ -277,10 +277,10 @@ public class ClinicalCatalogPriceResolveSupport {
         if (lines == null || lines.isEmpty()) {
             return null;
         }
-        if (isActivityDefinitionTable(instanceTable)) {
+        if (ProductTableNameSupport.isActivity(instanceTable)) {
             return selectBestSalePriceLine(lines);
         }
-        if (isMedicationOrDeviceDefinitionTable(instanceTable)) {
+        if (ProductTableNameSupport.isMedicationOrDevice(instanceTable)) {
             Map<String, ChargeItemDefinition> lotPriceIndex = indexLotNumberPriceRows(lines);
             if (StringUtils.isNotBlank(executionLotNumber)) {
                 ChargeItemDefinition lotMatched = resolveLotNumberPriceLineForLot(lotPriceIndex, executionLotNumber);
@@ -352,7 +352,7 @@ public class ClinicalCatalogPriceResolveSupport {
             return null;
         }
         String productTableName = command.getProductTableName();
-        if (!isMedicationOrDeviceDefinitionTable(productTableName)) {
+        if (!ProductTableNameSupport.isMedicationOrDevice(productTableName)) {
             return null;
         }
         List<Long> candidateLocs;
@@ -394,7 +394,7 @@ public class ClinicalCatalogPriceResolveSupport {
                 net = BigDecimal.ZERO;
             }
             if (command.getEncounterId() != null) {
-                String occKey = tripleCompositeKey(row.getItemTable(), row.getItemId(), row.getLocationId());
+                String occKey = ProductTableNameSupport.tripleCompositeKey(row.getItemTable(), row.getItemId(), row.getLocationId());
                 net = net.subtract(occupancy.getOrDefault(occKey, BigDecimal.ZERO));
             }
             if (net.compareTo(BigDecimal.ZERO) > 0) {
@@ -427,7 +427,7 @@ public class ClinicalCatalogPriceResolveSupport {
         if (productRows == null || productRows.isEmpty() || StringUtils.isBlank(productTableName)) {
             return leadingLotByProductKey;
         }
-        if (!isMedicationOrDeviceDefinitionTable(productTableName)) {
+        if (!ProductTableNameSupport.isMedicationOrDevice(productTableName)) {
             return leadingLotByProductKey;
         }
         List<Long> productDefinitionIds = new ArrayList<>();
@@ -535,7 +535,7 @@ public class ClinicalCatalogPriceResolveSupport {
                     netQuantity = BigDecimal.ZERO;
                 }
                 if (encounterId != null) {
-                    String occupancyKey = tripleCompositeKey(
+                    String occupancyKey = ProductTableNameSupport.tripleCompositeKey(
                         inventoryRow.getItemTable(), inventoryRow.getItemId(), inventoryRow.getLocationId());
                     netQuantity = netQuantity.subtract(occupancy.getOrDefault(occupancyKey, BigDecimal.ZERO));
                 }
@@ -623,11 +623,6 @@ public class ClinicalCatalogPriceResolveSupport {
         return Map.of();
     }
 
-    private static String tripleCompositeKey(String table, Long definitionOrItemId, Long locationId) {
-        char sep = GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR;
-        return table + sep + definitionOrItemId + sep + locationId;
-    }
-
     private static ChargeItemDefinition selectBestLotNumberPriceLine(List<ChargeItemDefinition> lines) {
         String lotPriceCode = PriceType.LOT_NUMBER_PRICE.getCode();
         ChargeItemDefinition best = null;
@@ -644,24 +639,6 @@ public class ClinicalCatalogPriceResolveSupport {
             return GeneralSharedConstants.EMPTY_STRING;
         }
         return lotNo.trim();
-    }
-
-    private static boolean isActivityDefinitionTable(String productTableName) {
-        return productTableName != null
-            && TableNameConstants.WKF_ACTIVITY_DEFINITION.equalsIgnoreCase(productTableName);
-    }
-
-    private static boolean isMedicationOrDeviceDefinitionTable(String productTableName) {
-        if (productTableName == null) {
-            return false;
-        }
-        if (TableNameConstants.MED_MEDICATION_DEFINITION.equalsIgnoreCase(productTableName)) {
-            return true;
-        }
-        if (TableNameConstants.ADM_DEVICE_DEFINITION.equalsIgnoreCase(productTableName)) {
-            return true;
-        }
-        return false;
     }
 
     private static ChargeItemDefinition selectBestSalePriceLine(List<ChargeItemDefinition> lines) {

@@ -28,8 +28,8 @@ import com.openhis.health.domain.medication.medicationdispense.query.InpatientPh
 import com.openhis.health.domain.medication.medicationdispense.query.ReturnMedicineDetailQuery;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.ReturnMedicineDetailReadRow;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
-import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.enums.DispenseStatus;
+import com.openhis.health.domain.share.utils.AdministrativeGenderDisplayUtil;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.apache.commons.lang3.StringUtils;
@@ -109,7 +109,7 @@ public class InpatientPharmacyReturnMedicineMapperImpl implements InpatientPharm
         dto.setEncounterId(ctx.getEncounterId());
         dto.setPatientName(StringUtils.defaultString(ctx.getPatientName()));
         dto.setGenderEnum(ctx.getGenderEnum());
-        dto.setGenderEnumText(this.toGenderText(ctx.getGenderEnum()));
+        dto.setGenderEnumText(AdministrativeGenderDisplayUtil.toDisplayText(ctx.getGenderEnum()));
         dto.setAge(StringUtils.defaultString(ctx.getAgeText()));
         dto.setIdCard(GeneralSharedConstants.EMPTY_STRING);
         dto.setWardName(StringUtils.defaultString(ctx.getWardName()));
@@ -173,23 +173,6 @@ public class InpatientPharmacyReturnMedicineMapperImpl implements InpatientPharm
             list.add(dto);
         }
         return list;
-    }
-
-    /**
-     * 性别编码转展示名。
-     *
-     * @param genderEnum 编码
-     * @return 展示名
-     */
-    private String toGenderText(String genderEnum) {
-        AdministrativeGender g = EnumUtil.fromCode(AdministrativeGender.class, genderEnum);
-        if (g == null) {
-            if (genderEnum == null) {
-                return GeneralSharedConstants.EMPTY_STRING;
-            }
-            return genderEnum;
-        }
-        return g.getDisplay();
     }
 
     /**

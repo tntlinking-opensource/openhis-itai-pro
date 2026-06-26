@@ -4,6 +4,9 @@ import com.openhis.whale.core.application.dto.PagedResult;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * 团检名单分页响应（9.5）。
+ */
 @Getter
 @Setter
 public class PageGroupCheckupRostersResponse extends PagedResult<GroupCheckupRosterDto> {

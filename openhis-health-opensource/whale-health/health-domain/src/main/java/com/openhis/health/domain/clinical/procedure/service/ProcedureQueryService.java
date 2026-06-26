@@ -40,6 +40,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import com.openhis.health.domain.share.constants.ClinicalProcedureConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 
@@ -281,6 +282,46 @@ public class ProcedureQueryService {
             jsonByProcedureId.put(entry.getKey(), JSON.toJSONString(entry.getValue()));
         }
         return jsonByProcedureId;
+    }
+
+    /**
+     * 批量解析各执行记录的主执行人执业者主键（{@code PRIMARY} 优先，否则取首条）。
+     *
+     * @param procedureIds 执行记录主键集合
+     * @return 执行记录 id → 主执行人 {@code adm_practitioner.id}
+     */
+    public Map<Long, Long> mapPrimaryPractitionerIdByProcedureIds(Collection<Long> procedureIds) {
+        Collection<Long> idSet = this.distinctNonNullProcedureIds(procedureIds);
+        if (idSet.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<ProcedurePerformer> rows = this.performerRepository.findAllByProcedureIdIn(idSet);
+        Map<Long, ProcedurePerformer> primaryByProcedureId = new HashMap<>();
+        Map<Long, ProcedurePerformer> fallbackByProcedureId = new HashMap<>();
+        for (ProcedurePerformer performer : rows) {
+            if (performer == null || performer.getProcedureId() == null || performer.getPractitionerId() == null) {
+                continue;
+            }
+            Long procedureId = performer.getProcedureId();
+            if (ClinicalProcedureConstants.PROCEDURE_PERFORMER_FUNCTION_PRIMARY.equals(performer.getFunctionCode())) {
+                primaryByProcedureId.put(procedureId, performer);
+                continue;
+            }
+            if (!fallbackByProcedureId.containsKey(procedureId)) {
+                fallbackByProcedureId.put(procedureId, performer);
+            }
+        }
+        Map<Long, Long> practitionerIdByProcedureId = new HashMap<>();
+        for (Long procedureId : idSet) {
+            ProcedurePerformer chosen = primaryByProcedureId.get(procedureId);
+            if (chosen == null) {
+                chosen = fallbackByProcedureId.get(procedureId);
+            }
+            if (chosen != null) {
+                practitionerIdByProcedureId.put(procedureId, chosen.getPractitionerId());
+            }
+        }
+        return practitionerIdByProcedureId;
     }
 
     /**

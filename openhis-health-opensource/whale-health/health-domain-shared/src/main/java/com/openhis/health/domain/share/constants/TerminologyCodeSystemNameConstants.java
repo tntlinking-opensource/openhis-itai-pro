@@ -37,8 +37,6 @@ public interface TerminologyCodeSystemNameConstants {
     String THO_PART_ATTRIBUTE_ENUM = "tho_part_attribute_enum";
     /** 医保等级（收费项等级）。 */
     String CHRGITM_LV = "chrgitm_lv";
-    /** 药学专业分类编码。 */
-    String MED_CATEGORY_CODE = "med_category_code";
     /** 体系类别（药理/管理等）。 */
     String SYSTEM_CATEGORIES = "system_categories";
     /** 药品性质（术语字典）。 */
@@ -97,4 +95,12 @@ public interface TerminologyCodeSystemNameConstants {
     String IN_WAY_CODE = "in_way_code";
     /** 入院类型（与 {@code adm_encounter.admit_source_code} 对齐）。 */
     String ADMIT_SOURCE_CODE = "admit_source_code";
+    /** 生命体征项编码体系（护士站/体温单体征下拉）。 */
+    String VITAL_SIGNS_CODE = "vital_signs_code";
+    /** 收银支付渠道（477 pay_enum，ADR-PAY-001）。 */
+    String PAY_ENUM = "pay_enum";
+    /** 体温单特殊事件编码体系。 */
+    String SPECIAL_EVENT_CODE = "special_event_code";
+    /** 库存范围（数量等于 0 / 数量大于 0；种子 {@code inventory_range}）。 */
+    String INVENTORY_RANGE = "inventory_range";
 }

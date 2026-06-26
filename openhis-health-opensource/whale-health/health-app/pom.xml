@@ -8,7 +8,7 @@
     <parent>
         <groupId>com.openhis</groupId>
         <artifactId>whale-health</artifactId>
-        <version>2.0.1-SNAPSHOT</version>
+        <version>2.0.2-SNAPSHOT</version>
     </parent>
     
     <artifactId>health-app</artifactId>
@@ -26,20 +26,6 @@
         <dependency>
             <groupId>com.openhis</groupId>
             <artifactId>health-application</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-
-        <!-- CHS 吉林契约（Port 接口；实现由 with-chs / with-chs-remote profile 可选装配） -->
-        <dependency>
-            <groupId>com.openhis</groupId>
-            <artifactId>chs-jilin-contracts</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-
-        <!-- Booking 契约（挂号衔接 Port；实现由 with-booking profile 可选装配） -->
-        <dependency>
-            <groupId>com.openhis</groupId>
-            <artifactId>booking-contracts</artifactId>
             <version>${project.version}</version>
         </dependency>
 
@@ -202,6 +188,54 @@
                 <dependency>
                     <groupId>com.openhis</groupId>
                     <artifactId>booking-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-chs</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>chs-jilin-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-elep</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>elep-jilin-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-einvoice-boss</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>einvoice-boss-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-unionpay-bpc</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>unionpay-bpc-starter</artifactId>
                 </dependency>
             </dependencies>
         </profile>

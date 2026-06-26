@@ -17,15 +17,18 @@
 
 package com.openhis.health.module.querysupport.product;
 
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
+import com.openhis.health.domain.administration.healthcareservice.entity.HealthcareService;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.product.MedicationProductUnitConversionSource;
 import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import org.apache.commons.lang3.StringUtils;
 
 import java.math.BigDecimal;
+
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 /**
  * 主表实体 → {@link ProductDefinitionDisplayDto} 映射（持久化 {@code code} 列；展示名由
@@ -65,7 +68,7 @@ public final class ProductDefinitionDisplaySupport {
         dto.setDefEncounterUnitCode(definition.getDefEncounterUnitCode());
         dto.setDefInhospitalUnitCode(definition.getDefInhospitalUnitCode());
         dto.setTotalVolume(definition.getTotalVolume());
-        dto.setManufacturer(trimOrNull(definition.getManufacturerText()));
+        dto.setManufacturer(trimToNull(definition.getManufacturerText()));
         dto.setLocationId(definition.getLocationId());
         dto.setSupplierId(definition.getSupplyId());
         dto.setStatusEnum(definition.getStatusEnum());
@@ -147,7 +150,7 @@ public final class ProductDefinitionDisplaySupport {
         dto.setDefEncounterUnitCode(definition.getDefEncounterUnitCode());
         dto.setDefInhospitalUnitCode(definition.getDefInhospitalUnitCode());
         dto.setTotalVolume(definition.getTotalVolume());
-        dto.setManufacturer(trimOrNull(definition.getManufacturerText()));
+        dto.setManufacturer(trimToNull(definition.getManufacturerText()));
         dto.setLocationId(definition.getLocationId());
         dto.setSupplierId(definition.getSupplyId());
         dto.setStatusEnum(definition.getStatusEnum());
@@ -157,6 +160,28 @@ public final class ProductDefinitionDisplaySupport {
         dto.setPyStr(definition.getPyStr());
         dto.setWbStr(definition.getWbStr());
         dto.setChrgitmLv(definition.getChrgitmLv());
+        return dto;
+    }
+
+    /**
+     * 号源类型（挂号费）实体 → 统一产品展示 DTO。
+     *
+     * @param healthcareService 医疗服务定义；缺主键时返回 null
+     * @return 展示 DTO 或 null
+     */
+    public static ProductDefinitionDisplayDto fromHealthcareService(HealthcareService healthcareService) {
+        if (healthcareService == null || healthcareService.getId() == null) {
+            return null;
+        }
+        ProductDefinitionDisplayDto dto = new ProductDefinitionDisplayDto();
+        dto.setProductTableName(TableNameConstants.ADM_HEALTHCARE_SERVICE);
+        dto.setProductDefinitionId(healthcareService.getId());
+        dto.setProductBusNo(healthcareService.getBusNo());
+        dto.setProductName(healthcareService.getName());
+        dto.setCategoryCode(healthcareService.getCategoryCode());
+        dto.setStatusEnum(healthcareService.getStatusEnum());
+        dto.setActiveFlag(healthcareService.getActiveFlag());
+        dto.setYbNo(healthcareService.getYbNo());
         return dto;
     }
 
@@ -181,22 +206,5 @@ public final class ProductDefinitionDisplaySupport {
         source.setPackageUnitCode(dto.getPackageUnitCode());
         source.setPackageUnitRatio(dto.getPackageUnitRatio());
         return source;
-    }
-
-    /**
-     * 字符串 trim 后若为空则返回 null（制造商等可选展示列回落）。
-     *
-     * @param raw 原始字符串
-     * @return 非空白 trim 结果或 null
-     */
-    private static String trimOrNull(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        String t = raw.trim();
-        if (StringUtils.isEmpty(t)) {
-            return null;
-        }
-        return t;
     }
 }

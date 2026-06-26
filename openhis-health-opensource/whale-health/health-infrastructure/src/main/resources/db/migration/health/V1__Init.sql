@@ -48,8 +48,352 @@ CREATE INDEX IF NOT EXISTS idx_whale_users_created_at ON whale_users(created_at 
 CREATE INDEX IF NOT EXISTS idx_users_ukey_id ON whale_users(ukey_id);
 
 CREATE INDEX IF NOT EXISTS idx_users_ukey_src_id ON whale_users(ukey_src_id);
+COMMENT ON TABLE whale_users IS '系统用户';
+COMMENT ON COLUMN whale_users.id IS '主键';
+COMMENT ON COLUMN whale_users.user_name IS '登录用户名';
+COMMENT ON COLUMN whale_users.email IS '邮箱';
+COMMENT ON COLUMN whale_users.phone_number IS '手机号';
+COMMENT ON COLUMN whale_users.password_hash IS '密码哈希';
+COMMENT ON COLUMN whale_users.name IS '名';
+COMMENT ON COLUMN whale_users.surname IS '姓';
+COMMENT ON COLUMN whale_users.is_active IS '是否启用';
+COMMENT ON COLUMN whale_users.is_locked_out IS '是否锁定';
+COMMENT ON COLUMN whale_users.lockout_end IS '锁定结束时间';
+COMMENT ON COLUMN whale_users.access_failed_count IS '登录失败次数';
+COMMENT ON COLUMN whale_users.extra_properties IS '扩展属性 JSON';
+COMMENT ON COLUMN whale_users.created_at IS '创建时间';
+COMMENT ON COLUMN whale_users.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_users.created_by IS '创建人';
+COMMENT ON COLUMN whale_users.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_users.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_users.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_users.deleted_by IS '删除人';
+COMMENT ON COLUMN whale_users.ukey_id IS 'UKey 标识';
+COMMENT ON COLUMN whale_users.ukey_src_id IS 'UKey 来源标识';
 
+COMMENT ON TABLE whale_roles IS '系统角色';
+COMMENT ON COLUMN whale_roles.id IS '主键';
+COMMENT ON COLUMN whale_roles.name IS '角色名称（唯一）';
+COMMENT ON COLUMN whale_roles.display_name IS '显示名称';
+COMMENT ON COLUMN whale_roles.code IS '角色编码';
+COMMENT ON COLUMN whale_roles.description IS '描述';
+COMMENT ON COLUMN whale_roles.is_default IS '是否默认角色';
+COMMENT ON COLUMN whale_roles.is_static IS '是否静态角色（不可删）';
+COMMENT ON COLUMN whale_roles.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_roles.created_at IS '创建时间';
+COMMENT ON COLUMN whale_roles.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_roles.created_by IS '创建人';
+COMMENT ON COLUMN whale_roles.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_roles.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_roles.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_roles.deleted_by IS '删除人';
 
+COMMENT ON TABLE whale_user_roles IS '用户角色关联';
+COMMENT ON COLUMN whale_user_roles.id IS '主键';
+COMMENT ON COLUMN whale_user_roles.user_id IS '用户标识';
+COMMENT ON COLUMN whale_user_roles.role_id IS '角色标识';
+COMMENT ON COLUMN whale_user_roles.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_user_roles.created_at IS '创建时间';
+COMMENT ON COLUMN whale_user_roles.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_user_roles.created_by IS '创建人';
+COMMENT ON COLUMN whale_user_roles.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_user_roles.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_user_roles.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_user_roles.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_permissions IS '权限定义';
+COMMENT ON COLUMN whale_permissions.id IS '主键';
+COMMENT ON COLUMN whale_permissions.name IS '权限名称（唯一）';
+COMMENT ON COLUMN whale_permissions.display_name IS '显示名称';
+COMMENT ON COLUMN whale_permissions.parent_name IS '父权限名称';
+COMMENT ON COLUMN whale_permissions.description IS '描述';
+COMMENT ON COLUMN whale_permissions.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_permissions.created_at IS '创建时间';
+COMMENT ON COLUMN whale_permissions.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_permissions.created_by IS '创建人';
+COMMENT ON COLUMN whale_permissions.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_permissions.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_permissions.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_permissions.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_permission_grants IS '权限授权';
+COMMENT ON COLUMN whale_permission_grants.id IS '主键';
+COMMENT ON COLUMN whale_permission_grants.permission_name IS '权限名称';
+COMMENT ON COLUMN whale_permission_grants.provider_name IS '授权主体类型（R=角色/U=用户）';
+COMMENT ON COLUMN whale_permission_grants.provider_key IS '授权主体键';
+COMMENT ON COLUMN whale_permission_grants.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_permission_grants.created_at IS '创建时间';
+COMMENT ON COLUMN whale_permission_grants.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_permission_grants.created_by IS '创建人';
+COMMENT ON COLUMN whale_permission_grants.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_permission_grants.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_permission_grants.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_permission_grants.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_security_logs IS '安全审计日志';
+COMMENT ON COLUMN whale_security_logs.id IS '主键';
+COMMENT ON COLUMN whale_security_logs.user_id IS '用户标识';
+COMMENT ON COLUMN whale_security_logs.user_name IS '用户名称';
+COMMENT ON COLUMN whale_security_logs.action IS '操作动作';
+COMMENT ON COLUMN whale_security_logs.client_ip IS '客户端ip';
+COMMENT ON COLUMN whale_security_logs.user_agent IS '用户agent';
+COMMENT ON COLUMN whale_security_logs.result IS '结果';
+COMMENT ON COLUMN whale_security_logs.failure_reason IS 'failure原因';
+COMMENT ON COLUMN whale_security_logs.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_security_logs.extra_properties IS '扩展属性 JSON';
+COMMENT ON COLUMN whale_security_logs.created_at IS '创建时间';
+COMMENT ON COLUMN whale_security_logs.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_security_logs.created_by IS '创建人';
+COMMENT ON COLUMN whale_security_logs.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_security_logs.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_security_logs.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_security_logs.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_organization_units IS '组织机构单元';
+COMMENT ON COLUMN whale_organization_units.id IS '主键';
+COMMENT ON COLUMN whale_organization_units.code IS '编码';
+COMMENT ON COLUMN whale_organization_units.display_name IS '显示名称';
+COMMENT ON COLUMN whale_organization_units.parent_id IS '父节点标识';
+COMMENT ON COLUMN whale_organization_units.sort_order IS '排序号';
+COMMENT ON COLUMN whale_organization_units.is_enabled IS '是否启用，语义等同 { PublicationStatus.ACTIVE}（见 health-domain-shared）';
+COMMENT ON COLUMN whale_organization_units.remark IS '备注';
+COMMENT ON COLUMN whale_organization_units.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_organization_units.created_at IS '创建时间';
+COMMENT ON COLUMN whale_organization_units.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_organization_units.created_by IS '创建人';
+COMMENT ON COLUMN whale_organization_units.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_organization_units.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_organization_units.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_organization_units.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_user_organization_units IS '用户组织单元关联';
+COMMENT ON COLUMN whale_user_organization_units.id IS '主键';
+COMMENT ON COLUMN whale_user_organization_units.user_id IS '用户标识';
+COMMENT ON COLUMN whale_user_organization_units.organization_unit_id IS '组织单元标识';
+COMMENT ON COLUMN whale_user_organization_units.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_user_organization_units.created_at IS '创建时间';
+COMMENT ON COLUMN whale_user_organization_units.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_user_organization_units.created_by IS '创建人';
+COMMENT ON COLUMN whale_user_organization_units.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_user_organization_units.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_user_organization_units.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_user_organization_units.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_user_claims IS '用户声明';
+COMMENT ON COLUMN whale_user_claims.id IS '主键';
+COMMENT ON COLUMN whale_user_claims.user_id IS '用户标识';
+COMMENT ON COLUMN whale_user_claims.claim_type IS '声明类型';
+COMMENT ON COLUMN whale_user_claims.claim_value IS '声明值';
+COMMENT ON COLUMN whale_user_claims.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_user_claims.created_at IS '创建时间';
+COMMENT ON COLUMN whale_user_claims.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_user_claims.created_by IS '创建人';
+COMMENT ON COLUMN whale_user_claims.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_user_claims.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_user_claims.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_user_claims.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_role_claims IS '角色声明';
+COMMENT ON COLUMN whale_role_claims.id IS '主键';
+COMMENT ON COLUMN whale_role_claims.role_id IS '角色标识';
+COMMENT ON COLUMN whale_role_claims.claim_type IS '声明类型';
+COMMENT ON COLUMN whale_role_claims.claim_value IS '声明值';
+COMMENT ON COLUMN whale_role_claims.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_role_claims.created_at IS '创建时间';
+COMMENT ON COLUMN whale_role_claims.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_role_claims.created_by IS '创建人';
+COMMENT ON COLUMN whale_role_claims.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_role_claims.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_role_claims.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_role_claims.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_qrtz_locks IS 'Quartz 调度锁';
+COMMENT ON COLUMN whale_qrtz_locks.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_locks.lock_name IS '锁名称';
+
+COMMENT ON TABLE whale_qrtz_job_details IS 'Quartz 作业详情';
+COMMENT ON COLUMN whale_qrtz_job_details.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_job_details.job_name IS '作业名称';
+COMMENT ON COLUMN whale_qrtz_job_details.job_group IS '作业组';
+COMMENT ON COLUMN whale_qrtz_job_details.description IS '描述';
+COMMENT ON COLUMN whale_qrtz_job_details.job_class_name IS '作业类名';
+COMMENT ON COLUMN whale_qrtz_job_details.is_durable IS '是否持久化';
+COMMENT ON COLUMN whale_qrtz_job_details.is_nonconcurrent IS '是否禁止并发';
+COMMENT ON COLUMN whale_qrtz_job_details.is_update_data IS '是否更新数据';
+COMMENT ON COLUMN whale_qrtz_job_details.requests_recovery IS '是否请求恢复';
+COMMENT ON COLUMN whale_qrtz_job_details.job_data IS '作业数据（BLOB）';
+
+COMMENT ON TABLE whale_qrtz_triggers IS 'Quartz 触发器';
+COMMENT ON COLUMN whale_qrtz_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_triggers.job_name IS '关联作业名称';
+COMMENT ON COLUMN whale_qrtz_triggers.job_group IS '关联作业组';
+COMMENT ON COLUMN whale_qrtz_triggers.description IS '描述';
+COMMENT ON COLUMN whale_qrtz_triggers.next_fire_time IS '下次触发时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_triggers.prev_fire_time IS '上次触发时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_triggers.priority IS '优先级';
+COMMENT ON COLUMN whale_qrtz_triggers.trigger_state IS '触发器状态';
+COMMENT ON COLUMN whale_qrtz_triggers.trigger_type IS '触发器类型';
+COMMENT ON COLUMN whale_qrtz_triggers.start_time IS '开始时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_triggers.end_time IS '结束时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_triggers.calendar_name IS '日历名称';
+COMMENT ON COLUMN whale_qrtz_triggers.misfire_instr IS '错失触发策略';
+COMMENT ON COLUMN whale_qrtz_triggers.job_data IS '触发器数据（BLOB）';
+
+COMMENT ON TABLE whale_qrtz_cron_triggers IS 'Quartz Cron 触发器';
+COMMENT ON COLUMN whale_qrtz_cron_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_cron_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_cron_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_cron_triggers.cron_expression IS 'Cron 表达式';
+COMMENT ON COLUMN whale_qrtz_cron_triggers.time_zone_id IS '时区 ID';
+
+COMMENT ON TABLE whale_qrtz_simple_triggers IS 'Quartz 简单触发器';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.repeat_count IS '重复次数';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.repeat_interval IS '重复间隔（毫秒）';
+COMMENT ON COLUMN whale_qrtz_simple_triggers.times_triggered IS '已触发次数';
+
+COMMENT ON TABLE whale_qrtz_blob_triggers IS 'Quartz BLOB 触发器';
+COMMENT ON COLUMN whale_qrtz_blob_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_blob_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_blob_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_blob_triggers.blob_data IS '触发器 BLOB 数据';
+
+COMMENT ON TABLE whale_qrtz_calendars IS 'Quartz 日历';
+COMMENT ON COLUMN whale_qrtz_calendars.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_calendars.calendar_name IS '日历名称';
+COMMENT ON COLUMN whale_qrtz_calendars.calendar IS '日历对象（BLOB）';
+
+COMMENT ON TABLE whale_qrtz_paused_trigger_grps IS 'Quartz 暂停触发器组';
+COMMENT ON COLUMN whale_qrtz_paused_trigger_grps.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_paused_trigger_grps.trigger_group IS '触发器组';
+
+COMMENT ON TABLE whale_qrtz_scheduler_state IS 'Quartz 调度器状态';
+COMMENT ON COLUMN whale_qrtz_scheduler_state.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_scheduler_state.instance_name IS '实例名称';
+COMMENT ON COLUMN whale_qrtz_scheduler_state.last_checkin_time IS '最后检入时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_scheduler_state.checkin_interval IS '检入间隔（毫秒）';
+
+COMMENT ON TABLE whale_qrtz_fired_triggers IS 'Quartz 已触发记录';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.sched_name IS '调度器名称';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.entry_id IS '条目 ID';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.trigger_name IS '触发器名称';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.trigger_group IS '触发器组';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.instance_name IS '实例名称';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.fired_time IS '触发时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.sched_time IS '计划时间（毫秒）';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.priority IS '优先级';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.state IS '状态';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.job_name IS '作业名称';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.job_group IS '作业组';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.is_nonconcurrent IS '是否禁止并发';
+COMMENT ON COLUMN whale_qrtz_fired_triggers.requests_recovery IS '是否请求恢复';
+
+COMMENT ON TABLE whale_tenants IS '租户';
+COMMENT ON COLUMN whale_tenants.id IS '主键';
+COMMENT ON COLUMN whale_tenants.name IS '租户名称';
+COMMENT ON COLUMN whale_tenants.code IS '租户代码';
+COMMENT ON COLUMN whale_tenants.description IS '租户描述';
+COMMENT ON COLUMN whale_tenants.is_active IS '是否启用';
+COMMENT ON COLUMN whale_tenants.extra_properties IS '扩展属性';
+COMMENT ON COLUMN whale_tenants.created_at IS '创建时间';
+COMMENT ON COLUMN whale_tenants.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_tenants.created_by IS '创建人';
+COMMENT ON COLUMN whale_tenants.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_tenants.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_tenants.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_tenants.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_user_tenants IS '用户租户关联';
+COMMENT ON COLUMN whale_user_tenants.id IS '主键';
+COMMENT ON COLUMN whale_user_tenants.user_id IS '用户标识';
+COMMENT ON COLUMN whale_user_tenants.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_user_tenants.created_at IS '创建时间';
+COMMENT ON COLUMN whale_user_tenants.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_user_tenants.created_by IS '创建人';
+COMMENT ON COLUMN whale_user_tenants.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_user_tenants.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_user_tenants.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_user_tenants.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_settings IS '系统设置';
+COMMENT ON COLUMN whale_settings.id IS '主键';
+COMMENT ON COLUMN whale_settings.name IS '设置键';
+COMMENT ON COLUMN whale_settings.value IS '设置值';
+COMMENT ON COLUMN whale_settings.provider_name IS '提供者类型';
+COMMENT ON COLUMN whale_settings.provider_key IS '提供者键';
+COMMENT ON COLUMN whale_settings.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_settings.description IS '描述';
+COMMENT ON COLUMN whale_settings.created_at IS '创建时间';
+COMMENT ON COLUMN whale_settings.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_settings.created_by IS '创建人';
+COMMENT ON COLUMN whale_settings.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_settings.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_settings.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_settings.deleted_by IS '删除人';
+
+COMMENT ON TABLE whale_menus IS '菜单';
+COMMENT ON COLUMN whale_menus.id IS '主键';
+COMMENT ON COLUMN whale_menus.code IS '菜单编码';
+COMMENT ON COLUMN whale_menus.name IS '菜单名称';
+COMMENT ON COLUMN whale_menus.display_name IS '显示名称';
+COMMENT ON COLUMN whale_menus.icon IS '图标';
+COMMENT ON COLUMN whale_menus.path IS '路由路径';
+COMMENT ON COLUMN whale_menus.component IS '前端组件路径';
+COMMENT ON COLUMN whale_menus.permission_name IS '关联权限名称';
+COMMENT ON COLUMN whale_menus.parent_id IS '父菜单 ID';
+COMMENT ON COLUMN whale_menus.sort_order IS '排序号';
+COMMENT ON COLUMN whale_menus.is_enabled IS '是否启用';
+COMMENT ON COLUMN whale_menus.is_hidden IS '是否隐藏';
+COMMENT ON COLUMN whale_menus.is_external IS '是否外链';
+COMMENT ON COLUMN whale_menus.external_url IS '外链 URL';
+COMMENT ON COLUMN whale_menus.menu_type IS '菜单类型（menu/directory）';
+COMMENT ON COLUMN whale_menus.remark IS '备注';
+COMMENT ON COLUMN whale_menus.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_menus.created_at IS '创建时间';
+COMMENT ON COLUMN whale_menus.updated_at IS '最后更新时间';
+COMMENT ON COLUMN whale_menus.created_by IS '创建人';
+COMMENT ON COLUMN whale_menus.updated_by IS '最后更新人';
+COMMENT ON COLUMN whale_menus.is_deleted IS '软删标记';
+COMMENT ON COLUMN whale_menus.deleted_at IS '删除时间';
+COMMENT ON COLUMN whale_menus.deleted_by IS '删除人';
+COMMENT ON COLUMN whale_menus.keep_alive IS '是否缓存页面';
+
+COMMENT ON TABLE whale_sequence IS '业务序号表，按 key 记录当前序号';
+COMMENT ON COLUMN whale_sequence.seq_key IS '序号键（如 ORDER、PATIENT、或 ORDER:2025-01-30 表示按天）';
+COMMENT ON COLUMN whale_sequence.current_value IS '当前序号值（递增后返回）';
+COMMENT ON COLUMN whale_sequence.updated_at IS '最后更新时间';
+
+COMMENT ON TABLE whale_audit_logs IS '实体变更审计日志';
+COMMENT ON COLUMN whale_audit_logs.id IS '主键';
+COMMENT ON COLUMN whale_audit_logs.entity_type IS '实体类型';
+COMMENT ON COLUMN whale_audit_logs.entity_id IS '实体 ID';
+COMMENT ON COLUMN whale_audit_logs.operation_type IS '操作类型';
+COMMENT ON COLUMN whale_audit_logs.user_id IS '操作人';
+COMMENT ON COLUMN whale_audit_logs.tenant_id IS '租户标识';
+COMMENT ON COLUMN whale_audit_logs.ip_address IS 'IP 地址';
+COMMENT ON COLUMN whale_audit_logs.user_agent IS '用户agent';
+COMMENT ON COLUMN whale_audit_logs.changes IS '变更内容';
+COMMENT ON COLUMN whale_audit_logs.created_at IS '创建时间';
+
+COMMENT ON TABLE whale_framework_runtime_state IS '框架运行时状态';
+COMMENT ON COLUMN whale_framework_runtime_state.id IS '主键';
+COMMENT ON COLUMN whale_framework_runtime_state.insight_code IS '洞察编码';
+COMMENT ON COLUMN whale_framework_runtime_state.category IS '分类';
+COMMENT ON COLUMN whale_framework_runtime_state.runtime_version IS '运行时版本';
+COMMENT ON COLUMN whale_framework_runtime_state.operator_user_id IS '操作人用户标识';
+COMMENT ON COLUMN whale_framework_runtime_state.session_started_at IS '会话开始时间';
+COMMENT ON COLUMN whale_framework_runtime_state.org_category IS '机构类别';
+COMMENT ON COLUMN whale_framework_runtime_state.org_name IS '机构名称';
+COMMENT ON COLUMN whale_framework_runtime_state.deployment_fingerprint IS '部署指纹';
+COMMENT ON COLUMN whale_framework_runtime_state.license_customer IS '许可证客户';
+COMMENT ON COLUMN whale_framework_runtime_state.license_not_after IS '许可证失效时间';
+COMMENT ON COLUMN whale_framework_runtime_state.payload_json IS '载荷 JSON';
+COMMENT ON COLUMN whale_framework_runtime_state.observed_at IS '观测时间';
+COMMENT ON COLUMN whale_framework_runtime_state.received_at IS '接收时间';
 
 -- seed: whale_users
 INSERT INTO "whale_users" ("id", "user_name", "email", "phone_number", "password_hash", "name", "surname", "is_active", "is_locked_out", "lockout_end", "access_failed_count", "extra_properties", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "ukey_id", "ukey_src_id")
@@ -213,6 +557,10 @@ VALUES
 ('33', 'Navigation.Chargeipsettle', '住院结算', 'Navigation', '菜单入口: ChargeIpSettle', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('34', 'Navigation.Chargeipprepay', '预交金管理', 'Navigation', '菜单入口: ChargeIpPrepay', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('35', 'Navigation.Chargeipfee', '住院费用管理', 'Navigation', '菜单入口: ChargeIpFee', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('73', 'Navigation.Chargeipdayclose', '住院日结', 'Navigation', '菜单入口: ChargeIpDayClose', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('74', 'Navigation.Dispenserecordop', '门诊发退药记录', 'Navigation', '菜单入口: DispenseRecordOp', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('75', 'Navigation.Dispenserecordip', '住院发退药记录', 'Navigation', '菜单入口: DispenseRecordIp', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('76', 'Navigation.Opfeedetail', '门诊费用明细', 'Navigation', '菜单入口: OpFeeDetail', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('36', 'Navigation.Outpatientdoctorstation', '门诊医生站', 'Navigation', '菜单入口: OutpatientDoctorStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('37', 'Navigation.Inpatientdoctorstation', '住院医生站', 'Navigation', '菜单入口: InpatientDoctorStation', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('38', 'Navigation.Dispenseop', '门诊发药', 'Navigation', '菜单入口: DispenseOp', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
@@ -265,7 +613,7 @@ VALUES
 ('322589916564819968', 'SettingManagement.Settings.Update', '更新设置', 'SettingManagement.Settings', NULL, NULL, '2026-06-09 04:17:09.539+00', '2026-06-09 04:17:09.539+00', NULL, NULL, false, NULL, NULL),
 ('322589916577402880', 'SettingManagement.Settings.Delete', '删除设置', 'SettingManagement.Settings', NULL, NULL, '2026-06-09 04:17:09.542+00', '2026-06-09 04:17:09.542+00', NULL, NULL, false, NULL, NULL),
 ('322589916594180096', 'SettingManagement.Settings.View', '查看设置', 'SettingManagement.Settings', NULL, NULL, '2026-06-09 04:17:09.546+00', '2026-06-09 04:17:09.546+00', NULL, NULL, false, NULL, NULL),
-('322970151327633408', 'Navigation.Reporttemplatedesigner', '打印模板设计', 'Navigation', '菜单入口: ReportTemplateDesigner', '1', '2026-06-10 05:28:04.571+00', '2026-06-10 05:28:04.571+00', '1', '1', false, NULL, NULL)
+('322970151327633408', 'Navigation.Reporttemplatedesigner', '打印模板设计', 'Navigation', '菜单入口: PrintTemplateDesigner（Report 遗留，已废弃）', '1', '2026-06-10 05:28:04.571+00', '2026-06-25 00:00:00.000+00', '1', '1', true, '2026-06-25 00:00:00.000+00', NULL)
 ON CONFLICT ("id") DO NOTHING;
 
 -- ========== whale_permission_grants ==========
@@ -307,6 +655,10 @@ VALUES
 ('10007', 'Navigation.Chargeipsettle', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10008', 'Navigation.Chargeopcharge', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10009', 'Navigation.Chargeopdayclose', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10075', 'Navigation.Chargeipdayclose', 'R', '1', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10076', 'Navigation.Dispenserecordop', 'R', '1', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10077', 'Navigation.Dispenserecordip', 'R', '1', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('10078', 'Navigation.Opfeedetail', 'R', '1', NULL, '2026-06-21 00:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10010', 'Navigation.Chargeoprefund', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10011', 'Navigation.Chargeopregister', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('10012', 'Navigation.CodesystemManagement', 'R', '1', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
@@ -376,6 +728,10 @@ VALUES
 ('322733614544982016', 'Navigation.Chargeoprefund', 'R', '14', '1', '2026-06-09 13:48:09.808+00', '2026-06-09 13:48:09.808+00', '1', '1', false, NULL, NULL),
 ('322733614553370624', 'Navigation.Reporthome', 'R', '14', '1', '2026-06-09 13:48:09.810+00', '2026-06-09 13:48:09.810+00', '1', '1', false, NULL, NULL),
 ('322733614561759232', 'Navigation.Chargeopdayclose', 'R', '14', '1', '2026-06-09 13:48:09.812+00', '2026-06-09 13:48:09.812+00', '1', '1', false, NULL, NULL),
+('322733614561759233', 'Navigation.Chargeipdayclose', 'R', '14', '1', '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL),
+('322733614561759234', 'Navigation.Opfeedetail', 'R', '14', '1', '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL),
+('322733438157721601', 'Navigation.Dispenserecordop', 'R', '12', '1', '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL),
+('322733438157721602', 'Navigation.Dispenserecordip', 'R', '12', '1', '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL),
 ('322733614574342144', 'Navigation.Chargeipregister', 'R', '14', '1', '2026-06-09 13:48:09.815+00', '2026-06-09 13:48:09.815+00', '1', '1', false, NULL, NULL),
 ('322733614582730752', 'Navigation.Chargeopregister', 'R', '14', '1', '2026-06-09 13:48:09.817+00', '2026-06-09 13:48:09.817+00', '1', '1', false, NULL, NULL),
 ('322733614586925056', 'Navigation.Chargeopcharge', 'R', '14', '1', '2026-06-09 13:48:09.818+00', '2026-06-09 13:48:09.818+00', '1', '1', false, NULL, NULL),
@@ -953,6 +1309,11 @@ VALUES
 ('310400000000000007', 'ChargeIpSettle', 'ChargeIpSettle', '住院结算', 'lucide:wallet', '/inpatient/charge/settle', '/inpatient/charge/settle/index', 'Navigation.Chargeipsettle', '310400000000000001', 6, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000008', 'ChargeIpPrepay', 'ChargeIpPrepay', '预交金管理', 'lucide:coins', '/inpatient/charge/prepay', '/inpatient/charge/prepay/index', 'Navigation.Chargeipprepay', '310400000000000001', 7, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000009', 'ChargeIpFee', 'ChargeIpFee', '住院费用管理', 'lucide:list-todo', '/inpatient/charge/fee', '/inpatient/charge/fee/index', 'Navigation.Chargeipfee', '310400000000000001', 8, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000117', 'ChargeIpDayClose', 'ChargeIpDayClose', '住院日结', 'lucide:calendar-check', '/inpatient/charge/daily-settlement', '/inpatient/charge/daily-settlement/index', 'Navigation.Chargeipdayclose', '310400000000000001', 9, true, false, false, '', 'menu', '住院收费日结交账', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000118', 'DispenseRecordOp', 'DispenseRecordOp', '门诊发退药记录', 'lucide:clipboard-list', '/pharmacy/dispense-record/outpatient', '/pharmacy/dispense-record/outpatient/index', 'Navigation.Dispenserecordop', '301696493912330240', 3, true, false, false, '', 'menu', '门诊发退药记录查询与导出', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000119', 'DispenseRecordIp', 'DispenseRecordIp', '住院发退药记录', 'lucide:clipboard-list', '/pharmacy/dispense-record/inpatient', '/pharmacy/dispense-record/inpatient/index', 'Navigation.Dispenserecordip', '301696493912330240', 4, true, false, false, '', 'menu', '住院发退药记录查询与导出', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000120', 'OpReport', 'OpReport', '门诊报表', 'lucide:file-bar-chart', '/outpatient/report', '', NULL, '310400000000000001', 10, true, false, false, '', 'directory', '门诊域报表（费用明细等）', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000121', 'OpFeeDetail', 'OpFeeDetail', '门诊费用明细', 'lucide:receipt', '/outpatient/report/fee-detail', '/outpatient/report/fee-detail/index', 'Navigation.Opfeedetail', '310400000000000120', 1, true, false, false, '', 'menu', '门诊费用明细查询与导出', NULL, '2026-06-21 00:00:00.000+00', '2026-06-21 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000020', 'OutpatientDoctorStation', 'OutpatientDoctorStation', '门诊医生站', 'lucide:user-round-pen', '/outpatient/doctor-station', '/outpatient/doctor-station/index', 'Navigation.Outpatientdoctorstation', NULL, 4, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000040', 'InpatientDoctorStation', 'InpatientDoctorStation', '住院医生站', 'lucide:hospital', '/inpatient/doctor-station', '/inpatient/doctor-station/index', 'Navigation.Inpatientdoctorstation', NULL, 5, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000060', 'MedicationDispense', 'MedicationDispense', '发药管理', 'lucide:pill-bottle', '/pharmacy/dispense', '', NULL, NULL, 8, true, false, false, '', 'directory', 'HIS清单-发药管理', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
@@ -960,17 +1321,18 @@ VALUES
 ('310400000000000062', 'DispenseIp', 'DispenseIp', '住院发药', 'lucide:truck', '/pharmacy/dispense/inpatient', '/pharmacy/dispense/inpatient/index', 'Navigation.Dispenseip', '310400000000000060', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000063', 'DispenseDoc', 'DispenseDoc', '发药单据', 'lucide:file-box', '/pharmacy/dispense/documents', '/pharmacy/dispense/documents/index', 'Navigation.Dispensedoc', '310400000000000060', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000081', 'WhPurchaseOrder', 'WhPurchaseOrder', '药库订货单', 'lucide:file-spreadsheet', '/inventory/warehouse/purchase-order', '/inventory/warehouse/purchase-order/index', 'Navigation.Whpurchaseorder', '284503862625177600', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310400000000000100', 'ReportCenter', 'ReportCenter', '报表管理', 'lucide:layout-dashboard', '/reports', '', NULL, NULL, 11, true, false, false, '', 'directory', 'HIS清单-报表管理', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310400000000000100', 'ReportManagement', 'ReportManagement', '报表管理', 'lucide:layout-dashboard', '/reports', '', NULL, NULL, 11, true, false, false, '', 'directory', 'HIS清单-报表管理', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000101', 'ReportHome', 'ReportHome', '首页', 'lucide:home', '/reports/home', '/reports/home/index', 'Navigation.Reporthome', '310400000000000100', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000102', 'ReportDean', 'ReportDean', '院长', 'lucide:building-2', '/reports/dean', '/reports/dean/index', 'Navigation.Reportdean', '310400000000000100', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310400000000000103', 'ReportClinical', 'ReportClinical', '临床报表', 'lucide:activity', '/reports/clinical', '/reports/clinical/index', 'Navigation.Reportclinical', '310400000000000100', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310500000000000100', 'ChsManagement', 'ChsManagement', '医保管理', 'lucide:shield', '/chs', '', '', NULL, 12, true, false, false, '', 'directory', 'CHS 医保扩展菜单', NULL, '2026-06-01 16:00:00.000+00', '2026-06-01 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310500000000000101', 'ChsNationalCatalog', 'ChsNationalCatalog', '国家目录查询', 'lucide:book-open', '/chs/national-catalog', '/chs/national-catalog/index', 'Navigation.Chsnationalcatalog', '310500000000000100', 1, true, false, false, '', 'menu', '1312/1301 国家医保目录查询与下载', NULL, '2026-06-01 16:00:00.000+00', '2026-06-01 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('310500000000000102', 'ChsCatalogDownload', 'ChsCatalogDownload', '目录文件下载', 'lucide:download', '/chs/catalog-download', '/chs/catalog-download/index', 'Navigation.Chscatalogdownload', '310500000000000100', 2, true, false, false, '', 'menu', '1301/1305/1306 + 9102 文件下载解压入库', NULL, '2026-06-01 16:00:00.000+00', '2026-06-01 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310600000000000101', 'ReportPrintTemplate', 'ReportPrintTemplate', '打印模板', 'lucide:printer', '/basic/report-template', '/basic/report-template/index', 'Report.Templates.View', '2000', 21, true, false, false, '', 'menu', 'Layout 设计器 L1：flow/roll/overlay 模板列表（whale-report）', NULL, '2026-06-03 16:00:00.000+00', '2026-06-03 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310600000000000102', 'ReportTemplateDesigner', 'ReportTemplateDesigner', '打印模板设计', 'lucide:layout-template', '/basic/report-template/designer', '/basic/report-template/designer/index', 'Navigation.Reporttemplatedesigner', '2000', 22, true, false, false, '', 'menu', '', NULL, '2026-06-03 16:00:00.000+00', '2026-06-10 05:28:04.572+00', '1', '1', false, NULL, NULL, false),
-('310600000000000103', 'ReportPrintLog', 'ReportPrintLog', '打印日志', 'lucide:scroll-text', '/basic/print-log', '/basic/print-log/index', 'Report.PrintLog.View', '2000', 23, true, false, false, '', 'menu', '打印事件明细 rpt_print_event_log（P2 查询页）', NULL, '2026-06-03 16:00:00.000+00', '2026-06-03 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('310600000000000111', 'WhaleReportLoaderCenter', 'WhaleReportLoaderCenter', '动态报表', 'lucide:table', '/reports/whale-center', '/report/center/index', 'Report.Center.View', '310400000000000100', 5, true, false, false, '', 'menu', 'whale-report C 类 ReportLoader 报表中心（P2），挂在 V1 报表管理下', NULL, '2026-06-03 16:00:00.000+00', '2026-06-03 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310600000000000101', 'PrintTemplate', 'PrintTemplate', '打印模板', 'lucide:printer', '/basic/print-template', '/basic/print-template/index', 'Print.Templates.View', '2000', 25, true, false, false, '', 'menu', 'PrintJson 模板列表（新建/发布/复制草稿）；设计请用「打印设计器」菜单', NULL, '2026-06-03 16:00:00.000+00', '2026-06-25 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310600000000000102', 'PrintTemplateDesigner', 'PrintTemplateDesigner', '打印设计器', 'lucide:layout-template', '/basic/print-design', '/basic/print-template/designer/index', 'Print.Templates.Design', '2000', 24, true, false, false, '', 'menu', '独立 hiprint 设计器；纯画布编辑，与业务 binding/发印无关', NULL, '2026-06-22 00:00:00.000+00', '2026-06-25 00:00:00.000+00', '1', '1', false, NULL, NULL, false),
+('310600000000000103', 'ReportPrintLog', 'ReportPrintLog', '打印日志', 'lucide:scroll-text', '/basic/print-log', '/basic/print-log/index', 'Print.PrintLog.View', '2000', 27, true, false, false, '', 'menu', 'PRT 打印审计 prt_print_event_log', NULL, '2026-06-03 16:00:00.000+00', '2026-06-22 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310600000000000104', 'ReportPrintBinding', 'ReportPrintBinding', '打印模板配置', 'lucide:link-2', '/basic/print-binding', '/basic/print-binding/index', 'Print.PrintBinding.View', '2000', 26, true, false, false, '', 'menu', 'PRT bindingCode→busNo 租户绑定', NULL, '2026-06-22 00:00:00.000+00', '2026-06-22 00:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('310600000000000111', 'ReportDesigner', 'ReportDesigner', '报表设计器', 'lucide:pen-line', '/reports/designer', '/report/designer/index', 'Report.Designer.View', '310400000000000100', 4, true, true, false, '', 'menu', 'C 类报表配置、PDF 模板绑定与发布（draft → published）', NULL, '2026-06-03 16:00:00.000+00', '2026-06-03 16:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('312881978679496704', 'WhPurchaseInbound', 'WhPurchaseInbound', '药库进货单', 'lucide:package-check', '/inventory/warehouse/purchase-inbound', '/inventory/warehouse/purchase-inbound/index', 'Navigation.Whpurchaseinbound', '284503862625177600', 2, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('313234941086273536', 'WhStockOut', 'WhStockOut', '药库出库单', 'lucide:package-minus', '/inventory/warehouse/stock-out', '/inventory/warehouse/stock-out/index', 'Navigation.Whstockout', '284503862625177600', 3, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('313295483593297921', 'PhStockIn', 'PhStockIn', '药房入库单', 'lucide:package-plus', '/inventory/pharmacy/stock-in', '/inventory/pharmacy/stock-in/index', 'Navigation.Phstockin', '301696493912330240', 1, true, false, false, '', 'menu', '', '1', '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
@@ -1045,386 +1407,66 @@ CREATE INDEX IF NOT EXISTS idx_fw_runtime_state_fingerprint ON whale_framework_r
 
 CREATE INDEX IF NOT EXISTS idx_fw_runtime_state_received_at ON whale_framework_runtime_state(received_at DESC);
 
-COMMENT ON TABLE whale_users IS '系统用户';
 
-COMMENT ON COLUMN whale_users.id IS '主键';
-COMMENT ON COLUMN whale_users.user_name IS '登录用户名';
-COMMENT ON COLUMN whale_users.email IS '邮箱';
-COMMENT ON COLUMN whale_users.phone_number IS '手机号';
-COMMENT ON COLUMN whale_users.password_hash IS '密码哈希';
-COMMENT ON COLUMN whale_users.name IS '名';
-COMMENT ON COLUMN whale_users.surname IS '姓';
-COMMENT ON COLUMN whale_users.is_active IS '是否启用';
-COMMENT ON COLUMN whale_users.is_locked_out IS '是否锁定';
-COMMENT ON COLUMN whale_users.lockout_end IS '锁定结束时间';
-COMMENT ON COLUMN whale_users.access_failed_count IS '登录失败次数';
-COMMENT ON COLUMN whale_users.extra_properties IS '扩展属性 JSON';
-COMMENT ON COLUMN whale_users.created_at IS '创建时间';
-COMMENT ON COLUMN whale_users.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_users.created_by IS '创建人';
-COMMENT ON COLUMN whale_users.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_users.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_users.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_users.deleted_by IS '删除人';
-COMMENT ON COLUMN whale_users.ukey_id IS 'UKey 标识';
-COMMENT ON COLUMN whale_users.ukey_src_id IS 'UKey 来源标识';
 
-COMMENT ON TABLE whale_roles IS '系统角色';
 
-COMMENT ON COLUMN whale_roles.id IS '主键';
-COMMENT ON COLUMN whale_roles.name IS '角色名称（唯一）';
-COMMENT ON COLUMN whale_roles.display_name IS '显示名称';
-COMMENT ON COLUMN whale_roles.code IS '角色编码';
-COMMENT ON COLUMN whale_roles.description IS '描述';
-COMMENT ON COLUMN whale_roles.is_default IS '是否默认角色';
-COMMENT ON COLUMN whale_roles.is_static IS '是否静态角色（不可删）';
-COMMENT ON COLUMN whale_roles.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_roles.created_at IS '创建时间';
-COMMENT ON COLUMN whale_roles.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_roles.created_by IS '创建人';
-COMMENT ON COLUMN whale_roles.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_roles.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_roles.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_roles.deleted_by IS '删除人';
 
-COMMENT ON TABLE whale_user_roles IS '用户角色关联';
 
-COMMENT ON COLUMN whale_user_roles.id IS '主键';
-COMMENT ON COLUMN whale_user_roles.user_id IS '用户标识';
-COMMENT ON COLUMN whale_user_roles.role_id IS '角色标识';
-COMMENT ON COLUMN whale_user_roles.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_user_roles.created_at IS '创建时间';
-COMMENT ON COLUMN whale_user_roles.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_user_roles.created_by IS '创建人';
-COMMENT ON COLUMN whale_user_roles.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_user_roles.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_user_roles.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_user_roles.deleted_by IS '删除人';
 
-COMMENT ON TABLE whale_permissions IS '权限定义';
 
-COMMENT ON COLUMN whale_permissions.id IS '主键';
-COMMENT ON COLUMN whale_permissions.name IS '权限名称（唯一）';
-COMMENT ON COLUMN whale_permissions.display_name IS '显示名称';
-COMMENT ON COLUMN whale_permissions.parent_name IS '父权限名称';
-COMMENT ON COLUMN whale_permissions.description IS '描述';
-COMMENT ON COLUMN whale_permissions.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_permissions.created_at IS '创建时间';
-COMMENT ON COLUMN whale_permissions.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_permissions.created_by IS '创建人';
-COMMENT ON COLUMN whale_permissions.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_permissions.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_permissions.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_permissions.deleted_by IS '删除人';
 
-COMMENT ON TABLE whale_permission_grants IS '权限授权';
 
-COMMENT ON COLUMN whale_permission_grants.id IS '主键';
-COMMENT ON COLUMN whale_permission_grants.permission_name IS '权限名称';
-COMMENT ON COLUMN whale_permission_grants.provider_name IS '授权主体类型（R=角色/U=用户）';
-COMMENT ON COLUMN whale_permission_grants.provider_key IS '授权主体键';
-COMMENT ON COLUMN whale_permission_grants.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_permission_grants.created_at IS '创建时间';
-COMMENT ON COLUMN whale_permission_grants.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_permission_grants.created_by IS '创建人';
-COMMENT ON COLUMN whale_permission_grants.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_permission_grants.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_permission_grants.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_permission_grants.deleted_by IS '删除人';
 
-COMMENT ON TABLE whale_security_logs IS '安全审计日志';
 
-COMMENT ON COLUMN whale_security_logs.id IS '主键';
-COMMENT ON COLUMN whale_security_logs.user_id IS '用户标识';
-COMMENT ON COLUMN whale_security_logs.user_name IS 'user name';
-COMMENT ON COLUMN whale_security_logs.action IS '操作动作';
-COMMENT ON COLUMN whale_security_logs.client_ip IS 'client ip';
-COMMENT ON COLUMN whale_security_logs.user_agent IS 'user agent';
-COMMENT ON COLUMN whale_security_logs.result IS 'result';
-COMMENT ON COLUMN whale_security_logs.failure_reason IS 'failure reason';
-COMMENT ON COLUMN whale_security_logs.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_security_logs.extra_properties IS '扩展属性 JSON';
-COMMENT ON COLUMN whale_security_logs.created_at IS '创建时间';
-COMMENT ON COLUMN whale_security_logs.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_security_logs.created_by IS '创建人';
-COMMENT ON COLUMN whale_security_logs.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_security_logs.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_security_logs.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_security_logs.deleted_by IS '删除人';
 
-COMMENT ON TABLE whale_organization_units IS '组织机构单元';
 
-COMMENT ON COLUMN whale_organization_units.id IS '主键';
-COMMENT ON COLUMN whale_organization_units.code IS '编码';
-COMMENT ON COLUMN whale_organization_units.display_name IS '显示名称';
-COMMENT ON COLUMN whale_organization_units.parent_id IS '父节点标识';
-COMMENT ON COLUMN whale_organization_units.sort_order IS '排序号';
-COMMENT ON COLUMN whale_organization_units.is_enabled IS '是否启用，语义等同 { PublicationStatus.ACTIVE}（见 health-domain-shared）';
-COMMENT ON COLUMN whale_organization_units.remark IS '备注';
-COMMENT ON COLUMN whale_organization_units.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_organization_units.created_at IS '创建时间';
-COMMENT ON COLUMN whale_organization_units.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_organization_units.created_by IS '创建人';
-COMMENT ON COLUMN whale_organization_units.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_organization_units.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_organization_units.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_organization_units.deleted_by IS '删除人';
 
-COMMENT ON TABLE whale_user_organization_units IS '用户组织单元关联';
 
-COMMENT ON COLUMN whale_user_organization_units.id IS '主键';
-COMMENT ON COLUMN whale_user_organization_units.user_id IS '用户标识';
-COMMENT ON COLUMN whale_user_organization_units.organization_unit_id IS '组织单元标识';
-COMMENT ON COLUMN whale_user_organization_units.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_user_organization_units.created_at IS '创建时间';
-COMMENT ON COLUMN whale_user_organization_units.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_user_organization_units.created_by IS '创建人';
-COMMENT ON COLUMN whale_user_organization_units.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_user_organization_units.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_user_organization_units.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_user_organization_units.deleted_by IS '删除人';
 
-COMMENT ON TABLE whale_user_claims IS '用户声明';
 
-COMMENT ON COLUMN whale_user_claims.id IS '主键';
-COMMENT ON COLUMN whale_user_claims.user_id IS '用户标识';
-COMMENT ON COLUMN whale_user_claims.claim_type IS '声明类型';
-COMMENT ON COLUMN whale_user_claims.claim_value IS '声明值';
-COMMENT ON COLUMN whale_user_claims.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_user_claims.created_at IS '创建时间';
-COMMENT ON COLUMN whale_user_claims.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_user_claims.created_by IS '创建人';
-COMMENT ON COLUMN whale_user_claims.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_user_claims.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_user_claims.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_user_claims.deleted_by IS '删除人';
 
-COMMENT ON TABLE whale_role_claims IS '角色声明';
 
-COMMENT ON COLUMN whale_role_claims.id IS '主键';
-COMMENT ON COLUMN whale_role_claims.role_id IS '角色标识';
-COMMENT ON COLUMN whale_role_claims.claim_type IS '声明类型';
-COMMENT ON COLUMN whale_role_claims.claim_value IS '声明值';
-COMMENT ON COLUMN whale_role_claims.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_role_claims.created_at IS '创建时间';
-COMMENT ON COLUMN whale_role_claims.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_role_claims.created_by IS '创建人';
-COMMENT ON COLUMN whale_role_claims.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_role_claims.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_role_claims.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_role_claims.deleted_by IS '删除人';
 
-COMMENT ON TABLE whale_qrtz_locks IS 'Quartz 调度锁';
 
-COMMENT ON COLUMN whale_qrtz_locks.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_locks.lock_name IS '锁名称';
 
-COMMENT ON TABLE whale_qrtz_job_details IS 'Quartz 作业详情';
 
-COMMENT ON COLUMN whale_qrtz_job_details.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_job_details.job_name IS '作业名称';
-COMMENT ON COLUMN whale_qrtz_job_details.job_group IS '作业组';
-COMMENT ON COLUMN whale_qrtz_job_details.description IS '描述';
-COMMENT ON COLUMN whale_qrtz_job_details.job_class_name IS '作业类名';
-COMMENT ON COLUMN whale_qrtz_job_details.is_durable IS '是否持久化';
-COMMENT ON COLUMN whale_qrtz_job_details.is_nonconcurrent IS '是否禁止并发';
-COMMENT ON COLUMN whale_qrtz_job_details.is_update_data IS '是否更新数据';
-COMMENT ON COLUMN whale_qrtz_job_details.requests_recovery IS '是否请求恢复';
-COMMENT ON COLUMN whale_qrtz_job_details.job_data IS '作业数据（BLOB）';
 
-COMMENT ON TABLE whale_qrtz_triggers IS 'Quartz 触发器';
 
-COMMENT ON COLUMN whale_qrtz_triggers.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_triggers.trigger_name IS '触发器名称';
-COMMENT ON COLUMN whale_qrtz_triggers.trigger_group IS '触发器组';
-COMMENT ON COLUMN whale_qrtz_triggers.job_name IS '关联作业名称';
-COMMENT ON COLUMN whale_qrtz_triggers.job_group IS '关联作业组';
-COMMENT ON COLUMN whale_qrtz_triggers.description IS '描述';
-COMMENT ON COLUMN whale_qrtz_triggers.next_fire_time IS '下次触发时间（毫秒）';
-COMMENT ON COLUMN whale_qrtz_triggers.prev_fire_time IS '上次触发时间（毫秒）';
-COMMENT ON COLUMN whale_qrtz_triggers.priority IS '优先级';
-COMMENT ON COLUMN whale_qrtz_triggers.trigger_state IS '触发器状态';
-COMMENT ON COLUMN whale_qrtz_triggers.trigger_type IS '触发器类型';
-COMMENT ON COLUMN whale_qrtz_triggers.start_time IS '开始时间（毫秒）';
-COMMENT ON COLUMN whale_qrtz_triggers.end_time IS '结束时间（毫秒）';
-COMMENT ON COLUMN whale_qrtz_triggers.calendar_name IS '日历名称';
-COMMENT ON COLUMN whale_qrtz_triggers.misfire_instr IS '错失触发策略';
-COMMENT ON COLUMN whale_qrtz_triggers.job_data IS '触发器数据（BLOB）';
 
-COMMENT ON TABLE whale_qrtz_cron_triggers IS 'Quartz Cron 触发器';
 
-COMMENT ON COLUMN whale_qrtz_cron_triggers.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_cron_triggers.trigger_name IS '触发器名称';
-COMMENT ON COLUMN whale_qrtz_cron_triggers.trigger_group IS '触发器组';
-COMMENT ON COLUMN whale_qrtz_cron_triggers.cron_expression IS 'Cron 表达式';
-COMMENT ON COLUMN whale_qrtz_cron_triggers.time_zone_id IS '时区 ID';
 
-COMMENT ON TABLE whale_qrtz_simple_triggers IS 'Quartz 简单触发器';
 
-COMMENT ON COLUMN whale_qrtz_simple_triggers.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_simple_triggers.trigger_name IS '触发器名称';
-COMMENT ON COLUMN whale_qrtz_simple_triggers.trigger_group IS '触发器组';
-COMMENT ON COLUMN whale_qrtz_simple_triggers.repeat_count IS '重复次数';
-COMMENT ON COLUMN whale_qrtz_simple_triggers.repeat_interval IS '重复间隔（毫秒）';
-COMMENT ON COLUMN whale_qrtz_simple_triggers.times_triggered IS '已触发次数';
 
-COMMENT ON TABLE whale_qrtz_blob_triggers IS 'Quartz BLOB 触发器';
 
-COMMENT ON COLUMN whale_qrtz_blob_triggers.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_blob_triggers.trigger_name IS '触发器名称';
-COMMENT ON COLUMN whale_qrtz_blob_triggers.trigger_group IS '触发器组';
-COMMENT ON COLUMN whale_qrtz_blob_triggers.blob_data IS '触发器 BLOB 数据';
 
-COMMENT ON TABLE whale_qrtz_calendars IS 'Quartz 日历';
 
-COMMENT ON COLUMN whale_qrtz_calendars.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_calendars.calendar_name IS '日历名称';
-COMMENT ON COLUMN whale_qrtz_calendars.calendar IS '日历对象（BLOB）';
 
-COMMENT ON TABLE whale_qrtz_paused_trigger_grps IS 'Quartz 暂停触发器组';
 
-COMMENT ON COLUMN whale_qrtz_paused_trigger_grps.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_paused_trigger_grps.trigger_group IS '触发器组';
 
-COMMENT ON TABLE whale_qrtz_scheduler_state IS 'Quartz 调度器状态';
 
-COMMENT ON COLUMN whale_qrtz_scheduler_state.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_scheduler_state.instance_name IS '实例名称';
-COMMENT ON COLUMN whale_qrtz_scheduler_state.last_checkin_time IS '最后检入时间（毫秒）';
-COMMENT ON COLUMN whale_qrtz_scheduler_state.checkin_interval IS '检入间隔（毫秒）';
 
-COMMENT ON TABLE whale_qrtz_fired_triggers IS 'Quartz 已触发记录';
 
-COMMENT ON COLUMN whale_qrtz_fired_triggers.sched_name IS '调度器名称';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.entry_id IS '条目 ID';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.trigger_name IS '触发器名称';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.trigger_group IS '触发器组';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.instance_name IS '实例名称';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.fired_time IS '触发时间（毫秒）';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.sched_time IS '计划时间（毫秒）';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.priority IS '优先级';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.state IS '状态';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.job_name IS '作业名称';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.job_group IS '作业组';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.is_nonconcurrent IS '是否禁止并发';
-COMMENT ON COLUMN whale_qrtz_fired_triggers.requests_recovery IS '是否请求恢复';
 
-COMMENT ON TABLE whale_tenants IS '租户';
 
-COMMENT ON COLUMN whale_tenants.id IS '主键';
-COMMENT ON COLUMN whale_tenants.name IS '租户名称';
-COMMENT ON COLUMN whale_tenants.code IS '租户代码';
-COMMENT ON COLUMN whale_tenants.description IS '租户描述';
-COMMENT ON COLUMN whale_tenants.is_active IS '是否启用';
-COMMENT ON COLUMN whale_tenants.extra_properties IS '扩展属性';
-COMMENT ON COLUMN whale_tenants.created_at IS '创建时间';
-COMMENT ON COLUMN whale_tenants.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_tenants.created_by IS '创建人';
-COMMENT ON COLUMN whale_tenants.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_tenants.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_tenants.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_tenants.deleted_by IS '删除人';
 
-COMMENT ON TABLE whale_user_tenants IS '用户租户关联';
 
-COMMENT ON COLUMN whale_user_tenants.id IS '主键';
-COMMENT ON COLUMN whale_user_tenants.user_id IS '用户标识';
-COMMENT ON COLUMN whale_user_tenants.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_user_tenants.created_at IS '创建时间';
-COMMENT ON COLUMN whale_user_tenants.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_user_tenants.created_by IS '创建人';
-COMMENT ON COLUMN whale_user_tenants.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_user_tenants.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_user_tenants.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_user_tenants.deleted_by IS '删除人';
 
-COMMENT ON TABLE whale_settings IS '系统设置';
 
-COMMENT ON COLUMN whale_settings.id IS '主键';
-COMMENT ON COLUMN whale_settings.name IS '设置键';
-COMMENT ON COLUMN whale_settings.value IS '设置值';
-COMMENT ON COLUMN whale_settings.provider_name IS '提供者类型';
-COMMENT ON COLUMN whale_settings.provider_key IS '提供者键';
-COMMENT ON COLUMN whale_settings.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_settings.description IS '描述';
-COMMENT ON COLUMN whale_settings.created_at IS '创建时间';
-COMMENT ON COLUMN whale_settings.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_settings.created_by IS '创建人';
-COMMENT ON COLUMN whale_settings.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_settings.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_settings.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_settings.deleted_by IS '删除人';
 
-COMMENT ON TABLE whale_menus IS '菜单';
 
-COMMENT ON COLUMN whale_menus.id IS '主键';
-COMMENT ON COLUMN whale_menus.code IS '菜单编码';
-COMMENT ON COLUMN whale_menus.name IS '菜单名称';
-COMMENT ON COLUMN whale_menus.display_name IS '显示名称';
-COMMENT ON COLUMN whale_menus.icon IS '图标';
-COMMENT ON COLUMN whale_menus.path IS '路由路径';
-COMMENT ON COLUMN whale_menus.component IS '前端组件路径';
-COMMENT ON COLUMN whale_menus.permission_name IS '关联权限名称';
-COMMENT ON COLUMN whale_menus.parent_id IS '父菜单 ID';
-COMMENT ON COLUMN whale_menus.sort_order IS '排序号';
-COMMENT ON COLUMN whale_menus.is_enabled IS '是否启用';
-COMMENT ON COLUMN whale_menus.is_hidden IS '是否隐藏';
-COMMENT ON COLUMN whale_menus.is_external IS '是否外链';
-COMMENT ON COLUMN whale_menus.external_url IS '外链 URL';
-COMMENT ON COLUMN whale_menus.menu_type IS '菜单类型（menu/directory）';
-COMMENT ON COLUMN whale_menus.remark IS '备注';
-COMMENT ON COLUMN whale_menus.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_menus.created_at IS '创建时间';
-COMMENT ON COLUMN whale_menus.updated_at IS '最后更新时间';
-COMMENT ON COLUMN whale_menus.created_by IS '创建人';
-COMMENT ON COLUMN whale_menus.updated_by IS '最后更新人';
-COMMENT ON COLUMN whale_menus.is_deleted IS '软删标记';
-COMMENT ON COLUMN whale_menus.deleted_at IS '删除时间';
-COMMENT ON COLUMN whale_menus.deleted_by IS '删除人';
-COMMENT ON COLUMN whale_menus.keep_alive IS '是否缓存页面';
 
-COMMENT ON TABLE whale_sequence IS '业务序号表，按 key 记录当前序号';
 
-COMMENT ON COLUMN whale_sequence.seq_key IS '序号键（如 ORDER、PATIENT、或 ORDER:2025-01-30 表示按天）';
-COMMENT ON COLUMN whale_sequence.current_value IS '当前序号值（递增后返回）';
-COMMENT ON COLUMN whale_sequence.updated_at IS '最后更新时间';
 
-COMMENT ON TABLE whale_audit_logs IS '实体变更审计日志';
 
-COMMENT ON COLUMN whale_audit_logs.id IS '主键';
-COMMENT ON COLUMN whale_audit_logs.entity_type IS '实体类型';
-COMMENT ON COLUMN whale_audit_logs.entity_id IS '实体 ID';
-COMMENT ON COLUMN whale_audit_logs.operation_type IS '操作类型';
-COMMENT ON COLUMN whale_audit_logs.user_id IS '操作人';
-COMMENT ON COLUMN whale_audit_logs.tenant_id IS '租户标识';
-COMMENT ON COLUMN whale_audit_logs.ip_address IS 'IP 地址';
-COMMENT ON COLUMN whale_audit_logs.user_agent IS 'User-Agent';
-COMMENT ON COLUMN whale_audit_logs.changes IS '变更内容';
-COMMENT ON COLUMN whale_audit_logs.created_at IS '创建时间';
 
-COMMENT ON TABLE whale_framework_runtime_state IS '框架运行时状态';
 
-COMMENT ON COLUMN whale_framework_runtime_state.id IS '主键';
-COMMENT ON COLUMN whale_framework_runtime_state.insight_code IS '洞察编码';
-COMMENT ON COLUMN whale_framework_runtime_state.category IS 'category';
-COMMENT ON COLUMN whale_framework_runtime_state.runtime_version IS 'runtime version';
-COMMENT ON COLUMN whale_framework_runtime_state.operator_user_id IS 'operator user id';
-COMMENT ON COLUMN whale_framework_runtime_state.session_started_at IS '会话开始时间';
-COMMENT ON COLUMN whale_framework_runtime_state.org_category IS '机构类别';
-COMMENT ON COLUMN whale_framework_runtime_state.org_name IS '机构名称';
-COMMENT ON COLUMN whale_framework_runtime_state.deployment_fingerprint IS '部署指纹';
-COMMENT ON COLUMN whale_framework_runtime_state.license_customer IS '许可证客户';
-COMMENT ON COLUMN whale_framework_runtime_state.license_not_after IS '许可证失效时间';
-COMMENT ON COLUMN whale_framework_runtime_state.payload_json IS '载荷 JSON';
-COMMENT ON COLUMN whale_framework_runtime_state.observed_at IS '观测时间';
-COMMENT ON COLUMN whale_framework_runtime_state.received_at IS '接收时间';
 
 -- ========== 发版合并：原 V74–V87 菜单/权限种子（whale_menus / whale_permissions）==========
 
 -- ----- V74__report_menus.sql -----
--- V74：whale-report 菜单 + Report.* 权限 + 管理员角色授权
--- 说明：V1 已写入菜单但缺少 Report.Templates.View 等权限及 role=1 授权，导致 UI 不显示
--- 结构：顶级「报表打印」目录下集中 whale-report 全部入口
+-- V74：whale-print/report 菜单 + Report.* 权限 + 管理员角色授权
+-- 说明：V1 已写入菜单但缺少 Print.Templates.View 等权限及 role=1 授权，导致 UI 不显示
+-- 结构：顶级「报表打印」目录下集中 whale-print/report 全部入口
 
 -- ========== 1. Report 权限定义 ==========
 INSERT INTO whale_permissions (
@@ -1433,22 +1475,22 @@ INSERT INTO whale_permissions (
 )
 VALUES
     ('310700000000000001', 'Report', '打印与报表', NULL,
-     'whale-report 模块入口权限分组', NULL,
+     'whale-print/report 模块入口权限分组', NULL,
      TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('310700000000000002', 'Report.Templates.View', '打印模板', 'Report',
-     '菜单入口: ReportPrintTemplate', NULL,
-     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('310700000000000003', 'Report.Templates.Design', '打印模板设计', 'Report',
-     '菜单入口: ReportTemplateDesigner', NULL,
-     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('310700000000000004', 'Report.PrintLog.View', '打印日志', 'Report',
+    ('310700000000000002', 'Print.Templates.View', '打印模板', 'BasicData',
+     '菜单入口: PrintTemplate', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-22 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000003', 'Print.Templates.Design', '打印设计器', 'BasicData',
+     '独立 hiprint 画布设计器菜单；与 PrintBinding / 业务发印无关', NULL,
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000004', 'Print.PrintLog.View', '打印日志', 'BasicData',
      '菜单入口: ReportPrintLog', NULL,
-     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+     TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-22 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('310700000000000005', 'Report.Center.View', '动态报表', 'Report',
-     '菜单入口: WhaleReportLoaderCenter', NULL,
+     '菜单入口: ReportCenter', NULL,
      TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('310700000000000006', 'Report.External.View', '外系统报告', 'Report',
-     '菜单入口: WhaleReportExternal', NULL,
+    ('310700000000000006', 'Health.ExternalDocument.View', '外系统报告', 'Report',
+     '菜单入口: ExternalDocument', NULL,
      TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL)
 ON CONFLICT (id) DO UPDATE SET
     name          = EXCLUDED.name,
@@ -1467,33 +1509,18 @@ INSERT INTO whale_menus (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
 )
 VALUES
-    ('310400000000000100', 'ReportCenter', 'ReportCenter', '报表管理', 'lucide:layout-dashboard',
+    ('310400000000000100', 'ReportManagement', 'ReportManagement', '报表管理', 'lucide:layout-dashboard',
      '/reports', '', NULL, NULL, 11, TRUE, FALSE, FALSE, '', 'directory',
-     'whale-report 打印模板 / 报表模板 / 报表中心 / 外系统报告', NULL,
-     TIMESTAMP '2026-06-03 16:00:00+00', TIMESTAMP '2026-06-13 04:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+     '报表中心 / 报表设计器 / 外系统报告（PRT 打印菜单在基础数据）', NULL,
+     TIMESTAMP '2026-06-03 16:00:00+00', TIMESTAMP '2026-06-22 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
 
-    ('310600000000000101', 'ReportPrintTemplate', 'ReportPrintTemplate', '打印模板', 'lucide:file-text',
-     '/basic/report-template', '/basic/report-template/index', 'Report.Templates.View', '310400000000000100', 1,
-     TRUE, FALSE, FALSE, '', 'menu', 'Layout 设计器 L1：flow/roll/overlay 模板列表（whale-report）', NULL,
+    ('310600000000000111', 'ReportDesigner', 'ReportDesigner', '报表设计器', 'lucide:pen-line',
+     '/reports/designer', '/report/designer/index', 'Report.Designer.View', '310400000000000100', 4,
+     TRUE, TRUE, FALSE, '', 'menu', 'C 类报表配置、PDF 模板绑定与发布（draft → published）', NULL,
      TIMESTAMP '2026-06-03 16:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
 
-    ('310600000000000102', 'ReportTemplateDesigner', 'ReportTemplateDesigner', '打印模板设计', 'lucide:layout-template',
-     '/basic/report-template/designer', '/basic/report-template/designer/index', 'Report.Templates.Design', '310400000000000100', 2,
-     TRUE, FALSE, FALSE, '', 'menu', 'Layout 设计器 L1 编辑页', NULL,
-     TIMESTAMP '2026-06-03 16:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL, FALSE),
-
-    ('310600000000000103', 'ReportPrintLog', 'ReportPrintLog', '打印日志', 'lucide:scroll-text',
-     '/basic/print-log', '/basic/print-log/index', 'Report.PrintLog.View', '310400000000000100', 3,
-     TRUE, FALSE, FALSE, '', 'menu', '打印事件明细 rpt_print_event_log', NULL,
-     TIMESTAMP '2026-06-03 16:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
-
-    ('310600000000000111', 'WhaleReportLoaderCenter', 'WhaleReportLoaderCenter', '动态报表', 'lucide:table',
-     '/reports/whale-center', '/report/center/index', 'Report.Center.View', '310400000000000100', 4,
-     TRUE, FALSE, FALSE, '', 'menu', 'whale-report C 类 ReportLoader 报表中心', NULL,
-     TIMESTAMP '2026-06-03 16:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
-
-    ('310600000000000112', 'WhaleReportExternal', 'WhaleReportExternal', '外系统报告', 'lucide:file-search',
-     '/reports/external', '/report/external/index', 'Report.External.View', '310400000000000100', 5,
+    ('310600000000000112', 'ExternalDocument', 'ExternalDocument', '外系统报告', 'lucide:file-search',
+     '/health/external-document', '/health/external-document/index', 'Health.ExternalDocument.View', '310400000000000100', 5,
      TRUE, FALSE, FALSE, '', 'menu', 'D 类 LIS/PACS 外系统报告查看', NULL,
      TIMESTAMP '2026-06-11 00:00:00+00', TIMESTAMP '2026-06-11 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
 ON CONFLICT (id) DO UPDATE SET
@@ -1514,12 +1541,12 @@ ON CONFLICT (id) DO UPDATE SET
     deleted_by      = NULL,
     updated_at      = EXCLUDED.updated_at;
 
--- V1 占位报表页（首页/院长/临床/财务）移出「报表打印」，避免与 whale-report 入口混排
+-- V1 占位报表页（首页/院长/临床/财务）移出「报表打印」，避免与 whale-print/report 入口混排
 UPDATE whale_menus
 SET parent_id   = NULL,
     sort_order  = 12,
     is_hidden   = TRUE,
-    remark      = COALESCE(remark, '') || '；V74 已迁至隐藏，whale-report 统一在「报表打印」',
+    remark      = COALESCE(remark, '') || '；V74 已迁至隐藏，whale-print/report 统一在「报表打印」',
     updated_at  = TIMESTAMP '2026-06-11 00:00:00+00'
 WHERE id IN (
     '310400000000000101',
@@ -1535,11 +1562,11 @@ INSERT INTO whale_permission_grants (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
 )
 VALUES
-    ('310800000000000001', 'Report.Templates.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('310800000000000002', 'Report.Templates.Design', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('310800000000000003', 'Report.PrintLog.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000001', 'Print.Templates.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000002', 'Print.Templates.Design', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000003', 'Print.PrintLog.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('310800000000000004', 'Report.Center.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('310800000000000005', 'Report.External.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+    ('310800000000000005', 'Health.ExternalDocument.View', 'R', '1', NULL, TIMESTAMP '2026-06-11 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
 ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
     is_deleted = FALSE,
     deleted_at = NULL,
@@ -1554,8 +1581,8 @@ INSERT INTO whale_permissions (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
 )
 VALUES (
-    '310700000000000007', 'Report.PrintBinding.View', '打印模板配置', 'Report',
-    '菜单入口: ReportPrintBinding — 院点业务场景绑定 templateCode', NULL,
+    '310700000000000007', 'Print.PrintBinding.View', '打印模板配置', 'BasicData',
+    '菜单入口: ReportPrintBinding — bindingCode→busNo', NULL,
     TIMESTAMP '2026-06-11 12:00:00+00', TIMESTAMP '2026-06-11 12:00:00+00', 1, 1, FALSE, NULL, NULL
 )
 ON CONFLICT (id) DO UPDATE SET
@@ -1575,8 +1602,8 @@ INSERT INTO whale_menus (
 )
 VALUES (
     '310600000000000104', 'ReportPrintBinding', 'ReportPrintBinding', '打印模板配置', 'lucide:link-2',
-    '/basic/print-binding', '/basic/print-binding/index', 'Report.PrintBinding.View', '310400000000000100', 2,
-    TRUE, FALSE, FALSE, '', 'menu', '院点业务场景 → templateCode 绑定（whale-report）', NULL,
+    '/basic/print-binding', '/basic/print-binding/index', 'Print.PrintBinding.View', '2000', 26,
+    TRUE, FALSE, FALSE, '', 'menu', 'PRT bindingCode→busNo 租户绑定', NULL,
     TIMESTAMP '2026-06-11 12:00:00+00', TIMESTAMP '2026-06-11 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
 )
 ON CONFLICT (id) DO UPDATE SET
@@ -1597,23 +1624,8 @@ ON CONFLICT (id) DO UPDATE SET
     deleted_by      = NULL,
     updated_at      = EXCLUDED.updated_at;
 
-UPDATE whale_menus
-SET sort_order = 3,
-    updated_at = TIMESTAMP '2026-06-11 12:00:00+00'
-WHERE id = '310600000000000103' AND is_deleted = FALSE;
-
-UPDATE whale_menus
-SET sort_order = 4,
-    updated_at = TIMESTAMP '2026-06-11 12:00:00+00'
-WHERE id = '310600000000000111' AND is_deleted = FALSE;
-
-UPDATE whale_menus
-SET sort_order = 5,
-    updated_at = TIMESTAMP '2026-06-11 12:00:00+00'
-WHERE id = '310600000000000112' AND is_deleted = FALSE;
-
 DELETE FROM whale_permission_grants
-WHERE permission_name = 'Report.PrintBinding.View'
+WHERE permission_name = 'Print.PrintBinding.View'
   AND provider_name = 'R'
   AND provider_key = '1'
   AND id <> '310800000000000006';
@@ -1623,7 +1635,7 @@ INSERT INTO whale_permission_grants (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
 )
 VALUES (
-    '310800000000000006', 'Report.PrintBinding.View', 'R', '1', NULL,
+    '310800000000000006', 'Print.PrintBinding.View', 'R', '1', NULL,
     TIMESTAMP '2026-06-11 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
 )
 ON CONFLICT (id) DO UPDATE SET
@@ -1644,7 +1656,7 @@ INSERT INTO whale_permissions (
 )
 VALUES (
     '310700000000000008', 'Report.Designer.View', '报表设计器', 'Report',
-    '菜单入口: WhaleReportDesigner — C 类报表配置与发布', NULL,
+    '菜单入口: ReportDesigner — C 类报表配置与发布', NULL,
     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL
 )
 ON CONFLICT (id) DO UPDATE SET
@@ -1659,14 +1671,14 @@ ON CONFLICT (id) DO UPDATE SET
 
 UPDATE whale_permissions
 SET display_name = '报表中心',
-    description  = '菜单入口: WhaleReportCenter — 已发布 C 类报表查询/导出/打印',
+    description  = '菜单入口: ReportCenter — 已发布 C 类报表查询/导出/打印',
     updated_at   = TIMESTAMP '2026-06-13 00:00:00+00'
 WHERE name = 'Report.Center.View'
   AND is_deleted = FALSE;
 
 UPDATE whale_menus
-SET code            = 'WhaleReportDesigner',
-    name            = 'WhaleReportDesigner',
+SET code            = 'ReportDesigner',
+    name            = 'ReportDesigner',
     display_name    = '报表设计器',
     icon            = 'lucide:pen-line',
     path            = '/reports/designer',
@@ -1684,7 +1696,7 @@ INSERT INTO whale_menus (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
 )
 VALUES (
-    '310600000000000113', 'WhaleReportCenter', 'WhaleReportCenter', '报表中心', 'lucide:table-2',
+    '310600000000000113', 'ReportCenter', 'ReportCenter', '报表中心', 'lucide:table-2',
     '/reports/center', '/report/center/index', 'Report.Center.View', '310400000000000100', 5,
     TRUE, FALSE, FALSE, '', 'menu', '已发布 C 类报表：查询、Excel/PDF 导出、打印预览与打印', NULL,
     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
@@ -1714,7 +1726,7 @@ WHERE id = '310600000000000112'
   AND is_deleted = FALSE;
 
 UPDATE whale_menus
-SET remark = 'whale-report 打印模板 / 日志 / 报表设计器 / 报表中心 / 外系统报告',
+SET remark = 'whale-print/report 打印模板 / 日志 / 报表设计器 / 报表中心 / 外系统报告',
     updated_at = TIMESTAMP '2026-06-13 00:00:00+00'
 WHERE id = '310400000000000100'
   AND is_deleted = FALSE;
@@ -1751,7 +1763,7 @@ INSERT INTO whale_permissions (
 )
 VALUES (
     '310700000000000009', 'Report.Definition.View', '报表模板', 'Report',
-    '菜单入口: WhaleReportTemplate — C 类报表 CRUD', NULL,
+    '菜单入口: ReportTemplate — C 类报表 CRUD', NULL,
     TIMESTAMP '2026-06-13 12:00:00+00', TIMESTAMP '2026-06-13 12:00:00+00', 1, 1, FALSE, NULL, NULL
 )
 ON CONFLICT (id) DO UPDATE SET
@@ -1760,7 +1772,7 @@ ON CONFLICT (id) DO UPDATE SET
 
 UPDATE whale_permissions
 SET display_name = '报表设计器',
-    description = '菜单入口: WhaleReportDesigner — SQL/表头/表底/筛选器设计',
+    description = '菜单入口: ReportDesigner — SQL/表头/表底/筛选器设计',
     updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
 WHERE name = 'Report.Designer.View' AND is_deleted = FALSE;
 
@@ -1770,7 +1782,7 @@ INSERT INTO whale_menus (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
 )
 VALUES (
-    '310600000000000114', 'WhaleReportTemplate', 'WhaleReportTemplate', '报表模板', 'lucide:file-spreadsheet',
+    '310600000000000114', 'ReportTemplate', 'ReportTemplate', '报表模板', 'lucide:file-spreadsheet',
     '/reports/report-template', '/report/template/index', 'Report.Definition.View', '310400000000000100', 4,
     TRUE, FALSE, FALSE, '', 'menu', 'C 类报表增删改查（类比打印模板列表）', NULL,
     TIMESTAMP '2026-06-13 12:00:00+00', TIMESTAMP '2026-06-13 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
@@ -1783,8 +1795,8 @@ ON CONFLICT (id) DO UPDATE SET
 
 UPDATE whale_menus
 SET sort_order = 5,
-    is_hidden = TRUE,
-    remark = 'C 类报表设计（从报表模板「设计」进入；编辑 SQL/表头/表底）',
+    is_hidden  = TRUE,
+    remark     = 'C 类报表设计编辑页（可从报表模板「设计」进入）',
     updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
 WHERE id = '310600000000000111' AND is_deleted = FALSE;
 
@@ -1797,7 +1809,7 @@ SET sort_order = 7, updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
 WHERE id = '310600000000000112' AND is_deleted = FALSE;
 
 UPDATE whale_menus
-SET remark = 'whale-report 打印模板 / 报表模板 / 报表中心 / 外系统报告',
+SET remark = 'whale-print/report 打印模板 / 报表模板 / 报表中心 / 外系统报告',
     updated_at = TIMESTAMP '2026-06-13 12:00:00+00'
 WHERE id = '310400000000000100' AND is_deleted = FALSE;
 
@@ -2154,6 +2166,21 @@ ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
     deleted_by = NULL,
     updated_at = TIMESTAMP '2026-06-17 00:00:00+00';
 
+-- 代理登录：系统管理员（R / 1）授予用户代理权限
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '10074', 'Identity.Users.Impersonate', 'R', '1', NULL,
+    TIMESTAMP '2026-06-09 04:17:09.507+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-09 04:17:09.507+00';
+
 -- Report 模块：补管理员角色对 Report 分组权限（与 Booking 模块 Booking 分组授权同构）
 INSERT INTO whale_permission_grants (
     id, permission_name, provider_name, provider_key,
@@ -2374,3 +2401,461 @@ ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
     deleted_at = NULL,
     deleted_by = NULL,
     updated_at = TIMESTAMP '2026-06-17 00:00:00+00';
+
+
+-- ----- incremental whale seeds (from git HEAD V77–V98, INSERT only) -----
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310500000000000106', 'ChsMedicalInfoQuery', 'ChsMedicalInfoQuery', '医保信息查询', 'lucide:search',
+    '/chs/medical-info-query', '/chs/medical-info-query/index', '', '310500000000000100', 4,
+    TRUE, FALSE, FALSE, '', 'menu', '5201–5206 就诊/结算/慢特病/累计查询', NULL,
+    TIMESTAMP '2026-06-15 12:00:00+00', TIMESTAMP '2026-06-15 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310700000000000010', 'Navigation.ChsNationalCatalog', '国家目录查询', 'Navigation',
+     '菜单入口: ChsNationalCatalog', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', TIMESTAMP '2026-06-15 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000011', 'Navigation.ChsCatalogDownload', '目录文件下载', 'Navigation',
+     '菜单入口: ChsCatalogDownload', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', TIMESTAMP '2026-06-15 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000012', 'Navigation.ChsReconciliation', '对账清算', 'Navigation',
+     '菜单入口: ChsReconciliation', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', TIMESTAMP '2026-06-15 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000013', 'Navigation.ChsCatalogMappingWorkbench', '目录对码工作台', 'Navigation',
+     '菜单入口: ChsCatalogMappingWorkbench', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', TIMESTAMP '2026-06-15 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000014', 'Navigation.ChsInventoryOps', '进销存运维', 'Navigation',
+     '菜单入口: ChsInventoryOps', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', TIMESTAMP '2026-06-15 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000015', 'Navigation.ChsMedicalInfoQuery', '医保信息查询', 'Navigation',
+     '菜单入口: ChsMedicalInfoQuery — 5201–5206', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', TIMESTAMP '2026-06-15 12:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310800000000000010', 'Navigation.ChsNationalCatalog', 'R', '1', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000011', 'Navigation.ChsCatalogDownload', 'R', '1', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000012', 'Navigation.ChsReconciliation', 'R', '1', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000013', 'Navigation.ChsCatalogMappingWorkbench', 'R', '1', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000014', 'Navigation.ChsInventoryOps', 'R', '1', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000015', 'Navigation.ChsMedicalInfoQuery', 'R', '1', NULL,
+     TIMESTAMP '2026-06-15 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO NOTHING;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '1010', 'job_management', 'JobManagement', '定时任务', 'lucide:timer',
+    '/system/job', '/system/job/index', 'Navigation.JobManagement', '1000', 7,
+    TRUE, FALSE, FALSE, '', 'menu', 'Quartz 定时任务管理（whale_qrtz_*）', NULL,
+    TIMESTAMP '2026-06-18 12:00:00+00', TIMESTAMP '2026-06-18 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '330000000000000001', 'Navigation.JobManagement', '定时任务', 'Navigation',
+    '菜单入口: job_management', NULL,
+    TIMESTAMP '2026-06-18 12:00:00+00', TIMESTAMP '2026-06-18 12:00:00+00',
+    1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '330000000000000002', 'Navigation.JobManagement', 'R', '1', NULL,
+    TIMESTAMP '2026-06-18 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (permission_name, provider_name, provider_key) DO NOTHING;
+
+INSERT INTO whale_qrtz_job_details (
+    sched_name, job_name, job_group, description, job_class_name,
+    is_durable, is_nonconcurrent, is_update_data, requests_recovery, job_data
+) VALUES (
+    'WhaleScheduler',
+    '住院滚费',
+    'DEFAULT',
+    '住院滚费',
+    'com.openhis.whale.core.infrastructure.job.QuartzDisallowConcurrentJobAdapter',
+    false,
+    true,
+    false,
+    false,
+    '\x230d0a23547565204a756e2032332031343a32323a32302043535420323032360d0a6a6f624265616e4e616d653d6e7572736553746174696f6e496e70617469656e7442696c6c696e672f65786563757465496e70617469656e744175746f526f6c6c4a6f620d0a646973706c61794e616d653d5c75344634465c75393636325c75364544415c75384433390d0a74656e616e7449643d310d0a6d697366697265506f6c6963793d44454641554c540d0a636f6e63757272656e74506f6c6963793d444953414c4c4f570d0a'::bytea
+) ON CONFLICT (sched_name, job_name, job_group) DO NOTHING;
+
+INSERT INTO whale_qrtz_triggers (
+    sched_name, trigger_name, trigger_group, job_name, job_group,
+    description, next_fire_time, prev_fire_time, priority,
+    trigger_state, trigger_type, start_time, end_time,
+    calendar_name, misfire_instr, job_data
+) VALUES (
+    'WhaleScheduler',
+    '住院滚费_trigger',
+    'DEFAULT',
+    '住院滚费',
+    'DEFAULT',
+    NULL,
+    0,
+    -1,
+    5,
+    'PAUSED',
+    'CRON',
+    (EXTRACT(EPOCH FROM TIMESTAMP '2026-01-01 00:00:00+08') * 1000)::bigint,
+    0,
+    NULL,
+    0,
+    NULL
+) ON CONFLICT (sched_name, trigger_name, trigger_group) DO NOTHING;
+
+INSERT INTO whale_qrtz_cron_triggers (
+    sched_name, trigger_name, trigger_group, cron_expression, time_zone_id
+) VALUES (
+    'WhaleScheduler',
+    '住院滚费_trigger',
+    'DEFAULT',
+    '0 5 0 * * ?',
+    'Asia/Shanghai'
+) ON CONFLICT (sched_name, trigger_name, trigger_group) DO NOTHING;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310400000000000122', 'ReportCenterRoot', 'ReportCenterRoot', '报表中心', 'lucide:layout-dashboard',
+    '/report-center', '', NULL, NULL, 11,
+    TRUE, FALSE, FALSE, '', 'directory', 'HIS 报表中心（门诊费用明细等）', NULL,
+    TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310400000000000123', 'ConfigManagementRoot', 'ConfigManagementRoot', '配置管理', 'lucide:settings-2',
+    '/config', '', NULL, NULL, 12,
+    TRUE, FALSE, FALSE, '', 'directory', 'HIS 配置管理（病历/执行地点/组套/取药科室/耗材绑定等）', NULL,
+    TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310400000000000124', 'PrintManagementRoot', 'PrintManagementRoot', '打印管理', 'lucide:printer',
+    '/print', '', NULL, NULL, 16,
+    TRUE, FALSE, FALSE, '', 'directory', 'HIS 打印管理（模板/绑定/日志）', NULL,
+    TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310900000000000012', 'Booking.SlotCalendar.View', '号源日历', 'Booking',
+    '菜单入口: BookingSlotCalendar', NULL,
+    TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310700000000000016', 'ConfigManagement', '配置管理', NULL,
+     'HIS 配置管理入口权限分组（病历/执行地点/组套/取药科室/耗材绑定）', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000017', 'PrintManagement', '打印管理', NULL,
+     'HIS 打印管理入口权限分组（PRT 模板/绑定/日志）', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000018', 'ReportCenter', '报表中心', NULL,
+     'HIS 报表中心入口权限分组（门诊费用明细等）', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT 310800000000000037, 'Booking.SlotCalendar.View', 'R', '1', NULL,
+       TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+WHERE NOT EXISTS (
+    SELECT 1 FROM whale_permission_grants
+    WHERE permission_name = 'Booking.SlotCalendar.View'
+      AND provider_name = 'R'
+      AND provider_key = '1'
+      AND is_deleted = FALSE
+);
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310800000000000016', 'ConfigManagement', 'R', '1', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000017', 'PrintManagement', 'R', '1', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000018', 'ReportCenter', 'R', '1', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO NOTHING;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310800000000000020', 'Navigation.WarehouseManagement', 'R', '13', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO NOTHING;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT 310800000000000019, 'Booking.OutpatientSchedule.View', 'R', '10', '1',
+       TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL
+WHERE NOT EXISTS (
+    SELECT 1 FROM whale_permission_grants
+    WHERE permission_name = 'Booking.OutpatientSchedule.View'
+      AND provider_name = 'R'
+      AND provider_key = '10'
+      AND is_deleted = FALSE
+);
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT 310800000000000036, 'Booking.SlotCalendar.View', 'R', '10', '1',
+       TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL
+WHERE NOT EXISTS (
+    SELECT 1 FROM whale_permission_grants
+    WHERE permission_name = 'Booking.SlotCalendar.View'
+      AND provider_name = 'R'
+      AND provider_key = '10'
+      AND is_deleted = FALSE
+);
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310800000000000022', 'Booking.Template.View', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000023', 'Navigation.ChsCatalogDownload', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000024', 'Navigation.ChsCatalogMappingWorkbench', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000025', 'Navigation.ChsInventoryOps', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000026', 'Navigation.ChsMedicalInfoQuery', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000027', 'Navigation.ChsNationalCatalog', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000028', 'Navigation.ChsReconciliation', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000029', 'Navigation.JobManagement', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000030', 'Navigation.Opfeedetail', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000031', 'Navigation.SpecimenDefinition', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000032', 'Print.PrintBinding.View', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000033', 'Print.PrintLog.View', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310800000000000034', 'Print.Templates.View', 'R', '323022177255297024', '1',
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO NOTHING;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+SELECT 310800000000000035, 'Booking.SlotCalendar.View', 'R', '323022177255297024', '1',
+       TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL
+WHERE NOT EXISTS (
+    SELECT 1 FROM whale_permission_grants
+    WHERE permission_name = 'Booking.SlotCalendar.View'
+      AND provider_name = 'R'
+      AND provider_key = '323022177255297024'
+      AND is_deleted = FALSE
+);
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES (
+    '310500000000000107', 'ChsPlatformDict', 'ChsPlatformDict', '平台字典(1901)', 'lucide:map',
+    '/chs/platform-dict', '/chs/platform-dict/index', 'Navigation.ChsPlatformDict', '310500000000000100', 7,
+    TRUE, FALSE, FALSE, '', 'menu', '1901 医保区划等字典手动同步与本地镜像查询', NULL,
+    TIMESTAMP '2026-06-24 12:00:00+00', TIMESTAMP '2026-06-24 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310700000000000016', 'Navigation.ChsPlatformDict', '平台字典(1901)', 'Navigation',
+    '菜单入口: ChsPlatformDict — 1901 参保地医保区划字典', NULL,
+    TIMESTAMP '2026-06-24 12:00:00+00', TIMESTAMP '2026-06-24 12:00:00+00', 1, 1, FALSE, NULL, NULL
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES (
+    '310800000000000016', 'Navigation.ChsPlatformDict', 'R', '1', NULL,
+    TIMESTAMP '2026-06-24 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL
+)
+ON CONFLICT (permission_name, provider_name, provider_key) DO NOTHING;
+
+INSERT INTO whale_roles (
+    id, name, display_name, code, description, is_default, is_static,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+) VALUES
+    ('15', 'medical_technician', '医技', 'ROLE_MEDICAL_TECH', '医技人员，负责检验检查等医技工作', true, true, NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
+    ('16', 'staff_other', '其他', 'ROLE_STAFF_OTHER', '其他岗位人员（老库 STAFF_TYPE=1）', true, true, NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO whale_role_claims (
+    id, role_id, claim_type, claim_value, tenant_id,
+    created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+) VALUES
+    ('105023', '15', 'AssignmentScope', 'ORG', NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
+    ('105024', '15', 'StaffScope', 'DOCTOR_VISIT_ORG', NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
+    ('105025', '16', 'AssignmentScope', 'ORG', NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
+    ('105026', '11', 'StaffScope', 'NURSE_ORG', NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL)
+ON CONFLICT (id) DO NOTHING;
+
+-- ----- seed sync from DB (whale_permission_grants, 19 rows) -----
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('310800000000000035', 'Booking.SlotCalendar.View', 'R', '323022177255297024', '1', '2026-06-25 04:00:00.000+00', NULL, '1', NULL, false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('310800000000000036', 'Booking.SlotCalendar.View', 'R', '10', '1', '2026-06-25 04:00:00.000+00', NULL, '1', NULL, false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('310800000000000037', 'Booking.SlotCalendar.View', 'R', '1', NULL, '2026-06-25 04:00:00.000+00', NULL, '1', NULL, false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376340131614720', 'Navigation.ChsCatalogDownload', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.424+00', '2026-06-25 03:30:20.424+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376340148391936', 'Navigation.ChsInventoryOps', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.428+00', '2026-06-25 03:30:20.428+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376340169363456', 'Print.PrintBinding.View', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.433+00', '2026-06-25 03:30:20.433+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376340186140672', 'Navigation.SpecimenDefinition', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.437+00', '2026-06-25 03:30:20.437+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376340202917888', 'Navigation.ChsReconciliation', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.441+00', '2026-06-25 03:30:20.441+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376340223889408', 'Navigation.ChsCatalogMappingWorkbench', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.446+00', '2026-06-25 03:30:20.446+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376340240666624', 'Print.Templates.View', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.450+00', '2026-06-25 03:30:20.450+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376340257443840', 'Print.PrintLog.View', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.454+00', '2026-06-25 03:30:20.454+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376340274221056', 'Navigation.ChsNationalCatalog', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.458+00', '2026-06-25 03:30:20.458+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376340290998272', 'Navigation.ChsMedicalInfoQuery', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.463+00', '2026-06-25 03:30:20.463+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376340311969792', 'Booking.Template.View', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.467+00', '2026-06-25 03:30:20.467+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376340328747008', 'Navigation.JobManagement', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.471+00', '2026-06-25 03:30:20.471+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376340349718528', 'Booking.OutpatientSchedule.View', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.476+00', '2026-06-25 04:00:00.000+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376340366495744', 'Navigation.Opfeedetail', 'R', '323022177255297024', '1', '2026-06-25 03:30:20.480+00', '2026-06-25 03:30:20.480+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376625457532928', 'Booking.OutpatientSchedule.View', 'R', '10', '1', '2026-06-25 03:31:28.451+00', '2026-06-25 04:00:00.000+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "whale_permission_grants" ("id", "permission_name", "provider_name", "provider_key", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by")
+VALUES ('328376866273497088', 'Navigation.WarehouseManagement', 'R', '13', '1', '2026-06-25 03:32:25.866+00', '2026-06-25 03:32:25.866+00', '1', '1', false, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;

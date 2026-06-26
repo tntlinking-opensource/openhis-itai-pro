@@ -92,7 +92,7 @@ server:
 
 # Whale Framework配置
 app:
-  version: 1.0.0-SNAPSHOT
+  version: 2.0.2-SNAPSHOT
   jwt:
     secret: ${JWT_SECRET:whale-health-secret-key-32-characters-long}
     access-token-expiration: 7200000  # 2小时，单位：毫秒
@@ -124,26 +124,45 @@ app:
   rate-limit:
     enabled: false  # 是否启用限流（生产环境建议启用）
     max-requests-per-minute: 100  # 每分钟最大请求数
+
+  logging:
+    api-params-enabled: true  # 控制台打印 /api/app 请求体（whale.access）
+    api-params-max-length: 2000  # 超长 JSON 截断，避免刷屏
   
   quartz:
     enabled: true
 
-# 日志配置
+# 日志配置：启动阶段保留关键进度；运行期以访问摘要 + 异常/慢请求为主
 logging:
   level:
     root: INFO
-    com.openhis.whale: DEBUG  # 框架代码使用 DEBUG，便于开发调试
-    com.openhis.whale.core.infrastructure.cache.IndexedCacheService: WARN  # 启动预热字典时避免批量缓存 DEBUG 刷屏
-    com.openhis.health: DEBUG
-    org.springframework.boot: WARN  # Spring Boot 自动配置日志改为 WARN，减少启动日志噪音
-    org.springframework.jdbc: WARN  # JDBC 日志改为 WARN
-    org.flywaydb: INFO  # Flyway 日志改为 INFO，只显示关键信息
-    org.hibernate: WARN  # Hibernate 日志改为 WARN，减少 SQL 日志输出
-    org.hibernate.orm.connections.pooling: ERROR  # 隐藏连接池信息日志（那些 unknown 信息）
-    org.hibernate.engine.jdbc.env.internal: WARN  # 减少数据库环境信息日志
-    org.hibernate.SQL: DEBUG # 打印SQL
-    org.hibernate.orm.jdbc.bind: TRACE # Hibernate 6+ 打印SQL绑定参数
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE # 打印SQL参数（若有）
+    whale.startup: INFO  # 启动里程碑：Flyway、缓存预热、端口就绪
+    whale.access: INFO  # API 访问摘要：POST /api/app/xxx/yyy -> 200 125ms user=1 tenant=2
+    com.openhis.whale: INFO
+    com.openhis.health: INFO
+    # --- 压制运行期噪音（不影响 WARN/ERROR）---
+    com.openhis.whale.core.infrastructure.cache.IndexedCacheService: WARN
+    com.openhis.whale.web.api.AppServiceControllerRegistrar: WARN
+    com.openhis.whale.web.config.DynamicOpenApiCustomizer: WARN
+    com.openhis.whale.web.config.OpenApiConfig: WARN
+    com.openhis.whale.web.config.SwaggerDiagnosticInterceptor: WARN
+    com.openhis.whale.identity.application.AuthAppService: WARN  # 登录流程细节不刷屏
+    org.springframework.boot: INFO  # Starting / Started WhaleHealthApplication in X seconds
+    org.springframework.jdbc: WARN
+    org.springframework.orm: WARN
+    org.springframework.data: WARN
+    org.springframework.web: WARN
+    org.springframework.web.servlet: WARN
+    org.flywaydb: INFO  # 迁移脚本执行明细
+    org.hibernate: WARN
+    org.hibernate.orm.connections.pooling: ERROR
+    org.hibernate.engine.jdbc.env.internal: WARN
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    org.quartz: WARN
+    com.zaxxer.hikari: INFO  # 连接池 Starting / Start completed
+    org.springdoc: WARN
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{requestId}] [%X{tenantId}] [%X{userId}] %logger{36} - %msg%n"
   file:
@@ -190,11 +209,25 @@ openhis:
     mrms:
       enabled: true
     chs:
+      enabled: true
+    elep:
       enabled: false
     report:
       enabled: true
     booking:
       enabled: true
+
+    # CHS 部署：embedded 同 JVM（chs-jilin-starter）；remote 分机（chs-jilin-http-starter）
+  chs:
+    deployment:
+      mode: embedded          # embedded | remote
+      remote:
+        base-url: http://127.0.0.1:8091
+        api-key: ${CHS_API_KEY:}
+    inventory:
+      upload-enabled: true
+      # default-contract-bus-no: <fin_contract.bus_no>  # 多契约机构必填
+
 whale:
   cache:
     concept:
@@ -218,6 +251,9 @@ spring:
   config:
     activate:
       on-profile: prod
+app:
+  logging:
+    api-params-enabled: false
 springdoc:
   api-docs:
     enabled: false

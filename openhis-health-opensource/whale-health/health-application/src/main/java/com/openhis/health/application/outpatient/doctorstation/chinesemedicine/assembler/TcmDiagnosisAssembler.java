@@ -18,7 +18,7 @@
 package com.openhis.health.application.outpatient.doctorstation.chinesemedicine.assembler;
 
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.dto.TcmDiagnosisGroupRowDto;
-import com.openhis.health.bridge.shared.diagnosis.DiagnosisJsonSnapshotParser;
+import com.openhis.health.module.shared.diagnosis.DiagnosisJsonSnapshotParser;
 import com.openhis.health.domain.administration.encounter.queries.model.TcmEncounterDiagnosisAssociationQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;

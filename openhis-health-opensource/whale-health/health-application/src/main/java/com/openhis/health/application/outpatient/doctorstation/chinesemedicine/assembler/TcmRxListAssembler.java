@@ -4,6 +4,8 @@
 
 package com.openhis.health.application.outpatient.doctorstation.chinesemedicine.assembler;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.dto.TcmRxHeaderDto;
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.dto.TcmRxHistoryRowDto;
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.dto.TcmRxLineDto;
@@ -32,7 +34,8 @@ import com.openhis.health.module.common.assembler.product.ProductDefinitionCatal
 import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.domain.share.enums.ChargeItemStatus;
+import com.openhis.health.domain.share.enums.RequestStatus;
+import com.openhis.health.domain.share.utils.EnumUtil;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
@@ -96,6 +99,9 @@ public class TcmRxListAssembler {
         }
         Map<Long, String> medicationNameById = this.loadMedicationNames(medicationIds);
         TcmLineChargeEnrich chargeEnrich = this.loadLineChargeEnrich(requestIds);
+        Long encounterId = this.resolveEncounterIdFromGroups(groups);
+        Map<String, String> decoctionChargeByPrescriptionNo =
+            this.loadDecoctionChargeStatusByPrescriptionNo(encounterId, groups);
         Map<String, String> tcmMethodLabelByCode =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.TCM_METHOD_CODE);
         Map<String, String> westernMethodLabelByCode =
@@ -161,6 +167,7 @@ public class TcmRxListAssembler {
                 }
             }
             header.setLines(lineDtos);
+            this.applyHeaderDisplayStatus(header, group, chargeEnrich, decoctionChargeByPrescriptionNo);
             result.add(header);
         }
         return result;
@@ -188,7 +195,7 @@ public class TcmRxListAssembler {
             }
         }
         Map<Long, String> medicationNameById = this.loadMedicationNames(medicationIds);
-        String keywordTrimmed = StringUtils.trimToEmpty(keyword).toLowerCase();
+        String keywordTrimmed = trimToEmpty(keyword).toLowerCase();
         for (TcmHerbalPrescriptionHistoryGroupQueryModel group : groups) {
             List<String> medicationNames = new ArrayList<>();
             for (Long medicationId : group.getMedicationIds()) {
@@ -366,9 +373,10 @@ public class TcmRxListAssembler {
      */
     private TcmLineChargeEnrich loadLineChargeEnrich(Set<Long> requestIds) {
         Map<Long, String> statusTextByRequestId = new HashMap<>();
+        Map<Long, String> chargeStatusEnumByRequestId = new HashMap<>();
         Map<Long, BigDecimal> unitPriceByRequestId = new HashMap<>();
         if (requestIds == null || requestIds.isEmpty()) {
-            return new TcmLineChargeEnrich(statusTextByRequestId, unitPriceByRequestId);
+            return new TcmLineChargeEnrich(statusTextByRequestId, chargeStatusEnumByRequestId, unitPriceByRequestId);
         }
         ChargeItemQueryCommand cmd = new ChargeItemQueryCommand();
         cmd.setServiceIds(new ArrayList<>(requestIds));
@@ -387,16 +395,8 @@ public class TcmRxListAssembler {
             }
             Long requestId = chargeItem.getServiceId();
             String current = rollupStatusByRequestId.get(requestId);
-            String incoming = chargeItem.getStatusEnum();
-            // 收费态 rollup：已结算优先，否则保留首个非空态
-            if (ChargeItemStatus.SETTLED.getCode().equals(incoming)) {
-                rollupStatusByRequestId.put(requestId, incoming);
-            } else if (current == null) {
-                rollupStatusByRequestId.put(requestId, incoming);
-            } else if (ChargeItemStatus.PLANNED.getCode().equals(incoming)
-                && !ChargeItemStatus.SETTLED.getCode().equals(current)) {
-                rollupStatusByRequestId.put(requestId, incoming);
-            }
+            rollupStatusByRequestId.put(requestId, AdviceChargeDisplayStatusSupport.mergeChargeStatusForRollup(
+                current, chargeItem.getStatusEnum()));
             TcmChargePrimaryRow primary = primaryByRequestId.get(requestId);
             if (primary == null) {
                 primaryByRequestId.put(requestId, TcmChargePrimaryRow.from(chargeItem));
@@ -406,6 +406,7 @@ public class TcmRxListAssembler {
             }
         }
         for (Map.Entry<Long, String> entry : rollupStatusByRequestId.entrySet()) {
+            chargeStatusEnumByRequestId.put(entry.getKey(), entry.getValue());
             statusTextByRequestId.put(entry.getKey(),
                 AdviceChargeDisplayStatusSupport.resolveChargeStatusDisplayTextForAdviceList(entry.getValue()));
         }
@@ -414,12 +415,121 @@ public class TcmRxListAssembler {
                 unitPriceByRequestId.put(entry.getKey(), entry.getValue().unitPrice);
             }
         }
-        return new TcmLineChargeEnrich(statusTextByRequestId, unitPriceByRequestId);
+        return new TcmLineChargeEnrich(statusTextByRequestId, chargeStatusEnumByRequestId, unitPriceByRequestId);
     }
 
-    /** 中药行费用 enrich 中间态：展示文案 + 已落库单价。 */
+    /**
+     * 从方聚合读模型取就诊主键（同次列表查询下各方归属同一就诊）。
+     */
+    private Long resolveEncounterIdFromGroups(List<TcmHerbalPrescriptionGroupQueryModel> groups) {
+        if (groups == null) {
+            return null;
+        }
+        for (TcmHerbalPrescriptionGroupQueryModel group : groups) {
+            if (group.getLines() == null) {
+                continue;
+            }
+            for (MedicationRequestListQueryModel line : group.getLines()) {
+                if (line != null && line.getEncounterId() != null) {
+                    return line.getEncounterId();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 按处方号归并同方代煎 companion 诊疗收费态（锚定 {@code wkf_service_request}）。
+     */
+    private Map<String, String> loadDecoctionChargeStatusByPrescriptionNo(
+        Long encounterId,
+        List<TcmHerbalPrescriptionGroupQueryModel> groups
+    ) {
+        Map<String, String> result = new HashMap<>();
+        if (encounterId == null || groups == null || groups.isEmpty()) {
+            return result;
+        }
+        Set<String> prescriptionNos = new HashSet<>();
+        for (TcmHerbalPrescriptionGroupQueryModel group : groups) {
+            if (!Boolean.TRUE.equals(group.getSufferingFlag())) {
+                continue;
+            }
+            if (StringUtils.isBlank(group.getPrescriptionNo())) {
+                continue;
+            }
+            prescriptionNos.add(group.getPrescriptionNo().trim());
+        }
+        if (prescriptionNos.isEmpty()) {
+            return result;
+        }
+        ChargeItemQueryCommand cmd = new ChargeItemQueryCommand();
+        cmd.setEncounterId(encounterId);
+        List<ChargeItem> chargeItems = chargeItemQueryService.listChargeItemsByEncounterId(cmd);
+        for (ChargeItem chargeItem : chargeItems) {
+            if (chargeItem == null || Boolean.TRUE.equals(chargeItem.getIsDeleted())) {
+                continue;
+            }
+            if (!TableNameConstants.WKF_SERVICE_REQUEST.equals(chargeItem.getServiceTable())) {
+                continue;
+            }
+            if (StringUtils.isBlank(chargeItem.getPrescriptionNo())) {
+                continue;
+            }
+            String prescriptionNo = chargeItem.getPrescriptionNo().trim();
+            if (!prescriptionNos.contains(prescriptionNo)) {
+                continue;
+            }
+            String current = result.get(prescriptionNo);
+            result.put(prescriptionNo, AdviceChargeDisplayStatusSupport.mergeChargeStatusForRollup(
+                current, chargeItem.getStatusEnum()));
+        }
+        return result;
+    }
+
+    /**
+     * 方头「状态」列展示态：药材行与代煎 companion 收费退费态优先于请求态。
+     */
+    private void applyHeaderDisplayStatus(
+        TcmRxHeaderDto header,
+        TcmHerbalPrescriptionGroupQueryModel group,
+        TcmLineChargeEnrich chargeEnrich,
+        Map<String, String> decoctionChargeByPrescriptionNo
+    ) {
+        String headerChargeStatus = null;
+        if (group.getLines() != null) {
+            for (MedicationRequestListQueryModel line : group.getLines()) {
+                if (line == null || line.getId() == null) {
+                    continue;
+                }
+                headerChargeStatus = AdviceChargeDisplayStatusSupport.mergeChargeStatusForRollup(
+                    headerChargeStatus, chargeEnrich.chargeStatusEnumByRequestId().get(line.getId()));
+            }
+        }
+        if (Boolean.TRUE.equals(group.getSufferingFlag()) && StringUtils.isNotBlank(group.getPrescriptionNo())) {
+            String decoctionCharge = decoctionChargeByPrescriptionNo.get(group.getPrescriptionNo().trim());
+            headerChargeStatus = AdviceChargeDisplayStatusSupport.mergeChargeStatusForRollup(
+                headerChargeStatus, decoctionCharge);
+        }
+        String requestStatus = StringUtils.defaultIfBlank(header.getStatusEnum(), "");
+        AdviceChargeDisplayStatusSupport.ListDisplayStatus display =
+            AdviceChargeDisplayStatusSupport.resolveAdviceListDisplayStatus(
+                requestStatus, resolveRequestStatusDisplay(requestStatus), headerChargeStatus);
+        header.setDisplayStatusEnum(display.displayStatusEnum());
+        header.setDisplayStatusEnumText(display.displayStatusEnumText());
+    }
+
+    private static String resolveRequestStatusDisplay(String statusEnum) {
+        RequestStatus parsed = EnumUtil.fromCode(RequestStatus.class, statusEnum);
+        if (parsed != null) {
+            return parsed.getDisplay();
+        }
+        return StringUtils.defaultIfBlank(statusEnum, "");
+    }
+
+    /** 中药行费用 enrich 中间态：展示文案 + 收费态码 + 已落库单价。 */
     private record TcmLineChargeEnrich(
         Map<Long, String> statusTextByRequestId,
+        Map<Long, String> chargeStatusEnumByRequestId,
         Map<Long, BigDecimal> unitPriceByRequestId
     ) {
     }

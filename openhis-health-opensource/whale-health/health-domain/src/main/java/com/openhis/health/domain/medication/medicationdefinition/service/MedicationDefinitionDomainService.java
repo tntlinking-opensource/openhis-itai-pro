@@ -166,11 +166,8 @@ public class MedicationDefinitionDomainService {
             }
             MedicationDefinition definition = new MedicationDefinition();
             // 业务分支：空值校验失败则跳过该行计入失败。
-            if (StringUtils.isBlank(row.getBusNo())) {
-                definition.setBusNo(businessSequenceService.getSeq(AggregateTypeConstants.MEDICATION_DEFINITION, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
-            } else {
-                definition.setBusNo(row.getBusNo());
-            }
+            definition.setBusNo(businessSequenceService.getSeq(
+                AggregateTypeConstants.MEDICATION_DEFINITION, BusinessSequenceConstants.MASTER_DATA_2_PREFIX_SEQ_LENGTH));
             definition.setName(row.getName());
             definition.setCategoryCode(row.getCategoryCode());
             definition.setPurchaseUnitCode(row.getPurchaseUnitCode());
@@ -258,9 +255,8 @@ public class MedicationDefinitionDomainService {
     private void fillDefinitionFromCreateItem(
         MedicationDefinition definition,
         CreateMedicationDefinitionCommand.CreateMedicationDefinitionItemCommand item) {
-        definition.setBusNo(StringUtils.defaultIfBlank(
-            item.getBusNo(),
-            businessSequenceService.getSeq(AggregateTypeConstants.MEDICATION_DEFINITION, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH)));
+        definition.setBusNo(businessSequenceService.getSeq(
+            AggregateTypeConstants.MEDICATION_DEFINITION, BusinessSequenceConstants.MASTER_DATA_2_PREFIX_SEQ_LENGTH));
         definition.setVersion(StringUtils.defaultIfBlank(item.getVersion(), "1"));
         definition.setName(item.getName());
         definition.setMerchandiseName(item.getMerchandiseName());
@@ -326,7 +322,6 @@ public class MedicationDefinitionDomainService {
     private void fillDefinitionFromEditItem(
         MedicationDefinition definition,
         EditMedicationDefinitionCommand.EditMedicationDefinitionItemCommand item) {
-        definition.setBusNo(StringUtils.defaultIfBlank(item.getBusNo(), definition.getBusNo()));
         definition.setName(item.getName());
         definition.setMerchandiseName(item.getMerchandiseName());
         definition.setPyStr(this.resolvePyCode(item.getPyStr(), item.getName()));

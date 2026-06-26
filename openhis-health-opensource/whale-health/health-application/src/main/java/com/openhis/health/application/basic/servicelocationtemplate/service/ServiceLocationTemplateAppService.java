@@ -17,6 +17,10 @@
 
 package com.openhis.health.application.basic.servicelocationtemplate.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.application.basic.servicelocationtemplate.dto.ServiceLocationTemplateDto;
 import com.openhis.health.application.basic.servicelocationtemplate.dto.ServiceLocationTemplateInitDto;
 import com.openhis.health.application.basic.servicelocationtemplate.mapper.ServiceLocationTemplateMapper;
@@ -26,7 +30,7 @@ import com.openhis.health.application.basic.servicelocationtemplate.request.Save
 import com.openhis.health.module.common.assembler.advice.TcmMethodCodeDisplaySupport;
 import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
 import com.openhis.health.module.common.assembler.order.OrderCatalogDisplayAssembler;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.location.entity.Location;
@@ -89,7 +93,7 @@ public class ServiceLocationTemplateAppService {
     /** 请求/读模型与 DTO、领域命令映射。 */
     private final ServiceLocationTemplateMapper serviceLocationTemplateMapper;
     /** 写路径操作人门控 B.6.1。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     /** 组织机构读侧：科室树与名称解析。 */
     private final OrganizationQueryService organizationQueryService;
     /** 位置读侧：药房/药库下拉与库位校验。 */
@@ -110,7 +114,7 @@ public class ServiceLocationTemplateAppService {
         dto.setDefLocationOptions(this.buildDefLocationOptions());
         dto.setItemTableOptions(this.buildItemTableOptions());
         dto.setMedicationCategoryOptions(
-            terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.MED_CATEGORY_CODE));
+            terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.MEDICATION_CATEGORY_CODE));
         dto.setDeviceCategoryOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.DEVICE_CATEGORY_CODE));
         dto.setMethodCodeOptions(
@@ -156,7 +160,7 @@ public class ServiceLocationTemplateAppService {
         if (request == null || request.getOrganizationId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "开立科室不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT,
             "请先登录后再保存取药科室配置");
         this.validateSaveDistributionConfigRequest(request);
@@ -177,7 +181,7 @@ public class ServiceLocationTemplateAppService {
         }
         Set<Long> validLocationIds = this.loadValidPharmacyWarehouseLocationIds();
         Map<String, String> medicationCategoryLabels =
-            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.MED_CATEGORY_CODE);
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.MEDICATION_CATEGORY_CODE);
         Map<String, String> deviceCategoryLabels =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DEVICE_CATEGORY_CODE);
         Map<String, String> westernMethodLabels =
@@ -192,7 +196,7 @@ public class ServiceLocationTemplateAppService {
             if (item == null) {
                 throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "规则行不能为空");
             }
-            String itemTable = StringUtils.trimToEmpty(item.getItemTable());
+            String itemTable = trimToEmpty(item.getItemTable());
             // 物品表名须与消费方 TableNameConstants 完全一致，否则医生站目录匹配不上
             if (!TableNameConstants.MED_MEDICATION_DEFINITION.equals(itemTable)
                 && !TableNameConstants.ADM_DEVICE_DEFINITION.equals(itemTable)) {
@@ -200,7 +204,7 @@ public class ServiceLocationTemplateAppService {
                     ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT,
                     "物品表名不合法，仅支持药品或耗材定义表");
             }
-            String categoryCode = StringUtils.trimToEmpty(item.getDistributionCategoryCode());
+            String categoryCode = trimToEmpty(item.getDistributionCategoryCode());
             if (categoryCode.isEmpty()) {
                 throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "发放类别不能为空");
             }
@@ -232,7 +236,7 @@ public class ServiceLocationTemplateAppService {
                     ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT,
                     "生效开始时间必须早于结束时间");
             }
-            String methodCode = StringUtils.trimToNull(item.getMethodCode());
+            String methodCode = trimToNull(item.getMethodCode());
             if (methodCode != null) {
                 Map<String, String> methodLabels = this.resolveMethodCodeLabelMapForValidation(
                     itemTable,
@@ -284,7 +288,7 @@ public class ServiceLocationTemplateAppService {
         Map<Long, String> locationNameById = locationQueryService.mapNamesByIds(locationIds);
         Map<String, ProductDefinitionDisplayDto> productByKey = productDefinitionBatchLoader.loadAsMap(productLookups);
         Map<String, String> medicationCategoryLabels =
-            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.MED_CATEGORY_CODE);
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.MEDICATION_CATEGORY_CODE);
         Map<String, String> deviceCategoryLabels =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DEVICE_CATEGORY_CODE);
         Map<String, String> westernMethodLabels =
@@ -327,13 +331,13 @@ public class ServiceLocationTemplateAppService {
     }
 
     /**
-     * 判断药品发放类别是否为中草药（术语 {@code med_category_code} 码值 {@code 4}）。
+     * 判断药品发放类别是否为中草药（术语 {@code medication_category_code} 码值 {@code 4}）。
      *
      * @param distributionCategoryCode 发放类别编码
      * @return 中草药类别时 {@code true}
      */
     private boolean isHerbalMedicationCategory(String distributionCategoryCode) {
-        return DoctorStationTcmConstants.HERBAL_CATEGORY_CODE.equals(StringUtils.trimToEmpty(distributionCategoryCode));
+        return DoctorStationTcmConstants.HERBAL_CATEGORY_CODE.equals(trimToEmpty(distributionCategoryCode));
     }
 
     /**

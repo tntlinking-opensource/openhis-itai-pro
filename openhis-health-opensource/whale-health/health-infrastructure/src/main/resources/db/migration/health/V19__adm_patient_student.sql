@@ -34,9 +34,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_patient_student" (
     "patient_id" int8 NOT NULL,
     CONSTRAINT "adm_patient_student_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_patient_student IS '管理域 patient student';
-
 COMMENT ON COLUMN adm_patient_student.id IS '主键';
 COMMENT ON COLUMN adm_patient_student.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_patient_student.created_at IS '创建时间';
@@ -67,4 +65,3 @@ COMMENT ON COLUMN adm_patient_student.physical_exam_result IS '体检结果';
 COMMENT ON COLUMN adm_patient_student.counselor IS '辅导员';
 COMMENT ON COLUMN adm_patient_student.counselor_phone IS '辅导员电话';
 COMMENT ON COLUMN adm_patient_student.patient_id IS '所属患者标识';
-

@@ -36,7 +36,6 @@ import jakarta.validation.Valid;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
@@ -119,7 +118,6 @@ public class DocumentTypeAppService {
      * @return 新建的类型
      * @throws ValidationException 编码重复或默认模板不匹配
      */
-    @Transactional(rollbackFor = Exception.class)
     public DocumentTypeDto create(@Valid CreateDocumentTypeRequest request) {
         // Gate：请求体非空；code/name 格式与唯一性校验
         if (request == null) {
@@ -156,7 +154,6 @@ public class DocumentTypeAppService {
      * @param request 含 id；code 不可改
      * @return 更新后的类型
      */
-    @Transactional(rollbackFor = Exception.class)
     public DocumentTypeDto update(@Valid UpdateDocumentTypeRequest request) {
         // Gate：主键必填
         if (request == null || request.getId() == null) {
@@ -194,7 +191,6 @@ public class DocumentTypeAppService {
      * @param request 含类型 id
      * @throws ValidationException 仍被模板或文书引用
      */
-    @Transactional(rollbackFor = Exception.class)
     public void delete(@Valid DeleteDocumentTypeRequest request) {
         // Gate：主键必填
         if (request == null || request.getId() == null) {

@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.orderexecute.request;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -61,6 +62,10 @@ public class ListNurseStationOrderExecuteRequest {
     @NotNull(message = "截止时间不能为空")
     /** 截止时间。 */
     @Schema(description = "截止时间", required = true)
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime executionDeadline;
+
+    /** 中西药 Tab：west / tcm；默认 west。 */
+    @Schema(description = "中西药 Tab：west / tcm；默认 west")
+    private String medicineCategoryTab;
 }

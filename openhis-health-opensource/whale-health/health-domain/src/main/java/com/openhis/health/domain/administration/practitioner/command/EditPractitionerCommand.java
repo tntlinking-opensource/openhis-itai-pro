@@ -50,6 +50,12 @@ public class EditPractitionerCommand extends BatchCommand<EditPractitionerComman
         private AddressCommand address;
         /** 工号或业务编号。 */
         private String busNo;
+        /** 医保人员编号。 */
+        private String ybNo;
+        /** 职称编码。 */
+        private Integer drProfttlCode;
+        /** 医师/药师执业资格证编号。 */
+        private String pharPracCertNo;
         /** 电子签名或签名资源标识。 */
         private String signature;
         /** 本次实际发生变更的字段名列表。 */

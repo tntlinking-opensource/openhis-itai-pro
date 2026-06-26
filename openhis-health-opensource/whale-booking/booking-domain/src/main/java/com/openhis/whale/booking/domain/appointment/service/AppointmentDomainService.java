@@ -53,11 +53,15 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 预约与候诊写侧领域服务。
+ * 预约与候诊写侧领域服务（DM-WKF-002）。
  *
  * <p>职责：创建候诊/预约项、候诊队列调序、叫号、过号、按就诊取消等。</p>
  *
  * <p>边界：分诊医学规则、号源算法、就诊与患者跨聚合校验由应用服务编排；本服务只写本聚合表。</p>
+ *
+ * <p>不变量摘要：BR-APT-001 同一就诊仅一条有效队列项；BR-APT-002 同机构同诊室 {@code displayOrder} 连续；
+ * BR-APT-003 终态项不参与待诊；BR-APT-004 叫号/过号须可追溯原因；BR-APT-006 调序不得越界。
+ * 各命令批次内仅处理一条记录（单聚合写入口）。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -72,14 +76,15 @@ public class AppointmentDomainService {
     private final BusinessSequenceService businessSequenceService;
 
     /**
-     * 创建候诊/预约项。
+     * 创建候诊/预约项（DM-WKF-002 §4.1）。
      *
-     * @param command 创建命令（支持 item/items）
-     * @return 创建后的实体（批量时返回首条）
+     * @param command 创建命令（支持 item/items，批次内须恰好一条）
+     * @return 创建后的实体
+     * @throws BusinessException 批次条数不为 1 或分类不变式校验失败时
      */
     public Appointment create(CreateAppointmentCommand command) {
         List<CreateAppointmentCommand.CreateAppointmentItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             // DOC-CONFLICT: DM/SDD 语义为单次创建动作，但 BatchCommand 默认支持批量；本聚合按一次一条收敛，避免队列重排语义歧义。
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "创建候诊/预约项一次仅允许提交一条记录");
@@ -87,6 +92,7 @@ public class AppointmentDomainService {
 
         CreateAppointmentCommand.CreateAppointmentItemCommand item = items.get(0);
 
+        // 加载/组装聚合：按 appointmentKind 装配字段与队列顺位。
         Appointment appointment = new Appointment();
         appointment.setAppointmentKind(item.getAppointmentKind());
         appointment.setOrganizationId(item.getOrganizationId());
@@ -106,13 +112,13 @@ public class AppointmentDomainService {
         appointment.setStartInstant(item.getStartInstant());
         appointment.setEndInstant(item.getEndInstant());
         appointment.setIsDeleted(Boolean.FALSE);
-        appointment.setBusNo(this.generateBusNoIfNeeded(null));
+        appointment.setBusNo(this.allocateAppointmentBusNo());
         appointment.setOrigin(this.toOrigin(item.getOrigin()));
 
         // 分类约束校验。
         appointment.assertKindConstraints();
 
-        // 先落库，再发布事件（DM-WKF-002 §5.1 全量载荷）。
+        // 持久化：先落库，再发布事件（DM-WKF-002 §5.1 全量载荷）。
         Appointment saved = appointmentRepository.save(appointment);
         String channel = null;
         if (saved.getOrigin() != null) {
@@ -126,29 +132,36 @@ public class AppointmentDomainService {
     }
 
     /**
-     * 渠道报到入队。
+     * 渠道报到入队（CHECK_IN_ONLY 形态）。
      *
-     * @param command 报到入队命令（支持 item/items）
-     * @return 创建后的实体（批量时返回首条）
+     * @param command 报到入队命令（支持 item/items，批次内须恰好一条）
+     * @return 创建后的实体
+     * @throws BusinessException 批次条数、形态或机构/诊室参数非法，或同一就诊已存在有效队列项时
      */
     public Appointment checkInToQueue(CheckInToQueueCommand command) {
         List<CheckInToQueueCommand.CheckInToQueueItemCommand> items = command.resolveItems();
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "报到入队一次仅允许提交一条记录");
         }
 
         CheckInToQueueCommand.CheckInToQueueItemCommand item = items.get(0);
+        // 前置校验：现场报到须使用 CHECK_IN_ONLY 形态。
         if (!CHECK_IN_ONLY_KIND.equals(item.getAppointmentKind())) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "现场报到入队 appointmentKind 必须为 CHECK_IN_ONLY");
         }
+        // 前置校验：报到入队须指定机构。
         if (item.getOrganizationId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "报到入队 organizationId 不能为空");
         }
+        // 前置校验：报到入队须指定目标诊室。
         if (item.getDestinationLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "报到入队 destinationLocationId 不能为空");
         }
+        // 前置校验：同一就诊不得重复入队（BR-APT-001）。
         this.assertNoActiveQueueForEncounter(item.getEncounterId());
 
+        // 加载/组装聚合：新建报到候诊项并分配队列下一顺位。
         Appointment appointment = new Appointment();
         appointment.setAppointmentKind(item.getAppointmentKind());
         appointment.setOrganizationId(item.getOrganizationId());
@@ -157,11 +170,12 @@ public class AppointmentDomainService {
         appointment.setPatientId(item.getPatientId());
         appointment.setDisplayOrder(this.resolveNextDisplayOrder(item.getOrganizationId(), item.getDestinationLocationId()));
         appointment.setIsDeleted(Boolean.FALSE);
-        appointment.setBusNo(this.generateBusNoIfNeeded(null));
+        appointment.setBusNo(this.allocateAppointmentBusNo());
         appointment.setOrigin(this.toOrigin(item.getOrigin()));
 
         appointment.assertKindConstraints();
 
+        // 持久化：先落库，再发布创建事件（DM-WKF-002 §5.1）。
         Appointment saved = appointmentRepository.save(appointment);
         String checkInChannel = null;
         if (saved.getOrigin() != null) {
@@ -175,73 +189,89 @@ public class AppointmentDomainService {
     }
 
     /**
-     * 门诊预约报到入队（更新既有 OUTPATIENT_BOOKING 的 displayOrder）。
+     * 门诊预约报到入队：更新既有 OUTPATIENT_BOOKING 的 displayOrder（IF-REG-06）。
      *
-     * @param command 预约报到命令
+     * @param command 预约报到命令（批次内须恰好一条）
      * @return 更新后的实体
+     * @throws BusinessException 批次条数、参数非法、预约非门诊形态、已报到或机构不匹配时
      */
     public Appointment checkInOutpatientBooking(CheckInOutpatientBookingCommand command) {
         List<CheckInOutpatientBookingCommand.CheckInOutpatientBookingItemCommand> items = command.resolveItems();
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "预约报到入队一次仅允许提交一条记录");
         }
 
         CheckInOutpatientBookingCommand.CheckInOutpatientBookingItemCommand item = items.get(0);
+        // 前置校验：须指定待报到的预约主键。
         if (item.getAppointmentId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "预约报到 appointmentId 不能为空");
         }
+        // 前置校验：须指定机构以校验预约归属。
         if (item.getOrganizationId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "预约报到 organizationId 不能为空");
         }
 
         Appointment appointment = this.requireAppointment(item.getAppointmentId());
         appointment.assertActive();
+        // 前置校验：仅门诊预约形态允许预约报到入队。
         if (!OUTPATIENT_BOOKING_KIND.equals(appointment.getAppointmentKind())) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "仅门诊预约允许预约报到入队");
         }
+        // 前置校验：预约须属于同一机构。
         if (!item.getOrganizationId().equals(appointment.getOrganizationId())) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "预约与机构不匹配");
         }
+        // 前置校验：已分配 displayOrder 表示已报到，禁止重复入队。
         if (appointment.getDisplayOrder() != null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_RULE_CONFLICT, "预约已报到入队");
         }
 
         Long destinationLocationId = item.getDestinationLocationId();
+        // 命令未传诊室时沿用预约原目标诊室。
         if (destinationLocationId == null) {
             destinationLocationId = appointment.getDestinationLocationId();
         }
+        // 前置校验：报到入队须能解析目标诊室。
         if (destinationLocationId == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "预约报到 destinationLocationId 不能为空");
         }
         appointment.setDestinationLocationId(destinationLocationId);
         appointment.setDisplayOrder(this.resolveNextDisplayOrder(item.getOrganizationId(), destinationLocationId));
 
+        // 持久化：更新预约队列顺位。
         return appointmentRepository.save(appointment);
     }
 
     /**
      * 门诊预约回填就诊关联（IF-REG-07）。
      *
-     * @param command 回填命令
+     * @param command 回填命令（批次内须恰好一条）
+     * @throws BusinessException 批次条数、参数非法、非门诊形态或已关联其他就诊时
      */
     public void linkEncounter(LinkEncounterCommand command) {
         List<LinkEncounterCommand.LinkEncounterItemCommand> items = command.resolveItems();
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "回填就诊关联一次仅允许提交一条记录");
         }
         LinkEncounterCommand.LinkEncounterItemCommand item = items.get(0);
+        // 前置校验：须指定待回填的预约主键。
         if (item.getAppointmentId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "回填就诊关联 appointmentId 不能为空");
         }
+        // 前置校验：须指定待关联的就诊主键。
         if (item.getEncounterId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "回填就诊关联 encounterId 不能为空");
         }
 
         Appointment appointment = this.requireAppointment(item.getAppointmentId());
         appointment.assertActive();
+        // 前置校验：仅门诊预约形态允许回填就诊。
         if (!OUTPATIENT_BOOKING_KIND.equals(appointment.getAppointmentKind())) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "仅门诊预约允许回填就诊关联");
         }
+        // 已关联同一就诊时幂等返回；已关联其他就诊则拒绝。
         if (appointment.getEncounterId() != null) {
             if (appointment.getEncounterId().equals(item.getEncounterId())) {
                 return;
@@ -249,25 +279,30 @@ public class AppointmentDomainService {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_RULE_CONFLICT, "预约已关联其他就诊");
         }
         appointment.setEncounterId(item.getEncounterId());
+        // 持久化：写入就诊关联。
         appointmentRepository.save(appointment);
     }
 
     /**
      * 退号后释放预约与就诊关联（IF-REG-10）。
      *
-     * @param command 释放命令
+     * @param command 释放命令（批次内须恰好一条）
+     * @throws BusinessException 批次条数或 encounterId 为空时
      */
     public void releaseEncounterLink(ReleaseEncounterLinkCommand command) {
         List<ReleaseEncounterLinkCommand.ReleaseEncounterLinkItemCommand> items = command.resolveItems();
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "释放就诊关联一次仅允许提交一条记录");
         }
         ReleaseEncounterLinkCommand.ReleaseEncounterLinkItemCommand item = items.get(0);
+        // 前置校验：须指定待释放关联的就诊主键。
         if (item.getEncounterId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "释放就诊关联 encounterId 不能为空");
         }
 
         Appointment appointment = appointmentRepository.findByEncounterId(item.getEncounterId()).orElse(null);
+        // 无有效预约项或非门诊形态时静默返回（退号场景容错）。
         if (appointment == null || Boolean.TRUE.equals(appointment.getIsDeleted())) {
             return;
         }
@@ -275,30 +310,36 @@ public class AppointmentDomainService {
             return;
         }
         appointment.setEncounterId(null);
+        // 持久化：清除就诊关联。
         appointmentRepository.save(appointment);
     }
 
     /**
      * 按预约主键取消有效门诊预约项。
      *
-     * @param command 取消命令
+     * @param command 取消命令（批次内须恰好一条）
+     * @throws BusinessException 批次条数、appointmentId 为空或候诊项不存在/已终态时
      */
     public void cancelAppointment(CancelAppointmentCommand command) {
         List<CancelAppointmentCommand.CancelAppointmentItemCommand> items = command.resolveItems();
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "取消预约一次仅允许提交一条记录");
         }
         CancelAppointmentCommand.CancelAppointmentItemCommand item = items.get(0);
+        // 前置校验：须指定待取消的预约主键。
         if (item.getAppointmentId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "appointmentId 不能为空");
         }
         Appointment appointment = this.requireAppointment(item.getAppointmentId());
         appointment.assertActive();
         String reasonText = item.getReason();
+        // 未传取消原因时使用默认文案。
         if (StringUtils.isBlank(reasonText)) {
             reasonText = "用户取消预约";
         }
         appointment.markTerminalByReason(reasonText, item.getCancellationReasonCode(), LocalDateTime.now());
+        // 持久化：先落库，再发布过号/取消事件。
         appointmentRepository.save(appointment);
         domainEventPublisher.publish(new AppointmentNoShowEvent(
             appointment.getId(), appointment.getCancellationAt(), item.getCancellationReasonCode()));
@@ -306,19 +347,27 @@ public class AppointmentDomainService {
 
     /**
      * 门诊预约改约：更新号源与时段快照（占释由应用层编排）。
+     *
+     * @param command 改约命令，须含 appointmentId 与新 slotId
+     * @return 更新后的实体
+     * @throws BusinessException 参数非法、非门诊形态、已转挂号或候诊项不存在时
      */
     public Appointment rescheduleOutpatientBooking(RescheduleOutpatientBookingCommand command) {
+        // 前置校验：须指定待改约的预约主键。
         if (command.getAppointmentId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "appointmentId 不能为空");
         }
+        // 前置校验：须指定新号源时段。
         if (command.getNewSlotId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "newSlotId 不能为空");
         }
         Appointment appointment = this.requireAppointment(command.getAppointmentId());
         appointment.assertActive();
+        // 前置校验：仅门诊预约形态允许改约。
         if (!OUTPATIENT_BOOKING_KIND.equals(appointment.getAppointmentKind())) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "仅门诊预约允许改约");
         }
+        // 前置校验：已关联就诊表示已转挂号，禁止改约。
         if (appointment.getEncounterId() != null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_RULE_CONFLICT, "已转挂号预约不可改约");
         }
@@ -332,23 +381,25 @@ public class AppointmentDomainService {
         if (command.getDestinationLocationId() != null) {
             appointment.setDestinationLocationId(command.getDestinationLocationId());
         }
+        // 持久化：更新号源与时段快照。
         return appointmentRepository.save(appointment);
     }
 
     /**
-     * 按就诊取消当前有效项。
+     * 按就诊取消当前有效项（BR-APT-003/004）。
      *
-     * @param command 取消命令（支持 item/items）
+     * @param command 取消命令（支持 item/items，批次内须恰好一条）
+     * @throws BusinessException 批次条数、encounterId 为空或未找到对应有效项时
      */
     public void cancelByEncounterId(CancelByEncounterCommand command) {
         List<CancelByEncounterCommand.CancelByEncounterItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "按就诊取消一次仅允许提交一条记录");
         }
 
         CancelByEncounterCommand.CancelByEncounterItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：须指定待取消关联的就诊主键。
         if (item.getEncounterId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "按就诊取消时 encounterId 不能为空");
         }
@@ -360,25 +411,27 @@ public class AppointmentDomainService {
         appointment.assertActive();
         appointment.markTerminalByReason(item.getReason(), item.getCancellationReasonCode(), LocalDateTime.now());
 
+        // 持久化：先落库，再发布过号/取消事件。
         appointmentRepository.save(appointment);
         domainEventPublisher.publish(new AppointmentNoShowEvent(
             appointment.getId(), appointment.getCancellationAt(), item.getCancellationReasonCode()));
     }
 
     /**
-     * 优先就诊（置顶并重排）。
+     * 优先就诊（置顶并重排，BR-APT-002）。
      *
-     * @param command 优先就诊命令（支持 item/items）
+     * @param command 优先就诊命令（支持 item/items，批次内须恰好一条）
+     * @throws BusinessException 批次条数、参数非法、候诊项不存在或目标诊室无有效队列时
      */
     public void priorityTreatment(PriorityTreatmentCommand command) {
         List<PriorityTreatmentCommand.PriorityTreatmentItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "优先就诊一次仅允许提交一条记录");
         }
 
         PriorityTreatmentCommand.PriorityTreatmentItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：须指定待置顶的候诊项主键。
         if (item.getAppointmentId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "优先就诊时 appointmentId 不能为空");
         }
@@ -392,7 +445,7 @@ public class AppointmentDomainService {
         } else {
             destinationLocationId = item.getDestinationLocationId();
         }
-        // 业务分支处理。
+        // 前置校验：优先就诊须能解析目标诊室（命令传入或沿用原科室）。
         if (destinationLocationId == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "优先就诊时 destinationLocationId 不能为空");
         }
@@ -400,7 +453,7 @@ public class AppointmentDomainService {
         // BR-APT-002：同机构同诊室 displayOrder 连续；通过全量重排收口。
         List<Appointment> queue = appointmentRepository.findByOrganizationIdAndDestinationLocationId(
             appointment.getOrganizationId(), destinationLocationId);
-        // 业务分支处理。
+        // 前置校验：目标诊室须存在有效候诊队列。
         if (queue.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_NOT_FOUND, "未找到同诊室的有效队列");
         }
@@ -408,44 +461,46 @@ public class AppointmentDomainService {
         // 记录调序前序号，落库后作为事件载荷。
         Integer oldOrder = appointment.getDisplayOrder();
         this.moveToTopAndReorder(queue, appointment.getId());
+        // 持久化：全量重排后落库。
         appointmentRepository.saveAll(queue);
 
-        // 先落库再发布事件；优先后序号恒为 1（置顶）。
+        // 发布事件：优先后序号恒为 1（置顶）。
         domainEventPublisher.publish(new PriorityTreatmentAppliedEvent(appointment.getId(), oldOrder, appointment.getDisplayOrder()));
     }
 
     /**
-     * 前后调位（与相邻项交换并重排）。
+     * 前后调位（与相邻项交换并重排，BR-APT-006）。
      *
-     * @param command 调位命令（支持 item/items）
+     * @param command 调位命令（支持 item/items，批次内须恰好一条）
+     * @throws BusinessException 批次条数、参数非法、候诊项不在队列或调位越界时
      */
     public void changeOver(ChangeOverCommand command) {
         List<ChangeOverCommand.ChangeOverItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "前后调位一次仅允许提交一条记录");
         }
 
         ChangeOverCommand.ChangeOverItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：须指定待调位的候诊项主键。
         if (item.getAppointmentId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "前后调位时 appointmentId 不能为空");
         }
-        // 业务分支处理。
+        // 前置校验：须明确前移或后移方向。
         if (item.getMoveForward() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "前后调位时 moveForward 不能为空");
         }
 
         Appointment appointment = this.requireAppointment(item.getAppointmentId());
         appointment.assertActive();
-        // 业务分支处理。
+        // 前置校验：候诊项须已分配目标诊室方可调序。
         if (appointment.getDestinationLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "前后调位时 destinationLocationId 不能为空");
         }
 
         List<Appointment> queue = appointmentRepository.findByOrganizationIdAndDestinationLocationId(
             appointment.getOrganizationId(), appointment.getDestinationLocationId());
-        // 业务分支处理。
+        // 前置校验：目标诊室须存在有效候诊队列。
         if (queue.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_NOT_FOUND, "未找到同诊室的有效队列");
         }
@@ -454,13 +509,13 @@ public class AppointmentDomainService {
         this.normalizeAndSort(queue);
 
         int index = this.indexOf(queue, appointment.getId());
-        // 业务分支处理。
+        // 前置校验：目标项须仍在同诊室队列中。
         if (index < 0) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_NOT_FOUND, "未找到目标候诊项");
         }
 
         int targetIndex;
-        // 业务分支处理。
+        // 按 moveForward 计算相邻交换目标索引。
         if (item.getMoveForward()) {
             targetIndex = index - 1;
         } else {
@@ -475,55 +530,58 @@ public class AppointmentDomainService {
         Integer oldOrder = appointment.getDisplayOrder();
         Collections.swap(queue, index, targetIndex);
         this.reorderDisplayOrder(queue);
+        // 持久化：全量重排后落库。
         appointmentRepository.saveAll(queue);
+        // 发布事件：携带调序前后 displayOrder。
         domainEventPublisher.publish(new QueueOrderChangedEvent(appointment.getId(), oldOrder, appointment.getDisplayOrder()));
     }
 
     /**
-     * 拖拽调位（移动并重排）。
+     * 拖拽调位（移动并重排，BR-APT-006）。
      *
-     * @param command 拖拽调位命令（支持 item/items）
+     * @param command 拖拽调位命令（支持 item/items，批次内须恰好一条）
+     * @throws BusinessException 批次条数、参数非法、候诊项不在队列或目标索引越界时
      */
     public void dragChangeOrder(DragChangeOrderCommand command) {
         List<DragChangeOrderCommand.DragChangeOrderItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "拖拽调位一次仅允许提交一条记录");
         }
 
         DragChangeOrderCommand.DragChangeOrderItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：须指定待拖拽的候诊项主键。
         if (item.getAppointmentId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "拖拽调位时 appointmentId 不能为空");
         }
-        // 业务分支处理。
+        // 前置校验：拖拽须指定目标索引。
         if (item.getTargetIndex() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "拖拽调位时 targetIndex 不能为空");
         }
 
         Appointment appointment = this.requireAppointment(item.getAppointmentId());
         appointment.assertActive();
-        // 业务分支处理。
+        // 前置校验：候诊项须已分配目标诊室方可调序。
         if (appointment.getDestinationLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "拖拽调位时 destinationLocationId 不能为空");
         }
 
         List<Appointment> queue = appointmentRepository.findByOrganizationIdAndDestinationLocationId(
             appointment.getOrganizationId(), appointment.getDestinationLocationId());
-        // 业务分支处理。
+        // 前置校验：目标诊室须存在有效候诊队列。
         if (queue.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_NOT_FOUND, "未找到同诊室的有效队列");
         }
 
         this.normalizeAndSort(queue);
         int index = this.indexOf(queue, appointment.getId());
-        // 业务分支处理。
+        // 前置校验：目标项须仍在同诊室队列中。
         if (index < 0) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_NOT_FOUND, "未找到目标候诊项");
         }
 
         int targetIndex = item.getTargetIndex();
-        // 业务分支处理。
+        // 前置校验：拖拽目标索引须在队列范围内（BR-APT-006）。
         if (targetIndex < 0 || targetIndex >= queue.size()) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "拖拽目标索引越界");
         }
@@ -532,28 +590,31 @@ public class AppointmentDomainService {
         Appointment moved = queue.remove(index);
         queue.add(targetIndex, moved);
         this.reorderDisplayOrder(queue);
+        // 持久化：全量重排后落库。
         appointmentRepository.saveAll(queue);
+        // 发布事件：携带调序前后 displayOrder。
         domainEventPublisher.publish(new QueueOrderChangedEvent(appointment.getId(), oldOrderDrag, appointment.getDisplayOrder()));
     }
 
     /**
-     * 叫号看诊。
+     * 叫号看诊（BR-APT-004）。
      *
-     * @param command 叫号命令（支持 item/items）
+     * @param command 叫号命令（支持 item/items，批次内须恰好一条）
+     * @throws BusinessException 批次条数、参数非法或候诊项不存在/已终态时
      */
     public void callToSee(CallToSeeCommand command) {
         List<CallToSeeCommand.CallToSeeItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "叫号看诊一次仅允许提交一条记录");
         }
 
         CallToSeeCommand.CallToSeeItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：须指定待叫号的候诊项主键。
         if (item.getAppointmentId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "叫号看诊时 appointmentId 不能为空");
         }
-        // 业务分支处理。
+        // 前置校验：叫号须指定执业医师。
         if (item.getPractitionerId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "叫号看诊时 practitionerId 不能为空");
         }
@@ -566,25 +627,27 @@ public class AppointmentDomainService {
         appointment.setLastPractitionerId(item.getPractitionerId());
         appointment.markTerminalByReason("医生叫号看诊", null, appointment.getCalledAt());
 
+        // 持久化：先落库，再发布叫号事件。
         appointmentRepository.save(appointment);
         domainEventPublisher.publish(new AppointmentCalledToSeeEvent(
             appointment.getId(), appointment.getCalledAt(), appointment.getLastPractitionerId()));
     }
 
     /**
-     * 过号处理。
+     * 过号处理（BR-APT-004）。
      *
-     * @param command 过号命令（支持 item/items）
+     * @param command 过号命令（支持 item/items，批次内须恰好一条）
+     * @throws BusinessException 批次条数、appointmentId 为空或候诊项不存在/已终态时
      */
     public void noShow(NoShowCommand command) {
         List<NoShowCommand.NoShowItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "过号处理一次仅允许提交一条记录");
         }
 
         NoShowCommand.NoShowItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：须指定待过号的候诊项主键。
         if (item.getAppointmentId() == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "过号处理时 appointmentId 不能为空");
         }
@@ -594,6 +657,7 @@ public class AppointmentDomainService {
 
         LocalDateTime noShowAt = LocalDateTime.now();
         appointment.markTerminalByReason("过号", item.getReasonCode(), noShowAt);
+        // 持久化：先落库，再发布过号事件。
         appointmentRepository.save(appointment);
         domainEventPublisher.publish(new AppointmentNoShowEvent(appointment.getId(), noShowAt, item.getReasonCode()));
     }
@@ -675,15 +739,15 @@ public class AppointmentDomainService {
         queue.sort((a, b) -> {
             Integer oa = a.getDisplayOrder();
             Integer ob = b.getDisplayOrder();
-            // 业务分支处理：两者都为空视为相等。
+            // 比较器：两者均为 null 时视为相等。
             if (oa == null && ob == null) {
                 return 0;
             }
-            // 业务分支处理：a 为空则视为更小。
+            // 比较器：左侧为空则视为更小（排前）。
             if (oa == null) {
                 return -1;
             }
-            // 业务分支处理：b 为空则视为更大。
+            // 比较器：右侧为空则视为更大（排后）。
             if (ob == null) {
                 return 1;
             }
@@ -704,7 +768,7 @@ public class AppointmentDomainService {
         // Loop：遍历队列查找匹配项。
         for (int i = 0; i < queue.size(); i++) {
             Appointment appointment = queue.get(i);
-            // 业务分支处理：ID 匹配则返回当前索引。
+            // 遍历队列：主键匹配则返回当前索引。
             if (appointmentId != null && appointmentId.equals(appointment.getId())) {
                 return i;
             }
@@ -736,7 +800,7 @@ public class AppointmentDomainService {
      * @return 来源实体对象，命令为空时返回 null
      */
     private AppointmentOrigin toOrigin(CreateAppointmentCommand.AppointmentOriginCommand command) {
-        // 业务分支处理：命令为空时返回 null。
+        // 来源命令为空时不装配值对象。
         if (command == null) {
             return null;
         }
@@ -752,6 +816,10 @@ public class AppointmentDomainService {
 
     /**
      * 计算同诊室队列下一顺位（仅统计已分配 displayOrder 的有效项）。
+     *
+     * @param organizationId        机构主键
+     * @param destinationLocationId 目标诊室主键
+     * @return 下一顺位序号（当前最大值 + 1）
      */
     private int resolveNextDisplayOrder(Long organizationId, Long destinationLocationId) {
         List<Appointment> queue = appointmentRepository.findByOrganizationIdAndDestinationLocationId(
@@ -766,18 +834,13 @@ public class AppointmentDomainService {
     }
 
     /**
-     * 私有方法：generateBusNoIfNeeded。
+     * 私有方法：allocateAppointmentBusNo。
      *
-     * <p>按需生成业务编码：若外部已提供则使用，否则生成按日递增的序列号。</p>
+     * <p>预约业务号由领域层按日序列生成，禁止外部注入（B.10.9）。</p>
      *
-     * @param provided 外部提供的业务编码
-     * @return 业务编码（传入值或生成值）
+     * @return 业务编码
      */
-    private String generateBusNoIfNeeded(String provided) {
-        // 业务分支处理：外部提供有效编码时直接使用。
-        if (StringUtils.isNotBlank(provided)) {
-            return provided.trim();
-        }
+    private String allocateAppointmentBusNo() {
         return businessSequenceService.getSeqByDay(AggregateTypeConstants.APPOINTMENT, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
     }
 }

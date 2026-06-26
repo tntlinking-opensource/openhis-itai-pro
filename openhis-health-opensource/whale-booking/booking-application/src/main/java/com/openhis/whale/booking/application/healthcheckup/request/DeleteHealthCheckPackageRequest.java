@@ -11,6 +11,7 @@ import lombok.Setter;
 @Setter
 public class DeleteHealthCheckPackageRequest {
 
+    /** 体检套餐主键。 */
     @NotNull
     private Long id;
 }

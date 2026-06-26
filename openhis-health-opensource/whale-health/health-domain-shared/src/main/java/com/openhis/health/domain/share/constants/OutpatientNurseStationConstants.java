@@ -72,6 +72,30 @@ public interface OutpatientNurseStationConstants {
      */
     String MEDICATION_PROCEDURE_CATEGORY_FALLBACK = "MEDICATION_ORDER";
 
+    /** IF-NUR-03 执行记录抽屉：已完成操作的展示文案。 */
+    String EXECUTION_RECORD_ACTION_COMPLETED = "执行完成";
+
+    /** IF-NUR-03 执行记录抽屉：取消执行操作的展示文案。 */
+    String EXECUTION_RECORD_ACTION_CANCEL = "取消执行";
+
+    /** IF-NUR-03 执行记录抽屉：中止执行操作的展示文案。 */
+    String EXECUTION_RECORD_ACTION_STOPPED = "不执行";
+
+    /** IF-NUR-03 执行记录抽屉：进行中状态的展示文案。 */
+    String EXECUTION_RECORD_ACTION_IN_PROGRESS = "执行中";
+
+    /** IF-NUR-03 执行记录抽屉：待执行状态的展示文案。 */
+    String EXECUTION_RECORD_ACTION_PREPARATION = "待执行";
+
+    /** IF-NUR-03 执行记录抽屉：无法识别状态时的展示文案。 */
+    String EXECUTION_RECORD_ACTION_DEFAULT = "执行登记";
+
+    /** IF-NUR-03 执行记录抽屉：已完成/进行中记录的操作人列标题语义。 */
+    String EXECUTION_RECORD_OPERATOR_ROLE_EXECUTE = "执行人";
+
+    /** IF-NUR-03 执行记录抽屉：取消记录的操作人列标题语义。 */
+    String EXECUTION_RECORD_OPERATOR_ROLE_CANCEL = "取消执行人";
+
     /** 皮试枚举初始化失败（IF-OP-STK-01）。 */
     String EX_OP_STK_101 = "EX-OP-STK-101";
 

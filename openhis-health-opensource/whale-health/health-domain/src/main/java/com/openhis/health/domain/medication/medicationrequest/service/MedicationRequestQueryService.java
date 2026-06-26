@@ -42,6 +42,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -249,6 +250,19 @@ public class MedicationRequestQueryService {
      */
     public List<TcmHerbalPrescriptionGroupQueryModel> listTcmHerbalPrescriptionsByEncounter(
         Long encounterId, String generateSourceEnum) {
+        return this.listTcmHerbalPrescriptionsByEncounter(encounterId, generateSourceEnum, null);
+    }
+
+    /**
+     * 按就诊查询中药饮片处方列表（按方聚合），可选按长临嘱收窄。
+     *
+     * @param encounterId          就诊标识
+     * @param generateSourceEnum   生成来源码（医生站通常为 {@link GenerateSource#DOCTOR_PRESCRIPTION}）
+     * @param therapyEnum          治疗类型码（{@link com.openhis.health.domain.share.enums.TherapyType#getCode()}）；空则不过滤
+     * @return 按方聚合的中医处方读模型；无数据时返回空列表
+     */
+    public List<TcmHerbalPrescriptionGroupQueryModel> listTcmHerbalPrescriptionsByEncounter(
+        Long encounterId, String generateSourceEnum, String therapyEnum) {
         if (encounterId == null || generateSourceEnum == null) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
                 "查询就诊中药处方时 encounterId 与 generateSourceEnum 不能为空");
@@ -256,12 +270,15 @@ public class MedicationRequestQueryService {
         List<MedicationRequest> requests = medicationRequestRepository.findByEncounterIdAndGenerateSourceEnum(
             encounterId, generateSourceEnum);
         List<MedicationRequestListQueryModel> tcmLines = new ArrayList<>();
-        // Pre：医生开立来源下再筛 tcm_flag，排除软删行。
+        // Pre：医生开立来源下再筛 tcm_flag，排除软删行；可选按 therapy_enum 收窄住院长临 Tab。
         for (MedicationRequest request : requests) {
             if (request == null || Boolean.TRUE.equals(request.getIsDeleted())) {
                 continue;
             }
             if (!Boolean.TRUE.equals(request.getTcmFlag())) {
+                continue;
+            }
+            if (StringUtils.isNotBlank(therapyEnum) && !therapyEnum.equals(request.getTherapyEnum())) {
                 continue;
             }
             tcmLines.add(this.toListModel(request));
@@ -914,6 +931,7 @@ public class MedicationRequestQueryService {
                 group.setDispensePerDuration(line.getDispensePerDuration());
                 group.setRemark(line.getRemark());
                 group.setRxTypeCode(line.getRxTypeCode());
+                group.setTherapyEnum(line.getTherapyEnum());
                 group.setStatusEnum(line.getStatusEnum());
                 group.setReqAuthoredTime(line.getReqAuthoredTime());
                 grouped.put(groupKey, group);
@@ -926,7 +944,14 @@ public class MedicationRequestQueryService {
                 }
             }
         }
-        return new ArrayList<>(grouped.values());
+        List<TcmHerbalPrescriptionGroupQueryModel> result = new ArrayList<>(grouped.values());
+        // Asm：方内行按 sortNumber、requestId 稳定排序，避免读侧随库表物理顺序漂移
+        for (TcmHerbalPrescriptionGroupQueryModel group : result) {
+            group.getLines().sort(Comparator
+                .comparing(MedicationRequestListQueryModel::getSortNumber, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(MedicationRequestListQueryModel::getId, Comparator.nullsLast(Comparator.naturalOrder())));
+        }
+        return result;
     }
 
     /**

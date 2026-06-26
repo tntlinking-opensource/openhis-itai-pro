@@ -49,4 +49,10 @@ public class PreSettleChargeLinePreviewDto {
     @Schema(description = "行金额")
     /** 行金额（业务字段）。 */
     private BigDecimal lineAmount;
+    /**
+     * 费用性质展示：账户 {@code contract_no} 关联 {@code fin_contract} 名称，与 IF-OPC-03 {@code feeNatureDisplay} 同口径。
+     */
+    @Schema(description = "费用性质展示（账户 contract_no → fin_contract 名称，与 IF-OPC-03 同口径）")
+    /** 费用性质展示（自费/省医保/市医保等）（业务字段）。 */
+    private String feeNatureDisplay;
 }

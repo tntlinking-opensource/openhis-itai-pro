@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.orderaudit.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -35,9 +36,11 @@ import java.time.LocalDateTime;
 @Schema(description = "医嘱校对列表行")
 public class NurseStationOrderAuditRowDto {
 
+    /** 稳定行键：requestId + SOH(U+0001) + orderType。 */
     @Schema(description = "稳定行键：requestId + SOH(U+0001) + orderType")
     private String listRowKey;
 
+    /** 药品/诊疗申请主键。 */
     @Schema(description = "药品/诊疗申请主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long requestId;
@@ -94,12 +97,12 @@ public class NurseStationOrderAuditRowDto {
 
     /** 开立时间。 */
     @Schema(description = "开立时间")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime authoredTime;
 
     /** 停嘱时间；未停为 null。 */
     @Schema(description = "停嘱时间；未停为 null")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime stopTime;
 
     /** 开立医生姓名。 */
@@ -121,9 +124,32 @@ public class NurseStationOrderAuditRowDto {
     @Schema(description = "药品成组号（仅药嘱）")
     private Long groupId;
 
+    /** 药品组号/排序号（排序用）。 */
     @Schema(description = "药品组号/排序号（排序用）")
     private Integer groupNo;
 
+    /** 排序号（药品）。 */
     @Schema(description = "排序号（药品）")
     private Integer sortNumber;
+
+    /** 是否中药饮片方。 */
+    @Schema(description = "是否中药饮片方")
+    private Boolean tcmFlag;
+
+    /** 处方号（中药整方展示）。 */
+    @Schema(description = "处方号")
+    private String prescriptionNo;
+
+    /** 方内全部药品申请 id（整方校对/退回扩行）。 */
+    @Schema(description = "方内药品申请 id 列表")
+    @JsonSerialize(contentUsing = ToStringSerializer.class)
+    private java.util.List<Long> lineRequestIds;
+
+    /** 代煎标志（方头）。 */
+    @Schema(description = "代煎标志")
+    private Boolean sufferingFlag;
+
+    /** 中药付数（方头）。 */
+    @Schema(description = "中药付数")
+    private java.math.BigDecimal chineseHerbsDoseQuantity;
 }

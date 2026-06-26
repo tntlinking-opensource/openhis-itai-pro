@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inventory.pharmacy.stockin.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -82,12 +83,12 @@ public class PharmacyStockInDetailLineDto {
     @Schema(description = "批号")
     private String lotNumber;
 
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 效期起点。 */
     @Schema(description = "效期起点")
     private LocalDateTime startTime;
 
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 效期止点。 */
     @Schema(description = "效期止点")
     private LocalDateTime endTime;
@@ -108,7 +109,7 @@ public class PharmacyStockInDetailLineDto {
     @Schema(description = "行总价")
     private BigDecimal totalPrice;
 
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 业务发生时间。 */
     @Schema(description = "业务发生时间")
     private LocalDateTime occurrenceTime;

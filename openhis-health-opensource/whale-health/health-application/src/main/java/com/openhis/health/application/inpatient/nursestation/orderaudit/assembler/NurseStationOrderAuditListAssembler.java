@@ -19,10 +19,11 @@ package com.openhis.health.application.inpatient.nursestation.orderaudit.assembl
 
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditPatientGroupDto;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditRowDto;
-import com.openhis.health.module.querysupport.order.NurseStationOrderViewListAssembler;
-import com.openhis.health.module.querysupport.order.dto.NurseStationOrderViewDisplayContext;
-import com.openhis.health.module.querysupport.order.dto.NurseStationOrderViewDisplayCore;
-import com.openhis.health.module.querysupport.order.dto.NurseStationOrderViewListDetailIndex;
+import com.openhis.health.module.querysupport.nursestation.InpatientNurseStationTcmSupport;
+import com.openhis.health.module.querysupport.nursestation.NurseStationOrderViewListAssembler;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewDisplayContext;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewDisplayCore;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewListDetailIndex;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
@@ -49,18 +50,23 @@ public class NurseStationOrderAuditListAssembler {
     /** 医嘱查看列表行展示内核。 */
     private final NurseStationOrderViewListAssembler orderViewListAssembler;
 
+    /** 中药 Tab 筛选与方级折叠。 */
+    private final InpatientNurseStationTcmSupport inpatientNurseStationTcmSupport;
+
     /**
      * OrderInfo 骨架 + 域明细 → 按就诊分组且组内已排序的列表。
      *
      * @param skeleton       过滤后的读模型行
-     * @param medByEncounter 就诊 → 药品明细列表
-     * @param svcByEncounter 就诊 → 诊疗明细列表
+     * @param medByEncounter       就诊 → 药品明细列表
+     * @param svcByEncounter       就诊 → 诊疗明细列表
+     * @param medicineCategoryTab  west / tcm
      * @return 患者分组列表（BR-IP-AUD-005）
      */
     public List<NurseStationOrderAuditPatientGroupDto> assemblePatientGroups(
         List<InpatientOrderListSkeleton> skeleton,
         Map<Long, List<MedicationRequestListQueryModel>> medByEncounter,
-        Map<Long, List<ServiceRequestListModel>> svcByEncounter) {
+        Map<Long, List<ServiceRequestListModel>> svcByEncounter,
+        String medicineCategoryTab) {
         if (skeleton == null || skeleton.isEmpty()) {
             return new ArrayList<>();
         }
@@ -85,15 +91,76 @@ public class NurseStationOrderAuditListAssembler {
             bucket.add(line);
         }
         List<NurseStationOrderAuditPatientGroupDto> groups = new ArrayList<>();
+        Map<Long, MedicationRequestListQueryModel> medDetailById =
+            inpatientNurseStationTcmSupport.indexMedDetailById(medByEncounter);
         for (Map.Entry<Long, List<NurseStationOrderAuditRowDto>> entry : rowsByEncounter.entrySet()) {
             List<NurseStationOrderAuditRowDto> sorted = this.sortRows(entry.getValue());
+            // Asm：中药 Tab 按 prescription_no 折叠为一方一行
+            List<NurseStationOrderAuditRowDto> collapsed =
+                inpatientNurseStationTcmSupport.collapseTcmPrescriptionDisplayRows(
+                    sorted,
+                    medDetailById,
+                    medicineCategoryTab,
+                    AUDIT_TCM_ROW_ACCESSOR);
             NurseStationOrderAuditPatientGroupDto group = new NurseStationOrderAuditPatientGroupDto();
             group.setEncounterId(entry.getKey());
-            group.setOrders(sorted);
+            group.setOrders(collapsed);
             groups.add(group);
         }
         return groups;
     }
+
+    private static final InpatientNurseStationTcmSupport.TcmPrescriptionRowAccessor<NurseStationOrderAuditRowDto>
+        AUDIT_TCM_ROW_ACCESSOR = new InpatientNurseStationTcmSupport.TcmPrescriptionRowAccessor<>() {
+        @Override
+        public Long getRequestId(NurseStationOrderAuditRowDto row) {
+            return row.getRequestId();
+        }
+
+        @Override
+        public Long getEncounterId(NurseStationOrderAuditRowDto row) {
+            return row.getEncounterId();
+        }
+
+        @Override
+        public String getOrderType(NurseStationOrderAuditRowDto row) {
+            return row.getOrderType();
+        }
+
+        @Override
+        public Integer getSortNumber(NurseStationOrderAuditRowDto row) {
+            return row.getSortNumber();
+        }
+
+        @Override
+        public String getAdviceDisplayName(NurseStationOrderAuditRowDto row) {
+            return row.getAdviceDisplayName();
+        }
+
+        @Override
+        public String getDosageDisplay(NurseStationOrderAuditRowDto row) {
+            return row.getDosageDisplay();
+        }
+
+        @Override
+        public void applyTcmPrescriptionCollapse(
+            NurseStationOrderAuditRowDto representative,
+            MedicationRequestListQueryModel repMed,
+            List<Long> lineRequestIds,
+            String adviceDisplayName,
+            String dosageDisplay) {
+            representative.setTcmFlag(Boolean.TRUE);
+            if (repMed != null) {
+                representative.setPrescriptionNo(repMed.getPrescriptionNo());
+                representative.setSufferingFlag(repMed.getSufferingFlag());
+                representative.setChineseHerbsDoseQuantity(repMed.getChineseHerbsDoseQuantity());
+            }
+            representative.setLineRequestIds(lineRequestIds);
+            representative.setAdviceDisplayName(adviceDisplayName);
+            representative.setSpecificationText(null);
+            representative.setDosageDisplay(dosageDisplay);
+        }
+    };
 
     /**
      * 将单条 OrderInfo 映射为校对列表行。

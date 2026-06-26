@@ -23,9 +23,7 @@ CREATE TABLE IF NOT EXISTS "public"."cus_activity_execution_location" (
     "remark" varchar(255),
     CONSTRAINT "cus_activity_execution_location_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE cus_activity_execution_location IS '自定义 activity execution location';
-
 COMMENT ON COLUMN cus_activity_execution_location.id IS '主键';
 COMMENT ON COLUMN cus_activity_execution_location.tenant_id IS '租户标识';
 COMMENT ON COLUMN cus_activity_execution_location.created_at IS '创建时间';
@@ -45,4 +43,3 @@ COMMENT ON COLUMN cus_activity_execution_location.end_time IS '生效结束时�
 COMMENT ON COLUMN cus_activity_execution_location.priority IS '优先级（数值越小越优先，1 最优先；与取药科室一致）';
 COMMENT ON COLUMN cus_activity_execution_location.display_order IS '展示顺序';
 COMMENT ON COLUMN cus_activity_execution_location.remark IS '备注';
-

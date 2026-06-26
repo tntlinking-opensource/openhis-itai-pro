@@ -27,7 +27,6 @@ import com.openhis.health.domain.share.events.custom.servicelocationtemplate.Ser
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalTime;
 import java.util.*;
@@ -48,7 +47,6 @@ public class ServiceLocationTemplateDomainService {
      *
      * @param command 开立科室与规则行列表
      */
-    @Transactional
     public void saveDistributionConfig(SaveDistributionConfigCommand command) {
         // 业务分支处理。
         if (command.getOrganizationId() == null) {

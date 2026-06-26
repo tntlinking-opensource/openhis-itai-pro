@@ -28,9 +28,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_healthcare_service" (
     "contact" varchar(255),
     CONSTRAINT "adm_healthcare_service_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_healthcare_service IS '管理域 healthcare service';
-
 COMMENT ON COLUMN adm_healthcare_service.id IS '主键';
 COMMENT ON COLUMN adm_healthcare_service.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_healthcare_service.created_at IS '创建时间';

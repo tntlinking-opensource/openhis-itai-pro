@@ -17,6 +17,8 @@
 
 package com.openhis.health.application.inpatient.pharmacy.summarydispense.assembler;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.module.common.assembler.product.MedicationPackageSplitQuantityDisplaySupport;
 import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.dto.InpatientPharmacySummaryDispenseItemDto;
@@ -73,7 +75,7 @@ public class InpatientPharmacySummaryDispenseAssembler {
             dto.setUnitCode(row.getUnitCode());
             dto.setUnitPrice(row.getUnitPrice());
             dto.setTotalPrice(row.getTotalPrice());
-            dto.setPurposeLocationName(StringUtils.trimToNull(purposeLocationName));
+            dto.setPurposeLocationName(trimToNull(purposeLocationName));
             String productKey = ProductDefinitionKeyUtil.buildCompositeKey(
                 TableNameConstants.MED_MEDICATION_DEFINITION, row.getItemId());
             ProductDefinitionDisplayDto product = productByKey.get(productKey);
@@ -82,7 +84,7 @@ public class InpatientPharmacySummaryDispenseAssembler {
                 dto.setSpecificationText(this.resolveSpecificationText(product));
                 dto.setUnitCodeText(ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
                     null, row.getUnitCode(), product));
-                dto.setManufacturerName(StringUtils.trimToNull(product.getManufacturer()));
+                dto.setManufacturerName(trimToNull(product.getManufacturer()));
                 dto.setDisplayQuantityText(MedicationPackageSplitQuantityDisplaySupport.buildDisplayQuantityText(
                     row.getItemQuantity(), product));
             }

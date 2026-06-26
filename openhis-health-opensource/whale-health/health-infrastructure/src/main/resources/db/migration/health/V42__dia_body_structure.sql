@@ -21,8 +21,10 @@ CREATE TABLE IF NOT EXISTS "public"."dia_body_structure" (
     CONSTRAINT "dia_body_structure_pkey" PRIMARY KEY ("id")
 );
 
-COMMENT ON TABLE dia_body_structure IS '诊断 body structure';
 
+
+-- ----- seed sync from DB (dia_body_structure, 3 rows) -----
+COMMENT ON TABLE dia_body_structure IS '诊断 body structure';
 COMMENT ON COLUMN dia_body_structure.id IS '主键';
 COMMENT ON COLUMN dia_body_structure.tenant_id IS '租户标识';
 COMMENT ON COLUMN dia_body_structure.created_at IS '创建时间';
@@ -33,10 +35,21 @@ COMMENT ON COLUMN dia_body_structure.is_deleted IS '软删标记';
 COMMENT ON COLUMN dia_body_structure.deleted_at IS '删除时间';
 COMMENT ON COLUMN dia_body_structure.deleted_by IS '删除人';
 COMMENT ON COLUMN dia_body_structure.version IS '乐观锁版本号';
-COMMENT ON COLUMN dia_body_structure.bus_no IS 'bus no';
-COMMENT ON COLUMN dia_body_structure.name IS 'name';
-COMMENT ON COLUMN dia_body_structure.status_enum IS 'status enum';
-COMMENT ON COLUMN dia_body_structure.py_str IS 'py str';
-COMMENT ON COLUMN dia_body_structure.wb_str IS 'wb str';
-COMMENT ON COLUMN dia_body_structure.parent_id IS 'parent id';
+COMMENT ON COLUMN dia_body_structure.bus_no IS '业务编号';
+COMMENT ON COLUMN dia_body_structure.name IS '名称';
+COMMENT ON COLUMN dia_body_structure.status_enum IS '状态枚举值';
+COMMENT ON COLUMN dia_body_structure.py_str IS '拼音码';
+COMMENT ON COLUMN dia_body_structure.wb_str IS '五笔码';
+COMMENT ON COLUMN dia_body_structure.parent_id IS 'parent标识';
 
+INSERT INTO "dia_body_structure" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "bus_no", "name", "status_enum", "py_str", "wb_str", "parent_id")
+VALUES ('328090067094999040', '1', '2026-06-24 08:32:47.614+00', '2026-06-24 08:32:47.614+00', '1', '1', false, NULL, NULL, 0, 'BS0001', '头', 'ACTIVE', '头', '头', NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "dia_body_structure" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "bus_no", "name", "status_enum", "py_str", "wb_str", "parent_id")
+VALUES ('328098821287972864', '1', '2026-06-24 09:07:34.776+00', '2026-06-24 09:07:34.776+00', '1', '1', false, NULL, NULL, 0, 'BS0002', '下肢', 'ACTIVE', '下肢', '下肢', NULL)
+ON CONFLICT ("id") DO NOTHING;
+
+INSERT INTO "dia_body_structure" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "bus_no", "name", "status_enum", "py_str", "wb_str", "parent_id")
+VALUES ('328098846499934208', '1', '2026-06-24 09:07:40.787+00', '2026-06-24 09:07:40.787+00', '1', '1', false, NULL, NULL, 0, 'BS0003', '小腿关节', 'ACTIVE', '小腿关节', '小腿关节', '328098821287972864')
+ON CONFLICT ("id") DO NOTHING;

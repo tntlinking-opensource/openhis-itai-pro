@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.outpatient.financial.registration.response;
 
+import com.openhis.health.application.outpatient.financial.registration.dto.ContractInsuranceProfileDto;
 import com.openhis.whale.core.application.dto.OptionDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -63,4 +64,16 @@ public class LoadRegisterFormInitResponse {
     @Schema(description = "性别选项")
     /** 性别选项（业务字段）。 */
     private List<OptionDto> genderOptions;
+
+    /** 费用性质主键（String）→ 合同类别编码（ContractCategory.code）。 */
+    @Schema(description = "费用性质类别映射")
+    private Map<String, String> contractCategoryById;
+
+    /** 费用性质主键 → 医保通道概要。 */
+    @Schema(description = "费用性质医保通道概要")
+    private Map<String, ContractInsuranceProfileDto> contractInsuranceProfileById;
+
+    /** 支付渠道选项（477 ∩ PaymentChannel）。 */
+    @Schema(description = "支付渠道选项")
+    private List<OptionDto> paymentChannelOptions;
 }

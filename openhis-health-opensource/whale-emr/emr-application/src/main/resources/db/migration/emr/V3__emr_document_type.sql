@@ -27,9 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_emr_document_type_enabled
 
 CREATE INDEX IF NOT EXISTS idx_emr_document_type_tenant
     ON emr_document_type (tenant_id);
-
 COMMENT ON TABLE emr_document_type IS '电子病历 document type';
-
 COMMENT ON COLUMN emr_document_type.id IS '主键';
 COMMENT ON COLUMN emr_document_type.code IS '文书类型配置';
 COMMENT ON COLUMN emr_document_type.name IS '文书类型名称';
@@ -52,5 +50,5 @@ INSERT INTO emr_document_type (
 ) VALUES
 (323100000000000101, 'OUTPATIENT_RECORD', '门诊病历', 323100000000000201, TRUE, 1, TIMESTAMP '2026-06-11 00:00:00+00', FALSE, 1, 1),
 (323100000000000102, 'PROGRESS_NOTE',     '病程记录', 323100000000000203, TRUE, 2, TIMESTAMP '2026-06-11 00:00:00+00', FALSE, 1, 1),
-(323100000000000103, 'ADMISSION_RECORD',  '入院记录', NULL,                 TRUE, 3, TIMESTAMP '2026-06-11 00:00:00+00', FALSE, 1, 1),
+(323100000000000103, 'ADMISSION_RECORD',  '入院记录', 323100000000000205, TRUE, 3, TIMESTAMP '2026-06-11 00:00:00+00', FALSE, 1, 1),
 (323100000000000104, 'DISCHARGE_SUMMARY', '出院小结', NULL,                 TRUE, 4, TIMESTAMP '2026-06-11 00:00:00+00', FALSE, 1, 1);

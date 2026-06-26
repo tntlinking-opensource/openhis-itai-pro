@@ -1,0 +1,25 @@
+{
+  "moduleId": "chs",
+  "displayName": "医保（CHS）",
+  "enabledProperty": "openhis.modules.chs.enabled",
+  "autoConfigurationClass": "com.openhis.chs.application.config.ChsAutoConfiguration",
+  "appServiceNames": [
+    "insuranceNationalCatalog",
+    "insurancePlatformDict",
+    "insuranceCatalogMapping",
+    "insuranceCatalogWorkbench",
+    "insuranceSession",
+    "insuranceMedicalInfoQuery",
+    "insuranceInventory",
+    "insuranceReconciliation",
+    "insurancePerson",
+    "chsNationalCatalog",
+    "chsPlatformDict",
+    "chsCatalogMapping",
+    "chsSession",
+    "chsGateway",
+    "chsMedicalInfoQuery",
+    "chsInventory",
+    "chsReconciliation"
+  ]
+}

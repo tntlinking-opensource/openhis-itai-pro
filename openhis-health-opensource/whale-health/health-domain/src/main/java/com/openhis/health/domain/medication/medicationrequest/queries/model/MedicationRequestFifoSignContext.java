@@ -47,7 +47,7 @@ public class MedicationRequestFifoSignContext {
     /** 数量单位编码。 */
     private String unitCode;
 
-    /** 目录 categoryCode（药品 med_category_code），用于签发相位 FIFO 模板解析。 */
+    /** 目录 categoryCode（药品 medication_category_code），用于签发相位 FIFO 模板解析。 */
     private String catalogCategoryCode;
 
     /** 给药途径编码（模板 calcScore 维度）。 */

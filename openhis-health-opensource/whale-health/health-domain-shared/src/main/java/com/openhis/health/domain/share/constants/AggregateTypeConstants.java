@@ -95,6 +95,11 @@ public interface AggregateTypeConstants {
     String BODY_STRUCTURE = "BS";
 
     /**
+     * 生命体征聚合类型名称。
+     */
+    String VITAL_SIGN = "VS";
+
+    /**
      * 费用性质聚合类型名称。
      */
     String CONTRACT = "CT";
@@ -232,6 +237,11 @@ public interface AggregateTypeConstants {
      * 支付流水聚合类型名称。
      */
     String PAYMENT_RECONCILIATION = "PYR";
+
+    /**
+     * 收费员交账聚合类型名称（交账单 busNo 前缀）。
+     */
+    String CASHIER_SETTLEMENT = "CS";
 
     /**
      * 医保协同单聚合类型名称。

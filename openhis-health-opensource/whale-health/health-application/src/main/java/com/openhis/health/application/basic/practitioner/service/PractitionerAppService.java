@@ -22,7 +22,7 @@ import com.openhis.health.application.basic.practitioner.request.SavePractitione
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerDomainService;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
@@ -47,7 +47,7 @@ public class PractitionerAppService {
     /** 医务人员写侧：更新签名图等主档属性。 */
     private final PractitionerDomainService practitionerDomainService;
     /** 写路径操作人解析：未登录时阻断签名保存。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
 
     /**
      * 加载医务人员主档（含签名图），供岗位工作台「医生维护」区展示。
@@ -94,7 +94,7 @@ public class PractitionerAppService {
         practitionerDomainService.updateSignature(
             request.getPractitionerId(),
             payload,
-            currentOperatorResolver.requireOperatorId(
+            currentPractitionerResolver.requireOperatorId(
                 ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "请先登录后再操作"));
     }
 }

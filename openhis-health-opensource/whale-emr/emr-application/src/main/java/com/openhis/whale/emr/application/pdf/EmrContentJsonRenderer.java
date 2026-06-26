@@ -44,6 +44,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import static com.openhis.whale.core.application.util.StringUtils.firstNonBlank;
+import static com.openhis.whale.core.application.util.StringUtils.nullToEmpty;
+
 /**
  * 将 Tiptap/ProseMirror JSON 渲染到 OpenPDF Document。
  */
@@ -609,21 +612,5 @@ public class EmrContentJsonRenderer {
             return null;
         }
         return attrs.get(key).asText(null);
-    }
-
-    private static String firstNonBlank(String... values) {
-        for (String v : values) {
-            if (StringUtils.hasText(v)) {
-                return v;
-            }
-        }
-        return null;
-    }
-
-    private static String nullToEmpty(String s) {
-        if (s != null) {
-            return s;
-        }
-        return "";
     }
 }

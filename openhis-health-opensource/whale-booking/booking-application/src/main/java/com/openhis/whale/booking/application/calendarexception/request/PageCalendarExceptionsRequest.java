@@ -13,19 +13,26 @@ import java.time.LocalDate;
 @Setter
 public class PageCalendarExceptionsRequest {
 
+    /** 科室主键；空=全院。 */
     private Long organizationId;
 
+    /** 例外类型筛选。 */
     private String exceptionType;
 
+    /** 日期区间起。 */
     private LocalDate rangeStart;
 
+    /** 日期区间止。 */
     private LocalDate rangeEnd;
 
+    /** 说明关键字。 */
     private String keyword;
 
+    /** 页码（1-based）。 */
     @NotNull
     private Integer pageNo;
 
+    /** 页大小。 */
     @NotNull
     private Integer pageSize;
 }

@@ -24,8 +24,4 @@ public class SignTcmRxBatchResponse {
     /** prescriptionGroupKey 到处方号映射。 */
     @Schema(description = "方标识到处方号映射")
     private Map<String, String> prescriptionNoByGroupKey = new HashMap<>();
-
-    /** 批次签发码。 */
-    @Schema(description = "批次签发码")
-    private String signCode;
 }

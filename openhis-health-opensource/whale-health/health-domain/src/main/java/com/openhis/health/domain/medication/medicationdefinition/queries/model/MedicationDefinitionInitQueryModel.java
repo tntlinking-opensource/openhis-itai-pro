@@ -47,8 +47,6 @@ public class MedicationDefinitionInitQueryModel {
     private List<OptionDto> tempOrderSplitPropertyOptions;
     /** chrgitmlvoptions。 */
     private List<OptionDto> chrgitmLvOptions;
-    /** med类别options。 */
-    private List<OptionDto> medCategoryOptions;
     /** system类别options。 */
     private List<OptionDto> systemCategoryOptions;
     /** medicinepropertyoptions。 */

@@ -14,7 +14,7 @@
 
     <groupId>com.openhis</groupId>
     <artifactId>whale</artifactId>
-    <version>2.0.1-SNAPSHOT</version>
+    <version>2.0.2-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>OpenHIS All</name>
@@ -33,6 +33,7 @@
         <whale.emr.version>${project.version}</whale.emr.version>
         <whale.mrms.version>${project.version}</whale.mrms.version>
         <whale.chs.version>${project.version}</whale.chs.version>
+        <whale.elep.version>${project.version}</whale.elep.version>
         <whale.report.version>${project.version}</whale.report.version>
         <whale.booking.version>${project.version}</whale.booking.version>
 
@@ -58,6 +59,9 @@
         <module>whale-booking</module>
         <module>whale-report</module>
         <module>whale-chs-jilin</module>
+        <module>whale-elep-jilin</module>
+        <module>whale-einvoice-boss</module>
+        <module>whale-unionpay-bpc</module>
     </modules>
 
     <dependencyManagement>
@@ -73,9 +77,8 @@
     </dependencyManagement>
 
     <profiles>
-<!-- 开源仓：仅 HIS 核心（无扩展模块） -->
         <profile>
-            <id>opensource</id>
+            <id>with-emr</id>
     <modules>
         <module>whale-dependencies</module>
         <module>whale-health</module>
@@ -84,9 +87,70 @@
         <module>whale-booking</module>
         <module>whale-report</module>
         <module>whale-chs-jilin</module>
+        <module>whale-elep-jilin</module>
+        <module>whale-einvoice-boss</module>
+        <module>whale-unionpay-bpc</module>
     </modules>
         </profile>
-    </profiles>
+        <profile>
+            <id>with-mrms</id>
+    <modules>
+        <module>whale-dependencies</module>
+        <module>whale-health</module>
+        <module>whale-emr</module>
+        <module>whale-mrms</module>
+        <module>whale-booking</module>
+        <module>whale-report</module>
+        <module>whale-chs-jilin</module>
+        <module>whale-elep-jilin</module>
+        <module>whale-einvoice-boss</module>
+        <module>whale-unionpay-bpc</module>
+    </modules>
+        </profile>
+        <profile>
+            <id>with-chs</id>
+    <modules>
+        <module>whale-dependencies</module>
+        <module>whale-health</module>
+        <module>whale-emr</module>
+        <module>whale-mrms</module>
+        <module>whale-booking</module>
+        <module>whale-report</module>
+        <module>whale-chs-jilin</module>
+        <module>whale-elep-jilin</module>
+        <module>whale-einvoice-boss</module>
+        <module>whale-unionpay-bpc</module>
+    </modules>
+        </profile>
+        <profile>
+            <id>with-elep</id>
+    <modules>
+        <module>whale-dependencies</module>
+        <module>whale-health</module>
+        <module>whale-emr</module>
+        <module>whale-mrms</module>
+        <module>whale-booking</module>
+        <module>whale-report</module>
+        <module>whale-chs-jilin</module>
+        <module>whale-elep-jilin</module>
+        <module>whale-einvoice-boss</module>
+        <module>whale-unionpay-bpc</module>
+    </modules>
+        </profile>
+        <profile>
+            <id>with-booking</id>
+        </profile>
+        <profile>
+            <id>with-einvoice-boss</id>
+        </profile>
+        <profile>
+            <id>with-unionpay-bpc</id>
+        </profile>
+        <profile>
+            <id>with-report</id>
+        </profile>
+<!-- 开源仓：仅 HIS 核心（无扩展模块） -->
+</profiles>
 
     <build>
         <pluginManagement>

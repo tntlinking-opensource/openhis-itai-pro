@@ -11,8 +11,10 @@ import lombok.Setter;
 @Setter
 public class CancelDiagnosticBookingRequest {
 
+    /** 待取消预约主键。 */
     @NotNull
     private Long appointmentId;
 
+    /** 取消原因（可选）。 */
     private String reason;
 }

@@ -18,18 +18,23 @@ import java.math.BigDecimal;
 @Table(name = "bkg_health_check_booking_ext")
 public class HealthCheckBookingExt extends BaseAuditedEntity {
 
+    /** 关联预约主键。 */
     @Column(name = "appointment_id", nullable = false)
     private Long appointmentId;
 
+    /** 套餐主键。 */
     @Column(name = "package_id")
     private Long packageId;
 
+    /** 团检批次主键（个检为空）。 */
     @Column(name = "batch_id")
     private Long batchId;
 
+    /** 下单时套餐快照 JSON。 */
     @Column(name = "package_snapshot_json")
     private String packageSnapshotJson;
 
+    /** 参考金额。 */
     @Column(name = "estimated_amount")
     private BigDecimal estimatedAmount;
 }

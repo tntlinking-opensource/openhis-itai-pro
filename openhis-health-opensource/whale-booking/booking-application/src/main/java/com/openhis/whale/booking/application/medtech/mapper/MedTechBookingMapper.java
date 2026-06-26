@@ -48,10 +48,20 @@ public class MedTechBookingMapper {
 
     private final BookingRegisterMapper bookingRegisterMapper;
 
+    /**
+     * @param bookingRegisterMapper 门诊预约映射器
+     */
     public MedTechBookingMapper(BookingRegisterMapper bookingRegisterMapper) {
         this.bookingRegisterMapper = bookingRegisterMapper;
     }
 
+    /**
+     * 主数据 → 医技预约表单初始化响应。
+     *
+     * @param locations 诊室位置选项列表
+     * @param masterData 排班表单主数据快照
+     * @return 医技预约表单初始化响应
+     */
     public LoadMedTechFormInitResponse toLoadMedTechFormInitResponse(
         List<MasterDataOption> locations,
         ScheduleFormMasterDataSnapshot masterData) {
@@ -63,6 +73,12 @@ public class MedTechBookingMapper {
         return response;
     }
 
+    /**
+     * 检索就诊请求 → Port 查询。
+     *
+     * @param request 检索就诊请求
+     * @return 就诊检索 Port 查询
+     */
     public SearchEncounterQuery toSearchEncounterQuery(SearchEncounterRequest request) {
         SearchEncounterQuery query = new SearchEncounterQuery();
         query.setOrganizationId(request.getOrganizationId());
@@ -72,6 +88,12 @@ public class MedTechBookingMapper {
         return query;
     }
 
+    /**
+     * Port 就诊检索结果 → 就诊上下文 DTO。
+     *
+     * @param source Port 就诊检索结果
+     * @return 就诊上下文 DTO，source 为 null 时返回 null
+     */
     public EncounterContextDto toEncounterContextDto(EncounterSearchResultDto source) {
         if (source == null) {
             return null;
@@ -86,6 +108,13 @@ public class MedTechBookingMapper {
         return dto;
     }
 
+    /**
+     * 可预约医嘱 + 预约索引 → 医嘱列表行 DTO。
+     *
+     * @param source 可预约医嘱 DTO
+     * @param appointmentIdByServiceRequestId 医嘱主键 → 预约主键映射
+     * @return 医嘱列表行 DTO
+     */
     public ServiceRequestItemDto toServiceRequestItemDto(
         BookableServiceRequestDto source,
         Map<Long, Long> appointmentIdByServiceRequestId) {
@@ -103,6 +132,13 @@ public class MedTechBookingMapper {
         return dto;
     }
 
+    /**
+     * 预约列表模型 + 可预约医嘱 → 医嘱列表行 DTO。
+     *
+     * @param model 预约列表模型
+     * @param source 可预约医嘱 DTO
+     * @return 医嘱列表行 DTO
+     */
     public ServiceRequestItemDto toServiceRequestItemDto(AppointmentBookingListModel model, BookableServiceRequestDto source) {
         ServiceRequestItemDto dto = new ServiceRequestItemDto();
         if (source != null) {
@@ -118,6 +154,12 @@ public class MedTechBookingMapper {
         return dto;
     }
 
+    /**
+     * 预约列表模型 → 医嘱列表行 DTO（从预约反查医嘱）。
+     *
+     * @param model 预约列表模型
+     * @return 医嘱列表行 DTO
+     */
     public ServiceRequestItemDto toServiceRequestItemDtoFromAppointment(AppointmentBookingListModel model) {
         ServiceRequestItemDto dto = new ServiceRequestItemDto();
         if (model == null) {
@@ -136,6 +178,12 @@ public class MedTechBookingMapper {
         return dto;
     }
 
+    /**
+     * 可约号源响应 → 医技可约号源响应。
+     *
+     * @param source 可约号源列表响应
+     * @return 医技可约号源列表响应
+     */
     public ListDiagnosticBookableSlotsResponse toListDiagnosticBookableSlotsResponse(ListBookableSlotsResponse source) {
         ListDiagnosticBookableSlotsResponse response = new ListDiagnosticBookableSlotsResponse();
         if (source == null || source.getSlots() == null) {
@@ -150,14 +198,38 @@ public class MedTechBookingMapper {
         return response;
     }
 
+    /**
+     * 占号命令（委托门诊预约映射器）。
+     *
+     * @param slotId 号源主键
+     * @param operatorId 操作人主键
+     * @return 占号命令
+     */
     public AllocateBookingCommand toAllocateBookingCommand(Long slotId, Long operatorId) {
         return bookingRegisterMapper.toAllocateBookingCommand(slotId, operatorId);
     }
 
+    /**
+     * 释放占号命令（委托门诊预约映射器）。
+     *
+     * @param slotId 号源主键
+     * @param operatorId 操作人主键
+     * @return 释放占号命令
+     */
     public ReleaseBookingCommand toReleaseBookingCommand(Long slotId, Long operatorId) {
         return bookingRegisterMapper.toReleaseBookingCommand(slotId, operatorId);
     }
 
+    /**
+     * 创建医技预约请求 → 创建预约命令。
+     *
+     * @param request 创建医技预约请求
+     * @param slot 目标号源明细
+     * @param resourceMap 医技资源映射
+     * @param encounterId 就诊主键
+     * @param operatorId 操作人主键
+     * @return 创建预约命令
+     */
     public CreateAppointmentCommand toCreateDiagnosticAppointmentCommand(
         CreateDiagnosticBookingRequest request,
         SlotDetailModel slot,
@@ -190,6 +262,12 @@ public class MedTechBookingMapper {
         return command;
     }
 
+    /**
+     * 预约实体 → 创建医技预约响应。
+     *
+     * @param appointment 预约实体
+     * @return 创建医技预约响应
+     */
     public CreateDiagnosticBookingResponse toCreateDiagnosticBookingResponse(Appointment appointment) {
         CreateDiagnosticBookingResponse response = new CreateDiagnosticBookingResponse();
         response.setAppointmentId(appointment.getId());
@@ -197,6 +275,13 @@ public class MedTechBookingMapper {
         return response;
     }
 
+    /**
+     * 取消医技预约请求 → 取消预约命令。
+     *
+     * @param request 取消医技预约请求
+     * @param operatorId 操作人主键
+     * @return 取消预约命令
+     */
     public CancelAppointmentCommand toCancelAppointmentCommand(CancelDiagnosticBookingRequest request, Long operatorId) {
         CancelAppointmentCommand command = new CancelAppointmentCommand();
         command.setOperatorId(operatorId);
@@ -207,6 +292,13 @@ public class MedTechBookingMapper {
         return command;
     }
 
+    /**
+     * 改约结果 → 医技改约响应。
+     *
+     * @param appointmentId 预约主键
+     * @param newSlotId 新号源主键
+     * @return 医技改约响应
+     */
     public RescheduleDiagnosticBookingResponse toRescheduleDiagnosticBookingResponse(
         Long appointmentId,
         Long newSlotId) {
@@ -216,6 +308,14 @@ public class MedTechBookingMapper {
         return response;
     }
 
+    /**
+     * 预约详情 → 现场报到入队命令。
+     *
+     * @param booking 预约详情模型
+     * @param destinationLocationId 目的地位置主键
+     * @param operatorId 操作人主键
+     * @return 现场报到入队命令
+     */
     public CheckInToQueueCommand toCheckInToQueueCommand(
         AppointmentBookingDetailModel booking,
         Long destinationLocationId,
@@ -236,6 +336,12 @@ public class MedTechBookingMapper {
         return command;
     }
 
+    /**
+     * 医技资源映射实体 → DTO。
+     *
+     * @param entity 医技资源映射实体
+     * @return 医技资源映射 DTO
+     */
     public DiagnosticResourceMapDto toDiagnosticResourceMapDto(DiagnosticResourceMap entity) {
         DiagnosticResourceMapDto dto = new DiagnosticResourceMapDto();
         dto.setId(entity.getId());
@@ -250,6 +356,12 @@ public class MedTechBookingMapper {
         return dto;
     }
 
+    /**
+     * 保存医技资源映射请求 → 领域实体。
+     *
+     * @param request 保存医技资源映射请求
+     * @return 医技资源映射实体
+     */
     public DiagnosticResourceMap toDiagnosticResourceMapEntity(SaveDiagnosticResourceMapRequest request) {
         DiagnosticResourceMap entity = new DiagnosticResourceMap();
         entity.setId(request.getId());
@@ -260,10 +372,20 @@ public class MedTechBookingMapper {
         entity.setLocationId(request.getLocationId());
         entity.setDeviceId(request.getDeviceId());
         entity.setResourceName(request.getResourceName());
-        entity.setActiveFlag(request.getActiveFlag() == null ? Boolean.TRUE : request.getActiveFlag());
+        if (request.getActiveFlag() == null) {
+            entity.setActiveFlag(Boolean.TRUE);
+        } else {
+            entity.setActiveFlag(request.getActiveFlag());
+        }
         return entity;
     }
 
+    /**
+     * 从可预约医嘱列表提取医嘱主键。
+     *
+     * @param rows 可预约医嘱 DTO 列表
+     * @return 医嘱主键列表
+     */
     public List<Long> collectServiceRequestIds(List<BookableServiceRequestDto> rows) {
         List<Long> ids = new ArrayList<>();
         if (rows == null) {
@@ -277,6 +399,13 @@ public class MedTechBookingMapper {
         return ids;
     }
 
+    /**
+     * 按医嘱主键查找可预约医嘱。
+     *
+     * @param rows 可预约医嘱 DTO 列表
+     * @param serviceRequestId 医嘱主键
+     * @return 匹配的可预约医嘱 DTO，未找到时为 null
+     */
     public BookableServiceRequestDto findServiceRequest(List<BookableServiceRequestDto> rows, Long serviceRequestId) {
         if (rows == null || serviceRequestId == null) {
             return null;
@@ -289,6 +418,12 @@ public class MedTechBookingMapper {
         return null;
     }
 
+    /**
+     * 可预约医嘱列表 → 医嘱主键索引。
+     *
+     * @param rows 可预约医嘱 DTO 列表
+     * @return 医嘱主键 → 可预约医嘱 DTO 映射
+     */
     public Map<Long, BookableServiceRequestDto> indexServiceRequests(List<BookableServiceRequestDto> rows) {
         Map<Long, BookableServiceRequestDto> map = new java.util.HashMap<>();
         if (rows == null) {

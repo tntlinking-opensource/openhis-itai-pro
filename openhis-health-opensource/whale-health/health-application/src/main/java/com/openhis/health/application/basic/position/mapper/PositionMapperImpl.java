@@ -27,7 +27,7 @@ import com.openhis.health.domain.administration.practitionerrole.entity.Practiti
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
-import com.openhis.health.application.basic.position.support.PositionRoleApiCompat;
+import com.openhis.health.module.common.converter.position.PositionRoleApiCompat;
 import com.openhis.whale.identity.infrastructure.repository.RoleRepository;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.identity.application.dto.RoleDto;

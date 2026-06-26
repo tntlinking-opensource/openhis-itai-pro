@@ -129,7 +129,7 @@ public class PractitionerQueryService {
     }
 
     /**
-     * 批量解析流水经办人展示名（{@code entererId} 可能为系统用户 ID 或医务人员主键）。
+     * 批量解析流水经办人展示名（{@code entererId} 为医务人员主键；存量数据可能仍为系统用户 ID）。
      *
      * @param entererIds 支付头 {@code enterer_id} 集合
      * @return entererId → 姓名；未命中则不写入该键
@@ -148,29 +148,24 @@ public class PractitionerQueryService {
             return java.util.Collections.emptyMap();
         }
         java.util.Map<Long, String> nameByEntererId = new java.util.HashMap<>(distinct.size() * 2);
-        java.util.List<Practitioner> byUserId =
-            practitionerRepository.findAllByUserIdInAndIsDeletedFalse(distinct);
-        for (Practitioner practitioner : byUserId) {
-            if (practitioner == null || practitioner.getUserId() == null) {
-                continue;
-            }
-            if (StringUtils.isNotBlank(practitioner.getName())) {
-                nameByEntererId.put(practitioner.getUserId(), practitioner.getName());
-            }
-        }
         java.util.List<Long> unresolved = new java.util.ArrayList<>();
         for (Long entererId : distinct) {
-            if (!nameByEntererId.containsKey(entererId)) {
+            Practitioner practitioner = practitionerRepository.findById(entererId).orElse(null);
+            if (practitioner != null && practitioner.getId() != null && StringUtils.isNotBlank(practitioner.getName())) {
+                nameByEntererId.put(practitioner.getId(), practitioner.getName());
+            } else {
                 unresolved.add(entererId);
             }
         }
         if (!unresolved.isEmpty()) {
-            for (Practitioner practitioner : practitionerRepository.findAllById(unresolved)) {
-                if (practitioner == null || practitioner.getId() == null) {
+            java.util.List<Practitioner> byUserId =
+                practitionerRepository.findAllByUserIdInAndIsDeletedFalse(unresolved);
+            for (Practitioner practitioner : byUserId) {
+                if (practitioner == null || practitioner.getUserId() == null) {
                     continue;
                 }
                 if (StringUtils.isNotBlank(practitioner.getName())) {
-                    nameByEntererId.put(practitioner.getId(), practitioner.getName());
+                    nameByEntererId.put(practitioner.getUserId(), practitioner.getName());
                 }
             }
         }

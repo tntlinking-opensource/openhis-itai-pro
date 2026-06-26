@@ -26,6 +26,9 @@ import com.openhis.health.domain.custom.encounterhistory.repository.EncounterHis
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -103,6 +106,28 @@ public class EncounterHistoryQueryService {
         model.setEncounterHistoryId(latest.getId());
         model.setOutWayCode(latest.getOutWayCode());
         return model;
+    }
+
+    /**
+     * 按就诊主键批量加载历史实体（住院 ON_HOLD 路由字段回填）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 历史实体列表
+     */
+    public List<EncounterHistory> listEncounterHistoryEntitiesByEncounterIds(Collection<Long> encounterIds) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> distinct = new LinkedHashSet<>();
+        for (Long id : encounterIds) {
+            if (id != null) {
+                distinct.add(id);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return repository.findAllByEncounterIdIn(distinct);
     }
 
     /**

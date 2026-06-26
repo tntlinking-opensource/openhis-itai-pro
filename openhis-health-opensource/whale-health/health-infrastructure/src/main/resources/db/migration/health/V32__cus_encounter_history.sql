@@ -23,9 +23,7 @@ CREATE TABLE IF NOT EXISTS "public"."cus_encounter_history" (
     "out_way_code" varchar(255),
     CONSTRAINT "cus_encounter_history_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE cus_encounter_history IS '自定义 encounter history';
-
 COMMENT ON COLUMN cus_encounter_history.id IS '主键';
 COMMENT ON COLUMN cus_encounter_history.tenant_id IS '租户标识';
 COMMENT ON COLUMN cus_encounter_history.created_at IS '创建时间';
@@ -45,4 +43,3 @@ COMMENT ON COLUMN cus_encounter_history.target_organization_id IS '目标科室�
 COMMENT ON COLUMN cus_encounter_history.original_location_id IS '原位置标识（病区/床位等）';
 COMMENT ON COLUMN cus_encounter_history.target_location_id IS '目标位置标识（病区/床位等）';
 COMMENT ON COLUMN cus_encounter_history.out_way_code IS '出院方式编码（仅离院类里程碑使用）';
-

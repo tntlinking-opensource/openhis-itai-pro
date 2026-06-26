@@ -52,7 +52,7 @@ public interface DoctorStationTcmConstants {
     String SCOPE_LINE = "LINE";
 
     /** 租户代煎诊疗项目默认检索名称（ActivityDefinition）。 */
-    String DECOCTION_ACTIVITY_NAME = "代煎费";
+    String DECOCTION_ACTIVITY_NAME = "代煎中药";
 
     /** IF-DOR-31 病名 source 集合。 */
     List<String> TCM_DISEASE_SOURCES = List.of(TCM_SOURCE_DISEASE);

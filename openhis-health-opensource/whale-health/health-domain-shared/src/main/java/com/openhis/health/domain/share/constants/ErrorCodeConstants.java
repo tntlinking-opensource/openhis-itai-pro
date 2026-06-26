@@ -318,6 +318,19 @@ public interface ErrorCodeConstants {
     String BODY_STRUCTURE_RULE_CONFLICT = "BODY_STRUCTURE_005";
 
     /**
+     * 生命体征错误码：参数非法。
+     */
+    String VITAL_SIGN_INVALID_ARGUMENT = "VITAL_SIGN_001";
+    /**
+     * 生命体征错误码：资源不存在。
+     */
+    String VITAL_SIGN_NOT_FOUND = "VITAL_SIGN_002";
+    /**
+     * 生命体征错误码：体征编码未启用或不存在。
+     */
+    String VITAL_SIGN_INVALID_CODE = "VITAL_SIGN_003";
+
+    /**
      * 费用性质错误码：参数非法。
      */
     String CONTRACT_INVALID_ARGUMENT = "CONTRACT_001";
@@ -362,6 +375,23 @@ public interface ErrorCodeConstants {
      * 支付流水明细错误码：明细不属于该结算单。
      */
     String PAYMENT_REC_DETAIL_NOT_MATCH = "PAYMENT_RECONCILIATION_006";
+
+    /**
+     * 收费员交账错误码：参数非法。
+     */
+    String CASHIER_SETTLEMENT_INVALID_ARGUMENT = "CASHIER_SETTLEMENT_001";
+    /**
+     * 收费员交账错误码：无可交账流水。
+     */
+    String CASHIER_SETTLEMENT_EMPTY_CANDIDATES = "CASHIER_SETTLEMENT_002";
+    /**
+     * 收费员交账错误码：并发挂载冲突。
+     */
+    String CASHIER_SETTLEMENT_CONCURRENT_CONFLICT = "CASHIER_SETTLEMENT_003";
+    /**
+     * 收费员交账错误码：单号生成冲突。
+     */
+    String CASHIER_SETTLEMENT_BUS_NO_CONFLICT = "CASHIER_SETTLEMENT_004";
 
     /**
      * 药品发放错误码：参数非法。
@@ -1249,4 +1279,13 @@ public interface ErrorCodeConstants {
      * 执行记录错误码：规则冲突。
      */
     String PROCEDURE_RULE_CONFLICT = "PROCEDURE_004";
+
+    /**
+     * 画布打印错误码：资源不存在。
+     */
+    String PRT_NOT_FOUND = "PRT-404";
+    /**
+     * 画布打印错误码：参数或版式非法。
+     */
+    String PRT_INVALID = "PRT-422";
 }

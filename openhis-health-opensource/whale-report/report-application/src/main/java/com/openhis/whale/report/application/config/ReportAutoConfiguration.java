@@ -6,6 +6,9 @@ import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
+/**
+ * report-application 自动配置：JPA 实体、仓储与 AppService 扫描。
+ */
 @Configuration
 @ConditionalOnProperty(name = "openhis.modules.report.enabled", havingValue = "true")
 @ComponentScan(basePackages = {

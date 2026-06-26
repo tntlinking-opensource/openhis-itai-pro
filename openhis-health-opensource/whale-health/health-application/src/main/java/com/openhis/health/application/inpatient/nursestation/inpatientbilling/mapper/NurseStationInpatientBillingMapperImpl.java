@@ -17,13 +17,17 @@
 
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.mapper;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
 import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.PrepickedProductKeyDto;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingCancelItemDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingParentRequestAnchorDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingWriteItemDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationSupplementParentOrderRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.PageNurseStationPricingCatalogRequest;
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
+import com.openhis.health.domain.administration.chargeitem.command.VoidNursePricingChargeItemsByServiceAnchorsCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
 import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
@@ -35,8 +39,12 @@ import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.workflow.devicerequest.command.CreateExecutedDeviceOrderCommand;
+import com.openhis.health.domain.workflow.devicerequest.command.RevokeExecutedDeviceOrderCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.GenerateDeviceDispenseFromTemporaryPathCommand;
+import com.openhis.health.domain.workflow.devicedispense.command.RemoveUndispensedDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateFromNursePricingCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.RemoveFromNursePricingCommand;
+import com.openhis.health.domain.workflow.inventoryitem.command.IncreaseQuantityCommand;
 import com.openhis.whale.core.application.exception.BusinessException;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
@@ -46,7 +54,11 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * {@link NurseStationInpatientBillingMapper} 实现：字段搬运与 Gate 校验，无跨域编排。
@@ -88,6 +100,9 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
         query.setPricingFlag(1);
         query.setActiveFlag(Boolean.TRUE);
         query.setProductTableNames(this.resolvePricingProductTableNames(request.getProductTableNames()));
+        if (StringUtils.isNotBlank(request.getCategoryCode())) {
+            query.setCategoryCode(request.getCategoryCode().trim());
+        }
         if (request.getPrepickedProductKeys() != null && !request.getPrepickedProductKeys().isEmpty()) {
             // 组套/历史行 ids 收窄目录（与 IF-DOR-11 prepickedProductKeys 同套路，BR-IP-PRC-017）
             List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
@@ -422,7 +437,7 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
         if (rows == null || rows.isEmpty()) {
             return Collections.emptyList();
         }
-        String kw = StringUtils.trimToEmpty(keyword).toLowerCase();
+        String kw = trimToEmpty(keyword).toLowerCase();
         List<NurseStationSupplementParentOrderRowDto> filtered = new ArrayList<>();
         for (NurseStationSupplementParentOrderRowDto row : rows) {
             if (row == null) {
@@ -463,5 +478,204 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
             return InpatientNurseStationConstants.PRICING_MODE_DIRECT;
         }
         return InpatientNurseStationConstants.PRICING_MODE_SUPPLEMENT;
+    }
+
+    /**
+     * 取消划价入参 Gate：非空、≤50、禁止重复 (orderType, requestId)（BR-IP-PRC-021）。
+     *
+     * @param items 取消行
+     */
+    @Override
+    public void validateCancelPricingItems(List<NurseStationPricingCancelItemDto> items) {
+        if (items == null || items.isEmpty()) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_PRC_401,
+                "请选择要取消的划价行");
+        }
+        if (items.size() > InpatientNurseStationConstants.PRICING_WRITE_BATCH_MAX) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_PRC_401,
+                "请选择要取消的划价行");
+        }
+        Set<String> seenKeys = new HashSet<>();
+        for (NurseStationPricingCancelItemDto row : items) {
+            // 每行三要素必填，否则无法定位取消锚点
+            if (row == null || row.getRequestId() == null || row.getEncounterId() == null
+                || StringUtils.isBlank(row.getOrderType())) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_PRC_401,
+                    "请选择要取消的划价行");
+            }
+            String normalizedType = row.getOrderType().trim();
+            // orderType 仅允许已划价列表两种轨
+            if (!ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(normalizedType)
+                && !ReadModelOrderTypeConstants.DEVICE_REQUEST.equals(normalizedType)) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_PRC_401,
+                    "请选择要取消的划价行");
+            }
+            String dedupeKey = normalizedType + "|" + row.getRequestId();
+            // 同批禁止重复勾选同一行
+            if (!seenKeys.add(dedupeKey)) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_PRC_401,
+                    "请选择要取消的划价行");
+            }
+        }
+    }
+
+    /**
+     * orderType → 上游 serviceTable。
+     *
+     * @param orderType SERVICE_REQUEST / DEVICE_REQUEST
+     * @return 物理表名
+     */
+    @Override
+    public String resolveCancelServiceTable(String orderType) {
+        if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(orderType)) {
+            return TableNameConstants.WKF_SERVICE_REQUEST;
+        }
+        if (ReadModelOrderTypeConstants.DEVICE_REQUEST.equals(orderType)) {
+            return TableNameConstants.WKF_DEVICE_REQUEST;
+        }
+        throw new BusinessException(
+            InpatientNurseStationConstants.EX_IP_PRC_401,
+            "请选择要取消的划价行");
+    }
+
+    /**
+     * 批量软删护士划价诊疗请求命令。
+     *
+     * @param serviceRequestIds 诊疗请求 id
+     * @param operatorId        操作人
+     * @return 领域命令
+     */
+    @Override
+    public RemoveFromNursePricingCommand toRemoveFromNursePricingCommand(
+        List<Long> serviceRequestIds,
+        Long operatorId) {
+        RemoveFromNursePricingCommand command = new RemoveFromNursePricingCommand();
+        command.setOperatorId(operatorId);
+        List<RemoveFromNursePricingCommand.Item> batchItems = new ArrayList<>();
+        if (serviceRequestIds != null) {
+            for (Long id : serviceRequestIds) {
+                if (id == null) {
+                    continue;
+                }
+                RemoveFromNursePricingCommand.Item item = new RemoveFromNursePricingCommand.Item();
+                item.setId(id);
+                batchItems.add(item);
+            }
+        }
+        command.setItems(batchItems);
+        return command;
+    }
+
+    /**
+     * 批量撤销已完成耗材请求命令。
+     *
+     * @param deviceRequestIds 耗材请求 id
+     * @param operatorId       操作人
+     * @return 领域命令
+     */
+    @Override
+    public RevokeExecutedDeviceOrderCommand toRevokeExecutedDeviceOrderCommand(
+        List<Long> deviceRequestIds,
+        Long operatorId) {
+        RevokeExecutedDeviceOrderCommand command = new RevokeExecutedDeviceOrderCommand();
+        command.setOperatorId(operatorId);
+        List<RevokeExecutedDeviceOrderCommand.RevokeExecutedDeviceOrderItemCommand> batchItems = new ArrayList<>();
+        if (deviceRequestIds != null) {
+            for (Long id : deviceRequestIds) {
+                if (id == null) {
+                    continue;
+                }
+                RevokeExecutedDeviceOrderCommand.RevokeExecutedDeviceOrderItemCommand item =
+                    new RevokeExecutedDeviceOrderCommand.RevokeExecutedDeviceOrderItemCommand();
+                item.setId(id);
+                batchItems.add(item);
+            }
+        }
+        command.setItems(batchItems);
+        return command;
+    }
+
+    /**
+     * 按单锚点撤销护士划价待结算费用命令。
+     *
+     * @param encounterId  就诊
+     * @param serviceTable 上游表
+     * @param serviceId    上游 id
+     * @param operatorId   操作人
+     * @return 领域命令
+     */
+    @Override
+    public VoidNursePricingChargeItemsByServiceAnchorsCommand toVoidNursePricingChargeItemsByServiceAnchorsCommand(
+        Long encounterId,
+        String serviceTable,
+        Long serviceId,
+        Long operatorId) {
+        VoidNursePricingChargeItemsByServiceAnchorsCommand command =
+            new VoidNursePricingChargeItemsByServiceAnchorsCommand();
+        command.setOperatorId(operatorId);
+        command.setEncounterId(encounterId);
+        command.setServiceTable(serviceTable);
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        if (serviceId != null) {
+            ids.add(serviceId);
+        }
+        command.setServiceIds(ids);
+        return command;
+    }
+
+    /**
+     * 软删耗材请求下发放行（以 deviceReqId 定位）。
+     *
+     * @param deviceRequestId 耗材请求 id
+     * @param operatorId      操作人
+     * @return 领域命令
+     */
+    @Override
+    public RemoveUndispensedDeviceDispenseCommand toRemoveUndispensedDeviceDispenseCommand(
+        Long deviceRequestId,
+        Long operatorId) {
+        RemoveUndispensedDeviceDispenseCommand command = new RemoveUndispensedDeviceDispenseCommand();
+        command.setOperatorId(operatorId);
+        command.setIdListOrRequestKey(String.valueOf(deviceRequestId));
+        return command;
+    }
+
+    /**
+     * 取消划价库存回补命令（已发 Dispense revert 后累计量）。
+     *
+     * @param operatorId       操作人
+     * @param inventoryIdToQty 库存项 → 回补量
+     * @return 增加库存命令
+     */
+    @Override
+    public IncreaseQuantityCommand toIncreaseQuantityCommand(
+        Long operatorId,
+        Map<Long, BigDecimal> inventoryIdToQty) {
+        IncreaseQuantityCommand command = new IncreaseQuantityCommand();
+        command.setOperatorId(operatorId);
+        List<IncreaseQuantityCommand.IncreaseQuantityItemCommand> items = new ArrayList<>();
+        if (inventoryIdToQty != null) {
+            for (Map.Entry<Long, BigDecimal> entry : inventoryIdToQty.entrySet()) {
+                if (entry.getKey() == null || entry.getValue() == null) {
+                    continue;
+                }
+                // 忽略非正回补量，避免库存域断言失败
+                if (entry.getValue().compareTo(BigDecimal.ZERO) <= 0) {
+                    continue;
+                }
+                IncreaseQuantityCommand.IncreaseQuantityItemCommand item =
+                    new IncreaseQuantityCommand.IncreaseQuantityItemCommand();
+                item.setId(entry.getKey());
+                item.setIncreaseQty(entry.getValue());
+                items.add(item);
+            }
+        }
+        command.setItems(items);
+        return command;
     }
 }

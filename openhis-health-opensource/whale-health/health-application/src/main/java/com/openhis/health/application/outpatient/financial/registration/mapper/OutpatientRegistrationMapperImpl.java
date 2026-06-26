@@ -17,6 +17,8 @@
 
 package com.openhis.health.application.outpatient.financial.registration.mapper;
 
+import static com.openhis.whale.core.application.util.StringUtils.firstNonBlank;
+
 import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.outpatient.financial.registration.dto.*;
@@ -191,7 +193,7 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
      */
     @Override
     public LoadAppointmentForRegisterResponse toLoadAppointmentForRegisterResponse(
-        com.openhis.whale.booking.contracts.dto.OutpatientBookingSnapshot snapshot) {
+        com.openhis.health.integration.booking.result.OutpatientBookingSnapshot snapshot) {
         if (snapshot == null) {
             return null;
         }
@@ -218,11 +220,11 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
      */
     @Override
     public ListBookableSlotHintsResponse toListBookableSlotHintsResponse(
-        java.util.List<com.openhis.whale.booking.contracts.dto.BookableSlotHint> hints) {
+        java.util.List<com.openhis.health.integration.booking.result.BookableSlotHintSnapshot> hints) {
         ListBookableSlotHintsResponse response = new ListBookableSlotHintsResponse();
         java.util.List<BookableSlotHintDto> rows = new java.util.ArrayList<>();
         if (hints != null) {
-            for (com.openhis.whale.booking.contracts.dto.BookableSlotHint hint : hints) {
+            for (com.openhis.health.integration.booking.result.BookableSlotHintSnapshot hint : hints) {
                 if (hint == null) {
                     continue;
                 }
@@ -257,7 +259,17 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
             status = payment.getStatusEnum().getCode();
         }
 
-        return new PayRegisterFeeResponse().setPaymentId(payment.getId()).setInvoiceId(invoiceId).setStatus(status);
+        String invoiceStatus = null;
+        if (invoice != null) {
+            invoiceStatus = invoice.getStatusEnum();
+        }
+
+        return new PayRegisterFeeResponse()
+                .setPaymentId(payment.getId())
+                .setEncounterId(payment.getEncounterId())
+                .setInvoiceId(invoiceId)
+                .setStatus(status)
+                .setInvoiceStatus(invoiceStatus);
     }
 
     /**
@@ -937,6 +949,7 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
         query.setEndDate(null);
         query.setStartTime(request.getDateFrom().atStartOfDay());
         query.setEndTime(request.getDateTo().atTime(23, 59, 59));
+        query.setPatientId(request.getPatientId());
         return query;
     }
 
@@ -955,19 +968,6 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
         item.setCancelReason(request.getCancelReason());
         item.setCancelAt(LocalDateTime.now());
         command.setItem(item);
-        return command;
-    }
-
-    /**
-     * 构建进入退费窗口命令。
-     *
-     * @param paymentIds 支付 ID 列表
-     * @return 进入退费窗口命令
-     */
-    @Override
-    public EnterRefundProcessingWindowCommand toEnterRefundProcessingWindowCommand(List<Long> paymentIds) {
-        EnterRefundProcessingWindowCommand command = new EnterRefundProcessingWindowCommand();
-        command.setPaymentIds(paymentIds);
         return command;
     }
 
@@ -1075,28 +1075,6 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
             list.add(item);
         }
         return list;
-    }
-
-    /**
-     * 在两条候选字符串中取首条非空白值，均空白时返回 {@code null}。
-     *
-     * <p>实现要点：主档优先于请求表单，用于患者姓名、电话、身份证号等字段的投影器/请求兜底策略，
-     * 避免主数据更新延迟导致展示不一致。</p>
-     *
-     * @param primary 优先候选（如主档字段）；可为 null
-     * @param fallback 次选候选（如请求表单字段）；可为 null
-     * @return 非空白字符串或 {@code null}
-     */
-    private static String firstNonBlank(String primary, String fallback) {
-        // 优先候选非空白时直接返回，避免重复计算。
-        if (primary != null && !primary.isBlank()) {
-            return primary;
-        }
-        // 优先候选空白或 null 时，尝试次选候选。
-        if (fallback != null && !fallback.isBlank()) {
-            return fallback;
-        }
-        return null;
     }
 
     /**

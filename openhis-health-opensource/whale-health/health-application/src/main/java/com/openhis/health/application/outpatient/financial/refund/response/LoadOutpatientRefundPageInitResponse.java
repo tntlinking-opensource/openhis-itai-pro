@@ -36,4 +36,8 @@ public class LoadOutpatientRefundPageInitResponse {
     @Schema(description = "收费项状态筛选项")
     /** 收费项状态筛选项（业务字段）。 */
     private List<OptionDto> chargeItemStatusOptions;
+
+    @Schema(description = "支付渠道下拉选项")
+    /** 当前用户可选的支付渠道选项（ADR-PAY-001 语义码 ∩ 477 active）。 */
+    private List<OptionDto> paymentChannelOptions;
 }

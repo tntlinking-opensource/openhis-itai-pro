@@ -102,7 +102,11 @@ public class DayScheduleTemplateResolver {
             ResolvedDaySchedulePlan.VirtualSlotPeriod period = new ResolvedDaySchedulePlan.VirtualSlotPeriod();
             period.setStartTime(start);
             period.setEndTime(end);
-            period.setCapacity(row.getCapacity() != null ? row.getCapacity() : 1);
+            if (row.getCapacity() != null) {
+                period.setCapacity(row.getCapacity());
+            } else {
+                period.setCapacity(1);
+            }
             period.setVirtualSlotKey(VirtualSlotKeySupport.encode(
                 organizationId, date, dayTemplateId, start, end));
             periods.add(period);

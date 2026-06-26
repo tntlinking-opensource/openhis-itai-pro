@@ -9,8 +9,10 @@ import com.openhis.health.application.outpatient.nursestation.skintest.response.
 import com.openhis.health.application.outpatient.nursestation.skintest.response.ListOutpatientSkinTestRowsResponse;
 import com.openhis.health.application.outpatient.nursestation.skintest.response.LoadOutpatientSkinTestInitResponse;
 import com.openhis.health.application.outpatient.nursestation.skintest.response.SaveOutpatientSkinTestRecordResponse;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.clinical.allergyintolerance.command.DeleteSkinTestRecordCommand;
 import com.openhis.health.domain.clinical.allergyintolerance.command.SaveSkinTestRecordCommand;
+import com.openhis.whale.core.application.dto.OptionDto;
 
 import java.util.List;
 
@@ -26,6 +28,14 @@ public interface OutpatientSkinTestMapper {
      * @return 同一响应实例
      */
     LoadOutpatientSkinTestInitResponse toInitResponse(LoadOutpatientSkinTestInitResponse response);
+
+    /**
+     * 护士实体列表转下拉选项。
+     *
+     * @param practitioners 护士实体列表
+     * @return 下拉选项
+     */
+    List<OptionDto> toNurseOptionList(List<Practitioner> practitioners);
 
     /**
      * 构造列表响应。

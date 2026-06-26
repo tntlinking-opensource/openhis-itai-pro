@@ -12,7 +12,12 @@ import java.util.List;
 @Setter
 public class BedMatrixRowDto {
 
+    /** 床位地点主键。 */
     private Long bedLocationId;
+
+    /** 床位名称。 */
     private String bedName;
+
+    /** 矩阵单元格列表。 */
     private List<BedMatrixCellDto> cells;
 }

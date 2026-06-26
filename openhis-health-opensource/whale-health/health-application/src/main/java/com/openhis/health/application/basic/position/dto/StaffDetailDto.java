@@ -38,6 +38,9 @@ public class StaffDetailDto {
 
     private String practitionerName;
     private String busNo;
+    private String ybNo;
+    private Integer drProfttlCode;
+    private String pharPracCertNo;
     private String genderEnum;
     private String statusEnum;
 

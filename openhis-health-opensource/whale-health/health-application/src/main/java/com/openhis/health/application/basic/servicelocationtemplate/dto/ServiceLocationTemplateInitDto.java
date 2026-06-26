@@ -40,7 +40,7 @@ public class ServiceLocationTemplateInitDto {
     @Schema(description = "物品表类型选项")
     private List<OptionDto> itemTableOptions;
 
-    /** 药品发放类别（与 {@code med_category_code} 对齐，供 {@code med_medication_definition} 行选用）。 */
+    /** 药品发放类别（与 {@code medication_category_code} 对齐，供 {@code med_medication_definition.category_code} 选用）。 */
     @Schema(description = "药品发放类别选项")
     private List<OptionDto> medicationCategoryOptions;
 

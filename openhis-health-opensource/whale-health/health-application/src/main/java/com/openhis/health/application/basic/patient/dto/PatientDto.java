@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.basic.patient.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -49,7 +50,7 @@ public class PatientDto {
     /** 身份证号或其它主证件号（依建档口径）。 */
     private String idCard;
     /** 出生日期（仅日期，不含时分秒）。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     private LocalDate birthDate;
     /** 联系电话。 */
     private String phone;
@@ -92,7 +93,7 @@ public class PatientDto {
     /** 婚姻状况展示文案。 */
     private String maritalStatusEnumText;
     /** 死亡时间（若有）。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime deceasedDate;
     /** 拼音检索码。 */
     private String pyStr;
@@ -105,7 +106,7 @@ public class PatientDto {
     /** 粗略年龄（列表展示用，非周岁法务口径）。 */
     private Integer age;
     /** 创建时间。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime createTime;
     /** 患者其他证件/标识列表（身份证以外），编辑回显使用。 */
     private List<PatientIdentifierItemDto> patientIdInfoList;

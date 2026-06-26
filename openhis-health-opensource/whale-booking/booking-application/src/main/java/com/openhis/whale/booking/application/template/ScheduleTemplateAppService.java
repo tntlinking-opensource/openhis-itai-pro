@@ -27,7 +27,7 @@ import com.openhis.whale.booking.application.template.response.WeekScheduleTempl
 import com.openhis.whale.booking.application.template.support.PractitionerRoleImportSupport;
 import com.openhis.whale.booking.application.template.support.TemplateJsonSupport;
 import com.openhis.whale.booking.contracts.dto.PractitionerRoleScheduleItemDto;
-import com.openhis.whale.booking.contracts.port.BookingPractitionerRolePort;
+import com.openhis.whale.booking.contracts.reader.HealthPractitionerRoleReader;
 import com.openhis.whale.booking.domain.template.entity.ScheduleTemplate;
 import com.openhis.whale.booking.domain.template.entity.SlotProvisionTemplate;
 import com.openhis.whale.booking.domain.template.entity.WeekScheduleTemplate;
@@ -44,16 +44,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 排班模板应用服务（T1/T2 CRUD，2.13～2.14）。
+ * 排班模板应用服务（T1/T2/TW CRUD，2.13～2.14、2.24～2.25）。
  *
- * <p>接入：POST /api/app/scheduleTemplate/{methodName}</p>
+ * <p>职责边界：号源时段模板（T1）、日排班模板（T2）、周模板（TW）的查询与维护；岗位导入生成 T1+T2 草稿。</p>
+ * <p>接入：AppServiceControllerRegistrar → {@code POST /api/app/scheduleTemplate/{methodName}}。</p>
  */
 @Service
 @Validated
@@ -61,20 +61,29 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ScheduleTemplateAppService {
 
+    /** T1/T2 模板读侧。 */
     private final TemplateQueryService templateQueryService;
+    /** T1/T2 模板写侧。 */
     private final TemplateDomainService templateDomainService;
+    /** TW 周模板读侧。 */
     private final WeekScheduleTemplateQueryService weekScheduleTemplateQueryService;
+    /** TW 周模板写侧。 */
     private final WeekScheduleTemplateDomainService weekScheduleTemplateDomainService;
+    /** T1/T2 Request/Entity/DTO 映射。 */
     private final ScheduleTemplateMapper scheduleTemplateMapper;
+    /** TW Request/Entity/DTO 映射。 */
     private final WeekScheduleTemplateMapper weekScheduleTemplateMapper;
+    /** 写路径操作人。 */
     private final BookingOperatorResolver bookingOperatorResolver;
-    private final BookingPractitionerRolePort bookingPractitionerRolePort;
+    /** 岗位出诊时段（health 经 Reader/Writer/Client）。 */
+    private final HealthPractitionerRoleReader healthPractitionerRoleReader;
 
     /**
      * T1 分页列表（2.13）。
      */
     public PageSlotProvisionTemplatesResponse pageSlotProvisionTemplates(
         @Valid PageSlotProvisionTemplatesRequest request) {
+        // Pre：按机构与关键字分页加载 T1 模板。
         Page<SlotProvisionTemplate> page = templateQueryService.pageSlotProvisionTemplates(
             request.getOrganizationId(),
             request.getKeyword(),
@@ -83,6 +92,7 @@ public class ScheduleTemplateAppService {
         for (SlotProvisionTemplate entity : page.getContent()) {
             rows.add(scheduleTemplateMapper.toSlotProvisionTemplateDto(entity));
         }
+        // Asm：映射 DTO 并包装分页结果。
         return BookingPagedResultBuilder.build(new PageSlotProvisionTemplatesResponse(), rows, page);
     }
 
@@ -90,6 +100,8 @@ public class ScheduleTemplateAppService {
      * T1 详情。
      */
     public SlotProvisionTemplateDto loadSlotProvisionTemplate(@Valid LoadTemplateByIdRequest request) {
+        // Pre：按主键加载 T1 模板。
+        // Asm：映射 T1 详情 DTO。
         return scheduleTemplateMapper.toSlotProvisionTemplateDto(
             templateQueryService.loadSlotProvisionTemplateById(request.getId()));
     }
@@ -97,11 +109,13 @@ public class ScheduleTemplateAppService {
     /**
      * T1 保存。
      */
-    @Transactional
     public SaveTemplateResponse saveSlotProvisionTemplate(@Valid SaveSlotProvisionTemplateRequest request) {
+        // Gate：写路径须登录。
         Long operatorId = bookingOperatorResolver.requireOperatorId();
+        // Cmd：持久化 T1 模板。
         SlotProvisionTemplate saved = templateDomainService.saveSlotProvisionTemplate(
             scheduleTemplateMapper.toSlotProvisionTemplateEntity(request), operatorId);
+        // Asm：返回主键。
         SaveTemplateResponse response = new SaveTemplateResponse();
         response.setId(saved.getId());
         return response;
@@ -110,9 +124,10 @@ public class ScheduleTemplateAppService {
     /**
      * T1 删除。
      */
-    @Transactional
     public void deleteSlotProvisionTemplate(@Valid DeleteTemplateRequest request) {
+        // Gate：写路径须登录。
         Long operatorId = bookingOperatorResolver.requireOperatorId();
+        // Cmd：软删 T1 模板。
         templateDomainService.deleteSlotProvisionTemplate(request.getId(), operatorId);
     }
 
@@ -121,6 +136,7 @@ public class ScheduleTemplateAppService {
      */
     public ListSlotProvisionTemplateOptionsResponse listSlotProvisionTemplateOptions(
         ListSlotProvisionTemplateOptionsRequest request) {
+        // Pre：解析机构并加载已启用 T1 下拉项。
         Long organizationId = null;
         if (request != null) {
             organizationId = request.getOrganizationId();
@@ -128,6 +144,7 @@ public class ScheduleTemplateAppService {
         ListSlotProvisionTemplateOptionsResponse response = new ListSlotProvisionTemplateOptionsResponse();
         response.setOptions(scheduleTemplateMapper.toSlotProvisionOptions(
             templateQueryService.listEnabledSlotProvisionTemplates(organizationId)));
+        // Asm：返回 T1 下拉选项响应。
         return response;
     }
 
@@ -135,6 +152,7 @@ public class ScheduleTemplateAppService {
      * T2 分页列表（2.14）。
      */
     public PageScheduleTemplatesResponse pageScheduleTemplates(@Valid PageScheduleTemplatesRequest request) {
+        // Pre：按机构与关键字分页加载 T2 模板。
         Page<ScheduleTemplate> page = templateQueryService.pageScheduleTemplates(
             request.getOrganizationId(),
             request.getKeyword(),
@@ -143,6 +161,7 @@ public class ScheduleTemplateAppService {
         for (ScheduleTemplate entity : page.getContent()) {
             rows.add(scheduleTemplateMapper.toScheduleTemplateDto(entity));
         }
+        // Asm：映射 DTO 并包装分页结果。
         return BookingPagedResultBuilder.build(new PageScheduleTemplatesResponse(), rows, page);
     }
 
@@ -150,6 +169,8 @@ public class ScheduleTemplateAppService {
      * T2 详情。
      */
     public ScheduleTemplateDto loadScheduleTemplate(@Valid LoadTemplateByIdRequest request) {
+        // Pre：按主键加载 T2 模板。
+        // Asm：映射 T2 详情 DTO。
         return scheduleTemplateMapper.toScheduleTemplateDto(
             templateQueryService.loadScheduleTemplateById(request.getId()));
     }
@@ -157,11 +178,13 @@ public class ScheduleTemplateAppService {
     /**
      * T2 保存。
      */
-    @Transactional
     public SaveTemplateResponse saveScheduleTemplate(@Valid SaveScheduleTemplateRequest request) {
+        // Gate：写路径须登录。
         Long operatorId = bookingOperatorResolver.requireOperatorId();
+        // Cmd：持久化 T2 模板。
         ScheduleTemplate saved = templateDomainService.saveScheduleTemplate(
             scheduleTemplateMapper.toScheduleTemplateEntity(request), operatorId);
+        // Asm：返回主键。
         SaveTemplateResponse response = new SaveTemplateResponse();
         response.setId(saved.getId());
         return response;
@@ -170,26 +193,29 @@ public class ScheduleTemplateAppService {
     /**
      * T2 删除。
      */
-    @Transactional
     public void deleteScheduleTemplate(@Valid DeleteTemplateRequest request) {
+        // Gate：写路径须登录。
         Long operatorId = bookingOperatorResolver.requireOperatorId();
+        // Cmd：软删 T2 模板。
         templateDomainService.deleteScheduleTemplate(request.getId(), operatorId);
     }
 
     /**
      * 从岗位导入 T2 日程模板草稿（2.24）。
      */
-    @Transactional
     public ImportFromPractitionerRoleResponse importFromPractitionerRole(
         @Valid ImportFromPractitionerRoleRequest request) {
+        // Gate：写路径须登录。
         Long operatorId = bookingOperatorResolver.requireOperatorId();
-        List<PractitionerRoleScheduleItemDto> items = bookingPractitionerRolePort.listScheduleItemsByPractitioner(
+        // Pre：从岗位加载出诊时段并解析为 T1 时段项。
+        List<PractitionerRoleScheduleItemDto> items = healthPractitionerRoleReader.listScheduleItemsByPractitioner(
             request.getPractitionerId(), request.getOrganizationId());
         PractitionerRoleScheduleItemDto sourceItem = this.pickImportSourceItem(items);
         List<SlotProvisionTemplateItemDto> slotItems = PractitionerRoleImportSupport.parseTimePeriods(
             sourceItem.getTimePeriodsJson());
 
         String t1Code = "PR-T1-" + request.getPractitionerId();
+        // Cmd：先保存 T1 再组装并保存 T2。
         SlotProvisionTemplate t1 = templateDomainService.saveSlotProvisionTemplate(
             this.buildImportedT1(request.getOrganizationId(), t1Code, slotItems), operatorId);
 
@@ -215,6 +241,7 @@ public class ScheduleTemplateAppService {
         t2.setPriority(0);
         ScheduleTemplate saved = templateDomainService.saveScheduleTemplate(t2, operatorId);
 
+        // Asm：返回导入后的 T2 主键与编码。
         ImportFromPractitionerRoleResponse response = new ImportFromPractitionerRoleResponse();
         response.setScheduleTemplateId(saved.getId());
         response.setTemplateCode(saved.getTemplateCode());
@@ -226,6 +253,7 @@ public class ScheduleTemplateAppService {
      */
     public PageWeekScheduleTemplatesResponse pageWeekScheduleTemplates(
         @Valid PageWeekScheduleTemplatesRequest request) {
+        // Pre：按机构与关键字分页加载 TW 周模板头。
         Page<WeekScheduleTemplate> page = weekScheduleTemplateQueryService.pageWeekScheduleTemplates(
             request.getOrganizationId(),
             request.getKeyword(),
@@ -234,6 +262,7 @@ public class ScheduleTemplateAppService {
         for (WeekScheduleTemplate entity : page.getContent()) {
             rows.add(this.loadWeekDto(entity.getId()));
         }
+        // Asm：组装含明细的 TW DTO 并包装分页结果。
         return BookingPagedResultBuilder.build(new PageWeekScheduleTemplatesResponse(), rows, page);
     }
 
@@ -241,19 +270,23 @@ public class ScheduleTemplateAppService {
      * TW 周模板详情。
      */
     public WeekScheduleTemplateDto loadWeekScheduleTemplate(@Valid LoadTemplateByIdRequest request) {
+        // Pre：按主键加载 TW 头与明细行。
+        // Asm：映射 TW 周模板详情 DTO。
         return this.loadWeekDto(request.getId());
     }
 
     /**
      * TW 周模板保存。
      */
-    @Transactional
     public SaveTemplateResponse saveWeekScheduleTemplate(@Valid SaveWeekScheduleTemplateRequest request) {
+        // Gate：写路径须登录。
         Long operatorId = bookingOperatorResolver.requireOperatorId();
+        // Cmd：持久化 TW 头与明细行。
         WeekScheduleTemplate saved = weekScheduleTemplateDomainService.saveWeekScheduleTemplate(
             weekScheduleTemplateMapper.toHeaderEntity(request),
             weekScheduleTemplateMapper.toItemEntities(request),
             operatorId);
+        // Asm：返回主键。
         SaveTemplateResponse response = new SaveTemplateResponse();
         response.setId(saved.getId());
         return response;
@@ -262,9 +295,10 @@ public class ScheduleTemplateAppService {
     /**
      * TW 周模板删除。
      */
-    @Transactional
     public void deleteWeekScheduleTemplate(@Valid DeleteTemplateRequest request) {
+        // Gate：写路径须登录。
         Long operatorId = bookingOperatorResolver.requireOperatorId();
+        // Cmd：软删 TW 周模板。
         weekScheduleTemplateDomainService.deleteWeekScheduleTemplate(request.getId(), operatorId);
     }
 

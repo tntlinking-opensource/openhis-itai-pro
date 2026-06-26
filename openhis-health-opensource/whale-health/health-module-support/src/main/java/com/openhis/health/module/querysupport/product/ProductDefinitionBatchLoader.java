@@ -19,6 +19,8 @@ package com.openhis.health.module.querysupport.product;
 
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.devicedefinition.service.DeviceDefinitionQueryService;
+import com.openhis.health.domain.administration.healthcareservice.entity.HealthcareService;
+import com.openhis.health.domain.administration.healthcareservice.service.HealthcareServiceQueryService;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -48,6 +50,9 @@ public class ProductDefinitionBatchLoader {
     private final MedicationDefinitionQueryService medicationDefinitionQueryService;
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
     private final DeviceDefinitionQueryService deviceDefinitionQueryService;
+
+    private final HealthcareServiceQueryService healthcareServiceQueryService;
+
     private final ProductDefinitionSelectionTerminologySupport productDefinitionSelectionTerminologySupport;
 
     /**
@@ -83,6 +88,12 @@ public class ProductDefinitionBatchLoader {
             } else if (TableNameConstants.ADM_DEVICE_DEFINITION.equals(tableName)) {
                 for (var dev : deviceDefinitionQueryService.getAllDeviceDefinitions(idList)) {
                     putDevice(result, dev);
+                }
+            } else if (TableNameConstants.ADM_HEALTHCARE_SERVICE.equals(tableName)) {
+                Map<Long, HealthcareService> healthcareById =
+                    healthcareServiceQueryService.loadHealthcareServiceMapByIds(idList);
+                for (HealthcareService healthcareService : healthcareById.values()) {
+                    putHealthcareService(result, healthcareService);
                 }
             }
         }
@@ -121,6 +132,20 @@ public class ProductDefinitionBatchLoader {
     private static void putDevice(Map<String, ProductDefinitionDisplayDto> result,
                                 com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition dev) {
         ProductDefinitionDisplayDto dto = ProductDefinitionDisplaySupport.fromDevice(dev);
+        if (dto == null) {
+            return;
+        }
+        String key = ProductDefinitionKeyUtil.buildCompositeKey(dto.getProductTableName(), dto.getProductDefinitionId());
+        if (key != null) {
+            result.put(key, dto);
+        }
+    }
+
+    /** 号源类型（挂号费）行写入结果 Map。 */
+    private static void putHealthcareService(
+        Map<String, ProductDefinitionDisplayDto> result,
+        HealthcareService healthcareService) {
+        ProductDefinitionDisplayDto dto = ProductDefinitionDisplaySupport.fromHealthcareService(healthcareService);
         if (dto == null) {
             return;
         }

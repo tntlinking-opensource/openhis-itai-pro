@@ -25,9 +25,9 @@ import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PageWindowGate;
-import com.openhis.health.application.insurance.inventory.InventoryMedicareUploadSupport;
+import com.openhis.health.integration.support.insurance.inventory.InventoryMedicareUploadSupport;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.mapper.InventoryWarehouseInboundReceiptMapper;
 import com.openhis.health.application.inventory.department.stocktake.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.department.stocktake.dto.DeptStocktakeDetailLineDto;
@@ -77,8 +77,8 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequ
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.chs.jilin.port.InventoryInsurancePort;
-import com.openhis.whale.chs.jilin.port.model.UploadAfterStocktakeCommand;
+import com.openhis.health.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.integration.insurance.inventory.command.InventoryUploadAfterStocktakeCommand;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -112,14 +112,13 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class InventoryDeptStocktakeAppService {
 
-    @Autowired(required = false)
-    private InventoryInsurancePort inventoryInsurancePort;
+    private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
     /** 列表筛选「全部科室」时 purposeLocationId 占位（0 非库位主键）。 */
     private static final long ALL_DEPT_LOCATIONS_LIST_FILTER_LOCATION_ID = 0L;
 
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     private final PageWindowGate pageWindowGate;
     private final SupplyRequestDomainService supplyRequestDomainService;
     private final SupplyRequestQueryService supplyRequestQueryService;
@@ -320,7 +319,7 @@ public class InventoryDeptStocktakeAppService {
             throw new BusinessException(ErrorCodeConstants.DEP_ST_001, "经手人不能为空");
         }
         this.assertDeptStocktakeLinesFields(request.getLines());
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.DEP_ST_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.DEP_ST_101, "用户未登录");
         Long applicantId = this.requireDeptStocktakeApplicantPractitionerId(
             ErrorCodeConstants.DEP_ST_101,
             "用户未登录",
@@ -371,7 +370,7 @@ public class InventoryDeptStocktakeAppService {
             throw new BusinessException(ErrorCodeConstants.DEP_ST_001, "经手人不能为空");
         }
         this.assertDeptStocktakeLinesFields(request.getLines());
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.DEP_ST_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.DEP_ST_101, "用户未登录");
         Long applicantId = this.requireDeptStocktakeApplicantPractitionerId(
             ErrorCodeConstants.DEP_ST_101,
             "用户未登录",
@@ -408,7 +407,7 @@ public class InventoryDeptStocktakeAppService {
         try {
             supplyRequestDomainService.submitApproval(
                 stocktakeMapper.toSubmitApprovalCommand(request,
-                    currentOperatorResolver.requireOperatorId(ErrorCodeConstants.DEP_ST_101, "用户未登录"),
+                    currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.DEP_ST_101, "用户未登录"),
                     applicantId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.DEP_ST_003);
@@ -432,7 +431,7 @@ public class InventoryDeptStocktakeAppService {
         try {
             supplyRequestDomainService.withdrawApproval(
                 stocktakeMapper.toWithdrawApprovalCommand(request,
-                    currentOperatorResolver.requireOperatorId(ErrorCodeConstants.DEP_ST_101, "用户未登录")));
+                    currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.DEP_ST_101, "用户未登录")));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.DEP_ST_003);
         }
@@ -452,7 +451,7 @@ public class InventoryDeptStocktakeAppService {
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.DEP_ST_001, "busNo 不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.DEP_ST_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.DEP_ST_101, "用户未登录");
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
         q.setBusNo(request.getBusNo().trim());
         List<SupplyRequestModel> beforeLines = supplyRequestQueryService.getSupplyByBusNo(q);
@@ -597,13 +596,13 @@ public class InventoryDeptStocktakeAppService {
         if (lineIds.isEmpty()) {
             return;
         }
-        InventoryMedicareUploadSupport.uploadIfPortPresent(inventoryInsurancePort, () -> {
-            UploadAfterStocktakeCommand command = new UploadAfterStocktakeCommand()
+        InventoryMedicareUploadSupport.uploadIfEnabled(inventoryUploadExtension, () -> {
+            InventoryUploadAfterStocktakeCommand command = new InventoryUploadAfterStocktakeCommand()
                 .setStocktakeBusNo(request.getBusNo())
                 .setSupplyRequestLineIds(lineIds)
                 .setSupplyTypeCode(SupplyType.DEPT_STOCKTAKE.getCode())
                 .setContractBusNo(request.getContractBusNo());
-            inventoryInsurancePort.uploadAfterStocktakeAgree(command);
+            inventoryUploadExtension.uploadAfterStocktakeAgree(command);
         });
     }
 
@@ -621,7 +620,7 @@ public class InventoryDeptStocktakeAppService {
         if (StringUtils.isBlank(request.getChangeReason()) && StringUtils.isBlank(request.getChangeReasonCode())) {
             throw new BusinessException(ErrorCodeConstants.DEP_ST_001, "驳回原因不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.DEP_ST_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.DEP_ST_101, "用户未登录");
         try {
             supplyRequestDomainService.rejectRequest(stocktakeMapper.toRejectRequestCommand(request, operatorId));
         } catch (BusinessException ex) {
@@ -642,7 +641,7 @@ public class InventoryDeptStocktakeAppService {
             throw new BusinessException(ErrorCodeConstants.DEP_ST_001, "请求不能为空");
         }
         this.gateBusNo(request.getBusNo());
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.DEP_ST_101, "用户未登录");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.DEP_ST_101, "用户未登录");
         try {
             supplyRequestDomainService.removeByBusNo(stocktakeMapper.toRemoveByBusNoCommand(request, operatorId));
         } catch (BusinessException ex) {
@@ -1011,15 +1010,7 @@ public class InventoryDeptStocktakeAppService {
         String notLoggedInErrorCode,
         String notLoggedInMessage,
         String noPractitionerMessage) {
-        Long userId = this.currentOperatorResolver.requireOperatorId(notLoggedInErrorCode, notLoggedInMessage);
-        Practitioner practitioner = this.practitionerQueryService.findByUserId(userId);
-        if (practitioner == null) {
-            throw new BusinessException(notLoggedInErrorCode, noPractitionerMessage);
-        }
-        if (practitioner.getId() == null) {
-            throw new BusinessException(notLoggedInErrorCode, noPractitionerMessage);
-        }
-        return practitioner.getId();
+        return this.currentPractitionerResolver.requirePractitionerId(notLoggedInErrorCode, noPractitionerMessage);
     }
 
     private void assertDeptStocktakeLinesFields(List<DeptStocktakeLineDto> lines) {

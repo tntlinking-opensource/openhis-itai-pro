@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -26,4 +27,10 @@ public class CreateScheduleRequest {
     @NotEmpty
     @Valid
     private List<ScheduleActorRequest> actors;
+
+    /** 规划窗口起（草稿创建时可选，绑定后才能在周历/月历占格）。 */
+    private LocalDateTime planningHorizonStart;
+
+    /** 规划窗口止。 */
+    private LocalDateTime planningHorizonEnd;
 }

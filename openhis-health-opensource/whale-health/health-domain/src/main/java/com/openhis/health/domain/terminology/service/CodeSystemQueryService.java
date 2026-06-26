@@ -39,7 +39,6 @@ import org.springframework.data.jpa.domain.Specification;
 import jakarta.persistence.criteria.JoinType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Comparator;
 import java.util.List;
@@ -386,12 +385,12 @@ public class CodeSystemQueryService {
      * <p>受配置项 {@code whale.cache.concept.init-on-startup} 控制；关闭时跳过预热，后续走懒加载。</p>
      */
     @PostConstruct
-    @Transactional(readOnly = true)
     public void initCodeSystemCache() {
         if (!initCacheOnStartup) {
             return;
         }
         try {
+            log.info(">>> 术语字典缓存预热开始...");
             List<CodeSystem> codeSystems = findAllWithConceptsLoaded();
             // Loop：遍历编码系统，逐个写入缓存分片
             for (CodeSystem codeSystem : codeSystems) {
@@ -399,6 +398,7 @@ public class CodeSystemQueryService {
                     conceptCache.putAll(CACHE_PREFIX_DICT + codeSystem.getName(), codeSystem.getConcepts(), Concept::getCode);
                 }
             }
+            log.info(">>> 术语字典缓存预热完成: {} 个编码系统", codeSystems.size());
         } catch (Exception e) {
             log.error("编码系统缓存初始化失败", e);
         }

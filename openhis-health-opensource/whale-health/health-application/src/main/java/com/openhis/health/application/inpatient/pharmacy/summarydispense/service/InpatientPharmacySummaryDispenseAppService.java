@@ -18,7 +18,6 @@
 package com.openhis.health.application.inpatient.pharmacy.summarydispense.service;
 
 import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
 import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PageWindowGate;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.assembler.InpatientPharmacySummaryDispenseAssembler;
@@ -55,7 +54,6 @@ import com.openhis.health.domain.medication.medicationdispense.queries.model.Med
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseDomainService;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
-import com.openhis.health.domain.share.constants.InsuranceCoordinationConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientPharmacySummaryDispenseConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -79,20 +77,16 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.Medication
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
-import com.openhis.health.application.insurance.config.InsuranceCoordinationProperties;
-import com.openhis.health.application.insurance.inventory.DispenseTraceGateCommandSupport;
-import com.openhis.health.application.insurance.inventory.MedicareInventoryUploadCoordinator;
-import com.openhis.whale.chs.jilin.port.InventoryInsurancePort;
-import com.openhis.whale.chs.jilin.port.InventoryTraceDispenseGatePort;
-import com.openhis.whale.chs.jilin.port.model.UploadAfterDispenseCommand;
+import com.openhis.health.integration.support.insurance.inventory.DispenseTraceGateCommandSupport;
+import com.openhis.health.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.integration.insurance.inventory.DispenseTraceGateExtension;
+import com.openhis.health.integration.insurance.inventory.command.InventoryUploadAfterDispenseCommand;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -126,20 +120,13 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class InpatientPharmacySummaryDispenseAppService {
 
-    @Autowired(required = false)
-    private InventoryInsurancePort inventoryInsurancePort;
+    private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
-    @Autowired(required = false)
-    private InventoryTraceDispenseGatePort inventoryTraceDispenseGatePort;
-
-    @Autowired(required = false)
-    private MedicareInventoryUploadCoordinator medicareInventoryUploadCoordinator;
+    private final DispenseTraceGateExtension dispenseTraceGateExtension;
 
     /** 写路径操作人门控（B.6.1）。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
-    private final InsuranceCoordinationProperties insuranceCoordinationProperties;
-    /** 写路径发药药师/applicant 解析。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
+    /** 写路径发药药师/applicant 解析。 */
     /** 可操作药房 location 收窄（BR-IPS-001）。 */
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     /** 分页窗口 Gate（IF-IPS-01 pageNo/pageSize 必填）。 */
@@ -329,7 +316,6 @@ public class InpatientPharmacySummaryDispenseAppService {
      * @return 已成功核发单号
      * @throws BusinessException {@code EX-IPS-101}～{@code EX-IPS-205} 见 AS §5
      */
-    @Transactional(rollbackFor = Exception.class)
     public DispenseSummaryMedicationsResponse dispenseSummaryMedications(DispenseSummaryMedicationsRequest request) {
         // Gate ①：批上限与必填参数
         List<String> summaryNos;
@@ -359,7 +345,7 @@ public class InpatientPharmacySummaryDispenseAppService {
                 "追溯码冲突或请选择有效调配药师");
         }
         // Gate ②：操作人
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             InpatientPharmacySummaryDispenseConstants.EX_IPS_101,
             "未登录或无权操作该药房");
         // Gate ③：发药药师
@@ -412,12 +398,12 @@ public class InpatientPharmacySummaryDispenseAppService {
                 }
                 // Pre 6d：合并请求追溯码与实体持久化追溯码
                 this.mergeTraceLinesIntoDispenses(dispenses, request.getTraceLines());
-                if (inventoryTraceDispenseGatePort != null) {
+                if (dispenseTraceGateExtension.isEnabled()) {
                     for (MedicationDispense dispense : dispenses) {
                         List<String> lineTraceCodes = splitTraceCodesFromDispense(dispense);
-                        inventoryTraceDispenseGatePort.assertTraceAllowedForPrepare(
+                        dispenseTraceGateExtension.assertTraceAllowedForPrepare(
                             DispenseTraceGateCommandSupport.from(dispense), lineTraceCodes);
-                        inventoryTraceDispenseGatePort.assertTraceAllowedForDispense(
+                        dispenseTraceGateExtension.assertTraceAllowedForDispense(
                             DispenseTraceGateCommandSupport.from(dispense));
                     }
                 }
@@ -566,23 +552,7 @@ public class InpatientPharmacySummaryDispenseAppService {
         if (dispenseIdsByEncounter.isEmpty()) {
             return;
         }
-        Long operatorUserId = currentOperatorResolver.requireOperatorId(
-            InpatientPharmacySummaryDispenseConstants.EX_IPS_205, "未登录用户不能核发汇总发药");
-        if (insuranceCoordinationProperties.isDispenseUploadAsyncEnabled()
-            && medicareInventoryUploadCoordinator != null) {
-            for (Map.Entry<Long, List<Long>> entry : dispenseIdsByEncounter.entrySet()) {
-                if (entry.getValue() == null || entry.getValue().isEmpty()) {
-                    continue;
-                }
-                medicareInventoryUploadCoordinator.scheduleUploadIfEnabled(
-                    entry.getKey(),
-                    entry.getValue(),
-                    operatorUserId,
-                    InsuranceCoordinationConstants.DISPENSE_UPLOAD_KIND_SALE);
-            }
-            return;
-        }
-        if (inventoryInsurancePort == null) {
+        if (!inventoryUploadExtension.isEnabled()) {
             return;
         }
         List<String> uploadWarnings = new ArrayList<>();
@@ -591,11 +561,11 @@ public class InpatientPharmacySummaryDispenseAppService {
                 continue;
             }
             try {
-                UploadAfterDispenseCommand uploadCommand = new UploadAfterDispenseCommand()
+                InventoryUploadAfterDispenseCommand uploadCommand = new InventoryUploadAfterDispenseCommand()
                     .setEncounterId(entry.getKey())
                     .setDispenseIds(entry.getValue())
                     .setContractBusNo(request.getContractBusNo());
-                inventoryInsurancePort.uploadAfterDispense(uploadCommand);
+                inventoryUploadExtension.uploadAfterDispense(uploadCommand);
             } catch (RuntimeException ex) {
                 log.warn("汇总发药医保进销存3505上传失败 encounterId={}", entry.getKey(), ex);
                 uploadWarnings.add(ex.getMessage());
@@ -620,7 +590,6 @@ public class InpatientPharmacySummaryDispenseAppService {
      * @return 已驳回单号
      * @throws BusinessException {@code EX-IPS-103}、{@code EX-IPS-202}、{@code EX-IPS-205}
      */
-    @Transactional(rollbackFor = Exception.class)
     public RejectSummaryDispenseResponse rejectSummaryDispense(RejectSummaryDispenseRequest request) {
         // Gate ①：批上限与非空
         List<String> summaryNos;
@@ -640,7 +609,7 @@ public class InpatientPharmacySummaryDispenseAppService {
                 "驳回失败，请检查汇总单状态");
         }
         // Gate ②：操作人与审批人
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             InpatientPharmacySummaryDispenseConstants.EX_IPS_101,
             "未登录或无权操作该药房");
         Long approverId = currentPractitionerResolver.requirePractitionerId(
@@ -1130,12 +1099,12 @@ public class InpatientPharmacySummaryDispenseAppService {
      * 按发放行 lot+location 合并扣减库存（与住院逐行发药同族；禁止对 SupplyDelivery 扣库）。
      *
      * @param dispensersInSubmitOrder 待扣库发放行
-     * @param operatorUserId          操作用户 id
+     * @param operatorPractitionerId          操作用户 id
      * @param productByMedicationId   药品 id → 产品读模型
      */
     private void applyInventoryDeductionForDispensedLines(
         List<MedicationDispense> dispensersInSubmitOrder,
-        Long operatorUserId,
+        Long operatorPractitionerId,
         Map<Long, ProductDefinitionDisplayDto> productByMedicationId) {
         if (dispensersInSubmitOrder == null || dispensersInSubmitOrder.isEmpty()) {
             return;
@@ -1198,7 +1167,7 @@ public class InpatientPharmacySummaryDispenseAppService {
                 inventoryIdToMergedDecrease.put(inventoryItemId, existedInv.add(lotEntry.getValue()));
             }
         }
-        inventoryItemDomainService.decreaseQuantitiesMerged(operatorUserId, inventoryIdToMergedDecrease);
+        inventoryItemDomainService.decreaseQuantitiesMerged(operatorPractitionerId, inventoryIdToMergedDecrease);
         for (Map.Entry<String, BigDecimal> allocateEntry : mergedAllocateRequiredByKey.entrySet()) {
             String[] allocateParts = allocateEntry.getKey().split(Pattern.quote(sep), -1);
             if (allocateParts.length != 3) {
@@ -1207,7 +1176,7 @@ public class InpatientPharmacySummaryDispenseAppService {
                     "库存不足，请联系库管");
             }
             AllocateAndDecreaseCommand allocateCommand = new AllocateAndDecreaseCommand();
-            allocateCommand.setOperatorId(operatorUserId);
+            allocateCommand.setOperatorId(operatorPractitionerId);
             AllocateAndDecreaseCommand.AllocateAndDecreaseItemCommand allocateItem =
                 new AllocateAndDecreaseCommand.AllocateAndDecreaseItemCommand();
             allocateItem.setItemTable(allocateParts[0]);

@@ -18,6 +18,8 @@
 /* (C)2026 */
 package com.openhis.health.domain.share.utils;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -30,7 +32,7 @@ import java.time.format.DateTimeParseException;
 public final class DateTimeParseUtil {
 
     private static final String[] DATE_TIME_PATTERNS = {
-        "yyyy-MM-dd HH:mm:ss",
+        GeneralSharedConstants.DATE_TIME_PATTERN,
         "yyyy-MM-dd HH:mm",
         "yyyy-MM-dd'T'HH:mm:ss",
         "yyyy-MM-dd'T'HH:mm"
@@ -62,7 +64,7 @@ public final class DateTimeParseUtil {
             }
         }
         try {
-            return LocalDate.parse(s, DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay();
+            return LocalDate.parse(s, GeneralSharedConstants.DATE_DISPLAY_FORMATTER).atStartOfDay();
         } catch (DateTimeParseException ignored) {
             return null;
         }

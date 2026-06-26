@@ -83,7 +83,7 @@ public class PatientDomainService {
         this.assertBatchSize(items.size());
         this.assertNoDuplicateIdCardInBatch(items);
         // 患者主档为非按日流水：一次性批量取号，前缀取 AggregateType.PATIENT，避免先 TMP 再二次落库。
-        List<String> patientBusNos = businessSequenceService.getSeq(AggregateTypeConstants.PATIENT, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH, items.size());
+        List<String> patientBusNos = businessSequenceService.getSeq(AggregateTypeConstants.PATIENT, BusinessSequenceConstants.MASTER_DATA_2_PREFIX_SEQ_LENGTH, items.size());
         List<Patient> patients = new ArrayList<>();
         for (int index = 0; index < items.size(); index++) {
             RegisterPatientCommand.RegisterPatientItemCommand item = items.get(index);
@@ -1040,9 +1040,9 @@ public class PatientDomainService {
      * @return 当前登录用户主键
      */
     private Long requireOperatorId() {
-        Long operatorId = currentUser.getCurrentUserId();
+        Long operatorId = currentUser.getCurrentPractitionerId();
         if (operatorId == null) {
-            throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "当前会话操作人不能为空");
+            throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "当前会话未绑定医务人员，无法记录操作人");
         }
         return operatorId;
     }

@@ -11,12 +11,22 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * 医技资源映射读侧查询。
+ */
 @Service
 @RequiredArgsConstructor
 public class DiagnosticResourceMapQueryService {
 
     private final DiagnosticResourceMapRepository repository;
 
+    /**
+     * 按机构分页查询有效资源映射。
+     *
+     * @param organizationId 机构主键（可选）
+     * @param pageable 分页
+     * @return 映射分页
+     */
     public Page<DiagnosticResourceMap> pageByOrganization(Long organizationId, Pageable pageable) {
         Specification<DiagnosticResourceMap> spec = (root, query, cb) -> {
             var p = cb.conjunction();
@@ -29,12 +39,22 @@ public class DiagnosticResourceMapQueryService {
         return repository.findAll(spec, pageable);
     }
 
+    /**
+     * 按主键加载映射（含已删）。
+     *
+     * @param id 映射主键
+     * @return 实体或 null
+     */
     public DiagnosticResourceMap loadById(Long id) {
         return repository.findById(id).orElse(null);
     }
 
     /**
      * 按机构与诊疗项目解析启用中的资源映射。
+     *
+     * @param organizationId 机构主键
+     * @param activityDefinitionId 诊疗项目主键
+     * @return 启用映射；无则 empty
      */
     public Optional<DiagnosticResourceMap> findActiveByActivityDefinitionId(Long organizationId, Long activityDefinitionId) {
         if (organizationId == null || activityDefinitionId == null) {

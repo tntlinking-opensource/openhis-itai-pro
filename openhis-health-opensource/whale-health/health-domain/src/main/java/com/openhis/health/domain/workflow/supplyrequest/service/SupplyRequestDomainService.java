@@ -81,7 +81,7 @@ public class SupplyRequestDomainService {
      * 创建或修订药库订货单（同一聚合入口：{@link SupplyType#CABINET_PURCHASE_ORDER} 多行明细共享同一 {@code bus_no}）。
      *
      * <p><b>新建路径</b>：命令首行 {@link CreatePurchaseOrderCommand.CreatePurchaseOrderItemCommand#getBusNo()} 为空或空白时，
-     * 由 {@link #ensureOrGenerateBusNo(String, String)} 按业务日生成新 {@code busNo}（序号键见 {@link SupplyType#busNoSeqPrefixForTypeCode(String)}，
+     * 由 {@link #generateSupplyBusNo(String)} 按业务日生成新 {@code busNo}（序号键见 {@link SupplyType#busNoSeqPrefixForTypeCode(String)}，
      * 序号策略见 {@link BusinessSequenceService}），再批量插入多行，状态统一为待审核；插入成功后发布
      * {@link SupplyRequestCreatedEvent}（须在持久化完成之后，见全局规范「先 save 后 publish」）。</p>
      *
@@ -147,7 +147,7 @@ public class SupplyRequestDomainService {
         if (typeForBusNo == null || typeForBusNo.isBlank()) {
             typeForBusNo = SupplyType.CABINET_PURCHASE_ORDER.getCode();
         }
-        String busNo = this.ensureOrGenerateBusNo(null, typeForBusNo);
+        String busNo = this.generateSupplyBusNo(typeForBusNo);
 
         List<SupplyRequest> toSave = new ArrayList<>();
         for (CreatePurchaseOrderCommand.CreatePurchaseOrderItemCommand item : items) {
@@ -263,7 +263,7 @@ public class SupplyRequestDomainService {
         if (typeForBusNo == null || typeForBusNo.isBlank()) {
             typeForBusNo = SupplyType.CABINET_INBOUND_RECEIPT.getCode();
         }
-        String busNo = this.ensureOrGenerateBusNo(null, typeForBusNo);
+        String busNo = this.generateSupplyBusNo(typeForBusNo);
         List<SupplyRequest> toSave = new ArrayList<>();
         for (CreateInboundReceiptCommand.CreateInboundReceiptItemCommand item : items) {
             SupplyRequest entity = this.buildInboundReceiptEntityFromItem(busNo, item);
@@ -348,7 +348,7 @@ public class SupplyRequestDomainService {
         if (typeForBusNo == null || typeForBusNo.isBlank()) {
             typeForBusNo = SupplyType.CABINET_RETURN_TO_SUPPLIER.getCode();
         }
-        String busNo = this.ensureOrGenerateBusNo(null, typeForBusNo);
+        String busNo = this.generateSupplyBusNo(typeForBusNo);
         List<SupplyRequest> toSave = new ArrayList<>();
         for (CreateReturnToSupplierCommand.CreateReturnToSupplierItemCommand item : items) {
             SupplyRequest entity = this.buildReturnToSupplierEntityFromItem(busNo, item);
@@ -421,7 +421,7 @@ public class SupplyRequestDomainService {
             return busNo;
         }
 
-        String busNo = this.ensureOrGenerateBusNo(soHead.getBusNo(), typeForBusNo);
+        String busNo = this.generateSupplyBusNo(typeForBusNo);
         List<SupplyRequest> toSave = new ArrayList<>();
         for (CreateStockOutCommand.CreateStockOutItemCommand item : items) {
             SupplyRequest entity = this.buildStockOutEntityFromItem(busNo, item);
@@ -509,7 +509,7 @@ public class SupplyRequestDomainService {
             return busNo;
         }
 
-        String busNo = this.ensureOrGenerateBusNo(items.get(0).getBusNo(), items.get(0).getTypeEnum());
+        String busNo = this.generateSupplyBusNo(items.get(0).getTypeEnum());
 
         List<SupplyRequest> toSave = new ArrayList<>();
         for (CreateReturnCommand.CreateReturnItemCommand item : items) {
@@ -552,7 +552,7 @@ public class SupplyRequestDomainService {
      */
     public String createGainLoss(CreateGainLossCommand command) {
         List<CreateGainLossCommand.CreateGainLossItemCommand> items = command.resolveItems();
-        String busNo = this.ensureOrGenerateBusNo(items.get(0).getBusNo(), items.get(0).getTypeEnum());
+        String busNo = this.generateSupplyBusNo(items.get(0).getTypeEnum());
 
         List<SupplyRequest> toSave = new ArrayList<>();
         for (CreateGainLossCommand.CreateGainLossItemCommand item : items) {
@@ -623,7 +623,7 @@ public class SupplyRequestDomainService {
             return busNo;
         }
 
-        String busNo = this.ensureOrGenerateBusNo(head.getBusNo(), head.getTypeEnum());
+        String busNo = this.generateSupplyBusNo(head.getTypeEnum());
 
         List<SupplyRequest> toSave = new ArrayList<>();
         for (CreateStocktakeCommand.CreateStocktakeItemCommand item : items) {
@@ -651,7 +651,7 @@ public class SupplyRequestDomainService {
      */
     public String createTransfer(CreateTransferCommand command) {
         List<CreateTransferCommand.CreateTransferItemCommand> items = command.resolveItems();
-        String busNo = this.ensureOrGenerateBusNo(items.get(0).getBusNo(), items.get(0).getTypeEnum());
+        String busNo = this.generateSupplyBusNo(items.get(0).getTypeEnum());
 
         List<SupplyRequest> toSave = new ArrayList<>();
         for (CreateTransferCommand.CreateTransferItemCommand item : items) {
@@ -732,7 +732,7 @@ public class SupplyRequestDomainService {
             return busNo;
         }
 
-        String busNo = this.ensureOrGenerateBusNo(items.get(0).getBusNo(), items.get(0).getTypeEnum());
+        String busNo = this.generateSupplyBusNo(items.get(0).getTypeEnum());
 
         List<SupplyRequest> toSave = new ArrayList<>();
         for (CreateRequisitionCommand.CreateRequisitionItemCommand item : items) {
@@ -804,7 +804,7 @@ public class SupplyRequestDomainService {
         if (typeForBusNo == null || typeForBusNo.isBlank()) {
             typeForBusNo = SupplyType.MEDICATION_SUMMARY_ORDER.getCode();
         }
-        String busNo = this.ensureOrGenerateBusNo(msHead.getBusNo(), typeForBusNo);
+        String busNo = this.generateSupplyBusNo(typeForBusNo);
 
         List<SupplyRequest> toSave = new ArrayList<>();
         for (CreateSummarySupplyRequestCommand.CreateSummarySupplyRequestItemCommand item : items) {
@@ -842,7 +842,7 @@ public class SupplyRequestDomainService {
         if (typeForBusNo == null || typeForBusNo.isBlank()) {
             typeForBusNo = SupplyType.DEPT_DEVICE_STOCKTAKE.getCode();
         }
-        String busNo = this.ensureOrGenerateBusNo(ddHead.getBusNo(), typeForBusNo);
+        String busNo = this.generateSupplyBusNo(typeForBusNo);
 
         List<SupplyRequest> toSave = new ArrayList<>();
         for (CreateDeviceSummarySupplyRequestCommand.CreateDeviceSummarySupplyRequestItemCommand item : items) {
@@ -1186,17 +1186,13 @@ public class SupplyRequestDomainService {
     }
 
     /**
-     * 生成或归一化单据号。
+     * 按供应类型分桶生成新单据号（新建路径专用；禁止外部注入）。
      *
-     * @param busNo 外部传入单据号
-     * @param typeEnumCodeForNewSeq 新建时用于分桶的 {@code SupplyType} 持久化码（{@link SupplyType#getCode()}）；空白或无法识别时回退短键 {@code SR}（见 {@link SupplyType#busNoSeqPrefixForTypeCode(String)}）
-     * @return 归一化后的单据号
+     * @param typeEnumCodeForNewSeq 新建时用于分桶的 {@code SupplyType} 持久化码（{@link SupplyType#getCode()}）
+     * @return 按日递增的业务单号
+     * @throws BusinessException 未知或空白 type_enum 时
      */
-    private String ensureOrGenerateBusNo(String busNo, String typeEnumCodeForNewSeq) {
-        // 业务分支处理。
-        if (busNo != null && !busNo.trim().isEmpty()) {
-            return busNo.trim();
-        }
+    private String generateSupplyBusNo(String typeEnumCodeForNewSeq) {
         String prefix = SupplyType.busNoSeqPrefixForTypeCode(typeEnumCodeForNewSeq);
         return businessSequenceService.getSeqByDay(prefix, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
     }

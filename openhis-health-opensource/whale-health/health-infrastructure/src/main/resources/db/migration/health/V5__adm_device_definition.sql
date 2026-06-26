@@ -59,9 +59,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_device_definition" (
     "package_unit_ratio" numeric(18,6),
     CONSTRAINT "adm_device_definition_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_device_definition IS '管理域 device definition';
-
 COMMENT ON COLUMN adm_device_definition.id IS '主键';
 COMMENT ON COLUMN adm_device_definition.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_device_definition.created_at IS '创建时间';
@@ -123,4 +121,10 @@ INSERT INTO "adm_device_definition" ("id", "tenant_id", "created_at", "updated_a
 VALUES
 ('322999285465485312', '1', '2026-06-10 07:23:50.691+00', '2026-06-10 07:23:50.691+00', '322932010666430464', '322932010666430464', false, NULL, NULL, 0, '一次性使用无菌注射器', 'DD0007', 'YCXSYWJZSQ', 'GUNWEFAITK', '11', NULL, '7', '5ml', NULL, NULL, '9', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, false, '9', '9', '9', NULL, NULL, '河北康卫士医疗科技有限公司', NULL, NULL, NULL, NULL, NULL, false, NULL, false, NULL, NULL, false, NULL, 'ACTIVE', true, NULL, '1.000000', '100.000000', '1.000000', '1.000000'),
 ('323000109906268160', '1', '2026-06-10 07:27:07.254+00', '2026-06-10 07:27:07.254+00', '322932010666430464', '322932010666430464', false, NULL, NULL, 0, '一次性使用精密输液器（带针）', 'DD0008', 'YCXSYJMSYQ（DZ）', 'GUNWEOPLIK（GQ）', '11', NULL, '7', 'ZJ-B-BV23(400支/件)', NULL, NULL, '9', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, false, '9', '9', '9', NULL, NULL, '江西三鑫医疗科技股份有限公司', NULL, NULL, NULL, NULL, NULL, false, NULL, false, NULL, NULL, false, NULL, 'ACTIVE', true, NULL, '1.000000', '200.000000', '1.000000', '1.000000')
+ON CONFLICT ("id") DO NOTHING;
+
+-- ----- seed sync from DB (adm_device_definition, 1 rows) -----
+
+INSERT INTO "adm_device_definition" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "name", "bus_no", "py_str", "wb_str", "category_code", "type_code", "purchase_unit_code", "total_volume", "item_min_quantity", "item_max_quantity", "split_unit_code", "merchandise_name", "merchandise_py_str", "merchandise_wb_str", "def_encounter_unit_code", "def_inhospital_unit_code", "org_id", "location_id", "model_number", "hvcm_flag", "dose_unit_code", "package_unit_code", "stock_unit_code", "approval_number", "manufacturer_id", "manufacturer_text", "supply_id", "description", "jurisdiction", "device_version", "substance_text", "allergen_flag", "rx_flag", "yb_flag", "yb_no", "yb_org_no", "yb_match_flag", "chrgitm_lv", "status_enum", "active_flag", "yb_mapping_code", "dose_unit_ratio", "purchase_unit_ratio", "stock_unit_ratio", "package_unit_ratio")
+VALUES ('328091173040689152', '1', '2026-06-24 08:37:11.292+00', '2026-06-24 08:37:11.292+00', '1', '1', false, NULL, NULL, 0, '(蓝）一次性真空采血管', 'DD0001', '(L）YCXZKCXG', '(A）GUNFPETT', '11', NULL, '7', '5ml', NULL, NULL, '9', '(蓝）一次性真空采血管', '(L）YCXZKCXG', '(A）GUNFPETT', NULL, NULL, NULL, NULL, NULL, false, '9', '9', '9', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, false, NULL, false, NULL, NULL, false, NULL, 'ACTIVE', true, NULL, '1.000000', '100.000000', '1.000000', '1.000000')
 ON CONFLICT ("id") DO NOTHING;

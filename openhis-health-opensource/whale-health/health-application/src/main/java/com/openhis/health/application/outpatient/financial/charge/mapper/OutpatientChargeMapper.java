@@ -42,7 +42,9 @@ import java.util.Map;
  * 门诊收费 Mapper 契约。
  */
 public interface OutpatientChargeMapper {
-    LoadChargePageInitResponse toLoadChargePageInitResponse(List<OptionDto> chargeItemStatusOptions);
+    LoadChargePageInitResponse toLoadChargePageInitResponse(
+        List<OptionDto> chargeItemStatusOptions,
+        List<OptionDto> paymentChannelOptions);
 
     List<ChargeQueueRowDto> toChargeQueueRowDtoList(List<OutpatientEncounterContextQueryModel> baseRows, Map<Long, String> flags);
 

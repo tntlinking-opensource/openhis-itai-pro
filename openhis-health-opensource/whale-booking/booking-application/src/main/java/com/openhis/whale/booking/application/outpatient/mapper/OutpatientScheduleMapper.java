@@ -10,6 +10,7 @@ import com.openhis.whale.booking.application.outpatient.request.PublishScheduleR
 import com.openhis.whale.booking.application.outpatient.request.ReactivateScheduleRequest;
 import com.openhis.whale.booking.application.outpatient.request.ScheduleActorRequest;
 import com.openhis.whale.booking.application.outpatient.request.ScheduleServiceProfileRequest;
+import com.openhis.whale.booking.domain.slot.queries.model.SlotDetailModel;
 import com.openhis.whale.booking.application.outpatient.request.SlotTemplateRequest;
 import com.openhis.whale.booking.application.outpatient.request.SubstitutePractitionerRequest;
 import com.openhis.whale.booking.application.outpatient.request.UpdateScheduleDraftRequest;
@@ -24,7 +25,6 @@ import com.openhis.whale.booking.application.outpatient.response.ScheduleActorDt
 import com.openhis.whale.booking.application.outpatient.response.ScheduleCalendarCellDto;
 import com.openhis.whale.booking.application.outpatient.response.ScheduleCalendarDayDto;
 import com.openhis.whale.booking.contracts.dto.MasterDataOption;
-import com.openhis.whale.booking.contracts.dto.PractitionerRoleScheduleItemDto;
 import com.openhis.whale.booking.contracts.dto.ScheduleFormMasterDataSnapshot;
 import com.openhis.whale.booking.application.template.response.SlotProvisionTemplateItemDto;
 import com.openhis.whale.booking.application.template.support.TemplateJsonSupport;
@@ -60,12 +60,16 @@ import java.util.Map;
 
 /**
  * 门诊排班应用层映射器。
+ * <p>职责：排班/放号/停诊/月历 HTTP 契约 ↔ 领域 Command/Query/DTO；模板与策略时段切分在此完成。</p>
  */
 @Component
 public class OutpatientScheduleMapper {
 
     /**
      * Port 主数据快照 → 初始化响应。
+     *
+     * @param snapshot 排班表单主数据快照
+     * @return 排班表单初始化响应
      */
     public LoadScheduleFormInitResponse toLoadScheduleFormInitResponse(ScheduleFormMasterDataSnapshot snapshot) {
         LoadScheduleFormInitResponse response = new LoadScheduleFormInitResponse();
@@ -87,6 +91,9 @@ public class OutpatientScheduleMapper {
 
     /**
      * 日历 HTTP 请求 → 领域查询。
+     *
+     * @param request 按日历分页排班请求
+     * @return 日历日程查询
      */
     public CalendarScheduleQuery toCalendarScheduleQuery(PageSchedulesByCalendarRequest request) {
         return this.toCalendarScheduleQuery(
@@ -100,6 +107,9 @@ public class OutpatientScheduleMapper {
 
     /**
      * 月历 HTTP 请求 → 领域查询（网格区间）。
+     *
+     * @param request 按月分页排班请求
+     * @return 日历日程查询
      */
     public CalendarScheduleQuery toCalendarScheduleQuery(PageSchedulesByMonthRequest request) {
         LocalDate[] monthRange = MonthCalendarRangeSupport.resolveMonthRange(request.getYearMonth());
@@ -132,6 +142,11 @@ public class OutpatientScheduleMapper {
 
     /**
      * 领域日历项 → 按日分组响应。
+     *
+     * @param schedules 日历日程项列表
+     * @param rangeStart 区间起始日期
+     * @param rangeEnd 区间结束日期
+     * @return 按日历分页排班响应
      */
     public PageSchedulesByCalendarResponse toPageSchedulesByCalendarResponse(
         List<ScheduleCalendarItemModel> schedules,
@@ -163,6 +178,11 @@ public class OutpatientScheduleMapper {
 
     /**
      * 领域日历项 → 月历响应（含摘要，2.23）。
+     *
+     * @param schedules 日历日程项列表
+     * @param yearMonth 年月（yyyy-MM）
+     * @param bookedAppointmentCount 当月已预约数量
+     * @return 按月分页排班响应
      */
     public PageSchedulesByMonthResponse toPageSchedulesByMonthResponse(
         List<ScheduleCalendarItemModel> schedules,
@@ -250,6 +270,7 @@ public class OutpatientScheduleMapper {
     }
 
     private void incrementDayStatusCount(ScheduleCalendarMonthDayDto day, String statusEnum) {
+        // 按 statusEnum 累加月历格子的 active/draft/inactive 计数
         if ("active".equalsIgnoreCase(statusEnum)) {
             day.setActiveCount(day.getActiveCount() + 1);
             return;
@@ -265,6 +286,10 @@ public class OutpatientScheduleMapper {
 
     /**
      * 创建请求 → 领域命令。
+     *
+     * @param request 创建排班请求
+     * @param operatorId 操作人主键
+     * @return 创建排班命令
      */
     public CreateScheduleCommand toCreateScheduleCommand(CreateScheduleRequest request, Long operatorId) {
         CreateScheduleCommand command = new CreateScheduleCommand();
@@ -279,6 +304,10 @@ public class OutpatientScheduleMapper {
 
     /**
      * 发布请求 → 领域命令。
+     *
+     * @param request 发布排班请求
+     * @param operatorId 操作人主键
+     * @return 发布排班命令
      */
     public PublishScheduleCommand toPublishScheduleCommand(PublishScheduleRequest request, Long operatorId) {
         PublishScheduleCommand command = new PublishScheduleCommand();
@@ -293,6 +322,10 @@ public class OutpatientScheduleMapper {
 
     /**
      * 停用请求 → 领域命令。
+     *
+     * @param request 停用排班请求
+     * @param operatorId 操作人主键
+     * @return 停用排班命令
      */
     public DeactivateScheduleCommand toDeactivateScheduleCommand(DeactivateScheduleRequest request, Long operatorId) {
         DeactivateScheduleCommand command = new DeactivateScheduleCommand();
@@ -306,6 +339,10 @@ public class OutpatientScheduleMapper {
 
     /**
      * 恢复开诊请求 → 领域命令。
+     *
+     * @param request 恢复开诊请求
+     * @param operatorId 操作人主键
+     * @return 恢复开诊命令
      */
     public ReactivateScheduleCommand toReactivateScheduleCommand(ReactivateScheduleRequest request, Long operatorId) {
         ReactivateScheduleCommand command = new ReactivateScheduleCommand();
@@ -319,6 +356,10 @@ public class OutpatientScheduleMapper {
 
     /**
      * 替诊请求 → 领域命令。
+     *
+     * @param request 替诊请求
+     * @param operatorId 操作人主键
+     * @return 替诊命令
      */
     public SubstitutePractitionerCommand toSubstitutePractitionerCommand(
         SubstitutePractitionerRequest request, Long operatorId) {
@@ -335,6 +376,10 @@ public class OutpatientScheduleMapper {
 
     /**
      * 放号请求 → 领域命令。
+     *
+     * @param request 批量放号请求
+     * @param operatorId 操作人主键
+     * @return 批量放号命令
      */
     public ProvisionSlotBatchCommand toProvisionSlotBatchCommand(ProvisionSlotBatchRequest request, Long operatorId) {
         ProvisionSlotBatchCommand command = new ProvisionSlotBatchCommand();
@@ -357,6 +402,9 @@ public class OutpatientScheduleMapper {
 
     /**
      * 放号结果 → 响应。
+     *
+     * @param slotIds 生成的号源主键列表
+     * @return 批量放号响应
      */
     public ProvisionSlotBatchResponse toProvisionSlotBatchResponse(List<Long> slotIds) {
         ProvisionSlotBatchResponse response = new ProvisionSlotBatchResponse();
@@ -372,6 +420,10 @@ public class OutpatientScheduleMapper {
 
     /**
      * 编辑草稿：参与者替换命令（可选字段）。
+     *
+     * @param request 更新排班草稿请求
+     * @param operatorId 操作人主键
+     * @return 替换排班参与者命令
      */
     public ReplaceScheduleActorsCommand toReplaceScheduleActorsCommand(UpdateScheduleDraftRequest request, Long operatorId) {
         ReplaceScheduleActorsCommand command = new ReplaceScheduleActorsCommand();
@@ -385,20 +437,49 @@ public class OutpatientScheduleMapper {
 
     /**
      * 编辑草稿：规划窗口调整命令。
+     *
+     * @param request 更新排班草稿请求
+     * @param operatorId 操作人主键
+     * @return 调整规划窗口命令
      */
     public AdjustPlanningHorizonCommand toAdjustPlanningHorizonCommand(UpdateScheduleDraftRequest request, Long operatorId) {
+        return this.toAdjustPlanningHorizonCommand(
+            request.getScheduleId(),
+            request.getPlanningHorizonStart(),
+            request.getPlanningHorizonEnd(),
+            operatorId);
+    }
+
+    /**
+     * 创建/编辑：规划窗口调整命令。
+     *
+     * @param scheduleId 日程主键
+     * @param planningHorizonStart 新规划窗口起始
+     * @param planningHorizonEnd 新规划窗口结束
+     * @param operatorId 操作人主键
+     * @return 调整规划窗口命令
+     */
+    public AdjustPlanningHorizonCommand toAdjustPlanningHorizonCommand(
+        Long scheduleId,
+        LocalDateTime planningHorizonStart,
+        LocalDateTime planningHorizonEnd,
+        Long operatorId) {
         AdjustPlanningHorizonCommand command = new AdjustPlanningHorizonCommand();
         command.setOperatorId(operatorId);
         AdjustPlanningHorizonCommand.AdjustPlanningHorizonItemCommand item = new AdjustPlanningHorizonCommand.AdjustPlanningHorizonItemCommand();
-        item.setScheduleId(request.getScheduleId());
-        item.setNewStart(request.getPlanningHorizonStart());
-        item.setNewEnd(request.getPlanningHorizonEnd());
+        item.setScheduleId(scheduleId);
+        item.setNewStart(planningHorizonStart);
+        item.setNewEnd(planningHorizonEnd);
         command.setItem(item);
         return command;
     }
 
     /**
      * 编辑草稿：服务口径更新命令。
+     *
+     * @param request 更新排班草稿请求
+     * @param operatorId 操作人主键
+     * @return 更新服务口径命令
      */
     public UpdateServiceProfileCommand toUpdateServiceProfileCommand(UpdateScheduleDraftRequest request, Long operatorId) {
         UpdateServiceProfileCommand command = new UpdateServiceProfileCommand();
@@ -419,6 +500,10 @@ public class OutpatientScheduleMapper {
 
     /**
      * 编辑草稿：说明更新命令。
+     *
+     * @param request 更新排班草稿请求
+     * @param operatorId 操作人主键
+     * @return 更新排班说明命令
      */
     public UpdateScheduleCommentCommand toUpdateScheduleCommentCommand(UpdateScheduleDraftRequest request, Long operatorId) {
         UpdateScheduleCommentCommand command = new UpdateScheduleCommentCommand();
@@ -453,10 +538,14 @@ public class OutpatientScheduleMapper {
     }
 
     private boolean scheduleCoversDay(ScheduleCalendarItemModel schedule, LocalDate day) {
+        // 规划窗口与日历日有交集即视为当日可见
         LocalDateTime dayStart = day.atStartOfDay();
         LocalDateTime dayEndExclusive = day.plusDays(1).atStartOfDay();
         LocalDateTime horizonStart = schedule.getPlanningHorizonStart();
         LocalDateTime horizonEnd = schedule.getPlanningHorizonEnd();
+        if (horizonStart == null && horizonEnd == null) {
+            return false;
+        }
         if (horizonStart != null && !horizonStart.isBefore(dayEndExclusive)) {
             return false;
         }
@@ -467,6 +556,7 @@ public class OutpatientScheduleMapper {
     }
 
     private ScheduleCalendarCellDto toCalendarCellDto(ScheduleCalendarItemModel schedule) {
+        // 领域日历项 → 周历/月历单元格摘要（含替诊原医师快照）
         ScheduleCalendarCellDto cell = new ScheduleCalendarCellDto();
         cell.setScheduleId(schedule.getId());
         cell.setName(schedule.getName());
@@ -482,6 +572,9 @@ public class OutpatientScheduleMapper {
 
     /**
      * 填充替诊展示文案。
+     *
+     * @param cells 日历单元格列表
+     * @param practitioners 医师主数据选项列表
      */
     public void enrichSubstituteDisplay(List<ScheduleCalendarCellDto> cells, List<MasterDataOption> practitioners) {
         if (cells == null || cells.isEmpty()) {
@@ -497,6 +590,52 @@ public class OutpatientScheduleMapper {
         }
     }
 
+    /**
+     * 填充日历格子的参与者展示名（出诊医师、诊室、号源类型）。
+     *
+     * @param cells 日历单元格列表
+     * @param snapshot 排班表单主数据快照
+     */
+    public void enrichCalendarActorLabels(List<ScheduleCalendarCellDto> cells, ScheduleFormMasterDataSnapshot snapshot) {
+        if (cells == null || cells.isEmpty() || snapshot == null) {
+            return;
+        }
+        Map<Long, String> practitionerNames = this.toNameMap(snapshot.getPractitioners());
+        Map<Long, String> locationNames = this.toNameMap(snapshot.getClinicLocations());
+        Map<Long, String> serviceNames = this.toNameMap(snapshot.getHealthcareServices());
+        int practitionerType = ScheduleActorKind.PRACTITIONER.getSortOrder().intValue();
+        int locationType = ScheduleActorKind.LOCATION.getSortOrder().intValue();
+        int serviceType = ScheduleActorKind.HEALTHCARE_SERVICE.getSortOrder().intValue();
+        for (ScheduleCalendarCellDto cell : cells) {
+            if (cell == null || cell.getActors() == null) {
+                continue;
+            }
+            for (ScheduleActorDto actor : cell.getActors()) {
+                if (actor == null || actor.getActorId() == null || actor.getActorType() == null) {
+                    continue;
+                }
+                if (practitionerType == actor.getActorType()) {
+                    cell.setPractitionerName(practitionerNames.get(actor.getActorId()));
+                    if (cell.getOriginalPractitionerId() == null) {
+                        cell.setOriginalPractitionerId(actor.getActorId());
+                    }
+                } else if (locationType == actor.getActorType()) {
+                    cell.setLocationName(locationNames.get(actor.getActorId()));
+                } else if (serviceType == actor.getActorType()) {
+                    cell.setHealthcareServiceName(serviceNames.get(actor.getActorId()));
+                }
+            }
+        }
+    }
+
+    /**
+     * 构建替诊展示文案（如「B替A」）。
+     *
+     * @param substituteId 替诊医师主键
+     * @param originalId 原出诊医师主键
+     * @param nameMap 医师主键 → 姓名映射
+     * @return 替诊展示文案
+     */
     public String buildSubstituteDisplay(Long substituteId, Long originalId, Map<Long, String> nameMap) {
         if (substituteId == null) {
             return null;
@@ -595,50 +734,29 @@ public class OutpatientScheduleMapper {
         if (code == null && display == null) {
             return null;
         }
-        String safeCode = code == null ? "" : code.replace("\"", "\\\"");
-        String safeDisplay = display == null ? "" : display.replace("\"", "\\\"");
+        String safeCode;
+        if (code == null) {
+            safeCode = "";
+        } else {
+            safeCode = code.replace("\"", "\\\"");
+        }
+        String safeDisplay;
+        if (display == null) {
+            safeDisplay = "";
+        } else {
+            safeDisplay = display.replace("\"", "\\\"");
+        }
         return "{\"code\":\"" + safeCode + "\",\"display\":\"" + safeDisplay + "\"}";
     }
 
     /**
-     * 岗位出诊模板 → 创建日程命令。
-     */
-    public CreateScheduleCommand toCreateScheduleFromPractitionerItem(
-        PractitionerRoleScheduleItemDto item, Long organizationId, Long practitionerId, String scheduleName, Long operatorId) {
-        CreateScheduleCommand command = new CreateScheduleCommand();
-        command.setOperatorId(operatorId);
-        CreateScheduleCommand.CreateScheduleItemCommand scheduleItem = new CreateScheduleCommand.CreateScheduleItemCommand();
-        scheduleItem.setOrganizationId(organizationId);
-        scheduleItem.setName(scheduleName);
-        List<CreateScheduleCommand.ScheduleActorItemCommand> actors = new ArrayList<>();
-        if (practitionerId != null) {
-            CreateScheduleCommand.ScheduleActorItemCommand practitioner = new CreateScheduleCommand.ScheduleActorItemCommand();
-            practitioner.setActorType(ScheduleActorKind.PRACTITIONER.getSortOrder().intValue());
-            practitioner.setActorId(practitionerId);
-            practitioner.setSortNo(0);
-            actors.add(practitioner);
-        }
-        if (item.getLocationId() != null) {
-            CreateScheduleCommand.ScheduleActorItemCommand location = new CreateScheduleCommand.ScheduleActorItemCommand();
-            location.setActorType(ScheduleActorKind.LOCATION.getSortOrder().intValue());
-            location.setActorId(item.getLocationId());
-            location.setSortNo(1);
-            actors.add(location);
-        }
-        if (item.getHealthcareServiceId() != null) {
-            CreateScheduleCommand.ScheduleActorItemCommand service = new CreateScheduleCommand.ScheduleActorItemCommand();
-            service.setActorType(ScheduleActorKind.HEALTHCARE_SERVICE.getSortOrder().intValue());
-            service.setActorId(item.getHealthcareServiceId());
-            service.setSortNo(2);
-            actors.add(service);
-        }
-        scheduleItem.setActors(actors);
-        command.setItem(scheduleItem);
-        return command;
-    }
-
-    /**
      * T2 日程模板 → 指定日期的创建命令（2.17）。
+     *
+     * @param template 日排班模板实体
+     * @param organizationId 机构主键
+     * @param date 目标日期
+     * @param operatorId 操作人主键
+     * @return 创建排班命令
      */
     public CreateScheduleCommand toCreateScheduleFromScheduleTemplate(
         ScheduleTemplate template, Long organizationId, LocalDate date, Long operatorId) {
@@ -679,6 +797,10 @@ public class OutpatientScheduleMapper {
 
     /**
      * T1 放号时段模板 → 指定日期的放号时段列表。
+     *
+     * @param template 号源时段模板实体
+     * @param date 目标日期
+     * @return 放号时段请求列表
      */
     public List<SlotTemplateRequest> buildSlotTemplatesFromT1(SlotProvisionTemplate template, LocalDate date) {
         List<SlotTemplateRequest> result = new ArrayList<>();
@@ -724,7 +846,39 @@ public class OutpatientScheduleMapper {
     }
 
     /**
+     * 复制放号：源 Slot 明细 → 偏移后的时段模板。
+     *
+     * @param sourceSlots 源号源明细列表
+     * @param dayOffset 日期偏移天数
+     * @return 放号时段请求列表
+     */
+    public List<SlotTemplateRequest> buildSlotTemplatesFromSourceSlots(
+        List<SlotDetailModel> sourceSlots, long dayOffset) {
+        List<SlotTemplateRequest> templates = new ArrayList<>();
+        if (sourceSlots == null || sourceSlots.isEmpty()) {
+            return templates;
+        }
+        for (SlotDetailModel slot : sourceSlots) {
+            if (slot == null || slot.getStartTime() == null || slot.getEndTime() == null) {
+                continue;
+            }
+            SlotTemplateRequest template = new SlotTemplateRequest();
+            template.setStartTime(slot.getStartTime().plusDays(dayOffset));
+            template.setEndTime(slot.getEndTime().plusDays(dayOffset));
+            template.setCapacity(slot.getCapacity());
+            templates.add(template);
+        }
+        return templates;
+    }
+
+    /**
      * 复制日程参与者 → 创建命令。
+     *
+     * @param source 源日历日程项
+     * @param organizationId 机构主键
+     * @param name 新日程名称
+     * @param operatorId 操作人主键
+     * @return 创建排班命令
      */
     public CreateScheduleCommand toCopyScheduleCommand(
         ScheduleCalendarItemModel source, Long organizationId, String name, Long operatorId) {
@@ -740,6 +894,11 @@ public class OutpatientScheduleMapper {
 
     /**
      * 放号策略 → 时段模板（按日程规划窗口整日切分）。
+     *
+     * @param policy 放号策略实体
+     * @param horizonStart 规划窗口起始
+     * @param horizonEnd 规划窗口结束
+     * @return 放号时段请求列表
      */
     public List<SlotTemplateRequest> buildSlotTemplatesFromPolicy(
         ReleasePolicy policy, LocalDateTime horizonStart, LocalDateTime horizonEnd) {
@@ -747,8 +906,18 @@ public class OutpatientScheduleMapper {
         if (policy == null || horizonStart == null || horizonEnd == null || !horizonEnd.isAfter(horizonStart)) {
             return templates;
         }
-        int slotMinutes = policy.getSlotMinutes() == null ? 30 : policy.getSlotMinutes();
-        int capacity = policy.getCapacityPerSlot() == null ? 1 : policy.getCapacityPerSlot();
+        int slotMinutes;
+        if (policy.getSlotMinutes() == null) {
+            slotMinutes = 30;
+        } else {
+            slotMinutes = policy.getSlotMinutes();
+        }
+        int capacity;
+        if (policy.getCapacityPerSlot() == null) {
+            capacity = 1;
+        } else {
+            capacity = policy.getCapacityPerSlot();
+        }
         LocalDateTime cursor = horizonStart;
         while (cursor.plusMinutes(slotMinutes).compareTo(horizonEnd) <= 0) {
             SlotTemplateRequest template = new SlotTemplateRequest();

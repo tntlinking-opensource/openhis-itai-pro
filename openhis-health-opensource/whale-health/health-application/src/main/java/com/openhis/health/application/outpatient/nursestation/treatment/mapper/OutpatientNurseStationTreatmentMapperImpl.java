@@ -17,7 +17,6 @@
 
 package com.openhis.health.application.outpatient.nursestation.treatment.mapper;
 
-import com.openhis.health.module.querysupport.advice.AdviceExtensionJsonSupport;
 import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.domain.share.constants.OutpatientNurseStationConstants;
@@ -448,8 +447,8 @@ public class OutpatientNurseStationTreatmentMapperImpl implements OutpatientNurs
     /**
      * 单条医嘱执行单读模型行 → 抽屉 DTO。
      *
-     * <p>实现要点：搬运执行记录抽屉展示所需的全部字段，状态枚举通过 {@link EnumUtil} 转中文展示，
-     * 医嘱内容 JSON 与执行者列表 JSON 原样透传供前端解析渲染。</p>
+     * <p>实现要点：搬运执行记录抽屉展示所需的全部字段，状态枚举通过 {@link EnumUtil} 转中文展示；
+     * 项目名/操作/操作人展示列由 AppService 读侧 enrich 回填（B.6.2，禁止 HTTP 直透 JSON）。</p>
      *
      * @param row 读模型行；允许 null
      * @return DTO；{@code row} 为 null 时返回 null
@@ -478,10 +477,8 @@ public class OutpatientNurseStationTreatmentMapperImpl implements OutpatientNurs
         dto.setOccurrenceTime(row.getOccurrenceTime());
         dto.setRecordedTime(row.getRecordedTime());
         dto.setRecorderId(row.getRecorderId());
-        // 执行结果与医嘱内容/参与人（结构化快照，B.6.2）
+        // 执行结果；项目名/操作/操作人展示列由 AppService enrich 回填（禁止 JSON 解析路径）。
         dto.setResultText(row.getResultText());
-        dto.setRequestExtensions(AdviceExtensionJsonSupport.parseRequestExtensions(row.getOrderContentJson()));
-        dto.setPerformers(AdviceExtensionJsonSupport.parsePerformers(row.getPerformerListJson()));
         return dto;
     }
 

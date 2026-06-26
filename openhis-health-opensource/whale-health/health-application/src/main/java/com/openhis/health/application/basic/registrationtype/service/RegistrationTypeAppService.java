@@ -38,7 +38,7 @@ import com.openhis.health.domain.administration.healthcareservice.entity.Healthc
 import com.openhis.health.domain.administration.healthcareservice.service.HealthcareServiceDomainService;
 import com.openhis.health.domain.administration.healthcareservice.service.HealthcareServiceQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
@@ -72,7 +72,7 @@ public class RegistrationTypeAppService {
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     private final RegistrationTypeMapper registrationTypeMapper;
     /** 写路径操作人门控（B.6.5）。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
 
     /**
      * 列出全部挂号类型（注册场景下的医疗服务），并为每条补充当前销售价金额（元）。
@@ -131,7 +131,7 @@ public class RegistrationTypeAppService {
         if (request.getAmount() == null) {
             throw new ValidationException("挂号类型金额不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT, "请先登录后再新增挂号类型");
         Long serviceId = healthcareServiceDomainService.createService(
             registrationTypeMapper.toCreateCommand(request, operatorId));
@@ -172,7 +172,7 @@ public class RegistrationTypeAppService {
         if (request.getId() == null) {
             throw new ValidationException("挂号类型ID不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT, "请先登录后再更新挂号类型");
         healthcareServiceDomainService.modifyService(
             registrationTypeMapper.toUpdateCommand(request, operatorId));
@@ -208,7 +208,7 @@ public class RegistrationTypeAppService {
         if (entity == null) {
             throw new EntityNotFoundException("挂号类型", id);
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT, "请先登录后再删除挂号类型");
         AbolishHealthcareServiceCommand command = new AbolishHealthcareServiceCommand();
         command.setOperatorId(operatorId);
@@ -232,7 +232,7 @@ public class RegistrationTypeAppService {
         if (id == null) {
             throw new ValidationException("挂号类型ID不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT, "请先登录后再启用挂号类型");
         ReactivateHealthcareServiceCommand command = new ReactivateHealthcareServiceCommand();
         command.setOperatorId(operatorId);
@@ -254,7 +254,7 @@ public class RegistrationTypeAppService {
         if (id == null) {
             throw new ValidationException("挂号类型ID不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT, "请先登录后再停用挂号类型");
         RetireHealthcareServiceCommand command = new RetireHealthcareServiceCommand();
         command.setOperatorId(operatorId);

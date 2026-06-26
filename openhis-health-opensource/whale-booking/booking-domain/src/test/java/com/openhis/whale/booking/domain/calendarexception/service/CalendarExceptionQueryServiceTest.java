@@ -9,12 +9,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
@@ -34,7 +36,7 @@ class CalendarExceptionQueryServiceTest {
 
     @Test
     void resolveDayGeneratePlan_closed_skipsNormalGeneration() {
-        when(calendarExceptionRepository.findApplicableForDate(eq(ORG_ID), eq(DAY)))
+        when(calendarExceptionRepository.findAll(any(Specification.class), any(Sort.class)))
             .thenReturn(List.of(exception(CalendarExceptionTypeConstants.CLOSED, null)));
 
         DayGeneratePlanModel plan = queryService.resolveDayGeneratePlan(ORG_ID, DAY);
@@ -45,7 +47,7 @@ class CalendarExceptionQueryServiceTest {
 
     @Test
     void resolveDayGeneratePlan_extra_generatesAdditionalSchedule() {
-        when(calendarExceptionRepository.findApplicableForDate(eq(ORG_ID), eq(DAY)))
+        when(calendarExceptionRepository.findAll(any(Specification.class), any(Sort.class)))
             .thenReturn(List.of(exception(CalendarExceptionTypeConstants.EXTRA, 501L)));
 
         DayGeneratePlanModel plan = queryService.resolveDayGeneratePlan(ORG_ID, DAY);
@@ -57,7 +59,7 @@ class CalendarExceptionQueryServiceTest {
 
     @Test
     void resolveDayGeneratePlan_override_replacesTemplate() {
-        when(calendarExceptionRepository.findApplicableForDate(eq(ORG_ID), eq(DAY)))
+        when(calendarExceptionRepository.findAll(any(Specification.class), any(Sort.class)))
             .thenReturn(List.of(exception(CalendarExceptionTypeConstants.OVERRIDE, 502L)));
 
         DayGeneratePlanModel plan = queryService.resolveDayGeneratePlan(ORG_ID, DAY);
@@ -70,7 +72,7 @@ class CalendarExceptionQueryServiceTest {
     void resolveDayGeneratePlan_autoApplyOff_isIgnored() {
         CalendarException row = exception(CalendarExceptionTypeConstants.CLOSED, null);
         row.setAutoApplyOnGenerate(Boolean.FALSE);
-        when(calendarExceptionRepository.findApplicableForDate(eq(ORG_ID), eq(DAY)))
+        when(calendarExceptionRepository.findAll(any(Specification.class), any(Sort.class)))
             .thenReturn(List.of(row));
 
         DayGeneratePlanModel plan = queryService.resolveDayGeneratePlan(ORG_ID, DAY);

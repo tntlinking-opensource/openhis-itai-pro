@@ -26,9 +26,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_encounter_diagnosis" (
     "tcm_flag" bool,
     CONSTRAINT "adm_encounter_diagnosis_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_encounter_diagnosis IS '管理域 encounter diagnosis';
-
 COMMENT ON COLUMN adm_encounter_diagnosis.id IS '主键';
 COMMENT ON COLUMN adm_encounter_diagnosis.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_encounter_diagnosis.created_at IS '创建时间';
@@ -51,4 +49,3 @@ COMMENT ON COLUMN adm_encounter_diagnosis.med_type IS '医保或诊疗类别';
 COMMENT ON COLUMN adm_encounter_diagnosis.highest_diag_flag IS '是否最高诊断';
 COMMENT ON COLUMN adm_encounter_diagnosis.tcm_syndrome_group IS '中医证候组';
 COMMENT ON COLUMN adm_encounter_diagnosis.tcm_flag IS '是否中医诊断';
-

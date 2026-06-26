@@ -17,4 +17,6 @@ public interface ScheduleTemplateRepository extends JpaRepository<ScheduleTempla
      */
     Optional<ScheduleTemplate> findFirstByOrganizationIdAndTemplateCodeAndIsDeletedFalse(
         Long organizationId, String templateCode);
+
+    long countBySlotProvisionTemplateIdAndIsDeletedFalse(Long slotProvisionTemplateId);
 }

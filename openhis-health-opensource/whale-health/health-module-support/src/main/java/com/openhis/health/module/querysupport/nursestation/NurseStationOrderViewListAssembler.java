@@ -1,0 +1,654 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.module.querysupport.nursestation;
+
+import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
+import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
+import com.openhis.health.module.common.assembler.order.OrderCatalogDisplayAssembler;
+import com.openhis.health.module.common.assembler.order.OrderRequestCatalogWarmAssembler;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.module.querysupport.order.dto.OrderRequestCatalogWarmContext;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewDisplayContext;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewDisplayCore;
+import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewListDetailIndex;
+import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
+import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
+import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
+import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
+import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
+import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
+import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
+import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
+import com.openhis.health.domain.share.enums.RequestStatus;
+import com.openhis.health.domain.share.enums.TherapyType;
+import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
+import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
+import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * 住院护士站医嘱查看：列表行展示内核（明细索引、批量预热、药/诊行字段组装）。
+ *
+ * <p>供医嘱校对、医嘱执行、护士划价父医嘱等模块复用；读模型骨架查询仍由各业务
+ * {@code OrderInfoRMQueryService} 场景方法承担，本类不改变 IF 契约与过滤规则。</p>
+ */
+@Component
+@RequiredArgsConstructor
+public class NurseStationOrderViewListAssembler {
+
+    /** 术语展示名批量解析。 */
+    private final TerminologyOptionLoader terminologyOptionLoader;
+    /** 频次展示码表：cus_frequency 主数据。 */
+    private final FrequencyOptionLoader frequencyOptionLoader;
+
+    /** 药/诊定义预热。 */
+    private final OrderRequestCatalogWarmAssembler orderRequestCatalogWarmAssembler;
+
+    /** 产品读模型批量查询。 */
+    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+
+    /** 库位名称解析。 */
+    private final LocationQueryService locationQueryService;
+
+    /** 医务人员姓名解析。 */
+    private final PractitionerQueryService practitionerQueryService;
+
+    /**
+     * 第一遍扫描：建立明细 id 索引并收集批量预热 id 集合。
+     *
+     * @param skeleton       OrderInfo 骨架行（可为空）
+     * @param medByEncounter 就诊 → 药品明细
+     * @param svcByEncounter 就诊 → 诊疗明细
+     * @return 明细索引与 id 集合
+     */
+    public NurseStationOrderViewListDetailIndex indexEncounterDetails(
+        List<InpatientOrderListSkeleton> skeleton,
+        Map<Long, List<MedicationRequestListQueryModel>> medByEncounter,
+        Map<Long, List<ServiceRequestListModel>> svcByEncounter) {
+        NurseStationOrderViewListDetailIndex index = new NurseStationOrderViewListDetailIndex();
+        if (medByEncounter != null) {
+            for (List<MedicationRequestListQueryModel> list : medByEncounter.values()) {
+                for (MedicationRequestListQueryModel row : list) {
+                    if (row == null) {
+                        continue;
+                    }
+                    if (row.getId() != null) {
+                        index.getMedDetailById().put(row.getId(), row);
+                    }
+                    if (row.getMedicationId() != null) {
+                        index.getMedDefIds().add(row.getMedicationId());
+                    }
+                    this.collectPractitionerAndLocation(row.getRequesterId(), row.getRecorderId(),
+                        row.getPerformLocation(), index.getPractitionerIds(), index.getLocationIds());
+                }
+            }
+        }
+        if (svcByEncounter != null) {
+            for (List<ServiceRequestListModel> list : svcByEncounter.values()) {
+                for (ServiceRequestListModel row : list) {
+                    if (row == null) {
+                        continue;
+                    }
+                    if (row.getId() != null) {
+                        index.getSvcDetailById().put(row.getId(), row);
+                    }
+                    if (this.shouldWarmActivityDefinition(row.getCategoryEnum(), row.getActivityId())) {
+                        index.getActivityDefIds().add(row.getActivityId());
+                    }
+                    this.collectPractitionerAndLocation(row.getRequesterId(), null, row.getLocationId(),
+                        index.getPractitionerIds(), index.getLocationIds());
+                }
+            }
+        }
+        if (skeleton != null) {
+            for (InpatientOrderListSkeleton order : skeleton) {
+                if (order == null) {
+                    continue;
+                }
+                if (order.getMedRequesterId() != null) {
+                    index.getPractitionerIds().add(order.getMedRequesterId());
+                }
+                if (order.getRequesterId() != null) {
+                    index.getPractitionerIds().add(order.getRequesterId());
+                }
+                if (order.getMedicationId() != null) {
+                    index.getMedDefIds().add(order.getMedicationId());
+                }
+                if (this.shouldWarmActivityDefinition(order.getCategoryEnum(), order.getActivityId())) {
+                    index.getActivityDefIds().add(order.getActivityId());
+                }
+                if (order.getLocationId() != null) {
+                    index.getLocationIds().add(order.getLocationId());
+                }
+            }
+        }
+        return index;
+    }
+
+    /**
+     * 在骨架遍历前批量预热目录、术语、人员与库位名称。
+     *
+     * @param index 由 {@link #indexEncounterDetails} 产出
+     * @return 展示上下文
+     */
+    public NurseStationOrderViewDisplayContext prepareDisplayContext(NurseStationOrderViewListDetailIndex index) {
+        NurseStationOrderViewDisplayContext ctx = new NurseStationOrderViewDisplayContext();
+        OrderRequestCatalogWarmContext catalogWarm = orderRequestCatalogWarmAssembler.prepareByDefinitionIds(
+            index.getActivityDefIds(), index.getMedDefIds(), Set.of());
+        ctx.setMedicationDefinitionById(catalogWarm.getMedicationDefinitionById());
+        ctx.setActivityDefinitionById(catalogWarm.getActivityDefinitionById());
+        ctx.setProductByKey(this.batchLoadProducts(index.getMedDefIds(), index.getActivityDefIds()));
+        ctx.setUnitLabelByCode(
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE));
+        ctx.setMethodLabelByCode(
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.METHOD_CODE));
+        ctx.setRateLabelByCode(frequencyOptionLoader.buildRateLabelMap());
+        ctx.setDoseUnitLabelByCode(
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DOSE_UNIT));
+        ctx.setPractitionerNameById(this.loadPractitionerNames(index.getPractitionerIds()));
+        ctx.setLocationNameById(locationQueryService.mapNamesByIds(index.getLocationIds()));
+        return ctx;
+    }
+
+    /**
+     * 从 OrderInfo 解析域 Request 主键（药嘱 medReqId，诊嘱 orderId）。
+     *
+     * @param order 读模型行
+     * @return 申请主键；无法识别时 null
+     */
+    public Long resolveRequestId(InpatientOrderListSkeleton order) {
+        if (order == null) {
+            return null;
+        }
+        if (ReadModelOrderTypeConstants.MED_REQUEST.equals(order.getOrderType())) {
+            return order.getMedReqId();
+        }
+        if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())) {
+            return order.getOrderId();
+        }
+        return null;
+    }
+
+    /**
+     * OrderInfo.orderType → Procedure/绑定查询用的 Request 表名。
+     *
+     * @param order 读模型行
+     * @return 表名字面量；无法识别时 null
+     */
+    public String resolveRequestTable(InpatientOrderListSkeleton order) {
+        if (order == null) {
+            return null;
+        }
+        if (ReadModelOrderTypeConstants.MED_REQUEST.equals(order.getOrderType())) {
+            return TableNameConstants.MED_MEDICATION_REQUEST;
+        }
+        if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())) {
+            return TableNameConstants.WKF_SERVICE_REQUEST;
+        }
+        return null;
+    }
+
+    /**
+     * 稳定行键：requestId + U+0001 + orderType。
+     *
+     * @param requestId 申请主键
+     * @param orderType 医嘱类型
+     * @return 行键
+     */
+    public String buildListRowKey(Long requestId, String orderType) {
+        if (requestId == null) {
+            return null;
+        }
+        return requestId + String.valueOf(GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR) + orderType;
+    }
+
+    /**
+     * 药品 OrderInfo 行 → 展示内核。
+     *
+     * @param order     骨架
+     * @param medDetail 药品明细；可 null
+     * @param ctx       预热上下文
+     * @return 展示内核；非药嘱时 null
+     */
+    public NurseStationOrderViewDisplayCore buildMedicationDisplayCore(
+        InpatientOrderListSkeleton order,
+        MedicationRequestListQueryModel medDetail,
+        NurseStationOrderViewDisplayContext ctx) {
+        if (order == null || !ReadModelOrderTypeConstants.MED_REQUEST.equals(order.getOrderType())) {
+            return null;
+        }
+        Long requestId = order.getMedReqId();
+        NurseStationOrderViewDisplayCore core = new NurseStationOrderViewDisplayCore();
+        core.setListRowKey(this.buildListRowKey(requestId, ReadModelOrderTypeConstants.MED_REQUEST));
+        core.setRequestId(requestId);
+        core.setOrderType(ReadModelOrderTypeConstants.MED_REQUEST);
+        core.setEncounterId(order.getEncounterId());
+        core.setPatientId(order.getPatientId());
+        String statusCode = this.resolveRequestStatusCode(order, medDetail, null);
+        core.setStatusEnum(statusCode);
+        core.setStatusDisplay(this.resolveRequestStatusDisplay(statusCode));
+        String therapyCode = order.getTherapyEnum();
+        if (medDetail != null && StringUtils.isNotBlank(medDetail.getTherapyEnum())) {
+            therapyCode = medDetail.getTherapyEnum();
+        }
+        core.setTherapyEnum(therapyCode);
+        core.setTherapyDisplay(this.resolveTherapyDisplay(therapyCode));
+        Long medDefId = order.getMedicationId();
+        if (medDetail != null && medDetail.getMedicationId() != null) {
+            medDefId = medDetail.getMedicationId();
+        }
+        MedicationDefinition def = ctx.getMedicationDefinitionById().get(medDefId);
+        if (def != null) {
+            core.setAdviceDisplayName(def.getName());
+            core.setSpecificationText(OrderCatalogDisplayAssembler.resolveMedicationSpecText(def));
+        } else {
+            ProductDefinitionDisplayDto product = ctx.getProductByKey().get(
+                ProductDefinitionKeyUtil.buildCompositeKey(
+                    TableNameConstants.MED_MEDICATION_DEFINITION, medDefId));
+            if (product != null) {
+                core.setAdviceDisplayName(product.getProductName());
+            }
+        }
+        ProductDefinitionDisplayDto medProduct = ctx.getProductByKey().get(
+            ProductDefinitionKeyUtil.buildCompositeKey(
+                TableNameConstants.MED_MEDICATION_DEFINITION, medDefId));
+        if (medDetail != null) {
+            core.setDosageDisplay(this.formatDosageDisplay(medDetail.getDose(), medDetail.getDoseUnitCode(),
+                ctx.getDoseUnitLabelByCode(), medDetail.getQuantity(), medDetail.getUnitCode(),
+                ctx.getUnitLabelByCode(), medProduct));
+            core.setUsageDisplay(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
+                ctx.getMethodLabelByCode(), medDetail.getMethodCode()));
+            core.setFrequencyDisplay(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
+                ctx.getRateLabelByCode(), medDetail.getRateCode()));
+            core.setAuthoredTime(medDetail.getReqAuthoredTime());
+            core.setStopTime(medDetail.getEffectiveDoseEnd());
+            Long authorId = medDetail.getRequesterId();
+            if (authorId == null) {
+                authorId = medDetail.getRecorderId();
+            }
+            core.setRequesterName(ctx.getPractitionerNameById().get(authorId));
+            if (medDetail.getPerformLocation() != null) {
+                core.setPerformerLocationDisplay(ctx.getLocationNameById().get(medDetail.getPerformLocation()));
+            }
+            core.setGroupId(medDetail.getGroupId());
+            if (medDetail.getGroupId() != null && medDetail.getGroupId() <= Integer.MAX_VALUE) {
+                core.setGroupNo(medDetail.getGroupId().intValue());
+            }
+            core.setSortNumber(medDetail.getSortNumber());
+        } else {
+            core.setAuthoredTime(order.getMedAuthoredTime());
+            core.setStopTime(order.getEffectiveDoseEnd());
+            core.setRequesterName(ctx.getPractitionerNameById().get(order.getMedRequesterId()));
+        }
+        return core;
+    }
+
+    /**
+     * 诊疗 OrderInfo 行 → 展示内核。
+     *
+     * @param order     骨架
+     * @param svcDetail 诊疗明细；可 null
+     * @param ctx       预热上下文
+     * @return 展示内核；非诊嘱时 null
+     */
+    public NurseStationOrderViewDisplayCore buildServiceDisplayCore(
+        InpatientOrderListSkeleton order,
+        ServiceRequestListModel svcDetail,
+        NurseStationOrderViewDisplayContext ctx) {
+        if (order == null || !ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())) {
+            return null;
+        }
+        Long requestId = order.getOrderId();
+        NurseStationOrderViewDisplayCore core = new NurseStationOrderViewDisplayCore();
+        core.setListRowKey(this.buildListRowKey(requestId, ReadModelOrderTypeConstants.SERVICE_REQUEST));
+        core.setRequestId(requestId);
+        core.setOrderType(ReadModelOrderTypeConstants.SERVICE_REQUEST);
+        core.setEncounterId(order.getEncounterId());
+        core.setPatientId(order.getPatientId());
+        String statusCode = this.resolveRequestStatusCode(order, null, svcDetail);
+        core.setStatusEnum(statusCode);
+        core.setStatusDisplay(this.resolveRequestStatusDisplay(statusCode));
+        String serviceCategory = this.resolveServiceCategoryEnum(order, svcDetail);
+        core.setCategoryEnum(serviceCategory);
+        String therapyCode = order.getTherapyEnum();
+        if (svcDetail != null && StringUtils.isNotBlank(svcDetail.getTherapyEnum())) {
+            therapyCode = svcDetail.getTherapyEnum();
+        }
+        core.setTherapyEnum(therapyCode);
+        core.setTherapyDisplay(this.resolveTherapyDisplay(therapyCode));
+        Long activityId = this.resolveCatalogActivityId(order.getActivityId(), svcDetail, serviceCategory);
+        if (this.isSpecialServiceCategory(serviceCategory)) {
+            // 出院/转科不依赖活动定义 catalog，展示名与住院医生站列表口径一致（BR-IP-ORD-017）。
+            core.setAdviceDisplayName(this.resolveSpecialServiceAdviceDisplayName(serviceCategory));
+        } else if (activityId != null) {
+            ActivityDefinition activityDef = ctx.getActivityDefinitionById().get(activityId);
+            if (activityDef != null) {
+                core.setAdviceDisplayName(activityDef.getName());
+            } else {
+                ProductDefinitionDisplayDto product = ctx.getProductByKey().get(
+                    ProductDefinitionKeyUtil.buildCompositeKey(
+                        TableNameConstants.WKF_ACTIVITY_DEFINITION, activityId));
+                if (product != null) {
+                    core.setAdviceDisplayName(product.getProductName());
+                }
+            }
+        }
+        ProductDefinitionDisplayDto svcProduct = null;
+        if (activityId != null) {
+            svcProduct = ctx.getProductByKey().get(
+                ProductDefinitionKeyUtil.buildCompositeKey(
+                    TableNameConstants.WKF_ACTIVITY_DEFINITION, activityId));
+        }
+        if (svcDetail != null) {
+            core.setDosageDisplay(this.formatQuantityUnitDisplay(svcDetail.getQuantity(), svcDetail.getUnitCode(),
+                ctx.getUnitLabelByCode(), svcProduct));
+            core.setFrequencyDisplay(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
+                ctx.getRateLabelByCode(), svcDetail.getRateCode()));
+            core.setAuthoredTime(svcDetail.getReqAuthoredTime());
+            core.setStopTime(svcDetail.getOccurrenceEndTime());
+            core.setRequesterName(ctx.getPractitionerNameById().get(svcDetail.getRequesterId()));
+            if (svcDetail.getLocationId() != null) {
+                core.setPerformerLocationDisplay(ctx.getLocationNameById().get(svcDetail.getLocationId()));
+            }
+            core.setSortNumber(svcDetail.getSortNumber());
+        } else {
+            core.setAuthoredTime(order.getAuthoredTime());
+        }
+        return core;
+    }
+
+    /**
+     * 解析诊疗类目持久化码（category_enum）；明细优先于 OrderInfo 骨架。
+     *
+     * @param order     读模型骨架行
+     * @param svcDetail 诊疗明细；可 null
+     * @return 类目 code；无值时 null
+     */
+    public String resolveServiceCategoryEnum(
+        InpatientOrderListSkeleton order,
+        ServiceRequestListModel svcDetail) {
+        if (svcDetail != null && StringUtils.isNotBlank(svcDetail.getCategoryEnum())) {
+            return svcDetail.getCategoryEnum().trim();
+        }
+        if (order != null && StringUtils.isNotBlank(order.getCategoryEnum())) {
+            return order.getCategoryEnum().trim();
+        }
+        return null;
+    }
+
+    /**
+     * 是否为出院/转科等特殊诊疗类目（不依赖活动定义 catalog）。
+     *
+     * @param serviceCategory {@link InpatientNurseStationConstants} 类目 code
+     * @return 出院或转科时为 true
+     */
+    public boolean isSpecialServiceCategory(String serviceCategory) {
+        return InpatientNurseStationConstants.SERVICE_CATEGORY_DISCHARGE.equals(serviceCategory)
+            || InpatientNurseStationConstants.SERVICE_CATEGORY_TRANSFER.equals(serviceCategory);
+    }
+
+    /**
+     * 护士站医嘱执行列表是否排除该诊疗类目（与入出转 ATD-03 待执行列表口径一致）。
+     *
+     * <p>转科/出院/护理类不经护士站「执行」Tab 走 Procedure 槽位，校对后由专用流程处理。</p>
+     *
+     * @param serviceCategory 诊疗类目 code
+     * @return true 表示不进入 IF-IP-EXE-01 列表
+     */
+    public boolean isExcludedFromNurseStationExecuteList(String serviceCategory) {
+        if (InpatientNurseStationConstants.SERVICE_CATEGORY_TRANSFER.equals(serviceCategory)) {
+            return true;
+        }
+        if (InpatientNurseStationConstants.SERVICE_CATEGORY_DISCHARGE.equals(serviceCategory)) {
+            return true;
+        }
+        if (InpatientNurseStationConstants.SERVICE_CATEGORY_NURSING.equals(serviceCategory)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 出院/转科类医嘱固定展示名（与 {@link DoctorStationAdviceConstants} 住院医生站列表一致）。
+     *
+     * @param serviceCategory 诊疗类目 code
+     * @return 展示名；非特殊类目时 null
+     */
+    public String resolveSpecialServiceAdviceDisplayName(String serviceCategory) {
+        if (InpatientNurseStationConstants.SERVICE_CATEGORY_DISCHARGE.equals(serviceCategory)) {
+            return DoctorStationAdviceConstants.ADVICE_LIST_DISCHARGE_DISPLAY_NAME_INPATIENT;
+        }
+        if (InpatientNurseStationConstants.SERVICE_CATEGORY_TRANSFER.equals(serviceCategory)) {
+            return DoctorStationAdviceConstants.ADVICE_LIST_TRANSFER_DISPLAY_NAME_INPATIENT;
+        }
+        return null;
+    }
+
+    /**
+     * 特殊类目或无效 activityId 不参与活动定义预热，避免占位 id 污染批量查询。
+     *
+     * @param categoryEnum 诊疗类目
+     * @param activityId   活动定义主键
+     * @return true 表示可加入 catalog 预热集合
+     */
+    private boolean shouldWarmActivityDefinition(String categoryEnum, Long activityId) {
+        if (activityId == null || activityId <= 0L) {
+            return false;
+        }
+        if (this.isSpecialServiceCategory(categoryEnum)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 出院/转科等占位 activity_id 不参与活动定义 catalog 回落。
+     *
+     * @param orderActivityId 骨架 activityId
+     * @param svcDetail       诊疗明细
+     * @param serviceCategory 已解析类目
+     * @return 可查询 catalog 的 activityId；特殊类目时为 null
+     */
+    private Long resolveCatalogActivityId(
+        Long orderActivityId,
+        ServiceRequestListModel svcDetail,
+        String serviceCategory) {
+        if (this.isSpecialServiceCategory(serviceCategory)) {
+            return null;
+        }
+        Long candidate = orderActivityId;
+        if (svcDetail != null && svcDetail.getActivityId() != null) {
+            candidate = svcDetail.getActivityId();
+        }
+        if (candidate == null || candidate <= 0L) {
+            return null;
+        }
+        return candidate;
+    }
+
+    /**
+     * 收集开立人/录入人/执行库位 id，供批量姓名/库位名解析。
+     */
+    private void collectPractitionerAndLocation(
+        Long requesterId,
+        Long recorderId,
+        Long locationId,
+        Set<Long> practitionerIds,
+        Set<Long> locationIds) {
+        if (requesterId != null) {
+            practitionerIds.add(requesterId);
+        }
+        if (recorderId != null) {
+            practitionerIds.add(recorderId);
+        }
+        if (locationId != null) {
+            locationIds.add(locationId);
+        }
+    }
+
+    /**
+     * 批量加载药品/活动产品读模型（展示名回落）。
+     */
+    private Map<String, ProductDefinitionDisplayDto> batchLoadProducts(Set<Long> medDefIds, Set<Long> activityDefIds) {
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+        for (Long id : medDefIds) {
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
+            lookup.setProductDefinitionId(id);
+            lookups.add(lookup);
+        }
+        for (Long id : activityDefIds) {
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION);
+            lookup.setProductDefinitionId(id);
+            lookups.add(lookup);
+        }
+        if (lookups.isEmpty()) {
+            return new HashMap<>();
+        }
+        return productDefinitionBatchLoader.loadAsMap(lookups);
+    }
+
+    /**
+     * 批量解析医务人员姓名。
+     */
+    private Map<Long, String> loadPractitionerNames(Set<Long> ids) {
+        Map<Long, String> map = new HashMap<>();
+        if (ids == null || ids.isEmpty()) {
+            return map;
+        }
+        List<Practitioner> list = practitionerQueryService.findAllByIds(ids);
+        for (Practitioner p : list) {
+            if (p != null && p.getId() != null) {
+                map.put(p.getId(), p.getName());
+            }
+        }
+        return map;
+    }
+
+    /**
+     * 请求状态：域明细优先于 OrderInfo 骨架（停嘱后投影未追上时仍以写表为准）。
+     */
+    private String resolveRequestStatusCode(
+        InpatientOrderListSkeleton order,
+        MedicationRequestListQueryModel medDetail,
+        ServiceRequestListModel svcDetail) {
+        if (order == null) {
+            return null;
+        }
+        if (ReadModelOrderTypeConstants.MED_REQUEST.equals(order.getOrderType())) {
+            if (medDetail != null && StringUtils.isNotBlank(medDetail.getStatusEnum())) {
+                return medDetail.getStatusEnum();
+            }
+        } else if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())) {
+            if (svcDetail != null && StringUtils.isNotBlank(svcDetail.getStatusEnum())) {
+                return svcDetail.getStatusEnum();
+            }
+        }
+        return order.getStatusEnum();
+    }
+
+    /**
+     * RequestStatus code → 展示文案。
+     */
+    private String resolveRequestStatusDisplay(String statusCode) {
+        if (StringUtils.isBlank(statusCode)) {
+            return null;
+        }
+        RequestStatus status = EnumUtil.fromCode(RequestStatus.class, statusCode);
+        if (status != null) {
+            return status.getDisplay();
+        }
+        return null;
+    }
+
+    /**
+     * TherapyType code → 展示文案。
+     */
+    private String resolveTherapyDisplay(String therapyCode) {
+        if (StringUtils.isBlank(therapyCode)) {
+            return null;
+        }
+        TherapyType therapyType = EnumUtil.fromCode(TherapyType.class, therapyCode);
+        if (therapyType != null) {
+            return therapyType.getDisplay();
+        }
+        return null;
+    }
+
+    /**
+     * 药嘱剂量展示：优先 dose+doseUnit，回落 quantity+unit。
+     */
+    private String formatDosageDisplay(
+        BigDecimal dose,
+        String doseUnitCode,
+        Map<String, String> doseUnitLabelByCode,
+        BigDecimal quantity,
+        String unitCode,
+        Map<String, String> unitLabelByCode,
+        ProductDefinitionDisplayDto productRow) {
+        if (dose != null) {
+            String unit = ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
+                doseUnitLabelByCode, doseUnitCode, productRow);
+            String doseText = dose.setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+            if (StringUtils.isNotBlank(unit)) {
+                return doseText + unit;
+            }
+            return doseText;
+        }
+        return this.formatQuantityUnitDisplay(quantity, unitCode, unitLabelByCode, productRow);
+    }
+
+    /**
+     * 数量+单位拼接展示。
+     */
+    private String formatQuantityUnitDisplay(
+        BigDecimal quantity,
+        String unitCode,
+        Map<String, String> unitLabelByCode,
+        ProductDefinitionDisplayDto productRow) {
+        if (quantity == null) {
+            return null;
+        }
+        String qtyText = quantity.setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+        String unit = ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
+            unitLabelByCode, unitCode, productRow);
+        if (StringUtils.isNotBlank(unit)) {
+            return qtyText + unit;
+        }
+        return qtyText;
+    }
+}

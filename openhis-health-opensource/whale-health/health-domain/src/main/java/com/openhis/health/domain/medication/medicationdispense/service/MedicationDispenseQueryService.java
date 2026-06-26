@@ -29,6 +29,7 @@ import com.openhis.health.domain.medication.medicationdispense.queries.model.Med
 import com.openhis.health.domain.medication.medicationdispense.query.InpatientPharmacyPendingEncounterPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.query.InpatientPharmacyReturnEncounterPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispensePickupPendingPageQuery;
+import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseRecordPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseSlipPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.query.OutpatientPharmacyPendingEncounterPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.query.PageReturnPatientQuery;
@@ -39,6 +40,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.NurseStationExecutionConstants;
+import com.openhis.health.domain.share.constants.PharmacyDispenseRecordConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.MedicationDispenseType;
 import com.openhis.health.domain.share.utils.EnumUtil;
@@ -910,6 +912,208 @@ public class MedicationDispenseQueryService {
             models.add(this.toSlipQueryModel(row));
         }
         return models;
+    }
+
+    /**
+     * 发退药记录分页（AS-OP-PHA-004 / AS-IP-PHA-004）：仅已发/已退事实，按 {@code dispense_time} 倒序。
+     *
+     * @param query 记录分页入参；跨聚合筛选项须由应用层预解析写入 resolved 字段
+     * @return 发放事实读模型页；无匹配时为空页
+     */
+    public Page<MedicationDispenseSlipQueryModel> pageMedicationDispenseRecords(MedicationDispenseRecordPageQuery query) {
+        if (query == null) {
+            query = new MedicationDispenseRecordPageQuery();
+        }
+        int pageNo = query.springPageIndex();
+        int pageSize = query.getBoundedPageSize();
+        Sort sort = Sort.by(
+            Sort.Order.desc(FieldNameConstants.DISPENSE_TIME),
+            Sort.Order.desc(FieldNameConstants.ID));
+        PageRequest pageable = PageRequest.of(pageNo, pageSize, sort);
+        Specification<MedicationDispense> specification = this.buildMedicationDispenseRecordSpecification(query);
+        Page<MedicationDispense> page = medicationDispenseRepository.findAll(specification, pageable);
+        List<MedicationDispenseSlipQueryModel> models = new ArrayList<>();
+        for (MedicationDispense row : page.getContent()) {
+            models.add(this.toSlipQueryModel(row));
+        }
+        return new PageImpl<>(models, pageable, page.getTotalElements());
+    }
+
+    /**
+     * 发退药记录全量列表（导出）：筛选口径与 {@link #pageMedicationDispenseRecords} 一致；行数受 {@link MedicationDispenseRecordPageQuery#getBoundedPageSize()} 约束。
+     *
+     * @param query 记录查询入参；导出场景须设置 {@code pageSize} 为导出行上限
+     * @return 发放事实读模型列表；无匹配时返回空列表
+     */
+    public List<MedicationDispenseSlipQueryModel> listMedicationDispenseRecords(MedicationDispenseRecordPageQuery query) {
+        if (query == null) {
+            query = new MedicationDispenseRecordPageQuery();
+        }
+        int maxRows = query.getBoundedPageSize();
+        Specification<MedicationDispense> specification = this.buildMedicationDispenseRecordSpecification(query);
+        Sort sort = Sort.by(
+            Sort.Order.desc(FieldNameConstants.DISPENSE_TIME),
+            Sort.Order.desc(FieldNameConstants.ID));
+        // 导出全量列表：下推 LIMIT，避免 findAll 无界拉取
+        PageRequest pageable = PageRequest.of(0, maxRows, sort);
+        Page<MedicationDispense> page = medicationDispenseRepository.findAll(specification, pageable);
+        List<MedicationDispenseSlipQueryModel> models = new ArrayList<>();
+        for (MedicationDispense row : page.getContent()) {
+            models.add(this.toSlipQueryModel(row));
+        }
+        return models;
+    }
+
+    /**
+     * 组装发退药记录列表的 JPA 动态谓词（{@code dispense_time} 轴；不含发药工作台 supersede 排除）。
+     *
+     * @param query 记录分页入参
+     * @return 供 {@link MedicationDispenseRepository#findAll} 使用的规约
+     */
+    private Specification<MedicationDispense> buildMedicationDispenseRecordSpecification(
+        MedicationDispenseRecordPageQuery query) {
+        return (root, criteriaQuery, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            MedicationDispenseRecordPageQuery effectiveQuery = query;
+            if (effectiveQuery == null) {
+                effectiveQuery = new MedicationDispenseRecordPageQuery();
+            }
+            predicates.add(this.buildMedicationDispenseRecordTypePredicate(root, cb, effectiveQuery));
+            if (effectiveQuery.getLocationId() != null) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.LOCATION_ID), effectiveQuery.getLocationId()));
+            }
+            if (effectiveQuery.getPractitionerId() != null) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.PRACTITIONER_ID), effectiveQuery.getPractitionerId()));
+            }
+            this.applyResolvedEncounterIdsForScene(predicates, root, cb, effectiveQuery.getResolvedEncounterIdsForScene());
+            this.applyResolvedMedicationIds(predicates, root, cb, effectiveQuery.getResolvedMedicationIdsForCategory());
+            this.applyResolvedMedicationIds(predicates, root, cb, effectiveQuery.getResolvedMedicationIdsForDrugKeyword());
+            this.applyResolvedEncounterIds(predicates, root, cb, effectiveQuery.getResolvedEncounterIdsForPatientKeyword());
+            this.applyDispenseTimeWindow(predicates, root, cb, effectiveQuery);
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+    }
+
+    /**
+     * 记录类型 + 场景正向发放类型谓词（发/退 OR 组合）。
+     */
+    private Predicate buildMedicationDispenseRecordTypePredicate(
+        Root<MedicationDispense> root,
+        CriteriaBuilder cb,
+        MedicationDispenseRecordPageQuery query) {
+        String recordType = StringUtils.trimToNull(query.getRecordTypeCode());
+        if (recordType == null) {
+            recordType = PharmacyDispenseRecordConstants.RECORD_TYPE_ALL;
+        }
+        Predicate forwardPredicate = this.buildMedicationDispenseRecordForwardPredicate(root, cb, query);
+        Predicate refundPredicate = cb.and(
+            cb.equal(root.get(FieldNameConstants.STATUS_ENUM), DispenseStatus.REFUNDED),
+            cb.equal(root.get(FieldNameConstants.DISPENSE_ENUM), MedicationDispenseType.REFUND));
+        if (PharmacyDispenseRecordConstants.RECORD_TYPE_DISPENSE.equals(recordType)) {
+            return forwardPredicate;
+        }
+        if (PharmacyDispenseRecordConstants.RECORD_TYPE_REFUND.equals(recordType)) {
+            return refundPredicate;
+        }
+        return cb.or(forwardPredicate, refundPredicate);
+    }
+
+    /**
+     * 正向已发药行：{@code COMPLETED} 且 {@code dispense_enum} 落在门诊/住院场景集合。
+     */
+    private Predicate buildMedicationDispenseRecordForwardPredicate(
+        Root<MedicationDispense> root,
+        CriteriaBuilder cb,
+        MedicationDispenseRecordPageQuery query) {
+        List<MedicationDispenseType> forwardTypes = new ArrayList<>();
+        if (Boolean.TRUE.equals(query.getOutpatientMedicationOnly())) {
+            forwardTypes.add(MedicationDispenseType.OUTPATIENT);
+            forwardTypes.add(MedicationDispenseType.TEMPORARY);
+        } else if (Boolean.TRUE.equals(query.getInpatientMedicationOnly())) {
+            forwardTypes.add(MedicationDispenseType.INPATIENT);
+            forwardTypes.add(MedicationDispenseType.TEMPORARY);
+        }
+        if (forwardTypes.isEmpty()) {
+            // 未指定场景时正向行不可命中，避免与退药行混查时误纳入全表 COMPLETED
+            return cb.equal(cb.literal(1), cb.literal(0));
+        }
+        return cb.and(
+            cb.equal(root.get(FieldNameConstants.STATUS_ENUM), DispenseStatus.COMPLETED),
+            root.get(FieldNameConstants.DISPENSE_ENUM).in(forwardTypes));
+    }
+
+    /**
+     * 就诊场景预解析主键集合 → {@code encounter_id IN}；空列表表示无命中须拒查。
+     */
+    private void applyResolvedEncounterIdsForScene(
+        List<Predicate> predicates,
+        Root<MedicationDispense> root,
+        CriteriaBuilder cb,
+        List<Long> resolvedEncounterIdsForScene) {
+        if (resolvedEncounterIdsForScene == null) {
+            return;
+        }
+        if (resolvedEncounterIdsForScene.isEmpty()) {
+            predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
+            return;
+        }
+        predicates.add(root.get(FieldNameConstants.ENCOUNTER_ID).in(resolvedEncounterIdsForScene));
+    }
+
+    /**
+     * 患者关键字预解析就诊主键 → {@code encounter_id IN}；空列表表示无命中须拒查。
+     */
+    private void applyResolvedEncounterIds(
+        List<Predicate> predicates,
+        Root<MedicationDispense> root,
+        CriteriaBuilder cb,
+        List<Long> resolvedEncounterIds) {
+        if (resolvedEncounterIds == null) {
+            return;
+        }
+        if (resolvedEncounterIds.isEmpty()) {
+            predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
+            return;
+        }
+        predicates.add(root.get(FieldNameConstants.ENCOUNTER_ID).in(resolvedEncounterIds));
+    }
+
+    /**
+     * 药品/项目类型预解析主键 → {@code medication_id IN}；空列表表示无命中须拒查。
+     */
+    private void applyResolvedMedicationIds(
+        List<Predicate> predicates,
+        Root<MedicationDispense> root,
+        CriteriaBuilder cb,
+        List<Long> ids) {
+        if (ids == null) {
+            return;
+        }
+        if (ids.isEmpty()) {
+            predicates.add(cb.equal(cb.literal(1), cb.literal(0)));
+            return;
+        }
+        predicates.add(root.get(FieldNameConstants.MEDICATION_ID).in(ids));
+    }
+
+    /**
+     * {@code dispense_time} 闭区间；有时间窗时排除 {@code dispense_time} 为空的行。
+     */
+    private void applyDispenseTimeWindow(
+        List<Predicate> predicates,
+        Root<MedicationDispense> root,
+        CriteriaBuilder cb,
+        MedicationDispenseRecordPageQuery query) {
+        if (query.getStartDate() != null || query.getEndDate() != null) {
+            predicates.add(cb.isNotNull(root.get(FieldNameConstants.DISPENSE_TIME)));
+        }
+        if (query.getStartDate() != null) {
+            predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.DISPENSE_TIME), query.getStartDate()));
+        }
+        if (query.getEndDate() != null) {
+            predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.DISPENSE_TIME), query.getEndDate()));
+        }
     }
 
     /**

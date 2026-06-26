@@ -18,6 +18,7 @@
 package com.openhis.health.application.outpatient.financial.charge.request;
 
 import com.openhis.health.application.outpatient.financial.charge.dto.PaymentDetailSubmitDto;
+import com.openhis.health.integration.payment.dto.ClientScanResultDto;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
@@ -46,9 +47,6 @@ public class ConfirmOutpatientChargeSettlementRequest {
     /** 账单日期，落账时写入支付单。 */
     private LocalDateTime billDate;
 
-    /** 医保结算 id 列表序列化串（平台 2207 成功后回写）。 */
-    private String ybSettleIds;
-
     /** 医保收费批次号（预结算返回，单组兼容）。 */
     private String ybChrgBchno;
 
@@ -57,4 +55,7 @@ public class ConfirmOutpatientChargeSettlementRequest {
 
     /** 结算结果枚举 code。 */
     private String outcomeEnum;
+
+    /** 银联被扫 Win 回传（扫码 settle 时必填，与 paymentDetails 并列）。 */
+    private ClientScanResultDto clientScanResult;
 }

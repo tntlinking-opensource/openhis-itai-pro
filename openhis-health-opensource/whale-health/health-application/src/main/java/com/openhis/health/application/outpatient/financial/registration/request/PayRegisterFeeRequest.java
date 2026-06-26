@@ -18,6 +18,7 @@
 package com.openhis.health.application.outpatient.financial.registration.request;
 
 import com.openhis.health.application.outpatient.financial.registration.dto.PaymentDetailDto;
+import com.openhis.health.integration.payment.dto.ClientScanResultDto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -47,4 +48,8 @@ public class PayRegisterFeeRequest {
     @Schema(description = "预约ID")
     /** 预约ID（业务字段）。 */
     private Long appointmentId;
+
+    /** 银联被扫 Win 回传（扫码 settle 时必填）。 */
+    @Schema(description = "银联被扫 Win 回传")
+    private ClientScanResultDto clientScanResult;
 }

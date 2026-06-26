@@ -20,6 +20,7 @@ package com.openhis.health.application.inpatient.financial.prepay.request;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayPaymentDetailDto;
+import com.openhis.health.integration.payment.dto.ClientScanResultDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -70,4 +71,13 @@ public class CollectPrepayAdvanceDepositRequest {
     /** 备注。 */
     @Schema(description = "备注")
     private String remark;
+
+    /** 银联被扫 Win 回传（扫码收预交金时必填）。 */
+    @Schema(description = "银联被扫 Win 回传")
+    private ClientScanResultDto clientScanResult;
+
+    /** 预下单草稿 ID（{@link #preparePrepayAdvanceDeposit} 返回；扫码续收时传入）。 */
+    @Schema(description = "预交金支付草稿 ID（扫码预下单后传入）")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long paymentDraftId;
 }

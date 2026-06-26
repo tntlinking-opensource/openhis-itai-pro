@@ -17,9 +17,12 @@
 
 package com.openhis.health.module.querysupport.advice;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.openhis.health.module.querysupport.advice.dto.AdvicePackageChildItemDto;
 import com.openhis.health.module.querysupport.advice.dto.AdviceRequestExtensionSnapshotDto;
 import com.openhis.health.module.querysupport.advice.dto.ProcedurePerformerItemDto;
@@ -43,7 +46,7 @@ import java.util.Map;
  */
 public final class AdviceExtensionJsonSupport {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
@@ -150,7 +153,7 @@ public final class AdviceExtensionJsonSupport {
             }
             String unitCode = null;
             if (root.hasNonNull(FieldNameConstants.UNIT_CODE)) {
-                unitCode = StringUtils.trimToNull(root.get(FieldNameConstants.UNIT_CODE).asText());
+                unitCode = trimToNull(root.get(FieldNameConstants.UNIT_CODE).asText());
             }
             return new ServiceChildOverrideHints(executionCount, unitCode);
         } catch (Exception ignored) {

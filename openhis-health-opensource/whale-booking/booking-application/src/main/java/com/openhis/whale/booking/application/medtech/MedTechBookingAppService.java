@@ -30,10 +30,11 @@ import com.openhis.whale.booking.application.register.response.ListBookableSlots
 import com.openhis.whale.booking.application.support.BookingOperatorResolver;
 import com.openhis.whale.booking.application.support.BookingPagedResultBuilder;
 import com.openhis.whale.booking.contracts.dto.BookableServiceRequestDto;
-import com.openhis.whale.booking.contracts.port.BookingEncounterPort;
-import com.openhis.whale.booking.contracts.port.BookingLocationPort;
-import com.openhis.whale.booking.contracts.port.BookingScheduleMasterDataPort;
-import com.openhis.whale.booking.contracts.port.BookingServiceRequestPort;
+import com.openhis.whale.booking.contracts.reader.HealthEncounterReader;
+import com.openhis.whale.booking.contracts.reader.HealthLocationReader;
+import com.openhis.whale.booking.contracts.reader.HealthScheduleMasterDataReader;
+import com.openhis.whale.booking.contracts.reader.HealthServiceRequestReader;
+import com.openhis.whale.booking.contracts.writer.HealthServiceRequestBookingWriter;
 import com.openhis.whale.booking.domain.appointment.entity.Appointment;
 import com.openhis.whale.booking.domain.appointment.queries.model.AppointmentBookingDetailModel;
 import com.openhis.whale.booking.domain.appointment.queries.model.AppointmentBookingListModel;
@@ -54,7 +55,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 
 import java.time.LocalDateTime;
@@ -63,9 +63,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 医技预约应用服务。
+ * 医技预约应用服务（7.x）。
  *
- * <p>接入：POST /api/app/medTechBooking/{methodName}</p>
+ * <p>职责边界：医技可约号源、预约创建/改约/取消/到检、资源映射维护；医嘱状态经 Reader/Writer/Client 回写。</p>
+ * <p>接入：AppServiceControllerRegistrar → {@code POST /api/app/medTechBooking/{methodName}}。</p>
  */
 @Service
 @Validated
@@ -73,35 +74,59 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class MedTechBookingAppService {
 
-    private final BookingEncounterPort bookingEncounterPort;
-    private final BookingServiceRequestPort bookingServiceRequestPort;
-    private final BookingLocationPort bookingLocationPort;
-    private final BookingScheduleMasterDataPort bookingScheduleMasterDataPort;
+    /** 就诊检索（health 经 Reader/Writer/Client）。 */
+    private final HealthEncounterReader healthEncounterReader;
+    /** 医嘱查询。 */
+    private final HealthServiceRequestReader bookingServiceRequestReader;
+    /** 医嘱预约回写。 */
+    private final HealthServiceRequestBookingWriter bookingServiceRequestWriter;
+    /** 科室/位置主数据。 */
+    private final HealthLocationReader healthLocationReader;
+    /** 排班主数据：表单选项。 */
+    private final HealthScheduleMasterDataReader healthScheduleMasterDataReader;
+    /** 医技资源映射读侧。 */
     private final DiagnosticResourceMapQueryService diagnosticResourceMapQueryService;
+    /** 医技资源映射写侧。 */
     private final DiagnosticResourceMapDomainService diagnosticResourceMapDomainService;
+    /** 号源读侧。 */
     private final SlotQueryService slotQueryService;
+    /** 号源写侧：allocate/release。 */
     private final SlotDomainService slotDomainService;
+    /** 预约写侧。 */
     private final AppointmentDomainService appointmentDomainService;
+    /** 预约读侧。 */
     private final AppointmentQueryService appointmentQueryService;
+    /** 可约号源 DTO 映射（复用门诊）。 */
     private final BookingRegisterMapper bookingRegisterMapper;
+    /** 医技 Request/Command/DTO 映射。 */
     private final MedTechBookingMapper medTechBookingMapper;
+    /** 写路径操作人。 */
     private final BookingOperatorResolver bookingOperatorResolver;
 
     /**
      * 医技预约台初始化（7.1）。
      */
     public LoadMedTechFormInitResponse loadMedTechFormInit(LoadMedTechFormInitRequest request) {
-        Long organizationId = request == null ? null : request.getOrganizationId();
+        // Pre：解析机构并加载科室与排班主数据选项。
+        Long organizationId;
+        if (request == null) {
+            organizationId = null;
+        } else {
+            organizationId = request.getOrganizationId();
+        }
+        // Asm：映射医技预约台初始化响应。
         return medTechBookingMapper.toLoadMedTechFormInitResponse(
-            bookingLocationPort.listActiveLocationsByOrganization(organizationId),
-            bookingScheduleMasterDataPort.loadOutpatientScheduleFormOptions(organizationId));
+            healthLocationReader.listActiveLocationsByOrganization(organizationId),
+            healthScheduleMasterDataReader.loadOutpatientScheduleFormOptions(organizationId));
     }
 
     /**
      * 检索就诊上下文。
      */
     public EncounterContextDto searchEncounter(@Valid SearchEncounterRequest request) {
-        return bookingEncounterPort.searchEncounter(medTechBookingMapper.toSearchEncounterQuery(request))
+        // Pre：委托就诊 Reader 检索就诊上下文。
+        // Asm：映射就诊上下文 DTO；未找到时返回 null。
+        return healthEncounterReader.searchEncounter(medTechBookingMapper.toSearchEncounterQuery(request))
             .map(medTechBookingMapper::toEncounterContextDto)
             .orElse(null);
     }
@@ -111,8 +136,9 @@ public class MedTechBookingAppService {
      */
     public ListBookableServiceRequestsResponse listBookableServiceRequests(
         @Valid ListBookableServiceRequestsRequest request) {
+        // Pre：按就诊加载可预约医嘱并关联已有预约主键。
         List<BookableServiceRequestDto> rows =
-            bookingServiceRequestPort.listBookableServiceRequestsByEncounter(request.getEncounterId());
+            bookingServiceRequestReader.listBookableServiceRequestsByEncounter(request.getEncounterId());
         Map<Long, Long> appointmentIds = appointmentQueryService.mapActiveDiagnosticAppointmentIdsByServiceRequestIds(
             medTechBookingMapper.collectServiceRequestIds(rows));
         List<ServiceRequestItemDto> items = new ArrayList<>();
@@ -121,6 +147,7 @@ public class MedTechBookingAppService {
         }
         ListBookableServiceRequestsResponse response = new ListBookableServiceRequestsResponse();
         response.setItems(items);
+        // Asm：返回可预约医嘱列表响应。
         return response;
     }
 
@@ -129,10 +156,12 @@ public class MedTechBookingAppService {
      */
     public ListDiagnosticBookableSlotsResponse listDiagnosticBookableSlots(
         @Valid ListDiagnosticBookableSlotsRequest request) {
+        // Pre：解析医技资源映射并查询当日可约号源。
         DiagnosticResourceMap resourceMap = this.resolveResourceMap(request.getOrganizationId(), request.getServiceRequestId());
         if (resourceMap.getScheduleId() == null) {
             ListDiagnosticBookableSlotsResponse empty = new ListDiagnosticBookableSlotsResponse();
             empty.setSlots(new ArrayList<>());
+            // Asm：无映射 Schedule 时返回空列表。
             return empty;
         }
         LocalDateTime dayStart = request.getDate().atStartOfDay();
@@ -152,24 +181,26 @@ public class MedTechBookingAppService {
             slotDetails.add(slotQueryService.loadSlotById(model.getSlotId()));
         }
         ListBookableSlotsResponse slotsResponse = bookingRegisterMapper.toListBookableSlotsResponse(merged, slotDetails);
+        // Asm：映射医技可约号源响应。
         return medTechBookingMapper.toListDiagnosticBookableSlotsResponse(slotsResponse);
     }
 
     /**
      * 创建医技预约：占号 + 写 Appointment + 关联医嘱。
      */
-    @Transactional
     public CreateDiagnosticBookingResponse createDiagnosticBooking(@Valid CreateDiagnosticBookingRequest request) {
+        // Gate：写路径须登录；医嘱不可重复预约。
         Long operatorId = bookingOperatorResolver.requireOperatorId();
         if (appointmentQueryService.findActiveDiagnosticBookingByServiceRequestId(request.getServiceRequestId()).isPresent()) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_RULE_CONFLICT, "该医嘱已存在有效预约");
         }
-        Long encounterId = bookingServiceRequestPort.resolveEncounterIdByServiceRequestId(request.getServiceRequestId());
+        // Pre：解析就诊、可预约医嘱与资源映射。
+        Long encounterId = bookingServiceRequestReader.resolveEncounterIdByServiceRequestId(request.getServiceRequestId());
         if (encounterId == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "无法解析医嘱所属就诊");
         }
         List<BookableServiceRequestDto> serviceRequests =
-            bookingServiceRequestPort.listBookableServiceRequestsByEncounter(encounterId);
+            bookingServiceRequestReader.listBookableServiceRequestsByEncounter(encounterId);
         BookableServiceRequestDto serviceRequest = medTechBookingMapper.findServiceRequest(serviceRequests, request.getServiceRequestId());
         if (serviceRequest == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "医嘱不可预约或不存在");
@@ -182,23 +213,28 @@ public class MedTechBookingAppService {
         if (resourceMap.getScheduleId() != null && !resourceMap.getScheduleId().equals(slot.getScheduleId())) {
             throw new BusinessException(ErrorCodeConstants.SLOT_INVALID_ARGUMENT, "号源与医技资源映射不匹配");
         }
+        // Cmd：占号、建预约、标记医嘱已预约。
         slotDomainService.allocateBooking(medTechBookingMapper.toAllocateBookingCommand(request.getSlotId(), operatorId));
         Appointment appointment = appointmentDomainService.create(
             medTechBookingMapper.toCreateDiagnosticAppointmentCommand(
                 request, slot, resourceMap, encounterId, operatorId));
-        bookingServiceRequestPort.markServiceRequestBooked(request.getServiceRequestId(), appointment.getId());
+        bookingServiceRequestWriter.markServiceRequestBooked(request.getServiceRequestId(), appointment.getId());
+        // Asm：映射创建响应。
         return medTechBookingMapper.toCreateDiagnosticBookingResponse(appointment);
     }
 
     /**
      * 取消医技预约并释放号源。
      */
-    @Transactional
     public void cancelDiagnosticBooking(@Valid CancelDiagnosticBookingRequest request) {
+        // Gate：写路径须登录。
         Long operatorId = bookingOperatorResolver.requireOperatorId();
+        // Pre：加载预约以获取 slotId。
         AppointmentBookingDetailModel booking = appointmentQueryService.loadDiagnosticBookingById(request.getAppointmentId());
+        // Cmd：取消预约。
         appointmentDomainService.cancelAppointment(
             medTechBookingMapper.toCancelAppointmentCommand(request, operatorId));
+        // Cmd：释放号源容量。
         if (booking.getSlotId() != null) {
             slotDomainService.releaseBooking(
                 medTechBookingMapper.toReleaseBookingCommand(booking.getSlotId(), operatorId));
@@ -208,18 +244,21 @@ public class MedTechBookingAppService {
     /**
      * 医技改约（7.5）：释放旧号源、占用新号源并重建预约。
      */
-    @Transactional
     public RescheduleDiagnosticBookingResponse rescheduleDiagnosticBooking(
         @Valid RescheduleDiagnosticBookingRequest request) {
+        // Gate：写路径须登录。
         Long operatorId = bookingOperatorResolver.requireOperatorId();
+        // Pre：加载原预约与新号源。
         AppointmentBookingDetailModel booking = appointmentQueryService.loadDiagnosticBookingById(request.getAppointmentId());
         SlotDetailModel newSlot = slotQueryService.loadSlotById(request.getNewSlotId());
+        // Cmd：释放旧号源、占用新号源。
         if (booking.getSlotId() != null) {
             slotDomainService.releaseBooking(
                 medTechBookingMapper.toReleaseBookingCommand(booking.getSlotId(), operatorId));
         }
         slotDomainService.allocateBooking(
             medTechBookingMapper.toAllocateBookingCommand(request.getNewSlotId(), operatorId));
+        // Cmd：取消旧预约并创建新预约。
         CancelDiagnosticBookingRequest cancelRequest = new CancelDiagnosticBookingRequest();
         cancelRequest.setAppointmentId(request.getAppointmentId());
         cancelRequest.setReason("改约释放");
@@ -248,17 +287,19 @@ public class MedTechBookingAppService {
             medTechBookingMapper.toCreateDiagnosticAppointmentCommand(
                 createRequest, newSlot, resourceMap, booking.getEncounterId(), operatorId));
         if (createRequest.getServiceRequestId() != null) {
-            bookingServiceRequestPort.markServiceRequestBooked(createRequest.getServiceRequestId(), appointment.getId());
+            bookingServiceRequestWriter.markServiceRequestBooked(createRequest.getServiceRequestId(), appointment.getId());
         }
+        // Asm：映射改约响应。
         return medTechBookingMapper.toRescheduleDiagnosticBookingResponse(appointment.getId(), request.getNewSlotId());
     }
 
     /**
      * 医技到检报到（7.6）。
      */
-    @Transactional
     public CheckInDiagnosticResponse checkInDiagnostic(@Valid CheckInDiagnosticRequest request) {
+        // Gate：写路径须登录。
         Long operatorId = bookingOperatorResolver.requireOperatorId();
+        // Pre：加载医技预约；已报到则直接返回。
         AppointmentBookingDetailModel booking = appointmentQueryService.loadDiagnosticBookingById(request.getAppointmentId());
         CheckInDiagnosticResponse response = new CheckInDiagnosticResponse();
         if (booking.getDisplayOrder() != null) {
@@ -276,8 +317,10 @@ public class MedTechBookingAppService {
         if (destinationLocationId == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "到检报到 destinationLocationId 不能为空");
         }
+        // Cmd：入队报到。
         Appointment queueItem = appointmentDomainService.checkInToQueue(
             medTechBookingMapper.toCheckInToQueueCommand(booking, destinationLocationId, operatorId));
+        // Asm：映射报到响应。
         response.setAppointmentId(queueItem.getId());
         response.setDisplayOrder(queueItem.getDisplayOrder());
         return response;
@@ -288,6 +331,7 @@ public class MedTechBookingAppService {
      */
     public PageDiagnosticResourceMapResponse pageDiagnosticResourceMap(
         @Valid PageDiagnosticResourceMapRequest request) {
+        // Pre：按机构分页加载医技资源映射。
         Page<DiagnosticResourceMap> page = diagnosticResourceMapQueryService.pageByOrganization(
             request.getOrganizationId(),
             PageRequest.of(request.getPageNo() - 1, request.getPageSize()));
@@ -295,17 +339,20 @@ public class MedTechBookingAppService {
         for (DiagnosticResourceMap entity : page.getContent()) {
             rows.add(medTechBookingMapper.toDiagnosticResourceMapDto(entity));
         }
+        // Asm：映射 DTO 并包装分页结果。
         return BookingPagedResultBuilder.build(new PageDiagnosticResourceMapResponse(), rows, page);
     }
 
     /**
      * 保存医技资源映射（7.7）。
      */
-    @Transactional
     public SaveDiagnosticResourceMapResponse saveDiagnosticResourceMap(@Valid SaveDiagnosticResourceMapRequest request) {
+        // Gate：写路径须登录。
         Long operatorId = bookingOperatorResolver.requireOperatorId();
+        // Cmd：持久化医技资源映射。
         DiagnosticResourceMap saved = diagnosticResourceMapDomainService.save(
             medTechBookingMapper.toDiagnosticResourceMapEntity(request), operatorId);
+        // Asm：返回主键。
         SaveDiagnosticResourceMapResponse response = new SaveDiagnosticResourceMapResponse();
         response.setId(saved.getId());
         return response;
@@ -315,6 +362,7 @@ public class MedTechBookingAppService {
      * 医技预约分页：按就诊时返回医嘱维度，否则返回预约维度。
      */
     public PageDiagnosticBookingsResponse pageDiagnosticBookings(@Valid PageDiagnosticBookingsRequest request) {
+        // Pre：按就诊或机构维度加载医技预约列表。
         if (request.getEncounterId() != null) {
             return this.pageDiagnosticBookingsByEncounter(request);
         }
@@ -324,12 +372,13 @@ public class MedTechBookingAppService {
         for (AppointmentBookingListModel model : page.getContent()) {
             rows.add(medTechBookingMapper.toServiceRequestItemDtoFromAppointment(model));
         }
+        // Asm：映射预约维度分页结果。
         return BookingPagedResultBuilder.build(new PageDiagnosticBookingsResponse(), rows, page);
     }
 
     private PageDiagnosticBookingsResponse pageDiagnosticBookingsByEncounter(PageDiagnosticBookingsRequest request) {
         List<BookableServiceRequestDto> allRows =
-            bookingServiceRequestPort.listBookableServiceRequestsByEncounter(request.getEncounterId());
+            bookingServiceRequestReader.listBookableServiceRequestsByEncounter(request.getEncounterId());
         Map<Long, Long> appointmentIds = appointmentQueryService.mapActiveDiagnosticAppointmentIdsByServiceRequestIds(
             medTechBookingMapper.collectServiceRequestIds(allRows));
         List<ServiceRequestItemDto> allItems = new ArrayList<>();
@@ -338,9 +387,12 @@ public class MedTechBookingAppService {
         }
         int fromIndex = Math.max(0, (request.getPageNo() - 1) * request.getPageSize());
         int toIndex = Math.min(allItems.size(), fromIndex + request.getPageSize());
-        List<ServiceRequestItemDto> pageItems = fromIndex >= allItems.size()
-            ? new ArrayList<>()
-            : new ArrayList<>(allItems.subList(fromIndex, toIndex));
+        List<ServiceRequestItemDto> pageItems;
+        if (fromIndex >= allItems.size()) {
+            pageItems = new ArrayList<>();
+        } else {
+            pageItems = new ArrayList<>(allItems.subList(fromIndex, toIndex));
+        }
         PageDiagnosticBookingsResponse response = new PageDiagnosticBookingsResponse();
         response.setContent(pageItems);
         response.setTotalCount((long) allItems.size());
@@ -350,7 +402,7 @@ public class MedTechBookingAppService {
     }
 
     private DiagnosticResourceMap resolveResourceMap(Long organizationId, Long serviceRequestId) {
-        Long activityId = bookingServiceRequestPort.resolveActivityIdByServiceRequestId(serviceRequestId);
+        Long activityId = bookingServiceRequestReader.resolveActivityIdByServiceRequestId(serviceRequestId);
         if (activityId == null) {
             throw new BusinessException(ErrorCodeConstants.APPOINTMENT_INVALID_ARGUMENT, "无法解析医嘱关联项目");
         }

@@ -45,6 +45,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 药品定义主数据读侧查询服务。
@@ -57,6 +58,17 @@ public class MedicationDefinitionQueryService {
 
     private final MedicationDefinitionRepository medicationDefinitionRepository;
 
+
+    /**
+     * 按主键加载药品定义实体（adapter 读路径）；不存在时 empty。
+     */
+    public Optional<MedicationDefinition> findOptionalMedicationDefinitionEntityById(Long id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return medicationDefinitionRepository.findById(id)
+            .filter(row -> !Boolean.TRUE.equals(row.getIsDeleted()));
+    }
 
     /**
      * 按动态条件分页查询药品目录列表行。

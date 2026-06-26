@@ -84,6 +84,10 @@ public interface FieldNameConstants {
      */
     String BILL_DATE = "billDate";
     /**
+     * 收费员交账头标识（payment 挂载列）。
+     */
+    String CASHIER_SETTLEMENT_ID = "cashierSettlementId";
+    /**
      * 出生日期。
      */
     String BIRTH_DATE = "birthDate";
@@ -311,6 +315,9 @@ public interface FieldNameConstants {
      * 药品发放类型枚举（{@code MedicationDispense.dispenseEnum}）。
      */
     String DISPENSE_ENUM = "dispenseEnum";
+
+    /** 核发发药时刻（{@code med_medication_dispense.dispense_time}）。 */
+    String DISPENSE_TIME = "dispenseTime";
     /**
      * 药品成组号（药品申请 {@code groupId}）。
      */
@@ -760,6 +767,10 @@ public interface FieldNameConstants {
      */
     String REFUND_SERVICE_ID = "refundServiceId";
     /**
+     * 关联原支付单标识（逆向退费单 {@code fin_payment_reconciliation.relation_id}）。
+     */
+    String RELATION_ID = "relationId";
+    /**
      * 就诊参与者角色编码（{@code adm_encounter_participant.role_code}）。
      */
     String ROLE_CODE = "roleCode";
@@ -956,9 +967,13 @@ public interface FieldNameConstants {
      */
     String SUPPLY_ID = "supplyId";
     /**
-     * 目标定义标识。
+     * 目标定义标识（ChargeItemAutoGen 等配置表 {@code charge_definition_id}）。
      */
-    String TARGET_DEFINITION_ID = "targetDefinitionId";
+    String CHARGE_DEFINITION_ID = "chargeDefinitionId";
+    /**
+     * 收费项目定义主键（{@code adm_charge_item.definition_id}；与 {@link #CHARGE_DEFINITION_ID} 配置锚点语义不同）。
+     */
+    String DEFINITION_ID = "definitionId";
     /**
      * 租户标识（多租户行级隔离，与审计基类 {@code tenant_id} 对齐）。
      */
@@ -1144,4 +1159,34 @@ public interface FieldNameConstants {
      * 组套模板头列表排序权重。
      */
     String SORT_WEIGHT = "sortWeight";
+
+    /**
+     * 生命体征记录时点。
+     */
+    String RECORDED_AT = "recordedAt";
+
+    /**
+     * 术语体系 code。
+     */
+    String TERM_CODE = "termCode";
+
+    /**
+     * 字典项 code。
+     */
+    String ITEM_CODE = "itemCode";
+
+    /**
+     * 字典项值。
+     */
+    String ITEM_VALUE = "itemValue";
+
+    /**
+     * 生命体征主表 id（明细外键）。
+     */
+    String VITAL_SIGN_ID = "vitalSignId";
+
+    /**
+     * 婴儿序号。
+     */
+    String BABY_NO = "babyNo";
 }

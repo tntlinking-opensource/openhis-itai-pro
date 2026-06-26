@@ -124,4 +124,28 @@ public class ClinicRegisterItemDto {
     @Schema(description = "支付流水ID（已结算挂号时返回，供补打小票）")
     /** 支付流水ID（已结算挂号时返回，供补打小票）（业务字段）。 */
     private Long paymentId;
+
+    @Schema(description = "费用性质名称")
+    private String contractName;
+
+    @Schema(description = "参保地医保区划")
+    private String insuplcAdmdvs;
+
+    @Schema(description = "参保地展示名（1901 字典 label）")
+    private String insuplcAdmdvsName;
+
+    @Schema(description = "是否已医保平台挂号")
+    private Boolean insurancePlatformRegistered;
+
+    @Schema(description = "是否已完成医保预结算")
+    private Boolean insurancePreSettled;
+
+    @Schema(description = "医保基金支付")
+    private BigDecimal ybFundPaySumamt;
+
+    @Schema(description = "医保个人账户支付")
+    private BigDecimal ybAcctPay;
+
+    @Schema(description = "医保个人现金支付")
+    private BigDecimal ybPsnCashPay;
 }

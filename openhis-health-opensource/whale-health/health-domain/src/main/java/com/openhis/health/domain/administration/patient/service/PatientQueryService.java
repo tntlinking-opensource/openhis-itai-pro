@@ -92,6 +92,27 @@ public class PatientQueryService {
     }
 
     /**
+     * 按姓名关键字模糊匹配患者主键（adapter 票据检索读路径）。
+     */
+    public List<Long> listPatientIdsByNameKeyword(String keyword, int limit) {
+        if (StringUtils.isBlank(keyword)) {
+            return Collections.emptyList();
+        }
+        int pageSize = limit <= 0 ? 50 : limit;
+        Specification<Patient> specification = (root, query, cb) -> cb.and(
+            cb.like(root.get(FieldNameConstants.NAME), "%" + keyword.trim() + "%"),
+            cb.or(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)), cb.isNull(root.get(FieldNameConstants.IS_DELETED))));
+        Page<Patient> page = patientRepository.findAll(specification, PageRequest.of(0, pageSize));
+        List<Long> ids = new ArrayList<>();
+        for (Patient row : page.getContent()) {
+            if (row != null && row.getId() != null) {
+                ids.add(row.getId());
+            }
+        }
+        return ids;
+    }
+
+    /**
      * 分页检索患者。
      *
      * @param query 查询参数
@@ -405,6 +426,38 @@ public class PatientQueryService {
             }
             if (StringUtils.isNotBlank(p.getName())) {
                 out.put(p.getId(), p.getName());
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 按主键批量加载患者实体（querysupport 上下文组装；不含 identifier/student 子表）。
+     *
+     * @param patientIds 患者主键集合
+     * @return 患者 ID → 实体；未命中或已软删则无条目
+     */
+    public Map<Long, Patient> loadPatientEntityMapByIds(Collection<Long> patientIds) {
+        if (patientIds == null || patientIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Set<Long> idSet = new LinkedHashSet<>();
+        for (Long id : patientIds) {
+            if (id != null) {
+                idSet.add(id);
+            }
+        }
+        if (idSet.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        if (idSet.size() > GeneralSharedConstants.BATCH_LIMIT) {
+            throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "批量加载数量超过上限");
+        }
+        List<Patient> patients = patientRepository.findAllByIdIn(idSet);
+        Map<Long, Patient> out = new HashMap<>(patients.size());
+        for (Patient patient : patients) {
+            if (patient != null && patient.getId() != null && !Boolean.TRUE.equals(patient.getIsDeleted())) {
+                out.put(patient.getId(), patient);
             }
         }
         return out;

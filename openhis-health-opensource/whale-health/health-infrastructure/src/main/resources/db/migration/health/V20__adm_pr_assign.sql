@@ -26,9 +26,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_pr_assign" (
 );
 
 CREATE INDEX IF NOT EXISTS idx_adm_pr_assign_role_id ON adm_pr_assign (role_id);
-
 COMMENT ON TABLE adm_pr_assign IS '管理域 pr assign';
-
 COMMENT ON COLUMN adm_pr_assign.id IS '主键';
 COMMENT ON COLUMN adm_pr_assign.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_pr_assign.created_at IS '创建时间';
@@ -39,13 +37,13 @@ COMMENT ON COLUMN adm_pr_assign.is_deleted IS '软删标记';
 COMMENT ON COLUMN adm_pr_assign.deleted_at IS '删除时间';
 COMMENT ON COLUMN adm_pr_assign.deleted_by IS '删除人';
 COMMENT ON COLUMN adm_pr_assign.version IS '乐观锁版本号';
-COMMENT ON COLUMN adm_pr_assign.name IS 'name';
-COMMENT ON COLUMN adm_pr_assign.active_flag IS 'active flag';
-COMMENT ON COLUMN adm_pr_assign.practitioner_id IS 'practitioner id';
-COMMENT ON COLUMN adm_pr_assign.org_id IS 'org id';
-COMMENT ON COLUMN adm_pr_assign.location_id IS 'location id';
-COMMENT ON COLUMN adm_pr_assign.specialty_code IS 'specialty code';
-COMMENT ON COLUMN adm_pr_assign.type_code IS 'type code';
+COMMENT ON COLUMN adm_pr_assign.name IS '名称';
+COMMENT ON COLUMN adm_pr_assign.active_flag IS '是否启用';
+COMMENT ON COLUMN adm_pr_assign.practitioner_id IS '医护人员标识';
+COMMENT ON COLUMN adm_pr_assign.org_id IS '机构标识';
+COMMENT ON COLUMN adm_pr_assign.location_id IS '位置/科室标识';
+COMMENT ON COLUMN adm_pr_assign.specialty_code IS 'specialty编码';
+COMMENT ON COLUMN adm_pr_assign.type_code IS '类型编码';
 COMMENT ON COLUMN adm_pr_assign.role_id IS '岗位分配聚合根（{ adm_pr_assign}）';
 
 -- seed: adm_pr_assign

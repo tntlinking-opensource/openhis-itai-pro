@@ -5,7 +5,7 @@ import com.openhis.health.domain.share.enums.ScheduleActorKind;
 import com.openhis.whale.booking.application.outpatient.request.ScheduleActorRequest;
 import com.openhis.whale.booking.contracts.dto.MasterDataOption;
 import com.openhis.whale.booking.contracts.dto.ScheduleFormMasterDataSnapshot;
-import com.openhis.whale.booking.contracts.port.BookingScheduleMasterDataPort;
+import com.openhis.whale.booking.contracts.reader.HealthScheduleMasterDataReader;
 import com.openhis.whale.booking.domain.schedule.command.CreateScheduleCommand;
 import com.openhis.whale.booking.domain.schedule.queries.model.ScheduleActorModel;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -20,7 +20,7 @@ import java.util.Set;
 /**
  * 门诊 Schedule Actor 主数据引用校验（07 §2.2 BR-SCH-001～005）。
  *
- * <p>经 {@link BookingScheduleMasterDataPort} 读 health 主数据，校验机构与参与者引用合法。</p>
+ * <p>经 {@link HealthScheduleMasterDataReader} 读 health 主数据，校验机构与参与者引用合法。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -30,7 +30,7 @@ public class ScheduleActorMasterDataValidator {
     private static final int LOCATION_TYPE = ScheduleActorKind.LOCATION.getSortOrder().intValue();
     private static final int HEALTHCARE_SERVICE_TYPE = ScheduleActorKind.HEALTHCARE_SERVICE.getSortOrder().intValue();
 
-    private final BookingScheduleMasterDataPort bookingScheduleMasterDataPort;
+    private final HealthScheduleMasterDataReader healthScheduleMasterDataReader;
 
     /**
      * 校验创建/编辑日程时的机构与参与者主数据引用。
@@ -43,7 +43,7 @@ public class ScheduleActorMasterDataValidator {
         if (organizationId == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "organizationId 不能为空");
         }
-        ScheduleFormMasterDataSnapshot snapshot = bookingScheduleMasterDataPort.loadOutpatientScheduleFormOptions(organizationId);
+        ScheduleFormMasterDataSnapshot snapshot = healthScheduleMasterDataReader.loadOutpatientScheduleFormOptions(organizationId);
         this.assertOrganizationIsClinic(organizationId, snapshot);
         this.assertActorIdsInSnapshot(snapshot, actors);
     }

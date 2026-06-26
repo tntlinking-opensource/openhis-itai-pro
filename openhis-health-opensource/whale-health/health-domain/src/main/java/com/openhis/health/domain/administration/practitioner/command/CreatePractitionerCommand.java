@@ -46,5 +46,11 @@ public class CreatePractitionerCommand extends BatchCommand<CreatePractitionerCo
         private String busNo;
         /** 所属组织机构主键。 */
         private Long orgId;
+        /** 医保人员编号。 */
+        private String ybNo;
+        /** 职称编码。 */
+        private Integer drProfttlCode;
+        /** 医师/药师执业资格证编号。 */
+        private String pharPracCertNo;
     }
 }

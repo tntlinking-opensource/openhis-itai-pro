@@ -17,8 +17,6 @@
 
 package com.openhis.health.domain.share.constants;
 
-import java.time.format.DateTimeFormatter;
-
 /**
  * 国家医保目录（1312 等）业务字面量。
  */
@@ -26,12 +24,6 @@ public interface InsuranceCatalogConstants {
 
     /** 本地无游标时 1312 增量拉取起始日期（与 OpenHIS 一致）。 */
     String DEFAULT_CATALOG_UPDT_TIME = "2020-01-01";
-
-    /** 1312 updt_time 日期格式（yyyy-MM-dd）。 */
-    String UPDT_TIME_DATE_PATTERN = "yyyy-MM-dd";
-
-    /** 1312 updt_time 日期格式化器。 */
-    DateTimeFormatter UPDT_TIME_DATE_FORMATTER = DateTimeFormatter.ofPattern(UPDT_TIME_DATE_PATTERN);
 
     /** 目录类别缺省 list_type（西药中成药）。 */
     String DEFAULT_LIST_TYPE = "101";

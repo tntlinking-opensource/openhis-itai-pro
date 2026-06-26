@@ -65,4 +65,19 @@ public class SaveStaffRequest {
 
     /** 为 true 时按 {@link #primaryOrgId} 更新默认登录科室（含置空）。 */
     private Boolean syncPrimaryOrgId;
+
+    /** 医保人员编号（{@code adm_practitioner.yb_no}）。 */
+    private String ybNo;
+
+    /** 职称编码（{@code adm_practitioner.dr_profttl_code}）。 */
+    private Integer drProfttlCode;
+
+    /** 医师/药师执业资格证编号（{@code adm_practitioner.phar_prac_cert_no}）。 */
+    private String pharPracCertNo;
+
+    /**
+     * 用户扩展资料 JSON（过渡期兼容；显式字段优先）。
+     * 可含 {@code pharPracCertNo}、{@code drProfttlCode}、{@code ybNo} 等。
+     */
+    private String extraProperties;
 }

@@ -25,7 +25,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  *
- * <p>机构维度由 {@link com.openhis.whale.core.infrastructure.security.ICurrentUser} 解析，请求体不得承载机构主键作为权威来源（B.10.11 配套约定）。</p>
+ * <p>机构维度由应用层 {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver} 解析，请求体不得承载机构主键作为权威来源（B.10.11 配套约定）。</p>
  */
 @Getter
 @Setter

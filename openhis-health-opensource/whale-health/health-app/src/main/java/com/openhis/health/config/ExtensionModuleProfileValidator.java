@@ -19,10 +19,14 @@ import org.springframework.util.ClassUtils;
 public class ExtensionModuleProfileValidator implements ApplicationListener<ApplicationReadyEvent> {
 
     private static final String[][] MODULE_CHECKS = {
-            {"emr", "com.openhis.whale.emr.application.config.EmrAutoConfiguration", "openhis.modules.emr.enabled"},
             {"mrms", "com.openhis.whale.mrms.application.config.MrmsAutoConfiguration", "openhis.modules.mrms.enabled"},
+            {"emr", "com.openhis.whale.emr.application.config.EmrAutoConfiguration", "openhis.modules.emr.enabled"},
             {"chs", "com.openhis.chs.application.config.ChsAutoConfiguration", "openhis.modules.chs.enabled"},
+            {"elep", "com.openhis.elep.application.config.ElepAutoConfiguration", "openhis.modules.elep.enabled"},
             {"report", "com.openhis.whale.report.application.config.ReportAutoConfiguration", "openhis.modules.report.enabled"},
+            {"booking", "com.openhis.whale.booking.application.config.BookingAutoConfiguration", "openhis.modules.booking.enabled"},
+            {"einvoice-boss", "com.openhis.whale.einvoice.boss.application.config.EinvoiceBossAutoConfiguration", "openhis.modules.einvoice-boss.enabled"},
+            {"unionpay-bpc", "com.openhis.whale.unionpay.bpc.application.config.UnionPayBpcAutoConfiguration", "openhis.modules.unionpay-bpc.enabled"},
     };
 
     private final Environment environment;
@@ -71,7 +75,18 @@ public class ExtensionModuleProfileValidator implements ApplicationListener<Appl
                 "chs-jilin-adapter",
                 "com.openhis.whale.chs.adapter.config.ChsJilinAdapterAutoConfiguration",
                 "openhis.modules.chs.enabled");
+        validateOptionalModule(
+                classLoader,
+                "elep-jilin-adapter",
+                "com.openhis.whale.elep.adapter.config.ElepJilinAdapterAutoConfiguration",
+                "openhis.modules.elep.enabled");
+        validateOptionalModule(
+                classLoader,
+                "unionpay-bpc-adapter",
+                "com.openhis.whale.unionpay.bpc.adapter.config.UnionPayBpcAdapterAutoConfiguration",
+                "openhis.modules.unionpay-bpc.enabled");
         validateChsGatewayMode(classLoader);
+        validateElepDeploymentMode(classLoader);
     }
 
     /**
@@ -119,14 +134,39 @@ public class ExtensionModuleProfileValidator implements ApplicationListener<Appl
         boolean localImplPresent = ClassUtils.isPresent(
                 "com.openhis.chs.application.gateway.InsuranceGatewayClientLocalImpl", classLoader);
         boolean remoteImplPresent = ClassUtils.isPresent(
-                "com.openhis.health.bridge.chs.deployment.remote.gateway.InsuranceGatewayClientRemoteImpl", classLoader);
+                "com.openhis.health.integration.chs.remote.gateway.InsuranceGatewayClientRemoteImpl", classLoader);
         // remote 模式不应同时携带 embedded LocalImpl
         if (remote && localImplPresent) {
-            log.warn("CHS remote 模式但 classpath 仍含 chs-application（LocalImpl），请改用 chs-jilin-http-starter");
+            log.warn("CHS remote 模式但 classpath 仍含 chs-jilin-application（LocalImpl），请改用 chs-jilin-http-starter");
         }
         // embedded 模式须能发现 LocalImpl
         if (!remote && remoteImplPresent && !localImplPresent) {
             log.warn("CHS embedded 模式但未发现 LocalImpl，请挂载 chs-jilin-starter");
+        }
+    }
+
+    /**
+     * 校验 ELEP 部署模式（embedded/remote）与 Operations 实现类 classpath 是否匹配。
+     *
+     * @param classLoader 应用 ClassLoader
+     */
+    private void validateElepDeploymentMode(ClassLoader classLoader) {
+        boolean elepEnabled = environment.getProperty("openhis.modules.elep.enabled", Boolean.class, false);
+        if (!elepEnabled) {
+            return;
+        }
+        String deploymentMode = environment.getProperty("openhis.elep.deployment.mode", "embedded");
+        boolean remote = "remote".equalsIgnoreCase(deploymentMode);
+        boolean localImplPresent = ClassUtils.isPresent(
+                "com.openhis.elep.application.prescription.ElepPrescriptionCoordinator", classLoader);
+        boolean remoteImplPresent = ClassUtils.isPresent(
+                "com.openhis.health.integration.elep.remote.appservice.ElepPrescriptionOperationsRemoteAdapter",
+                classLoader);
+        if (remote && localImplPresent) {
+            log.warn("ELEP remote 模式但 classpath 仍含 elep-jilin-application（Coordinator），请改用 elep-jilin-http-starter");
+        }
+        if (!remote && remoteImplPresent && !localImplPresent) {
+            log.warn("ELEP embedded 模式但未发现 Coordinator，请挂载 elep-jilin-starter");
         }
     }
 }

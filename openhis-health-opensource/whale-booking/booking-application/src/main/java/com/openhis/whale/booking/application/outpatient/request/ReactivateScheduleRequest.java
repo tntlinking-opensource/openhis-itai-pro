@@ -11,6 +11,7 @@ import lombok.Setter;
 @Setter
 public class ReactivateScheduleRequest {
 
+    /** 待恢复日程主键。 */
     @NotNull
     private Long scheduleId;
 }

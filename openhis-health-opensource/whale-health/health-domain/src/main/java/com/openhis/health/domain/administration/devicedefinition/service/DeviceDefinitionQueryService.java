@@ -17,6 +17,8 @@
 
 package com.openhis.health.domain.administration.devicedefinition.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
@@ -96,9 +98,9 @@ public class DeviceDefinitionQueryService {
      */
     public Page<DeviceDefinition> pageDeviceDefinition(
         int pageNum, int pageSize, String searchKey, String categoryCode, String typeCode) {
-        String sk = StringUtils.trimToEmpty(searchKey);
-        String cc = StringUtils.trimToEmpty(categoryCode);
-        String tc = StringUtils.trimToEmpty(typeCode);
+        String sk = trimToEmpty(searchKey);
+        String cc = trimToEmpty(categoryCode);
+        String tc = trimToEmpty(typeCode);
         if (sk.isEmpty() && cc.isEmpty() && tc.isEmpty()) {
             Specification<DeviceDefinition> catalogPage = (root, query, cb) ->
                 DeviceDefinitionQueryService.notDeletedPredicate(root, cb);
@@ -167,7 +169,7 @@ public class DeviceDefinitionQueryService {
      */
     public List<DeviceDefinition> searchByKeyWord(String keyword) {
         // 与分页检索同口径：用户关键字驱动之 `LIKE` 一律 `lower(列)` + {@link SearchCodeUtil#toCaseInsensitiveLikePattern}。
-        String sk = StringUtils.trimToEmpty(keyword);
+        String sk = trimToEmpty(keyword);
         Specification<DeviceDefinition> spec = (root, query, cb) -> {
             List<Predicate> ands = new ArrayList<>();
             ands.add(DeviceDefinitionQueryService.notDeletedPredicate(root, cb));
@@ -423,4 +425,3 @@ public class DeviceDefinitionQueryService {
         return ids;
     }
 }
-

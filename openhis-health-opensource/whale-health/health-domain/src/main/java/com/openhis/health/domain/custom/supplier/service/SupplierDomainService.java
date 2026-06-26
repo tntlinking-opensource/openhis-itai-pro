@@ -17,13 +17,15 @@
 
 package com.openhis.health.domain.custom.supplier.service;
 
-import com.openhis.health.domain.share.constants.AggregateTypeConstants;
-import com.openhis.health.domain.share.constants.CustomConstants;
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
+
+import com.openhis.health.domain.share.constants.*;
 import com.openhis.health.domain.custom.supplier.command.*;
 import com.openhis.health.domain.custom.supplier.entity.Supplier;
 import com.openhis.health.domain.custom.supplier.repository.SupplierRepository;
-import com.openhis.health.domain.share.constants.ErrorCodeConstants;
-import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.enums.SupplierType;
 import com.openhis.health.domain.share.events.custom.supplier.*;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -59,7 +61,7 @@ public class SupplierDomainService {
         if (command == null || !StringUtils.hasText(command.getName())) {
             throw new BusinessException(ErrorCodeConstants.SUPPLIER_INVALID_ARGUMENT, "供应商名称不能为空");
         }
-        String busNo = resolveBusNo(command.getBusNo());
+        String busNo = this.generateSupplierBusNo();
         if (repository.existsByBusNo(busNo)) {
             throw new BusinessException(ErrorCodeConstants.SUPPLIER_BUS_NO_CONFLICT, "业务编号已存在");
         }
@@ -261,40 +263,19 @@ public class SupplierDomainService {
     }
 
     /**
-     * 优先使用前端传入编号；未传则按序列生成（前缀 {@link AggregateTypeConstants#SUPPLIER}）。
+     * 按 {@link AggregateTypeConstants#SUPPLIER} 主数据序列生成业务编号（新建路径禁止外部注入，B.10.9）。
+     *
+     * @return 租户内唯一的供应商 busNo
+     * @throws BusinessException 连续采番仍碰撞时
      */
-    private String resolveBusNo(String requested) {
-        if (StringUtils.hasText(requested)) {
-            return requested.trim();
-        }
+    private String generateSupplierBusNo() {
         for (int i = 0; i < 10; i++) {
-            String code = businessSequenceService.getSeq(AggregateTypeConstants.SUPPLIER, 10);
+            String code = businessSequenceService.getSeq(
+                AggregateTypeConstants.SUPPLIER, BusinessSequenceConstants.MASTER_DATA_3_PREFIX_SEQ_LENGTH);
             if (!repository.existsByBusNo(code)) {
                 return code;
             }
         }
         throw new BusinessException(ErrorCodeConstants.SUPPLIER_BUS_NO_CONFLICT, "生成供应商编号失败，请重试");
     }
-
-    private static String trimToNull(String value) {
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-        return value.trim();
-    }
-
-    /**
-     * 文本 trim 后回落为空串（持久化可选字段「未填」与 null 区分场景）。
-     *
-     * @param value 原始文本
-     * @return trim 后非空串，或 {@link GeneralSharedConstants#EMPTY_STRING}
-     */
-    private static String trimToEmpty(String value) {
-        String t = trimToNull(value);
-        if (t == null) {
-            return GeneralSharedConstants.EMPTY_STRING;
-        }
-        return t;
-    }
 }
-

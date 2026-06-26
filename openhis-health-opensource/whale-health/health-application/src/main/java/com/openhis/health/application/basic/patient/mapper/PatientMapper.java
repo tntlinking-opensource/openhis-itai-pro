@@ -17,6 +17,8 @@
 
 package com.openhis.health.application.basic.patient.mapper;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.application.basic.patient.dto.PatientDto;
 import com.openhis.health.application.basic.patient.dto.PatientIdentifierItemDto;
@@ -433,23 +435,6 @@ public class PatientMapper {
             throw new ValidationException("性别编码无效：" + trimmed);
         }
         return gender.getCode();
-    }
-
-    /**
-     * 空白归一为 {@code null}，减少领域命令中出现仅空格字符串。
-     *
-     * @param s 原始串
-     * @return trim 后非空则返回 trim 结果，否则 {@code null}
-     */
-    private static String trimToNull(String s) {
-        if (s == null) {
-            return null;
-        }
-        String t = s.trim();
-        if (t.isEmpty()) {
-            return null;
-        }
-        return t;
     }
 
     /**

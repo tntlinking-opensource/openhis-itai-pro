@@ -58,6 +58,21 @@ public class OutpatientRefundQueueRowDto {
     /** 患者姓名（业务字段）。 */
     private String patientName;
 
+    /** 性别编码。 */
+    @Schema(description = "性别编码")
+    /** 性别编码（业务字段）。 */
+    private String genderCode;
+
+    /** 性别展示（AdministrativeGender.display）。 */
+    @Schema(description = "性别展示（AdministrativeGender.display）")
+    /** 性别展示（业务字段）。 */
+    private String genderEnumText;
+
+    /** 年龄展示文本。 */
+    @Schema(description = "年龄文本")
+    /** 年龄文本（业务字段）。 */
+    private String ageText;
+
     /** 队列标签 code（PENDING=待退费，SETTLED=已退费；见 {@link com.openhis.health.domain.share.constants.OutpatientRefundQueueTab}）。 */
     @Schema(description = "队列标签编码 PENDING/SETTLED（SETTLED 对外展示已退费）")
     /** 队列标签编码 PENDING/SETTLED（SETTLED 对外展示已退费）（业务字段）。 */

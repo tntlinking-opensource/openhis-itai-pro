@@ -31,6 +31,7 @@ import com.openhis.health.domain.share.events.workflow.devicerequest.DeviceOrder
 import com.openhis.health.domain.share.events.workflow.devicerequest.DeviceOrderSignOffEvent;
 import com.openhis.health.domain.share.events.workflow.devicerequest.DeviceOrderSignedEvent;
 import com.openhis.health.domain.share.events.workflow.devicerequest.NursePricingDeviceRequestCreatedEvent;
+import com.openhis.health.domain.share.events.workflow.devicerequest.NursePricingDeviceRequestRemovedEvent;
 import com.openhis.health.domain.share.events.workflow.devicerequest.OutpatientDeviceDispenseConfirmationCancelledEvent;
 import com.openhis.health.domain.share.events.workflow.devicerequest.OutpatientDeviceDispenseConfirmedEvent;
 import com.openhis.health.domain.workflow.devicerequest.command.ChangeDeviceOrderDraftCommand;
@@ -56,7 +57,10 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -534,27 +538,58 @@ public class DeviceRequestDomainService {
     }
 
     /**
-     * 撤销已完成请求（对执行侧直写完成态进行撤销/软删收口）。
+     * 撤销已完成请求（对执行侧直写完成态进行撤销/软删收口；支持批量，AS-IP-NUR-005 IF-IP-PRC-06）。
+     *
+     * @param command 批量撤销项；护士划价路径须 {@code generate_source=nurse-pricing}
+     * @throws BusinessException 状态不允许、不存在或入参非法时
      */
     public void revokeExecutedDeviceOrder(RevokeExecutedDeviceOrderCommand command) {
         List<RevokeExecutedDeviceOrderCommand.RevokeExecutedDeviceOrderItemCommand> items = command.resolveItems();
-        // 业务分支处理。
-        if (items.size() != 1) {
-            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "撤销已完成请求一次仅允许提交一条记录");
+        // 前置校验：批量撤销须至少一行。
+        if (items.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "撤销已完成请求入参不能为空");
         }
-
-        RevokeExecutedDeviceOrderCommand.RevokeExecutedDeviceOrderItemCommand item = items.get(0);
-        // 业务分支处理。
-        if (item.getId() == null) {
-            throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "撤销已完成请求时 id 不能为空");
+        LinkedHashSet<Long> distinctIds = new LinkedHashSet<>();
+        for (RevokeExecutedDeviceOrderCommand.RevokeExecutedDeviceOrderItemCommand item : items) {
+            if (item.getId() == null) {
+                throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "撤销已完成请求时 id 不能为空");
+            }
+            distinctIds.add(item.getId());
         }
-
-        DeviceRequest request = this.requireDeviceRequest(item.getId());
-        // 委托聚合根 assertCompleted() 校验撤销请求前置条件，遵守 §D3.2 硬门禁。
-        request.assertCompleted();
-        // DOC-CONFLICT: 下游引用判定与跨域回滚由应用服务编排；领域层仅做软删收口占位。
-        request.setIsDeleted(Boolean.TRUE);
-        deviceRequestRepository.save(request);
+        List<Long> idList = new ArrayList<>(distinctIds);
+        List<DeviceRequest> requests = deviceRequestRepository.findAllById(idList);
+        Map<Long, DeviceRequest> requestMap = new HashMap<>();
+        for (DeviceRequest request : requests) {
+            requestMap.put(request.getId(), request);
+        }
+        List<DeviceRequest> toSave = new ArrayList<>();
+        for (Long id : idList) {
+            DeviceRequest request = requestMap.get(id);
+            if (request == null) {
+                throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_NOT_FOUND, "耗材请求不存在");
+            }
+            // 护士划价路径走专用断言；其它来源仍仅校验 COMPLETED。
+            if (request.getGenerateSourceEnum() != null
+                && GenerateSource.NURSE_PRICING.getCode().equals(request.getGenerateSourceEnum())) {
+                request.assertNursePricingRevocable();
+            } else {
+                request.assertCompleted();
+            }
+            request.setIsDeleted(Boolean.TRUE);
+            toSave.add(request);
+        }
+        deviceRequestRepository.saveAll(toSave);
+        // 发布事件：护士划价行 save 后通知读侧剔除。
+        for (DeviceRequest row : toSave) {
+            if (row.getGenerateSourceEnum() != null
+                && GenerateSource.NURSE_PRICING.getCode().equals(row.getGenerateSourceEnum())) {
+                domainEventPublisher.publish(new NursePricingDeviceRequestRemovedEvent(
+                    row.getId(),
+                    row.getEncounterId(),
+                    row.getBasedOnTable(),
+                    row.getBasedOnId()));
+            }
+        }
     }
 
     /**

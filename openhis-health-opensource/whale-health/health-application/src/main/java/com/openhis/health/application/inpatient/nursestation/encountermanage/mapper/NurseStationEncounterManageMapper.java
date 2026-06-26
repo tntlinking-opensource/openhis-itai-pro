@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.encountermanage.mapper;
 
+import com.openhis.health.module.common.dto.nursestation.AdmissionVitalSignSubmitDto;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.NurseStationQueueDisplayEnrichment;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.NurseStationTaskCountBundle;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.ParticipantDto;
@@ -80,12 +81,10 @@ public interface NurseStationEncounterManageMapper {
         Collection<Long> encounterIdsIn);
 
     /**
-     * 读模型行 + 账户与任务计数 → 列表卡片 DTO。
+     * 读模型行 + 任务计数 → 列表卡片 DTO（账户余额由调用方 {@code InpatientAccountBalanceDisplayDtoApplier} 回填）。
      *
      * @param row               住院信息读模型
      * @param counts            任务计数；可 null 时按 0
-     * @param accountBalance    展示余额
-     * @param lowBalanceWarning 低余额预警
      * @param enrichment        展示增补；可 null
      * @param displayOverlay    队列展示覆盖；可 null
      * @param priorityEnum      病情/优先级 code（就诊主档批量解析）；可 null
@@ -95,8 +94,6 @@ public interface NurseStationEncounterManageMapper {
     PatientQueueItemDto toPatientQueueItemDto(
         InpatientEncounterContextQueryModel row,
         NurseStationTaskCountBundle counts,
-        BigDecimal accountBalance,
-        boolean lowBalanceWarning,
         NurseStationQueueDisplayEnrichment enrichment,
         InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay displayOverlay,
         String priorityEnum,
@@ -118,14 +115,16 @@ public interface NurseStationEncounterManageMapper {
      * @param base         列表同源字段（含诊断列表/摘要）
      * @param patientPhone 电话
      * @param idCardNo     证件号（已脱敏）
-     * @param participants 全角色参与者
+     * @param participants        全角色参与者
+     * @param admissionVitalSigns 入科时点体征回填（锚点 {@code start_time}）；未入科可 null
      * @return 详情 DTO
      */
     PatientDetailDto toPatientDetailDto(
         PatientQueueItemDto base,
         String patientPhone,
         String idCardNo,
-        List<ParticipantDto> participants);
+        List<ParticipantDto> participants,
+        AdmissionVitalSignSubmitDto admissionVitalSigns);
 
     /**
      * 维护请求 + 操作人 → 领域保存命令。

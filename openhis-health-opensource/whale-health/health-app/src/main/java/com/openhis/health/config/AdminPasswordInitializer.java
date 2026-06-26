@@ -57,7 +57,7 @@ public class AdminPasswordInitializer {
     @Order(1) // 在其他初始化之前执行
     public void initializeAdminPassword() {
         try {
-            logger.info("🔍 开始检查管理员密码...");
+            logger.info(">>> 检查管理员账户...");
             
             // 查找用户，包括可能被软删除的用户
             Optional<User> adminUserOpt = userRepository.findById(1L);
@@ -78,27 +78,7 @@ public class AdminPasswordInitializer {
                     adminUser.setDeletedBy(null);
                 }
                 
-                String currentHash = adminUser.getPasswordHash();
-                
-                logger.info("📋 找到管理员用户: id={}, userName={}, isActive={}, isLockedOut={}, isDeleted={}", 
-                    adminUser.getId(), adminUser.getUserName(), adminUser.getIsActive(), 
-                    adminUser.getIsLockedOut(), adminUser.getIsDeleted());
-                logger.info("🔑 当前密码哈希: {}", currentHash);
-                
-                // 验证当前密码哈希是否正确
-                boolean isValid = false;
-                if (currentHash != null && !currentHash.isEmpty()) {
-                    try {
-                        isValid = passwordEncoder.matches(ADMIN_PASSWORD, currentHash);
-                    } catch (Exception e) {
-                        logger.warn("⚠️  密码验证时发生异常: {}", e.getMessage());
-                        isValid = false;
-                    }
-                }
-                logger.info("🔐 密码验证结果: {}", isValid ? "✓ 正确" : "✗ 不正确");
-                
-                // 无论当前哈希是否正确，都强制更新一次，确保密码正确
-                logger.info("🔄 强制更新管理员密码以确保正确性...");
+                // 强制同步默认密码，确保开发/演示环境可登录
                 String newHash = passwordEncoder.encode(ADMIN_PASSWORD);
                 adminUser.setPasswordHash(newHash);
                 adminUser.setIsActive(true); // 确保用户是激活状态
@@ -110,11 +90,7 @@ public class AdminPasswordInitializer {
                 // 验证新哈希
                 boolean newHashValid = passwordEncoder.matches(ADMIN_PASSWORD, newHash);
                 if (newHashValid) {
-                    logger.info("✅ 管理员密码已更新，用户名: {}, 密码: {}", ADMIN_USERNAME, ADMIN_PASSWORD);
-                    logger.info("🔑 新密码哈希: {}", newHash);
-                    logger.info("📝 请使用以下凭据登录:");
-                    logger.info("   用户名: {}", ADMIN_USERNAME);
-                    logger.info("   密码: {}", ADMIN_PASSWORD);
+                    logger.info(">>> 管理员账户就绪: user={}", ADMIN_USERNAME);
                 } else {
                     logger.error("❌ 密码更新后验证失败！这不应该发生！");
                 }

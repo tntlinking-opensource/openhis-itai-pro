@@ -27,7 +27,7 @@ import lombok.Setter;
 @Setter
 public class ActivateAutoGenRuleCommand {
     /**
-     * 规则标识。
+     * 待操作规则主键（= 表 {@code cus_charge_item_auto_gen.id}；无 {@code rule_id} 列）。
      */
     private Long ruleId;
     /**

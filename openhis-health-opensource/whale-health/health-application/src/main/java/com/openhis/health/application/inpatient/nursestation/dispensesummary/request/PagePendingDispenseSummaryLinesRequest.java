@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.dispensesummary.request;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -64,6 +65,6 @@ public class PagePendingDispenseSummaryLinesRequest extends AbstractHealthPageRe
 
     /** 计划发药截止（含）；空则不过滤。 */
     @Schema(description = "计划发药截止时间")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime queryDeadline;
 }

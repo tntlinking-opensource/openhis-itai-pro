@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.pharmacy.dispense.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -216,7 +217,7 @@ public class EncounterMedicationDispenseSlipRowDto {
 
     /** 医嘱开立时刻。 */
     @Schema(description = "医嘱开具时间")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime requestAuthoredTime;
 
     /** 是否皮试医嘱。 */

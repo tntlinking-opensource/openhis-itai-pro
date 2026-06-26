@@ -17,6 +17,8 @@
 
 package com.openhis.health.module.common.assembler.option;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.financial.contract.entity.Contract;
@@ -67,7 +69,7 @@ public class ContractFeeNatureOptionLoader {
             if (!Boolean.TRUE.equals(row.getActiveFlag())) {
                 continue;
             }
-            String categoryCode = StringUtils.trimToNull(row.getCategoryEnum());
+            String categoryCode = trimToNull(row.getCategoryEnum());
             if (categoryCode == null) {
                 continue;
             }
@@ -98,7 +100,7 @@ public class ContractFeeNatureOptionLoader {
         if (registrationAccount == null) {
             return selfPayCategoryCode;
         }
-        String contractBusNo = StringUtils.trimToNull(registrationAccount.getContractNo());
+        String contractBusNo = trimToNull(registrationAccount.getContractNo());
         if (contractBusNo == null) {
             return selfPayCategoryCode;
         }
@@ -106,7 +108,7 @@ public class ContractFeeNatureOptionLoader {
         if (registrationContract.isEmpty()) {
             return selfPayCategoryCode;
         }
-        String categoryCode = StringUtils.trimToNull(registrationContract.get().getCategoryEnum());
+        String categoryCode = trimToNull(registrationContract.get().getCategoryEnum());
         if (categoryCode == null) {
             return selfPayCategoryCode;
         }
@@ -148,4 +150,4 @@ public class ContractFeeNatureOptionLoader {
         return options;
     }
 }
-
+

@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.outpatient.financial.registration.request;
 
+import com.openhis.health.integration.payment.dto.ClientRefundResultDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -48,4 +49,8 @@ public class CancelWithRefundRequest {
     @Schema(description = "退费请求键")
     /** 退费请求键（业务字段）。 */
     private String refundRequestId;
+
+    /** 银联退货 Win 回传（原扫码段原路退时必填）。 */
+    @Schema(description = "银联退货 Win 回传")
+    private ClientRefundResultDto clientRefundResult;
 }

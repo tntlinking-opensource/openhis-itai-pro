@@ -11,6 +11,7 @@ import lombok.Setter;
 @Setter
 public class LoadWardTreeRequest {
 
+    /** 机构/科室主键。 */
     @NotNull
     private Long organizationId;
 }

@@ -11,9 +11,11 @@ import lombok.Setter;
 @Setter
 public class ImportFromPractitionerRoleRequest {
 
+    /** 科室/机构主键。 */
     @NotNull
     private Long organizationId;
 
+    /** 医师主键。 */
     @NotNull
     private Long practitionerId;
 

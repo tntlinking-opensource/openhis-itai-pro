@@ -30,4 +30,9 @@ public class InpatientSettleSummaryResult {
     private BigDecimal selectedTotal;
     private BigDecimal balanceHint;
     private BigDecimal displayAccountBalance;
+    private String accountBalanceDisplayMode;
+    private BigDecimal availableBalance;
+    private String accountBalanceSummaryText;
+    private String accountBalanceSubText;
+    private Boolean lowBalanceWarning;
 }

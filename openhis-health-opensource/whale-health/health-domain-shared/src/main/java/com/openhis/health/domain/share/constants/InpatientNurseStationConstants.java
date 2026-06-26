@@ -90,6 +90,21 @@ public interface InpatientNurseStationConstants {
     /** 清床：展示账户余额非零（IF-IP-NUR-ATD-06，BR-IP-ATD-016）。 */
     String EX_IP_ATD_403 = "EX-IP-ATD-403";
 
+    /** 出院召回：当前状态不允许（IF-IP-NUR-ATD-07）。 */
+    String EX_IP_ATD_501 = "EX-IP-ATD-501";
+
+    /** 出院召回：反结失败（IF-IP-NUR-ATD-07）。 */
+    String EX_IP_ATD_502 = "EX-IP-ATD-502";
+
+    /** 出院召回：无出院嘱或不可退回（IF-IP-NUR-ATD-07）。 */
+    String EX_IP_ATD_503 = "EX-IP-ATD-503";
+
+    /** 出院召回：领域持久化失败（IF-IP-NUR-ATD-07）。 */
+    String EX_IP_ATD_504 = "EX-IP-ATD-504";
+
+    /** 护士站列表状态筛选：已出院结算（{@code COMPLETED} ∪ {@code DISCHARGED}，AS-IP-NUR-001 BR-IP-NUR-012）。 */
+    String STATUS_FILTER_SETTLED_DISCHARGED = "SETTLED_DISCHARGED";
+
     /** 床位列表面板：入科 Tab（IF-IP-NUR-ATD-01）。 */
     String ATD_PANEL_ADMISSION = "admission";
 
@@ -258,6 +273,36 @@ public interface InpatientNurseStationConstants {
     /** 补费父医嘱非法或不可补（IF-IP-PRC-04）。 */
     String EX_IP_PRC_301 = "EX-IP-PRC-301";
 
+    /** 取消划价未选行或同批重复 (orderType, requestId)（IF-IP-PRC-06）。 */
+    String EX_IP_PRC_401 = "EX-IP-PRC-401";
+
+    /** 取消划价目标非 nurse-pricing 或不可加载（IF-IP-PRC-06）。 */
+    String EX_IP_PRC_402 = "EX-IP-PRC-402";
+
+    /** 取消划价关联费用已结算或退费中（IF-IP-PRC-06）。 */
+    String EX_IP_PRC_403 = "EX-IP-PRC-403";
+
+    /** 取消划价耗材发放态不可回退（IF-IP-PRC-06）。 */
+    String EX_IP_PRC_404 = "EX-IP-PRC-404";
+
+    /** 取消划价域写失败整批回滚（IF-IP-PRC-06）。 */
+    String EX_IP_PRC_405 = "EX-IP-PRC-405";
+
+    /** 自动计费：就诊不在护士站可见范围（IF-IP-ARG-02～07）。 */
+    String EX_IP_ARG_201 = "EX-IP-ARG-201";
+
+    /** 自动计费：配置组合键冲突（IF-IP-ARG-03/04）。 */
+    String EX_IP_ARG_301 = "EX-IP-ARG-301";
+
+    /** 自动计费：床位服务/定价无效（IF-IP-ARG-03/04）。 */
+    String EX_IP_ARG_302 = "EX-IP-ARG-302";
+
+    /** 自动计费：规则不存在或已删除（IF-IP-ARG-04～07）。 */
+    String EX_IP_ARG_401 = "EX-IP-ARG-401";
+
+    /** 自动计费：启停状态不允许（IF-IP-ARG-06/07）。 */
+    String EX_IP_ARG_501 = "EX-IP-ARG-501";
+
     /** 费用明细展示模式：明细（IF-IP-CDT-02）。 */
     String COST_DETAIL_PRESENTATION_MODE_DETAIL = "DETAIL";
 
@@ -381,14 +426,17 @@ public interface InpatientNurseStationConstants {
     /** 皮试保存：皮试检查定价无效（IF-IP-STK-03）。 */
     String EX_IP_STK_203 = "EX-IP-STK-203";
 
-    /** 皮试保存：重复补费/并发（IF-IP-STK-03）。 */
+    /** 皮试保存：重复划价/并发（IF-IP-STK-03 · BR-IP-STK-006）。 */
     String EX_IP_STK_204 = "EX-IP-STK-204";
 
-    /** 皮试保存：已存在医生开立皮试检查（IF-IP-STK-03）。 */
+    /** 皮试保存：v1.0 互斥码（已废止，v1.1 改用 {@link #EX_IP_STK_207}）；保留常量避免历史引用断裂。 */
     String EX_IP_STK_205 = "EX-IP-STK-205";
 
     /** 皮试保存：写失败（IF-IP-STK-03）。 */
     String EX_IP_STK_206 = "EX-IP-STK-206";
+
+    /** 皮试保存：医生未开立皮试检查医嘱（IF-IP-STK-03 · BR-IP-STK-009）。 */
+    String EX_IP_STK_207 = "EX-IP-STK-207";
 
     /** 皮试删除：记录不存在（IF-IP-STK-04）。 */
     String EX_IP_STK_301 = "EX-IP-STK-301";
@@ -425,4 +473,85 @@ public interface InpatientNurseStationConstants {
 
     /** 取消执行自动撤汇总时 Supply 驳回原因码（APPROVAL 路径，BR-IP-CXL-011）。 */
     String ORDER_CANCEL_EXECUTE_SUPPLY_REJECT_REASON_CODE = "AUTO_CANCEL_EXECUTE";
+
+    /** 体温单窗口：3 天（IF-IP-TMP-01）。 */
+    String TEMPERATURE_SHEET_WINDOW_3D = "3d";
+
+    /** 体温单窗口：7 天（IF-IP-TMP-01 默认）。 */
+    String TEMPERATURE_SHEET_WINDOW_7D = "7d";
+
+    /** 体温单窗口：14 天（IF-IP-TMP-01）。 */
+    String TEMPERATURE_SHEET_WINDOW_14D = "14d";
+
+    /** 体温单打印范围：当前页（IF-IP-TMP-04）。 */
+    String TEMPERATURE_SHEET_PRINT_SCOPE_CURRENT_PAGE = "CURRENT_PAGE";
+
+    /** 体温单打印范围：全部（IF-IP-TMP-04）。 */
+    String TEMPERATURE_SHEET_PRINT_SCOPE_ALL = "ALL";
+
+    /** 体温单保存：未登录（IF-IP-TMP-03 · BR-IP-TMP-010）。 */
+    String EX_IP_TMP_101 = "EX-IP-TMP-101";
+
+    /** 体温单读/写：就诊不可见（IF-IP-TMP-02～04 · BR-IP-TMP-001）。 */
+    String EX_IP_TMP_102 = "EX-IP-TMP-102";
+
+    /** 体温单保存：日期或时点非法（IF-IP-TMP-03 · BR-IP-TMP-003）。 */
+    String EX_IP_TMP_201 = "EX-IP-TMP-201";
+
+    /** 体温单保存：无任何有效测量值（IF-IP-TMP-03 · BR-IP-TMP-004）。 */
+    String EX_IP_TMP_202 = "EX-IP-TMP-202";
+
+    /** 体温单保存：体征项编码无效（IF-IP-TMP-03）。 */
+    String EX_IP_TMP_203 = "EX-IP-TMP-203";
+
+    /** 体温单保存：写失败（IF-IP-TMP-03）。 */
+    String EX_IP_TMP_204 = "EX-IP-TMP-204";
+
+    /** 护理记录视图：时间轴（IF-IP-NRC-01）。 */
+    String NURSING_RECORD_VIEW_MODE_TIMELINE = "timeline";
+
+    /** 护理记录视图：纸质单（IF-IP-NRC-01）。 */
+    String NURSING_RECORD_VIEW_MODE_PAPER = "paper";
+
+    /** 护理记录视图「时间轴」展示文案（IF-IP-NRC-01）。 */
+    String NURSING_RECORD_VIEW_MODE_TIMELINE_DISPLAY = "时间轴";
+
+    /** 护理记录视图「纸质单」展示文案（IF-IP-NRC-01）。 */
+    String NURSING_RECORD_VIEW_MODE_PAPER_DISPLAY = "纸质单";
+
+    /** 护理记录默认周范围说明（IF-IP-NRC-01）。 */
+    String NURSING_RECORD_DEFAULT_WEEK_RANGE_DESCRIPTION = "默认展示当前自然周（周一至周日）";
+
+    /** 护理记录打印模板 code（IF-IP-NRC-06）。 */
+    String NURSING_RECORD_PRINT_TEMPLATE_CODE = "nursing_record";
+
+    /** 护理记录行类型：预置骨架行（IF-IP-NRC-04 过滤）。 */
+    String NURSING_RECORD_ROW_TYPE_SKELETON = "skeleton";
+
+    /** 护理记录行类型：纸质额外行。 */
+    String NURSING_RECORD_ROW_TYPE_EXTRA = "extra";
+
+    /** 护理记录读/写：就诊不可见（IF-IP-NRC-02～06 · BR-IP-NRC-001）。 */
+    String EX_IP_NRC_102 = "EX-IP-NRC-102";
+
+    /** 护理记录保存：记录时点缺失（IF-IP-NRC-03 · BR-IP-NRC-003）。 */
+    String EX_IP_NRC_201 = "EX-IP-NRC-201";
+
+    /** 护理记录保存：无有效内容（IF-IP-NRC-03 · BR-VS-008）。 */
+    String EX_IP_NRC_202 = "EX-IP-NRC-202";
+
+    /** 护理记录保存：体征项编码无效（IF-IP-NRC-03）。 */
+    String EX_IP_NRC_203 = "EX-IP-NRC-203";
+
+    /** 护理记录保存：写失败（IF-IP-NRC-03）。 */
+    String EX_IP_NRC_204 = "EX-IP-NRC-204";
+
+    /** 护理记录批量保存：第 N 行失败（IF-IP-NRC-04 · BR-IP-NRC-009）。 */
+    String EX_IP_NRC_205 = "EX-IP-NRC-205";
+
+    /** 护理记录删除：记录不存在（IF-IP-NRC-05）。 */
+    String EX_IP_NRC_301 = "EX-IP-NRC-301";
+
+    /** 护理记录删除：写失败（IF-IP-NRC-05）。 */
+    String EX_IP_NRC_302 = "EX-IP-NRC-302";
 }

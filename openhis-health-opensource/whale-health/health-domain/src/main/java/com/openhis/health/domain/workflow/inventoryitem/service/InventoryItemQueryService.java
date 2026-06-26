@@ -107,6 +107,26 @@ public class InventoryItemQueryService {
     }
 
     /**
+     * 按批号、库位与物品四维精确加载库存项实体（adapter 读路径）。
+     */
+    public List<InventoryItem> listInventoryItemEntitiesByLotLocationItem(
+        String lotNumber, Long locationId, String itemTable, Long itemId) {
+        if (locationId == null || itemId == null || StringUtils.isBlank(itemTable) || StringUtils.isBlank(lotNumber)) {
+            return new ArrayList<>();
+        }
+        List<InventoryItem> rows = inventoryItemRepository.findByLotNumberAndLocationIdAndItemTableAndItemIdOrderByIdAsc(
+            lotNumber.trim(), locationId, itemTable.trim(), itemId);
+        List<InventoryItem> activeRows = new ArrayList<>();
+        for (InventoryItem row : rows) {
+            if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            activeRows.add(row);
+        }
+        return activeRows;
+    }
+
+    /**
      * 批量按主键加载库存项（空集合避免无意义查询）。
      *
      * @param idList 主键列表
@@ -649,7 +669,9 @@ public class InventoryItemQueryService {
      * 药库库存明细现库分页：谓词与关键字下推到仓储。
      *
      * <p>
-     * 机构与库房数据范围由应用层在调用前通过 {@code LocationQueryService} 与 {@code ICurrentUser} 解析为
+     * 机构与库房数据范围由应用层在调用前通过 {@code LocationQueryService} 与
+     * {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver}、
+     * {@link com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver} 解析为
      * {@link com.openhis.health.domain.workflow.inventoryitem.queries.WarehouseInventoryDetailPageQuery#getEffectiveWarehouseIds()}，
      * 本方法不在此重复拼接 {@code organization_id}（与 B.10.11 职责划分一致）。
      * </p>
@@ -662,7 +684,9 @@ public class InventoryItemQueryService {
      * 药库库存明细现库分页：谓词与关键字下推到仓储。
      *
      * <p>
-     * 机构与库房数据范围由应用层在调用前通过 {@code LocationQueryService} 与 {@code ICurrentUser} 解析为
+     * 机构与库房数据范围由应用层在调用前通过 {@code LocationQueryService} 与
+     * {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver}、
+     * {@link com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver} 解析为
      * {@link com.openhis.health.domain.workflow.inventoryitem.queries.WarehouseInventoryDetailPageQuery#getEffectiveWarehouseIds()}，
      * 本方法不在此重复拼接 {@code organization_id}（与 B.10.11 职责划分一致）。
      * </p>
@@ -730,6 +754,7 @@ public class InventoryItemQueryService {
                 predicates.add(root.get(FieldNameConstants.INVENTORY_STATUS_ENUM).in(query.getInventoryStatusEnums()));
             }
             if (query.getZeroStockOnly() != null) {
+                // 库存范围：数量等于 0 或数量大于 0（与 inventory_range 术语一致）。
                 if (query.getZeroStockOnly()) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
                 } else {

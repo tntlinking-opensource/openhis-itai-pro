@@ -21,8 +21,9 @@ import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
 import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.module.common.assembler.financial.PaymentChannelOptionProvider;
 import com.openhis.health.module.common.validator.PaymentChannelGate;
 import com.openhis.health.application.inpatient.financial.registration.dto.AdmissionDiagnosisSubmitDto;
 import com.openhis.health.application.inpatient.financial.registration.dto.PaymentDetailDto;
@@ -35,17 +36,19 @@ import com.openhis.health.domain.administration.account.command.AdjustAdvanceDep
 import com.openhis.health.domain.administration.account.service.AccountDomainService;
 import com.openhis.health.application.inpatient.financial.registration.request.CancelRegistrationRequest;
 import com.openhis.health.application.inpatient.financial.registration.request.ListWardsByDepartmentRequest;
+import com.openhis.health.application.inpatient.financial.registration.request.LoadInpatientRegistrationPageInitRequest;
 import com.openhis.health.application.inpatient.financial.registration.request.LoadRegistrationContextRequest;
 import com.openhis.health.application.inpatient.financial.registration.request.LoadWardBedCapacityRequest;
 import com.openhis.health.application.inpatient.financial.registration.request.PageRegistrationQueueRequest;
 import com.openhis.health.application.inpatient.financial.registration.request.SubmitRegistrationRequest;
 import com.openhis.health.application.inpatient.financial.registration.response.CancelRegistrationResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.ListWardsByDepartmentResponse;
+import com.openhis.health.application.inpatient.financial.registration.response.LoadInpatientRegistrationPageInitResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.LoadRegistrationContextResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.LoadWardBedCapacityResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.PageRegistrationQueueResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.SubmitRegistrationResponse;
-import com.openhis.health.application.inpatient.financial.registration.support.EncounterInpatientAdmissionWriteSupport;
+import com.openhis.health.module.orchestration.encounter.EncounterInpatientAdmissionWriteSupport;
 import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.encounter.command.CancelInpatientAdmissionCommand;
@@ -87,10 +90,10 @@ import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.chs.jilin.port.InpatientInsuranceSettlementPort;
-import com.openhis.whale.chs.jilin.port.model.IpInsuranceAdmissionCommand;
-import com.openhis.whale.chs.jilin.port.model.IpInsuranceAdmissionResult;
-import com.openhis.whale.chs.jilin.port.model.IpInsuranceEncounterCommand;
+import com.openhis.health.integration.insurance.inpatient.InpatientChargeInsuranceExtension;
+import com.openhis.health.integration.insurance.inpatient.command.InpatientChargeAdmissionCommand;
+import com.openhis.health.integration.insurance.inpatient.command.InpatientChargeEncounterCommand;
+import com.openhis.health.integration.insurance.inpatient.result.InpatientChargeAdmissionResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -129,9 +132,10 @@ public class InpatientRegistrationAppService {
     private final PatientDomainService patientDomainService;
     private final PatientQueryService patientQueryService;
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     private final PageWindowGate pageWindowGate;
     private final PaymentChannelGate paymentChannelGate;
+    private final PaymentChannelOptionProvider paymentChannelOptionProvider;
     private final OrganizationQueryService organizationQueryService;
     private final LocationQueryService locationQueryService;
     private final ContractQueryService contractQueryService;
@@ -147,8 +151,30 @@ public class InpatientRegistrationAppService {
     private final CodeSystemQueryService codeSystemQueryService;
     private final PractitionerQueryService practitionerQueryService;
 
-    @Autowired(required = false)
-    private InpatientInsuranceSettlementPort inpatientInsuranceSettlementPort;
+    private final InpatientChargeInsuranceExtension inpatientChargeInsuranceExtension;
+
+    /**
+     * IF-IP-REG-00：住院登记页初始化。
+     *
+     * @param request 占位请求
+     * @return 用户可选支付渠道下拉
+     * @throws BusinessException 初始化失败时抛出 EX-IP-REG-101
+     */
+    public LoadInpatientRegistrationPageInitResponse loadInpatientRegistrationPageInit(
+        LoadInpatientRegistrationPageInitRequest request) {
+        try {
+            // Pre：用户可选支付渠道与住院结算/预交金口径对齐（ADR-PAY-001）。
+            List<OptionDto> paymentChannels = paymentChannelOptionProvider.loadUserSelectableOptions();
+            // Asm：Mapper 装配支付渠道下拉。
+            return inpatientRegistrationMapper.toLoadInpatientRegistrationPageInitResponse(paymentChannels);
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_101,
+                "初始化失败，请稍后重试");
+        }
+    }
 
     /**
      * 分页查询住院登记待办队列（IF-IP-REG-01）。
@@ -388,11 +414,11 @@ public class InpatientRegistrationAppService {
     }
 
     private String runInsuranceAdmissionIfNeeded(SubmitRegistrationRequest request, Long encounterId) {
-        if (inpatientInsuranceSettlementPort == null) {
+        if (!inpatientChargeInsuranceExtension.isEnabled()) {
             return null;
         }
         if (request.getContractId() == null
-            || !inpatientInsuranceSettlementPort.isInsuranceContract(request.getContractId())) {
+            || !inpatientChargeInsuranceExtension.supportsThirdPartyContract(request.getContractId())) {
             return null;
         }
         if (StringUtils.isBlank(request.getPsnNo())) {
@@ -400,34 +426,35 @@ public class InpatientRegistrationAppService {
                 InpatientRegistrationConstants.EX_IP_REG_002,
                 "医保登记须先读卡获取人员编号");
         }
-        IpInsuranceAdmissionCommand command = new IpInsuranceAdmissionCommand();
+        InpatientChargeAdmissionCommand command = new InpatientChargeAdmissionCommand();
         command.setEncounterId(encounterId);
         command.setContractId(request.getContractId());
-        command.setMdtrtCertType(request.getYbMediumType());
-        command.setMdtrtCertNo(request.getYbCardInfo());
-        command.setPsnNo(request.getPsnNo());
+        command.setPayerCertType(request.getYbMediumType());
+        command.setPayerCertNo(request.getYbCardInfo());
+        command.setInsuredPersonNo(request.getPsnNo());
         command.setInsuplcAdmdvs(request.getInsuplcAdmdvs());
         command.setInsutype(request.getInsutype());
         command.setMedType(request.getMedType());
-        IpInsuranceAdmissionResult result = inpatientInsuranceSettlementPort.ensureAdmission(command);
-        if (result == null || StringUtils.isBlank(result.getMdtrtId())) {
+        // Cmd：Extension → 2401 入院登记，返回 mdtrt_id
+        InpatientChargeAdmissionResult result = inpatientChargeInsuranceExtension.ensureAdmission(command);
+        if (result == null || StringUtils.isBlank(result.getEncounterPlatformId())) {
             return null;
         }
-        return result.getMdtrtId().trim();
+        return result.getEncounterPlatformId().trim();
     }
 
     private void runInsuranceRevokeAdmissionIfNeeded(EncounterDetailQueryModel encounter, Account account) {
-        if (inpatientInsuranceSettlementPort == null || encounter == null) {
+        if (!inpatientChargeInsuranceExtension.isEnabled() || encounter == null) {
             return;
         }
         Long contractId = resolveInsuranceContractId(account);
-        if (contractId == null || !inpatientInsuranceSettlementPort.isInsuranceContract(contractId)) {
+        if (contractId == null || !inpatientChargeInsuranceExtension.supportsThirdPartyContract(contractId)) {
             return;
         }
-        IpInsuranceEncounterCommand command = new IpInsuranceEncounterCommand();
+        InpatientChargeEncounterCommand command = new InpatientChargeEncounterCommand();
         command.setEncounterId(encounter.getId());
         command.setContractId(contractId);
-        inpatientInsuranceSettlementPort.revokeAdmission(command);
+        inpatientChargeInsuranceExtension.revokeAdmission(command);
     }
 
     private Long resolveInsuranceContractId(Account account) {
@@ -710,7 +737,7 @@ public class InpatientRegistrationAppService {
     private Long resolveRegistrarId(Long operatorIdFromRequest) {
         Long registrarId = operatorIdFromRequest;
         if (registrarId == null) {
-            registrarId = currentOperatorResolver.requireOperatorId(
+            registrarId = currentPractitionerResolver.requireOperatorId(
                 InpatientRegistrationConstants.EX_IP_REG_001,
                 "操作人不能为空");
         }
@@ -845,7 +872,7 @@ public class InpatientRegistrationAppService {
                     InpatientRegistrationConstants.EX_IP_REG_001,
                     "支付明细合计与预交金金额不一致");
             }
-            row.setPayChannelCode(paymentChannelGate.requireUserSelectablePayChannelCode(
+            row.setPayChannelCode(paymentChannelGate.requirePersistablePayChannelCode(
                 row.getPayChannelCode(),
                 InpatientRegistrationConstants.EX_IP_REG_001,
                 "支付方式不合法"));

@@ -89,4 +89,10 @@ public class PageInpatientDoctorStationAdviceCatalogRequest extends AbstractHeal
     /** 申请单选品：按诊疗类别过滤（ActivityDefCategory code 或 TREATMENT/PROOF/TEST）。 */
     @Schema(description = "申请单选品类别过滤（检查 TEST/23、检验 PROOF/22、治疗 TREATMENT/21）")
     private String categoryEnum;
+
+    /**
+     * 排除药品目录 categoryCode（如开立西药医嘱排除中草药 {@code 4}）。
+     */
+    @Schema(description = "排除药品 medication_category_code 集合（如开立西药医嘱传 [\"4\"] 排除中草药）")
+    private List<String> excludeMedicationCategoryCodes;
 }

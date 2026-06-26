@@ -28,14 +28,14 @@ import com.openhis.health.domain.terminology.repository.CodeSystemRepository;
 import com.openhis.health.domain.terminology.repository.ConceptRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 
 /**
  * 编码系统（CodeSystem）与概念（Concept）写侧领域服务：编码系统与概念的增删改及概念缓存写穿。
  * <p>
- * 与 {@link CodeSystemQueryService} 同包并列；读路径请注入 {@link CodeSystemQueryService}；类上不加 {@code @Transactional}，方法与旧实现一致在方法级标注。
+ * 与 {@link CodeSystemQueryService} 同包并列；读路径请注入 {@link CodeSystemQueryService}。
+ * 写路径参与调用方 {@code *AppService} 由 {@link com.openhis.whale.core.infrastructure.transaction.AppServiceAspect} 开启的 UoW，本类禁止声明 {@code @Transactional}。
  * </p>
  */
 @Service
@@ -52,7 +52,6 @@ public class CodeSystemDomainService {
      * @return 已持久化的编码系统
      * @throws IllegalArgumentException 当名称与存量冲突时
      */
-    @Transactional
     public CodeSystem create(CreateCodeSystemCommand command) {
         // 名称在租户/全局口径下需唯一，重复则拒绝创建以免字典键冲突。
         if (codeSystemRepository.existsByName(command.getName())) {
@@ -85,7 +84,6 @@ public class CodeSystemDomainService {
      * @return 持久化后的实体
      * @throws IllegalArgumentException 当记录不存在或新名称冲突时
      */
-    @Transactional
     public CodeSystem update(UpdateCodeSystemCommand command) {
         CodeSystem codeSystem = codeSystemRepository.findById(command.getId())
             .orElseThrow(() -> new IllegalArgumentException("编码系统不存在: " + command.getId()));
@@ -120,7 +118,6 @@ public class CodeSystemDomainService {
      * @param id 编码系统主键
      * @throws IllegalArgumentException 当记录不存在时
      */
-    @Transactional
     public void delete(Long id) {
         CodeSystem codeSystem = codeSystemRepository.findById(id)
             .orElseThrow(() -> new IllegalArgumentException("编码系统不存在: " + id));
@@ -136,7 +133,6 @@ public class CodeSystemDomainService {
      * @return 已持久化的概念
      * @throws IllegalArgumentException 当 code 重复、父不存在或父不属于同一编码系统时
      */
-    @Transactional
     public Concept createConcept(CreateConceptCommand command) {
         // 同一 CodeSystem 下 code 必须唯一，否则术语解析无法唯一定位。
         if (conceptRepository.findByCodeSystemIdAndCode(command.getCodeSystemId(), command.getCode()).isPresent()) {
@@ -178,7 +174,6 @@ public class CodeSystemDomainService {
      * @return 持久化后的概念
      * @throws IllegalArgumentException 当记录不存在、新 code 冲突、父非法或自引用时
      */
-    @Transactional
     public Concept updateConcept(UpdateConceptCommand command) {
         Concept concept = conceptRepository.findById(command.getId())
             .orElseThrow(() -> new IllegalArgumentException("概念不存在: " + command.getId()));
@@ -232,7 +227,6 @@ public class CodeSystemDomainService {
      * @param id 概念主键
      * @throws IllegalArgumentException 当概念不存在时
      */
-    @Transactional
     public void defaultConcept(Long id) {
         Concept concept = conceptRepository.findById(id)
             .orElseThrow(() -> new IllegalArgumentException("编码系统不存在: " + id));
@@ -259,7 +253,6 @@ public class CodeSystemDomainService {
      * @param id 概念主键
      * @throws IllegalArgumentException 当概念不存在时
      */
-    @Transactional
     public void activateConcept(Long id) {
         Concept concept = conceptRepository.findById(id)
             .orElseThrow(() -> new IllegalArgumentException("概念不存在: " + id));
@@ -273,7 +266,6 @@ public class CodeSystemDomainService {
      * @param id 概念主键
      * @throws IllegalArgumentException 当概念不存在时
      */
-    @Transactional
     public void deactivateConcept(Long id) {
         Concept concept = conceptRepository.findById(id)
             .orElseThrow(() -> new IllegalArgumentException("概念不存在: " + id));
@@ -287,7 +279,6 @@ public class CodeSystemDomainService {
      * @param id 概念主键
      * @throws IllegalArgumentException 当概念不存在或存在子概念时
      */
-    @Transactional
     public void deleteConcept(Long id) {
         Concept concept = conceptRepository.findById(id)
             .orElseThrow(() -> new IllegalArgumentException("概念不存在: " + id));

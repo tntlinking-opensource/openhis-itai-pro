@@ -17,6 +17,8 @@
 
 package com.openhis.health.application.inpatient.nursestation.orderaudit.mapper;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditPatientGroupDto;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditWriteItemDto;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.response.ListNurseStationOrderAuditResponse;
@@ -79,7 +81,7 @@ public class NurseStationOrderAuditMapperImpl implements NurseStationOrderAuditM
      */
     @Override
     public List<String> resolveStatusEnumIn(String auditTab) {
-        String normalized = StringUtils.trimToEmpty(auditTab);
+        String normalized = trimToEmpty(auditTab);
         List<String> codes = new ArrayList<>();
         if (InpatientNurseStationConstants.AUDIT_TAB_PENDING.equals(normalized)) {
             codes.add(RequestStatus.ACTIVE.getCode());
@@ -109,7 +111,7 @@ public class NurseStationOrderAuditMapperImpl implements NurseStationOrderAuditM
      */
     @Override
     public String resolveTherapyEnum(String therapyType) {
-        String normalized = StringUtils.trimToEmpty(therapyType);
+        String normalized = trimToEmpty(therapyType);
         if (StringUtils.isBlank(normalized)
             || InpatientNurseStationConstants.THERAPY_FILTER_ALL.equals(normalized)) {
             return null;

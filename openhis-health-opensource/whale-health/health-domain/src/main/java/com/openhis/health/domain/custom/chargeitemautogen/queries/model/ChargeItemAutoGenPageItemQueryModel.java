@@ -41,6 +41,10 @@ public class ChargeItemAutoGenPageItemQueryModel {
      */
     private String ruleName;
     /**
+     * 住院就诊标识。
+     */
+    private Long encounterId;
+    /**
      * 触发来源表名。
      */
     private String triggerSourceTable;
@@ -51,7 +55,7 @@ public class ChargeItemAutoGenPageItemQueryModel {
     /**
      * 目标收费项定义主键。
      */
-    private Long targetDefinitionId;
+    private Long chargeDefinitionId;
     /**
      * 执行机构标识。
      */

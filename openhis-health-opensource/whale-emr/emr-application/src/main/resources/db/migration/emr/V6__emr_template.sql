@@ -54,9 +54,7 @@ CREATE INDEX IF NOT EXISTS idx_emr_template_enc_class_code
 
 CREATE INDEX IF NOT EXISTS idx_emr_template_owner_practitioner
     ON emr_template (owner_practitioner_id);
-
 COMMENT ON TABLE emr_template IS '电子病历 template';
-
 COMMENT ON COLUMN emr_template.id IS '主键';
 COMMENT ON COLUMN emr_template.name IS '电子病历模板实体';
 COMMENT ON COLUMN emr_template.code IS '模板编码，唯一';
@@ -143,6 +141,22 @@ $tpl_pn_daily$,
 $tpl_pn_senior$,
     TRUE,
     TIMESTAMP '2026-06-11 00:00:00+00',
+    FALSE,
+    1,
+    1
+),
+(
+    323100000000000205,
+    '入院记录（标准）',
+    'IP_ADMISSION_STD',
+    'ADMISSION_RECORD',
+    'HOSPITAL',
+    'IMP',
+    $tpl_admission$
+{"type":"doc","content":[{"type":"paragraph","attrs":{"textAlign":"center"},"content":[{"type":"text","text":"入院记录"}]},{"type":"paragraph","content":[{"type":"text","text":"主诉："}]},{"type":"paragraph","content":[{"type":"text","text":"现病史："}]},{"type":"paragraph","content":[{"type":"text","text":"既往史："}]},{"type":"paragraph","content":[{"type":"text","text":"体格检查："}]},{"type":"paragraph","content":[{"type":"text","text":"初步诊断："}]},{"type":"emrDataElement","attrs":{"elementId":"admissionDiagnosisStructured","name":"admissionDiagnosisStructured","labelSnapshot":"入院诊断结构化（MRMS）","value":"[]","editable":true,"widgetOverride":"text"}}]}
+$tpl_admission$,
+    TRUE,
+    TIMESTAMP '2026-06-19 00:00:00+00',
     FALSE,
     1,
     1

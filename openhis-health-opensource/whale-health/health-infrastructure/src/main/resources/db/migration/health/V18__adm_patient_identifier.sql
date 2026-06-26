@@ -20,9 +20,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_patient_identifier" (
     "patient_id" int8 NOT NULL,
     CONSTRAINT "adm_patient_identifier_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_patient_identifier IS '管理域 patient identifier';
-
 COMMENT ON COLUMN adm_patient_identifier.id IS '主键';
 COMMENT ON COLUMN adm_patient_identifier.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_patient_identifier.created_at IS '创建时间';
@@ -39,4 +37,3 @@ COMMENT ON COLUMN adm_patient_identifier.state_enum IS '标识状态编码';
 COMMENT ON COLUMN adm_patient_identifier.start_time IS '有效开始时间';
 COMMENT ON COLUMN adm_patient_identifier.end_time IS '有效结束时间';
 COMMENT ON COLUMN adm_patient_identifier.patient_id IS '所属患者标识';
-

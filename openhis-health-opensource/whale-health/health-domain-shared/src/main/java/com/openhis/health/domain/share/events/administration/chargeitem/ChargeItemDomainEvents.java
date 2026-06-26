@@ -66,6 +66,17 @@ public final class ChargeItemDomainEvents {
     }
     @Getter @Setter public static class OrderDraftChargeItemCreatedEvent extends DomainEvent { public OrderDraftChargeItemCreatedEvent() { super(); } public OrderDraftChargeItemCreatedEvent(Long id) { super(id, AggregateTypeConstants.CHARGE_ITEM); } }
     @Getter @Setter public static class NursePricingChargeItemCreatedEvent extends DomainEvent { public NursePricingChargeItemCreatedEvent() { super(); } public NursePricingChargeItemCreatedEvent(Long id) { super(id, AggregateTypeConstants.CHARGE_ITEM); } }
+    /** 住院滚费收费明细已创建（来源 auto-roll-fees；aggregateId 为 adm_charge_item.id）。 */
+    @Getter @Setter public static class AutoRollChargeItemCreatedEvent extends DomainEvent { public AutoRollChargeItemCreatedEvent() { super(); } public AutoRollChargeItemCreatedEvent(Long id) { super(id, AggregateTypeConstants.CHARGE_ITEM); } }
+    @Getter @Setter public static class NursePricingChargeItemRemovedEvent extends DomainEvent {
+        /** 关联就诊标识。 */
+        private Long encounterId;
+        public NursePricingChargeItemRemovedEvent() { super(); }
+        public NursePricingChargeItemRemovedEvent(Long id, Long encounterId) {
+            super(id, AggregateTypeConstants.CHARGE_ITEM);
+            this.encounterId = encounterId;
+        }
+    }
     @Getter @Setter public static class ChargeItemActivatedByExecutionEvent extends DomainEvent {
         /** 执行记录主键。 */
         private Long procedureId;
@@ -105,6 +116,7 @@ public final class ChargeItemDomainEvents {
     @Getter @Setter public static class OutpatientBillRefundRequestedEvent extends DomainEvent { private List<Long> ids; public OutpatientBillRefundRequestedEvent() { super(); } public OutpatientBillRefundRequestedEvent(Long id, List<Long> ids) { super(id, AggregateTypeConstants.CHARGE_ITEM); this.ids = ids; } }
     @Getter @Setter public static class OutpatientBillRefundCompletedEvent extends DomainEvent { private List<Long> ids; public OutpatientBillRefundCompletedEvent() { super(); } public OutpatientBillRefundCompletedEvent(Long id, List<Long> ids) { super(id, AggregateTypeConstants.CHARGE_ITEM); this.ids = ids; } }
     @Getter @Setter public static class InpatientChargeItemsSettledEvent extends DomainEvent { private List<Long> ids; public InpatientChargeItemsSettledEvent() { super(); } public InpatientChargeItemsSettledEvent(Long id, List<Long> ids) { super(id, AggregateTypeConstants.CHARGE_ITEM); this.ids = ids; } }
+    @Getter @Setter public static class InpatientChargeItemsRevertedEvent extends DomainEvent { private List<Long> ids; public InpatientChargeItemsRevertedEvent() { super(); } public InpatientChargeItemsRevertedEvent(Long id, List<Long> ids) { super(id, AggregateTypeConstants.CHARGE_ITEM); this.ids = ids; } }
     @Getter @Setter public static class InpatientBillRefundRequestedEvent extends DomainEvent { private List<Long> ids; public InpatientBillRefundRequestedEvent() { super(); } public InpatientBillRefundRequestedEvent(Long id, List<Long> ids) { super(id, AggregateTypeConstants.CHARGE_ITEM); this.ids = ids; } }
     @Getter @Setter public static class InpatientBillRefundCompletedEvent extends DomainEvent { private List<Long> ids; public InpatientBillRefundCompletedEvent() { super(); } public InpatientBillRefundCompletedEvent(Long id, List<Long> ids) { super(id, AggregateTypeConstants.CHARGE_ITEM); this.ids = ids; } }
 

@@ -12,7 +12,7 @@ import com.openhis.whale.booking.application.outpatient.response.TransferAppoint
 import com.openhis.whale.booking.application.register.mapper.BookingRegisterMapper;
 import com.openhis.whale.booking.application.register.request.CancelBookingRequest;
 import com.openhis.whale.booking.application.register.request.RescheduleBookingRequest;
-import com.openhis.whale.booking.contracts.port.BookingPatientPort;
+import com.openhis.whale.booking.contracts.reader.HealthPatientReader;
 import com.openhis.whale.booking.domain.appointment.queries.model.AppointmentBookingDetailModel;
 import com.openhis.whale.booking.domain.appointment.service.AppointmentDomainService;
 import com.openhis.whale.booking.domain.appointment.service.AppointmentQueryService;
@@ -33,7 +33,6 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.openhis.whale.booking.domain.share.StopClinicConstants;
 import java.time.LocalDateTime;
@@ -46,6 +45,7 @@ import java.util.Set;
 
 /**
  * 停诊影响预览与预约转交编排（07 §4，2.18～2.19）。
+ * <p>写路径须由调用方 {@code *AppService}（如 {@link com.openhis.whale.booking.application.outpatient.OutpatientScheduleAppService}）开启 UoW；本类禁止 {@code @Transactional}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -56,7 +56,7 @@ public class StopClinicImpactService {
     private final AppointmentQueryService appointmentQueryService;
     private final PolicyQueryService policyQueryService;
     private final StopClinicTransferMatcher stopClinicTransferMatcher;
-    private final BookingPatientPort bookingPatientPort;
+    private final HealthPatientReader healthPatientReader;
     private final BookingRegisterMapper bookingRegisterMapper;
     private final SlotDomainService slotDomainService;
     private final AppointmentDomainService appointmentDomainService;
@@ -73,7 +73,6 @@ public class StopClinicImpactService {
      * @param request 预览请求
      * @return 影响摘要与映射表
      */
-    @Transactional
     public PreviewStopClinicImpactResponse previewImpact(PreviewStopClinicImpactRequest request) {
         ScheduleCalendarItemModel schedule = scheduleQueryService.loadCalendarItemById(request.getScheduleId());
         if (!request.getOrganizationId().equals(schedule.getOrganizationId())) {
@@ -89,7 +88,7 @@ public class StopClinicImpactService {
         }
         List<AppointmentBookingDetailModel> appointments =
             appointmentQueryService.listActiveOutpatientBookingsBySlotIds(slotIds);
-        Map<Long, String> patientNames = bookingPatientPort.findPatientNamesByIds(this.collectPatientIds(appointments));
+        Map<Long, String> patientNames = healthPatientReader.findPatientNamesByIds(this.collectPatientIds(appointments));
 
         PreviewStopClinicImpactResponse response = new PreviewStopClinicImpactResponse();
         response.setScheduleId(schedule.getId());
@@ -166,7 +165,12 @@ public class StopClinicImpactService {
 
         if (Boolean.TRUE.equals(policy.getFreezeSourceSlotOnPreview()) && !slotIds.isEmpty()) {
             Long operatorId = bookingOperatorResolver.requireOperatorId();
-            int ttlMinutes = policy.getFreezeTtlMinutes() != null ? policy.getFreezeTtlMinutes() : 15;
+            int ttlMinutes;
+            if (policy.getFreezeTtlMinutes() != null) {
+                ttlMinutes = policy.getFreezeTtlMinutes();
+            } else {
+                ttlMinutes = 15;
+            }
             LocalDateTime expiresAt = stopClinicSlotFreezeDomainService.applyPreviewFreeze(
                 request.getOrganizationId(),
                 schedule.getId(),
@@ -186,7 +190,6 @@ public class StopClinicImpactService {
     /**
      * 取消停诊预览时释放源号源冻结。
      */
-    @Transactional
     public void releasePreviewFreeze(
         Long organizationId,
         Long scheduleId,
@@ -205,7 +208,6 @@ public class StopClinicImpactService {
      * @param request 执行请求
      * @return 执行结果
      */
-    @Transactional
     public TransferAppointmentsOnStopClinicResponse transferAndStop(TransferAppointmentsOnStopClinicRequest request) {
         Long operatorId = bookingOperatorResolver.requireOperatorId();
         ScheduleCalendarItemModel schedule = scheduleQueryService.loadCalendarItemById(request.getScheduleId());
@@ -268,7 +270,12 @@ public class StopClinicImpactService {
 
         List<Long> requestedSlotIds = this.normalizeSlotIds(request.getSlotIds());
         if (!requestedSlotIds.isEmpty()) {
-            String reason = request.getReason() != null ? request.getReason() : "停诊";
+            String reason;
+            if (request.getReason() != null) {
+                reason = request.getReason();
+            } else {
+                reason = "停诊";
+            }
             for (Long slotId : requestedSlotIds) {
                 BlockSlotCommand blockCommand = slotManageMapper.toBlockSlotCommand(slotId, reason, operatorId);
                 slotDomainService.blockSlot(blockCommand);
@@ -291,9 +298,15 @@ public class StopClinicImpactService {
                 "STOP_CLINIC_WITH_DISPOSITION",
                 request.getDispositionMode());
         }
+        List<Long> releaseSlotIds;
+        if (requestedSlotIds.isEmpty()) {
+            releaseSlotIds = slotIds;
+        } else {
+            releaseSlotIds = requestedSlotIds;
+        }
         stopClinicSlotFreezeDomainService.releasePreviewFreeze(
             request.getScheduleId(),
-            requestedSlotIds.isEmpty() ? slotIds : requestedSlotIds,
+            releaseSlotIds,
             operatorId);
         return response;
     }
@@ -360,7 +373,11 @@ public class StopClinicImpactService {
             }
             CancelBookingRequest cancelRequest = new CancelBookingRequest();
             cancelRequest.setAppointmentId(appointment.getId());
-            cancelRequest.setReason(reason != null ? reason : "停诊取消");
+            if (reason != null) {
+                cancelRequest.setReason(reason);
+            } else {
+                cancelRequest.setReason("停诊取消");
+            }
             appointmentDomainService.cancelAppointment(
                 bookingRegisterMapper.toCancelAppointmentCommand(cancelRequest, operatorId));
             slotDomainService.releaseBooking(

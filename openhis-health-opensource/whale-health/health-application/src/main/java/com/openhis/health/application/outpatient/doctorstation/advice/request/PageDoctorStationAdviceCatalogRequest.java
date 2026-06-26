@@ -76,7 +76,7 @@ public class PageDoctorStationAdviceCatalogRequest extends AbstractHealthPageReq
      * 排除药品目录 categoryCode（如开立西药医嘱排除中草药 {@code 4}）。
      * 仅作用于 {@code med_medication_definition} 检索；与 {@link #categoryEnum} 无关。
      */
-    @Schema(description = "排除药品 med_category_code 集合（如开立西药医嘱传 [\"4\"] 排除中草药）")
+    @Schema(description = "排除药品 medication_category_code 集合（如开立西药医嘱传 [\"4\"] 排除中草药）")
     private List<String> excludeMedicationCategoryCodes;
 
     /** 划价标记。 */

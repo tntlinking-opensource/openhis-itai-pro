@@ -20,7 +20,7 @@ package com.openhis.health.domain.share.enums;
 /**
  * 费用性质（财务合约）分类：与基础数据维护页 {@code category} 下拉及库内 {@code category} 字符串码对齐。
  *
- * <p>持久化/接口字段与 {@link #getCode()}（{@code "1"}～{@code "5"}）对齐；展示经
+ * <p>持久化/接口字段与 {@link #getCode()}（{@code "1"}～{@code "4"}）对齐；展示经
  * {@link com.openhis.health.domain.share.utils.EnumUtil#fromCode(Class, String)} 解析后取 {@link #getDisplay()}。</p>
  */
 public enum ChargeTypeCategory implements EnumInterface {
@@ -32,9 +32,7 @@ public enum ChargeTypeCategory implements EnumInterface {
     /** 省医保 */
     PROVINCIAL_INSURANCE(0L, "3", "省医保", "", 3L),
     /** 市医保 */
-    MUNICIPAL_INSURANCE(0L, "4", "市医保", "", 4L),
-    /** 职工医保 */
-    EMPLOYEE_INSURANCE(0L, "5", "职工医保", "", 5L);
+    MUNICIPAL_INSURANCE(0L, "4", "市医保", "", 4L);
 
     private final Long codeSystemId;
     private final String code;

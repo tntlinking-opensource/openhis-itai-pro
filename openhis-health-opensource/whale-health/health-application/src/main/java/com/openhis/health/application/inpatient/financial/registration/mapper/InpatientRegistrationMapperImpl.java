@@ -17,6 +17,8 @@
 
 package com.openhis.health.application.inpatient.financial.registration.mapper;
 
+import static com.openhis.whale.core.application.util.StringUtils.firstNonBlank;
+
 import com.openhis.health.module.common.assembler.inpatient.AdmissionPrimaryDiagnosisAssembler;
 import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
@@ -30,6 +32,7 @@ import com.openhis.health.application.inpatient.financial.registration.request.C
 import com.openhis.health.application.inpatient.financial.registration.request.SubmitRegistrationRequest;
 import com.openhis.health.application.inpatient.financial.registration.response.CancelRegistrationResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.ListWardsByDepartmentResponse;
+import com.openhis.health.application.inpatient.financial.registration.response.LoadInpatientRegistrationPageInitResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.LoadRegistrationContextResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.LoadWardBedCapacityResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.PageRegistrationQueueResponse;
@@ -71,6 +74,20 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
 
     public InpatientRegistrationMapperImpl(AdmissionPrimaryDiagnosisAssembler admissionPrimaryDiagnosisAssembler) {
         this.admissionPrimaryDiagnosisAssembler = admissionPrimaryDiagnosisAssembler;
+    }
+
+    /**
+     * 装配住院登记页初始化响应。
+     *
+     * @param paymentChannelOptions 用户可选支付渠道下拉
+     * @return 初始化响应
+     */
+    @Override
+    public LoadInpatientRegistrationPageInitResponse toLoadInpatientRegistrationPageInitResponse(
+        List<OptionDto> paymentChannelOptions) {
+        LoadInpatientRegistrationPageInitResponse response = new LoadInpatientRegistrationPageInitResponse();
+        response.setPaymentChannelOptions(paymentChannelOptions);
+        return response;
     }
 
     /**
@@ -395,7 +412,6 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
         command.setPaymentId(paymentId);
         command.setOutcomeEnum(PaymentStatus.SUCCESS.getCode());
         command.setBillDate(LocalDateTime.now());
-        command.setYbSettleIds(null);
         return command;
     }
 
@@ -536,40 +552,23 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
             overlayWardName = overlay.getWardName();
             overlayBedName = overlay.getBedName();
         }
-        dto.setEncounterBusNo(this.firstNonBlank(row.getEncounterBusNo(), overlayBusNo));
+        dto.setEncounterBusNo(firstNonBlank(row.getEncounterBusNo(), overlayBusNo));
         dto.setPatientId(row.getPatientId());
-        dto.setPatientName(this.firstNonBlank(row.getPatientName(), overlayPatientName));
+        dto.setPatientName(firstNonBlank(row.getPatientName(), overlayPatientName));
         dto.setStatusEnum(row.getStatusEnum());
-        dto.setStatusEnumText(this.firstNonBlank(row.getStatusEnumText(), overlayStatusText));
+        dto.setStatusEnumText(firstNonBlank(row.getStatusEnumText(), overlayStatusText));
         dto.setOrganizationId(row.getOrganizationId());
-        dto.setOrganizationName(this.firstNonBlank(row.getOrganizationName(), overlayOrgName));
+        dto.setOrganizationName(firstNonBlank(row.getOrganizationName(), overlayOrgName));
         dto.setWardId(row.getWardId());
-        dto.setWardName(this.firstNonBlank(row.getWardName(), overlayWardName));
+        dto.setWardName(firstNonBlank(row.getWardName(), overlayWardName));
         dto.setBedId(row.getBedId());
-        dto.setBedName(this.firstNonBlank(row.getBedName(), overlayBedName));
+        dto.setBedName(firstNonBlank(row.getBedName(), overlayBedName));
         dto.setStartTime(row.getStartTime());
         dto.setInWayCode(row.getInWayCode());
         dto.setInWayCodeText(this.resolveTerminologyLabel(inWayLabelByCode, row.getInWayCode()));
         dto.setAmbEncounterId(ambEncounterId);
         dto.setCancelable(this.resolveCancelable(row));
         return dto;
-    }
-
-    /**
-     * 读模型字段优先，空白时回落展示覆盖层。
-     *
-     * @param fromRow    读模型原值
-     * @param fromOverlay 覆盖层回填
-     * @return 非空白字符串或 null
-     */
-    private String firstNonBlank(String fromRow, String fromOverlay) {
-        if (StringUtils.isNotBlank(fromRow)) {
-            return fromRow;
-        }
-        if (StringUtils.isNotBlank(fromOverlay)) {
-            return fromOverlay;
-        }
-        return null;
     }
 
     /**

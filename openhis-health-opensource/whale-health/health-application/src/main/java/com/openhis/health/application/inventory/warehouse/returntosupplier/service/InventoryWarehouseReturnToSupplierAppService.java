@@ -6,7 +6,7 @@ package com.openhis.health.application.inventory.warehouse.returntosupplier.serv
 
 import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.ReturnToSupplierLineDto;
-import com.openhis.health.application.insurance.inventory.InventoryMedicareUploadSupport;
+import com.openhis.health.integration.support.insurance.inventory.InventoryMedicareUploadSupport;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.mapper.InventoryWarehouseReturnToSupplierMapper;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.request.*;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.response.*;
@@ -47,14 +47,14 @@ import com.openhis.health.domain.workflow.supplyrequest.support.SupplyPersistedS
 import com.openhis.health.module.common.pagination.PageQueryBinder;
 import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PageWindowGate;
 import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
 import com.openhis.health.module.querysupport.product.ProductDefinitionPurchasePageLoader;
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.whale.chs.jilin.port.InventoryInsurancePort;
-import com.openhis.whale.chs.jilin.port.model.UploadAfterPurchaseReturnCommand;
+import com.openhis.health.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.integration.insurance.inventory.command.InventoryUploadAfterPurchaseReturnCommand;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -88,11 +88,10 @@ public class InventoryWarehouseReturnToSupplierAppService {
 
     private static final long CABINET_RETURN_TYPE_SORT = 3L;
 
-    @Autowired(required = false)
-    private InventoryInsurancePort inventoryInsurancePort;
+    private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     private final PageWindowGate pageWindowGate;
     private final SupplyRequestDomainService supplyRequestDomainService;
     private final SupplyRequestQueryService supplyRequestQueryService;
@@ -251,7 +250,7 @@ public class InventoryWarehouseReturnToSupplierAppService {
         this.assertReturnToSupplierDraftLinesWithinSourceAvailableInventory(request.getSourceLocationId(), request.getLines());
         this.assertReturnToSupplierLinesOccurrencePresent(request.getLines());
 
-        Long operatorId = this.currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_RT_101, "用户未登录");
+        Long operatorId = this.currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_RT_101, "用户未登录");
         Long applicantId = this.requireWarehousePreparerPractitionerId(
             ErrorCodeConstants.WHS_RT_101,
             "用户未登录",
@@ -312,7 +311,7 @@ public class InventoryWarehouseReturnToSupplierAppService {
         this.assertReturnToSupplierDraftLinesWithinSourceAvailableInventory(request.getSourceLocationId(), request.getLines());
         this.assertReturnToSupplierLinesOccurrencePresent(request.getLines());
 
-        Long operatorId = this.currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_RT_101, "用户未登录");
+        Long operatorId = this.currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_RT_101, "用户未登录");
         Long applicantId = this.requireWarehousePreparerPractitionerId(
             ErrorCodeConstants.WHS_RT_101,
             "用户未登录",
@@ -352,7 +351,7 @@ public class InventoryWarehouseReturnToSupplierAppService {
             this.supplyRequestDomainService.submitApproval(
                 this.returnToSupplierMapper.toSubmitApprovalCommand(
                     request,
-                    this.currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_RT_101, "用户未登录"),
+                    this.currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_RT_101, "用户未登录"),
                     applicantId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_RT_003);
@@ -379,7 +378,7 @@ public class InventoryWarehouseReturnToSupplierAppService {
             this.supplyRequestDomainService.withdrawApproval(
                 this.returnToSupplierMapper.toWithdrawApprovalCommand(
                     request,
-                    this.currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_RT_101, "用户未登录")));
+                    this.currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_RT_101, "用户未登录")));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_RT_003);
         }
@@ -398,7 +397,7 @@ public class InventoryWarehouseReturnToSupplierAppService {
         if (request == null || StringUtils.isBlank(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_RT_001, "busNo 不能为空");
         }
-        Long operatorId = this.currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_RT_101, "用户未登录");
+        Long operatorId = this.currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_RT_101, "用户未登录");
 
         // Pre：回读退供应商单并校验未重复同意
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
@@ -576,7 +575,7 @@ public class InventoryWarehouseReturnToSupplierAppService {
         if (StringUtils.isBlank(request.getRejectReason())) {
             throw new BusinessException(ErrorCodeConstants.WHS_RT_001, "驳回原因不能为空");
         }
-        Long operatorId = this.currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_RT_101, "用户未登录");
+        Long operatorId = this.currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_RT_101, "用户未登录");
         try {
             this.supplyRequestDomainService.rejectRequest(
                 this.returnToSupplierMapper.toRejectRequestCommand(request, operatorId));
@@ -599,7 +598,7 @@ public class InventoryWarehouseReturnToSupplierAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_RT_001, "请求不能为空");
         }
         this.gateBusNo(request.getBusNo());
-        Long operatorId = this.currentOperatorResolver.requireOperatorId(ErrorCodeConstants.WHS_RT_101, "用户未登录");
+        Long operatorId = this.currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_RT_101, "用户未登录");
         try {
             // Cmd：领域按 busNo 软删
             this.supplyRequestDomainService.removeByBusNo(
@@ -694,12 +693,12 @@ public class InventoryWarehouseReturnToSupplierAppService {
         if (lineIds.isEmpty()) {
             return;
         }
-        InventoryMedicareUploadSupport.uploadIfPortPresent(this.inventoryInsurancePort, () -> {
-            UploadAfterPurchaseReturnCommand command = new UploadAfterPurchaseReturnCommand()
+        InventoryMedicareUploadSupport.uploadIfEnabled(this.inventoryUploadExtension, () -> {
+            InventoryUploadAfterPurchaseReturnCommand command = new InventoryUploadAfterPurchaseReturnCommand()
                 .setReturnBusNo(request.getBusNo())
                 .setSupplyRequestLineIds(lineIds)
                 .setContractBusNo(request.getContractBusNo());
-            this.inventoryInsurancePort.uploadAfterPurchaseReturn(command);
+            this.inventoryUploadExtension.uploadAfterPurchaseReturn(command);
         });
     }
 
@@ -966,12 +965,7 @@ public class InventoryWarehouseReturnToSupplierAppService {
         String notLoggedInErrorCode,
         String notLoggedInMessage,
         String noPractitionerMessage) {
-        Long userId = this.currentOperatorResolver.requireOperatorId(notLoggedInErrorCode, notLoggedInMessage);
-        Practitioner practitioner = this.practitionerQueryService.findByUserId(userId);
-        if (practitioner == null || practitioner.getId() == null) {
-            throw new BusinessException(notLoggedInErrorCode, noPractitionerMessage);
-        }
-        return practitioner.getId();
+        return this.currentPractitionerResolver.requirePractitionerId(notLoggedInErrorCode, noPractitionerMessage);
     }
 
     private BusinessException mapSupplyWorkflowException(BusinessException ex, String defaultCode) {

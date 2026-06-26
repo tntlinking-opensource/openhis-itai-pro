@@ -45,11 +45,11 @@ public class BatchCancelDispositionRequest {
     private Long encounterId;
 
     /**
-     * 操作护士主键：用于审计与领域命令 operatorId。
+     * 操作医务人员主键（{@code adm_practitioner.id}）。
+     * 未传时由服务端经 {@code CurrentPractitionerResolver} 取当前登录绑定医务人员（B.6.5）。
      */
-    @NotNull(message = "operatorId 不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
-    @Schema(description = "操作护士主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "操作医务人员主键（可选；未传则取当前登录医务人员）")
     private Long operatorId;
 
     /**

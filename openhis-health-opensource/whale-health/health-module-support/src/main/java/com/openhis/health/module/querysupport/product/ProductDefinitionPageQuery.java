@@ -55,7 +55,7 @@ public class ProductDefinitionPageQuery extends AbstractPageQuery {
     /** 分类编码。 */
     private String categoryCode;
 
-    /** 排除药品目录 med_category_code（如开立西药医嘱传 {@code ["4"]} 排除中草药）；仅药品检索。 */
+    /** 排除药品目录 medication_category_code（如开立西药医嘱传 {@code ["4"]} 排除中草药）；仅药品检索。 */
     private List<String> excludeMedicationCategoryCodes;
 
     /** 启用标志。 */

@@ -4,23 +4,30 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 团检单位 DTO。
+ * 团检单位 DTO（9.3）。
  */
 @Getter
 @Setter
 public class GroupCheckupOrgDto {
 
+    /** 团检单位主键。 */
     private Long id;
 
+    /** 单位编码。 */
     private String orgCode;
 
+    /** 单位名称。 */
     private String orgName;
 
+    /** 联系人姓名。 */
     private String contactName;
 
+    /** 联系电话。 */
     private String contactPhone;
 
+    /** 结算方式。 */
     private String settlementMode;
 
+    /** 合同年度。 */
     private String contractYear;
 }

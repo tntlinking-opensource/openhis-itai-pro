@@ -1,9 +1,9 @@
 package com.openhis.whale.report.application.external.service;
 
+import com.openhis.whale.report.application.external.request.ReportExternalDocumentRequest;
 import com.openhis.whale.report.application.external.response.ReportExternalDocumentDto;
 import com.openhis.whale.report.application.external.response.ReportExternalSourceDto;
-import com.openhis.whale.report.application.external.request.ReportExternalDocumentRequest;
-import com.openhis.whale.report.domain.port.external.ReportExternalDocumentPort;
+import com.openhis.whale.report.contracts.reader.ReportExternalDocumentReader;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -21,19 +21,20 @@ import java.util.Map;
 @Validated
 public class ReportExternalViewAppService {
 
-    private final ReportExternalDocumentPort externalDocumentPort;
+    private final ReportExternalDocumentReader externalDocumentReader;
 
     public ReportExternalViewAppService(
-            @Autowired(required = false) ReportExternalDocumentPort externalDocumentPort) {
-        this.externalDocumentPort = externalDocumentPort;
+            @Autowired(required = false) ReportExternalDocumentReader externalDocumentReader) {
+        this.externalDocumentReader = externalDocumentReader;
     }
 
     /**
-     * 外系统报告来源列表 → {@code POST /api/app/reportExternalView/listSources}
+     * 列出外系统报告来源目录（出厂静态列表）。
      *
-     * @return 固定 LIS/PACS 等文档类型
+     * @return 文档来源项
      */
     public List<ReportExternalSourceDto> listSources() {
+        // Gate：无入参，返回出厂文档来源目录
         List<ReportExternalSourceDto> sources = new ArrayList<>();
         sources.add(source("lis_report", "检验报告 PDF", "D-View"));
         sources.add(source("pacs_report", "检查报告 PDF", "D-View"));
@@ -43,27 +44,30 @@ public class ReportExternalViewAppService {
     }
 
     /**
-     * 解析外系统报告文档 → {@code POST /api/app/reportExternalView/resolve}
+     * 解析外系统报告访问元数据（URL、可用性等）。
      *
-     * @param request 文档编码与参数
-     * @return 可用性、URL 与回显参数
+     * @param request 文档编码与扩展参数
+     * @return 解析结果；Port 未装配时 available=false
      */
     public ReportExternalDocumentDto resolve(@Valid ReportExternalDocumentRequest request) {
+        // Gate：documentCode 必填，由 @Valid 校验
         ReportExternalDocumentDto dto = new ReportExternalDocumentDto();
         dto.setDocumentCode(request.getDocumentCode());
-        if (externalDocumentPort == null) {
+        if (externalDocumentReader == null) {
+            // adapter 未引入时降级，避免启动失败
             dto.setAvailable(false);
             dto.setTitle(request.getDocumentCode());
-            dto.setMessage("ReportExternalDocumentPort 未装配");
+            dto.setMessage("ReportExternalDocumentReader 未装配");
             return dto;
         }
+        // Pre：整理 params，空则传空 Map
         Map<String, Object> params = Map.of();
         if (request.getParams() != null) {
             params = new LinkedHashMap<>(request.getParams());
         }
-        Map<String, Object> loaded = externalDocumentPort.resolve(
-                request.getDocumentCode(),
-                params);
+        // Cmd：经 Reader/Writer/Client 解析外系统报告元数据
+        Map<String, Object> loaded = externalDocumentReader.resolve(request.getDocumentCode(), params);
+        // Asm：Map 转 DTO
         dto.setAvailable(asBoolean(loaded.get("available")));
         dto.setTitle(asString(loaded.get("title")));
         dto.setContentType(asString(loaded.get("contentType")));

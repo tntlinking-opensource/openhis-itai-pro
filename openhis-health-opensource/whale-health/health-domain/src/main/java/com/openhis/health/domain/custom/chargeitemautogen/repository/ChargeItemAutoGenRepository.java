@@ -34,45 +34,33 @@ public interface ChargeItemAutoGenRepository extends JpaRepository<ChargeItemAut
     Optional<ChargeItemAutoGen> findById(Long id);
 
     /**
-     * BR-软删唯一性语义分析表（生成后补齐，避免“已删除记录占用唯一键”或“误放过冲突”）。
-     *
-     * <p>说明：当前仓储方法用于“同一触发键下组合唯一”校验。由于领域文档未在此文件内内联展示，
-     * 这里按“有效记录内唯一”为默认口径：即仅对 {@code isDeleted=false} 的记录做冲突判定；
-     * 若文档实际要求“含已逻辑删除记录仍占用唯一键”，则需将下列方法签名去掉 {@code } 并标记 DOC-CONFLICT。</p>
-     *
-     * <pre>
-     * | BR 编号 | 原文关键词 | 含已逻辑删除记录？ | 结论 Repository 方法签名 | DOC-CONFLICT 留痕 |
-     * | BR-CAG-001 | 组合唯一/触发键 | 模糊（默认按有效记录） | existsByTriggerSourceTableAndTriggerSourceIdAndPerformingOrgIdAndTargetDefinitionId | DOC-CONFLICT: 唯一性是否含已删待文档确认 |
-     * </pre>
-     *
-     * @param triggerSourceTable 触发来源表名
-     * @param triggerSourceId 触发来源主键
-     * @param performingOrgId 执行机构标识
-     * @param targetDefinitionId 目标收费项定义主键
-     * @return true 表示冲突存在
+     * 同一就诊 + 触发键 + 执行科室 + 定价组合是否已存在（BR-CAG-001）。
      */
-    boolean existsByTriggerSourceTableAndTriggerSourceIdAndPerformingOrgIdAndTargetDefinitionId(
+    boolean existsByEncounterIdAndTriggerSourceTableAndTriggerSourceIdAndPerformingOrgIdAndChargeDefinitionId(
+        Long encounterId,
         String triggerSourceTable,
         Long triggerSourceId,
         Long performingOrgId,
-        Long targetDefinitionId
+        Long chargeDefinitionId
     );
 
-    boolean existsByTriggerSourceTableAndTriggerSourceIdAndPerformingOrgIdAndTargetDefinitionIdAndIdNot(
+    boolean existsByEncounterIdAndTriggerSourceTableAndTriggerSourceIdAndPerformingOrgIdAndChargeDefinitionIdAndIdNot(
+        Long encounterId,
         String triggerSourceTable,
         Long triggerSourceId,
         Long performingOrgId,
-        Long targetDefinitionId,
+        Long chargeDefinitionId,
         Long id
     );
 
-    List<ChargeItemAutoGen> findAllByTriggerSourceTableAndTriggerSourceIdOrderByPriorityAscIdAsc(
+    List<ChargeItemAutoGen> findAllByTriggerSourceTableAndTriggerSourceIdAndIsDeletedFalseOrderByPriorityAscIdAsc(
         String triggerSourceTable,
         Long triggerSourceId
     );
 
-    List<ChargeItemAutoGen> findAllByTargetDefinitionIdOrderByIdAsc(Long targetDefinitionId);
+    List<ChargeItemAutoGen> findAllByEncounterIdAndIsDeletedFalseOrderByPriorityAscIdAsc(Long encounterId);
+
+    List<ChargeItemAutoGen> findAllByChargeDefinitionIdAndIsDeletedFalseOrderByIdAsc(Long chargeDefinitionId);
 
     Page<ChargeItemAutoGen> findAllBy(Pageable pageable);
 }
-

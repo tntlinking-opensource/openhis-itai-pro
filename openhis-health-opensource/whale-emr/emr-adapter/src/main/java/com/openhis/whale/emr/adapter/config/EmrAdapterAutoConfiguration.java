@@ -7,12 +7,12 @@ import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@ConditionalOnClass(name = "com.openhis.whale.emr.domain.port.metadata.EmrMetadataContextPort")
+@ConditionalOnClass(name = "com.openhis.whale.emr.contracts.reader.EmrHealthMetadataReader")
 @ConditionalOnProperty(name = "openhis.modules.emr.enabled", havingValue = "true")
 @AutoConfigureBefore(name = "com.openhis.whale.emr.application.config.EmrAutoConfiguration")
 @ComponentScan(basePackages = {
         "com.openhis.whale.emr.adapter.module",
-        "com.openhis.health.application.emr"
+        "com.openhis.health.integration.emr"
 })
 public class EmrAdapterAutoConfiguration {
 }

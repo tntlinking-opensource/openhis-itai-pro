@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.costdetail.request;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -54,14 +55,14 @@ public class QueryNurseStationInpatientCostDetailRequest {
 
     /** 业务日期下界（闭区间，BR-IP-CDT-002/005）。 */
     @NotNull(message = "查询开始日期不能为空")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     /** 业务日期下界。 */
     @Schema(description = "业务日期下界", requiredMode = Schema.RequiredMode.REQUIRED)
     private LocalDate dateFrom;
 
     /** 业务日期上界（闭区间；须 dateFrom ≤ dateTo）。 */
     @NotNull(message = "查询结束日期不能为空")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     /** 业务日期上界。 */
     @Schema(description = "业务日期上界", requiredMode = Schema.RequiredMode.REQUIRED)
     private LocalDate dateTo;

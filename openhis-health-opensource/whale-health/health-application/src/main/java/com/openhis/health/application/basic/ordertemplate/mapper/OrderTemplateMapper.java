@@ -148,11 +148,12 @@ public interface OrderTemplateMapper {
     LineDiffResult diffLines(List<OrderTemplateLineEditDto> submitted, List<OrderTemplateLineQueryModel> existing);
 
     /**
-     * 三段绑定列表 → 绑定分组 DTO（IF-BAS-OTL-07/11）。
+     * 四段绑定列表 → 绑定分组 DTO（IF-BAS-OTL-07/11）。
      *
      * @param personalList 个人归属头列表
      * @param departmentList 科室归属头列表
      * @param hospitalList 全院归属头列表
+     * @param agreementList 协定处方归属头列表
      * @param searchKey 名称关键字（可空）
      * @return 分段列表
      */
@@ -160,6 +161,7 @@ public interface OrderTemplateMapper {
         List<OrderTemplateHeaderQueryModel> personalList,
         List<OrderTemplateHeaderQueryModel> departmentList,
         List<OrderTemplateHeaderQueryModel> hospitalList,
+        List<OrderTemplateHeaderQueryModel> agreementList,
         String searchKey
     );
 

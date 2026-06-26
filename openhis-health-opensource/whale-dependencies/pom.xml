@@ -9,18 +9,21 @@
   </parent>
   <groupId>com.openhis</groupId>
   <artifactId>whale-dependencies</artifactId>
-  <version>2.0.1-SNAPSHOT</version>
+  <version>2.0.2-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Whale Dependencies BOM</name>
   <description>OpenHIS / Whale 统一 dependencyManagement</description>
   <properties>
-    <whale.framework.version>2.0.1-SNAPSHOT</whale.framework.version>
-    <whale.health.version>2.0.1-SNAPSHOT</whale.health.version>
-    <whale.emr.version>2.0.1-SNAPSHOT</whale.emr.version>
-    <whale.mrms.version>2.0.1-SNAPSHOT</whale.mrms.version>
-    <whale.chs.version>2.0.1-SNAPSHOT</whale.chs.version>
-    <whale.report.version>2.0.1-SNAPSHOT</whale.report.version>
-    <whale.booking.version>2.0.1-SNAPSHOT</whale.booking.version>
+    <whale.framework.version>2.0.2-SNAPSHOT</whale.framework.version>
+    <whale.health.version>2.0.2-SNAPSHOT</whale.health.version>
+    <whale.emr.version>2.0.2-SNAPSHOT</whale.emr.version>
+    <whale.mrms.version>2.0.2-SNAPSHOT</whale.mrms.version>
+    <whale.chs.version>2.0.2-SNAPSHOT</whale.chs.version>
+    <whale.elep.version>2.0.2-SNAPSHOT</whale.elep.version>
+    <whale.report.version>2.0.2-SNAPSHOT</whale.report.version>
+    <whale.booking.version>2.0.2-SNAPSHOT</whale.booking.version>
+    <whale.einvoice.boss.version>2.0.2-SNAPSHOT</whale.einvoice.boss.version>
+    <whale.unionpay.bpc.version>2.0.2-SNAPSHOT</whale.unionpay.bpc.version>
     <mapstruct.version>1.5.5.Final</mapstruct.version>
     <bouncycastle.version>1.80</bouncycastle.version>
   </properties>
@@ -75,6 +78,11 @@
       </dependency>
       <dependency>
         <groupId>com.openhis</groupId>
+        <artifactId>health-integration-contracts</artifactId>
+        <version>${whale.health.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
         <artifactId>health-domain</artifactId>
         <version>${whale.health.version}</version>
       </dependency>
@@ -93,7 +101,7 @@
         <artifactId>health-app</artifactId>
         <version>${whale.health.version}</version>
       </dependency>
-      <!-- Report -->
+      <!-- SqlReport -->
       <dependency>
         <groupId>com.openhis</groupId>
         <artifactId>report-contracts</artifactId>
@@ -144,6 +152,63 @@
         <groupId>com.openhis</groupId>
         <artifactId>booking-starter</artifactId>
         <version>${whale.booking.version}</version>
+      </dependency>
+      <!-- EInvoice Boss -->
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>einvoice-boss-contracts</artifactId>
+        <version>${whale.einvoice.boss.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>einvoice-boss-domain</artifactId>
+        <version>${whale.einvoice.boss.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>einvoice-boss-adapter</artifactId>
+        <version>${whale.einvoice.boss.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>einvoice-boss-application</artifactId>
+        <version>${whale.einvoice.boss.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>einvoice-boss-starter</artifactId>
+        <version>${whale.einvoice.boss.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>einvoice-boss-http-starter</artifactId>
+        <version>${whale.einvoice.boss.version}</version>
+      </dependency>
+      <!-- UnionPay BPC -->
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>unionpay-bpc-contracts</artifactId>
+        <version>${whale.unionpay.bpc.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>unionpay-bpc-domain</artifactId>
+        <version>${whale.unionpay.bpc.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>unionpay-bpc-adapter</artifactId>
+        <version>${whale.unionpay.bpc.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>unionpay-bpc-application</artifactId>
+        <version>${whale.unionpay.bpc.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>unionpay-bpc-starter</artifactId>
+        <version>${whale.unionpay.bpc.version}</version>
       </dependency>
       <!-- EMR -->
       <dependency>
@@ -202,6 +267,62 @@
         <groupId>com.openhis</groupId>
         <artifactId>chs-jilin-contracts</artifactId>
         <version>${whale.chs.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>chs-jilin-domain</artifactId>
+        <version>${whale.chs.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>chs-jilin-adapter</artifactId>
+        <version>${whale.chs.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>chs-jilin-application</artifactId>
+        <version>${whale.chs.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>chs-jilin-starter</artifactId>
+        <version>${whale.chs.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>chs-jilin-http-starter</artifactId>
+        <version>${whale.chs.version}</version>
+      </dependency>
+      <!-- ELEP Jilin -->
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>elep-jilin-contracts</artifactId>
+        <version>${whale.elep.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>elep-jilin-domain</artifactId>
+        <version>${whale.elep.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>elep-jilin-adapter</artifactId>
+        <version>${whale.elep.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>elep-jilin-application</artifactId>
+        <version>${whale.elep.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>elep-jilin-starter</artifactId>
+        <version>${whale.elep.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.openhis</groupId>
+        <artifactId>elep-jilin-http-starter</artifactId>
+        <version>${whale.elep.version}</version>
       </dependency>
       <!-- MapStruct / BouncyCastle -->
       <dependency>

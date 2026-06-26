@@ -35,7 +35,7 @@ import com.openhis.health.domain.custom.frequency.service.FrequencyQueryService;
 import com.openhis.health.domain.share.constants.CustomConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.ValidationException;
@@ -62,7 +62,7 @@ public class FrequencyAppService {
     /** 请求/实体与 DTO、领域命令映射。 */
     private final FrequencyMapper frequencyMapper;
     /** 写路径操作人门控（B.6.5）。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
 
     /**
      * 返回频次维护表单所需的下拉选项（状态、周期类型、场景、跨天）。
@@ -135,7 +135,7 @@ public class FrequencyAppService {
      */
     public FrequencyDto create(CreateFrequencyRequest request) {
         validateCreateRequest(request);
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "请先登录后再新增频次");
         Long id = frequencyDomainService.createFrequency(
             frequencyMapper.toCreateCommand(request, operatorId));
@@ -152,7 +152,7 @@ public class FrequencyAppService {
      */
     public FrequencyDto update(UpdateFrequencyRequest request) {
         validateUpdateRequest(request);
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "请先登录后再更新频次");
         frequencyDomainService.modifyFrequency(
             frequencyMapper.toModifyCommand(request, operatorId));
@@ -170,7 +170,7 @@ public class FrequencyAppService {
         if (id == null) {
             throw new ValidationException("删除频次失败：id 不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "请先登录后再删除频次");
         DeleteFrequencyCommand command = new DeleteFrequencyCommand();
         command.setId(id);
@@ -188,7 +188,7 @@ public class FrequencyAppService {
         if (id == null) {
             throw new ValidationException("启用频次失败：id 不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "请先登录后再启用频次");
         ActivateFrequencyCommand command = new ActivateFrequencyCommand();
         command.setId(id);
@@ -206,7 +206,7 @@ public class FrequencyAppService {
         if (id == null) {
             throw new ValidationException("停用频次失败：id 不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "请先登录后再停用频次");
         DeactivateFrequencyCommand command = new DeactivateFrequencyCommand();
         command.setId(id);

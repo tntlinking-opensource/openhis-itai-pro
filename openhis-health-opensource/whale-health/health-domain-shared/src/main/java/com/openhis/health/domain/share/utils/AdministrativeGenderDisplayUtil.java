@@ -1,0 +1,31 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ */
+
+package com.openhis.health.domain.share.utils;
+
+import com.openhis.health.domain.share.enums.AdministrativeGender;
+
+/**
+ * 行政性别 code → 展示文案（打印/列表/Mapper 共用）。
+ */
+public final class AdministrativeGenderDisplayUtil {
+
+    private AdministrativeGenderDisplayUtil() {
+    }
+
+    /**
+     * @param genderEnum 持久化 gender code
+     * @return 展示文案；未命中枚举时回落为 code 或空串
+     */
+    public static String toDisplayText(String genderEnum) {
+        AdministrativeGender g = EnumUtil.fromCode(AdministrativeGender.class, genderEnum);
+        if (g != null) {
+            return g.getDisplay();
+        }
+        if (genderEnum != null) {
+            return genderEnum;
+        }
+        return "";
+    }
+}

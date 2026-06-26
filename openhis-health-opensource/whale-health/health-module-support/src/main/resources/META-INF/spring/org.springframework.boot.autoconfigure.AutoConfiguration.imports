@@ -1,1 +1,2 @@
-com.openhis.health.bridge.shared.config.HealthBridgeSharedAutoConfiguration
+com.openhis.health.module.shared.config.HealthModuleSharedAutoConfiguration
+com.openhis.health.integration.support.config.HealthIntegrationContractsAutoConfiguration

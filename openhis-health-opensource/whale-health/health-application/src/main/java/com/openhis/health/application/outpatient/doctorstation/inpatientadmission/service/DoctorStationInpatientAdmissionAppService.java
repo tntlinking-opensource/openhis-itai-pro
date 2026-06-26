@@ -18,7 +18,7 @@
 package com.openhis.health.application.outpatient.doctorstation.inpatientadmission.service;
 
 import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.application.inpatient.financial.registration.support.EncounterInpatientAdmissionWriteSupport;
+import com.openhis.health.module.orchestration.encounter.EncounterInpatientAdmissionWriteSupport;
 import com.openhis.health.application.outpatient.doctorstation.inpatientadmission.dto.AdmissionDiagnosisSubmitDto;
 import com.openhis.health.application.outpatient.doctorstation.inpatientadmission.mapper.DoctorStationInpatientAdmissionMapper;
 import com.openhis.health.application.outpatient.doctorstation.inpatientadmission.request.CheckInpatientAdmissionExistsRequest;

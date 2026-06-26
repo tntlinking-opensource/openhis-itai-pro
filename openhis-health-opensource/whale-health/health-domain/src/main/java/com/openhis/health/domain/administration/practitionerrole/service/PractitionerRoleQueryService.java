@@ -10,11 +10,13 @@
 package com.openhis.health.domain.administration.practitionerrole.service;
 
 import com.openhis.health.domain.administration.practitionerrole.entity.PractitionerRole;
+import com.openhis.health.domain.administration.practitionerrole.entity.PractitionerRoleScheduleItem;
 import com.openhis.health.domain.administration.practitionerrole.entity.PractitionerRoleServiceItem;
 import com.openhis.health.domain.administration.practitionerrole.queries.model.PractitionerHealthcareServiceQueryModel;
 import com.openhis.health.domain.administration.practitionerrole.queries.model.PractitionerOrgIdQueryModel;
 import com.openhis.health.domain.administration.practitionerrole.queries.model.PractitionerRoleAssignmentQueryModel;
 import com.openhis.health.domain.administration.practitionerrole.repository.PractitionerRoleRepository;
+import com.openhis.health.domain.administration.practitionerrole.repository.PractitionerRoleScheduleItemRepository;
 import com.openhis.health.domain.administration.practitionerrole.repository.PractitionerRoleServiceItemRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -37,6 +39,7 @@ public class PractitionerRoleQueryService {
 
     private final PractitionerRoleRepository repository;
     private final PractitionerRoleServiceItemRepository serviceItemRepository;
+    private final PractitionerRoleScheduleItemRepository scheduleItemRepository;
 
     public List<PractitionerRoleAssignmentQueryModel> listAssignmentsByPractitioner(Long practitionerId) {
         List<PractitionerRole> roles = repository.findAllByPractitionerIdAndActiveFlagTrue(practitionerId);
@@ -261,5 +264,24 @@ public class PractitionerRoleQueryService {
             }
         }
         return ids;
+    }
+
+    /**
+     * 按岗位主键批量加载出诊模板行（booking Port 读路径）。
+     */
+    public List<PractitionerRoleScheduleItem> listScheduleItemsByAssignmentIds(Collection<Long> assignmentIds) {
+        if (assignmentIds == null || assignmentIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> distinct = new LinkedHashSet<>();
+        for (Long assignmentId : assignmentIds) {
+            if (assignmentId != null) {
+                distinct.add(assignmentId);
+            }
+        }
+        if (distinct.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return scheduleItemRepository.findAllByAssignmentIdIn(new ArrayList<>(distinct));
     }
 }

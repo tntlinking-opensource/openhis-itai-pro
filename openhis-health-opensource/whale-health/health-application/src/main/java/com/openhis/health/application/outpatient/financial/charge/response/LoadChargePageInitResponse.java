@@ -32,4 +32,7 @@ public class LoadChargePageInitResponse {
 
     /** 收费项状态下拉选项。 */
     private List<OptionDto> chargeItemStatusOptions;
+
+    /** 支付渠道选项（477 ∩ PaymentChannel）。 */
+    private List<OptionDto> paymentChannelOptions;
 }

@@ -25,9 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_emr_document_version_created_at
 
 CREATE INDEX IF NOT EXISTS idx_emr_document_version_tenant
     ON emr_document_version (tenant_id);
-
 COMMENT ON TABLE emr_document_version IS '电子病历 document version';
-
 COMMENT ON COLUMN emr_document_version.id IS '主键';
 COMMENT ON COLUMN emr_document_version.document_id IS '文书版本快照';
 COMMENT ON COLUMN emr_document_version.version_number IS '版本号，同一文书内递增';
@@ -40,4 +38,3 @@ COMMENT ON COLUMN emr_document_version.is_deleted IS '软删标记';
 COMMENT ON COLUMN emr_document_version.deleted_at IS '删除时间';
 COMMENT ON COLUMN emr_document_version.deleted_by IS '删除人';
 COMMENT ON COLUMN emr_document_version.tenant_id IS '租户标识';
-

@@ -39,23 +39,21 @@ CREATE INDEX IF NOT EXISTS idx_emr_metadata_field_source
 
 CREATE INDEX IF NOT EXISTS idx_emr_metadata_field_tenant
     ON emr_metadata_field_def (tenant_id);
-
 COMMENT ON TABLE emr_metadata_field_def IS '电子病历 metadata field def';
-
 COMMENT ON COLUMN emr_metadata_field_def.id IS '主键';
-COMMENT ON COLUMN emr_metadata_field_def.field_key IS 'field key';
-COMMENT ON COLUMN emr_metadata_field_def.label IS 'label';
-COMMENT ON COLUMN emr_metadata_field_def.data_type IS 'data type';
-COMMENT ON COLUMN emr_metadata_field_def.editable_default IS 'editable default';
-COMMENT ON COLUMN emr_metadata_field_def.value_source IS 'value source';
-COMMENT ON COLUMN emr_metadata_field_def.source_path IS 'source path';
-COMMENT ON COLUMN emr_metadata_field_def.source_config IS 'source config';
-COMMENT ON COLUMN emr_metadata_field_def.default_value IS 'default value';
-COMMENT ON COLUMN emr_metadata_field_def.mask_rule IS 'mask rule';
-COMMENT ON COLUMN emr_metadata_field_def.format_pattern IS 'format pattern';
-COMMENT ON COLUMN emr_metadata_field_def.sort_order IS 'sort order';
-COMMENT ON COLUMN emr_metadata_field_def.is_enabled IS 'is enabled';
-COMMENT ON COLUMN emr_metadata_field_def.remark IS 'remark';
+COMMENT ON COLUMN emr_metadata_field_def.field_key IS '字段key';
+COMMENT ON COLUMN emr_metadata_field_def.label IS '显示标签';
+COMMENT ON COLUMN emr_metadata_field_def.data_type IS 'data类型';
+COMMENT ON COLUMN emr_metadata_field_def.editable_default IS '默认可编辑';
+COMMENT ON COLUMN emr_metadata_field_def.value_source IS 'value来源';
+COMMENT ON COLUMN emr_metadata_field_def.source_path IS '来源path';
+COMMENT ON COLUMN emr_metadata_field_def.source_config IS '来源config';
+COMMENT ON COLUMN emr_metadata_field_def.default_value IS '默认值';
+COMMENT ON COLUMN emr_metadata_field_def.mask_rule IS '脱敏规则';
+COMMENT ON COLUMN emr_metadata_field_def.format_pattern IS '格式模式';
+COMMENT ON COLUMN emr_metadata_field_def.sort_order IS '排序号';
+COMMENT ON COLUMN emr_metadata_field_def.is_enabled IS '是否启用';
+COMMENT ON COLUMN emr_metadata_field_def.remark IS '备注';
 COMMENT ON COLUMN emr_metadata_field_def.created_at IS '创建时间';
 COMMENT ON COLUMN emr_metadata_field_def.updated_at IS '最后更新时间';
 COMMENT ON COLUMN emr_metadata_field_def.created_by IS '创建人';

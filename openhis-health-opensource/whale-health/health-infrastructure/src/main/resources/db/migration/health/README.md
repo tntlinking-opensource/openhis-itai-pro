@@ -20,4 +20,7 @@ COMMENT ON COLUMN adm_patient.id IS '主键';
 ## 命名
 
 - 单表脚本：`V{n}__{表名}.sql`（如 `V17__adm_patient.sql`）
-- 框架与种子：`V1__Init.sql`
+- 框架与种子：`V1__Init.sql`（全部 `whale_*`）
+- 当前最大版本：**V74**（`prt_print`）
+- 新建脚本模板：`../_templates/health/_TEMPLATE.sql`（Flyway 不扫描 `_templates` 目录）
+- 发版 squash：`../../../../../../../scripts/squash-flyway-release.mjs`

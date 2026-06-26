@@ -13,10 +13,12 @@ import com.openhis.health.application.inpatient.nursestation.skintest.response.L
 import com.openhis.health.application.inpatient.nursestation.skintest.response.LoadNurseStationSkinTestInitResponse;
 import com.openhis.health.application.inpatient.nursestation.skintest.response.SaveNurseStationSkinTestRecordResponse;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.clinical.allergyintolerance.command.DeleteSkinTestRecordCommand;
 import com.openhis.health.domain.clinical.allergyintolerance.command.SaveSkinTestRecordCommand;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.whale.core.application.dto.OptionDto;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
@@ -40,6 +42,32 @@ public class NurseStationSkinTestMapperImpl implements NurseStationSkinTestMappe
     @Override
     public LoadNurseStationSkinTestInitResponse toInitResponse(LoadNurseStationSkinTestInitResponse response) {
         return response;
+    }
+
+    /**
+     * 护士实体列表转下拉选项。
+     *
+     * @param practitioners 护士实体列表
+     * @return 下拉选项
+     */
+    @Override
+    public List<OptionDto> toNurseOptionList(List<Practitioner> practitioners) {
+        List<OptionDto> list = new ArrayList<>();
+        if (practitioners == null) {
+            return list;
+        }
+        for (Practitioner practitioner : practitioners) {
+            if (practitioner == null || practitioner.getId() == null) {
+                continue;
+            }
+            Long id = practitioner.getId();
+            String label = practitioner.getName();
+            if (StringUtils.isBlank(label)) {
+                label = String.valueOf(id);
+            }
+            list.add(new OptionDto(id, String.valueOf(id), label));
+        }
+        return list;
     }
 
     /**
@@ -115,7 +143,7 @@ public class NurseStationSkinTestMapperImpl implements NurseStationSkinTestMappe
     }
 
     /**
-     * 首次保存：构造 nurse-pricing 皮试检查补费写行（父锚点皮试药）。
+     * 首次保存：构造锚 doctor SR 计费用的皮试检查划价写行（父锚点皮试药）。
      *
      * @param request    保存请求
      * @param activityId 皮试检查活动定义 id

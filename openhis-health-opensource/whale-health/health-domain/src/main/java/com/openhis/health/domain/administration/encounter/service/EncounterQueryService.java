@@ -17,6 +17,8 @@
 
 package com.openhis.health.domain.administration.encounter.service;
 
+import com.openhis.health.domain.administration.account.entity.Account;
+import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.share.constants.EncounterConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
@@ -31,6 +33,7 @@ import com.openhis.health.domain.administration.encounter.queries.OutpatientEnco
 import com.openhis.health.domain.administration.encounter.queries.RegistrationSlipPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.ClinicRegisterQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.RegistrationSlipQueryModel;
+import com.openhis.health.domain.administration.encounter.queries.model.InpatientAutoRollEncounterQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.query.AbstractPageQuery;
@@ -93,6 +96,7 @@ public class EncounterQueryService {
     private final EncounterParticipantRepository participantRepository;
     private final EncounterLocationRepository locationRepository;
     private final EncounterDiagnosisRepository diagnosisRepository;
+    private final AccountQueryService accountQueryService;
 
     /**
      * 按主键加载就诊详情查询模型。
@@ -672,6 +676,36 @@ public class EncounterQueryService {
      * @param diagnosisIds 就诊诊断关联行主键集合
      * @return 关联主键 → med_type；未命中时不包含该键
      */
+    /**
+     * 按 {@code adm_encounter_diagnosis.id} 批量加载就诊诊断关联实体（adapter 读路径）。
+     */
+    public List<EncounterDiagnosis> listEncounterDiagnosisEntitiesByIds(Collection<Long> diagnosisIds) {
+        if (diagnosisIds == null || diagnosisIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> unique = new LinkedHashSet<>();
+        for (Long id : diagnosisIds) {
+            if (id != null) {
+                unique.add(id);
+            }
+        }
+        if (unique.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return diagnosisRepository.findAllByIdIn(unique);
+    }
+
+    /**
+     * 按业务单号加载就诊实体（Port 读路径）；不存在或已软删时 empty。
+     */
+    public Optional<Encounter> findOptionalEncounterEntityByBusNo(String busNo) {
+        if (StringUtils.isBlank(busNo)) {
+            return Optional.empty();
+        }
+        return encounterRepository.findByBusNo(busNo.trim())
+            .filter(row -> !Boolean.TRUE.equals(row.getIsDeleted()));
+    }
+
     public Map<Long, String> mapMedTypeByEncounterDiagnosisIds(Collection<Long> diagnosisIds) {
         if (diagnosisIds == null || diagnosisIds.isEmpty()) {
             return Collections.emptyMap();
@@ -1200,6 +1234,183 @@ public class EncounterQueryService {
     }
 
     /**
+     * 读侧 Criteria 分页（querysupport Loader 收口；Specification 仍由应用层按场景构建）。
+     *
+     * @param specification JPA 规约
+     * @param pageable      分页与排序
+     * @return 就诊实体页
+     */
+    public Page<Encounter> pageEncounterEntities(Specification<Encounter> specification, Pageable pageable) {
+        return encounterRepository.findAll(specification, pageable);
+    }
+
+    /**
+     * 读侧 Criteria 计数（querysupport Loader 收口）。
+     */
+    public long countEncounterEntities(Specification<Encounter> specification) {
+        return encounterRepository.count(specification);
+    }
+
+    /**
+     * 读侧 Criteria 列表（无分页）。
+     *
+     * @param specification JPA 规约
+     * @param sort          排序
+     * @return 就诊实体列表
+     */
+    public List<Encounter> listEncounterEntities(Specification<Encounter> specification, Sort sort) {
+        return encounterRepository.findAll(specification, sort);
+    }
+
+    /**
+     * 按主键批量加载就诊实体（保持调用方 id 集合语义，过滤 null）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 命中实体列表
+     */
+    public List<Encounter> listEncounterEntitiesByIds(Collection<Long> encounterIds) {
+        LinkedHashSet<Long> distinct = this.distinctNonNullIds(encounterIds);
+        if (distinct.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return encounterRepository.findAllByIdIn(distinct);
+    }
+
+    /**
+     * 按主键与 IMP 类别加载住院就诊实体。
+     *
+     * @param encounterId 就诊主键
+     * @return 住院实体；不存在或非 IMP 时 empty
+     */
+    public Optional<Encounter> findInpatientEncounterEntityById(Long encounterId) {
+        if (encounterId == null) {
+            return Optional.empty();
+        }
+        return encounterRepository.findByIdAndClassEnum(encounterId, EncounterClass.IMP.getCode());
+    }
+
+    /**
+     * 按主键批量加载 IMP 类别就诊实体。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 住院实体列表
+     */
+    public List<Encounter> listInpatientEncounterEntitiesByIds(Collection<Long> encounterIds) {
+        LinkedHashSet<Long> distinct = this.distinctNonNullIds(encounterIds);
+        if (distinct.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return encounterRepository.findAllByIdInAndClassEnum(distinct, EncounterClass.IMP.getCode());
+    }
+
+    /**
+     * 批量加载活动态就诊参与者实体（供 querysupport 上下文组装）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 参与者实体列表
+     */
+    public List<EncounterParticipant> listActiveParticipantEntitiesByEncounterIds(Collection<Long> encounterIds) {
+        LinkedHashSet<Long> distinct = this.distinctNonNullIds(encounterIds);
+        if (distinct.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return participantRepository.findAllByEncounterIdInAndStatusEnum(
+            distinct, EncounterActivityStatus.ACTIVE.getCode());
+    }
+
+    /**
+     * 批量加载活动态就诊位置实体（供住院上下文床位/病区展示）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return 就诊位置实体列表
+     */
+    public List<EncounterLocation> listActiveEncounterLocationEntitiesByEncounterIds(Collection<Long> encounterIds) {
+        LinkedHashSet<Long> distinct = this.distinctNonNullIds(encounterIds);
+        if (distinct.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return locationRepository.findAllByEncounterIdInAndStatusEnum(
+            distinct, EncounterActivityStatus.ACTIVE.getCode());
+    }
+
+    /**
+     * 查询就诊末次已完成病区位置主键（DM-ADM-002 §6.1.25 Pre，AS-IP-NUR-002 ATD-07 已清床轨）。
+     *
+     * <p>在 {@code adm_encounter_location} 中按 {@code form_enum=WARD}、{@code status_enum=COMPLETED}、
+     * {@code end_time} 最大的一条取 {@code location_id}；无匹配时返回空。</p>
+     *
+     * @param encounterId 住院就诊主键
+     * @return 末次已完成病区位置主键
+     */
+    public Optional<Long> findLastCompletedWardLocationIdByEncounterId(Long encounterId) {
+        if (encounterId == null) {
+            return Optional.empty();
+        }
+        Long wardLocationId = this.mapLastCompletedWardLocationIdByEncounterIds(List.of(encounterId)).get(encounterId);
+        return wardLocationId == null ? Optional.empty() : Optional.of(wardLocationId);
+    }
+
+    /**
+     * 批量解析就诊末次已完成病区位置主键（AS-IP-NUR-001 已清床召回列表 QueryModel 投影）。
+     *
+     * @param encounterIds 住院就诊主键集合
+     * @return encounterId → 末次已完成 WARD 位置主键
+     */
+    public Map<Long, Long> mapLastCompletedWardLocationIdByEncounterIds(Collection<Long> encounterIds) {
+        LinkedHashSet<Long> distinct = this.distinctNonNullIds(encounterIds);
+        if (distinct.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<EncounterLocation> rows = locationRepository.findAllByEncounterIdInAndStatusEnum(
+            distinct, EncounterActivityStatus.COMPLETED.getCode());
+        Map<Long, EncounterLocation> lastCompletedWardByEncounterId = new HashMap<>();
+        for (EncounterLocation row : rows) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            // 仅统计病区形态轨迹，忽略 HOUSE/BED 层。
+            if (!LocationForm.WARD.getCode().equals(row.getFormEnum())) {
+                continue;
+            }
+            if (row.getLocationId() == null) {
+                continue;
+            }
+            EncounterLocation previous = lastCompletedWardByEncounterId.get(row.getEncounterId());
+            if (previous == null) {
+                lastCompletedWardByEncounterId.put(row.getEncounterId(), row);
+                continue;
+            }
+            // 在多条已完成 WARD 中取 end_time 最大者为末次病区。
+            LocalDateTime rowEnd = row.getEndTime();
+            LocalDateTime previousEnd = previous.getEndTime();
+            if (rowEnd == null) {
+                continue;
+            }
+            if (previousEnd == null || rowEnd.isAfter(previousEnd)) {
+                lastCompletedWardByEncounterId.put(row.getEncounterId(), row);
+            }
+        }
+        Map<Long, Long> wardLocationIdByEncounterId = new HashMap<>(lastCompletedWardByEncounterId.size() * 2);
+        for (Map.Entry<Long, EncounterLocation> entry : lastCompletedWardByEncounterId.entrySet()) {
+            wardLocationIdByEncounterId.put(entry.getKey(), entry.getValue().getLocationId());
+        }
+        return wardLocationIdByEncounterId;
+    }
+
+    private LinkedHashSet<Long> distinctNonNullIds(Collection<Long> ids) {
+        LinkedHashSet<Long> distinct = new LinkedHashSet<>();
+        if (ids == null) {
+            return distinct;
+        }
+        for (Long id : ids) {
+            if (id != null) {
+                distinct.add(id);
+            }
+        }
+        return distinct;
+    }
+
+    /**
      * 按主键与就诊类别加载聚合根；不存在或类别不符时区分抛出业务异常。
      *
      * @param encounterId 就诊标识
@@ -1224,5 +1435,83 @@ public class EncounterQueryService {
             throw new BusinessException(wrongClassErrorCode, wrongClassMessage);
         }
         throw new BusinessException(ErrorCodeConstants.ENCOUNTER_NOT_FOUND, "就诊记录不存在");
+    }
+
+    /**
+     * 滚费任务：列出已分床且未清床的 IMP 就诊上下文（AS-IP-NUR-013 BR-IP-ARG-008；DM-ADM-002 §6.2.21）。
+     *
+     * <p>状态含 {@link EncounterStatus#IN_PROGRESS}、{@link EncounterStatus#ON_HOLD}、
+     * {@link EncounterStatus#COMPLETED}（已结算待清床）；排除 {@link EncounterStatus#DISCHARGED}。
+     * 须存在激活床位轨迹（{@code form_enum=BED}）。账户经 {@link AccountQueryService} 批量解析。</p>
+     *
+     * @return 滚费候选就诊列表；无命中时空列表
+     */
+    public List<InpatientAutoRollEncounterQueryModel> listInpatientAutoRollEncounterContexts() {
+        // Pre：加载未清床 IMP 候选（含已结算待清床的 COMPLETED）。
+        Specification<Encounter> specification = (root, criteriaQuery, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.IMP.getCode()),
+            root.get(FieldNameConstants.STATUS_ENUM).in(
+                EncounterStatus.IN_PROGRESS.getCode(),
+                EncounterStatus.ON_HOLD.getCode(),
+                EncounterStatus.COMPLETED.getCode()));
+        List<Encounter> candidates = this.encounterRepository.findAll(specification);
+        if (candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> candidateIds = new LinkedHashSet<>();
+        Map<Long, Encounter> encounterById = new HashMap<>();
+        for (Encounter row : candidates) {
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            candidateIds.add(row.getId());
+            encounterById.put(row.getId(), row);
+        }
+        if (candidateIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // Pre：收窄至存在激活床位轨迹的就诊（分床后，BR-IP-ARG-008）。
+        List<EncounterLocation> activeLocations = this.locationRepository.findAllByEncounterIdInAndStatusEnum(
+            candidateIds, EncounterActivityStatus.ACTIVE.getCode());
+        Map<Long, Long> bedLocationByEncounterId = new HashMap<>();
+        for (EncounterLocation locationRow : activeLocations) {
+            if (locationRow == null || locationRow.getEncounterId() == null) {
+                continue;
+            }
+            if (!LocationForm.BED.getCode().equals(locationRow.getFormEnum())) {
+                continue;
+            }
+            // 同一就诊仅保留首条床位轨迹，滚费落账不依赖具体床位切换次序。
+            if (!bedLocationByEncounterId.containsKey(locationRow.getEncounterId())) {
+                bedLocationByEncounterId.put(locationRow.getEncounterId(), locationRow.getLocationId());
+            }
+        }
+        if (bedLocationByEncounterId.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // Pre：批量解析默认个人现金账户，供滚费 Charge 落账 accountId。
+        Map<Long, Account> accountByEncounterId =
+            this.accountQueryService.mapRegistrationAccountsByEncounterIds(bedLocationByEncounterId.keySet());
+        List<InpatientAutoRollEncounterQueryModel> models = new ArrayList<>();
+        for (Long encounterId : bedLocationByEncounterId.keySet()) {
+            Encounter encounter = encounterById.get(encounterId);
+            if (encounter == null) {
+                continue;
+            }
+            InpatientAutoRollEncounterQueryModel model = new InpatientAutoRollEncounterQueryModel();
+            model.setEncounterId(encounterId);
+            model.setPatientId(encounter.getPatientId());
+            model.setOrganizationId(encounter.getOrganizationId());
+            model.setStartTime(encounter.getStartTime());
+            model.setStatusEnum(encounter.getStatusEnum());
+            model.setBedLocationId(bedLocationByEncounterId.get(encounterId));
+            Account account = accountByEncounterId.get(encounterId);
+            if (account != null) {
+                model.setAccountId(account.getId());
+            }
+            models.add(model);
+        }
+        return models;
     }
 }

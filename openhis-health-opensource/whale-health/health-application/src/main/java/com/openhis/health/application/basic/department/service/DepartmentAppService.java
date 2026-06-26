@@ -25,7 +25,7 @@ import com.openhis.health.application.basic.department.request.CreateDepartmentR
 import com.openhis.health.application.basic.department.request.QueryDepartmentListRequest;
 import com.openhis.health.application.basic.department.request.UpdateDepartmentRequest;
 import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
-import com.openhis.health.bridge.shared.organization.OrganizationUnitLinkCode;
+import com.openhis.health.module.shared.organization.OrganizationUnitLinkCode;
 import com.openhis.health.domain.administration.organization.command.AbolishOrganizationCommand;
 import com.openhis.health.domain.administration.organization.command.RelocateOrganizationCommand;
 import com.openhis.health.domain.administration.organization.command.ReactivateOrganizationCommand;
@@ -38,7 +38,7 @@ import com.openhis.health.domain.administration.practitioner.entity.Practitioner
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.share.enums.OrganizationClassification;
 import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
@@ -79,7 +79,7 @@ public class DepartmentAppService {
     /** 组织写侧：创建、修改、迁父、启停与作废。 */
     private final OrganizationDomainService organizationDomainService;
     /** 写路径操作人门控（B.6.5）。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     /** 术语下拉：科室分类、类型等初始化选项。 */
     private final CodeSystemQueryService codeSystemQueryService;
     /** 科室请求/实体与 DTO、领域命令映射。 */
@@ -190,7 +190,7 @@ public class DepartmentAppService {
             throw new ValidationException("创建科室失败：请求不能为空");
         }
         validateOrganizationHierarchy(request.getTypeEnum(), request.getParentId(), null);
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再新建科室");
         // 步骤一：领域落库组织主档
         Long createdId = organizationDomainService.createOrganization(
@@ -218,7 +218,7 @@ public class DepartmentAppService {
         validateOrganizationHierarchy(request.getTypeEnum(), request.getParentId(), current);
         // 仅在前端显式声明“上级已变更”时才执行 relocate；
         // 支持 newParentId=null 表示“提升为根节点”。
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再编辑科室");
         if (Boolean.TRUE.equals(request.getParentIdChanged())
             && !isSameParent(current.getParentId(), request.getParentId())) {
@@ -244,7 +244,7 @@ public class DepartmentAppService {
         if (organization == null) {
             throw new ValidationException("科室不存在");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再删除科室");
         AbolishOrganizationCommand command = new AbolishOrganizationCommand();
         command.setOperatorId(operatorId);
@@ -268,7 +268,7 @@ public class DepartmentAppService {
         if (validDeptIds.isEmpty()) {
             return false;
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再启用科室");
         ReactivateOrganizationCommand command = new ReactivateOrganizationCommand();
         command.setOperatorId(operatorId);
@@ -298,7 +298,7 @@ public class DepartmentAppService {
         if (validDeptIds.isEmpty()) {
             return false;
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再停用科室");
         RetireOrganizationCommand command = new RetireOrganizationCommand();
         command.setOperatorId(operatorId);

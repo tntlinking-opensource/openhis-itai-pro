@@ -136,6 +136,17 @@ public interface ChargeItemRepository extends JpaRepository<ChargeItem, Long>, J
         Long encounterId, String serviceTable, Collection<Long> serviceIds, String statusEnum);
 
     /**
+     * 按就诊、上游表名与多条上游主键批量加载收费明细（取消划价费用 Gate，不限状态）。
+     *
+     * @param encounterId  就诊标识
+     * @param serviceTable 上游物理表名
+     * @param serviceIds   上游主键集合
+     * @return 明细列表
+     */
+    List<ChargeItem> findAllByEncounterIdAndServiceTableAndServiceIdIn(
+        Long encounterId, String serviceTable, Collection<Long> serviceIds);
+
+    /**
      * 按就诊、发放表名、多条发放主键与收费状态批量加载明细。
      *
      * <p>用于门诊医生站签发/签退：{@code adm_charge_item.dispense_table} 与 {@code dispense_id} 与发放聚合对齐，

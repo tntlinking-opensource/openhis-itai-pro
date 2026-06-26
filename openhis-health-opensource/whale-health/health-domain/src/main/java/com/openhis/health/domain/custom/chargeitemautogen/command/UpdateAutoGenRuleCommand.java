@@ -29,7 +29,7 @@ import java.math.BigDecimal;
 @Setter
 public class UpdateAutoGenRuleCommand {
     /**
-     * 规则标识。
+     * 待操作规则主键（= 表 {@code cus_charge_item_auto_gen.id}；无 {@code rule_id} 列）。
      */
     private Long ruleId;
     /**
@@ -37,9 +37,9 @@ public class UpdateAutoGenRuleCommand {
      */
     private String ruleName;
     /**
-     * 状态枚举值（可空；非空则覆盖）。
+     * 住院就诊标识（可空；非空则覆盖）。
      */
-    private String statusEnum;
+    private Long encounterId;
     /**
      * 触发来源表名（可空；非空则覆盖）。
      */
@@ -51,7 +51,7 @@ public class UpdateAutoGenRuleCommand {
     /**
      * 目标收费项定义主键（可空；非空则覆盖）。
      */
-    private Long targetDefinitionId;
+    private Long chargeDefinitionId;
     /**
      * 执行科室/执行机构标识（可空；非空则覆盖）。
      */

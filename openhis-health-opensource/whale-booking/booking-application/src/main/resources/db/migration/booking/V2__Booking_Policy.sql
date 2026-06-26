@@ -26,28 +26,7 @@ CREATE TABLE IF NOT EXISTS bkg_release_policy (
     version INT NOT NULL DEFAULT 0
 );
 
-COMMENT ON TABLE bkg_release_policy IS '放号策略：提前天数、时段粒度、每段容量、渠道配额';
-COMMENT ON COLUMN bkg_release_policy.id IS '主键';
-COMMENT ON COLUMN bkg_release_policy.tenant_id IS '租户标识';
-COMMENT ON COLUMN bkg_release_policy.organization_id IS '机构标识；空=租户默认';
-COMMENT ON COLUMN bkg_release_policy.policy_code IS '策略编码（机构内唯一）';
-COMMENT ON COLUMN bkg_release_policy.policy_name IS '策略名称';
-COMMENT ON COLUMN bkg_release_policy.advance_days IS '可预约提前天数';
-COMMENT ON COLUMN bkg_release_policy.slot_minutes IS '默认时段粒度（分钟）';
-COMMENT ON COLUMN bkg_release_policy.capacity_per_slot IS '默认每时段容量';
-COMMENT ON COLUMN bkg_release_policy.channel_quota_json IS '渠道配额 JSON，如 {"WINDOW":60,"APP":40}';
-COMMENT ON COLUMN bkg_release_policy.created_at IS '创建时间';
-COMMENT ON COLUMN bkg_release_policy.updated_at IS '最后更新时间';
-COMMENT ON COLUMN bkg_release_policy.created_by IS '创建人';
-COMMENT ON COLUMN bkg_release_policy.updated_by IS '最后更新人';
-COMMENT ON COLUMN bkg_release_policy.is_deleted IS '软删标记';
-COMMENT ON COLUMN bkg_release_policy.deleted_at IS '删除时间';
-COMMENT ON COLUMN bkg_release_policy.deleted_by IS '删除人';
-COMMENT ON COLUMN bkg_release_policy.version IS '乐观锁版本号';
 
--- ---------------------------------------------------------------------------
--- bkg_registration_policy · 挂号衔接策略
--- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS bkg_registration_policy (
     id BIGINT PRIMARY KEY,
     tenant_id BIGINT,
@@ -66,26 +45,7 @@ CREATE TABLE IF NOT EXISTS bkg_registration_policy (
     version INT NOT NULL DEFAULT 0
 );
 
-COMMENT ON TABLE bkg_registration_policy IS '挂号衔接策略：现场取号、取消处置、医师变更等';
-COMMENT ON COLUMN bkg_registration_policy.id IS '主键';
-COMMENT ON COLUMN bkg_registration_policy.tenant_id IS '租户标识';
-COMMENT ON COLUMN bkg_registration_policy.organization_id IS '机构标识；空=租户默认';
-COMMENT ON COLUMN bkg_registration_policy.walk_in_slot_mode IS '现场取号模式：APPOINTMENT_FIRST / SLOT_FIRST 等';
-COMMENT ON COLUMN bkg_registration_policy.auto_check_in_on_register IS '挂号时是否自动签到';
-COMMENT ON COLUMN bkg_registration_policy.on_cancel_policy IS '取消预约处置：RELEASE_SLOT_ONLY / KEEP_SLOT 等';
-COMMENT ON COLUMN bkg_registration_policy.allow_edit_practitioner_from_appointment IS '是否允许从预约修改接诊医师';
-COMMENT ON COLUMN bkg_registration_policy.created_at IS '创建时间';
-COMMENT ON COLUMN bkg_registration_policy.updated_at IS '最后更新时间';
-COMMENT ON COLUMN bkg_registration_policy.created_by IS '创建人';
-COMMENT ON COLUMN bkg_registration_policy.updated_by IS '最后更新人';
-COMMENT ON COLUMN bkg_registration_policy.is_deleted IS '软删标记';
-COMMENT ON COLUMN bkg_registration_policy.deleted_at IS '删除时间';
-COMMENT ON COLUMN bkg_registration_policy.deleted_by IS '删除人';
-COMMENT ON COLUMN bkg_registration_policy.version IS '乐观锁版本号';
 
--- ---------------------------------------------------------------------------
--- bkg_schedule_change_policy · 停诊与预约处置策略
--- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS bkg_schedule_change_policy (
     id BIGINT PRIMARY KEY,
     tenant_id BIGINT,
@@ -113,6 +73,41 @@ CREATE TABLE IF NOT EXISTS bkg_schedule_change_policy (
 CREATE INDEX IF NOT EXISTS idx_bkg_schedule_change_policy_org
     ON bkg_schedule_change_policy (organization_id)
     WHERE is_deleted = FALSE;
+COMMENT ON TABLE bkg_release_policy IS '放号策略：提前天数、时段粒度、每段容量、渠道配额';
+COMMENT ON COLUMN bkg_release_policy.id IS '主键';
+COMMENT ON COLUMN bkg_release_policy.tenant_id IS '租户标识';
+COMMENT ON COLUMN bkg_release_policy.organization_id IS '机构标识；空=租户默认';
+COMMENT ON COLUMN bkg_release_policy.policy_code IS '策略编码（机构内唯一）';
+COMMENT ON COLUMN bkg_release_policy.policy_name IS '策略名称';
+COMMENT ON COLUMN bkg_release_policy.advance_days IS '可预约提前天数';
+COMMENT ON COLUMN bkg_release_policy.slot_minutes IS '默认时段粒度（分钟）';
+COMMENT ON COLUMN bkg_release_policy.capacity_per_slot IS '默认每时段容量';
+COMMENT ON COLUMN bkg_release_policy.channel_quota_json IS '渠道配额 JSON，如 {"WINDOW":60,"APP":40}';
+COMMENT ON COLUMN bkg_release_policy.created_at IS '创建时间';
+COMMENT ON COLUMN bkg_release_policy.updated_at IS '最后更新时间';
+COMMENT ON COLUMN bkg_release_policy.created_by IS '创建人';
+COMMENT ON COLUMN bkg_release_policy.updated_by IS '最后更新人';
+COMMENT ON COLUMN bkg_release_policy.is_deleted IS '软删标记';
+COMMENT ON COLUMN bkg_release_policy.deleted_at IS '删除时间';
+COMMENT ON COLUMN bkg_release_policy.deleted_by IS '删除人';
+COMMENT ON COLUMN bkg_release_policy.version IS '乐观锁版本号';
+
+COMMENT ON TABLE bkg_registration_policy IS '挂号衔接策略：现场取号、取消处置、医师变更等';
+COMMENT ON COLUMN bkg_registration_policy.id IS '主键';
+COMMENT ON COLUMN bkg_registration_policy.tenant_id IS '租户标识';
+COMMENT ON COLUMN bkg_registration_policy.organization_id IS '机构标识；空=租户默认';
+COMMENT ON COLUMN bkg_registration_policy.walk_in_slot_mode IS '现场取号模式：APPOINTMENT_FIRST / SLOT_FIRST 等';
+COMMENT ON COLUMN bkg_registration_policy.auto_check_in_on_register IS '挂号时是否自动签到';
+COMMENT ON COLUMN bkg_registration_policy.on_cancel_policy IS '取消预约处置：RELEASE_SLOT_ONLY / KEEP_SLOT 等';
+COMMENT ON COLUMN bkg_registration_policy.allow_edit_practitioner_from_appointment IS '是否允许从预约修改接诊医师';
+COMMENT ON COLUMN bkg_registration_policy.created_at IS '创建时间';
+COMMENT ON COLUMN bkg_registration_policy.updated_at IS '最后更新时间';
+COMMENT ON COLUMN bkg_registration_policy.created_by IS '创建人';
+COMMENT ON COLUMN bkg_registration_policy.updated_by IS '最后更新人';
+COMMENT ON COLUMN bkg_registration_policy.is_deleted IS '软删标记';
+COMMENT ON COLUMN bkg_registration_policy.deleted_at IS '删除时间';
+COMMENT ON COLUMN bkg_registration_policy.deleted_by IS '删除人';
+COMMENT ON COLUMN bkg_registration_policy.version IS '乐观锁版本号';
 
 COMMENT ON TABLE bkg_schedule_change_policy IS '停诊与预约处置院点策略（07 §4.2）';
 COMMENT ON COLUMN bkg_schedule_change_policy.id IS '主键';

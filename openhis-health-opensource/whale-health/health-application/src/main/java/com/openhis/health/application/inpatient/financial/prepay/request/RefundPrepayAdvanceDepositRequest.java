@@ -20,6 +20,7 @@ package com.openhis.health.application.inpatient.financial.prepay.request;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayPaymentDetailDto;
+import com.openhis.health.integration.payment.dto.ClientRefundResultDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -66,4 +67,13 @@ public class RefundPrepayAdvanceDepositRequest {
     /** 备注。 */
     @Schema(description = "备注")
     private String remark;
+
+    /** 原路退对应的收取支付单 ID（扫码原路退时必填）。 */
+    @Schema(description = "原收取支付单 ID（扫码原路退）")
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long originalPaymentId;
+
+    /** 银联退货 Win 回传（扫码原路退时必填）。 */
+    @Schema(description = "银联退货 Win 回传")
+    private ClientRefundResultDto clientRefundResult;
 }

@@ -10,9 +10,18 @@ import lombok.Setter;
 @Setter
 public class SubstitutePractitionerResponse {
 
+    /** 日程主键。 */
     private Long scheduleId;
+
+    /** 原出诊医师主键。 */
     private Long originalPractitionerId;
+
+    /** 替诊医师主键。 */
     private Long substitutePractitionerId;
+
+    /** 替诊原因。 */
     private String substituteReason;
+
+    /** 是否已撤销替诊（substitutePractitionerId 为空时 true）。 */
     private Boolean cleared;
 }

@@ -21,8 +21,14 @@ import com.openhis.health.domain.administration.invoice.entity.Invoice;
 import com.openhis.health.domain.administration.invoice.query.InvoiceQueryCommand;
 import com.openhis.health.domain.administration.invoice.repository.InvoiceRepository;
 import com.openhis.health.domain.share.enums.InvoiceStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import lombok.RequiredArgsConstructor;
+
+import java.util.List;
+import java.util.Optional;
 
 /**
  * 票据读侧查询服务。
@@ -66,6 +72,31 @@ public class InvoiceQueryService {
     public Invoice getLatestIssuedInvoiceByPaymentId(InvoiceQueryCommand cmd) {
         // 开票完成态用枚举码过滤，避免把未开具记录当作可报销凭证。
         return repository.findFirstByPaymentIdAndStatusEnum(cmd.getPaymentId(), InvoiceStatus.ISSUED.getCode()).orElse(null);
+    }
+
+    /**
+     * 按主键加载票据实体（Port/adapter 读路径）；不存在或已软删时 empty。
+     */
+    public Optional<Invoice> findOptionalInvoiceEntityById(Long invoiceId) {
+        if (invoiceId == null) {
+            return Optional.empty();
+        }
+        return repository.findById(invoiceId)
+            .filter(row -> !Boolean.TRUE.equals(row.getIsDeleted()));
+    }
+
+    /**
+     * 读侧 Criteria 列表（无分页）。
+     */
+    public List<Invoice> listInvoiceEntities(Specification<Invoice> specification) {
+        return repository.findAll(specification);
+    }
+
+    /**
+     * 读侧 Criteria 分页。
+     */
+    public Page<Invoice> pageInvoiceEntities(Specification<Invoice> specification, Pageable pageable) {
+        return repository.findAll(specification, pageable);
     }
 }
 

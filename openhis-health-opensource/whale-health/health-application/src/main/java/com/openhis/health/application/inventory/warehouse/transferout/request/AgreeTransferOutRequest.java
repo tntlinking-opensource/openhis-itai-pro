@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inventory.warehouse.transferout.request;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
@@ -42,7 +43,7 @@ public class AgreeTransferOutRequest {
     /**
      * 已废弃：领域 {@code agreeRequest} 内以服务端当前时间写入 {@code approval_time}（WHS-IN-SDD-R-013 / WHS-SO-SDD-R-009），请求体若仍带此字段则忽略。
      */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "已废弃：审批时间由服务端写入，可忽略", deprecated = true)
     private LocalDateTime approvalTime;
 

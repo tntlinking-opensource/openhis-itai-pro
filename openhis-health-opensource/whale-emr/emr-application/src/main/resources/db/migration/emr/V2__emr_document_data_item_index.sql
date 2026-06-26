@@ -25,9 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_emr_doc_data_item_name
 
 CREATE INDEX IF NOT EXISTS idx_emr_doc_data_item_tenant
     ON emr_document_data_item_index (tenant_id);
-
 COMMENT ON TABLE emr_document_data_item_index IS '电子病历 document data item index';
-
 COMMENT ON COLUMN emr_document_data_item_index.id IS '主键';
 COMMENT ON COLUMN emr_document_data_item_index.document_id IS '文书数据项名索引（可选）';
 COMMENT ON COLUMN emr_document_data_item_index.node_type IS '节点类型：region / section / dataElement';
@@ -40,4 +38,3 @@ COMMENT ON COLUMN emr_document_data_item_index.is_deleted IS '软删标记';
 COMMENT ON COLUMN emr_document_data_item_index.deleted_at IS '删除时间';
 COMMENT ON COLUMN emr_document_data_item_index.deleted_by IS '删除人';
 COMMENT ON COLUMN emr_document_data_item_index.tenant_id IS '租户标识';
-

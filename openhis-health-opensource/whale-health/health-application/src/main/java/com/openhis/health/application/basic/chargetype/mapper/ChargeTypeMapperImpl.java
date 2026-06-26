@@ -17,6 +17,8 @@
 
 package com.openhis.health.application.basic.chargetype.mapper;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.openhis.health.application.basic.chargetype.dto.ChargeTypeDto;
 import com.openhis.health.application.basic.chargetype.request.CreateChargeTypeRequest;
 import com.openhis.health.application.basic.chargetype.request.UpdateChargeTypeRequest;
@@ -148,20 +150,4 @@ public class ChargeTypeMapperImpl implements ChargeTypeMapper {
         return null;
     }
 
-    /**
-     * 去掉首尾空白并将空串视为 {@code null}，避免领域侧把空白当合法业务值入库。
-     *
-     * @param value 原始字符串，可为 {@code null}
-     * @return trim 后非空串，否则 {@code null}
-     */
-    private String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        if (trimmed.isEmpty()) {
-            return null;
-        }
-        return trimmed;
-    }
 }

@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.dispensesummary.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -47,7 +48,7 @@ public class NurseStationDispenseSummaryTimePointDto {
 
     /** 计划发药时刻。 */
     @Schema(description = "计划发药时刻")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime plannedDispenseTime;
 
     /** 原单位数量。 */

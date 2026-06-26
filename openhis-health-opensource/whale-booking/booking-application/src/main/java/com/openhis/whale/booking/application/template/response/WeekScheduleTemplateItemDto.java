@@ -10,6 +10,7 @@ import lombok.Setter;
 @Setter
 public class WeekScheduleTemplateItemDto {
 
+    /** 明细主键。 */
     private Long id;
 
     /** 1=周一 … 7=周日。 */
@@ -18,9 +19,12 @@ public class WeekScheduleTemplateItemDto {
     /** 关联 T2 日模板。 */
     private Long dayScheduleTemplateId;
 
+    /** T2 日模板名称。 */
     private String dayScheduleTemplateName;
 
+    /** 同日多条排序。 */
     private Integer sortNo;
 
+    /** 是否启用。 */
     private Boolean enabled;
 }

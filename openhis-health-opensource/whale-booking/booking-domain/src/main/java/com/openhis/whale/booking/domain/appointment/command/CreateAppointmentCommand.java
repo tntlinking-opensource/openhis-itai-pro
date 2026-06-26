@@ -66,10 +66,15 @@ public class CreateAppointmentCommand extends BatchCommand<CreateAppointmentComm
     @Getter
     @Setter
     public static class AppointmentOriginCommand {
+        /** 渠道编码（如 KIOSK / MINIAPP / COUNTER / DOCTOR_STATION / NURSE_STATION / OTHER）。 */
         private String originChannel;
+        /** 渠道会话标识。 */
         private String originChannelSessionId;
+        /** 来源设备标识（自助机 Device 等）。 */
         private Long originSourceDeviceId;
+        /** 代操作操作者标识（护士站等）。 */
         private Long originOperatorId;
+        /** 客户端版本（小程序/App 版本等）。 */
         private String originClientAppVersion;
     }
 }

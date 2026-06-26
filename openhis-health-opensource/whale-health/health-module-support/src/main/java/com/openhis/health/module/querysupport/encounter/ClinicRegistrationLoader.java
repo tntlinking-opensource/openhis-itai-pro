@@ -18,45 +18,31 @@
 package com.openhis.health.module.querysupport.encounter;
 
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
-import com.openhis.health.domain.administration.encounter.entity.EncounterDiagnosis;
 import com.openhis.health.domain.administration.encounter.entity.EncounterParticipant;
 import com.openhis.health.domain.administration.encounter.queries.ClinicRegisterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.RegistrationSlipPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.ClinicRegisterQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.RegistrationSlipQueryModel;
-import com.openhis.health.domain.administration.encounter.repository.EncounterParticipantRepository;
-import com.openhis.health.domain.administration.encounter.repository.EncounterRepository;
+import com.openhis.health.domain.administration.encounter.service.EncounterContextPageQueryService;
+import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.healthcareservice.entity.HealthcareService;
-import com.openhis.health.domain.administration.healthcareservice.repository.HealthcareServiceRepository;
+import com.openhis.health.domain.administration.healthcareservice.service.HealthcareServiceQueryService;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.patient.entity.Patient;
-import com.openhis.health.domain.administration.patient.repository.PatientRepository;
+import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.RegistrationSlipConstants;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
-import com.openhis.health.domain.share.enums.EncounterActivityStatus;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterParticipantRole;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
-import com.openhis.health.domain.share.utils.SearchCodeUtil;
-import jakarta.persistence.criteria.Expression;
-import jakarta.persistence.criteria.Predicate;
-import jakarta.persistence.criteria.Root;
-import jakarta.persistence.criteria.Subquery;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;
-
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -70,19 +56,17 @@ import java.util.Set;
  *
  * <p>分页经 {@link ClinicRegisterPageQuery#springPageIndex()} / {@link ClinicRegisterPageQuery#getBoundedPageSize()}（B.10.11）；
  * 就诊记录列表不按当前登录科室收窄，仅按日期窗、关键字、状态等条件筛选。</p>
- *
- * <p>DOC-CONFLICT：就诊主档 Criteria 暂经 {@link EncounterRepository}；长期应收口 {@code EncounterQueryService}（迁移文档 10）。</p>
  */
 @Component
 @RequiredArgsConstructor
 public class ClinicRegistrationLoader {
 
-    private final EncounterRepository encounterRepository;
-    private final EncounterParticipantRepository participantRepository;
-    private final PatientRepository patientRepository;
+    private final EncounterContextPageQueryService pageQueryService;
+    private final EncounterQueryService encounterQueryService;
+    private final PatientQueryService patientQueryService;
     private final OrganizationQueryService organizationQueryService;
     private final PractitionerQueryService practitionerQueryService;
-    private final HealthcareServiceRepository healthcareServiceRepository;
+    private final HealthcareServiceQueryService healthcareServiceQueryService;
 
     /**
      * 门诊挂号列表分页：按关键字/状态/时段 Criteria 查询并批量装配患者、科室、医生展示字段。
@@ -91,18 +75,16 @@ public class ClinicRegistrationLoader {
      * @return 挂号列表读模型页
      */
     public Page<ClinicRegisterQueryModel> pageClinicRegister(ClinicRegisterPageQuery query) {
-        ClinicRegisterPageQuery effective = query;
-        if (effective == null) {
-            effective = new ClinicRegisterPageQuery();
-        }
-        Pageable pageable = PageRequest.of(
-            effective.springPageIndex(),
-            effective.getBoundedPageSize(),
-            Sort.by(Sort.Order.desc(FieldNameConstants.CREATED_AT)));
-        Specification<Encounter> specification = this.buildClinicRegisterSpecification(query);
-        Page<Encounter> page = encounterRepository.findAll(specification, pageable);
+        Page<Encounter> page = pageQueryService.pageClinicRegisterEncounters(query);
         List<ClinicRegisterQueryModel> content = this.toClinicRegisterModels(page.getContent());
-        return new PageImpl<>(content, pageable, page.getTotalElements());
+        return new PageImpl<>(content, page.getPageable(), page.getTotalElements());
+    }
+
+    /**
+     * 门诊挂号列表计数（与 {@link #pageClinicRegister} 共用筛选谓词）。
+     */
+    public long countClinicRegister(ClinicRegisterPageQuery query) {
+        return pageQueryService.countClinicRegisterEncounters(query);
     }
 
     /**
@@ -112,18 +94,9 @@ public class ClinicRegistrationLoader {
      * @return 挂号单读模型页
      */
     public Page<RegistrationSlipQueryModel> pageRegistrationSlip(RegistrationSlipPageQuery query) {
-        RegistrationSlipPageQuery effective = query;
-        if (effective == null) {
-            effective = new RegistrationSlipPageQuery();
-        }
-        Pageable pageable = PageRequest.of(
-            effective.springPageIndex(),
-            effective.getBoundedPageSize(),
-            Sort.by(Sort.Order.desc(FieldNameConstants.CREATED_AT)));
-        Specification<Encounter> specification = this.buildRegistrationSlipSpecification(query);
-        Page<Encounter> page = encounterRepository.findAll(specification, pageable);
+        Page<Encounter> page = pageQueryService.pageRegistrationSlipEncounters(query);
         List<RegistrationSlipQueryModel> content = this.toRegistrationSlipModels(page.getContent());
-        return new PageImpl<>(content, pageable, page.getTotalElements());
+        return new PageImpl<>(content, page.getPageable(), page.getTotalElements());
     }
 
     /**
@@ -136,7 +109,7 @@ public class ClinicRegistrationLoader {
         if (encounterId == null) {
             return Optional.empty();
         }
-        return encounterRepository.findById(encounterId)
+        return encounterQueryService.findOptionalEncounterEntityById(encounterId)
             .filter(this::isAmbEncounter)
             .map(encounter -> this.toRegistrationSlipModels(List.of(encounter)).get(0));
     }
@@ -147,109 +120,6 @@ public class ClinicRegistrationLoader {
             return false;
         }
         return EncounterClass.AMB.getCode().equals(encounter.getClassEnum());
-    }
-
-    /**
-     * 挂号列表 Criteria：AMB + 关键字（诊断描述 EXISTS）/状态/时段。
-     */
-    private Specification<Encounter> buildClinicRegisterSpecification(ClinicRegisterPageQuery query) {
-        return (root, criteriaQuery, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
-            predicates.add(cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.AMB.getCode()));
-            if (query != null) {
-                if (StringUtils.isNotBlank(query.getKeyword())) {
-                    String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
-                    predicates.add(this.existsDiagnosisDescriptionLike(root, cb, criteriaQuery, likeIc));
-                }
-                if (StringUtils.isNotBlank(query.getStatusEnum())) {
-                    predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), query.getStatusEnum().trim()));
-                }
-                Expression<LocalDateTime> occurredAt = cb.coalesce(
-                    root.get(FieldNameConstants.START_TIME),
-                    root.get(FieldNameConstants.CREATED_AT));
-                if (query.getStartTime() != null) {
-                    predicates.add(cb.greaterThanOrEqualTo(occurredAt, query.getStartTime()));
-                }
-                if (query.getEndTime() != null) {
-                    predicates.add(cb.lessThanOrEqualTo(occurredAt, query.getEndTime()));
-                }
-            }
-            return cb.and(predicates.toArray(new Predicate[0]));
-        };
-    }
-
-    /**
-     * 挂号单查询 Criteria：按 slipNo 解析 encounterId 或显式 encounterId/patientId。
-     */
-    private Specification<Encounter> buildRegistrationSlipSpecification(RegistrationSlipPageQuery query) {
-        return (root, criteriaQuery, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
-            predicates.add(cb.equal(root.get(FieldNameConstants.CLASS_ENUM), EncounterClass.AMB.getCode()));
-            if (query != null) {
-                Long encounterId = query.getEncounterId();
-                if (encounterId == null && StringUtils.isNotBlank(query.getSlipNo())) {
-                    encounterId = this.parseEncounterIdFromSlipNo(query.getSlipNo().trim());
-                }
-                if (encounterId != null) {
-                    predicates.add(cb.equal(root.get(FieldNameConstants.ID), encounterId));
-                }
-                if (query.getPatientId() != null) {
-                    predicates.add(cb.equal(root.get(FieldNameConstants.PATIENT_ID), query.getPatientId()));
-                }
-                if (StringUtils.isNotBlank(query.getStatusEnum())) {
-                    predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), query.getStatusEnum().trim()));
-                }
-                if (query.getStartTime() != null) {
-                    predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.START_TIME), query.getStartTime()));
-                }
-                if (query.getEndTime() != null) {
-                    predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.END_TIME), query.getEndTime()));
-                }
-            }
-            return cb.and(predicates.toArray(new Predicate[0]));
-        };
-    }
-
-    /**
-     * 从挂号单号后缀解析就诊主键（前缀 {@link RegistrationSlipConstants#SLIP_NO_PREFIX}）。
-     */
-    private Long parseEncounterIdFromSlipNo(String slipNo) {
-        if (StringUtils.isBlank(slipNo)) {
-            return null;
-        }
-        String prefix = RegistrationSlipConstants.SLIP_NO_PREFIX;
-        if (!slipNo.startsWith(prefix)) {
-            return null;
-        }
-        String suffix = slipNo.substring(prefix.length());
-        if (suffix.isBlank()) {
-            return null;
-        }
-        try {
-            return Long.parseLong(suffix.trim());
-        } catch (NumberFormatException ex) {
-            return null;
-        }
-    }
-
-    /**
-     * 就诊诊断子表描述模糊匹配（挂号列表关键字 OR 分支之一）。
-     */
-    private Predicate existsDiagnosisDescriptionLike(
-        Root<Encounter> root,
-        jakarta.persistence.criteria.CriteriaBuilder cb,
-        jakarta.persistence.criteria.CriteriaQuery<?> criteriaQuery,
-        String pattern) {
-        Subquery<Long> sq = criteriaQuery.subquery(Long.class);
-        Root<EncounterDiagnosis> diagRoot = sq.from(EncounterDiagnosis.class);
-        sq.select(cb.literal(1L));
-        sq.where(cb.and(
-            cb.equal(diagRoot.get(FieldNameConstants.ENCOUNTER_ID), root.get(FieldNameConstants.ID)),
-            cb.isFalse(diagRoot.get(FieldNameConstants.IS_DELETED)),
-            cb.like(cb.lower(diagRoot.get(FieldNameConstants.DESCRIPTION)), pattern)));
-        return cb.exists(sq);
     }
 
     /** 挂号列表行装配（批量预热患者/科室/医生）。 */
@@ -385,25 +255,12 @@ public class ClinicRegistrationLoader {
                 serviceTypeIds.add(encounter.getServiceTypeId());
             }
         }
-        if (!patientIds.isEmpty()) {
-            for (Patient patient : patientRepository.findAllByIdIn(patientIds)) {
-                if (patient.getId() != null) {
-                    bundle.patientById.put(patient.getId(), patient);
-                }
-            }
-        }
+        bundle.patientById.putAll(patientQueryService.loadPatientEntityMapByIds(patientIds));
         bundle.organizationNameById.putAll(organizationQueryService.mapNamesByIds(organizationIds));
-        if (!serviceTypeIds.isEmpty()) {
-            for (HealthcareService svc : healthcareServiceRepository.findAllById(serviceTypeIds)) {
-                if (svc.getId() != null) {
-                    bundle.healthcareServiceById.put(svc.getId(), svc);
-                }
-            }
-        }
-        String activeStatus = EncounterActivityStatus.ACTIVE.getCode();
+        bundle.healthcareServiceById.putAll(healthcareServiceQueryService.loadHealthcareServiceMapByIds(serviceTypeIds));
         if (!encounterIds.isEmpty()) {
             for (EncounterParticipant participant :
-                participantRepository.findAllByEncounterIdInAndStatusEnum(encounterIds, activeStatus)) {
+                encounterQueryService.listActiveParticipantEntitiesByEncounterIds(encounterIds)) {
                 if (participant.getEncounterId() == null) {
                     continue;
                 }

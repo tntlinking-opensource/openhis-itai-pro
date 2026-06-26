@@ -268,7 +268,6 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         dto.setPartAttributeEnumOptions(model.getPartAttributeOptions());
         dto.setTempOrderSplitPropertyEnumOptions(model.getTempOrderSplitPropertyOptions());
         dto.setChrgitmLvOptions(model.getChrgitmLvOptions());
-        dto.setMedCategoryCodeOptions(model.getMedCategoryOptions());
         dto.setSystemCategoriesOptions(model.getSystemCategoryOptions());
         dto.setMedicinePropertiesOptions(model.getMedicinePropertyOptions());
         dto.setDoseFormCodeOptions(model.getDoseFormOptions());

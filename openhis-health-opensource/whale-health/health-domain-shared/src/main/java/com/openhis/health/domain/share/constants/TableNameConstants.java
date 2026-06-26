@@ -44,6 +44,10 @@ public interface TableNameConstants {
     String ADM_ENCOUNTER = "adm_encounter";
     /** 身体结构表名（服务申请明细 target_table 锚点）。 */
     String DIA_BODY_STRUCTURE = "dia_body_structure";
+    /** 生命体征单据主表名。 */
+    String DIA_VITAL_SIGN = "dia_vital_sign";
+    /** 生命体征明细表名。 */
+    String DIA_VITAL_SIGN_DETAIL = "dia_vital_sign_detail";
     /** 标本定义表名（服务申请明细 target_table 锚点）。 */
     String ADM_SPECIMEN_DEFINITION = "adm_specimen_definition";
 }

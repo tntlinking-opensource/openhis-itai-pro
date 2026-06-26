@@ -81,13 +81,17 @@ public class TcmRxHeaderDto {
     @Schema(description = "备注")
     private String remark;
 
-    /** 签发批次码。 */
-    @Schema(description = "签发批次码")
-    private String signCode;
-
     /** 方状态（取行内最高态）。 */
     @Schema(description = "方状态")
     private String statusEnum;
+
+    /** 方状态展示码（退费态优先于请求态，与医嘱列表 displayStatusEnum 口径一致）。 */
+    @Schema(description = "方状态展示码")
+    private String displayStatusEnum;
+
+    /** 方状态展示文案（如待退费/已退费/已完成）。 */
+    @Schema(description = "方状态展示文案")
+    private String displayStatusEnumText;
 
     /** 方内明细行。 */
     @Schema(description = "方内明细行")

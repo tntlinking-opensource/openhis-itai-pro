@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inventory.warehouse.transferout.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -86,13 +87,13 @@ public class TransferOutDetailLineDto {
     private String lotNumber;
 
     /** 效期区间起点。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 效期起点。 */
     @Schema(description = "效期起点")
     private LocalDateTime startTime;
 
     /** 效期区间止点。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 效期止点。 */
     @Schema(description = "效期止点")
     private LocalDateTime endTime;
@@ -114,7 +115,7 @@ public class TransferOutDetailLineDto {
     private BigDecimal totalPrice;
 
     /** 业务发生时间。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 业务发生时间。 */
     @Schema(description = "业务发生时间")
     private LocalDateTime occurrenceTime;

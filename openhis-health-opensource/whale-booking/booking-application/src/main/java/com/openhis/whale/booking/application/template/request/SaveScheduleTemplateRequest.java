@@ -21,8 +21,7 @@ public class SaveScheduleTemplateRequest {
     @NotNull
     private Long organizationId;
 
-    /** 模板编码。 */
-    @NotBlank
+    /** 模板编码（可选；留空时由领域层自动生成，见 BookingTemplateCodeConstants）。 */
     private String templateCode;
 
     /** 模板名称。 */

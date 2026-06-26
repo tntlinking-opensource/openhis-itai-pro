@@ -74,7 +74,7 @@ public class BodyStructureDomainService {
             // 业务分支处理：无 id 视为新增，分配业务编码并初始化启用状态
             if (item.getId() == null) {
                 bodyStructure = new BodyStructure();
-                bodyStructure.setBusNo(businessSequenceService.getSeq(AggregateTypeConstants.BODY_STRUCTURE, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
+                bodyStructure.setBusNo(businessSequenceService.getSeq(AggregateTypeConstants.BODY_STRUCTURE, BusinessSequenceConstants.MASTER_DATA_2_PREFIX_SEQ_LENGTH));
                 bodyStructure.setStatusEnum(PublicationStatus.ACTIVE.getCode());
                 created.add(bodyStructure);
             } else {

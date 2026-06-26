@@ -10,8 +10,11 @@ import com.openhis.health.application.outpatient.nursestation.skintest.response.
 import com.openhis.health.application.outpatient.nursestation.skintest.response.ListOutpatientSkinTestRowsResponse;
 import com.openhis.health.application.outpatient.nursestation.skintest.response.LoadOutpatientSkinTestInitResponse;
 import com.openhis.health.application.outpatient.nursestation.skintest.response.SaveOutpatientSkinTestRecordResponse;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.clinical.allergyintolerance.command.DeleteSkinTestRecordCommand;
 import com.openhis.health.domain.clinical.allergyintolerance.command.SaveSkinTestRecordCommand;
+import com.openhis.whale.core.application.dto.OptionDto;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -33,6 +36,32 @@ public class OutpatientSkinTestMapperImpl implements OutpatientSkinTestMapper {
     @Override
     public LoadOutpatientSkinTestInitResponse toInitResponse(LoadOutpatientSkinTestInitResponse response) {
         return response;
+    }
+
+    /**
+     * 护士实体列表转下拉选项。
+     *
+     * @param practitioners 护士实体列表
+     * @return 下拉选项
+     */
+    @Override
+    public List<OptionDto> toNurseOptionList(List<Practitioner> practitioners) {
+        List<OptionDto> list = new ArrayList<>();
+        if (practitioners == null) {
+            return list;
+        }
+        for (Practitioner practitioner : practitioners) {
+            if (practitioner == null || practitioner.getId() == null) {
+                continue;
+            }
+            Long id = practitioner.getId();
+            String label = practitioner.getName();
+            if (StringUtils.isBlank(label)) {
+                label = String.valueOf(id);
+            }
+            list.add(new OptionDto(id, String.valueOf(id), label));
+        }
+        return list;
     }
 
     /**

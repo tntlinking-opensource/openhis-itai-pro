@@ -24,16 +24,15 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 /**
- * 住院场景患者栏「账户余额」展示装配（跨预交金、登记、护士站等 IF 复用）。
+ * 住院场景患者栏「账户余额」展示装配（跨预交金、登记、护士站、医生站、款台等 IF 复用）。
  *
- * <p>口径（与 {@code AS-IP-FIN-002} §1.3 一致）：</p>
+ * <p>口径（与 {@code AS-IP-FIN-002} §1.3、{@code DM-ADM-009} 一致）：</p>
  * <ul>
- *   <li>{@link Account#getBalance()}：个人现金户<strong>预交金收退净值</strong>，仅随预交金收/退变更。</li>
- *   <li><strong>费用占用额</strong>：{@link com.openhis.health.domain.share.enums.ChargeItemStatus#PENDING_SETTLEMENT}
- *   与 {@link com.openhis.health.domain.share.enums.ChargeItemStatus#SETTLED} 明细 {@code total_price} 之和
- *   （护士划价/执行入账待结算 + 中途/出院已结算，均为预交金口径下已花掉的钱）。</li>
- *   <li><strong>待收费</strong>（{@code PLANNED}，含住院医生站签发后）：<strong>不</strong>扣减展示余额，直至执行/划价进入待结算。</li>
- *   <li>对外展示余额 = 预交金净值 − 费用占用额；<strong>禁止</strong>将 Account.balance 直出为「还剩多少钱」。</li>
+ *   <li>{@link Account#getBalance()}：个人现金户<strong>账户余额</strong>（预交金收退与结算扣已结费用后的库内值）。</li>
+ *   <li>结算成功时写侧扣减本批 {@code SETTLED} 金额；出院全结少补/多退照旧调整余额。</li>
+ *   <li><strong>待结算</strong>（{@code PENDING_SETTLEMENT}）：读侧从库内余额扣减后作为展示余额；写侧不在 ChargeItem 入账时回写 {@code balance}。</li>
+ *   <li><strong>待收费</strong>（{@code PLANNED}）：不扣减展示余额，直至进入待结算。</li>
+ *   <li>展示余额 = {@code balance} − 待结算合计；卡片/队列文案见 {@link InpatientAccountBalanceDisplayAssembler}（仅单一余额，不含「可用/待结算」拆分）。</li>
  * </ul>
  */
 public final class InpatientDisplayAccountBalanceAssembler {
@@ -42,12 +41,12 @@ public final class InpatientDisplayAccountBalanceAssembler {
     }
 
     /**
-     * 个人现金户预交金收退净值（无户或未落余额时按 0）。
+     * 个人现金户库内账户余额（无户或未落余额时按 0）。
      *
      * @param account 登记个人现金户，可 null
-     * @return 预交金净值（仅内部计算或预交金退费等门禁，非患者栏展示）
+     * @return 账户余额（{@code adm_account.balance}）
      */
-    public static BigDecimal resolvePersonalCashPrepayNet(Account account) {
+    public static BigDecimal resolveAccountBalance(Account account) {
         if (account == null || account.getBalance() == null) {
             return BigDecimal.ZERO;
         }
@@ -55,21 +54,32 @@ public final class InpatientDisplayAccountBalanceAssembler {
     }
 
     /**
-     * 患者栏/队列展示的账户余额（动态计算，允许为负表示已透支口径）。
+     * 个人现金户库内余额别名（预交金退费可退上限等门禁复用）。
      *
-     * @param account                 个人现金户；取 balance 参与计算，不对外直出
-     * @param chargedOccupancyTotal   待结算 + 已结算费用合计（{@link com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService} 汇总）
-     * @return 展示用 accountBalance
+     * @param account 登记个人现金户，可 null
+     * @return 账户余额
+     */
+    public static BigDecimal resolvePersonalCashPrepayNet(Account account) {
+        return resolveAccountBalance(account);
+    }
+
+    /**
+     * 展示余额（允许为负表示欠费口径）。
+     *
+     * @param account                个人现金户
+     * @param pendingSettlementTotal 待结算费用合计（不含已结算）
+     * @return 展示余额 = 库内余额 − 待结算
      */
     public static BigDecimal computeDisplayAccountBalance(
         Account account,
-        BigDecimal chargedOccupancyTotal) {
-        BigDecimal net = resolvePersonalCashPrepayNet(account);
-        BigDecimal occupied = chargedOccupancyTotal;
-        if (occupied == null) {
-            occupied = BigDecimal.ZERO;
+        BigDecimal pendingSettlementTotal) {
+        BigDecimal balance = resolveAccountBalance(account);
+        BigDecimal pending = pendingSettlementTotal;
+        if (pending == null) {
+            pending = BigDecimal.ZERO;
         }
-        return net.subtract(occupied)
+        return balance.subtract(pending)
             .setScale(InpatientPrepayConstants.PREPAY_AMOUNT_COMPARE_SCALE, RoundingMode.HALF_UP);
     }
 }
+

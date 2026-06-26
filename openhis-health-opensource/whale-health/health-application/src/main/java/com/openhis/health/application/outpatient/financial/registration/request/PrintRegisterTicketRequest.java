@@ -43,4 +43,8 @@ public class PrintRegisterTicketRequest {
     @Schema(description = "打印份数")
     /** 打印份数（业务字段）。 */
     private Integer printCopies;
+
+    /** 支付流水主键（已结算挂号时传入，用于回补支付明细）。 */
+    @Schema(description = "支付流水ID")
+    private Long paymentId;
 }

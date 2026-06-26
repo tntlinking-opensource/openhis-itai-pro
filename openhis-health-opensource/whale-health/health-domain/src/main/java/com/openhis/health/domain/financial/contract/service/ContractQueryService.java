@@ -142,22 +142,29 @@ public class ContractQueryService {
     /**
      * 全量费用性质简表（不分页，适用于下拉或缓存预热；数据量由主数据规模约束）。
      *
-     * @return 全部列表项，按展示序与主键排序
+     * <p>排除已软删记录，与 {@link #listAllContractsByOrgId(Long)} 口径一致。</p>
+     *
+     * @return 有效列表项，按展示序与主键排序
      */
     public List<ContractListItemQueryModel> listAllContracts() {
-        return contractRepository.findAll(Sort.by(Sort.Direction.ASC, FieldNameConstants.DISPLAY_ORDER, FieldNameConstants.ID))
-            .stream()
-            .map(item -> {
-                ContractListItemQueryModel model = new ContractListItemQueryModel();
-                model.setId(item.getId());
-                model.setBusNo(item.getBusNo());
-                model.setName(item.getName());
-                model.setCategoryEnum(item.getCategoryEnum());
-                model.setActiveFlag(item.getActiveFlag());
-                model.setDisplayOrder(item.getDisplayOrder());
-                return model;
-            })
-            .toList();
+        List<ContractListItemQueryModel> out = new ArrayList<>();
+        // Loop：遍历租户内未删费用性质，装配下拉/缓存项
+        for (Contract item : contractRepository.findAll(
+            Sort.by(Sort.Direction.ASC, FieldNameConstants.DISPLAY_ORDER, FieldNameConstants.ID))) {
+            if (item == null || Boolean.TRUE.equals(item.getIsDeleted())) {
+                // 软删合同不参与下拉与展示判定
+                continue;
+            }
+            ContractListItemQueryModel model = new ContractListItemQueryModel();
+            model.setId(item.getId());
+            model.setBusNo(item.getBusNo());
+            model.setName(item.getName());
+            model.setCategoryEnum(item.getCategoryEnum());
+            model.setActiveFlag(item.getActiveFlag());
+            model.setDisplayOrder(item.getDisplayOrder());
+            out.add(model);
+        }
+        return out;
     }
 
     /**
@@ -188,6 +195,36 @@ public class ContractQueryService {
                 continue;
             }
             out.put(contract.getBusNo(), StringUtils.defaultString(contract.getName()));
+        }
+        return out;
+    }
+
+    /**
+     * 按业务号批量加载费用性质实体（交账/报表 enrichment 用）。
+     *
+     * @param busNos 合同业务号集合
+     * @return 未软删的合同实体列表；无命中时空列表
+     */
+    public List<Contract> findAllContractEntitiesByBusNoIn(Collection<String> busNos) {
+        if (busNos == null || busNos.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (String busNo : busNos) {
+            if (StringUtils.isNotBlank(busNo)) {
+                unique.add(busNo.trim());
+            }
+        }
+        if (unique.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<Contract> list = contractRepository.findAllByBusNoIn(unique);
+        List<Contract> out = new ArrayList<>(list.size());
+        for (Contract contract : list) {
+            if (contract == null || Boolean.TRUE.equals(contract.getIsDeleted())) {
+                continue;
+            }
+            out.add(contract);
         }
         return out;
     }

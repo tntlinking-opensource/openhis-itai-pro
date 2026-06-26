@@ -40,4 +40,8 @@ public class OrderTemplateBindingGroupDto {
     /** 全院归属组套/模板头列表。 */
     @Schema(description = "全院组套列表")
     private List<OrderTemplateHeaderRowDto> hospitalList;
+
+    /** 协定处方组套/模板头列表。 */
+    @Schema(description = "协定处方组套列表")
+    private List<OrderTemplateHeaderRowDto> agreementList;
 }

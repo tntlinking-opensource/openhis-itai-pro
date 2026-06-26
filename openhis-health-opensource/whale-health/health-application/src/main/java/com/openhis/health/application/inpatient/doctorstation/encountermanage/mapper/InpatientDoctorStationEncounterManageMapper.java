@@ -41,7 +41,7 @@ public interface InpatientDoctorStationEncounterManageMapper {
      * 列表分页请求 → 住院信息读模型分页入参（医生站队列 Q-IPI-006）。
      *
      * @param request HTTP 请求
-     * @return 住院就诊上下文分页查询；科室收窄由领域读侧 {@link ICurrentUser} 承担（B.10.11）
+     * @return 住院就诊上下文分页查询；科室收窄由应用层 {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver} 承担（B.10.11）
      */
     InpatientEncounterPageQuery toInpatientEncounterPageQuery(PagePatientQueueRequest request);
 
@@ -60,8 +60,6 @@ public interface InpatientDoctorStationEncounterManageMapper {
      */
     DoctorStationPatientQueueItemDto toDoctorStationPatientQueueItemDto(
         InpatientEncounterContextQueryModel row,
-        BigDecimal accountBalance,
-        boolean lowBalanceWarning,
         InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay displayOverlay,
         String priorityEnum,
         List<String> diagnosisList,

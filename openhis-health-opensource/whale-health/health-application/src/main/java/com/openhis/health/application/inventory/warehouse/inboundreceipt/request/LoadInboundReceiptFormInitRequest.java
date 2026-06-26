@@ -24,7 +24,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 /**
  *
  * <p>当前无业务必填体字段：药房/药库位置、供应商、人员与筛选项下拉均由应用层按
- * {@link com.openhis.whale.core.infrastructure.security.ICurrentUser} 机构与岗位管辖装配为
+ * {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver} 与
+ * {@link com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver} 机构与岗位管辖装配为
  * {@link com.openhis.health.application.inventory.warehouse.inboundreceipt.response.LoadInboundReceiptFormInitResponse}（见
  * {@link com.openhis.health.application.inventory.warehouse.inboundreceipt.mapper.InventoryWarehouseInboundReceiptMapper#toLoadInboundReceiptFormInitResponse}）。</p>
  *

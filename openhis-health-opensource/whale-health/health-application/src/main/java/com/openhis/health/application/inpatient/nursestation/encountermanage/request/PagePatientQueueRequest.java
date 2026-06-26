@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.encountermanage.request;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -51,8 +52,16 @@ public class PagePatientQueueRequest extends AbstractHealthPageRequest {
     @Schema(description = "任务筛选：pending-audit / pending-execute / processed")
     private String nurseStationTaskFilter;
 
+    /**
+     * 列表状态筛选 code（{@link com.openhis.health.domain.share.constants.InpatientNurseStationConstants} {@code STATUS_FILTER_*}）。
+     *
+     * <p>空=默认在院 {@code REGISTERED}～{@code COMPLETED}；{@code SETTLED_DISCHARGED}=已出院结算召回列表。</p>
+     */
+    @Schema(description = "列表状态筛选：空=在院；SETTLED_DISCHARGED=已出院结算")
+    private String nurseStationStatusFilter;
+
     /** 待执行计数自然日；空则按当天。 */
     @Schema(description = "待执行计数自然日")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     private LocalDate nurseStationExecutionDate;
 }

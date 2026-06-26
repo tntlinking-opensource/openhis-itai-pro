@@ -16,14 +16,16 @@ public class PageSchedulesByMonthResponse {
     /** 查询自然月 yyyy-MM。 */
     private String yearMonth;
 
-    /** 自然月起止（含）。 */
+    /** 自然月起（含）。 */
     private LocalDate monthStart;
 
+    /** 自然月止（含）。 */
     private LocalDate monthEnd;
 
-    /** 月历网格起止（含，补齐至整周）。 */
+    /** 月历网格起（含，补齐至整周）。 */
     private LocalDate gridStart;
 
+    /** 月历网格止（含，补齐至整周）。 */
     private LocalDate gridEnd;
 
     /** 月历格子（含跨月 padding 日）。 */

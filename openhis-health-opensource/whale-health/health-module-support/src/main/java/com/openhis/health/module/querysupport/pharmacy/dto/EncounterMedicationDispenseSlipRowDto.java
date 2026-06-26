@@ -17,6 +17,7 @@
 
 package com.openhis.health.module.querysupport.pharmacy.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -173,7 +174,7 @@ public class EncounterMedicationDispenseSlipRowDto {
     private Long prescriptionGroupId;
 
     @Schema(description = "医嘱开具时间")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime requestAuthoredTime;
 
     @Schema(description = "是否皮试医嘱")
@@ -223,4 +224,55 @@ public class EncounterMedicationDispenseSlipRowDto {
 
     @Schema(description = "候选库存明细（门诊工作台）")
     private List<MedicationDispenseInventoryDetailDto> inventoryDetailList;
+
+    @Schema(description = "患者姓名（处方打印）")
+    private String patientName;
+
+    @Schema(description = "患者年龄展示（处方打印）")
+    private String ageText;
+
+    @Schema(description = "患者性别展示（处方打印）")
+    private String genderEnumText;
+
+    @Schema(description = "患者联系电话（处方打印）")
+    private String patientPhone;
+
+    @Schema(description = "医疗机构名称（处方打印页眉）")
+    private String hospitalName;
+
+    @Schema(description = "费用性质展示（处方打印）")
+    private String feeNatureText;
+
+    @Schema(description = "处方笺标题（处方打印）")
+    private String prescriptionDocumentTitle;
+
+    @Schema(description = "处方日期展示 YYYY-MM-DD（处方打印）")
+    private String prescriptionDateText;
+
+    @Schema(description = "处方类别展示行1（处方打印）")
+    private String prescriptionTypeLine1;
+
+    @Schema(description = "处方类别展示行2（处方打印）")
+    private String prescriptionTypeLine2;
+
+    @Schema(description = "处方药品金额合计（同处方号各行一致）")
+    private BigDecimal prescriptionTotalPrice;
+
+    @Schema(description = "处方药品金额展示（处方打印页脚）")
+    private String prescriptionTotalPriceText;
+
+    @Schema(description = "调配药师姓名（处方打印）")
+    private String preparerPractitionerName;
+
+    @Schema(description = "划价员姓名（处方打印）")
+    private String pricingPractitionerName;
+
+    @Schema(description = "药品主行左列展示（处方打印）")
+    private String medicationDisplayLeft;
+
+    @Schema(description = "药品主行右列展示（处方打印）")
+    private String medicationDisplayRight;
+
+    @Schema(description = "用法用量展示行（处方打印）")
+    private String medicationUsageDisplayText;
 }

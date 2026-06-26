@@ -17,6 +17,8 @@
 
 package com.openhis.health.domain.administration.devicedefinition.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
@@ -66,11 +68,7 @@ public class DeviceDefinitionDomainService {
         List<DeviceDefinition> toSave = new ArrayList<>();
         for (CreateDeviceDefinitionCommand.Item item : items) {
             DeviceDefinition row = new DeviceDefinition();
-            if (item.getBusNo() == null || item.getBusNo().trim().isEmpty()) {
-                row.setBusNo(this.generateBusNo());
-            } else {
-                row.setBusNo(item.getBusNo().trim());
-            }
+            row.setBusNo(this.generateBusNo());
             row.setName(item.getName());
             row.setMerchandiseName(item.getMerchandiseName());
             row.setCategoryCode(item.getCategoryCode());
@@ -191,22 +189,22 @@ public class DeviceDefinitionDomainService {
                     row.refreshSearchCodeOnNameChanged();
                 } else {
                     if (pyProvided) {
-                        row.setPyStr(StringUtils.trimToEmpty(item.getPyStr()));
+                        row.setPyStr(trimToEmpty(item.getPyStr()));
                     } else {
                         row.setPyStr(SearchCodeUtil.toPyStr(row.getName()));
                     }
                     if (wbProvided) {
-                        row.setWbStr(StringUtils.trimToEmpty(item.getWbStr()));
+                        row.setWbStr(trimToEmpty(item.getWbStr()));
                     } else {
                         row.setWbStr(SearchCodeUtil.toWbStr(row.getName()));
                     }
                 }
             } else {
                 if (pyProvided) {
-                    row.setPyStr(StringUtils.trimToEmpty(item.getPyStr()));
+                    row.setPyStr(trimToEmpty(item.getPyStr()));
                 }
                 if (wbProvided) {
-                    row.setWbStr(StringUtils.trimToEmpty(item.getWbStr()));
+                    row.setWbStr(trimToEmpty(item.getWbStr()));
                 }
             }
 
@@ -350,9 +348,10 @@ public class DeviceDefinitionDomainService {
 
                 // 业务分支处理。
                 if (target == null) {
-                    // 新增路径：初始化为启用。
+                    // 新增路径：初始化为启用；业务编码由领域层生成，忽略导入行 busNo（B.10.9）。
                     DeviceDefinition created = new DeviceDefinition();
-                    created.setBusNo(busNo);
+                    String generatedBusNo = this.generateBusNo();
+                    created.setBusNo(generatedBusNo);
                     created.setName(item.getName());
                     created.setMerchandiseName(item.getName());
                     created.setCategoryCode(item.getCategoryCode());
@@ -374,7 +373,7 @@ public class DeviceDefinitionDomainService {
                     created.refreshSearchCodeOnNameChanged();
                     created.refreshMerchandiseSearchCodes();
                     toSave.add(created);
-                    createdBusNos.add(busNo);
+                    createdBusNos.add(generatedBusNo);
                 } else {
                     // 已存在：由 overwrite 决定是否覆盖更新。
                     if (!Boolean.TRUE.equals(overwrite)) {
@@ -539,7 +538,7 @@ public class DeviceDefinitionDomainService {
      * 基于框架业务序列生成器生成器材业务编码。
      */
     private String generateBusNo() {
-        return businessSequenceService.getSeq(AggregateTypeConstants.DEVICE_DEFINITION, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
+        return businessSequenceService.getSeq(
+            AggregateTypeConstants.DEVICE_DEFINITION, BusinessSequenceConstants.CATALOG_DEFINITION_BUS_NO_SEQ_LENGTH);
     }
 }
-

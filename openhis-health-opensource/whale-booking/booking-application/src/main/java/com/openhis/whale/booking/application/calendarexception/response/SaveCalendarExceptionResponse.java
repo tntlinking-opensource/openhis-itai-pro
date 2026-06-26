@@ -10,5 +10,6 @@ import lombok.Setter;
 @Setter
 public class SaveCalendarExceptionResponse {
 
+    /** 日历例外主键。 */
     private Long id;
 }

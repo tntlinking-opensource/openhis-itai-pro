@@ -25,6 +25,7 @@ import com.openhis.health.domain.share.enums.PaymentStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 支付对账头读模型：支付单全貌（状态、金额、就诊、发票与医保结算串等）。
@@ -72,8 +73,8 @@ public class PaymentReconciliationQueryModel {
     private Long invoiceId;
     /** 账户主键。 */
     private Long accountId;
-    /** 医保结算 ID 列表序列化串。 */
-    private String ybSettleIds;
+    /** 医保结算凭证行。 */
+    private List<PaymentYbSettlementQueryModel> ybSettlements;
     /** 是否已完成医保清算标记。 */
     private Boolean ybClearFlag;
     /** 票据打印次数。 */

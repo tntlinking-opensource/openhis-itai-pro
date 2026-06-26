@@ -17,8 +17,10 @@
 
 package com.openhis.health.application.outpatient.doctorstation.diagnosis.mapper;
 
-import com.openhis.health.bridge.shared.diagnosis.DiagnosisJsonSnapshotParser;
-import com.openhis.health.bridge.shared.diagnosis.PatientHistoryCommonDiagnosisRow;
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
+import com.openhis.health.module.shared.diagnosis.DiagnosisJsonSnapshotParser;
+import com.openhis.health.module.shared.diagnosis.PatientHistoryCommonDiagnosisRow;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
@@ -391,7 +393,7 @@ public class DoctorStationDiagnosisMapperImpl implements DoctorStationDiagnosisM
             d.setRank(child.getDiagnosisSortNo());
             d.setDescription(child.getDiagnosisDesc());
             // 就诊诊断关联 med_type：未传时默认普通门诊（医保 med_type=11，BR-OP-DOD-010）。
-            String medTypeCode = StringUtils.trimToNull(child.getMedicalTypeCode());
+            String medTypeCode = trimToNull(child.getMedicalTypeCode());
             if (medTypeCode == null) {
                 medTypeCode = YbMedType.GENERAL_OUTPATIENT.getCode();
             } else if (EnumUtil.fromCode(YbMedType.class, medTypeCode) == null) {
@@ -400,6 +402,8 @@ public class DoctorStationDiagnosisMapperImpl implements DoctorStationDiagnosisM
             d.setMedType(medTypeCode);
             // 门诊就诊诊断类型固定为「门诊诊断」（ipt_dise_type_code=2，BR-OP-DOD-011）；不接受前端传入覆盖。
             d.setDiagTypeCode(IptPatientDiseaseDiagType.OUTPATIENT.getCode());
+            // IF-DOR-08 仅处理西医关联；中医病证组由 IF-DOR-32 专管。
+            d.setTcmFlag(Boolean.FALSE);
             diagnosisItems.add(d);
         }
         batchItem.setDiagnosisItems(diagnosisItems);

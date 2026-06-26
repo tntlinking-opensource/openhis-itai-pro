@@ -27,9 +27,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_account" (
     "status_enum" varchar(255),
     CONSTRAINT "adm_account_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_account IS '管理域 account';
-
 COMMENT ON COLUMN adm_account.id IS '主键';
 COMMENT ON COLUMN adm_account.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_account.created_at IS '创建时间';
@@ -45,12 +43,11 @@ COMMENT ON COLUMN adm_account.encounter_id IS 'encounter 标识';
 COMMENT ON COLUMN adm_account.type_code IS 'type 代码';
 COMMENT ON COLUMN adm_account.bus_no IS '业务流水号（新建必填）';
 COMMENT ON COLUMN adm_account.name IS '名称';
-COMMENT ON COLUMN adm_account.balance IS 'balance';
+COMMENT ON COLUMN adm_account.balance IS '余额';
 COMMENT ON COLUMN adm_account.billing_status_enum IS '结账状态（{ com.openhis.health.domain.share.enums.AccountBillingStatus#getCode()}）';
 COMMENT ON COLUMN adm_account.contract_no IS 'contract 编号';
 COMMENT ON COLUMN adm_account.yb_area_no IS 'ybArea 编号';
 COMMENT ON COLUMN adm_account.encounter_flag IS 'encounter 标志位';
-COMMENT ON COLUMN adm_account.insutype IS 'insutype';
+COMMENT ON COLUMN adm_account.insutype IS '险种类型';
 COMMENT ON COLUMN adm_account.default_flag IS 'default 标志位';
 COMMENT ON COLUMN adm_account.status_enum IS '账户主状态（有效/无效，{ com.openhis.health.domain.share.enums.PublicationStatus#getCode()}）';
-

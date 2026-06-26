@@ -11,9 +11,11 @@ import lombok.Setter;
 @Setter
 public class ListBookableServiceRequestsRequest {
 
+    /** 机构/科室主键。 */
     @NotNull
     private Long organizationId;
 
+    /** 就诊主键。 */
     @NotNull
     private Long encounterId;
 }

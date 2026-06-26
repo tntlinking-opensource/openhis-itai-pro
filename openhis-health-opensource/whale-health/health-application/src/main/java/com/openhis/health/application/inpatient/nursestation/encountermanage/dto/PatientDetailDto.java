@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.encountermanage.dto;
 
+import com.openhis.health.module.common.dto.nursestation.AdmissionVitalSignSubmitDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -34,6 +35,7 @@ import java.util.List;
 @Schema(description = "患者全景详情")
 public class PatientDetailDto extends PatientQueueItemDto {
 
+    /** 联系电话（{@code adm_patient.phone}，展示用）。 */
     @Schema(description = "联系电话")
     private String patientPhone;
 
@@ -44,4 +46,8 @@ public class PatientDetailDto extends PatientQueueItemDto {
     /** 参与者全角色列表。 */
     @Schema(description = "参与者全角色列表")
     private List<ParticipantDto> participants;
+
+    /** 入科时点入院体征（锚点 {@code adm_encounter.start_time}）。 */
+    @Schema(description = "入院体征回填块")
+    private AdmissionVitalSignSubmitDto admissionVitalSigns;
 }

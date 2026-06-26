@@ -26,12 +26,15 @@ import com.openhis.health.domain.administration.episodeofcare.entity.EpisodeOfCa
 import com.openhis.health.domain.administration.episodeofcare.entity.EpisodeOfCareEncounter;
 import com.openhis.health.domain.administration.episodeofcare.repository.EpisodeOfCareEncounterRepository;
 import com.openhis.health.domain.administration.episodeofcare.repository.EpisodeOfCareRepository;
+import com.openhis.health.domain.share.constants.AggregateTypeConstants;
+import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.EpisodeOfCareStatus;
 import com.openhis.health.domain.share.events.administration.episodeofcare.EpisodeOfCareCreatedEvent;
 import com.openhis.health.domain.share.events.administration.episodeofcare.EpisodeOfCareDomainEvents;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
+import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -48,19 +51,22 @@ public class EpisodeOfCareDomainService {
     private final EpisodeOfCareRepository repository;
     private final EpisodeOfCareEncounterRepository encounterRepository;
     private final IDomainEventPublisher domainEventPublisher;
+    private final BusinessSequenceService businessSequenceService;
 
 
     /**
      * 新建治疗周期（初始为未激活，状态为「计划中」语义）。
      *
-     * @param cmd 创建命令（患者、机构、业务号等）
+     * @param cmd 创建命令（患者、机构等；业务号由领域层按日采番）
      * @return 新建聚合主键
      */
     public Long createEpisodeOfCare(CreateEpisodeOfCareCommand cmd) {
         EpisodeOfCare row = new EpisodeOfCare();
         row.setPatientId(cmd.getPatientId());
         row.setOrganizationId(cmd.getOrganizationId());
-        row.setBusNo(cmd.getBusNo());
+        // 业务分支：治疗周期号为业务流水，按 EC 前缀与当日序号生成（B.10.9）。
+        row.setBusNo(businessSequenceService.getSeqByDay(
+            AggregateTypeConstants.EPISODE_OF_CARE, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         row.setStatusEnum(EpisodeOfCareStatus.PLANNED.getCode());
         row.setActiveFlag(Boolean.FALSE);
         row = repository.save(row);

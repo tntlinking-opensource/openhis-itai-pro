@@ -164,11 +164,10 @@ public interface DoctorStationTcmMapper {
      * 装配 IF-DOR-37 签发成功响应。
      *
      * @param prescriptionNoByGroupKey 方标识 → 处方号
-     * @param signCode                   批次签发码
      * @return 签发响应
      */
     SignTcmRxBatchResponse toSignTcmRxBatchResponse(
-        Map<String, String> prescriptionNoByGroupKey, String signCode);
+        Map<String, String> prescriptionNoByGroupKey);
 
     /**
      * 装配 IF-DOR-38 签退/删除响应。

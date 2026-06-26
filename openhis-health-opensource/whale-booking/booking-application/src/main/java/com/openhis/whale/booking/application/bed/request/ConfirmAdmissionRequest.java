@@ -11,8 +11,10 @@ import lombok.Setter;
 @Setter
 public class ConfirmAdmissionRequest {
 
+    /** 待确认预约主键。 */
     @NotNull
     private Long appointmentId;
 
+    /** 备注说明（可选）。 */
     private String reason;
 }

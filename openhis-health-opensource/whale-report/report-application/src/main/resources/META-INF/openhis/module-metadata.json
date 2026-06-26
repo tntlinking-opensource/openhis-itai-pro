@@ -7,7 +7,7 @@
     "reportDesign",
     "reportTemplate",
     "reportPrintLog",
-    "reportQuery",
+    "report",
     "reportExternalView",
     "reportPrintBinding"
   ]

@@ -21,7 +21,6 @@ import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
 import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
 import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.inpatient.pharmacy.returnmedicine.assembler.InpatientReturnMedicinePatientQueueAssembler;
 import com.openhis.health.application.inpatient.pharmacy.returnmedicine.dto.InpatientReturnPatientRowDto;
@@ -35,8 +34,6 @@ import com.openhis.health.application.inpatient.pharmacy.returnmedicine.response
 import com.openhis.health.application.inpatient.pharmacy.returnmedicine.response.InpatientReturnMedicineDetailResponse;
 import com.openhis.health.application.inpatient.pharmacy.returnmedicine.response.LoadInpatientReturnMedicineInitResponse;
 import com.openhis.health.application.inpatient.pharmacy.returnmedicine.response.PageInpatientReturnPatientResponse;
-import com.openhis.health.application.insurance.config.InsuranceCoordinationProperties;
-import com.openhis.health.application.insurance.inventory.MedicareInventoryUploadCoordinator;
 import com.openhis.health.module.querysupport.pharmacy.InpatientReturnMedicineDetailLoader;
 import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.module.querysupport.pharmacy.PharmacyEncounterQueueLoader;
@@ -57,7 +54,6 @@ import com.openhis.health.domain.medication.medicationdispense.service.Medicatio
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
-import com.openhis.health.domain.share.constants.InsuranceCoordinationConstants;
 import com.openhis.health.domain.share.constants.InpatientPharmacyReturnQueueTab;
 import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -71,14 +67,13 @@ import com.openhis.health.domain.workflow.inventoryitem.command.IncreaseQuantity
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.support.MedicationProductQuantityToSplitUnitConverter;
-import com.openhis.whale.chs.jilin.port.InventoryInsurancePort;
-import com.openhis.whale.chs.jilin.port.model.UploadAfterReturnCommand;
+import com.openhis.health.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.integration.insurance.inventory.command.InventoryUploadAfterReturnCommand;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -105,18 +100,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class InpatientPharmacyReturnMedicineAppService {
 
-    @Autowired(required = false)
-    private InventoryInsurancePort inventoryInsurancePort;
-
-    @Autowired(required = false)
-    private MedicareInventoryUploadCoordinator medicareInventoryUploadCoordinator;
-
-    private final InsuranceCoordinationProperties insuranceCoordinationProperties;
+    private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
     /** 写路径操作人门控（B.6.1.4）。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
-    /** 退药审计医务人员解析。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
+    /** 退药审计医务人员解析。 */
     /** 可操作药房/库房范围解析。 */
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     /** 会话科室解析，供病区候选加载。 */
@@ -157,7 +145,7 @@ public class InpatientPharmacyReturnMedicineAppService {
         LoadInpatientReturnMedicineInitRequest request) {
         try {
             // Gate：须登录后才能加载退药页元数据
-            currentOperatorResolver.requireOperatorId(
+            currentPractitionerResolver.requireOperatorId(
                 ErrorCodeConstants.EX_IPR_101_LOAD_FAILED,
                 "数据加载失败，请稍后重试");
             if (request == null) {
@@ -195,7 +183,7 @@ public class InpatientPharmacyReturnMedicineAppService {
                 request = new PageInpatientReturnPatientRequest();
             }
             // Gate：分页参数与登录校验
-            currentOperatorResolver.requireOperatorId(
+            currentPractitionerResolver.requireOperatorId(
                 ErrorCodeConstants.EX_IPR_102_QUERY_FAILED,
                 "列表加载失败，请稍后重试");
             validatePageInpatientReturnPatientRequest(request);
@@ -245,7 +233,7 @@ public class InpatientPharmacyReturnMedicineAppService {
         GetInpatientReturnMedicineDetailRequest request) {
         try {
             // Gate：须登录且 encounterId 必填
-            currentOperatorResolver.requireOperatorId(
+            currentPractitionerResolver.requireOperatorId(
                 ErrorCodeConstants.EX_IPR_103_DETAIL_FAILED,
                 "无法加载退药明细");
             if (request == null || request.getEncounterId() == null) {
@@ -279,7 +267,7 @@ public class InpatientPharmacyReturnMedicineAppService {
         if (request == null || request.getItems() == null || request.getItems().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.EX_IPR_301_ITEMS_EMPTY, "请选择要退药的药品");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.EX_IPR_301_ITEMS_EMPTY,
             "请选择要退药的药品");
         Long practitionerId = currentPractitionerResolver.findPractitionerIdOrNull();
@@ -365,18 +353,11 @@ public class InpatientPharmacyReturnMedicineAppService {
             return null;
         }
         try {
-            if (insuranceCoordinationProperties.isDispenseUploadAsyncEnabled()
-                && medicareInventoryUploadCoordinator != null) {
-                medicareInventoryUploadCoordinator.scheduleUploadIfEnabled(
-                    encounterId,
-                    dispenseIds,
-                    operatorId,
-                    InsuranceCoordinationConstants.DISPENSE_UPLOAD_KIND_RETURN);
-            } else if (inventoryInsurancePort != null) {
-                UploadAfterReturnCommand uploadCommand = new UploadAfterReturnCommand()
+            if (inventoryUploadExtension.isEnabled()) {
+                InventoryUploadAfterReturnCommand uploadCommand = new InventoryUploadAfterReturnCommand()
                     .setEncounterId(encounterId)
                     .setDispenseIds(dispenseIds);
-                inventoryInsurancePort.uploadAfterOutpatientReturn(uploadCommand);
+                inventoryUploadExtension.uploadAfterReturn(uploadCommand);
             }
         } catch (RuntimeException ex) {
             log.warn("医保进销存3506上传失败（本地住院退药已成功）", ex);

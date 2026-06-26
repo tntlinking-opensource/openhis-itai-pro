@@ -19,9 +19,7 @@ CREATE TABLE IF NOT EXISTS "public"."cus_condition_template" (
     "remark" varchar(255),
     CONSTRAINT "cus_condition_template_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE cus_condition_template IS '自定义 condition template';
-
 COMMENT ON COLUMN cus_condition_template.id IS '主键';
 COMMENT ON COLUMN cus_condition_template.tenant_id IS '租户标识';
 COMMENT ON COLUMN cus_condition_template.created_at IS '创建时间';
@@ -37,4 +35,3 @@ COMMENT ON COLUMN cus_condition_template.definition_id IS '诊断定义标识';
 COMMENT ON COLUMN cus_condition_template.binding_enum IS '绑定类型枚举';
 COMMENT ON COLUMN cus_condition_template.sort_weight IS '排序权重';
 COMMENT ON COLUMN cus_condition_template.remark IS '备注';
-

@@ -17,6 +17,9 @@
 
 package com.openhis.health.domain.share.enums;
 
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.whale.core.application.exception.BusinessException;
+
 /**
  * 供应请求单据类型：写表 {@code wkf_supply_request.type_enum} 的<strong>持久化身份白名单</strong>（当前 28 项）。
  *
@@ -77,11 +80,6 @@ public enum SupplyType implements EnumInterface {
     MEDICATION_SUMMARY_ORDER(0L, "MEDICATION_SUMMARY_ORDER", "药品汇总单", "", 27L, "MSO"),
     /** 科室耗材盘点。 */
     DEPT_DEVICE_STOCKTAKE(0L, "DEPT_DEVICE_STOCKTAKE", "科室耗材盘点单", "", 28L, "DDT");
-
-    /**
-     * 无法匹配本枚举白名单时，按日流水序号键使用的回退短码（与历史统一 {@code SQ} 前缀解耦，**不含** {@code SQ}）。
-     */
-    private static final String BUS_NO_SEQ_FALLBACK_KEY = "SR";
 
     /** 编码体系占位；当前各常量恒为 {@code 0L}，与术语扩展预留一致。 */
     private final Long codeSystemId;
@@ -151,12 +149,13 @@ public enum SupplyType implements EnumInterface {
      * <p>与 {@link com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService#getSeqByDay(String, int)}
      * 配合：返回本枚举声明的 {@link #busNoSeqKey}（若干大写字母，**不含** {@code SQ}），各 {@link SupplyType} 独立分桶递增。</p>
      *
-     * @param typeEnumCode 持久化码（{@link #getCode()}）；空白或无法匹配白名单时回退 {@code SR}
+     * @param typeEnumCode 持久化码（{@link #getCode()}）
      * @return 序号服务前缀，不得为空白
+     * @throws BusinessException 空白或无法匹配白名单时
      */
     public static String busNoSeqPrefixForTypeCode(String typeEnumCode) {
         if (typeEnumCode == null || typeEnumCode.isBlank()) {
-            return BUS_NO_SEQ_FALLBACK_KEY;
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "供应类型 type_enum 不能为空");
         }
         String trimmed = typeEnumCode.trim();
         // —— 线性扫描白名单：体量小且调用低频，避免维护平行 Map（B.4）。——
@@ -165,7 +164,8 @@ public enum SupplyType implements EnumInterface {
                 return t.busNoSeqKey;
             }
         }
-        return BUS_NO_SEQ_FALLBACK_KEY;
+        throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+            "未知的供应类型 type_enum：" + trimmed);
     }
 
     /**

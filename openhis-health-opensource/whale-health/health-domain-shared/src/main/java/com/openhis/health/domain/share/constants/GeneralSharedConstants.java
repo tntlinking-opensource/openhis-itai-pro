@@ -59,9 +59,24 @@ public interface GeneralSharedConstants {
     String COMMA = ",";
 
     /**
+     * 分号（多片段备注/文本 {@code split} 与写侧拼接共用）。
+     */
+    String SEMICOLON = ";";
+
+    /**
+     * 分号加空格（多片段备注拼接时的间隔符）。
+     */
+    String SEMICOLON_SPACE = "; ";
+
+    /**
      * 点
      */
     String POINT = ".";
+
+    /**
+     * 1（计数/次数等缺省整型字面量）。
+     */
+    Integer ONE = 1;
 
     /**
      * 3（用于字符串截位）
@@ -139,6 +154,16 @@ public interface GeneralSharedConstants {
     String AREA_CODE = "110101";
 
     /**
+     * 通用日期格式（前端字符串 ↔ 后端 LocalDate，如结账日、发药日展示）。
+     */
+    String DATE_DISPLAY_PATTERN = "yyyy-MM-dd";
+
+    /**
+     * 通用日期格式化器（预编译，避免重复创建）。
+     */
+    DateTimeFormatter DATE_DISPLAY_FORMATTER = DateTimeFormatter.ofPattern(DATE_DISPLAY_PATTERN);
+
+    /**
      * 通用时间格式（前端字符串 ↔ 后端 LocalDateTime）。
      */
     String DATE_TIME_PATTERN = "yyyy-MM-dd HH:mm:ss";
@@ -149,11 +174,51 @@ public interface GeneralSharedConstants {
     DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern(DATE_TIME_PATTERN);
 
     /**
+     * 导出文件名时间戳格式（紧凑 {@code yyyyMMddHHmmss}，无分隔符）。
+     */
+    String EXPORT_FILE_TIMESTAMP_PATTERN = "yyyyMMddHHmmss";
+
+    /**
+     * 导出文件名时间戳格式化器。
+     */
+    DateTimeFormatter EXPORT_FILE_TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern(EXPORT_FILE_TIMESTAMP_PATTERN);
+
+    /**
+     * 年月格式（医保累计等 {@code YearMonth} 传参，如 {@code 202506}）。
+     */
+    String YEAR_MONTH_PATTERN = "yyyyMM";
+
+    /**
+     * 年月格式化器。
+     */
+    DateTimeFormatter YEAR_MONTH_FORMATTER = DateTimeFormatter.ofPattern(YEAR_MONTH_PATTERN);
+
+    /**
      * ISO-8601 无时区本地日期时间格式化器（{@link DateTimeFormatter#ISO_LOCAL_DATE_TIME}，日期与时间以 {@code T} 分隔）。
      * <p>用于 API 字符串字段需与常见 JSON {@code LocalDateTime} 序列化形态对齐的场景（如医生站医嘱列表开立时刻 {@code authoredAt}）。</p>
      * <p>若产品契约固定为 {@code yyyy-MM-dd HH:mm:ss}（空格分隔），应使用 {@link #DATE_TIME_FORMATTER}，二者不可混用以免前端解析失败。</p>
      */
     DateTimeFormatter ISO_LOCAL_DATE_TIME_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+
+    /**
+     * 本地时间格式（仅时分，护理记录/体温单记录时间展示与解析）。
+     */
+    String TIME_HH_MM_PATTERN = "HH:mm";
+
+    /**
+     * 本地时间格式（时分秒，护理记录保存请求回落解析）。
+     */
+    String TIME_HH_MM_SS_PATTERN = "HH:mm:ss";
+
+    /**
+     * {@link #TIME_HH_MM_PATTERN} 预编译格式化器。
+     */
+    DateTimeFormatter TIME_HH_MM_FORMATTER = DateTimeFormatter.ofPattern(TIME_HH_MM_PATTERN);
+
+    /**
+     * {@link #TIME_HH_MM_SS_PATTERN} 预编译格式化器。
+     */
+    DateTimeFormatter TIME_HH_MM_SS_FORMATTER = DateTimeFormatter.ofPattern(TIME_HH_MM_SS_PATTERN);
 
     /**
      * 患者年龄整岁展示后缀，与数字拼接为「N岁」。

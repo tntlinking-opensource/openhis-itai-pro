@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.costdetail.response;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostDetailPresentationOptionDto;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -36,12 +37,12 @@ import java.util.List;
 public class LoadNurseStationCostDetailPageInitResponse {
 
     /** 默认查询开始日期（当日）。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     @Schema(description = "默认业务日期下界")
     private LocalDate dateFrom;
 
     /** 默认查询结束日期（当日）。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     /** 默认业务日期上界。 */
     @Schema(description = "默认业务日期上界")
     private LocalDate dateTo;

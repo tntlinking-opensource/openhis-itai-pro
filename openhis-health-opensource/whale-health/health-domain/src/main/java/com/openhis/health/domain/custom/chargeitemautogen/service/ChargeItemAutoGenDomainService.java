@@ -45,17 +45,18 @@ public class ChargeItemAutoGenDomainService {
      * 新增自动计费规则。
      *
      * @param command 新增命令
-     * @return 新建规则标识
+     * @return 新建规则主键（表 id）
      * @throws BusinessException 组合键冲突时
      *
-     * <p>Pre：应用层须先断言 {@code targetDefinitionId} 对应收费项定价存在。</p>
+     * <p>Pre：应用层须先断言 {@code chargeDefinitionId} 对应收费项定价存在。</p>
      */
     public Long createAutoGenRule(CreateAutoGenRuleCommand command) {
         ChargeItemAutoGen rule = new ChargeItemAutoGen();
         rule.setRuleName(command.getRuleName());
+        rule.setEncounterId(command.getEncounterId());
         rule.setTriggerSourceTable(command.getTriggerSourceTable());
         rule.setTriggerSourceId(command.getTriggerSourceId());
-        rule.setTargetDefinitionId(command.getTargetDefinitionId());
+        rule.setChargeDefinitionId(command.getChargeDefinitionId());
         rule.setPerformingOrgId(command.getPerformingOrgId());
         // 业务分支处理：数量缺省为 1。
         if (command.getQuantityValue() == null) {
@@ -71,7 +72,7 @@ public class ChargeItemAutoGenDomainService {
         }
         rule.setRemark(command.getRemark());
 
-        // 业务分支处理：默认状态 active（DM §6.1.1 缺省约定）。
+        // 业务分支处理：默认状态 ACTIVE（DM §6.1.1 缺省约定）。
         if (command.getStatusEnum() == null) {
             rule.initActiveStatus();
         } else {
@@ -80,11 +81,12 @@ public class ChargeItemAutoGenDomainService {
 
         rule.assertRequiredFields();
 
-        boolean exists = repository.existsByTriggerSourceTableAndTriggerSourceIdAndPerformingOrgIdAndTargetDefinitionId(
+        boolean exists = repository.existsByEncounterIdAndTriggerSourceTableAndTriggerSourceIdAndPerformingOrgIdAndChargeDefinitionId(
+            rule.getEncounterId(),
             rule.getTriggerSourceTable(),
             rule.getTriggerSourceId(),
             rule.getPerformingOrgId(),
-            rule.getTargetDefinitionId()
+            rule.getChargeDefinitionId()
         );
         // 业务分支处理：组合键冲突时抛异常。
         if (exists) {
@@ -99,7 +101,7 @@ public class ChargeItemAutoGenDomainService {
             CustomConstants.ChargeItemAutoGenOperation.OP_CREATE,
             saved.getTriggerSourceTable(),
             saved.getTriggerSourceId(),
-            saved.getTargetDefinitionId()
+            saved.getChargeDefinitionId()
         , command.getOperatorId()));
         return saved.getId();
     }
@@ -112,14 +114,15 @@ public class ChargeItemAutoGenDomainService {
      */
     public void updateAutoGenRule(UpdateAutoGenRuleCommand command) {
         // Pre：校验目标行存在且未软删（BR-CAG-003/010）。
-        ChargeItemAutoGen rule = repository.findById(command.getRuleId())
-            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_NOT_FOUND, "规则不存在"));
-
-        rule.assertEditable();
+        ChargeItemAutoGen rule = loadMutableRule(command.getRuleId());
 
         // 业务分支处理：规则名称变更。
         if (command.getRuleName() != null) {
             rule.setRuleName(command.getRuleName());
+        }
+        // 业务分支处理：住院就诊变更。
+        if (command.getEncounterId() != null) {
+            rule.setEncounterId(command.getEncounterId());
         }
         // 业务分支处理：触发源表变更。
         if (command.getTriggerSourceTable() != null) {
@@ -130,8 +133,8 @@ public class ChargeItemAutoGenDomainService {
             rule.setTriggerSourceId(command.getTriggerSourceId());
         }
         // 业务分支处理：目标定价变更。
-        if (command.getTargetDefinitionId() != null) {
-            rule.setTargetDefinitionId(command.getTargetDefinitionId());
+        if (command.getChargeDefinitionId() != null) {
+            rule.setChargeDefinitionId(command.getChargeDefinitionId());
         }
         // 业务分支处理：执行科室标识变更。
         if (command.getPerformingOrgId() != null) {
@@ -152,11 +155,12 @@ public class ChargeItemAutoGenDomainService {
 
         rule.assertRequiredFields();
 
-        boolean exists = repository.existsByTriggerSourceTableAndTriggerSourceIdAndPerformingOrgIdAndTargetDefinitionIdAndIdNot(
+        boolean exists = repository.existsByEncounterIdAndTriggerSourceTableAndTriggerSourceIdAndPerformingOrgIdAndChargeDefinitionIdAndIdNot(
+            rule.getEncounterId(),
             rule.getTriggerSourceTable(),
             rule.getTriggerSourceId(),
             rule.getPerformingOrgId(),
-            rule.getTargetDefinitionId(),
+            rule.getChargeDefinitionId(),
             rule.getId()
         );
         // 业务分支处理：组合键冲突时抛异常。
@@ -172,7 +176,7 @@ public class ChargeItemAutoGenDomainService {
             CustomConstants.ChargeItemAutoGenOperation.OP_UPDATE,
             saved.getTriggerSourceTable(),
             saved.getTriggerSourceId(),
-            saved.getTargetDefinitionId()
+            saved.getChargeDefinitionId()
         , command.getOperatorId()));
     }
 
@@ -184,8 +188,7 @@ public class ChargeItemAutoGenDomainService {
      */
     public void deleteAutoGenRule(DeleteAutoGenRuleCommand command) {
         // Pre：校验目标行存在且未软删（BR-CAG-010）。
-        ChargeItemAutoGen rule = repository.findById(command.getRuleId())
-            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_NOT_FOUND, "规则不存在"));
+        ChargeItemAutoGen rule = loadMutableRule(command.getRuleId());
 
         rule.markDeleted();
 
@@ -197,20 +200,19 @@ public class ChargeItemAutoGenDomainService {
             CustomConstants.ChargeItemAutoGenOperation.OP_DELETE,
             saved.getTriggerSourceTable(),
             saved.getTriggerSourceId(),
-            saved.getTargetDefinitionId()
+            saved.getChargeDefinitionId()
         , command.getOperatorId()));
     }
 
     /**
-     * 启用自动计费规则（retired -> active）。
+     * 启用自动计费规则（INACTIVE -> ACTIVE）。
      *
      * @param command 启用命令
      * @throws BusinessException 规则不存在或状态不允许启用时
      */
     public void activateAutoGenRule(ActivateAutoGenRuleCommand command) {
         // Pre：校验目标行存在且未软删（BR-CAG-003/010）。
-        ChargeItemAutoGen rule = repository.findById(command.getRuleId())
-            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_NOT_FOUND, "规则不存在"));
+        ChargeItemAutoGen rule = loadMutableRule(command.getRuleId());
 
         rule.activate();
 
@@ -222,20 +224,19 @@ public class ChargeItemAutoGenDomainService {
             CustomConstants.ChargeItemAutoGenOperation.OP_STATUS_CHANGE,
             saved.getTriggerSourceTable(),
             saved.getTriggerSourceId(),
-            saved.getTargetDefinitionId()
+            saved.getChargeDefinitionId()
         , command.getOperatorId()));
     }
 
     /**
-     * 停用自动计费规则（active -> retired）。
+     * 停用自动计费规则（ACTIVE -> INACTIVE）。
      *
      * @param command 停用命令
      * @throws BusinessException 规则不存在或状态不允许停用时
      */
     public void suspendAutoGenRule(SuspendAutoGenRuleCommand command) {
         // Pre：校验目标行存在且未软删（BR-CAG-003/010）。
-        ChargeItemAutoGen rule = repository.findById(command.getRuleId())
-            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_NOT_FOUND, "规则不存在"));
+        ChargeItemAutoGen rule = loadMutableRule(command.getRuleId());
 
         rule.suspend();
 
@@ -247,7 +248,20 @@ public class ChargeItemAutoGenDomainService {
             CustomConstants.ChargeItemAutoGenOperation.OP_STATUS_CHANGE,
             saved.getTriggerSourceTable(),
             saved.getTriggerSourceId(),
-            saved.getTargetDefinitionId()
+            saved.getChargeDefinitionId()
         , command.getOperatorId()));
+    }
+
+    /**
+     * 加载可变更的规则行：须存在、未软删，且非 DISCARDED 终态。
+     */
+    private ChargeItemAutoGen loadMutableRule(Long ruleId) {
+        ChargeItemAutoGen rule = repository.findById(ruleId)
+            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_NOT_FOUND, "规则不存在"));
+        if (Boolean.TRUE.equals(rule.getIsDeleted())) {
+            throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_NOT_FOUND, "规则不存在");
+        }
+        rule.assertEditable();
+        return rule;
     }
 }

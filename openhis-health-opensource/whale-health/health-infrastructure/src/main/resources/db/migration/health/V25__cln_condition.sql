@@ -37,9 +37,7 @@ CREATE TABLE IF NOT EXISTS "public"."cln_condition" (
     "encounter_id" int8,
     CONSTRAINT "cln_condition_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE cln_condition IS '临床 condition';
-
 COMMENT ON COLUMN cln_condition.id IS '主键';
 COMMENT ON COLUMN cln_condition.tenant_id IS '租户标识';
 COMMENT ON COLUMN cln_condition.created_at IS '创建时间';
@@ -50,27 +48,26 @@ COMMENT ON COLUMN cln_condition.is_deleted IS '软删标记';
 COMMENT ON COLUMN cln_condition.deleted_at IS '删除时间';
 COMMENT ON COLUMN cln_condition.deleted_by IS '删除人';
 COMMENT ON COLUMN cln_condition.version IS '乐观锁版本号';
-COMMENT ON COLUMN cln_condition.verification_status_enum IS 'verification status enum';
-COMMENT ON COLUMN cln_condition.clinical_status_enum IS 'clinical status enum';
-COMMENT ON COLUMN cln_condition.category_enum IS 'category enum';
-COMMENT ON COLUMN cln_condition.severity_enum IS 'severity enum';
-COMMENT ON COLUMN cln_condition.bus_no IS 'bus no';
-COMMENT ON COLUMN cln_condition.body_site_json IS 'body site json';
-COMMENT ON COLUMN cln_condition.body_structure_id IS 'body structure id';
-COMMENT ON COLUMN cln_condition.patient_id IS 'patient id';
-COMMENT ON COLUMN cln_condition.description IS 'description';
-COMMENT ON COLUMN cln_condition.onset_datetime IS 'onset datetime';
-COMMENT ON COLUMN cln_condition.onset_age IS 'onset age';
-COMMENT ON COLUMN cln_condition.onset_text IS 'onset text';
-COMMENT ON COLUMN cln_condition.abatement_datetime IS 'abatement datetime';
-COMMENT ON COLUMN cln_condition.abatement_age IS 'abatement age';
-COMMENT ON COLUMN cln_condition.abatement_string IS 'abatement string';
-COMMENT ON COLUMN cln_condition.recorded_datetime IS 'recorded datetime';
-COMMENT ON COLUMN cln_condition.recorder_id IS 'recorder id';
-COMMENT ON COLUMN cln_condition.stage_summary_text IS 'stage summary text';
-COMMENT ON COLUMN cln_condition.evidence IS 'evidence';
-COMMENT ON COLUMN cln_condition.yb_no IS 'yb no';
-COMMENT ON COLUMN cln_condition.definition_id IS 'definition id';
-COMMENT ON COLUMN cln_condition.tcm_flag IS 'tcm flag';
+COMMENT ON COLUMN cln_condition.verification_status_enum IS 'verification状态枚举值';
+COMMENT ON COLUMN cln_condition.clinical_status_enum IS 'clinical状态枚举值';
+COMMENT ON COLUMN cln_condition.category_enum IS 'category枚举值';
+COMMENT ON COLUMN cln_condition.severity_enum IS 'severity枚举值';
+COMMENT ON COLUMN cln_condition.bus_no IS '业务编号';
+COMMENT ON COLUMN cln_condition.body_site_json IS '身体siteJSON';
+COMMENT ON COLUMN cln_condition.body_structure_id IS '身体结构标识';
+COMMENT ON COLUMN cln_condition.patient_id IS '患者标识';
+COMMENT ON COLUMN cln_condition.description IS '描述';
+COMMENT ON COLUMN cln_condition.onset_datetime IS '发病时间';
+COMMENT ON COLUMN cln_condition.onset_age IS '发病年龄';
+COMMENT ON COLUMN cln_condition.onset_text IS 'onset文本';
+COMMENT ON COLUMN cln_condition.abatement_datetime IS '缓解时间';
+COMMENT ON COLUMN cln_condition.abatement_age IS '缓解年龄';
+COMMENT ON COLUMN cln_condition.abatement_string IS '缓解描述';
+COMMENT ON COLUMN cln_condition.recorded_datetime IS '记录datetime';
+COMMENT ON COLUMN cln_condition.recorder_id IS '记录人标识';
+COMMENT ON COLUMN cln_condition.stage_summary_text IS 'stagesummary文本';
+COMMENT ON COLUMN cln_condition.evidence IS '临床证据';
+COMMENT ON COLUMN cln_condition.yb_no IS '医保编号';
+COMMENT ON COLUMN cln_condition.definition_id IS '定义标识';
+COMMENT ON COLUMN cln_condition.tcm_flag IS 'tcm标志位';
 COMMENT ON COLUMN cln_condition.encounter_id IS '诊断记录聚合根';
-

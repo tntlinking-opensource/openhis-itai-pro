@@ -20,7 +20,7 @@ package com.openhis.whale.emr.application.metadata.support;
 import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import com.openhis.whale.emr.domain.entity.Document;
 import com.openhis.whale.emr.domain.entity.DocumentType;
-import com.openhis.whale.emr.domain.port.metadata.EmrMetadataContextPort;
+import com.openhis.whale.emr.contracts.reader.EmrHealthMetadataReader;
 import com.openhis.whale.emr.domain.service.DocumentManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -41,26 +41,26 @@ public class EmrMetadataContextBuilder {
     private static final DateTimeFormatter DATETIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final DocumentManager documentManager;
-    private final EmrMetadataContextPort metadataContextPort;
+    private final EmrHealthMetadataReader healthMetadataReader;
     private final ICurrentUser currentUser;
 
     public EmrMetadataContextBuilder(
             DocumentManager documentManager,
-            @Autowired(required = false) EmrMetadataContextPort metadataContextPort,
+            @Autowired(required = false) EmrHealthMetadataReader healthMetadataReader,
             @Autowired(required = false) ICurrentUser currentUser) {
         this.documentManager = documentManager;
-        this.metadataContextPort = metadataContextPort;
+        this.healthMetadataReader = healthMetadataReader;
         this.currentUser = currentUser;
     }
 
     public Map<String, String> build(String patientId, String encounterId, Long documentId) {
         Map<String, String> ctx = new HashMap<>();
-        if (metadataContextPort != null) {
+        if (healthMetadataReader != null) {
             if (StringUtils.hasText(patientId)) {
-                metadataContextPort.contributePatient(ctx, patientId);
+                healthMetadataReader.contributePatient(ctx, patientId);
             }
             if (StringUtils.hasText(encounterId)) {
-                metadataContextPort.contributeEncounter(ctx, encounterId);
+                healthMetadataReader.contributeEncounter(ctx, encounterId);
             }
         }
         contributeDocument(ctx, documentId);
@@ -105,8 +105,8 @@ public class EmrMetadataContextBuilder {
         if (currentUser.getCurrentPractitionerId() != null) {
             Long practitionerId = currentUser.getCurrentPractitionerId();
             put(ctx, "user.practitionerId", String.valueOf(practitionerId));
-            if (metadataContextPort != null) {
-                metadataContextPort.contributePractitioner(ctx, practitionerId);
+            if (healthMetadataReader != null) {
+                healthMetadataReader.contributePractitioner(ctx, practitionerId);
             }
         }
     }

@@ -97,8 +97,8 @@ public class PaymentReconciliation extends BaseAuditedEntity {
     /** contract 编号。 */
     @Column(name = "contract_no")
     private String contractNo;
-    /** chargeItemIds。 */
-    @Column(name = "charge_item_ids", nullable = false)
+    /** chargeItemIds（TEXT；历史 varchar(255) 已在 V94 扩容，避免 Snowflake 主键拼接截断）。 */
+    @Column(name = "charge_item_ids", nullable = false, columnDefinition = "TEXT")
     private String chargeItemIds;
     /** encounter 标识。 */
     @Column(name = "encounter_id", nullable = false)
@@ -112,12 +112,13 @@ public class PaymentReconciliation extends BaseAuditedEntity {
     /** account 标识。 */
     @Column(name = "account_id")
     private Long accountId;
-    /** ybSettleIds。 */
-    @Column(name = "yb_settle_ids")
-    private String ybSettleIds;
     /** ybClear 标志位。 */
     @Column(name = "yb_clear_flag")
     private Boolean ybClearFlag;
+
+    /** 收费员交账头标识；非空表示已交账。 */
+    @Column(name = "cashier_settlement_id")
+    private Long cashierSettlementId;
 
     /**
       * 断言业务前置条件满足。
@@ -238,5 +239,22 @@ public class PaymentReconciliation extends BaseAuditedEntity {
             && !PaymentStatus.PARTIAL_REFUNDED.equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_STATUS, "仅成功或部分退款状态可进入退款受理");
         }
+    }
+
+    /**
+     * 挂载到指定交账头；已挂载则拒绝（并发交账防护，BR-CS-008）。
+     *
+     * @param settlementId 交账头主键
+     * @throws BusinessException 交账头为空或 payment 已被其它批次挂载
+     */
+    public void attachCashierSettlement(Long settlementId) {
+        if (settlementId == null) {
+            throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "交账头标识不能为空");
+        }
+        // 已挂载表示另一交账批次已归档，禁止重复纳入
+        if (this.cashierSettlementId != null) {
+            throw new BusinessException(ErrorCodeConstants.CASHIER_SETTLEMENT_CONCURRENT_CONFLICT, "支付流水已被交账，请刷新后重试");
+        }
+        this.cashierSettlementId = settlementId;
     }
 }

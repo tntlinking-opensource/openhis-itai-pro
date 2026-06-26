@@ -18,6 +18,7 @@
 package com.openhis.health.application.inpatient.doctorstation.diagnosis.response;
 
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
+import com.openhis.health.module.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -27,7 +28,7 @@ import java.util.List;
 /**
  * IF-IP-DOR-02：当前住院就诊诊断列表响应（AS-IP-DOR-002）。
  *
- * <p>数据来自 {@link BridgeEncounterDiagnosisSnapshotAssembler} 实时扫表装配后经 Mapper 解析，非读模型 JSON 透传；{@code totalCount} 与列表长度一致。</p>
+ * <p>数据来自 {@link EncounterDiagnosisSnapshotAssembler} 实时扫表装配后经 Mapper 解析，非读模型 JSON 透传；{@code totalCount} 与列表长度一致。</p>
  */
 @Data
 @Accessors(chain = true)

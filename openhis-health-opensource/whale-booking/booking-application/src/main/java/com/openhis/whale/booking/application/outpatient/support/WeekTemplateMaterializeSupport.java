@@ -155,7 +155,11 @@ public class WeekTemplateMaterializeSupport {
         ProvisionSlotBatchRequest batchRequest = new ProvisionSlotBatchRequest();
         batchRequest.setScheduleId(scheduleId);
         batchRequest.setOrganizationId(organizationId);
-        batchRequest.setReleasePolicyId(releasePolicy != null ? releasePolicy.getId() : null);
+        if (releasePolicy != null) {
+            batchRequest.setReleasePolicyId(releasePolicy.getId());
+        } else {
+            batchRequest.setReleasePolicyId(null);
+        }
         batchRequest.setSlotTemplates(templates);
         ProvisionSlotBatchCommand command = outpatientScheduleMapper.toProvisionSlotBatchCommand(batchRequest, operatorId);
         slotDomainService.provisionSlotBatch(command);

@@ -17,6 +17,8 @@
 
 package com.openhis.whale.emr.application.metadataField.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,7 +45,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.validation.annotation.Validated;
 
@@ -163,7 +164,6 @@ public class MetadataFieldAppService {
      * @return 持久化后的字段定义
      * @throws ValidationException fieldKey 重复或定义不合法
      */
-    @Transactional(rollbackFor = Exception.class)
     public MetadataFieldDto create(@Valid CreateMetadataFieldRequest request) {
         // Gate：请求非空；fieldKey 格式与唯一性；valueSource 定义合法
         if (request == null) {
@@ -214,7 +214,6 @@ public class MetadataFieldAppService {
      * @param request 含 id 与待更新字段
      * @return 更新后的字段定义
      */
-    @Transactional(rollbackFor = Exception.class)
     public MetadataFieldDto update(@Valid UpdateMetadataFieldRequest request) {
         // Gate：主键必填
         if (request == null || request.getId() == null) {
@@ -273,7 +272,6 @@ public class MetadataFieldAppService {
      * @param request 含字段 id
      * @throws ValidationException 字段仍被模板引用
      */
-    @Transactional(rollbackFor = Exception.class)
     public void delete(@Valid DeleteMetadataFieldRequest request) {
         // Gate：主键必填
         if (request == null || request.getId() == null) {
@@ -424,12 +422,5 @@ public class MetadataFieldAppService {
             return maskRule.trim().toUpperCase();
         }
         return "NONE";
-    }
-
-    private static String trimToNull(String value) {
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-        return value.trim();
     }
 }

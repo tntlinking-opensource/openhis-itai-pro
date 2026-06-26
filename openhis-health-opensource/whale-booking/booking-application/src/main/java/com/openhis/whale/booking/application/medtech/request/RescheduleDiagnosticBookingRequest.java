@@ -11,11 +11,14 @@ import lombok.Setter;
 @Setter
 public class RescheduleDiagnosticBookingRequest {
 
+    /** 待改约预约主键。 */
     @NotNull
     private Long appointmentId;
 
+    /** 目标号源主键。 */
     @NotNull
     private Long newSlotId;
 
+    /** 去向地点（可选）。 */
     private Long destinationLocationId;
 }

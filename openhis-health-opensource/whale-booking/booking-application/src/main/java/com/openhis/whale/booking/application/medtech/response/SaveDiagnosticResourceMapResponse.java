@@ -10,5 +10,6 @@ import lombok.Setter;
 @Setter
 public class SaveDiagnosticResourceMapResponse {
 
+    /** 映射主键。 */
     private Long id;
 }

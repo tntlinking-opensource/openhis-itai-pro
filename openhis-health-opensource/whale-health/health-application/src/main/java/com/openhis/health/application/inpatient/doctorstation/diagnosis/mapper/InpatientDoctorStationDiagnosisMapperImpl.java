@@ -17,7 +17,9 @@
 
 package com.openhis.health.application.inpatient.doctorstation.diagnosis.mapper;
 
-import com.openhis.health.bridge.shared.diagnosis.DiagnosisJsonSnapshotParser;
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
+import com.openhis.health.module.shared.diagnosis.DiagnosisJsonSnapshotParser;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
@@ -78,7 +80,7 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
     /**
      * 构造：注入诊断快照 JSON 解析器。
      *
-     * @param diagnosisJsonSnapshotParser 与 {@code bridge.shared.diagnosis} 共用的解析组件
+     * @param diagnosisJsonSnapshotParser 与 {@code module.shared.diagnosis} 共用的解析组件
      */
     public InpatientDoctorStationDiagnosisMapperImpl(DiagnosisJsonSnapshotParser diagnosisJsonSnapshotParser) {
         this.diagnosisJsonSnapshotParser = diagnosisJsonSnapshotParser;
@@ -448,14 +450,16 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
             d.setRank(child.getDiagnosisSortNo());
             d.setDescription(child.getDiagnosisDesc());
             // 就诊诊断关联 med_type：未传时默认普通门诊（医保 med_type=11）；住院 diag_type_code 仍由 iptDiseaseTypeCode 写入。
-            String medTypeCode = StringUtils.trimToNull(child.getMedicalTypeCode());
+            String medTypeCode = trimToNull(child.getMedicalTypeCode());
             if (medTypeCode == null) {
                 medTypeCode = YbMedType.GENERAL_OUTPATIENT.getCode();
             } else if (EnumUtil.fromCode(YbMedType.class, medTypeCode) == null) {
                 throw new BusinessException(ErrorCodeConstants.CONDITION_INVALID_ARGUMENT, "请重新选择医疗类别");
             }
             d.setMedType(medTypeCode);
-            d.setDiagTypeCode(StringUtils.trimToNull(child.getIptDiseaseTypeCode()));
+            d.setDiagTypeCode(trimToNull(child.getIptDiseaseTypeCode()));
+            // IF-IP-DOR-05 仅处理西医关联；中医病证组由 IF-IP-TCM-32 专管。
+            d.setTcmFlag(Boolean.FALSE);
             diagnosisItems.add(d);
         }
         batchItem.setDiagnosisItems(diagnosisItems);
@@ -665,7 +669,7 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
             if (child == null) {
                 continue;
             }
-            String typeCode = StringUtils.trimToNull(child.getIptDiseaseTypeCode());
+            String typeCode = trimToNull(child.getIptDiseaseTypeCode());
             if (typeCode == null) {
                 continue;
             }

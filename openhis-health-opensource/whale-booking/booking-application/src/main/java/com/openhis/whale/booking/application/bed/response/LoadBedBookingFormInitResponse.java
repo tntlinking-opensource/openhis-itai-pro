@@ -14,5 +14,6 @@ import java.util.List;
 @Setter
 public class LoadBedBookingFormInitResponse {
 
+    /** 病区选项列表。 */
     private List<OptionDto> wards = new ArrayList<>();
 }

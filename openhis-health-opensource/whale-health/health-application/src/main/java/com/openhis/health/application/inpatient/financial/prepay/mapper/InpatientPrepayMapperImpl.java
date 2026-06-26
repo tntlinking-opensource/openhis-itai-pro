@@ -17,6 +17,8 @@
 
 package com.openhis.health.application.inpatient.financial.prepay.mapper;
 
+import static com.openhis.whale.core.application.util.StringUtils.firstNonBlank;
+
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayPaymentDetailDto;
 import com.openhis.health.module.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
@@ -27,6 +29,7 @@ import com.openhis.health.application.inpatient.financial.prepay.request.Collect
 import com.openhis.health.application.inpatient.financial.prepay.request.PagePrepayPatientQueueRequest;
 import com.openhis.health.application.inpatient.financial.prepay.request.RefundPrepayAdvanceDepositRequest;
 import com.openhis.health.application.inpatient.financial.prepay.response.CollectPrepayAdvanceDepositResponse;
+import com.openhis.health.application.inpatient.financial.prepay.response.LoadInpatientPrepayPageInitResponse;
 import com.openhis.health.application.inpatient.financial.prepay.response.PagePrepayPatientQueueResponse;
 import com.openhis.health.application.inpatient.financial.prepay.response.RefundPrepayAdvanceDepositResponse;
 import com.openhis.health.domain.administration.account.command.AdjustAdvanceDepositBalanceCommand;
@@ -44,6 +47,7 @@ import com.openhis.health.domain.share.enums.PaymentKind;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.health.domain.share.enums.PaymentType;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -58,6 +62,20 @@ import java.util.Map;
  */
 @Component
 public class InpatientPrepayMapperImpl implements InpatientPrepayMapper {
+
+    /**
+     * 装配预交金页初始化响应。
+     *
+     * @param paymentChannelOptions 用户可选支付渠道下拉
+     * @return 初始化响应
+     */
+    @Override
+    public LoadInpatientPrepayPageInitResponse toLoadInpatientPrepayPageInitResponse(
+        List<OptionDto> paymentChannelOptions) {
+        LoadInpatientPrepayPageInitResponse response = new LoadInpatientPrepayPageInitResponse();
+        response.setPaymentChannelOptions(paymentChannelOptions);
+        return response;
+    }
 
     /**
      * 队列分页请求 → 住院信息读模型分页查询。
@@ -87,8 +105,7 @@ public class InpatientPrepayMapperImpl implements InpatientPrepayMapper {
     public PrepayQueueItemDto toPrepayQueueItemDto(
         InpatientEncounterContextQueryModel contextRow,
         Account account,
-        InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay displayOverlay,
-        BigDecimal chargedOccupancyTotal) {
+        InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay displayOverlay) {
         if (contextRow == null) {
             return null;
         }
@@ -117,43 +134,23 @@ public class InpatientPrepayMapperImpl implements InpatientPrepayMapper {
         PrepayQueueItemDto dto = new PrepayQueueItemDto();
         dto.setEncounterId(contextRow.getEncounterId());
         dto.setPatientId(contextRow.getPatientId());
-        dto.setEncounterBusNo(this.firstNonBlank(contextRow.getEncounterBusNo(), overlayBusNo));
-        dto.setPatientName(this.firstNonBlank(contextRow.getPatientName(), overlayPatientName));
-        String genderCode = this.firstNonBlank(contextRow.getGenderEnum(), overlayGenderEnum);
+        dto.setEncounterBusNo(firstNonBlank(contextRow.getEncounterBusNo(), overlayBusNo));
+        dto.setPatientName(firstNonBlank(contextRow.getPatientName(), overlayPatientName));
+        String genderCode = firstNonBlank(contextRow.getGenderEnum(), overlayGenderEnum);
         dto.setGenderEnum(genderCode);
         AdministrativeGender gender = EnumUtil.fromCode(AdministrativeGender.class, genderCode);
         if (gender != null) {
             dto.setGenderEnumText(gender.getDisplay());
         }
-        dto.setAgeText(this.firstNonBlank(contextRow.getAgeText(), overlayAgeText));
-        dto.setOrganizationName(this.firstNonBlank(contextRow.getOrganizationName(), overlayOrgName));
-        dto.setWardName(this.firstNonBlank(contextRow.getWardName(), overlayWardName));
-        dto.setBedName(this.firstNonBlank(contextRow.getBedName(), overlayBedName));
+        dto.setAgeText(firstNonBlank(contextRow.getAgeText(), overlayAgeText));
+        dto.setOrganizationName(firstNonBlank(contextRow.getOrganizationName(), overlayOrgName));
+        dto.setWardName(firstNonBlank(contextRow.getWardName(), overlayWardName));
+        dto.setBedName(firstNonBlank(contextRow.getBedName(), overlayBedName));
         dto.setStatusEnum(contextRow.getStatusEnum());
-        dto.setStatusEnumText(this.firstNonBlank(contextRow.getStatusEnumText(), overlayStatusText));
+        dto.setStatusEnumText(firstNonBlank(contextRow.getStatusEnumText(), overlayStatusText));
         dto.setStartTime(contextRow.getStartTime());
-        // Asm：展示余额 = 预交金净值 −（待结算 + 已结算占用）；PLANNED 待收费不扣减。
-        dto.setAccountBalance(
-            InpatientDisplayAccountBalanceAssembler.computeDisplayAccountBalance(account, chargedOccupancyTotal));
         dto.setContractDisplay(overlayContract);
         return dto;
-    }
-
-    /**
-     * 读模型原值优先，空白时回落展示覆盖。
-     *
-     * @param fromRow     读模型字段
-     * @param fromOverlay 覆盖回填
-     * @return 展示字符串或 null
-     */
-    private String firstNonBlank(String fromRow, String fromOverlay) {
-        if (fromRow != null && !fromRow.isBlank()) {
-            return fromRow;
-        }
-        if (fromOverlay != null && !fromOverlay.isBlank()) {
-            return fromOverlay;
-        }
-        return null;
     }
 
     /**
@@ -290,7 +287,6 @@ public class InpatientPrepayMapperImpl implements InpatientPrepayMapper {
         command.setPaymentId(paymentId);
         command.setOutcomeEnum(PaymentStatus.SUCCESS.getCode());
         command.setBillDate(LocalDateTime.now());
-        command.setYbSettleIds(null);
         return command;
     }
 

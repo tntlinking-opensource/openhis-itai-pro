@@ -47,4 +47,19 @@ public class SlotDetailDto {
 
     /** 备注。 */
     private String commentText;
+
+    /** 接诊医师（含替诊生效后医师）。 */
+    private Long practitionerId;
+
+    /** 号源类型（医疗服务）主键。 */
+    private Long healthcareServiceId;
+
+    /** 接诊医师展示名。 */
+    private String practitionerName;
+
+    /** 号源类型展示名。 */
+    private String healthcareServiceName;
+
+    /** 科室（机构）展示名。 */
+    private String organizationName;
 }

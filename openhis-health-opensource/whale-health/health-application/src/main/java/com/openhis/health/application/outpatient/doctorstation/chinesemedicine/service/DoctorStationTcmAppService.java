@@ -3,6 +3,8 @@
  */
 package com.openhis.health.application.outpatient.doctorstation.chinesemedicine.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
 import com.openhis.health.application.outpatient.doctorstation.advice.assembler.DoctorStationAdviceCatalogAssembler;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceCatalogRowDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.mapper.DoctorStationAdviceMapper;
@@ -13,7 +15,7 @@ import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.d
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.mapper.DoctorStationTcmMapper;
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.request.*;
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.response.*;
-import com.openhis.health.bridge.shared.diagnosis.BridgeEncounterDiagnosisSnapshotAssembler;
+import com.openhis.health.module.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemDomainService;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
@@ -42,11 +44,11 @@ import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
-import com.openhis.health.application.outpatient.doctorstation.support.OutpatientMedicationSignChargeSupport;
+import com.openhis.health.module.orchestration.advice.OutpatientMedicationSignChargeSupport;
 import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
 import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
 import com.openhis.health.module.common.validator.PageWindowGate;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.module.querysupport.order.OrderRequestFifoSignContextLoader;
 import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
@@ -60,7 +62,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.*;
@@ -77,7 +78,7 @@ import java.util.*;
 public class DoctorStationTcmAppService {
 
     /** 写路径操作人解析。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     /** 门诊就诊读模型门控。 */
     private final EncounterContextFacade encounterContextFacade;
     /** 中医 Tab 字段映射。 */
@@ -91,7 +92,7 @@ public class DoctorStationTcmAppService {
     /** 代煎费。 */
     private final TcmDecoctionAssembler decoctionFeeAssembler;
     /** 诊断快照。 */
-    private final BridgeEncounterDiagnosisSnapshotAssembler bridgeEncounterDiagnosisSnapshotAssembler;
+    private final EncounterDiagnosisSnapshotAssembler encounterDiagnosisSnapshotAssembler;
     /** 诊断定义分页。 */
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
     /** 诊断事实写。 */
@@ -167,7 +168,7 @@ public class DoctorStationTcmAppService {
             encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // Gate：患者与就诊须同属一次接诊
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
-        String diagnosisJson = bridgeEncounterDiagnosisSnapshotAssembler.buildSnapshot(request.getEncounterId()).diagnosisJson();
+        String diagnosisJson = encounterDiagnosisSnapshotAssembler.buildSnapshot(request.getEncounterId()).diagnosisJson();
         // Asm：按 tcm_syndrome_group 聚合一病一证
         List<TcmDiagnosisGroupRowDto> groups = diagnosisAssembler.groupTcmDiagnosisRows(request.getEncounterId(), diagnosisJson);
         return tcmMapper.toListTcmDiagnosisGroupsResponse(groups);
@@ -215,17 +216,16 @@ public class DoctorStationTcmAppService {
      * @param request 全量病证组批次；空组拒绝
      * @return 保存后的组号列表
      */
-    @Transactional(rollbackFor = Exception.class)
     public SaveTcmDiagnosisGroupsBatchResponse saveTcmDiagnosisGroupsBatch(SaveTcmDiagnosisGroupsBatchRequest request) {
         // Pre：门诊就诊快照
         OutpatientEncounterContextQueryModel snapshot =
             encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // Gate：患者就诊一致
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请先登录后再操作");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请先登录后再操作");
         // Gate：每组须 1 病 + 1 证，主诊组至多 1 个
         validateTcmDiagnosisBatch(request);
-        String diagnosisJson = bridgeEncounterDiagnosisSnapshotAssembler.buildSnapshot(request.getEncounterId()).diagnosisJson();
+        String diagnosisJson = encounterDiagnosisSnapshotAssembler.buildSnapshot(request.getEncounterId()).diagnosisJson();
         List<TcmDiagnosisGroupRowDto> existing = diagnosisAssembler.groupTcmDiagnosisRows(request.getEncounterId(), diagnosisJson);
         List<String> removedGroups = tcmMapper.diffRemovedTcmGroups(existing, request);
         // Cmd：全量 diff 后先删不在批次内的历史组
@@ -249,15 +249,14 @@ public class DoctorStationTcmAppService {
      * @param request 含 tcmSyndromeGroup、encounterId、patientId
      * @return 删除是否成功
      */
-    @Transactional(rollbackFor = Exception.class)
     public DeleteTcmDiagnosisGroupResponse deleteTcmDiagnosisGroup(DeleteTcmDiagnosisGroupRequest request) {
         // Pre：门诊就诊快照
         OutpatientEncounterContextQueryModel snapshot =
             encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // Gate：患者就诊一致
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请先登录后再操作");
-        String diagnosisJson = bridgeEncounterDiagnosisSnapshotAssembler.buildSnapshot(request.getEncounterId()).diagnosisJson();
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请先登录后再操作");
+        String diagnosisJson = encounterDiagnosisSnapshotAssembler.buildSnapshot(request.getEncounterId()).diagnosisJson();
         List<TcmDiagnosisGroupRowDto> existing = diagnosisAssembler.groupTcmDiagnosisRows(request.getEncounterId(), diagnosisJson);
         // Cmd：校验引用后删除组内关联与事实
         deleteTcmGroupInternal(request.getEncounterId(), request.getTcmSyndromeGroup(), existing, operatorId);
@@ -316,7 +315,6 @@ public class DoctorStationTcmAppService {
      * @param request 含 prescriptions、prescriptionGroupKey、病证组绑定
      * @return 新建药品申请 id 列表
      */
-    @Transactional(rollbackFor = Exception.class)
     public SaveTcmRxDraftBatchResponse saveTcmHerbalPrescriptionDraftBatch(
         SaveTcmRxDraftBatchRequest request) {
         // Pre：门诊就诊快照
@@ -324,7 +322,7 @@ public class DoctorStationTcmAppService {
             encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // Gate：患者就诊一致
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
         Long orgId = snapshot.getOrganizationId();
         // Pre：自费账户用于挂费用草稿
         Long accountId = accountQueryService.getSelfPayAccount(request.getEncounterId());
@@ -340,7 +338,7 @@ public class DoctorStationTcmAppService {
             }
             String contentJson = tcmMapper.buildHerbalContentJson(header);
             for (TcmRxDraftLineRequest line : header.getLines()) {
-                String op = StringUtils.upperCase(StringUtils.trimToEmpty(line.getLineOp()));
+                String op = StringUtils.upperCase(trimToEmpty(line.getLineOp()));
                 // 请求数量 = 单剂用量 × 付数（BR-TCM-RX-005）
                 BigDecimal quantity = line.getDose().multiply(header.getChineseHerbsDoseQuantity());
                 // Cmd：按 lineOp 三选一执行 CREATE / UPDATE / DELETE
@@ -376,16 +374,15 @@ public class DoctorStationTcmAppService {
      * IF-DOR-37：签发中药处方（按 prescriptionGroupKey 取号，禁止 splitPrescription）。
      *
      * @param request 含 signTargets（方标识 + 药品申请 id）
-     * @return 方标识 → 处方号、批次 signCode
+     * @return 方标识 → 处方号
      */
-    @Transactional(rollbackFor = Exception.class)
     public SignTcmRxBatchResponse signTcmHerbalPrescriptionBatch(SignTcmRxBatchRequest request) {
         // Pre：门诊就诊快照与自费账户
         OutpatientEncounterContextQueryModel snapshot =
             encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // Gate：患者就诊一致
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
         Long orgId = snapshot.getOrganizationId();
         Long accountId = accountQueryService.getSelfPayAccount(request.getEncounterId());
         if (accountId == null) {
@@ -412,7 +409,6 @@ public class DoctorStationTcmAppService {
         // Pre：按 key 取/复用 prescription_no（禁止 splitPrescription）
         Map<String, String> prescriptionNoByKey = prescriptionSignAssembler.resolvePrescriptionNoByGroupKey(
             request.getEncounterId(), groupKeyToIds);
-        String signCode = prescriptionSignAssembler.generateBatchSignCode();
         String rxTypeCode = prescriptionSignAssembler.deriveHerbalRxTypeCode(YbMedType.GENERAL_OUTPATIENT.getCode());
         // Cmd：签发前预写处方号与 rx_type_code
         for (SignTcmRxTargetRequest target : request.getSignTargets()) {
@@ -438,15 +434,18 @@ public class DoctorStationTcmAppService {
         for (Map.Entry<String, List<Long>> entry : groupKeyToIds.entrySet()) {
             MedicationRequestListQueryModel first = medicationRequestQueryService.getListModelById(entry.getValue().get(0));
             if (first != null && Boolean.TRUE.equals(first.getSufferingFlag())) {
+                // Cmd：方头代煎=是，签发 companion 代煎 SR 并按付数挂 PLANNED 费用
                 decoctionFeeAssembler.replacePlannedDecoctionCharge(
                     request.getEncounterId(), request.getPatientId(), accountId, orgId, operatorId,
-                    prescriptionNoByKey.get(entry.getKey()), first.getChineseHerbsDoseQuantity());
+                    prescriptionNoByKey.get(entry.getKey()), first.getChineseHerbsDoseQuantity(),
+                    first, entry.getValue().get(0));
             } else {
+                // Cmd：方头未勾选代煎，清理同处方号历史代煎 SR 与未计费费用
                 decoctionFeeAssembler.voidDecoctionChargeByPrescriptionNo(
-                    request.getEncounterId(), prescriptionNoByKey.get(entry.getKey()));
+                    request.getEncounterId(), prescriptionNoByKey.get(entry.getKey()), operatorId);
             }
         }
-        return tcmMapper.toSignTcmRxBatchResponse(prescriptionNoByKey, signCode);
+        return tcmMapper.toSignTcmRxBatchResponse(prescriptionNoByKey);
     }
 
     /**
@@ -455,7 +454,6 @@ public class DoctorStationTcmAppService {
      * @param request 含 action（WITHDRAW/DELETE）、scope、medicationRequestIds
      * @return 操作是否成功
      */
-    @Transactional(rollbackFor = Exception.class)
     public WithdrawOrDeleteTcmRxResponse withdrawOrDeleteTcmHerbalPrescription(
         WithdrawOrDeleteTcmRxRequest request) {
         // Pre：门诊就诊快照
@@ -463,7 +461,7 @@ public class DoctorStationTcmAppService {
             encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // Gate：患者就诊一致
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
-        Long operatorId = currentOperatorResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
         for (Long medReqId : request.getMedicationRequestIds()) {
             // Cmd：签退路径——费用回退、signOff、释放预占
             if (DoctorStationTcmConstants.ACTION_WITHDRAW.equals(request.getAction())) {
@@ -498,13 +496,14 @@ public class DoctorStationTcmAppService {
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "不支持的操作类型");
             }
         }
-        // Cmd：整方撤回时同步清理同处方号代煎费
+        // Cmd：整方撤回时同步清理同处方号代煎 companion SR 与费用
         if (DoctorStationTcmConstants.ACTION_WITHDRAW.equals(request.getAction())
             && DoctorStationTcmConstants.SCOPE_PRESCRIPTION.equals(request.getScope())
             && StringUtils.isNotBlank(request.getPrescriptionGroupKey())) {
             MedicationRequestListQueryModel row = medicationRequestQueryService.getListModelById(request.getMedicationRequestIds().get(0));
             if (row != null && StringUtils.isNotBlank(row.getPrescriptionNo())) {
-                decoctionFeeAssembler.voidDecoctionChargeByPrescriptionNo(request.getEncounterId(), row.getPrescriptionNo());
+                decoctionFeeAssembler.voidDecoctionChargeByPrescriptionNo(
+                    request.getEncounterId(), row.getPrescriptionNo(), operatorId);
             }
         }
         return tcmMapper.toWithdrawOrDeleteTcmRxResponse(Boolean.TRUE);

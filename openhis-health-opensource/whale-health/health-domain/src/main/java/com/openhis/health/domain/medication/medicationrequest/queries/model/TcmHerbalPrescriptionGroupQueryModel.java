@@ -26,7 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 就诊维度中药处方按方聚合读模型（IF-DOR-34 读侧真源）。
+ * 就诊维度中药处方按方聚合读模型（IF-DOR-34 / IF-IP-TCM-34 读侧真源）。
  */
 @Getter
 @Setter
@@ -51,6 +51,8 @@ public class TcmHerbalPrescriptionGroupQueryModel {
     private String remark;
     /** 处方类别编码。 */
     private String rxTypeCode;
+    /** 治疗类型枚举编码（方头口径，取组内首行 {@code therapy_enum}）。 */
+    private String therapyEnum;
     /** 方级展示状态（取组内行最高优先级状态）。 */
     private String statusEnum;
     /** 方级开立时间（取组内最早 {@code req_authored_time}）。 */

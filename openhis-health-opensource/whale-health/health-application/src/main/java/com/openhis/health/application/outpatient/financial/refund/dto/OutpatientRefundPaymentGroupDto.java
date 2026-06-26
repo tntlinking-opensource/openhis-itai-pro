@@ -87,4 +87,11 @@ public class OutpatientRefundPaymentGroupDto {
     @Schema(description = "应退展示金额")
     /** 应退展示金额（业务字段）。 */
     private BigDecimal refundableAmount;
+
+    /**
+     * 原支付落库渠道码（{@code fin_payment_rec_detail.pay_enum} 去重）；
+     * 供前端判定是否可能银联原路退，现金等仅含 {@code CASH} 时不查 BPC。
+     */
+    @Schema(description = "原支付落库渠道码列表")
+    private List<String> originalPayChannelCodes;
 }

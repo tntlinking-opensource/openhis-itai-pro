@@ -14,9 +14,11 @@ import lombok.Setter;
 @Setter
 public class ImportGroupCheckupRosterRequest {
 
+    /** 团检批次主键。 */
     @NotNull
     private Long batchId;
 
+    /** CSV 文本内容。 */
     @NotBlank
     private String csvContent;
 }

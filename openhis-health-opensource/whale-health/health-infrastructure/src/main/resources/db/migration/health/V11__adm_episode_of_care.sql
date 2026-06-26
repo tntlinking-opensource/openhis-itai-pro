@@ -24,9 +24,7 @@ CREATE TABLE IF NOT EXISTS "public"."adm_episode_of_care" (
     "end_time" timestamptz(6),
     CONSTRAINT "adm_episode_of_care_pkey" PRIMARY KEY ("id")
 );
-
 COMMENT ON TABLE adm_episode_of_care IS '管理域 episode of care';
-
 COMMENT ON COLUMN adm_episode_of_care.id IS '主键';
 COMMENT ON COLUMN adm_episode_of_care.tenant_id IS '租户标识';
 COMMENT ON COLUMN adm_episode_of_care.created_at IS '创建时间';
@@ -41,10 +39,9 @@ COMMENT ON COLUMN adm_episode_of_care.patient_id IS 'patient 标识';
 COMMENT ON COLUMN adm_episode_of_care.organization_id IS 'organization 标识';
 COMMENT ON COLUMN adm_episode_of_care.bus_no IS 'bus 编号';
 COMMENT ON COLUMN adm_episode_of_care.care_team_id IS 'careTeam 标识';
-COMMENT ON COLUMN adm_episode_of_care.care_type IS 'careType';
-COMMENT ON COLUMN adm_episode_of_care.care_goal IS 'careGoal';
+COMMENT ON COLUMN adm_episode_of_care.care_type IS 'care类型';
+COMMENT ON COLUMN adm_episode_of_care.care_goal IS '照护目标';
 COMMENT ON COLUMN adm_episode_of_care.status_enum IS 'status 枚举值';
 COMMENT ON COLUMN adm_episode_of_care.active_flag IS 'active 标志位';
 COMMENT ON COLUMN adm_episode_of_care.start_time IS 'start 时间';
 COMMENT ON COLUMN adm_episode_of_care.end_time IS 'end 时间';
-

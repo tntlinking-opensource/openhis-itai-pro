@@ -13,9 +13,11 @@ import java.util.List;
 @Setter
 public class ReleaseStopClinicPreviewFreezeRequest {
 
+    /** 科室/机构主键。 */
     @NotNull
     private Long organizationId;
 
+    /** 待释放冻结的日程主键。 */
     @NotNull
     private Long scheduleId;
 

@@ -358,6 +358,30 @@ public class Slot extends BaseAuditedEntity {
     }
 
     /**
+     * 删除前断言：无预约占用、非临时占用、未软删。
+     */
+    public void assertRetirable() {
+        this.assertNotEnteredInError();
+        if (Boolean.TRUE.equals(this.getIsDeleted())) {
+            throw new BusinessException(ErrorCodeConstants.SLOT_INVALID_ARGUMENT, "号源已删除");
+        }
+        if (this.bookedCount != null && this.bookedCount > 0) {
+            throw new BusinessException(ErrorCodeConstants.SLOT_INVALID_ARGUMENT, "存在预约占用时不允许删除号源");
+        }
+        if (SlotStatus.BUSY_TENTATIVE.getCode().equals(this.statusCode)) {
+            throw new BusinessException(ErrorCodeConstants.SLOT_INVALID_ARGUMENT, "临时占用中不允许删除号源");
+        }
+    }
+
+    /**
+     * 软删除号源（撤销误放号源；已约号源不可删）。
+     */
+    public void retire() {
+        this.assertRetirable();
+        this.setIsDeleted(true);
+    }
+
+    /**
      * entered-in-error 断言（BR-SLT-006）。
      */
     public void assertNotEnteredInError() {

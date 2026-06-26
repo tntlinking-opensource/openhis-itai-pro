@@ -17,7 +17,7 @@
 
 package com.openhis.health.application.outpatient.doctorstation.diagnosis.mapper;
 
-import com.openhis.health.bridge.shared.diagnosis.PatientHistoryCommonDiagnosisRow;
+import com.openhis.health.module.shared.diagnosis.PatientHistoryCommonDiagnosisRow;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.request.SaveEncounterDiagnosisRequest;

@@ -19,11 +19,13 @@ package com.openhis.health.application.outpatient.nursestation.treatment.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceRequestDetailSummaryDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * 门诊护士站处置单行 DTO（三列表字段名一致，IF-NUR-02）。
@@ -74,9 +76,10 @@ public class NurseStationTreatmentLineDto {
     private String itemCode;
 
     /**
-     * 处方号（仅药品列表有意义）。
+     * 处方/申请单号：药品行为 {@code med_medication_request.prescription_no}（或回落 busNo）；
+     * 诊疗行为 {@code wkf_service_request.prescription_no}，{@code AR} 前缀表示检验/检查/治疗申请单整单号。
      */
-    @Schema(description = "处方号（仅药品列表有意义）")
+    @Schema(description = "处方/申请单号（诊疗 AR 前缀为申请单号）")
     private String prescriptionNo;
 
     /**
@@ -296,4 +299,29 @@ public class NurseStationTreatmentLineDto {
      */
     @Schema(description = "排序号")
     private Integer sortNumber;
+
+    /**
+     * 最近一次已完成执行的主执行人主键（读侧由 {@code cln_procedure_performer} 装配）。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "最近主执行人主键")
+    private Long lastPerformerPractitionerId;
+
+    /**
+     * 最近一次已完成执行的主执行人展示名。
+     */
+    @Schema(description = "最近主执行人展示名")
+    private String lastPerformerDisplay;
+
+    /**
+     * 申请单行纯备注（`wkf_service_request.remark`；非申请单行可空）。
+     */
+    @Schema(description = "申请单行纯备注")
+    private String remark;
+
+    /**
+     * 申请单行部位/样本明细摘要（`AR` 前缀申请单；对齐 IF-DOR-10 `serviceRequestDetails`）。
+     */
+    @Schema(description = "申请单部位/样本明细摘要")
+    private List<ServiceRequestDetailSummaryDto> serviceRequestDetails;
 }

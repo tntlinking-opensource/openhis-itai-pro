@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inventory.pharmacy.stockin.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -70,7 +71,7 @@ public class ProductDefinitionItemDto {
     @Schema(description = "批号")
     private String lotNumber;
 
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 效期。 */
     @Schema(description = "效期")
     private LocalDateTime expirationDate;

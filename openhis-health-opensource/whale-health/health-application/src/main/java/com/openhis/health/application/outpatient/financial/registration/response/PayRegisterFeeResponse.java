@@ -43,4 +43,12 @@ public class PayRegisterFeeResponse {
     @Schema(description = "状态")
     /** 状态（业务字段）。 */
     private String status;
+
+    /** 票据状态（DRAFT/ISSUED/CANCELLED）。 */
+    @Schema(description = "票据状态")
+    private String invoiceStatus;
+
+    /** 就诊主键（挂号预结算/缴费后可用于补打小票）。 */
+    @Schema(description = "就诊ID")
+    private Long encounterId;
 }

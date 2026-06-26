@@ -20,6 +20,8 @@ package com.openhis.health.domain.custom.chargeitemautogen.queries.model;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+
 /**
  * 按触发键查询的生效规则查询模型。
  */
@@ -27,7 +29,7 @@ import lombok.Setter;
 @Setter
 public class ChargeItemAutoGenActiveRuleQueryModel {
     /**
-     * 规则标识。
+     * 规则主键（表 id）。
      */
     private Long id;
     /**
@@ -39,6 +41,10 @@ public class ChargeItemAutoGenActiveRuleQueryModel {
      */
     private String ruleName;
     /**
+     * 住院就诊标识。
+     */
+    private Long encounterId;
+    /**
      * 触发来源表名。
      */
     private String triggerSourceTable;
@@ -49,9 +55,17 @@ public class ChargeItemAutoGenActiveRuleQueryModel {
     /**
      * 目标收费项定义主键。
      */
-    private Long targetDefinitionId;
+    private Long chargeDefinitionId;
     /**
      * 执行机构标识。
      */
     private Long performingOrgId;
+    /**
+     * 默认生成数量。
+     */
+    private BigDecimal quantityValue;
+    /**
+     * 同键下匹配优先级（数值越小越优先）。
+     */
+    private Integer priority;
 }

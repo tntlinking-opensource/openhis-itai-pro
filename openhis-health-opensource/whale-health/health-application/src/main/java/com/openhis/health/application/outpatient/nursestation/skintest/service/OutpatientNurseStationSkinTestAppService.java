@@ -4,7 +4,8 @@
 
 package com.openhis.health.application.outpatient.nursestation.skintest.service;
 
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.application.outpatient.nursestation.skintest.assembler.OutpatientSkinTestInitAssembler;
 import com.openhis.health.application.outpatient.nursestation.skintest.assembler.OutpatientSkinTestListAssembler;
@@ -20,6 +21,7 @@ import com.openhis.health.application.outpatient.nursestation.skintest.response.
 import com.openhis.health.application.outpatient.nursestation.skintest.response.ListOutpatientSkinTestRowsResponse;
 import com.openhis.health.application.outpatient.nursestation.skintest.response.LoadOutpatientSkinTestInitResponse;
 import com.openhis.health.application.outpatient.nursestation.skintest.response.SaveOutpatientSkinTestRecordResponse;
+import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
 import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
@@ -38,6 +40,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
@@ -86,17 +89,25 @@ public class OutpatientNurseStationSkinTestAppService {
     private final InventoryItemQueryService inventoryItemQueryService;
     private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
     private final PractitionerQueryService practitionerQueryService;
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
+    private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
+    private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
 
     /**
-     * IF-OP-STK-01：加载皮试表单枚举下拉。
+     * IF-OP-STK-01：加载皮试表单枚举下拉与护士候选。
      *
      * @param request 可空
-     * @return 四类枚举选项
+     * @return 四类枚举选项与护士下拉
      */
     public LoadOutpatientSkinTestInitResponse loadOutpatientSkinTestInit(LoadOutpatientSkinTestInitRequest request) {
         try {
+            // Pre：枚举选项与当前机构下激活护士岗人员
             LoadOutpatientSkinTestInitResponse response = outpatientSkinTestInitAssembler.assembleInitOptions();
+            Long organizationId = managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery();
+            List<Practitioner> nurses = practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
+                WhalePlatformRoleCodeConstants.ROLE_NURSE, organizationId);
+            response.setNurseOptions(outpatientSkinTestMapper.toNurseOptionList(nurses));
+            // Asm：透传初始化响应
             return outpatientSkinTestMapper.toInitResponse(response);
         } catch (BusinessException ex) {
             throw ex;
@@ -283,7 +294,7 @@ public class OutpatientNurseStationSkinTestAppService {
             throw new BusinessException(OutpatientNurseStationConstants.EX_OP_STK_301, "皮试记录不存在，请刷新");
         }
 
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
             "操作人不能为空");
 

@@ -292,7 +292,7 @@ public class Encounter extends BaseAuditedEntity {
      * 断言当前状态允许取消。
      *
      * <p>门诊允许退号的前置状态：REGISTERED（已挂号未接诊）、
-     * TRIAGED（已分诊但医生未接诊）、IN_PROGRESS（接诊中，医生尚未完诊）。
+     * TRIAGED（已分诊但医生未接诊）、IN_PROGRESS（接诊中）、DISCHARGED（完诊）。
      * PLANNED（待挂号/预结算未缴费）不走退号域动作，由应用侧引导完成缴费或清理草稿。</p>
      *
      * <p>住院（IMP）取消登记须走 {@link #assertInpatientAdmissionCancelable(boolean)}，不在此方法内处理。</p>
@@ -301,10 +301,11 @@ public class Encounter extends BaseAuditedEntity {
         if (EncounterClass.IMP.getCode().equals(this.classEnum)) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "住院取消登记请使用专用域动作");
         }
-        // 门诊：待挂号（PLANNED）禁止退号；已挂号未接诊及在诊中允许退号。
+        // 门诊：待挂号（PLANNED）禁止退号；已挂号至完诊允许退号。
         if (!EncounterStatus.REGISTERED.getCode().equals(this.statusEnum)
             && !EncounterStatus.TRIAGED.getCode().equals(this.statusEnum)
-            && !EncounterStatus.IN_PROGRESS.getCode().equals(this.statusEnum)) {
+            && !EncounterStatus.IN_PROGRESS.getCode().equals(this.statusEnum)
+            && !EncounterStatus.DISCHARGED.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前门诊状态不允许取消");
         }
     }
@@ -370,6 +371,39 @@ public class Encounter extends BaseAuditedEntity {
     }
 
     /**
+     * 出院召回（未清床轨）：已结算 → 已入科，清空出院时间与离院方式（DM-ADM-002 §6.1.25）。
+     *
+     * <p>豁免 BR-ENC-003 终止态拦截：仅允许自 {@code COMPLETED} 回退，不清活动床/参与者轨迹。</p>
+     */
+    public void recallFromCompletedToInProgress() {
+        this.assertClass(EncounterClass.IMP.getCode());
+        if (!EncounterStatus.COMPLETED.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
+                "仅已结算状态允许未清床轨出院召回");
+        }
+        this.statusEnum = EncounterStatus.IN_PROGRESS.getCode();
+        this.endTime = null;
+        this.outWayCode = null;
+    }
+
+    /**
+     * 出院召回（已清床轨）：已出院 → 待入科，清空出院时间与离院方式（DM-ADM-002 §6.1.25）。
+     *
+     * <p>豁免 BR-ENC-003：{@code DISCHARGED} 为业务终态，仅本方法允许拉回 {@code REGISTERED}；
+     * 活动病区由领域服务 INSERT，床/参与者须护士二次分床补齐。</p>
+     */
+    public void recallFromDischargedToRegistered() {
+        this.assertClass(EncounterClass.IMP.getCode());
+        if (!EncounterStatus.DISCHARGED.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
+                "仅已出院状态允许已清床轨出院召回");
+        }
+        this.statusEnum = EncounterStatus.REGISTERED.getCode();
+        this.endTime = null;
+        this.outWayCode = null;
+    }
+
+    /**
      * 迁移到诊毕/出院状态。
      *
      * @param completedAt 完成时间
@@ -383,9 +417,17 @@ public class Encounter extends BaseAuditedEntity {
 
     /**
      * 迁移到取消状态。
+     *
+     * <p>完诊（DISCHARGED）为终止态但仍允许窗口退号，故仅此终止态可迁入 CANCELLED。</p>
      */
     public void transitToCancelled() {
-        this.assertNotTerminal();
+        if (this.statusEnum != null) {
+            EncounterStatus current = EnumUtil.fromCode(EncounterStatus.class, this.statusEnum);
+            if (current != null && current.isTerminal() && !EncounterStatus.DISCHARGED.equals(current)) {
+                throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
+                    "就诊已处于终止态（" + current.name() + "），不允许再次状态迁移");
+            }
+        }
         this.statusEnum = EncounterStatus.CANCELLED.getCode();
     }
 

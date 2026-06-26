@@ -4,32 +4,34 @@ import com.openhis.whale.booking.application.outpatient.mapper.OutpatientSchedul
 import com.openhis.whale.booking.application.outpatient.request.GenerateFromTemplateRequest;
 import com.openhis.whale.booking.application.outpatient.response.GenerateFromTemplateResponse;
 import com.openhis.whale.booking.application.support.BookingAuditSupport;
+import com.openhis.whale.booking.application.support.BookingOperatorResolver;
 import com.openhis.whale.booking.application.support.ScheduleActorMasterDataValidator;
+import com.openhis.whale.booking.contracts.dto.MasterDataOption;
+import com.openhis.whale.booking.contracts.dto.ScheduleFormMasterDataSnapshot;
+import com.openhis.whale.booking.contracts.reader.HealthScheduleMasterDataReader;
 import com.openhis.whale.booking.domain.calendarexception.queries.model.DayGeneratePlanModel;
 import com.openhis.whale.booking.domain.calendarexception.service.CalendarExceptionQueryService;
 import com.openhis.whale.booking.domain.policy.service.PolicyQueryService;
-import com.openhis.whale.booking.domain.schedule.command.CreateScheduleCommand;
 import com.openhis.whale.booking.domain.schedule.service.ScheduleDomainService;
 import com.openhis.whale.booking.domain.slot.service.SlotDomainService;
 import com.openhis.whale.booking.domain.template.entity.ScheduleTemplate;
 import com.openhis.whale.booking.domain.template.service.TemplateQueryService;
+import com.openhis.whale.booking.domain.template.service.WeekScheduleTemplateQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.quality.Strictness;
 import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import java.time.LocalDate;
-import java.util.Collections;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -50,6 +52,8 @@ class GenerateFromTemplateSupportTest {
     @Mock
     private TemplateQueryService templateQueryService;
     @Mock
+    private WeekScheduleTemplateQueryService weekScheduleTemplateQueryService;
+    @Mock
     private CalendarExceptionQueryService calendarExceptionQueryService;
     @Mock
     private PolicyQueryService policyQueryService;
@@ -57,14 +61,7 @@ class GenerateFromTemplateSupportTest {
     private ScheduleDomainService scheduleDomainService;
     @Mock
     private SlotDomainService slotDomainService;
-    @Mock
-    private OutpatientScheduleMapper outpatientScheduleMapper;
-    @Mock
-    private ScheduleActorMasterDataValidator scheduleActorMasterDataValidator;
-    @Mock
-    private BookingAuditSupport bookingAuditSupport;
 
-    @InjectMocks
     private GenerateFromTemplateSupport support;
 
     private ScheduleTemplate baseTemplate;
@@ -72,12 +69,30 @@ class GenerateFromTemplateSupportTest {
 
     @BeforeEach
     void setUp() {
+        HealthScheduleMasterDataReader healthScheduleMasterDataReader = organizationId -> {
+            ScheduleFormMasterDataSnapshot snapshot = new ScheduleFormMasterDataSnapshot();
+            snapshot.setDepartments(List.of(option(organizationId)));
+            snapshot.setHealthcareServices(List.of(option(900L)));
+            return snapshot;
+        };
+        ScheduleActorMasterDataValidator actorValidator = new ScheduleActorMasterDataValidator(healthScheduleMasterDataReader);
+        BookingAuditSupport auditSupport = new BookingAuditSupport(new BookingOperatorResolver(null));
+
+        support = new GenerateFromTemplateSupport(
+            templateQueryService,
+            weekScheduleTemplateQueryService,
+            calendarExceptionQueryService,
+            policyQueryService,
+            scheduleDomainService,
+            slotDomainService,
+            new OutpatientScheduleMapper(),
+            actorValidator,
+            auditSupport);
+
         baseTemplate = usableTemplate(BASE_TEMPLATE_ID, ORG_ID);
         extraTemplate = usableTemplate(EXTRA_TEMPLATE_ID, ORG_ID);
         when(templateQueryService.loadScheduleTemplateById(BASE_TEMPLATE_ID)).thenReturn(baseTemplate);
         when(templateQueryService.loadScheduleTemplateById(EXTRA_TEMPLATE_ID)).thenReturn(extraTemplate);
-        when(outpatientScheduleMapper.toCreateScheduleFromScheduleTemplate(any(), eq(ORG_ID), any(), eq(OPERATOR_ID)))
-            .thenAnswer(invocation -> createCommand());
         when(scheduleDomainService.createSchedule(any())).thenReturn(1001L, 1002L, 1003L);
     }
 
@@ -121,6 +136,13 @@ class GenerateFromTemplateSupportTest {
         verify(scheduleDomainService, times(2)).createSchedule(any());
     }
 
+    private static MasterDataOption option(Long id) {
+        MasterDataOption option = new MasterDataOption();
+        option.setValue(String.valueOf(id));
+        option.setLabel("opt-" + id);
+        return option;
+    }
+
     private static GenerateFromTemplateRequest requestFor(LocalDate start, LocalDate end) {
         GenerateFromTemplateRequest request = new GenerateFromTemplateRequest();
         request.setOrganizationId(ORG_ID);
@@ -141,14 +163,6 @@ class GenerateFromTemplateSupportTest {
         template.setHealthcareServiceId(900L);
         template.setEnabled(Boolean.TRUE);
         return template;
-    }
-
-    private static CreateScheduleCommand createCommand() {
-        CreateScheduleCommand command = new CreateScheduleCommand();
-        CreateScheduleCommand.CreateScheduleItemCommand item = new CreateScheduleCommand.CreateScheduleItemCommand();
-        item.setActors(Collections.emptyList());
-        command.setItem(item);
-        return command;
     }
 
     private static DayGeneratePlanModel closedPlan() {

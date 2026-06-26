@@ -18,15 +18,11 @@
 package com.openhis.health.application.outpatient.pharmacy.returnmedicine.service;
 
 import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
 import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.assembler.OutpatientReturnMedicinePatientQueueAssembler;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.mapper.OutpatientPharmacyReturnMedicineMapper;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
-import com.openhis.health.application.insurance.config.InsuranceCoordinationProperties;
-import com.openhis.health.application.insurance.inventory.MedicareInventoryUploadCoordinator;
-import com.openhis.health.domain.share.constants.InsuranceCoordinationConstants;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.request.ConfirmMedicineReturnRequest;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.request.GetReturnMedicineDetailRequest;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.request.LoadReturnMedicineInitRequest;
@@ -77,12 +73,11 @@ import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDom
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.support.MedicationProductQuantityToSplitUnitConverter;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.whale.chs.jilin.port.InventoryInsurancePort;
-import com.openhis.whale.chs.jilin.port.model.UploadAfterReturnCommand;
+import com.openhis.health.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.integration.insurance.inventory.command.InventoryUploadAfterReturnCommand;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -109,14 +104,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OutpatientPharmacyReturnMedicineAppService {
 
-    @Autowired(required = false)
-    private InventoryInsurancePort inventoryInsurancePort;
+    private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
-    @Autowired(required = false)
-    private MedicareInventoryUploadCoordinator medicareInventoryUploadCoordinator;
-
-    private final InsuranceCoordinationProperties insuranceCoordinationProperties;
-    private final CurrentOperatorResolver currentOperatorResolver;
     private final CurrentPractitionerResolver currentPractitionerResolver;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     private final OrganizationQueryService organizationQueryService;
@@ -243,8 +232,10 @@ public class OutpatientPharmacyReturnMedicineAppService {
     public ConfirmMedicineReturnResponse confirmMedicineReturn(ConfirmMedicineReturnRequest request) {
         // Gate：请求体、confirmType 与退药行须合法。
         this.validateConfirmMedicineReturnRequest(request);
-        Long operatorId = this.requireOperatorUserId();
-        Long practitionerId = this.resolvePractitionerIdForAudit(operatorId);
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.EX_PHA_002_101_LOAD_FAILED,
+            "用户未登录");
+        Long practitionerId = operatorId;
         boolean confirm =
             MedicationCommonConstants.OUTPATIENT_PHARMACY_RETURN_CONFIRM_TYPE_CONFIRM.equalsIgnoreCase(
                 request.getConfirmType().trim());
@@ -372,18 +363,11 @@ public class OutpatientPharmacyReturnMedicineAppService {
             return null;
         }
         try {
-            if (insuranceCoordinationProperties.isDispenseUploadAsyncEnabled()
-                && medicareInventoryUploadCoordinator != null) {
-                medicareInventoryUploadCoordinator.scheduleUploadIfEnabled(
-                    encounterId,
-                    dispenseIds,
-                    requireOperatorUserId(),
-                    InsuranceCoordinationConstants.DISPENSE_UPLOAD_KIND_RETURN);
-            } else if (inventoryInsurancePort != null) {
-                UploadAfterReturnCommand uploadCommand = new UploadAfterReturnCommand()
+            if (inventoryUploadExtension.isEnabled()) {
+                InventoryUploadAfterReturnCommand uploadCommand = new InventoryUploadAfterReturnCommand()
                     .setEncounterId(encounterId)
                     .setDispenseIds(dispenseIds);
-                inventoryInsurancePort.uploadAfterOutpatientReturn(uploadCommand);
+                inventoryUploadExtension.uploadAfterReturn(uploadCommand);
             }
         } catch (RuntimeException ex) {
             log.warn("医保进销存3506上传失败（本地退药已成功）", ex);
@@ -434,20 +418,6 @@ public class OutpatientPharmacyReturnMedicineAppService {
         if (decline && StringUtils.isBlank(request.getReason())) {
             throw new BusinessException(ErrorCodeConstants.EX_PHA_002_302_DECLINE_REASON_REQUIRED, "拒绝退药须填写原因");
         }
-    }
-
-    private Long requireOperatorUserId() {
-        return currentOperatorResolver.requireOperatorId(
-            ErrorCodeConstants.EX_PHA_002_101_LOAD_FAILED,
-            "用户未登录");
-    }
-
-    private Long resolvePractitionerIdForAudit(Long operatorId) {
-        Long pid = currentPractitionerResolver.findPractitionerIdOrNull();
-        if (pid != null) {
-            return pid;
-        }
-        return operatorId;
     }
 
     private void assertPendingRefundDispense(DispenseStatus status, Long dispenseId) {

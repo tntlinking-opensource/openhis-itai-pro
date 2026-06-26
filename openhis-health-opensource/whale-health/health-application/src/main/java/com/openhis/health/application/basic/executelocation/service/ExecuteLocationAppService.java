@@ -28,7 +28,7 @@ import com.openhis.health.application.basic.executelocation.request.UpdateExecut
 import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
 import com.openhis.health.module.common.assembler.order.OrderCatalogDisplayAssembler;
 import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.module.querysupport.product.ProductDefinitionCatalogPageLoader;
 import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
@@ -92,7 +92,7 @@ public class ExecuteLocationAppService {
     /** 执行规则写侧。 */
     private final ActivityExecutionLocationDomainService activityExecutionLocationDomainService;
     /** 写路径操作人门控 B.6.1。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
+    private final CurrentPractitionerResolver currentPractitionerResolver;
     /** 组织机构读侧：科室树与名称解析。 */
     private final OrganizationQueryService organizationQueryService;
     /** 位置读侧：执行地点名称 enrich。 */
@@ -208,7 +208,7 @@ public class ExecuteLocationAppService {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗大类不能为空");
         }
         this.validateWriteRequest(request.getExecutionOrgId(), request.getStartTime(), request.getEndTime());
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
             "请先登录后再保存执行科室规则");
         CreateExecutionRuleCommand command = new CreateExecutionRuleCommand();
@@ -236,7 +236,7 @@ public class ExecuteLocationAppService {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "ID不能为空");
         }
         this.validateWriteRequest(request.getExecutionOrgId(), request.getStartTime(), request.getEndTime());
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
             "请先登录后再保存执行科室规则");
         UpdateExecutionRuleCommand command = executeLocationMapper.toUpdateCommand(request);
@@ -254,7 +254,7 @@ public class ExecuteLocationAppService {
         if (id == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "ID不能为空");
         }
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
             "请先登录后再删除执行科室规则");
         DeleteExecutionRuleCommand command = new DeleteExecutionRuleCommand();
@@ -281,7 +281,7 @@ public class ExecuteLocationAppService {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗定义列表不能为空");
         }
         this.validateWriteRequest(request.getExecutionOrgId(), request.getStartTime(), request.getEndTime());
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
             "请先登录后再保存执行科室规则");
         CreateExecutionRuleCommand command = new CreateExecutionRuleCommand();

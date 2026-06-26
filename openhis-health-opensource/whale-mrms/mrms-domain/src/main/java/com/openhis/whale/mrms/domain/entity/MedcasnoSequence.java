@@ -1,45 +1,30 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ */
+
 package com.openhis.whale.mrms.domain.entity;
 
-import com.openhis.whale.core.infrastructure.id.SnowflakeIdGenerator;
+import com.openhis.whale.core.domain.BaseAuditedEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.hibernate.annotations.GenericGenerator;
-
-import java.time.LocalDateTime;
 
 /**
- * 病案号序列表。表 mrms_medcasno_sequence。
+ * 病案号年度流水序列表。
  */
 @Getter
 @Setter
 @Entity
 @Table(name = "mrms_medcasno_sequence")
-public class MedcasnoSequence {
+public class MedcasnoSequence extends BaseAuditedEntity {
 
-    @Id
-    @GeneratedValue(generator = "snowflake")
-    @GenericGenerator(name = "snowflake", type = SnowflakeIdGenerator.class)
-    @SuppressWarnings("deprecation")
-    @Column(name = "id", nullable = false)
-    private Long id;
+    /** 发号年度（yyyy）。 */
+    @Column(name = "year_value", nullable = false)
+    private Integer yearValue;
 
-    @Column(name = "year_no", nullable = false)
-    private Integer yearNo;
-
-    @Column(name = "last_value", nullable = false)
-    private Long lastValue = 0L;
-
-    @Column(name = "tenant_id", nullable = false)
-    private Long tenantId;
-
-    @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
-
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
+    /** 当前年度已分配最大流水号。 */
+    @Column(name = "last_seq", nullable = false)
+    private Integer lastSeq;
 }

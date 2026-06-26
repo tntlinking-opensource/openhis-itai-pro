@@ -23,6 +23,8 @@ import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDispl
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionSelectionTerminologyMaps;
 import org.apache.commons.lang3.StringUtils;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
+
 public final class ProductDefinitionCatalogEditorHintsAssembler {
 
     /**
@@ -62,32 +64,15 @@ public final class ProductDefinitionCatalogEditorHintsAssembler {
         dto.setUnitBands(ProductDefinitionCatalogUnitBandsAssembler.buildInboundSelectionBandsWithTerminology(
             row, terminologyMaps));
         dto.setProductBasePrice(row.getPrice());
-        dto.setMinUnitCode(trimOrNull(row.getSplitUnitCode()));
-        dto.setDefaultPurchaseUnitCode(trimOrNull(row.getPurchaseUnitCode()));
+        dto.setMinUnitCode(trimToNull(row.getSplitUnitCode()));
+        dto.setDefaultPurchaseUnitCode(trimToNull(row.getPurchaseUnitCode()));
         dto.setPurchaseUnitRatioToSplit(row.getPurchaseUnitRatio());
-        dto.setMerchandiseName(trimOrNull(row.getMerchandiseName()));
-        dto.setCategoryCode(trimOrNull(row.getCategoryCode()));
-        dto.setCategoryCodeDictText(trimOrNull(row.getCategoryCodeDictText()));
-        dto.setProductBusNo(trimOrNull(row.getProductBusNo()));
-        dto.setTotalVolume(trimOrNull(row.getTotalVolume()));
+        dto.setMerchandiseName(trimToNull(row.getMerchandiseName()));
+        dto.setCategoryCode(trimToNull(row.getCategoryCode()));
+        dto.setCategoryCodeDictText(trimToNull(row.getCategoryCodeDictText()));
+        dto.setProductBusNo(trimToNull(row.getProductBusNo()));
+        dto.setTotalVolume(trimToNull(row.getTotalVolume()));
         dto.setPurchasePrice(null);
         return dto;
-    }
-
-    /**
-     * 去除首尾空白；全空白或 {@code null} 时返回 {@code null}，与读模型空串脏数据隔离。
-     *
-     * @param raw 原始串
-     * @return 修剪后的非空串，或 {@code null}
-     */
-    private static String trimOrNull(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        String t = raw.trim();
-        if (StringUtils.isEmpty(t)) {
-            return null;
-        }
-        return t;
     }
 }

@@ -5,7 +5,6 @@
 package com.openhis.health.application.inpatient.nursestation.skintest.service;
 
 import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
 import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler.NurseStationInpatientBillingCatalogAssembler;
@@ -25,6 +24,7 @@ import com.openhis.health.application.inpatient.nursestation.skintest.response.D
 import com.openhis.health.application.inpatient.nursestation.skintest.response.ListNurseStationSkinTestRowsResponse;
 import com.openhis.health.application.inpatient.nursestation.skintest.response.LoadNurseStationSkinTestInitResponse;
 import com.openhis.health.application.inpatient.nursestation.skintest.response.SaveNurseStationSkinTestRecordResponse;
+import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
 import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
@@ -33,6 +33,7 @@ import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQuery
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemDomainService;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.clinical.allergyintolerance.command.DeleteSkinTestRecordCommand;
@@ -44,11 +45,11 @@ import com.openhis.health.domain.medication.medicationdispense.service.Medicatio
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestDetailQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
-import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
@@ -56,9 +57,7 @@ import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryCatalogAvailabilityRowModel;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
-import com.openhis.health.domain.workflow.servicerequest.command.CreateFromNursePricingCommand;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
-import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
@@ -71,6 +70,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -81,8 +81,8 @@ import java.util.Set;
  *
  * <p>职责边界：</p>
  * <ul>
- *   <li>列表：已校对皮试药 + nurse-pricing 皮试检查 SR + 过敏记录 + 批号候选只读装配。</li>
- *   <li>保存：首次同事务补费划价（createFromNursePricing + priceByNurseStation）+ 过敏记录；更新仅改过敏记录。</li>
+ *   <li>列表：已校对皮试药（须有 doctor 皮试检查 SR）+ 过敏记录 + 批号候选只读装配。</li>
+ *   <li>保存：首次同事务锚 doctor SR 划价（priceByNurseStation）+ 过敏记录；更新仅改过敏记录。</li>
  *   <li>删除：仅允许未划价误录；不删 SR/Charge。</li>
  * </ul>
  *
@@ -118,11 +118,8 @@ public class NurseStationSkinTestAppService {
     /** 皮试药医嘱列表加载。 */
     private final MedicationRequestQueryService medicationRequestQueryService;
 
-    /** 皮试检查 SR 互斥与幂等查询。 */
+    /** 皮试检查 SR 查询（doctor-prescription 锚皮试药）。 */
     private final ServiceRequestQueryService serviceRequestQueryService;
-
-    /** nurse-pricing 皮试检查 SR 写路径。 */
-    private final ServiceRequestDomainService serviceRequestDomainService;
 
     /** 过敏记录读侧。 */
     private final AllergyIntoleranceQueryService allergyIntoleranceQueryService;
@@ -155,22 +152,26 @@ public class NurseStationSkinTestAppService {
     private final NurseStationInpatientBillingCatalogAssembler nurseStationInpatientBillingCatalogAssembler;
 
     /** 写路径操作人门控（B.6.1）。 */
-    private final CurrentOperatorResolver currentOperatorResolver;
-
-    /** 写路径申请人（医务人员）解析。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
 
+    /** 岗位分配 → 护士主键预解析。 */
+    private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
+
     /**
-     * IF-IP-STK-01：加载皮试表单枚举下拉。
+     * IF-IP-STK-01：加载皮试表单枚举下拉与护士候选。
      *
      * @param request 可空占位请求
-     * @return 四类枚举选项
+     * @return 四类枚举选项与护士下拉
      * @throws BusinessException {@link InpatientNurseStationConstants#EX_IP_STK_101} 枚举装载失败
      */
     public LoadNurseStationSkinTestInitResponse loadNurseStationSkinTestInit(
         LoadNurseStationSkinTestInitRequest request) {
         try {
+            // Pre：枚举选项与管辖病区内激活护士岗人员
             LoadNurseStationSkinTestInitResponse response = nurseStationSkinTestInitAssembler.assembleInitOptions();
+            List<Practitioner> nurses = this.listNursesInManagedWards();
+            response.setNurseOptions(nurseStationSkinTestMapper.toNurseOptionList(nurses));
+            // Asm：透传初始化响应
             return nurseStationSkinTestMapper.toInitResponse(response);
         } catch (BusinessException ex) {
             throw ex;
@@ -212,6 +213,21 @@ public class NurseStationSkinTestAppService {
                         request.getEncounterId(),
                         doctorSource));
 
+            List<ServiceRequestListModel> doctorPrescriptionServiceRequests =
+                serviceRequestQueryService.listServiceRequestsByGenerateSource(
+                    request.getEncounterId(),
+                    doctorSource);
+            // Pre：索引 doctor-prescription 皮试检查 SR（based_on → 皮试药，BR-IP-STK-009）
+            Map<Long, ServiceRequestListModel> doctorPrescriptionSkinTestSrByMedicationRequestId =
+                this.indexDoctorPrescriptionSkinTestServiceRequests(
+                    doctorPrescriptionServiceRequests,
+                    skinTestActivityId);
+
+            // Pre：无 doctor 联动 SR 的皮试药不进 Tab 列表（BR-IP-STK-009）
+            skinTestMedications = this.filterMedicationsWithDoctorSkinTestServiceRequest(
+                skinTestMedications,
+                doctorPrescriptionSkinTestSrByMedicationRequestId);
+
             Set<Long> medicationRequestIds = new LinkedHashSet<>();
             Set<Long> medicationIds = new LinkedHashSet<>();
             for (MedicationRequestListQueryModel medicationRequest : skinTestMedications) {
@@ -232,16 +248,6 @@ public class NurseStationSkinTestAppService {
                 }
             }
 
-            String nursePricingSource = GenerateSource.NURSE_PRICING.getCode();
-            List<ServiceRequestListModel> nursePricingServiceRequests =
-                serviceRequestQueryService.listServiceRequestsByGenerateSource(
-                    request.getEncounterId(),
-                    nursePricingSource);
-            Map<Long, ServiceRequestListModel> nursePricingSkinTestSrByMedicationRequestId =
-                this.indexNursePricingSkinTestServiceRequests(
-                    nursePricingServiceRequests,
-                    skinTestActivityId);
-
             Map<Long, AllergyIntoleranceRecordQueryModel> allergyBySkinTestServiceRequestId = new HashMap<>();
             List<AllergyIntoleranceRecordQueryModel> allergyRecords =
                 allergyIntoleranceQueryService.getRecordInfo(request.getEncounterId());
@@ -252,7 +258,7 @@ public class NurseStationSkinTestAppService {
             }
 
             Set<Long> skinTestServiceRequestIds = new LinkedHashSet<>();
-            for (ServiceRequestListModel serviceRequest : nursePricingSkinTestSrByMedicationRequestId.values()) {
+            for (ServiceRequestListModel serviceRequest : doctorPrescriptionSkinTestSrByMedicationRequestId.values()) {
                 if (serviceRequest != null && serviceRequest.getId() != null) {
                     skinTestServiceRequestIds.add(serviceRequest.getId());
                 }
@@ -266,13 +272,14 @@ public class NurseStationSkinTestAppService {
             Map<Long, String> practitionerNameById = this.loadPractitionerNamesForRows(
                 skinTestMedications,
                 allergyBySkinTestServiceRequestId,
-                nursePricingSkinTestSrByMedicationRequestId);
+                doctorPrescriptionSkinTestSrByMedicationRequestId);
 
             NurseStationSkinTestListAssemblyInput assemblyInput = new NurseStationSkinTestListAssemblyInput();
             assemblyInput.setEncounterId(encounterSnapshot.getEncounterId());
             assemblyInput.setPatientId(encounterSnapshot.getPatientId());
             assemblyInput.setSkinTestMedicationRequests(skinTestMedications);
-            assemblyInput.setNursePricingSkinTestSrByMedicationRequestId(nursePricingSkinTestSrByMedicationRequestId);
+            assemblyInput.setDoctorPrescriptionSkinTestSrByMedicationRequestId(
+                doctorPrescriptionSkinTestSrByMedicationRequestId);
             assemblyInput.setAllergyBySkinTestServiceRequestId(allergyBySkinTestServiceRequestId);
             assemblyInput.setLocationIdByMedicationRequestId(locationIdByMedicationRequestId);
             assemblyInput.setMedicationNameById(medicationNameById);
@@ -296,7 +303,7 @@ public class NurseStationSkinTestAppService {
     }
 
     /**
-     * IF-IP-STK-03：保存皮试结果（首次含 nurse-pricing 补费划价）。
+     * IF-IP-STK-03：保存皮试结果（首次锚 doctor SR 划价 + 登记过敏记录）。
      *
      * @param request 保存请求
      * @return 保存结果
@@ -304,8 +311,8 @@ public class NurseStationSkinTestAppService {
      *         {@link InpatientNurseStationConstants#EX_IP_STK_201} 双签或必填状态缺失；
      *         {@link InpatientNurseStationConstants#EX_IP_STK_202} 皮试药不可登记；
      *         {@link InpatientNurseStationConstants#EX_IP_STK_203} 定价异常；
-     *         {@link InpatientNurseStationConstants#EX_IP_STK_204} 重复补费；
-     *         {@link InpatientNurseStationConstants#EX_IP_STK_205} 医生已开皮试检查；
+     *         {@link InpatientNurseStationConstants#EX_IP_STK_204} 重复划价；
+     *         {@link InpatientNurseStationConstants#EX_IP_STK_207} 医生未开立皮试检查；
      *         {@link InpatientNurseStationConstants#EX_IP_STK_206} 写失败
      */
     public SaveNurseStationSkinTestRecordResponse saveNurseStationSkinTestRecord(
@@ -348,42 +355,31 @@ public class NurseStationSkinTestAppService {
                 "该皮试医嘱不可登记，请刷新列表");
         }
 
-        // Pre：医生开立皮试检查互斥（BR-IP-STK-009）
-        if (this.hasDoctorPrescriptionSkinTestInspection(
+        // Pre（BR-IP-STK-009）：须存在 doctor-prescription 皮试检查 SR
+        ServiceRequestListModel doctorSkinTestServiceRequest = this.requireDoctorPrescriptionSkinTestServiceRequest(
             request.getEncounterId(),
             skinTestActivityId,
-            request.getMedicationRequestId())) {
-            throw new BusinessException(
-                InpatientNurseStationConstants.EX_IP_STK_205,
-                "存在重复皮试费用医嘱，请联系医生处理");
-        }
+            request.getMedicationRequestId());
 
         boolean firstTimePriced = false;
-        Long skinTestServiceRequestId = null;
+        Long skinTestServiceRequestId = doctorSkinTestServiceRequest.getId();
 
         if (request.getAllergyRecordId() == null) {
-            // 首次保存：不得已存在 nurse-pricing 皮试检查 SR（BR-IP-STK-006）
-            String nursePricingSource = GenerateSource.NURSE_PRICING.getCode();
-            List<ServiceRequestListModel> nursePricingServiceRequests =
-                serviceRequestQueryService.listServiceRequestsByGenerateSource(
-                    request.getEncounterId(),
-                    nursePricingSource);
-            Map<Long, ServiceRequestListModel> existingNursePricingSrByMedReqId =
-                this.indexNursePricingSkinTestServiceRequests(
-                    nursePricingServiceRequests,
-                    skinTestActivityId);
-            if (existingNursePricingSrByMedReqId.containsKey(request.getMedicationRequestId())) {
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_STK_204,
-                    "皮试操作费已登记，请刷新后修改结果");
-            }
+            // 首次保存：须 accountId、doctor SR 尚无 ChargeItem（BR-IP-STK-004/006）
             if (request.getAccountId() == null) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_STK_201,
                     "请填写皮试结果并选择执行护士与核对护士");
             }
+            Map<Long, Boolean> pricedFlags = this.loadPricedFlagBySkinTestServiceRequestIds(
+                Collections.singleton(skinTestServiceRequestId));
+            if (Boolean.TRUE.equals(pricedFlags.get(skinTestServiceRequestId))) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_STK_204,
+                    "皮试操作费已登记，请刷新后修改结果");
+            }
 
-            // Pre：解析皮试检查定价（BR-IP-STK-004）
+            // Pre：解析皮试检查定价行（BR-IP-STK-004）
             NurseStationPricingWriteItemDto pricingRow = nurseStationSkinTestMapper.toSkinTestPricingWriteItem(
                 request,
                 skinTestActivityId,
@@ -402,28 +398,13 @@ public class NurseStationSkinTestAppService {
             }
             pricingRow.setTotalPrice(pricingRow.getUnitPrice().multiply(quantity));
 
-            Long operatorId = currentOperatorResolver.requireOperatorId(
+            Long operatorId = currentPractitionerResolver.requireOperatorId(
                 InpatientNurseStationConstants.EX_IP_STK_206,
                 "保存失败，请稍后重试");
-            Long requesterId = currentPractitionerResolver.findPractitionerIdOrNull();
             Long orgId = encounterSnapshot.getOrganizationId();
 
             try {
-                // Cmd 1：创建 nurse-pricing 皮试检查 SR（VERIFIED）
-                CreateFromNursePricingCommand serviceCmd =
-                    nurseStationInpatientBillingMapper.toCreateFromNursePricingCommand(
-                        List.of(pricingRow),
-                        operatorId,
-                        requesterId);
-                List<Long> createdServiceRequestIds = serviceRequestDomainService.createFromNursePricing(serviceCmd);
-                if (createdServiceRequestIds.isEmpty()) {
-                    throw new BusinessException(
-                        InpatientNurseStationConstants.EX_IP_STK_206,
-                        "保存失败，请稍后重试");
-                }
-                skinTestServiceRequestId = createdServiceRequestIds.get(0);
-
-                // Cmd 2：落待结算费用行
+                // Cmd：锚 doctor SR 落待结算费用行（禁止 createFromNursePricing）
                 var chargeCmd = nurseStationInpatientBillingMapper.toCreateChargeItemCommand(
                     pricingRow,
                     TableNameConstants.WKF_SERVICE_REQUEST,
@@ -464,7 +445,7 @@ public class NurseStationSkinTestAppService {
         }
 
         try {
-            // Cmd 3：保存/更新过敏记录（request_id 锚定皮试检查 SR）
+            // Cmd：保存/更新过敏记录（request_id 锚定 doctor 皮试检查 SR）
             SaveSkinTestRecordCommand command = nurseStationSkinTestMapper.toSaveSkinTestRecordCommand(
                 request,
                 skinTestServiceRequestId);
@@ -528,7 +509,7 @@ public class NurseStationSkinTestAppService {
             }
         }
 
-        Long operatorId = currentOperatorResolver.requireOperatorId(
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
             "操作人不能为空");
 
@@ -674,13 +655,36 @@ public class NurseStationSkinTestAppService {
     }
 
     /**
-     * 索引 nurse-pricing 皮试检查 SR：皮试药 id → SR。
+     * 过滤仅保留存在 doctor 皮试检查 SR 的皮试药行。
      *
-     * @param serviceRequests    nurse-pricing 服务申请列表
+     * @param skinTestMedications                            已校对皮试药
+     * @param doctorPrescriptionSkinTestSrByMedicationRequestId doctor SR 索引
+     * @return 过滤后的皮试药列表
+     */
+    private List<MedicationRequestListQueryModel> filterMedicationsWithDoctorSkinTestServiceRequest(
+        List<MedicationRequestListQueryModel> skinTestMedications,
+        Map<Long, ServiceRequestListModel> doctorPrescriptionSkinTestSrByMedicationRequestId) {
+        List<MedicationRequestListQueryModel> filtered = new ArrayList<>();
+        if (skinTestMedications == null || doctorPrescriptionSkinTestSrByMedicationRequestId == null) {
+            return filtered;
+        }
+        for (MedicationRequestListQueryModel medicationRequest : skinTestMedications) {
+            if (medicationRequest != null && medicationRequest.getId() != null
+                && doctorPrescriptionSkinTestSrByMedicationRequestId.containsKey(medicationRequest.getId())) {
+                filtered.add(medicationRequest);
+            }
+        }
+        return filtered;
+    }
+
+    /**
+     * 索引 doctor-prescription 皮试检查 SR：皮试药 id → SR。
+     *
+     * @param serviceRequests    doctor-prescription 服务申请列表
      * @param skinTestActivityId 皮试检查活动 id
      * @return 索引表
      */
-    private Map<Long, ServiceRequestListModel> indexNursePricingSkinTestServiceRequests(
+    private Map<Long, ServiceRequestListModel> indexDoctorPrescriptionSkinTestServiceRequests(
         List<ServiceRequestListModel> serviceRequests,
         Long skinTestActivityId) {
         Map<Long, ServiceRequestListModel> indexed = new HashMap<>();
@@ -704,14 +708,14 @@ public class NurseStationSkinTestAppService {
     }
 
     /**
-     * 是否存在医生开立的皮试检查诊疗（BR-IP-STK-009 互斥）。
+     * 要求存在 doctor-prescription 皮试检查 SR（BR-IP-STK-009）；缺失时抛 EX-IP-STK-207。
      *
      * @param encounterId         就诊 id
      * @param skinTestActivityId  皮试检查活动 id
      * @param medicationRequestId 皮试药医嘱 id
-     * @return 存在为 true
+     * @return doctor 皮试检查 SR 列表模型
      */
-    private boolean hasDoctorPrescriptionSkinTestInspection(
+    private ServiceRequestListModel requireDoctorPrescriptionSkinTestServiceRequest(
         Long encounterId,
         Long skinTestActivityId,
         Long medicationRequestId) {
@@ -719,7 +723,7 @@ public class NurseStationSkinTestAppService {
         List<ServiceRequestListModel> serviceRequests =
             serviceRequestQueryService.listServiceRequestsByGenerateSource(encounterId, doctorSource);
         for (ServiceRequestListModel serviceRequest : serviceRequests) {
-            if (serviceRequest == null) {
+            if (serviceRequest == null || serviceRequest.getId() == null) {
                 continue;
             }
             if (!skinTestActivityId.equals(serviceRequest.getActivityId())) {
@@ -729,10 +733,12 @@ public class NurseStationSkinTestAppService {
                 continue;
             }
             if (medicationRequestId.equals(serviceRequest.getBasedOnId())) {
-                return true;
+                return serviceRequest;
             }
         }
-        return false;
+        throw new BusinessException(
+            InpatientNurseStationConstants.EX_IP_STK_207,
+            "医生未开立皮试检查医嘱，请联系医生处理");
     }
 
     /**
@@ -843,24 +849,24 @@ public class NurseStationSkinTestAppService {
     /**
      * 列表行涉及人员展示名批量加载。
      *
-     * @param skinTestMedications                       皮试药行
-     * @param allergyBySkinTestServiceRequestId         过敏记录索引
-     * @param nursePricingSkinTestSrByMedicationRequestId SR 索引
+     * @param skinTestMedications                             皮试药行
+     * @param allergyBySkinTestServiceRequestId               过敏记录索引
+     * @param doctorPrescriptionSkinTestSrByMedicationRequestId doctor SR 索引
      * @return 人员 id → 展示名
      */
     private Map<Long, String> loadPractitionerNamesForRows(
         List<MedicationRequestListQueryModel> skinTestMedications,
         Map<Long, AllergyIntoleranceRecordQueryModel> allergyBySkinTestServiceRequestId,
-        Map<Long, ServiceRequestListModel> nursePricingSkinTestSrByMedicationRequestId) {
+        Map<Long, ServiceRequestListModel> doctorPrescriptionSkinTestSrByMedicationRequestId) {
         Set<Long> practitionerIds = new LinkedHashSet<>();
         if (skinTestMedications != null) {
             for (MedicationRequestListQueryModel medicationRequest : skinTestMedications) {
                 if (medicationRequest != null && medicationRequest.getRequesterId() != null) {
                     practitionerIds.add(medicationRequest.getRequesterId());
                 }
-                if (medicationRequest != null && nursePricingSkinTestSrByMedicationRequestId != null) {
+                if (medicationRequest != null && doctorPrescriptionSkinTestSrByMedicationRequestId != null) {
                     ServiceRequestListModel serviceRequest =
-                        nursePricingSkinTestSrByMedicationRequestId.get(medicationRequest.getId());
+                        doctorPrescriptionSkinTestSrByMedicationRequestId.get(medicationRequest.getId());
                     if (serviceRequest != null && serviceRequest.getId() != null
                         && allergyBySkinTestServiceRequestId != null) {
                         AllergyIntoleranceRecordQueryModel allergy =
@@ -889,5 +895,34 @@ public class NurseStationSkinTestAppService {
             }
         }
         return practitionerNameById;
+    }
+
+    /**
+     * 汇总当前操作者管辖病区内激活护士岗的在职人员（去重）。
+     *
+     * @return 护士实体列表
+     */
+    private List<Practitioner> listNursesInManagedWards() {
+        List<Location> managedWards = managedWardLocationIdsResolver.listManagedActiveWardsOrEmpty();
+        if (managedWards.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashMap<Long, Practitioner> nurseById = new LinkedHashMap<>();
+        for (Location ward : managedWards) {
+            if (ward == null || ward.getId() == null) {
+                continue;
+            }
+            List<Practitioner> wardNurses = practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleAtWardLocation(
+                WhalePlatformRoleCodeConstants.ROLE_NURSE, ward.getId());
+            if (wardNurses == null || wardNurses.isEmpty()) {
+                continue;
+            }
+            for (Practitioner nurse : wardNurses) {
+                if (nurse != null && nurse.getId() != null) {
+                    nurseById.putIfAbsent(nurse.getId(), nurse);
+                }
+            }
+        }
+        return new ArrayList<>(nurseById.values());
     }
 }

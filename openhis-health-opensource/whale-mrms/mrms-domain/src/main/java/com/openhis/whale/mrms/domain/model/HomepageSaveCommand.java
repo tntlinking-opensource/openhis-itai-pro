@@ -1,74 +1,85 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ */
+
 package com.openhis.whale.mrms.domain.model;
 
+import com.openhis.whale.mrms.domain.entity.HomepageDiagnosis;
+import com.openhis.whale.mrms.domain.entity.HomepageProcedure;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * 首页保存命令（领域层入参）。
+ * 首页保存命令（领域写路径入参，Wave 1 显式字段）。
  */
 @Getter
 @Setter
 public class HomepageSaveCommand {
 
+    /** 病案主档主键。 */
     private Long caseRecordId;
+
+    /** 操作人主键。 */
+    private Long operatorId;
+
+    /** 姓名。 */
     private String psnName;
+
+    /** 性别字典码。 */
     private String gendCode;
+
+    /** 出生日期。 */
     private LocalDate brdy;
+
+    /** 证件号。 */
     private String certno;
-    private String ntlyCode;
-    private String natyCode;
-    private String prfsCode;
-    private String mrgStasCode;
-    private String currAddr;
-    private String psnTel;
-    private String conerName;
-    private String conerTel;
-    private String conerAddr;
+
+    /** 住院号。 */
     private String iptNo;
+
+    /** 入院途径字典码。 */
     private String admWayCode;
+
+    /** 入院科别编码。 */
     private String admCatyCode;
-    private String admCatyName;
-    private String dscgCatyCode;
-    private String dscgCatyName;
+
+    /** 入院时间。 */
     private LocalDateTime admTime;
+
+    /** 出院科别编码。 */
+    private String dscgCatyCode;
+
+    /** 出院时间。 */
     private LocalDateTime dscgTime;
-    private Integer actIptDays;
+
+    /** 住院天数。 */
+    private Integer iptDays;
+
+    /** 离院方式字典码。 */
     private String dscgWayCode;
-    private String transferDeptSummary;
-    private String deptDirectorName;
+
+    /** 主任/副主任医师姓名。 */
     private String chfdrName;
+
+    /** 主治医师姓名。 */
     private String atddrName;
+
+    /** 住院医师姓名。 */
     private String iptDrName;
-    private String respNursName;
-    private String fieldSourcesJson;
-    private String extensionJson;
-    private List<DiagnosisLineCommand> diagnoses;
-    private List<ProcedureLineCommand> procedures;
 
-    @Getter
-    @Setter
-    public static class DiagnosisLineCommand {
-        private String diagTypeCode;
-        private int sortNo;
-        private String diagCode;
-        private String diagName;
-        private String admCondCode;
-    }
+    /** 扩展 JSON 键值。 */
+    private Map<String, Object> extension = new HashMap<>();
 
-    @Getter
-    @Setter
-    public static class ProcedureLineCommand {
-        private int sortNo;
-        private String oprnOprtCode;
-        private String oprnOprtName;
-        private LocalDate oprnDate;
-        private String oprnLevelCode;
-        private String oprnIncisionCode;
-        private String healGradeCode;
-        private String anstWayCode;
-    }
+    /** 诊断行全量列表；null 表示不替换子表。 */
+    private List<HomepageDiagnosis> diagnoses;
+
+    /** 手术行全量列表；null 表示不替换子表。 */
+    private List<HomepageProcedure> procedures;
 }

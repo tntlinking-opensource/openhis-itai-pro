@@ -17,6 +17,7 @@
 
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -85,7 +86,7 @@ public class NurseStationPricedOrderRowDto {
 
     /** 划价时间（OrderInfo.createdAt）。 */
     @Schema(description = "划价时间")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime pricedTime;
 
     /** 费用状态 code（如 PENDING_SETTLEMENT）。 */

@@ -15,4 +15,6 @@ public interface WeekScheduleTemplateItemRepository extends JpaRepository<WeekSc
 
     List<WeekScheduleTemplateItem> findByWeekScheduleTemplateIdAndWeekdayAndIsDeletedFalseAndEnabledTrueOrderBySortNoAsc(
         Long weekScheduleTemplateId, Integer weekday);
+
+    long countByDayScheduleTemplateIdAndIsDeletedFalse(Long dayScheduleTemplateId);
 }

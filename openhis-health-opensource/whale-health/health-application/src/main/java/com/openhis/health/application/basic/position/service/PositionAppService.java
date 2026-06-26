@@ -17,16 +17,18 @@
 
 package com.openhis.health.application.basic.position.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openhis.health.application.basic.position.dto.*;
 import com.openhis.health.application.basic.position.mapper.PositionMapper;
-import com.openhis.health.application.basic.position.support.PositionPractitionerRoleWriteGate;
-import com.openhis.health.application.basic.position.support.PositionRoleApiCompat;
-import com.openhis.health.module.common.validator.CurrentOperatorResolver;
+import com.openhis.health.module.common.validator.position.PositionPractitionerRoleWriteGate;
+import com.openhis.health.module.common.converter.position.PositionRoleApiCompat;
+import com.openhis.whale.core.application.session.CurrentOperatorResolver;
 import com.openhis.health.module.common.validator.WhaleRoleLookup;
 import com.openhis.health.module.common.validator.StaffManagedScopeWriteGate;
 import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
-import com.openhis.health.bridge.shared.identity.UserLoginOrganizationSyncService;
-import com.openhis.health.bridge.shared.organization.OrganizationUnitLinkSyncService;
+import com.openhis.health.module.shared.identity.UserLoginOrganizationSyncService;
+import com.openhis.health.module.shared.organization.OrganizationUnitLinkSyncService;
 import com.openhis.health.domain.administration.healthcareservice.entity.HealthcareService;
 import com.openhis.health.domain.administration.healthcareservice.service.HealthcareServiceQueryService;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
@@ -207,6 +209,9 @@ public class PositionAppService {
             detail.setPractitionerId(practitioner.getId());
             detail.setPractitionerName(practitioner.getName());
             detail.setBusNo(practitioner.getBusNo());
+            detail.setYbNo(practitioner.getYbNo());
+            detail.setDrProfttlCode(practitioner.getDrProfttlCode());
+            detail.setPharPracCertNo(practitioner.getPharPracCertNo());
             detail.setGenderEnum(practitioner.getGenderEnum());
             detail.setStatusEnum(practitioner.getStatusEnum());
             detail.setPrimaryOrgId(practitioner.getOrgId());
@@ -258,6 +263,9 @@ public class PositionAppService {
         Practitioner practitioner = practitionerQueryService.findByUserId(userId);
         Long practitionerId = request.getPractitionerId();
         String genderEnum = normalizeGenderEnum(request.getGenderEnum());
+        String ybNo = resolveStaffYbNo(request);
+        Integer drProfttlCode = resolveStaffDrProfttlCode(request);
+        String pharPracCertNo = resolveStaffPharPracCertNo(request);
         if (practitioner == null) {
             CreatePractitionerCommand createCmd = new CreatePractitionerCommand();
             createCmd.setOperatorId(operatorId);
@@ -268,6 +276,9 @@ public class PositionAppService {
             item.setGenderEnum(genderEnum);
             item.setBusNo(request.getBusNo());
             item.setOrgId(request.getPrimaryOrgId());
+            item.setYbNo(ybNo);
+            item.setDrProfttlCode(drProfttlCode);
+            item.setPharPracCertNo(pharPracCertNo);
             createCmd.setItem(item);
             practitionerId = practitionerDomainService.createPractitioner(createCmd);
         } else {
@@ -281,6 +292,9 @@ public class PositionAppService {
             editItem.setGenderEnum(genderEnum);
             editItem.setPhone(request.getPhoneNumber());
             editItem.setBusNo(request.getBusNo());
+            editItem.setYbNo(ybNo);
+            editItem.setDrProfttlCode(drProfttlCode);
+            editItem.setPharPracCertNo(pharPracCertNo);
             editCmd.setItem(editItem);
             practitionerDomainService.editPractitioner(editCmd);
             if (Boolean.TRUE.equals(request.getSyncPrimaryOrgId()) && request.getPrimaryOrgId() != null) {
@@ -798,6 +812,58 @@ public class PositionAppService {
             return user.getName().trim();
         }
         return request.getUserName();
+    }
+
+    private static final ObjectMapper STAFF_EXTRA_PROPERTIES_MAPPER = new ObjectMapper();
+
+    private JsonNode parseStaffExtraProperties(SaveStaffRequest request) {
+        if (request == null || StringUtils.isBlank(request.getExtraProperties())) {
+            return null;
+        }
+        try {
+            return STAFF_EXTRA_PROPERTIES_MAPPER.readTree(request.getExtraProperties().trim());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String resolveStaffTextField(SaveStaffRequest request, String fieldName, String explicitValue) {
+        if (StringUtils.isNotBlank(explicitValue)) {
+            return explicitValue.trim();
+        }
+        JsonNode extra = parseStaffExtraProperties(request);
+        if (extra == null || !extra.hasNonNull(fieldName)) {
+            return null;
+        }
+        String value = extra.get(fieldName).asText();
+        return StringUtils.isBlank(value) ? null : value.trim();
+    }
+
+    private String resolveStaffYbNo(SaveStaffRequest request) {
+        return resolveStaffTextField(request, "ybNo", request.getYbNo());
+    }
+
+    private String resolveStaffPharPracCertNo(SaveStaffRequest request) {
+        return resolveStaffTextField(request, "pharPracCertNo", request.getPharPracCertNo());
+    }
+
+    private Integer resolveStaffDrProfttlCode(SaveStaffRequest request) {
+        if (request.getDrProfttlCode() != null) {
+            return request.getDrProfttlCode();
+        }
+        JsonNode extra = parseStaffExtraProperties(request);
+        if (extra == null || !extra.hasNonNull("drProfttlCode")) {
+            return null;
+        }
+        String raw = extra.get("drProfttlCode").asText();
+        if (StringUtils.isBlank(raw)) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(raw.trim());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     private void syncLoginOrganizationsFromAssignCommand(AssignPractitionerRoleCommand cmd) {

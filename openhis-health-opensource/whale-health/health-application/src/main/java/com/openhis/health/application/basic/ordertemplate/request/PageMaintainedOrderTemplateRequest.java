@@ -46,6 +46,12 @@ public class PageMaintainedOrderTemplateRequest extends AbstractHealthPageReques
     @Schema(description = "状态 code")
     private String statusEnum;
 
+    /**
+     * 模板来源筛选（MAINTAINED / FROM_ADVICE）；缺省不过滤，维护页可展示医生站另存模板。
+     */
+    @Schema(description = "模板来源 code（MAINTAINED / FROM_ADVICE）；缺省不过滤")
+    private String templateSourceEnum;
+
     /** 名称/编码关键字（SDD 字段名；与父类 keyword 二选一）。 */
     @Schema(description = "名称/编码关键字（与 keyword 二选一）")
     private String searchKey;

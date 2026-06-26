@@ -60,7 +60,10 @@ import lombok.RequiredArgsConstructor;
 /**
  * 号源日程写侧领域服务（DM-WKF-009）。
  *
- * <p>草稿创建、发布、计划窗口调整、服务口径更新、参与者与外部标识全量替换/同步、说明维护、停用/恢复/废弃；各命令批次内仅处理一条日程。</p>
+ * <p>聚合边界：{@link Schedule} 主根 + {@link ScheduleActor} / {@link ScheduleIdentifier} 子实体。</p>
+ * <p>不变量摘要：草稿→发布须绑定规划窗口；参与者须满足门诊组合规则（BR-SCH-001）；已废弃不可写；
+ * 外部标识 (idSystem,idValue) 唯一；事件在 {@code save} 之后发布。</p>
+ * <p>写入口：创建、发布、窗口调整、服务口径、参与者/标识全量替换、说明、停用/恢复/废弃、替诊。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -80,16 +83,16 @@ public class ScheduleDomainService {
      */
     public Long createSchedule(CreateScheduleCommand command) {
         List<CreateScheduleCommand.CreateScheduleItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "一次仅允许创建一条日程");
         }
         CreateScheduleCommand.CreateScheduleItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：机构主键必填，日程须归属院点。
         if (item.getOrganizationId() == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "organizationId 不能为空");
         }
-        // 业务分支处理。
+        // 前置校验：门诊参与者组合须含医师+号源类型等（BR-SCH-001）。
         this.assertOutpatientActorCompositionFromCreate(item.getActors());
 
         Schedule schedule = new Schedule();
@@ -98,16 +101,18 @@ public class ScheduleDomainService {
         schedule.initDraft();
         schedule.assertActorNotEmpty(item.getActors().size());
 
+        // 持久化：先落 Schedule 头，再落参与者与可选外部标识。
         Schedule saved = scheduleRepository.save(schedule);
 
         List<ScheduleActor> actorRows = this.buildActorRows(saved.getId(), item.getActors());
         List<ScheduleIdentifier> identifierRows = this.buildIdentifierRows(saved.getId(), item.getIdentifiers());
         scheduleActorRepository.saveAll(actorRows);
-        // 业务分支处理。
+        // 可选：创建时携带的外部标识一并写入。
         if (!identifierRows.isEmpty()) {
             scheduleIdentifierRepository.saveAll(identifierRows);
         }
 
+        // 发布事件：创建完成后通知下游索引/同步。
         domainEventPublisher.publish(new ScheduleCreatedEvent(saved.getId(), saved.getId(), saved.getOrganizationId(), command.getOperatorId()));
         return saved.getId();
     }
@@ -120,12 +125,12 @@ public class ScheduleDomainService {
      */
     public void publishSchedule(PublishScheduleCommand command) {
         List<PublishScheduleCommand.PublishScheduleItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "一次仅允许发布一条日程");
         }
         PublishScheduleCommand.PublishScheduleItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：scheduleId 为空则无法加载聚合根。
         if (item.getScheduleId() == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "scheduleId 不能为空");
         }
@@ -153,12 +158,12 @@ public class ScheduleDomainService {
      */
     public void adjustPlanningHorizon(AdjustPlanningHorizonCommand command) {
         List<AdjustPlanningHorizonCommand.AdjustPlanningHorizonItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "一次仅允许调整一条日程窗口");
         }
         AdjustPlanningHorizonCommand.AdjustPlanningHorizonItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：scheduleId 为空则无法加载聚合根。
         if (item.getScheduleId() == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "scheduleId 不能为空");
         }
@@ -182,12 +187,12 @@ public class ScheduleDomainService {
      */
     public void updateServiceProfile(UpdateServiceProfileCommand command) {
         List<UpdateServiceProfileCommand.UpdateServiceProfileItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "一次仅允许更新一条日程服务口径");
         }
         UpdateServiceProfileCommand.UpdateServiceProfileItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：scheduleId 为空则无法加载聚合根。
         if (item.getScheduleId() == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "scheduleId 不能为空");
         }
@@ -208,16 +213,16 @@ public class ScheduleDomainService {
      */
     public void replaceScheduleActors(ReplaceScheduleActorsCommand command) {
         List<ReplaceScheduleActorsCommand.ReplaceScheduleActorsItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "一次仅允许替换一条日程参与者");
         }
         ReplaceScheduleActorsCommand.ReplaceScheduleActorsItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：scheduleId 为空则无法加载聚合根。
         if (item.getScheduleId() == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "scheduleId 不能为空");
         }
-        // 业务分支处理。
+        // 前置校验：加载日程并拒绝已废弃聚合上的参与者替换。
         Schedule schedule = this.mustGetSchedule(item.getScheduleId());
         schedule.assertNotRetired();
 
@@ -227,7 +232,7 @@ public class ScheduleDomainService {
         for (ScheduleActor row : existing) {
             row.setIsDeleted(true);
         }
-        // 业务分支处理。
+        // 持久化：软删旧参与者行，再写入全量新参与者。
         if (!existing.isEmpty()) {
             scheduleActorRepository.saveAll(existing);
         }
@@ -259,12 +264,12 @@ public class ScheduleDomainService {
      */
     public void syncScheduleIdentifiers(SyncScheduleIdentifiersCommand command) {
         List<SyncScheduleIdentifiersCommand.SyncScheduleIdentifiersItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "一次仅允许同步一条日程标识");
         }
         SyncScheduleIdentifiersCommand.SyncScheduleIdentifiersItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：scheduleId 为空则无法加载聚合根。
         if (item.getScheduleId() == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "scheduleId 不能为空");
         }
@@ -277,13 +282,13 @@ public class ScheduleDomainService {
         for (ScheduleIdentifier row : existing) {
             row.setIsDeleted(true);
         }
-        // 业务分支处理。
+        // 持久化：软删旧外部标识行。
         if (!existing.isEmpty()) {
             scheduleIdentifierRepository.saveAll(existing);
         }
 
         List<ScheduleIdentifier> newRows = this.buildIdentifierRowsForSync(schedule.getId(), item.getIdentifiers());
-        // 业务分支处理。
+        // 持久化：写入同步后的新标识列表（可为空表示清空）。
         if (!newRows.isEmpty()) {
             scheduleIdentifierRepository.saveAll(newRows);
         }
@@ -299,18 +304,33 @@ public class ScheduleDomainService {
      */
     public void updateComment(UpdateScheduleCommentCommand command) {
         List<UpdateScheduleCommentCommand.UpdateScheduleCommentItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "一次仅允许更新一条日程说明");
         }
         UpdateScheduleCommentCommand.UpdateScheduleCommentItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：scheduleId 为空则无法加载聚合根。
         if (item.getScheduleId() == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "scheduleId 不能为空");
         }
         Schedule schedule = this.mustGetSchedule(item.getScheduleId());
         schedule.assertCommentLength(item.getCommentMarkdown());
         schedule.updateComment(item.getCommentMarkdown());
+        scheduleRepository.save(schedule);
+    }
+
+    /**
+     * 更新日程显示名称（草稿编辑等场景）。
+     *
+     * @param scheduleId 日程主键
+     * @param name 名称
+     */
+    public void updateName(Long scheduleId, String name) {
+        if (scheduleId == null) {
+            throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "scheduleId 不能为空");
+        }
+        Schedule schedule = this.mustGetSchedule(scheduleId);
+        schedule.updateName(name);
         scheduleRepository.save(schedule);
     }
 
@@ -322,12 +342,12 @@ public class ScheduleDomainService {
      */
     public void deactivateSchedule(DeactivateScheduleCommand command) {
         List<DeactivateScheduleCommand.DeactivateScheduleItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "一次仅允许停用一条日程");
         }
         DeactivateScheduleCommand.DeactivateScheduleItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：scheduleId 为空则无法加载聚合根。
         if (item.getScheduleId() == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "scheduleId 不能为空");
         }
@@ -344,14 +364,17 @@ public class ScheduleDomainService {
      */
     public void substitutePractitioner(SubstitutePractitionerCommand command) {
         List<SubstitutePractitionerCommand.SubstitutePractitionerItemCommand> items = command.resolveItems();
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "一次仅允许替诊一条日程");
         }
         SubstitutePractitionerCommand.SubstitutePractitionerItemCommand item = items.get(0);
+        // 前置校验：scheduleId 为空则无法加载聚合根。
         if (item.getScheduleId() == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "scheduleId 不能为空");
         }
         Schedule schedule = this.mustGetSchedule(item.getScheduleId());
+        // 替诊 id 为空表示撤销顶班；否则写入 substitute 字段（Actor 仍保留原医师）。
         if (item.getSubstitutePractitionerId() == null) {
             schedule.clearSubstitute();
         } else {
@@ -368,12 +391,12 @@ public class ScheduleDomainService {
      */
     public void reactivateSchedule(ReactivateScheduleCommand command) {
         List<ReactivateScheduleCommand.ReactivateScheduleItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "一次仅允许恢复一条日程");
         }
         ReactivateScheduleCommand.ReactivateScheduleItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：scheduleId 为空则无法加载聚合根。
         if (item.getScheduleId() == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "scheduleId 不能为空");
         }
@@ -393,12 +416,12 @@ public class ScheduleDomainService {
      */
     public void retireSchedule(RetireScheduleCommand command) {
         List<RetireScheduleCommand.RetireScheduleItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：命令批次须恰好一条（单聚合写入口）。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "一次仅允许废弃一条日程");
         }
         RetireScheduleCommand.RetireScheduleItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：scheduleId 为空则无法加载聚合根。
         if (item.getScheduleId() == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "scheduleId 不能为空");
         }
@@ -445,7 +468,7 @@ public class ScheduleDomainService {
             row.setScheduleId(scheduleId);
             row.setActorType(actor.getActorType());
             row.setActorId(actor.getActorId());
-            // 业务分支处理：未指定排序号时按顺序自动分配。
+            // 未指定 sortNo 时按列表顺序自动编号，保证展示稳定。
             if (actor.getSortNo() == null) {
                 row.setSortNo(i);
             } else {
@@ -467,7 +490,7 @@ public class ScheduleDomainService {
      */
     private List<ScheduleIdentifier> buildIdentifierRows(Long scheduleId, List<CreateScheduleCommand.ScheduleIdentifierItemCommand> identifiers) {
         List<ScheduleIdentifier> rows = new ArrayList<>();
-        // 业务分支处理：空列表直接返回。
+        // 无外部标识时跳过构建，避免无意义 insert。
         if (identifiers == null || identifiers.isEmpty()) {
             return rows;
         }
@@ -500,7 +523,7 @@ public class ScheduleDomainService {
      */
     private List<ScheduleIdentifier> buildIdentifierRowsForSync(Long scheduleId, List<SyncScheduleIdentifiersCommand.ScheduleIdentifierItemCommand> identifiers) {
         List<ScheduleIdentifier> rows = new ArrayList<>();
-        // 业务分支处理：空列表直接返回。
+        // 无外部标识时跳过构建，避免无意义 insert。
         if (identifiers == null || identifiers.isEmpty()) {
             return rows;
         }
@@ -569,7 +592,7 @@ public class ScheduleDomainService {
      * @throws BusinessException idSystem/idValue 为空或组合重复时
      */
     private void assertIdentifierUnique(List<SyncScheduleIdentifiersCommand.ScheduleIdentifierItemCommand> identifiers) {
-        // 业务分支处理：空列表直接通过校验。
+        // 空标识列表视为合法（同步时可清空全部外部标识）。
         if (identifiers == null || identifiers.isEmpty()) {
             return;
         }

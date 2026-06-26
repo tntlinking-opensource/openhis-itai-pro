@@ -17,6 +17,8 @@
 
 package com.openhis.health.domain.diagnosis.bodystructure.service;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
+
 import com.openhis.health.domain.diagnosis.bodystructure.entity.BodyStructure;
 import com.openhis.health.domain.diagnosis.bodystructure.queries.model.BodyStructureInfoQueryModel;
 import com.openhis.health.domain.diagnosis.bodystructure.queries.model.BodyStructureListItemQueryModel;
@@ -63,8 +65,11 @@ public class BodyStructureQueryService {
         List<BodyStructure> bodyStructures = repository.findAllByOrderByBusNoAsc();
         Map<Long, BodyStructureTreeQueryModel> map = new HashMap<>();
         List<BodyStructureTreeQueryModel> roots = new ArrayList<>();
-        // 第一遍：为每个部位建立树节点并放入 id→节点 索引
+        // 第一遍：为每个未删部位建立树节点并放入 id→节点 索引
         for (BodyStructure bodyStructure : bodyStructures) {
+            if (Boolean.TRUE.equals(bodyStructure.getIsDeleted())) {
+                continue;
+            }
             BodyStructureTreeQueryModel model = new BodyStructureTreeQueryModel();
             model.setId(bodyStructure.getId());
             model.setBusNo(bodyStructure.getBusNo());
@@ -73,6 +78,9 @@ public class BodyStructureQueryService {
             map.put(model.getId(), model);
         }
         for (BodyStructure bodyStructure : bodyStructures) {
+            if (Boolean.TRUE.equals(bodyStructure.getIsDeleted())) {
+                continue;
+            }
             BodyStructureTreeQueryModel current = map.get(bodyStructure.getId());
             // 无父节点则为顶层部位（如全身、系统级）
             if (bodyStructure.getParentId() == null) {
@@ -125,7 +133,7 @@ public class BodyStructureQueryService {
         if (keyword != null) {
             keywordForTrim = keyword;
         }
-        String qTrim = StringUtils.trimToEmpty(keywordForTrim);
+        String qTrim = trimToEmpty(keywordForTrim);
         String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(qTrim);
         Specification<BodyStructure> spec = (root, cq, cb) -> {
             List<Predicate> preds = new ArrayList<>();
@@ -197,4 +205,3 @@ public class BodyStructureQueryService {
         return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), defaultSort);
     }
 }
-

@@ -19,6 +19,7 @@ package com.openhis.health.application.inpatient.nursestation.ATDManager.request
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.module.common.dto.nursestation.AdmissionVitalSignSubmitDto;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.ParticipantSubmitDto;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -75,4 +76,8 @@ public class ExecuteBedOperationRequest {
     /** 责任医护（ASSIGN 建议必填，全量收口后 INSERT）。 */
     @Schema(description = "责任医护提交行")
     private List<ParticipantSubmitDto> participants;
+
+    /** 入院体征（仅 ASSIGN 可选；分床成功后同事务写入）。 */
+    @Schema(description = "入院体征提交块")
+    private AdmissionVitalSignSubmitDto admissionVitalSigns;
 }
