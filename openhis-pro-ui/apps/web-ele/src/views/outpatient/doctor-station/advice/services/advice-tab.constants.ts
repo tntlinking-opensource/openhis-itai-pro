@@ -4,8 +4,12 @@ import type { ProductColumn } from './advice.types';
 export const ADVICE_PRICING_SOURCE_CODE = 'retailPrice';
 
 export const MEDICATION_DEFINITION_TABLE = 'med_medication_definition';
+export const ACTIVITY_DEFINITION_TABLE = 'wkf_activity_definition';
+export const DEVICE_DEFINITION_TABLE = 'adm_device_definition';
+export const MEDICATION_REQUEST_TABLE = 'med_medication_request';
+export const SERVICE_REQUEST_TABLE = 'wkf_service_request';
 
-/** IF-DOR-35 中草药 med_category_code；开立医嘱选品需排除 */
+/** IF-DOR-35 中草药 medication_category_code；开立医嘱选品需排除 */
 export const HERBAL_MEDICATION_CATEGORY_CODE = '4';
 
 /** 开立医嘱目录检索默认排除的药品分类 */

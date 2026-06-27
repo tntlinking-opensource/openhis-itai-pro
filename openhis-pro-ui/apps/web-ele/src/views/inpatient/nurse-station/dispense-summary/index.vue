@@ -23,7 +23,6 @@ import {
   httpSubmitMedicationSummary,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-dispense-summary.http';
 import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display-cell.vue';
-import { useWardDispenseSummaryPrint } from '#/composables/use-ward-dispense-summary-print';
 import { useRequest } from '#/hooks/use-request';
 
 import NurseStationPatientOrderCollapseTitle from '../components/nurse-station-patient-order-collapse-title.vue';
@@ -98,7 +97,6 @@ const summaryHeadersRequest = useRequest(httpPageMedicationSummarySlipHeaders, {
 const createSummaryRequest = useRequest(httpCreateMedicationSummary, { manual: true });
 const submitSummaryRequest = useRequest(httpSubmitMedicationSummary, { manual: true });
 const cancelSummaryRequest = useRequest(httpCancelMedicationSummary, { manual: true });
-const { printWardDispenseSummary, isPrinting: summaryPrintLoading } = useWardDispenseSummaryPrint();
 
 const encounterIds = computed(() =>
   props.patients.map((p) => String(p.id).trim()).filter((id) => id.length > 0),
@@ -334,15 +332,6 @@ async function handleCreateSummaryPickup() {
   await afterCreateSummarySuccess(msg);
 }
 
-/** 打印汇总明细（复用当前已加载数据） */
-function handlePrintPickupDetail() {
-  if (allVisiblePlanSlots.value.length === 0) {
-    ElMessage.warning('暂无待汇总明细可打印');
-    return;
-  }
-  ElMessage.info('打印模板待接入，可先导出当前列表数据');
-}
-
 /** 汇总 Tab 表格多选变化 */
 function handleSummarySelectionChange(rows: NurseStationDispenseSummarySlipHeaderDto[]) {
   selectedSummarySlips.value = rows;
@@ -365,16 +354,6 @@ async function handleViewSummarySheet(row: NurseStationDispenseSummarySlipHeader
   } finally {
     detailDialogLoading.value = false;
   }
-}
-
-/** 打印汇总单（IF-IP-SUM-07：报表模板 ward_dispense_summary） */
-async function handlePrintSummarySheet(row: NurseStationDispenseSummarySlipHeaderDto) {
-  const summaryNo = String(row.busNo ?? '').trim();
-  if (!summaryNo) {
-    ElMessage.warning('汇总单号为空，无法打印');
-    return;
-  }
-  await printWardDispenseSummary({ summaryNo });
 }
 
 /** 发送汇总单至药房 */
@@ -459,12 +438,6 @@ async function handleCancelSummarySheets() {
   }
 }
 
-/** 打印详情弹窗中的汇总单 */
-function handlePrintDetailDialog() {
-  if (!detailDialogHeader.value) return;
-  void handlePrintSummarySheet(detailDialogHeader.value);
-}
-
 /** 领药时点勾选标签：时刻 + 数量（与医嘱执行槽位标签同构） */
 function formatDispenseSlotLabel(slot: DispenseSummarySelectableSlot): string {
   const time = formatPlannedDispenseTimeLabel(slot.point.plannedDispenseTime);
@@ -543,9 +516,6 @@ function formatDispenseSlotLabel(slot: DispenseSummarySelectableSlot): string {
             />
           </label>
           <ElButton type="primary" @click="handleCreateSummaryPickup">汇总领药</ElButton>
-          <ElButton plain :loading="summaryPrintLoading" @click="handlePrintPickupDetail">
-            打印明细
-          </ElButton>
         </template>
         <template v-else>
           <ElButton
@@ -702,14 +672,6 @@ function formatDispenseSlotLabel(slot: DispenseSummarySelectableSlot): string {
                 <ElButton
                   link
                   type="primary"
-                  :loading="summaryPrintLoading"
-                  @click="handlePrintSummarySheet(row)"
-                >
-                  打印
-                </ElButton>
-                <ElButton
-                  link
-                  type="primary"
                   :disabled="!isPendingSummarySlip(row)"
                   @click="handleSubmitSingleSummarySheet(row)"
                 >
@@ -733,7 +695,6 @@ function formatDispenseSlotLabel(slot: DispenseSummarySelectableSlot): string {
       :header="detailDialogHeader"
       :lines="detailDialogLines"
       :loading="detailDialogLoading"
-      @print="handlePrintDetailDialog"
     />
   </div>
 </template>

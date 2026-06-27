@@ -1,7 +1,7 @@
 import type { ApiResponse } from '#/types/api-response';
 
 import { requestClient } from '#/api/request';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 周期类型 code（DM-CUS-008 §4.1） */
 export type FrequencyCycleTypeCode = 'as-needed' | 'daily' | 'fixed-count' | 'interval' | 'weekly';

@@ -29,7 +29,7 @@ import {
   initPharmacyWarehouseSuplyApi,
 } from '#/api/warehouse/inventory';
 import { useRequest } from '#/hooks/use-request';
-import { decimalAdd, decimalSub, decimalToFixed } from '#/utils/decimal-util';
+import { decimalAdd, decimalSub, decimalToFixed } from '#/utils/format/decimal-util';
 
 import { calcTotalPrice, formatQuantityByUnit } from '../../util';
 

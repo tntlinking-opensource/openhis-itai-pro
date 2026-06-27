@@ -255,6 +255,7 @@ const gridOptions = computed(() => {
     sortConfig: {
       multiple: true,
     },
+    ...(props.spanMethod ? { spanMethod: props.spanMethod } : {}),
     loading: props.loading,
     toolbarConfig,
     ...(checkboxConfigFromSelection.value

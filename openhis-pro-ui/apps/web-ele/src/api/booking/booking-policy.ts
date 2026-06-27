@@ -3,19 +3,22 @@
  */
 import { publicRequestClient } from '#/api/request';
 
+import type { BookingEntityId } from './booking-id';
 import type { BookingPagedResult } from './booking-types';
 
 export interface ReleasePolicyDto {
-  id?: number;
+  id?: BookingEntityId;
   policyCode?: string;
   policyName?: string;
   advanceDays?: number;
   slotMinutes?: number;
   capacityPerSlot?: number;
-  channelQuotaJson?: string;
+  /** 结构化渠道配额（渠道编码 → 百分比）；后端出参，编辑时序列化为 JSON 字符串 */
+  channelQuotas?: Record<string, number>;
 }
 
 export interface PageReleasePoliciesRequest {
+  organizationId?: BookingEntityId;
   keyword?: string;
   pageNo: number;
   pageSize: number;
@@ -23,7 +26,7 @@ export interface PageReleasePoliciesRequest {
 
 export interface SaveReleasePolicyRequest {
   id?: number;
-  policyCode: string;
+  policyCode?: string;
   policyName: string;
   advanceDays: number;
   slotMinutes: number;
@@ -53,7 +56,7 @@ export interface SaveRegistrationPolicyRequest {
 }
 
 export interface GetRegistrationModeRequest {
-  organizationId?: number;
+  organizationId: BookingEntityId;
 }
 
 export interface GetRegistrationModeResponse {
@@ -127,7 +130,7 @@ export async function saveRegistrationPolicyApi(params: SaveRegistrationPolicyRe
   return publicRequestClient.post<void>('/bookingPolicy/saveRegistrationPolicy', params);
 }
 
-export async function getRegistrationModeApi(params: GetRegistrationModeRequest = {}) {
+export async function getRegistrationModeApi(params: GetRegistrationModeRequest) {
   return publicRequestClient.post<GetRegistrationModeResponse>(
     '/bookingPolicy/getRegistrationMode',
     params,

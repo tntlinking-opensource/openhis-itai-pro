@@ -8,13 +8,9 @@ import type {
 } from '#/api/doctor-station/advice.types';
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
 
-import {
-  httpPageDoctorStationAdviceCatalog,
-  httpSaveDoctorStationAdviceDraftBatch,
-} from '#/api/doctor-station/advice.http';
+import { httpPageDoctorStationAdviceCatalog } from '#/api/doctor-station/advice.http';
 import { httpGetEncounterDiagnosis } from '#/api/doctor-station/diagnosis.http';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { resolveRequestErrorMessage } from '#/utils/resolve-request-error-message';
 import {
   convertAdviceCatalogSplitQtyToPackageDisplay,
   formatAdviceCatalogStockCellText,
@@ -26,7 +22,7 @@ import {
   convertInboundQtyBetweenBandKinds,
   normalizeInboundProductUnitBands,
 } from '#/utils/inventory/inbound-product-unit-bands';
-
+import { saveAdviceDraftBatchWithBindResolution } from './advice-draft-bind.service';
 import {
   createAdviceDrugItem,
   inferDoseBandConvertK,
@@ -39,7 +35,7 @@ import {
 } from './advice-edit-hydrate';
 import { mapCatalogRowToOption } from './advice-list';
 import { buildAdviceDraftLines } from './advice-medication-draft';
-import { validateWesternEditLineItem, inferAdviceLineEditorKind } from './advice-row';
+import { inferAdviceLineEditorKind, validateWesternEditLineItem } from './advice-row';
 import { ADVICE_PRICING_SOURCE_CODE } from './advice-tab.constants';
 import { unitCodeByBandKind } from './medication-unit-bands';
 
@@ -400,21 +396,23 @@ export async function applyHistoryAdviceToAdviceDraft(
     throw new HistoryAdviceApplyError(`「${name}」参数不完整，无法复用历史医嘱`);
   }
 
-  const draftLines = buildAdviceDraftLines(drugItems, [], {
-    encounterDiagnosisRows,
+  const draftLines = (() => {
+    try {
+      return buildAdviceDraftLines(drugItems, [], {
+        encounterDiagnosisRows,
+        existingAdviceRows: params.existingAdviceRows ?? [],
+      });
+    } catch (error) {
+      throw new HistoryAdviceApplyError(error instanceof Error ? error.message : '请求组包失败');
+    }
+  })();
+  const saveRes = await saveAdviceDraftBatchWithBindResolution({
+    encounterId,
+    patientId,
+    pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
+    lines: draftLines,
     existingAdviceRows: params.existingAdviceRows ?? [],
   });
-  let saveRes: Awaited<ReturnType<typeof httpSaveDoctorStationAdviceDraftBatch>>;
-  try {
-    saveRes = await httpSaveDoctorStationAdviceDraftBatch({
-      encounterId,
-      patientId,
-      pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
-      lines: draftLines,
-    });
-  } catch (error) {
-    throw new HistoryAdviceApplyError(resolveRequestErrorMessage(error, '保存医嘱草稿失败'));
-  }
   if (saveRes.success === false) {
     throw new HistoryAdviceApplyError(String(saveRes.message ?? '').trim() || '保存医嘱草稿失败');
   }

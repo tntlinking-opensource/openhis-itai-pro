@@ -2,6 +2,12 @@
 export interface NurseStationModulePatient {
   id: string;
   patientId?: string;
+  /** 住院号（病历号展示用 busNo，非 encounterId）。 */
+  busNo?: string;
+  /** 入院时间（YYYY-MM-DD HH:mm:ss）。 */
+  admissionAt?: string;
+  /** 出院时间（YYYY-MM-DD HH:mm:ss）。 */
+  dischargeAt?: string;
   bedNo: string;
   name: string;
   gender: string;
@@ -15,15 +21,35 @@ export interface NurseStationModulePatient {
   pendingExecute: number;
   accountId?: string;
   accountBalance?: number | string;
+  accountBalanceDisplayMode?: string;
+  accountBalanceSummaryText?: string;
+  accountBalanceSubText?: string;
+  availableBalance?: number | string;
+  pendingSettlementTotal?: number | string;
+  lowBalanceWarning?: boolean;
   riskTags: string[];
 }
 
-/** 账户余额展示：对接读模型 accountBalance。 */
-export function formatNurseStationAccountBalance(value?: number | string): string {
-  if (value == null || value === '') return '—';
-  const num = Number(value);
-  if (Number.isFinite(num)) return num.toFixed(2);
-  return String(value);
+import {
+  formatInpatientAccountBalancePrimaryText,
+  formatInpatientAccountBalanceSecondaryText,
+  resolveInpatientAccountBalanceLabel,
+} from '#/utils/inpatient/account-balance-display';
+
+export {
+  formatInpatientAccountBalancePrimaryText,
+  formatInpatientAccountBalanceSecondaryText,
+  resolveInpatientAccountBalanceLabel,
+};
+
+/** 账户余额展示：对接读模型文案；无文案时回退金额。 */
+export function formatNurseStationAccountBalance(
+  row?: Pick<
+    NurseStationModulePatient,
+    'accountBalance' | 'accountBalanceSummaryText' | 'availableBalance'
+  >,
+): string {
+  return formatInpatientAccountBalancePrimaryText(row);
 }
 
 /** 展示余额是否非零（与后端 InpatientDisplayAccountBalanceAssembler 2 位小数口径对齐）。 */

@@ -1,3 +1,5 @@
+import type { DispensePrescriptionBlock, DispenseQueuePatient } from '../components/types';
+
 import type {
   EncounterMedicationDispenseSlipRowDto,
   MedicationDispenseInventoryDetailDto,
@@ -5,8 +7,6 @@ import type {
 } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.types';
 
 import { formatDateTime } from '@vben/utils';
-
-import type { DispensePrescriptionBlock, DispenseQueuePatient } from '../components/types';
 
 import { encodeInventoryPick } from './inventory-pick-codec';
 
@@ -30,7 +30,7 @@ export function mapPendingQueueRowToPatient(
 ): DispenseQueuePatient {
   const ge = row.genderEnum;
   let genderEnum: number | undefined;
-  if (ge != null && ge !== '') {
+  if (ge !== null && ge !== undefined && ge !== '') {
     const n = Number(ge);
     if (!Number.isNaN(n)) genderEnum = n;
   }
@@ -93,7 +93,9 @@ export function mapSlipRowsToPrescriptionBlocks(
     const tcm = isHerbalSlipRow(head);
     const rxNo = resolvePrescriptionBlockNo(head);
     const issued =
-      head.requestAuthoredTime != null && head.requestAuthoredTime !== ''
+      head.requestAuthoredTime !== null &&
+      head.requestAuthoredTime !== undefined &&
+      head.requestAuthoredTime !== ''
         ? formatDateTime(head.requestAuthoredTime)
         : '—';
     const items = groupRows.map((line) => {

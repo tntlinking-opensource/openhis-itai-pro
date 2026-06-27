@@ -17,6 +17,8 @@ import type {
   PageDoctorStationAdviceResponse,
   PageDoctorStationAdviceCatalogRequest,
   PageDoctorStationAdviceCatalogResponse,
+  ResolveDoctorStationAdviceDraftBindsRequest,
+  ResolveDoctorStationAdviceDraftBindsResponse,
   SaveDoctorStationAdviceDraftBatchRequest,
   SaveDoctorStationAdviceDraftBatchResponse,
   SaveDoctorStationServiceApplyFormRequest,
@@ -58,6 +60,9 @@ export interface DoctorStationAdviceHttpClient {
   httpPageDoctorStationAdviceCatalog: (
     body: PageDoctorStationAdviceCatalogRequest,
   ) => Promise<PageDoctorStationAdviceCatalogResponse>;
+  httpResolveDoctorStationAdviceDraftBinds: (
+    body: ResolveDoctorStationAdviceDraftBindsRequest,
+  ) => Promise<ResolveDoctorStationAdviceDraftBindsResponse>;
   httpSaveDoctorStationAdviceDraftBatch: (
     body: SaveDoctorStationAdviceDraftBatchRequest,
   ) => Promise<SaveDoctorStationAdviceDraftBatchResponse>;
@@ -100,6 +105,8 @@ export function createDoctorStationAdviceHttpClient(
       post('getDoctorStationAdviceOrderBindInfo', body),
     httpGetEncounterAdviceDefaultContract: (body) =>
       post('getEncounterAdviceDefaultContract', body),
+    httpResolveDoctorStationAdviceDraftBinds: (body) =>
+      post('resolveDoctorStationAdviceDraftBinds', body),
     httpSaveDoctorStationAdviceDraftBatch: (body) =>
       post('saveDoctorStationAdviceDraftBatch', body),
     httpSignDoctorStationAdviceBatch: (body) => post('signDoctorStationAdviceBatch', body),

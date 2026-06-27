@@ -19,7 +19,7 @@ import {
   WARD_BED_REGISTER_DEFAULT,
 } from '#/api/basic/ward-bed';
 import { unwrapApiList } from '#/utils/api/unwrap-api-list';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 interface Props {
   visible?: boolean;

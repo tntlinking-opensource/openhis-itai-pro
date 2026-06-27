@@ -1,6 +1,6 @@
 import type { ProductDetail } from '#/types/common';
 
-import { decimalAdd, decimalMul } from '#/utils/decimal-util';
+import { decimalAdd, decimalMul } from '#/utils/format/decimal-util';
 
 export const calcPurchasePrice = (partPercent: number, unitPrice: number) => {
   return decimalMul(unitPrice, partPercent);

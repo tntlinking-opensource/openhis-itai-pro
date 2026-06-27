@@ -16,6 +16,7 @@ import {
   ElImage,
   ElInput,
   ElInputNumber,
+  ElOption,
   ElSelect,
 } from 'element-plus';
 
@@ -449,6 +450,42 @@ setupVbenVxeTable({
         const amountField = String(props?.amountField ?? column.field ?? 'totalAmount');
         const text = formatInventoryTotalAmountDisplay(row, amountField);
         return h('span', { class: 'block w-full text-right' }, text);
+      },
+    });
+
+    /** 行内 options 字段驱动的 ElSelect（如护士站皮试执行人/核对人） */
+    vxeUI.renderer.add('RowOptionsElSelect', {
+      autofocus: '.el-input__inner',
+      renderTableEdit(renderOpts, { row, column }) {
+        const { props } = renderOpts;
+        type RowOpt = { label: string; value: string };
+        const optionsField = String(props?.optionsField ?? '');
+        const options = (row[optionsField] as RowOpt[] | undefined) ?? [];
+        return h(
+          ElSelect,
+          {
+            class: 'w-full',
+            filterable: props?.filterable === true,
+            clearable: props?.clearable === true,
+            placeholder: props?.placeholder as string | undefined,
+            modelValue: row[column.field],
+            'onUpdate:modelValue': (val: string) => {
+              row[column.field] = val;
+            },
+          },
+          () =>
+            options.map((opt) =>
+              h(ElOption, { key: opt.value, label: opt.label, value: opt.value }),
+            ),
+        );
+      },
+      renderTableCell(renderOpts, { row, column }) {
+        type RowOpt = { label: string; value: string };
+        const optionsField = String(renderOpts.props?.optionsField ?? '');
+        const options = (row[optionsField] as RowOpt[] | undefined) ?? [];
+        const value = String(row[column.field] ?? '');
+        const hit = options.find((item) => item.value === value);
+        return h('span', hit?.label || value || '—');
       },
     });
 

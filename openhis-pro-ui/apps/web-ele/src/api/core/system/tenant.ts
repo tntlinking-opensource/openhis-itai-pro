@@ -2,7 +2,7 @@ import type { UserInfo } from '#/api/user/user';
 import type { PageApiResponse, PageParams } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 export interface TenantListParams extends PageParams {
   code?: string;

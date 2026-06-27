@@ -1,6 +1,7 @@
 import type {
   ExecuteOutpatientBillRefundByPaymentRequest,
   ExecuteOutpatientBillRefundByPaymentResponse,
+  ListOriginalPayChannelCodesRequest,
   LoadOutpatientRefundExecutionDetailRequest,
   LoadOutpatientRefundExecutionDetailResponse,
   LoadOutpatientRefundPageInitRequest,
@@ -53,6 +54,13 @@ export async function httpVerifyRefundableBeforeExecution(
     '/outpatientRefund/verifyRefundableBeforeExecution',
     body,
   );
+}
+
+/** 按原支付主单查询落库渠道码（退费前判定是否可能银联原路退） */
+export async function httpListOriginalPayChannelCodes(
+  body: ListOriginalPayChannelCodesRequest,
+): Promise<string[]> {
+  return publicRequestClient.post<string[]>('/outpatientRefund/listOriginalPayChannelCodes', body);
 }
 
 /** 按原支付主单执行门诊账单退费 */

@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import type { EmrTemplateTreeNode } from './build-emr-template-tree';
+
 import type { DocumentSummaryDto } from '#/api/emr/document';
 import type { EmrTemplateStationKind } from '#/views/basic/emr-template/emr-template-scope.constants';
-import type { EmrTemplateTreeNode } from './build-emr-template-tree';
 
 import { ref, watch } from 'vue';
 
@@ -16,16 +17,6 @@ defineOptions({
   name: 'HistoryTemplatePanel',
 });
 
-interface Props {
-  activeTab?: 'history' | 'template';
-  patientId?: string;
-  encounterId?: string;
-  /** 当前打开的文书 ID，用于高亮历史列表项 */
-  currentDocumentId?: string;
-  /** 门诊 / 住院医生站场景，驱动模板可见范围 */
-  stationKind?: EmrTemplateStationKind;
-}
-
 const props = withDefaults(defineProps<Props>(), {
   activeTab: 'template',
   patientId: '',
@@ -38,6 +29,16 @@ const emit = defineEmits<{
   selectDocument: [row: DocumentSummaryDto];
   tabChange: [tab: 'history' | 'template'];
 }>();
+
+interface Props {
+  activeTab?: 'history' | 'template';
+  patientId?: string;
+  encounterId?: string;
+  /** 当前打开的文书 ID，用于高亮历史列表项 */
+  currentDocumentId?: string;
+  /** 门诊 / 住院医生站场景，驱动模板可见范围 */
+  stationKind?: EmrTemplateStationKind;
+}
 
 const activeTab = ref(props.activeTab);
 const searchKeyword = ref('');

@@ -1,6 +1,6 @@
-import type { OutpatientPatientCardPayload } from '#/components/outpatient/patient-card.types';
-
 import type { DispenseQueuePatient } from './types';
+
+import type { OutpatientPatientCardPayload } from '#/components/outpatient/patient-card.types';
 
 function genderLabelToEnum(label: string): number | undefined {
   if (label.includes('男')) return 1;

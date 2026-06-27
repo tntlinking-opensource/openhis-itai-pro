@@ -3,6 +3,8 @@ import type { NursingRecordPaperHeader, NursingRecordViewRow } from './nursing-r
 
 import { Delete } from '@element-plus/icons-vue';
 
+import { usePaperSheetFullscreen } from '../../composables/use-paper-sheet-fullscreen';
+
 defineOptions({
   name: 'NursingRecordPaperTable',
 });
@@ -10,12 +12,14 @@ defineOptions({
 interface Props {
   paperHeader?: NursingRecordPaperHeader | null;
   rows: NursingRecordViewRow[];
+  savingAll?: boolean;
   unsavedCount?: number;
   weekRangeLabel?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   paperHeader: null,
+  savingAll: false,
   unsavedCount: 0,
   weekRangeLabel: '',
 });
@@ -23,10 +27,12 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   addRow: [];
   deleteRow: [id: string];
+  ensureDatetime: [id: string];
   markDirty: [id: string];
-  print: [];
   saveAll: [];
 }>();
+
+const { isFullscreen, toggleFullscreen } = usePaperSheetFullscreen();
 
 /** 将完整日期格式化为 MM-DD。 */
 function formatDateShort(date?: string) {
@@ -58,253 +64,262 @@ function handleFieldDirty(row: NursingRecordViewRow) {
 </script>
 
 <template>
-  <div class="paper-record">
-    <div class="paper-record__scroll">
-      <div class="paper-record__sheet">
-        <div class="paper-record__doc-head">
-          <header class="sheet-title">护 理 记 录 单</header>
+  <Teleport to="body" :disabled="!isFullscreen">
+    <div class="paper-record" :class="{ 'is-fullscreen': isFullscreen }">
+      <div class="paper-record__toolbar">
+        <div class="paper-record__toolbar-main">
+          <span v-if="weekRangeLabel" class="paper-record__week">{{ weekRangeLabel }}</span>
+          <span v-if="unsavedCount > 0" class="paper-record__unsaved"
+            >未保存 {{ unsavedCount }} 条</span
+          >
+        </div>
+        <div class="paper-record__toolbar-actions">
+          <slot name="toolbar-extra" />
+          <ElButton plain @click="toggleFullscreen">
+            {{ isFullscreen ? '退出全屏' : '全屏' }}
+          </ElButton>
+          <ElButton type="primary" plain @click="emit('addRow')">新增行</ElButton>
+          <ElButton :loading="savingAll" type="primary" @click="emit('saveAll')">保存</ElButton>
+        </div>
+      </div>
 
-          <div v-if="paperHeader" class="patient-info-line">
-            <span>姓名：{{ paperHeader.name || '' }}</span>
-            <span>性别：{{ paperHeader.gender || '' }}</span>
-            <span>年龄：{{ paperHeader.age ?? '' }}岁</span>
-            <span>病室：{{ paperHeader.wardName || '' }}</span>
-            <span>床号：{{ paperHeader.bedNo || '' }}</span>
-            <span>病历号：{{ paperHeader.inpatientNo || '' }}</span>
-            <span>入院日期：{{ paperHeader.admitAt || '' }}</span>
-            <span>出院日期：{{ paperHeader.dischargeAt || '' }}</span>
+      <div class="paper-record__viewport is-fluid">
+        <div class="paper-record__stage">
+          <div class="paper-record__shell">
+            <div class="paper-record__sheet is-fluid">
+              <div class="paper-record__doc-head">
+                <header class="sheet-title">护 理 记 录 单</header>
+
+                <div v-if="paperHeader" class="patient-info-line">
+                  <span>姓名：{{ paperHeader.name || '' }}</span>
+                  <span>性别：{{ paperHeader.gender || '' }}</span>
+                  <span>年龄：{{ paperHeader.age ?? '' }}岁</span>
+                  <span>病室：{{ paperHeader.wardName || '' }}</span>
+                  <span>床号：{{ paperHeader.bedNo || '' }}</span>
+                  <span>病历号：{{ paperHeader.inpatientNo || '' }}</span>
+                  <span>入院日期：{{ paperHeader.admitAt || '' }}</span>
+                  <span>出院日期：{{ paperHeader.dischargeAt || '' }}</span>
+                </div>
+              </div>
+
+              <table class="paper-record__table">
+                <colgroup>
+                  <col class="col-datetime" />
+                  <col class="col-vital" span="5" />
+                  <col class="col-consciousness" />
+                  <col class="col-pupil" span="2" />
+                  <col class="col-io-name" />
+                  <col class="col-io-amount" />
+                  <col class="col-io-name" />
+                  <col class="col-io-amount" />
+                  <col class="col-io-color" />
+                  <col class="col-observation" />
+                  <col class="col-signature" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th class="col-datetime" rowspan="2">日期<br />时间</th>
+                    <th class="col-vital">体温</th>
+                    <th class="col-vital">脉搏</th>
+                    <th class="col-vital">心率</th>
+                    <th class="col-vital">呼吸</th>
+                    <th class="col-vital">血压</th>
+                    <th class="col-consciousness" rowspan="2">意识</th>
+                    <th class="col-pupil" colspan="2">瞳孔</th>
+                    <th class="col-io" colspan="2">入量</th>
+                    <th class="col-io" colspan="3">出量</th>
+                    <th class="col-observation" rowspan="2">病情观察及护理</th>
+                    <th class="col-signature" rowspan="2">护士签名</th>
+                  </tr>
+                  <tr>
+                    <th class="col-vital">℃</th>
+                    <th class="col-vital">次/分</th>
+                    <th class="col-vital">次/分</th>
+                    <th class="col-vital">次/分</th>
+                    <th class="col-vital">mmHg</th>
+                    <th class="col-pupil">左</th>
+                    <th class="col-pupil">右</th>
+                    <th class="col-io-name">名称</th>
+                    <th class="col-io-amount">ml</th>
+                    <th class="col-io-name">名称</th>
+                    <th class="col-io-amount">ml</th>
+                    <th class="col-io-color">颜色</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in rows" :key="row.id" class="paper-record__row">
+                    <td class="col-datetime">
+                      <input
+                        class="paper-field paper-field--date"
+                        type="text"
+                        data-nav-col="0"
+                        data-nav-slot="date"
+                        :value="formatDateShort(row.recordDate)"
+                        @input="syncDateShort(row, ($event.target as HTMLInputElement).value)"
+                      />
+                      <input
+                        v-model="row.recordTime"
+                        class="paper-field paper-field--time"
+                        type="text"
+                        data-nav-col="0"
+                        data-nav-slot="time"
+                        @focus="emit('ensureDatetime', row.id)"
+                        @input="handleFieldDirty(row)"
+                      />
+                      <button
+                        v-if="row.rowType === 'extra'"
+                        type="button"
+                        class="paper-row-delete"
+                        title="删除此行"
+                        @click="emit('deleteRow', row.id)"
+                      >
+                        <ElIcon :size="10"><Delete /></ElIcon>
+                      </button>
+                    </td>
+                    <td class="col-vital">
+                      <input
+                        v-model="row.temperature"
+                        class="paper-field"
+                        type="text"
+                        data-nav-col="1"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                    <td class="col-vital">
+                      <input
+                        v-model="row.pulse"
+                        class="paper-field"
+                        type="text"
+                        data-nav-col="2"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                    <td class="col-vital">
+                      <input
+                        v-model="row.heartRate"
+                        class="paper-field"
+                        type="text"
+                        data-nav-col="3"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                    <td class="col-vital">
+                      <input
+                        v-model="row.respiratory"
+                        class="paper-field"
+                        type="text"
+                        data-nav-col="4"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                    <td class="col-vital">
+                      <input
+                        v-model="row.bloodPressure"
+                        class="paper-field"
+                        type="text"
+                        data-nav-col="5"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                    <td class="col-consciousness">
+                      <input
+                        v-model="row.consciousness"
+                        class="paper-field"
+                        type="text"
+                        data-nav-col="6"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                    <td class="col-pupil">
+                      <input
+                        v-model="row.pupilLeft"
+                        class="paper-field"
+                        type="text"
+                        data-nav-col="7"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                    <td class="col-pupil">
+                      <input
+                        v-model="row.pupilRight"
+                        class="paper-field"
+                        type="text"
+                        data-nav-col="8"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                    <td class="col-io-name">
+                      <input
+                        v-model="row.intakeName"
+                        class="paper-field"
+                        type="text"
+                        data-nav-col="9"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                    <td class="col-io-amount">
+                      <input
+                        v-model="row.intakeAmount"
+                        class="paper-field"
+                        type="text"
+                        data-nav-col="10"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                    <td class="col-io-name">
+                      <input
+                        v-model="row.outputName"
+                        class="paper-field"
+                        type="text"
+                        data-nav-col="11"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                    <td class="col-io-amount">
+                      <input
+                        v-model="row.outputAmount"
+                        class="paper-field"
+                        type="text"
+                        data-nav-col="12"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                    <td class="col-io-color">
+                      <input
+                        v-model="row.outputColorCharacter"
+                        class="paper-field"
+                        type="text"
+                        data-nav-col="13"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                    <td class="col-observation">
+                      <textarea
+                        v-model="row.conditionMeasure"
+                        class="paper-field paper-field--textarea"
+                        rows="1"
+                        data-nav-col="14"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                    <td class="col-signature">
+                      <input
+                        v-model="row.nurseSignature"
+                        class="paper-field"
+                        type="text"
+                        data-nav-col="15"
+                        @input="handleFieldDirty(row)"
+                      />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-
-        <div class="paper-record__toolbar">
-          <div class="paper-record__toolbar-main">
-            <span v-if="weekRangeLabel" class="paper-record__week">{{ weekRangeLabel }}</span>
-            <span v-if="unsavedCount > 0" class="paper-record__unsaved"
-              >未保存 {{ unsavedCount }} 条</span
-            >
-          </div>
-          <div class="paper-record__toolbar-actions">
-            <slot name="toolbar-extra" />
-            <ElButton type="primary" plain @click="emit('addRow')">新增行</ElButton>
-            <ElButton type="primary" @click="emit('saveAll')">保存</ElButton>
-            <ElButton plain @click="emit('print')">打印</ElButton>
-          </div>
-        </div>
-
-        <table class="paper-record__table">
-          <colgroup>
-            <col class="col-datetime" />
-            <col class="col-vital" span="5" />
-            <col class="col-consciousness" />
-            <col class="col-pupil" span="2" />
-            <col class="col-io-name" />
-            <col class="col-io-amount" />
-            <col class="col-io-name" />
-            <col class="col-io-amount" />
-            <col class="col-io-color" />
-            <col class="col-observation" />
-            <col class="col-signature" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th class="col-datetime" rowspan="2">日期<br />时间</th>
-              <th class="col-vital">体温</th>
-              <th class="col-vital">脉搏</th>
-              <th class="col-vital">心率</th>
-              <th class="col-vital">呼吸</th>
-              <th class="col-vital">血压</th>
-              <th class="col-consciousness" rowspan="2">意识</th>
-              <th class="col-pupil" colspan="2">瞳孔</th>
-              <th class="col-io" colspan="2">入量</th>
-              <th class="col-io" colspan="3">出量</th>
-              <th class="col-observation" rowspan="2">病情观察及护理</th>
-              <th class="col-signature" rowspan="2">护士签名</th>
-            </tr>
-            <tr>
-              <th class="col-vital">℃</th>
-              <th class="col-vital">次/分</th>
-              <th class="col-vital">次/分</th>
-              <th class="col-vital">次/分</th>
-              <th class="col-vital">mmHg</th>
-              <th class="col-pupil">左</th>
-              <th class="col-pupil">右</th>
-              <th class="col-io-name">名称</th>
-              <th class="col-io-amount">ml</th>
-              <th class="col-io-name">名称</th>
-              <th class="col-io-amount">ml</th>
-              <th class="col-io-color">颜色</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in rows" :key="row.id" class="paper-record__row">
-              <td class="col-datetime">
-                <input
-                  class="paper-field paper-field--date"
-                  type="text"
-                  data-nav-col="0"
-                  data-nav-slot="date"
-                  :value="formatDateShort(row.recordDate)"
-                  @input="syncDateShort(row, ($event.target as HTMLInputElement).value)"
-                />
-                <input
-                  v-model="row.recordTime"
-                  class="paper-field paper-field--time"
-                  type="text"
-                  data-nav-col="0"
-                  data-nav-slot="time"
-                  @input="handleFieldDirty(row)"
-                />
-                <button
-                  v-if="row.rowType === 'extra'"
-                  type="button"
-                  class="paper-row-delete"
-                  title="删除此行"
-                  @click="emit('deleteRow', row.id)"
-                >
-                  <ElIcon :size="10"><Delete /></ElIcon>
-                </button>
-              </td>
-              <td class="col-vital">
-                <input
-                  v-model="row.temperature"
-                  class="paper-field"
-                  type="text"
-                  data-nav-col="1"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-              <td class="col-vital">
-                <input
-                  v-model="row.pulse"
-                  class="paper-field"
-                  type="text"
-                  data-nav-col="2"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-              <td class="col-vital">
-                <input
-                  v-model="row.heartRate"
-                  class="paper-field"
-                  type="text"
-                  data-nav-col="3"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-              <td class="col-vital">
-                <input
-                  v-model="row.respiratory"
-                  class="paper-field"
-                  type="text"
-                  data-nav-col="4"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-              <td class="col-vital">
-                <input
-                  v-model="row.bloodPressure"
-                  class="paper-field"
-                  type="text"
-                  data-nav-col="5"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-              <td class="col-consciousness">
-                <input
-                  v-model="row.consciousness"
-                  class="paper-field"
-                  type="text"
-                  data-nav-col="6"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-              <td class="col-pupil">
-                <input
-                  v-model="row.pupilLeft"
-                  class="paper-field"
-                  type="text"
-                  data-nav-col="7"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-              <td class="col-pupil">
-                <input
-                  v-model="row.pupilRight"
-                  class="paper-field"
-                  type="text"
-                  data-nav-col="8"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-              <td class="col-io-name">
-                <input
-                  v-model="row.intakeName"
-                  class="paper-field"
-                  type="text"
-                  data-nav-col="9"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-              <td class="col-io-amount">
-                <input
-                  v-model="row.intakeAmount"
-                  class="paper-field"
-                  type="text"
-                  data-nav-col="10"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-              <td class="col-io-name">
-                <input
-                  v-model="row.outputName"
-                  class="paper-field"
-                  type="text"
-                  data-nav-col="11"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-              <td class="col-io-amount">
-                <input
-                  v-model="row.outputAmount"
-                  class="paper-field"
-                  type="text"
-                  data-nav-col="12"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-              <td class="col-io-color">
-                <input
-                  v-model="row.outputColorCharacter"
-                  class="paper-field"
-                  type="text"
-                  data-nav-col="13"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-              <td class="col-observation">
-                <textarea
-                  v-model="row.conditionMeasure"
-                  class="paper-field paper-field--textarea"
-                  rows="1"
-                  data-nav-col="14"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-              <td class="col-signature">
-                <input
-                  v-model="row.nurseSignature"
-                  class="paper-field"
-                  type="text"
-                  data-nav-col="15"
-                  @input="handleFieldDirty(row)"
-                />
-              </td>
-            </tr>
-          </tbody>
-        </table>
       </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -316,12 +331,31 @@ function handleFieldDirty(row: NursingRecordViewRow) {
   min-height: 0;
 }
 
+.paper-record.is-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  background: #eef0f3;
+}
+
 .paper-record__toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 6px;
+  flex: 0 0 auto;
+  padding: 8px 12px 6px;
+  background: #f3f5f8;
+}
+
+.paper-record.is-fullscreen .paper-record__toolbar {
+  background: #f3f5f8;
 }
 
 .paper-record__toolbar-main {
@@ -357,21 +391,52 @@ function handleFieldDirty(row: NursingRecordViewRow) {
   padding: 2px;
 }
 
-.paper-record__scroll {
+.paper-record__viewport {
   flex: 1;
   min-width: 0;
   min-height: 0;
+}
+
+.paper-record__viewport.is-fluid {
   overflow: auto;
   background: #fff;
 }
 
+.paper-record.is-fullscreen .paper-record__viewport.is-fluid {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}
+
+.paper-record__stage {
+  width: fit-content;
+  margin: 0 auto;
+}
+
+.paper-record.is-fullscreen .paper-record__stage {
+  width: 100%;
+  margin: 0;
+}
+
+.paper-record__shell {
+  position: relative;
+  overflow: hidden;
+}
+
+.paper-record__viewport.is-fluid .paper-record__shell {
+  overflow: visible;
+}
+
 .paper-record__sheet {
   box-sizing: border-box;
+  background: #fff;
+  color: #020817;
+}
+
+.paper-record__sheet.is-fluid {
   width: 100%;
   min-height: 100%;
   padding: 12px;
-  background: #fff;
-  color: #020817;
 }
 
 /* 单据抬头 + 表格 thead：与体温单 head-label / sheet-head-grid 同字体（非宋体） */
@@ -612,12 +677,19 @@ function handleFieldDirty(row: NursingRecordViewRow) {
     display: none;
   }
 
-  .paper-record__scroll {
-    border: 0;
+  .paper-record__viewport {
+    display: block;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .paper-record__shell {
+    width: auto !important;
+    height: auto !important;
     overflow: visible;
   }
 
-  .paper-record__sheet {
+  .paper-record__sheet.is-fluid {
     width: 100%;
     padding: 0;
   }

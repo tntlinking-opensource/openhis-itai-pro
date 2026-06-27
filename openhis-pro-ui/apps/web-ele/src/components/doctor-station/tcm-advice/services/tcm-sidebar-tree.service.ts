@@ -8,6 +8,7 @@ import type { OrderTemplateTreeNode } from '#/views/outpatient/doctor-station/ad
 
 import {
   buildOrderTemplateTreeFromGroups,
+  DOCTOR_STATION_EXCLUDED_BINDING_SCOPES,
   resolveOrderTemplateHeaderTooltip,
 } from '#/views/outpatient/doctor-station/advice/services/order-template.service';
 
@@ -55,6 +56,7 @@ function filterTemplateGroupsByKeyword(
       return name.includes(lower) || code.includes(lower);
     });
   return {
+    agreementList: filterHeaders(groups.agreementList),
     personalList: filterHeaders(groups.personalList),
     departmentList: filterHeaders(groups.departmentList),
     hospitalList: filterHeaders(groups.hospitalList),
@@ -72,7 +74,9 @@ export function buildTcmSidebarTree(params: {
     .toLowerCase();
   const filteredGroups = filterTemplateGroupsByKeyword(params.templateGroups, keyword);
   const templateSection = mapTemplateTreeNodes(
-    buildOrderTemplateTreeFromGroups(filteredGroups),
+    buildOrderTemplateTreeFromGroups(filteredGroups, {
+      excludeBindingScopes: DOCTOR_STATION_EXCLUDED_BINDING_SCOPES,
+    }),
   ).filter((group) => (group.children?.length ?? 0) > 0 || !keyword);
 
   const historyChildren = params.historyItems

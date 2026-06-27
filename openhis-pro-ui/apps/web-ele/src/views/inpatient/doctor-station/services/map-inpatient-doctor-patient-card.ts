@@ -2,6 +2,11 @@ import type { InpatientPatientCardPayload } from '#/components/outpatient/patien
 
 import { formatDateTime } from '@vben/utils';
 
+import {
+  formatInpatientAccountBalancePrimaryText,
+  formatInpatientAccountBalanceSecondaryText,
+} from '#/utils/inpatient/account-balance-display';
+
 import type { InpatientDoctorStationPatient } from '../doctorPatientStore';
 
 /** 住院医生站队列行 → 门诊 PatientCard（variant=doctor）住院载荷 */
@@ -40,8 +45,10 @@ export function mapInpatientDoctorStationPatientToCardPayload(
     visitNo: (row.encounterBusNo ?? '').trim() || undefined,
     status: (row.statusEnumText ?? '').trim() || '在院',
     paymentType,
-    /** 顶栏第三段：床位（与门诊「普通门诊」位置一致） */
     priority: bedLabel,
     isRegistered: true,
+    accountBalanceSummary: formatInpatientAccountBalancePrimaryText(row),
+    accountBalanceSub: formatInpatientAccountBalanceSecondaryText(row),
+    lowBalanceWarning: row.lowBalanceWarning === true,
   };
 }

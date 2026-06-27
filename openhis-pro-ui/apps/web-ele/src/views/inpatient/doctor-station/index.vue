@@ -2,6 +2,10 @@
 import type { Component } from 'vue';
 
 import type { InpatientDoctorStationPatient } from './doctorPatientStore';
+import type {
+  ServiceApplyKind,
+  ServiceApplyPatientSummary,
+} from '#/views/outpatient/doctor-station/service-apply/service-apply.types';
 
 import type { EnsureClinicalReceptionFn } from '#/components/doctor-station';
 
@@ -22,16 +26,14 @@ import DoctorHeader from '#/components/outpatient/doctor-header.vue';
 import MedicalRecordForm from '#/components/outpatient/medical-record-form.vue';
 import PatientInfoBar from '#/components/outpatient/patient-info-bar.vue';
 import { confirmEmrDiscardUnsaved } from '#/emrEditor';
-import { getCaseRecordByEncounterApi } from '#/api/mrms';
-import { useMrmsHomepagePrint } from '#/composables/use-mrms-homepage-print';
 import { useAuthStore } from '#/store';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
 
 import { InpatientAdviceList } from './advice';
 import InpatientDischargeAdviceDialog from './components/inpatient-discharge-advice-dialog.vue';
 import DoctorPatientList from './doctor-patient-list.vue';
 import { useInpatientDoctorPatientStore } from './doctorPatientStore';
 import { useInpatientDoctorPatientQueue } from './use-inpatient-doctor-patient-queue';
+import ServiceApplyDialog from '#/views/outpatient/doctor-station/service-apply/service-apply-dialog.vue';
 
 defineOptions({
   name: 'InpatientDoctorStation',
@@ -112,6 +114,9 @@ const doctorStationContextBindings = computed(() => {
       stationScope: 'inpatient' as const,
     };
   }
+  if (tab === DOCTOR_TABS.TCM) {
+    return { ...base, stationScope: 'inpatient' as const };
+  }
   return base;
 });
 
@@ -177,16 +182,6 @@ const handleTabChange = async (tab: string) => {
     if (!ok) return;
   }
   activeTab.value = next;
-  await nextTick();
-  const inst = tabPanelRef.value as
-    | undefined
-    | { loadAdviceInit?: () => Promise<void>; reload?: () => Promise<void> | void };
-  if (next === DOCTOR_TABS.ORDER && inst && typeof inst.loadAdviceInit === 'function') {
-    void inst.loadAdviceInit();
-  }
-  if (next === DOCTOR_TABS.DIAGNOSIS && inst && typeof inst.reload === 'function') {
-    void inst.reload();
-  }
 };
 
 /** 侧栏点选患者 */
@@ -211,7 +206,6 @@ const handleRefresh = () => {
 
 const tabPanelRef = ref<null | { reload?: () => Promise<void> | void }>(null);
 const dischargeDialogVisible = ref(false);
-const { printHomepagePdf, isPrinting: homepagePrinting } = useMrmsHomepagePrint();
 
 onMounted(() => {
   void loadInpatientDoctorStationList();
@@ -268,9 +262,11 @@ const handleQuickAction = async (
     activeTab.value = DOCTOR_TABS.REPORT_QUERY;
     return;
   }
-  const actionTextMap: Record<Exclude<typeof action, 'report'>, string> = {
-    exam: '检查申请',
-    lab: '检验申请',
+  if (action === 'lab' || action === 'exam') {
+    openServiceApplyDialog(action);
+    return;
+  }
+  const actionTextMap: Record<Exclude<typeof action, 'exam' | 'lab' | 'report'>, string> = {
     transfusion: '输血申请',
     pathology: '病理申请',
     surgery: '手术申请',
@@ -278,6 +274,40 @@ const handleQuickAction = async (
   };
   ElMessage.info(`${actionTextMap[action]}功能待实现`);
 };
+
+const serviceApplyDialogVisible = ref(false);
+const serviceApplyKind = ref<ServiceApplyKind>('lab');
+
+/** 检验/检查申请弹窗顶部患者摘要 */
+const serviceApplyPatientSummary = computed<ServiceApplyPatientSummary>(() => {
+  const info = currentPatientInfo.value;
+  const gender = (info.genderEnumText ?? '').trim() || '—';
+  const ageRaw = (info.ageText ?? '').trim();
+  const age = ageRaw ? (ageRaw.includes('岁') ? ageRaw : `${ageRaw}岁`) : '—';
+  return {
+    patientName: (info.patientName ?? '').trim() || '—',
+    genderText: gender,
+    ageText: age,
+    encounterNo: (info.medicalRecordNo ?? info.encounterId ?? '').trim() || '—',
+    feeNatureText: (info.serviceTypeName ?? '').trim() || '住院',
+  };
+});
+
+/** 打开检验/检查申请弹窗 */
+function openServiceApplyDialog(kind: ServiceApplyKind) {
+  serviceApplyKind.value = kind;
+  serviceApplyDialogVisible.value = true;
+}
+
+/** 申请单签发成功后刷新当前「开立医嘱」列表 */
+async function handleServiceApplySigned() {
+  if (activeTab.value !== DOCTOR_TABS.ORDER) return;
+  await nextTick();
+  const inst = tabPanelRef.value as undefined | { reload?: () => Promise<void> };
+  if (inst && typeof inst.reload === 'function') {
+    await inst.reload();
+  }
+}
 
 /** 打开出院医嘱表单弹窗 */
 const handleCompleteVisit = () => {
@@ -303,28 +333,6 @@ const handleNursing = () => {
   if (!ensurePatientSelected()) return;
   ElMessage.info('护理功能待实现');
 };
-
-/** 打印病案首页（IP-24 / MR-01）。 */
-async function handlePrintHomepage() {
-  if (!ensurePatientSelected()) return;
-  const encounterId = preserveApiIdForRequest(selectedPatient.value?.encounterId);
-  if (!encounterId) {
-    ElMessage.warning('缺少就诊信息');
-    return;
-  }
-  try {
-    const caseRecord = await getCaseRecordByEncounterApi(encounterId);
-    const caseRecordId = preserveApiIdForRequest(caseRecord?.id);
-    if (!caseRecordId) {
-      ElMessage.warning('未找到病案记录，请先完成病案建档');
-      return;
-    }
-    await printHomepagePdf(caseRecordId, selectedPatient.value?.patientName);
-    ElMessage.success('病案首页已发送打印');
-  } catch {
-    ElMessage.error('病案首页打印失败');
-  }
-}
 </script>
 
 <template>
@@ -350,9 +358,6 @@ async function handlePrintHomepage() {
         >
           <template #actions>
             <ElButton type="primary" link @click="handleToolbarRefresh">刷新</ElButton>
-            <ElButton type="primary" link :loading="homepagePrinting" @click="handlePrintHomepage">
-              打印病案首页
-            </ElButton>
             <ElButton type="primary" link @click="handleCompleteVisit">出院</ElButton>
             <ElButton type="primary" link @click="handleSpecialty">转科</ElButton>
             <ElButton type="primary" link @click="handleNursing">护理</ElButton>
@@ -385,6 +390,16 @@ async function handlePrintHomepage() {
       v-model="dischargeDialogVisible"
       :patient="selectedPatient"
       @success="handleDischargeAdviceSuccess"
+    />
+
+    <ServiceApplyDialog
+      v-model="serviceApplyDialogVisible"
+      station-scope="inpatient"
+      :apply-kind="serviceApplyKind"
+      :encounter-id="selectedPatient?.encounterId ?? ''"
+      :patient-id="selectedPatient?.patientId ?? ''"
+      :patient="serviceApplyPatientSummary"
+      @signed="handleServiceApplySigned"
     />
   </div>
 </template>

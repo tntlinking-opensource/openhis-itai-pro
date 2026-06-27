@@ -9,22 +9,30 @@ defineOptions({
 
 const props = withDefaults(defineProps<Props>(), {
   canOperateBilling: false,
+  cancelLoading: false,
   loading: false,
   pricingRows: () => [],
   pricingTimeRange: () => [],
+  selectedRowIds: () => [],
+  tableKey: 0,
 });
 
 const emit = defineEmits<{
   onBatchPricingClick: [];
+  onCancelPricingClick: [];
   onPricingQuery: [];
+  selectionChange: [ids: string[]];
   'update:pricingTimeRange': [value: string[]];
 }>();
 
 interface Props {
   canOperateBilling?: boolean;
+  cancelLoading?: boolean;
   loading?: boolean;
   pricingRows?: PricingConfirmationTableRow[];
   pricingTimeRange?: string[];
+  selectedRowIds?: string[];
+  tableKey?: number;
 }
 
 const pricingTimeRangeModel = computed({
@@ -32,9 +40,35 @@ const pricingTimeRangeModel = computed({
   set: (value: string[]) => emit('update:pricingTimeRange', value),
 });
 
+/** 当前列表可取消划价的行 */
+const cancellableRows = computed(() => props.pricingRows.filter((row) => row.canCancel));
+
+/** 是否已勾选至少一条可取消行 */
+const canCancelSelected = computed(
+  () =>
+    props.canOperateBilling &&
+    props.selectedRowIds.some((id) => {
+      const row = props.pricingRows.find((item) => item.id === id);
+      return row?.canCancel;
+    }),
+);
+
 /** 将金额格式化为两位小数金额文案。 */
 function formatCurrency(value: number) {
   return `￥${value.toFixed(2)}`;
+}
+
+/** 仅待结算行允许勾选（用于取消划价） */
+function pricingRowSelectable(row: PricingConfirmationTableRow) {
+  return row.canCancel;
+}
+
+/** 表格勾选变化时回传稳定行 id 列表 */
+function handleSelectionChange(selection: PricingConfirmationTableRow[]) {
+  emit(
+    'selectionChange',
+    selection.map((row) => row.id),
+  );
 }
 </script>
 
@@ -55,9 +89,24 @@ function formatCurrency(value: number) {
         />
         <ElButton type="primary" :loading="loading" @click="emit('onPricingQuery')">查询</ElButton>
       </div>
-      <ElButton type="primary" :disabled="!canOperateBilling" @click="emit('onBatchPricingClick')">
-        批量划价
-      </ElButton>
+      <div class="billing-list-card__actions">
+        <ElButton
+          type="danger"
+          plain
+          :disabled="!canCancelSelected"
+          :loading="cancelLoading"
+          @click="emit('onCancelPricingClick')"
+        >
+          取消划价
+        </ElButton>
+        <ElButton
+          type="primary"
+          :disabled="!canOperateBilling"
+          @click="emit('onBatchPricingClick')"
+        >
+          批量划价
+        </ElButton>
+      </div>
     </div>
     <ElAlert
       v-if="!canOperateBilling"
@@ -65,7 +114,29 @@ function formatCurrency(value: number) {
       type="warning"
       :closable="false"
     />
-    <ElTable v-loading="loading" :data="pricingRows" border stripe height="100%" row-key="id">
+    <div
+      v-else-if="cancellableRows.length === 0 && pricingRows.length > 0"
+      class="billing-list-card__hint"
+    >
+      当前列表无待结算划价记录，已结算或退费中的项目不可取消划价
+    </div>
+    <ElTable
+      :key="tableKey"
+      v-loading="loading"
+      :data="pricingRows"
+      border
+      stripe
+      height="100%"
+      row-key="id"
+      @selection-change="handleSelectionChange"
+    >
+      <ElTableColumn
+        type="selection"
+        width="42"
+        align="center"
+        :selectable="pricingRowSelectable"
+        :reserve-selection="false"
+      />
       <ElTableColumn prop="pricingContent" label="划价内容" min-width="200" show-overflow-tooltip />
       <ElTableColumn prop="pricingModeDisplay" label="划价模式" width="100" align="center" />
       <ElTableColumn prop="quantityText" label="数量" min-width="90" align="center" />
@@ -106,6 +177,17 @@ function formatCurrency(value: number) {
   align-items: center;
   display: flex;
   gap: 8px;
+}
+
+.billing-list-card__actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.billing-list-card__hint {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
 }
 
 .billing-list-card :deep(.el-table__header th.el-table__cell) {

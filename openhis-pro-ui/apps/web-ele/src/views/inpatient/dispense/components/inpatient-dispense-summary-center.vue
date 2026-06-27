@@ -45,7 +45,6 @@ const emit = defineEmits<{
   batchDispense: [];
   batchReject: [];
   batchTraceScan: [];
-  printSummary: [];
 }>();
 
 const selectedDispenserId = defineModel<string | undefined>('selectedDispenserId', {
@@ -152,9 +151,6 @@ const headerSummaryText = computed(() => {
             @click="emit('batchTraceScan')"
           >
             扫追溯码
-          </ElButton>
-          <ElButton plain :disabled="!props.selectedSummaryNo" @click="emit('printSummary')">
-            打印
           </ElButton>
         </div>
         <div class="flex shrink-0 items-center gap-1.5 whitespace-nowrap">

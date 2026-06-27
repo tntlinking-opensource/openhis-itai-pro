@@ -20,25 +20,30 @@ export interface EmrTemplateTreeNode {
 }
 
 function buildTemplateLeafLabel(tpl: TemplateDto): string {
-  const base = tpl.name ?? tpl.code ?? (tpl.id != null ? String(tpl.id) : '未命名模板');
+  const base =
+    tpl.name ??
+    tpl.code ??
+    (tpl.id === null || tpl.id === undefined ? '未命名模板' : String(tpl.id));
   const scopeTag = formatTemplateScopeTag(tpl.scopeLevel);
   return scopeTag ? `${base} [${scopeTag}]` : base;
 }
 
 function toLeaf(tpl: TemplateDto, leafIndex: number): EmrTemplateTreeNode {
   const idStr =
-    tpl.id != null ? String(tpl.id) : `noid-${(tpl.code ?? 'tpl').replace(/\W/g, '')}-${leafIndex}`;
+    tpl.id === null || tpl.id === undefined
+      ? `noid-${(tpl.code ?? 'tpl').replaceAll(/\W/g, '')}-${leafIndex}`
+      : String(tpl.id);
   return {
     nodeKey: `tpl:${idStr}`,
     label: buildTemplateLeafLabel(tpl),
-    templateId: tpl.id != null ? String(tpl.id) : undefined,
+    templateId: tpl.id === null || tpl.id === undefined ? undefined : String(tpl.id),
     isDocumentType: false,
     template: tpl,
   };
 }
 
 function sortTemplates(list: TemplateDto[]) {
-  return [...list].sort((a, b) =>
+  return [...list].toSorted((a, b) =>
     (a.name ?? '').localeCompare(b.name ?? '', 'zh-CN', { numeric: true }),
   );
 }
@@ -53,11 +58,12 @@ export function buildEmrTemplateTree(
   const byCode = new Map<string, TemplateDto[]>();
   for (const t of templates) {
     const code = (t.documentTypeCode ?? '').trim();
-    if (!byCode.has(code)) byCode.set(code, []);
-    byCode.get(code)!.push(t);
+    const bucket = byCode.get(code) ?? [];
+    bucket.push(t);
+    byCode.set(code, bucket);
   }
 
-  const sortedTypes = [...documentTypes].sort((a, b) => {
+  const sortedTypes = [...documentTypes].toSorted((a, b) => {
     const order = (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
     if (order !== 0) return order;
     return (a.name ?? '').localeCompare(b.name ?? '', 'zh-CN', { numeric: true });
@@ -70,7 +76,7 @@ export function buildEmrTemplateTree(
     const rawList = byCode.get(code) ?? [];
     byCode.delete(code);
     const children = sortTemplates(rawList).map((tpl, i) => toLeaf(tpl, i));
-    const typeId = dt.id != null ? String(dt.id) : `idx-${index}`;
+    const typeId = dt.id === null || dt.id === undefined ? `idx-${index}` : String(dt.id);
     nodes.push({
       nodeKey: `dtype:${typeId}:${code || 'empty'}`,
       label: dt.name?.trim() || code || '文书类型',

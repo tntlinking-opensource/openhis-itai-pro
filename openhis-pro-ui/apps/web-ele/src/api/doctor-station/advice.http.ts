@@ -13,6 +13,8 @@ export const httpGetDoctorStationAdviceOrderBindInfo =
   outpatientAdviceHttp.httpGetDoctorStationAdviceOrderBindInfo;
 export const httpGetEncounterAdviceDefaultContract =
   outpatientAdviceHttp.httpGetEncounterAdviceDefaultContract;
+export const httpResolveDoctorStationAdviceDraftBinds =
+  outpatientAdviceHttp.httpResolveDoctorStationAdviceDraftBinds;
 export const httpSaveDoctorStationAdviceDraftBatch =
   outpatientAdviceHttp.httpSaveDoctorStationAdviceDraftBatch;
 export const httpSignDoctorStationAdviceBatch =

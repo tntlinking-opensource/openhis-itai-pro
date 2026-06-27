@@ -10,7 +10,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { Delete } from '@element-plus/icons-vue';
 import { ElIcon, ElInputNumber } from 'element-plus';
 
-import { decimalMul } from '#/utils/decimal-util';
+import { decimalMul } from '#/utils/format/decimal-util';
 import { AdviceOrderSelect } from '#/views/outpatient/doctor-station/advice';
 
 defineOptions({ name: 'TcmHerbCard' });

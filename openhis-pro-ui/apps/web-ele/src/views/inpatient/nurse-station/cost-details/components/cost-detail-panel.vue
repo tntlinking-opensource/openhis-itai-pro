@@ -25,7 +25,6 @@ interface Props {
   dateRange?: string[];
   detailLines?: NurseStationCostDetailLineDto[];
   loading?: boolean;
-  printLoading?: boolean;
   presentationMode?: NurseStationCostDetailPresentationMode;
   presentationOptions?: NurseStationCostDetailPresentationOptionDto[];
   quickDay?: CostDetailQuickDay;
@@ -41,7 +40,6 @@ const props = withDefaults(defineProps<Props>(), {
   dateRange: () => [],
   detailLines: () => [],
   loading: false,
-  printLoading: false,
   presentationMode: 'DETAIL',
   presentationOptions: () => [],
   quickDay: 'today',
@@ -136,7 +134,6 @@ function splitBusinessDateTime(value: string | undefined) {
       </div>
       <div class="cost-detail-filter__actions">
         <ElButton @click="emit('onQuickDayChange', 'today')">重置</ElButton>
-        <ElButton plain :loading="printLoading" @click="emit('onPrint')">打印明细</ElButton>
         <ElButton type="primary" :loading="loading" @click="emit('onQuery')">查询</ElButton>
       </div>
     </section>

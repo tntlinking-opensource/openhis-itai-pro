@@ -1,4 +1,6 @@
 import type {
+  CancelStopLongTermTcmHerbalPrescriptionRequest,
+  CancelStopLongTermTcmHerbalPrescriptionResponse,
   DeleteTcmDiagnosisGroupRequest,
   DeleteTcmDiagnosisGroupResponse,
   InitDoctorStationTcmRequest,
@@ -19,6 +21,8 @@ import type {
   SaveTcmRxDraftBatchResponse,
   SignTcmRxBatchRequest,
   SignTcmRxBatchResponse,
+  StopLongTermTcmHerbalPrescriptionRequest,
+  StopLongTermTcmHerbalPrescriptionResponse,
   WithdrawOrDeleteTcmRxRequest,
   WithdrawOrDeleteTcmRxResponse,
 } from './tcm.types';
@@ -59,6 +63,15 @@ export interface DoctorStationTcmHttpClient {
   ) => Promise<WithdrawOrDeleteTcmRxResponse>;
 }
 
+export interface InpatientDoctorStationTcmHttpClient extends DoctorStationTcmHttpClient {
+  httpStopLongTermTcmHerbalPrescription: (
+    body: StopLongTermTcmHerbalPrescriptionRequest,
+  ) => Promise<StopLongTermTcmHerbalPrescriptionResponse>;
+  httpCancelStopLongTermTcmHerbalPrescription: (
+    body: CancelStopLongTermTcmHerbalPrescriptionRequest,
+  ) => Promise<CancelStopLongTermTcmHerbalPrescriptionResponse>;
+}
+
 /** 按应用服务前缀生成门诊中医 Tab HTTP 客户端 */
 export function createDoctorStationTcmHttpClient(basePath: string): DoctorStationTcmHttpClient {
   const prefix = basePath.replace(/\/$/, '');
@@ -81,5 +94,24 @@ export function createDoctorStationTcmHttpClient(basePath: string): DoctorStatio
       post('withdrawOrDeleteTcmHerbalPrescription', body),
     httpListPatientTcmHerbalPrescriptionHistory: (body) =>
       post('listPatientTcmHerbalPrescriptionHistory', body),
+  };
+}
+
+/** 住院中医 Tab HTTP 客户端（初始化与停嘱接口名与门诊不同） */
+export function createInpatientDoctorStationTcmHttpClient(
+  basePath = '/inpatientDoctorStationTcm',
+): InpatientDoctorStationTcmHttpClient {
+  const base = createDoctorStationTcmHttpClient(basePath);
+  const prefix = basePath.replace(/\/$/, '');
+  const post = <TReq, TRes>(method: string, body: TReq) =>
+    publicRequestClient.post<TRes>(`${prefix}/${method}`, body);
+
+  return {
+    ...base,
+    httpInitDoctorStationTcm: (body) => post('initInpatientDoctorStationTcm', body),
+    httpStopLongTermTcmHerbalPrescription: (body) =>
+      post('stopLongTermTcmHerbalPrescription', body),
+    httpCancelStopLongTermTcmHerbalPrescription: (body) =>
+      post('cancelStopLongTermTcmHerbalPrescription', body),
   };
 }

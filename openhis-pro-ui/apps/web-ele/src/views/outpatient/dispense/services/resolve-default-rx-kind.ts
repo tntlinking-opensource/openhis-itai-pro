@@ -1,15 +1,43 @@
+import type { DispenseRxKindBadgeCounts } from '../components/types';
+
 import type { EncounterMedicationDispenseSlipRowDto } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.types';
 
 import { httpPageEncounterMedicationDispenseSlips } from '#/api/outpatient-pharmacy-dispense/outpatient-pharmacy-dispense.http';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
 
-import type { DispenseRxKindBadgeCounts } from '../components/types';
-
-import { mapSlipRowsToPrescriptionBlocks } from './map-api-to-dispense-ui';
+import { isHerbalSlipRow, mapSlipRowsToPrescriptionBlocks } from './map-api-to-dispense-ui';
 
 export interface EncounterRxKindSummary {
   badgeCounts: DispenseRxKindBadgeCounts;
   defaultKind: 'herbal' | 'western';
+}
+
+/** 按中西药 tab 过滤发放行（与接口 tcmOnly/westernOnly 语义一致） */
+export function filterSlipRowsByRxKind(
+  rows: EncounterMedicationDispenseSlipRowDto[],
+  kind: 'herbal' | 'western',
+): EncounterMedicationDispenseSlipRowDto[] {
+  return rows.filter((row) => (kind === 'herbal' ? isHerbalSlipRow(row) : !isHerbalSlipRow(row)));
+}
+
+/** 根据全量 slip 统计角标并推断默认 tab */
+export function computeRxKindSummaryFromSlips(
+  slipList: EncounterMedicationDispenseSlipRowDto[],
+): EncounterRxKindSummary {
+  const blocks = mapSlipRowsToPrescriptionBlocks(slipList);
+  let western = 0;
+  let herbal = 0;
+  for (const block of blocks) {
+    if (block.rxType === 'herbal') herbal += 1;
+    else western += 1;
+  }
+
+  const defaultKind: 'herbal' | 'western' = western === 0 && herbal > 0 ? 'herbal' : 'western';
+
+  return {
+    defaultKind,
+    badgeCounts: { western, herbal },
+  };
 }
 
 /** 拉取就诊下全部 slip，统计中西药处方块数并推断默认 tab */
@@ -26,18 +54,5 @@ export async function loadEncounterRxKindSummary(params: {
   const { content: slipList } =
     parsePagedRowsFromApiData<EncounterMedicationDispenseSlipRowDto>(res);
 
-  const blocks = mapSlipRowsToPrescriptionBlocks(slipList);
-  let western = 0;
-  let herbal = 0;
-  for (const block of blocks) {
-    if (block.rxType === 'herbal') herbal += 1;
-    else western += 1;
-  }
-
-  const defaultKind: 'herbal' | 'western' = western === 0 && herbal > 0 ? 'herbal' : 'western';
-
-  return {
-    defaultKind,
-    badgeCounts: { western, herbal },
-  };
+  return computeRxKindSummaryFromSlips(slipList);
 }

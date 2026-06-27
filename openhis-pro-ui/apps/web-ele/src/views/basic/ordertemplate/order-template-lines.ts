@@ -26,7 +26,7 @@ import {
   pageServiceCatalogApi,
 } from '#/api/core/system/catalog';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 import { parseOptionalNumberInput } from '#/views/outpatient/doctor-station/advice/services/advice-edit';
 
 import {
@@ -265,6 +265,27 @@ export function useOrderTemplateLines(options: {
       return 'last';
     }
     return 'middle';
+  }
+
+  /** 成组共享字段展示源：组员缺省时回落组首行 */
+  function resolveGroupSharedFieldSource(row: DraftLine): DraftLine {
+    const line = resolveDraftLine(row);
+    const groupKey = getLineGroupKey(line);
+    if (!groupKey || !isMedicationLineRow(line) || isGroupLeaderRow(line)) {
+      return line;
+    }
+    const leader = visibleLines.value.find((item) => getLineGroupKey(item) === groupKey);
+    if (!leader) {
+      return line;
+    }
+    const resolvedLeader = resolveDraftLine(leader);
+    return {
+      ...line,
+      routeCode: line.routeCode ?? resolvedLeader.routeCode,
+      defaultDays: line.defaultDays ?? resolvedLeader.defaultDays,
+      frequencyId: line.frequencyId ?? resolvedLeader.frequencyId,
+      frequencyText: line.frequencyText ?? resolvedLeader.frequencyText,
+    };
   }
 
   /** 将成组首行的用法/天数同步到同组其它行 */
@@ -862,6 +883,7 @@ export function useOrderTemplateLines(options: {
       }
     }
     reorderDraftLinesByGroup();
+    syncAllGroupSharedFields();
     await enrichMedicationLinesUnitBands(draftLines.value, options.unitCodeOptions());
     if (visibleLines.value.length === 0) {
       handleAddLine();
@@ -887,7 +909,8 @@ export function useOrderTemplateLines(options: {
 
   /** 给药途径展示文案 */
   function formatLineRouteText(row: DraftLine): string {
-    const code = String(row.routeCode ?? '').trim();
+    const source = resolveGroupSharedFieldSource(row);
+    const code = String(source.routeCode ?? '').trim();
     if (!code) {
       return '—';
     }
@@ -896,11 +919,12 @@ export function useOrderTemplateLines(options: {
 
   /** 频次展示文案 */
   function formatLineFrequencyText(row: DraftLine): string {
-    const text = String(row.frequencyText ?? '').trim();
+    const source = resolveGroupSharedFieldSource(row);
+    const text = String(source.frequencyText ?? '').trim();
     if (text) {
       return text;
     }
-    const id = preserveApiIdForRequest(row.frequencyId);
+    const id = preserveApiIdForRequest(source.frequencyId);
     if (!id) {
       return '—';
     }
@@ -919,10 +943,11 @@ export function useOrderTemplateLines(options: {
 
   /** 用药天数展示文案 */
   function formatLineDaysText(row: DraftLine): string {
-    if (row.defaultDays === undefined || row.defaultDays === null) {
+    const source = resolveGroupSharedFieldSource(row);
+    if (source.defaultDays === undefined || source.defaultDays === null) {
       return '—';
     }
-    return String(row.defaultDays);
+    return String(source.defaultDays);
   }
 
   /** 总量展示文案 */

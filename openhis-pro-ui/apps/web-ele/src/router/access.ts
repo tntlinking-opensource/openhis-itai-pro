@@ -4,7 +4,6 @@ import { generateAccessible } from '@vben/access';
 import { preferences } from '@vben/preferences';
 
 import { BasicLayout, IFrameView } from '#/layouts';
-import { accessRoutes } from '#/router/routes';
 
 const forbiddenComponent = () => import('#/views/_core/fallback/forbidden.vue');
 
@@ -25,9 +24,7 @@ async function generateAccess(
     ParentView: BasicLayout,
   };
 
-  const { menuData, ...restOptions } = options;
-
-  const staticRoutes = accessRoutes;
+  const { menuData, routes: staticRoutes, ...restOptions } = options;
 
   if (
     (preferences.app.accessMode === 'backend' || preferences.app.accessMode === 'mixed') &&
@@ -66,6 +63,7 @@ async function generateAccess(
 
   const result = await generateAccessible(preferences.app.accessMode, {
     ...restOptions,
+    routes: staticRoutes,
     fetchMenuListAsync: async () => {
       if (menuData && Array.isArray(menuData) && menuData.length > 0) {
         return menuData;

@@ -10,8 +10,13 @@ defineOptions({
 
 const emit = defineEmits<{
   search: [keyword: string];
-  select: [item: any];
+  select: [item: MedicalRecordTreeNode];
 }>();
+
+interface MedicalRecordTreeNode {
+  label: string;
+  children?: MedicalRecordTreeNode[];
+}
 
 const searchKeyword = ref('');
 
@@ -47,7 +52,7 @@ const handleSearch = () => {
   emit('search', searchKeyword.value);
 };
 
-const handleNodeClick = (data: any) => {
+const handleNodeClick = (data: MedicalRecordTreeNode) => {
   emit('select', data);
 };
 </script>

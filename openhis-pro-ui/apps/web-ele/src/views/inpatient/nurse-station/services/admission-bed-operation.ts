@@ -1,5 +1,8 @@
 import type { ExecuteBedOperationRequest } from '#/api/inpatient/nurse-station/inpatient-nurse-station-atd.types';
-import type { ParticipantSubmitDto } from '#/api/inpatient/nurse-station/inpatient-nurse-station.types';
+import type {
+  AdmissionVitalSignSubmitDto,
+  ParticipantSubmitDto,
+} from '#/api/inpatient/nurse-station/inpatient-nurse-station.types';
 
 import type { PatientItem } from '../types';
 
@@ -24,6 +27,7 @@ export function buildExecuteBedOperationFromIntent(
   encounterId: string,
   participants: ParticipantSubmitDto[],
   priorityEnum?: string,
+  admissionVitalSigns?: AdmissionVitalSignSubmitDto,
 ): ExecuteBedOperationRequest {
   if (intent.type === 'swap') {
     return {
@@ -44,6 +48,9 @@ export function buildExecuteBedOperationFromIntent(
     }
     if (priorityEnum) {
       body.priorityEnum = priorityEnum;
+    }
+    if (admissionVitalSigns) {
+      body.admissionVitalSigns = admissionVitalSigns;
     }
   }
   return body;

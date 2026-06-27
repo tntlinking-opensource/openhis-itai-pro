@@ -2,10 +2,7 @@
  * 门诊护士站应用服务请求/响应类型（与后端 camelCase、Long→JSON 字符串约定一致）。
  */
 
-import type {
-  AdviceRequestExtensionSnapshotDto,
-  ProcedurePerformerItemDto,
-} from '#/api/doctor-station/advice.types';
+import type { ServiceRequestDetailSummaryDto } from '#/api/doctor-station/advice.types';
 
 /** 分页查询护士站患者队列 */
 export interface PageNurseStationPatientQueueRequest {
@@ -59,6 +56,8 @@ export interface NurseStationTreatmentLineDto {
   groupId?: null | string;
   itemCode?: null | string;
   itemName?: null | string;
+  lastPerformerDisplay?: null | string;
+  lastPerformerPractitionerId?: null | string;
   medCategoryCode?: null | string;
   medCategoryCodeText?: null | string;
   medicationExecuteNum?: null | number;
@@ -73,8 +72,12 @@ export interface NurseStationTreatmentLineDto {
   rateCode?: null | string;
   rateName?: null | string;
   refundPairRequestId?: null | string;
+  /** 申请单行纯备注（wkf_service_request.remark） */
+  remark?: null | string;
   requestId: string;
   requestTable: string;
+  /** 申请单部位/样本明细摘要（AR 前缀申请单） */
+  serviceRequestDetails?: ServiceRequestDetailSummaryDto[] | null;
   serviceCategoryCode?: null | string;
   serviceCategoryCodeText?: null | string;
   sortNumber?: null | number;
@@ -91,6 +94,11 @@ export interface QueryEncounterTreatmentSheetResponse {
   serviceLines: NurseStationTreatmentLineDto[];
 }
 
+/** 登录者管辖药房下拉（耗材房） */
+export interface ListManagedSupplyRoomOptionsResponse {
+  supplyRoomOptions?: Array<{ label: string; sort?: number; value: string }>;
+}
+
 /** 分页查询诊疗执行记录 */
 export interface ListProcedureRecordsForNurseStationRequest {
   categoryEnum?: null | string;
@@ -104,11 +112,17 @@ export interface ListProcedureRecordsForNurseStationRequest {
 }
 
 export interface OrderExecutionSheetItemDto {
+  /** 操作展示文案（如「执行完成」「取消执行」） */
+  actionDisplayText?: null | string;
   categoryEnum?: null | string;
   encounterId?: null | string;
+  /** 对应医嘱/项目展示名 */
+  orderItemDisplayName?: null | string;
   occurrenceTime?: null | string;
-  requestExtensions?: AdviceRequestExtensionSnapshotDto | null;
-  performers?: ProcedurePerformerItemDto[] | null;
+  /** 操作人展示名 */
+  operatorDisplayName?: null | string;
+  /** 操作人列标题（「执行人」或「取消执行人」） */
+  operatorRoleDisplayText?: null | string;
   patientId?: null | string;
   procedureId: string;
   recordedTime?: null | string;
@@ -117,6 +131,8 @@ export interface OrderExecutionSheetItemDto {
   requestTable?: null | string;
   resultText?: null | string;
   statusEnum?: null | string;
+  /** 执行状态展示文案（IF-NUR-03） */
+  statusEnumText?: null | string;
 }
 
 export interface ListProcedureRecordsForNurseStationResponse {
@@ -130,8 +146,8 @@ export interface BatchPerformDispositionRequest {
   encounterId: string;
   inventoryLocationId?: null | string;
   medicationRequestIds?: string[];
-  operatorId: string;
-  performerPractitionerId?: null | string;
+  /** 操作/执行医务人员；未传时后端取当前登录医务人员 */
+  operatorId?: null | string;
   serviceRequestIds?: string[];
 }
 
@@ -171,7 +187,8 @@ export interface ListNetRemainingProcedureRecordsForNurseStationResponse {
 /** IF-NUR-05 批量取消执行 */
 export interface BatchCancelDispositionRequest {
   encounterId: string;
-  operatorId: string;
+  /** 操作医务人员；未传时后端取当前登录医务人员 */
+  operatorId?: null | string;
   statusReasonText: string;
   procedureIds?: string[];
   deviceDispenseIds?: string[];
@@ -181,4 +198,97 @@ export interface BatchCancelDispositionResponse {
   success?: boolean;
   cancelledProcedureIds?: string[];
   revertedDeviceDispenseIds?: string[];
+}
+
+/** 皮试表单枚举选项 */
+export interface OutpatientSkinTestEnumOptionDto {
+  code: string;
+  displayText: string;
+}
+
+/** 皮试批号候选 */
+export interface OutpatientSkinTestLotOptionDto {
+  locationId?: null | string;
+  lotNumber?: null | string;
+  medicationId?: null | string;
+}
+
+/** 皮试列表行 */
+export interface OutpatientSkinTestRowDto {
+  allergyRecordId?: null | string;
+  checkPractitionerId?: null | string;
+  checkPractitionerName?: null | string;
+  clinicalStatusCode?: null | string;
+  clinicalStatusText?: null | string;
+  criticalityCode?: null | string;
+  criticalityText?: null | string;
+  description?: null | string;
+  encounterId?: null | string;
+  feeSettledFlag?: boolean | null;
+  lotNumber?: null | string;
+  lotNumberOptions?: OutpatientSkinTestLotOptionDto[] | null;
+  medicationId?: null | string;
+  medicationName?: null | string;
+  medicationRequestId?: null | string;
+  openDoctorId?: null | string;
+  openDoctorName?: null | string;
+  patientId?: null | string;
+  performLocationId?: null | string;
+  practitionerId?: null | string;
+  practitionerName?: null | string;
+  recordedDate?: null | string;
+  serviceRequestId: string;
+  severityCode?: null | string;
+  severityText?: null | string;
+  verificationStatusCode?: null | string;
+  verificationStatusText?: null | string;
+}
+
+export interface LoadOutpatientSkinTestInitResponse {
+  clinicalStatusOptions?: OutpatientSkinTestEnumOptionDto[] | null;
+  criticalityOptions?: OutpatientSkinTestEnumOptionDto[] | null;
+  nurseOptions?: { label?: null | string; value?: null | number | string }[] | null;
+  severityOptions?: OutpatientSkinTestEnumOptionDto[] | null;
+  verificationStatusOptions?: OutpatientSkinTestEnumOptionDto[] | null;
+}
+
+export interface ListOutpatientSkinTestRowsRequest {
+  encounterId: string;
+  patientId?: null | string;
+}
+
+export interface ListOutpatientSkinTestRowsResponse {
+  rows?: OutpatientSkinTestRowDto[] | null;
+}
+
+export interface SaveOutpatientSkinTestRecordRequest {
+  allergyRecordId?: null | string;
+  checkPractitionerId: string;
+  clinicalStatusCode: string;
+  criticalityCode?: null | string;
+  description?: null | string;
+  encounterId: string;
+  lotNumber?: null | string;
+  medicationId: string;
+  medicationRequestId: string;
+  patientId: string;
+  practitionerId: string;
+  recordedDate?: null | string;
+  serviceRequestId: string;
+  severityCode?: null | string;
+  verificationStatusCode: string;
+}
+
+export interface SaveOutpatientSkinTestRecordResponse {
+  allergyRecordId?: null | string;
+  serviceRequestId?: null | string;
+}
+
+export interface DeleteOutpatientSkinTestRecordRequest {
+  allergyRecordId: string;
+  encounterId: string;
+}
+
+export interface DeleteOutpatientSkinTestRecordResponse {
+  success?: boolean;
 }

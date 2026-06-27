@@ -29,6 +29,9 @@ export function useNurseStationPatientProjections(
     return {
       id: item.id,
       patientId: item.patientId,
+      busNo: item.encounterBusNo,
+      admissionAt: item.startTime,
+      dischargeAt: item.endTime,
       bedNo: item.bedNo,
       name: item.name,
       gender: item.gender,
@@ -42,6 +45,12 @@ export function useNurseStationPatientProjections(
       pendingExecute: item.pendingExecute,
       accountId: item.accountId,
       accountBalance: item.accountBalance,
+      accountBalanceDisplayMode: item.accountBalanceDisplayMode,
+      accountBalanceSummaryText: item.accountBalanceSummaryText,
+      accountBalanceSubText: item.accountBalanceSubText,
+      availableBalance: item.availableBalance,
+      pendingSettlementTotal: item.pendingSettlementTotal,
+      lowBalanceWarning: item.lowBalanceWarning,
       riskTags: item.riskText ? [item.riskText] : [],
     };
   }

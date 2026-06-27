@@ -1,13 +1,14 @@
 import type {
   CancelWithRefundResult,
+  ListBookableSlotHintsParams,
+  ListBookableSlotHintsResult,
   ListPractitionersParams,
   ListPractitionersResult,
   LoadAppointmentForRegisterParams,
-  ListBookableSlotHintsParams,
-  ListBookableSlotHintsResult,
   LoadRegisterFormInitParams,
   LoadRegisterFormInitResult,
   OutpatientBookingSnapshotDto,
+  PageClinicRegistersParams,
   PagePatientsForSelectResult,
   PatientItemDto,
   PayRegisterFeeParams,
@@ -18,9 +19,10 @@ import type {
 } from '#/api/outpatient-registration';
 
 import {
+  httpCancelPlannedRegistration,
   httpCancelWithRefund,
-  httpListPractitioners,
   httpListBookableSlotHints,
+  httpListPractitioners,
   httpLoadAppointmentForRegister,
   httpLoadRegisterFormInit,
   httpPageClinicRegisters,
@@ -28,6 +30,7 @@ import {
   httpPayRegisterFee,
   httpPreRegisterFromAppointment,
   httpPreRegisterSettlement,
+  httpRefreshRegisterFeeInsurancePreSettle,
   httpValidateCancelable,
 } from '#/api/outpatient-registration';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
@@ -39,9 +42,9 @@ export const DEFAULT_REGISTER_PAY_CHANNEL_CODE = 'CASH';
  * 患者分页查询（SelectTable 使用 pageNo 从 1 开始）。
  */
 export async function pageRegisterPatientsForSelect(params: {
+  keyword: string;
   pageNo: number;
   pageSize: number;
-  keyword: string;
 }): Promise<{ content: PatientItemDto[]; totalElements: number }> {
   const body = {
     keyword: params.keyword.trim(),
@@ -103,6 +106,13 @@ export async function payRegisterFee(body: PayRegisterFeeParams): Promise<PayReg
   return httpPayRegisterFee(body);
 }
 
+/** 重新读码后刷新挂号费医保预结算（2205→2206） */
+export async function refreshRegisterFeeInsurancePreSettle(
+  body: import('#/api/outpatient-registration').RefreshRegisterFeeInsurancePreSettleParams,
+) {
+  return httpRefreshRegisterFeeInsurancePreSettle(body);
+}
+
 /**
  * 就诊记录表格分页（pageNo 从 1 开始）。
  */
@@ -112,14 +122,18 @@ export async function pageRegisterHistoryForTable(opts: {
   keyword: string;
   pageNo: number;
   pageSize: number;
+  patientId?: null | number | string;
 }): Promise<{ list: RegisterHistoryTableRow[]; total: number }> {
-  const body = {
+  const body: PageClinicRegistersParams = {
     dateFrom: opts.dateFrom,
     dateTo: opts.dateTo,
     keyword: opts.keyword.trim(),
     pageNo: opts.pageNo,
     pageSize: opts.pageSize,
   };
+  if (opts.patientId !== undefined && opts.patientId !== null && String(opts.patientId).trim()) {
+    body.patientId = opts.patientId;
+  }
   const data = await httpPageClinicRegisters(body);
   const { content, totalCount } = parsePagedRowsFromApiData<RegisterHistoryTableRow>(data);
   return {
@@ -133,6 +147,7 @@ export async function pageRegisterHistoryForTable(opts: {
  */
 export async function cancelRegisterEncounter(params: {
   cancelReason?: string;
+  clientRefundResult?: import('#/api/payment/payment.types').ClientRefundResultDto;
   encounterId: string;
 }): Promise<CancelWithRefundResult> {
   const encounterId = params.encounterId;
@@ -145,5 +160,21 @@ export async function cancelRegisterEncounter(params: {
     typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
       : `ref-${encounterId}-${Date.now()}`;
-  return httpCancelWithRefund({ cancelReason, encounterId, refundRequestId });
+  return httpCancelWithRefund({
+    cancelReason,
+    encounterId,
+    refundRequestId,
+    ...(params.clientRefundResult ? { clientRefundResult: params.clientRefundResult } : {}),
+  });
+}
+
+/** 待挂号（PLANNED）撤销：含医保平台退号（2202） */
+export async function cancelPlannedRegisterEncounter(params: {
+  cancelReason?: string;
+  encounterId: string;
+}) {
+  return httpCancelPlannedRegistration({
+    encounterId: params.encounterId,
+    cancelReason: params.cancelReason ?? '窗口撤销待挂号',
+  });
 }

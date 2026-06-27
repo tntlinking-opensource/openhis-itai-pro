@@ -2,6 +2,8 @@
 import type { AdviceLineEditorKind } from '../services/advice-row';
 import type { AdviceDrugItem } from '../services/advice.types';
 
+import type { PerformOrgOption } from '#/views/doctor-station/advice-shared/perform-org-options.service';
+
 import { computed, ref, watch } from 'vue';
 
 import { ElInput, ElInputNumber, ElOption, ElSelect } from 'element-plus';
@@ -11,7 +13,6 @@ import {
   loadAllDepartmentPerformOrgOptions,
   mapActivityExecutionRulesToPerformOrgOptions,
   mergeCurrentPerformOrgIntoOptions,
-  type PerformOrgOption,
 } from '#/views/doctor-station/advice-shared/perform-org-options.service';
 
 import { parseOptionalNumberInput } from '../services/advice-edit';
@@ -93,18 +94,16 @@ async function refreshServiceExecutionOrgOptions() {
     if (token !== serviceFetchToken) return;
 
     const ruleOpts = mapActivityExecutionRulesToPerformOrgOptions(res.rules);
-    let opts: PerformOrgOption[];
-    if (ruleOpts.length > 0) {
-      opts = ruleOpts;
-    } else {
-      opts = await loadAllDepartmentPerformOrgOptions();
-    }
+    const opts = ruleOpts.length > 0 ? ruleOpts : await loadAllDepartmentPerformOrgOptions();
     serviceExecutionOrgOptions.value = opts;
 
     if (token !== serviceFetchToken) return;
     const cur = String(props.item.performOrgId ?? '').trim();
     if (opts.length === 1) {
-      const only = opts[0]!;
+      const only = opts[0];
+      if (!only) {
+        return;
+      }
       if (cur !== only.value) {
         props.setField('performOrgId', only.value as AdviceDrugItem['performOrgId']);
         props.setField('performOrgName', only.label as AdviceDrugItem['performOrgName']);
@@ -115,7 +114,10 @@ async function refreshServiceExecutionOrgOptions() {
       cur &&
       !opts.some((o) => o.value === cur)
     ) {
-      const first = opts[0]!;
+      const first = opts[0];
+      if (!first) {
+        return;
+      }
       props.setField('performOrgId', first.value as AdviceDrugItem['performOrgId']);
       props.setField('performOrgName', first.label as AdviceDrugItem['performOrgName']);
     }

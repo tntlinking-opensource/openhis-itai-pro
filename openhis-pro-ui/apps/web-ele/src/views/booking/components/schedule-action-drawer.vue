@@ -1,16 +1,14 @@
 <script setup lang="ts">
+import type { BookingEntityId } from '#/api/booking/booking-id';
+import { bookingOptionValue, isSameBookingId, toBookingId } from '#/api/booking/booking-id';
 import type { ScheduleCalendarCellDto } from '#/api/booking/outpatient-schedule';
 import type { BookingOptionDto } from '#/api/booking/booking-types';
 
 import { computed, reactive, ref, watch } from 'vue';
 
+import { formatScheduleStatus, BOOKING_ACTOR_TYPE } from '#/api/booking/booking-constants';
 import {
-  formatScheduleStatus,
-  toDateTimeEnd,
-  toDateTimeStart,
-  BOOKING_ACTOR_TYPE,
-} from '#/api/booking/booking-constants';
-import {
+  createScheduleApi,
   deactivateScheduleApi,
   generateFromTemplateApi,
   previewPublishScheduleConflictsApi,
@@ -18,15 +16,31 @@ import {
   publishScheduleApi,
   reactivateScheduleApi,
   substitutePractitionerApi,
+  updateScheduleDraftApi,
 } from '#/api/booking/outpatient-schedule';
 import type { SlotListItemDto } from '#/api/booking/slot-manage';
 import { pageSlotsByDateApi } from '#/api/booking/slot-manage';
 import ProvisionSlotDialog from '#/views/booking/components/provision-slot-dialog.vue';
+import ScheduleDraftForm from '#/views/booking/components/schedule-draft-form.vue';
+import {
+  assertDraftFormValid,
+  applyHorizonToForm,
+  buildDraftActors,
+  buildPlanningHorizon,
+  createEmptyDraftForm,
+  extractPlanningDate,
+  fillDraftFormFromActors,
+  resetDraftFormForDate,
+} from '#/views/booking/components/schedule-draft-form.utils';
 import StopClinicWizard from '#/views/booking/components/stop-clinic-wizard.vue';
+import {
+  scheduleLocationLabel,
+  schedulePractitionerLabel,
+  scheduleServiceTypeLabel,
+} from '#/views/booking/components/schedule-actor-labels';
 import { useRequest } from '#/hooks/use-request';
 import {
   ElButton,
-  ElDatePicker,
   ElDescriptions,
   ElDescriptionsItem,
   ElDrawer,
@@ -43,22 +57,22 @@ import {
 
 const props = defineProps<{
   visible: boolean;
-  organizationId?: number;
+  /** 新建模式：与 schedule 互斥，使用同一套草稿表单 */
+  createMode?: boolean;
+  organizationId?: BookingEntityId;
   selectedDate?: string;
   schedule?: ScheduleCalendarCellDto | null;
   practitioners?: BookingOptionDto[];
+  clinicLocations?: BookingOptionDto[];
+  healthcareServices?: BookingOptionDto[];
 }>();
 
 const emit = defineEmits<{
   'update:visible': [value: boolean];
-  refreshed: [];
-  edit: [scheduleId: number];
+  refreshed: [payload?: { planningDate?: string }];
 }>();
 
-const publishForm = reactive({
-  planningHorizonStart: '',
-  planningHorizonEnd: '',
-});
+const draftForm = reactive(createEmptyDraftForm());
 
 const provisionVisible = ref(false);
 const stopWizardVisible = ref(false);
@@ -66,62 +80,273 @@ const materializeLoading = ref(false);
 const substitutePractitionerId = ref<number>();
 const substituteReason = ref('');
 const scheduleSlots = ref<SlotListItemDto[]>([]);
-const partialSlotIds = ref<number[]>([]);
+const partialSlotIds = ref<BookingEntityId[]>([]);
 const partialStopWizardVisible = ref(false);
 const slotsLoading = ref(false);
+const publishLoading = ref(false);
+/** 模板生成的草稿默认只读确认；需改字段时再切编辑 */
+const draftEditMode = ref(false);
+
+const isCreateMode = computed(() => props.createMode === true);
+
+const isExistingDraft = computed(
+  () =>
+    !isCreateMode.value && props.schedule?.statusEnum === 'draft' && !!props.schedule?.scheduleId,
+);
 
 const isTemplateCell = computed(
   () => props.schedule?.statusEnum === 'FROM_TEMPLATE' || props.schedule?.fromTemplate === true,
 );
 
+const isDraft = computed(() => isCreateMode.value || props.schedule?.statusEnum === 'draft');
+
+/** 模板/生成带入的草稿：只读摘要 + 发布，不要求重填表单 */
+const showDraftPublishPanel = computed(() => isExistingDraft.value && !draftEditMode.value);
+
+const showDraftForm = computed(
+  () => isCreateMode.value || (isExistingDraft.value && draftEditMode.value),
+);
+
+const drawerTitle = computed(() => {
+  if (isCreateMode.value) {
+    return '新建排班';
+  }
+  if (showDraftPublishPanel.value) {
+    return '草稿排班 — 待发布';
+  }
+  if (isDraft.value) {
+    return '编辑草稿排班';
+  }
+  return '日程详情';
+});
+
+const planningHorizonDisplay = computed(() => {
+  const start = props.schedule?.planningHorizonStart;
+  const end = props.schedule?.planningHorizonEnd;
+  if (!start || !end) {
+    return '—';
+  }
+  const startText = start.replace('T', ' ').slice(0, 16);
+  const endText = end.replace('T', ' ').slice(11, 16);
+  return `${startText} ~ ${endText}`;
+});
+
 const originalPractitionerId = computed(() => {
   const actors = props.schedule?.actors ?? [];
   const practitioner = actors.find((item) => item.actorType === BOOKING_ACTOR_TYPE.PRACTITIONER);
-  return practitioner?.actorId;
+  return practitioner?.actorId ?? props.schedule?.originalPractitionerId;
 });
 
-async function handlePublish() {
-  if (!props.schedule?.scheduleId) return;
+const practitionerDisplay = computed(() => {
+  const label = schedulePractitionerLabel(props.schedule, props.practitioners);
+  return label || '未指定';
+});
+
+const locationDisplay = computed(
+  () => scheduleLocationLabel(props.schedule, props.clinicLocations) || '—',
+);
+
+const serviceTypeDisplay = computed(
+  () => scheduleServiceTypeLabel(props.schedule, props.healthcareServices) || '—',
+);
+
+const missingPractitionerHint = computed(
+  () => !schedulePractitionerLabel(props.schedule, props.practitioners),
+);
+
+function resetCreateForm() {
+  Object.assign(draftForm, createEmptyDraftForm());
+  const date = props.selectedDate ?? new Date().toISOString().slice(0, 10);
+  resetDraftFormForDate(draftForm, date);
+}
+
+function fillDraftFormFromSchedule() {
+  draftForm.name = props.schedule?.name ?? '';
+  fillDraftFormFromActors(draftForm, props.schedule?.actors);
+  if (!draftForm.healthcareServiceId) {
+    draftForm.healthcareServiceId = toBookingId(props.schedule?.healthcareServiceId);
+  }
+  applyHorizonToForm(
+    draftForm,
+    props.schedule?.planningHorizonStart,
+    props.schedule?.planningHorizonEnd,
+    props.selectedDate,
+  );
+}
+
+function resolvePublishHorizon() {
+  if (draftForm.planningDate && draftForm.startTime && draftForm.endTime) {
+    return buildPlanningHorizon(draftForm);
+  }
+  const start = props.schedule?.planningHorizonStart;
+  const end = props.schedule?.planningHorizonEnd;
+  if (start && end) {
+    return { planningHorizonStart: start, planningHorizonEnd: end };
+  }
+  throw new Error('请填写出诊日期与时间');
+}
+
+function assertPublishReady() {
+  if (!draftForm.healthcareServiceId) {
+    draftForm.healthcareServiceId = toBookingId(props.schedule?.healthcareServiceId);
+  }
+  assertDraftFormValid(draftForm);
+}
+
+function emitRefreshed() {
+  emit('refreshed', { planningDate: extractPlanningDate(draftForm) });
+}
+
+async function createDraftSchedule() {
+  if (!props.organizationId) {
+    throw new Error('请先选择排班科室');
+  }
+  assertDraftFormValid(draftForm);
+  const horizon = buildPlanningHorizon(draftForm);
+  const res = await createScheduleApi({
+    organizationId: props.organizationId,
+    name: draftForm.name.trim() || undefined,
+    actors: buildDraftActors(draftForm),
+    planningHorizonStart: horizon.planningHorizonStart,
+    planningHorizonEnd: horizon.planningHorizonEnd,
+  });
+  if (!res?.scheduleId) {
+    throw new Error('创建日程失败');
+  }
+  return res.scheduleId;
+}
+
+async function saveDraftSchedule() {
+  assertDraftFormValid(draftForm);
+  if (isCreateMode.value) {
+    await createDraftSchedule();
+    return;
+  }
+  if (!props.schedule?.scheduleId) {
+    return;
+  }
+  const horizon = buildPlanningHorizon(draftForm);
+  await updateScheduleDraftApi({
+    scheduleId: props.schedule.scheduleId,
+    name: draftForm.name.trim() || undefined,
+    actors: buildDraftActors(draftForm),
+    planningHorizonStart: horizon.planningHorizonStart,
+    planningHorizonEnd: horizon.planningHorizonEnd,
+  });
+}
+
+const { run: runSaveDraft, loading: saveDraftLoading } = useRequest(saveDraftSchedule, {
+  manual: true,
+  onSuccess: () => {
+    ElMessage.success(isCreateMode.value ? '草稿日程已创建' : '草稿已保存');
+    emitRefreshed();
+    emit('update:visible', false);
+  },
+});
+
+async function handleSaveDraft() {
   try {
-    const preview = await previewPublishScheduleConflictsApi({
-      scheduleId: props.schedule.scheduleId,
-      planningHorizonStart: publishForm.planningHorizonStart,
-      planningHorizonEnd: publishForm.planningHorizonEnd,
+    await runSaveDraft();
+  } catch (error) {
+    ElMessage.error((error as Error).message || '保存失败');
+  }
+}
+
+async function publishScheduleById(
+  scheduleId: BookingEntityId,
+  horizon?: { planningHorizonStart: string; planningHorizonEnd: string },
+) {
+  const resolved = horizon ?? resolvePublishHorizon();
+  const preview = await previewPublishScheduleConflictsApi({
+    scheduleId,
+    planningHorizonStart: resolved.planningHorizonStart,
+    planningHorizonEnd: resolved.planningHorizonEnd,
+  });
+  if (preview?.hasConflict) {
+    const lines = (preview.conflicts ?? [])
+      .slice(0, 5)
+      .map((item) => item.message || item.conflictScheduleName || '冲突')
+      .join('\n');
+    await ElMessageBox.confirm(
+      `检测到 ${preview.conflicts?.length ?? 0} 条冲突：\n${lines}\n\n确认仍要发布？`,
+      '发布冲突警告',
+      { type: 'warning' },
+    );
+    await publishScheduleApi({
+      scheduleId,
+      planningHorizonStart: resolved.planningHorizonStart,
+      planningHorizonEnd: resolved.planningHorizonEnd,
+      acknowledgeConflictWarnings: true,
     });
-    if (preview?.hasConflict) {
-      const lines = (preview.conflicts ?? [])
-        .slice(0, 5)
-        .map((item) => item.message || item.conflictScheduleName || '冲突')
-        .join('\n');
-      await ElMessageBox.confirm(
-        `检测到 ${preview.conflicts?.length ?? 0} 条冲突：\n${lines}\n\n确认仍要发布？`,
-        '发布冲突警告',
-        { type: 'warning' },
-      );
-      await publishScheduleApi({
-        scheduleId: props.schedule.scheduleId,
-        planningHorizonStart: publishForm.planningHorizonStart,
-        planningHorizonEnd: publishForm.planningHorizonEnd,
-        acknowledgeConflictWarnings: true,
-      });
-    } else {
-      await publishScheduleApi({
-        scheduleId: props.schedule.scheduleId,
-        planningHorizonStart: publishForm.planningHorizonStart,
-        planningHorizonEnd: publishForm.planningHorizonEnd,
-      });
+    return;
+  }
+  await publishScheduleApi({
+    scheduleId,
+    planningHorizonStart: resolved.planningHorizonStart,
+    planningHorizonEnd: resolved.planningHorizonEnd,
+  });
+}
+
+async function handlePublish() {
+  try {
+    assertPublishReady();
+    let scheduleId = toBookingId(props.schedule?.scheduleId);
+    if (isCreateMode.value) {
+      scheduleId = toBookingId(await createDraftSchedule());
     }
+    if (!scheduleId) {
+      return;
+    }
+    await publishScheduleById(scheduleId);
     ElMessage.success('日程已发布');
-    emit('refreshed');
+    emitRefreshed();
     emit('update:visible', false);
   } catch {
     // cancel or error
   }
 }
 
+async function handlePublishWithLoading() {
+  publishLoading.value = true;
+  try {
+    await handlePublish();
+  } finally {
+    publishLoading.value = false;
+  }
+}
+
+async function handlePublishGeneratedDraft() {
+  const scheduleId = toBookingId(props.schedule?.scheduleId);
+  const start = props.schedule?.planningHorizonStart;
+  const end = props.schedule?.planningHorizonEnd;
+  if (!scheduleId || !start || !end) {
+    ElMessage.warning('草稿信息不完整，请点「修改后再发布」检查');
+    return;
+  }
+  publishLoading.value = true;
+  try {
+    await publishScheduleById(scheduleId, {
+      planningHorizonStart: start,
+      planningHorizonEnd: end,
+    });
+    ElMessage.success('日程已发布');
+    emitRefreshed();
+    emit('update:visible', false);
+  } catch {
+    // cancel or error
+  } finally {
+    publishLoading.value = false;
+  }
+}
+
+function enterDraftEditMode() {
+  draftEditMode.value = true;
+  fillDraftFormFromSchedule();
+}
+
 async function handleMaterializeFromTemplate() {
   if (!props.organizationId || !props.selectedDate || !props.schedule?.dayScheduleTemplateId) {
-    ElMessage.warning('模板信息不完整');
+    ElMessage.warning('占位预览信息不完整');
     return;
   }
   materializeLoading.value = true;
@@ -135,20 +360,33 @@ async function handleMaterializeFromTemplate() {
       autoPublish: true,
       autoProvision: true,
     });
-    ElMessage.success(`已从模板物化 ${res?.generatedCount ?? 0} 条日程`);
-    emit('refreshed');
+    ElMessage.success(`已生成 ${res?.generatedCount ?? 0} 条正式排班`);
+    emit('refreshed', { planningDate: props.selectedDate });
     emit('update:visible', false);
   } finally {
     materializeLoading.value = false;
   }
 }
 
+function initDrawerForm() {
+  draftEditMode.value = false;
+  if (isCreateMode.value) {
+    resetCreateForm();
+    return;
+  }
+  if (isExistingDraft.value) {
+    return;
+  }
+  if (props.schedule?.statusEnum === 'draft') {
+    fillDraftFormFromSchedule();
+  }
+}
+
 watch(
   () => props.visible,
   (open) => {
-    if (!open || !props.selectedDate) return;
-    publishForm.planningHorizonStart = toDateTimeStart(props.selectedDate);
-    publishForm.planningHorizonEnd = toDateTimeEnd(props.selectedDate);
+    if (!open) return;
+    initDrawerForm();
     substitutePractitionerId.value = props.schedule?.substitutePractitionerId;
     substituteReason.value = '';
     partialSlotIds.value = [];
@@ -156,6 +394,20 @@ watch(
       void loadScheduleSlots();
     } else {
       scheduleSlots.value = [];
+    }
+  },
+);
+
+watch(
+  () => [
+    props.createMode,
+    props.schedule?.scheduleId,
+    props.schedule?.statusEnum,
+    props.selectedDate,
+  ],
+  () => {
+    if (props.visible) {
+      initDrawerForm();
     }
   },
 );
@@ -181,6 +433,13 @@ function formatSlotLabel(slot: SlotListItemDto) {
   const start = slot.startTime?.slice(11, 16) ?? '';
   const end = slot.endTime?.slice(11, 16) ?? '';
   return `${start}-${end} · 已约${slot.bookedCount ?? 0}/${slot.capacity ?? 0} · ${slot.displayStatus || slot.statusCode || ''}`;
+}
+
+async function handleProvisionDone() {
+  emit('refreshed');
+  if (props.schedule?.statusEnum === 'active') {
+    await loadScheduleSlots();
+  }
 }
 
 async function handleReactivate() {
@@ -292,12 +551,49 @@ async function handleDeactivate() {
 <template>
   <ElDrawer
     :model-value="visible"
-    title="日程详情"
+    :title="drawerTitle"
     size="460px"
     @update:model-value="emit('update:visible', $event)"
   >
-    <ElDescriptions v-if="schedule" :column="1" border>
+    <div v-if="showDraftPublishPanel" class="schedule-action__section">
+      <p class="schedule-action__hint">
+        信息已由<strong>排班模板</strong>带入，无需重填。确认无误后点「发布」；发布后在同一格「批量放号」。
+      </p>
+      <ElDescriptions :column="1" border>
+        <ElDescriptionsItem label="名称">{{ schedule?.name || '—' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="出诊医师">{{ practitionerDisplay || '—' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="诊室">{{ locationDisplay || '—' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="号源类型">{{ serviceTypeDisplay || '—' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="出诊时间">{{ planningHorizonDisplay }}</ElDescriptionsItem>
+      </ElDescriptions>
+      <div class="schedule-action__row">
+        <ElButton type="primary" :loading="publishLoading" @click="handlePublishGeneratedDraft">
+          发布
+        </ElButton>
+        <ElButton link type="primary" @click="enterDraftEditMode">修改后再发布</ElButton>
+      </div>
+    </div>
+
+    <div v-else-if="showDraftForm" class="schedule-action__section">
+      <ScheduleDraftForm
+        v-model="draftForm"
+        :practitioners="practitioners"
+        :clinic-locations="clinicLocations"
+        :healthcare-services="healthcareServices"
+      />
+      <div class="schedule-action__row">
+        <ElButton :loading="saveDraftLoading" @click="handleSaveDraft">保存草稿</ElButton>
+        <ElButton type="primary" :loading="publishLoading" @click="handlePublishWithLoading">
+          发布
+        </ElButton>
+      </div>
+    </div>
+
+    <ElDescriptions v-else-if="schedule" :column="1" border>
       <ElDescriptionsItem label="名称">{{ schedule.name || '-' }}</ElDescriptionsItem>
+      <ElDescriptionsItem label="出诊医师">{{ practitionerDisplay }}</ElDescriptionsItem>
+      <ElDescriptionsItem label="诊室">{{ locationDisplay }}</ElDescriptionsItem>
+      <ElDescriptionsItem label="号源类型">{{ serviceTypeDisplay }}</ElDescriptionsItem>
       <ElDescriptionsItem label="状态">{{
         formatScheduleStatus(schedule.statusEnum)
       }}</ElDescriptionsItem>
@@ -312,11 +608,16 @@ async function handleDeactivate() {
       </ElDescriptionsItem>
     </ElDescriptions>
 
+    <p v-if="schedule && missingPractitionerHint && !showDraftForm" class="schedule-action__hint">
+      该日程未绑定出诊医师。请在「排班设置 →
+      日排班」中维护出诊医师后重新生成，或在草稿状态下编辑并发布。
+    </p>
+
     <div v-if="isTemplateCell" class="schedule-action__section">
       <p class="schedule-action__hint">
-        该格来自周模板 fallback，{{
-          schedule?.bookable ? '可直接预约（lazy 物化）' : '仅展示不可约'
-        }}。
+        此为<strong>占位预览</strong>（当天尚无正式排班），{{
+          schedule?.bookable ? '可预约时会自动生成正式排班' : '仅预览、不可约'
+        }}。预览何时出现由「排班设置」中的占位有效期控制。
       </p>
       <ElButton
         v-if="schedule?.dayScheduleTemplateId"
@@ -324,34 +625,8 @@ async function handleDeactivate() {
         :loading="materializeLoading"
         @click="handleMaterializeFromTemplate"
       >
-        从模板物化当日排班
+        生成本日正式排班
       </ElButton>
-    </div>
-
-    <div v-else-if="schedule?.statusEnum === 'draft'" class="schedule-action__section">
-      <h4>发布日程</h4>
-      <ElForm label-width="88px">
-        <ElFormItem label="规划起">
-          <ElDatePicker
-            v-model="publishForm.planningHorizonStart"
-            type="datetime"
-            value-format="YYYY-MM-DDTHH:mm:ss"
-            style="width: 100%"
-          />
-        </ElFormItem>
-        <ElFormItem label="规划止">
-          <ElDatePicker
-            v-model="publishForm.planningHorizonEnd"
-            type="datetime"
-            value-format="YYYY-MM-DDTHH:mm:ss"
-            style="width: 100%"
-          />
-        </ElFormItem>
-      </ElForm>
-      <ElButton type="primary" @click="handlePublish">发布</ElButton>
-      <ElButton @click="schedule?.scheduleId && emit('edit', schedule.scheduleId)"
-        >编辑参与者</ElButton
-      >
     </div>
 
     <div v-if="schedule?.statusEnum === 'active'" class="schedule-action__section">
@@ -372,8 +647,8 @@ async function handleDeactivate() {
               v-for="item in practitioners || []"
               :key="item.value"
               :label="item.label"
-              :value="Number(item.value)"
-              :disabled="Number(item.value) === originalPractitionerId"
+              :value="bookingOptionValue(item.value)"
+              :disabled="isSameBookingId(item.value, originalPractitionerId)"
             />
           </ElSelect>
         </ElFormItem>
@@ -418,7 +693,8 @@ async function handleDeactivate() {
       v-model:visible="provisionVisible"
       :organization-id="organizationId"
       :schedule-id="schedule?.scheduleId"
-      @done="emit('refreshed')"
+      :selected-date="selectedDate"
+      @done="handleProvisionDone"
     />
 
     <StopClinicWizard
@@ -446,6 +722,10 @@ async function handleDeactivate() {
   flex-direction: column;
   gap: 10px;
   margin-top: 16px;
+}
+
+.schedule-action__section:first-child {
+  margin-top: 0;
 }
 
 .schedule-action__section h4 {

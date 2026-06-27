@@ -4,6 +4,9 @@ export type NurseStationOrderExecuteTab = 'all' | 'cancelled' | 'executed' | 'pe
 /** 长临筛选：全部 / 长期 / 临时 */
 export type NurseStationOrderExecuteTherapyFilter = 'all' | 'long' | 'temp';
 
+/** 中西药 Tab：west 西药 / tcm 中药 */
+export type NurseStationOrderExecuteMedicineCategoryTab = 'tcm' | 'west';
+
 /** 写操作锚点：药品申请 / 诊疗申请 */
 export type NurseStationOrderExecuteOrderType = 'MED_REQUEST' | 'SERVICE_REQUEST';
 
@@ -12,6 +15,7 @@ export interface ListNurseStationOrderExecuteRequest {
   encounterIds: string[];
   executeTab: NurseStationOrderExecuteTab;
   therapyType?: NurseStationOrderExecuteTherapyFilter;
+  medicineCategoryTab?: NurseStationOrderExecuteMedicineCategoryTab;
   executionDeadline: string;
 }
 
@@ -52,7 +56,8 @@ export interface NurseStationOrderExecuteRowDto {
   encounterId?: string;
   patientId?: string;
   statusEnum?: string;
-  statusDisplay?: string;
+  /** 请求状态展示（与后端 statusEnumText 对齐） */
+  statusEnumText?: string;
   therapyEnum?: string;
   /** 长临展示（与后端 therapyEnumText 对齐） */
   therapyEnumText?: string;
@@ -73,6 +78,13 @@ export interface NurseStationOrderExecuteRowDto {
   skippedSlots?: NurseStationOrderExecuteSlotDto[];
   cancelledSlots?: NurseStationOrderExecuteSlotDto[];
   bindItems?: NurseStationOrderExecuteBindItemDto[];
+  /** 是否中药饮片方（方级折叠行） */
+  tcmFlag?: boolean;
+  prescriptionNo?: string;
+  /** 方内全部药品申请 id（整方执行扩行） */
+  lineRequestIds?: string[];
+  sufferingFlag?: boolean;
+  chineseHerbsDoseQuantity?: number | string;
 }
 
 /** 按就诊分组的医嘱列表 */
@@ -95,6 +107,9 @@ export interface NurseStationOrderExecuteWriteSlotDto {
   accountId?: string;
   actualTime?: string;
   bindItems?: NurseStationOrderExecuteBindItemDto[];
+  prescriptionNo?: string;
+  /** 中药方内全部药品申请主键（列表 lineRequestIds 回传） */
+  lineRequestIds?: string[];
 }
 
 /** 批量执行医嘱 */

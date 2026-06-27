@@ -240,7 +240,7 @@ bootstrap();
             <template v-if="slot.waitlistCount">（{{ slot.waitlistCount }}人排队）</template>
           </template>
           <template v-else>余 {{ slot.remainingCount ?? 0 }}</template>
-          <template v-if="slot.fromTemplate"> · 模板</template>
+          <template v-if="slot.fromTemplate"> · 占位预览</template>
         </span>
       </button>
       <div v-if="!bookableSlots.length" class="booking-register-panel__empty">暂无可约号源</div>

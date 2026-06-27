@@ -20,7 +20,9 @@ import { useAuthStore } from '#/store';
 
 import type { AuthApi } from '#/api/core/auth';
 
-import { isTenantScopeLostError, restoreLoginScopeOnce } from '#/utils/restore-login-scope';
+import { isTenantScopeLostError, restoreLoginScopeOnce } from '#/utils/auth/restore-login-scope';
+import { formatInsuranceRegisterError } from '#/utils/http/format-insurance-register-error';
+import { showPersistentUserError } from '#/utils/http/show-persistent-user-message';
 
 import { refreshTokenApi } from './core';
 
@@ -66,7 +68,8 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
       accessStore.setRefreshToken(loginResult.refreshToken);
     }
     try {
-      await restoreLoginScopeOnce();
+      const { requireLoginScopeReady } = await import('#/utils/auth/require-login-scope-ready');
+      await requireLoginScopeReady();
     } catch {
       // 本地未缓存租户/科室时由业务请求拦截器再恢复
     }
@@ -173,6 +176,15 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
 
       if (errorCode === 'MODULE_NOT_AVAILABLE') {
         ElMessage.warning(displayMessage);
+        return;
+      }
+
+      const registerInsuranceError = formatInsuranceRegisterError(
+        typeof errorCode === 'string' ? errorCode : undefined,
+        displayMessage,
+      );
+      if (registerInsuranceError) {
+        void showPersistentUserError(registerInsuranceError);
         return;
       }
 

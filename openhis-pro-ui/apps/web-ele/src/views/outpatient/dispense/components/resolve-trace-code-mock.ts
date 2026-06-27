@@ -33,7 +33,10 @@ export function resolveTraceCodeMock(
     h = Math.imul(31, h) + (t.codePointAt(i) ?? 0);
   }
   const idx = (h >>> 0) % lines.length;
-  const row = lines[idx] ?? lines[0]!;
+  const row = lines[idx] ?? lines[0];
+  if (!row) {
+    throw new Error('resolveTraceCodeMock: lines must not be empty');
+  }
   // drugId 占位与 lineId 区分；对接后使用后端返回的药品主键
   return {
     drugId: `drug:${row.id}`,

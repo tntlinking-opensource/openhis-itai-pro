@@ -20,8 +20,8 @@ import {
   getStaffScopesApi,
   updateRoleApi,
 } from '#/api/user/role';
-import { resolveGrantableMenuPermissionName } from '#/utils/menu-navigation-permission';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { resolveGrantableMenuPermissionName } from '#/utils/auth/menu-navigation-permission';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 interface Props {
   modelValue: boolean;

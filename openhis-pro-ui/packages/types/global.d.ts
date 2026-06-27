@@ -28,35 +28,5 @@ export interface ApplicationConfig {
 declare global {
   interface Window {
     _VBEN_ADMIN_PRO_APP_CONF_: VbenAdminProAppConfigRaw;
-    /** Hiprint 实例（直接挂载在 window 上） */
-    hiprint?: {
-      [key: string]: any;
-      /**
-       * 初始化方法（可选）
-       */
-      init?: () => void;
-      /**
-       * 打印模板构造函数
-       */
-      PrintTemplate: new (options?: { [key: string]: any; template?: Record<string, any> }) => any;
-    };
-    /** Hiprint 实例（通过 vue-plugin-hiprint 挂载） */
-    $hiprint?: {
-      [key: string]: any;
-      hiprint: {
-        [key: string]: any;
-        /**
-         * 初始化方法（可选）
-         */
-        init?: () => void;
-        /**
-         * 打印模板构造函数
-         */
-        PrintTemplate: new (options?: {
-          [key: string]: any;
-          template?: Record<string, any>;
-        }) => any;
-      };
-    };
   }
 }

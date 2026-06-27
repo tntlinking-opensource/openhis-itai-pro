@@ -23,17 +23,17 @@ import {
   ElOption,
   ElSelect,
   ElTag,
+  ElTreeSelect,
 } from 'element-plus';
 
-import {
-  useExamApplyFormPrint,
-  useLabApplyFormPrint,
-} from '#/composables/use-service-apply-form-print';
 import AppDialog from '#/components/app-dialog.vue';
 import { DiagnosisPickerDialog } from '#/components/doctor-station/diagnosis';
 import { useAuthStore } from '#/store';
-import { decimalAdd, decimalMul } from '#/utils/decimal-util';
+import { decimalAdd, decimalMul } from '#/utils/format/decimal-util';
+import * as inpatientServiceApplyApi from '#/views/inpatient/doctor-station/service-apply/inpatient-service-apply.service';
 
+import AdviceDraftBindDialog from '../advice/components/advice-draft-bind-dialog.vue';
+import { saveServiceApplyBindItemsAfterApplyForm } from './service-apply-bind.service';
 import {
   buildDetailItems,
   buildSaveServiceApplyFormRequest,
@@ -42,16 +42,12 @@ import {
   catalogRowKey,
   catalogRowUnitPrice,
   detailTargetIds,
-  loadServiceApplyEncounterDiagnosisRows,
-  loadServiceApplyCatalog,
-  loadServiceApplyInitOptions,
+  firstTreeOptionValue,
   mergeCatalogDefaultPerformOrgOptions,
-  mergeServiceApplyOrgOptions,
   pickDefaultServiceApplyEncounterDiagnosisId,
-  saveServiceApplyForm,
-  signServiceApplyRequests,
   validateServiceApplySelectedItems,
 } from './service-apply.service';
+import * as outpatientServiceApplyApi from './service-apply.service';
 
 defineOptions({ name: 'ServiceApplyDialog' });
 
@@ -62,11 +58,14 @@ const props = withDefaults(
     modelValue: boolean;
     patient?: ServiceApplyPatientSummary;
     patientId?: string;
+    /** 门诊 / 住院：决定申请单保存与签发所调 HTTP */
+    stationScope?: 'inpatient' | 'outpatient';
   }>(),
   {
     applyKind: 'lab',
     encounterId: '',
     patientId: '',
+    stationScope: 'outpatient',
     patient: () => ({
       patientName: '—',
       genderText: '—',
@@ -79,7 +78,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   saved: [];
-  /** 申请单签发成功（含签发并打印） */
+  /** 申请单签发成功 */
   signed: [];
   'update:modelValue': [value: boolean];
 }>();
@@ -87,8 +86,13 @@ const emit = defineEmits<{
 type CatalogTab = 'category' | 'frequent';
 
 const authStore = useAuthStore();
-const { printServiceApplyForm: printLabApplyForm } = useLabApplyFormPrint();
-const { printServiceApplyForm: printExamApplyForm } = useExamApplyFormPrint();
+
+/** 按 stationScope 选择门诊/住院申请单 API 实现 */
+const serviceApplyApi = computed(() =>
+  props.stationScope === 'inpatient' ? inpatientServiceApplyApi : outpatientServiceApplyApi,
+);
+
+const isInpatientScope = computed(() => props.stationScope === 'inpatient');
 
 const keyword = ref('');
 const catalogTab = ref<CatalogTab>('frequent');
@@ -119,6 +123,8 @@ const detailOptions = computed(() =>
 
 /** 明细字段标签 */
 const detailFieldLabel = computed(() => (props.applyKind === 'lab' ? '样本' : '部位'));
+
+const isLabApply = computed(() => props.applyKind === 'lab');
 
 /** 分类列表（由已加载目录去重） */
 const categoryList = computed(() => {
@@ -180,7 +186,7 @@ function buildSelectedRow(row: DoctorStationAdviceCatalogRowDto): ServiceApplySe
   const defaultTargetId =
     props.applyKind === 'lab'
       ? String(specimenDefinitionOptions.value[0]?.value ?? '').trim()
-      : String(bodyStructureOptions.value[0]?.value ?? '').trim();
+      : firstTreeOptionValue(bodyStructureOptions.value);
   const key = catalogRowKey(row);
   return {
     rowKey: nextRowKey(key),
@@ -203,7 +209,10 @@ async function refreshEncounterDiagnosisOptions() {
     encounterDiagnosisId.value = '';
     return;
   }
-  const rows = await loadServiceApplyEncounterDiagnosisRows(encounterId, patientId);
+  const rows = await serviceApplyApi.value.loadServiceApplyEncounterDiagnosisRows(
+    encounterId,
+    patientId,
+  );
   encounterDiagnosisRows.value = rows;
   const options = buildServiceApplyDiagnosisOptions(rows);
   const current = String(encounterDiagnosisId.value ?? '').trim();
@@ -232,7 +241,7 @@ async function refreshOrgOptions() {
     orgOptions.value = [];
     return;
   }
-  const merged = await mergeServiceApplyOrgOptions({
+  const merged = await serviceApplyApi.value.mergeServiceApplyOrgOptions({
     encounterId,
     patientId,
     activityDefinitionIds,
@@ -257,8 +266,8 @@ async function loadPanelData() {
   catalogLoading.value = true;
   try {
     const [initOpts, catalogRes] = await Promise.all([
-      loadServiceApplyInitOptions(encounterId, patientId),
-      loadServiceApplyCatalog({
+      serviceApplyApi.value.loadServiceApplyInitOptions(encounterId, patientId),
+      serviceApplyApi.value.loadServiceApplyCatalog({
         encounterId,
         patientId,
         applyKind: props.applyKind,
@@ -329,8 +338,8 @@ function handleClose() {
   emit('update:modelValue', false);
 }
 
-/** 保存申请单（DRAFT） */
-async function persistApplyForm(): Promise<{ prescriptionNo: string; requestIds: string[] }> {
+/** 校验并组装申请单保存请求 */
+function buildPersistApplyFormRequest() {
   const encounterId = String(props.encounterId ?? '').trim();
   const patientId = String(props.patientId ?? '').trim();
   const validationMsg = validateServiceApplySelectedItems(
@@ -351,9 +360,37 @@ async function persistApplyForm(): Promise<{ prescriptionNo: string; requestIds:
     previousPrescriptionNo: savedPrescriptionNo.value || undefined,
     items: selectedItems.value,
   });
-  const result = await saveServiceApplyForm(request);
+  return { encounterId, patientId, request };
+}
+
+/** 保存申请单（DRAFT） */
+async function persistApplyForm(): Promise<{
+  encounterId: string;
+  patientId: string;
+  prescriptionNo: string;
+  request: ReturnType<typeof buildSaveServiceApplyFormRequest>;
+  requestIds: string[];
+}> {
+  const { encounterId, patientId, request } = buildPersistApplyFormRequest();
+  const result = await serviceApplyApi.value.saveServiceApplyForm(request);
   savedPrescriptionNo.value = result.prescriptionNo;
-  return result;
+  return { encounterId, patientId, request, ...result };
+}
+
+/** 签发前解析并带出绑定项（暂存不调用） */
+async function resolveServiceApplyBindOnSign(
+  encounterId: string,
+  patientId: string,
+  request: ReturnType<typeof buildSaveServiceApplyFormRequest>,
+  applyResult: { prescriptionNo: string; requestIds: string[] },
+) {
+  await saveServiceApplyBindItemsAfterApplyForm({
+    encounterId,
+    patientId,
+    request,
+    stationScope: props.stationScope,
+    applyResult,
+  });
 }
 
 /** 暂存申请单 */
@@ -386,10 +423,12 @@ async function handleSign() {
   }
   actionLoading.value = true;
   try {
-    const encounterId = String(props.encounterId ?? '').trim();
-    const patientId = String(props.patientId ?? '').trim();
-    const { requestIds } = await persistApplyForm();
-    await signServiceApplyRequests({ encounterId, patientId, requestIds });
+    const { encounterId, patientId, request, requestIds } = await persistApplyForm();
+    await resolveServiceApplyBindOnSign(encounterId, patientId, request, {
+      prescriptionNo: savedPrescriptionNo.value,
+      requestIds,
+    });
+    await serviceApplyApi.value.signServiceApplyRequests({ encounterId, patientId, requestIds });
     ElMessage.success('签发成功');
     emit('saved');
     emit('signed');
@@ -399,47 +438,6 @@ async function handleSign() {
       error && typeof error === 'object' && 'message' in error
         ? String((error as { message?: unknown }).message)
         : '签发失败';
-    ElMessage.error(msg);
-  } finally {
-    actionLoading.value = false;
-  }
-}
-
-/** 签发并打印申请单 */
-async function handleSignAndPrint() {
-  if (!contextReady.value) {
-    ElMessage.warning('缺少就诊或患者信息');
-    return;
-  }
-  actionLoading.value = true;
-  try {
-    const encounterId = String(props.encounterId ?? '').trim();
-    const patientId = String(props.patientId ?? '').trim();
-    const { requestIds } = await persistApplyForm();
-    await signServiceApplyRequests({ encounterId, patientId, requestIds });
-    const printTarget = { serviceRequestIds: requestIds };
-    if (props.applyKind === 'lab') {
-      await printLabApplyForm({
-        encounterId,
-        target: printTarget,
-        jobName: '检验申请单',
-      });
-    } else {
-      await printExamApplyForm({
-        encounterId,
-        target: printTarget,
-        jobName: '检查申请单',
-      });
-    }
-    ElMessage.success('已签发并发送打印');
-    emit('saved');
-    emit('signed');
-    handleClose();
-  } catch (error: unknown) {
-    const msg =
-      error && typeof error === 'object' && 'message' in error
-        ? String((error as { message?: unknown }).message)
-        : '签发并打印失败';
     ElMessage.error(msg);
   } finally {
     actionLoading.value = false;
@@ -460,7 +458,10 @@ function writeDetailTargetIds(row: ServiceApplySelectedItem, ids: string[]) {
 }
 
 /** 弹窗打开时重置为初始态并加载数据 */
+let suppressKeywordReload = false;
+
 function resetPanelState() {
+  suppressKeywordReload = true;
   keyword.value = '';
   catalogTab.value = 'frequent';
   activeCategory.value = '';
@@ -472,24 +473,17 @@ function resetPanelState() {
   encounterDiagnosisRows.value = [];
   savedPrescriptionNo.value = '';
   catalogItems.value = [];
+  suppressKeywordReload = false;
 }
 
 watch(
-  () => props.modelValue,
-  (open) => {
-    if (open) {
-      resetPanelState();
-      if (contextReady.value) {
-        void loadPanelData();
-      }
-    }
-  },
-);
-
-watch(
-  () => [props.applyKind, props.encounterId, props.patientId] as const,
-  () => {
-    if (props.modelValue && contextReady.value) {
+  () => [props.modelValue, props.applyKind, props.encounterId, props.patientId] as const,
+  ([open, kind, encounterId, patientId], prev) => {
+    if (!open || !contextReady.value) return;
+    const wasOpen = prev?.[0] ?? false;
+    const contextChanged =
+      !prev || prev[1] !== kind || prev[2] !== encounterId || prev[3] !== patientId;
+    if ((!wasOpen && open) || (wasOpen && contextChanged)) {
       resetPanelState();
       void loadPanelData();
     }
@@ -497,7 +491,7 @@ watch(
 );
 
 watch(keyword, () => {
-  if (!props.modelValue || !contextReady.value) return;
+  if (suppressKeywordReload || !props.modelValue || !contextReady.value) return;
   if (catalogSearchTimer) clearTimeout(catalogSearchTimer);
   catalogSearchTimer = setTimeout(() => {
     void loadPanelData();
@@ -527,6 +521,7 @@ watch(keyword, () => {
           <span class="patient-strip__value">{{ patient.encounterNo }}</span>
         </div>
         <ElTag size="small" effect="light" type="info">{{ patient.feeNatureText }}</ElTag>
+        <ElTag v-if="isInpatientScope" size="small" effect="plain" type="warning"> 临时医嘱 </ElTag>
       </div>
 
       <div v-if="!contextReady" class="context-hint">请先选择患者后再开立申请单</div>
@@ -685,6 +680,7 @@ watch(keyword, () => {
                 />
                 <span class="cart-field__label">{{ detailFieldLabel }}</span>
                 <ElSelect
+                  v-if="isLabApply"
                   :model-value="detailTargetIds(row.detailItems)"
                   multiple
                   collapse-tags
@@ -700,6 +696,21 @@ watch(keyword, () => {
                     :value="String(opt.value ?? '')"
                   />
                 </ElSelect>
+                <ElTreeSelect
+                  v-else
+                  :model-value="detailTargetIds(row.detailItems)"
+                  multiple
+                  collapse-tags
+                  collapse-tags-tooltip
+                  filterable
+                  check-strictly
+                  class="cart-field__detail"
+                  :data="bodyStructureOptions"
+                  :props="{ value: 'value', label: 'label', children: 'children' }"
+                  node-key="value"
+                  :placeholder="`请选择${detailFieldLabel}`"
+                  @update:model-value="(v: string[]) => writeDetailTargetIds(row, v)"
+                />
               </div>
               <div class="cart-item__remark">
                 <span class="cart-field__label">备注</span>
@@ -742,15 +753,6 @@ watch(keyword, () => {
           >
             签发
           </ElButton>
-          <ElButton
-            type="primary"
-            plain
-            :loading="actionLoading"
-            :disabled="!contextReady"
-            @click="handleSignAndPrint"
-          >
-            签发并打印
-          </ElButton>
         </div>
       </div>
     </template>
@@ -758,11 +760,14 @@ watch(keyword, () => {
 
   <DiagnosisPickerDialog
     v-model="diagnosisDialogVisible"
+    :station-scope="props.stationScope"
     :encounter-id="encounterId"
     :patient-id="patientId"
     :existing-diagnosis-list="encounterDiagnosisRows"
     @saved="handleDiagnosisPickerSaved"
   />
+
+  <AdviceDraftBindDialog />
 </template>
 
 <style scoped>

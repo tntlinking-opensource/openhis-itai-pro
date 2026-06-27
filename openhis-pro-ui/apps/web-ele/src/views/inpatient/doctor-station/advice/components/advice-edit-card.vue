@@ -18,12 +18,9 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 import { ElButton, ElMessage, ElRadio, ElRadioGroup } from 'element-plus';
 
-import { httpGetInpatientEncounterDiagnosis } from '#/api/inpatient/doctor-station/inpatient-doctor-station-diagnosis.http';
 import { DiagnosisPickerDialog } from '#/components/doctor-station/diagnosis';
-import {
-  mapEncounterRowToDiagnosisItem,
-  resolveEncounterDiagnosisDisplayRows,
-} from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
+import { fetchEncounterDiagnosisDisplayList } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis.service';
+import { mapEncounterRowToDiagnosisItem } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
 
 import { useAdviceDrugFormKeyboard } from '../composables/use-advice-drug-form-keyboard';
 import { calcAdviceTotalFee } from '../composables/use-advice-drug-list';
@@ -143,8 +140,10 @@ async function loadEncounterDiagnosisOptions() {
     return;
   }
   try {
-    const res = await httpGetInpatientEncounterDiagnosis({ encounterId, patientId });
-    const displayList = resolveEncounterDiagnosisDisplayRows(res.diagnosisList ?? []);
+    const displayList = await fetchEncounterDiagnosisDisplayList(
+      { encounterId, patientId },
+      'inpatient',
+    );
     encounterDiagnosisSnapshot.value = displayList;
     patientDiagnoses.value = displayList
       .map((row) => mapEncounterRowToDiagnosisItem(row))

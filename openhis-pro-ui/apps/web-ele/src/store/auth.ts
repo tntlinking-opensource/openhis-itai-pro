@@ -1,6 +1,6 @@
 import type { Recordable } from '@vben/types';
 
-import type { AuthApi } from '#/api';
+import type { AuthApi } from '#/api/core/auth';
 
 import { ref } from 'vue';
 
@@ -11,19 +11,20 @@ import { defineStore } from 'pinia';
 
 import { stopProgress } from '@vben/utils';
 
-import { getTenantsApi, getUserInfoApi, loginApi, logoutApi } from '#/api';
+import { getTenantsApi, loginApi, logoutApi } from '#/api/core/auth';
+import { getUserInfoApi } from '#/api/core/user';
 import {
   beginForceLogoutSession,
   endForceLogoutSession,
   registerEmrUnsavedGuard,
 } from '#/emrEditor/use-emr-unsaved-guard';
 import { unwrapApiList } from '#/utils/api/unwrap-api-list';
-import { canSkipLoginDepartmentSelection } from '#/utils/platform-admin';
+import { canSkipLoginDepartmentSelection } from '#/utils/auth/platform-admin';
 import {
   clearPersistedSessionStorage,
   clearTabbarPersistedState,
   hardRedirectToLogin,
-} from '#/utils/session-logout';
+} from '#/utils/auth/session-logout';
 
 const LOGOUT_API_TIMEOUT_MS = 3000;
 
@@ -103,6 +104,9 @@ export const useAuthStore = defineStore('auth', () => {
         setSelectedHospital('');
         setOrganizationUnitSkipped(false);
         accessStore.setIsAccessChecked(false);
+        void import('#/utils/auth/require-login-scope-ready').then(({ resetLoginScopeSync }) =>
+          resetLoginScopeSync(),
+        );
         const tenantsResult = await getTenantsApi();
         tenants = unwrapApiList(tenantsResult);
 
@@ -261,6 +265,9 @@ export const useAuthStore = defineStore('auth', () => {
           beginForceLogoutSession();
           registerEmrUnsavedGuard(null);
           void import('#/router/access-init').then(({ resetAccessInit }) => resetAccessInit());
+          void import('#/utils/auth/require-login-scope-ready').then(({ resetLoginScopeSync }) =>
+            resetLoginScopeSync(),
+          );
 
           const refreshToken = accessStore.refreshToken;
 

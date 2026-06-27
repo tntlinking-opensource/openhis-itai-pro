@@ -5,16 +5,14 @@ import type { TreeNodeData } from 'element-plus/es/components/tree/src/tree.type
 import type { EmrTemplateTreeNode } from './build-emr-template-tree';
 
 import type { TemplateDto } from '#/api/emr/template';
+import type { EmrTemplateStationKind } from '#/views/basic/emr-template/emr-template-scope.constants';
 
 import { nextTick, onMounted, ref, watch } from 'vue';
 
 import { ElMessage, ElTree } from 'element-plus';
 
 import { getTemplateDocumentTypesApi, listTemplatesForStationApi } from '#/api/emr/template';
-import {
-  EMR_TEMPLATE_STATION_KIND,
-  type EmrTemplateStationKind,
-} from '#/views/basic/emr-template/emr-template-scope.constants';
+import { EMR_TEMPLATE_STATION_KIND } from '#/views/basic/emr-template/emr-template-scope.constants';
 
 import { buildEmrTemplateTree } from './build-emr-template-tree';
 
@@ -28,10 +26,10 @@ const props = withDefaults(
     documentTypesEnabledOnly?: boolean;
     /** 与外侧搜索框联动，筛选节点展示 */
     filterText?: string;
-    /** 仅加载启用模板；默认 true */
-    templatesEnabledOnly?: boolean;
     /** 医生站场景：门诊 / 住院；传入时走 listForStation */
     stationKind?: EmrTemplateStationKind;
+    /** 仅加载启用模板；默认 true */
+    templatesEnabledOnly?: boolean;
   }>(),
   {
     documentTypesEnabledOnly: true,

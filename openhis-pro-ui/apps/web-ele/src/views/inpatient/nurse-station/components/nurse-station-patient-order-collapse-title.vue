@@ -26,9 +26,7 @@ const bedDisplayText = computed(() => {
 
 const bedUnassigned = computed(() => isNurseStationBedUnassigned(props.patient.bedNo));
 
-const prepayBalanceText = computed(() =>
-  formatNurseStationAccountBalance(props.patient.accountBalance),
-);
+const prepayBalanceText = computed(() => formatNurseStationAccountBalance(props.patient));
 </script>
 
 <template>

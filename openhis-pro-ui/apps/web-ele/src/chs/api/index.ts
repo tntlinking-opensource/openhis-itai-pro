@@ -5,3 +5,5 @@ export * from './catalog-mapping';
 export * from './catalog-workbench';
 export * from './reconciliation';
 export * from './inventory';
+export * from './medical-info-query';
+export * from './platform-dict';

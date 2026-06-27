@@ -87,7 +87,15 @@ function onIptTypeSelectChange(
     </div>
     <Table
       class="min-h-0 flex-1"
-      row-key="conditionId"
+      :row-key="
+        (row: EncounterDiagnosisRowDto) =>
+          row.tcmSyndromeGroup?.trim() ||
+          row.conditionId ||
+          row.encounterDiagnosisId ||
+          row.conditionDefinitionId ||
+          row.conditionDefinitionName ||
+          ''
+      "
       :table-data="props.rows"
       :table-columns="tableColumns"
       :show-pagination="false"

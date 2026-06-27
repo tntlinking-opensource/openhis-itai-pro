@@ -4,7 +4,7 @@ import type {
   EncounterDiagnosisRowDto,
 } from '#/api/doctor-station/diagnosis.types';
 
-import { computed, inject, onActivated, onMounted, ref, watch } from 'vue';
+import { computed, inject, onActivated, onDeactivated, ref, watch } from 'vue';
 
 import { ElEmpty, ElMessage } from 'element-plus';
 
@@ -18,9 +18,11 @@ import {
   deleteTcmDiagnosisGroupRow,
   fetchEncounterDiagnosisTabData,
   saveEncounterDiagnosisRows,
+  saveInpatientEncounterDiagnosisIptTypeRows,
   type DoctorStationDiagnosisScope,
 } from './services/encounter-diagnosis.service';
 import { appendTcmDiagnosisGroupBatch } from './services/tcm-diagnosis-groups.service';
+import { isTcmDiagnosisRow } from './services/merge-encounter-diagnosis-display';
 
 defineOptions({ name: 'DoctorStationDiagnosisList' });
 
@@ -84,17 +86,22 @@ async function reload() {
 
 defineExpose({ reload });
 
-onMounted(() => {
+/** KeepAlive 内仅激活页签拉数；换患者时由 watch 刷新当前可见 Tab */
+const isTabActive = ref(false);
+
+onActivated(() => {
+  isTabActive.value = true;
   void reload();
 });
 
-onActivated(() => {
-  void reload();
+onDeactivated(() => {
+  isTabActive.value = false;
 });
 
 watch(
   () => [props.encounterId, props.patientId],
   () => {
+    if (!isTabActive.value) return;
     void reload();
   },
 );
@@ -142,7 +149,7 @@ async function handleQuickAppend(append: EncounterDiagnosisRowDto) {
   const syndromeId = append.syndromeDefinitionId?.trim();
   const isTcmPair = Boolean(diseaseId && syndromeId);
 
-  if (isTcmPair && encounterId && patientId && props.stationScope === 'outpatient') {
+  if (isTcmPair && encounterId && patientId) {
     quickSaveLoading.value = true;
     try {
       const result = await appendTcmDiagnosisGroupBatch(
@@ -159,6 +166,7 @@ async function handleQuickAppend(append: EncounterDiagnosisRowDto) {
           conditionName: '',
         },
         diagnosisRows.value.length === 0,
+        props.stationScope,
       );
       if (result === 'duplicate') {
         ElMessage.info('该中医病证组已在当前列表中');
@@ -189,11 +197,23 @@ function isSameDiagnosisRow(a: EncounterDiagnosisRowDto, b: EncounterDiagnosisRo
   return false;
 }
 
-/** 住院：诊断类型变更后全量保存 */
+/** 住院：诊断类型变更后保存（中医病证组仅同步诊断类型，西医走 IF-IP-DOR-05 全量对齐） */
 async function handleIptTypeChange(row: EncounterDiagnosisRowDto, code: string | undefined) {
   const opt = businessClass.value?.iptDiseaseTypeOptions?.find((o) => o.value === code);
+  const groupKey = row.tcmSyndromeGroup?.trim();
   const next = diagnosisRows.value.map((item) => {
-    if (!isSameDiagnosisRow(item, row)) {
+    if (groupKey && isTcmDiagnosisRow(item)) {
+      const itemGroupKey = String(item.tcmSyndromeGroup ?? '').trim();
+      const matchesGroup =
+        itemGroupKey === groupKey ||
+        item.conditionId === row.conditionId ||
+        item.conditionId === row.syndromeConditionId ||
+        item.conditionDefinitionId === row.conditionDefinitionId ||
+        item.conditionDefinitionId === row.syndromeDefinitionId;
+      if (!matchesGroup) {
+        return item;
+      }
+    } else if (!isSameDiagnosisRow(item, row)) {
       return item;
     }
     return {
@@ -202,8 +222,25 @@ async function handleIptTypeChange(row: EncounterDiagnosisRowDto, code: string |
       iptDiseaseTypeText: opt?.label ?? null,
     };
   });
+  if (!contextReady.value) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const encounterId = props.encounterId.trim();
+  const patientId = props.patientId.trim();
   diagnosisRows.value = next;
-  await persistMergedRows(next);
+  quickSaveLoading.value = true;
+  try {
+    if (props.stationScope === 'inpatient') {
+      await saveInpatientEncounterDiagnosisIptTypeRows(encounterId, patientId, next);
+    } else {
+      await saveEncounterDiagnosisRows(encounterId, patientId, next, props.stationScope);
+    }
+    ElMessage.success('诊断已保存');
+    await reload();
+  } finally {
+    quickSaveLoading.value = false;
+  }
 }
 
 /** 删除已持久化行（中医病证组走 IF-DOR-33，西医走单条删除） */
@@ -214,7 +251,7 @@ async function handleRemove(row: EncounterDiagnosisRowDto) {
   if (!encounterId) return;
   try {
     if (groupKey && patientId) {
-      await deleteTcmDiagnosisGroupRow(encounterId, patientId, groupKey);
+      await deleteTcmDiagnosisGroupRow(encounterId, patientId, groupKey, props.stationScope);
     } else {
       const cid = row.conditionId;
       if (!cid) return;

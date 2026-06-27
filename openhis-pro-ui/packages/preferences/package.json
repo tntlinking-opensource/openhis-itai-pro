@@ -17,6 +17,14 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./es/define-overrides": {
+      "types": "./src/define-overrides.ts",
+      "default": "./src/define-overrides.ts"
+    },
+    "./es/preferences-manager": {
+      "types": "./src/preferences-manager.ts",
+      "default": "./src/preferences-manager.ts"
     }
   },
   "dependencies": {

@@ -18,7 +18,7 @@ import type {
   InpatientDoctorStationAdviceDraftLineRequest,
   InpatientDoctorStationAdviceRowDto,
 } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.types';
-import type { DrugGroupDisplayItem } from '#/utils/drug-group-table';
+import type { DrugGroupDisplayItem } from '#/utils/doctor-station/drug-group-table';
 
 import {
   computed,
@@ -26,7 +26,6 @@ import {
   nextTick,
   onActivated,
   onDeactivated,
-  onMounted,
   onUnmounted,
   ref,
   watch,
@@ -41,6 +40,7 @@ import {
   httpSaveInpatientDoctorStationAdviceDraftBatch,
   httpSignInpatientDoctorStationAdviceBatch,
   httpStopLongTermInpatientDoctorStationAdvice,
+  httpCancelStopLongTermInpatientDoctorStationAdvice,
   httpUpdateInpatientDoctorStationMedicationAdviceGroups,
   httpWithdrawInpatientDoctorStationAdviceBatch,
 } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.http';
@@ -77,8 +77,12 @@ import {
   ADVICE_ESC_OVERLAY_SELECTOR,
   ADVICE_PRODUCT_COLUMNS,
   INPATIENT_ADVICE_CATALOG_TABLE_NAMES,
+  WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES,
 } from '../services/advice-tab.constants';
-import { rowLooksStopLongTermEligible } from '../services/advice-row';
+import {
+  rowLooksCancelStopLongTermEligible,
+  rowLooksStopLongTermEligible,
+} from '../services/advice-row';
 import { calcAdviceTotalFee } from './use-advice-drug-list';
 
 export interface UseInpatientAdviceTabProps {
@@ -446,6 +450,59 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     });
   };
 
+  /** 取消停嘱：仅长期且已停嘱医嘱（IF-IP-DOR-25） */
+  const handleCancelStopLongTerm = async () => {
+    if (showEditor.value && editorDirty.value) {
+      ElMessage.warning('请先保存或关闭当前编辑卡片');
+      return;
+    }
+    const encounterId = props.encounterId?.trim() || '';
+    const patientId = props.patientId?.trim() || '';
+    if (!encounterId || !patientId) {
+      ElMessage.warning('缺少就诊或患者信息');
+      return;
+    }
+    const flatSel = flattenAdviceRowsForResourceOps(tableSelection.value);
+    const cancellable = flatSel.filter((r) => rowLooksCancelStopLongTermEligible(r));
+    const lines = cancellable
+      .map((r) => {
+        const requestId = String(r.requestId ?? '').trim();
+        const productTableName = productTableNameForAdviceRow(r);
+        if (!requestId || !productTableName) return null;
+        return { requestId, productTableName };
+      })
+      .filter(Boolean) as Array<{ requestId: string; productTableName: string }>;
+    if (lines.length === 0) {
+      ElMessage.warning('请勾选至少一条可取消停嘱的长期医嘱');
+      return;
+    }
+    if (lines.length < flatSel.length) {
+      ElMessage.warning('已跳过不可取消停嘱行');
+    }
+    await withAdviceMutationLoading(async () => {
+      try {
+        const res = await httpCancelStopLongTermInpatientDoctorStationAdvice({
+          encounterId,
+          patientId,
+          lines,
+        });
+        if (res.success === false) {
+          ElMessage.error(String(res.message || '').trim() || '取消停嘱失败');
+          return;
+        }
+        ElMessage.success(String(res.message || '').trim() || '取消停嘱成功');
+        clearAdviceTableSelection();
+        await loadAdviceList();
+      } catch (error: unknown) {
+        const msg =
+          error && typeof error === 'object' && 'message' in error
+            ? String((error as { message?: unknown }).message)
+            : '取消停嘱失败';
+        ElMessage.error(msg);
+      }
+    });
+  };
+
   /** 将勾选草稿行以 DELETE 行方式提交暂存批次 */
   const handleDelete = async () => {
     if (showEditor.value && editorDirty.value) {
@@ -708,6 +765,9 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         pageNo: params.pageNo,
         pageSize: params.pageSize,
         productTableNames: catalogTables,
+        excludeMedicationCategoryCodes: [
+          ...WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES,
+        ],
       });
       const { content: rawRows, totalCount } =
         parsePagedRowsFromApiData<InpatientDoctorStationAdviceCatalogRowDto>(res);
@@ -739,6 +799,9 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         pageSize: Math.max(keys.length, 20),
         prepickedProductKeys: keys,
         productTableNames: [...INPATIENT_ADVICE_CATALOG_TABLE_NAMES],
+        excludeMedicationCategoryCodes: [
+          ...WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES,
+        ],
       });
       const { content: rawRows } =
         parsePagedRowsFromApiData<InpatientDoctorStationAdviceCatalogRowDto>(res);
@@ -960,31 +1023,45 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     }
   };
 
+  /** Tab 激活或切换患者后：并行拉列表与初始化下拉 */
+  async function loadAdviceTabData() {
+    const encounterId = props.encounterId?.trim() || '';
+    const patientId = props.patientId?.trim() || '';
+    if (!encounterId || !patientId) {
+      rows.value = [];
+      medicationRateOptions.value = [];
+      medicationRouteOptions.value = [];
+      feeNatureOptions.value = [];
+      return;
+    }
+    await Promise.all([loadAdviceList(), loadAdviceInit()]);
+  }
+
+  /** KeepAlive 内仅激活页签拉数；换患者时由 watch 刷新当前可见 Tab */
+  const isTabActive = ref(false);
+
   watch(
     () => [props.encounterId, props.patientId],
     () => {
+      if (!isTabActive.value) return;
       if (showEditor.value) {
         showEditor.value = false;
         editorDirty.value = false;
         editingAdviceResourceType.value = '';
       }
       clearAdviceTableSelection();
-      void loadAdviceList();
-      void loadAdviceInit();
+      void loadAdviceTabData();
     },
   );
 
-  onMounted(() => {
-    attachAdviceEscKeydown();
-    void loadAdviceList();
-    void loadAdviceInit();
-  });
-
   onActivated(() => {
+    isTabActive.value = true;
     attachAdviceEscKeydown();
+    void loadAdviceTabData();
   });
 
   onDeactivated(() => {
+    isTabActive.value = false;
     detachAdviceEscKeydown();
   });
 
@@ -995,7 +1072,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
   /** 对外：父级 KeepAlive 刷新 */
   async function reload() {
     await withAdviceMutationLoading(async () => {
-      await Promise.all([loadAdviceList(), loadAdviceInit()]);
+      await loadAdviceTabData();
     });
   }
 
@@ -1033,6 +1110,7 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
     handleToolbarPlaceholder,
     handleWithdraw,
     handleStopLongTerm,
+    handleCancelStopLongTerm,
     loadAdviceInit,
     loadAdviceList,
     medicationRateOptions,

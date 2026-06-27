@@ -1,33 +1,57 @@
 import type { RouteRecordRaw } from 'vue-router';
 
-import { mergeRouteModules, traverseTreeValues } from '@vben/utils';
-
 import { coreRoutes, fallbackNotFoundRoute } from './core';
 
-const dynamicRouteFiles = import.meta.glob('./modules/**/*.ts', {
-  eager: true,
-});
+const dynamicRouteFileLoaders = import.meta.glob('./modules/**/*.ts');
 
-// 有需要可以自行打开注释，并创建文件夹
-// const externalRouteFiles = import.meta.glob('./external/**/*.ts', { eager: true });
-// const staticRouteFiles = import.meta.glob('./static/**/*.ts', { eager: true });
-
-/** 动态路由 */
-const dynamicRoutes: RouteRecordRaw[] = mergeRouteModules(dynamicRouteFiles);
-
-/** 外部路由列表，访问这些页面可以不需要Layout，可能用于内嵌在别的系统(不会显示在菜单中) */
-// const externalRoutes: RouteRecordRaw[] = mergeRouteModules(externalRouteFiles);
-// const staticRoutes: RouteRecordRaw[] = mergeRouteModules(staticRouteFiles);
 const staticRoutes: RouteRecordRaw[] = [];
 const externalRoutes: RouteRecordRaw[] = [];
+
+let accessRoutesCache: RouteRecordRaw[] | undefined;
+let accessRoutesPromise: Promise<RouteRecordRaw[]> | undefined;
+
+/** 懒加载动态路由模块，避免启动时 eager 拉取全部 modules */
+async function getAccessRoutes(): Promise<RouteRecordRaw[]> {
+  if (accessRoutesCache) {
+    return accessRoutesCache;
+  }
+  if (!accessRoutesPromise) {
+    accessRoutesPromise = (async () => {
+      const { mergeRouteModules } = await import('@vben/utils');
+      const modules = await Promise.all(
+        Object.values(dynamicRouteFileLoaders).map((load) => load()),
+      );
+      const dynamicRoutes = mergeRouteModules(
+        Object.fromEntries(modules.map((mod, index) => [`module_${index}`, mod])),
+      );
+      accessRoutesCache = [...dynamicRoutes, ...staticRoutes];
+      return accessRoutesCache;
+    })();
+  }
+  return accessRoutesPromise;
+}
 
 /** 路由列表，由基本路由、外部路由和404兜底路由组成
  *  无需走权限验证（会一直显示在菜单中） */
 const routes: RouteRecordRaw[] = [...coreRoutes, ...externalRoutes, fallbackNotFoundRoute];
 
 /** 基本路由列表，这些路由不需要进入权限拦截 */
-const coreRouteNames = traverseTreeValues(coreRoutes, (route) => route.name);
+function getCoreRouteNames(): string[] {
+  const names: string[] = [];
+  const walk = (items: RouteRecordRaw[]) => {
+    for (const route of items) {
+      if (route.name) {
+        names.push(route.name as string);
+      }
+      if (route.children?.length) {
+        walk(route.children);
+      }
+    }
+  };
+  walk(coreRoutes);
+  return names;
+}
 
-/** 有权限校验的路由列表，包含动态路由和静态路由 */
-const accessRoutes = [...dynamicRoutes, ...staticRoutes];
-export { accessRoutes, coreRouteNames, routes };
+const coreRouteNames = getCoreRouteNames();
+
+export { coreRouteNames, getAccessRoutes, routes };

@@ -3,7 +3,7 @@ import type { OrderTemplateTreeNode } from '../services/order-template.service';
 
 import type { OrderTemplateHeaderItem } from '#/api/basic/order-template';
 
-import { computed, ref, watch } from 'vue';
+import { computed, onActivated, onDeactivated, ref, watch } from 'vue';
 
 import { ElInput, ElScrollbar, ElTooltip, ElTree } from 'element-plus';
 
@@ -11,6 +11,7 @@ import { ORDER_TEMPLATE_KIND_GENERAL } from '#/api/basic/order-template';
 
 import {
   buildOrderTemplateTreeFromGroups,
+  DOCTOR_STATION_EXCLUDED_BINDING_SCOPES,
   fetchMergedDoctorStationOrderTemplateGroups,
   findOrderTemplateHeaderInGroups,
 } from '../services/order-template.service';
@@ -39,9 +40,11 @@ const listLoading = ref(false);
 const templateGroups =
   ref<Awaited<ReturnType<typeof fetchMergedDoctorStationOrderTemplateGroups>>>();
 
-/** 左侧树：个人 / 科室 / 全院（含维护组套 + 另存模板） */
+/** 左侧树：个人 / 科室 / 全院（含维护组套 + 另存模板，不含协定处方） */
 const templateTreeData = computed<OrderTemplateTreeNode[]>(() =>
-  buildOrderTemplateTreeFromGroups(templateGroups.value),
+  buildOrderTemplateTreeFromGroups(templateGroups.value, {
+    excludeBindingScopes: DOCTOR_STATION_EXCLUDED_BINDING_SCOPES,
+  }),
 );
 
 const canLoadList = computed(() => !!props.encounterId?.trim() && !!props.patientId?.trim());
@@ -69,6 +72,18 @@ async function reloadTemplateList() {
 
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
+/** 父级 KeepAlive 激活时才拉组套，避免非当前 Tab 换患者重复请求 */
+const isPanelActive = ref(false);
+
+onActivated(() => {
+  isPanelActive.value = true;
+  void reloadTemplateList();
+});
+
+onDeactivated(() => {
+  isPanelActive.value = false;
+});
+
 /** 搜索关键字变更：防抖刷新列表 */
 function scheduleReloadBySearch() {
   clearTimeout(searchTimer);
@@ -80,14 +95,15 @@ function scheduleReloadBySearch() {
 watch(
   () => [props.encounterId, props.patientId, props.templateKindEnum],
   () => {
+    if (!isPanelActive.value) return;
     selectedNodeId.value = '';
     emit('select', null);
     void reloadTemplateList();
   },
-  { immediate: true },
 );
 
 watch(searchKeyword, () => {
+  if (!isPanelActive.value) return;
   scheduleReloadBySearch();
 });
 

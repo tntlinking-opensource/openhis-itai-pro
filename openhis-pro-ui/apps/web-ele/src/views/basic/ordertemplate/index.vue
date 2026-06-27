@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { OrderTemplateMaintenanceTreeNode } from './order-template-maintenance-tree';
 
 import type {
   OrderTemplateHeaderItem,
@@ -7,17 +7,29 @@ import type {
   PageMaintainedOrderTemplateParams,
 } from '#/api/basic/order-template';
 
-import { computed, onActivated, onMounted, ref } from 'vue';
+import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
-
-import { ElButton, ElMessage, ElMessageBox, ElSpace, ElTabPane, ElTabs, ElTag } from 'element-plus';
+import {
+  ElButton,
+  ElInput,
+  ElMessage,
+  ElMessageBox,
+  ElSpace,
+  ElTabPane,
+  ElTabs,
+  ElTag,
+  ElTree,
+} from 'element-plus';
 
 import {
   changeOrderTemplateLifecycleApi,
   initOrderTemplateMaintenanceApi,
+  ORDER_TEMPLATE_BINDING_AGREEMENT,
+  ORDER_TEMPLATE_BINDING_DEPARTMENT,
+  ORDER_TEMPLATE_BINDING_HOSPITAL,
+  ORDER_TEMPLATE_BINDING_PERSONAL,
   ORDER_TEMPLATE_KIND_GENERAL,
   ORDER_TEMPLATE_KIND_PRICING,
   ORDER_TEMPLATE_KIND_TCM,
@@ -27,64 +39,33 @@ import {
   pageMaintainedOrderTemplatesApi,
 } from '#/api/basic/order-template';
 import { useRequest } from '#/hooks/use-request';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
-import EditDialog from './edit-dialog.vue';
+import EditPanel from './edit-panel.vue';
+import {
+  buildOrderTemplateMaintenanceTree,
+  findOrderTemplateHeaderInTree,
+} from './order-template-maintenance-tree';
 
 defineOptions({ name: 'BasicOrderTemplate' });
 
 const activeKind = ref<string>(ORDER_TEMPLATE_KIND_GENERAL);
+const treeKeyword = ref('');
+const templateHeaders = ref<OrderTemplateHeaderItem[]>([]);
+const initOptions = ref<OrderTemplateInitResponse>({});
+const selectedTemplateId = ref('');
+const panelFormData = ref<Partial<OrderTemplateHeaderItem>>({
+  templateKindEnum: ORDER_TEMPLATE_KIND_GENERAL,
+});
+const panelVersion = ref(0);
+const treeRef = ref<InstanceType<typeof ElTree>>();
+const editPanelRef = ref<InstanceType<typeof EditPanel> | null>(null);
+
 const queryParams = ref<PageMaintainedOrderTemplateParams>({
   pageNo: 1,
-  pageSize: 50,
+  pageSize: 500,
   templateKindEnum: ORDER_TEMPLATE_KIND_GENERAL,
-  keyword: '',
 });
-
-const tableData = ref<OrderTemplateHeaderItem[]>([]);
-const total = ref(0);
-const initOptions = ref<OrderTemplateInitResponse>({});
-
-/** 列宽用百分比铺满表格，避免固定像素总宽不足导致右侧大片空白 */
-const tableColumns: TableColumn[] = [
-  { type: 'index', label: '序号', width: '6%', align: 'center' },
-  { prop: 'name', label: '名称', width: '28%', showOverflowTooltip: true },
-  { prop: 'statusEnum', label: '状态', width: '11%', align: 'center', slot: 'statusEnum' },
-  { prop: 'bindingEnum', label: '绑定', width: '11%', slot: 'bindingEnum' },
-  { prop: 'sceneEnum', label: '场景', width: '11%', slot: 'sceneEnum' },
-  { prop: 'action', label: '操作', width: '33%', slot: 'action', align: 'center' },
-];
-
-const formItems = computed<FormItemConfig[]>(() => [
-  {
-    type: 'input',
-    prop: 'keyword',
-    label: '关键词',
-    placeholder: '名称',
-    clearable: true,
-  },
-  {
-    type: 'select',
-    prop: 'bindingEnum',
-    label: '绑定类型',
-    options: initOptions.value.bindingOptions ?? [],
-    clearable: true,
-  },
-  {
-    type: 'select',
-    prop: 'sceneEnum',
-    label: '适用场景',
-    options: initOptions.value.sceneOptions ?? [],
-    clearable: true,
-  },
-  {
-    type: 'select',
-    prop: 'statusEnum',
-    label: '状态',
-    options: initOptions.value.statusOptions ?? [],
-    clearable: true,
-  },
-]);
 
 const kindTabOptions = computed(() => {
   if (initOptions.value.templateKindOptions?.length) {
@@ -97,38 +78,38 @@ const kindTabOptions = computed(() => {
   ];
 });
 
-const { run: runInit, loading: initLoading } = useRequest(initOrderTemplateMaintenanceApi, {
-  manual: true,
-  onSuccess: (data) => {
-    initOptions.value = data ?? {};
-  },
+const isGeneralKind = computed(() => activeKind.value === ORDER_TEMPLATE_KIND_GENERAL);
+
+/** 通用组套不展示协定处方绑定维度 */
+const maintenanceBindingOptions = computed(() => {
+  const options = initOptions.value.bindingOptions ?? [];
+  if (!isGeneralKind.value) {
+    return options;
+  }
+  return options.filter(
+    (item) => String(item.value ?? '').trim() !== ORDER_TEMPLATE_BINDING_AGREEMENT,
+  );
 });
 
-const { run: runPage, loading: pageLoading } = useRequest(pageMaintainedOrderTemplatesApi, {
-  manual: true,
-  onSuccess: (data) => {
-    tableData.value = data.content ?? [];
-    total.value = data.totalCount ?? 0;
-  },
+const treeData = computed(() =>
+  buildOrderTemplateMaintenanceTree({
+    headers: templateHeaders.value,
+    bindingOptions: maintenanceBindingOptions.value,
+    searchKeyword: treeKeyword.value,
+  }),
+);
+
+const selectedHeader = computed(() =>
+  findOrderTemplateHeaderInTree(treeData.value, selectedTemplateId.value),
+);
+
+const panelTitle = computed(() => {
+  const name = String(selectedHeader.value?.name ?? panelFormData.value.name ?? '').trim();
+  if (name) {
+    return name;
+  }
+  return '组套维护';
 });
-
-const loading = computed(() => initLoading.value || pageLoading.value);
-
-/** 从 init 下拉解析展示文案 */
-function optionLabel(
-  options: Array<{ label: string; value: string }> | undefined,
-  value: unknown,
-  fallback?: string,
-): string {
-  if (fallback) {
-    return fallback;
-  }
-  if (value === null || value === undefined || String(value).trim() === '') {
-    return '-';
-  }
-  const hit = (options ?? []).find((item) => item.value === String(value));
-  return hit?.label ?? String(value);
-}
 
 /** 状态标签颜色 */
 function statusTagType(statusEnum: string | undefined): 'info' | 'success' | 'warning' {
@@ -141,92 +122,107 @@ function statusTagType(statusEnum: string | undefined): 'info' | 'success' | 'wa
   return 'info';
 }
 
-/** 加载组套列表 */
-function loadData() {
+const { run: runInit, loading: initLoading } = useRequest(initOrderTemplateMaintenanceApi, {
+  manual: true,
+  onSuccess: (data) => {
+    initOptions.value = data ?? {};
+  },
+});
+
+const { run: runPage, loading: pageLoading } = useRequest(pageMaintainedOrderTemplatesApi, {
+  manual: true,
+  onSuccess: (data) => {
+    templateHeaders.value = data.content ?? [];
+    syncSelectionAfterReload();
+  },
+});
+
+const loading = computed(() => initLoading.value || pageLoading.value);
+
+/** 重置右侧编辑区为空白 */
+function resetEditorPanel() {
+  selectedTemplateId.value = '';
+  panelFormData.value = { templateKindEnum: activeKind.value };
+  panelVersion.value += 1;
+  void nextTick(() => {
+    treeRef.value?.setCurrentKey?.(undefined);
+  });
+}
+
+/** 加载当前种类下的组套头列表 */
+function loadTemplateHeaders() {
   queryParams.value.templateKindEnum = activeKind.value;
   runPage(queryParams.value);
+}
+
+/** 刷新后保持选中项；不存在则回到空白编辑态 */
+function syncSelectionAfterReload() {
+  const currentId = preserveApiIdForRequest(selectedTemplateId.value);
+  if (!currentId) {
+    return;
+  }
+  const hit = findOrderTemplateHeaderInTree(treeData.value, currentId);
+  if (!hit) {
+    resetEditorPanel();
+    return;
+  }
+  panelFormData.value = {
+    ...hit,
+    orderTemplateId: preserveApiIdForRequest(hit.orderTemplateId),
+  };
+  void nextTick(() => {
+    treeRef.value?.setCurrentKey?.(`template-${currentId}`);
+  });
 }
 
 /** 切换组套种类 Tab */
 function handleKindChange(kind: number | string) {
   activeKind.value = String(kind);
-  queryParams.value.pageNo = 1;
-  loadData();
+  resetEditorPanel();
+  loadTemplateHeaders();
 }
 
-/** 查询 */
-function handleQuery(formModel: Record<string, unknown>) {
-  queryParams.value = {
-    ...queryParams.value,
-    pageNo: 1,
-    keyword: typeof formModel.keyword === 'string' ? formModel.keyword : queryParams.value.keyword,
-    bindingEnum:
-      typeof formModel.bindingEnum === 'string'
-        ? formModel.bindingEnum
-        : queryParams.value.bindingEnum,
-    sceneEnum:
-      typeof formModel.sceneEnum === 'string' ? formModel.sceneEnum : queryParams.value.sceneEnum,
-    statusEnum:
-      typeof formModel.statusEnum === 'string'
-        ? formModel.statusEnum
-        : queryParams.value.statusEnum,
+/** 选中左侧树节点，加载到右侧编辑区 */
+function handleTreeNodeClick(node: OrderTemplateMaintenanceTreeNode) {
+  if (node.nodeType === 'group') {
+    return;
+  }
+  const templateId = preserveApiIdForRequest(node.header?.orderTemplateId);
+  if (!templateId) {
+    return;
+  }
+  selectedTemplateId.value = templateId;
+  panelFormData.value = {
+    ...node.header,
+    orderTemplateId: templateId,
   };
-  loadData();
 }
 
-/** 重置查询 */
-function handleReset() {
-  queryParams.value = {
-    pageNo: 1,
-    pageSize: 50,
-    templateKindEnum: activeKind.value,
-    keyword: '',
-  };
-  loadData();
+/** 按绑定类型保存当前组套内容 */
+function handleSaveAsBinding(bindingEnum: string) {
+  void editPanelRef.value?.submit?.(bindingEnum);
 }
 
-/** 分页 */
-function handlePagination(pagination: { limit: number; page: number }) {
-  queryParams.value.pageNo = pagination.page;
-  queryParams.value.pageSize = pagination.limit;
-  loadData();
+/** 清空右侧编辑区 */
+function handleClearPanel() {
+  resetEditorPanel();
 }
 
-const dialogVisible = ref(false);
-const dialogFormData = ref<Partial<OrderTemplateHeaderItem>>({});
-
-/** 打开新增明细弹窗 */
-function handleAdd() {
-  dialogFormData.value = { templateKindEnum: activeKind.value };
-  dialogVisible.value = true;
-}
-
-/** 打开维护明细弹窗（头 + 明细一次保存） */
-function handleEdit(row: OrderTemplateHeaderItem) {
-  dialogFormData.value = {
-    ...row,
-    orderTemplateId:
-      row.orderTemplateId !== null && row.orderTemplateId !== undefined
-        ? String(row.orderTemplateId)
-        : undefined,
-  };
-  dialogVisible.value = true;
-}
-
-/** 弹窗保存成功后刷新列表 */
-function handleDialogSuccess() {
-  loadData();
+/** 保存成功后刷新树并保持选中 */
+function handlePanelSuccess(savedId?: string) {
+  const nextId =
+    preserveApiIdForRequest(savedId) || preserveApiIdForRequest(selectedTemplateId.value);
+  if (nextId) {
+    selectedTemplateId.value = nextId;
+  }
+  loadTemplateHeaders();
 }
 
 /** 变更组套生命周期 */
-async function handleLifecycle(
-  row: OrderTemplateHeaderItem,
-  lifecycleActionCode: string,
-  confirmMessage?: string,
-) {
-  const orderTemplateId = preserveApiIdForRequest(row.orderTemplateId);
+async function handleLifecycle(lifecycleActionCode: string, confirmMessage?: string) {
+  const orderTemplateId = preserveApiIdForRequest(selectedTemplateId.value);
   if (!orderTemplateId) {
-    ElMessage.warning('缺少组套ID');
+    ElMessage.warning('请先从左侧选择组套');
     return;
   }
   if (confirmMessage) {
@@ -244,107 +240,166 @@ async function handleLifecycle(
       [ORDER_TEMPLATE_LIFECYCLE_DELETE]: '删除成功',
     };
     ElMessage.success(msgMap[lifecycleActionCode] ?? '操作成功');
-    loadData();
+    if (lifecycleActionCode === ORDER_TEMPLATE_LIFECYCLE_DELETE) {
+      resetEditorPanel();
+    }
+    loadTemplateHeaders();
   } catch {
     ElMessage.error('操作失败，请稍后重试');
   }
 }
 
+watch(treeKeyword, () => {
+  void nextTick(() => {
+    treeRef.value?.setCurrentKey?.(
+      selectedTemplateId.value ? `template-${selectedTemplateId.value}` : undefined,
+    );
+  });
+});
+
 onMounted(async () => {
   await runInit();
-  loadData();
+  loadTemplateHeaders();
 });
 
 onActivated(() => {
-  loadData();
+  loadTemplateHeaders();
 });
 </script>
 
 <template>
   <Page auto-content-height>
-    <ElTabs :model-value="activeKind" class="mb-2" @tab-change="handleKindChange">
-      <ElTabPane
-        v-for="item in kindTabOptions"
-        :key="item.value"
-        :label="item.label"
-        :name="item.value"
-      />
-    </ElTabs>
+    <div class="order-template-page flex h-full min-h-0 flex-col gap-2">
+      <ElTabs :model-value="activeKind" class="shrink-0" @tab-change="handleKindChange">
+        <ElTabPane
+          v-for="item in kindTabOptions"
+          :key="item.value"
+          :label="item.label"
+          :name="item.value"
+        />
+      </ElTabs>
 
-    <TableLayout
-      :table-data="tableData"
-      :loading="loading"
-      :total="total"
-      :query-params="queryParams"
-      :form-items="formItems"
-      :table-columns="tableColumns"
-      :show-top-query="true"
-      :show-pagination="true"
-      row-key="orderTemplateId"
-      @query="handleQuery"
-      @reset="handleReset"
-      @pagination="handlePagination"
-    >
-      <template #toolbar-actions>
-        <ElButton type="primary" @click="handleAdd">新增明细</ElButton>
-      </template>
+      <div class="order-template-page__body flex min-h-0 flex-1 gap-3">
+        <aside
+          class="order-template-page__aside flex w-72 min-w-[240px] shrink-0 flex-col gap-2 border-r border-[var(--el-border-color-light)] pr-2"
+        >
+          <ElInput v-model="treeKeyword" clearable placeholder="搜索组套名称" class="w-full" />
 
-      <template #bindingEnum="{ row }">
-        {{ optionLabel(initOptions.bindingOptions, row.bindingEnum, row.bindingEnumText) }}
-      </template>
+          <div v-loading="loading" class="min-h-0 flex-1 overflow-auto">
+            <ElTree
+              ref="treeRef"
+              :data="treeData"
+              node-key="id"
+              :props="{ label: 'label', children: 'children' }"
+              highlight-current
+              default-expand-all
+              :expand-on-click-node="false"
+              @node-click="handleTreeNodeClick"
+            />
+          </div>
+        </aside>
 
-      <template #sceneEnum="{ row }">
-        {{ optionLabel(initOptions.sceneOptions, row.sceneEnum, row.sceneEnumText) }}
-      </template>
+        <section class="order-template-page__main flex min-w-0 flex-1 flex-col gap-2">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-semibold text-[var(--el-text-color-primary)]">
+                {{ panelTitle }}
+              </span>
+              <ElTag
+                v-if="selectedHeader?.statusEnum"
+                :type="statusTagType(selectedHeader.statusEnum)"
+              >
+                {{ selectedHeader?.statusEnumText || selectedHeader?.statusEnum }}
+              </ElTag>
+            </div>
+            <ElSpace wrap>
+              <ElButton
+                type="primary"
+                @click="handleSaveAsBinding(ORDER_TEMPLATE_BINDING_DEPARTMENT)"
+              >
+                存科室
+              </ElButton>
+              <ElButton
+                type="primary"
+                @click="handleSaveAsBinding(ORDER_TEMPLATE_BINDING_PERSONAL)"
+              >
+                存个人
+              </ElButton>
+              <ElButton
+                type="primary"
+                @click="handleSaveAsBinding(ORDER_TEMPLATE_BINDING_HOSPITAL)"
+              >
+                存全院
+              </ElButton>
+              <ElButton
+                v-if="!isGeneralKind"
+                type="primary"
+                @click="handleSaveAsBinding(ORDER_TEMPLATE_BINDING_AGREEMENT)"
+              >
+                存协方
+              </ElButton>
+              <ElButton @click="handleClearPanel">清空</ElButton>
+              <ElButton
+                v-if="selectedTemplateId && selectedHeader?.statusEnum === 'DRAFT'"
+                type="primary"
+                plain
+                @click="handleLifecycle(ORDER_TEMPLATE_LIFECYCLE_PUBLISH)"
+              >
+                发布
+              </ElButton>
+              <ElButton
+                v-if="selectedTemplateId && selectedHeader?.statusEnum === 'ACTIVE'"
+                type="warning"
+                plain
+                @click="
+                  handleLifecycle(
+                    ORDER_TEMPLATE_LIFECYCLE_RETIRE,
+                    '停用后不可再被调用，确定停用吗？',
+                  )
+                "
+              >
+                停用
+              </ElButton>
+              <ElButton
+                v-if="selectedTemplateId"
+                type="danger"
+                plain
+                @click="handleLifecycle(ORDER_TEMPLATE_LIFECYCLE_DELETE, '确定删除该组套吗？')"
+              >
+                删除
+              </ElButton>
+            </ElSpace>
+          </div>
 
-      <template #statusEnum="{ row }">
-        <ElTag :type="statusTagType(row.statusEnum)">
-          {{ optionLabel(initOptions.statusOptions, row.statusEnum, row.statusEnumText) }}
-        </ElTag>
-      </template>
-
-      <template #action="{ row }">
-        <ElSpace>
-          <ElButton link type="primary" @click="handleEdit(row)">维护明细</ElButton>
-          <ElButton
-            v-if="row.statusEnum === 'DRAFT'"
-            link
-            type="primary"
-            @click="handleLifecycle(row, ORDER_TEMPLATE_LIFECYCLE_PUBLISH)"
-          >
-            发布
-          </ElButton>
-          <ElButton
-            v-if="row.statusEnum === 'ACTIVE'"
-            link
-            type="warning"
-            @click="
-              handleLifecycle(
-                row,
-                ORDER_TEMPLATE_LIFECYCLE_RETIRE,
-                '停用后不可再被调用，确定停用吗？',
-              )
-            "
-          >
-            停用
-          </ElButton>
-          <ElButton
-            link
-            type="danger"
-            @click="handleLifecycle(row, ORDER_TEMPLATE_LIFECYCLE_DELETE, '确定删除该医嘱组套吗？')"
-          >
-            删除
-          </ElButton>
-        </ElSpace>
-      </template>
-    </TableLayout>
-
-    <EditDialog
-      v-model:visible="dialogVisible"
-      :form-data="dialogFormData"
-      :template-kind-enum="activeKind"
-      :init-options="initOptions"
-      @success="handleDialogSuccess"
-    />
+          <EditPanel
+            ref="editPanelRef"
+            :key="`${activeKind}-${panelVersion}`"
+            class="min-h-0 flex-1"
+            :form-data="panelFormData"
+            :template-kind-enum="activeKind"
+            :init-options="initOptions"
+            @success="handlePanelSuccess"
+          />
+        </section>
+      </div>
+    </div>
   </Page>
 </template>
+
+<style scoped>
+.order-template-page {
+  height: 100%;
+}
+
+.order-template-page__body {
+  min-height: 0;
+}
+
+.order-template-page__aside :deep(.el-tree-node__content) {
+  height: 32px;
+}
+
+.order-template-page__main {
+  min-height: 0;
+}
+</style>

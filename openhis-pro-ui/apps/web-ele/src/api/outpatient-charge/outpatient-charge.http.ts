@@ -9,6 +9,8 @@ import type {
   PageOutpatientChargeQueueResponse,
   PreSettleOutpatientChargesRequest,
   PreSettleOutpatientChargesResponse,
+  PrintChargeReceiptParams,
+  PrintChargeReceiptResult,
   SwitchEncounterChargeItemsAccountResponse,
   SwitchEncounterChargeItemsRequest,
 } from './outpatient-charge.types';
@@ -81,6 +83,16 @@ export async function httpConfirmOutpatientChargeSettlement(
 ): Promise<ConfirmOutpatientChargeSettlementResponse> {
   return publicRequestClient.post<ConfirmOutpatientChargeSettlementResponse>(
     '/outpatientCharge/confirmOutpatientChargeSettlement',
+    body,
+  );
+}
+
+/** 获取收费小票打印数据 */
+export async function httpPrintChargeReceipt(
+  body: PrintChargeReceiptParams,
+): Promise<PrintChargeReceiptResult> {
+  return publicRequestClient.post<PrintChargeReceiptResult>(
+    '/outpatientCharge/printChargeReceipt',
     body,
   );
 }

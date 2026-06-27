@@ -22,6 +22,59 @@ import {
 import { MEDICATION_DEFINITION_TABLE } from './advice-tab.constants';
 import { resolveMedicationDraftDosePayload } from './medication-unit-bands';
 
+function normalizeMedicationDaysForGroupCompare(raw: unknown): number | undefined {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    return undefined;
+  }
+  return Math.trunc(n);
+}
+
+/** 同组成组药品：用法、用药天数须一致（保存前校验） */
+export function validateMedicationGroupSharedFields(items: AdviceDrugItem[]): string | undefined {
+  const byGroup = new Map<string, AdviceDrugItem[]>();
+  for (const item of items) {
+    if (inferAdviceLineEditorKind(item) !== 'MEDICATION') {
+      continue;
+    }
+    const groupId = String(item.groupId ?? '').trim();
+    if (!groupId) {
+      continue;
+    }
+    const members = byGroup.get(groupId) ?? [];
+    members.push(item);
+    byGroup.set(groupId, members);
+  }
+
+  for (const members of byGroup.values()) {
+    if (members.length <= 1) {
+      continue;
+    }
+    const leader = members[0];
+    if (!leader) {
+      continue;
+    }
+    const leaderUsage = String(leader.usage ?? '').trim();
+    const leaderDays = normalizeMedicationDaysForGroupCompare(leader.medicationDays);
+    for (let i = 1; i < members.length; i += 1) {
+      const member = members[i];
+      if (!member) {
+        continue;
+      }
+      const memberUsage = String(member.usage ?? '').trim();
+      if (memberUsage !== leaderUsage) {
+        return '同组药品的用法必须一致';
+      }
+      const memberDays = normalizeMedicationDaysForGroupCompare(member.medicationDays);
+      if (memberDays !== leaderDays) {
+        return '同组药品的用药天数必须一致';
+      }
+    }
+  }
+
+  return undefined;
+}
+
 /** 从 `med_medication_definition:{id}` 形态的 selectedId 取药品定义主键。 */
 export function parseMedicationDefinitionId(selectedId: string): string | undefined {
   const s = String(selectedId || '').trim();
@@ -222,6 +275,10 @@ export function buildAdviceDraftLines(
   patientDiagnoses: DiagnosisItem[],
   options?: BuildAdviceDraftLinesOptions,
 ): DoctorStationAdviceDraftLineRequest[] {
+  const groupValidationError = validateMedicationGroupSharedFields(items);
+  if (groupValidationError) {
+    throw new Error(groupValidationError);
+  }
   const encounterRows = options?.encounterDiagnosisRows ?? [];
   const existingAdviceRows = options?.existingAdviceRows ?? [];
   const itemsWithSort = assignMedicationSortNumbersBeforeSave(items, existingAdviceRows);

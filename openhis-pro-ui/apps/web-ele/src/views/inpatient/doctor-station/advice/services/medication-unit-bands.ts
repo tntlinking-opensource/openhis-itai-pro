@@ -3,8 +3,8 @@ import type { DoctorStationMedicationUnitBandDto } from '#/api/doctor-station/ad
 import {
   convertProductUnitPriceBetweenBandKinds,
   PRODUCT_CATALOG_PRICE_SOURCE_BAND_KIND,
-} from '#/utils/product-unit-band-price';
-import { decimalDiv, decimalMul } from '#/utils/decimal-util';
+} from '#/utils/doctor-station/product-unit-band-price';
+import { decimalDiv, decimalMul } from '#/utils/format/decimal-util';
 
 /** 解析目录行上的多计量带（数组或 JSON 字符串） */
 export function normalizeCatalogUnitBands(

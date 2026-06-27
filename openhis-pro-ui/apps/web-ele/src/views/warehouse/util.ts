@@ -1,4 +1,4 @@
-import { decimalMul } from '#/utils/decimal-util';
+import { decimalMul } from '#/utils/format/decimal-util';
 
 /** 数量 × 单价，用 decimal 避免浮点误差 */
 export const calcTotalPrice = (quantity: number, price: number): number =>

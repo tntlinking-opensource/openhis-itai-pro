@@ -1,11 +1,11 @@
+import type { ReturnMedicineDetailRow, ReturnMedicineQueuePatient } from '../components/types';
+
 import type {
   ReturnMedicineDetailRowDto,
   ReturnPatientRowDto,
 } from '#/api/outpatient-pharmacy-return-medicine/outpatient-pharmacy-return-medicine.types';
 
 import { formatDateTime } from '@vben/utils';
-
-import type { ReturnMedicineDetailRow, ReturnMedicineQueuePatient } from '../components/types';
 
 function scalarToTrimmedString(value: null | number | string | undefined): string {
   if (value === null || value === undefined) return '';

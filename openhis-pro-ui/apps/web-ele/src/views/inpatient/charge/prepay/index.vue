@@ -17,27 +17,42 @@ import {
   ElFormItem,
   ElInput,
   ElMessage,
+  ElOption,
   ElRadio,
   ElRadioGroup,
+  ElSelect,
   ElTag,
 } from 'element-plus';
 
-import { useDepositReceiptPrint } from '#/composables/use-deposit-receipt-print';
+import AppDialog from '#/components/app-dialog.vue';
 import {
   httpCollectPrepayAdvanceDeposit,
   httpListPrepayPaymentRecords,
+  httpLoadInpatientPrepayPageInit,
   httpPagePrepayPatientQueue,
   httpRefundPrepayAdvanceDeposit,
 } from '#/api/inpatient-prepay';
-import AppDialog from '#/components/app-dialog.vue';
+import { isScanPayChannel, useUnionPayScanPay } from '#/composables/payment/useUnionPayScanPay';
+import { submitPrepayScanPayment } from '#/utils/payment/submit-scan-payment';
+import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
+import { submitScanRefund } from '#/utils/payment/submit-scan-refund';
 import SectionTitle from '#/components/layouts/section-title.vue';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import {
   preserveApiIdForRequest,
   resolveLoginPractitionerIdForRequest,
-} from '#/utils/preserve-api-id';
+} from '#/utils/format/preserve-api-id';
+import {
+  formatInpatientAccountBalancePrimaryText,
+  formatInpatientAccountBalanceSecondaryText,
+  resolveInpatientAccountBalanceLabel,
+} from '#/utils/inpatient/account-balance-display';
 
 import InpatientQueuePanel from './components/inpatient-queue-panel.vue';
+import {
+  optionDtosToPayChannelOptions,
+  type PayChannelOption,
+} from '#/utils/payment/payment-channel-options';
 import {
   DEFAULT_PAY_CHANNEL_CODE,
   PAY_CHANNEL_OPTIONS,
@@ -64,13 +79,21 @@ const prepayForm = reactive({
   amount: '',
   payChannelCode: DEFAULT_PAY_CHANNEL_CODE,
   remark: '',
+  scanCode: '',
 });
 
 const refundForm = reactive({
   amount: '',
   payChannelCode: DEFAULT_PAY_CHANNEL_CODE,
   remark: '',
+  originalPaymentId: '',
 });
+
+const scanStatusText = ref('');
+const payChannelOptions = ref<PayChannelOption[]>([...PAY_CHANNEL_OPTIONS]);
+
+const { scanPayEnabled, effectivePayChannelOptions, refreshUnionPayCapabilities } =
+  useUnionPayScanPay(() => payChannelOptions.value);
 
 const recordTableQueryParams = reactive({
   pageNo: 1,
@@ -85,8 +108,6 @@ const tableLoading = ref(false);
 const collectSubmitting = ref(false);
 const refundSubmitting = ref(false);
 const refundDialogVisible = ref(false);
-
-const { isPrinting, previewLoading, printDepositReceipt } = useDepositReceiptPrint();
 
 const quickAmounts = [100, 200, 500, 1000, 2000];
 
@@ -119,14 +140,6 @@ const recordTableColumns: TableColumn[] = [
     align: 'center',
     headerAlign: 'center',
   },
-  {
-    label: '操作',
-    minWidth: 90,
-    slot: 'actions',
-    align: 'center',
-    headerAlign: 'center',
-    fixed: 'right',
-  },
 ];
 
 const currentPatient = computed(
@@ -148,6 +161,9 @@ const queueCardList = computed<BillingPatientCardPatient[]>(() =>
       .join(' / '),
     visitTime: row.startTime ?? '',
     visitType: 'inpatient',
+    accountBalanceSummary: formatInpatientAccountBalancePrimaryText(row),
+    accountBalanceSub: formatInpatientAccountBalanceSecondaryText(row),
+    lowBalanceWarning: row.lowBalanceWarning === true,
   })),
 );
 
@@ -158,12 +174,20 @@ const canOperatePrepay = computed(() => {
 
 const currentPatientStatusTagType = computed(() => {
   if (!currentPatient.value) return 'info';
-  if (currentPatient.value.arrearsAlert) return 'danger';
+  if (currentPatient.value.lowBalanceWarning) return 'danger';
   return 'success';
 });
 
-/** 将余额格式化为展示文案 */
-function formatBalanceDisplay(value: number | string | undefined): string {
+/** 库内可退余额（退费上限） */
+function resolveRefundableBalance(row: PrepayQueueItemDto | null): number {
+  if (!row) return 0;
+  const raw = row.prepayNetBalance ?? row.accountBalance ?? 0;
+  const num = Number(raw);
+  return Number.isFinite(num) ? num : 0;
+}
+
+/** 将金额格式化为展示文案 */
+function formatCurrencyAmount(value: number | string | undefined): string {
   if (value === undefined || value === null || value === '') return '-';
   const num = Number(value);
   if (!Number.isFinite(num)) return String(value);
@@ -178,6 +202,40 @@ function formatPrepayRecordAmount(row: PrepayPaymentRecordDto): string {
   return isRefund ? `¥-${num.toFixed(2)}` : `¥${num.toFixed(2)}`;
 }
 
+/** 可原路退的收取流水选项 */
+const collectPaymentOptions = computed(() =>
+  prepayRecordData.value
+    .filter(
+      (row) =>
+        row.statusEnum === 'SUCCESS' &&
+        row.paymentEnum !== 'UN_PAY' &&
+        row.bizTypeText !== '退预交金' &&
+        String(row.paymentId ?? '').trim(),
+    )
+    .map((row) => ({
+      value: String(row.paymentId),
+      label: `${row.tradeTime} · ${formatPrepayRecordAmount(row)} · ${row.payMethodText || '—'}`,
+    })),
+);
+
+/** 最近一笔成功收取流水（供扫码原路退选原支付单） */
+function resolveLatestCollectPaymentId(records: PrepayPaymentRecordDto[]): string | undefined {
+  const collectRows = records.filter(
+    (row) =>
+      row.statusEnum === 'SUCCESS' &&
+      row.paymentEnum !== 'UN_PAY' &&
+      row.bizTypeText !== '退预交金' &&
+      String(row.paymentId ?? '').trim(),
+  );
+  if (collectRows.length === 0) {
+    return undefined;
+  }
+  const sorted = [...collectRows].sort((a, b) =>
+    String(b.tradeTime ?? '').localeCompare(String(a.tradeTime ?? '')),
+  );
+  return String(sorted[0]?.paymentId ?? '').trim() || undefined;
+}
+
 /** 解析金额输入为正数，非法时返回 null */
 function parsePositiveAmount(raw: string): null | number {
   const num = Number(String(raw ?? '').trim());
@@ -185,12 +243,9 @@ function parsePositiveAmount(raw: string): null | number {
   return num;
 }
 
-/** 将选中患者余额写回队列行（收退成功后本地即时刷新） */
-function patchQueueAccountBalance(encounterId: string, accountBalance: number | string) {
-  const row = queueData.value.find((item) => item.encounterId === encounterId);
-  if (row) {
-    row.accountBalance = accountBalance;
-  }
+/** 收退成功后刷新队列（同步展示文案与可退余额） */
+async function refreshQueueAfterBalanceChange() {
+  await queryQueueData();
 }
 
 /** 根据左侧筛选条件刷新在院患者队列 */
@@ -270,6 +325,7 @@ function handleOpenRefundDialog() {
   refundForm.amount = '';
   refundForm.payChannelCode = DEFAULT_PAY_CHANNEL_CODE;
   refundForm.remark = '';
+  refundForm.originalPaymentId = resolveLatestCollectPaymentId(prepayRecordData.value) ?? '';
   refundDialogVisible.value = true;
 }
 
@@ -290,9 +346,35 @@ async function handleCollectPrepay() {
     ElMessage.warning('请输入正确的收费金额');
     return;
   }
+  if (isScanPayChannel(prepayForm.payChannelCode) && !prepayForm.scanCode.trim()) {
+    ElMessage.warning('请输入付款码');
+    return;
+  }
   collectSubmitting.value = true;
+  scanStatusText.value = '';
   try {
-    const result = await httpCollectPrepayAdvanceDeposit({
+    let paymentDraftId: string | undefined;
+    let clientScanResult;
+    if (isScanPayChannel(prepayForm.payChannelCode)) {
+      if (!scanPayEnabled.value) {
+        ElMessage.error('请启动本地客户端（OpenHIS.Win）并确认银联组件已安装');
+        return;
+      }
+      scanStatusText.value = '等待支付结果…';
+      const scanOutcome = await submitPrepayScanPayment({
+        encounterId,
+        patientId,
+        amount,
+        scanCode: prepayForm.scanCode,
+        payChannelCode: prepayForm.payChannelCode,
+        operatorId: resolveLoginPractitionerIdForRequest(userStore.userInfo),
+        remark: prepayForm.remark.trim() || undefined,
+      });
+      paymentDraftId = scanOutcome.paymentDraftId;
+      clientScanResult = scanOutcome.clientScanResult;
+    }
+
+    const collectBody = {
       encounterId,
       patientId,
       amount,
@@ -302,12 +384,22 @@ async function handleCollectPrepay() {
           amount,
         },
       ],
+      ...(paymentDraftId ? { paymentDraftId } : {}),
       operatorId: resolveLoginPractitionerIdForRequest(userStore.userInfo),
       remark: prepayForm.remark.trim() || undefined,
-    });
-    patchQueueAccountBalance(encounterId, result.accountBalance);
+    };
+
+    if (clientScanResult) {
+      await settleWithScanRecovery(clientScanResult, () =>
+        httpCollectPrepayAdvanceDeposit({ ...collectBody, clientScanResult }),
+      );
+    } else {
+      await httpCollectPrepayAdvanceDeposit(collectBody);
+    }
+    await refreshQueueAfterBalanceChange();
     prepayForm.amount = '';
     prepayForm.remark = '';
+    prepayForm.scanCode = '';
     await queryPrepayRecords();
     ElMessage.success('预交金收取成功');
   } finally {
@@ -328,14 +420,30 @@ async function handleConfirmRefund() {
     ElMessage.warning('请输入正确的退费金额');
     return;
   }
-  const balance = Number(currentPatient.value?.accountBalance ?? 0);
-  if (Number.isFinite(balance) && refundAmount > balance) {
-    ElMessage.warning('退费金额不能大于账户余额');
+  const refundable = resolveRefundableBalance(currentPatient.value);
+  if (refundAmount > refundable) {
+    ElMessage.warning('退费金额不能大于可退余额');
     return;
   }
   refundSubmitting.value = true;
   try {
-    const result = await httpRefundPrepayAdvanceDeposit({
+    const originalPaymentId = String(refundForm.originalPaymentId ?? '').trim();
+    let clientRefundResult;
+    if (originalPaymentId) {
+      try {
+        clientRefundResult =
+          (await submitScanRefund({
+            originalPaymentId,
+            refundAmountYuan: refundAmount,
+          })) ?? undefined;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '退费前银联校验失败，请稍后重试';
+        ElMessage.error(message);
+        return;
+      }
+    }
+
+    await httpRefundPrepayAdvanceDeposit({
       encounterId,
       patientId,
       refundAmount,
@@ -345,49 +453,17 @@ async function handleConfirmRefund() {
           amount: refundAmount,
         },
       ],
+      ...(originalPaymentId && clientRefundResult ? { originalPaymentId, clientRefundResult } : {}),
       operatorId: resolveLoginPractitionerIdForRequest(userStore.userInfo),
       remark: refundForm.remark.trim() || undefined,
     });
-    patchQueueAccountBalance(encounterId, result.accountBalance);
+    await refreshQueueAfterBalanceChange();
     refundDialogVisible.value = false;
     await queryPrepayRecords();
     ElMessage.success('预交金退费成功');
   } finally {
     refundSubmitting.value = false;
   }
-}
-
-/** 打印指定流水收据 */
-function handlePrintRecord(row: PrepayPaymentRecordDto) {
-  const encounterId = preserveApiIdForRequest(selectedEncounterId.value);
-  if (!encounterId) {
-    ElMessage.warning('请先选择患者');
-    return;
-  }
-  if (row.statusEnum !== 'SUCCESS') {
-    ElMessage.warning('仅成功流水可打印收据');
-    return;
-  }
-  void printDepositReceipt({
-    paymentId: row.paymentId,
-    encounterId,
-    jobName: `预交金-${row.ticketNo || row.paymentId}`,
-  });
-}
-
-/** 打印最近一条成功流水 */
-function handlePrintTicket() {
-  const encounterId = preserveApiIdForRequest(selectedEncounterId.value);
-  if (!encounterId) {
-    ElMessage.warning('请先选择患者');
-    return;
-  }
-  const latest = prepayRecordData.value.find((row) => row.statusEnum === 'SUCCESS');
-  if (!latest) {
-    ElMessage.warning('暂无可打印的预交金流水');
-    return;
-  }
-  handlePrintRecord(latest);
 }
 
 watch(
@@ -406,6 +482,13 @@ watch(
 );
 
 onMounted(async () => {
+  try {
+    const init = await httpLoadInpatientPrepayPageInit({});
+    payChannelOptions.value = optionDtosToPayChannelOptions(init.paymentChannelOptions);
+  } catch {
+    payChannelOptions.value = [...PAY_CHANNEL_OPTIONS];
+  }
+  await refreshUnionPayCapabilities();
   await queryQueueData();
   await queryPrepayRecords();
 });
@@ -467,9 +550,20 @@ onMounted(async () => {
                   <span class="patient-info-value">{{ currentPatient?.bedName || '-' }}</span>
                 </div>
                 <div class="patient-info-item">
-                  <span class="patient-info-label">账户余额</span>
-                  <span class="patient-info-value text-blue-600">
-                    {{ formatBalanceDisplay(currentPatient?.accountBalance) }}
+                  <span class="patient-info-label">{{
+                    resolveInpatientAccountBalanceLabel(currentPatient)
+                  }}</span>
+                  <span
+                    class="patient-info-value"
+                    :class="currentPatient?.lowBalanceWarning ? 'text-red-600' : 'text-blue-600'"
+                  >
+                    {{ formatInpatientAccountBalancePrimaryText(currentPatient) }}
+                    <span
+                      v-if="formatInpatientAccountBalanceSecondaryText(currentPatient)"
+                      class="ml-1 text-xs text-[var(--el-text-color-secondary)]"
+                    >
+                      {{ formatInpatientAccountBalanceSecondaryText(currentPatient) }}
+                    </span>
                   </span>
                 </div>
                 <div class="patient-info-item">
@@ -478,7 +572,7 @@ onMounted(async () => {
                     {{ currentPatient?.statusEnumText || '未选择' }}
                   </ElTag>
                   <ElTag
-                    v-if="currentPatient?.arrearsAlert"
+                    v-if="currentPatient?.lowBalanceWarning"
                     type="danger"
                     size="small"
                     class="ml-1"
@@ -522,14 +616,6 @@ onMounted(async () => {
                 <ElButton plain :disabled="!canOperatePrepay" @click="handleOpenRefundDialog">
                   退预交金
                 </ElButton>
-                <ElButton
-                  plain
-                  :loading="isPrinting || previewLoading"
-                  :disabled="!canOperatePrepay"
-                  @click="handlePrintTicket"
-                >
-                  打印凭证
-                </ElButton>
               </div>
             </div>
 
@@ -546,13 +632,29 @@ onMounted(async () => {
               <ElFormItem label="支付方式" required>
                 <ElRadioGroup v-model="prepayForm.payChannelCode" :disabled="!canOperatePrepay">
                   <ElRadio
-                    v-for="item in PAY_CHANNEL_OPTIONS"
+                    v-for="item in effectivePayChannelOptions"
                     :key="item.value"
                     :label="item.value"
                   >
                     {{ item.label }}
                   </ElRadio>
                 </ElRadioGroup>
+              </ElFormItem>
+              <ElFormItem
+                v-if="scanPayEnabled && prepayForm.payChannelCode === 'SCAN_PAY'"
+                label="付款码"
+                required
+              >
+                <ElInput
+                  v-model="prepayForm.scanCode"
+                  placeholder="请扫码或输入付款码"
+                  class="w-80"
+                  clearable
+                  :disabled="!canOperatePrepay"
+                />
+                <p v-if="scanStatusText" class="mt-1 text-[13px] text-blue-600">
+                  {{ scanStatusText }}
+                </p>
               </ElFormItem>
               <ElFormItem label="备注">
                 <ElInput
@@ -588,17 +690,6 @@ onMounted(async () => {
                     {{ row.statusEnumText }}
                   </ElTag>
                 </template>
-                <template #actions="{ row }">
-                  <ElButton
-                    v-if="row.statusEnum === 'SUCCESS'"
-                    link
-                    type="primary"
-                    :loading="isPrinting || previewLoading"
-                    @click="handlePrintRecord(row)"
-                  >
-                    打印
-                  </ElButton>
-                </template>
               </TableLayout>
             </div>
           </div>
@@ -611,9 +702,27 @@ onMounted(async () => {
         <ElFormItem label="退费金额" required>
           <ElInput v-model="refundForm.amount" placeholder="请输入退费金额" clearable />
         </ElFormItem>
+        <ElFormItem v-if="collectPaymentOptions.length > 0" label="原收取流水">
+          <ElSelect
+            v-model="refundForm.originalPaymentId"
+            placeholder="扫码原路退时选择原支付单"
+            clearable
+            class="w-full"
+          >
+            <ElOption
+              v-for="item in collectPaymentOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </ElSelect>
+          <p class="mt-1 text-[12px] text-[var(--el-text-color-secondary)]">
+            若原收取为扫码支付，请选择对应流水以发起银联退货
+          </p>
+        </ElFormItem>
         <ElFormItem label="退现渠道" required>
           <ElRadioGroup v-model="refundForm.payChannelCode">
-            <ElRadio v-for="item in PAY_CHANNEL_OPTIONS" :key="item.value" :label="item.value">
+            <ElRadio v-for="item in payChannelOptions" :key="item.value" :label="item.value">
               {{ item.label }}
             </ElRadio>
           </ElRadioGroup>
@@ -621,9 +730,9 @@ onMounted(async () => {
         <ElFormItem label="备注">
           <ElInput v-model="refundForm.remark" placeholder="可选填写" clearable />
         </ElFormItem>
-        <ElFormItem label="账户余额">
+        <ElFormItem label="可退余额">
           <span class="text-[var(--el-text-color-primary)]">
-            {{ formatBalanceDisplay(currentPatient?.accountBalance) }}
+            {{ formatCurrencyAmount(resolveRefundableBalance(currentPatient)) }}
           </span>
         </ElFormItem>
       </ElForm>

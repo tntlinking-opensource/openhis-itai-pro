@@ -148,17 +148,21 @@ export interface GetOrderTemplateDetailResponse {
 export const ORDER_TEMPLATE_SOURCE_MAINTAINED = 'MAINTAINED';
 export const ORDER_TEMPLATE_SOURCE_FROM_ADVICE = 'FROM_ADVICE';
 
-/** 模板绑定范围（另存组套仅支持个人/科室） */
+/** 模板绑定范围 */
 export const ORDER_TEMPLATE_BINDING_PERSONAL = 'PERSONAL';
 export const ORDER_TEMPLATE_BINDING_DEPARTMENT = 'DEPARTMENT';
+export const ORDER_TEMPLATE_BINDING_HOSPITAL = 'HOSPITAL';
+export const ORDER_TEMPLATE_BINDING_AGREEMENT = 'AGREEMENT';
 
 /** 套用上下文 */
 export const ORDER_TEMPLATE_APPLY_CONTEXT_DOCTOR = 'DOCTOR';
 
 /** 医生站工作站类型 */
 export const ORDER_TEMPLATE_WORKSTATION_OUTPATIENT = 'OUTPATIENT';
+export const ORDER_TEMPLATE_WORKSTATION_INPATIENT = 'INPATIENT';
 
 export interface OrderTemplateBindingGroup {
+  agreementList?: OrderTemplateHeaderItem[];
   personalList?: OrderTemplateHeaderItem[];
   departmentList?: OrderTemplateHeaderItem[];
   hospitalList?: OrderTemplateHeaderItem[];

@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import type { CallToSeeResponse, QueueListItemDto } from '#/api/booking/queue-board';
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 
 import { ElButton, ElCard, ElEmpty, ElInput, ElMessage, ElOption, ElSelect } from 'element-plus';
 
+import { bookingOptionValue, toBookingId } from '#/api/booking/booking-id';
+import type { BookingEntityId } from '#/api/booking/booking-id';
 import { loadScheduleFormInitApi } from '#/api/booking/outpatient-schedule';
 import type { BookingOptionDto } from '#/api/booking/booking-types';
 import {
@@ -19,31 +21,25 @@ import {
   pageQueueApi,
   priorityTreatmentApi,
 } from '#/api/booking/queue-board';
-import { useAuthStore } from '#/store/auth';
+import { useBookingOrganization } from '#/views/booking/composables/use-booking-organization';
 import { useRequest } from '#/hooks/use-request';
 
 defineOptions({ name: 'BookingQueueBoard' });
 
 const router = useRouter();
-const authStore = useAuthStore();
+const { organizationId } = useBookingOrganization();
 const waitingList = ref<QueueListItemDto[]>([]);
 const completedList = ref<QueueListItemDto[]>([]);
 const currentCall = ref<CallToSeeResponse | null>(null);
 const clinicLocations = ref<BookingOptionDto[]>([]);
 const practitioners = ref<BookingOptionDto[]>([]);
-const destinationLocationId = ref<number>();
-const practitionerId = ref<number>();
+const destinationLocationId = ref<BookingEntityId>();
+const practitionerId = ref<BookingEntityId>();
 const checkInAppointmentBusNo = ref('');
 
 const query = reactive({
   pageNo: 1,
   pageSize: 50,
-});
-
-const organizationId = computed(() => {
-  const raw = authStore.getSelectedOrganization();
-  const id = Number(raw);
-  return Number.isFinite(id) && id > 0 ? id : undefined;
 });
 
 const { run: runInit, loading: initLoading } = useRequest(loadScheduleFormInitApi, {
@@ -52,10 +48,7 @@ const { run: runInit, loading: initLoading } = useRequest(loadScheduleFormInitAp
     clinicLocations.value = res.clinicLocations ?? [];
     practitioners.value = res.practitioners ?? [];
     if (!destinationLocationId.value && clinicLocations.value.length > 0) {
-      const first = Number(clinicLocations.value[0]?.value);
-      if (Number.isFinite(first)) {
-        destinationLocationId.value = first;
-      }
+      destinationLocationId.value = toBookingId(clinicLocations.value[0]?.value);
     }
   },
 });
@@ -256,7 +249,7 @@ onMounted(async () => {
             v-for="item in clinicLocations"
             :key="item.value"
             :label="item.label"
-            :value="Number(item.value)"
+            :value="bookingOptionValue(item.value)"
           />
         </ElSelect>
         <ElInput
@@ -278,7 +271,7 @@ onMounted(async () => {
             v-for="item in practitioners"
             :key="item.value"
             :label="item.label"
-            :value="Number(item.value)"
+            :value="bookingOptionValue(item.value)"
           />
         </ElSelect>
         <ElButton type="primary" :loading="pageLoading || completedLoading" @click="handleRefresh">

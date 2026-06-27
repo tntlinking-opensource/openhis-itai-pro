@@ -279,19 +279,26 @@ const tabbarStyle = computed((): CSSProperties => {
   };
 });
 
-const contentStyle = computed((): CSSProperties => {
+const headerContentOffset = computed(() => {
   const fixed = headerFixed.value;
+  if (
+    fixed &&
+    !isFullContent.value &&
+    !headerIsHidden.value &&
+    (!isHeaderAutoMode.value || scrollY.value < headerWrapperHeight.value)
+  ) {
+    return headerWrapperHeight.value;
+  }
+  return 0;
+});
 
+/** 顶栏 fixed 脱离文档流时，用占位块顶开主内容（不用 padding-top，避免 DevTools 绿色空白区与高度双扣） */
+const showHeaderPlaceholder = computed(() => headerContentOffset.value > 0);
+
+const contentStyle = computed((): CSSProperties => {
   const { footerEnable, footerFixed, footerHeight } = props;
   return {
-    marginTop:
-      fixed &&
-      !isFullContent.value &&
-      !headerIsHidden.value &&
-      (!isHeaderAutoMode.value || scrollY.value < headerWrapperHeight.value)
-        ? `${headerWrapperHeight.value}px`
-        : 0,
-    paddingBottom: `${footerEnable && footerFixed ? footerHeight : 0}px`,
+    paddingBottom: footerEnable && footerFixed ? `${footerHeight}px` : undefined,
   };
 });
 
@@ -457,7 +464,7 @@ const idMainContent = ELEMENT_ID_MAIN_CONTENT;
 </script>
 
 <template>
-  <div class="relative flex h-[100vh] min-h-full w-full">
+  <div class="relative flex h-full min-h-0 w-full">
     <LayoutSidebar
       v-if="sidebarEnableState"
       v-model:collapse="sidebarCollapse"
@@ -547,6 +554,13 @@ const idMainContent = ELEMENT_ID_MAIN_CONTENT;
         </LayoutTabbar>
       </div>
 
+      <div
+        v-if="showHeaderPlaceholder"
+        class="pointer-events-none shrink-0"
+        :style="{ height: `${headerContentOffset}px` }"
+        aria-hidden="true"
+      />
+
       <!-- </div> -->
       <LayoutContent
         :id="idMainContent"
@@ -558,7 +572,6 @@ const idMainContent = ELEMENT_ID_MAIN_CONTENT;
         :padding-right="contentPaddingRight"
         :padding-top="contentPaddingTop"
         :style="contentStyle"
-        class="transition-[margin-top] duration-200"
       >
         <slot name="content"></slot>
 

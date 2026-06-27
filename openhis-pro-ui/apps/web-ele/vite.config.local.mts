@@ -1,11 +1,12 @@
 import type { PluginOption } from 'vite';
 
-import path from 'node:path';
-
 import { defineConfig } from '@vben/vite-config';
 
 import AutoImport from 'unplugin-auto-import/vite';
 import ElementPlus from 'unplugin-element-plus/vite';
+
+import { devPerformanceConfig } from './vite.dev-performance';
+import { createWebEleResolveAliases } from './vite.resolve-aliases';
 
 const extraPlugins = [
   AutoImport({
@@ -50,26 +51,17 @@ export default defineConfig(async () => {
         },
       },
       plugins: extraPlugins,
+      optimizeDeps: devPerformanceConfig.optimizeDeps,
       define: {
         global: 'globalThis',
       },
       resolve: {
         conditions: ['development', 'module', 'browser', 'default'],
-        alias: {
-          '@': path.resolve(import.meta.dirname, './src'),
-          '@inventory': path.resolve(import.meta.dirname, './src/views/inventory'),
-          '@pharmacy': path.resolve(import.meta.dirname, './src/views/inventory/pharmacy'),
-          '@warehouse': path.resolve(import.meta.dirname, './src/views/inventory-bk/warehouse'),
-        },
+        dedupe: ['vue', 'vue-router', 'pinia'],
+        alias: createWebEleResolveAliases(import.meta.dirname),
       },
       server: {
-        warmup: {
-          clientFiles: [
-            './index.html',
-            './src/bootstrap.ts',
-            './src/{views,layouts,router,store,api,adapter}/**/*.{vue,ts,tsx,js,scss,css}',
-          ],
-        },
+        ...devPerformanceConfig.server,
         proxy: {
           '/api/imec': {
             changeOrigin: true,

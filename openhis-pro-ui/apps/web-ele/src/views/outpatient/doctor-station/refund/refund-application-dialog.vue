@@ -19,8 +19,8 @@ import {
   httpVerifyConsumableExecutionBeforeRefund,
 } from '#/api/doctor-station/refund-application.http';
 import { useRequest } from '#/hooks/use-request';
-import { decimalAdd } from '#/utils/decimal-util';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { decimalAdd } from '#/utils/format/decimal-util';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 defineOptions({ name: 'DoctorStationRefundApplicationDialog' });
 

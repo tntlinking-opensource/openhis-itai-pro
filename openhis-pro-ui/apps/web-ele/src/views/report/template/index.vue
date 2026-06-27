@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 
-import type { ReportDefinitionItemDto } from '#/api/report/report-query';
+import type { ReportDefinitionItemDto, ReportSqlPresetItemDto } from '#/api/report/report';
 
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
@@ -18,17 +18,28 @@ import {
   ElInput,
   ElMessage,
   ElMessageBox,
+  ElOption,
+  ElOptionGroup,
+  ElSelect,
   ElTag,
+  ElTooltip,
 } from 'element-plus';
 
 import {
+  copyReportDefinitionApi,
   createReportDefinitionApi,
   deleteReportDefinitionApi,
   listReportDefinitionsApi,
+  listSqlPresetsApi,
+  parseReportFilters,
+  parseReportHeaderConfig,
+  resolveDefinitionFilters,
+  resolveDefinitionHeader,
   publishReportDefinitionApi,
   unpublishReportDefinitionApi,
-} from '#/api/report/report-query';
+} from '#/api/report/report';
 import { useRequest } from '#/hooks/use-request';
+import { groupPresetsByPriority } from '#/utils/report/report-builder';
 
 defineOptions({
   name: 'WhaleReportTemplate',
@@ -36,29 +47,49 @@ defineOptions({
 
 const router = useRouter();
 const tableData = ref<ReportDefinitionItemDto[]>([]);
+const sqlPresets = ref<ReportSqlPresetItemDto[]>([]);
 const createVisible = ref(false);
+const copyVisible = ref(false);
+const copySource = ref<ReportDefinitionItemDto | null>(null);
 const createForm = reactive({
+  reportCode: '',
+  name: '',
+  remark: '',
+  presetReportCode: '',
+});
+const copyForm = reactive({
   reportCode: '',
   name: '',
   remark: '',
 });
 
+const groupedPresets = computed(() => groupPresetsByPriority(sqlPresets.value));
+
 const queryParams = reactive<{ keyword?: string; status?: string }>({});
 
 const { run: runList, loading: listLoading } = useRequest(listReportDefinitionsApi, {
   manual: true,
+  showErrorMessage: false,
 });
 
 const { run: runCreate, loading: createLoading } = useRequest(createReportDefinitionApi, {
   manual: true,
+  showErrorMessage: false,
+});
+
+const { run: runCopy, loading: copyLoading } = useRequest(copyReportDefinitionApi, {
+  manual: true,
+  showErrorMessage: false,
 });
 
 const { run: runPublish, loading: publishLoading } = useRequest(publishReportDefinitionApi, {
   manual: true,
+  showErrorMessage: false,
 });
 
 const { run: runUnpublish, loading: unpublishLoading } = useRequest(unpublishReportDefinitionApi, {
   manual: true,
+  showErrorMessage: false,
 });
 
 const formItems = computed<FormItemConfig[]>(() => [
@@ -82,7 +113,7 @@ const tableColumns: TableColumn[] = [
   { prop: 'sourceType', label: '来源', width: 88, slot: 'sourceType' },
   { prop: 'status', label: '状态', width: 96, slot: 'status' },
   { prop: 'remark', label: '备注', minWidth: 160, showOverflowTooltip: true },
-  { prop: 'action', label: '操作', fixed: 'right', width: 300, align: 'center', slot: 'action' },
+  { prop: 'action', label: '操作', fixed: 'right', width: 360, align: 'center', slot: 'action' },
 ];
 
 async function getList() {
@@ -93,11 +124,25 @@ async function getList() {
   tableData.value = Array.isArray(rows) ? rows : [];
 }
 
+async function loadPresets() {
+  const rows = await listSqlPresetsApi();
+  sqlPresets.value = Array.isArray(rows) ? rows : [];
+}
+
 function openCreate() {
   createForm.reportCode = '';
   createForm.name = '';
   createForm.remark = '';
+  createForm.presetReportCode = '';
   createVisible.value = true;
+}
+
+function openCopy(row: ReportDefinitionItemDto) {
+  copySource.value = row;
+  copyForm.reportCode = row.reportCode ? `${row.reportCode}_copy` : '';
+  copyForm.name = row.name ? `${row.name}（副本）` : '';
+  copyForm.remark = row.remark ?? '';
+  copyVisible.value = true;
 }
 
 async function handleCreate() {
@@ -111,9 +156,34 @@ async function handleCreate() {
     reportCode,
     name,
     remark: createForm.remark?.trim() || undefined,
+    presetReportCode: createForm.presetReportCode?.trim() || undefined,
   });
   ElMessage.success('已创建');
   createVisible.value = false;
+  await getList();
+  if (created?.id) {
+    goDesign(created);
+  }
+}
+
+async function handleCopy() {
+  if (!copySource.value?.id) {
+    return;
+  }
+  const reportCode = copyForm.reportCode.trim();
+  const name = copyForm.name.trim();
+  if (!reportCode || !name) {
+    ElMessage.warning('请填写新报表编码和名称');
+    return;
+  }
+  const created = await runCopy({
+    sourceId: copySource.value.id,
+    reportCode,
+    name,
+    remark: copyForm.remark?.trim() || undefined,
+  });
+  ElMessage.success('已复制');
+  copyVisible.value = false;
   await getList();
   if (created?.id) {
     goDesign(created);
@@ -127,8 +197,45 @@ function goDesign(row: ReportDefinitionItemDto) {
   void router.push({ path: '/reports/designer', query: { id: String(row.id) } });
 }
 
+function validateBeforePublish(row: ReportDefinitionItemDto): string | null {
+  if (!row.name?.trim()) {
+    return '报表名称未填写';
+  }
+  if (row.sourceType === 'sql') {
+    if (!row.querySql?.trim()) {
+      return 'SQL 报表未配置查询语句';
+    }
+    const header = resolveDefinitionHeader(row);
+    if (!header.title?.trim()) {
+      return '表头标题未填写';
+    }
+    const filters = resolveDefinitionFilters(row);
+    const hasDateFilter = filters.some(
+      (f) => f.field === 'dateFrom' || f.field === 'dateTo' || f.type === 'daterange',
+    );
+    if (!hasDateFilter) {
+      return '未配置日期筛选（dateFrom/dateTo 或日期区间）';
+    }
+  }
+  return null;
+}
+
 async function handlePublish(row: ReportDefinitionItemDto) {
   if (!row.id) {
+    return;
+  }
+  const validationError = validateBeforePublish(row);
+  if (validationError) {
+    try {
+      await ElMessageBox.confirm(
+        `${validationError}。建议在报表设计器中完成配置并试查后再发布，是否前往设计器？`,
+        '无法发布',
+        { type: 'warning', confirmButtonText: '去设计器', cancelButtonText: '取消' },
+      );
+      goDesign(row);
+    } catch {
+      // user cancelled
+    }
     return;
   }
   await runPublish(row.id);
@@ -161,17 +268,21 @@ async function handleDelete(row: ReportDefinitionItemDto) {
   await getList();
 }
 
-void getList();
+onMounted(() => {
+  void loadPresets();
+  void getList();
+});
 </script>
 
 <template>
   <Page auto-content-height>
     <TableLayout
       v-model:query-params="queryParams"
-      :columns="tableColumns"
-      :data="tableData"
+      :table-columns="tableColumns"
+      :table-data="tableData"
       :form-items="formItems"
       :loading="listLoading"
+      :show-pagination="false"
       @query="getList"
       @reset="getList"
     >
@@ -193,6 +304,14 @@ void getList();
 
       <template #action="{ row }">
         <ElButton link type="primary" @click="goDesign(row)">设计</ElButton>
+        <ElTooltip
+          v-if="row.sourceType !== 'sql'"
+          content="出厂 Loader 报表不可复制为 SQL 报表"
+          placement="top"
+        >
+          <ElButton link type="primary" disabled>复制</ElButton>
+        </ElTooltip>
+        <ElButton v-else link type="primary" @click="openCopy(row)">复制</ElButton>
         <ElButton
           v-if="row.status !== 'published'"
           link
@@ -220,16 +339,38 @@ void getList();
     <ElDialog
       v-model="createVisible"
       title="新建 SQL 报表"
-      width="480px"
+      width="520px"
       destroy-on-close
       align-center
     >
-      <ElForm label-width="88px">
+      <ElForm label-width="96px">
         <ElFormItem label="报表编码" required>
           <ElInput v-model="createForm.reportCode" placeholder="如 dept_drug_usage" clearable />
         </ElFormItem>
         <ElFormItem label="报表名称" required>
           <ElInput v-model="createForm.name" placeholder="显示名称" clearable />
+        </ElFormItem>
+        <ElFormItem label="预制模板">
+          <ElSelect
+            v-model="createForm.presetReportCode"
+            filterable
+            clearable
+            placeholder="可选：从 V20 预制 SQL 初始化"
+            class="w-full"
+          >
+            <ElOptionGroup
+              v-for="group in groupedPresets"
+              :key="group.priority"
+              :label="group.label"
+            >
+              <ElOption
+                v-for="preset in group.items"
+                :key="preset.reportCode"
+                :label="`${preset.name} (${preset.reportCode})`"
+                :value="preset.reportCode ?? ''"
+              />
+            </ElOptionGroup>
+          </ElSelect>
         </ElFormItem>
         <ElFormItem label="备注">
           <ElInput v-model="createForm.remark" type="textarea" :rows="2" />
@@ -240,6 +381,27 @@ void getList();
         <ElButton type="primary" :loading="createLoading" @click="handleCreate"
           >创建并设计</ElButton
         >
+      </template>
+    </ElDialog>
+
+    <ElDialog v-model="copyVisible" title="复制报表" width="520px" destroy-on-close align-center>
+      <ElForm label-width="96px">
+        <ElFormItem label="源报表">
+          <span>{{ copySource?.name }} ({{ copySource?.reportCode }})</span>
+        </ElFormItem>
+        <ElFormItem label="新编码" required>
+          <ElInput v-model="copyForm.reportCode" clearable />
+        </ElFormItem>
+        <ElFormItem label="新名称" required>
+          <ElInput v-model="copyForm.name" clearable />
+        </ElFormItem>
+        <ElFormItem label="备注">
+          <ElInput v-model="copyForm.remark" type="textarea" :rows="2" />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="copyVisible = false">取消</ElButton>
+        <ElButton type="primary" :loading="copyLoading" @click="handleCopy">复制并设计</ElButton>
       </template>
     </ElDialog>
   </Page>

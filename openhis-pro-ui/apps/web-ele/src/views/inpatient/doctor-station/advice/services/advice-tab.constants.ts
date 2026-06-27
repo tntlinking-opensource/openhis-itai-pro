@@ -2,6 +2,14 @@ import type { ProductColumn } from './advice.types';
 
 export const MEDICATION_DEFINITION_TABLE = 'med_medication_definition';
 
+/** IF-DOR-35 中草药 medication_category_code；开立医嘱选品需排除 */
+export const HERBAL_MEDICATION_CATEGORY_CODE = '4';
+
+/** 开立医嘱目录检索默认排除的药品分类 */
+export const WESTERN_ADVICE_CATALOG_EXCLUDE_MEDICATION_CATEGORY_CODES = [
+  HERBAL_MEDICATION_CATEGORY_CODE,
+] as const;
+
 /** 住院可开立目录表名白名单（不含耗材） */
 export const INPATIENT_ADVICE_CATALOG_TABLE_NAMES = [
   MEDICATION_DEFINITION_TABLE,

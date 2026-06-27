@@ -6,6 +6,8 @@ export interface PageNurseStationPricingCatalogRequest extends PageParams {
   patientId?: string;
   keyword?: string;
   productTableNames?: string[];
+  /** 自动计费床位选品传 51（床位服务） */
+  categoryCode?: string;
   organizationUnitId?: string;
   pharmacyLocationId?: string;
   sortMode?: string;
@@ -38,6 +40,10 @@ export interface NurseStationPricingCatalogRowDto {
   productId?: string;
   activityId?: string;
   deviceDefId?: string;
+  /** 耗材默认发放库房（写路径回传 performLocation） */
+  defaultDispenseLocationId?: string;
+  /** 默认发放库房展示名（可选） */
+  defaultDispenseLocationName?: string;
   childrenJson?: string;
   oxygenOrEcgFlag?: boolean;
 }
@@ -196,4 +202,115 @@ export interface NurseStationPricingPatientGroupDto {
 
 export interface ListNurseStationPricedOrdersResponse {
   groups?: NurseStationPricingPatientGroupDto[];
+}
+
+/** 取消划价单行（与 IF-IP-PRC-05 列表行 orderType/orderId 对齐） */
+export interface NurseStationPricingCancelItemDto {
+  orderType: 'DEVICE_REQUEST' | 'SERVICE_REQUEST' | string;
+  requestId: string;
+  encounterId: string;
+}
+
+/** 取消划价（IF-IP-PRC-06） */
+export interface CancelNurseStationPricingRequest {
+  items: NurseStationPricingCancelItemDto[];
+}
+
+export interface CancelNurseStationPricingResponse {
+  success?: boolean;
+  processedCount?: number;
+  cancelledServiceRequestIds?: string[];
+  cancelledDeviceRequestIds?: string[];
+}
+
+/** 自动计费配置列表查询 */
+export interface ListAutoRollConfigsRequest {
+  encounterId: string;
+  patientId: string;
+  billDate?: string;
+}
+
+/** 自动计费配置行 */
+export interface NurseStationAutoRollConfigRowDto {
+  ruleId?: string;
+  ruleName?: string;
+  statusEnum?: 'ACTIVE' | 'INACTIVE' | string;
+  statusDictText?: string;
+  encounterId?: string;
+  triggerSourceTable?: string;
+  triggerSourceId?: string;
+  activityName?: string;
+  chargeDefinitionId?: string;
+  chargeDefinitionName?: string;
+  quantityValue?: number | string;
+  performingOrgId?: string;
+  priority?: number;
+  remark?: string;
+}
+
+/** 护理级别只读区 */
+export interface NurseStationAutoRollNursingReadonlyDto {
+  serviceRequestId?: string;
+  activityId?: string;
+  activityName?: string;
+  quantity?: number | string;
+  unitCode?: string;
+  unitName?: string;
+  checkTime?: string;
+  statusEnum?: string;
+  statusDictText?: string;
+  chargeDefinitionId?: string;
+  chargeDefinitionName?: string;
+  billDate?: string;
+}
+
+export interface ListAutoRollConfigsResponse {
+  configs?: NurseStationAutoRollConfigRowDto[];
+  nursingLevelReadonly?: NurseStationAutoRollNursingReadonlyDto | null;
+}
+
+/** 新增自动计费配置 */
+export interface CreateAutoGenRuleRequest {
+  encounterId: string;
+  patientId: string;
+  ruleName: string;
+  activityId: string;
+  chargeDefinitionId: string;
+  quantityValue?: number | string;
+  performingOrgId?: string;
+  priority?: number;
+  remark?: string;
+}
+
+export interface CreateAutoGenRuleResponse {
+  ruleId?: string;
+}
+
+/** 更新自动计费配置 */
+export interface UpdateAutoGenRuleRequest {
+  ruleId: string;
+  encounterId: string;
+  patientId: string;
+  ruleName?: string;
+  activityId?: string;
+  chargeDefinitionId?: string;
+  quantityValue?: number | string;
+  performingOrgId?: string;
+  priority?: number;
+  remark?: string;
+}
+
+export interface UpdateAutoGenRuleResponse {
+  success?: boolean;
+}
+
+/** 删除 / 启停自动计费配置 */
+export interface AutoGenRuleMutationRequest {
+  ruleId: string;
+  encounterId: string;
+  patientId: string;
+}
+
+export interface AutoGenRuleMutationResponse {
+  success?: boolean;
 }

@@ -8,14 +8,46 @@ import type {
   RowVO,
 } from '../types/EditableTable.d';
 
-import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue';
+import { computed, h, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue';
 
 import { Plus } from '@vben-core/icons';
 import { VbenButton } from '@vben-core/shadcn-ui';
 
 import { ElMessageBox } from 'element-plus';
 import { Trash2 } from 'lucide-vue-next';
-import { VxeColumn, VxeTable } from 'vxe-table';
+import { VxeColumn, VxeTable, VxeUI } from 'vxe-table';
+
+/** 供 CustomEditRenderer 按 field 解析列配置（跨组件实例共享） */
+const customEditColumnResolver = ref<((field: string) => EditableTableColumn | undefined) | null>(
+  null,
+);
+
+let customEditRendererRegistered = false;
+
+function ensureCustomEditRenderer() {
+  if (customEditRendererRegistered) {
+    return;
+  }
+  customEditRendererRegistered = true;
+  VxeUI.renderer.add('CustomEditRenderer', {
+    renderTableEdit(_renderOpts, params) {
+      const { row, column } = params;
+      const field = column.field;
+      if (!field || !customEditColumnResolver.value) {
+        return null;
+      }
+      const colConfig = customEditColumnResolver.value(field);
+      if (!colConfig?.editRender) {
+        return null;
+      }
+      const component = colConfig.editRender(row, colConfig);
+      if (typeof component === 'string') {
+        return h('span', component);
+      }
+      return h(component);
+    },
+  });
+}
 
 defineOptions({
   name: 'EditableTable',
@@ -26,7 +58,9 @@ const props = withDefaults(defineProps<EditableTableProps>(), {
   columns: () => [],
   stripe: false,
   showAddButton: true,
+  showCheckboxColumn: true,
   showDeleteButton: true,
+  showSeqColumn: true,
   addButtonText: '添加',
   deleteButtonText: '删除',
   disabled: false,
@@ -92,6 +126,9 @@ const tableHeight = computed(() => {
 let resizeObserver: null | ResizeObserver = null;
 
 onMounted(() => {
+  customEditColumnResolver.value = (field) => columnConfigMap.value.get(field);
+  ensureCustomEditRenderer();
+
   setTimeout(() => {
     calculateHeight();
 
@@ -224,31 +261,19 @@ type VxeEditRendererConfig =
       props?: Record<string, any>;
     };
 
+/** 列是否参与行编辑（默认 true，显式 editable: false 除外） */
+function isColumnEditable(column: EditableTableColumn): boolean {
+  return column.editable !== false;
+}
+
 const getEditRender = (column: EditableTableColumn): VxeEditRendererConfig => {
   if (column.editable === false) {
     return undefined;
   }
 
   if (column.editType === 'custom' && column.editRender) {
-    // 如果提供了 editRender 函数，返回一个组件定义
-    // 这里返回的是 vxe-table 的 renderer 配置对象，内部 this.row 由 vxe 挂载
     return {
       name: 'CustomEditRenderer',
-      render() {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const component = column.editRender!((this as any).row, column);
-        if (typeof component === 'string') {
-          return component;
-        }
-        // 如果返回的是组件定义，直接使用
-        return component;
-      },
-      props: {
-        row: {
-          type: Object,
-          required: true,
-        },
-      },
     };
   }
 
@@ -260,21 +285,30 @@ const getEditRender = (column: EditableTableColumn): VxeEditRendererConfig => {
         placeholder: column.editPlaceholder || `请选择${column.label}`,
         disabled: props.disabled,
         clearable: true,
-        class: '!w-[200px]',
+        class: '!w-full',
+        ...column.editProps,
       },
     };
   }
 
   if (column.editType === 'select') {
+    const selectOptions =
+      typeof column.editOptions === 'function'
+        ? column.editOptions({}, column)
+        : column.editOptions;
     return {
       name: 'ElSelect',
       props: {
         disabled: props.disabled,
-        options: column.editOptions,
+        options: selectOptions,
         optionProps: {
           label: 'label',
           value: 'value',
         },
+        placeholder: column.editPlaceholder,
+        clearable: true,
+        class: 'w-full',
+        ...column.editProps,
       },
     };
   }
@@ -382,8 +416,15 @@ defineExpose<EditableTableExpose>({
       @checkbox-change="handleSelectChange"
     >
       <!-- 序号列 -->
-      <VxeColumn type="checkbox" width="60" fixed="left" align="center" />
-      <VxeColumn type="seq" title="序号" width="60" align="center" fixed="left" />
+      <VxeColumn v-if="showCheckboxColumn" type="checkbox" width="60" fixed="left" align="center" />
+      <VxeColumn
+        v-if="showSeqColumn"
+        type="seq"
+        title="序号"
+        width="60"
+        align="center"
+        fixed="left"
+      />
       <!-- 数据列 -->
       <VxeColumn
         v-for="column in props.columns"
@@ -401,8 +442,8 @@ defineExpose<EditableTableExpose>({
         <template #default="{ row }" v-if="column.formatterRender">
           <component :is="column.formatterRender!(row, column)" />
         </template>
-        <template v-else #default="{ row, $rowIndex }">
-          <span>
+        <template v-else #default="{ row, $rowIndex, $table }">
+          <span v-if="!isColumnEditable(column) || !$table.isEditByRow(row)">
             {{
               column.formatter
                 ? column.formatter(row, column, row[column.prop!], $rowIndex)

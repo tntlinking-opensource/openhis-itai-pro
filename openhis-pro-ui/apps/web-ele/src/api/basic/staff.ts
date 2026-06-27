@@ -1,7 +1,7 @@
 import type { RoleInfo } from '#/api/user/role';
 
 import { requestClient } from '#/api/request';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 岗位范围（AssignmentScope，与后端 RoleAssignmentScopeConstants 一致） */
 export const ASSIGNMENT_SCOPE = {
@@ -71,6 +71,9 @@ export interface StaffDetailDto {
   busNo?: string;
   genderEnum?: string;
   statusEnum?: string;
+  ybNo?: string;
+  drProfttlCode?: number | string;
+  pharPracCertNo?: string;
   primaryOrgId?: string;
   doctorVisitOrgList?: StaffOrgLocationItem[];
   warehouseLocationList?: StaffOrgLocationItem[];
@@ -92,6 +95,9 @@ export interface SaveStaffParams {
   practitionerId?: string;
   genderEnum?: string;
   busNo?: string;
+  ybNo?: string;
+  drProfttlCode?: number | string;
+  pharPracCertNo?: string;
   extraProperties?: string;
   doctorVisitOrgList?: StaffOrgLocationItem[];
   warehouseLocationList?: StaffOrgLocationItem[];

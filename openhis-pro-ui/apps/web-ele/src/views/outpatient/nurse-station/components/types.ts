@@ -1,4 +1,4 @@
-import type { DrugGroupDisplayItem } from '#/utils/drug-group-table';
+import type { DrugGroupDisplayItem } from '#/utils/doctor-station/drug-group-table';
 
 /** 护士站队列患者（演示字段，后续可对接接口） */
 export interface NursePatient {
@@ -60,6 +60,8 @@ export interface NurseAdviceExecuteRow {
   groupId?: string;
   /** 处方号（药品医嘱） */
   prescriptionNo?: string;
+  /** 申请单整单号（诊疗 AR 前缀 prescriptionNo，同单多行共享） */
+  applyFormNo?: string;
   /** 药品类目展示文案 */
   medCategoryCodeText?: string;
   /** 诊疗类目 code（检验/处置等） */
@@ -76,7 +78,7 @@ export interface SupplyItem {
   spec: string;
   usage: string;
   quantity: number;
-  status: '待发放' | '已配药' | '已发放';
+  status: '已发放' | '已配药' | '待发放';
   /** 护士执行后可取消（PREPARED / COMPLETED / PART_COMPLETED） */
   canCancelExecute?: boolean;
 }
@@ -85,6 +87,8 @@ export interface ActionRecord {
   id: string;
   time: string;
   operator: string;
+  /** 操作人列标题（执行人 / 取消执行人）；本地记录未传时由 appendRecord 回落 */
+  operatorLabel?: string;
   type: '打印' | '执行';
   action: string;
   target: string;

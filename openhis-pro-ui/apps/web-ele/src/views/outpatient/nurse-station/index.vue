@@ -6,68 +6,65 @@ import type {
   SupplyItem,
   SupplyRoomOption,
 } from './components/types';
+import type { NurseSkinTestRowDraft } from './services/map-nurse-skin-test';
 
 import type {
   NetRemainingProcedureRecordItemDto,
   NurseStationPatientQueueItemDto,
   OrderExecutionSheetItemDto,
+  OutpatientSkinTestEnumOptionDto,
+  OutpatientSkinTestRowDto,
 } from '#/api/outpatient-nurse-station/outpatient-nurse-station.types';
 import type { PatientInfoBarPayload } from '#/components/outpatient/patient-card.types';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
-import { useDebounceFn } from '@vueuse/core';
 import { useUserStore } from '@vben/stores';
 
-import { ElMessage } from 'element-plus';
+import { useDebounceFn } from '@vueuse/core';
+import { ElMessage, ElMessageBox } from 'element-plus';
 
 import {
   httpBatchCancelDisposition,
   httpBatchPerformDisposition,
+  httpDeleteOutpatientSkinTestRecord,
+  httpListManagedSupplyRoomOptions,
   httpListNetRemainingProcedureRecordsForNurseStation,
+  httpListOutpatientSkinTestRows,
   httpListProcedureRecordsForNurseStation,
+  httpLoadOutpatientSkinTestInit,
   httpPageNurseStationPatientQueue,
   httpQueryEncounterTreatmentSheet,
+  httpSaveOutpatientSkinTestRecord,
 } from '#/api/outpatient-nurse-station/outpatient-nurse-station.http';
+import { httpListPractitioners } from '#/api/outpatient-registration';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import { useAuthStore } from '#/store';
-import { getLocalDayRangeDateTimeStrings } from '#/utils/date-range-quick';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { getLocalDayRangeDateTimeStrings } from '#/utils/format/date-range-quick';
+import {
+  preserveApiIdForRequest,
+  resolveLoginPractitionerIdForRequest,
+} from '#/utils/format/preserve-api-id';
 
 import NurseActionRecordDrawer from './components/nurse-action-record-drawer.vue';
 import NurseCancelProcedureDialog from './components/nurse-cancel-procedure-dialog.vue';
-import NurseExecuteCenter from './components/nurse-execute-center.vue';
 import NurseFooterBar from './components/nurse-footer-bar.vue';
 import NurseQueuePanel from './components/nurse-queue-panel.vue';
 import NurseRightSidebar from './components/nurse-right-sidebar.vue';
+import NurseWorkstationCenter from './components/nurse-workstation-center.vue';
+import { mapSkinTestDraftToSaveRequest } from './services/map-nurse-skin-test';
 import {
+  isNurseExecuteMedicationRow,
   mapDeviceLinesToSupplyItems,
   mapOrderExecutionToActionRecord,
   mapQueueItemToNursePatient,
-  isNurseExecuteMedicationRow,
   mapTreatmentSheetToExecuteRows,
   normalizeNurseStationRequestTableForApi,
   parseExecuteKeysToBatchIds,
+  parseTreatmentSheetFromApiData,
   resolveSupplyDispenseIdForApi,
 } from './services/map-nurse-station-api';
-import { useBedsideSpecimenBarcodePrint } from '#/composables/use-bedside-specimen-barcode-print';
-import { useIvInfusionLabelPrint } from '#/composables/use-iv-infusion-label-print';
-import {
-  useNebulizationLabelPrint,
-  useSkinTestLabelPrint,
-} from '#/composables/use-medication-label-print';
-import { useNursePrescriptionPrint } from '#/composables/use-nurse-prescription-print';
-import { useProcedureApplyFormPrint } from '#/composables/use-service-apply-form-print';
-import { useTreatmentExecuteSheetPrint } from '#/composables/use-treatment-execute-sheet-print';
-import { groupInfusionLabelPrintTargets } from '#/utils/report/iv-infusion-label-print';
-import {
-  groupMedicationExecuteRequestIds,
-  groupMedicationLabelPrintTargets,
-  groupProcedureApplyPrintTargets,
-  groupSpecimenBarcodePrintTargets,
-  groupTreatmentExecutePrintTargets,
-} from '#/utils/report/nurse-station-print-targets';
 
 defineOptions({
   name: 'OutpatientNurseStation',
@@ -75,6 +72,11 @@ defineOptions({
 
 /** IF-NUR-05 必填取消原因，前端不再弹窗采集 */
 const DEFAULT_CANCEL_STATUS_REASON = '护士站取消执行';
+
+/** 就诊 id 写入请求体：禁止 Number 转换导致雪花 Long 丢精度 */
+function resolveEncounterIdForApi(raw: string): string {
+  return preserveApiIdForRequest(raw) ?? '';
+}
 
 const authStore = useAuthStore();
 const userStore = useUserStore();
@@ -89,7 +91,6 @@ const selectedSupplyIds = ref<string[]>([]);
 const isApplyingDefaultExecuteSelection = ref(false);
 const selectedSupplyRoomId = ref<string | undefined>(undefined);
 
-/** 耗材房下拉：库房主键需与基础数据一致后再改为接口加载 */
 const supplyRoomOptions = ref<SupplyRoomOption[]>([]);
 
 const selectedSupplyRoomLabel = computed(() => {
@@ -100,16 +101,10 @@ const selectedSupplyRoomLabel = computed(() => {
 
 const showRecordDrawer = ref(false);
 const recordTypeFilter = ref<'全部' | '打印' | '执行'>('全部');
-const executeCenterRef = ref<InstanceType<typeof NurseExecuteCenter> | null>(null);
+const workstationCenterRef = ref<InstanceType<typeof NurseWorkstationCenter> | null>(null);
+const activeWorkbenchTab = ref<'execute' | 'skintest'>('execute');
 const executeTableLoading = ref(false);
 const batchPerforming = ref(false);
-const { printIvInfusionLabels } = useIvInfusionLabelPrint();
-const { printBedsideSpecimenBarcodes } = useBedsideSpecimenBarcodePrint();
-const { printTreatmentExecuteSheet } = useTreatmentExecuteSheetPrint();
-const { printNursePrescriptions } = useNursePrescriptionPrint();
-const { printMedicationLabels: printSkinTestLabels } = useSkinTestLabelPrint();
-const { printMedicationLabels: printNebulizationLabels } = useNebulizationLabelPrint();
-const { printServiceApplyForm: printProcedureApplyForm } = useProcedureApplyFormPrint();
 
 const cancelExecuting = ref(false);
 const cancelProcedureDialogOpen = ref(false);
@@ -120,6 +115,19 @@ const queueLoading = ref(false);
 const patients = ref<NursePatient[]>([]);
 const executeItems = ref<NurseAdviceExecuteRow[]>([]);
 const supplyItems = ref<SupplyItem[]>([]);
+
+const skinTestRows = ref<OutpatientSkinTestRowDto[]>([]);
+const skinTestTableLoading = ref(false);
+const skinTestInitLoading = ref(false);
+const savingSkinTestServiceRequestId = ref('');
+const deletingSkinTestAllergyRecordId = ref('');
+const clinicalStatusOptions = ref<OutpatientSkinTestEnumOptionDto[]>([]);
+const verificationStatusOptions = ref<OutpatientSkinTestEnumOptionDto[]>([]);
+const criticalityOptions = ref<OutpatientSkinTestEnumOptionDto[]>([]);
+const severityOptions = ref<OutpatientSkinTestEnumOptionDto[]>([]);
+const practitionerOptions = ref<{ label: string; value: string }[]>([]);
+/** 列表行带回的 patientId，用于保存时患者一致 Gate */
+const skinTestPatientIdByEncounter = ref<Record<string, string>>({});
 
 /** 服务端执行单读模型映射后的记录 */
 const serverActionRecords = ref<ActionRecord[]>([]);
@@ -134,12 +142,16 @@ const currentNurseName = computed(() => {
 
 /** 解析记录时间字符串用于合并排序 */
 function actionRecordTimeKey(t: string): number {
-  const n = Date.parse(t.replace(/-/g, '/'));
+  const n = Date.parse(t.replaceAll('-', '/'));
   return Number.isNaN(n) ? 0 : n;
 }
 
 const mergedActionRecords = computed(() => {
-  const list = [...serverActionRecords.value, ...localClientRecords.value];
+  // 批量执行/取消已由 IF-NUR-03 服务端记录覆盖，过滤历史本机汇总行避免重复展示
+  const localRows = localClientRecords.value.filter(
+    (item) => item.action !== '执行并记录' && item.action !== '取消执行',
+  );
+  const list = [...serverActionRecords.value, ...localRows];
   list.sort((a, b) => actionRecordTimeKey(b.time) - actionRecordTimeKey(a.time));
   return list;
 });
@@ -183,12 +195,16 @@ const nursePatientDoctorName = computed(() => {
 
 const recentActionRecords = computed(() => mergedActionRecords.value.slice(0, 5));
 
-const handleSelectPatient = (patient: { id: string }) => {
-  selectedPatientId.value = patient.id;
-};
+const defaultPractitionerId = computed(() => {
+  return resolveLoginPractitionerIdForRequest(userStore.userInfo) ?? '';
+});
+
+const showExecuteFooter = computed(() => activeWorkbenchTab.value === 'execute');
+
+const showSupplySection = computed(() => activeWorkbenchTab.value === 'execute');
 
 const clearExecuteTableCheckbox = async () => {
-  await executeCenterRef.value?.clearTableSelection();
+  await workstationCenterRef.value?.clearTableSelection();
 };
 
 const handleExecuteSelectionChange = (keys: string[]) => {
@@ -236,18 +252,22 @@ const createTimeText = () => {
 };
 
 const appendRecord = (payload: Omit<ActionRecord, 'id' | 'operator' | 'result' | 'time'>) => {
+  const operatorLabel =
+    String(payload.operatorLabel ?? '').trim() ||
+    (payload.action === '取消执行' ? '取消执行人' : '执行人');
   localClientRecords.value.unshift({
     id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     time: createTimeText(),
     operator: currentNurseName.value,
     result: '成功',
     ...payload,
+    operatorLabel,
   });
 };
 
 /** 拉取护士站患者队列（按科室与就诊日） */
 async function loadPatientQueue() {
-  const organizationId = (authStore.getSelectedOrganization() ?? '').trim();
+  const organizationId = preserveApiIdForRequest(authStore.getSelectedOrganization()) ?? '';
   if (!organizationId) {
     ElMessage.warning('请先选择科室');
     patients.value = [];
@@ -274,10 +294,15 @@ async function loadPatientQueue() {
     });
     const { content: queueRows } = parsePagedRowsFromApiData<NurseStationPatientQueueItemDto>(res);
     patients.value = queueRows.map((r, i) => mapQueueItemToNursePatient(r, i));
-    if (patients.value.length) {
+    if (patients.value.length > 0) {
       const still = patients.value.some((p) => p.id === selectedPatientId.value);
       if (!still) {
         selectedPatientId.value = patients.value[0]?.id ?? '';
+      } else {
+        const encounterId = resolveEncounterIdForApi(selectedPatientId.value);
+        if (encounterId) {
+          void loadEncounterTreatmentSheet(encounterId);
+        }
       }
     } else {
       selectedPatientId.value = '';
@@ -305,7 +330,7 @@ function defaultSelectableSupplyIds(): string[] {
 async function applyDefaultExecuteTableSelection(keys: string[]) {
   isApplyingDefaultExecuteSelection.value = true;
   try {
-    await executeCenterRef.value?.setTableSelectionForKeys(keys);
+    await workstationCenterRef.value?.setTableSelectionForKeys(keys);
     selectedExecuteKeys.value = [...keys];
   } finally {
     isApplyingDefaultExecuteSelection.value = false;
@@ -314,19 +339,23 @@ async function applyDefaultExecuteTableSelection(keys: string[]) {
 
 /** 按就诊加载处置单与耗材侧栏；加载完成后默认勾选全部可执行诊疗与待发放耗材 */
 async function loadEncounterTreatmentSheet(encounterId: string) {
-  if (!encounterId.trim()) {
+  const normalizedEncounterId = resolveEncounterIdForApi(encounterId);
+  if (!normalizedEncounterId) {
     executeItems.value = [];
     supplyItems.value = [];
     return;
   }
   executeTableLoading.value = true;
   try {
-    const res = await httpQueryEncounterTreatmentSheet({ encounterId });
-    executeItems.value = mapTreatmentSheetToExecuteRows(
-      res.serviceLines ?? [],
-      res.medicationLines ?? [],
-    );
-    supplyItems.value = mapDeviceLinesToSupplyItems(res.deviceLines ?? []);
+    const res = await httpQueryEncounterTreatmentSheet({
+      encounterId: normalizedEncounterId,
+    });
+    const sheet = parseTreatmentSheetFromApiData(res);
+    executeItems.value = mapTreatmentSheetToExecuteRows(sheet.serviceLines, sheet.medicationLines);
+    supplyItems.value = mapDeviceLinesToSupplyItems(sheet.deviceLines);
+  } catch {
+    executeItems.value = [];
+    supplyItems.value = [];
   } finally {
     executeTableLoading.value = false;
   }
@@ -336,20 +365,160 @@ async function loadEncounterTreatmentSheet(encounterId: string) {
   await applyDefaultExecuteTableSelection(keys);
 }
 
+/** 加载登录者管辖药房作为耗材房下拉 */
+async function loadSupplyRoomOptions() {
+  try {
+    const res = await httpListManagedSupplyRoomOptions();
+    supplyRoomOptions.value = (res.supplyRoomOptions ?? [])
+      .map((opt) => {
+        const value = preserveApiIdForRequest(opt.value) ?? '';
+        return {
+          value,
+          label: (opt.label ?? '').trim() || value,
+        };
+      })
+      .filter((opt) => opt.value.length > 0);
+  } catch {
+    supplyRoomOptions.value = [];
+  }
+}
+
+/** 加载皮试表单枚举与护士候选 */
+async function loadSkinTestPageInit() {
+  skinTestInitLoading.value = true;
+  try {
+    const initRes = await httpLoadOutpatientSkinTestInit();
+    clinicalStatusOptions.value = initRes.clinicalStatusOptions ?? [];
+    verificationStatusOptions.value = initRes.verificationStatusOptions ?? [];
+    criticalityOptions.value = initRes.criticalityOptions ?? [];
+    severityOptions.value = initRes.severityOptions ?? [];
+    practitionerOptions.value = (initRes.nurseOptions ?? [])
+      .map((opt) => {
+        const value = preserveApiIdForRequest(opt.value) ?? '';
+        return {
+          value,
+          label: (opt.label ?? '').trim() || value,
+        };
+      })
+      .filter((opt) => opt.value.length > 0);
+  } catch {
+    clinicalStatusOptions.value = [];
+    verificationStatusOptions.value = [];
+    criticalityOptions.value = [];
+    severityOptions.value = [];
+    practitionerOptions.value = [];
+  } finally {
+    skinTestInitLoading.value = false;
+  }
+}
+
+/** 按就诊加载皮试待登记/已登记列表 */
+async function loadSkinTestRows(encounterId: string) {
+  const normalizedEncounterId = resolveEncounterIdForApi(encounterId);
+  if (!normalizedEncounterId) {
+    skinTestRows.value = [];
+    return;
+  }
+  skinTestTableLoading.value = true;
+  try {
+    const cachedPatientId = skinTestPatientIdByEncounter.value[normalizedEncounterId];
+    const res = await httpListOutpatientSkinTestRows({
+      encounterId: normalizedEncounterId,
+      patientId: cachedPatientId || undefined,
+    });
+    const rows = res.rows ?? [];
+    skinTestRows.value = rows;
+    const patientIdFromRow = String(rows[0]?.patientId ?? '').trim();
+    if (patientIdFromRow) {
+      skinTestPatientIdByEncounter.value = {
+        ...skinTestPatientIdByEncounter.value,
+        [normalizedEncounterId]: patientIdFromRow,
+      };
+    }
+  } catch {
+    skinTestRows.value = [];
+  } finally {
+    skinTestTableLoading.value = false;
+  }
+}
+
+/** 保存单行皮试登记 */
+async function handleSaveSkinTestRow(draft: NurseSkinTestRowDraft) {
+  const encounterId = resolveEncounterIdForApi(selectedPatientId.value);
+  if (!encounterId) {
+    ElMessage.warning('请先选择患者');
+    return;
+  }
+  const patientId =
+    preserveApiIdForRequest(draft.patientId) ??
+    skinTestPatientIdByEncounter.value[encounterId] ??
+    '';
+  if (!patientId) {
+    ElMessage.warning('患者信息无效，请刷新列表');
+    return;
+  }
+  const body = mapSkinTestDraftToSaveRequest({ ...draft, patientId }, encounterId);
+  savingSkinTestServiceRequestId.value = body.serviceRequestId;
+  try {
+    await httpSaveOutpatientSkinTestRecord(body);
+    ElMessage.success('皮试结果已保存');
+    appendRecord({
+      type: '执行',
+      action: '登记皮试',
+      target: draft.medicationName || '皮试药品',
+    });
+    await loadSkinTestRows(encounterId);
+  } finally {
+    savingSkinTestServiceRequestId.value = '';
+  }
+}
+
+/** 删除误录皮试记录 */
+async function handleDeleteSkinTestRow(allergyRecordId: string) {
+  const encounterId = resolveEncounterIdForApi(selectedPatientId.value);
+  const recordId = preserveApiIdForRequest(allergyRecordId) ?? '';
+  if (!encounterId || !recordId) {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm('确认删除该误录的皮试结果？删除后不影响已收费用。', '删除皮试记录', {
+      type: 'warning',
+      confirmButtonText: '确认删除',
+      cancelButtonText: '取消',
+    });
+  } catch {
+    return;
+  }
+  deletingSkinTestAllergyRecordId.value = recordId;
+  try {
+    await httpDeleteOutpatientSkinTestRecord({ encounterId, allergyRecordId: recordId });
+    ElMessage.success('皮试记录已删除');
+    appendRecord({
+      type: '执行',
+      action: '删除皮试记录',
+      target: recordId,
+    });
+    await loadSkinTestRows(encounterId);
+  } finally {
+    deletingSkinTestAllergyRecordId.value = '';
+  }
+}
+
 /** 加载执行记录抽屉数据源 */
 async function loadServerExecutionLog(encounterId: string) {
-  if (!encounterId.trim()) {
+  const normalizedEncounterId = resolveEncounterIdForApi(encounterId);
+  if (!normalizedEncounterId) {
     serverActionRecords.value = [];
     return;
   }
   try {
     const res = await httpListProcedureRecordsForNurseStation({
-      encounterId,
+      encounterId: normalizedEncounterId,
       pageNo: 1,
       pageSize: 100,
     });
     const { content: execRows } = parsePagedRowsFromApiData<OrderExecutionSheetItemDto>(res);
-    serverActionRecords.value = execRows.map(mapOrderExecutionToActionRecord);
+    serverActionRecords.value = execRows.map((row) => mapOrderExecutionToActionRecord(row));
   } catch {
     serverActionRecords.value = [];
   }
@@ -357,10 +526,8 @@ async function loadServerExecutionLog(encounterId: string) {
 
 watch(
   () => selectedPatientId.value,
-  async (id) => {
-    await clearSelectedItems();
-    await loadEncounterTreatmentSheet(id);
-    void loadServerExecutionLog(id);
+  (id) => {
+    void reloadSelectedPatientWorkbench(id);
   },
 );
 
@@ -374,18 +541,15 @@ watch(keyword, () => {
 
 onMounted(() => {
   void loadPatientQueue();
+  void loadSupplyRoomOptions();
+  void loadSkinTestPageInit();
 });
 
 /** 提交所选诊疗/药品与耗材发放 */
 async function executeSelectedItems() {
-  const encounterId = selectedPatientId.value.trim();
-  const operatorId = String(userStore.userInfo?.id ?? '').trim();
+  const encounterId = resolveEncounterIdForApi(selectedPatientId.value);
   if (!encounterId) {
     ElMessage.warning('请先选择患者');
-    return;
-  }
-  if (!operatorId) {
-    ElMessage.warning('当前登录用户无效，请重新登录');
     return;
   }
   const {
@@ -409,21 +573,12 @@ async function executeSelectedItems() {
   try {
     await httpBatchPerformDisposition({
       encounterId,
-      operatorId,
-      serviceRequestIds: serviceRequestIds.length ? serviceRequestIds : undefined,
-      medicationRequestIds: medicationRequestIds.length ? medicationRequestIds : undefined,
-      deviceDispenseIds: deviceDispenseIds.length ? deviceDispenseIds : undefined,
+      serviceRequestIds: serviceRequestIds.length > 0 ? serviceRequestIds : undefined,
+      medicationRequestIds: medicationRequestIds.length > 0 ? medicationRequestIds : undefined,
+      deviceDispenseIds: deviceDispenseIds.length > 0 ? deviceDispenseIds : undefined,
       ...(inventoryLocationId ? { inventoryLocationId } : {}),
     });
     ElMessage.success('执行成功');
-    const roomNote = selectedSupplyRoomLabel.value
-      ? `；耗材房：${selectedSupplyRoomLabel.value}`
-      : '';
-    appendRecord({
-      type: '执行',
-      action: '执行并记录',
-      target: `处置${serviceRequestIds.length + medicationRequestIds.length}项，耗材${deviceDispenseIds.length}项${roomNote}`,
-    });
     selectedExecuteKeys.value = [];
     selectedSupplyIds.value = [];
     await clearExecuteTableCheckbox();
@@ -439,6 +594,24 @@ const clearSelectedItems = async () => {
   selectedExecuteKeys.value = [];
   selectedSupplyIds.value = [];
   await clearExecuteTableCheckbox();
+};
+
+/** 选中患者后加载处置单、执行记录与皮试（watch 与重复点击共用） */
+async function reloadSelectedPatientWorkbench(encounterId: string) {
+  await clearSelectedItems();
+  await loadEncounterTreatmentSheet(encounterId);
+  void loadServerExecutionLog(encounterId);
+  void loadSkinTestRows(encounterId);
+}
+
+/** 选中卡片切换当前就诊；再次点击已选患者仍刷新处置单（避免 ref 不变导致 watch 不触发） */
+const handleSelectPatient = (patient: { id: string }) => {
+  const id = patient.id;
+  if (selectedPatientId.value === id) {
+    void reloadSelectedPatientWorkbench(id);
+    return;
+  }
+  selectedPatientId.value = id;
 };
 
 const handleQueueListDateChange = (date: string | undefined) => {
@@ -465,15 +638,9 @@ async function submitBatchCancel(params: {
   procedureIds?: string[];
   targetLabel: string;
 }) {
-  const encounterId = selectedPatientId.value.trim();
-  const operatorRaw = userStore.userInfo?.id;
-  const operatorId = (preserveApiIdForRequest(operatorRaw) ?? String(operatorRaw ?? '')).trim();
+  const encounterId = resolveEncounterIdForApi(selectedPatientId.value);
   if (!encounterId) {
     ElMessage.warning('请先选择患者');
-    return;
-  }
-  if (!operatorId) {
-    ElMessage.warning('当前登录用户无效，请重新登录');
     return;
   }
   const procedureIds = params.procedureIds ?? [];
@@ -486,17 +653,11 @@ async function submitBatchCancel(params: {
   try {
     await httpBatchCancelDisposition({
       encounterId,
-      operatorId,
       statusReasonText: DEFAULT_CANCEL_STATUS_REASON,
-      procedureIds: procedureIds.length ? procedureIds : undefined,
-      deviceDispenseIds: deviceDispenseIds.length ? deviceDispenseIds : undefined,
+      procedureIds: procedureIds.length > 0 ? procedureIds : undefined,
+      deviceDispenseIds: deviceDispenseIds.length > 0 ? deviceDispenseIds : undefined,
     });
     ElMessage.success('取消执行成功');
-    appendRecord({
-      type: '执行',
-      action: '取消执行',
-      target: params.targetLabel,
-    });
     cancelProcedureDialogOpen.value = false;
     await loadEncounterTreatmentSheet(encounterId);
     await loadServerExecutionLog(encounterId);
@@ -535,8 +696,8 @@ async function handleCancelSupplyExecute(supplyId: string) {
 async function loadNetRemainingProcedureRecords(
   row: NurseAdviceExecuteRow,
 ): Promise<NetRemainingProcedureRecordItemDto[]> {
-  const encounterId = selectedPatientId.value.trim();
-  const requestId = (row.requestId ?? '').trim();
+  const encounterId = resolveEncounterIdForApi(selectedPatientId.value);
+  const requestId = preserveApiIdForRequest(row.requestId) ?? '';
   const requestTable = normalizeNurseStationRequestTableForApi(row.requestTable ?? '');
   if (!encounterId || !requestId || !requestTable) {
     return [];
@@ -554,7 +715,7 @@ async function handleCancelExecute(row: NurseAdviceExecuteRow) {
   if (!row.canCancelExecute) {
     return;
   }
-  const encounterId = selectedPatientId.value.trim();
+  const encounterId = resolveEncounterIdForApi(selectedPatientId.value);
   if (!encounterId) {
     ElMessage.warning('请先选择患者');
     return;
@@ -574,7 +735,7 @@ async function handleCancelExecute(row: NurseAdviceExecuteRow) {
     return;
   }
   if (records.length === 1) {
-    const onlyId = String(records[0]?.procedureId ?? '').trim();
+    const onlyId = preserveApiIdForRequest(records[0]?.procedureId) ?? '';
     if (!onlyId) {
       ElMessage.warning('执行记录无效');
       return;
@@ -590,214 +751,6 @@ async function handleCancelExecute(row: NurseAdviceExecuteRow) {
 async function handleCancelProcedureDialogConfirm(procedureIds: string[]) {
   await submitBatchCancelProcedure(procedureIds);
 }
-
-const handlePrint = async (label: string) => {
-  if (!currentPatient.value) {
-    ElMessage.warning('请先选择患者');
-    return;
-  }
-  const selectedCount = totalSelectedCount.value;
-  const patientName = currentPatient.value.name || '-';
-  const targetText =
-    selectedCount > 0
-      ? `${patientName}（所选${selectedCount}项）`
-      : `${patientName}（全部待执行项）`;
-
-  if (label === '打印瓶贴') {
-    const groups = groupInfusionLabelPrintTargets(
-      executeItems.value,
-      selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined,
-    );
-    if (!groups.length) {
-      ElMessage.warning('没有可打印的药品医嘱');
-      return;
-    }
-    try {
-      await printIvInfusionLabels({
-        encounterId: currentPatient.value.id,
-        groups,
-      });
-      appendRecord({
-        type: '打印',
-        action: label,
-        target: `${targetText} · ${groups.length} 组`,
-      });
-      ElMessage.success(`已发送 ${groups.length} 张输液瓶贴`);
-    } catch {
-      // composable 已提示
-    }
-    return;
-  }
-
-  if (label === '打印采血码') {
-    const targets = groupSpecimenBarcodePrintTargets(
-      executeItems.value,
-      selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined,
-    );
-    if (!targets.length) {
-      ElMessage.warning('没有可打印的采血/检验医嘱');
-      return;
-    }
-    try {
-      await printBedsideSpecimenBarcodes({
-        encounterId: currentPatient.value.id,
-        targets,
-      });
-      appendRecord({
-        type: '打印',
-        action: label,
-        target: `${targetText} · ${targets.length} 张`,
-      });
-      ElMessage.success(`已发送 ${targets.length} 张采血条码`);
-    } catch {
-      // composable 已提示
-    }
-    return;
-  }
-
-  if (label === '打印处置单') {
-    const target = groupTreatmentExecutePrintTargets(
-      executeItems.value,
-      selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined,
-    );
-    if (!target) {
-      ElMessage.warning('没有可打印的处置医嘱');
-      return;
-    }
-    try {
-      await printTreatmentExecuteSheet({
-        encounterId: currentPatient.value.id,
-        target,
-      });
-      appendRecord({
-        type: '打印',
-        action: label,
-        target: `${targetText} · ${target.serviceRequestIds.length} 项`,
-      });
-      ElMessage.success('处置执行单已发送打印');
-    } catch {
-      // composable 已提示
-    }
-    return;
-  }
-
-  if (label === '打印处方单') {
-    const medicationRequestIds = groupMedicationExecuteRequestIds(
-      executeItems.value,
-      selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined,
-    );
-    if (!medicationRequestIds.length) {
-      ElMessage.warning('没有可打印的药品医嘱');
-      return;
-    }
-    try {
-      const printedCount = await printNursePrescriptions({
-        encounterId: currentPatient.value.id,
-        medicationRequestIds,
-        executeRows: executeItems.value,
-      });
-      if (printedCount <= 0) {
-        return;
-      }
-      appendRecord({
-        type: '打印',
-        action: label,
-        target: `${targetText} · ${printedCount} 张`,
-      });
-      ElMessage.success(`已发送 ${printedCount} 张处方单`);
-    } catch {
-      // composable 已提示
-    }
-    return;
-  }
-
-  if (label === '打印皮试标签') {
-    const groups = groupMedicationLabelPrintTargets(
-      executeItems.value,
-      selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined,
-      'skin_test',
-    );
-    if (!groups.length) {
-      ElMessage.warning('没有可打印的皮试医嘱');
-      return;
-    }
-    try {
-      await printSkinTestLabels({
-        encounterId: currentPatient.value.id,
-        groups,
-      });
-      appendRecord({
-        type: '打印',
-        action: label,
-        target: `${targetText} · ${groups.length} 张`,
-      });
-      ElMessage.success(`已发送 ${groups.length} 张皮试标签`);
-    } catch {
-      // composable 已提示
-    }
-    return;
-  }
-
-  if (label === '打印雾化标签') {
-    const groups = groupMedicationLabelPrintTargets(
-      executeItems.value,
-      selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined,
-      'nebulization',
-    );
-    if (!groups.length) {
-      ElMessage.warning('没有可打印的雾化/吸入医嘱');
-      return;
-    }
-    try {
-      await printNebulizationLabels({
-        encounterId: currentPatient.value.id,
-        groups,
-      });
-      appendRecord({
-        type: '打印',
-        action: label,
-        target: `${targetText} · ${groups.length} 张`,
-      });
-      ElMessage.success(`已发送 ${groups.length} 张雾化标签`);
-    } catch {
-      // composable 已提示
-    }
-    return;
-  }
-
-  if (label === '打印处置申请单') {
-    const target = groupProcedureApplyPrintTargets(
-      executeItems.value,
-      selectedExecuteKeys.value.length > 0 ? selectedExecuteKeys.value : undefined,
-    );
-    if (!target) {
-      ElMessage.warning('没有可打印的治疗/处置医嘱');
-      return;
-    }
-    try {
-      await printProcedureApplyForm({
-        encounterId: currentPatient.value.id,
-        target,
-      });
-      appendRecord({
-        type: '打印',
-        action: label,
-        target: `${targetText} · ${target.serviceRequestIds.length} 项`,
-      });
-      ElMessage.success('治疗/处置申请单已发送打印');
-    } catch {
-      // composable 已提示
-    }
-    return;
-  }
-
-  appendRecord({
-    type: '打印',
-    action: label,
-    target: targetText,
-  });
-  ElMessage.success(`${label}任务已发送`);
-};
 </script>
 
 <template>
@@ -816,35 +769,49 @@ const handlePrint = async (label: string) => {
     </template>
 
     <template #center>
-      <NurseExecuteCenter
-        ref="executeCenterRef"
+      <NurseWorkstationCenter
+        ref="workstationCenterRef"
+        v-model:active-tab="activeWorkbenchTab"
         :execute-items="executeItems"
         :execute-table-loading="executeTableLoading"
         :current-patient="currentPatient"
         :patient="nurseCurrentPatientInfo"
         :doctor-name="nursePatientDoctorName"
         :can-execute-selected="canExecuteSelected"
+        :skin-test-rows="skinTestRows"
+        :skin-test-table-loading="skinTestTableLoading || skinTestInitLoading"
+        :clinical-status-options="clinicalStatusOptions"
+        :verification-status-options="verificationStatusOptions"
+        :criticality-options="criticalityOptions"
+        :severity-options="severityOptions"
+        :practitioner-options="practitionerOptions"
+        :default-practitioner-id="defaultPractitionerId"
+        :saving-skin-test-service-request-id="savingSkinTestServiceRequestId"
+        :deleting-skin-test-allergy-record-id="deletingSkinTestAllergyRecordId"
         @selection-change="handleExecuteSelectionChange"
         @execute="executeSelectedItems"
         @cancel-execute="handleCancelExecute"
+        @refresh-skin-test="loadSkinTestRows(selectedPatientId)"
+        @save-skin-test-row="handleSaveSkinTestRow"
+        @delete-skin-test-row="handleDeleteSkinTestRow"
       />
     </template>
 
     <template #right>
       <NurseRightSidebar
         v-model:supply-room-id="selectedSupplyRoomId"
+        :show-supply-section="showSupplySection"
         :supply-items="supplyItems"
         :selected-supply-ids="selectedSupplyIds"
         :supply-room-options="supplyRoomOptions"
         :recent-action-records="recentActionRecords"
         @supply-change="toggleSupplySelection"
         @cancel-supply="handleCancelSupplyExecute"
-        @print="handlePrint"
         @show-all-records="showRecordDrawer = true"
       />
     </template>
 
-    <template #footer>
+    <template v-if="showExecuteFooter" #footer>
       <NurseFooterBar
         :selected-execute-count="selectedExecuteKeys.length"
         :selected-supply-count="selectedSupplyIds.length"

@@ -20,6 +20,7 @@ export interface AdviceRequestExtensionSnapshotDto {
 /** 与后端 `ProcedurePerformerItemDto` 对齐 */
 export interface ProcedurePerformerItemDto {
   practitionerId?: string;
+  practitionerName?: string;
   functionCode?: string;
   startTime?: string;
   endTime?: string;
@@ -31,6 +32,8 @@ export interface TerminologyOptionDto {
   label?: string;
   sortOrder?: number;
   value?: string;
+  busNo?: string;
+  children?: TerminologyOptionDto[];
 }
 
 export interface InitDoctorStationAdviceRequest {
@@ -127,6 +130,7 @@ export interface DoctorStationAdviceRowDto {
   /** 行展示总价（元，与后端展示口径一致） */
   lineDisplayTotalPrice?: number | string;
   skinTestFlagText?: string;
+  skinTestOutcomeCode?: string;
   skinTestOutcomeText?: string;
   /** 医生站主表展示排序号（AS BR-ORD-018） */
   sortNumber?: number | string | null;
@@ -149,7 +153,14 @@ export interface DoctorStationAdviceRowDto {
   generateSourceEnum?: string;
   stopTime?: string;
   conditionDefinitionId?: string;
-  signCode?: string;
+  /** 前置服务申请主键（锚定 SR 时） */
+  basedOnServiceRequestId?: string;
+  /** 前置药品申请主键（皮试检查 companion 锚定皮试药） */
+  basedOnMedicationRequestId?: string;
+  /** 申请单行纯备注（wkf_service_request.remark） */
+  remark?: string;
+  /** 申请单部位/样本明细摘要（AR 前缀申请单） */
+  serviceRequestDetails?: ServiceRequestDetailSummaryDto[];
 }
 
 export interface ListDoctorStationAdviceResponse {
@@ -168,7 +179,7 @@ export interface PageDoctorStationAdviceCatalogRequest {
   organizationUnitId?: string;
   pharmacyLocationId?: string;
   productTableNames?: string[];
-  /** 排除药品 med_category_code（如开立西药医嘱传 ["4"] 排除中草药） */
+  /** 排除药品 medication_category_code（如开立西药医嘱传 ["4"] 排除中草药） */
   excludeMedicationCategoryCodes?: string[];
   /** 申请单选品：检验 PROOF/22、检查 TEST/23、治疗 TREATMENT/21 */
   categoryEnum?: string;
@@ -274,6 +285,40 @@ export interface GetDoctorStationAdviceOrderBindInfoResponse {
   bindRows?: DoctorStationAdviceOrderBindRowDto[];
 }
 
+/** IF-DOR-23：暂存前绑定解析请求（与 IF-DOR-14 同构） */
+export interface ResolveDoctorStationAdviceDraftBindsRequest {
+  encounterId: string;
+  patientId: string;
+  lines: DoctorStationAdviceDraftLineRequest[];
+}
+
+/** IF-DOR-23：暂存前绑定解析明细 */
+export interface DoctorStationAdviceDraftBindItemDto {
+  bindType?: string;
+  sourceItemId?: string;
+  sourceItemName?: string;
+  targetItemId?: string;
+  targetItemName?: string;
+  targetProductTableName?: string;
+  quantityNumerator?: number | string;
+  quantityDenominator?: number | string;
+  unitCode?: string;
+  unitName?: string;
+  priority?: number;
+  activeFlag?: boolean;
+  triggerLineIndex?: number;
+  triggerLineOp?: string;
+  triggerProductTableName?: string;
+  triggerDefinitionId?: string;
+  triggerRequestId?: string;
+  basedOnTable?: string;
+  basedOnRequestId?: string;
+}
+
+export interface ResolveDoctorStationAdviceDraftBindsResponse {
+  bindItems?: DoctorStationAdviceDraftBindItemDto[];
+}
+
 export interface GetEncounterAdviceDefaultContractRequest {
   encounterId: string;
   patientId: string;
@@ -348,6 +393,10 @@ export interface DoctorStationAdviceDraftLineRequest {
   productTableName?: string;
   /** 与 `medicationPayload` 同级；展示排序号（AS BR-ORD-018） */
   sortNumber?: number;
+  /** 派生绑定行锚定表（IF-DOR-23 → IF-DOR-14） */
+  basedOnTable?: string;
+  /** 派生绑定行锚定主键（IF-DOR-23 → IF-DOR-14） */
+  basedOnId?: string;
   medicationPayload?: SaveMedicationAdviceDraftLinePayload;
   servicePayload?: SaveServiceAdviceDraftLinePayload;
   devicePayload?: SaveDeviceAdviceDraftLinePayload;

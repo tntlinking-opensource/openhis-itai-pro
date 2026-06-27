@@ -26,6 +26,11 @@
       "development": "./src/index.ts",
       "default": "./src/index.ts",
       "#default": "./dist/index.mjs"
+    },
+    "./es/preferences-manager": {
+      "types": "./src/preferences-manager-entry.ts",
+      "development": "./src/preferences-manager-entry.ts",
+      "default": "./src/preferences-manager-entry.ts"
     }
   },
   "dependencies": {

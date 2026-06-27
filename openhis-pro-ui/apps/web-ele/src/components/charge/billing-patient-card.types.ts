@@ -22,4 +22,8 @@ export interface BillingPatientCardPatient {
   doctorName?: string;
   /** 住院号（住院收费时展示） */
   inpatientNo?: string;
+  /** 账户余额主文案（住院队列卡片） */
+  accountBalanceSummary?: string;
+  accountBalanceSub?: string;
+  lowBalanceWarning?: boolean;
 }

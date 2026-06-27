@@ -49,24 +49,26 @@ const recordTypeFilter = defineModel<'全部' | '打印' | '执行'>('recordType
       </div>
       <SectionTitle title="记录明细" class="mb-2 shrink-0" />
       <div
-        class="bg-muted/60 text-muted-foreground grid grid-cols-[140px_60px_100px_1fr_60px] gap-2 rounded-md px-2 py-2 text-xs"
+        class="bg-muted/60 text-muted-foreground grid grid-cols-[130px_52px_72px_minmax(0,1fr)_72px_52px] gap-2 rounded-md px-2 py-2 text-xs"
       >
         <div>时间</div>
         <div>类型</div>
         <div>操作</div>
         <div>目标</div>
+        <div>操作人</div>
         <div>结果</div>
       </div>
       <div class="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto">
         <div
           v-for="record in records"
           :key="record.id"
-          class="bg-muted/45 grid grid-cols-[140px_60px_100px_1fr_60px] items-center gap-2 rounded-md px-3 py-2 text-xs text-gray-700"
+          class="bg-muted/45 grid grid-cols-[130px_52px_72px_minmax(0,1fr)_72px_52px] items-center gap-2 rounded-md px-3 py-2 text-xs text-gray-700"
         >
           <div>{{ record.time }}</div>
           <div>{{ record.type }}</div>
           <div>{{ record.action }}</div>
           <div class="truncate">{{ record.target }}</div>
+          <div class="truncate" :title="record.operator">{{ record.operator }}</div>
           <div>
             <ElTag size="small" type="success">{{ record.result }}</ElTag>
           </div>

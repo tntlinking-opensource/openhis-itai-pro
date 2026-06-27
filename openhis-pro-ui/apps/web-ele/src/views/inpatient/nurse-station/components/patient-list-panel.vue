@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { PatientStatusFilter } from './patient-list-panel.context';
+import type { PatientQueueScopeFilter, PatientStatusFilter } from './patient-list-panel.context';
 
 import { inject, toRef } from 'vue';
 
@@ -7,7 +7,10 @@ import { DArrowLeft, DArrowRight, Refresh } from '@element-plus/icons-vue';
 
 import { encounterStatusToNurseStationLabel } from '../services/map-inpatient-nurse-station-api';
 import {
+  formatInpatientAccountBalancePrimaryText,
+  formatInpatientAccountBalanceSecondaryText,
   formatNurseStationAccountBalance,
+  resolveInpatientAccountBalanceLabel,
   resolveNurseStationPatientBalanceTone,
   resolveNurseStationPatientStatusTone,
 } from './nurse-station-module-patient.types';
@@ -25,16 +28,21 @@ const context = injectedContext;
 const {
   availableWards,
   changeKeyword,
+  changeQueueScopeFilter,
   changeRegionIds,
   changeStatusFilter,
   changeWardIds,
   filterPanelExpanded,
   filteredPatients,
   keyword,
+  onPatientCardDblClick,
   onPatientDragEnd,
   onPatientDragStart,
+  onRecallPatient,
   pendingAuditCount,
   pendingExecuteCount,
+  queueScopeFilter,
+  queueScopeOptions,
   regionNameByIdRecord,
   selectedRegionIds,
   selectedWardIds,
@@ -42,7 +50,6 @@ const {
   statusOptions,
   toggleFilterPanel,
   togglePatientCardSelection,
-  onPatientCardDblClick,
   togglePatientSelection,
   totalPatientCount,
   wardNameByIdRecord,
@@ -55,9 +62,25 @@ function handleKeywordInput(value: string) {
   changeKeyword(value);
 }
 
-/** 切换患者状态筛选并拉取队列。 */
+/** 切换任务筛选并拉取队列。 */
 function handleStatusFilterChange(value: PatientStatusFilter) {
   changeStatusFilter(value);
+}
+
+/** 切换列表范围（在院 / 已出院结算）并拉取队列。 */
+function handleQueueScopeFilterChange(value: PatientQueueScopeFilter) {
+  changeQueueScopeFilter(value);
+}
+
+/** 已出院结算列表不可拖拽分床 */
+function isRecallListMode(): boolean {
+  return queueScopeFilter.value === 'settled-discharged';
+}
+
+/** 召回行操作：阻止冒泡后提交出院召回 */
+function handleRecallClick(event: MouseEvent, patient: (typeof filteredPatients.value)[number]) {
+  event.stopPropagation();
+  onRecallPatient(patient);
 }
 
 /** 病区勾选变化后拉取队列。 */
@@ -80,18 +103,27 @@ function handleRefreshFilters() {
   void context.refreshPatientFilters();
 }
 
-/** 卡片点击切换患者选中。 */
+/** 卡片点击切换患者选中（已出院结算列表不可选）。 */
 function handleCardClick(id: string) {
+  if (isRecallListMode()) {
+    return;
+  }
   togglePatientCardSelection(id);
 }
 
 /** 双击卡片打开患者入科选床弹窗。 */
 function handleCardDblClick(patient: (typeof filteredPatients.value)[number]) {
+  if (isRecallListMode()) {
+    return;
+  }
   onPatientCardDblClick(patient);
 }
 
-/** 勾选框选择变化后同步到父层。 */
+/** 勾选框选择变化后同步到父层（已出院结算列表不可选）。 */
 function handleCheckboxChange(id: string, value: boolean) {
+  if (isRecallListMode()) {
+    return;
+  }
   togglePatientSelection(id, value);
 }
 
@@ -123,7 +155,19 @@ function formatPatientStatusLabel(row: (typeof filteredPatients.value)[number]):
 
 /** 患者卡片预交金余额展示文案 */
 function formatPatientBalanceLabel(row: (typeof filteredPatients.value)[number]): string {
-  return formatNurseStationAccountBalance(row.accountBalance);
+  return formatNurseStationAccountBalance(row);
+}
+
+/** 患者卡片预交金余额副文案 */
+function formatPatientBalanceSubLabel(
+  row: (typeof filteredPatients.value)[number],
+): string | undefined {
+  return formatInpatientAccountBalanceSecondaryText(row);
+}
+
+/** 患者卡片余额区域标签 */
+function formatPatientBalanceFieldLabel(row: (typeof filteredPatients.value)[number]): string {
+  return resolveInpatientAccountBalanceLabel(row);
 }
 
 /** 患者卡片就诊状态色调 */
@@ -133,7 +177,8 @@ function resolvePatientStatusTone(row: (typeof filteredPatients.value)[number]):
 
 /** 患者卡片余额色调 */
 function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number]): string {
-  return resolveNurseStationPatientBalanceTone(row.accountBalance, row.lowBalanceWarning);
+  const balance = row.availableBalance ?? row.accountBalance;
+  return resolveNurseStationPatientBalanceTone(balance, row.lowBalanceWarning);
 }
 </script>
 
@@ -163,26 +208,48 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
 
     <div class="nurse-content">
       <div class="nurse-search-bar">
-        <ElInput
-          :model-value="keyword"
-          clearable
-          placeholder="姓名/病区/床号模糊搜索"
-          class="nurse-search-bar__keyword"
-          @update:model-value="handleKeywordInput"
-        />
-        <ElSelect
-          :model-value="statusFilter"
-          class="nurse-search-bar__status"
-          @update:model-value="handleStatusFilterChange"
-        >
-          <ElOption
-            v-for="item in statusOptions"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
+        <div class="nurse-search-bar__row">
+          <ElInput
+            :model-value="keyword"
+            clearable
+            placeholder="姓名/病区/床号模糊搜索"
+            class="nurse-search-bar__keyword"
+            @update:model-value="handleKeywordInput"
           />
-        </ElSelect>
-        <ElButton :icon="Refresh" circle title="刷新" @click.stop="handleRefreshFilters" />
+          <ElButton
+            :icon="Refresh"
+            circle
+            class="nurse-search-bar__refresh"
+            title="刷新"
+            @click.stop="handleRefreshFilters"
+          />
+        </div>
+        <div class="nurse-search-bar__row">
+          <ElSelect
+            :model-value="queueScopeFilter"
+            class="nurse-search-bar__scope"
+            @update:model-value="handleQueueScopeFilterChange"
+          >
+            <ElOption
+              v-for="item in queueScopeOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </ElSelect>
+          <ElSelect
+            :model-value="statusFilter"
+            class="nurse-search-bar__status"
+            @update:model-value="handleStatusFilterChange"
+          >
+            <ElOption
+              v-for="item in statusOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </ElSelect>
+        </div>
       </div>
       <div class="nurse-content-body">
         <div class="nurse-filter-panel" :class="{ 'is-collapsed': !filterPanelExpanded }">
@@ -244,18 +311,27 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
                   <div
                     v-for="row in filteredPatients"
                     :key="row.id"
-                    class="nurse-patient-card nurse-patient-card--draggable"
-                    :class="{ 'is-selected': row.selected }"
-                    title="按住拖动到右侧「入出转管理」床位图，在目标床位上松开以分床或换床"
-                    draggable="true"
-                    @dragstart="handlePatientDragStart($event, row)"
+                    class="nurse-patient-card"
+                    :class="{
+                      'nurse-patient-card--draggable': !isRecallListMode(),
+                      'nurse-patient-card--recall-only': isRecallListMode(),
+                      'is-selected': !isRecallListMode() && row.selected,
+                    }"
+                    :title="
+                      isRecallListMode()
+                        ? '已出院结算患者，仅可点击「召回」'
+                        : '按住拖动到右侧「入出转管理」床位图，在目标床位上松开以分床或换床'
+                    "
+                    :draggable="!isRecallListMode()"
+                    @dragstart="!isRecallListMode() && handlePatientDragStart($event, row)"
                     @dragend="handlePatientDragEnd"
-                    @click="handleCardClick(row.id)"
+                    @click="!isRecallListMode() && handleCardClick(row.id)"
                     @dblclick.stop="handleCardDblClick(row)"
                   >
                     <div class="nurse-patient-card__line1">
                       <ElCheckbox
                         v-model="row.selected"
+                        :disabled="isRecallListMode()"
                         @click.stop
                         @mousedown.stop
                         @change="(value: boolean) => handleCheckboxChange(row.id, value)"
@@ -284,12 +360,23 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
                             {{ formatPatientStatusLabel(row) }}
                           </span>
                           <span class="nurse-patient-card__balance-wrap">
-                            <span class="nurse-patient-card__balance-label">余额</span>
+                            <span class="nurse-patient-card__balance-main">
+                              <span class="nurse-patient-card__balance-label">{{
+                                formatPatientBalanceFieldLabel(row)
+                              }}</span>
+                              <span
+                                class="nurse-patient-card__balance-value"
+                                :class="`is-${resolvePatientBalanceTone(row)}`"
+                              >
+                                {{ formatPatientBalanceLabel(row) }}
+                              </span>
+                            </span>
                             <span
-                              class="nurse-patient-card__balance-value"
-                              :class="`is-${resolvePatientBalanceTone(row)}`"
+                              v-if="formatPatientBalanceSubLabel(row)"
+                              class="nurse-patient-card__balance-sub truncate"
+                              :title="formatPatientBalanceSubLabel(row)"
                             >
-                              {{ formatPatientBalanceLabel(row) }}
+                              {{ formatPatientBalanceSubLabel(row) }}
                             </span>
                           </span>
                         </div>
@@ -315,6 +402,15 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
                         </span>
                       </div>
                       <div class="nurse-patient-card__tasks">
+                        <ElButton
+                          v-if="row.recallEnabled"
+                          link
+                          size="small"
+                          type="primary"
+                          @click="handleRecallClick($event, row)"
+                        >
+                          召回
+                        </ElButton>
                         <span class="nurse-patient-card__audit">校 {{ row.pendingAudit }}</span>
                         <span class="nurse-patient-card__execute">执 {{ row.pendingExecute }}</span>
                       </div>
@@ -463,17 +559,28 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
   min-height: 0;
 }
 .nurse-search-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+}
+.nurse-search-bar__row {
   align-items: center;
   display: flex;
   gap: 8px;
-  padding: 6px 8px;
+  min-width: 0;
 }
 .nurse-search-bar__keyword {
   flex: 1;
   min-width: 0;
 }
+.nurse-search-bar__refresh {
+  flex-shrink: 0;
+}
+.nurse-search-bar__scope,
 .nurse-search-bar__status {
-  width: 132px;
+  flex: 1;
+  min-width: 0;
 }
 .nurse-table {
   flex: 1;
@@ -555,11 +662,24 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
   color: var(--el-text-color-secondary);
 }
 .nurse-patient-card__balance-wrap {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 2px;
+  margin-left: 8px;
+  max-width: 148px;
+}
+.nurse-patient-card__balance-main {
   align-items: baseline;
   display: flex;
-  flex-shrink: 0;
   gap: 4px;
-  margin-left: 8px;
+}
+.nurse-patient-card__balance-sub {
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+  line-height: 1.2;
+  max-width: 100%;
 }
 .nurse-patient-card__balance-label {
   color: var(--el-text-color-secondary);
@@ -683,5 +803,14 @@ function resolvePatientBalanceTone(row: (typeof filteredPatients.value)[number])
 
 .nurse-patient-card--draggable:active {
   cursor: grabbing;
+}
+
+.nurse-patient-card--recall-only {
+  cursor: default;
+}
+
+.nurse-patient-card--recall-only:hover {
+  background: #fff;
+  border-color: var(--el-border-color-lighter);
 }
 </style>

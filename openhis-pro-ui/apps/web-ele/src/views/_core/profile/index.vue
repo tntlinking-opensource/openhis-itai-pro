@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 
 import { Profile } from '@vben/common-ui';
 import { useUserStore } from '@vben/stores';
@@ -9,9 +10,11 @@ import ProfileClientSetting from './client-setting.vue';
 import ProfileDepartmentSetting from './department-setting.vue';
 import ProfileNotificationSetting from './notification-setting.vue';
 import ProfilePasswordSetting from './password-setting.vue';
+import ProfilePrintSetting from './print-setting.vue';
 import ProfileSecuritySetting from './security-setting.vue';
 
 const userStore = useUserStore();
+const route = useRoute();
 
 const tabsValue = ref<string>('basic');
 
@@ -37,10 +40,33 @@ const tabs = ref([
     value: 'department',
   },
   {
+    label: '打印设置',
+    value: 'print',
+  },
+  {
     label: '客户端',
     value: 'client',
   },
 ]);
+
+/** 支持 ?tab=print 直达打印设置 */
+function syncTabFromRoute(): void {
+  const tab = typeof route.query.tab === 'string' ? route.query.tab.trim() : '';
+  if (tab && tabs.value.some((item) => item.value === tab)) {
+    tabsValue.value = tab;
+  }
+}
+
+onMounted(() => {
+  syncTabFromRoute();
+});
+
+watch(
+  () => route.query.tab,
+  () => {
+    syncTabFromRoute();
+  },
+);
 </script>
 <template>
   <Profile
@@ -55,6 +81,7 @@ const tabs = ref([
       <ProfilePasswordSetting v-if="tabsValue === 'password'" />
       <ProfileNotificationSetting v-if="tabsValue === 'notice'" />
       <ProfileDepartmentSetting v-if="tabsValue === 'department'" />
+      <ProfilePrintSetting v-if="tabsValue === 'print'" />
       <ProfileClientSetting v-if="tabsValue === 'client'" />
     </template>
   </Profile>

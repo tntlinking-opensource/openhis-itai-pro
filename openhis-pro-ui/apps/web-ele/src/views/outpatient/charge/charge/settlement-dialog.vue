@@ -6,10 +6,13 @@ import type {
 
 import { computed, ref, watch } from 'vue';
 
+import { getPaymentTypeTagStyles } from '@vben/utils';
+
 import {
   ElButton,
   ElDescriptions,
   ElDescriptionsItem,
+  ElInput,
   ElInputNumber,
   ElRadioButton,
   ElRadioGroup,
@@ -19,7 +22,7 @@ import {
 } from 'element-plus';
 
 import AppDialog from '#/components/app-dialog.vue';
-import { decimalAdd, decimalMul, decimalSub } from '#/utils/decimal-util';
+import { decimalAdd, decimalMul, decimalSub } from '#/utils/format/decimal-util';
 
 import { OUTPATIENT_CHARGE_FEE_DETAIL_FIELD_DEFS } from './outpatient-charge.constants';
 
@@ -52,6 +55,10 @@ const props = withDefaults(
     projectTableTitle?: string;
     /** 小结/底部高亮金额标签（默认：应收金额） */
     receivableAmountLabel?: string;
+    /** 是否展示银联被扫区（Whale 模块 + Win native 就绪） */
+    scanPayEnabled?: boolean;
+    /** 扫码状态提示（父组件写入） */
+    scanStatusText?: string;
     selectedChargeCount?: number;
     summaryInsuranceAmount?: number | string;
     summarySelfPayAmount?: number | string;
@@ -67,6 +74,8 @@ const props = withDefaults(
     primaryButtonText: '确认收费',
     projectTableTitle: '收费项目',
     receivableAmountLabel: '应收金额',
+    scanPayEnabled: false,
+    scanStatusText: '',
     selectedChargeCount: 0,
     summaryInsuranceAmount: 0,
     summarySelfPayAmount: 0,
@@ -79,19 +88,43 @@ const emit = defineEmits<{
 
 const visible = defineModel<boolean>({ required: true });
 const payChannelCode = defineModel<string>('payChannelCode', { required: true });
+const scanCode = defineModel<string>('scanCode', { default: '' });
 
 /** 弹窗内优惠金额（仅影响展示应收；正式结算金额仍以父组件传入的 displayAmount 为准） */
 const localDiscountAmount = ref(0);
 
+const showScanPaySection = computed(
+  () => props.scanPayEnabled && payChannelCode.value === 'SCAN_PAY',
+);
+
 watch(visible, (open) => {
   if (open) {
     localDiscountAmount.value = 0;
+    scanCode.value = '';
   }
 });
 
 function formatMoney(value: null | number | string | undefined) {
   const n = Number(value ?? 0);
   return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+}
+
+/** 费用性质标签文案：与 IF-OPC-03 待收费列表 feeNatureDisplay 同口径 */
+function resolveFeeNatureLabel(row: PreSettleChargeLinePreviewDto) {
+  const label = String(row.feeNatureDisplay ?? '').trim();
+  if (!label) {
+    return '—';
+  }
+  return label;
+}
+
+function resolveFeeNatureTagStyle(row: PreSettleChargeLinePreviewDto) {
+  const label = resolveFeeNatureLabel(row);
+  if (label === '—') {
+    return undefined;
+  }
+  const { bgColor, textColor } = getPaymentTypeTagStyles(label);
+  return { backgroundColor: bgColor, color: textColor, border: 'none' };
 }
 
 /** 数量展示：拼接单位，如「1支」 */
@@ -237,6 +270,21 @@ const handleCancel = () => {
               </ElRadioButton>
             </ElRadioGroup>
           </div>
+
+          <div v-if="showScanPaySection" class="copy-section">
+            <div class="copy-section-title">扫码支付</div>
+            <div class="copy-discount-row">
+              <span>付款码</span>
+              <ElInput
+                v-model="scanCode"
+                class="copy-input-number"
+                placeholder="请扫码或输入付款码"
+                clearable
+                @keyup.enter="emit('confirmCharge')"
+              />
+            </div>
+            <p v-if="props.scanStatusText" class="copy-scan-status">{{ props.scanStatusText }}</p>
+          </div>
         </div>
       </div>
 
@@ -291,9 +339,16 @@ const handleCancel = () => {
           <ElTableColumn label="金额" width="105" align="right">
             <template #default="{ row }">¥{{ formatMoney(row.lineAmount) }}</template>
           </ElTableColumn>
-          <ElTableColumn label="医保" width="80" align="center">
-            <template #default>
-              <ElTag type="success" size="small">医保</ElTag>
+          <ElTableColumn label="类型" width="88" align="center">
+            <template #default="{ row }">
+              <ElTag
+                v-if="resolveFeeNatureLabel(row) !== '—'"
+                size="small"
+                :style="resolveFeeNatureTagStyle(row)"
+              >
+                {{ resolveFeeNatureLabel(row) }}
+              </ElTag>
+              <span v-else>—</span>
             </template>
           </ElTableColumn>
         </ElTable>
@@ -421,6 +476,12 @@ const handleCancel = () => {
   font-size: 13px;
   line-height: 28px;
   text-align: center;
+}
+
+.copy-scan-status {
+  margin: 8px 0 0;
+  color: #2563eb;
+  font-size: 13px;
 }
 
 .copy-insurance-list :deep(.el-descriptions__label) {

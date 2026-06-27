@@ -20,7 +20,6 @@ import {
   pageBookingsApi,
   rescheduleBookingApi,
 } from '#/api/booking/booking-register';
-import { useReportTemplatePrint } from '#/composables/use-report-template-print';
 import BookingRegisterPanel from '#/views/booking/components/booking-register-panel.vue';
 import { useBookingOrganization } from '#/views/booking/composables/use-booking-organization';
 import { useRequest } from '#/hooks/use-request';
@@ -48,8 +47,6 @@ const rescheduleDate = ref('');
 const rescheduleSlots = ref<BookableSlotDto[]>([]);
 const selectedRescheduleSlotId = ref<number>();
 
-const { printReportTemplate, isPrinting: voucherPrinting } = useReportTemplatePrint();
-
 const query = reactive({
   pageNo: 1,
   pageSize: 20,
@@ -72,7 +69,7 @@ const columns: TableColumn[] = [
   { prop: 'endInstant', label: '结束', minWidth: 160 },
   { prop: 'statusView', label: '状态', width: 100 },
   { prop: 'slotId', label: '号源', width: 100 },
-  { prop: 'actions', label: '操作', width: 220, slot: 'actions' },
+  { prop: 'actions', label: '操作', width: 160, slot: 'actions' },
 ];
 
 const { run: runRescheduleSlots, loading: rescheduleSlotsLoading } = useRequest(
@@ -174,15 +171,6 @@ async function handleConfirmReschedule() {
   });
 }
 
-async function handlePrintVoucher(row: BookingListItemDto) {
-  if (!row.appointmentId) return;
-  await printReportTemplate({
-    templateCode: 'appointment_voucher',
-    params: { appointmentId: row.appointmentId },
-    jobName: '预约凭证',
-  });
-}
-
 onMounted(loadData);
 </script>
 
@@ -212,14 +200,6 @@ onMounted(loadData);
               详情
             </ElButton>
             <ElButton link type="primary" @click="openReschedule(row)">改约</ElButton>
-            <ElButton
-              link
-              type="primary"
-              :loading="voucherPrinting"
-              @click="handlePrintVoucher(row)"
-            >
-              打印凭证
-            </ElButton>
             <ElButton link type="danger" @click="handleCancel(row)">取消</ElButton>
           </template>
         </TableLayout>

@@ -3,7 +3,7 @@ import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 
 import type { BodyItem } from '#/api/basic/body';
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
@@ -21,6 +21,7 @@ defineOptions({ name: 'BasicBodyIndex' });
 const allData = ref<BodyItem[]>([]);
 const tableData = ref<BodyItem[]>([]);
 const loading = ref(false);
+const total = ref(0);
 
 const initQueryParams = {
   keyword: '',
@@ -38,7 +39,6 @@ const formItems = ref<FormItemConfig[]>([
 ]);
 
 const tableColumns: TableColumn[] = [
-  { type: 'index', label: '序号', width: 58, align: 'center' },
   {
     prop: 'busNo',
     label: '业务编号',
@@ -48,13 +48,8 @@ const tableColumns: TableColumn[] = [
   {
     prop: 'name',
     label: '名称',
-    minWidth: 140,
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'parentName',
-    label: '上级部位',
-    minWidth: 120,
+    minWidth: 180,
+    treeNode: true,
     showOverflowTooltip: true,
   },
   {
@@ -80,73 +75,115 @@ const tableColumns: TableColumn[] = [
   },
 ];
 
-/** 由 parentId 映射上级部位名称，供列表展示 */
-const parentNameMap = computed(() => {
-  const map = new Map<string, string>();
-  for (const item of allData.value) {
-    if (item.id && item.name) {
-      map.set(String(item.id), item.name);
+/** 统计树节点总数，供列表展示 */
+function countTreeNodes(items: BodyItem[] | undefined): number {
+  if (!items || items.length === 0) {
+    return 0;
+  }
+  let count = 0;
+  for (const item of items) {
+    count++;
+    count += countTreeNodes(item.children);
+  }
+  return count;
+}
+
+/** 将平面列表按 parentId 组装为树 */
+function buildTreeFromFlat(items: BodyItem[]): BodyItem[] {
+  const nodeMap = new Map<string, BodyItem>();
+  for (const item of items) {
+    if (item.id !== undefined && item.id !== null) {
+      nodeMap.set(String(item.id), { ...item, children: [] });
     }
   }
-  return map;
-});
 
-/** 判断部位是否为启用态 */
-function isBodyActive(row: BodyItem): boolean {
-  return row.statusEnum === PublicationStatusCode.ACTIVE;
-}
-
-/** 状态列 Tag 类型 */
-function statusTagType(statusEnum?: string): 'danger' | 'info' | 'success' | 'warning' {
-  switch (statusEnum) {
-    case PublicationStatusCode.ACTIVE: {
-      return 'success';
+  const roots: BodyItem[] = [];
+  for (const item of items) {
+    const node =
+      item.id !== undefined && item.id !== null ? nodeMap.get(String(item.id)) : undefined;
+    if (!node) {
+      continue;
     }
-    case PublicationStatusCode.DRAFT: {
-      return 'warning';
-    }
-    case PublicationStatusCode.DISCARDED: {
-      return 'danger';
-    }
-    default: {
-      return 'info';
+    const parentKey =
+      item.parentId === undefined || item.parentId === null ? '' : String(item.parentId);
+    const parentNode = parentKey ? nodeMap.get(parentKey) : undefined;
+    if (parentNode) {
+      if (!parentNode.children) {
+        parentNode.children = [];
+      }
+      parentNode.children.push(node);
+    } else {
+      roots.push(node);
     }
   }
+  return roots;
 }
 
-/** 附加 parentName 供表格展示 */
-function enrichRows(items: BodyItem[]): BodyItem[] {
-  return items.map((item) => {
-    const parentId = item.parentId ? String(item.parentId) : '';
-    return {
-      ...item,
-      parentName: parentId ? (parentNameMap.value.get(parentId) ?? '-') : '-',
-    };
-  });
+/** 按业务编号稳定排序整棵树 */
+function sortTreeByBusNo(items: BodyItem[]): BodyItem[] {
+  const sorted = [...items].toSorted((a, b) =>
+    (a.busNo ?? '').localeCompare(b.busNo ?? '', 'zh-CN'),
+  );
+  for (const item of sorted) {
+    if (item.children && item.children.length > 0) {
+      item.children = sortTreeByBusNo(item.children);
+    }
+  }
+  return sorted;
 }
 
-/** 按关键词在前端过滤列表 */
+/** 判断单条部位是否命中关键词 */
+function matchesKeyword(item: BodyItem, keyword: string): boolean {
+  return (
+    item.name?.toLowerCase().includes(keyword) ||
+    item.busNo?.toLowerCase().includes(keyword) ||
+    item.pyStr?.toLowerCase().includes(keyword) ||
+    item.wbStr?.toLowerCase().includes(keyword) ||
+    item.statusEnumText?.toLowerCase().includes(keyword)
+  );
+}
+
+/** 收集匹配节点及其全部祖先，保证树检索时父路径可见 */
+function collectVisibleIds(items: BodyItem[], keyword: string): Set<string> {
+  const idToParent = new Map<string, string>();
+  for (const item of items) {
+    if (item.id && item.parentId) {
+      idToParent.set(String(item.id), String(item.parentId));
+    }
+  }
+
+  const matchedIds = new Set<string>();
+  for (const item of items) {
+    if (item.id && matchesKeyword(item, keyword)) {
+      matchedIds.add(String(item.id));
+    }
+  }
+
+  const visibleIds = new Set(matchedIds);
+  for (const id of matchedIds) {
+    let parentId = idToParent.get(id);
+    while (parentId) {
+      visibleIds.add(parentId);
+      parentId = idToParent.get(parentId);
+    }
+  }
+  return visibleIds;
+}
+
+/** 按关键词过滤后组树并刷新表格 */
 function filterData() {
   const keyword = queryParams.keyword?.toLowerCase().trim() || '';
-  const filtered = keyword
-    ? allData.value.filter((item) => {
-        const parentName = item.parentId
-          ? (parentNameMap.value.get(String(item.parentId)) ?? '')
-          : '';
-        return (
-          item.name?.toLowerCase().includes(keyword) ||
-          item.busNo?.toLowerCase().includes(keyword) ||
-          item.pyStr?.toLowerCase().includes(keyword) ||
-          item.wbStr?.toLowerCase().includes(keyword) ||
-          item.statusEnumText?.toLowerCase().includes(keyword) ||
-          parentName.toLowerCase().includes(keyword)
-        );
-      })
+  const source = keyword
+    ? allData.value.filter(
+        (item) => item.id && collectVisibleIds(allData.value, keyword).has(String(item.id)),
+      )
     : allData.value;
-  tableData.value = enrichRows(filtered);
+  const roots = sortTreeByBusNo(buildTreeFromFlat(source));
+  tableData.value = roots;
+  total.value = countTreeNodes(roots);
 }
 
-/** 加载全量列表并刷新表格 */
+/** 加载全量列表并刷新树形表格 */
 async function loadAllData() {
   loading.value = true;
   try {
@@ -157,6 +194,7 @@ async function loadAllData() {
     ElMessage.error('加载数据失败，请稍后重试');
     allData.value = [];
     tableData.value = [];
+    total.value = 0;
   } finally {
     loading.value = false;
   }
@@ -191,6 +229,29 @@ function handleDialogSuccess() {
 function handleEdit(row: BodyItem) {
   dialogFormData.value = { ...row };
   dialogVisible.value = true;
+}
+
+/** 判断部位是否为启用态 */
+function isBodyActive(row: BodyItem): boolean {
+  return row.statusEnum === PublicationStatusCode.ACTIVE;
+}
+
+/** 状态列 Tag 类型 */
+function statusTagType(statusEnum?: string): 'danger' | 'info' | 'success' | 'warning' {
+  switch (statusEnum) {
+    case PublicationStatusCode.ACTIVE: {
+      return 'success';
+    }
+    case PublicationStatusCode.DRAFT: {
+      return 'warning';
+    }
+    case PublicationStatusCode.DISCARDED: {
+      return 'danger';
+    }
+    default: {
+      return 'info';
+    }
+  }
 }
 
 /** 启用部位 */
@@ -259,11 +320,21 @@ onMounted(() => {
     <TableLayout
       :table-data="tableData"
       :loading="loading"
+      :total="total"
       :query-params="queryParams"
       :form-items="formItems"
       :table-columns="tableColumns"
       :show-top-query="true"
       :show-pagination="false"
+      :tree="true"
+      :tree-config="{
+        children: 'children',
+        indent: 20,
+        line: false,
+        expandAll: true,
+        accordion: false,
+        trigger: 'default',
+      }"
       row-key="id"
       stripe
       @query="handleQuery"

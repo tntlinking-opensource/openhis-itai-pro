@@ -6,8 +6,8 @@ import {
   mergeConsecutiveRowsByDrugGroup,
   type DrugGroupDisplayItem,
   type DrugGroupKey,
-} from '#/utils/drug-group-table';
-import { convertProductUnitPriceForDisplay } from '#/utils/product-unit-band-price';
+} from '#/utils/doctor-station/drug-group-table';
+import { convertProductUnitPriceForDisplay } from '#/utils/doctor-station/product-unit-band-price';
 
 import { formatDateTime } from '@vben/utils';
 
@@ -15,6 +15,11 @@ import {
   formatAdviceCatalogStockCellText,
   isAdviceCatalogZeroStock,
 } from '#/utils/doctor-station/advice-catalog-stock-display';
+import { buildServiceApplyFormExtensionText } from '#/utils/service-apply-display';
+import {
+  resolveServiceApplyFormNo,
+  resolveServiceApplyFormSortKey,
+} from '#/utils/service-apply-form-group-display';
 
 import type { AdviceDrugItem, AdviceProductOption, AdviceRowItem } from './advice.types';
 import { formatUnitPriceYuan } from './advice-format';
@@ -121,6 +126,18 @@ function buildAdviceMethodRateDurationLine(dto: DoctorStationAdviceRowDto): stri
   return dayPart.trim();
 }
 
+/** 医嘱内容 extension：申请单样本/部位/备注 + 用法频次天数 */
+function buildAdviceListExtensionLine(dto: DoctorStationAdviceRowDto): string {
+  const usageLine = buildAdviceMethodRateDurationLine(dto);
+  return buildServiceApplyFormExtensionText(
+    {
+      remark: dto.remark,
+      serviceRequestDetails: dto.serviceRequestDetails,
+    },
+    usageLine ? [usageLine] : [],
+  );
+}
+
 function formatAdviceRowTotalPrice(dto: DoctorStationAdviceRowDto): string {
   const v = dto.lineDisplayTotalPrice;
   if (v !== null && v !== undefined && String(v).trim() !== '') {
@@ -138,7 +155,9 @@ function normalizedListSortNumber(
 }
 
 function skinTestDisplayText(dto: DoctorStationAdviceRowDto): string {
-  const t = String(dto.skinTestFlagText ?? dto.skinTestOutcomeText ?? '').trim();
+  const outcome = String(dto.skinTestOutcomeText ?? '').trim();
+  if (outcome) return outcome;
+  const t = String(dto.skinTestFlagText ?? '').trim();
   if (t) return t;
   if (dto.skinTestFlag === true) return '是';
   if (dto.skinTestFlag === false) return '否';
@@ -162,7 +181,7 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
   const startTime = authoredRaw ? formatDateTime(authoredRaw) : '';
   const content = buildAdviceContentTitle(dto);
   const dosageLine = buildAdviceDosageSummaryLine(dto);
-  const extension = buildAdviceMethodRateDurationLine(dto);
+  const extension = buildAdviceListExtensionLine(dto);
   const typeLabel =
     String(dto.catalogCategoryName ?? '').trim() || resourceTypeToTypeLabel(resourceType);
 
@@ -217,6 +236,7 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
       const n = typeof q === 'number' ? q : Number(q);
       return Number.isFinite(n) && n > 0 ? n : undefined;
     })(),
+    applyFormNo: resolveServiceApplyFormNo(dto.prescriptionNo),
   };
 }
 
@@ -340,6 +360,13 @@ function sortDoctorStationAdviceRowsStable(
   rows: readonly DoctorStationAdviceRowDto[],
 ): DoctorStationAdviceRowDto[] {
   return [...rows].sort((a, b) => {
+    const leftFormKey = resolveServiceApplyFormSortKey(a.prescriptionNo);
+    const rightFormKey = resolveServiceApplyFormSortKey(b.prescriptionNo);
+    const formCompare = leftFormKey.localeCompare(rightFormKey);
+    if (formCompare !== 0) {
+      return formCompare;
+    }
+
     const ag = medicationGroupMergeKey(a);
     const bg = medicationGroupMergeKey(b);
     const aGroupSort = ag === '' || ag === null || ag === undefined ? '\uffff' : String(ag);

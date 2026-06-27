@@ -12,15 +12,29 @@ import { ref } from 'vue';
 import { ElMessage } from 'element-plus';
 
 import {
-  getCaseRecordByIdApi,
-  getHomepageApi,
+  loadHomepagePageApi,
   refreshAutoFillApi,
   saveHomepageApi,
   submitHomepageApi,
 } from '#/api/mrms';
 import { useRequest } from '#/hooks/use-request';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import { homepageToFormModel, mergeCaseRecordIntoFormModel } from '../homepage-form.util';
+
+function normalizeCaseRecordDetail(
+  raw: CaseRecordDetailDto | undefined | null,
+): CaseRecordDetailDto | null {
+  if (!raw) {
+    return null;
+  }
+  return {
+    ...raw,
+    caseRecordId: preserveApiIdForRequest(raw.caseRecordId) ?? raw.caseRecordId,
+    patientId: preserveApiIdForRequest(raw.patientId),
+    encounterId: preserveApiIdForRequest(raw.encounterId),
+  };
+}
 
 export function useCaseRecordContext(caseRecordId: Ref<string>) {
   const caseRecord = ref<CaseRecordDetailDto | null>(null);
@@ -31,10 +45,7 @@ export function useCaseRecordContext(caseRecordId: Ref<string>) {
   const loadError = ref<string | null>(null);
   let loadSeq = 0;
 
-  const { run: runLoadCase, loading: caseLoading } = useRequest(getCaseRecordByIdApi, {
-    manual: true,
-  });
-  const { run: runLoadHomepage, loading: homepageLoading } = useRequest(getHomepageApi, {
+  const { run: runLoadPage, loading: pageLoading } = useRequest(loadHomepagePageApi, {
     manual: true,
   });
   const { run: runSave, loading: saving } = useRequest(saveHomepageApi, {
@@ -56,7 +67,7 @@ export function useCaseRecordContext(caseRecordId: Ref<string>) {
   const { run: runSubmit, loading: submitting } = useRequest(submitHomepageApi, {
     manual: true,
     onSuccess: (detail) => {
-      caseRecord.value = detail;
+      caseRecord.value = normalizeCaseRecordDetail(detail);
       formDirty.value = false;
       ElMessage.success('提交成功');
     },
@@ -71,7 +82,7 @@ export function useCaseRecordContext(caseRecordId: Ref<string>) {
     formModel.value = homepageToFormModel(data);
   }
 
-  /** 按病案主键加载主档与首页 */
+  /** 按病案主键加载主档与首页（单次 loadPage） */
   async function loadAll() {
     const id = caseRecordId.value?.trim();
     if (!id) {
@@ -83,13 +94,19 @@ export function useCaseRecordContext(caseRecordId: Ref<string>) {
     loading.value = true;
     loadError.value = null;
     try {
-      const [detail, hp] = await Promise.all([runLoadCase(id), runLoadHomepage(id)]);
+      const page = await runLoadPage(id);
       if (seq !== loadSeq) {
         return;
       }
+      const detail = normalizeCaseRecordDetail(page?.caseRecord);
       caseRecord.value = detail;
-      applyHomepage(hp);
-      formModel.value = mergeCaseRecordIntoFormModel(formModel.value!, detail);
+      if (page?.homepage) {
+        applyHomepage(page.homepage);
+        formModel.value = mergeCaseRecordIntoFormModel(formModel.value!, detail);
+      } else {
+        formModel.value = null;
+        loadError.value = '未加载到病案首页数据';
+      }
       formDirty.value = false;
     } catch (e) {
       if (seq !== loadSeq) {
@@ -145,8 +162,7 @@ export function useCaseRecordContext(caseRecordId: Ref<string>) {
     formDirty,
     loadError,
     loading,
-    caseLoading,
-    homepageLoading,
+    pageLoading,
     saving,
     refreshing,
     submitting,

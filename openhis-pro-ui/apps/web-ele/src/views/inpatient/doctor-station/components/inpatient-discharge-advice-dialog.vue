@@ -19,7 +19,7 @@ import {
 
 import AppDialog from '#/components/app-dialog.vue';
 import { useRequest } from '#/hooks/use-request';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import { createInpatientDischargeAdvice } from '../advice/services/inpatient-advice-discharge';
 import {

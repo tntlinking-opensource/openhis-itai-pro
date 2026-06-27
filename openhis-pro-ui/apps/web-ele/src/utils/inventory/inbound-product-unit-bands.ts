@@ -5,7 +5,7 @@
  * 跨域目录单价换算见 {@link ../product-unit-band-price.ts}。
  */
 
-import { decimalDiv, decimalMul } from '#/utils/decimal-util';
+import { decimalDiv, decimalMul } from '#/utils/format/decimal-util';
 
 export interface InboundProductUnitBand {
   bandKind?: string;

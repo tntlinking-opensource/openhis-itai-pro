@@ -1,12 +1,17 @@
 import type {
+  ServiceApplyDiagnosisOption,
+  ServiceApplyKind,
+  ServiceApplySelectedItem,
+} from './service-apply.types';
+
+import type {
   DoctorStationAdviceCatalogRowDto,
   SaveDoctorStationServiceApplyFormRequest,
   ServiceApplyFormDetailItemRequest,
   TerminologyOptionDto,
 } from '#/api/doctor-station/advice.types';
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
-import { httpGetEncounterDiagnosis } from '#/api/doctor-station/diagnosis.http';
-import { resolveEncounterDiagnosisDisplayRows } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
+
 import {
   httpInitDoctorStationAdvice,
   httpListActivityExecutionLocations,
@@ -14,21 +19,17 @@ import {
   httpSaveDoctorStationServiceApplyForm,
   httpSignDoctorStationAdviceBatch,
 } from '#/api/doctor-station/advice.http';
+import { httpGetEncounterDiagnosis } from '#/api/doctor-station/diagnosis.http';
+import { resolveEncounterDiagnosisDisplayRows } from '#/components/doctor-station/diagnosis/services/encounter-diagnosis-select';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import { pickMainDiagnosisDisplayName } from '../advice/services/advice-edit';
-
-import type {
-  ServiceApplyDiagnosisOption,
-  ServiceApplyKind,
-  ServiceApplySelectedItem,
-} from './service-apply.types';
 import {
   SERVICE_APPLY_ACTIVITY_TABLE,
   SERVICE_APPLY_BODY_STRUCTURE_TABLE,
-  SERVICE_APPLY_CATEGORY_BY_KIND,
   SERVICE_APPLY_CATALOG_PAGE_SIZE,
+  SERVICE_APPLY_CATEGORY_BY_KIND,
   SERVICE_APPLY_SIGN_PRODUCT_TABLE,
   SERVICE_APPLY_SPECIMEN_TABLE,
 } from './service-apply.constants';
@@ -159,6 +160,23 @@ export function detailTargetIds(items: ServiceApplyFormDetailItemRequest[]): str
   return items.map((item) => String(item.targetId ?? '').trim()).filter(Boolean);
 }
 
+/** 深度优先取树形下拉首个可选 value（申请单默认部位） */
+export function firstTreeOptionValue(options: TerminologyOptionDto[]): string {
+  for (const opt of options) {
+    const value = String(opt.value ?? '').trim();
+    if (value) {
+      return value;
+    }
+    if (opt.children?.length) {
+      const nested = firstTreeOptionValue(opt.children);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+  return '';
+}
+
 /** 加载部位/样本下拉 */
 export async function loadServiceApplyInitOptions(
   encounterId: string,
@@ -173,13 +191,13 @@ export async function loadServiceApplyInitOptions(
 
 /** 分页检索申请单可选诊疗项目 */
 export async function loadServiceApplyCatalog(params: {
-  encounterId: string;
-  patientId: string;
   applyKind: ServiceApplyKind;
+  encounterId: string;
   keyword?: string;
+  organizationUnitId?: string;
   pageNo?: number;
   pageSize?: number;
-  organizationUnitId?: string;
+  patientId: string;
 }): Promise<{ rows: DoctorStationAdviceCatalogRowDto[]; totalCount: number }> {
   const res = await httpPageDoctorStationAdviceCatalog({
     encounterId: params.encounterId,
@@ -192,15 +210,15 @@ export async function loadServiceApplyCatalog(params: {
     categoryEnum: resolveServiceApplyCategoryEnum(params.applyKind),
   });
   const { content, totalCount } = parsePagedRowsFromApiData<DoctorStationAdviceCatalogRowDto>(res);
-  const rows = content.filter(isValidServiceApplyCatalogRow);
+  const rows = content.filter((item) => isValidServiceApplyCatalogRow(item));
   return { rows, totalCount };
 }
 
 /** 按诊疗定义拉取可执行科室（去重） */
 export async function loadServiceApplyOrgOptions(params: {
+  activityDefinitionId: string;
   encounterId: string;
   patientId: string;
-  activityDefinitionId: string;
 }): Promise<ServiceApplyOrgOption[]> {
   const activityDefinitionId = preserveApiIdForRequest(params.activityDefinitionId);
   if (!activityDefinitionId) return [];
@@ -248,9 +266,9 @@ export function mergeCatalogDefaultPerformOrgOptions(
 
 /** 合并多个诊疗项的执行科室下拉 */
 export async function mergeServiceApplyOrgOptions(params: {
+  activityDefinitionIds: string[];
   encounterId: string;
   patientId: string;
-  activityDefinitionIds: string[];
 }): Promise<ServiceApplyOrgOption[]> {
   const map = new Map<string, string>();
   const ids = [
@@ -277,7 +295,7 @@ export function validateServiceApplySelectedItems(
   items: ServiceApplySelectedItem[],
   orgId: string,
   encounterDiagnosisId: string,
-): string | null {
+): null | string {
   if (items.length === 0) return '请先选择申请项目';
   if (!String(orgId ?? '').trim()) return '请选择执行科室';
   if (!String(encounterDiagnosisId ?? '').trim()) return '请选择诊断';
@@ -295,14 +313,14 @@ export function validateServiceApplySelectedItems(
 
 /** 组装整张申请单保存请求 */
 export function buildSaveServiceApplyFormRequest(params: {
-  encounterId: string;
-  patientId: string;
   applyKind: ServiceApplyKind;
-  orgId: string;
   encounterDiagnosisId: string;
   encounterDiagnosisRows: EncounterDiagnosisRowDto[];
-  previousPrescriptionNo?: string;
+  encounterId: string;
   items: ServiceApplySelectedItem[];
+  orgId: string;
+  patientId: string;
+  previousPrescriptionNo?: string;
 }): SaveDoctorStationServiceApplyFormRequest {
   const diagnosisIds = resolveServiceApplyDiagnosisIds(
     params.encounterDiagnosisId,

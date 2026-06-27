@@ -1,7 +1,7 @@
 import type { ApiOptionItem, PageApiResponse, PageParams } from '#/types/api-response';
 
 import { publicRequestClient } from '#/api/request';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 绑定类型：与领域 ServiceDeviceTemplateTypeCode 一致 */
 export const SERVICE_DEVICE_BIND_TYPE_USAGE = 'USAGE';
@@ -69,6 +69,10 @@ export interface ServiceDeviceBindingUnitOptionsByTargetParams {
   targetId: string;
 }
 
+export interface ListDeviceDefOptionsParams {
+  keyword?: string;
+}
+
 export interface ServiceDeviceBindingUnitOptionsByTargetResponse {
   unitCode?: string;
   unitOptions?: ApiOptionItem[];
@@ -76,6 +80,14 @@ export interface ServiceDeviceBindingUnitOptionsByTargetResponse {
 
 export async function initServiceDeviceBindingApi() {
   return publicRequestClient.post<ServiceDeviceBindingInitResponse>('/serviceDeviceBinding/init');
+}
+
+/** 实时拉取耗材绑定目标下拉（避免 init 快照在其他 Tab 新增耗材后过期） */
+export async function listDeviceDefOptionsApi(params?: ListDeviceDefOptionsParams) {
+  return publicRequestClient.post<ApiOptionItem[]>(
+    '/serviceDeviceBinding/listDeviceDefOptions',
+    params ?? {},
+  );
 }
 
 export async function pageServiceDeviceBindingApi(params: PageServiceDeviceBindingParams) {

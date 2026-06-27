@@ -7,6 +7,7 @@ import {
   ElButton,
   ElDescriptions,
   ElDescriptionsItem,
+  ElInput,
   ElRadioButton,
   ElRadioGroup,
   ElTable,
@@ -39,6 +40,8 @@ const props = withDefaults(
     payChannelOptions?: PayChannelOption[];
     previewText?: string;
     receivableTotal?: number | string;
+    scanPayEnabled?: boolean;
+    scanStatusText?: string;
     settleModeLabel?: string;
   }>(),
   {
@@ -51,6 +54,8 @@ const props = withDefaults(
     payChannelOptions: () => [],
     previewText: '',
     receivableTotal: 0,
+    scanPayEnabled: false,
+    scanStatusText: '',
     settleModeLabel: '',
   },
 );
@@ -61,6 +66,7 @@ const emit = defineEmits<{
 
 const visible = defineModel<boolean>({ required: true });
 const payChannelCode = defineModel<string>('payChannelCode', { required: true });
+const scanCode = defineModel<string>('scanCode', { default: '' });
 
 function formatMoney(value: null | number | string | undefined) {
   const n = Number(value ?? 0);
@@ -73,6 +79,17 @@ const payableDisplay = computed(() => {
   }
   return formatMoney(props.receivableTotal);
 });
+
+const payableAmountNum = computed(() => {
+  if (props.insurancePreSettled && props.displayAmount != null) {
+    return Number(props.displayAmount);
+  }
+  return Number(props.receivableTotal ?? 0);
+});
+
+const showScanPaySection = computed(
+  () => props.scanPayEnabled && payChannelCode.value === 'SCAN_PAY' && payableAmountNum.value > 0,
+);
 
 function handleCancel() {
   visible.value = false;
@@ -118,6 +135,16 @@ function handleCancel() {
             {{ opt.label }}
           </ElRadioButton>
         </ElRadioGroup>
+      </div>
+      <div v-if="showScanPaySection" class="settle-dialog-section">
+        <div class="settle-dialog-section__title">扫码支付</div>
+        <ElInput
+          v-model="scanCode"
+          placeholder="请扫码或输入付款码"
+          clearable
+          @keyup.enter="emit('confirm')"
+        />
+        <p v-if="scanStatusText" class="settle-dialog-scan-status">{{ scanStatusText }}</p>
       </div>
       <div class="settle-dialog-section">
         <div class="settle-dialog-section__title">结算费用（{{ chargeLines.length }} 项）</div>
@@ -186,5 +213,11 @@ function handleCancel() {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.settle-dialog-scan-status {
+  margin: 8px 0 0;
+  color: #2563eb;
+  font-size: 13px;
 }
 </style>

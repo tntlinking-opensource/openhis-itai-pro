@@ -20,8 +20,31 @@ export interface LoadRegisterFormInitParams {
 }
 
 /** 挂号页面初始化返回：科室、医生、费用性质、号源类型、性别字典等 */
+export interface ContractInsuranceProfileDto {
+  busNo?: string;
+  categoryCode?: string;
+  contractId?: string;
+  treatmentAreaCode?: string;
+  ybFlag?: boolean;
+}
+
+export interface RegisterContractMatchDto {
+  blockRegister?: boolean;
+  hintMessage?: string;
+  matchStatus?: 'CROSS_PROVINCE' | 'IN_PROVINCE' | 'MATCH' | 'UNKNOWN' | string;
+  patientInsuplcAdmdvs?: string;
+  recommendedCategoryCode?: string;
+  recommendedContractId?: string;
+  recommendedContractName?: string;
+  selectedContractId?: string;
+  selectedTreatmentAreaCode?: string;
+}
+
 export interface LoadRegisterFormInitResult {
   contractOptions: OptionDto[];
+  /** 费用性质主键 → ContractCategory 编码 */
+  contractCategoryById?: Record<string, string>;
+  contractInsuranceProfileById?: Record<string, ContractInsuranceProfileDto>;
   departmentOptions: OptionDto[];
   /** 患者性别单选项（如 MALE / FEMALE / UNKNOWN，与主数据字典一致） */
   genderOptions: OptionDto[];
@@ -29,6 +52,7 @@ export interface LoadRegisterFormInitResult {
   serviceTypeOptions: OptionDto[];
   /** 号源类型主键 → 挂号费销售价（元） */
   serviceTypeFeeById?: Record<string, number | string>;
+  paymentChannelOptions?: OptionDto[];
 }
 
 /** 患者检索分页请求参数 */
@@ -82,6 +106,142 @@ export interface PreRegisterSettlementParams {
   phone: string;
   practitionerId: number | string;
   serviceTypeId: number | string;
+  slotId?: null | number | string;
+  /** 挂号费是否走医保预结算 */
+  ybRegisterFee?: boolean;
+  /** 是否使用医保个人账户（acct_used_flag） */
+  ybUseAcctPay?: boolean;
+  /** 医保读卡字段 */
+  psnNo?: string;
+  insuplcAdmdvs?: string;
+  insutype?: string;
+  ybMediumType?: string;
+  ybCardInfo?: string;
+  medType?: string;
+}
+
+/** 1101 参保信息预览行 */
+export interface YbInsuInfoPreviewDto {
+  balc?: number | string;
+  cvlservFlag?: string;
+  empName?: string;
+  insuplcAdmdvs?: string;
+  insutype?: string;
+  psnInsuDate?: string;
+  psnInsuStas?: string;
+  psnType?: string;
+}
+
+/** 2001 待遇检查预览行 */
+export interface YbTreatmentInfoPreviewDto {
+  begndate?: string;
+  enddate?: string;
+  fundPayType?: string;
+  psnNo?: string;
+  trtChkRslt?: string;
+  trtChkType?: string;
+  trtEnjymntFlag?: string;
+}
+
+/** 5301 慢特病备案预览行 */
+export interface YbOpspFilingPreviewDto {
+  begndate?: string;
+  enddate?: string;
+  opspDiseCode?: string;
+  opspDiseName?: string;
+}
+
+/** 5206 累计信息预览行 */
+export interface YbCumulativeInfoPreviewDto {
+  cum?: number | string;
+  cumTypeCode?: string;
+  cumYm?: string;
+  insutype?: string;
+  year?: string;
+}
+
+/** 参保地 vs 就医地对比提示 */
+export interface YbRegisterBenefitAreaHintDto {
+  areaKind?: 'CROSS_PROVINCE' | 'IN_PROVINCE' | 'LOCAL' | 'UNKNOWN' | string;
+  hintMessage?: string;
+  insuplcAdmdvs?: string;
+  mdtrtareaAdmdvs?: string;
+}
+
+/** 医保挂号待遇预览 */
+export interface YbRegisterBenefitPreviewDto {
+  areaHint?: YbRegisterBenefitAreaHintDto;
+  balc?: number | string;
+  brdy?: string;
+  certno?: string;
+  cumulativeInfoList?: YbCumulativeInfoPreviewDto[];
+  gend?: string;
+  insuinfoList?: YbInsuInfoPreviewDto[];
+  insuplcAdmdvs?: string;
+  insutype?: string;
+  opspFilingList?: YbOpspFilingPreviewDto[];
+  psnName?: string;
+  psnNo?: string;
+  /** 2001 待遇检查结果 */
+  treatmentBlocked?: boolean;
+  treatmentInfoList?: YbTreatmentInfoPreviewDto[];
+}
+
+/** 学籍记录预览 */
+export interface StudentRecordPreviewDto {
+  college?: string;
+  grade?: string;
+  leaveTimeText?: string;
+  major?: string;
+  name?: string;
+  physicalExamResult?: number;
+  schoolStatus?: number;
+  studentId?: number | string;
+  studentNo?: string;
+}
+
+/** 学生公费资格预览 */
+export interface StudentEligibilityPreviewDto {
+  eligible?: boolean;
+  patientId?: number | string;
+  reasonCode?: string;
+  reasonMessage?: string;
+  studentId?: number | string;
+}
+
+/** 学生公费待遇预览 */
+export interface StudentRegisterBenefitPreviewDto {
+  idCard?: string;
+  patientId?: number | string;
+  patientName?: string;
+  phone?: string;
+  studentRecords?: StudentRecordPreviewDto[];
+}
+
+export interface LoadRegisterBenefitPreviewParams {
+  contractId: number | string;
+  insuplcAdmdvs?: string;
+  insutype?: string;
+  medType?: string;
+  patientId?: null | number | string;
+  psnNo?: string;
+  runCumulativeQuery?: boolean;
+  runOpspFilingQuery?: boolean;
+  runTreatmentCheck?: boolean;
+  studentId?: null | number | string;
+  ybCardInfo?: string;
+  ybCardSn?: string;
+  ybCertno?: string;
+  ybMediumType?: string;
+  ybPsnName?: string;
+}
+
+export interface LoadRegisterBenefitPreviewResult {
+  benefitKind?: 'INSURANCE' | 'NONE' | 'STUDENT' | string;
+  contractMatch?: RegisterContractMatchDto;
+  studentEligibility?: StudentEligibilityPreviewDto;
+  studentPreview?: StudentRegisterBenefitPreviewDto;
+  ybPreview?: YbRegisterBenefitPreviewDto;
 }
 
 /** 预结算费用明细行 */
@@ -101,6 +261,10 @@ export interface PreRegisterSettlementResult {
   paymentDraftId: number | string;
   slotId?: null | number | string;
   totalAmount: number | string;
+  insurancePreSettled?: boolean;
+  ybFundPaySumamt?: number | string;
+  ybAcctPay?: number | string;
+  ybPsnCashPay?: number | string;
 }
 
 /** 结算时提交的单渠道支付明细 */
@@ -110,16 +274,21 @@ export interface PaymentDetailDto {
   transactionNo?: string;
 }
 
+import type { ClientScanResultDto } from '#/api/payment/payment.types';
+
 /** 挂号费正式结算请求参数 */
 export interface PayRegisterFeeParams {
   appointmentId?: null | number | string;
   paymentDetails: PaymentDetailDto[];
   paymentDraftId: number | string;
+  clientScanResult?: ClientScanResultDto;
 }
 
 /** 挂号费正式结算返回 */
 export interface PayRegisterFeeResult {
+  encounterId?: null | number | string;
   invoiceId: number | string;
+  invoiceStatus?: string;
   paymentId: number | string;
   status: string;
 }
@@ -131,6 +300,8 @@ export interface PageClinicRegistersParams {
   keyword?: string;
   pageNo: number;
   pageSize: number;
+  /** 按患者查历史挂号 */
+  patientId?: null | number | string;
 }
 
 /**
@@ -161,6 +332,15 @@ export interface ClinicRegisterItemDto {
   statusText: string;
   /** 是否关联预约（供退号提示） */
   hasLinkedAppointment?: boolean;
+  contractName?: string;
+  insuplcAdmdvs?: string;
+  /** 1901 字典 label；未同步字典时为空 */
+  insuplcAdmdvsName?: string;
+  insurancePlatformRegistered?: boolean;
+  insurancePreSettled?: boolean;
+  ybFundPaySumamt?: number;
+  ybAcctPay?: number;
+  ybPsnCashPay?: number;
 }
 
 /** 门诊挂号记录分页返回 */
@@ -188,6 +368,7 @@ export interface CancelWithRefundParams {
   encounterId: number | string;
   refundIntent?: string;
   refundRequestId: string;
+  clientRefundResult?: import('#/api/payment/payment.types').ClientRefundResultDto;
 }
 
 /** 退号并退费返回 */
@@ -246,6 +427,54 @@ export interface ListBookableSlotHintsResult {
 /** 挂号历史表格行：与 `ClinicRegisterItemDto` 同源 */
 export type RegisterHistoryTableRow = ClinicRegisterItemDto;
 
+/** 挂号小票收费项目行 */
+export interface RegistrationReceiptChargeLineDto {
+  amountText?: string;
+  chargeCategoryText?: string;
+  itemName?: string;
+}
+
+/** 挂号小票 slip（printRegisterTicket 返回） */
+export interface RegistrationSlipDto {
+  accountBalanceText?: string;
+  accountPayText?: string;
+  ageText?: string;
+  alipayPayText?: string;
+  amount?: number;
+  cashierName?: string;
+  cashPayText?: string;
+  chargeItemLines?: RegistrationReceiptChargeLineDto[];
+  chargeTimeText?: string;
+  deductibleLineText?: string;
+  doctorName?: string;
+  encounterId?: null | number | string;
+  feeNatureText?: string;
+  fundPayText?: string;
+  genderEnumText?: string;
+  hospitalName?: string;
+  organizationName?: string;
+  patientName?: string;
+  poolingPayText?: string;
+  printCount?: null | number;
+  registerDepartmentName?: string;
+  serviceTypeName?: string;
+  slipNo?: string;
+  statusText?: string;
+  totalAmountText?: string;
+  wechatPayText?: string;
+}
+
+export interface PrintRegisterTicketParams {
+  encounterId?: null | number | string;
+  paymentId?: null | number | string;
+  slipNo?: string;
+}
+
+export interface PrintRegisterTicketResult {
+  printCount?: null | number;
+  slip?: RegistrationSlipDto;
+}
+
 /** 挂号窗口打开时加载下拉主数据：科室、医生、费用性质、号源类型等 */
 export async function httpLoadRegisterFormInit(
   params: LoadRegisterFormInitParams = {},
@@ -273,6 +502,16 @@ export async function httpListPractitioners(
   return publicRequestClient.post<ListPractitionersResult>(
     '/outpatientRegistration/listPractitioners',
     params,
+  );
+}
+
+/** 加载挂号待遇预览（1101 / 学籍） */
+export async function httpLoadRegisterBenefitPreview(
+  body: LoadRegisterBenefitPreviewParams,
+): Promise<LoadRegisterBenefitPreviewResult> {
+  return publicRequestClient.post<LoadRegisterBenefitPreviewResult>(
+    '/outpatientRegistration/loadRegisterBenefitPreview',
+    body,
   );
 }
 
@@ -336,6 +575,27 @@ export async function httpPageClinicRegisters(
   );
 }
 
+/** 当日挂号统计（不含待收费 PLANNED） */
+export interface GetTodayRegisterSummaryParams {
+  date?: string;
+}
+
+export interface GetTodayRegisterSummaryResult {
+  date?: string;
+  totalCount?: number;
+  cancelledCount?: number;
+  activeCount?: number;
+}
+
+export async function httpGetTodayRegisterSummary(
+  params: GetTodayRegisterSummaryParams = {},
+): Promise<GetTodayRegisterSummaryResult> {
+  return publicRequestClient.post<GetTodayRegisterSummaryResult>(
+    '/outpatientRegistration/getTodayRegisterSummary',
+    params,
+  );
+}
+
 /** 退号前校验当前就诊是否允许退号 */
 export async function httpValidateCancelable(
   body: ValidateCancelableParams,
@@ -346,12 +606,75 @@ export async function httpValidateCancelable(
   );
 }
 
+/** 待挂号（PLANNED）撤销：作废草稿并可选医保退号 */
+export interface CancelPlannedRegistrationParams {
+  cancelReason?: string;
+  encounterId: number | string;
+}
+
+export interface CancelPlannedRegistrationResult {
+  encounterStatus: string;
+  insurancePlatformRevoked?: boolean;
+}
+
+/** 刷新挂号费医保预结算（重新展码后 2205→2206） */
+export interface RefreshRegisterFeeInsurancePreSettleParams {
+  paymentDraftId: number | string;
+  ybUseAcctPay?: boolean;
+  ybMediumType?: string;
+  ybCardInfo?: string;
+  psnNo?: string;
+  insuplcAdmdvs?: string;
+  insutype?: string;
+  medType?: string;
+}
+
+export interface RefreshRegisterFeeInsurancePreSettleResult {
+  paymentDraftId?: number | string;
+  totalAmount?: number | string;
+  insurancePreSettled?: boolean;
+  ybChrgBchno?: string;
+  ybMedfeeSumamt?: number | string;
+  ybFundPaySumamt?: number | string;
+  ybAcctPay?: number | string;
+  ybPsnCashPay?: number | string;
+}
+
+export async function httpCancelPlannedRegistration(
+  body: CancelPlannedRegistrationParams,
+): Promise<CancelPlannedRegistrationResult> {
+  return publicRequestClient.post<CancelPlannedRegistrationResult>(
+    '/outpatientRegistration/cancelPlannedRegistration',
+    body,
+  );
+}
+
+/** 刷新挂号费医保预结算（电子凭证过期后重新展码） */
+export async function httpRefreshRegisterFeeInsurancePreSettle(
+  body: RefreshRegisterFeeInsurancePreSettleParams,
+): Promise<RefreshRegisterFeeInsurancePreSettleResult> {
+  return publicRequestClient.post<RefreshRegisterFeeInsurancePreSettleResult>(
+    '/outpatientRegistration/refreshRegisterFeeInsurancePreSettle',
+    body,
+  );
+}
+
 /** 提交退号并按策略联动退费（含退款幂等键） */
 export async function httpCancelWithRefund(
   body: CancelWithRefundParams,
 ): Promise<CancelWithRefundResult> {
   return publicRequestClient.post<CancelWithRefundResult>(
     '/outpatientRegistration/cancelWithRefund',
+    body,
+  );
+}
+
+/** 获取挂号小票打印数据（含支付明细回补字段） */
+export async function httpPrintRegisterTicket(
+  body: PrintRegisterTicketParams,
+): Promise<PrintRegisterTicketResult> {
+  return publicRequestClient.post<PrintRegisterTicketResult>(
+    '/outpatientRegistration/printRegisterTicket',
     body,
   );
 }

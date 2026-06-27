@@ -36,7 +36,11 @@ import { useRequest } from '#/hooks/use-request';
 
 defineOptions({ name: 'InventoryWarehouseInventoryDetailPage' });
 
-/** 与 IF-02 对齐的筛选 + 分页；`zeroStockFilter` 仅 UI 三态，请求前映射为 `zeroStockOnly`。 */
+/** inventory_range 术语概念码（与后端 InventoryWarehouseDetailConstants 对齐）。 */
+const INVENTORY_RANGE_ZERO_CODE = '2';
+const INVENTORY_RANGE_GT_ZERO_CODE = '3';
+
+/** 与 IF-02 对齐的筛选 + 分页；`zeroStockFilter` 为术语码，请求前映射为 `zeroStockOnly`。 */
 interface InventoryDetailFormState {
   pageNo: number;
   pageSize: number;
@@ -45,7 +49,8 @@ interface InventoryDetailFormState {
   deviceCategoryCodes?: string[];
   inventoryStatusEnums?: string[];
   chrgitmLvList?: string[];
-  zeroStockFilter?: '' | 'positive' | 'zero';
+  /** inventory_range 概念码：2=数量等于0，3=数量大于0 */
+  zeroStockFilter?: typeof INVENTORY_RANGE_ZERO_CODE | typeof INVENTORY_RANGE_GT_ZERO_CODE;
   expireWithinDays?: string;
 }
 
@@ -59,10 +64,12 @@ const chrgitmLvOptions = ref<ApiOptionItem[]>([]);
 const inventoryStatusOptions = ref<ApiOptionItem[]>([]);
 const medicationCategoryOptions = ref<ApiOptionItem[]>([]);
 const deviceCategoryOptions = ref<ApiOptionItem[]>([]);
+const inventoryRangeOptions = ref<ApiOptionItem[]>([]);
 
 const queryParams = reactive<InventoryDetailFormState>({
   pageNo: 1,
   pageSize: 10,
+  zeroStockFilter: INVENTORY_RANGE_GT_ZERO_CODE,
 });
 
 // OptionDto → 表格筛选用 ApiOptionItem（value 一律 string，医保等级在请求体中再转 Integer）。
@@ -107,14 +114,22 @@ function toChrgitmLvInts(codes?: string[]): number[] | undefined {
   return nums.length > 0 ? nums : undefined;
 }
 
+// inventory_range 术语码 → IF-02 的 zeroStockOnly（2=等于0，3=大于0；未识别时默认大于0）。
+function normalizeInventoryRangeCode(code?: string | string[]): string | undefined {
+  const raw = Array.isArray(code) ? code[0] : code;
+  const normalized = String(raw ?? '').trim();
+  return normalized || undefined;
+}
+
+function mapInventoryRangeToZeroStockOnly(code?: string | string[]): boolean {
+  const normalized = normalizeInventoryRangeCode(code);
+  if (normalized === INVENTORY_RANGE_ZERO_CODE) return true;
+  return false;
+}
+
 // 组装 IF-02 分页请求体。
 function buildPageRequest() {
-  const z =
-    queryParams.zeroStockFilter === 'zero'
-      ? true
-      : queryParams.zeroStockFilter === 'positive'
-        ? false
-        : undefined;
+  const z = mapInventoryRangeToZeroStockOnly(queryParams.zeroStockFilter);
   const ed = queryParams.expireWithinDays?.trim();
   const expireWithinDays = ed && /^\d+$/.test(ed) ? Number.parseInt(ed, 10) : undefined;
   return {
@@ -152,6 +167,7 @@ const { run: runInit, loading: initLoading } = useRequest(loadInventoryDetailFor
     inventoryStatusOptions.value = optionDtosToSelectItems(d.inventoryStatusOptions);
     medicationCategoryOptions.value = optionDtosToSelectItems(d.medicationCategoryOptions);
     deviceCategoryOptions.value = optionDtosToSelectItems(d.deviceCategoryOptions);
+    inventoryRangeOptions.value = optionDtosToSelectItems(d.inventoryRangeOptions);
   },
 });
 
@@ -254,13 +270,11 @@ const formItems = computed<FormItemConfig[]>(() => [
     label: '库存范围',
     prop: 'zeroStockFilter',
     type: 'select',
-    placeholder: '零库存筛选',
-    clearable: true,
-    options: [
-      { label: '全部', value: '' },
-      { label: '仅零库存', value: 'zero' },
-      { label: '仅正库存', value: 'positive' },
-    ],
+    placeholder: '库存范围',
+    multiple: false,
+    filterable: false,
+    clearable: false,
+    options: inventoryRangeOptions.value,
   },
 ]);
 
@@ -429,7 +443,7 @@ function handleReset() {
   queryParams.deviceCategoryCodes = undefined;
   queryParams.inventoryStatusEnums = undefined;
   queryParams.chrgitmLvList = undefined;
-  queryParams.zeroStockFilter = undefined;
+  queryParams.zeroStockFilter = INVENTORY_RANGE_GT_ZERO_CODE;
   queryParams.pageNo = 1;
   getList();
 }

@@ -11,7 +11,6 @@ import {
   ElFormItem,
   ElInput,
   ElMessage,
-  ElOption,
   ElRadio,
   ElRadioGroup,
   ElTable,
@@ -23,7 +22,7 @@ import {
   ORDER_TEMPLATE_BINDING_PERSONAL,
   saveOrderTemplateFromAdviceApi,
 } from '#/api/basic/order-template';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import {
   buildSaveOrderTemplateCandidates,
@@ -109,7 +108,7 @@ async function handleConfirmSave() {
       bindingEnum: bindingEnum.value,
       sourceLines: selected.map((row) => toAdviceSourceLineKey(row)),
     });
-    ElMessage.success(`已另存为组套「${name}」（${selected.length} 项）`);
+    ElMessage.success(`已另存组套「${name}」（${selected.length} 项）`);
     open.value = false;
     emit('saved');
   } catch {
@@ -134,7 +133,7 @@ watch(open, (visible) => {
 <template>
   <ElDialog
     v-model="open"
-    title="另存为组套"
+    title="另存组套"
     width="760px"
     append-to-body
     destroy-on-close

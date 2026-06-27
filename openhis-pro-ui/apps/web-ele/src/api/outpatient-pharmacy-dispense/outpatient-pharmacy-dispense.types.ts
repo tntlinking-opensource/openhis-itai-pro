@@ -144,6 +144,23 @@ export interface EncounterMedicationDispenseSlipRowDto {
   therapyEnum?: null | string;
   busNo?: null | string;
   inventoryDetailList?: null | MedicationDispenseInventoryDetailDto[];
+  patientName?: null | string;
+  ageText?: null | string;
+  genderEnumText?: null | string;
+  patientPhone?: null | string;
+  hospitalName?: null | string;
+  feeNatureText?: null | string;
+  prescriptionDocumentTitle?: null | string;
+  prescriptionDateText?: null | string;
+  prescriptionTypeLine1?: null | string;
+  prescriptionTypeLine2?: null | string;
+  prescriptionTotalPrice?: null | number | string;
+  prescriptionTotalPriceText?: null | string;
+  preparerPractitionerName?: null | string;
+  pricingPractitionerName?: null | string;
+  medicationDisplayLeft?: null | string;
+  medicationDisplayRight?: null | string;
+  medicationUsageDisplayText?: null | string;
 }
 
 export interface PageEncounterMedicationDispenseSlipsResponse {

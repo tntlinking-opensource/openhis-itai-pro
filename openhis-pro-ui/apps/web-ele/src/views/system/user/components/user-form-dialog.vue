@@ -35,8 +35,8 @@ import { getRegistrationTypeListApi } from '#/api/core/system/registration';
 import { getRoleListApi } from '#/api/user/role';
 import { getUserRolesApi } from '#/api/user/user';
 import { unwrapApiList } from '#/utils/api/unwrap-api-list';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
-import { resolveRequestErrorMessage } from '#/utils/resolve-request-error-message';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { resolveRequestErrorMessage } from '#/utils/http/resolve-request-error-message';
 import { GENDER_OPTIONS } from '#/views/inpatient/charge/register/inpatient-register.constants';
 
 interface Props {
@@ -212,13 +212,8 @@ function buildExtraProperties(formValues: Record<string, unknown>): string | und
   const payload: UserExtraProfile = {
     birthDate: formValues.birthDate ? String(formValues.birthDate) : undefined,
     address: formValues.address ? String(formValues.address).trim() : undefined,
-    ybNo: formValues.ybNo ? String(formValues.ybNo).trim() : undefined,
-    drProfttlCode: formValues.drProfttlCode ? String(formValues.drProfttlCode) : undefined,
     signatureImage: formValues.signatureImage
       ? String(formValues.signatureImage).trim()
-      : undefined,
-    pharPracCertNo: formValues.pharPracCertNo
-      ? String(formValues.pharPracCertNo).trim()
       : undefined,
     remark: formValues.remark ? String(formValues.remark).trim() : undefined,
   };
@@ -417,6 +412,9 @@ function buildSaveStaffParams(
     isActive: formValues.isActive === undefined ? true : String(formValues.isActive) === 'true',
     roleIds,
     genderEnum: formValues.genderEnum ? String(formValues.genderEnum) : undefined,
+    ybNo: formValues.ybNo ? String(formValues.ybNo).trim() : '',
+    drProfttlCode: formValues.drProfttlCode ? String(formValues.drProfttlCode) : undefined,
+    pharPracCertNo: formValues.pharPracCertNo ? String(formValues.pharPracCertNo).trim() : '',
     extraProperties: buildExtraProperties(formValues),
   };
 
@@ -478,6 +476,12 @@ function mergeStaffDetailIntoForm(
     email: detail.email ?? props.user?.email ?? '',
     isActive: detail.isActive === undefined ? 'true' : String(detail.isActive),
     genderEnum: detail.genderEnum ?? extra.genderEnum ?? '',
+    ybNo: detail.ybNo ?? extra.ybNo ?? '',
+    drProfttlCode:
+      detail.drProfttlCode != null && String(detail.drProfttlCode) !== ''
+        ? String(detail.drProfttlCode)
+        : (extra.drProfttlCode ?? ''),
+    pharPracCertNo: detail.pharPracCertNo ?? extra.pharPracCertNo ?? '',
     roleIds,
     consultDeptIds: mapOrgIdsFromList(detail.doctorVisitOrgList).length
       ? mapOrgIdsFromList(detail.doctorVisitOrgList)

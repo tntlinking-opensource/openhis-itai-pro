@@ -176,3 +176,19 @@ export function rowLooksStopLongTermEligible(row: AdviceRowItem): boolean {
   if (/\bSTOPPED\b|已停嘱/.test(blob)) return false;
   return true;
 }
+
+/** 住院长期医嘱取消停嘱：已停嘱且 therapy 为 LONG_TERM */
+export function rowLooksCancelStopLongTermEligible(row: AdviceRowItem): boolean {
+  if (row.isEditor) return false;
+  if (!resourceKeyFromRow(row)) return false;
+  const therapy = String(row.therapyTypeCode ?? '')
+    .trim()
+    .toUpperCase();
+  if (therapy && therapy !== 'LONG_TERM') return false;
+  const statusCode = String(row.statusEnum ?? '')
+    .trim()
+    .toUpperCase();
+  if (statusCode === 'STOPPED') return true;
+  const blob = `${row.status ?? ''} ${row.statusEnum ?? ''}`.toUpperCase();
+  return /\bSTOPPED\b|已停嘱/.test(blob);
+}

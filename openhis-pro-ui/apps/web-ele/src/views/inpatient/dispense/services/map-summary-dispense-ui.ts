@@ -6,7 +6,7 @@ import type { DispensePrescriptionItemRow } from '#/views/outpatient/dispense/co
 
 import { formatDateTime } from '@vben/utils';
 
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 汇总合并行展示模型：批号由底层发放行聚合（BR-IPS-012 合并 DTO 不含 lotNumber） */
 export interface SummaryMergedLineDisplayRow extends InpatientPharmacySummarySlipLineDto {

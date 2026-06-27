@@ -21,6 +21,9 @@ export type TcmRxWithdrawScope = 'LINE' | 'PRESCRIPTION';
 /** 中医目录角色 */
 export type TcmCatalogRole = 'DISEASE' | 'SYNDROME';
 
+/** 住院长临医嘱类型 */
+export type TcmTherapyType = 'LONG_TERM' | 'TEMPORARY';
+
 /** listTcmDiagnosisGroups */
 export interface ListTcmDiagnosisGroupsRequest {
   encounterId: string;
@@ -108,6 +111,8 @@ export interface DeleteTcmDiagnosisGroupResponse {
 export interface ListTcmRxRequest {
   encounterId: string;
   patientId: string;
+  /** 住院：LONG_TERM / TEMPORARY；空=全部 */
+  therapyTypeCode?: null | string;
 }
 
 export interface TcmRxLineDto {
@@ -129,6 +134,8 @@ export interface TcmRxLineDto {
 export interface TcmRxHeaderDto {
   prescriptionGroupKey?: null | string;
   prescriptionNo?: null | string;
+  /** 住院方头长临 */
+  therapyEnum?: null | string;
   tcmSyndromeGroup?: null | string;
   chineseHerbsDoseQuantity?: null | number | string;
   sufferingFlag?: boolean | null;
@@ -139,8 +146,9 @@ export interface TcmRxHeaderDto {
   days?: null | number;
   decoctionMethodCode?: null | string;
   remark?: null | string;
-  signCode?: null | string;
   statusEnum?: null | string;
+  displayStatusEnum?: null | string;
+  displayStatusEnumText?: null | string;
   lines?: null | TcmRxLineDto[];
 }
 
@@ -179,6 +187,8 @@ export interface TcmRxDraftLineRequest {
 
 export interface TcmRxDraftHeaderRequest {
   prescriptionGroupKey: string;
+  /** 住院必填：LONG_TERM / TEMPORARY */
+  therapyEnum?: null | string;
   tcmSyndromeGroup: string;
   chineseHerbsDoseQuantity: number | string;
   sufferingFlag?: boolean | null;
@@ -217,7 +227,6 @@ export interface SignTcmRxBatchRequest {
 export interface SignTcmRxBatchResponse {
   success?: boolean | null;
   prescriptionNoByGroupKey?: null | Record<string, string>;
-  signCode?: null | string;
 }
 
 /** withdrawOrDeleteTcmHerbalPrescription */
@@ -228,6 +237,7 @@ export interface WithdrawOrDeleteTcmRxRequest {
   scope: TcmRxWithdrawScope;
   medicationRequestIds: string[];
   prescriptionGroupKey?: null | string;
+  prescriptionNo?: null | string;
 }
 
 export interface WithdrawOrDeleteTcmRxResponse {
@@ -262,4 +272,29 @@ export interface InitDoctorStationTcmRequest {
 export interface InitDoctorStationTcmResponse {
   tcmMethodCodeOptions?: null | TerminologyOptionDto[];
   medicationRateOptions?: null | TerminologyOptionDto[];
+}
+
+/** stopLongTermTcmHerbalPrescription（住院） */
+export interface StopLongTermTcmHerbalPrescriptionRequest {
+  encounterId: string;
+  patientId: string;
+  prescriptionNos: string[];
+  stopTime?: null | string;
+}
+
+export interface StopLongTermTcmHerbalPrescriptionResponse {
+  success?: boolean | null;
+  message?: null | string;
+}
+
+/** cancelStopLongTermTcmHerbalPrescription（住院） */
+export interface CancelStopLongTermTcmHerbalPrescriptionRequest {
+  encounterId: string;
+  patientId: string;
+  prescriptionNos: string[];
+}
+
+export interface CancelStopLongTermTcmHerbalPrescriptionResponse {
+  success?: boolean | null;
+  message?: null | string;
 }

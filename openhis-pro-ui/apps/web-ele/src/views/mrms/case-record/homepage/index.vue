@@ -23,9 +23,8 @@ import {
   ElTag,
 } from 'element-plus';
 
-import { receiveCaseRecordApi, returnCaseRecordApi } from '#/api/mrms';
+import { receiveHomepageApi, returnHomepageApi } from '#/api/mrms';
 import AppDialog from '#/components/app-dialog.vue';
-import { useMrmsHomepagePrint } from '#/composables/use-mrms-homepage-print';
 import { useRequest } from '#/hooks/use-request';
 import { useUserStore } from '@vben/stores';
 
@@ -107,7 +106,7 @@ const showImportHint = computed(
   () => formModel.value && isHomepageContentEmpty(homepage.value) && canDoctorEdit.value,
 );
 
-const { run: runReceive, loading: receiving } = useRequest(receiveCaseRecordApi, {
+const { run: runReceive, loading: receiving } = useRequest(receiveHomepageApi, {
   manual: true,
   onSuccess: () => {
     ElMessage.success('接收成功');
@@ -115,7 +114,7 @@ const { run: runReceive, loading: receiving } = useRequest(receiveCaseRecordApi,
   },
 });
 
-const { run: runReturn, loading: returning } = useRequest(returnCaseRecordApi, {
+const { run: runReturn, loading: returning } = useRequest(returnHomepageApi, {
   manual: true,
   onSuccess: () => {
     returnDialogVisible.value = false;
@@ -124,13 +123,6 @@ const { run: runReturn, loading: returning } = useRequest(returnCaseRecordApi, {
     loadAll();
   },
 });
-
-const {
-  isPrinting: homepagePrinting,
-  previewLoading: homepagePreviewLoading,
-  previewHomepagePdf,
-  printHomepagePdf,
-} = useMrmsHomepagePrint();
 
 /** 返回病案列表 */
 function goBack() {
@@ -170,7 +162,7 @@ async function onReceive() {
   if (!id) {
     return;
   }
-  await runReceive({ caseRecordId: id });
+  await runReceive(id);
 }
 
 /** 打开退回弹窗 */
@@ -186,50 +178,7 @@ async function confirmReturn() {
     ElMessage.warning('请填写退回原因');
     return;
   }
-  await runReturn({ caseRecordId: caseRecordId.value, reason });
-}
-
-/** 打印前保存确认 */
-async function ensureSavedBeforePrint(): Promise<boolean> {
-  if (!formDirty.value) {
-    return true;
-  }
-  try {
-    await ElMessageBox.confirm('有未保存修改，是否先保存再打印？', '打印', {
-      confirmButtonText: '保存并继续',
-      cancelButtonText: '取消',
-      type: 'warning',
-    });
-    await save();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** PDF 预览（新标签页） */
-async function onPreviewPdf() {
-  const id = caseRecordId.value;
-  if (!id) {
-    return;
-  }
-  if (!(await ensureSavedBeforePrint())) {
-    return;
-  }
-  await previewHomepagePdf(id);
-}
-
-/** 经 OpenHIS.Win printClient 打印 */
-async function onPrint() {
-  const id = caseRecordId.value;
-  if (!id) {
-    return;
-  }
-  if (!(await ensureSavedBeforePrint())) {
-    return;
-  }
-  const patientName = formModel.value?.psnName ?? caseRecord.value?.patientName;
-  await printHomepagePdf(id, patientName);
+  await runReturn({ caseRecordId: caseRecordId.value, returnReason: reason });
 }
 
 /** 字段来源角标（his / manual） */
@@ -265,8 +214,8 @@ onMounted(() => {
             病案首页
           </span>
           <span style="color: var(--el-text-color-regular)">
-            {{ caseRecord?.patientName }} / {{ caseRecord?.medcasno }} /
-            {{ caseRecord?.inpatientNo }}
+            {{ formModel?.psnName || homepage?.psnName || '—' }} / {{ caseRecord?.medcasno }} /
+            {{ formModel?.iptNo || homepage?.iptNo || '—' }}
           </span>
           <ElTag :type="CASE_RECORD_STATUS_TAG[statusCode] ?? 'info'" size="small">
             {{ CASE_RECORD_STATUS_LABEL[statusCode] ?? statusCode }}
@@ -287,10 +236,6 @@ onMounted(() => {
           </ElButton>
           <ElButton v-if="canReturn" type="warning" :loading="returning" @click="openReturnDialog">
             退回
-          </ElButton>
-          <ElButton :loading="homepagePreviewLoading" @click="onPreviewPdf">PDF 预览</ElButton>
-          <ElButton :loading="homepagePrinting || homepagePreviewLoading" @click="onPrint">
-            打印
           </ElButton>
         </div>
       </header>
@@ -412,7 +357,7 @@ onMounted(() => {
                 </ElFormItem>
                 <ElFormItem label="实际住院天数">
                   <ElInputNumber
-                    v-model="formModel.actIptDays"
+                    v-model="formModel.iptDays"
                     :min="0"
                     class="w-full"
                     @change="markDirty"

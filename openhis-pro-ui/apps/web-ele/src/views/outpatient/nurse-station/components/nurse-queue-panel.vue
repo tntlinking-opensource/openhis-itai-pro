@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import type { NursePatient } from './types';
 
-import { RotateCw, Search } from '@vben/icons';
-
-import { ElButton, ElDatePicker, ElInput } from 'element-plus';
-
 import type {
   OutpatientPatientCardPayload,
   PatientCardPatient,
 } from '#/components/outpatient/patient-card.types';
+
+import { RotateCw, Search } from '@vben/icons';
+
+import { ElButton, ElDatePicker, ElInput } from 'element-plus';
 
 import SectionTitle from '#/components/layouts/section-title.vue';
 import PatientCard from '#/components/outpatient/patient-card.vue';
@@ -18,6 +18,8 @@ import { toPatientCardPatient } from './nurse-patient-map';
 defineOptions({
   name: 'NurseQueuePanel',
 });
+
+const props = defineProps<Props>();
 
 const emit = defineEmits<{
   queueDateChange: [date: string | undefined];
@@ -33,8 +35,6 @@ interface Props {
 
 const keyword = defineModel<string>('keyword', { required: true });
 const queueDate = defineModel<string>('queueDate', { required: true });
-
-const props = defineProps<Props>();
 
 /** 通知父级重新拉取队列（由父级控制 loading） */
 const handleRefresh = () => {

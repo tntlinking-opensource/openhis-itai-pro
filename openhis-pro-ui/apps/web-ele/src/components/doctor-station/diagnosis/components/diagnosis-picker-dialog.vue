@@ -19,7 +19,10 @@ import {
   saveEncounterDiagnosisRows,
   type DoctorStationDiagnosisScope,
 } from '../services/encounter-diagnosis.service';
-import { appendTcmDiagnosisGroupBatch } from '../services/tcm-diagnosis-groups.service';
+import {
+  appendTcmDiagnosisGroupBatch,
+  resolveTcmDiagnosisHttp,
+} from '../services/tcm-diagnosis-groups.service';
 import {
   formatTcmDiagnosisDisplayName,
   mapTcmCatalogRowToConditionDefinitionRow,
@@ -28,7 +31,6 @@ import {
   type TcmDiagnosisPick,
 } from '../services/tcm-diagnosis-display';
 import { createDoctorStationDiagnosisHttpClient } from '#/api/doctor-station/diagnosis-api-client';
-import { httpPageTcmConditionDefinitionCatalog } from '#/api/doctor-station/tcm.http';
 
 defineOptions({ name: 'DiagnosisPickerDialog' });
 
@@ -57,6 +59,8 @@ const diagnosisHttp = computed(() =>
       : '/doctorStationDiagnosis',
   ),
 );
+
+const tcmHttp = computed(() => resolveTcmDiagnosisHttp(props.stationScope));
 
 const emit = defineEmits<{
   confirm: [value: DiagnosisConfirmPayload];
@@ -96,7 +100,7 @@ async function loadDefinitionPage() {
   tableLoading.value = true;
   try {
     if (isTcmMode.value) {
-      const res = await httpPageTcmConditionDefinitionCatalog({
+      const res = await tcmHttp.value.httpPageTcmConditionDefinitionCatalog({
         catalogRole: resolveTcmCatalogRole(tcmCatalogKind.value),
         keyword: keyword.value.trim() || undefined,
         pageNo: pageNo.value,
@@ -286,10 +290,6 @@ async function handleEncounterConfirmSave(pick?: ConditionDefinitionRowResponse 
   }
 
   if (isTcmMode.value) {
-    if (props.stationScope === 'inpatient') {
-      ElMessage.warning('住院站中医病证请使用中医医嘱 Tab 维护');
-      return;
-    }
     if (!tcmDiseasePick.value?.conditionDefinitionId) {
       ElMessage.warning('请先选择中医疾病');
       return;
@@ -306,6 +306,7 @@ async function handleEncounterConfirmSave(pick?: ConditionDefinitionRowResponse 
         tcmDiseasePick.value,
         tcmSyndromePick.value,
         saveAsMainDiagnosis.value,
+        props.stationScope,
       );
       if (result === 'duplicate') {
         ElMessage.info('该病证组已在当前列表中');

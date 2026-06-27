@@ -15,9 +15,10 @@ import type {
 
 import { computed, ref, watch } from 'vue';
 
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 
 import {
+  httpCancelNurseStationPricing,
   httpConfirmDirectNurseStationPricing,
   httpConfirmSupplementNurseStationPricing,
   httpListNurseStationPricedOrders,
@@ -27,10 +28,12 @@ import {
 import AppDialog from '#/components/app-dialog.vue';
 import InpatientPatientInfoHeader from '#/components/inpatient/patient-info-header.vue';
 import { useRequest } from '#/hooks/use-request';
+import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { decimalMul } from '#/utils/decimal-util';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { decimalMul } from '#/utils/format/decimal-util';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
+import AutoRollPanel from './components/auto-roll-panel.vue';
 import OrderBillingPanel from './components/order-billing-panel.vue';
 import PricingConfirmationPanel from './components/pricing-confirmation-panel.vue';
 import {
@@ -44,13 +47,15 @@ import {
   mapPricedOrderGroupsToTableRows,
   mapPricedOrderRowToChargeDetailRow,
   mapPricingDateRangeToQuery,
+  mapSelectedPricingRowsToCancelItems,
   mergeOrderBillingTreeFromApiResponses,
   normalizePricingCatalogRow,
+  PRICING_CANCEL_BATCH_LIMIT,
   PRICING_PRODUCT_TABLE_DEVICE,
   PRICING_PRODUCT_TABLE_SERVICE,
 } from './services/map-nurse-station-inpatient-billing';
 
-type BillingTab = 'order-billing' | 'pricing-confirmation';
+type BillingTab = 'auto-roll' | 'order-billing' | 'pricing-confirmation';
 
 interface SelectedPricingCatalogItem {
   rowKey: string;
@@ -74,8 +79,11 @@ const WRITE_BATCH_LIMIT = 50;
 const CATALOG_PAGE_SIZE = 20;
 
 const pricingRows = ref<PricingConfirmationTableRow[]>([]);
+const selectedPricingRowIds = ref<string[]>([]);
+const pricingTableKey = ref(0);
 const pricingTimeRange = ref<string[]>([]);
 const activeTab = ref<BillingTab>('pricing-confirmation');
+const autoRollPanelRef = ref<InstanceType<typeof AutoRollPanel> | null>(null);
 const batchDialogVisible = ref(false);
 const projectKeyword = ref('');
 const projectType = ref<PricingCatalogCategory>('device');
@@ -106,6 +114,8 @@ const confirmPricingRequest = useRequest(httpConfirmDirectNurseStationPricing, {
 const confirmSupplementPricingRequest = useRequest(httpConfirmSupplementNurseStationPricing, {
   manual: true,
 });
+const cancelPricingRequest = useRequest(httpCancelNurseStationPricing, { manual: true });
+const authStore = useAuthStore();
 
 const encounterIds = computed(() =>
   props.patients.map((patient) => String(patient.id).trim()).filter((id) => id.length > 0),
@@ -310,14 +320,22 @@ function resolveCatalogProductTableNames(): string[] {
     : [PRICING_PRODUCT_TABLE_SERVICE];
 }
 
+/** 取当前登录机构，供划价目录解析耗材默认发放库房。 */
+function resolvePricingOrganizationUnitId(): string | undefined {
+  const orgRaw = authStore.getSelectedOrganization();
+  return preserveApiIdForRequest(orgRaw) ?? undefined;
+}
+
 /** 加载划价选品目录（分页）。 */
 async function loadPricingCatalog() {
   const patient = selectedBillingPatient.value;
   const encounterId = patient ? preserveApiIdForRequest(patient.id) : undefined;
   const patientId = patient ? preserveApiIdForRequest(patient.patientId) : undefined;
+  const organizationUnitId = resolvePricingOrganizationUnitId();
   const res = await catalogRequest.run({
     encounterId,
     patientId,
+    organizationUnitId,
     keyword: projectKeyword.value.trim() || undefined,
     pageNo: catalogPageNo.value,
     pageSize: CATALOG_PAGE_SIZE,
@@ -330,10 +348,17 @@ async function loadPricingCatalog() {
   catalogTotal.value = parsed.totalCount;
 }
 
+/** 清空已划价列表勾选 */
+function clearSelectedPricingRows() {
+  selectedPricingRowIds.value = [];
+}
+
 /** 加载已划价列表。 */
 async function loadPricedOrders() {
+  clearSelectedPricingRows();
   if (encounterIds.value.length === 0) {
     pricingRows.value = [];
+    pricingTableKey.value += 1;
     return;
   }
   const res = await listPricedOrdersRequest.run({
@@ -341,6 +366,7 @@ async function loadPricedOrders() {
     ...mapPricingDateRangeToQuery(pricingTimeRange.value),
   });
   pricingRows.value = mapPricedOrderGroupsToTableRows(res.groups);
+  pricingTableKey.value += 1;
 }
 
 /** 按时间区间查询已划价列表。 */
@@ -423,6 +449,63 @@ function validatePricingSubmit() {
   return true;
 }
 
+/** 划价写行缺失字段提示（发放库房走管理员配置口径）。 */
+function formatPricingMissingFieldsMessage(itemName: string, missingFields: string[]): string {
+  const name = itemName?.trim() || '—';
+  if (missingFields.includes('发放库房')) {
+    return `项目「${name}」未配置发放库房，请联系管理员配置`;
+  }
+  return `项目「${name}」缺少：${missingFields.join('、')}，请补全后重试`;
+}
+
+/** 已划价列表勾选变化 */
+function handlePricingSelectionChange(ids: string[]) {
+  selectedPricingRowIds.value = ids;
+}
+
+/** 取消划价：勾选待结算行整行还原（IF-IP-PRC-06） */
+async function handleCancelPricing() {
+  if (!canOperateBilling.value) {
+    ElMessage.warning('住院记账仅支持单选患者，请在左侧只勾选 1 位患者');
+    return;
+  }
+  const items = mapSelectedPricingRowsToCancelItems(
+    pricingRows.value,
+    new Set(selectedPricingRowIds.value),
+  );
+  if (items.length === 0) {
+    ElMessage.warning('请先勾选待结算的划价记录');
+    return;
+  }
+  if (items.length > PRICING_CANCEL_BATCH_LIMIT) {
+    ElMessage.warning(`单次最多取消 ${PRICING_CANCEL_BATCH_LIMIT} 条划价记录`);
+    return;
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确认取消已选 ${items.length} 条划价记录？取消后费用与耗材发放将整行还原，补费父医嘱不变。`,
+      '取消划价',
+      {
+        type: 'warning',
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+      },
+    );
+  } catch {
+    return;
+  }
+
+  const res = await cancelPricingRequest.run({ items });
+  const count = res.processedCount ?? items.length;
+  ElMessage.success(`已成功取消 ${count} 条划价记录`);
+  clearSelectedPricingRows();
+  await loadPricedOrders();
+  if (activeTab.value === 'order-billing') {
+    await loadOrderBillingRows();
+  }
+}
+
 /** 提交批量划价或医嘱补费。 */
 async function submitBatchPricing() {
   if (!canOperateBilling.value) {
@@ -462,7 +545,7 @@ async function submitBatchPricing() {
       const missingFields = listSupplementPricingWriteItemMissingFields(supplementOptions);
       if (missingFields.length > 0) {
         ElMessage.warning(
-          `项目「${row.catalog.name ?? '—'}」缺少：${missingFields.join('、')}，请补全后重试`,
+          formatPricingMissingFieldsMessage(row.catalog.name ?? '—', missingFields),
         );
         return;
       }
@@ -476,9 +559,7 @@ async function submitBatchPricing() {
 
     const missingFields = listDirectPricingWriteItemMissingFields(writeOptions);
     if (missingFields.length > 0) {
-      ElMessage.warning(
-        `项目「${row.catalog.name ?? '—'}」缺少：${missingFields.join('、')}，请补全后重试`,
-      );
+      ElMessage.warning(formatPricingMissingFieldsMessage(row.catalog.name ?? '—', missingFields));
       return;
     }
     const writeItem = buildDirectPricingWriteItem(writeOptions);
@@ -539,10 +620,14 @@ watch(
       if (activeTab.value === 'order-billing') {
         void loadOrderBillingRows();
       }
+      if (activeTab.value === 'auto-roll') {
+        void autoRollPanelRef.value?.reload();
+      }
       return;
     }
     pricingRows.value = [];
     orderBillingRows.value = [];
+    void autoRollPanelRef.value?.reload();
   },
   { deep: true, immediate: true },
 );
@@ -550,6 +635,9 @@ watch(
 watch(activeTab, (tab) => {
   if (tab === 'order-billing' && canOperateBilling.value) {
     void loadOrderBillingRows();
+  }
+  if (tab === 'auto-roll' && canOperateBilling.value) {
+    void autoRollPanelRef.value?.reload();
   }
 });
 </script>
@@ -560,16 +648,29 @@ watch(activeTab, (tab) => {
     <ElTabs v-model="activeTab" class="billing-tabs">
       <ElTabPane label="划价确费" name="pricing-confirmation" />
       <ElTabPane label="医嘱计费" name="order-billing" />
+      <ElTabPane label="自动计费" name="auto-roll" />
     </ElTabs>
 
     <PricingConfirmationPanel
       v-if="activeTab === 'pricing-confirmation'"
       v-model:pricing-time-range="pricingTimeRange"
       :can-operate-billing="canOperateBilling"
+      :cancel-loading="cancelPricingRequest.loading.value"
       :loading="listPricedOrdersRequest.loading.value"
       :pricing-rows="pricingRows"
+      :selected-row-ids="selectedPricingRowIds"
+      :table-key="pricingTableKey"
       @on-batch-pricing-click="openBatchPricingDialog"
+      @on-cancel-pricing-click="handleCancelPricing"
       @on-pricing-query="handleQueryPricingRows"
+      @selection-change="handlePricingSelectionChange"
+    />
+
+    <AutoRollPanel
+      v-else-if="activeTab === 'auto-roll'"
+      ref="autoRollPanelRef"
+      :can-operate-billing="canOperateBilling"
+      :patient="selectedBillingPatient"
     />
 
     <OrderBillingPanel

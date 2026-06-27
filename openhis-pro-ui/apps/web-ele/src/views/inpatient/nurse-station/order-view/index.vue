@@ -139,7 +139,6 @@ const patientHeaderText = computed(() => {
         />
         <ElCheckbox v-model="cancelledOnly" label="作废" />
       </div>
-      <ElButton type="primary" class="toolbar-print">打印</ElButton>
     </section>
 
     <section class="order-table-wrap">

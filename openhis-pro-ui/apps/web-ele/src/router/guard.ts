@@ -1,18 +1,31 @@
 import type { RouteLocationPathRaw, Router } from 'vue-router';
 
 import { LOGIN_PATH } from '@vben/constants';
-import { preferences } from '@vben/preferences';
+import { preferences } from '@vben/preferences/es/preferences-manager';
 import { useAccessStore } from '@vben/stores';
 import { startProgress, stopProgress } from '@vben/utils';
 
-import { DEFAULT_HOME_PATH, resolvePostLoginPath } from '#/constants/app';
+import { DEFAULT_HOME_PATH } from '#/constants/app';
 import { coreRouteNames } from '#/router/routes';
-import { useAuthStore } from '#/store';
 
-import { isAuthFailureError, isTransientRequestError } from '#/utils/transient-request-error';
+import {
+  AccessInitTimeoutError,
+  isNotFoundRouteName,
+  ROUTER_ACCESS_INIT_TIMEOUT_MS,
+  withAccessInitTimeout,
+} from './access-init-guard';
 
-import { ensureAccessRoutes, isNotFoundRouteName } from './access-init';
-import { LoginScopeNotReadyError, requireLoginScopeReady } from '#/utils/require-login-scope-ready';
+const LOGIN_SCOPE_CHECK_TIMEOUT_MS = 3000;
+
+function isLoginScopeNotReadyError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'LoginScopeNotReadyError';
+}
+
+/** 菜单初始化超时或后端未就绪时，清理陈旧 token 避免每次进登录页重复拉菜单 */
+function clearStaleAccessSession(accessStore: ReturnType<typeof useAccessStore>) {
+  accessStore.setAccessToken(null);
+  accessStore.setIsAccessChecked(false);
+}
 
 /**
  * 从 resolve 结果中只取 path/query/hash，避免展开 RouteLocationResolved 带入 matched 等内部字段。
@@ -62,34 +75,16 @@ function setupCommonGuard(router: Router) {
 function setupAccessGuard(router: Router) {
   router.beforeEach(async (to, from) => {
     const accessStore = useAccessStore();
-    const authStore = useAuthStore();
 
-    // 优先检查：明确声明忽略权限访问权限，则可以访问（适用于任何路由）
     if (to.meta.ignoreAccess) {
       return true;
     }
 
-    // 基本路由，这些路由不需要进入权限拦截
-    if (coreRouteNames.includes(to.name as string)) {
-      if (to.path === LOGIN_PATH && accessStore.accessToken) {
-        try {
-          await requireLoginScopeReady();
-          const rawTarget = resolvePostLoginPath(to.query?.redirect as string | undefined);
-          return { ...pickPathQueryHash(router.resolve(rawTarget)), replace: true };
-        } catch (error) {
-          if (!(error instanceof LoginScopeNotReadyError)) {
-            console.error('[router-guard] login scope check failed', error);
-          }
-          authStore.setSelectedOrganization('');
-          accessStore.setIsAccessChecked(false);
-          return true;
-        }
-      }
-      return true;
-    }
-
-    // accessToken 检查
+    // 无 token 快速路径：不加载 auth store / 菜单，直接进登录页
     if (!accessStore.accessToken) {
+      if (coreRouteNames.includes(to.name as string)) {
+        return true;
+      }
       if (to.fullPath !== LOGIN_PATH) {
         return {
           path: LOGIN_PATH,
@@ -101,23 +96,66 @@ function setupAccessGuard(router: Router) {
       return true;
     }
 
-    // 动态路由已注册即放行；登录上下文在 ensureAccessRoutes 首次初始化时已校验
+    const { useAuthStore } = await import('#/store/auth');
+    const authStore = useAuthStore();
+
+    if (coreRouteNames.includes(to.name as string)) {
+      if (to.path === LOGIN_PATH && accessStore.accessToken) {
+        try {
+          const { requireLoginScopeReady } = await import('#/utils/auth/require-login-scope-ready');
+          const { resolvePostLoginPath } = await import('#/constants/app');
+          await withAccessInitTimeout(requireLoginScopeReady(), LOGIN_SCOPE_CHECK_TIMEOUT_MS);
+          if (!accessStore.isAccessChecked) {
+            return true;
+          }
+          const rawTarget = resolvePostLoginPath(to.query?.redirect as string | undefined);
+          return { ...pickPathQueryHash(router.resolve(rawTarget)), replace: true };
+        } catch (error) {
+          if (!isLoginScopeNotReadyError(error) && !(error instanceof AccessInitTimeoutError)) {
+            console.error('[router-guard] login scope check failed', error);
+          }
+          if (error instanceof AccessInitTimeoutError) {
+            clearStaleAccessSession(accessStore);
+          }
+          authStore.setSelectedOrganization('');
+          accessStore.setIsAccessChecked(false);
+          return true;
+        }
+      }
+      return true;
+    }
+
     if (accessStore.isAccessChecked) {
       return true;
     }
 
     try {
-      await ensureAccessRoutes(router);
+      const { ensureAccessRoutes } = await import('./access-init');
+      await withAccessInitTimeout(
+        ensureAccessRoutes(router),
+        ROUTER_ACCESS_INIT_TIMEOUT_MS,
+        async () => {
+          const { resetAccessInit } = await import('./access-init');
+          resetAccessInit();
+        },
+      );
     } catch (error) {
-      if (error instanceof LoginScopeNotReadyError) {
+      const { isAuthFailureError, isTransientRequestError } = await import(
+        '#/utils/http/transient-request-error'
+      );
+      if (isLoginScopeNotReadyError(error)) {
         authStore.setSelectedOrganization('');
         accessStore.setIsAccessChecked(false);
         return { path: LOGIN_PATH, replace: true };
       }
-      if (isTransientRequestError(error) || !isAuthFailureError(error)) {
-        console.warn('[router-guard] access-init failed, keep session for retry', error);
-        accessStore.setIsAccessChecked(false);
-        return true;
+      if (
+        error instanceof AccessInitTimeoutError ||
+        isTransientRequestError(error) ||
+        !isAuthFailureError(error)
+      ) {
+        console.warn('[router-guard] access-init deferred, redirect to login for retry', error);
+        clearStaleAccessSession(accessStore);
+        return { path: LOGIN_PATH, replace: true };
       }
       console.error('[router-guard] access-init auth failed, redirect to login', error);
       accessStore.setAccessToken(null);

@@ -10,6 +10,7 @@ export type OutpatientChargeQueueTabCode = 'ALL' | 'PENDING' | 'SETTLED';
 /** IF-OPC-01 初始化返回 */
 export interface LoadChargePageInitResponse {
   chargeItemStatusOptions: OptionDto[];
+  paymentChannelOptions?: OptionDto[];
 }
 
 /** IF-OPC-01 初始化请求 */
@@ -30,6 +31,8 @@ export interface ChargeQueueRowDto {
   patientId: string;
   patientName: string;
   paidAmount?: null | number | string;
+  /** 最近一次成功支付流水（补打收费小票） */
+  paymentId?: null | string;
   queueLabelCode: string;
   startTime?: null | string;
   totalAmount?: null | number | string;
@@ -108,6 +111,8 @@ export interface SwitchEncounterChargeItemsRequest {
 /** IF-OPC-06 预结算预览行 */
 export interface PreSettleChargeLinePreviewDto {
   chargeItemId: string;
+  /** 费用性质展示（账户 contract_no → fin_contract 名称，与 IF-OPC-03 同口径） */
+  feeNatureDisplay?: null | string;
   itemLabel?: null | string;
   lineAmount: number | string;
   quantityDisplay?: null | string;
@@ -176,6 +181,16 @@ export interface PaymentDetailSubmitDto {
   payChannelCode: string;
 }
 
+/** 银联被扫 Win 回传（settle 顶层 clientScanResult） */
+export interface ClientScanResultDto {
+  merTradeNo: string;
+  tradeNo: string;
+  payType: string;
+  respCode: string;
+  respMsg: string;
+  txnAmtFen?: number;
+}
+
 /** IF-OPC-07 正式结算请求 */
 export interface ConfirmOutpatientChargeSettlementRequest {
   billDate: string;
@@ -184,18 +199,54 @@ export interface ConfirmOutpatientChargeSettlementRequest {
   outcomeEnum: string;
   paymentDetails: PaymentDetailSubmitDto[];
   paymentDraftId: string;
+  clientScanResult?: ClientScanResultDto;
   ybChrgBchno?: null | string;
   ybChrgBchnos?: string[];
-  ybSettleIds?: null | string;
 }
 
 /** IF-OPC-07 正式结算响应 */
 export interface ConfirmOutpatientChargeSettlementResponse {
-  coordinationIds?: string[];
   invoiceId: string;
+  invoiceStatus?: string;
   paymentId: string;
-  paymentStatus?: null | string;
-  settlementMode?: null | string;
   successMessageCode?: null | string;
   ybSetlId?: null | string;
+}
+
+/** 收费小票收费项目行 */
+export interface ChargeReceiptChargeLineDto {
+  itemName?: string;
+  amountText?: string;
+  chargeCategoryText?: string;
+}
+
+/** 收费小票 slip（printChargeReceipt 返回） */
+export interface ChargeReceiptSlipDto {
+  encounterId?: null | number | string;
+  patientName?: string;
+  hospitalName?: string;
+  genderEnumText?: string;
+  ageText?: string;
+  feeNatureText?: string;
+  chargeItemLines?: ChargeReceiptChargeLineDto[];
+  totalAmountText?: string;
+  poolingPayText?: string;
+  fundPayText?: string;
+  accountPayText?: string;
+  deductibleLineText?: string;
+  cashPayText?: string;
+  wechatPayText?: string;
+  alipayPayText?: string;
+  accountBalanceText?: string;
+  cashierName?: string;
+  chargeTimeText?: string;
+}
+
+export interface PrintChargeReceiptParams {
+  encounterId?: null | number | string;
+  paymentId?: null | number | string;
+}
+
+export interface PrintChargeReceiptResult {
+  slip?: ChargeReceiptSlipDto;
 }

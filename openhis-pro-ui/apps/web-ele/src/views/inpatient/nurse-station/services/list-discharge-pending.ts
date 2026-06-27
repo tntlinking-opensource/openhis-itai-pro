@@ -2,7 +2,7 @@ import {
   httpListDischargePendingExecutions,
   httpListDischargePendingMedications,
 } from '#/api/inpatient/nurse-station/inpatient-nurse-station-atd.http';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 /** 拉取出院前待执行医嘱 */
 export async function listDischargePendingExecutions(encounterId: string) {

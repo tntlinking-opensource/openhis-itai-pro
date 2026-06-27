@@ -6,15 +6,42 @@ import { chsLongRequestConfig } from '#/chs/constants/request-timeout';
 const BASE = '/insurancePerson';
 
 export interface YbPersonInfoRequest {
+  cardSn?: string;
+  certno?: string;
   contractId: number | string;
   insuplcAdmdvs?: string;
   mdtrtCertNo: string;
   mdtrtCertType: string;
+  psnCertType?: string;
+  psnName?: string;
+}
+
+export interface YbInsuInfoRowDto {
+  balc?: number | string;
+  cvlservFlag?: string;
+  empName?: string;
+  insuplcAdmdvs?: string;
+  insutype?: string;
+  psnInsuDate?: string;
+  psnInsuStas?: string;
+  psnType?: string;
+}
+
+export interface YbIdetInfoRowDto {
+  begntime?: string;
+  endtime?: string;
+  memo?: string;
+  psnIdetType?: string;
+  psnTypeLv?: string;
 }
 
 export interface YbPersonInfoResponse {
   balc?: number | string;
+  brdy?: string;
   certno?: string;
+  gend?: string;
+  idetinfoList?: YbIdetInfoRowDto[];
+  insuinfoList?: YbInsuInfoRowDto[];
   insuplcAdmdvs?: string;
   insutype?: string;
   psnName?: string;

@@ -1,39 +1,24 @@
 <script setup lang="ts">
-import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
+import type { RegistrationPolicyDto, ScheduleChangePolicyDto } from '#/api/booking/booking-policy';
 
-import type {
-  RegistrationPolicyDto,
-  ReleasePolicyDto,
-  ScheduleChangePolicyDto,
-} from '#/api/booking/booking-policy';
-
-import { onMounted, reactive, ref } from 'vue';
+import { onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
 
-import { TableLayout } from '@vben-core/table-layout-ui';
-
 import {
-  deleteReleasePolicyApi,
   loadRegistrationPolicyApi,
-  loadReleasePolicyApi,
   loadScheduleChangePolicyApi,
-  pageReleasePoliciesApi,
   saveRegistrationPolicyApi,
-  saveReleasePolicyApi,
   saveScheduleChangePolicyApi,
 } from '#/api/booking/booking-policy';
 import { useBookingOrganization } from '#/views/booking/composables/use-booking-organization';
 import { useRequest } from '#/hooks/use-request';
 import {
   ElButton,
-  ElDialog,
   ElForm,
   ElFormItem,
-  ElInput,
   ElInputNumber,
   ElMessage,
-  ElMessageBox,
   ElOption,
   ElSelect,
   ElSwitch,
@@ -44,11 +29,7 @@ import {
 defineOptions({ name: 'BookingPolicy' });
 
 const { organizationId } = useBookingOrganization();
-const activeTab = ref('release');
-const list = ref<ReleasePolicyDto[]>([]);
-const total = ref(0);
-const editVisible = ref(false);
-const editForm = ref<Partial<ReleasePolicyDto>>({});
+const activeTab = ref('registration');
 
 const regPolicy = ref<RegistrationPolicyDto>({
   walkInSlotMode: 'APPOINTMENT_FIRST',
@@ -70,25 +51,6 @@ const stopPolicy = ref<ScheduleChangePolicyDto>({
   freezeTtlMinutes: 15,
 });
 const stopPolicyPersisted = ref(false);
-
-const query = reactive({
-  pageNo: 1,
-  pageSize: 20,
-  keyword: '',
-});
-
-const formItems: FormItemConfig[] = [
-  { prop: 'keyword', label: '关键词', type: 'input', placeholder: '策略编码/名称' },
-];
-
-const columns: TableColumn[] = [
-  { prop: 'policyCode', label: '策略编码', minWidth: 120 },
-  { prop: 'policyName', label: '策略名称', minWidth: 140 },
-  { prop: 'advanceDays', label: '提前天数', width: 90 },
-  { prop: 'slotMinutes', label: '时段(分)', width: 90 },
-  { prop: 'capacityPerSlot', label: '单段容量', width: 90 },
-  { prop: 'actions', label: '操作', width: 140, slot: 'actions' },
-];
 
 const walkInModeOptions = [
   { value: 'WALK_IN_NO_SLOT', label: '纯现场不占号' },
@@ -120,14 +82,6 @@ const confirmModeOptions = [
   { value: 'SMS_CONFIRM', label: '短信确认' },
   { value: 'WINDOW_CONFIRM', label: '窗口确认' },
 ];
-
-const { run: runPage, loading } = useRequest(pageReleasePoliciesApi, {
-  manual: true,
-  onSuccess: (res) => {
-    list.value = res.content ?? [];
-    total.value = Number(res.totalCount ?? 0);
-  },
-});
 
 const { run: runLoadReg, loading: regLoading } = useRequest(loadRegistrationPolicyApi, {
   manual: true,
@@ -176,14 +130,6 @@ const { run: runSaveStop, loading: saveStopLoading } = useRequest(saveScheduleCh
   },
 });
 
-async function loadReleaseList() {
-  await runPage({
-    keyword: String(query.keyword || '').trim() || undefined,
-    pageNo: query.pageNo,
-    pageSize: query.pageSize,
-  });
-}
-
 async function loadRegPolicy() {
   if (!organizationId.value) return;
   await runLoadReg({ organizationId: organizationId.value });
@@ -192,65 +138,6 @@ async function loadRegPolicy() {
 async function loadStopPolicy() {
   if (!organizationId.value) return;
   await runLoadStop({ organizationId: organizationId.value });
-}
-
-function handleSearch() {
-  query.pageNo = 1;
-  void loadReleaseList();
-}
-
-function handlePagination(pagination: { limit: number; page: number }) {
-  query.pageNo = pagination.page;
-  query.pageSize = pagination.limit;
-  void loadReleaseList();
-}
-
-function openCreate() {
-  editForm.value = {
-    advanceDays: 7,
-    slotMinutes: 30,
-    capacityPerSlot: 10,
-  };
-  editVisible.value = true;
-}
-
-async function openEdit(row: ReleasePolicyDto) {
-  if (!row.id) return;
-  const detail = await loadReleasePolicyApi({ id: row.id });
-  editForm.value = { ...detail };
-  editVisible.value = true;
-}
-
-async function handleSaveRelease() {
-  const form = editForm.value;
-  if (!form.policyCode?.trim() || !form.policyName?.trim()) {
-    ElMessage.warning('请填写策略编码与名称');
-    return;
-  }
-  await saveReleasePolicyApi({
-    id: form.id,
-    policyCode: form.policyCode.trim(),
-    policyName: form.policyName.trim(),
-    advanceDays: Number(form.advanceDays ?? 7),
-    slotMinutes: Number(form.slotMinutes ?? 30),
-    capacityPerSlot: Number(form.capacityPerSlot ?? 10),
-    channelQuotaJson: form.channelQuotaJson,
-  });
-  ElMessage.success('放号策略已保存');
-  editVisible.value = false;
-  await loadReleaseList();
-}
-
-async function handleDelete(row: ReleasePolicyDto) {
-  if (!row.id) return;
-  try {
-    await ElMessageBox.confirm(`确认删除策略「${row.policyName}」？`, '删除放号策略');
-    await deleteReleasePolicyApi({ id: row.id });
-    ElMessage.success('已删除');
-    await loadReleaseList();
-  } catch {
-    // cancel
-  }
 }
 
 async function handleSaveRegPolicy() {
@@ -290,7 +177,6 @@ async function handleSaveStopPolicy() {
 }
 
 onMounted(async () => {
-  await loadReleaseList();
   await loadRegPolicy();
   await loadStopPolicy();
 });
@@ -299,30 +185,12 @@ onMounted(async () => {
 <template>
   <Page auto-content-height>
     <div class="booking-policy-page">
+      <p class="booking-policy-page__intro">
+        挂号与停诊策略按科室配置，与「排班设置」中的出诊/放号模板相互独立。放号策略请在排班设置中维护。
+      </p>
       <ElTabs v-model="activeTab">
-        <ElTabPane label="放号策略" name="release">
-          <TableLayout
-            v-model:query-params="query"
-            :form-items="formItems"
-            :table-columns="columns"
-            :table-data="list"
-            :total="total"
-            :loading="loading"
-            @search="handleSearch"
-            @pagination="handlePagination"
-          >
-            <template #toolbar-actions>
-              <ElButton type="primary" @click="openCreate">新建策略</ElButton>
-            </template>
-            <template #actions="{ row }">
-              <ElButton link type="primary" @click="openEdit(row)">编辑</ElButton>
-              <ElButton link type="danger" @click="handleDelete(row)">删除</ElButton>
-            </template>
-          </TableLayout>
-        </ElTabPane>
-
         <ElTabPane label="挂号策略" name="registration">
-          <div v-loading="regLoading" class="booking-policy-page__reg-form">
+          <div v-loading="regLoading" class="booking-policy-page__form">
             <ElForm label-width="180px">
               <ElFormItem label="现场占号模式">
                 <ElSelect v-model="regPolicy.walkInSlotMode" style="width: 320px">
@@ -360,7 +228,7 @@ onMounted(async () => {
         </ElTabPane>
 
         <ElTabPane label="停诊策略" name="scheduleChange">
-          <div v-loading="stopLoading" class="booking-policy-page__reg-form">
+          <div v-loading="stopLoading" class="booking-policy-page__form">
             <p v-if="!stopPolicyPersisted" class="booking-policy-page__hint">
               当前科室尚未保存停诊策略，以下为系统默认值；保存后将写入院点配置。
             </p>
@@ -425,42 +293,6 @@ onMounted(async () => {
           </div>
         </ElTabPane>
       </ElTabs>
-
-      <ElDialog
-        v-model="editVisible"
-        :title="editForm.id ? '编辑放号策略' : '新建放号策略'"
-        width="520px"
-      >
-        <ElForm label-width="100px">
-          <ElFormItem label="策略编码" required>
-            <ElInput v-model="editForm.policyCode" placeholder="如 DEFAULT_OUTPATIENT" />
-          </ElFormItem>
-          <ElFormItem label="策略名称" required>
-            <ElInput v-model="editForm.policyName" placeholder="门诊默认放号" />
-          </ElFormItem>
-          <ElFormItem label="提前天数">
-            <ElInputNumber v-model="editForm.advanceDays" :min="0" :max="90" />
-          </ElFormItem>
-          <ElFormItem label="时段粒度">
-            <ElInputNumber v-model="editForm.slotMinutes" :min="5" :max="240" :step="5" />
-          </ElFormItem>
-          <ElFormItem label="单段容量">
-            <ElInputNumber v-model="editForm.capacityPerSlot" :min="1" :max="999" />
-          </ElFormItem>
-          <ElFormItem label="渠道配额">
-            <ElInput
-              v-model="editForm.channelQuotaJson"
-              type="textarea"
-              :rows="3"
-              placeholder='JSON，如 {"WINDOW":60,"MINIAPP":40}'
-            />
-          </ElFormItem>
-        </ElForm>
-        <template #footer>
-          <ElButton @click="editVisible = false">取消</ElButton>
-          <ElButton type="primary" @click="handleSaveRelease">保存</ElButton>
-        </template>
-      </ElDialog>
     </div>
   </Page>
 </template>
@@ -472,7 +304,13 @@ onMounted(async () => {
   height: 100%;
 }
 
-.booking-policy-page__reg-form {
+.booking-policy-page__intro {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.booking-policy-page__form {
   max-width: 720px;
   padding: 12px 0;
 }

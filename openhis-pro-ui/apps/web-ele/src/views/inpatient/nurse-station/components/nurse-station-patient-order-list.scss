@@ -171,3 +171,53 @@
   color: #5b8c3e;
   font-weight: 500;
 }
+
+/* 医嘱校对 / 医嘱执行：医嘱内容列版式（名称居左、剂量居右、用法频次蓝字） */
+.nurse-order-content-wrap {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.nurse-order-content-cell {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: 0;
+  min-width: 0;
+
+  :deep(.normal-content-cell) {
+    width: 100%;
+  }
+}
+
+.advice-order-line-row {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+  width: 100%;
+}
+
+.drug-main-text {
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.group-drug-dose {
+  color: var(--el-text-color-regular);
+  flex: 0 0 auto;
+  font-size: 12px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.normal-drug-shared {
+  border-top: 1px dashed #cbd5e1;
+  color: #2563eb;
+  font-size: 12px;
+  padding-top: 3px;
+}

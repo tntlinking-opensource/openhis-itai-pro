@@ -24,5 +24,11 @@ export const httpListInpatientActivityExecutionLocations =
   inpatientAdviceHttp.httpListActivityExecutionLocations;
 export const httpStopLongTermInpatientDoctorStationAdvice =
   inpatientAdviceHttp.httpStopLongTermInpatientDoctorStationAdvice;
+export const httpCancelStopLongTermInpatientDoctorStationAdvice =
+  inpatientAdviceHttp.httpCancelStopLongTermInpatientDoctorStationAdvice;
 export const httpCreateDischargeInpatientDoctorStationAdvice =
   inpatientAdviceHttp.httpCreateDischargeInpatientDoctorStationAdvice;
+export const httpSaveInpatientDoctorStationServiceApplyForm =
+  inpatientAdviceHttp.httpSaveInpatientDoctorStationServiceApplyForm;
+export const httpListInpatientDoctorStationServiceApplyForms =
+  inpatientAdviceHttp.httpListInpatientDoctorStationServiceApplyForms;

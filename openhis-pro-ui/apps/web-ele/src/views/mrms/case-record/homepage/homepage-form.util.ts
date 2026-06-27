@@ -18,24 +18,31 @@ export function detectRecordRoomRole(roles: string[] | undefined): boolean {
 }
 
 /** 列表默认查询：医生 vs 病案室 */
-export function buildDefaultListQuery(isRecordRoom: boolean, deptCode: string) {
+export function buildDefaultListQuery(
+  isRecordRoom: boolean,
+  admCatyName: string,
+  attendingPractitionerId?: string,
+) {
   const today = dayjs();
   if (isRecordRoom) {
     return {
       pageNo: 1,
       pageSize: 20,
-      statusCode: 'submitted',
-      dischargeFrom: today.subtract(7, 'day').format('YYYY-MM-DD'),
-      dischargeTo: today.format('YYYY-MM-DD'),
+      statusCode: undefined as string | undefined,
+      statusCodes: ['submitted', 'received'] as string[],
+      dscgFrom: today.subtract(7, 'day').format('YYYY-MM-DD'),
+      dscgTo: today.format('YYYY-MM-DD'),
     };
   }
   return {
     pageNo: 1,
     pageSize: 20,
-    deptCode: deptCode || undefined,
+    admCatyName: admCatyName || undefined,
+    attendingPractitionerId: attendingPractitionerId || undefined,
     statusCode: undefined as string | undefined,
-    dischargeFrom: today.subtract(30, 'day').format('YYYY-MM-DD'),
-    dischargeTo: today.format('YYYY-MM-DD'),
+    statusCodes: ['draft', 'returned'] as string[],
+    dscgFrom: today.subtract(30, 'day').format('YYYY-MM-DD'),
+    dscgTo: today.format('YYYY-MM-DD'),
   };
 }
 
@@ -49,13 +56,7 @@ export function mergeCaseRecordIntoFormModel(
   }
   return {
     ...form,
-    caseRecordId: form.caseRecordId || String(detail.id ?? ''),
-    psnName: form.psnName || detail.patientName,
-    gendCode: form.gendCode || detail.genderCode,
-    iptNo: form.iptNo || detail.inpatientNo,
-    admTime: form.admTime || detail.admissionAt,
-    dscgTime: form.dscgTime || detail.dischargeAt,
-    atddrName: form.atddrName || detail.attendingPractitionerName,
+    caseRecordId: form.caseRecordId || String(detail.caseRecordId ?? ''),
   };
 }
 
@@ -71,6 +72,17 @@ export function isHomepageContentEmpty(homepage: HomepageDto | null | undefined)
   return !scalarFilled && !rowsFilled;
 }
 
+function extensionField(homepage: HomepageDto, key: keyof SaveHomepageParams): string | undefined {
+  const ext = homepage.extension;
+  if (ext && key in ext) {
+    const v = ext[key as string];
+    if (v !== null && v !== undefined && v !== '') {
+      return String(v);
+    }
+  }
+  return undefined;
+}
+
 export function homepageToFormModel(homepage: HomepageDto): SaveHomepageParams {
   return {
     caseRecordId: String(homepage.caseRecordId ?? ''),
@@ -78,31 +90,33 @@ export function homepageToFormModel(homepage: HomepageDto): SaveHomepageParams {
     gendCode: homepage.gendCode,
     brdy: homepage.brdy,
     certno: homepage.certno,
-    ntlyCode: homepage.ntlyCode,
-    natyCode: homepage.natyCode,
-    prfsCode: homepage.prfsCode,
-    mrgStasCode: homepage.mrgStasCode,
-    currAddr: homepage.currAddr,
-    psnTel: homepage.psnTel,
-    conerName: homepage.conerName,
-    conerTel: homepage.conerTel,
-    conerAddr: homepage.conerAddr,
+    ntlyCode: homepage.ntlyCode ?? extensionField(homepage, 'ntlyCode'),
+    natyCode: homepage.natyCode ?? extensionField(homepage, 'natyCode'),
+    prfsCode: homepage.prfsCode ?? extensionField(homepage, 'prfsCode'),
+    mrgStasCode: homepage.mrgStasCode ?? extensionField(homepage, 'mrgStasCode'),
+    currAddr: homepage.currAddr ?? extensionField(homepage, 'currAddr'),
+    psnTel: homepage.psnTel ?? extensionField(homepage, 'psnTel'),
+    conerName: homepage.conerName ?? extensionField(homepage, 'conerName'),
+    conerTel: homepage.conerTel ?? extensionField(homepage, 'conerTel'),
+    conerAddr: homepage.conerAddr ?? extensionField(homepage, 'conerAddr'),
     iptNo: homepage.iptNo,
     admWayCode: homepage.admWayCode,
     admCatyCode: homepage.admCatyCode,
-    admCatyName: homepage.admCatyName,
+    admCatyName: homepage.admCatyName ?? extensionField(homepage, 'admCatyName'),
     dscgCatyCode: homepage.dscgCatyCode,
-    dscgCatyName: homepage.dscgCatyName,
+    dscgCatyName: homepage.dscgCatyName ?? extensionField(homepage, 'dscgCatyName'),
     admTime: homepage.admTime,
     dscgTime: homepage.dscgTime,
-    actIptDays: homepage.actIptDays,
+    iptDays: homepage.iptDays,
     dscgWayCode: homepage.dscgWayCode,
-    transferDeptSummary: homepage.transferDeptSummary,
-    deptDirectorName: homepage.deptDirectorName,
+    transferDeptSummary:
+      homepage.transferDeptSummary ?? extensionField(homepage, 'transferDeptSummary'),
+    deptDirectorName: homepage.deptDirectorName ?? extensionField(homepage, 'deptDirectorName'),
     chfdrName: homepage.chfdrName,
     atddrName: homepage.atddrName,
     iptDrName: homepage.iptDrName,
-    respNursName: homepage.respNursName,
+    respNursName: homepage.respNursName ?? extensionField(homepage, 'respNursName'),
+    extension: homepage.extension,
     diagnoses: cloneDiagnoses(homepage.diagnoses),
     procedures: cloneProcedures(homepage.procedures),
   };

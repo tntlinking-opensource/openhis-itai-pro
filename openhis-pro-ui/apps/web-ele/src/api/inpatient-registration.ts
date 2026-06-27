@@ -254,3 +254,21 @@ export async function httpLoadWardBedCapacity(
     params,
   );
 }
+
+/** 住院登记页初始化请求 */
+export type LoadInpatientRegistrationPageInitRequest = Record<string, never>;
+
+/** 住院登记页初始化响应 */
+export interface LoadInpatientRegistrationPageInitResponse {
+  paymentChannelOptions?: OptionDto[];
+}
+
+/** 住院登记页初始化 */
+export async function httpLoadInpatientRegistrationPageInit(
+  params: LoadInpatientRegistrationPageInitRequest = {},
+): Promise<LoadInpatientRegistrationPageInitResponse> {
+  return publicRequestClient.post<LoadInpatientRegistrationPageInitResponse>(
+    '/inpatientRegistration/loadInpatientRegistrationPageInit',
+    params,
+  );
+}

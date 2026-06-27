@@ -7,11 +7,13 @@ import type { LocaleSetupOptions, SupportedLanguagesType } from '@vben/locales';
 import { ref } from 'vue';
 
 import { $t, setupI18n as coreSetup, loadLocalesMapFromDir } from '@vben/locales';
-import { preferences } from '@vben/preferences';
 
 import dayjs from 'dayjs';
 import enLocale from 'element-plus/es/locale/lang/en';
 import defaultLocale from 'element-plus/es/locale/lang/zh-cn';
+
+/** 首屏默认语言，避免等待 preferences 桶加载 */
+const BOOTSTRAP_DEFAULT_LOCALE = 'zh-CN' as SupportedLanguagesType;
 
 const elementLocale = ref<Language>(defaultLocale);
 
@@ -84,8 +86,16 @@ async function loadElementLocale(lang: SupportedLanguagesType) {
 }
 
 async function setupI18n(app: App, options: LocaleSetupOptions = {}) {
+  let defaultLocale = BOOTSTRAP_DEFAULT_LOCALE;
+  try {
+    const { preferences } = await import('@vben/preferences/es/preferences-manager');
+    defaultLocale = preferences.app.locale;
+  } catch {
+    // 偏好设置尚未就绪时使用内置默认语言
+  }
+
   await coreSetup(app, {
-    defaultLocale: preferences.app.locale,
+    defaultLocale,
     loadMessages,
     missingWarn: !import.meta.env.PROD,
     ...options,

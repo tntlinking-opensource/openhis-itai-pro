@@ -4,6 +4,9 @@ export type NurseStationOrderAuditTab = 'pending' | 'passed' | 'stopped' | 'susp
 /** 长临筛选：全部 / 长期 / 临时 */
 export type NurseStationOrderAuditTherapyFilter = 'all' | 'long' | 'temp';
 
+/** 中西药 Tab：west 西药 / tcm 中药 */
+export type NurseStationOrderAuditMedicineCategoryTab = 'tcm' | 'west';
+
 /** 写操作锚点：药品申请 / 诊疗申请 */
 export type NurseStationOrderAuditOrderType = 'MED_REQUEST' | 'SERVICE_REQUEST';
 
@@ -12,6 +15,7 @@ export interface ListNurseStationOrderAuditRequest {
   encounterIds: string[];
   auditTab: NurseStationOrderAuditTab;
   therapyType?: NurseStationOrderAuditTherapyFilter;
+  medicineCategoryTab?: NurseStationOrderAuditMedicineCategoryTab;
 }
 
 /** 列表行（与后端 NurseStationOrderAuditRowDto 对齐） */
@@ -37,6 +41,13 @@ export interface NurseStationOrderAuditRowDto {
   categoryEnum?: string;
   groupNo?: number;
   sortNumber?: number;
+  /** 是否中药饮片方（方级折叠行） */
+  tcmFlag?: boolean;
+  prescriptionNo?: string;
+  /** 方内全部药品申请 id（整方校对/退回扩行） */
+  lineRequestIds?: string[];
+  sufferingFlag?: boolean;
+  chineseHerbsDoseQuantity?: number | string;
 }
 
 /** 按就诊分组的医嘱列表 */

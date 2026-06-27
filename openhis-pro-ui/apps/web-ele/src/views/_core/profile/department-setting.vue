@@ -12,7 +12,7 @@ import { ElMessage } from 'element-plus';
 
 import { getAvailableOrganizationUnitsApi } from '#/api';
 import { useAuthStore } from '#/store';
-import { switchOrganizationUnitSession } from '#/utils/switch-organization-unit-session';
+import { switchOrganizationUnitSession } from '#/utils/auth/switch-organization-unit-session';
 
 const authStore = useAuthStore();
 

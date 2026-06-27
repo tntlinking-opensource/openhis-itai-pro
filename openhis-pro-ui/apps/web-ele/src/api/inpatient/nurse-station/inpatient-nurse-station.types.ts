@@ -27,12 +27,17 @@ export interface LoadWardTreeResponse {
   wardNodes: NurseStationWardTreeNodeDto[];
 }
 
+/** 护士站列表状态筛选：已出院结算（与后端 STATUS_FILTER_SETTLED_DISCHARGED 一致） */
+export const NURSE_STATION_STATUS_FILTER_SETTLED_DISCHARGED = 'SETTLED_DISCHARGED';
+
 /** 在院患者队列分页请求 */
 export interface PagePatientQueueRequest extends PageParams {
   houseId?: string;
   keyword?: string;
   nurseStationExecutionDate?: string;
   nurseStationTaskFilter?: string;
+  /** 列表状态筛选；空=默认在院；SETTLED_DISCHARGED=已出院结算 */
+  nurseStationStatusFilter?: string;
   wardId?: string;
 }
 
@@ -40,6 +45,10 @@ export interface PagePatientQueueRequest extends PageParams {
 export interface PatientQueueItemDto {
   accountId?: string;
   accountBalance?: number | string;
+  accountBalanceDisplayMode?: string;
+  accountBalanceSubText?: string;
+  accountBalanceSummaryText?: string;
+  availableBalance?: number | string;
   admissionTime?: string;
   ageText?: string;
   arrearsAmount?: number | string;
@@ -49,6 +58,7 @@ export interface PatientQueueItemDto {
   diagnosisSummary?: string;
   encounterBusNo?: string;
   encounterId: string;
+  endTime?: string;
   genderEnum?: string;
   genderEnumText?: string;
   houseName?: string;
@@ -60,9 +70,12 @@ export interface PatientQueueItemDto {
   patientName: string;
   pendingAuditCount?: number;
   pendingExecuteCount?: number;
+  pendingSettlementTotal?: number | string;
   pinyinCode?: string;
   primaryNurseName?: string;
   priorityEnum?: string;
+  /** 是否可展示出院召回行操作 */
+  recallEnabled?: boolean;
   startTime?: string;
   statusEnum?: string;
   statusEnumText?: string;
@@ -94,8 +107,20 @@ export interface ParticipantSubmitDto {
   roleCode: string;
 }
 
+/** 入院体征提交/回填块（IF-IP-NUR-03/04 与 ATD-02 ASSIGN 复用） */
+export interface AdmissionVitalSignSubmitDto {
+  bloodPressureHigh?: string;
+  bloodPressureLow?: string;
+  heartRate?: string;
+  heightCm?: string;
+  pulse?: string;
+  temperature?: string;
+  weightKg?: string;
+}
+
 /** 患者全景详情（列表字段超集） */
 export interface PatientDetailDto extends PatientQueueItemDto {
+  admissionVitalSigns?: AdmissionVitalSignSubmitDto;
   diagnosisList?: string[];
   idCardNo?: string;
   locationJson?: string;
@@ -110,6 +135,7 @@ export interface GetPatientDetailResponse {
 
 /** 患者信息维护请求 */
 export interface SavePatientInfoRequest {
+  admissionVitalSigns?: AdmissionVitalSignSubmitDto;
   encounterId: string;
   participants?: ParticipantSubmitDto[];
   priorityEnum?: string;

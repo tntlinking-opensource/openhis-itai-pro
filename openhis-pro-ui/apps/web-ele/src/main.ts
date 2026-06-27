@@ -1,5 +1,5 @@
-import { initPreferences, updatePreferences } from '@vben/preferences';
-import { unmountGlobalLoading } from '@vben/utils';
+import { initPreferences, updatePreferences } from '@vben/preferences/es/preferences-manager';
+import { unmountGlobalLoading } from '@vben/utils/es/helpers/unmount-global-loading';
 
 import { overridesPreferences } from './preferences';
 
@@ -13,13 +13,11 @@ async function initApplication() {
   const appVersion = import.meta.env.VITE_APP_VERSION;
   const namespace = `${import.meta.env.VITE_APP_NAMESPACE}-${appVersion}-${env}`;
 
-  // app偏好设置初始化
+  // 偏好设置须在 bootstrap 前完成：路由守卫/布局会读取 preferences（主题、进度条等）
   await initPreferences({
     namespace,
     overrides: overridesPreferences,
   });
-
-  // 项目主题、默认首页以业务端固定配置为准，避免历史 localStorage 缓存覆盖。
   updatePreferences({
     app: {
       defaultHomePath: overridesPreferences.app?.defaultHomePath ?? '/analytics',
@@ -27,13 +25,24 @@ async function initApplication() {
     theme: overridesPreferences.theme,
   });
 
-  // 启动应用并挂载
-  // vue应用主要逻辑及视图
-  const { bootstrap } = await import('./bootstrap');
-  await bootstrap(namespace);
+  // 预编译路由 chunk，缩短冷启动首次进登录页时间
+  void import('./router');
 
-  // 移除并销毁loading
-  unmountGlobalLoading();
+  const bootstrapTimeoutMs = import.meta.env.DEV ? 60_000 : 10_000;
+  const loadingFallbackTimer = window.setTimeout(() => {
+    unmountGlobalLoading();
+    console.warn('[init] bootstrap 超时，已强制关闭 Loading');
+  }, bootstrapTimeoutMs);
+
+  try {
+    const { bootstrap } = await import('./bootstrap');
+    await bootstrap(namespace);
+  } catch (error) {
+    unmountGlobalLoading();
+    throw error;
+  } finally {
+    window.clearTimeout(loadingFallbackTimer);
+  }
 }
 
 initApplication();

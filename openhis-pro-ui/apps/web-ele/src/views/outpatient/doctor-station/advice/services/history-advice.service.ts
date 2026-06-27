@@ -203,7 +203,7 @@ function buildBundlesFromFlatAdviceRows(
     byEncounter.set(encounterId, list);
   }
 
-  const pending: Array<{ rawVisitTime: string; bundle: HistoryAdviceEncounterBundle }> = [];
+  const pending: Array<{ bundle: HistoryAdviceEncounterBundle; rawVisitTime: string }> = [];
   for (const [encounterId, encounterRows] of byEncounter) {
     const visitTimeRaw = pickLatestAuthoredAt(encounterRows);
     const encounter = mapEncounterDto(
@@ -254,7 +254,7 @@ function parseHistoryAdviceBundles(
 
   const { content: bundleContent } =
     parsePagedRowsFromApiData<PatientHistoryDoctorStationAdviceBundleDto>(res);
-  const legacyBundles = bundleContent.filter(isAdviceBundleDto);
+  const legacyBundles = bundleContent.filter((item) => isAdviceBundleDto(item));
   if (legacyBundles.length > 0) {
     return legacyBundles
       .map((b) => mapBundleDto(b, currentEncounterId))
@@ -269,12 +269,12 @@ export function collectDoctorStationAdviceFlatRows(
   res: PageDoctorStationAdviceResponse,
 ): DoctorStationAdviceRowDto[] {
   const { content: pagedContent } = parsePagedRowsFromApiData<DoctorStationAdviceRowDto>(res);
-  const fromContent = pagedContent.filter(isAdviceRowDto);
+  const fromContent = pagedContent.filter((item) => isAdviceRowDto(item));
   if (fromContent.length > 0) {
     return fromContent;
   }
 
-  const direct = (res.adviceRows ?? res.rows ?? []).filter(isAdviceRowDto);
+  const direct = (res.adviceRows ?? res.rows ?? []).filter((item) => isAdviceRowDto(item));
   if (direct.length > 0) {
     return direct;
   }
@@ -296,7 +296,7 @@ async function fetchDoctorStationAdvicePage(
   encounterId: string,
   adviceScopeTabCode: DoctorStationAdviceScopeTabCode,
   pageSize = HISTORY_ADVICE_PAGE_SIZE,
-): Promise<PageDoctorStationAdviceResponse | null> {
+): Promise<null | PageDoctorStationAdviceResponse> {
   const pid = patientId.trim();
   const eid = encounterId.trim();
   if (!pid || !eid) {
@@ -317,7 +317,7 @@ async function fetchDoctorStationAdvicePage(
 
 /** 解析单次分页响应为就诊 bundles */
 function resolveHistoryAdviceBundlesFromPage(
-  res: PageDoctorStationAdviceResponse | null,
+  res: null | PageDoctorStationAdviceResponse,
   currentEncounterId: string,
 ): HistoryAdviceEncounterBundle[] {
   if (!res) {

@@ -17,9 +17,15 @@ import {
 } from '#/api/basic/order-template';
 import AdviceOrderDisplayCell from '#/components/outpatient/advice-order-display-cell.vue';
 import { useAuthStore } from '#/store';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import {
+  buildServiceApplyFormCellClassName,
+  buildServiceApplyFormRowClassName,
+  isServiceApplyFormGroupStart,
+} from '#/utils/service-apply-form-group-display';
 
 import { useAdviceTab } from '../composables/use-advice-tab';
+import { getSkinTestDisplayTagType } from '../services/advice-list';
 import {
   applyHistoryAdviceToAdviceDraft,
   HistoryAdviceApplyError,
@@ -28,6 +34,7 @@ import {
   applyOrderTemplateToAdviceDraft,
   OrderTemplateApplyError,
 } from '../services/order-template-apply.service';
+import AdviceDraftBindDialog from './advice-draft-bind-dialog.vue';
 import AdviceEditCard from './advice-edit-card.vue';
 import HistoryAdviceDrawer from './history-advice-drawer.vue';
 import OrderTemplateSidePanel from './order-template-side-panel.vue';
@@ -55,7 +62,7 @@ const {
   editorPatientDiagnoses,
   encounterId,
   getAdviceStatusTagType,
-  getCellClassName,
+  getCellClassName: getBaseCellClassName,
   getTableRows,
   handleAdd,
   handleCloseEditor,
@@ -63,8 +70,6 @@ const {
   handleEditorDirtyChange,
   handleMedicationAssignGroup,
   handleMedicationUngroup,
-  handlePrintExamApplyForm,
-  handlePrintLabApplyForm,
   handleRowDblclick,
   handleSaveGroup,
   handleSign,
@@ -77,12 +82,44 @@ const {
   orderSelectExpandNonce,
   orderSelectFocusNonce,
   patientId,
-  printApplyFormLoading,
   productColumns,
   queryProductOptions,
   reload,
   validateWesternRow,
 } = useAdviceTab(props);
+
+/** 医嘱表最右列索引（申请单聚组右边框） */
+const ADVICE_APPLY_FORM_TABLE_EDGE_RIGHT_INDEX = 9;
+
+/** 申请单聚组：表格行 class-name */
+const resolveAdviceRowClassName = ({ row, rowIndex }: { row: AdviceRowItem; rowIndex: number }) => {
+  const tableRows = getTableRows();
+  return buildServiceApplyFormRowClassName({ row, rowIndex, rows: tableRows });
+};
+
+/** 合并编辑行与申请单聚组的 cell-class-name */
+const getCellClassName = ({
+  columnIndex,
+  row,
+  rowIndex,
+  column,
+}: {
+  columnIndex: number;
+  row: AdviceRowItem;
+  rowIndex: number;
+  column?: { fixed?: boolean | string };
+}) => {
+  const base = getBaseCellClassName({ columnIndex, row });
+  const applyForm = buildServiceApplyFormCellClassName({
+    row,
+    rowIndex,
+    rows: getTableRows(),
+    columnIndex,
+    edgeRightIndex: ADVICE_APPLY_FORM_TABLE_EDGE_RIGHT_INDEX,
+    columnFixed: column?.fixed,
+  });
+  return [base, applyForm].filter((part) => part.length > 0).join(' ');
+};
 
 const authStore = useAuthStore();
 
@@ -263,12 +300,6 @@ defineExpose({
         <ElButton plain @click="handleMedicationAssignGroup">并组</ElButton>
         <ElButton plain @click="handleOpenHistoryAdviceDrawer">历史医嘱</ElButton>
         <ElButton plain @click="handleOpenSaveAsOrderTemplateDialog">另存为组套</ElButton>
-        <ElButton plain :loading="printApplyFormLoading" @click="handlePrintLabApplyForm">
-          打印检验申请单
-        </ElButton>
-        <ElButton plain :loading="printApplyFormLoading" @click="handlePrintExamApplyForm">
-          打印检查申请单
-        </ElButton>
       </div>
 
       <div
@@ -279,6 +310,7 @@ defineExpose({
           ref="adviceTableRef"
           :data="getTableRows()"
           :span-method="handleSpanMethod"
+          :row-class-name="resolveAdviceRowClassName"
           :cell-class-name="getCellClassName"
           border
           stripe
@@ -355,21 +387,46 @@ defineExpose({
           </ElTableColumn>
           <ElTableColumn prop="type" label="类型" width="108" align="center" />
           <ElTableColumn prop="content" label="医嘱内容" min-width="350">
-            <template #default="{ row }">
-              <AdviceOrderDisplayCell
-                :row-key="row.key"
-                :group-items="row.groupItems"
-                :content="row.content"
-                :dosage-text="row.dosageText"
-                :extension="row.extension"
-              />
+            <template #default="{ row, $index }">
+              <div
+                class="advice-order-content-wrap"
+                :class="{ 'is-apply-form-block': Boolean(row.applyFormNo?.trim()) }"
+              >
+                <div
+                  v-if="isServiceApplyFormGroupStart(row, $index, getTableRows())"
+                  class="doctor-apply-form-group-label"
+                >
+                  <ElTag size="small" effect="plain" type="primary">
+                    申请单 {{ row.applyFormNo }}
+                  </ElTag>
+                </div>
+                <AdviceOrderDisplayCell
+                  :row-key="row.key"
+                  :group-items="row.groupItems"
+                  :content="row.content"
+                  :dosage-text="row.dosageText"
+                  :extension="row.extension"
+                />
+              </div>
             </template>
           </ElTableColumn>
           <ElTableColumn prop="startTime" label="开立时间" width="170" align="center" />
           <ElTableColumn prop="lineTotalAmount" label="总金额" width="100" align="center" />
           <ElTableColumn prop="diagnosisSummary" label="诊断" min-width="140" align="center" />
           <ElTableColumn prop="orderingDoctor" label="开立医生" width="100" align="center" />
-          <ElTableColumn prop="skinTestText" label="皮试" width="72" align="center" />
+          <ElTableColumn prop="skinTestText" label="皮试" width="80" align="center">
+            <template #default="{ row }">
+              <ElTag
+                v-if="getSkinTestDisplayTagType(row)"
+                :type="getSkinTestDisplayTagType(row)!"
+                size="small"
+                effect="light"
+              >
+                {{ row.skinTestText }}
+              </ElTag>
+              <span v-else>{{ row.skinTestText }}</span>
+            </template>
+          </ElTableColumn>
         </ElTable>
       </div>
     </div>
@@ -388,6 +445,8 @@ defineExpose({
       :advice-rows="saveOrderTemplateAdviceRows"
       @saved="handleSaveAsOrderTemplateSaved"
     />
+
+    <AdviceDraftBindDialog />
   </div>
 </template>
 
@@ -432,5 +491,58 @@ defineExpose({
 .advice-table :deep(.el-table__body-wrapper) {
   overflow-x: auto;
   overflow-y: auto;
+}
+
+/* 同一申请单多行：浅底 + 四边框成一组；组间顶部分隔；组内无横线 */
+.advice-table :deep(td.doctor-apply-form-cell) {
+  background-color: var(--el-color-primary-light-9) !important;
+}
+
+.advice-table :deep(td.doctor-apply-form-cell.is-group-edge-left) {
+  border-left: 2px solid var(--el-color-primary-light-5) !important;
+}
+
+.advice-table :deep(td.doctor-apply-form-cell.is-group-edge-right) {
+  border-right: 2px solid var(--el-color-primary-light-5) !important;
+}
+
+.advice-table :deep(td.doctor-apply-form-cell.is-group-start) {
+  border-top: 2px solid var(--el-color-primary-light-5) !important;
+}
+
+.advice-table :deep(td.doctor-apply-form-cell.is-group-end) {
+  border-bottom: 2px solid var(--el-color-primary-light-5) !important;
+}
+
+.advice-table :deep(td.doctor-apply-form-cell.is-group-continue) {
+  border-top: none !important;
+}
+
+.advice-table :deep(td.doctor-apply-form-cell:not(.is-group-end)) {
+  border-bottom: none !important;
+}
+
+.advice-table :deep(td.doctor-apply-form-cell.is-group-start.is-group-edge-left) {
+  border-top-left-radius: 4px;
+}
+
+.advice-table :deep(td.doctor-apply-form-cell.is-group-start.is-group-edge-right) {
+  border-top-right-radius: 4px;
+}
+
+.advice-table :deep(td.doctor-apply-form-cell.is-group-end.is-group-edge-left) {
+  border-bottom-left-radius: 4px;
+}
+
+.advice-table :deep(td.doctor-apply-form-cell.is-group-end.is-group-edge-right) {
+  border-bottom-right-radius: 4px;
+}
+
+.advice-order-content-wrap.is-apply-form-block {
+  padding-left: 8px;
+}
+
+.doctor-apply-form-group-label {
+  margin-bottom: 4px;
 }
 </style>

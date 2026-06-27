@@ -37,7 +37,8 @@ const style = computed((): CSSProperties => {
       : {};
   return {
     ...compactStyle,
-    flex: 1,
+    flex: '1 1 0%',
+    minHeight: 0,
     padding: `${padding}px`,
     paddingBottom: `${paddingBottom}px`,
     paddingLeft: `${paddingLeft}px`,
@@ -51,7 +52,7 @@ const style = computed((): CSSProperties => {
   <main
     ref="contentElement"
     :style="style"
-    class="relative flex h-[calc(100vh-88px)] w-full flex-1 bg-background-page"
+    class="relative flex min-h-0 w-full flex-col overflow-hidden bg-background-page"
   >
     <Slot :style="overlayStyle">
       <slot name="overlay"></slot>

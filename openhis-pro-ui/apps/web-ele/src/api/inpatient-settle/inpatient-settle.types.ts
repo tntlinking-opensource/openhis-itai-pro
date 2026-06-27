@@ -30,6 +30,11 @@ export interface PageInpatientSettleQueueRequest extends PageParams {
 /** 结算患者队列行 */
 export interface InpatientSettleQueueItemDto {
   accountBalance?: null | number | string;
+  accountBalanceDisplayMode?: string;
+  accountBalanceSubText?: string;
+  accountBalanceSummaryText?: string;
+  availableBalance?: null | number | string;
+  lowBalanceWarning?: boolean;
   ageText?: string;
   bedName?: string;
   contractDisplay?: string;
@@ -61,9 +66,14 @@ export interface LoadInpatientSettleSummaryRequest {
 
 /** 结算摘要响应 */
 export interface LoadInpatientSettleSummaryResponse {
+  accountBalanceDisplayMode?: string;
+  accountBalanceSubText?: string;
+  accountBalanceSummaryText?: string;
+  availableBalance?: number | string;
   balanceHint: number | string;
   bedName?: string;
   displayAccountBalance: number | string;
+  lowBalanceWarning?: boolean;
   encounterBusNo: string;
   encounterId: string;
   organizationName?: string;
@@ -164,6 +174,7 @@ export interface InpatientSettlePaymentDetailDto {
 export interface ConfirmInpatientSettleRequest {
   billDate?: string;
   chargeItemIds: string[];
+  clientScanResult?: import('#/api/payment/payment.types').ClientScanResultDto;
   encounterId: string;
   patientId: string;
   paymentDetails: InpatientSettlePaymentDetailDto[];
@@ -174,23 +185,34 @@ export interface ConfirmInpatientSettleRequest {
 /** 确认住院结算响应 */
 export interface ConfirmInpatientSettleResponse {
   advanceRefundPaymentId?: string;
-  coordinationIds?: string[];
   dischargeFullSettle?: boolean;
   insuranceSettled?: boolean;
   invoiceDraftId?: string;
+  invoiceStatus?: string;
   paymentId: string;
-  paymentStatus?: string;
-  settlementMode?: string;
   successMessageCode?: string;
   ybSetlId?: string;
 }
 
-/** 已结算支付单简要信息 */
+/** 已结算/反结历史支付单摘要（IF-IP-STL-07 增量） */
 export interface SettledPaymentBriefDto {
   payMethodText?: string;
   paymentId: string;
+  /** 展示绝对值，不含反结符号 */
   receivableTotal: number | string;
+  /** FORWARD 正向结单 / REVERSE 逆向反结单 */
+  recordType?: 'FORWARD' | 'REVERSE' | string;
+  /** 逆向单指向的原单 ID */
+  relationId?: string;
+  /** reverseEnabled=false 时的 Tooltip 文案 */
+  reverseDisabledReason?: string;
+  /** 是否可在收银台点击反结 */
+  reverseEnabled?: boolean;
+  /** 带符号展示金额：正向为正、逆向为负 */
+  signedAmount?: number | string;
   settleTime: string;
+  /** PaymentStatus code，如 SUCCESS / REFUNDED */
+  statusEnum?: string;
 }
 
 /** 已结算单查阅请求 */
@@ -201,7 +223,7 @@ export interface LoadSettledInpatientPaymentViewRequest {
   presentationMode?: InpatientSettlePresentationMode | string;
 }
 
-/** 已结算单查阅响应 */
+/** 已结算单查阅响应（含历史 NET） */
 export interface LoadSettledInpatientPaymentViewResponse {
   activePaymentId: string;
   categories?: InpatientSettleCategorySummaryDto[];
@@ -210,20 +232,21 @@ export interface LoadSettledInpatientPaymentViewResponse {
   operatorName?: string;
   payMethodText?: string;
   payments: SettledPaymentBriefDto[];
+  /** 历史 signedAmount 代数和，一正一负抵净 */
+  netSettleTotal?: null | number | string;
   receivableTotal?: null | number | string;
   settleTime?: string;
 }
 
-/** 取消住院结算请求（CHS Wave 2 外挂） */
-export interface CancelInpatientSettleRequest {
+/** 住院反结请求（IF-IP-RVS-01） */
+export interface ReverseInpatientSettleRequest {
   encounterId: string;
   patientId: string;
   paymentId: string;
 }
 
-/** 取消住院结算响应 */
-export interface CancelInpatientSettleResponse {
-  insuranceRevoked?: boolean;
+/** 住院反结响应 */
+export interface ReverseInpatientSettleResponse {
   refundPaymentId?: string;
-  ybSetlId?: string;
+  succeeded?: boolean;
 }

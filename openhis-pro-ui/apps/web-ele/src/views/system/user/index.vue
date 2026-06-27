@@ -19,7 +19,7 @@ import {
   getUserRolesApi,
   unlockUserApi,
 } from '#/api/user/user';
-import { preserveApiIdForRequest } from '#/utils/preserve-api-id';
+import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
 
 import { useAccess } from '@vben/access';
 

@@ -1,44 +1,18 @@
-import type { GetOpInsuranceSettleStatusResponse } from '#/api/insurance-outpatient-settlement';
-import type {
-  ConfirmOutpatientChargeSettlementResponse,
-  PendingChargeItemRowDto,
-} from '#/api/outpatient-charge/outpatient-charge.types';
+import type { PendingChargeItemRowDto } from '#/api/outpatient-charge/outpatient-charge.types';
 
 import { ElMessage } from 'element-plus';
 
-import { httpGetOutpatientInsuranceSettleStatus } from '#/api/insurance-outpatient-settlement';
 import { httpGetInsurancePersonInfo } from '#/chs/api/insurance-person';
 import {
   DEFAULT_CARD_READER_HOST,
   DEFAULT_CARD_READER_PORT,
-  invokeYbPlugin,
+  invokeSocialCardRead,
   isYbPluginOnline,
+  resolveSocialCard1101Credential,
   YB_PLUGIN_FUNCTION_ID,
 } from '#/chs/utils/yb-plugin';
 
 const SELF_PAY_HINTS = ['自费', '现金', '个人'];
-
-export const OUTPATIENT_SETTLEMENT_MODE = {
-  INSURANCE_ASYNC: 'INSURANCE_ASYNC',
-  SYNC: 'SYNC',
-} as const;
-
-export const OP_INSURANCE_SETTLE_POLL_INTERVAL_MS = 2000;
-export const OP_INSURANCE_SETTLE_POLL_MAX_ATTEMPTS = 90;
-
-const TERMINAL_COORDINATION_STATES = new Set([
-  'COMPLETED',
-  'FAILED',
-  'UNKNOWN',
-  'CANCELLED',
-  'COMPENSATED',
-]);
-
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
 
 export interface OutpatientChargeInsuranceContext {
   contractId: string;
@@ -91,7 +65,7 @@ export function resolveInsuranceContractId(rows: PendingChargeItemRowDto[]): str
 /** 读卡并 1101，返回预结算所需医保上下文；纯自费返回 null。 */
 export async function resolveOutpatientChargeInsuranceContext(
   rows: PendingChargeItemRowDto[],
-): Promise<OutpatientChargeInsuranceContext | null> {
+): Promise<null | OutpatientChargeInsuranceContext> {
   if (!selectionIncludesInsuranceItems(rows)) {
     return null;
   }
@@ -103,7 +77,7 @@ export async function resolveOutpatientChargeInsuranceContext(
   if (!(await isYbPluginOnline())) {
     return null;
   }
-  const cardInfo = await invokeYbPlugin({
+  const card = await invokeSocialCardRead({
     FunctionId: YB_PLUGIN_FUNCTION_ID.SOCIAL_CARD,
     IP: DEFAULT_CARD_READER_HOST,
     PORT: DEFAULT_CARD_READER_PORT,
@@ -111,70 +85,21 @@ export async function resolveOutpatientChargeInsuranceContext(
     LOG_PATH: 'C:/neu_log/',
     SFZ_DRIVER_TYPE: 0,
   });
-  const mdtrtCertNo = cardInfo.trim();
-  if (!mdtrtCertNo) {
-    throw new Error('读卡未返回有效凭证号');
-  }
+  const credential = resolveSocialCard1101Credential(card);
   const person = await httpGetInsurancePersonInfo({
+    cardSn: credential.cardSn,
+    certno: credential.certno,
     contractId,
-    mdtrtCertType: '03',
-    mdtrtCertNo,
+    mdtrtCertType: credential.mdtrtCertType,
+    mdtrtCertNo: credential.mdtrtCertNo,
+    psnCertType: credential.psnCertType,
   });
   return {
     contractId,
     insuplcAdmdvs: person.insuplcAdmdvs,
     insutype: person.insutype,
     psnNo: person.psnNo,
-    ybCardInfo: mdtrtCertNo,
-    ybMediumType: '03',
+    ybCardInfo: credential.mdtrtCertNo,
+    ybMediumType: credential.mdtrtCertType,
   };
-}
-
-/** 正式结算响应是否为医保异步协同单路径。 */
-export function isOutpatientInsuranceAsyncConfirmResponse(
-  response: ConfirmOutpatientChargeSettlementResponse | null | undefined,
-): boolean {
-  if (!response) {
-    return false;
-  }
-  return (
-    response.settlementMode === OUTPATIENT_SETTLEMENT_MODE.INSURANCE_ASYNC &&
-    Boolean(response.paymentId)
-  );
-}
-
-export interface PollOutpatientInsuranceSettleOptions {
-  intervalMs?: number;
-  maxAttempts?: number;
-  onTick?: (status: GetOpInsuranceSettleStatusResponse, attempt: number) => void;
-}
-
-/** 轮询 OP_SETTLE 协同单直至终态（2s 间隔）。 */
-export async function pollOutpatientInsuranceSettleStatus(
-  paymentId: string,
-  options?: PollOutpatientInsuranceSettleOptions,
-): Promise<GetOpInsuranceSettleStatusResponse> {
-  const intervalMs = options?.intervalMs ?? OP_INSURANCE_SETTLE_POLL_INTERVAL_MS;
-  const maxAttempts = options?.maxAttempts ?? OP_INSURANCE_SETTLE_POLL_MAX_ATTEMPTS;
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const status = await httpGetOutpatientInsuranceSettleStatus({ paymentId });
-    options?.onTick?.(status, attempt);
-    const state = String(status.state ?? '').trim();
-    if (status.completed || state === 'COMPLETED' || status.paymentStatus === 'SUCCESS') {
-      return status;
-    }
-    if (state === 'FAILED' || state === 'CANCELLED') {
-      throw new Error(status.errorMsg?.trim() || '医保门诊结算失败');
-    }
-    if (state === 'UNKNOWN') {
-      throw new Error(status.errorMsg?.trim() || '结算结果待确认，请勿重复收费，请联系医保办处理');
-    }
-    if (TERMINAL_COORDINATION_STATES.has(state) && state !== 'COMPLETED') {
-      throw new Error(status.errorMsg?.trim() || `医保协同单异常状态：${state}`);
-    }
-    if (attempt < maxAttempts) {
-      await sleep(intervalMs);
-    }
-  }
-  throw new Error('医保门诊结算超时，请稍后在已收费页签核对或联系医保办');
 }
