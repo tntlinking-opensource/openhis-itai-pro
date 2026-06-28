@@ -20,6 +20,11 @@ package com.openhis.health.domain.workflow.supplyrequest.repository;
 import com.openhis.health.domain.workflow.supplyrequest.entity.SupplyRequest;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.time.LocalDateTime;
 
 import java.util.List;
 import java.util.Optional;
@@ -90,4 +95,26 @@ public interface SupplyRequestRepository extends JpaRepository<SupplyRequest, Lo
      * @return 存在任一行则为 {@code true}
      */
     boolean existsByBusNoAndStatusEnum(String busNo, String statusEnum);
+
+    /**
+     * 审批同意：仅当源态为 {@code APPROVAL} 时同号全行迁移至 {@code AGREE}（GAP-INV-004 / GAP-STALE-002）。
+     *
+     * @return 实际更新行数
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        UPDATE SupplyRequest s
+           SET s.statusEnum = :targetStatus,
+               s.approverId = :approverId,
+               s.approvalTime = :approvalTime
+         WHERE s.busNo = :busNo
+           AND s.statusEnum = :sourceStatus
+           AND s.isDeleted = false
+        """)
+    int approveToAgreeWhereBusNoAndSourceStatus(
+        @Param("busNo") String busNo,
+        @Param("targetStatus") String targetStatus,
+        @Param("sourceStatus") String sourceStatus,
+        @Param("approverId") Long approverId,
+        @Param("approvalTime") LocalDateTime approvalTime);
 }

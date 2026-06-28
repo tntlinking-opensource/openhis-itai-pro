@@ -355,3 +355,13 @@ VALUES (
     '2026-06-18 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL
 )
 ON CONFLICT ("name") DO NOTHING;
+
+INSERT INTO "ter_code_system" (
+    "id", "name", "title", "description", "version", "status", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+VALUES (
+    '900009', 'special_event_code', '体温单特殊事件', '护士站体温单特殊事件编码（DM-DIA-002）', '1.0', '2', '1',
+    '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL
+)
+ON CONFLICT ("name") DO NOTHING;

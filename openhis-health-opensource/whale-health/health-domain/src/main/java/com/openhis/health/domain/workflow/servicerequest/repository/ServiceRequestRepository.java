@@ -18,8 +18,10 @@
 package com.openhis.health.domain.workflow.servicerequest.repository;
 
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 
 import java.util.Collection;
 import java.util.List;
@@ -139,4 +141,10 @@ public interface ServiceRequestRepository extends JpaRepository<ServiceRequest, 
      */
     List<ServiceRequest> findByEncounterIdAndPrescriptionNoAndGenerateSourceEnum(
         Long encounterId, String prescriptionNo, String generateSourceEnum);
+
+    /**
+     * 按主键加悲观写锁（门诊执行次数门控 GAP-EXE-006）。
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<ServiceRequest> findWithLockById(Long id);
 }

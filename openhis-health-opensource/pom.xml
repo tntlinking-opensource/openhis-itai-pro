@@ -31,10 +31,8 @@
         <whale.framework.version>${project.version}</whale.framework.version>
         <whale.health.version>${project.version}</whale.health.version>
         <whale.emr.version>${project.version}</whale.emr.version>
-        <whale.mrms.version>${project.version}</whale.mrms.version>
         <whale.chs.version>${project.version}</whale.chs.version>
         <whale.elep.version>${project.version}</whale.elep.version>
-        <whale.report.version>${project.version}</whale.report.version>
         <whale.booking.version>${project.version}</whale.booking.version>
 
         <lombok.version>1.18.30</lombok.version>
@@ -55,9 +53,7 @@
         <module>whale-dependencies</module>
         <module>whale-health</module>
         <module>whale-emr</module>
-        <module>whale-mrms</module>
         <module>whale-booking</module>
-        <module>whale-report</module>
         <module>whale-chs-jilin</module>
         <module>whale-elep-jilin</module>
         <module>whale-einvoice-boss</module>
@@ -83,24 +79,7 @@
         <module>whale-dependencies</module>
         <module>whale-health</module>
         <module>whale-emr</module>
-        <module>whale-mrms</module>
         <module>whale-booking</module>
-        <module>whale-report</module>
-        <module>whale-chs-jilin</module>
-        <module>whale-elep-jilin</module>
-        <module>whale-einvoice-boss</module>
-        <module>whale-unionpay-bpc</module>
-    </modules>
-        </profile>
-        <profile>
-            <id>with-mrms</id>
-    <modules>
-        <module>whale-dependencies</module>
-        <module>whale-health</module>
-        <module>whale-emr</module>
-        <module>whale-mrms</module>
-        <module>whale-booking</module>
-        <module>whale-report</module>
         <module>whale-chs-jilin</module>
         <module>whale-elep-jilin</module>
         <module>whale-einvoice-boss</module>
@@ -113,9 +92,7 @@
         <module>whale-dependencies</module>
         <module>whale-health</module>
         <module>whale-emr</module>
-        <module>whale-mrms</module>
         <module>whale-booking</module>
-        <module>whale-report</module>
         <module>whale-chs-jilin</module>
         <module>whale-elep-jilin</module>
         <module>whale-einvoice-boss</module>
@@ -128,9 +105,7 @@
         <module>whale-dependencies</module>
         <module>whale-health</module>
         <module>whale-emr</module>
-        <module>whale-mrms</module>
         <module>whale-booking</module>
-        <module>whale-report</module>
         <module>whale-chs-jilin</module>
         <module>whale-elep-jilin</module>
         <module>whale-einvoice-boss</module>
@@ -147,9 +122,9 @@
             <id>with-unionpay-bpc</id>
         </profile>
         <profile>
-            <id>with-report</id>
+            <id>with-crb</id>
         </profile>
-<!-- 开源仓：仅 HIS 核心（无扩展模块） -->
+        <!-- 开源仓：仅 HIS 核心（无扩展模块） -->
 </profiles>
 
     <build>

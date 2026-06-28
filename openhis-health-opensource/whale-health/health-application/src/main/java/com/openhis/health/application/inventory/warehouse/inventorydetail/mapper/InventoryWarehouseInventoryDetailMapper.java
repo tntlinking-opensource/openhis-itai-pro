@@ -17,11 +17,19 @@
 
 package com.openhis.health.application.inventory.warehouse.inventorydetail.mapper;
 
+import com.openhis.health.application.inventory.warehouse.inventorydetail.dto.InventoryDetailBackupExportRowDto;
+import com.openhis.health.application.inventory.warehouse.inventorydetail.dto.InventoryDetailBackupListRowDto;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.dto.InventoryDetailCurrentExportRowDto;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.dto.InventoryDetailListRowDto;
+import com.openhis.health.application.inventory.warehouse.inventorydetail.request.ExportInventoryDetailBackupRequest;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.request.ExportInventoryDetailCurrentRequest;
+import com.openhis.health.application.inventory.warehouse.inventorydetail.request.PageInventoryDetailBackupRequest;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.request.PageInventoryDetailCurrentRequest;
+import com.openhis.health.application.inventory.warehouse.inventorydetail.request.SumInventoryDetailBackupRequest;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.request.SumInventoryDetailCurrentRequest;
+import com.openhis.health.domain.document.inventoryitemsnapshot.command.DocInventoryItemSnapshotRowCommand;
+import com.openhis.health.domain.document.inventoryitemsnapshot.queries.DocInventoryItemSnapshotPageQuery;
+import com.openhis.health.domain.document.inventoryitemsnapshot.queries.model.DocInventoryItemSnapshotRowQueryModel;
 import com.openhis.health.domain.workflow.inventoryitem.queries.WarehouseInventoryDetailPageQuery;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.WarehouseInventoryDetailItemModel;
 import org.springframework.data.domain.Page;
@@ -117,4 +125,80 @@ public interface InventoryWarehouseInventoryDetailMapper {
      * @return 导出行 DTO
      */
     InventoryDetailCurrentExportRowDto toCurrentExportRowDto(InventoryDetailListRowDto row);
+
+    /**
+     * 将备份分页请求装配为快照领域查询。
+     *
+     * @param request               HTTP 入参
+     * @param tenantId              租户
+     * @param resolvedBusNo         已解析的备份批次单号
+     * @param effectiveWarehouseIds 门控后的库房范围
+     * @return 快照分页查询
+     */
+    DocInventoryItemSnapshotPageQuery toSnapshotPageQuery(
+        PageInventoryDetailBackupRequest request,
+        Long tenantId,
+        String resolvedBusNo,
+        List<Long> effectiveWarehouseIds
+    );
+
+    /**
+     * 将备份汇总请求装配为快照领域查询。
+     *
+     * @param request               HTTP 入参
+     * @param tenantId              租户
+     * @param resolvedBusNo         已解析的备份批次单号
+     * @param effectiveWarehouseIds 门控后的库房范围
+     * @return 快照查询
+     */
+    DocInventoryItemSnapshotPageQuery toSnapshotPageQuery(
+        SumInventoryDetailBackupRequest request,
+        Long tenantId,
+        String resolvedBusNo,
+        List<Long> effectiveWarehouseIds
+    );
+
+    /**
+     * 将备份导出请求装配为快照领域查询。
+     *
+     * @param request               HTTP 入参
+     * @param tenantId              租户
+     * @param resolvedBusNo         已解析的备份批次单号
+     * @param effectiveWarehouseIds 门控后的库房范围
+     * @return 快照查询
+     */
+    DocInventoryItemSnapshotPageQuery toSnapshotPageQuery(
+        ExportInventoryDetailBackupRequest request,
+        Long tenantId,
+        String resolvedBusNo,
+        List<Long> effectiveWarehouseIds
+    );
+
+    /**
+     * 快照读模型 → 备份列表 DTO 骨架（展示列由应用层 enrich）。
+     *
+     * @param model 快照行读模型
+     * @return 备份列表行
+     */
+    InventoryDetailBackupListRowDto toBackupListRowDto(DocInventoryItemSnapshotRowQueryModel model);
+
+    /**
+     * 备份列表行 → 导出行 DTO。
+     *
+     * @param row 备份列表行
+     * @return 导出行
+     */
+    InventoryDetailBackupExportRowDto toBackupExportRowDto(InventoryDetailBackupListRowDto row);
+
+    /**
+     * 现库已装配列表行 → 快照落库行命令（IF-10）。
+     *
+     * @param row   已 enrich 的列表行
+     * @param model 领域行（提供 LocalDateTime 效期等）
+     * @return 快照行命令
+     */
+    DocInventoryItemSnapshotRowCommand toSnapshotRowCommand(
+        InventoryDetailListRowDto row,
+        WarehouseInventoryDetailItemModel model
+    );
 }

@@ -16,6 +16,7 @@ import com.openhis.whale.booking.application.outpatient.request.ProvisionSlotBat
 import com.openhis.whale.booking.application.outpatient.request.PublishScheduleRequest;
 import com.openhis.whale.booking.application.outpatient.request.ReactivateScheduleRequest;
 import com.openhis.whale.booking.application.outpatient.request.ReleaseStopClinicPreviewFreezeRequest;
+import com.openhis.whale.booking.application.outpatient.request.RetireScheduleRequest;
 import com.openhis.whale.booking.application.outpatient.request.PreviewStopClinicImpactRequest;
 import com.openhis.whale.booking.application.outpatient.request.TransferAppointmentsOnStopClinicRequest;
 import com.openhis.whale.booking.application.outpatient.response.PreviewStopClinicImpactResponse;
@@ -49,8 +50,11 @@ import com.openhis.whale.booking.contracts.reader.HealthScheduleMasterDataReader
 import com.openhis.whale.booking.domain.appointment.service.AppointmentQueryService;
 import com.openhis.whale.booking.domain.policy.entity.ReleasePolicy;
 import com.openhis.whale.booking.domain.policy.service.PolicyQueryService;
+import com.openhis.whale.booking.domain.template.entity.SlotProvisionTemplate;
+import com.openhis.whale.booking.domain.template.service.TemplateQueryService;
 import com.openhis.whale.booking.domain.schedule.command.CreateScheduleCommand;
 import com.openhis.whale.booking.domain.schedule.command.AdjustPlanningHorizonCommand;
+import com.openhis.whale.booking.domain.schedule.command.RetireScheduleCommand;
 import com.openhis.whale.booking.domain.schedule.command.SubstitutePractitionerCommand;
 import com.openhis.whale.booking.domain.schedule.queries.model.ScheduleActorModel;
 import com.openhis.whale.booking.domain.schedule.command.DeactivateScheduleCommand;
@@ -101,6 +105,7 @@ public class OutpatientScheduleAppService {
     private final SlotDomainService slotDomainService;
     private final SlotQueryService slotQueryService;
     private final PolicyQueryService policyQueryService;
+    private final TemplateQueryService templateQueryService;
     private final OutpatientScheduleMapper outpatientScheduleMapper;
     private final BookingOperatorResolver bookingOperatorResolver;
     private final BookingAuditSupport bookingAuditSupport;
@@ -227,6 +232,10 @@ public class OutpatientScheduleAppService {
             UpdateScheduleCommentCommand commentCommand = outpatientScheduleMapper.toUpdateScheduleCommentCommand(request, operatorId);
             scheduleDomainService.updateComment(commentCommand);
         }
+        if (request.getSlotProvisionTemplateId() != null) {
+            scheduleDomainService.updateTemplateSnapshot(
+                request.getScheduleId(), null, request.getSlotProvisionTemplateId());
+        }
     }
 
     /**
@@ -286,14 +295,17 @@ public class OutpatientScheduleAppService {
         // Gate：写路径须登录操作人。
         Long operatorId = bookingOperatorResolver.requireOperatorId();
         List<SlotTemplateRequest> templates = request.getSlotTemplates();
-        // Pre：未传模板时按放号策略 + 日程规划窗口自动切分时段。
+        ScheduleCalendarItemModel schedule = scheduleQueryService.loadCalendarItemById(request.getScheduleId());
+        // Pre：未传模板时优先按日程关联 T1，再回落放号策略。
+        if (CollectionUtils.isEmpty(templates)) {
+            templates = this.buildSlotTemplatesFromScheduleT1(schedule);
+        }
         if (CollectionUtils.isEmpty(templates)) {
             ReleasePolicy policy = this.resolveReleasePolicy(request);
-            ScheduleCalendarItemModel schedule = scheduleQueryService.loadCalendarItemById(request.getScheduleId());
             templates = outpatientScheduleMapper.buildSlotTemplatesFromPolicy(
                 policy, schedule.getPlanningHorizonStart(), schedule.getPlanningHorizonEnd());
             if (templates.isEmpty()) {
-                throw new BusinessException(ErrorCodeConstants.SLOT_INVALID_ARGUMENT, "无法从放号策略生成时段模板");
+                throw new BusinessException(ErrorCodeConstants.SLOT_INVALID_ARGUMENT, "无法从放号时段或放号策略生成时段模板");
             }
             request.setSlotTemplates(templates);
         }
@@ -621,6 +633,28 @@ public class OutpatientScheduleAppService {
     }
 
     /**
+     * 作废日程（草稿/已停诊 → retired），周历不再展示。
+     *
+     * @param request 作废请求
+     */
+    public void retireSchedule(@Valid RetireScheduleRequest request) {
+        Long operatorId = bookingOperatorResolver.requireOperatorId();
+        ScheduleDetailModel detail = scheduleQueryService.loadScheduleById(request.getScheduleId());
+        if (ScheduleStatus.ACTIVE.getCode().equals(detail.getStatusEnum())) {
+            throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "已发布日程须先停诊后再作废");
+        }
+        long bookedSlotCount = slotQueryService.countBookedSlotsByScheduleId(request.getScheduleId());
+        if (bookedSlotCount > 0) {
+            throw new BusinessException(
+                ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT,
+                "存在预约占用号源，不允许作废日程（" + bookedSlotCount + " 个时段仍有预约），请先通过停诊向导处理预约");
+        }
+        RetireScheduleCommand command = outpatientScheduleMapper.toRetireScheduleCommand(request, operatorId);
+        scheduleDomainService.retireSchedule(command);
+        bookingAuditSupport.record("Schedule", request.getScheduleId(), "RETIRE_SCHEDULE", request.getReason());
+    }
+
+    /**
      * 断言日程处于草稿态，供编辑门控使用。
      */
     private void requireDraftSchedule(Long scheduleId) {
@@ -639,6 +673,25 @@ public class OutpatientScheduleAppService {
             throw new BusinessException(ErrorCodeConstants.SLOT_INVALID_ARGUMENT, "放号策略不存在");
         }
         return policy;
+    }
+
+    private List<SlotTemplateRequest> buildSlotTemplatesFromScheduleT1(ScheduleCalendarItemModel schedule) {
+        if (schedule == null || schedule.getSlotProvisionTemplateId() == null) {
+            return List.of();
+        }
+        SlotProvisionTemplate slotTemplate = templateQueryService.loadSlotProvisionTemplateById(
+            schedule.getSlotProvisionTemplateId());
+        if (slotTemplate == null) {
+            return List.of();
+        }
+        LocalDate targetDate = null;
+        if (schedule.getPlanningHorizonStart() != null) {
+            targetDate = schedule.getPlanningHorizonStart().toLocalDate();
+        }
+        if (targetDate == null) {
+            return List.of();
+        }
+        return outpatientScheduleMapper.buildSlotTemplatesFromT1(slotTemplate, targetDate);
     }
 
     private void enrichCalendarDisplay(PageSchedulesByCalendarResponse response, Long organizationId) {

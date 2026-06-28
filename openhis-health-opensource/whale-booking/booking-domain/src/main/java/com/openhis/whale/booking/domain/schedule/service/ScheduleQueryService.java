@@ -190,6 +190,7 @@ public class ScheduleQueryService {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), query.getOrganizationId()));
+            predicates.add(cb.notEqual(root.get(FieldNameConstants.STATUS_ENUM), ScheduleStatus.RETIRED.getCode()));
             // 规划窗口与查询区间有重叠即可出现在日历。
             jakarta.persistence.criteria.Predicate horizonOverlaps = cb.and(
                 cb.or(cb.isNull(root.get(FieldNameConstants.PLANNING_HORIZON_START)),
@@ -224,6 +225,39 @@ public class ScheduleQueryService {
             result.add(this.toCalendarItemModel(schedule, actors));
         }
         return result;
+    }
+
+    /**
+     * 指定日期是否已存在同 T2 来源且未废弃的正式日程（用于模板批量生成去重）。
+     *
+     * @param organizationId 机构主键
+     * @param sourceScheduleTemplateId 来源 T2 主键
+     * @param date 目标日期
+     * @return 已存在则 true
+     */
+    public boolean existsNonRetiredScheduleForTemplateOnDay(
+        Long organizationId, Long sourceScheduleTemplateId, LocalDate date) {
+        if (organizationId == null || sourceScheduleTemplateId == null || date == null) {
+            return false;
+        }
+        LocalDateTime dayStart = date.atStartOfDay();
+        LocalDateTime dayEndExclusive = date.plusDays(1).atStartOfDay();
+        Specification<Schedule> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ORGANIZATION_ID), organizationId));
+            predicates.add(cb.equal(root.get("sourceScheduleTemplateId"), sourceScheduleTemplateId));
+            predicates.add(cb.notEqual(root.get(FieldNameConstants.STATUS_ENUM), ScheduleStatus.RETIRED.getCode()));
+            jakarta.persistence.criteria.Predicate horizonOverlaps = cb.and(
+                cb.or(cb.isNull(root.get(FieldNameConstants.PLANNING_HORIZON_START)),
+                    cb.lessThan(root.get(FieldNameConstants.PLANNING_HORIZON_START), dayEndExclusive)),
+                cb.or(cb.isNull(root.get(FieldNameConstants.PLANNING_HORIZON_END)),
+                    cb.greaterThan(root.get(FieldNameConstants.PLANNING_HORIZON_END), dayStart))
+            );
+            predicates.add(horizonOverlaps);
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        return scheduleRepository.count(specification) > 0;
     }
 
     /**
@@ -385,6 +419,8 @@ public class ScheduleQueryService {
         model.setHealthcareServiceId(schedule.getHealthcareServiceId());
         model.setSubstitutePractitionerId(schedule.getSubstitutePractitionerId());
         model.setSubstituteReason(schedule.getSubstituteReason());
+        model.setSourceScheduleTemplateId(schedule.getSourceScheduleTemplateId());
+        model.setSlotProvisionTemplateId(schedule.getSlotProvisionTemplateId());
         List<ScheduleActorModel> actors = new ArrayList<>();
         for (ScheduleActor row : actorRows) {
             ScheduleActorModel actor = new ScheduleActorModel();

@@ -31,8 +31,83 @@ public interface InpatientRegistrationConstants {
     /** 已入科：{@code status_enum = IN_PROGRESS}。 */
     String LIST_STATUS_ADMITTED = "ADMITTED";
 
-    /** 缺省列表筛选（待登记），由应用层装配至 Query。 */
+    /** 预入院：{@code status_enum = PRE_ADMISSION}。 */
+    String LIST_STATUS_PRE_ADMISSION = "PRE_ADMISSION";
+
+    /** 暂离（待转科/待出院）：{@code status_enum = ON_HOLD}。 */
+    String LIST_STATUS_ON_HOLD = "ON_HOLD";
+
+    /** 待结算：{@code status_enum = PENDING}。 */
+    String LIST_STATUS_PENDING = "PENDING";
+
+    /** 已结算：{@code status_enum = COMPLETED}。 */
+    String LIST_STATUS_COMPLETED = "COMPLETED";
+
+    /** 已出院：{@code status_enum = DISCHARGED}。 */
+    String LIST_STATUS_DISCHARGED = "DISCHARGED";
+
+    /** 取消登记：{@code status_enum = CANCELLED}。 */
+    String LIST_STATUS_CANCELLED = "CANCELLED";
+
+    /** 错误录入：{@code status_enum = ENTERED_IN_ERROR}。 */
+    String LIST_STATUS_ENTERED_IN_ERROR = "ENTERED_IN_ERROR";
+
+    /** 缺省列表筛选（待登记）；仅作历史常量，登记列表未传状态时查全部登记口径。 */
     String DEFAULT_LIST_STATUS = LIST_STATUS_PLANNED;
+
+    /**
+     * 登记列表筛选码 → 持久化 {@code status_enum}。
+     *
+     * @param registrationListStatus 筛选码
+     * @return 就诊状态码；无法识别时返回 null
+     */
+    static String toEncounterStatusCode(String registrationListStatus) {
+        if (registrationListStatus == null || registrationListStatus.isBlank()) {
+            return null;
+        }
+        String code = registrationListStatus.trim();
+        if (LIST_STATUS_WAIT_ADMISSION.equals(code)) {
+            return com.openhis.health.domain.share.enums.EncounterStatus.REGISTERED.getCode();
+        }
+        if (LIST_STATUS_ADMITTED.equals(code)) {
+            return com.openhis.health.domain.share.enums.EncounterStatus.IN_PROGRESS.getCode();
+        }
+        if (LIST_STATUS_PLANNED.equals(code)) {
+            return com.openhis.health.domain.share.enums.EncounterStatus.PLANNED.getCode();
+        }
+        if (LIST_STATUS_PRE_ADMISSION.equals(code)) {
+            return com.openhis.health.domain.share.enums.EncounterStatus.PRE_ADMISSION.getCode();
+        }
+        if (LIST_STATUS_ON_HOLD.equals(code)) {
+            return com.openhis.health.domain.share.enums.EncounterStatus.ON_HOLD.getCode();
+        }
+        if (LIST_STATUS_PENDING.equals(code)) {
+            return com.openhis.health.domain.share.enums.EncounterStatus.PENDING.getCode();
+        }
+        if (LIST_STATUS_COMPLETED.equals(code)) {
+            return com.openhis.health.domain.share.enums.EncounterStatus.COMPLETED.getCode();
+        }
+        if (LIST_STATUS_DISCHARGED.equals(code)) {
+            return com.openhis.health.domain.share.enums.EncounterStatus.DISCHARGED.getCode();
+        }
+        if (LIST_STATUS_CANCELLED.equals(code)) {
+            return com.openhis.health.domain.share.enums.EncounterStatus.CANCELLED.getCode();
+        }
+        if (LIST_STATUS_ENTERED_IN_ERROR.equals(code)) {
+            return com.openhis.health.domain.share.enums.EncounterStatus.ENTERED_IN_ERROR.getCode();
+        }
+        return null;
+    }
+
+    /**
+     * 是否合法的登记列表筛选码。
+     *
+     * @param registrationListStatus 筛选码
+     * @return 合法则为 true
+     */
+    static boolean isValidRegistrationListStatus(String registrationListStatus) {
+        return toEncounterStatusCode(registrationListStatus) != null;
+    }
 
     /** 门诊转住院默认入院方式码（与 {@code ter_concept} {@code in_way_code} code=1 对齐）。 */
     String DEFAULT_IN_WAY_CODE_OUTPATIENT_TRANSFER = "1";

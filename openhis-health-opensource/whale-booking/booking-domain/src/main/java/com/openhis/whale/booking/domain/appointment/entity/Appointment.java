@@ -24,10 +24,12 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.lang3.StringUtils;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
@@ -86,6 +88,19 @@ public class Appointment extends BaseAuditedEntity {
     /** 号源标识（门诊预约）。 */
     @Column(name = "slot_id")
     private Long slotId;
+
+    /** 冗余：医疗服务标识（门诊防重）。 */
+    @Column(name = "healthcare_service_id")
+    private Long healthcareServiceId;
+
+    /** 冗余：预约自然日 Asia/Shanghai（门诊防重）。 */
+    @Column(name = "booking_date")
+    private LocalDate bookingDate;
+
+    /** 乐观锁版本号。 */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Integer version;
 
     /** 服务类型编码。 */
     @Column(name = "service_type_code")

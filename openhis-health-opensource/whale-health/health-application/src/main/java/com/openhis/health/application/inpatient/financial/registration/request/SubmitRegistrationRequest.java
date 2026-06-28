@@ -171,4 +171,10 @@ public class SubmitRegistrationRequest {
     @Schema(description = "医疗类别，默认 21 普通住院")
     /** 医疗类别，默认 21 普通住院（业务字段）。 */
     private String medType;
+
+    /** 主治医生医务人员 ID（医保登记 2401 须传 atddr_no）。 */
+    @Schema(description = "主治医生医务人员 ID（医保登记必填）")
+    @JsonSerialize(using = ToStringSerializer.class)
+    /** 主治医生医务人员 ID（业务字段）。 */
+    private Long attendingDoctorId;
 }

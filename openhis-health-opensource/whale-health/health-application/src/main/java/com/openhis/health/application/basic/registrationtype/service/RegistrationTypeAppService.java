@@ -38,6 +38,7 @@ import com.openhis.health.domain.administration.healthcareservice.entity.Healthc
 import com.openhis.health.domain.administration.healthcareservice.service.HealthcareServiceDomainService;
 import com.openhis.health.domain.administration.healthcareservice.service.HealthcareServiceQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.DailySettlementSharedConstants;
 import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.core.application.exception.ValidationException;
@@ -145,10 +146,10 @@ public class RegistrationTypeAppService {
         if (entity == null) {
             throw new EntityNotFoundException("挂号类型", serviceId);
         }
-        // 新建号源须落库挂号费定价行，否则挂号/维护台无法回显金额。
+        // 新建号源须落库诊察费定价行（fin_type 1012），否则日结/费用明细无法汇总。
         syncSalePricingForHealthcareService(
             entity.getId(),
-            entity.getTypeCode(),
+            DailySettlementSharedConstants.CONSULTATION_FEE_FIN_TYPE_CODE,
             null,
             entity.getName(),
             request.getAmount(),
@@ -180,10 +181,10 @@ public class RegistrationTypeAppService {
         if (entity == null) {
             throw new EntityNotFoundException("挂号类型", request.getId());
         }
-        // 编辑时按请求金额重建实例定价（null 表示仅清空定价行）。
+        // 编辑时按请求金额重建实例定价；type_code 固定诊察费 1012。
         syncSalePricingForHealthcareService(
             entity.getId(),
-            entity.getTypeCode(),
+            DailySettlementSharedConstants.CONSULTATION_FEE_FIN_TYPE_CODE,
             null,
             entity.getName(),
             request.getAmount(),
@@ -343,7 +344,7 @@ public class RegistrationTypeAppService {
      * 与诊疗/耗材目录共用 {@link ChargePricingCommandAssembler}，金额口径为「元」。</p>
      *
      * @param serviceId     医疗服务主键
-     * @param typeCode      类型编码（写入定价 {@code type_code}，可空）
+     * @param typeCode      财务类型编码（写入定价 {@code type_code}，号源须为诊察费 1012）
      * @param ybType        医保类别（写入定价 {@code yb_type}，可空）
      * @param chargeName    收费项展示名称（写入定价 {@code charge_name}，可空）
      * @param salePriceYuan 销售价（元）；{@code null} 表示仅清空不写回

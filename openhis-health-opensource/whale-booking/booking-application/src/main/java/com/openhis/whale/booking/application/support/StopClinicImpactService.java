@@ -34,6 +34,7 @@ import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
+import com.openhis.whale.booking.domain.share.BookingDateSupport;
 import com.openhis.whale.booking.domain.share.StopClinicConstants;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -353,7 +354,12 @@ public class StopClinicImpactService {
             rescheduleRequest.setAppointmentId(appointment.getId());
             rescheduleRequest.setNewSlotId(targetSlotId);
             appointmentDomainService.rescheduleOutpatientBooking(
-                bookingRegisterMapper.toRescheduleOutpatientBookingCommand(rescheduleRequest, newSlot, operatorId));
+                bookingRegisterMapper.toRescheduleOutpatientBookingCommand(
+                    rescheduleRequest,
+                    newSlot,
+                    schedule.getHealthcareServiceId(),
+                    BookingDateSupport.resolveBookingDate(newSlot.getStartTime()),
+                    operatorId));
             this.addSuccess(response, appointment.getId(), targetSlotId, "转交成功");
             bookingAuditSupport.record("Appointment", appointment.getId(), "TRANSFER_ON_STOP_CLINIC", targetSlotId.toString());
         } catch (BusinessException ex) {

@@ -57,6 +57,9 @@ public interface InpatientNurseStationConstants {
     /** 入出转：分床/换床/互换持久化失败（AS-IP-NUR-002 IF-IP-NUR-ATD-02）。 */
     String EX_IP_ATD_202 = "EX-IP-ATD-202";
 
+    /** 入出转：目标床已被他人预约或预约入院日未到（GAP-ATD-007）。 */
+    String EX_IP_ATD_207 = "EX-IP-ATD-207";
+
     /** 入出转：待执行医嘱列表失败（IF-IP-NUR-ATD-03）。 */
     String EX_IP_ATD_103 = "EX-IP-ATD-103";
 
@@ -215,6 +218,9 @@ public interface InpatientNurseStationConstants {
 
     /** 执行域写失败（IF-IP-EXE-02）。 */
     String EX_IP_EXE_304 = "EX-IP-EXE-304";
+
+    /** 长期嘱自然月累计发放超上限（IF-IP-EXE-02，GAP-EXE-010）。 */
+    String EX_IP_EXE_305 = "EX-IP-EXE-305";
 
     /** 不执行时槽位非 pending（IF-IP-EXE-04）。 */
     String EX_IP_EXE_401 = "EX-IP-EXE-401";

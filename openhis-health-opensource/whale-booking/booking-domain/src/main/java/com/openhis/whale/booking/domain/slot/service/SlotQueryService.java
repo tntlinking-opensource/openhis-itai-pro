@@ -294,6 +294,26 @@ public class SlotQueryService {
     }
 
     /**
+     * 统计日程下仍有预约占用的号源段数（bookedCount &gt; 0，作废日程前门禁）。
+     *
+     * @param scheduleId 日程主键
+     * @return 占用段数；scheduleId 为空时返回 0
+     */
+    public long countBookedSlotsByScheduleId(Long scheduleId) {
+        if (scheduleId == null) {
+            return 0;
+        }
+        Specification<Slot> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get("scheduleId"), scheduleId));
+            predicates.add(cb.greaterThan(root.get("bookedCount"), 0));
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        return slotRepository.count(specification);
+    }
+
+    /**
      * 聚合根到读侧明细模型的映射。
      *
      * @param slot 聚合根

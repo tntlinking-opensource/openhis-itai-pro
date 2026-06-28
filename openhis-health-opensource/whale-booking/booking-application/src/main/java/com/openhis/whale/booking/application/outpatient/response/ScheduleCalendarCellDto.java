@@ -63,4 +63,10 @@ public class ScheduleCalendarCellDto {
 
     /** 号源类型展示名（由 actors 解析）。 */
     private String healthcareServiceName;
+
+    /** 来源 T2 日排班模板主键。 */
+    private Long sourceScheduleTemplateId;
+
+    /** 关联 T1 放号时段模板主键。 */
+    private Long slotProvisionTemplateId;
 }

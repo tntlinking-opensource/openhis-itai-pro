@@ -49,6 +49,7 @@ import com.openhis.whale.booking.domain.slot.repository.SlotIdentifierRepository
 import com.openhis.whale.booking.domain.slot.repository.SlotRepository;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -316,7 +317,11 @@ public class SlotDomainService {
         // 状态迁移：递增占用计数并刷新 free/busy 状态。
         slot.increaseBookedCountAndRefreshStatus(item.getAllowOverbook());
         // 持久化：保存占用后状态。
-        slotRepository.save(slot);
+        try {
+            slotRepository.save(slot);
+        } catch (OptimisticLockingFailureException ex) {
+            throw new BusinessException(ErrorCodeConstants.SLOT_CONFLICT, "号源已被占用，请刷新后重试");
+        }
 
         // 发布事件：占用落库成功后再通知下游。
         domainEventPublisher.publish(new SlotBookedEvent(slot.getId(), slot.getId(), slot.getBookedCount(), slot.getStatusCode(), command.getOperatorId()));
@@ -351,7 +356,11 @@ public class SlotDomainService {
         // 状态迁移：递减占用计数并刷新 free/busy 状态。
         slot.decreaseBookedCountAndRefreshStatus(releaseCount);
         // 持久化：保存释放后状态。
-        slotRepository.save(slot);
+        try {
+            slotRepository.save(slot);
+        } catch (OptimisticLockingFailureException ex) {
+            throw new BusinessException(ErrorCodeConstants.SLOT_CONFLICT, "号源已被占用，请刷新后重试");
+        }
 
         // 发布事件：释放落库成功后再通知下游。
         domainEventPublisher.publish(new SlotReleasedEvent(slot.getId(), slot.getId(), slot.getBookedCount(), slot.getStatusCode(), command.getOperatorId()));

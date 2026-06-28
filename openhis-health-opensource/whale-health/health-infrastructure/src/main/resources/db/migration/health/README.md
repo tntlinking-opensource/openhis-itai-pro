@@ -21,6 +21,6 @@ COMMENT ON COLUMN adm_patient.id IS '主键';
 
 - 单表脚本：`V{n}__{表名}.sql`（如 `V17__adm_patient.sql`）
 - 框架与种子：`V1__Init.sql`（全部 `whale_*`）
-- 当前最大版本：**V74**（`prt_print`）
+- 当前最大版本：**V102**（`cln_procedure_occurrence_unique`，GAP-EXE-002）；**V101**（`doc_inventory_item_snapshot`）；`whale_sequence_seed_sync` 为 **V100**，须在 V1–V99 全部种子之后
 - 新建脚本模板：`../_templates/health/_TEMPLATE.sql`（Flyway 不扫描 `_templates` 目录）
 - 发版 squash：`../../../../../../../scripts/squash-flyway-release.mjs`

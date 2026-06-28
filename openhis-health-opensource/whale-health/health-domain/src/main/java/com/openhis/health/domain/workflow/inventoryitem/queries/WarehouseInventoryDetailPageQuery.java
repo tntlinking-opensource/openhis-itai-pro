@@ -80,4 +80,14 @@ public class WarehouseInventoryDetailPageQuery extends AbstractPageQuery {
      * 应用层解析后的耗材定义主键（{@code item_table=adm_device_definition}）；由 {@code InventoryCatalogFilterSupport} 写入。
      */
     private List<Long> resolvedDeviceDefinitionIds;
+
+    /**
+     * 关键字预解析的药品定义主键（编码/商品名等）；由 {@code InventoryCatalogFilterSupport#enrichKeywordDefinitionIds} 写入。
+     */
+    private List<Long> resolvedMedicationDefinitionIdsForKeyword;
+
+    /**
+     * 关键字预解析的耗材定义主键（编码/商品名等）；由 {@code InventoryCatalogFilterSupport#enrichKeywordDefinitionIds} 写入。
+     */
+    private List<Long> resolvedDeviceDefinitionIdsForKeyword;
 }

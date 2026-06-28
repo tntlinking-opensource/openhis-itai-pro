@@ -23,6 +23,7 @@ import com.openhis.health.domain.administration.chargeitemdefinition.query.Charg
 import com.openhis.health.domain.administration.chargeitemdefinition.repository.ChargeItemDefinitionRepository;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.PriceType;
+import com.openhis.health.domain.share.enums.PublicationStatus;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -31,7 +32,6 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -41,9 +41,12 @@ import lombok.RequiredArgsConstructor;
 /**
  * 收费项定义读侧查询服务。
  *
- * <p>职责：按实例（药品/项目等）与 {@link PriceType} 持久化码解析定价行；销售侧零售价统一为 {@link PriceType#SALE}（不再使用 {@code UNIT}）。</p>
+ * <p>职责：按实例（药品/项目等）与 {@link PriceType} 持久化码解析<strong>当前有效</strong>定价行；
+ * 销售侧零售价统一为 {@link PriceType#SALE}（不再使用 {@code UNIT}）。</p>
  *
- * <p>边界：只读；{@code instanceTable} 有值时走表+实例联合键，否则仅按实例标识查询。</p>
+ * <p>边界：只读；{@code instanceTable} 有值时走表+实例联合键，否则仅按实例标识查询。
+ * 「当前价」读路径（**BR-PRICE-SRC-001** / **BR-CHGDEF-QRY-002**）仅返回 {@code status_enum=ACTIVE} 且未软删行；
+ * {@link #findAllDefinitionsByIdIn} 按主键快照加载，供 {@code ChargeItem.definition_id} 历史锚点，不过滤 ACTIVE。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -59,10 +62,11 @@ public class ChargeItemDefinitionQueryService {
     public List<ChargeItemDefinition> findSaleItemByInstanceId(ChargeItemDefinitionQueryCommand cmd) {
         String saleCode = PriceType.SALE.getCode();
         if (cmd.getInstanceTable() != null) {
-            return repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCode(
-                cmd.getInstanceTable(), cmd.getInstanceId(), saleCode);
+            return filterCurrentActivePriceLines(repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCode(
+                cmd.getInstanceTable(), cmd.getInstanceId(), saleCode));
         }
-        return repository.findAllByInstanceIdAndPriceTypeCode(cmd.getInstanceId(), saleCode);
+        return filterCurrentActivePriceLines(
+            repository.findAllByInstanceIdAndPriceTypeCode(cmd.getInstanceId(), saleCode));
     }
 
     /**
@@ -74,10 +78,11 @@ public class ChargeItemDefinitionQueryService {
     public List<ChargeItemDefinition> findPurchaseItemByInstanceId(ChargeItemDefinitionQueryCommand cmd) {
         String purchaseCode = PriceType.PURCHASE.getCode();
         if (cmd.getInstanceTable() != null) {
-            return repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCode(
-                cmd.getInstanceTable(), cmd.getInstanceId(), purchaseCode);
+            return filterCurrentActivePriceLines(repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCode(
+                cmd.getInstanceTable(), cmd.getInstanceId(), purchaseCode));
         }
-        return repository.findAllByInstanceIdAndPriceTypeCode(cmd.getInstanceId(), purchaseCode);
+        return filterCurrentActivePriceLines(
+            repository.findAllByInstanceIdAndPriceTypeCode(cmd.getInstanceId(), purchaseCode));
     }
 
     /**
@@ -89,11 +94,11 @@ public class ChargeItemDefinitionQueryService {
     public List<ChargeItemDefinition> findSalePriceByInstanceIdAndLot(ChargeItemDefinitionQueryCommand cmd) {
         String saleCode = PriceType.SALE.getCode();
         if (cmd.getInstanceTable() != null) {
-            return repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
-                cmd.getInstanceTable(), cmd.getInstanceId(), saleCode, cmd.getLotNo());
+            return filterCurrentActivePriceLines(repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
+                cmd.getInstanceTable(), cmd.getInstanceId(), saleCode, cmd.getLotNo()));
         }
-        return repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(
-            cmd.getInstanceId(), saleCode, cmd.getLotNo());
+        return filterCurrentActivePriceLines(
+            repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(cmd.getInstanceId(), saleCode, cmd.getLotNo()));
     }
 
     /**
@@ -105,11 +110,11 @@ public class ChargeItemDefinitionQueryService {
     public List<ChargeItemDefinition> findPurchasePriceByInstanceIdAndLot(ChargeItemDefinitionQueryCommand cmd) {
         String purchaseCode = PriceType.PURCHASE.getCode();
         if (cmd.getInstanceTable() != null) {
-            return repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
-                cmd.getInstanceTable(), cmd.getInstanceId(), purchaseCode, cmd.getLotNo());
+            return filterCurrentActivePriceLines(repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
+                cmd.getInstanceTable(), cmd.getInstanceId(), purchaseCode, cmd.getLotNo()));
         }
-        return repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(
-            cmd.getInstanceId(), purchaseCode, cmd.getLotNo());
+        return filterCurrentActivePriceLines(
+            repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(cmd.getInstanceId(), purchaseCode, cmd.getLotNo()));
     }
 
     /**
@@ -123,10 +128,11 @@ public class ChargeItemDefinitionQueryService {
     public List<ChargeItemDefinition> findLotNumberCostByInstanceIdAndLot(ChargeItemDefinitionQueryCommand cmd) {
         String costCode = PriceType.LOT_NUMBER_COST.getCode();
         if (cmd.getInstanceTable() != null) {
-            return repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
-                cmd.getInstanceTable(), cmd.getInstanceId(), costCode, cmd.getLotNo());
+            return filterCurrentActivePriceLines(repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
+                cmd.getInstanceTable(), cmd.getInstanceId(), costCode, cmd.getLotNo()));
         }
-        return repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(cmd.getInstanceId(), costCode, cmd.getLotNo());
+        return filterCurrentActivePriceLines(
+            repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(cmd.getInstanceId(), costCode, cmd.getLotNo()));
     }
 
     /**
@@ -140,10 +146,11 @@ public class ChargeItemDefinitionQueryService {
     public List<ChargeItemDefinition> findLotNumberPriceByInstanceIdAndLot(ChargeItemDefinitionQueryCommand cmd) {
         String priceCode = PriceType.LOT_NUMBER_PRICE.getCode();
         if (cmd.getInstanceTable() != null) {
-            return repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
-                cmd.getInstanceTable(), cmd.getInstanceId(), priceCode, cmd.getLotNo());
+            return filterCurrentActivePriceLines(repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
+                cmd.getInstanceTable(), cmd.getInstanceId(), priceCode, cmd.getLotNo()));
         }
-        return repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(cmd.getInstanceId(), priceCode, cmd.getLotNo());
+        return filterCurrentActivePriceLines(
+            repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(cmd.getInstanceId(), priceCode, cmd.getLotNo()));
     }
 
     /**
@@ -159,7 +166,7 @@ public class ChargeItemDefinitionQueryService {
     }
 
     /**
-     * 解析定价表 {@link com.openhis.health.domain.share.enums.PriceType#PURCHASE} 首个稳定非空单价（每<strong>包装单位</strong>）。
+     * 解析定价表 {@link com.openhis.health.domain.share.enums.PriceType#PURCHASE} 当前有效择优单价（每<strong>包装单位</strong>）。
      *
      * <p>库房单据读路径两档锚价之一（无批号时）；与 {@link #resolveFirstLotNumberCostPriceValue} 成对使用，<strong>禁止</strong>在库房选品/详情槽价路径取 {@code SALE}。</p>
      *
@@ -178,7 +185,7 @@ public class ChargeItemDefinitionQueryService {
     }
 
     /**
-     * 解析定价表 {@link com.openhis.health.domain.share.enums.PriceType#SALE} 首个稳定非空单价（每<strong>包装单位</strong>）。
+     * 解析定价表 {@link com.openhis.health.domain.share.enums.PriceType#SALE} 当前有效择优单价（每<strong>包装单位</strong>）。
      *
      * @param instanceTable 物品物理表名
      * @param instanceId    物品定义主键
@@ -195,7 +202,7 @@ public class ChargeItemDefinitionQueryService {
     }
 
     /**
-     * 解析实例+批号维 {@link PriceType#LOT_NUMBER_COST} 首个稳定非空单价（价随批号展示，不做实例维回落）。
+     * 解析实例+批号维 {@link PriceType#LOT_NUMBER_COST} 当前有效择优单价（价随批号展示，不做实例维回落）。
      *
      * <p>库房单据读路径两档锚价之二（有批号时）；{@link PriceType#LOT_NUMBER_PRICE} 不参与库房读路径。</p>
      *
@@ -228,30 +235,19 @@ public class ChargeItemDefinitionQueryService {
     }
 
     /**
-     * 判断实例+批号维度是否已存在任一条「批号进价」或「批号售价」定价行（用于进货同意路径批号维定价去重，WHS-IN-SDD-R-006）。
+     * 判断实例+批号维度是否已存在任一条<strong>当前有效</strong>「批号进价」或「批号售价」定价行（用于进货同意路径批号维定价去重，WHS-IN-SDD-R-006）。
      *
      * @param cmd 查询命令；{@code instanceTable}、{@code instanceId}、非空白 {@code lotNo} 须已由调用方保证
-     * @return 已存在任一条 {@link PriceType#LOT_NUMBER_COST} 或 {@link PriceType#LOT_NUMBER_PRICE} 且批号一致时为 true
+     * @return 已存在任一条 ACTIVE {@link PriceType#LOT_NUMBER_COST} 或 {@link PriceType#LOT_NUMBER_PRICE} 且批号一致时为 true
      */
     public boolean existsLotNumberCostOrLotNumberPriceForInstanceAndLot(ChargeItemDefinitionQueryCommand cmd) {
         if (cmd == null || cmd.getInstanceId() == null || StringUtils.isBlank(cmd.getLotNo())) {
             return false;
         }
-        String lotTrimmed = cmd.getLotNo().trim();
-        String costCode = PriceType.LOT_NUMBER_COST.getCode();
-        String saleCode = PriceType.LOT_NUMBER_PRICE.getCode();
-        if (StringUtils.isNotBlank(cmd.getInstanceTable())) {
-            if (!repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
-                cmd.getInstanceTable().trim(), cmd.getInstanceId(), costCode, lotTrimmed).isEmpty()) {
-                return true;
-            }
-            return !repository.findAllByInstanceTableAndInstanceIdAndPriceTypeCodeAndLotNo(
-                cmd.getInstanceTable().trim(), cmd.getInstanceId(), saleCode, lotTrimmed).isEmpty();
-        }
-        if (!repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(cmd.getInstanceId(), costCode, lotTrimmed).isEmpty()) {
+        if (!this.findLotNumberCostByInstanceIdAndLot(cmd).isEmpty()) {
             return true;
         }
-        return !repository.findAllByInstanceIdAndPriceTypeCodeAndLotNo(cmd.getInstanceId(), saleCode, lotTrimmed).isEmpty();
+        return !this.findLotNumberPriceByInstanceIdAndLot(cmd).isEmpty();
     }
 
     /**
@@ -263,27 +259,26 @@ public class ChargeItemDefinitionQueryService {
     public List<ChargeItemDefinition> findPriceLinesByProjects(ChargeItemDefinitionQueryCommand cmd) {
         // 批量取价：有表维度时用 IN 查询限定在同表多实例，防止跨业务表 id 碰撞。
         if (cmd.getInstanceTable() != null) {
-            return repository.findAllByInstanceTableAndInstanceIdIn(cmd.getInstanceTable(), cmd.getInstanceIds());
+            return filterCurrentActivePriceLines(
+                repository.findAllByInstanceTableAndInstanceIdIn(cmd.getInstanceTable(), cmd.getInstanceIds()));
         }
-        return repository.findAllByInstanceIdIn(cmd.getInstanceIds());
+        return filterCurrentActivePriceLines(repository.findAllByInstanceIdIn(cmd.getInstanceIds()));
     }
 
     /**
-     * 挂号场景取单条销售定价行：在 {@link #findSaleItemByInstanceId(ChargeItemDefinitionQueryCommand)} 结果上取首条。
+     * 挂号场景取单条销售定价行：在 {@link #findSaleItemByInstanceId(ChargeItemDefinitionQueryCommand)} 结果上按 priority/id 择优。
      *
      * @param cmd 查询命令
-     * @return 首条定价行；无命中时 {@code null}
+     * @return 择优定价行；无命中时 {@code null}
      */
     public ChargeItemDefinition findSaleLineForHealthcareServiceRegistration(ChargeItemDefinitionQueryCommand cmd) {
-        List<ChargeItemDefinition> rows = this.findSaleItemByInstanceId(cmd);
-        if (rows.isEmpty()) {
-            return null;
-        }
-        return rows.get(0);
+        return selectBestCurrentPriceLine(this.findSaleItemByInstanceId(cmd));
     }
 
     /**
      * 按收费项定义主键批量加载，供收费明细列表、预结算预览等一次性解析 {@code charge_name}。
+     *
+     * <p>按主键快照加载，供 {@code ChargeItem.definition_id} 历史锚点；<strong>不过滤</strong> {@code status_enum}（**BR-PRICE-SRC-001** 已发生业务读账单）。</p>
      *
      * @param definitionIds 定价定义主键集合，允许含 {@code null}（忽略）
      * @return 以定义主键为键的映射；入参为空时返回空映射
@@ -347,7 +342,7 @@ public class ChargeItemDefinitionQueryService {
     }
 
     /**
-     * 构造「软删 + 价类 + 多组 (表,实例,批号) OR」规格。
+     * 构造「软删 + ACTIVE + 价类 + 多组 (表,实例,批号) OR」规格。
      *
      * @param chunk           单段键列表，调用方保证非空
      * @param priceTypeCode   价类持久化码
@@ -360,6 +355,7 @@ public class ChargeItemDefinitionQueryService {
         return (root, cq, cb) -> {
             List<jakarta.persistence.criteria.Predicate> andPredicates = new ArrayList<>();
             andPredicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            andPredicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), PublicationStatus.ACTIVE.getCode()));
             andPredicates.add(cb.equal(root.get(FieldNameConstants.PRICE_TYPE_CODE), priceTypeCode));
             List<jakarta.persistence.criteria.Predicate> orPredicates = new ArrayList<>();
             for (ChargeItemDefinitionLotBatchKey key : chunk) {
@@ -375,22 +371,122 @@ public class ChargeItemDefinitionQueryService {
         };
     }
 
-    private static BigDecimal selectFirstNonNullPriceValueStable(List<ChargeItemDefinition> lines) {
+    /**
+     * 保留未软删且 {@code status_enum=ACTIVE} 的定价行（当前价读路径，**BR-CHGDEF-QRY-002**）。
+     *
+     * @param lines 仓储原始结果
+     * @return 过滤后列表；无命中时返回空列表
+     */
+    private static List<ChargeItemDefinition> filterCurrentActivePriceLines(List<ChargeItemDefinition> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<ChargeItemDefinition> filtered = new ArrayList<>(lines.size());
+        String activeCode = PublicationStatus.ACTIVE.getCode();
+        for (ChargeItemDefinition line : lines) {
+            if (line == null || Boolean.TRUE.equals(line.getIsDeleted())) {
+                continue;
+            }
+            if (activeCode.equals(line.getStatusEnum())) {
+                filtered.add(line);
+            }
+        }
+        return filtered;
+    }
+
+    /**
+     * 在 ACTIVE 定价行中按 priority 升序、同 priority 时 id 升序择优（与 {@code ClinicalCatalogPriceResolveSupport} 一致）。
+     *
+     * @param lines 已过滤或待过滤行
+     * @return 择优行；无命中时 {@code null}
+     */
+    private static ChargeItemDefinition selectBestCurrentPriceLine(List<ChargeItemDefinition> lines) {
         if (lines == null || lines.isEmpty()) {
             return null;
         }
-        List<ChargeItemDefinition> ordered = new ArrayList<>(lines);
-        ordered.sort(Comparator.comparing(ChargeItemDefinition::getId, Comparator.nullsLast(Long::compareTo)));
-        for (ChargeItemDefinition line : ordered) {
+        ChargeItemDefinition best = null;
+        for (ChargeItemDefinition line : lines) {
             if (line == null) {
                 continue;
             }
-            BigDecimal price = line.getPriceValue();
-            if (price != null) {
-                return price;
+            best = betterCurrentPriceLine(best, line);
+        }
+        return best;
+    }
+
+    private static ChargeItemDefinition betterCurrentPriceLine(ChargeItemDefinition current, ChargeItemDefinition candidate) {
+        if (candidate == null) {
+            return current;
+        }
+        if (current == null) {
+            return candidate;
+        }
+        Integer cp = candidate.getPriority();
+        Integer curp = current.getPriority();
+        if (cp != null && curp != null) {
+            int cmp = Integer.compare(cp, curp);
+            if (cmp < 0) {
+                return candidate;
+            }
+            if (cmp > 0) {
+                return current;
+            }
+        } else if (cp != null) {
+            return candidate;
+        } else if (curp != null) {
+            return current;
+        }
+        Long cid = candidate.getId();
+        Long curid = current.getId();
+        if (cid != null && curid != null && cid < curid) {
+            return candidate;
+        }
+        return current;
+    }
+
+    /**
+     * 读取同实例任意定价行上的 {@code type_code}（含 INACTIVE；供批号价/调价写路径继承 fin_type）。
+     *
+     * @param cmd 查询命令（{@code instanceId} 必填；{@code instanceTable} 建议传入）
+     * @return 首个非空 type_code；无命中时为 {@code null}
+     */
+    public String findTypeCodeFromInstancePricing(ChargeItemDefinitionQueryCommand cmd) {
+        if (cmd == null || cmd.getInstanceId() == null) {
+            return null;
+        }
+        List<ChargeItemDefinition> rows;
+        if (StringUtils.isNotBlank(cmd.getInstanceTable())) {
+            rows = repository.findAllByInstanceTableAndInstanceId(
+                cmd.getInstanceTable().trim(), cmd.getInstanceId());
+        } else {
+            rows = repository.findAllByInstanceId(cmd.getInstanceId());
+        }
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        for (ChargeItemDefinition row : rows) {
+            if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            if (StringUtils.isNotBlank(row.getTypeCode())) {
+                return row.getTypeCode().trim();
             }
         }
         return null;
+    }
+
+    /**
+     * 在 ACTIVE 行中择优并返回非空 {@code price_value}；无命中时为 {@code null}。
+     *
+     * @param lines 定价行（通常已由 {@link #filterCurrentActivePriceLines} 过滤）
+     * @return 择优单价
+     */
+    private static BigDecimal selectFirstNonNullPriceValueStable(List<ChargeItemDefinition> lines) {
+        ChargeItemDefinition best = selectBestCurrentPriceLine(lines);
+        if (best == null) {
+            return null;
+        }
+        return best.getPriceValue();
     }
 
     /**

@@ -195,6 +195,8 @@ public class NurseStationOrderCancelExecuteAppService {
             if (!bindingProcedureIds.isEmpty()) {
                 allChargesForGate.addAll(chargeItemQueryService.listChargeItemsByProcedureIds(bindingProcedureIds));
             }
+            // Pre ⑥b：药房配药中 Gate（EX-IP-CXL-204，GAP-STALE-004）
+            nurseStationOrderCancelExecuteWriteAssembler.assertPharmacyPreparingDispenseGate(dispensesByProcedure);
             // Pre ⑦：结算 Gate（EX-IP-CXL-203）
             nurseStationOrderCancelExecuteWriteAssembler.assertSettlementGate(allChargesForGate);
             Map<Long, List<ChargeItem>> bindingChargesByServiceRequestId =

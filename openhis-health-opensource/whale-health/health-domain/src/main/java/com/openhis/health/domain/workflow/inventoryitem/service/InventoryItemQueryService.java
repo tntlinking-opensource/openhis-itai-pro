@@ -22,6 +22,7 @@ import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 
 import org.apache.commons.lang3.StringUtils;
@@ -40,6 +41,7 @@ import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
+import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.entity.InventoryItem;
 import com.openhis.health.domain.workflow.inventoryitem.entity.InventoryLock;
 import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryItemPageQuery;
@@ -91,6 +93,7 @@ public class InventoryItemQueryService {
 
     private final InventoryItemRepository inventoryItemRepository;
     private final InventoryLockRepository inventoryLockRepository;
+    private final MedicationDispenseQueryService medicationDispenseQueryService;
 
     /**
      * 按主键读取库存项读模型；不存在返回 null。
@@ -175,6 +178,53 @@ public class InventoryItemQueryService {
     }
 
     /**
+     * 调价锁预览：全院加载 ACTIVE 正数量库存行（含已锁定行，不按库位收窄，BR-PRC-LOCK-008）。
+     *
+     * @param itemTable 物品主表名
+     * @param itemIds   物品定义主键集合
+     * @return 候选锁库存行；入参非法时空列表
+     */
+    public List<InventoryCatalogAvailabilityRowModel> findActiveInventoryRowsForPriceAdjustmentLockPreview(
+        String itemTable,
+        Collection<Long> itemIds
+    ) {
+        if (StringUtils.isBlank(itemTable) || itemIds == null || itemIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        LocalDateTime now = LocalDateTime.now();
+        Specification<InventoryItem> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), itemTable.trim()));
+            predicates.add(root.get(FieldNameConstants.ITEM_ID).in(itemIds));
+            predicates.add(
+                cb.equal(root.get(FieldNameConstants.INVENTORY_STATUS_ENUM), PublicationStatus.ACTIVE.getCode()));
+            predicates.add(cb.greaterThan(root.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
+            jakarta.persistence.criteria.Predicate notExpired =
+                cb.or(cb.isNull(root.get(FieldNameConstants.EXPIRATION_DATE)),
+                    cb.greaterThan(root.get(FieldNameConstants.EXPIRATION_DATE), now));
+            predicates.add(notExpired);
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        Sort sort =
+            Sort.by(Sort.Order.asc(FieldNameConstants.EXPIRATION_DATE), Sort.Order.asc(FieldNameConstants.CREATED_AT));
+        List<InventoryItem> rows = inventoryItemRepository.findAll(specification, sort);
+        List<InventoryCatalogAvailabilityRowModel> result = new ArrayList<>();
+        for (InventoryItem row : rows) {
+            InventoryCatalogAvailabilityRowModel model = new InventoryCatalogAvailabilityRowModel();
+            model.setId(row.getId());
+            model.setItemTable(row.getItemTable());
+            model.setItemId(row.getItemId());
+            model.setLocationId(row.getLocationId());
+            model.setLotNumber(row.getLotNumber());
+            model.setExpirationDate(row.getExpirationDate());
+            model.setQuantity(row.getQuantity());
+            result.add(model);
+        }
+        return result;
+    }
+
+    /**
      * 汇总可用库存数量（逐批累加 quantity）。
      *
      * @param itemTable 物品主表名
@@ -192,6 +242,48 @@ public class InventoryItemQueryService {
             }
         }
         return total;
+    }
+
+    /**
+     * 批量汇总全院可用库存数量（与 {@link #calculateTotalAvailableInventory} 同一可用口径，{@code locationId} 为空）。
+     *
+     * @param itemTable 物品主表名
+     * @param itemIds   物品定义主键集合
+     * @return 按物品主键聚合的可用量总和；入参非法或集合为空时返回空 Map
+     */
+    public Map<Long, BigDecimal> sumTotalAvailableInventoryByItemIds(String itemTable, Collection<Long> itemIds) {
+        Map<Long, BigDecimal> quantityByItemId = new HashMap<>();
+        if (StringUtils.isBlank(itemTable) || itemIds == null || itemIds.isEmpty()) {
+            return quantityByItemId;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        Specification<InventoryItem> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), itemTable.trim()));
+            predicates.add(root.get(FieldNameConstants.ITEM_ID).in(itemIds));
+            predicates.add(
+                cb.equal(root.get(FieldNameConstants.INVENTORY_STATUS_ENUM), PublicationStatus.ACTIVE.getCode()));
+            predicates.add(cb.greaterThan(root.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
+            jakarta.persistence.criteria.Predicate notExpired =
+                cb.or(cb.isNull(root.get(FieldNameConstants.EXPIRATION_DATE)),
+                    cb.greaterThan(root.get(FieldNameConstants.EXPIRATION_DATE), now));
+            predicates.add(notExpired);
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        Sort sort =
+            Sort.by(Sort.Order.asc(FieldNameConstants.EXPIRATION_DATE), Sort.Order.asc(FieldNameConstants.CREATED_AT));
+        List<InventoryItem> rows = inventoryItemRepository.findAll(specification, sort);
+        rows = this.withoutLockedInventoryRows(rows);
+        // Loop：按 itemId 累加各批次可用数量
+        for (InventoryItem row : rows) {
+            if (row == null || row.getItemId() == null || row.getQuantity() == null) {
+                continue;
+            }
+            BigDecimal current = quantityByItemId.getOrDefault(row.getItemId(), BigDecimal.ZERO);
+            quantityByItemId.put(row.getItemId(), current.add(row.getQuantity()));
+        }
+        return quantityByItemId;
     }
 
     /**
@@ -554,6 +646,21 @@ public class InventoryItemQueryService {
     }
 
     /**
+     * 查询库存项当前生效锁的业务单号（调价锁冲突预览 BR-PRC-LOCK-004）。
+     *
+     * @param inventoryId 库存项主键
+     * @return 锁定单号；未锁定时为 {@code null}
+     */
+    public String findActiveLockBusNo(Long inventoryId) {
+        if (inventoryId == null) {
+            return null;
+        }
+        return inventoryLockRepository.findByInventoryIdAndLockFlagTrue(inventoryId)
+            .map(InventoryLock::getBusNo)
+            .orElse(null);
+    }
+
+    /**
      * 库存项分页检索：表、物品、库位、状态与关键字（名称/批号/检索码）组合过滤。
      *
      * @param query 筛选条件
@@ -662,6 +769,12 @@ public class InventoryItemQueryService {
         model.setExpirationDate(entity.getExpirationDate());
         model.setProductionDate(entity.getProductionDate());
         model.setInventoryStatusEnum(entity.getInventoryStatusEnum());
+        model.setTraceNo(entity.getTraceNo());
+        if (entity.getExpirationDate() != null) {
+            LocalDate expirationDate = entity.getExpirationDate().toLocalDate();
+            long days = ChronoUnit.DAYS.between(LocalDate.now(), expirationDate);
+            model.setRemainingDays(Integer.valueOf((int) days));
+        }
         return model;
     }
 
@@ -769,10 +882,24 @@ public class InventoryItemQueryService {
             if (StringUtils.isNotBlank(query.getKeyword())) {
                 String trimmed = query.getKeyword().trim();
                 String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
-                predicates.add(cb.or(cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
+                List<jakarta.persistence.criteria.Predicate> keywordOr = new ArrayList<>();
+                // 库存项冗余列：名称、批号、拼音/五笔
+                keywordOr.add(cb.or(cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
                     cb.like(cb.lower(root.get(FieldNameConstants.LOT_NUMBER)), likeIc),
                     cb.like(cb.lower(root.get(FieldNameConstants.PY_STR)), likeIc),
                     cb.like(cb.lower(root.get(FieldNameConstants.WB_STR)), likeIc)));
+                // 产品定义预解析：编码、商品名等（B.6.4 跨聚合，禁止 inventory Criteria JOIN）
+                if (query.getResolvedMedicationDefinitionIdsForKeyword() != null
+                    && !query.getResolvedMedicationDefinitionIdsForKeyword().isEmpty()) {
+                    keywordOr.add(this.medicationDefinitionItemPredicate(
+                        root, cb, query.getResolvedMedicationDefinitionIdsForKeyword()));
+                }
+                if (query.getResolvedDeviceDefinitionIdsForKeyword() != null
+                    && !query.getResolvedDeviceDefinitionIdsForKeyword().isEmpty()) {
+                    keywordOr.add(this.deviceDefinitionItemPredicate(
+                        root, cb, query.getResolvedDeviceDefinitionIdsForKeyword()));
+                }
+                predicates.add(cb.or(keywordOr.toArray(new jakarta.persistence.criteria.Predicate[0])));
             }
             if (query.getMedicationCategoryCodes() != null && !query.getMedicationCategoryCodes().isEmpty()) {
                 predicates.add(this.medicationDefinitionItemPredicate(root, cb, query.getResolvedMedicationDefinitionIds()));
@@ -1025,6 +1152,76 @@ public class InventoryItemQueryService {
     }
 
     /**
+     * 发药前库存充足断言（物理库存 − 全局待发预占，GAP-EXE-003）。
+     *
+     * @param excludeDispenseId 当前发放行主键；计入预占统计时排除自身
+     */
+    public void assertSufficientForMedicationDispenseWithReserve(
+        String itemTableName,
+        Long medicationId,
+        Long pharmacyLocationId,
+        String lotNumber,
+        BigDecimal requiredQuantityInBusinessUnit,
+        String businessUnitCode,
+        com.openhis.health.domain.share.product.MedicationProductUnitConversionSource productDefinition,
+        Long excludeDispenseId) {
+        if (medicationId == null || pharmacyLocationId == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "库存断言缺少药品或库房标识");
+        }
+        if (requiredQuantityInBusinessUnit == null || requiredQuantityInBusinessUnit.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "库存断言需求数量必须大于 0");
+        }
+        if (StringUtils.isBlank(itemTableName)) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "库存断言缺少物品主表名");
+        }
+        BigDecimal requiredInSplitUnit = MedicationProductQuantityToSplitUnitConverter
+            .medicationQuantityToSplitUnit(productDefinition, businessUnitCode, requiredQuantityInBusinessUnit);
+        List<AvailableInventoryModel> rows =
+            this.findAvailableInventories(itemTableName, medicationId, pharmacyLocationId);
+        BigDecimal physicalSum = BigDecimal.ZERO;
+        for (AvailableInventoryModel row : rows) {
+            if (row.getQuantity() == null) {
+                continue;
+            }
+            if (StringUtils.isNotBlank(lotNumber)) {
+                String rowLot = row.getLotNumber();
+                if (rowLot == null) {
+                    continue;
+                }
+                if (!lotNumber.trim().equals(rowLot.trim())) {
+                    continue;
+                }
+            }
+            physicalSum = physicalSum.add(row.getQuantity());
+        }
+        BigDecimal reserveInSplitUnit = medicationDispenseQueryService.sumDispenseExeReserveQuantityInSplitUnit(
+            pharmacyLocationId, medicationId, productDefinition, excludeDispenseId);
+        BigDecimal netAvailable = physicalSum.subtract(reserveInSplitUnit);
+        if (netAvailable.compareTo(requiredInSplitUnit) < 0) {
+            throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID, "可用库存不足以覆盖待发数量");
+        }
+    }
+
+    /**
+     * 对 FIFO Gate 涉及的库存账面行加悲观写锁（GAP-EXE-001/005）。
+     */
+    public void lockInventoryRowsForCatalogAvailability(List<InventoryCatalogAvailabilityRowModel> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        for (InventoryCatalogAvailabilityRowModel row : rows) {
+            if (row != null && row.getId() != null) {
+                ids.add(row.getId());
+            }
+        }
+        if (ids.isEmpty()) {
+            return;
+        }
+        inventoryItemRepository.findWithLockByIdIn(ids);
+    }
+
+    /**
      * 定位门诊发药将要扣减的<strong>单条</strong>库存项主键（药品物品表 + 药品定义 + 库房 + 批号）。
      *
      * <p>
@@ -1148,5 +1345,41 @@ public class InventoryItemQueryService {
                 "同一耗材同一批号存在多条库存账面记录，禁止自动扣减");
         }
         return activeRows.get(0);
+    }
+
+    /**
+     * 全院范围列出某物品可用库存实体（调价加锁/预览专用，BR-PRC-LOCK-001～003）。
+     *
+     * <p>口径与 {@link #findAvailableEntities} 一致（ACTIVE、quantity&gt;0、未过期），
+     * 但<strong>不排除</strong>已锁定行，以便预览与按 inventory_id 逐行加锁。</p>
+     *
+     * @param itemTable 物品物理表
+     * @param itemId    物品定义主键
+     * @return 库存实体列表；参数非法时返回空列表
+     */
+    public List<InventoryItem> listHospitalWideActiveInventoryRows(String itemTable, Long itemId) {
+        if (StringUtils.isBlank(itemTable) || itemId == null) {
+            return new ArrayList<>();
+        }
+        LocalDateTime now = LocalDateTime.now();
+        Specification<InventoryItem> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), itemTable.trim()));
+            predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_ID), itemId));
+            predicates.add(
+                cb.equal(root.get(FieldNameConstants.INVENTORY_STATUS_ENUM), PublicationStatus.ACTIVE.getCode()));
+            predicates.add(cb.greaterThan(root.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
+            jakarta.persistence.criteria.Predicate notExpired = cb.or(
+                cb.isNull(root.get(FieldNameConstants.EXPIRATION_DATE)),
+                cb.greaterThan(root.get(FieldNameConstants.EXPIRATION_DATE), now));
+            predicates.add(notExpired);
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        Sort sort = Sort.by(
+            Sort.Order.asc(FieldNameConstants.LOT_NUMBER),
+            Sort.Order.asc(FieldNameConstants.LOCATION_ID),
+            Sort.Order.asc(FieldNameConstants.ID));
+        return inventoryItemRepository.findAll(specification, sort);
     }
 }

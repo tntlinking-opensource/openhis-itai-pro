@@ -79,6 +79,14 @@ public interface GeneralSharedConstants {
     Integer ONE = 1;
 
     /**
+     * 平台出厂/种子数据租户标识（{@code tenant_id=0}）。
+     *
+     * <p>用于「租户行覆盖平台/种子行」场景，例如打印模板 fallback（DM-PRT-001 §4.2）、
+     * MRMS 质控种子（V81）、prt_print_binding 出厂 seed 等。</p>
+     */
+    Long PLATFORM_TENANT_ID = 0L;
+
+    /**
      * 3（用于字符串截位）
      */
     Integer THREE = 3;

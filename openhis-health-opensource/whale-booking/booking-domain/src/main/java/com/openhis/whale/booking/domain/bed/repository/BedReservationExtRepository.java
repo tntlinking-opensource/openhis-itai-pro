@@ -11,5 +11,7 @@ public interface BedReservationExtRepository extends JpaRepository<BedReservatio
 
     Optional<BedReservationExt> findByAppointmentIdAndIsDeletedFalse(Long appointmentId);
 
+    List<BedReservationExt> findByLocationIdAndIsDeletedFalse(Long locationId);
+
     List<BedReservationExt> findByPatientIdAndIsDeletedFalse(Long patientId);
 }

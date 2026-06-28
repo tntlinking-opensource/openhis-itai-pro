@@ -130,6 +130,11 @@ public class DeviceDispense extends BaseAuditedEntity {
     @Column(name = "procedure_id")
     private Long procedureId;
 
+    /** 乐观锁版本号。 */
+    @jakarta.persistence.Version
+    @Column(name = "version")
+    private Integer version;
+
     /**
      * 私有方法：statusEquals。
      */

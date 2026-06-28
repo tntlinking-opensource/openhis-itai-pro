@@ -75,6 +75,6 @@ public class HealthBedReservationWriterAdapter implements HealthBedReservationWr
         if (items.isEmpty()) {
             return;
         }
-        locationDomainService.releaseBed(healthCommand);
+        locationDomainService.releaseReservedBed(healthCommand);
     }
 }

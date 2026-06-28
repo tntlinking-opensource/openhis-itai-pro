@@ -1,5 +1,6 @@
 package com.openhis.health.application.outpatient.nursestation.treatment.service;
 
+import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.share.constants.OutpatientNurseStationConstants;
 import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
 import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
@@ -52,6 +53,7 @@ import com.openhis.health.module.querysupport.procedure.OrderExecutionSheetLoade
 import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureDetailQueryModel;
 import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecordQueryModel;
 import com.openhis.health.domain.clinical.procedure.service.ProcedureDomainService;
+import com.openhis.health.domain.clinical.procedure.support.ProcedurePerformCountGateSupport;
 import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestDetailQueryModel;
@@ -171,6 +173,7 @@ public class OutpatientNurseStationTreatmentAppService {
      * 执行记录写服务：IF-NUR-04/05 诊疗/药品执行登记与取消。
      */
     private final ProcedureDomainService procedureDomainService;
+    private final ProcedurePerformCountGateSupport procedurePerformCountGateSupport;
 
     /**
      * 库存项写服务：IF-NUR-04/05 合并扣减/回补（允许空映射短路）。
@@ -506,6 +509,27 @@ public class OutpatientNurseStationTreatmentAppService {
         }
         // Pre：操作人与执行人同口径（adm_practitioner.id）；请求未传则取当前登录医务人员（B.6.5）。
         Long practitionerId = this.resolveNurseStationPractitionerId(request.getOperatorId());
+        // Pre：批量执行前整批校验净次数（GAP-EXE-006，满额整批失败）。
+        for (Long serviceRequestId : retainedServiceIds) {
+            ServiceRequestListModel listRow = serviceRowById.get(serviceRequestId);
+            if (NurseStationSkinTestExecuteExcludeSupport.shouldExcludeServiceFromNurseStationExecuteList(
+                skinTestActivityId, listRow)) {
+                continue;
+            }
+            int planned = this.resolvePlannedServicePerformCount(listRow);
+            this.procedurePerformCountGateSupport.assertPerformCountBelowPlanned(
+                serviceRequestId, TableNameConstants.WKF_SERVICE_REQUEST, planned);
+        }
+        for (Long medicationRequestId : retainedMedicationIds) {
+            MedicationRequestListQueryModel listRow = medicationRowById.get(medicationRequestId);
+            if (NurseStationSkinTestExecuteExcludeSupport.shouldExcludeMedicationFromNurseStationExecuteList(listRow)) {
+                continue;
+            }
+            MedicationRequestDetailQueryModel med = this.medicationRequestQueryService.loadMedicationRequestById(medicationRequestId);
+            int planned = this.resolvePlannedMedicationPerformCount(listRow, med);
+            this.procedurePerformCountGateSupport.assertPerformCountBelowPlanned(
+                medicationRequestId, TableNameConstants.MED_MEDICATION_REQUEST, planned);
+        }
         // Cmd：诊疗路径——逐条校验净次数门控后执行 create→start→complete（护士站通过 CreateProcedureRecordCommand#skipDuplicateRequestAnchorCheck 允许多次登记）。
         for (Long serviceRequestId : retainedServiceIds) {
             ServiceRequestListModel listRow = serviceRowById.get(serviceRequestId);
@@ -515,11 +539,8 @@ public class OutpatientNurseStationTreatmentAppService {
             }
             ServiceRequestQueryModel sr = this.serviceRequestQueryService.mustGetServiceRequest(serviceRequestId);
             int planned = this.resolvePlannedServicePerformCount(listRow);
-            int net = this.netProcedureCount(serviceRequestId, TableNameConstants.WKF_SERVICE_REQUEST);
-            if (net >= planned) {
-                // 计划次数已满，本诊疗请求不再登记完成态。
-                continue;
-            }
+            this.procedurePerformCountGateSupport.assertPerformCountBelowPlanned(
+                serviceRequestId, TableNameConstants.WKF_SERVICE_REQUEST, planned);
             LocalDateTime now = LocalDateTime.now();
             com.openhis.health.domain.clinical.procedure.command.CreateProcedureRecordCommand createCmd =
                 this.outpatientNurseStationTreatmentMapper.toCreateProcedureRecordCommand(
@@ -548,11 +569,8 @@ public class OutpatientNurseStationTreatmentAppService {
             }
             MedicationRequestDetailQueryModel med = this.medicationRequestQueryService.loadMedicationRequestById(medicationRequestId);
             int planned = this.resolvePlannedMedicationPerformCount(listRow, med);
-            int net = this.netProcedureCount(medicationRequestId, TableNameConstants.MED_MEDICATION_REQUEST);
-            if (net >= planned) {
-                // 计划次数已满，本药品请求不再登记完成态。
-                continue;
-            }
+            this.procedurePerformCountGateSupport.assertPerformCountBelowPlanned(
+                medicationRequestId, TableNameConstants.MED_MEDICATION_REQUEST, planned);
             LocalDateTime now = LocalDateTime.now();
             String category = med.getTherapyEnum();
             if (category == null) {
@@ -1710,9 +1728,9 @@ public class OutpatientNurseStationTreatmentAppService {
             line.setDose(null);
             line.setDoseUnitCode(null);
             line.setDoseUnitName(null);
-            line.setMethodCode(null);
+            line.setMethodCode(row.getMethodCode());
             line.setMethodName(null);
-            line.setRateCode(null);
+            line.setRateCode(row.getRateCode());
             line.setRateName(null);
             line.setDispensePerDuration(null);
         }
@@ -1727,6 +1745,20 @@ public class OutpatientNurseStationTreatmentAppService {
         line.setRefundPairRequestId(null);
         line.setGroupId(row.getGroupId());
         line.setSortNumber(row.getSortNumber());
+        Boolean infusionFlag = row.getInfusionFlag();
+        if (infusionFlag == null && medicationDef != null) {
+            infusionFlag = medicationDef.getInjectFlag();
+        }
+        line.setInfusionFlag(infusionFlag);
+        if (Boolean.TRUE.equals(infusionFlag)) {
+            line.setInfusionFlagText(MedicationCommonConstants.WORKSTATION_BOOLEAN_DISPLAY_YES);
+        } else if (Boolean.FALSE.equals(infusionFlag)) {
+            line.setInfusionFlagText(MedicationCommonConstants.WORKSTATION_BOOLEAN_DISPLAY_NO);
+        } else {
+            line.setInfusionFlagText(null);
+        }
+        line.setSkinTestFlag(row.getSkinTestFlag());
+        line.setTcmFlag(row.getTcmFlag());
         this.applyChargeAggregation(line, TableNameConstants.MED_MEDICATION_REQUEST, row.getId(), chargeByAnchor);
         return line;
     }

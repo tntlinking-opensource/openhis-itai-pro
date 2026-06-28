@@ -133,6 +133,8 @@ public class ChannelBookingMapper {
     public CreateAppointmentCommand toChannelCreateAppointmentCommand(
         ChannelCreateBookingRequest request,
         SlotDetailModel slot,
+        Long healthcareServiceId,
+        java.time.LocalDate bookingDate,
         Long operatorId) {
         CreateAppointmentCommand command = new CreateAppointmentCommand();
         command.setOperatorId(operatorId);
@@ -141,6 +143,8 @@ public class ChannelBookingMapper {
         item.setOrganizationId(request.getOrganizationId());
         item.setPatientId(request.getPatientId());
         item.setSlotId(request.getSlotId());
+        item.setHealthcareServiceId(healthcareServiceId);
+        item.setBookingDate(bookingDate);
         item.setStartInstant(slot.getStartTime());
         item.setEndInstant(slot.getEndTime());
         if (request.getServiceRequestId() != null) {

@@ -31,6 +31,7 @@ import com.openhis.health.application.basic.medicationcatalog.request.CreateMedi
 import com.openhis.health.application.basic.medicationcatalog.request.QueryMedicationCatalogRequest;
 import com.openhis.health.application.basic.medicationcatalog.request.UpdateMedicationCatalogRequest;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.utils.GatewayIdParseUtil;
 import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
@@ -62,7 +63,7 @@ import com.openhis.health.domain.medication.medicationdefinition.queries.model.M
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.OrderCalcRuleEnum;
 import com.openhis.health.domain.share.utils.EnumUtil;
-import com.openhis.health.domain.share.utils.GatewayIdParseUtil;
+import com.openhis.health.domain.share.utils.FinTypeCodeMappingSupport;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.ValidationException;
@@ -247,8 +248,13 @@ public class MedicationCatalogAppService {
         this.applyDefaultOrganizationIdForCreate(request);
         // 先领域建档拿到主键，再刷新实例维度定价（与编辑共用 replacePriceLines）。
         Long createdId = medicationDefinitionDomainService.createMedicationDefinition(medicationCatalogMapper.toCreateCommand(request));
-        this.replacePriceLines(createdId, request.getTypeCode(), request.getYbType(), request.getPurchasePrice(),
-            request.getRetailPrice(), request.getMaximumRetailPrice());
+        this.replacePriceLines(
+            createdId,
+            this.resolveMedicationFinTypeCodeForPricing(request.getTypeCode(), request.getCategoryCode()),
+            request.getYbType(),
+            request.getPurchasePrice(),
+            request.getRetailPrice(),
+            request.getMaximumRetailPrice());
         return this.getMedicationCatalog(createdId);
     }
 
@@ -262,8 +268,13 @@ public class MedicationCatalogAppService {
     public MedicationDetailDto editMedicationCatalog(UpdateMedicationCatalogRequest request) {
         this.validateUpdateRequest(request);
         medicationDefinitionDomainService.editMedicationDefinition(medicationCatalogMapper.toEditCommand(request));
-        this.replacePriceLines(request.getId(), request.getTypeCode(), request.getYbType(), request.getPurchasePrice(),
-            request.getRetailPrice(), request.getMaximumRetailPrice());
+        this.replacePriceLines(
+            request.getId(),
+            this.resolveMedicationFinTypeCodeForPricing(request.getTypeCode(), request.getCategoryCode()),
+            request.getYbType(),
+            request.getPurchasePrice(),
+            request.getRetailPrice(),
+            request.getMaximumRetailPrice());
         return this.getMedicationCatalog(request.getId());
     }
 
@@ -717,6 +728,12 @@ public class MedicationCatalogAppService {
             throw new ValidationException("新增药品目录失败：包装单位不能为空");
         }
         this.assertMedicationUnitRatiosPositive(request, "新增药品目录失败");
+        this.assertFinTypeCodeWhenPricingPresent(
+            request.getTypeCode(),
+            request.getCategoryCode(),
+            request.getPurchasePrice(),
+            request.getRetailPrice(),
+            "新增药品目录失败");
     }
 
     /**
@@ -753,6 +770,50 @@ public class MedicationCatalogAppService {
             throw new ValidationException("更新药品目录失败：包装单位不能为空");
         }
         this.assertMedicationUnitRatiosPositive(request, "更新药品目录失败");
+        this.assertFinTypeCodeWhenPricingPresent(
+            request.getTypeCode(),
+            request.getCategoryCode(),
+            request.getPurchasePrice(),
+            request.getRetailPrice(),
+            "更新药品目录失败");
+    }
+
+    /**
+     * 药品定价 fin_type：优先请求 {@code typeCode}，否则按 {@code categoryCode} 映射 fin_type。
+     *
+     * @param typeCode     财务类型编码
+     * @param categoryCode 药品分类短码
+     * @return fin_type_code；仍无法解析时为 {@code null}
+     */
+    private String resolveMedicationFinTypeCodeForPricing(String typeCode, String categoryCode) {
+        if (StringUtils.isNotBlank(typeCode)) {
+            return typeCode.trim();
+        }
+        return FinTypeCodeMappingSupport.normalizeCategoryCodeToFinType(categoryCode);
+    }
+
+    /**
+     * 维护页有价格时须能解析 fin_type（显式 typeCode 或可由 categoryCode 映射）。
+     *
+     * @param typeCode       财务类型
+     * @param categoryCode   药品分类
+     * @param purchasePrice  进价
+     * @param retailPrice    零售价
+     * @param messagePrefix  校验失败前缀
+     */
+    private void assertFinTypeCodeWhenPricingPresent(
+        String typeCode,
+        String categoryCode,
+        BigDecimal purchasePrice,
+        BigDecimal retailPrice,
+        String messagePrefix) {
+        if (purchasePrice == null && retailPrice == null) {
+            return;
+        }
+        String finTypeCode = this.resolveMedicationFinTypeCodeForPricing(typeCode, categoryCode);
+        if (StringUtils.isBlank(finTypeCode)) {
+            throw new ValidationException(messagePrefix + "：维护价格时财务类型不能为空");
+        }
     }
 
     /**

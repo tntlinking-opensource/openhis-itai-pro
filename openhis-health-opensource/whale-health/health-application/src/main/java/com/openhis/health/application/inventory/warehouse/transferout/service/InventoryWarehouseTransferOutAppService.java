@@ -1112,22 +1112,9 @@ public class InventoryWarehouseTransferOutAppService {
             if (cat == null) {
                 continue;
             }
-            // —— 目录 PURCHASE 与批号包装价原样落槽；其余槽仅包装锚换算。——
-            BigDecimal purchase = this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
-                dto.getItemTable(), dto.getItemId());
-            cat.setPurchasePrice(purchase);
-            List<ProductDefinitionCatalogUnitBandDto> bands = cat.getUnitBands();
-            if (bands == null || bands.isEmpty()) {
-                // —— Mapper 未带出单位槽时无法回填单价，避免空列表误写。——
-                continue;
-            }
-            BigDecimal lotPackagePrice = null;
-            if (StringUtils.isNotBlank(dto.getLotNumber())) {
-                lotPackagePrice = this.chargeItemDefinitionQueryService.resolveFirstLotNumberCostPriceValue(
-                    dto.getItemTable(), dto.getItemId(), dto.getLotNumber().trim());
-            }
-            ProductDefinitionCatalogUnitBandsAssembler.applyInboundWarehouseDetailLineBandPrices(
-                bands, null, purchase, lotPackagePrice, dto.getPrice(), dto.getUnitCode());
+            // —— 历史单据：槽价仅锚 SupplyRequest 持久化行价（BR-PRICE-SRC-001）。——
+            ProductDefinitionCatalogUnitBandsAssembler.enrichWarehouseDetailCatalogFromPersistedSupplyLinePrice(
+                cat, dto.getPrice(), dto.getUnitCode(), null);
         }
     }
 

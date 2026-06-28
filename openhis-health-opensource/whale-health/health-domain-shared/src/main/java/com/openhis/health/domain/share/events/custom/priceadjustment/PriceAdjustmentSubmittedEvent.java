@@ -18,23 +18,25 @@
 package com.openhis.health.domain.share.events.custom.priceadjustment;
 
 /**
- * 价格调整已提交审批事件。
+ * 调价单已提交审批领域事件（DM-CUS-011 §5）。
+ *
+ * <p>触发于互斥通过、子表快照、全院加锁与状态迁移为 pending 之后；载荷含 {@code lockedInventoryCount}。</p>
  */
 public class PriceAdjustmentSubmittedEvent extends PriceAdjustmentSnapshotEvent {
+
     /**
-     * 处理逻辑。
-     * @return 返回结果
+     * 反序列化/框架用默认构造。
      */
     public PriceAdjustmentSubmittedEvent() {
         super();
     }
 
     /**
-     * 处理Long adjustmentId逻辑。
-     * @return 返回结果
+     * 按锚点主键构造。
+     *
+     * @param aggregateId 调价单首行主键
      */
-    public PriceAdjustmentSubmittedEvent(Long adjustmentId) {
-        super(adjustmentId);
+    public PriceAdjustmentSubmittedEvent(Long aggregateId) {
+        super(aggregateId);
     }
 }
-

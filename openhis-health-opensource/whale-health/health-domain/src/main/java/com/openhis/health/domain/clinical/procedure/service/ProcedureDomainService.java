@@ -24,12 +24,15 @@ import com.openhis.health.domain.clinical.procedure.entity.ProcedurePerformer;
 import com.openhis.health.domain.clinical.procedure.repository.ProcedurePerformerRepository;
 import com.openhis.health.domain.clinical.procedure.repository.ProcedureRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
+import com.openhis.health.domain.share.enums.EventStatus;
 import com.openhis.health.domain.share.events.clinical.procedure.*;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -38,6 +41,10 @@ import lombok.RequiredArgsConstructor;
 @Service
 @RequiredArgsConstructor
 public class ProcedureDomainService {
+    private static final Set<String> OCCURRENCE_TERMINAL_STATUSES = Set.of(
+        EventStatus.COMPLETED.getCode(),
+        EventStatus.STOPPED.getCode());
+
     private final ProcedureRepository procedureRepository;
     private final ProcedurePerformerRepository performerRepository;
     private final IDomainEventPublisher domainEventPublisher;
@@ -55,6 +62,8 @@ public class ProcedureDomainService {
             if (!existed.isEmpty()) {
                 throw new BusinessException(ErrorCodeConstants.PROCEDURE_RULE_CONFLICT, "同请求已存在执行记录");
             }
+        } else if (cmd.getOccurrenceTime() != null) {
+            this.assertOccurrenceSlotAvailable(cmd.getRequestId(), cmd.getRequestTable(), cmd.getOccurrenceTime());
         }
         Procedure entity = new Procedure();
         entity.setRequestId(cmd.getRequestId());
@@ -63,6 +72,7 @@ public class ProcedureDomainService {
         entity.setPatientId(cmd.getPatientId());
         entity.setCategoryEnum(cmd.getCategoryEnum());
         entity.setOccurrenceTime(cmd.getOccurrenceTime());
+        entity.setOccurrenceSlotActive(true);
         // BR-PRO-002: 执行记录必须绑定就诊与患者。
         entity.assertRequestBound();
         entity.initPreparationStatus();
@@ -154,6 +164,7 @@ public class ProcedureDomainService {
         // Assert：BR-PRO-005 取消动作必须可追溯（状态原因与链路标识）。
         entity.cancel();
         procedureRepository.save(entity);
+        this.releaseOccurrenceSlotIfRefunded(cmd.getRefundId());
         domainEventPublisher.publish(new ProcedureRecordCancelledEvent(entity.getId(), entity.getStatusEnum(), entity.getStatusReasonText(), entity.getRefundId()));
     }
 
@@ -169,6 +180,8 @@ public class ProcedureDomainService {
             if (!existed.isEmpty()) {
                 throw new BusinessException(ErrorCodeConstants.PROCEDURE_RULE_CONFLICT, "同请求已存在执行记录");
             }
+        } else if (cmd.getOccurrenceTime() != null) {
+            this.assertOccurrenceSlotAvailable(cmd.getRequestId(), cmd.getRequestTable(), cmd.getOccurrenceTime());
         }
         Procedure entity = new Procedure();
         entity.setRequestId(cmd.getRequestId());
@@ -177,6 +190,7 @@ public class ProcedureDomainService {
         entity.setPatientId(cmd.getPatientId());
         entity.setCategoryEnum(cmd.getCategoryEnum());
         entity.setOccurrenceTime(cmd.getOccurrenceTime());
+        entity.setOccurrenceSlotActive(true);
         entity.setRecordedTime(cmd.getRecordedTime());
         entity.setRecorderId(cmd.getOperatorId());
         entity.setStatusReasonText(cmd.getStatusReasonText());
@@ -198,5 +212,37 @@ public class ProcedureDomainService {
     private Procedure loadProcedure(Long procedureId) {
         return procedureRepository.findById(procedureId).orElseThrow(
             () -> new BusinessException(ErrorCodeConstants.PROCEDURE_NOT_FOUND, "执行记录不存在"));
+    }
+
+    /**
+     * 同锚点 occurrence 仍被终态占用时拒绝（GAP-EXE-002，EX-IP-EXE-301）。
+     */
+    private void assertOccurrenceSlotAvailable(Long requestId, String requestTable, java.time.LocalDateTime occurrenceTime) {
+        boolean occupied = procedureRepository.existsByRequestIdAndRequestTableAndOccurrenceTimeAndOccurrenceSlotActiveTrueAndStatusEnumInAndIsDeletedFalse(
+            requestId, requestTable, occurrenceTime, OCCURRENCE_TERMINAL_STATUSES);
+        if (occupied) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_EXE_301,
+                "该计划点已执行或已登记不执行，请刷新后重试");
+        }
+    }
+
+    /**
+     * CANCEL 对冲后释放被指向 COMPLETED/STOPPED 行的计划点占用，允许同 occurrence 再执行。
+     */
+    private void releaseOccurrenceSlotIfRefunded(Long refundProcedureId) {
+        if (refundProcedureId == null) {
+            return;
+        }
+        procedureRepository.findById(refundProcedureId).ifPresent(refunded -> {
+            if (!OCCURRENCE_TERMINAL_STATUSES.contains(refunded.getStatusEnum())) {
+                return;
+            }
+            if (!Boolean.TRUE.equals(refunded.getOccurrenceSlotActive())) {
+                return;
+            }
+            refunded.setOccurrenceSlotActive(false);
+            procedureRepository.save(refunded);
+        });
     }
 }

@@ -18,11 +18,19 @@
 package com.openhis.health.application.inventory.warehouse.inventorydetail.mapper;
 
 import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.application.inventory.warehouse.inventorydetail.dto.InventoryDetailBackupExportRowDto;
+import com.openhis.health.application.inventory.warehouse.inventorydetail.dto.InventoryDetailBackupListRowDto;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.dto.InventoryDetailCurrentExportRowDto;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.dto.InventoryDetailListRowDto;
+import com.openhis.health.application.inventory.warehouse.inventorydetail.request.ExportInventoryDetailBackupRequest;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.request.ExportInventoryDetailCurrentRequest;
+import com.openhis.health.application.inventory.warehouse.inventorydetail.request.PageInventoryDetailBackupRequest;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.request.PageInventoryDetailCurrentRequest;
+import com.openhis.health.application.inventory.warehouse.inventorydetail.request.SumInventoryDetailBackupRequest;
 import com.openhis.health.application.inventory.warehouse.inventorydetail.request.SumInventoryDetailCurrentRequest;
+import com.openhis.health.domain.document.inventoryitemsnapshot.command.DocInventoryItemSnapshotRowCommand;
+import com.openhis.health.domain.document.inventoryitemsnapshot.queries.DocInventoryItemSnapshotPageQuery;
+import com.openhis.health.domain.document.inventoryitemsnapshot.queries.model.DocInventoryItemSnapshotRowQueryModel;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InventoryWarehouseDetailExportConstants;
 import com.openhis.health.domain.workflow.inventoryitem.queries.WarehouseInventoryDetailPageQuery;
@@ -215,6 +223,8 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
         dto.setWarehouseId(model.getWarehouseId());
         dto.setSupplierId(model.getSupplierId());
         dto.setInventoryStatusEnum(model.getInventoryStatusEnum());
+        dto.setTraceNo(model.getTraceNo());
+        dto.setRemainingDays(model.getRemainingDays());
         if (model.getExpirationDate() != null) {
             dto.setExpirationDate(GeneralSharedConstants.DATE_TIME_FORMATTER.format(model.getExpirationDate()));
         }
@@ -233,14 +243,294 @@ public class InventoryWarehouseInventoryDetailMapperImpl implements InventoryWar
     @Override
     public InventoryDetailCurrentExportRowDto toCurrentExportRowDto(InventoryDetailListRowDto row) {
         return new InventoryDetailCurrentExportRowDto()
+            .setProductBusNo(row.getProductBusNo())
             .setName(row.getName())
-            .setLotNumber(row.getLotNumber())
-            .setQuantityText(StringUtils.defaultString(row.getDisplayQuantityText()))
+            .setMerchandiseName(row.getMerchandiseName())
+            .setCategoryLabel(row.getCategoryLabel())
             .setWarehouseName(row.getWarehouseName())
-            .setSupplierName(row.getSupplierName())
-            .setExpirationDate(row.getExpirationDate())
-            .setInventoryStatusText(row.getInventoryStatusText())
+            .setTotalVolume(row.getTotalVolume())
+            .setManufacturer(row.getManufacturer())
+            .setLotNumber(row.getLotNumber())
+            .setPackageStockText(StringUtils.defaultString(row.getPackageStockText()))
+            .setSplitStockText(StringUtils.defaultString(row.getSplitStockText()))
+            .setPackageUnitRatio(row.getPackageUnitRatio())
+            .setLotCostPrice(row.getLotCostPrice())
+            .setLotSalePrice(row.getLotSalePrice())
             .setLineCostTotal(row.getLineCostTotal())
-            .setLinePriceTotal(row.getLinePriceTotal());
+            .setLinePriceTotal(row.getLinePriceTotal())
+            .setDoseFormLabel(row.getDoseFormLabel())
+            .setApprovalNumber(row.getApprovalNumber())
+            .setSupplierName(row.getSupplierName())
+            .setChrgitmLvLabel(row.getChrgitmLvLabel())
+            .setProductionDate(row.getProductionDate())
+            .setExpirationDate(row.getExpirationDate())
+            .setRemainingDays(row.getRemainingDays());
+    }
+
+    /**
+     * 将备份分页请求映射为快照领域查询。
+     *
+     * @param request               分页请求，调用方保证非 null
+     * @param tenantId              租户
+     * @param resolvedBusNo         已解析批次单号
+     * @param effectiveWarehouseIds 门控库房范围
+     * @return 快照查询对象
+     */
+    @Override
+    public DocInventoryItemSnapshotPageQuery toSnapshotPageQuery(
+        PageInventoryDetailBackupRequest request,
+        Long tenantId,
+        String resolvedBusNo,
+        List<Long> effectiveWarehouseIds
+    ) {
+        DocInventoryItemSnapshotPageQuery query = new DocInventoryItemSnapshotPageQuery();
+        query.setTenantId(tenantId);
+        query.setBusNo(resolvedBusNo);
+        query.setKeyword(request.getKeyword());
+        this.applySnapshotFilters(
+            query,
+            request.getMedicationCategoryCodes(),
+            request.getDeviceCategoryCodes(),
+            request.getSupplierIds(),
+            request.getChrgitmLvList(),
+            request.getZeroStockOnly(),
+            request.getExpireWithinDays(),
+            request.getInventoryStatusEnums()
+        );
+        query.setWarehouseIds(effectiveWarehouseIds);
+        return query;
+    }
+
+    /**
+     * 将备份汇总请求映射为快照领域查询。
+     *
+     * @param request               汇总请求，调用方保证非 null
+     * @param tenantId              租户
+     * @param resolvedBusNo         已解析批次单号
+     * @param effectiveWarehouseIds 门控库房范围
+     * @return 快照查询对象
+     */
+    @Override
+    public DocInventoryItemSnapshotPageQuery toSnapshotPageQuery(
+        SumInventoryDetailBackupRequest request,
+        Long tenantId,
+        String resolvedBusNo,
+        List<Long> effectiveWarehouseIds
+    ) {
+        DocInventoryItemSnapshotPageQuery query = new DocInventoryItemSnapshotPageQuery();
+        query.setTenantId(tenantId);
+        query.setBusNo(resolvedBusNo);
+        query.setKeyword(request.getKeyword());
+        this.applySnapshotFilters(
+            query,
+            request.getMedicationCategoryCodes(),
+            request.getDeviceCategoryCodes(),
+            request.getSupplierIds(),
+            request.getChrgitmLvList(),
+            request.getZeroStockOnly(),
+            request.getExpireWithinDays(),
+            request.getInventoryStatusEnums()
+        );
+        query.setWarehouseIds(effectiveWarehouseIds);
+        return query;
+    }
+
+    /**
+     * 将备份导出请求映射为快照领域查询。
+     *
+     * @param request               导出请求，调用方保证非 null
+     * @param tenantId              租户
+     * @param resolvedBusNo         已解析批次单号
+     * @param effectiveWarehouseIds 门控库房范围
+     * @return 快照查询对象
+     */
+    @Override
+    public DocInventoryItemSnapshotPageQuery toSnapshotPageQuery(
+        ExportInventoryDetailBackupRequest request,
+        Long tenantId,
+        String resolvedBusNo,
+        List<Long> effectiveWarehouseIds
+    ) {
+        DocInventoryItemSnapshotPageQuery query = new DocInventoryItemSnapshotPageQuery();
+        query.setTenantId(tenantId);
+        query.setBusNo(resolvedBusNo);
+        query.setKeyword(request.getKeyword());
+        this.applySnapshotFilters(
+            query,
+            request.getMedicationCategoryCodes(),
+            request.getDeviceCategoryCodes(),
+            request.getSupplierIds(),
+            request.getChrgitmLvList(),
+            request.getZeroStockOnly(),
+            request.getExpireWithinDays(),
+            request.getInventoryStatusEnums()
+        );
+        query.setWarehouseIds(effectiveWarehouseIds);
+        return query;
+    }
+
+    /**
+     * 备份筛选字段写入快照查询对象。
+     *
+     * @param query                   目标查询
+     * @param medicationCategoryCodes 药品分类
+     * @param deviceCategoryCodes     耗材分类
+     * @param supplierIds             供应商
+     * @param chrgitmLvList           医保等级
+     * @param zeroStockOnly           零库存筛选
+     * @param expireWithinDays        近效期
+     * @param inventoryStatusEnums    供应状态
+     */
+    private void applySnapshotFilters(
+        DocInventoryItemSnapshotPageQuery query,
+        List<String> medicationCategoryCodes,
+        List<String> deviceCategoryCodes,
+        List<Long> supplierIds,
+        List<Integer> chrgitmLvList,
+        Boolean zeroStockOnly,
+        Integer expireWithinDays,
+        List<String> inventoryStatusEnums
+    ) {
+        query.setMedicationCategoryCodes(medicationCategoryCodes);
+        query.setDeviceCategoryCodes(deviceCategoryCodes);
+        query.setSupplierIds(supplierIds);
+        query.setChrgitmLvs(chrgitmLvList);
+        query.setInventoryStatusEnums(inventoryStatusEnums);
+        if (zeroStockOnly != null) {
+            query.setZeroStockFlag(zeroStockOnly);
+        }
+        query.setRemainingDaysLe(expireWithinDays);
+    }
+
+    /**
+     * 快照读模型 → 备份列表 DTO 骨架。
+     *
+     * @param model 快照行；null 时返回 null
+     * @return 备份列表行
+     */
+    @Override
+    public InventoryDetailBackupListRowDto toBackupListRowDto(DocInventoryItemSnapshotRowQueryModel model) {
+        if (model == null) {
+            return null;
+        }
+        InventoryDetailBackupListRowDto dto = new InventoryDetailBackupListRowDto();
+        dto.setId(model.getInventoryItemId());
+        dto.setItemTable(model.getItemTable());
+        dto.setItemId(model.getItemId());
+        dto.setChargeItemDefinitionId(model.getChargeItemDefinitionId());
+        dto.setProductBusNo(model.getProductBusNo());
+        dto.setName(model.getName());
+        dto.setMerchandiseName(model.getMerchandiseName());
+        dto.setTotalVolume(model.getTotalVolume());
+        dto.setManufacturer(model.getManufacturer());
+        dto.setApprovalNumber(model.getApprovalNumber());
+        dto.setYbNo(model.getYbNo());
+        dto.setTraceNo(model.getTraceNo());
+        dto.setPyStr(model.getPyStr());
+        dto.setWbStr(model.getWbStr());
+        dto.setLotNumber(model.getLotNumber());
+        dto.setWarehouseId(model.getWarehouseId());
+        dto.setSupplierId(model.getSupplierId());
+        dto.setQuantity(model.getQuantity());
+        dto.setPackageUnitRatio(model.getPackageUnitRatio());
+        dto.setPackageUnitCode(model.getPackageUnitCode());
+        dto.setLotCostPrice(model.getLotNumberCostAmount());
+        dto.setLotSalePrice(model.getLotNumberPriceAmount());
+        dto.setLineCostTotal(model.getLineCostTotal());
+        dto.setLinePriceTotal(model.getLinePriceTotal());
+        dto.setRemainingDays(model.getRemainingDays());
+        dto.setInventoryStatusEnum(model.getInventoryStatusEnum());
+        dto.setChrgitmLv(model.getChrgitmLv());
+        dto.setMedicationCategoryCode(model.getMedicationCategoryCode());
+        dto.setDeviceCategoryCode(model.getDeviceCategoryCode());
+        dto.setDoseFormCode(model.getDoseFormCode());
+        if (model.getExpirationDate() != null) {
+            dto.setExpirationDate(GeneralSharedConstants.DATE_TIME_FORMATTER.format(model.getExpirationDate()));
+        }
+        if (model.getProductionDate() != null) {
+            dto.setProductionDate(GeneralSharedConstants.DATE_TIME_FORMATTER.format(model.getProductionDate()));
+        }
+        return dto;
+    }
+
+    /**
+     * 备份列表行 → 导出行 DTO。
+     *
+     * @param row 列表行，调用方保证非 null
+     * @return 导出行
+     */
+    @Override
+    public InventoryDetailBackupExportRowDto toBackupExportRowDto(InventoryDetailBackupListRowDto row) {
+        return new InventoryDetailBackupExportRowDto()
+            .setProductBusNo(row.getProductBusNo())
+            .setName(row.getName())
+            .setMerchandiseName(row.getMerchandiseName())
+            .setCategoryLabel(row.getCategoryLabel())
+            .setWarehouseName(row.getWarehouseName())
+            .setTotalVolume(row.getTotalVolume())
+            .setManufacturer(row.getManufacturer())
+            .setLotNumber(row.getLotNumber())
+            .setPackageStockText(StringUtils.defaultString(row.getPackageStockText()))
+            .setSplitStockText(StringUtils.defaultString(row.getSplitStockText()))
+            .setPackageUnitRatio(row.getPackageUnitRatio())
+            .setLotCostPrice(row.getLotCostPrice())
+            .setLotSalePrice(row.getLotSalePrice())
+            .setLineCostTotal(row.getLineCostTotal())
+            .setLinePriceTotal(row.getLinePriceTotal())
+            .setDoseFormLabel(row.getDoseFormLabel())
+            .setApprovalNumber(row.getApprovalNumber())
+            .setSupplierName(row.getSupplierName())
+            .setChrgitmLvLabel(row.getChrgitmLvLabel())
+            .setProductionDate(row.getProductionDate())
+            .setExpirationDate(row.getExpirationDate())
+            .setRemainingDays(row.getRemainingDays());
+    }
+
+    /**
+     * 现库已装配行 → 快照落库命令（IF-10 · BR-DOC-SNAP-004）。
+     *
+     * @param row   已 enrich 列表行，调用方保证非 null
+     * @param model 领域行，调用方保证非 null
+     * @return 快照行命令
+     */
+    @Override
+    public DocInventoryItemSnapshotRowCommand toSnapshotRowCommand(
+        InventoryDetailListRowDto row,
+        WarehouseInventoryDetailItemModel model
+    ) {
+        DocInventoryItemSnapshotRowCommand cmd = new DocInventoryItemSnapshotRowCommand();
+        cmd.setInventoryItemId(row.getId());
+        cmd.setItemTable(row.getItemTable());
+        cmd.setItemId(row.getItemId());
+        cmd.setChargeItemDefinitionId(row.getChargeItemDefinitionId());
+        cmd.setWarehouseId(row.getWarehouseId());
+        cmd.setSupplierId(row.getSupplierId());
+        cmd.setProductBusNo(row.getProductBusNo());
+        cmd.setName(row.getName());
+        cmd.setMerchandiseName(row.getMerchandiseName());
+        cmd.setTotalVolume(row.getTotalVolume());
+        cmd.setManufacturer(row.getManufacturer());
+        cmd.setApprovalNumber(row.getApprovalNumber());
+        cmd.setYbNo(row.getYbNo());
+        cmd.setTraceNo(row.getTraceNo());
+        cmd.setPyStr(row.getPyStr());
+        cmd.setWbStr(row.getWbStr());
+        cmd.setLotNumber(row.getLotNumber());
+        cmd.setQuantity(row.getQuantity());
+        cmd.setPackageUnitRatio(row.getPackageUnitRatio());
+        cmd.setPackageUnitCode(row.getPackageUnitCode());
+        cmd.setLotNumberCostAmount(row.getLotCostPrice());
+        cmd.setLotNumberPriceAmount(row.getLotSalePrice());
+        cmd.setLineCostTotal(row.getLineCostTotal());
+        cmd.setLinePriceTotal(row.getLinePriceTotal());
+        cmd.setProductionDate(model.getProductionDate());
+        cmd.setExpirationDate(model.getExpirationDate());
+        cmd.setRemainingDays(row.getRemainingDays());
+        cmd.setInventoryStatusEnum(row.getInventoryStatusEnum());
+        cmd.setChrgitmLv(row.getChrgitmLv());
+        cmd.setMedicationCategoryCode(row.getMedicationCategoryCode());
+        cmd.setDeviceCategoryCode(row.getDeviceCategoryCode());
+        cmd.setDoseFormCode(row.getDoseFormCode());
+        return cmd;
     }
 }

@@ -136,4 +136,15 @@ public class RegistrationEncounterDto {
     @Schema(description = "源门诊接诊医生姓名（门诊转住院只读展示）")
     /** 源门诊接诊医生姓名；由源门诊就诊 ADMITTER 解析，无门诊锚点时为 null。 */
     private String outpatientDoctorName;
+
+    /** 主治医生医务人员 ID。 */
+    @Schema(description = "主治医生医务人员 ID")
+    @JsonSerialize(using = ToStringSerializer.class)
+    /** 主治医生医务人员 ID；未指定时为 null。 */
+    private Long attendingDoctorId;
+
+    /** 主治医生姓名。 */
+    @Schema(description = "主治医生姓名")
+    /** 主治医生姓名；未指定时为 null。 */
+    private String attendingDoctorName;
 }

@@ -126,4 +126,8 @@ public class RegistrationQueueItemDto {
     @Schema(description = "是否可取消登记")
     /** 是否可取消登记（业务字段）。 */
     private Boolean cancelable;
+
+    /** 是否已在医保平台完成入院登记（2401）。 */
+    @Schema(description = "是否已在医保平台完成入院登记（2401）")
+    private Boolean insurancePlatformRegistered;
 }

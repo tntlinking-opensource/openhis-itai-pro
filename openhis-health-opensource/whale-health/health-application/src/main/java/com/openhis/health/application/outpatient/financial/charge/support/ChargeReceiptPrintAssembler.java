@@ -23,15 +23,22 @@ import com.openhis.health.domain.financial.contract.service.ContractQueryService
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentRecDetailQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
+import com.openhis.health.domain.share.constants.OutpatientChargeConstants;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.enums.ChargeTypeCategory;
 import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.health.domain.share.enums.PaymentChannel;
 import com.openhis.health.domain.share.enums.PublicationStatus;
+import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.integration.insurance.outpatient.OutpatientRegistrationInsuranceExtension;
 import com.openhis.health.integration.insurance.outpatient.result.OutpatientRegistrationPlatformSnapshot;
+import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.module.querysupport.encounter.OutpatientEncounterContextLoader;
+import com.openhis.health.module.querysupport.product.ChargeItemProductLookupSupport;
+import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
@@ -64,6 +71,7 @@ public class ChargeReceiptPrintAssembler {
     private final ContractQueryService contractQueryService;
     private final PractitionerQueryService practitionerQueryService;
     private final OutpatientRegistrationInsuranceExtension outpatientRegistrationInsuranceExtension;
+    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
 
     /**
      * 组装门诊收费小票打印字段。
@@ -150,6 +158,7 @@ public class ChargeReceiptPrintAssembler {
         Map<Long, ChargeItemDefinition> definitionById = definitionIds.isEmpty()
             ? Map.of()
             : chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(new ArrayList<>(definitionIds));
+        Map<String, ProductDefinitionDisplayDto> productMap = loadProductMapForChargeItems(chargeItems);
 
         List<ChargeReceiptChargeLineDto> result = new ArrayList<>();
         for (ChargeItem line : chargeItems) {
@@ -157,13 +166,100 @@ public class ChargeReceiptPrintAssembler {
                 continue;
             }
             ChargeItemDefinition definition = definitionById.get(line.getDefinitionId());
+            ProductDefinitionDisplayDto product = resolveProductForChargeItem(line, productMap);
             ChargeReceiptChargeLineDto row = new ChargeReceiptChargeLineDto();
-            row.setItemName(firstNonBlank(resolveChargeItemName(definition), "收费项目"));
+            row.setItemName(firstNonBlank(
+                resolveChargeLineDisplayName(line, definition, product),
+                OutpatientChargeConstants.PENDING_CHARGE_ITEM_DISPLAY_FALLBACK));
+            row.setQuantityText(formatQuantityText(line, product));
             row.setAmountText(formatAmountText(line.getTotalPrice()));
             row.setChargeCategoryText(firstNonBlank(resolveChargeCategoryText(definition), "收费"));
             result.add(row);
         }
         return result;
+    }
+
+    private Map<String, ProductDefinitionDisplayDto> loadProductMapForChargeItems(List<ChargeItem> chargeItems) {
+        LinkedHashSet<String> dedupeKeys = new LinkedHashSet<>();
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+        for (ChargeItem chargeItem : chargeItems) {
+            if (chargeItem == null) {
+                continue;
+            }
+            ProductDefinitionBatchLookup lookup = ChargeItemProductLookupSupport.buildLookupFromChargeItem(chargeItem);
+            if (lookup == null) {
+                continue;
+            }
+            String compositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
+                lookup.getProductTableName(),
+                lookup.getProductDefinitionId());
+            if (compositeKey == null || !dedupeKeys.add(compositeKey)) {
+                continue;
+            }
+            lookups.add(lookup);
+        }
+        if (lookups.isEmpty()) {
+            return Map.of();
+        }
+        return productDefinitionBatchLoader.loadAsMap(lookups);
+    }
+
+    private ProductDefinitionDisplayDto resolveProductForChargeItem(
+        ChargeItem row,
+        Map<String, ProductDefinitionDisplayDto> productMap) {
+        if (productMap == null || productMap.isEmpty() || row == null) {
+            return null;
+        }
+        ProductDefinitionBatchLookup lookup = ChargeItemProductLookupSupport.buildLookupFromChargeItem(row);
+        if (lookup == null) {
+            return null;
+        }
+        String key = ProductDefinitionKeyUtil.buildCompositeKey(
+            lookup.getProductTableName(),
+            lookup.getProductDefinitionId());
+        if (key == null) {
+            return null;
+        }
+        return productMap.get(key);
+    }
+
+    /** 与门诊收银待收费列表口径一致：优先目录 product_name，其次定价 charge_name。 */
+    private String resolveChargeLineDisplayName(
+        ChargeItem row,
+        ChargeItemDefinition definition,
+        ProductDefinitionDisplayDto product) {
+        if (product != null && StringUtils.isNotBlank(product.getProductName())) {
+            return product.getProductName().trim();
+        }
+        return resolveChargeItemName(definition);
+    }
+
+    private String formatQuantityText(ChargeItem row, ProductDefinitionDisplayDto product) {
+        if (row == null || row.getQuantityValue() == null) {
+            return "";
+        }
+        String quantityPart = row.getQuantityValue().stripTrailingZeros().toPlainString();
+        String unitPart = resolveQuantityUnitDisplay(row.getQuantityUnit(), product);
+        if (StringUtils.isBlank(unitPart)) {
+            return quantityPart;
+        }
+        return quantityPart + " " + unitPart;
+    }
+
+    private String resolveQuantityUnitDisplay(String quantityUnit, ProductDefinitionDisplayDto product) {
+        if (StringUtils.isBlank(quantityUnit)) {
+            return "";
+        }
+        String normalized = quantityUnit.trim();
+        if (product != null) {
+            String resolved = ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayNameFromProduct(
+                product,
+                normalized);
+            if (StringUtils.isNotBlank(resolved)) {
+                return resolved.trim();
+            }
+        }
+        return normalized;
     }
 
     private String resolveChargeItemName(ChargeItemDefinition definition) {

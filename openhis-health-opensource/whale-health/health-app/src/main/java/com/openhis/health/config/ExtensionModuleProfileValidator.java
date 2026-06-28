@@ -19,11 +19,9 @@ import org.springframework.util.ClassUtils;
 public class ExtensionModuleProfileValidator implements ApplicationListener<ApplicationReadyEvent> {
 
     private static final String[][] MODULE_CHECKS = {
-            {"mrms", "com.openhis.whale.mrms.application.config.MrmsAutoConfiguration", "openhis.modules.mrms.enabled"},
             {"emr", "com.openhis.whale.emr.application.config.EmrAutoConfiguration", "openhis.modules.emr.enabled"},
             {"chs", "com.openhis.chs.application.config.ChsAutoConfiguration", "openhis.modules.chs.enabled"},
             {"elep", "com.openhis.elep.application.config.ElepAutoConfiguration", "openhis.modules.elep.enabled"},
-            {"report", "com.openhis.whale.report.application.config.ReportAutoConfiguration", "openhis.modules.report.enabled"},
             {"booking", "com.openhis.whale.booking.application.config.BookingAutoConfiguration", "openhis.modules.booking.enabled"},
             {"einvoice-boss", "com.openhis.whale.einvoice.boss.application.config.EinvoiceBossAutoConfiguration", "openhis.modules.einvoice-boss.enabled"},
             {"unionpay-bpc", "com.openhis.whale.unionpay.bpc.application.config.UnionPayBpcAutoConfiguration", "openhis.modules.unionpay-bpc.enabled"},

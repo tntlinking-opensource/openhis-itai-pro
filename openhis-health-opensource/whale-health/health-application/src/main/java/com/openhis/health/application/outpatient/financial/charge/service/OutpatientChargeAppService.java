@@ -15,6 +15,8 @@ import com.openhis.health.module.common.validator.PaymentChannelGate;
 import com.openhis.health.module.common.support.ThirdPartyPaymentSettleSupport;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.health.application.outpatient.financial.charge.support.ChargeReceiptPrintAssembler;
+import com.openhis.health.module.orchestration.financial.OutpatientChargeSettlementGateSupport;
+import com.openhis.health.module.orchestration.financial.OutpatientPaymentDraftLifecycleSupport;
 import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.command.BatchChargeItemIdsCommand;
@@ -38,7 +40,6 @@ import com.openhis.health.domain.clinical.condition.queries.model.ConditionBatch
 import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.financial.contract.queries.model.ContractDetailQueryModel;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
-import com.openhis.health.domain.financial.paymentreconciliation.command.AbortPreSettlementBeforePaymentCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CreatePaymentDraftFromPreSettleCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.PaymentDetailItemCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.PaymentYbSettlementItemCommand;
@@ -156,6 +157,8 @@ public class OutpatientChargeAppService {
     private final ThirdPartyPaymentSettleSupport thirdPartyPaymentSettleSupport;
 
     private final ChargeReceiptPrintAssembler chargeReceiptPrintAssembler;
+    private final OutpatientChargeSettlementGateSupport outpatientChargeSettlementGateSupport;
+    private final OutpatientPaymentDraftLifecycleSupport outpatientPaymentDraftLifecycleSupport;
 
     /**
      * IF-OPC-01：加载收费页初始化数据。
@@ -360,7 +363,7 @@ public class OutpatientChargeAppService {
         BatchChargeItemIdsCommand preSettleCommand =
             outpatientChargeMapper.toBatchChargeItemIdsCommand(request.getChargeItemIds(), operatorId);
         // 预结算前先作废同就诊遗留草稿，避免多次预结算残留 DRAFT 使 BR-OPC-012 误判为待收费。
-        this.cancelStaleOutpatientPaymentDrafts(request.getEncounterId(), null);
+        this.outpatientPaymentDraftLifecycleSupport.cancelAllDraftsForEncounter(request.getEncounterId(), null);
         // 先落收费项预结算快照，再创建支付草稿，保证“费用事实在前、支付草稿在后”的时序。
         chargeItemDomainService.preSettleChargeItems(preSettleCommand);
         BigDecimal totalAmount = this.sumChargeItemAmount(chargeItems);
@@ -481,6 +484,8 @@ public class OutpatientChargeAppService {
             OutpatientChargeConstants.MESSAGE_CODE_SETTLE_CHARGE_ITEMS_MISMATCH);
         // 校验收费项未结算：已结算或已退款的收费项不能再次结算
         this.assertNotSettledChargeItems(chargeItems);
+        // Gate（GAP-STALE-001）：须 PLANNED 且锚点医嘱/发放仍可收费；须在支付落账前执行。
+        this.outpatientChargeSettlementGateSupport.assertChargeItemsSettleable(chargeItems);
         // 计算收费项总金额作为预期金额基准；医保预结算后以草稿 displayAmount 为准。
         BigDecimal expected = this.resolveExpectedPayableAmount(payment, chargeItems);
         // 支付草稿明细金额必须与当前应付口径一致，防止历史脏草稿在正式结算阶段穿透。
@@ -523,7 +528,7 @@ public class OutpatientChargeAppService {
             outpatientChargeMapper.toBatchChargeItemIdsCommand(request.getChargeItemIds(), operatorId);
         chargeItemDomainService.settleChargeItems(batchChargeItemIdsCommand);
         // 正式结算后清理同就诊其它草稿支付单，防止队列标签仍命中陈旧 DRAFT。
-        this.cancelStaleOutpatientPaymentDrafts(request.getEncounterId(), null);
+        this.outpatientPaymentDraftLifecycleSupport.cancelAllDraftsForEncounter(request.getEncounterId(), null);
         // 收费项已结算：按锚点推进关联医嘱/申请及发放草稿，患者方可进入发药/执行后续环节。
         this.syncAdviceStatesAfterChargeSettlement(chargeItems, operatorId);
         Long invoiceId = invoiceDomainService.createDraftInvoiceAfterPayment(
@@ -1685,37 +1690,6 @@ public class OutpatientChargeAppService {
             }
         }
         return false;
-    }
-
-    /**
-     * 作废同就诊下仍处于草稿态的支付流水，避免 BR-OPC-012 队列标签被陈旧预结算单误判。
-     *
-     * @param encounterId         就诊主键
-     * @param retainDraftPaymentId 保留不作废的草稿主键；null 表示同就诊草稿全部作废
-     */
-    private void cancelStaleOutpatientPaymentDrafts(Long encounterId, Long retainDraftPaymentId) {
-        if (encounterId == null) {
-            return;
-        }
-        List<PaymentReconciliationQueryModel> encounterPayments =
-            paymentReconciliationQueryService.findPaymentsByEncounter(encounterId);
-        if (encounterPayments == null || encounterPayments.isEmpty()) {
-            return;
-        }
-        for (PaymentReconciliationQueryModel payment : encounterPayments) {
-            if (payment == null || payment.getId() == null) {
-                continue;
-            }
-            if (!PaymentStatus.DRAFT.equals(payment.getStatusEnum())) {
-                continue;
-            }
-            if (retainDraftPaymentId != null && retainDraftPaymentId.equals(payment.getId())) {
-                continue;
-            }
-            AbortPreSettlementBeforePaymentCommand abortCommand = new AbortPreSettlementBeforePaymentCommand();
-            abortCommand.setPaymentId(payment.getId());
-            paymentReconciliationDomainService.abortPreSettlementBeforePayment(abortCommand);
-        }
     }
 
     /**

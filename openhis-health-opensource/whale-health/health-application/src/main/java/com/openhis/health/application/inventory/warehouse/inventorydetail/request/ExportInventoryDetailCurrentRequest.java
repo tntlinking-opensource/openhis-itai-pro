@@ -21,10 +21,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 现库导出 Excel 入参（IF-INV-DTL-06）；筛选与汇总同构。

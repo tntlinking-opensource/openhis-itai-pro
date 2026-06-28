@@ -18,8 +18,10 @@
 package com.openhis.health.domain.administration.encounter.repository;
 
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -45,6 +47,16 @@ public interface EncounterRepository extends JpaRepository<Encounter, Long>, Jpa
      * @return 命中时返回实体，否则 empty
      */
     Optional<Encounter> findByIdAndClassEnum(Long id, String classEnum);
+
+    /**
+     * 按主键与就诊类别加悲观写锁加载（有申请住院登记防 PLANNED 双窗 TOCTOU，GAP-ATD-004）。
+     *
+     * @param id        就诊标识
+     * @param classEnum 就诊类别编码（住院登记为 {@code IMP}）
+     * @return 未软删就诊
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Encounter> findByIdAndClassEnumAndIsDeletedFalse(Long id, String classEnum);
 
     /**
      * 批量按主键与就诊类别查询未删除记录。

@@ -18,9 +18,12 @@
 package com.openhis.health.domain.workflow.inventoryitem.repository;
 
 import com.openhis.health.domain.workflow.inventoryitem.entity.InventoryItem;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -59,4 +62,10 @@ public interface InventoryItemRepository extends JpaRepository<InventoryItem, Lo
      */
     List<InventoryItem> findByLotNumberAndLocationIdAndItemTableAndItemIdOrderByIdAsc(
         String lotNumber, Long locationId, String itemTable, Long itemId);
+
+    /**
+     * 按主键集合加悲观写锁（护士站/签发 FIFO Gate GAP-EXE-001/005）。
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    List<InventoryItem> findWithLockByIdIn(Collection<Long> ids);
 }

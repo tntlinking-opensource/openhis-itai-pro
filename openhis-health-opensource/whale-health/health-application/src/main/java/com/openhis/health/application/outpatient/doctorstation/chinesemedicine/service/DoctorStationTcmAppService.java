@@ -45,6 +45,7 @@ import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.module.orchestration.advice.OutpatientMedicationSignChargeSupport;
+import com.openhis.health.module.orchestration.financial.OutpatientPaymentDraftLifecycleSupport;
 import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
 import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
 import com.openhis.health.module.common.validator.PageWindowGate;
@@ -135,6 +136,8 @@ public class DoctorStationTcmAppService {
     private final CodeSystemQueryService codeSystemQueryService;
     /** 用药频次下拉（与医嘱 Tab 同源）。 */
     private final FrequencyOptionLoader frequencyOptionLoader;
+    /** 签退后作废陈旧预结算草稿（GAP-STALE-001）。 */
+    private final OutpatientPaymentDraftLifecycleSupport outpatientPaymentDraftLifecycleSupport;
 
     /**
      * 中医 Tab 页初始化：下发中药用法与用药频次下拉。
@@ -505,6 +508,9 @@ public class DoctorStationTcmAppService {
                 decoctionFeeAssembler.voidDecoctionChargeByPrescriptionNo(
                     request.getEncounterId(), row.getPrescriptionNo(), operatorId);
             }
+        }
+        if (DoctorStationTcmConstants.ACTION_WITHDRAW.equals(request.getAction())) {
+            this.outpatientPaymentDraftLifecycleSupport.cancelDraftsWithNonPlannedBoundCharges(request.getEncounterId());
         }
         return tcmMapper.toWithdrawOrDeleteTcmRxResponse(Boolean.TRUE);
     }

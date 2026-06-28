@@ -61,6 +61,12 @@ import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
+import com.openhis.health.module.common.assembler.product.DoctorStationAdviceFifoAllocationAssembler;
+import com.openhis.health.module.common.validator.DeviceAutoInventoryDeductSettingSupport;
+import com.openhis.health.module.common.assembler.product.DoctorStationAdviceFifoAllocationAssembler;
+import com.openhis.health.module.common.validator.DeviceAutoInventoryDeductSettingSupport;
+import com.openhis.health.module.orchestration.support.HealthConcurrencySupport;
+import com.openhis.health.module.orchestration.nursestation.LongTermMedicationMonthlyDispenseCapSupport;
 import com.openhis.health.module.orchestration.nursestation.DeviceDispenseNurseWorkflowSupport;
 import com.openhis.health.module.orchestration.nursestation.ProcedureExecutionPerformerOrchestrationSupport;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestDomainService;
@@ -153,6 +159,8 @@ public class NurseStationOrderExecuteAppService {
     private final DeviceDispenseNurseWorkflowSupport deviceDispenseNurseWorkflowSupport;
     /** Procedure 完成后登记主执行人（cln_procedure_performer，1:1）。 */
     private final ProcedureExecutionPerformerOrchestrationSupport procedureExecutionPerformerOrchestrationSupport;
+    /** 长期嘱自然月累计发放上限（GAP-EXE-010）。 */
+    private final LongTermMedicationMonthlyDispenseCapSupport longTermMedicationMonthlyDispenseCapSupport;
     private final InventoryItemDomainService inventoryItemDomainService;
     /** 映射器。 */
     private final NurseStationOrderExecuteMapper nurseStationOrderExecuteMapper;
@@ -161,6 +169,9 @@ public class NurseStationOrderExecuteAppService {
     private final NurseStationOrderExecuteListLoader nurseStationOrderExecuteListLoader;
     /** 库存 Gate FIFO。 */
     private final NurseStationExecutionInventoryAssembler nurseStationExecutionInventoryAssembler;
+    private final HealthConcurrencySupport healthConcurrencySupport;
+    private final DoctorStationAdviceFifoAllocationAssembler doctorStationAdviceFifoAllocationAssembler;
+    private final DeviceAutoInventoryDeductSettingSupport deviceAutoInventoryDeductSettingSupport;
 
     /** 中药整方扩行。 */
     private final InpatientNurseStationTcmSupport inpatientNurseStationTcmSupport;
@@ -230,12 +241,16 @@ public class NurseStationOrderExecuteAppService {
             try {
                 List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment> fifoSegments =
                     fifoSegmentsBySlotKey.get(this.buildMedicationGateSlotKey(item));
+                this.assertLongTermMonthlyDispenseCapBeforeWrite(item, context, fifoSegments);
                 this.executeSingleSlot(item, context, operatorId, performerId, fifoSegments, decoctionKeys);
                 processed = processed + 1;
             } catch (BusinessException ex) {
                 // 业务拒绝（Gate/库存/槽位变更）整批回滚
                 throw ex;
             } catch (RuntimeException ex) {
+                if (healthConcurrencySupport.isProcedureOccurrenceConflict(ex)) {
+                    throw healthConcurrencySupport.procedureOccurrenceConflictException();
+                }
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_EXE_304,
                     "医嘱执行失败，请稍后重试");
@@ -442,6 +457,44 @@ public class NurseStationOrderExecuteAppService {
         }
     }
 
+    private BigDecimal sumMedicationFifoSegmentQuantities(
+        List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment> fifoSegments) {
+        BigDecimal total = BigDecimal.ZERO;
+        if (fifoSegments == null) {
+            return total;
+        }
+        for (NurseStationExecutionInventoryAssembler.MedicationFifoSegment segment : fifoSegments) {
+            if (segment != null && segment.getQuantity() != null) {
+                total = total.add(segment.getQuantity());
+            }
+        }
+        return total;
+    }
+
+    /**
+     * 长期药嘱自然月累计发放 Gate（GAP-EXE-010）；须在 Procedure 创建前执行。
+     */
+    private void assertLongTermMonthlyDispenseCapBeforeWrite(
+        NurseStationOrderExecuteWriteSlotDto item,
+        WriteContextBundle context,
+        List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment> fifoSegments) {
+        if (!ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
+            return;
+        }
+        OrderExecutionContext orderCtx = context.resolveOrderContext(item);
+        if (!TherapyType.LONG_TERM.getCode().equals(orderCtx.therapyEnum)) {
+            return;
+        }
+        MedicationRequestListQueryModel med = orderCtx.medDetail;
+        if (med == null) {
+            return;
+        }
+        this.longTermMedicationMonthlyDispenseCapSupport.assertMonthlyDispenseWithinCap(
+            med,
+            item.getPlanTime(),
+            this.sumMedicationFifoSegmentQuantities(fifoSegments));
+    }
+
     /**
      * 诊疗执行：每次 planTime 新建待结算 Charge（长临同构，BR-IP-EXE-018）。
      */
@@ -640,6 +693,14 @@ public class NurseStationOrderExecuteAppService {
             this.loadProductDefinition(context, TableNameConstants.ADM_DEVICE_DEFINITION, deviceDefId);
         String unitCode = this.resolveBindItemUnitCode(bindItem, deviceProduct);
         Long performLocation = this.resolveBindDevicePerformLocation(orgId, deviceDefId, deviceProduct);
+        if (this.deviceAutoInventoryDeductSettingSupport.isEnabled()) {
+            this.doctorStationAdviceFifoAllocationAssembler.allocateDeviceFifoAtPerformLocation(
+                order.getEncounterId(),
+                performLocation,
+                deviceDefId,
+                unitCode,
+                quantity);
+        }
         String basedOnTable = this.resolveRequestTable(item.getOrderType());
         Long basedOnId = item.getOrderId();
         List<Long> deviceReqIds = deviceRequestDomainService.createExecutedDeviceOrder(

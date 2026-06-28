@@ -244,6 +244,8 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
         dto.setAdmitSourceCodeText(null);
         dto.setPriorityEnum(null);
         dto.setAmbEncounterId(null);
+        dto.setAttendingDoctorId(row.getAttendingDoctorId());
+        dto.setAttendingDoctorName(row.getAttendingDoctorName());
         if (encounterHead != null) {
             if (StringUtils.isNotBlank(encounterHead.getBusNo())) {
                 dto.setEncounterBusNo(encounterHead.getBusNo());

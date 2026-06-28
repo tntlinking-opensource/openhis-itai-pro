@@ -18,8 +18,10 @@
 package com.openhis.health.domain.medication.medicationrequest.repository;
 
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 
 import java.util.List;
 import java.util.Optional;
@@ -112,5 +114,11 @@ public interface MedicationRequestRepository extends JpaRepository<MedicationReq
      * @return 药品申请集合
      */
     List<MedicationRequest> findByEncounterIdInAndStatusEnum(Collection<Long> encounterIds, String statusEnum);
+
+    /**
+     * 按主键加悲观写锁（门诊执行次数门控 GAP-EXE-006）。
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<MedicationRequest> findWithLockById(Long id);
 }
 

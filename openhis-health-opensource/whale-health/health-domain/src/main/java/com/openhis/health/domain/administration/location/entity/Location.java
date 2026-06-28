@@ -27,6 +27,7 @@ import com.openhis.whale.core.domain.BaseAuditedEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.lang3.StringUtils;
@@ -89,6 +90,11 @@ public class Location extends BaseAuditedEntity {
     /** parent 标识。 */
     @Column(name = "parent_id")
     private Long parentId;
+
+    /** 乐观锁版本号（与 adm_location.version 对齐；与 GAP-ATD-001 悲观行锁叠加）。 */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Integer version;
 
     /**
      * 初始化登记状态（草稿）。
@@ -250,6 +256,13 @@ public class Location extends BaseAuditedEntity {
     }
 
     /**
+     * 迁移为预留状态（booking 床位预约，GAP-ATD-007）。
+     */
+    public void reserve() {
+        this.operationalEnum = LocationOperational.RESERVED.getCode();
+    }
+
+    /**
      * 迁移为空闲状态。
      */
     public void release() {
@@ -268,11 +281,57 @@ public class Location extends BaseAuditedEntity {
     }
 
     /**
-     * 断言床位非占用。
+     * 断言床位当前为空，可供占床（分床/换床硬门禁，须在行锁后调用；仅 {@code NOT_IN_USE}）。
+     */
+    public void assertVacantForOccupy() {
+        if (!LocationOperational.NOT_IN_USE.getCode().equals(this.operationalEnum)) {
+            throw new BusinessException(ErrorCodeConstants.LOCATION_RULE_CONFLICT, "仅空床可占用");
+        }
+    }
+
+    /**
+     * 断言床位当前为预留，可供本患者分床占用（须在行锁后调用）。
+     */
+    public void assertReservedForOccupy() {
+        if (!LocationOperational.RESERVED.getCode().equals(this.operationalEnum)) {
+            throw new BusinessException(ErrorCodeConstants.LOCATION_RULE_CONFLICT, "仅预留床位可办理预约占床");
+        }
+    }
+
+    /**
+     * 断言床位当前为空闲，可供预约预留（须在行锁后调用）。
+     */
+    public void assertVacantForReserve() {
+        if (!LocationOperational.NOT_IN_USE.getCode().equals(this.operationalEnum)) {
+            throw new BusinessException(ErrorCodeConstants.LOCATION_RULE_CONFLICT, "仅空床可预留");
+        }
+    }
+
+    /**
+     * 断言床位当前为预留，可供释放预留（须在行锁后调用）。
+     */
+    public void assertReservedForRelease() {
+        if (!LocationOperational.RESERVED.getCode().equals(this.operationalEnum)) {
+            throw new BusinessException(ErrorCodeConstants.LOCATION_RULE_CONFLICT, "仅预留床位可释放预留");
+        }
+    }
+
+    /**
+     * 断言床位当前为占用，可供释床（换床/清床/互换硬门禁，须在行锁后调用）。
+     */
+    public void assertOccupiedForRelease() {
+        if (!LocationOperational.IN_USE.getCode().equals(this.operationalEnum)) {
+            throw new BusinessException(ErrorCodeConstants.LOCATION_RULE_CONFLICT, "仅占用中的床位可释放");
+        }
+    }
+
+    /**
+     * 断言床位非占用、非预留（管理态变更用）。
      */
     private void assertNotOccupiedBed() {
-        if (LocationOperational.IN_USE.getCode().equals(this.operationalEnum)) {
-            throw new BusinessException(ErrorCodeConstants.LOCATION_RULE_CONFLICT, "占用中的床位不可执行该操作");
+        if (LocationOperational.IN_USE.getCode().equals(this.operationalEnum)
+            || LocationOperational.RESERVED.getCode().equals(this.operationalEnum)) {
+            throw new BusinessException(ErrorCodeConstants.LOCATION_RULE_CONFLICT, "占用或预留中的床位不可执行该操作");
         }
     }
 }

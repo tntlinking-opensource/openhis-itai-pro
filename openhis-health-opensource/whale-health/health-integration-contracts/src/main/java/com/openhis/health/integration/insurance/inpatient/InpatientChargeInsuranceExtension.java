@@ -10,6 +10,7 @@ import com.openhis.health.integration.insurance.inpatient.command.InpatientCharg
 import com.openhis.health.integration.insurance.inpatient.command.InpatientChargePreSettleCommand;
 import com.openhis.health.integration.insurance.inpatient.command.InpatientChargeRevokeFeeDetailCommand;
 import com.openhis.health.integration.insurance.inpatient.command.InpatientChargeRevokeSettleCommand;
+import com.openhis.health.integration.insurance.inpatient.result.InpatientChargeAdmissionPlatformSnapshot;
 import com.openhis.health.integration.insurance.inpatient.result.InpatientChargeAdmissionResult;
 import com.openhis.health.integration.insurance.inpatient.result.InpatientChargeConfirmResult;
 import com.openhis.health.integration.insurance.inpatient.result.InpatientChargePreSettleResult;
@@ -111,6 +112,15 @@ public interface InpatientChargeInsuranceExtension {
     /** 撤销住院费用明细（2302）。 */
     default InpatientChargeRevokeFeeDetailResult revokeFeeDetails(InpatientChargeRevokeFeeDetailCommand command) {
         throw new UnsupportedOperationException("第三方结算未装配");
+    }
+
+    /**
+     * 批量查询就诊是否已在平台完成入院登记（2401）。
+     *
+     * @param encounterIds 住院就诊主键列表
+     */
+    default List<InpatientChargeAdmissionPlatformSnapshot> findAdmissionPlatformSnapshots(List<Long> encounterIds) {
+        return Collections.emptyList();
     }
 
     /** 撤销入院登记（2404）；未装配时为 no-op。 */

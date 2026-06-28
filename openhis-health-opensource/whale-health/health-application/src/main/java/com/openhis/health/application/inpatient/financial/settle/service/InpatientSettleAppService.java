@@ -77,6 +77,7 @@ import com.openhis.health.domain.administration.encounter.queries.InpatientEncou
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientSettleQueueTab;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
@@ -103,6 +104,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -828,7 +830,16 @@ public class InpatientSettleAppService {
                 advanceRefundPaymentId,
                 ybConfirmResult == null ? null : ybConfirmResult.getSettlementId());
         } catch (BusinessException ex) {
+            if (ErrorCodeConstants.ENCOUNTER_INVALID_STATUS.equals(ex.getErrorCode())) {
+                throw new BusinessException(
+                    InpatientSettleConstants.EX_IP_STL_109,
+                    "就诊状态已变更，请刷新后重试");
+            }
             throw ex;
+        } catch (OptimisticLockingFailureException ex) {
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_109,
+                "支付结算失败，请以流水为准重试");
         } catch (RuntimeException ex) {
             throw new BusinessException(
                 InpatientSettleConstants.EX_IP_STL_109,

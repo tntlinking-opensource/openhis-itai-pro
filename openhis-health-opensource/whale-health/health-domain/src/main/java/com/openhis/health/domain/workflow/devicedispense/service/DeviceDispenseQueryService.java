@@ -389,6 +389,23 @@ public class DeviceDispenseQueryService {
     }
 
     /**
+     * 按主键加载未软删耗材发放行（不存在或已软删时 {@code null}）。
+     *
+     * @param id 发放主键
+     * @return 发放行或 {@code null}
+     */
+    public DeviceDispense findById(Long id) {
+        if (id == null) {
+            return null;
+        }
+        DeviceDispense row = deviceDispenseRepository.findById(id).orElse(null);
+        if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+            return null;
+        }
+        return row;
+    }
+
+    /**
      * 详情字段映射。
      *
      * @param row 实体
@@ -461,6 +478,46 @@ public class DeviceDispenseQueryService {
         }
         List<Long> idList = new ArrayList<>(deviceReqIds);
         return deviceDispenseRepository.findByDeviceReqIdIn(idList);
+    }
+
+    /**
+     * 判断耗材是否存在非终态发放行（调价提交互斥 BR-PRC-SUB-003：在途发药）。
+     *
+     * @param deviceDefId 耗材定义主键
+     * @return 存在在途发放时为 true
+     */
+    public boolean existsInTransitDispenseByDeviceDefId(Long deviceDefId) {
+        if (deviceDefId == null) {
+            return false;
+        }
+        // 非终态发放视为在途发药（与药品发放口径一致）
+        Specification<DeviceDispense> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.DEVICE_DEF_ID), deviceDefId));
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(this.inTransitDispenseStatusCodes()));
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        return deviceDispenseRepository.count(specification) > 0;
+    }
+
+    /**
+     * 在途发放状态码：草稿、待发、配药中、部分完成、退药中等非终态。
+     *
+     * @return 状态 code 列表
+     */
+    private List<String> inTransitDispenseStatusCodes() {
+        List<String> codes = new ArrayList<>();
+        codes.add(DispenseStatus.DRAFT.getCode());
+        codes.add(DispenseStatus.PREPARATION.getCode());
+        codes.add(DispenseStatus.PREPARED.getCode());
+        codes.add(DispenseStatus.IN_PROGRESS.getCode());
+        codes.add(DispenseStatus.SUMMARIZED.getCode());
+        codes.add(DispenseStatus.PART_COMPLETED.getCode());
+        codes.add(DispenseStatus.ON_HOLD.getCode());
+        codes.add(DispenseStatus.PENDING_REFUND.getCode());
+        codes.add(DispenseStatus.PART_REFUND.getCode());
+        return codes;
     }
 
     /**

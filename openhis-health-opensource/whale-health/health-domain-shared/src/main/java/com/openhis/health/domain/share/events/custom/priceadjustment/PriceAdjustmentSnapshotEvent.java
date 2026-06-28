@@ -26,44 +26,75 @@ import java.math.BigDecimal;
 import java.util.Date;
 
 /**
- * 价格调整事件快照基类（包含完整调整信息，供下游核算/对账/审计使用）。
+ * 调价单事件快照基类（DM-CUS-011 v2 单据模型）。
+ *
+ * <p>载荷字段与 {@code cus_price_adjustment} 锚点行对齐，供投影与集成消费；发布时机为 beforeCommit。</p>
  */
 @Getter
 @Setter
 public class PriceAdjustmentSnapshotEvent extends DomainEvent {
-    private Long definitionId;
-    private String priceType;
-    private String lotNumber;
-    private BigDecimal oldAmount;
-    private BigDecimal newAmount;
+
+    /** 调价单号 {@code bus_no}。 */
+    private String busNo;
+
+    /** 项目物理表名（药品/耗材定义表）。 */
+    private String itemTable;
+
+    /** 项目定义主键。 */
+    private Long itemId;
+
+    /** 目标进价（主行）。 */
+    private BigDecimal newPurchaseAmount;
+
+    /** 目标售价（主行）。 */
+    private BigDecimal newSellingAmount;
+
+    /** 调价原因。 */
     private String adjustmentReason;
+
+    /** 制单/申请时间。 */
     private Date adjustmentTime;
+
+    /** 审批状态 code（{@link com.openhis.health.domain.share.enums.PriceAdjustmentStatus}）。 */
     private String statusEnum;
+
+    /** 提交人。 */
     private Long submitterId;
+
+    /** 提交时间。 */
     private Date submitTime;
+
+    /** 审批人。 */
     private Long approverId;
+
+    /** 审批时间。 */
     private Date approveTime;
+
+    /** 审批意见（驳回时必填）。 */
     private String approveComment;
+
+    /** 操作人。 */
     private Long operatorId;
+
+    /** 机构主键。 */
     private Long orgId;
-    private Integer stockQuantity;
-    private BigDecimal adjustmentDelta;
-    private BigDecimal totalImpact;
+
+    /** 本次提交加锁的库存行数（仅提交/再次提交事件填充）。 */
+    private Integer lockedInventoryCount;
 
     /**
-     * 处理逻辑。
-     * @return 返回结果
+     * 反序列化/框架用默认构造。
      */
     public PriceAdjustmentSnapshotEvent() {
         super();
     }
 
     /**
-     * 处理Long adjustmentId逻辑。
-     * @return 返回结果
+     * 按聚合锚点主键构造。
+     *
+     * @param aggregateId 调价单首行主键
      */
-    public PriceAdjustmentSnapshotEvent(Long adjustmentId) {
-        super(adjustmentId, AggregateTypeConstants.PRICE_ADJUSTMENT);
+    public PriceAdjustmentSnapshotEvent(Long aggregateId) {
+        super(aggregateId, AggregateTypeConstants.PRICE_ADJUSTMENT);
     }
 }
-

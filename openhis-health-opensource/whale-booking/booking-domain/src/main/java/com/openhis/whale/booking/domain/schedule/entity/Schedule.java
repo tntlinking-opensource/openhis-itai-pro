@@ -92,6 +92,14 @@ public class Schedule extends BaseAuditedEntity {
     @Column(name = "substitute_reason")
     private String substituteReason;
 
+    /** 来源 T2 日排班模板主键（模板生成时写入）。 */
+    @Column(name = "source_schedule_template_id")
+    private Long sourceScheduleTemplateId;
+
+    /** 关联 T1 放号时段模板主键。 */
+    @Column(name = "slot_provision_template_id")
+    private Long slotProvisionTemplateId;
+
     /**
      * 参与者集合非空断言（BR-SCH-001）。
      *
@@ -220,6 +228,23 @@ public class Schedule extends BaseAuditedEntity {
     }
 
     /**
+     * 更新模板血缘快照（仅草稿可改）。
+     *
+     * @param sourceScheduleTemplateId 来源 T2 主键
+     * @param slotProvisionTemplateId 关联 T1 主键
+     */
+    public void updateTemplateSnapshot(Long sourceScheduleTemplateId, Long slotProvisionTemplateId) {
+        this.assertNotRetired();
+        if (!ScheduleStatus.DRAFT.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "仅草稿状态允许修改放号时段引用");
+        }
+        if (sourceScheduleTemplateId != null) {
+            this.sourceScheduleTemplateId = sourceScheduleTemplateId;
+        }
+        this.slotProvisionTemplateId = slotProvisionTemplateId;
+    }
+
+    /**
      * 停用前断言。
      */
     public void assertDeactivatable() {
@@ -290,6 +315,9 @@ public class Schedule extends BaseAuditedEntity {
     public void assertRetirable() {
         if (ScheduleStatus.RETIRED.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "已废弃日程不允许重复废弃");
+        }
+        if (ScheduleStatus.ACTIVE.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "已发布日程须先停诊后再作废");
         }
     }
 

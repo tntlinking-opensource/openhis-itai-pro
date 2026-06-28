@@ -128,6 +128,41 @@ public class MedicationRequestQueryService {
         return medicationRequestRepository.existsByMedicationId(medicationId);
     }
 
+    /**
+     * 判断药品是否存在非终态医嘱申请（调价提交互斥 BR-PRC-SUB-003：在途医嘱）。
+     *
+     * @param medicationId 药品定义主键 {@code med_medication_definition.id}
+     * @return 存在在途申请时为 true
+     */
+    public boolean existsInTransitRequestByMedicationId(Long medicationId) {
+        if (medicationId == null) {
+            return false;
+        }
+        // 非终态申请（待发、已签发、已校对、暂挂）视为在途医嘱
+        Specification<MedicationRequest> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.MEDICATION_ID), medicationId));
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(this.inTransitRequestStatusCodes()));
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        return medicationRequestRepository.count(specification) > 0;
+    }
+
+    /**
+     * 在途医嘱申请状态码：待发、已签发、已校对、暂挂（非 COMPLETED/CANCELLED/STOPPED）。
+     *
+     * @return 状态 code 列表
+     */
+    private List<String> inTransitRequestStatusCodes() {
+        List<String> codes = new ArrayList<>();
+        codes.add(RequestStatus.DRAFT.getCode());
+        codes.add(RequestStatus.ACTIVE.getCode());
+        codes.add(RequestStatus.VERIFIED.getCode());
+        codes.add(RequestStatus.HOLD.getCode());
+        return codes;
+    }
+
     public Long resolveMedicationDefinitionId(Long requestId) {
         if (requestId == null) {
             return null;

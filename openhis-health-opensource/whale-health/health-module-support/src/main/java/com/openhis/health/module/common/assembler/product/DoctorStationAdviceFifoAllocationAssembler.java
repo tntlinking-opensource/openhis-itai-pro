@@ -109,6 +109,7 @@ public class DoctorStationAdviceFifoAllocationAssembler {
         List<InventoryCatalogAvailabilityRowModel> physical = inventoryItemQueryService.findAvailableCatalogRowsForOrder(
                 TableNameConstants.MED_MEDICATION_DEFINITION, List.of(medicationDefinitionId), candidateLocs);
         sortInventoryRowsForTemplateFifo(physical, candidateLocs);
+        inventoryItemQueryService.lockInventoryRowsForCatalogAvailability(physical);
         Map<String, BigDecimal> occ = buildMedicationOccupancy(encounterId, candidateLocs, medicationDefinitionId, productRow);
         DoctorStationAdviceFifoAllocationResult fifoResult = DoctorStationAdviceInventoryUnitQuantityHelper.allocateFifoSegmentsInDoctorBusinessUnit(
                 physical, occ, TableNameConstants.MED_MEDICATION_DEFINITION, productRow, businessUnitCode, totalQuantity);
@@ -230,6 +231,7 @@ public class DoctorStationAdviceFifoAllocationAssembler {
         List<InventoryCatalogAvailabilityRowModel> physical = inventoryItemQueryService.findAvailableCatalogRowsForOrder(
                 TableNameConstants.ADM_DEVICE_DEFINITION, List.of(deviceDefinitionId), candidateLocs);
         sortInventoryRowsForTemplateFifo(physical, candidateLocs);
+        inventoryItemQueryService.lockInventoryRowsForCatalogAvailability(physical);
         Map<String, BigDecimal> occ = buildDeviceOccupancy(encounterId, candidateLocs, deviceDefinitionId, productRow);
         DoctorStationAdviceFifoAllocationResult fifoResult = DoctorStationAdviceInventoryUnitQuantityHelper.allocateFifoSegmentsInDoctorBusinessUnit(
                 physical, occ, TableNameConstants.ADM_DEVICE_DEFINITION, productRow, businessUnitCode, totalQuantity);
@@ -276,6 +278,7 @@ public class DoctorStationAdviceFifoAllocationAssembler {
         List<InventoryCatalogAvailabilityRowModel> physical = inventoryItemQueryService.findAvailableCatalogRowsForOrder(
             TableNameConstants.ADM_DEVICE_DEFINITION, List.of(deviceDefinitionId), candidateLocs);
         sortInventoryRowsForTemplateFifo(physical, candidateLocs);
+        inventoryItemQueryService.lockInventoryRowsForCatalogAvailability(physical);
         Map<String, BigDecimal> occ = buildDeviceOccupancy(encounterId, candidateLocs, deviceDefinitionId, productRow);
         DoctorStationAdviceFifoAllocationResult fifoResult = DoctorStationAdviceInventoryUnitQuantityHelper.allocateFifoSegmentsInDoctorBusinessUnit(
             physical, occ, TableNameConstants.ADM_DEVICE_DEFINITION, productRow, unitCode, totalQuantity);

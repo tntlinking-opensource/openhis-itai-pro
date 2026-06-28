@@ -8,6 +8,7 @@ import com.openhis.whale.booking.application.support.ScheduleActorMasterDataVali
 import com.openhis.whale.booking.domain.calendarexception.service.CalendarExceptionQueryService;
 import com.openhis.whale.booking.domain.policy.entity.ReleasePolicy;
 import com.openhis.whale.booking.domain.policy.service.PolicyQueryService;
+import com.openhis.whale.booking.domain.schedule.command.AdjustPlanningHorizonCommand;
 import com.openhis.whale.booking.domain.schedule.command.CreateScheduleCommand;
 import com.openhis.whale.booking.domain.schedule.command.PublishScheduleCommand;
 import com.openhis.whale.booking.domain.schedule.service.ScheduleDomainService;
@@ -21,6 +22,7 @@ import com.openhis.whale.booking.domain.template.entity.SlotProvisionTemplate;
 import com.openhis.whale.booking.domain.template.entity.WeekScheduleTemplate;
 import com.openhis.whale.booking.domain.template.service.TemplateQueryService;
 import com.openhis.whale.booking.domain.template.service.WeekScheduleTemplateQueryService;
+import com.openhis.whale.booking.application.support.BookingConcurrencySupport;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -46,6 +48,7 @@ public class WeekTemplateMaterializeSupport {
     private final SlotRepository slotRepository;
     private final OutpatientScheduleMapper outpatientScheduleMapper;
     private final ScheduleActorMasterDataValidator scheduleActorMasterDataValidator;
+    private final BookingConcurrencySupport bookingConcurrencySupport;
 
     /**
      * 解析 virtualSlotKey，物化 Schedule+Slot 并返回真实 slotId。
@@ -69,14 +72,24 @@ public class WeekTemplateMaterializeSupport {
         }
 
         Long scheduleId = this.createScheduleForDay(dayTemplate, parts.getOrganizationId(), parts.getDate(), operatorId);
-        LocalDateTime dayStart = parts.getDate().atStartOfDay();
-        LocalDateTime dayEnd = parts.getDate().atTime(23, 59, 59);
-        this.publishSchedule(scheduleId, dayStart, dayEnd, operatorId);
         SlotProvisionTemplate slotTemplate = this.resolveSlotTemplate(dayTemplate);
+        LocalDateTime[] horizon = outpatientScheduleMapper.resolvePlanningHorizonFromT1(slotTemplate, parts.getDate());
+        this.publishSchedule(scheduleId, horizon[0], horizon[1], operatorId);
         ReleasePolicy releasePolicy = this.resolveReleasePolicy(dayTemplate);
-        this.provisionSlotsForDay(
-            scheduleId, parts.getOrganizationId(), parts.getDate(), dayStart, dayEnd,
-            slotTemplate, releasePolicy, operatorId);
+        try {
+            this.provisionSlotsForDay(
+                scheduleId, parts.getOrganizationId(), parts.getDate(), horizon[0], horizon[1],
+                slotTemplate, releasePolicy, operatorId);
+        } catch (RuntimeException ex) {
+            if (bookingConcurrencySupport.isVirtualSlotMaterializeConflict(ex)) {
+                return slotRepository.findFirstByOrganizationIdAndStartTimeAndEndTimeAndIsDeletedFalse(
+                        parts.getOrganizationId(), parts.getStartTime(), parts.getEndTime())
+                    .map(Slot::getId)
+                    .orElseThrow(() -> new BusinessException(
+                        ErrorCodeConstants.SLOT_INVALID_ARGUMENT, "lazy 物化并发冲突后未找到号源"));
+            }
+            throw ex;
+        }
 
         return slotRepository.findFirstByOrganizationIdAndStartTimeAndEndTimeAndIsDeletedFalse(
                 parts.getOrganizationId(), parts.getStartTime(), parts.getEndTime())
@@ -99,7 +112,13 @@ public class WeekTemplateMaterializeSupport {
             template, organizationId, date, operatorId);
         scheduleActorMasterDataValidator.assertCreateCommandActorsReferenceValid(
             organizationId, command.getItem().getActors());
-        return scheduleDomainService.createSchedule(command);
+        Long scheduleId = scheduleDomainService.createSchedule(command);
+        SlotProvisionTemplate slotTemplate = this.resolveSlotTemplate(template);
+        LocalDateTime[] horizon = outpatientScheduleMapper.resolvePlanningHorizonFromT1(slotTemplate, date);
+        AdjustPlanningHorizonCommand horizonCommand = outpatientScheduleMapper.toAdjustPlanningHorizonCommand(
+            scheduleId, horizon[0], horizon[1], operatorId);
+        scheduleDomainService.adjustPlanningHorizon(horizonCommand);
+        return scheduleId;
     }
 
     private void publishSchedule(Long scheduleId, LocalDateTime start, LocalDateTime end, Long operatorId) {

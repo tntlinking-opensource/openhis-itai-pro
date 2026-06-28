@@ -30,6 +30,8 @@ public class ConditionDefinitionBatchItemQueryModel {
     private Long id;
     /** 病情编码。 */
     private String conditionCode;
+    /** 国家医保诊断编码（目录 {@code yb_no}，2401/220x 平台病种码来源）。 */
+    private String ybNo;
     /** 名称。 */
     private String name;
     /** 状态枚举编码。 */

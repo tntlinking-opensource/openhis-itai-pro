@@ -15,6 +15,7 @@ public class YbInvokeLogCommand {
     private Long contractId;
     private String contractBusNo;
     private String infno;
+    private String infname;
     private String msgid;
     private Long encounterId;
     private Long paymentDraftId;
@@ -22,6 +23,7 @@ public class YbInvokeLogCommand {
     private Long preSettleId;
     private Long settlementRecordId;
     private String infcode;
+    private String errMsg;
     private Integer durationMs;
     private String requestJson;
     private String responseJson;

@@ -11,6 +11,7 @@ import com.openhis.health.integration.insurance.inpatient.command.InpatientCharg
 import com.openhis.health.integration.insurance.inpatient.command.InpatientChargePreSettleCommand;
 import com.openhis.health.integration.insurance.inpatient.command.InpatientChargeRevokeFeeDetailCommand;
 import com.openhis.health.integration.insurance.inpatient.command.InpatientChargeRevokeSettleCommand;
+import com.openhis.health.integration.insurance.inpatient.result.InpatientChargeAdmissionPlatformSnapshot;
 import com.openhis.health.integration.insurance.inpatient.result.InpatientChargeAdmissionResult;
 import com.openhis.health.integration.insurance.inpatient.result.InpatientChargeConfirmResult;
 import com.openhis.health.integration.insurance.inpatient.result.InpatientChargePreSettleResult;
@@ -23,6 +24,7 @@ import com.openhis.whale.chs.jilin.contracts.command.IpInsuranceConfirmCommand;
 import com.openhis.whale.chs.jilin.contracts.result.IpInsuranceConfirmResult;
 import com.openhis.whale.chs.jilin.contracts.command.IpInsuranceEncounterCommand;
 import com.openhis.whale.chs.jilin.contracts.command.IpInsurancePreSettleCommand;
+import com.openhis.whale.chs.jilin.contracts.result.IpInsurancePlatformAdmissionSnapshot;
 import com.openhis.whale.chs.jilin.contracts.result.IpInsurancePreSettleResult;
 import com.openhis.whale.chs.jilin.contracts.command.IpInsuranceRevokeFeeDetailCommand;
 import com.openhis.whale.chs.jilin.contracts.result.IpInsuranceRevokeFeeDetailResult;
@@ -66,6 +68,27 @@ public class InpatientChargeInsuranceExtensionImpl implements InpatientChargeIns
     @Override
     public boolean supportsThirdPartyContract(Long contractId) {
         return chsInpatientSettlementClient.isInsuranceContract(contractId);
+    }
+
+    @Override
+    public List<InpatientChargeAdmissionPlatformSnapshot> findAdmissionPlatformSnapshots(List<Long> encounterIds) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return List.of();
+        }
+        List<IpInsurancePlatformAdmissionSnapshot> rows =
+            chsInpatientSettlementClient.listPlatformAdmissionSnapshots(encounterIds);
+        List<InpatientChargeAdmissionPlatformSnapshot> result = new ArrayList<>(rows.size());
+        for (IpInsurancePlatformAdmissionSnapshot row : rows) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            result.add(new InpatientChargeAdmissionPlatformSnapshot()
+                .setEncounterId(row.getEncounterId())
+                .setContractId(row.getContractId())
+                .setMdtrtId(row.getMdtrtId())
+                .setPlatformAdmitted(row.getPlatformAdmitted()));
+        }
+        return result;
     }
 
     /**

@@ -51,6 +51,19 @@ public class BedReservationQueryService {
     }
 
     /**
+     * 按床位查有效预留扩展。
+     *
+     * @param locationId 床位 Location 主键
+     * @return 扩展列表
+     */
+    public List<BedReservationExt> findActiveByLocationId(Long locationId) {
+        if (locationId == null) {
+            return List.of();
+        }
+        return repository.findByLocationIdAndIsDeletedFalse(locationId);
+    }
+
+    /**
      * 按病区分页查询床位预留（兼容旧入参）。
      *
      * @param wardLocationId 病区库位主键

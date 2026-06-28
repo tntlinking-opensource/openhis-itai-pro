@@ -17,6 +17,7 @@ import com.openhis.whale.booking.domain.schedule.command.CreateScheduleCommand;
 import com.openhis.whale.booking.domain.schedule.command.PublishScheduleCommand;
 import com.openhis.whale.booking.domain.schedule.constants.GenerateScheduleConstants;
 import com.openhis.whale.booking.domain.schedule.service.ScheduleDomainService;
+import com.openhis.whale.booking.domain.schedule.service.ScheduleQueryService;
 import com.openhis.whale.booking.domain.share.ScheduleTemplateKindConstants;
 import com.openhis.whale.booking.domain.slot.command.ProvisionSlotBatchCommand;
 import com.openhis.whale.booking.domain.slot.service.SlotDomainService;
@@ -54,6 +55,7 @@ public class GenerateFromTemplateSupport {
     private final OutpatientScheduleMapper outpatientScheduleMapper;
     private final ScheduleActorMasterDataValidator scheduleActorMasterDataValidator;
     private final BookingAuditSupport bookingAuditSupport;
+    private final ScheduleQueryService scheduleQueryService;
 
     /**
      * 按日/周模板与日期区间批量生成 Schedule（可仅草稿、可自动发布/放号）。
@@ -322,17 +324,22 @@ public class GenerateFromTemplateSupport {
         boolean autoProvision,
         boolean reducedCapacity,
         GenerateFromTemplateResponse response) {
-        Long scheduleId = this.createScheduleForDay(dayTemplate, request.getOrganizationId(), cursor, operatorId);
+        if (scheduleQueryService.existsNonRetiredScheduleForTemplateOnDay(
+            request.getOrganizationId(), dayTemplate.getId(), cursor)) {
+            response.setSkippedCount(response.getSkippedCount() + 1);
+            return;
+        }
+        Long scheduleId = this.createScheduleForDay(
+            dayTemplate, request.getOrganizationId(), cursor, slotTemplate, operatorId);
         response.getScheduleIds().add(scheduleId);
         response.setGeneratedCount(response.getGeneratedCount() + 1);
 
         if (autoPublish) {
-            LocalDateTime dayStart = cursor.atStartOfDay();
-            LocalDateTime dayEnd = cursor.atTime(23, 59, 59);
-            this.publishSchedule(scheduleId, dayStart, dayEnd, operatorId);
+            LocalDateTime[] horizon = outpatientScheduleMapper.resolvePlanningHorizonFromT1(slotTemplate, cursor);
+            this.publishSchedule(scheduleId, horizon[0], horizon[1], operatorId);
             if (autoProvision) {
                 int slotCount = this.provisionSlotsForDay(
-                    scheduleId, request.getOrganizationId(), cursor, dayStart, dayEnd,
+                    scheduleId, request.getOrganizationId(), cursor, horizon[0], horizon[1],
                     slotTemplate, releasePolicy, operatorId, reducedCapacity);
                 response.setProvisionedSlotCount(response.getProvisionedSlotCount() + slotCount);
             }
@@ -368,17 +375,19 @@ public class GenerateFromTemplateSupport {
      * @return 新 Schedule 主键
      */
     private Long createScheduleForDay(
-        ScheduleTemplate template, Long organizationId, LocalDate date, Long operatorId) {
+        ScheduleTemplate template,
+        Long organizationId,
+        LocalDate date,
+        SlotProvisionTemplate slotTemplate,
+        Long operatorId) {
         CreateScheduleCommand command = outpatientScheduleMapper.toCreateScheduleFromScheduleTemplate(
             template, organizationId, date, operatorId);
         scheduleActorMasterDataValidator.assertCreateCommandActorsReferenceValid(
             organizationId, command.getItem().getActors());
         Long scheduleId = scheduleDomainService.createSchedule(command);
-        LocalDateTime dayStart = date.atStartOfDay();
-        LocalDateTime dayEnd = date.atTime(23, 59, 59);
-        // Cmd：草稿须占格，否则读侧过滤无窗口草稿，运维无法点格手动发布
+        LocalDateTime[] horizon = outpatientScheduleMapper.resolvePlanningHorizonFromT1(slotTemplate, date);
         AdjustPlanningHorizonCommand horizonCommand = outpatientScheduleMapper.toAdjustPlanningHorizonCommand(
-            scheduleId, dayStart, dayEnd, operatorId);
+            scheduleId, horizon[0], horizon[1], operatorId);
         scheduleDomainService.adjustPlanningHorizon(horizonCommand);
         return scheduleId;
     }

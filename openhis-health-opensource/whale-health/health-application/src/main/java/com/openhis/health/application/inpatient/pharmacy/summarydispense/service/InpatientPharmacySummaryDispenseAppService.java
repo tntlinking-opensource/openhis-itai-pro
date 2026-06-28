@@ -427,10 +427,18 @@ public class InpatientPharmacySummaryDispenseAppService {
                 if (!allTraceCodes.isEmpty()) {
                     traceNumberRecordQueryService.assertCodesNotAlreadyOutbound(allTraceCodes);
                 }
-                // Pre 6f：药品目录（单位换算）
+                // Cmd 6f：Supply APPROVAL → AGREE（条件更新，须在扣库前占位，GAP-INV-004）
+                supplyRequestDomainService.agreeRequest(
+                    inpatientPharmacySummaryDispenseMapper.toAgreeRequestCommand(
+                        summaryNo, dispenserPractitionerId, operatorId));
+                // Cmd 6g：发放行 SUMMARIZED → COMPLETED（条件更新，GAP-INV-004）
+                medicationDispenseDomainService.completeSummaryDispense(
+                    inpatientPharmacySummaryDispenseMapper.toCompleteSummaryDispenseCommand(
+                        summaryNo, operatorId, dispenserPractitionerId));
+                // Pre 6h：药品目录（单位换算）
                 Map<String, ProductDefinitionDisplayDto> productByKey =
                     productDefinitionBatchLoader.loadAsMap(this.collectProductLookupsFromDispenses(dispenses));
-                // Pre 6g：逐行库存充足预校验
+                // Pre 6i：逐行库存充足预校验
                 for (MedicationDispense dispense : dispenses) {
                     if (dispense == null) {
                         continue;
@@ -447,16 +455,17 @@ public class InpatientPharmacySummaryDispenseAppService {
                     if (requiredQuantity == null) {
                         requiredQuantity = dispense.getDispenseQuantity();
                     }
-                    inventoryItemQueryService.assertSufficientForMedicationDispense(
+                    inventoryItemQueryService.assertSufficientForMedicationDispenseWithReserve(
                         TableNameConstants.MED_MEDICATION_DEFINITION,
                         dispense.getMedicationId(),
                         dispense.getLocationId(),
                         dispense.getLotNumber(),
                         requiredQuantity,
                         dispense.getUnitCode(),
-                        ProductDefinitionDisplaySupport.toUnitConversionSource(productRow));
+                        ProductDefinitionDisplaySupport.toUnitConversionSource(productRow),
+                        dispense.getId());
                 }
-                // Cmd 6h：按 lot+location 合并扣库（仅 MedicationDispense 行）
+                // Cmd 6j：按 lot+location 合并扣库（仅 MedicationDispense 行；库存为最后防线）
                 Map<Long, ProductDefinitionDisplayDto> productByMedicationId = new HashMap<>();
                 for (MedicationDispense dispense : dispenses) {
                     if (dispense == null || dispense.getMedicationId() == null) {
@@ -470,15 +479,11 @@ public class InpatientPharmacySummaryDispenseAppService {
                     }
                 }
                 this.applyInventoryDeductionForDispensedLines(dispenses, operatorId, productByMedicationId);
-                // Cmd 6i：发放行 SUMMARIZED → COMPLETED
-                medicationDispenseDomainService.completeSummaryDispense(
-                    inpatientPharmacySummaryDispenseMapper.toCompleteSummaryDispenseCommand(
-                        summaryNo, operatorId, dispenserPractitionerId));
-                // Cmd 6j：创建 SupplyDelivery（写 receiverId）
+                // Cmd 6k：创建 SupplyDelivery（写 receiverId）
                 supplyDeliveryDomainService.createSummarySupplyDelivery(
                     inpatientPharmacySummaryDispenseMapper.toCreateSummarySupplyDeliveryCommand(
                         request.getReceiverId(), operatorId, supplyLines));
-                // Pre 6k：查新建 deliveryIds
+                // Pre 6l：查新建 deliveryIds
                 List<Long> supplyRequestIds = new ArrayList<>();
                 for (SupplyRequestModel line : supplyLines) {
                     if (line != null && line.getId() != null) {
@@ -496,16 +501,12 @@ public class InpatientPharmacySummaryDispenseAppService {
                     }
                 }
                 LocalDateTime completedTime = LocalDateTime.now();
-                // Cmd 6l：Delivery PREPARATION → COMPLETED
+                // Cmd 6m：Delivery PREPARATION → COMPLETED
                 if (!deliveryIds.isEmpty()) {
                     supplyDeliveryDomainService.updateCompletedStatusBatch(
                         inpatientPharmacySummaryDispenseMapper.toUpdateCompletedStatusBatchCommand(
                             deliveryIds, dispenserPractitionerId, operatorId, completedTime));
                 }
-                // Cmd 6m：Supply APPROVAL → AGREE
-                supplyRequestDomainService.agreeRequest(
-                    inpatientPharmacySummaryDispenseMapper.toAgreeRequestCommand(
-                        summaryNo, dispenserPractitionerId, operatorId));
                 // Cmd 6n：追溯出库
                 if (!allTraceCodes.isEmpty()) {
                     traceNumberRecordDomainService.appendTraceRecords(

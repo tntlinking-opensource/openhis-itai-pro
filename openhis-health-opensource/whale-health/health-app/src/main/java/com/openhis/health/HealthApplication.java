@@ -11,8 +11,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Spring Boot 入口。
- * <p>仅扫描 {@code com.openhis.health}（HIS 核心与 {@code integration.*} 适配）；Whale Framework、EMR/MRMS/Report/CHS 等扩展模块
- * 经各自 {@code AutoConfiguration} 自装配，避免误扫 {@code com.openhis.whale.*}。</p>
+ * <p>扫描 {@code com.openhis.health}（HIS 核心，含内嵌 MRMS/LIS 等子域）；EMR/Report/CHS 等扩展模块
+ * 经各自 {@code AutoConfiguration} 自装配。</p>
  */
 @SpringBootApplication(scanBasePackages = "com.openhis.health")
 @EntityScan(basePackages = "com.openhis.health")

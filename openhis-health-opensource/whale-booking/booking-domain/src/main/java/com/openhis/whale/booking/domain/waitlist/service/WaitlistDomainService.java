@@ -6,6 +6,7 @@ import com.openhis.whale.booking.domain.waitlist.entity.WaitlistEntry;
 import com.openhis.whale.booking.domain.waitlist.repository.WaitlistEntryRepository;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -120,6 +121,36 @@ public class WaitlistDomainService {
         entry.setUpdatedBy(operatorId);
         // 持久化：候补转正式预约后收口状态
         waitlistEntryRepository.save(entry);
+    }
+
+    /**
+     * 条件更新：仅 WAITING 状态可标记为 PROMOTED（GAP-BKG-005 并发提升）。
+     *
+     * @param waitlistEntryId 候补主键
+     * @param appointmentId 正式预约主键
+     * @param operatorId 操作人
+     * @return 是否成功标记
+     */
+    public boolean markPromotedIfWaiting(Long waitlistEntryId, Long appointmentId, Long operatorId) {
+        Optional<WaitlistEntry> row = waitlistEntryRepository.findById(waitlistEntryId)
+            .filter(entry -> !Boolean.TRUE.equals(entry.getIsDeleted()));
+        if (row.isEmpty()) {
+            return false;
+        }
+        WaitlistEntry entry = row.get();
+        if (!WaitlistStatusConstants.WAITING.equals(entry.getStatus())) {
+            return false;
+        }
+        entry.setStatus(WaitlistStatusConstants.PROMOTED);
+        entry.setPromotedAppointmentId(appointmentId);
+        entry.setUpdatedAt(LocalDateTime.now());
+        entry.setUpdatedBy(operatorId);
+        try {
+            waitlistEntryRepository.save(entry);
+            return true;
+        } catch (OptimisticLockingFailureException ex) {
+            return false;
+        }
     }
 
     /**

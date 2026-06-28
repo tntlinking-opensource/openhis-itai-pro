@@ -152,6 +152,29 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
     }
 
     /**
+     * 药房配药中 Gate：关联 Dispense 为 {@code PREPARED}/{@code IN_PROGRESS} 时拒绝取消执行（GAP-STALE-004）。
+     *
+     * @param dispenses 主医嘱 procedureId 关联发放行
+     * @throws BusinessException EX-IP-CXL-204
+     */
+    public void assertPharmacyPreparingDispenseGate(Collection<MedicationDispense> dispenses) {
+        if (dispenses == null || dispenses.isEmpty()) {
+            return;
+        }
+        for (MedicationDispense dispense : dispenses) {
+            if (dispense == null || dispense.getStatusEnum() == null) {
+                continue;
+            }
+            DispenseStatus status = dispense.getStatusEnum();
+            if (DispenseStatus.PREPARED.equals(status) || DispenseStatus.IN_PROGRESS.equals(status)) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_CXL_204,
+                    "药房配药中，请先作废配药或完成退药流程");
+            }
+        }
+    }
+
+    /**
      * 按 based_on 反查绑定诊疗派生 ServiceRequest。
      *
      * @param basedOnTable 主医嘱 requestTable

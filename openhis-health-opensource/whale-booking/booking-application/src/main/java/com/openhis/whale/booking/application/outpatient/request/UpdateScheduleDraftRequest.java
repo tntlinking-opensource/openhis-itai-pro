@@ -38,4 +38,7 @@ public class UpdateScheduleDraftRequest {
 
     /** 说明 Markdown（可选）。 */
     private String commentMarkdown;
+
+    /** 关联 T1 放号时段模板主键（可选）。 */
+    private Long slotProvisionTemplateId;
 }

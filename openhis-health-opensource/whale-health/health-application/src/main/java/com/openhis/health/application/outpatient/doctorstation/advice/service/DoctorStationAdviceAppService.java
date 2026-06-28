@@ -22,6 +22,7 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 import com.openhis.health.module.common.assembler.product.ProductTableNameSupport;
 import com.openhis.health.module.common.assembler.advice.ServiceAdviceDraftCommandSupport;
 import com.openhis.health.module.orchestration.advice.ServiceApplyFormOrchestrationSupport;
+import com.openhis.health.module.orchestration.financial.OutpatientPaymentDraftLifecycleSupport;
 import com.openhis.health.module.common.pagination.PagedResultBuilder;
 import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
@@ -41,9 +42,14 @@ import com.openhis.health.application.outpatient.doctorstation.advice.dto.Doctor
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceResourceKeyDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.SaveMedicationAdviceDraftLinePayload;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceRowDto;
+import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceRequestDetailSummaryDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.mapper.DoctorStationAdviceMapper;
-import com.openhis.health.application.outpatient.doctorstation.advice.port.LisPacsAdviceApplyCommand;
-import com.openhis.health.application.outpatient.doctorstation.advice.port.LisPacsApplyGateway;
+import com.openhis.health.integration.lis.LisAdviceApplyExtension;
+import com.openhis.health.integration.lis.command.LisAdviceApplyCommand;
+import com.openhis.health.integration.lis.dto.LisAdviceApplyDetailLine;
+import com.openhis.health.integration.pacs.PacsAdviceApplyExtension;
+import com.openhis.health.integration.pacs.command.PacsAdviceApplyCommand;
+import com.openhis.health.integration.pacs.dto.PacsAdviceApplyDetailLine;
 import com.openhis.health.application.outpatient.doctorstation.advice.query.DoctorStationAdviceOrderBindQueryService;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.GetDoctorStationAdviceOrderBindInfoRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.ListDoctorStationAdviceRequest;
@@ -169,7 +175,8 @@ public class DoctorStationAdviceAppService {
     private final ServiceRequestDomainService serviceRequestDomainService;
     private final DeviceRequestDomainService deviceRequestDomainService;
     private final BusinessSequenceService businessSequenceService;
-    private final LisPacsApplyGateway lisPacsApplyGateway;
+    private final LisAdviceApplyExtension lisAdviceApplyExtension;
+    private final PacsAdviceApplyExtension pacsAdviceApplyExtension;
     private final CodeSystemQueryService codeSystemQueryService;
     /** 用药频次下拉：读 cus_frequency 启用态，替代术语 rate_code。 */
     private final FrequencyOptionLoader frequencyOptionLoader;
@@ -194,6 +201,7 @@ public class DoctorStationAdviceAppService {
     private final ServiceRequestQueryService serviceRequestQueryService;
     private final BodyStructureQueryService bodyStructureQueryService;
     private final SpecimenDefinitionQueryService specimenDefinitionQueryService;
+    private final OutpatientPaymentDraftLifecycleSupport outpatientPaymentDraftLifecycleSupport;
     /**
      * 医嘱开立页初始化：用药频次、用法（给药途径）与费用性质（合同）下拉。
      *
@@ -839,9 +847,7 @@ public class DoctorStationAdviceAppService {
                 // 诊疗：域 sign 后外呼仅占位，真实 LIS/PACS 路由待检查申请类型后替换
                 serviceRequestDomainService.signServiceRequest(
                     doctorStationAdviceMapper.toSignServiceRequestCommand(t.getRequestId(), operatorId));
-                LisPacsAdviceApplyCommand lisPacsStub = buildLisPacsApplyCommand(
-                    request.getEncounterId(), request.getPatientId(), t.getRequestId());
-                lisPacsApplyGateway.submitIfLabOrImaging(lisPacsStub);
+                dispatchLabOrImagingAdvice(request.getEncounterId(), request.getPatientId(), t.getRequestId());
                 // 诊疗申请签发完成：检查/治疗类费用行进入可预结算态。
                 chargeItemDomainService.planDraftChargeItemsAfterAdviceSigned(
                     request.getEncounterId(), TableNameConstants.WKF_SERVICE_REQUEST, t.getRequestId());
@@ -955,6 +961,8 @@ public class DoctorStationAdviceAppService {
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "不支持的产品定义表名: " + t.getProductTableName());
             }
         }
+        // 签退回滚 PLANNED 费用后作废仍挂载非 PLANNED 项的预结算草稿（GAP-STALE-001）。
+        this.outpatientPaymentDraftLifecycleSupport.cancelDraftsWithNonPlannedBoundCharges(request.getEncounterId());
         WithdrawDoctorStationAdviceBatchResponse resp = new WithdrawDoctorStationAdviceBatchResponse();
         resp.setSuccess(Boolean.TRUE);
         resp.setMessage(DoctorStationAdviceConstants.RESPONSE_MESSAGE_OK);
@@ -1047,18 +1055,68 @@ public class DoctorStationAdviceAppService {
     }
 
     /**
-     * IF-DOR-15：装配 LIS/PACS 外发命令，携带申请明细摘要（BR-REQ-008）。
+     * IF-DOR-15：签发诊疗后分别外发 LIS / PACS（BR-REQ-008）。
      */
-    private LisPacsAdviceApplyCommand buildLisPacsApplyCommand(Long encounterId, Long patientId, Long requestId) {
-        LisPacsAdviceApplyCommand cmd = new LisPacsAdviceApplyCommand();
-        cmd.setEncounterId(encounterId);
-        cmd.setPatientId(patientId);
-        cmd.setRequestId(requestId);
+    private void dispatchLabOrImagingAdvice(Long encounterId, Long patientId, Long requestId) {
+        List<ServiceRequestDetailSummaryDto> summaries = loadAdviceApplyDetailSummaries(requestId);
+        LisAdviceApplyCommand lisCmd = new LisAdviceApplyCommand();
+        lisCmd.setEncounterId(encounterId);
+        lisCmd.setPatientId(patientId);
+        lisCmd.setRequestId(requestId);
+        lisCmd.setDetails(toLisAdviceApplyDetailLines(summaries));
+        lisAdviceApplyExtension.submitIfLab(lisCmd);
+
+        PacsAdviceApplyCommand pacsCmd = new PacsAdviceApplyCommand();
+        pacsCmd.setEncounterId(encounterId);
+        pacsCmd.setPatientId(patientId);
+        pacsCmd.setRequestId(requestId);
+        pacsCmd.setDetails(toPacsAdviceApplyDetailLines(summaries));
+        pacsAdviceApplyExtension.submitIfImaging(pacsCmd);
+    }
+
+    private List<ServiceRequestDetailSummaryDto> loadAdviceApplyDetailSummaries(Long requestId) {
         Map<Long, List<ServiceRequestDetailListModel>> detailMap =
             serviceRequestQueryService.mapDetailListModelsByServiceRequestIds(List.of(requestId));
-        cmd.setServiceRequestDetails(serviceApplyFormAssembler.toDetailSummaryDtos(
-            ServiceApplyFormOrchestrationSupport.toDetailSummaryModels(detailMap.get(requestId))));
-        return cmd;
+        return serviceApplyFormAssembler.toDetailSummaryDtos(
+            ServiceApplyFormOrchestrationSupport.toDetailSummaryModels(detailMap.get(requestId)));
+    }
+
+    private List<LisAdviceApplyDetailLine> toLisAdviceApplyDetailLines(List<ServiceRequestDetailSummaryDto> summaries) {
+        if (summaries == null || summaries.isEmpty()) {
+            return List.of();
+        }
+        List<LisAdviceApplyDetailLine> lines = new ArrayList<>();
+        for (ServiceRequestDetailSummaryDto summary : summaries) {
+            if (summary == null) {
+                continue;
+            }
+            LisAdviceApplyDetailLine line = new LisAdviceApplyDetailLine();
+            line.setTargetTable(summary.getTargetTable());
+            line.setTargetId(summary.getTargetId());
+            line.setTargetDisplayName(summary.getTargetDisplayName());
+            line.setRemark(summary.getRemark());
+            lines.add(line);
+        }
+        return lines;
+    }
+
+    private List<PacsAdviceApplyDetailLine> toPacsAdviceApplyDetailLines(List<ServiceRequestDetailSummaryDto> summaries) {
+        if (summaries == null || summaries.isEmpty()) {
+            return List.of();
+        }
+        List<PacsAdviceApplyDetailLine> lines = new ArrayList<>();
+        for (ServiceRequestDetailSummaryDto summary : summaries) {
+            if (summary == null) {
+                continue;
+            }
+            PacsAdviceApplyDetailLine line = new PacsAdviceApplyDetailLine();
+            line.setTargetTable(summary.getTargetTable());
+            line.setTargetId(summary.getTargetId());
+            line.setTargetDisplayName(summary.getTargetDisplayName());
+            line.setRemark(summary.getRemark());
+            lines.add(line);
+        }
+        return lines;
     }
 
     /**

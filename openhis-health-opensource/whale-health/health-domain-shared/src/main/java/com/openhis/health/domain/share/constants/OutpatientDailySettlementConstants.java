@@ -64,8 +64,8 @@ public interface OutpatientDailySettlementConstants {
     /** 财务代交账经办人下拉单次加载上限。 */
     int CASHIER_OPTION_PAGE_SIZE = 500;
 
-    /** 挂号费财务类别码（fin_type_code 特列，对齐 ter_concept 1011）。 */
-    String REGISTRATION_FEE_FIN_TYPE_CODE = "1011";
+    /** 诊察费财务类别码（号源/挂号在日结汇总特列，对齐 ter_concept 236/1012）。 */
+    String REGISTRATION_FEE_FIN_TYPE_CODE = "1012";
 
     /** 体检财务类别码（fin_type_code，老日结单 peisCnt 锚点）。 */
     String PHYSICAL_EXAM_FIN_TYPE_CODE = "9999";

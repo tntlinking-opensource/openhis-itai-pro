@@ -21,6 +21,7 @@ import com.openhis.health.domain.workflow.devicerequest.repository.DeviceRequest
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
+import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.workflow.devicerequest.entity.DeviceRequest;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestFifoSignContext;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestHistoryModel;
@@ -118,6 +119,41 @@ public class DeviceRequestQueryService {
         ctx.setQuantity(request.getQuantity());
         ctx.setUnitCode(request.getUnitCode());
         return ctx;
+    }
+
+    /**
+     * 判断耗材是否存在非终态医嘱申请（调价提交互斥 BR-PRC-SUB-003：在途医嘱）。
+     *
+     * @param deviceDefId 耗材定义主键 {@code adm_device_definition.id}
+     * @return 存在在途申请时为 true
+     */
+    public boolean existsInTransitRequestByDeviceDefId(Long deviceDefId) {
+        if (deviceDefId == null) {
+            return false;
+        }
+        // 非终态申请（待发、已签发、已校对、暂挂）视为在途医嘱
+        Specification<DeviceRequest> specification = (root, cq, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.DEVICE_DEF_ID), deviceDefId));
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(this.inTransitRequestStatusCodes()));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        return deviceRequestRepository.count(specification) > 0;
+    }
+
+    /**
+     * 在途耗材申请状态码：待发、已签发、已校对、暂挂（非 COMPLETED/CANCELLED/STOPPED）。
+     *
+     * @return 状态 code 列表
+     */
+    private List<String> inTransitRequestStatusCodes() {
+        List<String> codes = new ArrayList<>();
+        codes.add(RequestStatus.DRAFT.getCode());
+        codes.add(RequestStatus.ACTIVE.getCode());
+        codes.add(RequestStatus.VERIFIED.getCode());
+        codes.add(RequestStatus.HOLD.getCode());
+        return codes;
     }
 
     /**

@@ -6,6 +6,10 @@ package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.a
 import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.dto.TcmRxHeaderDto;
 import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.dto.TcmRxHistoryRowDto;
 import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.dto.TcmRxLineDto;
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
+import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
+import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
+import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
@@ -26,7 +30,6 @@ import com.openhis.health.module.common.assembler.product.ProductDefinitionCatal
 import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
@@ -34,6 +37,7 @@ import org.springframework.stereotype.Component;
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -43,20 +47,24 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * IF-IP-TCM-34/39：住院中药处方列表与历史 enrich（无 ChargeItem 优先价）。
+ * IF-IP-TCM-34/39：住院中药处方列表与历史 enrich（目录名、已落库账单单价优先）。
+ *
+ * <p>对齐门诊 {@code TcmRxListAssembler} 与 **BR-PRICE-SRC-001**：已挂费行优先 {@code ChargeItem.unit_price}，
+ * 草稿态无账单时回落目录 DOSE 槽参考价。</p>
  */
 @Component
 @RequiredArgsConstructor
 public class InpatientTcmRxListAssembler {
 
     private final MedicationDefinitionQueryService medicationDefinitionQueryService;
+    private final ChargeItemQueryService chargeItemQueryService;
     private final TerminologyOptionLoader terminologyOptionLoader;
     private final FrequencyOptionLoader frequencyOptionLoader;
     private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
     private final ClinicalCatalogPriceResolveSupport clinicalCatalogPriceResolveSupport;
 
     /**
-     * 将领域按方聚合读模型 enrich 为方头+行 DTO（住院版，无 ChargeItem enrich）。
+     * 将领域按方聚合读模型 enrich 为方头+行 DTO。
      *
      * @param groups 领域层按方聚合结果
      * @return 方头列表
@@ -67,6 +75,7 @@ public class InpatientTcmRxListAssembler {
             return result;
         }
         Set<Long> medicationIds = new HashSet<>();
+        Set<Long> requestIds = new HashSet<>();
         for (TcmHerbalPrescriptionGroupQueryModel group : groups) {
             if (group.getLines() == null) {
                 continue;
@@ -75,9 +84,14 @@ public class InpatientTcmRxListAssembler {
                 if (line.getMedicationId() != null) {
                     medicationIds.add(line.getMedicationId());
                 }
+                if (line.getId() != null) {
+                    requestIds.add(line.getId());
+                }
             }
         }
         Map<Long, String> medicationNameById = loadMedicationNames(medicationIds);
+        // Pre：批量加载药嘱锚定的 ChargeItem，供已计费行展示账单单价（BR-PRICE-SRC-001）
+        TcmLineChargeEnrich chargeEnrich = loadLineChargeEnrich(requestIds);
         Map<String, String> tcmMethodLabelByCode =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.TCM_METHOD_CODE);
         Map<String, String> westernMethodLabelByCode =
@@ -133,7 +147,8 @@ public class InpatientTcmRxListAssembler {
                     lineDto.setUnitCode(line.getUnitCode());
                     lineDto.setUnitName(ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
                         unitLabelByCode, line.getUnitCode(), medProduct));
-                    lineDto.setRetailUnitPrice(resolveRetailUnitPrice(line, group, medProduct, priceByKey));
+                    lineDto.setRetailUnitPrice(resolveRetailUnitPrice(
+                        line, group, medProduct, chargeEnrich, priceByKey));
                     lineDto.setSortNumber(line.getSortNumber());
                     lineDto.setLineStatusEnum(line.getStatusEnum());
                     lineDtos.add(lineDto);
@@ -237,12 +252,30 @@ public class InpatientTcmRxListAssembler {
         return result;
     }
 
+    /**
+     * 解析饮片行单剂用量单位零售价：已挂费优先 {@code ChargeItem.unit_price}，否则目录 DOSE 槽单价。
+     *
+     * @param line         药品请求行
+     * @param group        方头聚合（用法参与目录定价）
+     * @param medProduct   饮片目录投影；可为 null
+     * @param chargeEnrich 已落库账单单价
+     * @param priceByKey   目录定价行（按复合键分组）
+     * @return 元/剂量单位零售价；无法解析时 null
+     */
     private BigDecimal resolveRetailUnitPrice(
         MedicationRequestListQueryModel line,
         TcmHerbalPrescriptionGroupQueryModel group,
         ProductDefinitionDisplayDto medProduct,
+        TcmLineChargeEnrich chargeEnrich,
         Map<String, List<ChargeItemDefinition>> priceByKey
     ) {
+        // 已落库 ChargeItem 单价为展示权威（BR-PRICE-SRC-001），避免调价后目录价覆盖历史账单
+        if (line.getId() != null) {
+            BigDecimal chargeUnitPrice = chargeEnrich.unitPriceByRequestId().get(line.getId());
+            if (chargeUnitPrice != null) {
+                return chargeUnitPrice;
+            }
+        }
         if (medProduct == null || line.getMedicationId() == null) {
             return null;
         }
@@ -300,5 +333,87 @@ public class InpatientTcmRxListAssembler {
             }
         }
         return null;
+    }
+
+    /**
+     * 批量加载中药行已落库账单单价（按 {@code med_medication_request.id} 归并多条 ChargeItem）。
+     *
+     * @param requestIds 药品请求主键集合
+     * @return 请求 id → 账单单价；无 id 时返回空映射
+     */
+    private TcmLineChargeEnrich loadLineChargeEnrich(Set<Long> requestIds) {
+        Map<Long, BigDecimal> unitPriceByRequestId = new HashMap<>();
+        if (requestIds == null || requestIds.isEmpty()) {
+            return new TcmLineChargeEnrich(unitPriceByRequestId);
+        }
+        ChargeItemQueryCommand cmd = new ChargeItemQueryCommand();
+        cmd.setServiceIds(new ArrayList<>(requestIds));
+        List<ChargeItem> chargeItems = chargeItemQueryService.listChargeItemsByServiceIds(cmd);
+        Map<Long, TcmChargePrimaryRow> primaryByRequestId = new HashMap<>();
+        for (ChargeItem chargeItem : chargeItems) {
+            if (chargeItem == null || chargeItem.getServiceId() == null) {
+                continue;
+            }
+            if (!TableNameConstants.MED_MEDICATION_REQUEST.equals(chargeItem.getServiceTable())) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(chargeItem.getIsDeleted())) {
+                continue;
+            }
+            Long requestId = chargeItem.getServiceId();
+            TcmChargePrimaryRow primary = primaryByRequestId.get(requestId);
+            if (primary == null) {
+                primaryByRequestId.put(requestId, TcmChargePrimaryRow.from(chargeItem));
+            } else {
+                primary.consider(chargeItem);
+            }
+        }
+        for (Map.Entry<Long, TcmChargePrimaryRow> entry : primaryByRequestId.entrySet()) {
+            if (entry.getValue().unitPrice != null) {
+                unitPriceByRequestId.put(entry.getKey(), entry.getValue().unitPrice);
+            }
+        }
+        return new TcmLineChargeEnrich(unitPriceByRequestId);
+    }
+
+    /** 中药行账单单价 enrich 中间态。 */
+    private record TcmLineChargeEnrich(Map<Long, BigDecimal> unitPriceByRequestId) {
+    }
+
+    /** 同一药品请求下代表 ChargeItem 行（按发生时间与主键择优）。 */
+    private static final class TcmChargePrimaryRow {
+        private Long chargeItemId;
+        private LocalDateTime occurrenceTime;
+        private BigDecimal unitPrice;
+
+        private static TcmChargePrimaryRow from(ChargeItem item) {
+            TcmChargePrimaryRow row = new TcmChargePrimaryRow();
+            row.consider(item);
+            return row;
+        }
+
+        private void consider(ChargeItem item) {
+            LocalDateTime occ = item.getOccurrenceTime();
+            if (occ == null) {
+                occ = LocalDateTime.MIN;
+            }
+            if (chargeItemId == null) {
+                chargeItemId = item.getId();
+                occurrenceTime = occ;
+                unitPrice = item.getUnitPrice();
+                return;
+            }
+            if (occ.isAfter(occurrenceTime)) {
+                chargeItemId = item.getId();
+                occurrenceTime = occ;
+                unitPrice = item.getUnitPrice();
+                return;
+            }
+            if (occ.equals(occurrenceTime) && item.getId() != null && chargeItemId != null
+                && item.getId() > chargeItemId) {
+                chargeItemId = item.getId();
+                unitPrice = item.getUnitPrice();
+            }
+        }
     }
 }

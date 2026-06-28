@@ -22,6 +22,7 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 import com.openhis.health.module.common.assembler.order.OrderCatalogDisplayAssembler;
+import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
 import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.module.querysupport.product.dto.ProductDefinitionSelectionTerminologyMaps;
@@ -48,9 +49,8 @@ import java.util.Map;
  * 槽价与账单单价换算<strong>必须以包装单位为唯一输入锚</strong>，只允许<strong>包装价 → 其它单位价</strong>（{@code P_slot = P_pkg × R_slot / R_pkg}），
  * <strong>禁止</strong>以拆零/默认开立单位为锚再「往回乘」还原包装价，<strong>禁止</strong>把包装价误当作拆零价后再除倍数纠错。</p>
  *
- * <p>库房入/出/盘选品与详情（{@link #applyInboundWarehouseBandPrices} / {@link #applyInboundWarehouseDetailLineBandPrices}）：
- * <strong>读路径包装锚仅两档</strong>——无批号时定价表 {@code PURCHASE}、有批号时 {@code LOT_NUMBER_COST}（均为每包装单位单价）。
- * 各槽 {@code unitPrice} 按 {@code unitPrice_slot = P_pkg × R_slot / R_pkg} 线性写入。
+ * <p>库房入/出/盘<strong>选品</strong>（{@link #applyInboundWarehouseBandPrices}）读路径包装锚为定价表当前 {@code PURCHASE}/{@code LOT_NUMBER_COST}。
+ * 库房<strong>详情</strong>（{@link #enrichWarehouseDetailCatalogFromPersistedSupplyLinePrice}）仅锚 {@code SupplyRequest} 已持久化 {@code price}/{@code unitCode}，禁止回落定价表（**BR-PRICE-SRC-001**）。
  * {@code SALE}、{@code LOT_NUMBER_PRICE} <strong>不参与</strong>库房单据读路径与槽价装配（{@code LOT_NUMBER_PRICE} 仅在同意入库时写入，供门诊/收费下游消费）。</p>
  *
  * <p>槽语义编码一律取 {@link ProductDefinitionCatalogUnitBandConstants} 中 {@code BAND_*} 字面量，与持久化身份无关的展示字段分离。</p>
@@ -595,6 +595,35 @@ public final class ProductDefinitionCatalogUnitBandsAssembler {
             }
         }
         applyInboundWarehouseBandPrices(bands, productRow, packageAnchor);
+    }
+
+    /**
+     * 供应单详情槽价：仅锚定 {@code SupplyRequest} 已持久化 {@code price}/{@code unitCode}，禁止回落定价表当前价（**BR-PRICE-SRC-001**）。
+     *
+     * @param catalog      明细行 {@code productCatalog}，可 null
+     * @param linePrice    持久化单价
+     * @param lineUnitCode 持久化计价单位编码
+     * @param productRow   产品读模型（单位换算），可 null
+     */
+    public static void enrichWarehouseDetailCatalogFromPersistedSupplyLinePrice(
+        ProductDefinitionCatalogEditorHintsDto catalog,
+        BigDecimal linePrice,
+        String lineUnitCode,
+        ProductDefinitionDisplayDto productRow
+    ) {
+        if (catalog == null) {
+            return;
+        }
+        List<ProductDefinitionCatalogUnitBandDto> bands = catalog.getUnitBands();
+        if (bands == null || bands.isEmpty()) {
+            return;
+        }
+        applyInboundWarehouseDetailLineBandPrices(bands, productRow, null, null, linePrice, lineUnitCode);
+        BigDecimal packageAnchor = resolvePackageAnchorUnitPriceFromLine(
+            linePrice, lineUnitCode, productRow, bands);
+        if (packageAnchor != null) {
+            catalog.setPurchasePrice(packageAnchor);
+        }
     }
 
     /**

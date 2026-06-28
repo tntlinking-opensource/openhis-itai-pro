@@ -8,16 +8,16 @@ import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
-import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentStaticSnapshotQueryModel;
 import com.openhis.health.domain.share.constants.DailySettlementSharedConstants;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.PaymentType;
-import com.openhis.health.domain.share.enums.PriceType;
-import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
+import com.openhis.health.domain.share.utils.FinTypeCodeMappingSupport;
+import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
@@ -34,10 +34,10 @@ import java.util.Set;
  * 门/住院日结：按 {@code fin_type_code} 汇总展示金额（只读 enrich，B.6.1 querysupport）。
  *
  * <p>优先读取 {@code fin_payment_rec_static} 快照；快照未覆盖的收费项回落 payment {@code charge_item_ids}。
- * fin_type 解析：先 {@link ChargeItem#getDefinitionId()} 对应定价行 {@code type_code}；仍缺失时按
- * {@link ChargeItem#getProductTable()} + {@link ChargeItem#getProductId()} 批量加载目录实例定价行，
- * 统一取 {@code adm_charge_item_definition.type_code}（目录维护页「财务类型」，药/诊疗/耗材口径一致）。
- * 挂号费锚点强制归入 {@link DailySettlementSharedConstants#REGISTRATION_FEE_FIN_TYPE_CODE}。</p>
+ * fin_type 解析：仅锚 {@link ChargeItem#getDefinitionId()} 对应历史定价行 {@code type_code}；
+ * {@code unit_price}/{@code total_price} 或 {@code definition_id} 缺失时直接 {@link BusinessException}，
+ * 禁止回落当前目录定价行。号源/挂号收费强制归入
+ * {@link DailySettlementSharedConstants#CONSULTATION_FEE_FIN_TYPE_CODE}（诊察费 1012）。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -53,6 +53,7 @@ public class DailySettlementFinTypeAmountSupport {
      * @param paymentModels           展示过滤后的 payment 读模型
      * @param staticRowsByPaymentId   paymentId → 统计快照（可空 map）
      * @return fin_type_code value → 合计金额
+     * @throws BusinessException 回落 charge_item 时单价/总额或 definition_id 缺失，或定价锚点无法解析 fin_type
      */
     public Map<String, BigDecimal> aggregateFinTypeAmounts(
         List<PaymentReconciliationQueryModel> paymentModels,
@@ -96,6 +97,7 @@ public class DailySettlementFinTypeAmountSupport {
      *
      * @param chargeItems 收费明细列表；空时返回空 Map
      * @return chargeItemId → fin_type_code
+     * @throws BusinessException 任一条 charge_item 单价/总额或 definition_id 缺失，或定价锚点无法解析 fin_type
      */
     public Map<Long, String> mapFinTypeCodeByChargeItemId(List<ChargeItem> chargeItems) {
         Map<Long, String> finTypeByChargeItemId = new LinkedHashMap<>();
@@ -111,15 +113,12 @@ public class DailySettlementFinTypeAmountSupport {
         }
         Map<Long, ChargeItemDefinition> definitionById =
             this.chargeItemDefinitionQueryService.findAllDefinitionsByIdIn(definitionIds);
-        Map<String, String> finTypeByCatalogProductKey = this.loadFinTypeCodeByCatalogPricingLine(chargeItems);
         for (ChargeItem chargeItem : chargeItems) {
             if (chargeItem == null || chargeItem.getId() == null) {
                 continue;
             }
-            String finTypeCode = this.resolveFinTypeCode(chargeItem, definitionById, finTypeByCatalogProductKey);
-            if (StringUtils.isBlank(finTypeCode)) {
-                continue;
-            }
+            this.requirePersistedChargeItemPriceAndDefinitionId(chargeItem);
+            String finTypeCode = this.resolveFinTypeCode(chargeItem, definitionById);
             finTypeByChargeItemId.put(chargeItem.getId(), finTypeCode);
         }
         return finTypeByChargeItemId;
@@ -192,13 +191,7 @@ public class DailySettlementFinTypeAmountSupport {
                 continue;
             }
             String finTypeCode = finTypeByChargeItemId.get(chargeItem.getId());
-            if (StringUtils.isBlank(finTypeCode)) {
-                continue;
-            }
             BigDecimal lineAmount = chargeItem.getTotalPrice();
-            if (lineAmount == null) {
-                lineAmount = BigDecimal.ZERO;
-            }
             if (this.isRefundPayment(paymentModel)) {
                 lineAmount = lineAmount.negate();
             }
@@ -211,121 +204,67 @@ public class DailySettlementFinTypeAmountSupport {
     }
 
     /**
-     * 按 charge_item.product_table/product_id 批量加载目录实例定价行，统一取 {@code type_code}（财务类型）。
+     * 校验 charge_item 已落库单价、总额与定价锚点；缺失时拒绝汇总。
      *
-     * @param chargeItems 待汇总收费明细
-     * @return 目录复合键 → fin_type_code
+     * @param chargeItem 待汇总收费明细
+     * @throws BusinessException 单价/总额或 definition_id 为空
      */
-    private Map<String, String> loadFinTypeCodeByCatalogPricingLine(List<ChargeItem> chargeItems) {
-        Map<String, String> finTypeByProductKey = new LinkedHashMap<>();
-        if (chargeItems == null || chargeItems.isEmpty()) {
-            return finTypeByProductKey;
+    private void requirePersistedChargeItemPriceAndDefinitionId(ChargeItem chargeItem) {
+        if (chargeItem.getDefinitionId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                "收费明细缺少定价锚点 definition_id，无法汇总财务类型，chargeItemId=" + chargeItem.getId());
         }
-        Map<String, Set<Long>> instanceIdsByTable = new LinkedHashMap<>();
-        for (ChargeItem chargeItem : chargeItems) {
-            if (chargeItem == null || StringUtils.isBlank(chargeItem.getProductTable())
-                || chargeItem.getProductId() == null) {
-                continue;
-            }
-            String productTable = chargeItem.getProductTable().trim();
-            if (!this.isCatalogProductTable(productTable)) {
-                continue;
-            }
-            instanceIdsByTable.computeIfAbsent(productTable, ignored -> new LinkedHashSet<>())
-                .add(chargeItem.getProductId());
+        if (chargeItem.getUnitPrice() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                "收费明细单价为空，无法汇总财务类型，chargeItemId=" + chargeItem.getId());
         }
-        if (instanceIdsByTable.isEmpty()) {
-            return finTypeByProductKey;
+        if (chargeItem.getTotalPrice() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
+                "收费明细总额为空，无法汇总财务类型，chargeItemId=" + chargeItem.getId());
         }
-        for (Map.Entry<String, Set<Long>> tableEntry : instanceIdsByTable.entrySet()) {
-            ChargeItemDefinitionQueryCommand queryCommand = new ChargeItemDefinitionQueryCommand();
-            queryCommand.setInstanceTable(tableEntry.getKey());
-            queryCommand.setInstanceIds(new ArrayList<>(tableEntry.getValue()));
-            List<ChargeItemDefinition> priceLines =
-                this.chargeItemDefinitionQueryService.findPriceLinesByProjects(queryCommand);
-            Map<String, List<ChargeItemDefinition>> linesByProductKey = new LinkedHashMap<>();
-            for (ChargeItemDefinition priceLine : priceLines) {
-                if (priceLine == null) {
-                    continue;
-                }
-                String productKey = ProductDefinitionKeyUtil.buildCompositeKey(
-                    priceLine.getInstanceTable(), priceLine.getInstanceId());
-                if (productKey == null) {
-                    continue;
-                }
-                linesByProductKey.computeIfAbsent(productKey, ignored -> new ArrayList<>()).add(priceLine);
-            }
-            for (Map.Entry<String, List<ChargeItemDefinition>> groupEntry : linesByProductKey.entrySet()) {
-                String finTypeCode = this.resolveFinTypeFromPricingLines(groupEntry.getValue());
-                if (StringUtils.isBlank(finTypeCode)) {
-                    continue;
-                }
-                finTypeByProductKey.put(groupEntry.getKey(), finTypeCode);
-            }
-        }
-        return finTypeByProductKey;
     }
 
     /**
-     * 从同一目录实例的多条定价行中解析财务类型：优先 {@link PriceType#SALE} 行 {@code type_code}。
+     * 解析单条收费明细 fin_type：仅锚 charge_item.definition_id 对应历史定价行 type_code。
      *
-     * @param priceLines 同一实例下定价行
-     * @return fin_type_code；无法解析时返回 null
-     */
-    private String resolveFinTypeFromPricingLines(List<ChargeItemDefinition> priceLines) {
-        if (priceLines == null || priceLines.isEmpty()) {
-            return null;
-        }
-        for (ChargeItemDefinition priceLine : priceLines) {
-            if (priceLine == null || !PriceType.SALE.getCode().equals(priceLine.getPriceTypeCode())) {
-                continue;
-            }
-            if (StringUtils.isNotBlank(priceLine.getTypeCode())) {
-                return this.normalizeCategoryCodeToFinType(priceLine.getTypeCode().trim());
-            }
-        }
-        for (ChargeItemDefinition priceLine : priceLines) {
-            if (priceLine != null && StringUtils.isNotBlank(priceLine.getTypeCode())) {
-                return this.normalizeCategoryCodeToFinType(priceLine.getTypeCode().trim());
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 解析单条收费明细 fin_type：charge_item.definition_id 定价行优先，其次目录实例定价行 type_code。
-     *
-     * @param chargeItem                 收费明细
-     * @param definitionById             definitionId → 定价行
-     * @param finTypeByCatalogProductKey 目录复合键 → fin_type
-     * @return fin_type_code；无法解析时返回 null
+     * @param chargeItem     收费明细（调用方已校验单价/总额/definition_id）
+     * @param definitionById definitionId → 定价行
+     * @return fin_type_code
+     * @throws BusinessException 定价锚点缺失或 type_code 无法解析
      */
     private String resolveFinTypeCode(
         ChargeItem chargeItem,
-        Map<Long, ChargeItemDefinition> definitionById,
-        Map<String, String> finTypeByCatalogProductKey) {
+        Map<Long, ChargeItemDefinition> definitionById) {
         if (this.isRegistrationChargeItem(chargeItem)) {
-            return DailySettlementSharedConstants.REGISTRATION_FEE_FIN_TYPE_CODE;
+            return DailySettlementSharedConstants.CONSULTATION_FEE_FIN_TYPE_CODE;
         }
-        if (chargeItem.getDefinitionId() != null && definitionById != null) {
-            ChargeItemDefinition pricingLine = definitionById.get(chargeItem.getDefinitionId());
-            if (pricingLine != null && StringUtils.isNotBlank(pricingLine.getTypeCode())) {
-                String finTypeCode = this.normalizeCategoryCodeToFinType(pricingLine.getTypeCode().trim());
-                if (StringUtils.isNotBlank(finTypeCode)) {
-                    return finTypeCode;
-                }
-            }
+        ChargeItemDefinition pricingLine = null;
+        if (definitionById != null) {
+            pricingLine = definitionById.get(chargeItem.getDefinitionId());
         }
-        if (StringUtils.isBlank(chargeItem.getProductTable()) || chargeItem.getProductId() == null
-            || finTypeByCatalogProductKey == null) {
-            return null;
+        if (pricingLine == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_DEFINITION_NOT_FOUND,
+                "收费明细定价锚点不存在，无法汇总财务类型，chargeItemId="
+                    + chargeItem.getId()
+                    + ", definitionId="
+                    + chargeItem.getDefinitionId());
         }
-        String productKey = ProductDefinitionKeyUtil.buildCompositeKey(
-            chargeItem.getProductTable().trim(), chargeItem.getProductId());
-        if (productKey == null) {
-            return null;
+        if (StringUtils.isBlank(pricingLine.getTypeCode())) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_DEFINITION_INVALID_ARGUMENT,
+                "定价行缺少财务类型 type_code，无法汇总，definitionId=" + chargeItem.getDefinitionId());
         }
-        return finTypeByCatalogProductKey.get(productKey);
+        String finTypeCode = this.normalizeCategoryCodeToFinType(pricingLine.getTypeCode().trim());
+        if (StringUtils.isBlank(finTypeCode)) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_DEFINITION_INVALID_ARGUMENT,
+                "定价行财务类型无法归一化，definitionId=" + chargeItem.getDefinitionId());
+        }
+        return finTypeCode;
     }
 
     /**
@@ -335,39 +274,7 @@ public class DailySettlementFinTypeAmountSupport {
      * @return fin_type_code；空白时返回 null
      */
     private String normalizeCategoryCodeToFinType(String categoryCode) {
-        if (StringUtils.isBlank(categoryCode)) {
-            return null;
-        }
-        String normalized = categoryCode.trim();
-        if (DailySettlementSharedConstants.MEDICATION_CATEGORY_WESTERN_CODE.equals(normalized)) {
-            return DailySettlementSharedConstants.WESTERN_MEDICINE_FIN_TYPE_CODE;
-        }
-        if (DailySettlementSharedConstants.MEDICATION_CATEGORY_PATENT_CHINESE_CODE.equals(normalized)) {
-            return DailySettlementSharedConstants.CHINESE_PATENT_MEDICINE_FIN_TYPE_CODE;
-        }
-        if (DailySettlementSharedConstants.MEDICATION_CATEGORY_HERBAL_CODE.equals(normalized)) {
-            return DailySettlementSharedConstants.CHINESE_HERBAL_MEDICINE_FIN_TYPE_CODE;
-        }
-        if (DailySettlementSharedConstants.MEDICATION_CATEGORY_PURCHASED_CODE.equals(normalized)) {
-            return DailySettlementSharedConstants.PURCHASED_MEDICINE_FIN_TYPE_CODE;
-        }
-        return normalized;
-    }
-
-    private boolean isCatalogProductTable(String productTable) {
-        if (StringUtils.isBlank(productTable)) {
-            return false;
-        }
-        if (TableNameConstants.MED_MEDICATION_DEFINITION.equals(productTable)) {
-            return true;
-        }
-        if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(productTable)) {
-            return true;
-        }
-        if (TableNameConstants.ADM_DEVICE_DEFINITION.equals(productTable)) {
-            return true;
-        }
-        return TableNameConstants.ADM_HEALTHCARE_SERVICE.equals(productTable);
+        return FinTypeCodeMappingSupport.normalizeCategoryCodeToFinType(categoryCode);
     }
 
     private boolean isRegistrationChargeItem(ChargeItem chargeItem) {

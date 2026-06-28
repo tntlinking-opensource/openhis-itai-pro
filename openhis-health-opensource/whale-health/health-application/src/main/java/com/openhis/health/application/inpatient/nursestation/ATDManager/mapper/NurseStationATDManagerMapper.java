@@ -134,6 +134,12 @@ public interface NurseStationATDManagerMapper {
      */
     OccupyBedCommand toOccupyBedCommand(Long bedLocationId, Long encounterId, Long operatorId);
 
+    OccupyBedCommand toOccupyBedCommand(
+        Long bedLocationId,
+        Long encounterId,
+        Long operatorId,
+        boolean occupyFromReservation);
+
     /**
      * 释放床位命令（单条）。
      *

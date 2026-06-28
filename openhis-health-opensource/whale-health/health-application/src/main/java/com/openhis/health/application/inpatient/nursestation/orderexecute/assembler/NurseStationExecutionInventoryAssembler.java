@@ -174,6 +174,7 @@ public class NurseStationExecutionInventoryAssembler {
         List<InventoryCatalogAvailabilityRowModel> physical = inventoryItemQueryService.findAvailableCatalogRowsForOrder(
             TableNameConstants.MED_MEDICATION_DEFINITION, new ArrayList<>(medicationIds), candidateLocationIds);
         this.sortInventoryRowsForTemplateFifo(physical, candidateLocationIds);
+        inventoryItemQueryService.lockInventoryRowsForCatalogAvailability(physical);
         List<InventoryCatalogAvailabilityRowModel> workingPhysical = this.clonePhysicalRows(physical);
         Map<String, BigDecimal> occupancyByItemLocationKey =
             this.buildGlobalOccupancyByItemLocationKey(candidateLocationIds, medicationIds);

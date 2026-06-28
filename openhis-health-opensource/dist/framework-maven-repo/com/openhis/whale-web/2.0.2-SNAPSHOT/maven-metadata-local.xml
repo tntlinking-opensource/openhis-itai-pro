@@ -3,7 +3,7 @@
   <groupId>com.openhis</groupId>
   <artifactId>whale-web</artifactId>
   <versioning>
-    <lastUpdated>20260626120459</lastUpdated>
+    <lastUpdated>20260628105824</lastUpdated>
     <snapshot>
       <localCopy>true</localCopy>
     </snapshot>
@@ -11,12 +11,12 @@
       <snapshotVersion>
         <extension>jar</extension>
         <value>2.0.2-SNAPSHOT</value>
-        <updated>20260626120459</updated>
+        <updated>20260628105824</updated>
       </snapshotVersion>
       <snapshotVersion>
         <extension>pom</extension>
         <value>2.0.2-SNAPSHOT</value>
-        <updated>20260626120459</updated>
+        <updated>20260628105824</updated>
       </snapshotVersion>
     </snapshotVersions>
   </versioning>

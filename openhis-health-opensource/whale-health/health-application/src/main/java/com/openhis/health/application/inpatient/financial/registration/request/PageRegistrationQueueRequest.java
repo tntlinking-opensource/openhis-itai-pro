@@ -17,6 +17,8 @@
 
 package com.openhis.health.application.inpatient.financial.registration.request;
 
+import java.util.List;
+
 import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -33,8 +35,13 @@ import lombok.experimental.Accessors;
 @Schema(description = "住院登记待办列表分页请求")
 public class PageRegistrationQueueRequest extends AbstractHealthPageRequest {
 
-    @Schema(description = "登记状态筛选：PLANNED 待登记 / WAIT_ADMISSION 待入科 / ADMITTED 已入科")
-    /** 登记状态筛选：PLANNED 待登记 / WAIT_ADMISSION 待入科 / ADMITTED 已入科（业务字段）。 */
+    @Schema(description = "登记状态筛选（多选）：PLANNED 待登记 / WAIT_ADMISSION 待入科 / ADMITTED 已入科等")
+    /** 登记状态筛选（多选）（业务字段）。 */
+    private List<String> registrationListStatuses;
+
+    /** 登记状态筛选（单选，兼容旧入参；与 registrationListStatuses 二选一）。 */
+    @Schema(description = "登记状态筛选（单选，兼容旧入参）")
+    /** 登记状态筛选（单选）（业务字段）。 */
     private String registrationListStatus;
 
     /** 身份证号精确筛选。 */

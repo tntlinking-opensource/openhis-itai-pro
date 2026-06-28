@@ -43,3 +43,12 @@ COMMENT ON COLUMN cus_activity_execution_location.end_time IS '生效结束时�
 COMMENT ON COLUMN cus_activity_execution_location.priority IS '优先级（数值越小越优先，1 最优先；与取药科室一致）';
 COMMENT ON COLUMN cus_activity_execution_location.display_order IS '展示顺序';
 COMMENT ON COLUMN cus_activity_execution_location.remark IS '备注';
+
+-- seed: cus_activity_execution_location
+INSERT INTO "cus_activity_execution_location" ("id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by", "version", "activity_definition_id", "activity_category_code", "execution_org_id", "execution_location_id", "start_time", "end_time", "priority", "display_order", "remark")
+VALUES
+('329555420386430976', '1', '2026-06-28 09:35:35.063+00', '2026-06-28 09:35:35.063+00', '1', '1', false, NULL, NULL, 0, '328098713494360064', '23', '322663606385643520', NULL, '00:00:00', '23:59:59', 1, NULL, NULL),
+('329555452351221760', '1', '2026-06-28 09:35:42.684+00', '2026-06-28 09:35:42.684+00', '1', '1', false, NULL, NULL, 0, '323004165299113984', '22', '322663606385643520', NULL, '00:00:00', '23:59:59', 1, NULL, NULL),
+('329555473893167104', '1', '2026-06-28 09:35:47.820+00', '2026-06-28 09:35:47.820+00', '1', '1', false, NULL, NULL, 0, '323003446592540672', '22', '322663606385643520', NULL, '00:00:00', '23:59:59', 1, NULL, NULL),
+('329555495963594752', '1', '2026-06-28 09:35:53.082+00', '2026-06-28 09:35:53.082+00', '1', '1', false, NULL, NULL, 0, '323002894106234880', '22', '322663606385643520', NULL, '00:00:00', '23:59:59', 1, NULL, NULL)
+ON CONFLICT ("id") DO NOTHING;

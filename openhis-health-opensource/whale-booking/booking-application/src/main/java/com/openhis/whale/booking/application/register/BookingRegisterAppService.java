@@ -23,6 +23,8 @@ import com.openhis.whale.booking.application.register.response.RescheduleBooking
 import com.openhis.whale.booking.application.support.BookingAuditSupport;
 import com.openhis.whale.booking.application.support.BookingOperatorResolver;
 import com.openhis.whale.booking.application.support.BookingPagedResultBuilder;
+import com.openhis.whale.booking.application.support.OutpatientBookingWriteSupport;
+import com.openhis.whale.booking.application.support.OutpatientWaitlistPromoteSupport;
 import com.openhis.whale.booking.contracts.reader.HealthPatientReader;
 import com.openhis.whale.booking.domain.appointment.entity.Appointment;
 import com.openhis.whale.booking.domain.appointment.queries.model.AppointmentBookingDetailModel;
@@ -37,6 +39,7 @@ import com.openhis.whale.booking.domain.slot.queries.FindBookableSlotsQuery;
 import com.openhis.whale.booking.domain.slot.queries.model.BookableSlotModel;
 import com.openhis.whale.booking.domain.slot.queries.model.SlotDetailModel;
 import com.openhis.whale.booking.application.outpatient.support.WeekTemplateMaterializeSupport;
+import com.openhis.whale.booking.domain.share.BookingDateSupport;
 import com.openhis.whale.booking.domain.slot.service.SlotDomainService;
 import com.openhis.whale.booking.domain.slot.service.SlotQueryService;
 import com.openhis.whale.booking.domain.template.queries.model.ResolvedDaySchedulePlan;
@@ -97,6 +100,10 @@ public class BookingRegisterAppService {
     private final BookingAuditSupport bookingAuditSupport;
     /** 候补队列写侧。 */
     private final WaitlistDomainService waitlistDomainService;
+    /** 门诊预约占号 + 建单（防重 DB 兜底）。 */
+    private final OutpatientBookingWriteSupport outpatientBookingWriteSupport;
+    /** 候补自动提升。 */
+    private final OutpatientWaitlistPromoteSupport outpatientWaitlistPromoteSupport;
 
     /** 停诊号源状态码，满号候补时须排除。 */
     private static final String SLOT_BUSY_UNAVAILABLE = "busy-unavailable";
@@ -171,22 +178,17 @@ public class BookingRegisterAppService {
         // Gate：同日同患者同号源类型不可重复预约（BR-APT 规则）。
         ScheduleCalendarItemModel scheduleMeta = scheduleQueryService.loadCalendarItemById(slot.getScheduleId());
         Long healthcareServiceId = scheduleMeta.getHealthcareServiceId();
-        LocalDate bookingDate;
-        if (slot.getStartTime() != null) {
-            bookingDate = slot.getStartTime().toLocalDate();
-        } else {
-            bookingDate = LocalDate.now();
-        }
-        if (healthcareServiceId != null
-            && appointmentQueryService.findDuplicateOutpatientBooking(
-                request.getPatientId(), bookingDate, healthcareServiceId, null).isPresent()) {
-            throw new BusinessException(ErrorCodeConstants.APPOINTMENT_RULE_CONFLICT, "同日同患者同服务重复预约");
-        }
+        LocalDate bookingDate = BookingDateSupport.resolveBookingDate(slot.getStartTime());
+        outpatientBookingWriteSupport.assertNoDuplicateOutpatientBooking(
+            request.getPatientId(), bookingDate, healthcareServiceId, null);
 
-        // Cmd：先占号再建预约（slot bookedCount 与 appointment 同事务）。
-        slotDomainService.allocateBooking(bookingRegisterMapper.toAllocateBookingCommand(slotId, operatorId));
-        Appointment appointment = appointmentDomainService.create(
-            bookingRegisterMapper.toCreateAppointmentCommand(request, slot, destinationLocationId, operatorId));
+        CreateOutpatientBookingRequest createRequest = request;
+        createRequest.setSlotId(slotId);
+        Appointment appointment = outpatientBookingWriteSupport.allocateAndCreate(
+            bookingRegisterMapper.toCreateAppointmentCommand(
+                createRequest, slot, slotId, destinationLocationId, healthcareServiceId, bookingDate, operatorId),
+            slotId,
+            operatorId);
         bookingAuditSupport.record("Appointment", appointment.getId(), "CREATE_OUTPATIENT_BOOKING", slotId.toString());
         // Asm：映射创建预约响应。
         return bookingRegisterMapper.toCreateOutpatientBookingResponse(appointment);
@@ -205,28 +207,20 @@ public class BookingRegisterAppService {
         AppointmentBookingDetailModel booking = appointmentQueryService.loadOutpatientBookingById(request.getAppointmentId());
         SlotDetailModel newSlot = slotQueryService.loadSlotById(request.getNewSlotId());
         ScheduleCalendarItemModel newScheduleMeta = scheduleQueryService.loadCalendarItemById(newSlot.getScheduleId());
-        LocalDate bookingDate;
-        if (newSlot.getStartTime() != null) {
-            bookingDate = newSlot.getStartTime().toLocalDate();
-        } else {
-            bookingDate = LocalDate.now();
-        }
-        // Gate：改约后仍须满足同日同服务不重复（排除自身）。
-        if (newScheduleMeta.getHealthcareServiceId() != null
-            && appointmentQueryService.findDuplicateOutpatientBooking(
-                booking.getPatientId(), bookingDate, newScheduleMeta.getHealthcareServiceId(), booking.getId()).isPresent()) {
-            throw new BusinessException(ErrorCodeConstants.APPOINTMENT_RULE_CONFLICT, "同日同患者同服务重复预约");
-        }
+        LocalDate bookingDate = BookingDateSupport.resolveBookingDate(newSlot.getStartTime());
+        outpatientBookingWriteSupport.assertNoDuplicateOutpatientBooking(
+            booking.getPatientId(), bookingDate, newScheduleMeta.getHealthcareServiceId(), booking.getId());
         // Cmd：释放旧 slot；若有候补则尝试提升队首。
         if (booking.getSlotId() != null) {
             slotDomainService.releaseBooking(
                 bookingRegisterMapper.toReleaseBookingCommand(booking.getSlotId(), operatorId));
-            this.tryPromoteWaitlist(booking.getSlotId(), operatorId);
+            outpatientWaitlistPromoteSupport.tryPromoteWaitlist(booking.getSlotId(), operatorId);
         }
         slotDomainService.allocateBooking(
             bookingRegisterMapper.toAllocateBookingCommand(request.getNewSlotId(), operatorId));
         appointmentDomainService.rescheduleOutpatientBooking(
-            bookingRegisterMapper.toRescheduleOutpatientBookingCommand(request, newSlot, operatorId));
+            bookingRegisterMapper.toRescheduleOutpatientBookingCommand(
+                request, newSlot, newScheduleMeta.getHealthcareServiceId(), bookingDate, operatorId));
         // Asm：映射改约响应。
         return bookingRegisterMapper.toRescheduleBookingResponse(request.getAppointmentId(), request.getNewSlotId());
     }
@@ -254,7 +248,7 @@ public class BookingRegisterAppService {
         bookingAuditSupport.record("Appointment", request.getAppointmentId(), "CANCEL_BOOKING", request.getReason());
         CancelBookingResponse response = new CancelBookingResponse();
         // Post：释放容量后按 queue_position 提升候补（BR-EXT-011）。
-        Optional<Appointment> promoted = this.tryPromoteWaitlist(slotId, operatorId);
+        Optional<Appointment> promoted = outpatientWaitlistPromoteSupport.tryPromoteWaitlist(slotId, operatorId);
         if (promoted.isPresent()) {
             response.setWaitlistPromoted(true);
             response.setPromotedAppointmentId(promoted.get().getId());
@@ -288,17 +282,9 @@ public class BookingRegisterAppService {
         }
         ScheduleCalendarItemModel scheduleMeta = scheduleQueryService.loadCalendarItemById(slot.getScheduleId());
         Long healthcareServiceId = scheduleMeta.getHealthcareServiceId();
-        LocalDate bookingDate;
-        if (slot.getStartTime() != null) {
-            bookingDate = slot.getStartTime().toLocalDate();
-        } else {
-            bookingDate = LocalDate.now();
-        }
-        if (healthcareServiceId != null
-            && appointmentQueryService.findDuplicateOutpatientBooking(
-                request.getPatientId(), bookingDate, healthcareServiceId, null).isPresent()) {
-            throw new BusinessException(ErrorCodeConstants.APPOINTMENT_RULE_CONFLICT, "同日同患者同服务已有预约");
-        }
+        LocalDate bookingDate = BookingDateSupport.resolveBookingDate(slot.getStartTime());
+        outpatientBookingWriteSupport.assertNoDuplicateOutpatientBooking(
+            request.getPatientId(), bookingDate, healthcareServiceId, null);
         // Cmd：写入候补队列（不占 bookedCount）。
         WaitlistEntry entry = waitlistDomainService.join(
             request.getOrganizationId(),
@@ -456,57 +442,6 @@ public class BookingRegisterAppService {
                 dto.setWaitlistCount(counts.getOrDefault(dto.getSlotId(), 0L));
             }
         }
-    }
-
-    /**
-     * 候补自动提升：slot 释放容量后按 queue_position 创建正式预约。
-     *
-     * @param slotId 号源主键
-     * @param operatorId 操作人（系统提升时可为 null）
-     * @return 提升成功的新预约；无候补或仍满则 empty
-     */
-    private Optional<Appointment> tryPromoteWaitlist(Long slotId, Long operatorId) {
-        if (slotId == null) {
-            return Optional.empty();
-        }
-        SlotDetailModel slot = slotQueryService.loadSlotById(slotId);
-        // 仍满或停诊时不提升。
-        if (this.isSlotFull(slot) || SLOT_BUSY_UNAVAILABLE.equals(slot.getStatusCode())) {
-            return Optional.empty();
-        }
-        Optional<WaitlistEntry> next = waitlistDomainService.findNextWaiting(slotId);
-        if (next.isEmpty()) {
-            return Optional.empty();
-        }
-        WaitlistEntry entry = next.get();
-        ScheduleCalendarItemModel scheduleMeta = scheduleQueryService.loadCalendarItemById(slot.getScheduleId());
-        Long healthcareServiceId = scheduleMeta.getHealthcareServiceId();
-        LocalDate bookingDate;
-        if (slot.getStartTime() != null) {
-            bookingDate = slot.getStartTime().toLocalDate();
-        } else {
-            bookingDate = LocalDate.now();
-        }
-        // 队首患者若已有同日预约则跳过并递归尝试下一位。
-        if (healthcareServiceId != null
-            && appointmentQueryService.findDuplicateOutpatientBooking(
-                entry.getPatientId(), bookingDate, healthcareServiceId, null).isPresent()) {
-            waitlistDomainService.cancel(entry.getId(), "同日重复预约，自动跳过", operatorId);
-            return this.tryPromoteWaitlist(slotId, operatorId);
-        }
-        CreateOutpatientBookingRequest promoteRequest = new CreateOutpatientBookingRequest();
-        promoteRequest.setOrganizationId(entry.getOrganizationId());
-        promoteRequest.setPatientId(entry.getPatientId());
-        promoteRequest.setSlotId(slotId);
-        promoteRequest.setOriginChannel("WAITLIST");
-        ScheduleDetailModel schedule = scheduleQueryService.loadScheduleById(slot.getScheduleId());
-        Long destinationLocationId = bookingRegisterMapper.resolveLocationIdFromActors(schedule.getActors());
-        slotDomainService.allocateBooking(bookingRegisterMapper.toAllocateBookingCommand(slotId, operatorId));
-        Appointment appointment = appointmentDomainService.create(
-            bookingRegisterMapper.toCreateAppointmentCommand(promoteRequest, slot, destinationLocationId, operatorId));
-        waitlistDomainService.markPromoted(entry, appointment.getId(), operatorId);
-        bookingAuditSupport.record("Appointment", appointment.getId(), "PROMOTE_WAITLIST", slotId.toString());
-        return Optional.of(appointment);
     }
 
     /** 号源 bookedCount 已达 capacity 视为满号。 */

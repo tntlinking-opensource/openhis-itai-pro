@@ -4,6 +4,8 @@
 
 package com.openhis.health.integration.support.config;
 
+import com.openhis.health.integration.booking.inpatient.InpatientBedBookingConsumeExtension;
+import com.openhis.health.integration.booking.inpatient.InpatientBedBookingQueryExtension;
 import com.openhis.health.integration.booking.outpatient.OutpatientBookingQueryExtension;
 import com.openhis.health.integration.booking.outpatient.OutpatientBookingRegistrationExtension;
 import com.openhis.health.integration.insurance.benefit.InsuranceRegisterBenefitQueryExtension;
@@ -16,11 +18,24 @@ import com.openhis.health.integration.insurance.platformdict.InsurancePlatformDi
 import com.openhis.health.integration.emr.EmrAdmissionDiagnosisSyncExtension;
 import com.openhis.health.integration.einvoice.BossElectronicInvoiceExtension;
 import com.openhis.health.integration.elep.ElepPrescriptionExtension;
-import com.openhis.health.integration.mrms.MrmsCaseRecordBootstrapExtension;
+import com.openhis.health.integration.insurance.medcas.MedcasHomepageUploadExtension;
+import com.openhis.health.integration.lis.LisAdviceApplyExtension;
+import com.openhis.health.integration.pacs.PacsAdviceApplyExtension;
+import com.openhis.health.integration.emr.EmrAdmissionConditionExtension;
+import com.openhis.health.integration.emr.EmrDocumentExtension;
+import com.openhis.health.integration.notification.StaffNotificationExtension;
 import com.openhis.health.integration.payment.ThirdPartyPaymentExtension;
+import com.openhis.health.integration.support.booking.NoOpInpatientBedBookingConsumeExtension;
+import com.openhis.health.integration.support.booking.NoOpInpatientBedBookingQueryExtension;
 import com.openhis.health.integration.support.booking.NoOpOutpatientBookingQueryExtension;
 import com.openhis.health.integration.support.booking.NoOpOutpatientBookingRegistrationExtension;
 import com.openhis.health.integration.support.emr.NoOpEmrAdmissionDiagnosisSyncExtension;
+import com.openhis.health.integration.support.insurance.medcas.NoOpMedcasHomepageUploadExtension;
+import com.openhis.health.integration.support.lis.NoOpLisAdviceApplyExtension;
+import com.openhis.health.integration.support.pacs.NoOpPacsAdviceApplyExtension;
+import com.openhis.health.integration.support.emr.NoOpEmrAdmissionConditionExtension;
+import com.openhis.health.integration.support.emr.NoOpEmrDocumentExtension;
+import com.openhis.health.integration.support.notification.LoggingStaffNotificationExtension;
 import com.openhis.health.integration.support.einvoice.NoOpBossElectronicInvoiceExtension;
 import com.openhis.health.integration.support.insurance.NoOpInsurancePlatformDictDisplayExtension;
 import com.openhis.health.integration.support.insurance.benefit.NoOpInsuranceRegisterBenefitQueryExtension;
@@ -30,7 +45,6 @@ import com.openhis.health.integration.support.insurance.inventory.NoOpInventoryT
 import com.openhis.health.integration.support.insurance.outpatient.NoOpOutpatientChargeInsuranceExtension;
 import com.openhis.health.integration.support.insurance.outpatient.NoOpOutpatientRegistrationInsuranceExtension;
 import com.openhis.health.integration.support.elep.NoOpElepPrescriptionExtension;
-import com.openhis.health.integration.support.mrms.NoOpMrmsCaseRecordBootstrapExtension;
 import com.openhis.health.integration.support.payment.NoOpThirdPartyPaymentExtension;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -118,9 +132,15 @@ public class HealthIntegrationContractsAutoConfiguration {
     }
 
     @Bean
-    @ConditionalOnMissingBean(MrmsCaseRecordBootstrapExtension.class)
-    MrmsCaseRecordBootstrapExtension noOpMrmsCaseRecordBootstrapExtension() {
-        return new NoOpMrmsCaseRecordBootstrapExtension();
+    @ConditionalOnMissingBean(InpatientBedBookingQueryExtension.class)
+    InpatientBedBookingQueryExtension noOpInpatientBedBookingQueryExtension() {
+        return new NoOpInpatientBedBookingQueryExtension();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(InpatientBedBookingConsumeExtension.class)
+    InpatientBedBookingConsumeExtension noOpInpatientBedBookingConsumeExtension() {
+        return new NoOpInpatientBedBookingConsumeExtension();
     }
 
     @Bean
@@ -133,5 +153,41 @@ public class HealthIntegrationContractsAutoConfiguration {
     @ConditionalOnMissingBean(ThirdPartyPaymentExtension.class)
     ThirdPartyPaymentExtension noOpThirdPartyPaymentExtension() {
         return new NoOpThirdPartyPaymentExtension();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(EmrDocumentExtension.class)
+    EmrDocumentExtension noOpEmrDocumentExtension() {
+        return new NoOpEmrDocumentExtension();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(MedcasHomepageUploadExtension.class)
+    MedcasHomepageUploadExtension noOpMedcasHomepageUploadExtension() {
+        return new NoOpMedcasHomepageUploadExtension();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(EmrAdmissionConditionExtension.class)
+    EmrAdmissionConditionExtension noOpEmrAdmissionConditionExtension() {
+        return new NoOpEmrAdmissionConditionExtension();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(LisAdviceApplyExtension.class)
+    LisAdviceApplyExtension noOpLisAdviceApplyExtension() {
+        return new NoOpLisAdviceApplyExtension();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(PacsAdviceApplyExtension.class)
+    PacsAdviceApplyExtension noOpPacsAdviceApplyExtension() {
+        return new NoOpPacsAdviceApplyExtension();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(StaffNotificationExtension.class)
+    StaffNotificationExtension loggingStaffNotificationExtension() {
+        return new LoggingStaffNotificationExtension();
     }
 }

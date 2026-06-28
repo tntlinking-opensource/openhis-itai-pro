@@ -34,7 +34,8 @@ import java.util.List;
  * IF-IP-DOR-15：签发医嘱批次请求。
  *
  * <p>目标列表见 {@link InpatientDoctorStationAdviceResourceKeyDto}；住院长临均仅 sign 请求；
- * 诊疗签发后触发 {@link com.openhis.health.application.inpatient.doctorstation.advice.port.LisPacsApplyGateway} 占位。</p>
+ * 诊疗签发后触发 {@link com.openhis.health.integration.lis.LisAdviceApplyExtension} /
+ * {@link com.openhis.health.integration.pacs.PacsAdviceApplyExtension} 外发。</p>
  */
 @Data
 @Accessors(chain = true)

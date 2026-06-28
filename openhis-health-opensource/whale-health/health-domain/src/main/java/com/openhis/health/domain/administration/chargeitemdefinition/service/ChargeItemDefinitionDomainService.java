@@ -17,6 +17,7 @@
 
 package com.openhis.health.domain.administration.chargeitemdefinition.service;
 
+import com.openhis.health.domain.administration.chargeitemdefinition.command.DeactivateActivePriceLinesCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.RemovePricingByInstanceCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.SaveAllChargeItemDefinitionsCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.SavePriceLineCommand;
@@ -24,11 +25,17 @@ import com.openhis.health.domain.administration.chargeitemdefinition.command.Upd
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.repository.ChargeItemDefinitionRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.events.administration.chargeitemdefinition.ChargeItemDefinitionDomainEvents;
+import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -121,6 +128,45 @@ public class ChargeItemDefinitionDomainService {
      * @param cmd 价格行保存命令（批号、价格类型等）
      */
     public void addLotSalePrice(SavePriceLineCommand cmd) { this.addPriceLineByCommand(cmd); }
+
+    /**
+     * 批量停用匹配键下的当前 {@code ACTIVE} 定价行（调价审批 BR-PRC-APR-003）。
+     *
+     * @param cmd 停用命令（实例 + 价类 + 可选批号）
+     */
+    public void deactivateActivePriceLinesByCommand(DeactivateActivePriceLinesCommand cmd) {
+        // Pre：空命令或无停用项则跳过。
+        if (cmd == null) {
+            return;
+        }
+        List<DeactivateActivePriceLinesCommand.Item> itemList = cmd.getItems();
+        if (itemList == null || itemList.isEmpty()) {
+            return;
+        }
+        Long operatorId = cmd.getOperatorId();
+        List<ChargeItemDefinition> toSave = new ArrayList<>();
+        for (DeactivateActivePriceLinesCommand.Item item : itemList) {
+            if (item == null || item.getInstanceId() == null || StringUtils.isBlank(item.getPriceTypeCode())) {
+                continue;
+            }
+            // Pre：按匹配键加载当前 ACTIVE 行。
+            List<ChargeItemDefinition> activeRows = this.loadActivePriceLinesForDeactivate(item);
+            for (ChargeItemDefinition row : activeRows) {
+                row.setStatusEnum(PublicationStatus.INACTIVE.getCode());
+                row.setUpdatedBy(operatorId);
+                row.setUpdatedAt(LocalDateTime.now());
+                toSave.add(row);
+            }
+        }
+        if (toSave.isEmpty()) {
+            return;
+        }
+        // Cmd：批量持久化停用并发布价格行更新事件。
+        List<ChargeItemDefinition> saved = repository.saveAll(toSave);
+        for (ChargeItemDefinition row : saved) {
+            domainEventPublisher.publish(new ChargeItemDefinitionDomainEvents.PriceLineUpdatedEvent(row.getId()));
+        }
+    }
     /**
      * 按实例逻辑删除其下全部收费/定价行，并逐条发布移除事件。
      *
@@ -160,16 +206,27 @@ public class ChargeItemDefinitionDomainService {
         // Pre：遍历命令项，逐条转换为收费定义实体。
         List<ChargeItemDefinition> rows = new ArrayList<>();
         for (SaveAllChargeItemDefinitionsCommand.Item item : cmd.resolveItems()) {
-            rows.add(this.toEntity(
+            String typeCode = trimToNull(item.getTypeCode());
+            if (typeCode == null) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_DEFINITION_INVALID_ARGUMENT,
+                    "新建定价行缺少财务类型 type_code，instanceTable="
+                        + item.getInstanceTable()
+                        + ", instanceId="
+                        + item.getInstanceId());
+            }
+            ChargeItemDefinition row = this.toEntity(
                 item.getInstanceTable(),
                 item.getInstanceId(),
-                item.getTypeCode(),
+                typeCode,
                 item.getYbType(),
                 item.getPriceTypeCode(),
                 item.getLotNo(),
                 item.getPriceValue(),
                 item.getChargeName(),
-                null));
+                null);
+            this.ensurePublicationStatusForInsert(row, null);
+            rows.add(row);
         }
         List<ChargeItemDefinition> saved = repository.saveAll(rows);
         // Pre：取首条 ID 作为批次锚点，空批次时默认为 0L。
@@ -196,16 +253,27 @@ public class ChargeItemDefinitionDomainService {
         // Pre：遍历命令项，逐条组装价格定义实体。
         List<ChargeItemDefinition> toSave = new ArrayList<>();
         for (SavePriceLineCommand.Item item : cmd.resolveItems()) {
+            String typeCode = trimToNull(item.getTypeCode());
+            if (typeCode == null) {
+                // 批号价/调价新增行：继承同实例历史定价行的 fin_type，避免 LOT 行 type_code 为空
+                typeCode = this.resolveSiblingTypeCode(item.getInstanceTable(), item.getInstanceId());
+            }
+            String ybType = trimToNull(item.getYbType());
             ChargeItemDefinition row = this.toEntity(
                 item.getInstanceTable(),
                 item.getInstanceId(),
-                null,
-                null,
+                typeCode,
+                ybType,
                 item.getPriceTypeCode(),
                 item.getLotNo(),
                 item.getPriceValue(),
                 null,
                 item.getId());
+            // 新建行必须落 status_enum=ACTIVE（或命令显式指定），否则当前价读路径查不到
+            if (item.getId() == null) {
+                this.ensurePublicationStatusForInsert(row, item.getStatusEnum());
+                this.ensureTypeCodeForInsert(row);
+            }
             toSave.add(row);
         }
         List<ChargeItemDefinition> saved = repository.saveAll(toSave);
@@ -300,5 +368,115 @@ public class ChargeItemDefinitionDomainService {
         row.setPriceValue(priceValue);
         row.setChargeName(chargeName);
         return row;
+    }
+
+    /**
+     * 新建定价行落库前校验 {@code type_code}（**BR-CHGDEF-WR-002**）：日结/费用明细仅锚历史定价行 fin_type。
+     *
+     * @param row 待 insert 实体
+     * @throws BusinessException type_code 仍为空
+     */
+    private void ensureTypeCodeForInsert(ChargeItemDefinition row) {
+        if (row == null) {
+            return;
+        }
+        if (StringUtils.isBlank(row.getTypeCode())) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_DEFINITION_INVALID_ARGUMENT,
+                "新建定价行缺少财务类型 type_code，instanceTable="
+                    + row.getInstanceTable()
+                    + ", instanceId="
+                    + row.getInstanceId());
+        }
+    }
+
+    /**
+     * 从同实例任意未软删定价行继承 {@code type_code}（含 INACTIVE 历史行）。
+     *
+     * @param instanceTable 实例表
+     * @param instanceId    实例主键
+     * @return trim 后的 type_code；无命中时为 {@code null}
+     */
+    private String resolveSiblingTypeCode(String instanceTable, Long instanceId) {
+        if (StringUtils.isBlank(instanceTable) || instanceId == null) {
+            return null;
+        }
+        List<ChargeItemDefinition> siblings =
+            repository.findAllByInstanceTableAndInstanceId(instanceTable.trim(), instanceId);
+        for (ChargeItemDefinition sibling : siblings) {
+            if (sibling == null || Boolean.TRUE.equals(sibling.getIsDeleted())) {
+                continue;
+            }
+            String siblingTypeCode = trimToNull(sibling.getTypeCode());
+            if (siblingTypeCode != null) {
+                return siblingTypeCode;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 新建定价行落库前写入 {@code status_enum}（**BR-CHGDEF-QRY-004** 写侧配套）：命令未指定时默认 {@link PublicationStatus#ACTIVE}。
+     *
+     * @param row                 待 insert 实体
+     * @param explicitStatusEnum  命令显式状态码，可空
+     */
+    private void ensurePublicationStatusForInsert(ChargeItemDefinition row, String explicitStatusEnum) {
+        if (row == null) {
+            return;
+        }
+        if (StringUtils.isNotBlank(explicitStatusEnum)) {
+            row.setStatusEnum(explicitStatusEnum.trim());
+            return;
+        }
+        if (StringUtils.isBlank(row.getStatusEnum())) {
+            row.setStatusEnum(PublicationStatus.ACTIVE.getCode());
+        }
+    }
+
+    /**
+     * 加载待停用的当前启用定价行（匹配实例 + 价类 + 批号口径）。
+     *
+     * @param item 停用匹配键
+     * @return 未软删且 {@code status_enum=ACTIVE} 的行
+     */
+    private List<ChargeItemDefinition> loadActivePriceLinesForDeactivate(DeactivateActivePriceLinesCommand.Item item) {
+        String instanceTable = item.getInstanceTable();
+        Long instanceId = item.getInstanceId();
+        String priceTypeCode = item.getPriceTypeCode().trim();
+        String lotTrimmed = trimLotNoOrNull(item.getLotNo());
+        Specification<ChargeItemDefinition> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), PublicationStatus.ACTIVE.getCode()));
+            predicates.add(cb.equal(root.get(FieldNameConstants.PRICE_TYPE_CODE), priceTypeCode));
+            predicates.add(cb.equal(root.get(FieldNameConstants.INSTANCE_ID), instanceId));
+            if (StringUtils.isNotBlank(instanceTable)) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.INSTANCE_TABLE), instanceTable.trim()));
+            }
+            if (lotTrimmed == null) {
+                predicates.add(cb.or(
+                    cb.isNull(root.get(FieldNameConstants.LOT_NO)),
+                    cb.equal(root.get(FieldNameConstants.LOT_NO), "")
+                ));
+            } else {
+                predicates.add(cb.equal(root.get(FieldNameConstants.LOT_NO), lotTrimmed));
+            }
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        return repository.findAll(specification);
+    }
+
+    /**
+     * 批号 trim；空白时返回 null（项目级价类停用匹配键用）。
+     *
+     * @param lotNo 原始批号
+     * @return trim 后批号；空白时为 null
+     */
+    private static String trimLotNoOrNull(String lotNo) {
+        if (StringUtils.isBlank(lotNo)) {
+            return null;
+        }
+        return lotNo.trim();
     }
 }

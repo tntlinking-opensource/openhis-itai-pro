@@ -21,6 +21,7 @@ import com.openhis.health.domain.share.command.BatchCommand;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
@@ -50,6 +51,10 @@ public class CreateAppointmentCommand extends BatchCommand<CreateAppointmentComm
         private Integer displayOrder;
         /** 号源主键。 */
         private Long slotId;
+        /** 冗余：医疗服务主键（门诊防重）。 */
+        private Long healthcareServiceId;
+        /** 冗余：预约自然日（Asia/Shanghai）。 */
+        private LocalDate bookingDate;
         /** 计划开始。 */
         private LocalDateTime startInstant;
         /** 计划结束。 */

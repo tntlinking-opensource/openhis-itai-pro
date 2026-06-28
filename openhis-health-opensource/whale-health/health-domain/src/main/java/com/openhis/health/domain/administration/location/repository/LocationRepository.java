@@ -18,8 +18,10 @@
 package com.openhis.health.domain.administration.location.repository;
 
 import com.openhis.health.domain.administration.location.entity.Location;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 
 import java.util.Collection;
 import java.util.List;
@@ -140,5 +142,15 @@ public interface LocationRepository extends JpaRepository<Location, Long>, JpaSp
      * @return 匹配的位置列表
      */
     List<Location> findAllByBusNoStartingWith(String busNoPrefix);
+
+    /**
+     * 按主键与床位形态加悲观写锁加载（分床/换床占床防 TOCTOU）。
+     *
+     * @param id       床位主键
+     * @param formEnum 物理形式 code（须为 BED）
+     * @return 未软删床位
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Location> findByIdAndFormEnumAndIsDeletedFalse(Long id, String formEnum);
 }
 

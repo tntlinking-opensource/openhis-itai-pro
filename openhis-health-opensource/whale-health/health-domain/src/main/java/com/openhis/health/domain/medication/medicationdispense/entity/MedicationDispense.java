@@ -182,6 +182,11 @@ public class MedicationDispense extends BaseAuditedEntity {
     @Column(name = "dispense_frequency_code")
     private String dispenseFrequencyCode;
 
+    /** 乐观锁版本号。 */
+    @jakarta.persistence.Version
+    @Column(name = "version")
+    private Integer version;
+
     /**
      * 判断当前是否为草稿状态（用于批量推进逻辑中筛选可推进的发放单）。
      *
@@ -428,6 +433,15 @@ public class MedicationDispense extends BaseAuditedEntity {
         this.setIsDeleted(Boolean.TRUE);
         this.setDeletedBy(operatorId);
         this.setDeletedAt(LocalDateTime.now());
+    }
+
+    /**
+     * 断言发放行未被软删（取消执行释占、签退替换等路径；GAP-STALE-003）。
+     */
+    public void assertNotDeleted() {
+        if (Boolean.TRUE.equals(this.getIsDeleted())) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_NOT_FOUND, "药品发放记录不存在");
+        }
     }
 }
 

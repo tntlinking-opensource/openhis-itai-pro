@@ -38,6 +38,7 @@ import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQ
 import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.SavePriceLineCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
+import com.openhis.health.module.common.assembler.pricing.ChargePricingTypeCodeResolveSupport;
 import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogEditorHintsAssembler;
 import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
@@ -342,7 +343,7 @@ public class InventoryWarehouseInboundReceiptAppService {
     }
 
     /**
-     * 详情行槽价：目录 {@code PURCHASE}、批号 {@code LOT_NUMBER_COST} 原样落槽；{@code STOCK}/{@code SPLIT} 仅包装锚换算。
+     * 详情行槽价：仅锚 {@code SupplyRequest} 持久化 {@code price}/{@code unitCode}，禁止查定价表当前价（**BR-PRICE-SRC-001**）。
      *
      * @param lines 详情明细列表，可为 null
      */
@@ -358,23 +359,9 @@ public class InventoryWarehouseInboundReceiptAppService {
             if (cat == null) {
                 continue;
             }
-            // —— 头行装配的 catalog：此处只补价与槽内单价，不改单位编码列。——
-            // —— 目录 PURCHASE 为每包装进价；批号 LOT_NUMBER_COST 优先为包装锚。——
-            BigDecimal purchase = this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
-                dto.getItemTable(), dto.getItemId());
-            cat.setPurchasePrice(purchase);
-            List<ProductDefinitionCatalogUnitBandDto> bands = cat.getUnitBands();
-            if (bands == null || bands.isEmpty()) {
-                // —— 无槽列表则无法回填单价（仍保留 purchasePrice 展示列）。——
-                continue;
-            }
-            BigDecimal lotPackagePrice = null;
-            if (StringUtils.isNotBlank(dto.getLotNumber())) {
-                lotPackagePrice = this.chargeItemDefinitionQueryService.resolveFirstLotNumberCostPriceValue(
-                    dto.getItemTable(), dto.getItemId(), dto.getLotNumber().trim());
-            }
-            ProductDefinitionCatalogUnitBandsAssembler.applyInboundWarehouseDetailLineBandPrices(
-                bands, null, purchase, lotPackagePrice, dto.getPrice(), dto.getUnitCode());
+            // —— 历史单据：槽价与 purchasePrice 均来自行持久化价，不回落目录。——
+            ProductDefinitionCatalogUnitBandsAssembler.enrichWarehouseDetailCatalogFromPersistedSupplyLinePrice(
+                cat, dto.getPrice(), dto.getUnitCode(), null);
         }
     }
 
@@ -692,12 +679,26 @@ public class InventoryWarehouseInboundReceiptAppService {
                 ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable().trim(), line.getItemId()));
             BigDecimal priceVal = ProductDefinitionCatalogUnitBandsAssembler.resolveLotNumberPackageUnitPriceForInboundAgree(
                 line.getPrice(), line.getUnitCode(), product);
+            String pricingTypeCode = ChargePricingTypeCodeResolveSupport.resolveTypeCodeForLotPriceLine(
+                line.getItemTable().trim(),
+                line.getItemId(),
+                product,
+                chargeItemDefinitionQueryService);
+            if (StringUtils.isBlank(pricingTypeCode)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_DEFINITION_INVALID_ARGUMENT,
+                    "批号维定价缺少财务类型 type_code，itemTable="
+                        + line.getItemTable()
+                        + ", itemId="
+                        + line.getItemId());
+            }
             try {
                 SavePriceLineCommand costCmd = new SavePriceLineCommand();
                 costCmd.setOperatorId(operatorId);
                 SavePriceLineCommand.Item costItem = new SavePriceLineCommand.Item();
                 costItem.setInstanceTable(line.getItemTable().trim());
                 costItem.setInstanceId(line.getItemId());
+                costItem.setTypeCode(pricingTypeCode);
                 costItem.setPriceTypeCode(PriceType.LOT_NUMBER_COST.getCode());
                 costItem.setLotNo(resolvedLot);
                 costItem.setPriceValue(priceVal);
@@ -710,6 +711,7 @@ public class InventoryWarehouseInboundReceiptAppService {
                 SavePriceLineCommand.Item saleItem = new SavePriceLineCommand.Item();
                 saleItem.setInstanceTable(line.getItemTable().trim());
                 saleItem.setInstanceId(line.getItemId());
+                saleItem.setTypeCode(pricingTypeCode);
                 saleItem.setPriceTypeCode(PriceType.LOT_NUMBER_PRICE.getCode());
                 saleItem.setLotNo(resolvedLot);
                 saleItem.setPriceValue(priceVal);

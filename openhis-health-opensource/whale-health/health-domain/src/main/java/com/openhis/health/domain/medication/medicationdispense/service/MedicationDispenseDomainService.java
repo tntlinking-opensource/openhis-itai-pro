@@ -31,6 +31,7 @@ import com.openhis.health.domain.share.events.medication.medicationdispense.*;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -78,7 +79,7 @@ public class MedicationDispenseDomainService {
             dispense.toPrepared(item.getPreparerId());
             toSave.add(dispense);
         }
-        medicationDispenseRepository.saveAll(toSave);
+        this.saveAllMedicationDispenses(toSave);
         for (MedicationDispense dispense : toSave) {
             MedicationDispensePreparedEvent preparedEvent = new MedicationDispensePreparedEvent(
                 dispense.getId(), dispense.getPreparerId(), dispense.getPrepareTime(), command.getOperatorId());
@@ -103,7 +104,7 @@ public class MedicationDispenseDomainService {
             dispense.toCompleted(item.getPractitionerId(), item.getDispenseQuantity());
             toSave.add(dispense);
         }
-        medicationDispenseRepository.saveAll(toSave);
+        this.saveAllMedicationDispenses(toSave);
         for (MedicationDispense dispense : toSave) {
             MedicationDispensedEvent dispensedEvent = new MedicationDispensedEvent(
                 dispense.getId(), dispense.getMedicationId(), dispense.getLotNumber(), dispense.getDispenseQuantity(), command.getOperatorId());
@@ -461,23 +462,30 @@ public class MedicationDispenseDomainService {
      * @return 汇总单号
      */
     public String summarizeMedicationDispenses(SummarizeMedicationDispensesCommand command) {
+        List<Long> dispenseIds = command.getDispenseIds();
+        if (dispenseIds == null || dispenseIds.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "待汇总发放单不能为空");
+        }
         String agg = AggregateTypeConstants.MEDICATION_DISPENSE;
         String seqFull = businessSequenceService.getSeqByDay(agg, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
         String summaryNo = MedicationCommonConstants.SUMMARY_NO_PREFIX + seqFull.substring(agg.length());
-        List<MedicationDispense> dispenses = medicationDispenseRepository.findByIdIn(command.getDispenseIds());
-        List<Long> summarizedIds = new ArrayList<>();
-        for (MedicationDispense dispense : dispenses) {
-            dispense.applySummaryState(summaryNo);
-            summarizedIds.add(dispense.getId());
+        LocalDateTime statusChangedTime = LocalDateTime.now();
+        int updated = medicationDispenseRepository.summarizeIfPreparationWhereIdIn(
+            dispenseIds,
+            summaryNo,
+            DispenseStatus.SUMMARIZED,
+            DispenseStatus.PREPARATION,
+            statusChangedTime);
+        if (updated != dispenseIds.size()) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_STATUS,
+                "所选药品已汇总，请勿重复操作");
         }
-        medicationDispenseRepository.saveAll(dispenses);
         // Event：汇总事实落库后再发布绑定事件，头表状态码由载荷显式携带（B.14/B.15）。
-        if (!summarizedIds.isEmpty()) {
-            MedicationDispenseSummarizedEvent summarizedEvent =
-                new MedicationDispenseSummarizedEvent(summaryNo, summarizedIds, command.getOperatorId());
-            summarizedEvent.setSummaryHeaderStatusEnumCode(MedicationSummaryStatus.SUMMARIZED.getCode());
-            domainEventPublisher.publish(summarizedEvent);
-        }
+        MedicationDispenseSummarizedEvent summarizedEvent =
+            new MedicationDispenseSummarizedEvent(summaryNo, dispenseIds, command.getOperatorId());
+        summarizedEvent.setSummaryHeaderStatusEnumCode(MedicationSummaryStatus.SUMMARIZED.getCode());
+        domainEventPublisher.publish(summarizedEvent);
         return summaryNo;
     }
 
@@ -510,21 +518,34 @@ public class MedicationDispenseDomainService {
      */
     public void completeSummaryDispense(CompleteSummaryDispenseCommand command) {
         List<MedicationDispense> dispenses = medicationDispenseRepository.findBySummaryNo(command.getSummaryNo());
-        List<Long> completedIds = new ArrayList<>();
+        if (dispenses.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_NOT_FOUND, "汇总发放记录不存在");
+        }
         for (MedicationDispense dispense : dispenses) {
             dispense.ensureStatusForDispense();
-            dispense.toCompleted(command.getPractitionerId(), dispense.getQuantity());
+        }
+        LocalDateTime dispenseTime = LocalDateTime.now();
+        int updated = medicationDispenseRepository.completeSummaryDispenseWhereSummaryNoAndSourceStatus(
+            command.getSummaryNo(),
+            DispenseStatus.COMPLETED,
+            DispenseStatus.SUMMARIZED,
+            command.getPractitionerId(),
+            dispenseTime);
+        if (updated != dispenses.size()) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_STATUS,
+                "汇总单已核发或状态不允许，请刷新");
+        }
+        List<Long> completedIds = new ArrayList<>();
+        for (MedicationDispense dispense : dispenses) {
             completedIds.add(dispense.getId());
         }
-        medicationDispenseRepository.saveAll(dispenses);
         // Event：汇总闭环完成后发布携带明细态与头态载荷的事件，供 slip 与汇总头投影一致推进。
-        if (!completedIds.isEmpty()) {
-            MedicationDispenseSummaryCompletedEvent completedEvent =
-                new MedicationDispenseSummaryCompletedEvent(command.getSummaryNo(), completedIds, command.getOperatorId());
-            completedEvent.setSlipStatusEnumCode(dispenses.get(0).getStatusEnum().getCode());
-            completedEvent.setSummaryHeaderStatusEnumCode(MedicationSummaryStatus.COMPLETED.getCode());
-            domainEventPublisher.publish(completedEvent);
-        }
+        MedicationDispenseSummaryCompletedEvent completedEvent =
+            new MedicationDispenseSummaryCompletedEvent(command.getSummaryNo(), completedIds, command.getOperatorId());
+        completedEvent.setSlipStatusEnumCode(DispenseStatus.COMPLETED.getCode());
+        completedEvent.setSummaryHeaderStatusEnumCode(MedicationSummaryStatus.COMPLETED.getCode());
+        domainEventPublisher.publish(completedEvent);
     }
 
     /**
@@ -556,6 +577,9 @@ public class MedicationDispenseDomainService {
         for (MedicationDispense dispense : dispenses) {
             dispense.ensureCancellable();
             dispense.markDeleted(command.getOperatorId());
+            // 状态层双保险：与释占事件 ON_HOLD 口径一致，阻断 stale 提交仅依赖 status 的路径（GAP-STALE-003）
+            dispense.setStatusEnum(DispenseStatus.ON_HOLD);
+            dispense.setStatusChangedTime(LocalDateTime.now());
             released.add(dispense);
         }
         medicationDispenseRepository.saveAll(released);
@@ -600,8 +624,10 @@ public class MedicationDispenseDomainService {
      * @throws BusinessException 记录不存在
      */
     private MedicationDispense mustGet(Long id) {
-        return medicationDispenseRepository.findById(id).orElseThrow(
+        MedicationDispense dispense = medicationDispenseRepository.findById(id).orElseThrow(
             () -> new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_NOT_FOUND, "药品发放记录不存在"));
+        dispense.assertNotDeleted();
+        return dispense;
     }
 
     /**
@@ -649,5 +675,15 @@ public class MedicationDispenseDomainService {
         pending.setDoseUnitCode(origin.getDoseUnitCode());
         pending.setDesLocationId(origin.getDesLocationId());
         pending.setPlannedDispenseTime(origin.getPlannedDispenseTime());
+    }
+
+    private void saveAllMedicationDispenses(List<MedicationDispense> toSave) {
+        try {
+            medicationDispenseRepository.saveAll(toSave);
+        } catch (OptimisticLockingFailureException ex) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_DISPENSE_RULE_CONFLICT,
+                "发放单已被他人处理，请刷新");
+        }
     }
 }

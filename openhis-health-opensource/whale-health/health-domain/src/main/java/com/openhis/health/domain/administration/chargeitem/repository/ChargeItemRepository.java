@@ -20,6 +20,9 @@ package com.openhis.health.domain.administration.chargeitem.repository;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
@@ -199,4 +202,40 @@ public interface ChargeItemRepository extends JpaRepository<ChargeItem, Long>, J
      */
     List<ChargeItem> findAllByProcedureIdInAndStatusEnumAndGenerateSourceEnum(
         Collection<Long> procedureIds, String statusEnum, String generateSourceEnum);
+
+    /**
+     * 门诊正式结算：仅当源态为 {@code PLANNED} 时批量迁移至 {@code SETTLED} 并写入收款人（GAP-FIN-003 / GAP-STALE-001）。
+     *
+     * @return 实际更新行数
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        UPDATE ChargeItem c
+           SET c.statusEnum = :targetStatus,
+               c.performerId = :performerId
+         WHERE c.id IN :ids
+           AND c.statusEnum = :sourceStatus
+        """)
+    int updateStatusAndPerformerWhereIdInAndSourceStatus(
+        @Param("ids") Collection<Long> ids,
+        @Param("targetStatus") String targetStatus,
+        @Param("performerId") Long performerId,
+        @Param("sourceStatus") String sourceStatus);
+
+    /**
+     * 住院正式结算：仅当源态匹配时批量迁移目标态（GAP-FIN-001 / GAP-STALE-002）。
+     *
+     * @return 实际更新行数
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        UPDATE ChargeItem c
+           SET c.statusEnum = :targetStatus
+         WHERE c.id IN :ids
+           AND c.statusEnum = :sourceStatus
+        """)
+    int updateStatusWhereIdInAndSourceStatus(
+        @Param("ids") Collection<Long> ids,
+        @Param("targetStatus") String targetStatus,
+        @Param("sourceStatus") String sourceStatus);
 }

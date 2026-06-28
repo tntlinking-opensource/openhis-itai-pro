@@ -524,4 +524,33 @@ public class MedicationDefinitionQueryService {
         return ids;
     }
 
+    /**
+     * 按库存明细关键字解析药品定义主键（编码、商品名、拼音/五笔等，与采购选品口径一致）。
+     *
+     * @param keyword 检索词；空白时返回空列表
+     * @return 未删除且命中关键字的药品定义主键列表
+     */
+    public List<Long> listIdsByInventoryDetailKeyword(String keyword) {
+        if (StringUtils.isBlank(keyword)) {
+            return Collections.emptyList();
+        }
+        Specification<MedicationDefinition> specification = (root, criteriaQuery, cb) -> {
+            List<Predicate> ands = new ArrayList<>();
+            ands.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            Predicate keywordPred = this.buildPurchaseKeywordPredicate(root, cb, keyword);
+            if (keywordPred != null) {
+                ands.add(keywordPred);
+            }
+            return cb.and(ands.toArray(Predicate[]::new));
+        };
+        List<MedicationDefinition> rows = this.medicationDefinitionRepository.findAll(specification);
+        List<Long> ids = new ArrayList<>();
+        for (MedicationDefinition row : rows) {
+            if (row != null && row.getId() != null) {
+                ids.add(row.getId());
+            }
+        }
+        return ids;
+    }
+
 }

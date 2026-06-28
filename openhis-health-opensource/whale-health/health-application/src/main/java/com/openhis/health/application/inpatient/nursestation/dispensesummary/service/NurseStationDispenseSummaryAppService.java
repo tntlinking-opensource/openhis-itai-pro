@@ -52,12 +52,14 @@ import com.openhis.health.domain.administration.encounter.queries.InpatientEncou
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.medication.medicationdispense.command.SummarizeMedicationDispensesCommand;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispensePickupPendingQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseDomainService;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
@@ -348,8 +350,8 @@ public class NurseStationDispenseSummaryAppService {
                 Long locationId = entry.getKey();
                 List<SummaryMergeGroup> locationGroups = entry.getValue();
                 List<Long> locationDispenseIds = this.collectDispenseIdsFromGroups(locationGroups);
-                // Cmd 9a：发放汇总 → summaryNo
-                String summaryNo = medicationDispenseDomainService.summarizeMedicationDispenses(
+                // Cmd 9a：发放汇总 → summaryNo（条件更新，GAP-INV-003 / GAP-STALE-006）
+                String summaryNo = this.summarizeMedicationDispensesOrThrow201(
                     nurseStationDispenseSummaryMapper.toSummarizeMedicationDispensesCommand(
                         locationId, locationDispenseIds, operatorId));
                 // Cmd 9b：SupplyRequest type 27（初态 PENDING_APPROVAL；不创建 SupplyDelivery）
@@ -598,6 +600,19 @@ public class NurseStationDispenseSummaryAppService {
                     InpatientNurseStationConstants.EX_IP_SUM_201,
                     "所选药品已汇总，请勿重复操作");
             }
+        }
+    }
+
+    private String summarizeMedicationDispensesOrThrow201(SummarizeMedicationDispensesCommand command) {
+        try {
+            return medicationDispenseDomainService.summarizeMedicationDispenses(command);
+        } catch (BusinessException ex) {
+            if (ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_STATUS.equals(ex.getErrorCode())) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_SUM_201,
+                    "所选药品已汇总，请勿重复操作");
+            }
+            throw ex;
         }
     }
 
