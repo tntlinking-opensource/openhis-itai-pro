@@ -123,4 +123,34 @@ public interface CustomConstants {
         /** 绑定目标表：耗材。 */
         String TARGET_TABLE_DEVICE = "耗材";
     }
+
+    /**
+     * 调价单项目口径常量（药品耗材批号调价 / 诊疗一对一调价共用主从表）。
+     */
+    public interface PriceAdjustment {
+
+        /** 诊疗子表占位批号（无实物批号，与药品耗材批号行区分）。 */
+        String CLINICAL_DETAIL_LOT_PLACEHOLDER = "-";
+
+        /** 读模型展示：诊疗一对一调价。 */
+        String ADJUSTMENT_STYLE_CLINICAL = "clinical";
+
+        /** 读模型展示：药品耗材批号调价。 */
+        String ADJUSTMENT_STYLE_LOGISTICS = "logistics";
+
+        /** 在途预检原因：药品医嘱申请非终态。 */
+        String IN_TRANSIT_REASON_MED_REQUEST = "MED_REQUEST_IN_TRANSIT";
+
+        /** 在途预检原因：药品发放非终态。 */
+        String IN_TRANSIT_REASON_MED_DISPENSE = "MED_DISPENSE_IN_TRANSIT";
+
+        /** 在途预检原因：耗材申请非终态。 */
+        String IN_TRANSIT_REASON_DEVICE_REQUEST = "DEVICE_REQUEST_IN_TRANSIT";
+
+        /** 在途预检原因：耗材发放非终态。 */
+        String IN_TRANSIT_REASON_DEVICE_DISPENSE = "DEVICE_DISPENSE_IN_TRANSIT";
+
+        /** 租户选项缺失时默认医嘱定价来源（批号价，IF-PRC-01 非阻断）。 */
+        String ORDER_PRICING_SOURCE_DEFAULT = "LOT_NUMBER";
+    }
 }

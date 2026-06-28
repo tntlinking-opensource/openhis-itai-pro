@@ -50,6 +50,7 @@ import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -671,18 +672,26 @@ public class EncounterDomainService {
     }
 
     /**
-     * 住院登记。
+     * 住院登记（有申请路径：{@code PLANNED→REGISTERED}）。
+     *
+     * <p>按就诊 id 升序悲观行锁，锁内断言 {@code PLANNED} 后迁移，防双窗重复登记（GAP-ATD-004）。</p>
      *
      * @param command 命令
      */
+    @Transactional(rollbackFor = Exception.class)
     public void registerInpatientEncounter(RegisterInpatientEncounterCommand command) {
         List<RegisterInpatientEncounterCommand.RegisterInpatientEncounterItemCommand> items = command.resolveItems();
-        Map<Long, Encounter> encounterMap = this.loadEncounterMap(
-            CommandBatchUtil.extractIds(items, RegisterInpatientEncounterCommand.RegisterInpatientEncounterItemCommand::getEncounterId));
+        List<RegisterInpatientEncounterCommand.RegisterInpatientEncounterItemCommand> sortedItems =
+            new ArrayList<>(items);
+        sortedItems.sort(Comparator.comparing(
+            RegisterInpatientEncounterCommand.RegisterInpatientEncounterItemCommand::getEncounterId,
+            Comparator.nullsLast(Comparator.naturalOrder())));
+        Map<Long, Encounter> encounterMap = new LinkedHashMap<>();
         List<Encounter> toSave = new ArrayList<>();
         List<EncounterLocation> locationToSave = new ArrayList<>();
-        for (RegisterInpatientEncounterCommand.RegisterInpatientEncounterItemCommand item : items) {
-            Encounter encounter = this.requireEncounter(encounterMap, item.getEncounterId());
+        for (RegisterInpatientEncounterCommand.RegisterInpatientEncounterItemCommand item : sortedItems) {
+            Encounter encounter = this.requireEncounterForUpdate(item.getEncounterId(), EncounterClass.IMP.getCode());
+            encounterMap.put(encounter.getId(), encounter);
             encounter.assertClass(EncounterClass.IMP.getCode());
             // 委托聚合根 assertInpatientRegistrationAllowed() 校验住院登记前置状态，遵守 §D3.2 硬门禁。
             encounter.assertInpatientRegistrationAllowed();
@@ -936,20 +945,28 @@ public class EncounterDomainService {
     }
 
     /**
-     * 发起转科。
+     * 发起转科（GAP-ATD-006：悲观行锁 + 锁内 {@code IN_PROGRESS} 断言）。
      *
      * @param command 命令
      */
     public void initiateDepartmentTransfer(InitiateDepartmentTransferCommand command) {
         List<InitiateDepartmentTransferCommand.InitiateDepartmentTransferItemCommand> items = command.resolveItems();
-        Map<Long, Encounter> encounterMap = this.loadEncounterMap(
-            CommandBatchUtil.extractIds(items, InitiateDepartmentTransferCommand.InitiateDepartmentTransferItemCommand::getEncounterId));
+        List<InitiateDepartmentTransferCommand.InitiateDepartmentTransferItemCommand> sortedItems =
+            new ArrayList<>(items);
+        sortedItems.sort(Comparator.comparing(
+            InitiateDepartmentTransferCommand.InitiateDepartmentTransferItemCommand::getEncounterId,
+            Comparator.nullsLast(Comparator.naturalOrder())));
         List<Encounter> toSave = new ArrayList<>();
         List<EncounterParticipant> participantUpdates = new ArrayList<>();
-        for (InitiateDepartmentTransferCommand.InitiateDepartmentTransferItemCommand item : items) {
-            Encounter encounter = this.requireEncounter(encounterMap, item.getEncounterId());
+        for (InitiateDepartmentTransferCommand.InitiateDepartmentTransferItemCommand item : sortedItems) {
+            Encounter encounter = this.requireEncounterForUpdate(
+                item.getEncounterId(), EncounterClass.IMP.getCode());
             encounter.assertClass(EncounterClass.IMP.getCode());
-            encounter.assertStatus(EncounterStatus.IN_PROGRESS.getCode());
+            if (!EncounterStatus.IN_PROGRESS.getCode().equals(encounter.getStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
+                    "仅已入科在院状态的住院就诊可发起转科");
+            }
             encounter.transitToOnHold();
             // organizationId 保持为转出科室，待 confirmDepartmentTransfer 时再更新为目标科室。
             toSave.add(encounter);
@@ -962,32 +979,42 @@ public class EncounterDomainService {
                 participantUpdates.add(old);
             }
         }
-        encounterRepository.saveAll(toSave);
+        if (!toSave.isEmpty()) {
+            encounterRepository.saveAll(toSave);
+        }
         // 业务分支处理。
         if (!participantUpdates.isEmpty()) {
             participantRepository.saveAll(participantUpdates);
         }
-        for (InitiateDepartmentTransferCommand.InitiateDepartmentTransferItemCommand item : items) {
+        for (InitiateDepartmentTransferCommand.InitiateDepartmentTransferItemCommand item : sortedItems) {
             domainEventPublisher.publish(new DepartmentTransferInitiatedEvent(
                 item.getEncounterId(), item.getFromDepartmentId(), item.getToDepartmentId()));
         }
     }
 
     /**
-     * 确认转科。
+     * 确认转科（GAP-ATD-006：悲观行锁 + 锁内 {@code ON_HOLD} 断言）。
      *
      * @param command 命令
      */
     public void confirmDepartmentTransfer(ConfirmDepartmentTransferCommand command) {
         List<ConfirmDepartmentTransferCommand.ConfirmDepartmentTransferItemCommand> items = command.resolveItems();
-        Map<Long, Encounter> encounterMap = this.loadEncounterMap(
-            CommandBatchUtil.extractIds(items, ConfirmDepartmentTransferCommand.ConfirmDepartmentTransferItemCommand::getEncounterId));
+        List<ConfirmDepartmentTransferCommand.ConfirmDepartmentTransferItemCommand> sortedItems =
+            new ArrayList<>(items);
+        sortedItems.sort(Comparator.comparing(
+            ConfirmDepartmentTransferCommand.ConfirmDepartmentTransferItemCommand::getEncounterId,
+            Comparator.nullsLast(Comparator.naturalOrder())));
         List<Encounter> toSave = new ArrayList<>();
         List<EncounterLocation> locationUpdates = new ArrayList<>();
-        for (ConfirmDepartmentTransferCommand.ConfirmDepartmentTransferItemCommand item : items) {
-            Encounter encounter = this.requireEncounter(encounterMap, item.getEncounterId());
+        for (ConfirmDepartmentTransferCommand.ConfirmDepartmentTransferItemCommand item : sortedItems) {
+            Encounter encounter = this.requireEncounterForUpdate(
+                item.getEncounterId(), EncounterClass.IMP.getCode());
             encounter.assertClass(EncounterClass.IMP.getCode());
-            encounter.assertStatus(EncounterStatus.ON_HOLD.getCode());
+            if (!EncounterStatus.ON_HOLD.getCode().equals(encounter.getStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
+                    "仅待转科过渡状态的住院就诊可确认转科");
+            }
             LocalDateTime effectiveAt = this.defaultNow(item.getEffectiveAt());
             encounter.setStatusEnum(EncounterStatus.REGISTERED.getCode());
             // 确认转科时更新科室归属为目标科室。
@@ -1006,31 +1033,41 @@ public class EncounterDomainService {
             newLocation.markActive(effectiveAt);
             locationUpdates.add(newLocation);
         }
-        encounterRepository.saveAll(toSave);
+        if (!toSave.isEmpty()) {
+            encounterRepository.saveAll(toSave);
+        }
         // 业务分支处理。
         if (!locationUpdates.isEmpty()) {
             locationRepository.saveAll(locationUpdates);
         }
-        for (ConfirmDepartmentTransferCommand.ConfirmDepartmentTransferItemCommand item : items) {
+        for (ConfirmDepartmentTransferCommand.ConfirmDepartmentTransferItemCommand item : sortedItems) {
             domainEventPublisher.publish(new DepartmentTransferConfirmedEvent(
                 item.getEncounterId(), item.getTargetDepartmentId(), this.defaultNow(item.getEffectiveAt())));
         }
     }
 
     /**
-     * 住院出院医嘱开立（在科 → 待出院，{@code IN_PROGRESS} → {@code ON_HOLD}）。
+     * 住院出院医嘱开立（在科 → 待出院，{@code IN_PROGRESS} → {@code ON_HOLD}，GAP-ATD-006）。
      *
      * @param command 命令
      */
     public void dischargeInpatientEncounter(DischargeInpatientEncounterCommand command) {
         List<DischargeInpatientEncounterCommand.DischargeInpatientEncounterItemCommand> items = command.resolveItems();
-        Map<Long, Encounter> encounterMap = this.loadEncounterMap(
-            CommandBatchUtil.extractIds(items, DischargeInpatientEncounterCommand.DischargeInpatientEncounterItemCommand::getEncounterId));
+        List<DischargeInpatientEncounterCommand.DischargeInpatientEncounterItemCommand> sortedItems =
+            new ArrayList<>(items);
+        sortedItems.sort(Comparator.comparing(
+            DischargeInpatientEncounterCommand.DischargeInpatientEncounterItemCommand::getEncounterId,
+            Comparator.nullsLast(Comparator.naturalOrder())));
         List<Encounter> toSave = new ArrayList<>();
-        for (DischargeInpatientEncounterCommand.DischargeInpatientEncounterItemCommand item : items) {
-            Encounter encounter = this.requireEncounter(encounterMap, item.getEncounterId());
+        for (DischargeInpatientEncounterCommand.DischargeInpatientEncounterItemCommand item : sortedItems) {
+            Encounter encounter = this.requireEncounterForUpdate(
+                item.getEncounterId(), EncounterClass.IMP.getCode());
             encounter.assertClass(EncounterClass.IMP.getCode());
-            encounter.assertStatus(EncounterStatus.IN_PROGRESS.getCode());
+            if (!EncounterStatus.IN_PROGRESS.getCode().equals(encounter.getStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
+                    "仅已入科在院状态的住院就诊可开立出院医嘱");
+            }
             // BR-ENC-004：出院前必须存在负责医生参与者。
             this.assertDoctorParticipantExists(encounter.getId());
             // BR-ENC-006：出院前必须存在主诊断。
@@ -1039,35 +1076,74 @@ public class EncounterDomainService {
             encounter.setOutWayCode(item.getOutWayCode());
             toSave.add(encounter);
         }
-        encounterRepository.saveAll(toSave);
-        for (DischargeInpatientEncounterCommand.DischargeInpatientEncounterItemCommand item : items) {
-            Encounter encounter = this.requireEncounter(encounterMap, item.getEncounterId());
-            HospitalDischargedEvent event = new HospitalDischargedEvent(
-                encounter.getId(), encounter.getPatientId(), encounter.getOutWayCode(), null);
-            event.setStatusEnum(encounter.getStatusEnum());
-            event.setDischargeTypeEnum(CustomConstants.EncounterHistoryMilestoneName.DISCHARGE);
-            domainEventPublisher.publish(event);
+        if (!toSave.isEmpty()) {
+            encounterRepository.saveAll(toSave);
+            for (Encounter encounter : toSave) {
+                HospitalDischargedEvent event = new HospitalDischargedEvent(
+                    encounter.getId(), encounter.getPatientId(), encounter.getOutWayCode(), null);
+                event.setStatusEnum(encounter.getStatusEnum());
+                event.setDischargeTypeEnum(CustomConstants.EncounterHistoryMilestoneName.DISCHARGE);
+                domainEventPublisher.publish(event);
+            }
         }
     }
 
     /**
-     * 护士站办理出院：待出院 → 待出院结算（{@code ON_HOLD} → {@code PENDING}，DM-ADM-002 §6.1.22）。
+     * 撤销转科/出院过渡态（GAP-ATD-008：悲观行锁 + {@code ON_HOLD} → {@code IN_PROGRESS}）。
+     *
+     * @param command 命令
+     */
+    public void revertTransferOrDischargeHold(RevertTransferOrDischargeHoldCommand command) {
+        List<RevertTransferOrDischargeHoldCommand.RevertTransferOrDischargeHoldItemCommand> items =
+            command.resolveItems();
+        List<RevertTransferOrDischargeHoldCommand.RevertTransferOrDischargeHoldItemCommand> sortedItems =
+            new ArrayList<>(items);
+        sortedItems.sort(Comparator.comparing(
+            RevertTransferOrDischargeHoldCommand.RevertTransferOrDischargeHoldItemCommand::getEncounterId,
+            Comparator.nullsLast(Comparator.naturalOrder())));
+        List<Encounter> toSave = new ArrayList<>();
+        List<EncounterParticipant> participantsToSave = new ArrayList<>();
+        for (RevertTransferOrDischargeHoldCommand.RevertTransferOrDischargeHoldItemCommand item : sortedItems) {
+            Encounter encounter = this.requireEncounterForUpdate(
+                item.getEncounterId(), EncounterClass.IMP.getCode());
+            encounter.assertClass(EncounterClass.IMP.getCode());
+            boolean transferHold = Boolean.TRUE.equals(item.getTransferHold());
+            LocalDateTime revertedAt = this.defaultNow(item.getRevertedAt());
+            encounter.revertHoldToInProgress(!transferHold);
+            toSave.add(encounter);
+            if (transferHold) {
+                this.restoreParticipantsFromLatestCompletedBatch(
+                    item.getEncounterId(), revertedAt, participantsToSave);
+            }
+        }
+        if (!participantsToSave.isEmpty()) {
+            participantRepository.saveAll(participantsToSave);
+        }
+        if (!toSave.isEmpty()) {
+            encounterRepository.saveAll(toSave);
+        }
+    }
+
+    /**
+     * 护士站办理出院：待出院 → 待出院结算（{@code ON_HOLD} → {@code PENDING}，GAP-ATD-005）。
      *
      * <p>前置由应用层保证为「待出院」分流（非待转科）；本方法仅校验 {@code IMP+ON_HOLD}。
-     * 已为 {@code PENDING} 时幂等跳过。</p>
+     * 已为 {@code PENDING} 时幂等跳过。按就诊 id 升序悲观行锁后迁移。</p>
      *
      * @param command 命令
      */
     public void executeInpatientNurseDischarge(ExecuteInpatientNurseDischargeCommand command) {
         List<ExecuteInpatientNurseDischargeCommand.ExecuteInpatientNurseDischargeItemCommand> items =
             command.resolveItems();
-        Map<Long, Encounter> encounterMap = this.loadEncounterMap(
-            CommandBatchUtil.extractIds(
-                items,
-                ExecuteInpatientNurseDischargeCommand.ExecuteInpatientNurseDischargeItemCommand::getEncounterId));
+        List<ExecuteInpatientNurseDischargeCommand.ExecuteInpatientNurseDischargeItemCommand> sortedItems =
+            new ArrayList<>(items);
+        sortedItems.sort(Comparator.comparing(
+            ExecuteInpatientNurseDischargeCommand.ExecuteInpatientNurseDischargeItemCommand::getEncounterId,
+            Comparator.nullsLast(Comparator.naturalOrder())));
         List<Encounter> toSave = new ArrayList<>();
-        for (ExecuteInpatientNurseDischargeCommand.ExecuteInpatientNurseDischargeItemCommand item : items) {
-            Encounter encounter = this.requireEncounter(encounterMap, item.getEncounterId());
+        for (ExecuteInpatientNurseDischargeCommand.ExecuteInpatientNurseDischargeItemCommand item : sortedItems) {
+            Encounter encounter = this.requireEncounterForUpdate(
+                item.getEncounterId(), EncounterClass.IMP.getCode());
             encounter.assertClass(EncounterClass.IMP.getCode());
             if (EncounterStatus.PENDING.getCode().equals(encounter.getStatusEnum())) {
                 continue;
@@ -1097,7 +1173,7 @@ public class EncounterDomainService {
     }
 
     /**
-     * 住院出院财务全结：待结算 → 已结算（DM-ADM-002 §6.1.23，AS-IP-FIN-003 BR-IP-STL-003）。
+     * 住院出院财务全结：待结算 → 已结算（DM-ADM-002 §6.1.23，GAP-ATD-005 阶段 B）。
      *
      * <p>仅适用于 {@code IMP}；前置态须为 {@code PENDING}。中途结算不得调用本动作。</p>
      *
@@ -1107,9 +1183,8 @@ public class EncounterDomainService {
         if (command == null || command.getEncounterId() == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "住院就诊主键不能为空");
         }
-        Encounter encounter = encounterRepository.findById(command.getEncounterId())
-            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.ENCOUNTER_NOT_FOUND, "就诊记录不存在"));
-        encounter.assertClass(EncounterClass.IMP.getCode());
+        Encounter encounter = this.requireEncounterForUpdate(
+            command.getEncounterId(), EncounterClass.IMP.getCode());
         if (!EncounterStatus.PENDING.getCode().equals(encounter.getStatusEnum())) {
             throw new BusinessException(
                 ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
@@ -1137,9 +1212,7 @@ public class EncounterDomainService {
         if (encounterId == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "住院就诊主键不能为空");
         }
-        Encounter encounter = encounterRepository.findById(encounterId)
-            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.ENCOUNTER_NOT_FOUND, "就诊记录不存在"));
-        encounter.assertClass(EncounterClass.IMP.getCode());
+        Encounter encounter = this.requireEncounterForUpdate(encounterId, EncounterClass.IMP.getCode());
         if (!EncounterStatus.COMPLETED.getCode().equals(encounter.getStatusEnum())) {
             return;
         }
@@ -1149,25 +1222,28 @@ public class EncounterDomainService {
     }
 
     /**
-     * 出院召回（DM-ADM-002 §6.1.25，AS-IP-NUR-002 IF-IP-NUR-ATD-07）。
+     * 出院召回（DM-ADM-002 §6.1.25，AS-IP-NUR-002 IF-IP-NUR-ATD-07，GAP-ATD-005）。
      *
      * <p>仅 {@code DISCHARGED→REGISTERED} + INSERT 活动 {@code WARD}。
-     * 反结与撤销出院嘱由应用层 **AS-IP-FIN-004** 或 **ATD {@code RecallReverseSettleSupport}** 先行完成；本方法只迁移就诊主档与病区轨迹。</p>
+     * 反结与撤销出院嘱由应用层 **AS-IP-FIN-004** 或 **ATD {@code RecallReverseSettleSupport}** 先行完成；本方法悲观行锁后迁移就诊主档与病区轨迹。</p>
      *
      * @param command 召回命令
      */
     public void recallInpatientDischarge(RecallInpatientDischargeCommand command) {
         List<RecallInpatientDischargeCommand.RecallInpatientDischargeItemCommand> items = command.resolveItems();
-        Map<Long, Encounter> encounterMap = this.loadEncounterMap(
-            CommandBatchUtil.extractIds(
-                items,
-                RecallInpatientDischargeCommand.RecallInpatientDischargeItemCommand::getEncounterId));
+        List<RecallInpatientDischargeCommand.RecallInpatientDischargeItemCommand> sortedItems =
+            new ArrayList<>(items);
+        sortedItems.sort(Comparator.comparing(
+            RecallInpatientDischargeCommand.RecallInpatientDischargeItemCommand::getEncounterId,
+            Comparator.nullsLast(Comparator.naturalOrder())));
+        Map<Long, Encounter> encounterMap = new LinkedHashMap<>();
         List<Encounter> encountersToSave = new ArrayList<>();
         List<EncounterLocation> locationsToSave = new ArrayList<>();
         List<InpatientDischargeRecalledEvent> events = new ArrayList<>();
-        for (RecallInpatientDischargeCommand.RecallInpatientDischargeItemCommand item : items) {
-            Encounter encounter = this.requireEncounter(encounterMap, item.getEncounterId());
-            // 前置校验：仅住院线且处于已清床离院态。
+        for (RecallInpatientDischargeCommand.RecallInpatientDischargeItemCommand item : sortedItems) {
+            Encounter encounter = this.requireEncounterForUpdate(
+                item.getEncounterId(), EncounterClass.IMP.getCode());
+            encounterMap.put(encounter.getId(), encounter);
             encounter.assertClass(EncounterClass.IMP.getCode());
             String previousStatus = encounter.getStatusEnum();
             LocalDateTime recalledAt = this.defaultNow(item.getRecalledAt());
@@ -1175,7 +1251,6 @@ public class EncounterDomainService {
                 encounter.getId(), encounter.getPatientId());
             event.setPreviousStatusEnum(previousStatus);
             if (EncounterStatus.DISCHARGED.getCode().equals(previousStatus)) {
-                // 已清床轨：回到待入科，须写入末次病区活动轨迹供二次分床。
                 if (item.getWardLocationId() == null) {
                     throw new BusinessException(
                         ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
@@ -1209,19 +1284,24 @@ public class EncounterDomainService {
     }
 
     /**
-     * 清床。
+     * 清床离院（{@code COMPLETED} → {@code DISCHARGED}，GAP-ATD-005）。
      *
      * @param command 命令
      */
     public void clearDischargedBed(ClearDischargedBedCommand command) {
         List<ClearDischargedBedCommand.ClearDischargedBedItemCommand> items = command.resolveItems();
-        Map<Long, Encounter> encounterMap = this.loadEncounterMap(
-            CommandBatchUtil.extractIds(items, ClearDischargedBedCommand.ClearDischargedBedItemCommand::getEncounterId));
+        List<ClearDischargedBedCommand.ClearDischargedBedItemCommand> sortedItems = new ArrayList<>(items);
+        sortedItems.sort(Comparator.comparing(
+            ClearDischargedBedCommand.ClearDischargedBedItemCommand::getEncounterId,
+            Comparator.nullsLast(Comparator.naturalOrder())));
+        Map<Long, Encounter> encounterMap = new LinkedHashMap<>();
         List<EncounterLocation> toSave = new ArrayList<>();
         List<EncounterParticipant> participants = new ArrayList<>();
         List<Encounter> encountersToSave = new ArrayList<>();
-        for (ClearDischargedBedCommand.ClearDischargedBedItemCommand item : items) {
-            Encounter encounter = this.requireEncounter(encounterMap, item.getEncounterId());
+        for (ClearDischargedBedCommand.ClearDischargedBedItemCommand item : sortedItems) {
+            Encounter encounter = this.requireEncounterForUpdate(
+                item.getEncounterId(), EncounterClass.IMP.getCode());
+            encounterMap.put(encounter.getId(), encounter);
             encounter.assertClearBedAllowed();
             LocalDateTime clearedAt = this.defaultNow(item.getClearedAt());
             List<EncounterLocation> activeLocations = locationRepository
@@ -1686,6 +1766,23 @@ public class EncounterDomainService {
     }
 
     /**
+     * 按主键与类别悲观写锁加载就诊（住院登记、出院/清床/召回等写路径硬门禁）。
+     *
+     * @param encounterId 就诊主键
+     * @param classEnum   就诊类别 code
+     * @return 就诊聚合根
+     */
+    private Encounter requireEncounterForUpdate(Long encounterId, String classEnum) {
+        Encounter encounter = encounterRepository
+            .findByIdAndClassEnumAndIsDeletedFalse(encounterId, classEnum)
+            .orElse(null);
+        if (encounter == null) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_NOT_FOUND, "就诊记录不存在");
+        }
+        return encounter;
+    }
+
+    /**
      * 判断就诊是否存在活动床位级位置（已分床，DM §6.1.23 取消门禁）。
      *
      * @param encounterId 住院就诊主键
@@ -1841,6 +1938,43 @@ public class EncounterDomainService {
             participant.setRoleCode(row.getRoleCode().trim());
             participant.setPractitionerId(row.getPractitionerId());
             participant.markActive(effectiveAt);
+            sink.add(participant);
+        }
+    }
+
+    /**
+     * 转科撤销：按最近一次收口批次 INSERT 活动参与者（对齐 {@code initiateDepartmentTransfer} 收口逆操作）。
+     */
+    private void restoreParticipantsFromLatestCompletedBatch(
+        Long encounterId,
+        LocalDateTime revertedAt,
+        List<EncounterParticipant> sink) {
+        List<EncounterParticipant> completed = participantRepository.findAllByEncounterIdAndStatusEnum(
+            encounterId, EncounterActivityStatus.COMPLETED.getCode());
+        if (completed.isEmpty()) {
+            return;
+        }
+        LocalDateTime latestEnd = null;
+        for (EncounterParticipant row : completed) {
+            if (row.getEndTime() == null) {
+                continue;
+            }
+            if (latestEnd == null || row.getEndTime().isAfter(latestEnd)) {
+                latestEnd = row.getEndTime();
+            }
+        }
+        if (latestEnd == null) {
+            return;
+        }
+        for (EncounterParticipant old : completed) {
+            if (!latestEnd.equals(old.getEndTime())) {
+                continue;
+            }
+            EncounterParticipant participant = new EncounterParticipant();
+            participant.setEncounterId(encounterId);
+            participant.setRoleCode(old.getRoleCode());
+            participant.setPractitionerId(old.getPractitionerId());
+            participant.markActive(revertedAt);
             sink.add(participant);
         }
     }

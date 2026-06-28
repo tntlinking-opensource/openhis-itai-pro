@@ -22,6 +22,7 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
 import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.assembler.NurseStationOrderAuditListAssembler;
+import com.openhis.health.application.inpatient.support.InpatientTransferDischargeHoldOrchestrationSupport;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditPatientGroupDto;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditWriteItemDto;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.mapper.NurseStationOrderAuditMapper;
@@ -65,6 +66,7 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -81,7 +83,7 @@ import java.util.Set;
  *
  * <p>待校列表：管理病区内多选患者的待审/已审医嘱，按 Tab 与长临筛选。</p>
  * <p>校对：药品/诊疗审核通过；转科/出院类医嘱联动就诊状态。</p>
- * <p>退回：医嘱退回草稿，必要时同步撤销转科/出院编排。</p>
+ * <p>退回：未校对（ACTIVE）医嘱退回草稿；若该诊疗曾为转科/出院里程碑且就诊处于 {@code ON_HOLD}，同步撤销过渡编排（GAP-ATD-008）。</p>
  */
 @Slf4j
 @Service
@@ -102,6 +104,8 @@ public class NurseStationOrderAuditAppService {
     private final EncounterDomainService encounterDomainService;
     private final NurseStationOrderAuditMapper nurseStationOrderAuditMapper;
     private final NurseStationOrderAuditListAssembler nurseStationOrderAuditListAssembler;
+
+    private final InpatientTransferDischargeHoldOrchestrationSupport transferDischargeHoldOrchestrationSupport;
 
     /** 中药 Tab 筛选与整方扩行。 */
     private final InpatientNurseStationTcmSupport inpatientNurseStationTcmSupport;
@@ -224,8 +228,21 @@ public class NurseStationOrderAuditAppService {
             processed = processed + 1;
         }
         for (Long serviceRequestId : verifiedServiceRequestIds) {
-            this.orchestrateEncounterAfterServiceVerified(
-                serviceRequestId, serviceDetailById, operatorId, checkTime);
+            try {
+                this.orchestrateEncounterAfterServiceVerified(
+                    serviceRequestId, serviceDetailById, operatorId, checkTime);
+            } catch (BusinessException ex) {
+                if (ErrorCodeConstants.ENCOUNTER_INVALID_STATUS.equals(ex.getErrorCode())) {
+                    throw new BusinessException(
+                        InpatientNurseStationConstants.EX_IP_AUD_203,
+                        "患者流转状态已变更，请刷新后重试");
+                }
+                throw ex;
+            } catch (OptimisticLockingFailureException ex) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_AUD_203,
+                    "患者流转状态已变更，请刷新后重试");
+            }
         }
         return nurseStationOrderAuditMapper.toVerifyNurseStationOrdersResponse(processed);
     }
@@ -235,7 +252,7 @@ public class NurseStationOrderAuditAppService {
      *
      * @param request 待退回项与统一原因
      * @return 处理结果
-     * @throws BusinessException EX-IP-AUD-301/302
+     * @throws BusinessException EX-IP-AUD-301/302/203
      */
     public RejectNurseStationOrdersResponse rejectNurseStationOrders(RejectNurseStationOrdersRequest request) {
         if (request == null) {
@@ -269,6 +286,7 @@ public class NurseStationOrderAuditAppService {
             medicationRequestDomainService.rejectMedicationOrder(command);
             processed = processed + 1;
         }
+        List<Long> rejectedServiceRequestIds = new ArrayList<>();
         for (NurseStationOrderAuditWriteItemDto item : items) {
             if (!ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(item.getOrderType())) {
                 continue;
@@ -277,7 +295,15 @@ public class NurseStationOrderAuditAppService {
                 nurseStationOrderAuditMapper.toRejectServiceRequestToDraftCommand(
                     item, reason, operatorId, performerCheckId, checkTime);
             serviceRequestDomainService.rejectServiceRequestToDraft(command);
+            rejectedServiceRequestIds.add(item.getRequestId());
             processed = processed + 1;
+        }
+        for (Long serviceRequestId : rejectedServiceRequestIds) {
+            transferDischargeHoldOrchestrationSupport.tryRevertHoldAfterServiceRequestReverted(
+                serviceRequestId,
+                operatorId,
+                checkTime,
+                InpatientNurseStationConstants.EX_IP_AUD_203);
         }
         return nurseStationOrderAuditMapper.toRejectNurseStationOrdersResponse(processed);
     }
@@ -526,11 +552,49 @@ public class NurseStationOrderAuditAppService {
             EncounterClass.IMP.getCode(),
             InpatientNurseStationConstants.EX_IP_AUD_203,
             "仅住院就诊允许转科/出院联动");
-        // 已待转科/待出院（ON_HOLD）时幂等跳过，避免重复编排。
-        if (!EncounterStatus.IN_PROGRESS.getCode().equals(encounter.getStatusEnum())) {
+        boolean isTransfer = InpatientNurseStationConstants.SERVICE_CATEGORY_TRANSFER.equals(category);
+        boolean isDischarge = InpatientNurseStationConstants.SERVICE_CATEGORY_DISCHARGE.equals(category);
+        if (!isTransfer && !isDischarge) {
             return;
         }
-        if (InpatientNurseStationConstants.SERVICE_CATEGORY_TRANSFER.equals(category)) {
+        String statusCode = encounter.getStatusEnum();
+        if (EncounterStatus.IN_PROGRESS.getCode().equals(statusCode)) {
+            if (serviceRequestQueryService.hasVerifiedOppositeTransferOrDischargeRequest(
+                encounterId, category, serviceRequestId)) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_AUD_203,
+                    "同就诊已存在已校对的转科/出院医嘱，无法重复编排");
+            }
+            this.executeTransferOrDischargeOrchestration(
+                isTransfer, encounterId, encounter, serviceRequestId, serviceDetailById, operatorId, checkTime);
+            return;
+        }
+        if (EncounterStatus.ON_HOLD.getCode().equals(statusCode)) {
+            Long initiatingRequestId = this.resolveOnHoldInitiatingServiceRequestId(encounterId, isTransfer);
+            if (initiatingRequestId != null && initiatingRequestId.equals(serviceRequestId)) {
+                return;
+            }
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_AUD_203,
+                "患者已处于转科/出院过渡态，无法重复编排");
+        }
+        throw new BusinessException(
+            InpatientNurseStationConstants.EX_IP_AUD_203,
+            "当前就诊状态不允许转科/出院联动");
+    }
+
+    /**
+     * 执行转科或出院就诊编排（调用方已确认 {@code IN_PROGRESS}）。
+     */
+    private void executeTransferOrDischargeOrchestration(
+        boolean isTransfer,
+        Long encounterId,
+        EncounterDetailQueryModel encounter,
+        Long serviceRequestId,
+        Map<Long, ServiceRequestListModel> serviceDetailById,
+        Long operatorId,
+        LocalDateTime checkTime) {
+        if (isTransfer) {
             Long toDepartmentId = this.resolveTransferTargetOrganizationId(encounterId, serviceRequestId);
             if (toDepartmentId == null) {
                 throw new BusinessException(
@@ -546,29 +610,53 @@ public class NurseStationOrderAuditAppService {
                     checkTime));
             return;
         }
-        if (InpatientNurseStationConstants.SERVICE_CATEGORY_DISCHARGE.equals(category)) {
-            String outWayCode = this.resolveDischargeOutWayCode(encounterId, serviceRequestId);
-            if (StringUtils.isBlank(outWayCode)) {
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_AUD_203,
-                    "出院方式未配置");
-            }
-            LocalDateTime dischargedAt = checkTime;
-            String summary = null;
-            if (detail != null) {
-                // AS-SDD：dischargedAt=occurrenceStartTime（空则 now）；列表行用 reqAuthoredTime 对齐开立时刻。
-                if (detail.getReqAuthoredTime() != null) {
-                    dischargedAt = detail.getReqAuthoredTime();
-                }
-                summary = detail.getRemark();
-                if (StringUtils.isBlank(summary)) {
-                    summary = detail.getEntrustContent();
-                }
-            }
-            encounterDomainService.dischargeInpatientEncounter(
-                nurseStationOrderAuditMapper.toDischargeInpatientEncounterCommand(
-                    encounterId, outWayCode, dischargedAt, summary, operatorId));
+        String outWayCode = this.resolveDischargeOutWayCode(encounterId, serviceRequestId);
+        if (StringUtils.isBlank(outWayCode)) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_AUD_203,
+                "出院方式未配置");
         }
+        LocalDateTime dischargedAt = checkTime;
+        String summary = null;
+        ServiceRequestListModel detail = serviceDetailById.get(serviceRequestId);
+        if (detail != null) {
+            // AS-SDD：dischargedAt=occurrenceStartTime（空则 now）；列表行用 reqAuthoredTime 对齐开立时刻。
+            if (detail.getReqAuthoredTime() != null) {
+                dischargedAt = detail.getReqAuthoredTime();
+            }
+            summary = detail.getRemark();
+            if (StringUtils.isBlank(summary)) {
+                summary = detail.getEntrustContent();
+            }
+        }
+        encounterDomainService.dischargeInpatientEncounter(
+            nurseStationOrderAuditMapper.toDischargeInpatientEncounterCommand(
+                encounterId, outWayCode, dischargedAt, summary, operatorId));
+    }
+
+    /**
+     * 解析 {@code ON_HOLD} 过渡态由哪条诊疗申请发起（里程碑 requestId 对齐）。
+     *
+     * @param encounterId 就诊主键
+     * @param transfer    为 true 查转科里程碑，否则查出院里程碑
+     * @return 发起申请主键；未命中时为 null
+     */
+    private Long resolveOnHoldInitiatingServiceRequestId(Long encounterId, boolean transfer) {
+        String milestoneName = transfer
+            ? CustomConstants.EncounterHistoryMilestoneName.TRANSFER
+            : CustomConstants.EncounterHistoryMilestoneName.DISCHARGE;
+        List<EncounterHistoryMilestoneQueryModel> milestones =
+            encounterHistoryQueryService.listMilestonesByEncounter(encounterId);
+        for (EncounterHistoryMilestoneQueryModel milestone : milestones) {
+            if (milestone == null) {
+                continue;
+            }
+            if (!milestoneName.equals(milestone.getName())) {
+                continue;
+            }
+            return milestone.getRequestId();
+        }
+        return null;
     }
 
     /**

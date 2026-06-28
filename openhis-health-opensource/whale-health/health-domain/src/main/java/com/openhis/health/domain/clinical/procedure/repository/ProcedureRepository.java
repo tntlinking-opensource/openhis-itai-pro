@@ -21,6 +21,7 @@ import com.openhis.health.domain.clinical.procedure.entity.Procedure;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -77,4 +78,13 @@ public interface ProcedureRepository extends JpaRepository<Procedure, Long>, Jpa
      * @return 执行记录列表
      */
     List<Procedure> findAllByIdIn(Collection<Long> ids);
+
+    /**
+     * 是否存在仍占用计划点的终态执行记录（GAP-EXE-002 域层门禁）。
+     */
+    boolean existsByRequestIdAndRequestTableAndOccurrenceTimeAndOccurrenceSlotActiveTrueAndStatusEnumInAndIsDeletedFalse(
+        Long requestId,
+        String requestTable,
+        LocalDateTime occurrenceTime,
+        Collection<String> statusEnums);
 }

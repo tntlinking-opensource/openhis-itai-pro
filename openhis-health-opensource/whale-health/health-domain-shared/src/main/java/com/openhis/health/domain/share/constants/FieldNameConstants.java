@@ -399,6 +399,10 @@ public interface FieldNameConstants {
      */
     String INVENTORY_STATUS_ENUM = "inventoryStatusEnum";
     /**
+     * 源库存项主键（快照静表 {@code inventory_item_id}）。
+     */
+    String INVENTORY_ITEM_ID = "inventoryItemId";
+    /**
      * 发票业务流水号。
      */
     String INVOICE_BUS_NO = "invoiceBusNo";
@@ -435,6 +439,14 @@ public interface FieldNameConstants {
      */
     String LIMIT_PRICE = "limitPrice";
     /**
+     * 进价行总额（快照静表 {@code line_cost_total}）。
+     */
+    String LINE_COST_TOTAL = "lineCostTotal";
+    /**
+     * 售价行总额（快照静表 {@code line_price_total}）。
+     */
+    String LINE_PRICE_TOTAL = "linePriceTotal";
+    /**
      * 位置标识。
      */
     String LOCATION_ID = "locationId";
@@ -442,6 +454,14 @@ public interface FieldNameConstants {
      * 生产或库存批号。
      */
     String LOT_NUMBER = "lotNumber";
+    /**
+     * 批号进价（快照静表 {@code lot_number_cost_amount}）。
+     */
+    String LOT_NUMBER_COST_AMOUNT = "lotNumberCostAmount";
+    /**
+     * 批号售价（快照静表 {@code lot_number_price_amount}）。
+     */
+    String LOT_NUMBER_PRICE_AMOUNT = "lotNumberPriceAmount";
     /**
      * 收费项定价行批次号（{@code adm_charge_item_definition.lot_no}，JPA 属性 {@code lotNo}）。
      */
@@ -459,6 +479,10 @@ public interface FieldNameConstants {
      */
     String MEDICATION_ID = "medicationId";
     /**
+     * 药品分类字典 code（快照静表 {@code medication_category_code} 等）。
+     */
+    String MEDICATION_CATEGORY_CODE = "medicationCategoryCode";
+    /**
      * 药品医嘱申请主键（{@code med_medication_dispense.med_req_id}）。
      */
     String MED_REQ_ID = "medReqId";
@@ -470,6 +494,10 @@ public interface FieldNameConstants {
      * 耗材定义标识（发放聚合等设备侧字段名）。
      */
     String DEVICE_DEF_ID = "deviceDefId";
+    /**
+     * 耗材分类字典 code（快照静表 {@code device_category_code} 等）。
+     */
+    String DEVICE_CATEGORY_CODE = "deviceCategoryCode";
     /**
      * 商品名称。
      */
@@ -783,6 +811,10 @@ public interface FieldNameConstants {
      */
     String REGISTRAR_NAME = "registrarName";
     /**
+     * 剩余过期天数（快照写入时刻冻结，{@code remaining_days}）。
+     */
+    String REMAINING_DAYS = "remainingDays";
+    /**
      * 挂号所选医师标识。
      */
     String REGISTRATION_DOCTOR_ID = "registrationDoctorId";
@@ -927,6 +959,22 @@ public interface FieldNameConstants {
      */
     String START_TIME = "startTime";
     /**
+     * 提交审批时刻（调价单 {@code submit_time}）。
+     */
+    String SUBMIT_TIME = "submitTime";
+    /**
+     * 制单/申请时刻（调价单 {@code adjustment_time}）。
+     */
+    String ADJUSTMENT_TIME = "adjustmentTime";
+    /**
+     * 审批通过/生效时刻（调价单 {@code approve_time}）。
+     */
+    String APPROVE_TIME = "approveTime";
+    /**
+     * 状态码（prt_template.status / prt_print_event_log.status 等通用列名）。
+     */
+    String STATUS = "status";
+    /**
      * 状态枚举码。
      */
     String STATUS_ENUM = "statusEnum";
@@ -954,6 +1002,10 @@ public interface FieldNameConstants {
      * 汇总主表标识。
      */
     String SUMMARY_ID = "summaryId";
+    /**
+     * 快照批次完成时刻（静表 {@code snapshot_time}）。
+     */
+    String SNAPSHOT_TIME = "snapshotTime";
     /**
      * 汇总单号。
      */
@@ -1102,6 +1154,10 @@ public interface FieldNameConstants {
      * 病区标识。
      */
     String WARD_ID = "wardId";
+    /**
+     * 库房主键（快照静表 {@code warehouse_id}，不含货位）。
+     */
+    String WAREHOUSE_ID = "warehouseId";
     /**
      * 病区名称。
      */

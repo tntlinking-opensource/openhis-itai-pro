@@ -17,13 +17,12 @@
     <whale.framework.version>2.0.2-SNAPSHOT</whale.framework.version>
     <whale.health.version>2.0.2-SNAPSHOT</whale.health.version>
     <whale.emr.version>2.0.2-SNAPSHOT</whale.emr.version>
-    <whale.mrms.version>2.0.2-SNAPSHOT</whale.mrms.version>
     <whale.chs.version>2.0.2-SNAPSHOT</whale.chs.version>
     <whale.elep.version>2.0.2-SNAPSHOT</whale.elep.version>
-    <whale.report.version>2.0.2-SNAPSHOT</whale.report.version>
     <whale.booking.version>2.0.2-SNAPSHOT</whale.booking.version>
     <whale.einvoice.boss.version>2.0.2-SNAPSHOT</whale.einvoice.boss.version>
     <whale.unionpay.bpc.version>2.0.2-SNAPSHOT</whale.unionpay.bpc.version>
+    <whale.crb.version>2.0.2-SNAPSHOT</whale.crb.version>
     <mapstruct.version>1.5.5.Final</mapstruct.version>
     <bouncycastle.version>1.80</bouncycastle.version>
   </properties>
@@ -100,32 +99,6 @@
         <groupId>com.openhis</groupId>
         <artifactId>health-app</artifactId>
         <version>${whale.health.version}</version>
-      </dependency>
-      <!-- SqlReport -->
-      <dependency>
-        <groupId>com.openhis</groupId>
-        <artifactId>report-contracts</artifactId>
-        <version>${whale.report.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.openhis</groupId>
-        <artifactId>report-domain</artifactId>
-        <version>${whale.report.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.openhis</groupId>
-        <artifactId>report-adapter</artifactId>
-        <version>${whale.report.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.openhis</groupId>
-        <artifactId>report-application</artifactId>
-        <version>${whale.report.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.openhis</groupId>
-        <artifactId>report-starter</artifactId>
-        <version>${whale.report.version}</version>
       </dependency>
       <!-- Booking -->
       <dependency>
@@ -210,6 +183,7 @@
         <artifactId>unionpay-bpc-starter</artifactId>
         <version>${whale.unionpay.bpc.version}</version>
       </dependency>
+      <!-- CRB -->
       <!-- EMR -->
       <dependency>
         <groupId>com.openhis</groupId>
@@ -235,32 +209,6 @@
         <groupId>com.openhis</groupId>
         <artifactId>emr-starter</artifactId>
         <version>${whale.emr.version}</version>
-      </dependency>
-      <!-- MRMS -->
-      <dependency>
-        <groupId>com.openhis</groupId>
-        <artifactId>mrms-contracts</artifactId>
-        <version>${whale.mrms.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.openhis</groupId>
-        <artifactId>mrms-domain</artifactId>
-        <version>${whale.mrms.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.openhis</groupId>
-        <artifactId>mrms-adapter</artifactId>
-        <version>${whale.mrms.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.openhis</groupId>
-        <artifactId>mrms-application</artifactId>
-        <version>${whale.mrms.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>com.openhis</groupId>
-        <artifactId>mrms-starter</artifactId>
-        <version>${whale.mrms.version}</version>
       </dependency>
       <!-- CHS Jilin -->
       <dependency>

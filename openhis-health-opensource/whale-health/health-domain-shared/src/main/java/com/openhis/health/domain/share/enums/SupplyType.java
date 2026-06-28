@@ -238,4 +238,41 @@ public enum SupplyType implements EnumInterface {
         }
         return false;
     }
+
+    /**
+     * 是否属于须「财务审批」岗位才能 agree/reject 的动账类供应单（B.10.8.1 持久化 {@code type_enum} 白名单）。
+     *
+     * <p>纯物流调拨、出入库、盘点、药房/科室退库等不在此列；调价单走独立域审批 gate。</p>
+     *
+     * @param typeEnumCode 持久化 {@link #getCode()}；空白视为否
+     * @return 命中动账白名单时为 {@code true}
+     */
+    public static boolean requiresFinanceApproval(String typeEnumCode) {
+        if (typeEnumCode == null || typeEnumCode.isBlank()) {
+            return false;
+        }
+        String trimmed = typeEnumCode.trim();
+        if (CABINET_PURCHASE_ORDER.code.equals(trimmed)) {
+            return true;
+        }
+        if (CABINET_INBOUND_RECEIPT.code.equals(trimmed)) {
+            return true;
+        }
+        if (CABINET_RETURN_TO_SUPPLIER.code.equals(trimmed)) {
+            return true;
+        }
+        if (CABINET_RETURN_FROM_DOWNSTREAM.code.equals(trimmed)) {
+            return true;
+        }
+        if (CABINET_GAIN_LOSS.code.equals(trimmed)) {
+            return true;
+        }
+        if (PHARMACY_GAIN_LOSS.code.equals(trimmed)) {
+            return true;
+        }
+        if (DEPT_GAIN_LOSS.code.equals(trimmed)) {
+            return true;
+        }
+        return false;
+    }
 }

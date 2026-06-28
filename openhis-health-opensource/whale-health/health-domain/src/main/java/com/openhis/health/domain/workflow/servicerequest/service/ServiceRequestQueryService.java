@@ -427,6 +427,82 @@ public class ServiceRequestQueryService {
     }
 
     /**
+     * 就诊是否已有已校对的异类转科/出院诊疗（校对联动硬门禁，GAP-ATD-006 阶段 C）。
+     *
+     * @param encounterId        就诊主键
+     * @param categoryEnum       当前校对类别（{@code 32} 转科 / {@code 34} 出院）
+     * @param excludingRequestId 排除的申请主键（当前正在校对）
+     * @return 存在异类已校对申请时为 true
+     * @throws BusinessException 就诊主键为空
+     */
+    public boolean hasVerifiedOppositeTransferOrDischargeRequest(
+        Long encounterId,
+        String categoryEnum,
+        Long excludingRequestId) {
+        if (encounterId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "校验转科/出院异类已校对时 encounterId 不能为空");
+        }
+        String oppositeCategory;
+        if ("32".equals(categoryEnum)) {
+            oppositeCategory = "34";
+        } else if ("34".equals(categoryEnum)) {
+            oppositeCategory = "32";
+        } else {
+            return false;
+        }
+        List<String> categories = new ArrayList<>();
+        categories.add(oppositeCategory);
+        List<ServiceRequest> requests =
+            serviceRequestRepository.findByEncounterIdAndCategoryEnumIn(encounterId, categories);
+        for (ServiceRequest request : requests) {
+            if (request == null || request.getId() == null) {
+                continue;
+            }
+            if (excludingRequestId != null && excludingRequestId.equals(request.getId())) {
+                continue;
+            }
+            if (RequestStatus.VERIFIED.getCode().equals(request.getStatusEnum())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 就诊是否仍有已校对的转科/出院诊疗（逆向编排 Pre 门禁，GAP-ATD-008）。
+     *
+     * @param encounterId        就诊主键
+     * @param excludingRequestId 排除的申请主键（当前正在撤销）
+     * @return 存在其它已校对转科/出院申请时为 true
+     */
+    public boolean hasVerifiedTransferOrDischargeRequest(Long encounterId, Long excludingRequestId) {
+        if (encounterId == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "校验转科/出院已校对时 encounterId 不能为空");
+        }
+        List<String> categories = new ArrayList<>();
+        categories.add("32");
+        categories.add("34");
+        List<ServiceRequest> requests =
+            serviceRequestRepository.findByEncounterIdAndCategoryEnumIn(encounterId, categories);
+        for (ServiceRequest request : requests) {
+            if (request == null || request.getId() == null) {
+                continue;
+            }
+            if (excludingRequestId != null && excludingRequestId.equals(request.getId())) {
+                continue;
+            }
+            if (RequestStatus.VERIFIED.getCode().equals(request.getStatusEnum())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 按就诊主键集合与请求状态批量查询诊疗申请（只读；供应用层批量计数等编排）。
      *
      * @param encounterIds 就诊主键集合

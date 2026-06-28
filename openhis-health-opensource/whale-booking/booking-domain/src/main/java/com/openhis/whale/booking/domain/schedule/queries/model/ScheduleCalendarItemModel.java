@@ -59,4 +59,10 @@ public class ScheduleCalendarItemModel {
 
     /** 替诊原因。 */
     private String substituteReason;
+
+    /** 来源 T2 日排班模板主键。 */
+    private Long sourceScheduleTemplateId;
+
+    /** 关联 T1 放号时段模板主键。 */
+    private Long slotProvisionTemplateId;
 }

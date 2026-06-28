@@ -21,6 +21,7 @@ import com.openhis.health.domain.administration.devicedefinition.service.DeviceD
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.queries.WarehouseInventoryDetailPageQuery;
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -76,6 +77,24 @@ public class InventoryCatalogFilterSupport {
                 query.setResolvedDeviceDefinitionIds(devByLv);
             }
         }
+    }
+
+    /**
+     * 将关键字解析为药品/耗材定义主键列表并写入 {@link WarehouseInventoryDetailPageQuery}（与 openhis 编码/商品名检索对齐）。
+     *
+     * @param query 药库库存明细筛选入参（原地写入 resolved*ForKeyword 字段）
+     */
+    public void enrichKeywordDefinitionIds(WarehouseInventoryDetailPageQuery query) {
+        if (query == null) {
+            return;
+        }
+        if (StringUtils.isBlank(query.getKeyword())) {
+            return;
+        }
+        query.setResolvedMedicationDefinitionIdsForKeyword(
+            this.medicationDefinitionQueryService.listIdsByInventoryDetailKeyword(query.getKeyword()));
+        query.setResolvedDeviceDefinitionIdsForKeyword(
+            this.deviceDefinitionQueryService.listIdsByInventoryDetailKeyword(query.getKeyword()));
     }
 
     /**

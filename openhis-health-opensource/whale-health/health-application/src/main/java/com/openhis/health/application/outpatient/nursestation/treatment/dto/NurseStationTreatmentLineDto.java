@@ -209,6 +209,30 @@ public class NurseStationTreatmentLineDto {
     private Integer dispensePerDuration;
 
     /**
+     * 是否输液/注射相关（**仅药品**；优先 {@code med_medication_request.infusion_flag}，未落库时回落 {@code med_medication_definition.inject_flag}）。
+     */
+    @Schema(description = "是否输液/注射相关")
+    private Boolean infusionFlag;
+
+    /**
+     * 输液/注射相关展示（是/否）。
+     */
+    @Schema(description = "输液/注射相关展示")
+    private String infusionFlagText;
+
+    /**
+     * 是否皮试药（**仅药品**；持久化 {@code med_medication_request.skin_test_flag}）。
+     */
+    @Schema(description = "是否皮试药")
+    private Boolean skinTestFlag;
+
+    /**
+     * 是否中药医嘱（**仅药品**；持久化 {@code med_medication_request.tcm_flag}）。
+     */
+    @Schema(description = "是否中药医嘱")
+    private Boolean tcmFlag;
+
+    /**
      * 仅诊疗：计划执行次数。
      */
     @Schema(description = "仅诊疗：计划执行次数")

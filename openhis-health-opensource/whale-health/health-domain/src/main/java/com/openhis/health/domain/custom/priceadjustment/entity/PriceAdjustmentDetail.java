@@ -1,0 +1,88 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.openhis.health.domain.custom.priceadjustment.entity;
+
+import com.openhis.whale.core.domain.BaseAuditedEntity;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.math.BigDecimal;
+
+/**
+ * 调价批号明细行（DM-CUS-011 v2，表 {@code cus_price_adjustment_detail}）。
+ *
+ * <p>药品耗材：按批号多行快照数量与双侧调前价；诊疗：一对一仅存调前售价（占位批号 {@code -}、数量 1）。</p>
+ */
+@Getter
+@Setter
+@Entity
+@Table(name = "cus_price_adjustment_detail")
+public class PriceAdjustmentDetail extends BaseAuditedEntity {
+
+    /** 调价项目行主键。 */
+    @Column(name = "adjustment_id", nullable = false)
+    private Long adjustmentId;
+
+    /** 批号。 */
+    @Column(name = "lot_number", nullable = false)
+    private String lotNumber;
+
+    /** 影响数量（拆零）。 */
+    @Column(name = "quantity", nullable = false)
+    private BigDecimal quantity;
+
+    /** 调前进价。 */
+    @Column(name = "old_purchase_amount")
+    private BigDecimal oldPurchaseAmount;
+
+    /** 调前售价。 */
+    @Column(name = "old_selling_amount")
+    private BigDecimal oldSellingAmount;
+
+    /** 进价盈亏。 */
+    @Column(name = "purchase_impact")
+    private BigDecimal purchaseImpact;
+
+    /** 售价盈亏。 */
+    @Column(name = "selling_impact")
+    private BigDecimal sellingImpact;
+
+    /**
+     * 按主行目标价重算盈亏（BR-PRC-013）。
+     *
+     * @param newPurchaseAmount 目标进价，空则不算进价盈亏
+     * @param newSellingAmount  目标售价，空则不算售价盈亏
+     */
+    public void recalculateImpact(BigDecimal newPurchaseAmount, BigDecimal newSellingAmount) {
+        if (newPurchaseAmount != null && this.oldPurchaseAmount != null && this.quantity != null) {
+            BigDecimal delta = newPurchaseAmount.subtract(this.oldPurchaseAmount);
+            this.purchaseImpact = delta.multiply(this.quantity);
+        } else {
+            this.purchaseImpact = null;
+        }
+        if (newSellingAmount != null && this.oldSellingAmount != null && this.quantity != null) {
+            BigDecimal delta = newSellingAmount.subtract(this.oldSellingAmount);
+            this.sellingImpact = delta.multiply(this.quantity);
+        } else {
+            this.sellingImpact = null;
+        }
+    }
+}

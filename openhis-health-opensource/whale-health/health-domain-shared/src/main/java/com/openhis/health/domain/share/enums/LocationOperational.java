@@ -28,7 +28,11 @@ public enum LocationOperational implements EnumInterface {
     /**
      * NOT_IN_USE。
      */
-    NOT_IN_USE(0L, "NOT_IN_USE", "未使用", "", 2L);
+    NOT_IN_USE(0L, "NOT_IN_USE", "未使用", "", 2L),
+    /**
+     * RESERVED（床位预约预留，GAP-ATD-007）。
+     */
+    RESERVED(0L, "RESERVED", "预留", "", 3L);
 
     private final Long codeSystemId;
     private final String code;

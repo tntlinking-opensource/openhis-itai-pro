@@ -156,14 +156,22 @@ public class PaymentReconciliationDomainService {
         // Pre：按主键加载支付主记录，不存在则抛出业务异常
         PaymentReconciliation payment = this.mustGetPayment(cmd.getPaymentId());
         payment.assertStatusTransitionAllowed(PaymentStatus.DRAFT);
-        payment.setStatusEnum(PaymentStatus.SUCCESS);
-        payment.setOutcomeEnum(cmd.getOutcomeEnum());
+        int updated = paymentRepository.updateSettleFieldsWhereIdAndSourceStatus(
+            cmd.getPaymentId(),
+            PaymentStatus.SUCCESS,
+            PaymentStatus.DRAFT,
+            cmd.getOutcomeEnum(),
+            cmd.getBillDate());
+        if (updated != 1) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_STATUS,
+                "支付草稿状态非法或已被结算");
+        }
         List<PaymentYbSettlementItemCommand> ybItems = this.persistYbSettlements(payment.getId(), cmd.getYbSettlements());
-        payment.setBillDate(cmd.getBillDate());
-        paymentRepository.save(payment);
         if (cmd.getPayReceiptDetails() != null) {
             this.replaceDetails(payment.getId(), cmd.getPayReceiptDetails());
         }
+        payment = this.mustGetPayment(cmd.getPaymentId());
         OutpatientPaymentSettledEvent settledEvent = new OutpatientPaymentSettledEvent(
             payment.getId(), payment.getEncounterId(), payment.getChargeItemIds(),
             payment.getDisplayAmount(), payment.getBillDate(), payment.getEntererId());
@@ -181,11 +189,19 @@ public class PaymentReconciliationDomainService {
     public Long settleInpatientPayment(SettleInpatientPaymentCommand cmd) {
         PaymentReconciliation payment = this.mustGetPayment(cmd.getPaymentId());
         payment.assertStatusTransitionAllowed(PaymentStatus.DRAFT);
-        payment.setStatusEnum(PaymentStatus.SUCCESS);
-        payment.setOutcomeEnum(cmd.getOutcomeEnum());
+        int updated = paymentRepository.updateSettleFieldsWhereIdAndSourceStatus(
+            cmd.getPaymentId(),
+            PaymentStatus.SUCCESS,
+            PaymentStatus.DRAFT,
+            cmd.getOutcomeEnum(),
+            cmd.getBillDate());
+        if (updated != 1) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_STATUS,
+                "支付草稿状态非法或已被结算");
+        }
         List<PaymentYbSettlementItemCommand> ybItems = this.persistYbSettlements(payment.getId(), cmd.getYbSettlements());
-        payment.setBillDate(cmd.getBillDate());
-        paymentRepository.save(payment);
+        payment = this.mustGetPayment(cmd.getPaymentId());
         InpatientPaymentSettledEvent event = new InpatientPaymentSettledEvent(
             payment.getId(), payment.getEncounterId(), payment.getChargeItemIds(), payment.getDisplayAmount());
         event.setEntererId(payment.getEntererId());

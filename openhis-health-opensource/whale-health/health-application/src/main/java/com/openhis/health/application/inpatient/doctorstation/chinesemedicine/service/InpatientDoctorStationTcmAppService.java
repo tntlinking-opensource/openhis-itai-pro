@@ -299,7 +299,7 @@ public class InpatientDoctorStationTcmAppService {
         // Pre：领域按方聚合
         List<TcmHerbalPrescriptionGroupQueryModel> groups = medicationRequestQueryService.listTcmHerbalPrescriptionsByEncounter(
             request.getEncounterId(), GenerateSource.DOCTOR_PRESCRIPTION.getCode(), therapyEnum);
-        // Asm：enrich（无 ChargeItem）
+        // Asm：enrich（ChargeItem 账单单价优先，对齐 BR-PRICE-SRC-001）
         List<TcmRxHeaderDto> headers = prescriptionListAssembler.enrichInpatientPrescriptionGroups(groups);
         return tcmMapper.toListTcmHerbalPrescriptionsResponse(headers);
     }

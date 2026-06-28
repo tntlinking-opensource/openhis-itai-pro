@@ -42,6 +42,7 @@ import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -645,6 +646,7 @@ public class ChargeItemDomainService {
      * @param cmd 批量收费明细主键命令，须含非空 {@code operatorId}（收款人医务人员主键）
      * @throws BusinessException 入参为空或缺少收款人
      */
+    @Transactional
     public void settleChargeItems(BatchChargeItemIdsCommand cmd) {
         // Pre：从批量命令中提取收费明细 ID 列表。
         List<Long> ids = this.extractIds(cmd);
@@ -657,21 +659,28 @@ public class ChargeItemDomainService {
                 ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
                 "门诊收费结算须携带收款人（operatorId）");
         }
-        // Pre：批量加载目标明细，确认记录存在。
+        // Pre：批量加载目标明细，确认记录存在且仍处于 PLANNED（与 preSettleChargeItems 对称，GAP-FIN-003）。
         Map<Long, ChargeItem> map = this.loadMap(ids);
-        List<ChargeItem> toSave = new ArrayList<>();
         for (Long id : ids) {
             ChargeItem row = require(map, id);
-            row.setStatusEnum(ChargeItemStatus.SETTLED.getCode());
-            // 落库收款人：与 payment.enterer_id 同源，供门诊收银列表 performer_id 回显。
-            row.setPerformerId(cashierPractitionerId);
-            toSave.add(row);
+            if (!ChargeItemStatus.PLANNED.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
+                    "收费明细 " + id + " 状态非 PLANNED，不允许门诊结算");
+            }
         }
-        repository.saveAll(toSave);
+        int updated = repository.updateStatusAndPerformerWhereIdInAndSourceStatus(
+            ids,
+            ChargeItemStatus.SETTLED.getCode(),
+            cashierPractitionerId,
+            ChargeItemStatus.PLANNED.getCode());
+        if (updated != ids.size()) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
+                "收费明细状态已变更，不允许重复结算或结算已撤回医嘱");
+        }
         // Event：SETTLED 为批量粒度事件，以首条 ID 代表整批次发布一次。
-        if (!ids.isEmpty()) {
-            this.publishByType(ChargeItemEventType.SETTLED, ids.get(0), ids);
-        }
+        this.publishByType(ChargeItemEventType.SETTLED, ids.get(0), ids);
     }
 
     /**
@@ -856,7 +865,16 @@ public class ChargeItemDomainService {
                     "收费明细 " + id + " 状态非待结算，不允许住院结算");
             }
         }
-        this.batchUpdateStatus(cmd, ChargeItemStatus.SETTLED, ChargeItemEventType.INPATIENT_ITEMS_SETTLED);
+        int updated = repository.updateStatusWhereIdInAndSourceStatus(
+            ids,
+            ChargeItemStatus.SETTLED.getCode(),
+            ChargeItemStatus.PENDING_SETTLEMENT.getCode());
+        if (updated != ids.size()) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
+                "收费明细状态已变更，不允许重复结算");
+        }
+        this.publishByType(ChargeItemEventType.INPATIENT_ITEMS_SETTLED, ids.get(0), ids);
     }
 
     /**

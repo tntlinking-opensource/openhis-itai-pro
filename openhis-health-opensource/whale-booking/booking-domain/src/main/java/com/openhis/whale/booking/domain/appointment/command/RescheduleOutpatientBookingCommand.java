@@ -3,6 +3,8 @@ package com.openhis.whale.booking.domain.appointment.command;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDate;
+
 /**
  * 门诊预约改约命令：更新 slot 与时段快照（占释由应用层编排）。
  */
@@ -27,4 +29,10 @@ public class RescheduleOutpatientBookingCommand {
 
     /** 去向诊室主键。 */
     private Long destinationLocationId;
+
+    /** 冗余：新医疗服务主键（门诊防重）。 */
+    private Long healthcareServiceId;
+
+    /** 冗余：新预约自然日。 */
+    private LocalDate bookingDate;
 }

@@ -1,6 +1,0 @@
-{
-  "moduleId": "report",
-  "enabledProperty": "openhis.modules.report.enabled",
-  "locations": "classpath:db/migration/report",
-  "historyTable": "flyway_schema_history_report"
-}

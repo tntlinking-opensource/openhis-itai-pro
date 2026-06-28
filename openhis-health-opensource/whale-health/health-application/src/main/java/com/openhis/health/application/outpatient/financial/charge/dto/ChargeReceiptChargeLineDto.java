@@ -19,6 +19,9 @@ public class ChargeReceiptChargeLineDto {
     @Schema(description = "项目名称")
     private String itemName;
 
+    @Schema(description = "数量展示文本")
+    private String quantityText;
+
     @Schema(description = "金额展示文本")
     private String amountText;
 

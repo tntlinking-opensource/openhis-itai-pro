@@ -16,6 +16,8 @@ import com.openhis.whale.booking.application.channel.response.PageChannelConfigs
 import com.openhis.whale.booking.application.channel.response.SaveChannelConfigResponse;
 import com.openhis.whale.booking.application.support.BookingOperatorResolver;
 import com.openhis.whale.booking.application.support.BookingPagedResultBuilder;
+import com.openhis.whale.booking.application.support.OutpatientBookingWriteSupport;
+import com.openhis.whale.booking.application.support.OutpatientWaitlistPromoteSupport;
 import com.openhis.whale.booking.contracts.reader.HealthServiceRequestReader;
 import com.openhis.whale.booking.contracts.writer.HealthServiceRequestBookingWriter;
 import com.openhis.whale.booking.domain.appointment.entity.Appointment;
@@ -29,7 +31,10 @@ import com.openhis.whale.booking.domain.channel.service.ChannelQueryService;
 import com.openhis.whale.booking.domain.healthcheckup.entity.HealthCheckPackage;
 import com.openhis.whale.booking.domain.healthcheckup.service.HealthCheckupDomainService;
 import com.openhis.whale.booking.domain.healthcheckup.service.HealthCheckupQueryService;
+import com.openhis.whale.booking.domain.schedule.queries.model.ScheduleCalendarItemModel;
+import com.openhis.whale.booking.domain.schedule.service.ScheduleQueryService;
 import com.openhis.whale.booking.domain.share.AppointmentKindConstants;
+import com.openhis.whale.booking.domain.share.BookingDateSupport;
 import com.openhis.whale.booking.domain.slot.queries.model.SlotDetailModel;
 import com.openhis.whale.booking.domain.slot.service.SlotDomainService;
 import com.openhis.whale.booking.domain.slot.service.SlotQueryService;
@@ -82,6 +87,12 @@ public class ChannelBookingAppService {
     private final ChannelBookingMapper channelBookingMapper;
     /** 写路径操作人。 */
     private final BookingOperatorResolver bookingOperatorResolver;
+    /** 日程读侧（防重解析 healthcareServiceId）。 */
+    private final ScheduleQueryService scheduleQueryService;
+    /** 门诊预约占号 + 建单。 */
+    private final OutpatientBookingWriteSupport outpatientBookingWriteSupport;
+    /** 候补自动提升。 */
+    private final OutpatientWaitlistPromoteSupport outpatientWaitlistPromoteSupport;
 
     /**
      * 渠道配置分页列表。
@@ -164,11 +175,28 @@ public class ChannelBookingAppService {
         if (!request.getOrganizationId().equals(slot.getOrganizationId())) {
             throw new BusinessException(ErrorCodeConstants.SLOT_INVALID_ARGUMENT, "号源与机构不匹配");
         }
+        ScheduleCalendarItemModel scheduleMeta = scheduleQueryService.loadCalendarItemById(slot.getScheduleId());
+        Long healthcareServiceId = scheduleMeta.getHealthcareServiceId();
+        LocalDate bookingDate = BookingDateSupport.resolveBookingDate(slot.getStartTime());
+        if (AppointmentKindConstants.OUTPATIENT_BOOKING.equals(request.getAppointmentKind())) {
+            outpatientBookingWriteSupport.assertNoDuplicateOutpatientBooking(
+                request.getPatientId(), bookingDate, healthcareServiceId, null);
+        }
         // Cmd：占号并创建预约。
-        slotDomainService.allocateBooking(
-            channelBookingMapper.toAllocateBookingCommand(request.getSlotId(), operatorId));
-        Appointment appointment = appointmentDomainService.create(
-            channelBookingMapper.toChannelCreateAppointmentCommand(request, slot, operatorId));
+        Appointment appointment;
+        if (AppointmentKindConstants.OUTPATIENT_BOOKING.equals(request.getAppointmentKind())) {
+            appointment = outpatientBookingWriteSupport.allocateAndCreate(
+                channelBookingMapper.toChannelCreateAppointmentCommand(
+                    request, slot, healthcareServiceId, bookingDate, operatorId),
+                request.getSlotId(),
+                operatorId);
+        } else {
+            slotDomainService.allocateBooking(
+                channelBookingMapper.toAllocateBookingCommand(request.getSlotId(), operatorId));
+            appointment = appointmentDomainService.create(
+                channelBookingMapper.toChannelCreateAppointmentCommand(
+                    request, slot, healthcareServiceId, bookingDate, operatorId));
+        }
         // Cmd：按预约类型写扩展（体检套餐 / 医嘱已预约）。
         if (AppointmentKindConstants.HEALTH_CHECKUP_BOOKING.equals(request.getAppointmentKind())) {
             if (request.getPackageId() == null) {
@@ -204,6 +232,7 @@ public class ChannelBookingAppService {
         if (booking.getSlotId() != null) {
             slotDomainService.releaseBooking(
                 channelBookingMapper.toReleaseBookingCommand(booking.getSlotId(), operatorId));
+            outpatientWaitlistPromoteSupport.tryPromoteWaitlist(booking.getSlotId(), operatorId);
         }
     }
 

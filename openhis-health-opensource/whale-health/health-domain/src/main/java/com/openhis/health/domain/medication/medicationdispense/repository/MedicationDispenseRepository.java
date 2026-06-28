@@ -21,6 +21,11 @@ import com.openhis.health.domain.medication.medicationdispense.entity.Medication
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.time.LocalDateTime;
 
 import java.util.Collection;
 import java.util.List;
@@ -112,5 +117,52 @@ public interface MedicationDispenseRepository extends JpaRepository<MedicationDi
      * @return 发放记录集合；{@code procedureIds} 为空时返回空列表
      */
     List<MedicationDispense> findByProcedureIdIn(Collection<Long> procedureIds);
+
+    /**
+     * 汇总领药：仅当源态为 {@code PREPARATION} 且无汇总号时批量写入汇总号并迁移至 {@code SUMMARIZED}（GAP-INV-003 / GAP-STALE-006）。
+     *
+     * @return 实际更新行数
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        UPDATE MedicationDispense d
+           SET d.summaryNo = :summaryNo,
+               d.statusEnum = :targetStatus,
+               d.statusChangedTime = :statusChangedTime
+         WHERE d.id IN :ids
+           AND d.statusEnum = :sourceStatus
+           AND (d.summaryNo IS NULL OR d.summaryNo = '')
+           AND d.isDeleted = false
+        """)
+    int summarizeIfPreparationWhereIdIn(
+        @Param("ids") Collection<Long> ids,
+        @Param("summaryNo") String summaryNo,
+        @Param("targetStatus") DispenseStatus targetStatus,
+        @Param("sourceStatus") DispenseStatus sourceStatus,
+        @Param("statusChangedTime") LocalDateTime statusChangedTime);
+
+    /**
+     * 汇总核发：仅当源态为 {@code SUMMARIZED} 时批量完成发放（GAP-INV-004 / GAP-STALE-002）。
+     *
+     * @return 实际更新行数
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        UPDATE MedicationDispense d
+           SET d.statusEnum = :targetStatus,
+               d.practitionerId = :practitionerId,
+               d.dispenseQuantity = d.quantity,
+               d.dispenseTime = :dispenseTime,
+               d.statusChangedTime = :dispenseTime
+         WHERE d.summaryNo = :summaryNo
+           AND d.statusEnum = :sourceStatus
+           AND d.isDeleted = false
+        """)
+    int completeSummaryDispenseWhereSummaryNoAndSourceStatus(
+        @Param("summaryNo") String summaryNo,
+        @Param("targetStatus") DispenseStatus targetStatus,
+        @Param("sourceStatus") DispenseStatus sourceStatus,
+        @Param("practitionerId") Long practitionerId,
+        @Param("dispenseTime") LocalDateTime dispenseTime);
 }
 

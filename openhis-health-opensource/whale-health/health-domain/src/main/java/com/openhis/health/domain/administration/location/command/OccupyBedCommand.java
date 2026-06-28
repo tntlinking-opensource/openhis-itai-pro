@@ -38,5 +38,7 @@ public class OccupyBedCommand extends BatchCommand<OccupyBedCommand.OccupyBedIte
         private Long locationId;
         /** 住院就诊主键。 */
         private Long encounterId;
+        /** 为 true 时自 {@code RESERVED} 占床（预约患者分床，GAP-ATD-007）。 */
+        private Boolean occupyFromReservation;
     }
 }

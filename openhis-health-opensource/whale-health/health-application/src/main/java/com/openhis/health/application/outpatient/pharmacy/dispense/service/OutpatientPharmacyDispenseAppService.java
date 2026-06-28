@@ -40,9 +40,6 @@ import com.openhis.health.application.outpatient.pharmacy.dispense.response.Page
 import com.openhis.health.application.outpatient.pharmacy.dispense.response.SavePrepareOutpatientMedicationDispenseResponse;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
-import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
-import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
-import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.integration.support.insurance.inventory.DispenseTraceGateCommandSupport;
 import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
@@ -162,7 +159,6 @@ public class OutpatientPharmacyDispenseAppService {
     private final TraceNumberRecordQueryService traceNumberRecordQueryService;
     private final TraceNumberRecordDomainService traceNumberRecordDomainService;
     private final ChargeItemQueryService chargeItemQueryService;
-    private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     private final OutpatientPharmacyDispenseMapper outpatientPharmacyDispenseMapper;
     private final EncounterMedicationDispenseSlipPageLoader encounterMedicationDispenseSlipPageLoader;
 
@@ -417,14 +413,15 @@ public class OutpatientPharmacyDispenseAppService {
             if (productRow == null) {
                 throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID, "缺少药品目录投影，无法按最小单位校验库存");
             }
-            inventoryItemQueryService.assertSufficientForMedicationDispense(
+            inventoryItemQueryService.assertSufficientForMedicationDispenseWithReserve(
                 TableNameConstants.MED_MEDICATION_DEFINITION,
                 dispense.getMedicationId(),
                 submitLine.getDispenseLocationId(),
                 submitLine.getLotNumber(),
                 submitLine.getQuantity(),
                 dispense.getUnitCode(),
-                ProductDefinitionDisplaySupport.toUnitConversionSource(productRow));
+                ProductDefinitionDisplaySupport.toUnitConversionSource(productRow),
+                dispense.getId());
         }
 
         assertPrepareChargeTotalMatchesInventoryLotPricing(
@@ -522,14 +519,15 @@ public class OutpatientPharmacyDispenseAppService {
             if (productRowForStockAssert == null) {
                 throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID, "缺少药品目录投影，无法按最小单位校验库存");
             }
-            inventoryItemQueryService.assertSufficientForMedicationDispense(
+            inventoryItemQueryService.assertSufficientForMedicationDispenseWithReserve(
                 TableNameConstants.MED_MEDICATION_DEFINITION,
                 dispense.getMedicationId(),
                 dispense.getLocationId(),
                 dispense.getLotNumber(),
                 requiredQuantity,
                 dispense.getUnitCode(),
-                ProductDefinitionDisplaySupport.toUnitConversionSource(productRowForStockAssert));
+                ProductDefinitionDisplaySupport.toUnitConversionSource(productRowForStockAssert),
+                dispense.getId());
             dispensersInSubmitOrder.add(dispense);
         }
 
@@ -867,19 +865,18 @@ public class OutpatientPharmacyDispenseAppService {
     }
 
     /**
-     * 保存配药前金额门禁：已存在的收费明细（按发放单锚点）总价须等于「批号售价 {@code price_value} × 发放业务单位数量」按提交行重算之和。
+     * 保存配药前金额门禁：已存在的收费明细（按发放单锚点）总价须等于「账单单价 × 发放业务单位数量」按提交行重算之和。
      *
-     * <p>单价取自 {@code adm_charge_item_definition} 中 {@code LOT_NUMBER_PRICE} 且与物品表、药品定义主键、批号一致的 {@code price_value}；
-     * 同键多条时按 {@code priority} 更小优先、同优先级按主键更小择优。
-     * 数量口径须与签发费用草稿 {@link com.openhis.health.application.outpatient.doctorstation.advice.mapper.DoctorStationAdviceMapperImpl#toCreateChargeItemDraftItemFromOrder} 一致：
-     * 使用提交行在 {@link MedicationDispense#getUnitCode()} 下的数量（与 FIFO 分段写入 {@code MedicationDispense#quantity} 同语义），<strong>禁止</strong>先换算为拆零最小单位再乘单价——否则包装/采购等单位下会把金额放大 {@code package_unit_ratio} 等倍数，与已落库 {@code adm_charge_item} 总额不一致。</p>
+     * <p>单价取自锚定 {@code adm_charge_item.unit_price}（**BR-PRICE-SRC-001** / **BR-OPP-013**），同发放多行时按
+     * {@code sum(total_price)/sum(quantity_value)} 加权；**禁止**再查当前 {@code adm_charge_item_definition}，避免调价后误拒。
+     * 数量口径须与签发费用草稿 {@link com.openhis.health.application.outpatient.doctorstation.advice.mapper.DoctorStationAdviceMapperImpl#toCreateChargeItemDraftItemFromOrder} 一致。</p>
      *
      * <p>若就诊下尚无对应收费行（未签发计费等），跳过本校验。</p>
      *
-     * @param encounterId      就诊标识
-     * @param submittedDispenseIds 本批次涉及发放单主键（与提交行一致）
-     * @param submitLines      配药提交行
-     * @param dispenseById     发放单实体映射
+     * @param encounterId            就诊标识
+     * @param submittedDispenseIds   本批次涉及发放单主键（与提交行一致）
+     * @param submitLines            配药提交行
+     * @param dispenseById           发放单实体映射
      * @throws BusinessException {@code EX_OPP_204}：重算总额与账单不等
      */
     private void assertPrepareChargeTotalMatchesInventoryLotPricing(
@@ -899,19 +896,21 @@ public class OutpatientPharmacyDispenseAppService {
                 baselineTotal = baselineTotal.add(chargeRow.getTotalPrice());
             }
         }
+        Map<Long, BigDecimal> unitPriceByDispenseId = buildUnitPriceByDispenseIdFromChargeRows(chargeRows);
         BigDecimal recomputedTotal = BigDecimal.ZERO;
         for (SavePrepareDispenseLineSubmitDto submitLine : submitLines) {
             if (submitLine == null || submitLine.getDispenseId() == null) {
                 continue;
             }
-            MedicationDispense dispense = dispenseById.get(submitLine.getDispenseId());
-            if (dispense == null) {
+            if (dispenseById.get(submitLine.getDispenseId()) == null) {
                 continue;
             }
-            BigDecimal lotUnitPrice = requireLotNumberPriceValueFromChargeDefinition(
-                TableNameConstants.MED_MEDICATION_DEFINITION,
-                dispense.getMedicationId(),
-                submitLine.getLotNumber());
+            BigDecimal lotUnitPrice = unitPriceByDispenseId.get(submitLine.getDispenseId());
+            if (lotUnitPrice == null) {
+                throw new BusinessException(
+                    ErrorCodeConstants.EX_OPP_204_QUANTITY_MISMATCH,
+                    "收费明细缺少与本发放单锚点一致的账单单价，不能保存配药");
+            }
             BigDecimal qtyInDispenseUnit = submitLine.getQuantity();
             recomputedTotal = recomputedTotal.add(qtyInDispenseUnit.multiply(lotUnitPrice));
         }
@@ -920,83 +919,53 @@ public class OutpatientPharmacyDispenseAppService {
         if (baselineRounded.compareTo(recomputedRounded) != 0) {
             throw new BusinessException(
                 ErrorCodeConstants.EX_OPP_204_QUANTITY_MISMATCH,
-                "按定价表批号售价重算的总金额与当前收费明细不一致，不能保存配药");
+                "按收费明细账单单价重算的总金额与当前收费明细不一致，不能保存配药");
         }
     }
 
     /**
-     * 从 {@code adm_charge_item_definition} 取药品批号维销售单价（{@code LOT_NUMBER_PRICE}），与物品表、定义主键、批号精确匹配。
+     * 按发放锚点聚合 ChargeItem，得到 dispenseId → 账单单价（同锚点多行时 total/qty 加权）。
      *
-     * <p>排除逻辑删除行；多条命中时按 {@code priority} 更小优先、同优先级按主键更小择优（与医生站目录定价择优一致）。</p>
-     *
-     * @param instanceTable 物品定义物理表名（如 {@link TableNameConstants#MED_MEDICATION_DEFINITION}）
-     * @param medicationId    药品定义主键，对应 {@code instance_id}
-     * @param lotNumber       批号，对应 {@code lot_no}
-     * @return {@code price_value}，须大于 0
+     * @param chargeRows 与本批次发放锚点一致的收费明细
+     * @return dispenseId → unitPrice
      */
-    private BigDecimal requireLotNumberPriceValueFromChargeDefinition(String instanceTable, Long medicationId,
-        String lotNumber) {
-        if (StringUtils.isBlank(instanceTable)) {
-            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "批号售价查询缺少物品表名");
+    private Map<Long, BigDecimal> buildUnitPriceByDispenseIdFromChargeRows(List<ChargeItem> chargeRows) {
+        Map<Long, BigDecimal> totalByDispense = new HashMap<>();
+        Map<Long, BigDecimal> qtyByDispense = new HashMap<>();
+        if (chargeRows == null) {
+            return Map.of();
         }
-        if (medicationId == null) {
-            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "批号售价查询缺少药品定义主键");
-        }
-        if (StringUtils.isBlank(lotNumber)) {
-            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT,
-                "发放批号为空时无法从定价表解析批号售价，请先执行保存配药并选定批号");
-        }
-        ChargeItemDefinitionQueryCommand cmd = new ChargeItemDefinitionQueryCommand();
-        cmd.setInstanceTable(instanceTable.trim());
-        cmd.setInstanceId(medicationId);
-        cmd.setLotNo(lotNumber.trim());
-        List<ChargeItemDefinition> rows = chargeItemDefinitionQueryService.findLotNumberPriceByInstanceIdAndLot(cmd);
-        ChargeItemDefinition best = null;
-        for (ChargeItemDefinition row : rows) {
-            if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
+        for (ChargeItem chargeRow : chargeRows) {
+            if (chargeRow == null || chargeRow.getDispenseId() == null || Boolean.TRUE.equals(chargeRow.getIsDeleted())) {
                 continue;
             }
-            best = pickBetterChargeItemDefinitionPriceLine(best, row);
-        }
-        if (best == null || best.getPriceValue() == null || best.getPriceValue().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID,
-                "定价表未维护该批号的有效批号售价（LOT_NUMBER_PRICE），无法按批号复核与账单一致的总金额");
-        }
-        return best.getPriceValue();
-    }
-
-    /**
-     * 在两条定价行中取优先级更小者（同优先级时主键更小者），{@code null} 优先级视为较大。
-     */
-    private static ChargeItemDefinition pickBetterChargeItemDefinitionPriceLine(ChargeItemDefinition current,
-        ChargeItemDefinition candidate) {
-        if (candidate == null) {
-            return current;
-        }
-        if (current == null) {
-            return candidate;
-        }
-        Integer cp = candidate.getPriority();
-        Integer curp = current.getPriority();
-        if (cp != null && curp != null) {
-            int cmp = Integer.compare(cp, curp);
-            if (cmp < 0) {
-                return candidate;
+            Long dispenseKey = chargeRow.getDispenseId();
+            if (chargeRow.getTotalPrice() != null) {
+                BigDecimal existingTotal = totalByDispense.get(dispenseKey);
+                if (existingTotal == null) {
+                    totalByDispense.put(dispenseKey, chargeRow.getTotalPrice());
+                } else {
+                    totalByDispense.put(dispenseKey, existingTotal.add(chargeRow.getTotalPrice()));
+                }
             }
-            if (cmp > 0) {
-                return current;
+            if (chargeRow.getQuantityValue() != null) {
+                BigDecimal existingQty = qtyByDispense.get(dispenseKey);
+                if (existingQty == null) {
+                    qtyByDispense.put(dispenseKey, chargeRow.getQuantityValue());
+                } else {
+                    qtyByDispense.put(dispenseKey, existingQty.add(chargeRow.getQuantityValue()));
+                }
             }
-        } else if (cp != null) {
-            return candidate;
-        } else if (curp != null) {
-            return current;
         }
-        Long cid = candidate.getId();
-        Long curid = current.getId();
-        if (cid != null && curid != null && cid < curid) {
-            return candidate;
+        Map<Long, BigDecimal> unitPriceByDispense = new HashMap<>();
+        for (Map.Entry<Long, BigDecimal> entry : totalByDispense.entrySet()) {
+            Long dispenseKey = entry.getKey();
+            BigDecimal qtyVal = qtyByDispense.get(dispenseKey);
+            if (qtyVal != null && qtyVal.compareTo(BigDecimal.ZERO) > 0) {
+                unitPriceByDispense.put(dispenseKey, entry.getValue().divide(qtyVal, 4, RoundingMode.HALF_UP));
+            }
         }
-        return current;
+        return unitPriceByDispense;
     }
 
     /**

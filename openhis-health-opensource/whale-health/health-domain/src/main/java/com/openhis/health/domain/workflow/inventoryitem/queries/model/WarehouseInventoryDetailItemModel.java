@@ -71,4 +71,10 @@ public class WarehouseInventoryDetailItemModel {
 
     /** 供应状态持久化码。 */
     private String inventoryStatusEnum;
+
+    /** 追溯码（{@code wkf_inventory_item.trace_no}）。 */
+    private String traceNo;
+
+    /** 距效期剩余天数（由效期与当前自然日计算，可为负）。 */
+    private Integer remainingDays;
 }

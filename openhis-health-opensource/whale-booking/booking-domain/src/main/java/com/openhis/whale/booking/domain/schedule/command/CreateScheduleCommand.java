@@ -47,6 +47,10 @@ public class CreateScheduleCommand extends BatchCommand<CreateScheduleCommand.Cr
         private List<ScheduleActorItemCommand> actors;
         /** identifiers。 */
         private List<ScheduleIdentifierItemCommand> identifiers;
+        /** 来源 T2 日排班模板主键。 */
+        private Long sourceScheduleTemplateId;
+        /** 关联 T1 放号时段模板主键。 */
+        private Long slotProvisionTemplateId;
     }
 
 /**

@@ -26,6 +26,7 @@ import com.openhis.whale.core.domain.BaseAuditedEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 import org.apache.commons.lang3.StringUtils;
@@ -132,6 +133,11 @@ public class Encounter extends BaseAuditedEntity {
     /** outWay 代码。 */
     @Column(name = "out_way_code")
     private String outWayCode;
+
+    /** 乐观锁版本号（与 adm_encounter.version 对齐；与 GAP-ATD-004/005 悲观行锁叠加）。 */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Integer version;
 
     /**
      * 断言当前就诊不处于终止态，适用于所有状态迁移方法的前置保护（BR-ENC-003）。
@@ -352,6 +358,23 @@ public class Encounter extends BaseAuditedEntity {
     public void transitToOnHold() {
         this.assertNotTerminal();
         this.statusEnum = EncounterStatus.ON_HOLD.getCode();
+    }
+
+    /**
+     * 撤销转科/出院过渡态：{@code ON_HOLD} → {@code IN_PROGRESS}（GAP-ATD-008）。
+     *
+     * @param clearDischargeFields 为 true 时清空 {@code outWayCode}（待出院轨撤销）
+     */
+    public void revertHoldToInProgress(boolean clearDischargeFields) {
+        this.assertClass(EncounterClass.IMP.getCode());
+        if (!EncounterStatus.ON_HOLD.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
+                "仅转科/出院过渡态允许撤销回在科");
+        }
+        this.statusEnum = EncounterStatus.IN_PROGRESS.getCode();
+        if (clearDischargeFields) {
+            this.outWayCode = null;
+        }
     }
 
     /**

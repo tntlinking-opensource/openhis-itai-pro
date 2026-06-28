@@ -2,11 +2,11 @@
 
 > **文档**：架构/模块设计在 **[whale-doc](../whale-doc/)**（入口 [文档地图](../whale-doc/文档地图.md)）。
 
-本仓库为**业务源码**（`whale-health`、`whale-emr`、`whale-mrms`）。**Whale Framework 不提供源码**，已以预编译 JAR 形式内置在 **`dist/framework-maven-repo/`**，clone 后无需额外下载。
+本仓库为**业务源码**（`whale-health`、`whale-emr` 等扩展 Module）。**Whale Framework 不提供源码**，已以预编译 JAR 形式内置在 **`dist/framework-maven-repo/`**，clone 后无需额外下载。
 
 ## 简介
 
-基于 **Whale Framework** 的医院信息系统后端：住院/门诊等业务（`whale-health`）、电子病历（`whale-emr`）与病案管理（`whale-mrms`）同进程集成，由 `health-app` 统一启动。
+基于 **Whale Framework** 的医院信息系统后端：住院/门诊等业务与**内嵌病案（MRMS）**均在 `whale-health`；电子病历（`whale-emr`）等经 starter 同进程集成，由 `health-app` 统一启动。
 
 ### 技术栈
 
@@ -30,9 +30,8 @@
 <仓库根>/
 ├── pom.xml
 ├── dist/framework-maven-repo/   # Framework 预编译 JAR（已随仓携带）
-├── whale-health/                # 医疗业务
+├── whale-health/                # 医疗业务（含 MRMS 内嵌子域）
 ├── whale-emr/                   # 电子病历
-├── whale-mrms/                  # 病案管理
 └── whale-framework/             # 本仓库中不存在（仅二进制依赖）
 ```
 
@@ -41,8 +40,8 @@
 ```text
 whale-health/
 ├── health-domain-shared/    # 枚举、常量等共享定义
-├── health-domain/           # 领域层（实体、领域服务、读模型等）
-├── health-application/      # 应用层（AppService）
+├── health-domain/           # 领域层（实体、领域服务；含 domain/mrms）
+├── health-application/      # 应用层（AppService；含 application/mrms）
 ├── health-infrastructure/   # 基础设施（资源、迁移脚本等）
 └── health-app/              # 启动模块（HealthApplication、application.yml）
 ```
@@ -53,14 +52,6 @@ whale-health/
 whale-emr/
 ├── emr-domain/              # 病历领域（文书、模板等）
 └── emr-application/         # 病历应用服务（由 health-app 依赖并同进程加载）
-```
-
-### whale-mrms 模块
-
-```text
-whale-mrms/
-├── mrms-domain/             # 病案领域
-└── mrms-application/        # 病案应用服务（由 health-app 依赖并同进程加载）
 ```
 
 ---

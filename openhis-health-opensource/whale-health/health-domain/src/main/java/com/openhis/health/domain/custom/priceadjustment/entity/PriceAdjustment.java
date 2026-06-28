@@ -19,7 +19,6 @@ package com.openhis.health.domain.custom.priceadjustment.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.PriceAdjustmentStatus;
-import com.openhis.health.domain.share.enums.PriceType;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.BaseAuditedEntity;
 import jakarta.persistence.Column;
@@ -32,9 +31,10 @@ import java.math.BigDecimal;
 import java.util.Date;
 
 /**
- * 价格调整聚合根。
+ * 调价单项目行（DM-CUS-011 v2，表 {@code cus_price_adjustment}）。
  *
- * <p>记录价格变更的审批流程与历史事实。已生效（approved）行视为不可变历史事实，不允许再修改。</p>
+ * <p>同一 {@code bus_no} 可多行（每项目一行），共享审批状态与提交/审批字段。</p>
+ * <p>药品耗材与诊疗共用本表；诊疗 {@code item_table} 为活动/医疗服务，仅目标售价。</p>
  */
 @Getter
 @Setter
@@ -42,72 +42,96 @@ import java.util.Date;
 @Table(name = "cus_price_adjustment")
 public class PriceAdjustment extends BaseAuditedEntity {
 
-    @Column(name = "definition_id", nullable = false)
-    private Long definitionId;
+    /** 调价单号。 */
+    @Column(name = "bus_no", nullable = false)
+    private String busNo;
 
-    @Column(name = "price_type", nullable = false)
-    private String priceType;
+    /** 项目物理表名。 */
+    @Column(name = "item_table", nullable = false)
+    private String itemTable;
 
-    @Column(name = "lot_number")
-    private String lotNumber;
+    /** 项目定义主键。 */
+    @Column(name = "item_id", nullable = false)
+    private Long itemId;
 
-    @Column(name = "old_amount", nullable = false)
-    private BigDecimal oldAmount;
+    /** 目标进价。 */
+    @Column(name = "new_purchase_amount")
+    private BigDecimal newPurchaseAmount;
 
-    @Column(name = "new_amount", nullable = false)
-    private BigDecimal newAmount;
+    /** 目标售价。 */
+    @Column(name = "new_selling_amount")
+    private BigDecimal newSellingAmount;
 
+    /** 调价原因。 */
     @Column(name = "adjustment_reason", nullable = false)
     private String adjustmentReason;
 
+    /** 制单/申请时间。 */
     @Column(name = "adjustment_time", nullable = false)
     private Date adjustmentTime;
 
+    /** 审批状态。 */
     @Column(name = "status_enum", nullable = false)
     private String statusEnum;
 
+    /** 提交人。 */
     @Column(name = "submitter_id")
     private Long submitterId;
 
+    /** 提交时间。 */
     @Column(name = "submit_time")
     private Date submitTime;
 
+    /** 审批人。 */
     @Column(name = "approver_id")
     private Long approverId;
 
+    /** 审批时间。 */
     @Column(name = "approve_time")
     private Date approveTime;
 
+    /** 审批意见。 */
     @Column(name = "approve_comment")
     private String approveComment;
 
+    /** 操作人。 */
     @Column(name = "operator_id", nullable = false)
     private Long operatorId;
 
+    /** 机构。 */
     @Column(name = "org_id", nullable = false)
     private Long orgId;
 
-    @Column(name = "stock_quantity")
-    private Integer stockQuantity;
-
-    @Column(name = "adjustment_delta")
-    private BigDecimal adjustmentDelta;
-
-    @Column(name = "total_impact")
-    private BigDecimal totalImpact;
+    /**
+     * 校验草稿/驳回态可编辑字段（BR-PRC-004）。
+     */
+    public void assertEditable() {
+        if (PriceAdjustmentStatus.APPROVED.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_STATUS, "已生效记录不允许修改");
+        }
+        if (PriceAdjustmentStatus.PENDING.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_STATUS, "待审批记录不允许修改");
+        }
+        if (PriceAdjustmentStatus.DEPRECATED.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_STATUS, "已废弃记录不允许修改");
+        }
+    }
 
     /**
-     * 断言必填字段与核心约束（BR-PRC-006/007/008/009/010/011/013/014）。
+     * 校验制单必填与目标价侧（BR-PRC-006～009）。
      */
     public void assertRequiredFields() {
-        if (this.definitionId == null) {
-            throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "定价记录标识不能为空");
+        if (this.busNo == null || this.busNo.trim().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "调价单号不能为空");
         }
-        if (this.priceType == null || this.priceType.trim().isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "价格类型不能为空");
+        if (this.itemTable == null || this.itemTable.trim().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "项目表名不能为空");
         }
-        if (this.oldAmount == null || this.newAmount == null) {
-            throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "调价前后金额必须同时存在");
+        if (this.itemId == null) {
+            throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "项目标识不能为空");
+        }
+        if (this.newPurchaseAmount == null && this.newSellingAmount == null) {
+            throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "目标进价与目标售价至少填写一项");
         }
         if (this.adjustmentReason == null || this.adjustmentReason.trim().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "调整原因不能为空");
@@ -124,62 +148,20 @@ public class PriceAdjustment extends BaseAuditedEntity {
         if (this.adjustmentTime.after(new Date())) {
             throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "调整时间不能晚于当前时间");
         }
-        if (PriceType.isLotNumberPriceType(this.priceType)) {
-            if (this.lotNumber == null || this.lotNumber.trim().isEmpty()) {
-                throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "批号价变更时批次号不能为空");
-            }
-        }
-        this.assertDeltaConsistent();
-        this.assertStockQuantityPresentWhenLotNumber();
     }
 
     /**
-     * 断言已生效记录不可变（BR-PRC-004）。
-     */
-    public void assertNotApproved() {
-        if (PriceAdjustmentStatus.APPROVED.getCode().equals(this.statusEnum)) {
-            throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_STATUS, "已生效记录不允许修改");
-        }
-    }
-
-    /**
-     * 断言差异金额与金额字段一致（BR-PRC-013）。
-     */
-    public void assertDeltaConsistent() {
-        BigDecimal expected = this.newAmount.subtract(this.oldAmount);
-        if (this.adjustmentDelta == null) {
-            this.adjustmentDelta = expected;
-            return;
-        }
-        if (this.adjustmentDelta.compareTo(expected) != 0) {
-            throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "调整差异金额与调价前后金额不一致");
-        }
-    }
-
-    /**
-     * 断言批号价变更库存数量已记录（BR-PRC-014）。
-     */
-    public void assertStockQuantityPresentWhenLotNumber() {
-        if (!PriceType.isLotNumberPriceType(this.priceType)) {
-            return;
-        }
-        if (this.stockQuantity == null) {
-            throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "批号价变更时库存数量不能为空");
-        }
-    }
-
-    /**
-      * 初始化领域状态。
+     * 初始化为草稿态。
      */
     public void initDraft() {
         this.statusEnum = PriceAdjustmentStatus.DRAFT.getCode();
     }
 
     /**
-     * 提交审批：草稿/已驳回可提交，记录提交人与提交时间并迁至待审。
+     * 提交审批：草稿/已驳回可提交。
      *
-     * @param submitterId 提交人主键
-     * @param submitTime 提交时间，{@code null} 则取当前时间
+     * @param submitterId 提交人
+     * @param submitTime  提交时间，空则取当前
      */
     public void submit(Long submitterId, Date submitTime) {
         if (!PriceAdjustmentStatus.DRAFT.getCode().equals(this.statusEnum)
@@ -199,11 +181,11 @@ public class PriceAdjustment extends BaseAuditedEntity {
     }
 
     /**
-     * 审批通过：待审态可执行，记录审批人、意见与时间。
+     * 审批通过。
      *
-     * @param approverId 审批人主键
-     * @param approveComment 审批意见
-     * @param approveTime 审批时间，{@code null} 则取当前时间
+     * @param approverId     审批人
+     * @param approveComment 意见
+     * @param approveTime    审批时间
      */
     public void approve(Long approverId, String approveComment, Date approveTime) {
         if (!PriceAdjustmentStatus.PENDING.getCode().equals(this.statusEnum)) {
@@ -223,11 +205,11 @@ public class PriceAdjustment extends BaseAuditedEntity {
     }
 
     /**
-     * 审批拒绝：待审态可执行，意见必填，记录审批人与时间并迁至已驳回。
+     * 审批驳回。
      *
-     * @param approverId 审批人主键
-     * @param approveComment 拒绝原因（必填）
-     * @param approveTime 审批时间，{@code null} 则取当前时间
+     * @param approverId     审批人
+     * @param approveComment 驳回原因（必填）
+     * @param approveTime    审批时间
      */
     public void reject(Long approverId, String approveComment, Date approveTime) {
         if (!PriceAdjustmentStatus.PENDING.getCode().equals(this.statusEnum)) {
@@ -250,7 +232,7 @@ public class PriceAdjustment extends BaseAuditedEntity {
     }
 
     /**
-      * 处理withdraw逻辑。
+     * 撤销草稿。
      */
     public void withdraw() {
         if (!PriceAdjustmentStatus.DRAFT.getCode().equals(this.statusEnum)) {
@@ -259,4 +241,3 @@ public class PriceAdjustment extends BaseAuditedEntity {
         this.statusEnum = PriceAdjustmentStatus.DEPRECATED.getCode();
     }
 }
-

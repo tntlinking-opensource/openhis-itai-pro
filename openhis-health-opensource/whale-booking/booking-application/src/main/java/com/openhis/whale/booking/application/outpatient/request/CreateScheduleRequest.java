@@ -33,4 +33,7 @@ public class CreateScheduleRequest {
 
     /** 规划窗口止。 */
     private LocalDateTime planningHorizonEnd;
+
+    /** 关联 T1 放号时段模板主键。 */
+    private Long slotProvisionTemplateId;
 }

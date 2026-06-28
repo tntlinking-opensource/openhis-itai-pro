@@ -287,6 +287,12 @@ public interface DoctorStationAdviceConstants {
     /** Bean Validation：出院方式必填。 */
     String VALIDATION_DISCHARGE_MODE_REQUIRED = "出院方式不能为空";
 
+    /** EX-IP-ORD-103：签退存在已执行/已发药/待结算或已结算费用（IF-IP-DOR-16）。 */
+    String EX_IP_ORD_103 = "EX-IP-ORD-103";
+
+    /** EX-IP-ORD-103 用户提示：已发生执行/发药/费用事实时禁止签退。 */
+    String MSG_INPATIENT_WITHDRAW_BLOCKED = "已执行、已发药或费用不可回退，无法签退";
+
     /** Bean Validation：产品定义主键必填（目录预选键）。 */
     String VALIDATION_PRODUCT_DEFINITION_ID_REQUIRED = "产品定义主键不能为空";
 }

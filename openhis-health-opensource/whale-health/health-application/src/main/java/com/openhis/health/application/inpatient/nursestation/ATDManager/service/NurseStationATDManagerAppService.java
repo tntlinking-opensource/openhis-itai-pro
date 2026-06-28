@@ -23,6 +23,9 @@ import com.openhis.health.application.inpatient.nursestation.ATDManager.request.
 import com.openhis.health.application.inpatient.nursestation.ATDManager.request.ListDischargePendingMedicationsRequest;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.request.RecallInpatientDischargeRequest;
 import com.openhis.health.domain.administration.account.entity.Account;
+import com.openhis.health.integration.booking.inpatient.InpatientBedBookingConsumeExtension;
+import com.openhis.health.integration.booking.inpatient.InpatientBedBookingQueryExtension;
+import com.openhis.health.integration.booking.result.InpatientBedReservationSnapshot;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.command.AssignInpatientBedCommand;
@@ -70,9 +73,11 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -160,6 +165,12 @@ public class NurseStationATDManagerAppService {
 
     /** 入科入院体征写编排（ASSIGN 成功后同事务写入）。 */
     private final AdmissionVitalSignSupport admissionVitalSignSupport;
+
+    /** 床位预约读 Extension（GAP-ATD-007）。 */
+    private final InpatientBedBookingQueryExtension inpatientBedBookingQueryExtension;
+
+    /** 分床消费预约 Extension（GAP-ATD-007）。 */
+    private final InpatientBedBookingConsumeExtension inpatientBedBookingConsumeExtension;
 
     /**
      * IF-IP-NUR-ATD-01：床位列表查询（位置块 + 占床患者块）。
@@ -406,10 +417,21 @@ public class NurseStationATDManagerAppService {
             if (InpatientNurseStationConstants.EX_IP_ATD_201.equals(ex.getErrorCode())) {
                 throw ex;
             }
+            // 占床并发冲突：领域 LOCATION_RULE_CONFLICT 映射为 EX-IP-ATD-201。
+            if (ErrorCodeConstants.LOCATION_RULE_CONFLICT.equals(ex.getErrorCode())) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_ATD_201,
+                    "请选择空床或互换");
+            }
             // 其它业务失败统一映射为 EX-IP-ATD-202，与 AS 持久化失败口径一致。
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_ATD_202,
                 "分床失败，请联系管理员");
+        } catch (OptimisticLockingFailureException ex) {
+            // 床位行乐观锁冲突（与其它写路径并发）：与占床冲突同提示，引导刷新重选。
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_ATD_201,
+                "请选择空床或互换");
         } catch (RuntimeException ex) {
             // 非预期运行时异常同样收敛为 EX-IP-ATD-202。
             throw new BusinessException(
@@ -443,16 +465,20 @@ public class NurseStationATDManagerAppService {
                 InpatientNurseStationConstants.EX_IP_ATD_201,
                 "请选择空床或互换");
         }
-        // Pre：目标床须为空（EX-IP-ATD-201）。
-        this.assertTargetBedVacant(request.getBedLocationId(), request.getHouseLocationId());
-        // Cmd：领域分床（HOUSE+BED 轨迹 + 参与者 + 状态迁移）。
+        BedAssignGate bedGate = this.resolveTargetBedAssignGate(
+            encounter.getPatientId(), request.getBedLocationId(), request.getHouseLocationId());
+        OccupyBedCommand occupyCommand = nurseStationATDManagerMapper.toOccupyBedCommand(
+            request.getBedLocationId(), request.getEncounterId(), operatorId, bedGate.occupyFromReservation());
+        // Cmd：先占床成功再写轨迹，避免「有轨迹无床」；占床失败则整事务回滚。
+        locationDomainService.occupyBed(occupyCommand);
+        if (bedGate.reservationAppointmentId() != null
+            && inpatientBedBookingConsumeExtension.isEnabled()) {
+            inpatientBedBookingConsumeExtension.consumeReservationForBedAssign(
+                bedGate.reservationAppointmentId(), operatorId);
+        }
         AssignInpatientBedCommand assignCommand =
             nurseStationATDManagerMapper.toAssignInpatientBedCommand(request, operatorId);
         encounterDomainService.assignInpatientBed(assignCommand);
-        // Cmd：目标床标记 IN_USE（须在分床成功后）。
-        OccupyBedCommand occupyCommand = nurseStationATDManagerMapper.toOccupyBedCommand(
-            request.getBedLocationId(), request.getEncounterId(), operatorId);
-        locationDomainService.occupyBed(occupyCommand);
         // Cmd：分床成功后按 start_time 写入入院体征（BR-IP-ATD-020～024；与分床同事务）。
         EncounterDetailQueryModel assignedEncounter = encounterQueryService.mustGetEncounter(request.getEncounterId());
         LocalDateTime recordedAt = assignedEncounter.getStartTime();
@@ -501,19 +527,23 @@ public class NurseStationATDManagerAppService {
             "请选择空床或互换",
             InpatientNurseStationConstants.EX_IP_ATD_201,
             "请选择空床或互换");
-        this.assertTargetBedVacant(request.getBedLocationId(), request.getHouseLocationId());
-        // Cmd：领域确认换床轨迹（释放旧 HOUSE+BED、写入新 HOUSE+BED）。
+        BedAssignGate bedGate = this.resolveTargetBedAssignGate(
+            encounter.getPatientId(), request.getBedLocationId(), request.getHouseLocationId());
+        OccupyBedCommand occupyCommand = nurseStationATDManagerMapper.toOccupyBedCommand(
+            request.getBedLocationId(), request.getEncounterId(), operatorId, bedGate.occupyFromReservation());
+        // Cmd：先占目标空床（行锁硬门禁），再迁移轨迹，最后释原床。
+        locationDomainService.occupyBed(occupyCommand);
+        if (bedGate.reservationAppointmentId() != null
+            && inpatientBedBookingConsumeExtension.isEnabled()) {
+            inpatientBedBookingConsumeExtension.consumeReservationForBedAssign(
+                bedGate.reservationAppointmentId(), operatorId);
+        }
         ConfirmBedTransferCommand transferCommand =
             nurseStationATDManagerMapper.toConfirmBedTransferCommand(request, fromBedId, operatorId);
         encounterDomainService.confirmBedTransfer(transferCommand);
-        // Cmd：释放原床运营态，避免双占。
         ReleaseBedCommand releaseCommand =
             nurseStationATDManagerMapper.toReleaseBedCommand(fromBedId, request.getEncounterId(), operatorId);
         locationDomainService.releaseBed(releaseCommand);
-        // Cmd：占用目标空床，与分床 occupy 语义一致。
-        OccupyBedCommand occupyCommand = nurseStationATDManagerMapper.toOccupyBedCommand(
-            request.getBedLocationId(), request.getEncounterId(), operatorId);
-        locationDomainService.occupyBed(occupyCommand);
     }
 
     /**
@@ -583,44 +613,70 @@ public class NurseStationATDManagerAppService {
         SwapInpatientBedsCommand swapCommand = nurseStationATDManagerMapper.toSwapInpatientBedsCommand(
             request, toHouseIdA, toHouseIdB, operatorId);
         encounterDomainService.swapInpatientBeds(swapCommand);
-        // Cmd：双方原床批量 releaseBed（AS-SDD §3.3.3 序号 9，A.9.1 单次落库）。
         ReleaseBedCommand releaseCommand = nurseStationATDManagerMapper.toSwapReleaseBedCommand(
             operatorId, bedIdA, request.getEncounterId(), bedIdB, request.getEncounterIdB());
-        locationDomainService.releaseBed(releaseCommand);
-        // Cmd：A 占 bedB、B 占 bedA（序号 10）。
         OccupyBedCommand occupyCommand = nurseStationATDManagerMapper.toSwapOccupyBedCommand(
             operatorId, bedIdB, request.getEncounterId(), bedIdA, request.getEncounterIdB());
-        locationDomainService.occupyBed(occupyCommand);
+        // Cmd：双床排序加锁后 release + 交叉 occupy 一次落库（GAP-ATD-003，消除空窗）。
+        locationDomainService.swapBedsOperational(releaseCommand, occupyCommand);
     }
 
     /**
-     * 目标床须为 NOT_IN_USE，且父级病房与请求一致。
+     * 目标床分床/换床门禁：空床直接占；预留床须患者一致且入院日已到。
      *
-     * @param bedLocationId   目标床 id
-     * @param houseLocationId 目标病房 id
-     * @throws BusinessException 床不存在、已占或病房不匹配时 EX-IP-ATD-201
+     * @return 是否自预留占床及待消费预约主键
      */
-    private void assertTargetBedVacant(Long bedLocationId, Long houseLocationId) {
+    private BedAssignGate resolveTargetBedAssignGate(
+        Long patientId,
+        Long bedLocationId,
+        Long houseLocationId) {
         Location bed = locationQueryService.findOptionalById(bedLocationId).orElse(null);
         if (bed == null) {
-            // 目标床不存在，拒绝分床/换床以免写入脏位置。
-            throw new BusinessException(
-                InpatientNurseStationConstants.EX_IP_ATD_201,
-                "请选择空床或互换");
-        }
-        if (!LocationOperational.NOT_IN_USE.getCode().equals(bed.getOperationalEnum())) {
-            // 目标床已被占用，护士须另选空床或走互换流程。
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_ATD_201,
                 "请选择空床或互换");
         }
         if (houseLocationId != null && bed.getParentId() != null
             && !houseLocationId.equals(bed.getParentId())) {
-            // 请求病房与床位实际父级不一致，防止跨病房误占。
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_ATD_201,
                 "请选择空床或互换");
         }
+        String operational = bed.getOperationalEnum();
+        if (operational == null
+            || LocationOperational.NOT_IN_USE.getCode().equals(operational)) {
+            return new BedAssignGate(false, null);
+        }
+        if (LocationOperational.RESERVED.getCode().equals(operational)) {
+            if (!inpatientBedBookingQueryExtension.isEnabled()) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_ATD_201,
+                    "目标床已预留，请另选空床");
+            }
+            InpatientBedReservationSnapshot reservation = inpatientBedBookingQueryExtension
+                .findActiveByBed(bedLocationId)
+                .orElseThrow(() -> new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_ATD_207,
+                    "目标床预约信息不一致，请刷新后重试"));
+            if (patientId == null || !patientId.equals(reservation.getPatientId())) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_ATD_207,
+                    "该床已为其他患者预留");
+            }
+            if (reservation.getIntendedAdmissionDate() != null
+                && reservation.getIntendedAdmissionDate().isAfter(LocalDate.now())) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_ATD_207,
+                    "预约入院日未到，暂不可分床");
+            }
+            return new BedAssignGate(true, reservation.getAppointmentId());
+        }
+        throw new BusinessException(
+            InpatientNurseStationConstants.EX_IP_ATD_201,
+            "请选择空床或互换");
+    }
+
+    private record BedAssignGate(boolean occupyFromReservation, Long reservationAppointmentId) {
     }
 
     /**
@@ -868,9 +924,18 @@ public class NurseStationATDManagerAppService {
                 || InpatientNurseStationConstants.EX_IP_ATD_305.equals(ex.getErrorCode())) {
                 throw ex;
             }
+            if (ErrorCodeConstants.ENCOUNTER_INVALID_STATUS.equals(ex.getErrorCode())) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_ATD_304,
+                    "当前状态不允许办理出院，请刷新");
+            }
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_ATD_306,
                 "出院失败，请刷新后重试");
+        } catch (OptimisticLockingFailureException ex) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_ATD_304,
+                "当前状态不允许办理出院，请刷新");
         } catch (RuntimeException ex) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_ATD_306,
@@ -945,6 +1010,15 @@ public class NurseStationATDManagerAppService {
                 || InpatientNurseStationConstants.EX_IP_ATD_403.equals(ex.getErrorCode())) {
                 throw ex;
             }
+            if (ErrorCodeConstants.ENCOUNTER_INVALID_STATUS.equals(ex.getErrorCode())) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_ATD_401,
+                    "请等待出院结算完成后再清床");
+            }
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_ATD_402,
+                "清床失败，请检查病床状态");
+        } catch (OptimisticLockingFailureException ex) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_ATD_402,
                 "清床失败，请检查病床状态");
@@ -1024,10 +1098,17 @@ public class NurseStationATDManagerAppService {
             if (InpatientNurseStationConstants.EX_IP_ATD_501.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_502.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_503.equals(ex.getErrorCode())) {
-                // 业务门禁或内嵌反结失败已按 AS 口径抛出，原样透传。
                 throw ex;
             }
-            // 领域持久化等未预期失败，统一 EX-IP-ATD-504 可重试。
+            if (ErrorCodeConstants.ENCOUNTER_INVALID_STATUS.equals(ex.getErrorCode())) {
+                throw new BusinessException(
+                    InpatientNurseStationConstants.EX_IP_ATD_501,
+                    "当前状态不允许出院召回，请刷新");
+            }
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_ATD_504,
+                "出院召回失败，请刷新后重试");
+        } catch (OptimisticLockingFailureException ex) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_ATD_504,
                 "出院召回失败，请刷新后重试");

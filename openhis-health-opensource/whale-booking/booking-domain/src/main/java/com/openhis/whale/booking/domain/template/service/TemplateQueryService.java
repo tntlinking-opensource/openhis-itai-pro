@@ -44,8 +44,14 @@ public class TemplateQueryService {
         if (id == null) {
             throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "id 不能为空");
         }
-        return slotProvisionTemplateRepository.findById(id).filter(row -> !Boolean.TRUE.equals(row.getIsDeleted()))
-            .orElseThrow(() -> new BusinessException(ErrorCodeConstants.SCHEDULE_NOT_FOUND, "放号时段模板不存在"));
+        var optional = slotProvisionTemplateRepository.findById(id);
+        var row = optional.orElse(null);
+        if (row != null && Boolean.TRUE.equals(row.getIsDeleted())) {
+            throw new BusinessException(
+                ErrorCodeConstants.SCHEDULE_NOT_FOUND, "放号时段模板已删除，请刷新后重新选择");
+        }
+        return optional.orElseThrow(() -> new BusinessException(
+            ErrorCodeConstants.SCHEDULE_NOT_FOUND, "放号时段模板不存在"));
     }
 
     /**

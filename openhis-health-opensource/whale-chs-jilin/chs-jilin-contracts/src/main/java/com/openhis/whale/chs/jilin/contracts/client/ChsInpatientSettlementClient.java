@@ -14,6 +14,7 @@ import com.openhis.whale.chs.jilin.contracts.result.IpInsurancePreSettleResult;
 import com.openhis.whale.chs.jilin.contracts.command.IpInsuranceRevokeFeeDetailCommand;
 import com.openhis.whale.chs.jilin.contracts.result.IpInsuranceRevokeFeeDetailResult;
 import com.openhis.whale.chs.jilin.contracts.command.IpInsuranceRevokeSettleCommand;
+import com.openhis.whale.chs.jilin.contracts.result.IpInsurancePlatformAdmissionSnapshot;
 import com.openhis.whale.chs.jilin.contracts.result.IpInsuranceRevokeSettleResult;
 
 import java.util.List;
@@ -53,6 +54,9 @@ public interface ChsInpatientSettlementClient {
 
     /** 【2302】撤销已上传未结算的费用明细。 */
     IpInsuranceRevokeFeeDetailResult revokeFeeDetails(IpInsuranceRevokeFeeDetailCommand command);
+
+    /** 批量查询平台入院登记快照（2401 映射）。 */
+    List<IpInsurancePlatformAdmissionSnapshot> listPlatformAdmissionSnapshots(List<Long> encounterIds);
 
     /** 【2404】撤销入院登记。 */
     void revokeAdmission(IpInsuranceEncounterCommand command);

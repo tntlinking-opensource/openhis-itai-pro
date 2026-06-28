@@ -3,7 +3,7 @@
   <groupId>com.openhis</groupId>
   <artifactId>whale-job</artifactId>
   <versioning>
-    <lastUpdated>20260626120457</lastUpdated>
+    <lastUpdated>20260628105821</lastUpdated>
     <snapshot>
       <localCopy>true</localCopy>
     </snapshot>
@@ -11,12 +11,12 @@
       <snapshotVersion>
         <extension>jar</extension>
         <value>2.0.2-SNAPSHOT</value>
-        <updated>20260626120457</updated>
+        <updated>20260628105821</updated>
       </snapshotVersion>
       <snapshotVersion>
         <extension>pom</extension>
         <value>2.0.2-SNAPSHOT</value>
-        <updated>20260626120457</updated>
+        <updated>20260628105821</updated>
       </snapshotVersion>
     </snapshotVersions>
   </versioning>

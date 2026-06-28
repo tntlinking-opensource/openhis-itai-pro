@@ -8,6 +8,7 @@ import com.openhis.whale.booking.application.outpatient.request.PageSchedulesByM
 import com.openhis.whale.booking.application.outpatient.request.ProvisionSlotBatchRequest;
 import com.openhis.whale.booking.application.outpatient.request.PublishScheduleRequest;
 import com.openhis.whale.booking.application.outpatient.request.ReactivateScheduleRequest;
+import com.openhis.whale.booking.application.outpatient.request.RetireScheduleRequest;
 import com.openhis.whale.booking.application.outpatient.request.ScheduleActorRequest;
 import com.openhis.whale.booking.application.outpatient.request.ScheduleServiceProfileRequest;
 import com.openhis.whale.booking.domain.slot.queries.model.SlotDetailModel;
@@ -38,6 +39,7 @@ import com.openhis.whale.booking.domain.schedule.command.PublishScheduleCommand;
 import com.openhis.whale.booking.domain.schedule.command.ReactivateScheduleCommand;
 import com.openhis.whale.booking.domain.schedule.command.SubstitutePractitionerCommand;
 import com.openhis.whale.booking.domain.schedule.command.ReplaceScheduleActorsCommand;
+import com.openhis.whale.booking.domain.schedule.command.RetireScheduleCommand;
 import com.openhis.whale.booking.domain.schedule.command.UpdateScheduleCommentCommand;
 import com.openhis.whale.booking.domain.schedule.command.UpdateServiceProfileCommand;
 import com.openhis.whale.booking.domain.schedule.queries.CalendarScheduleQuery;
@@ -297,6 +299,7 @@ public class OutpatientScheduleMapper {
         CreateScheduleCommand.CreateScheduleItemCommand item = new CreateScheduleCommand.CreateScheduleItemCommand();
         item.setOrganizationId(request.getOrganizationId());
         item.setName(request.getName());
+        item.setSlotProvisionTemplateId(request.getSlotProvisionTemplateId());
         item.setActors(this.toCreateActorCommands(request.getActors()));
         command.setItem(item);
         return command;
@@ -331,6 +334,23 @@ public class OutpatientScheduleMapper {
         DeactivateScheduleCommand command = new DeactivateScheduleCommand();
         command.setOperatorId(operatorId);
         DeactivateScheduleCommand.DeactivateScheduleItemCommand item = new DeactivateScheduleCommand.DeactivateScheduleItemCommand();
+        item.setScheduleId(request.getScheduleId());
+        item.setReason(request.getReason());
+        command.setItem(item);
+        return command;
+    }
+
+    /**
+     * 作废日程请求 → 领域命令。
+     *
+     * @param request 作废请求
+     * @param operatorId 操作人主键
+     * @return 作废命令
+     */
+    public RetireScheduleCommand toRetireScheduleCommand(RetireScheduleRequest request, Long operatorId) {
+        RetireScheduleCommand command = new RetireScheduleCommand();
+        command.setOperatorId(operatorId);
+        RetireScheduleCommand.RetireScheduleItemCommand item = new RetireScheduleCommand.RetireScheduleItemCommand();
         item.setScheduleId(request.getScheduleId());
         item.setReason(request.getReason());
         command.setItem(item);
@@ -567,6 +587,8 @@ public class OutpatientScheduleMapper {
         cell.setActors(this.toActorDtoList(schedule.getActors()));
         cell.setSubstitutePractitionerId(schedule.getSubstitutePractitionerId());
         cell.setOriginalPractitionerId(this.resolvePractitionerId(schedule.getActors()));
+        cell.setSourceScheduleTemplateId(schedule.getSourceScheduleTemplateId());
+        cell.setSlotProvisionTemplateId(schedule.getSlotProvisionTemplateId());
         return cell;
     }
 
@@ -791,8 +813,46 @@ public class OutpatientScheduleMapper {
             actors.add(service);
         }
         scheduleItem.setActors(actors);
+        scheduleItem.setSourceScheduleTemplateId(template.getId());
+        scheduleItem.setSlotProvisionTemplateId(template.getSlotProvisionTemplateId());
         command.setItem(scheduleItem);
         return command;
+    }
+
+    /**
+     * T1 放号时段 → 指定日期的规划窗口起止；无有效时段时返回全天窗口。
+     *
+     * @param slotTemplate T1 放号时段模板
+     * @param date 目标日期
+     * @return 长度为 2 的数组：[planningHorizonStart, planningHorizonEnd]
+     */
+    public LocalDateTime[] resolvePlanningHorizonFromT1(SlotProvisionTemplate slotTemplate, LocalDate date) {
+        LocalDateTime dayStart = date.atStartOfDay();
+        LocalDateTime dayEnd = date.atTime(23, 59, 59);
+        if (slotTemplate == null || date == null) {
+            return new LocalDateTime[] { dayStart, dayEnd };
+        }
+        List<SlotTemplateRequest> slots = this.buildSlotTemplatesFromT1(slotTemplate, date);
+        if (slots.isEmpty()) {
+            return new LocalDateTime[] { dayStart, dayEnd };
+        }
+        LocalDateTime horizonStart = null;
+        LocalDateTime horizonEnd = null;
+        for (SlotTemplateRequest slot : slots) {
+            if (slot.getStartTime() == null || slot.getEndTime() == null) {
+                continue;
+            }
+            if (horizonStart == null || slot.getStartTime().isBefore(horizonStart)) {
+                horizonStart = slot.getStartTime();
+            }
+            if (horizonEnd == null || slot.getEndTime().isAfter(horizonEnd)) {
+                horizonEnd = slot.getEndTime();
+            }
+        }
+        if (horizonStart == null || horizonEnd == null) {
+            return new LocalDateTime[] { dayStart, dayEnd };
+        }
+        return new LocalDateTime[] { horizonStart, horizonEnd };
     }
 
     /**
@@ -887,6 +947,8 @@ public class OutpatientScheduleMapper {
         CreateScheduleCommand.CreateScheduleItemCommand item = new CreateScheduleCommand.CreateScheduleItemCommand();
         item.setOrganizationId(organizationId);
         item.setName(name);
+        item.setSourceScheduleTemplateId(source.getSourceScheduleTemplateId());
+        item.setSlotProvisionTemplateId(source.getSlotProvisionTemplateId());
         item.setActors(this.toCreateActorCommandsFromModels(source.getActors()));
         command.setItem(item);
         return command;

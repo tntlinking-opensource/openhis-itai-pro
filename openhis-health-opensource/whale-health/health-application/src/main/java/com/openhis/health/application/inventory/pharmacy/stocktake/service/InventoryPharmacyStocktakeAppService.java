@@ -965,20 +965,8 @@ public class InventoryPharmacyStocktakeAppService {
             if (cat == null) {
                 continue;
             }
-            BigDecimal purchase = this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
-                dto.getItemTable(), dto.getItemId());
-            cat.setPurchasePrice(purchase);
-            List<ProductDefinitionCatalogUnitBandDto> bands = cat.getUnitBands();
-            if (bands == null || bands.isEmpty()) {
-                continue;
-            }
-            BigDecimal lotPackagePrice = null;
-            if (StringUtils.isNotBlank(dto.getLotNumber())) {
-                lotPackagePrice = this.chargeItemDefinitionQueryService.resolveFirstLotNumberCostPriceValue(
-                    dto.getItemTable(), dto.getItemId(), dto.getLotNumber().trim());
-            }
-            ProductDefinitionCatalogUnitBandsAssembler.applyInboundWarehouseDetailLineBandPrices(
-                bands, null, purchase, lotPackagePrice, dto.getPrice(), dto.getUnitCode());
+            ProductDefinitionCatalogUnitBandsAssembler.enrichWarehouseDetailCatalogFromPersistedSupplyLinePrice(
+                cat, dto.getPrice(), dto.getUnitCode(), null);
         }
     }
 

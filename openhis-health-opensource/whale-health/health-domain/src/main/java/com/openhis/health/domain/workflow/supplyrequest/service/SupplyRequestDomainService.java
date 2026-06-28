@@ -17,6 +17,7 @@
 
 package com.openhis.health.domain.workflow.supplyrequest.service;
 
+import com.openhis.health.domain.share.authorization.FinanceApprovalAuthorizer;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.SupplyCategory;
@@ -75,6 +76,8 @@ public class SupplyRequestDomainService {
     private final IDomainEventPublisher domainEventPublisher;
     /** 供应请求 busNo：外部未传时按日流水分配，序号键由 {@link SupplyType#busNoSeqPrefixForTypeCode(String)} 按 {@code type_enum} 分桶。 */
     private final BusinessSequenceService businessSequenceService;
+    /** 动账类供应单 agree/reject 须持有财务审批岗位（实现由 module-support 装配）。 */
+    private final FinanceApprovalAuthorizer financeApprovalAuthorizer;
 
 
     /**
@@ -993,13 +996,26 @@ public class SupplyRequestDomainService {
             throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "单据不存在");
         }
 
+        // Gate：动账类 type_enum 须持有财务审批岗位（纯物流调拨/出入库等不在白名单内）
+        SupplyRequest firstForGate = entities.get(0);
+        financeApprovalAuthorizer.assertFinanceApprovalForSupplyType(firstForGate.getTypeEnum());
+
         LocalDateTime approvalTime = LocalDateTime.now();
         for (SupplyRequest entity : entities) {
             entity.assertApprovable();
-            entity.approvalToAgree(item.getApproverId(), approvalTime);
         }
 
-        List<SupplyRequest> saved = supplyRequestRepository.saveAll(entities);
+        int updated = supplyRequestRepository.approveToAgreeWhereBusNoAndSourceStatus(
+            item.getBusNo().trim(),
+            SupplyStatus.AGREE.getCode(),
+            SupplyStatus.APPROVAL.getCode(),
+            item.getApproverId(),
+            approvalTime);
+        if (updated != entities.size()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "单据已同意，禁止重复同意");
+        }
+
+        List<SupplyRequest> saved = supplyRequestRepository.findByBusNo(item.getBusNo().trim());
         SupplyRequest first = saved.get(0);
         SupplyRequestAgreedEvent agreedEvent = new SupplyRequestAgreedEvent(first.getId(), first.getBusNo(), first.getTypeEnum(), first.getApproverId(),
             first.getApprovalTime(), command.getOperatorId());
@@ -1038,6 +1054,10 @@ public class SupplyRequestDomainService {
         if (entities.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "单据不存在");
         }
+
+        // Gate：动账类 type_enum 须持有财务审批岗位
+        SupplyRequest firstForGate = entities.get(0);
+        financeApprovalAuthorizer.assertFinanceApprovalForSupplyType(firstForGate.getTypeEnum());
 
         LocalDateTime approvalTime = LocalDateTime.now();
         for (SupplyRequest entity : entities) {

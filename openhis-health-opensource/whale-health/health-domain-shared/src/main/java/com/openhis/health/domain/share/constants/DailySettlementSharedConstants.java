@@ -9,8 +9,11 @@ package com.openhis.health.domain.share.constants;
  */
 public interface DailySettlementSharedConstants {
 
-    /** 挂号费财务类别码（fin_type_code 特列，对齐 ter_concept 1011）。 */
-    String REGISTRATION_FEE_FIN_TYPE_CODE = "1011";
+    /** 诊察费财务类别码（号源定价 type_code 与日结特列，对齐 ter_concept 236/1012）。 */
+    String CONSULTATION_FEE_FIN_TYPE_CODE = "1012";
+
+    /** 号源/挂号收费在日结汇总中的 fin_type 特列（与 {@link #CONSULTATION_FEE_FIN_TYPE_CODE} 同码）。 */
+    String REGISTRATION_FEE_FIN_TYPE_CODE = "1012";
 
     /** 西药 fin_type_code（ter_concept 236/1001）。 */
     String WESTERN_MEDICINE_FIN_TYPE_CODE = "1001";

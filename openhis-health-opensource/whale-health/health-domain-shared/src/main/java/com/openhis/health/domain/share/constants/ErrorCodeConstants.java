@@ -785,14 +785,24 @@ public interface ErrorCodeConstants {
     String WHS_DTL_202 = "WHS_DTL_202";
     /** 库存明细：现库底部汇总失败（AS EX-INV-DTL-203）。 */
     String WHS_DTL_203 = "WHS_DTL_203";
+    /** 库存明细：备份分页失败（AS EX-INV-DTL-204）。 */
+    String WHS_DTL_204 = "WHS_DTL_204";
+    /** 库存明细：备份底部汇总失败（AS EX-INV-DTL-205）。 */
+    String WHS_DTL_205 = "WHS_DTL_205";
     /** 库存明细：现库导出失败（AS EX-INV-DTL-206）。 */
     String WHS_DTL_206 = "WHS_DTL_206";
+    /** 库存明细：备份导出失败（AS EX-INV-DTL-207）。 */
+    String WHS_DTL_207 = "WHS_DTL_207";
     /** 库存明细：批量停供未更新任何行（AS EX-INV-DTL-208）。 */
     String WHS_DTL_208 = "WHS_DTL_208";
     /** 库存明细：批量恢复供应未更新任何行（AS EX-INV-DTL-209）。 */
     String WHS_DTL_209 = "WHS_DTL_209";
     /** 库存明细：包装→拆零倍数非法（AS EX-INV-DTL-210）。 */
     String WHS_DTL_210 = "WHS_DTL_210";
+    /** 库存明细：定时快照落库失败（AS EX-INV-DTL-211）。 */
+    String WHS_DTL_211 = "WHS_DTL_211";
+    /** 库存明细：备份单号列表失败（AS EX-INV-DTL-212）。 */
+    String WHS_DTL_212 = "WHS_DTL_212";
     /** 库存明细：并发或乐观锁冲突（AS-SDD §6.2）。 */
     String WHS_DTL_105 = "WHS_DTL_105";
 
@@ -1030,6 +1040,10 @@ public interface ErrorCodeConstants {
      * 号源时段错误码：资源不存在。
      */
     String SLOT_NOT_FOUND = "SLOT_002";
+    /**
+     * 号源时段错误码：并发占号冲突（乐观锁或末号源竞态）。
+     */
+    String SLOT_CONFLICT = "SLOT_003";
 
     /**
      * 执行科室规则错误码：参数非法。
@@ -1191,6 +1205,11 @@ public interface ErrorCodeConstants {
     String SERVICE_DEVICE_TEMPLATE_INVALID_STATUS = "SERVICE_DEVICE_TEMPLATE_003";
 
     /**
+     * 财务审批角色缺失：动账类供应单或调价单 agree/reject 时当前用户无 {@code ROLE_FINANCE_APPROVER} 系统角色。
+     */
+    String FINANCE_APPROVAL_ROLE_REQUIRED = "FINANCE_APPROVAL_001";
+
+    /**
      * 价格调整错误码：参数非法。
      */
     String PRICE_ADJUSTMENT_INVALID_ARGUMENT = "PRICE_ADJUSTMENT_001";
@@ -1202,6 +1221,22 @@ public interface ErrorCodeConstants {
      * 价格调整错误码：状态不允许。
      */
     String PRICE_ADJUSTMENT_INVALID_STATUS = "PRICE_ADJUSTMENT_003";
+    /**
+     * 价格调整错误码：该项目已有待审批调价单。
+     */
+    String PRICE_ADJUSTMENT_ITEM_PENDING = "PRICE_ADJUSTMENT_004";
+    /**
+     * 价格调整错误码：存在在途医嘱/发药/护士业务，禁止提交调价。
+     */
+    String PRICE_ADJUSTMENT_ITEM_IN_TRANSIT = "PRICE_ADJUSTMENT_005";
+    /**
+     * 价格调整错误码：库存锁定冲突（已被其他业务单锁定）。
+     */
+    String PRICE_ADJUSTMENT_LOCK_CONFLICT = "PRICE_ADJUSTMENT_006";
+    /**
+     * 价格调整错误码：同一调价单内项目表不一致。
+     */
+    String PRICE_ADJUSTMENT_ITEM_TABLE_MISMATCH = "PRICE_ADJUSTMENT_007";
 
     /**
      * 组套模板错误码：参数非法。

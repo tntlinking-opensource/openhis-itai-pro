@@ -40,7 +40,6 @@ import com.openhis.health.domain.custom.encounterhistory.entity.EncounterHistory
 import com.openhis.health.domain.custom.encounterhistory.service.EncounterHistoryQueryService;
 import com.openhis.health.domain.share.constants.CustomConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
-import com.openhis.health.domain.share.constants.InpatientRegistrationConstants;
 import com.openhis.health.domain.share.constants.InpatientSettleQueueTab;
 import com.openhis.health.domain.share.enums.EncounterParticipantRole;
 import com.openhis.health.domain.share.enums.EncounterStatus;
@@ -89,7 +88,7 @@ public class InpatientEncounterContextLoader {
     private final CurrentManagedWardLocationIdsResolver managedWardLocationIdsResolver;
 
     /**
-     * 住院登记队列分页：默认 listStatus 为在院登记列表口径。
+     * 住院登记队列分页：未传 listStatus 时包含待登记/待入科/已入科。
      *
      * @param query 分页与地理/关键字筛选
      * @return 住院就诊上下文页
@@ -98,9 +97,6 @@ public class InpatientEncounterContextLoader {
         InpatientEncounterPageQuery effective = query;
         if (effective == null) {
             effective = new InpatientEncounterPageQuery();
-        }
-        if (StringUtils.isBlank(effective.getRegistrationListStatus())) {
-            effective.setRegistrationListStatus(InpatientRegistrationConstants.DEFAULT_LIST_STATUS);
         }
         return this.pageInpatientEncounterContexts(effective);
     }

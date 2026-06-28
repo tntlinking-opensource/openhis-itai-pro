@@ -21,6 +21,9 @@ import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentR
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -99,5 +102,26 @@ public interface PaymentReconciliationRepository extends JpaRepository<PaymentRe
      * @return 命中流水列表
      */
     List<PaymentReconciliation> findByEncounterIdInAndStatusEnum(Collection<Long> encounterIds, PaymentStatus statusEnum);
+
+    /**
+     * 正式结算：仅当源态为 {@code DRAFT} 时推进为 {@code SUCCESS} 并回写 outcome/billDate（GAP-FIN-001 / GAP-STALE-002）。
+     *
+     * @return 实际更新行数（期望 1）
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        UPDATE PaymentReconciliation p
+           SET p.statusEnum = :targetStatus,
+               p.outcomeEnum = :outcomeEnum,
+               p.billDate = :billDate
+         WHERE p.id = :id
+           AND p.statusEnum = :sourceStatus
+        """)
+    int updateSettleFieldsWhereIdAndSourceStatus(
+        @Param("id") Long id,
+        @Param("targetStatus") PaymentStatus targetStatus,
+        @Param("sourceStatus") PaymentStatus sourceStatus,
+        @Param("outcomeEnum") String outcomeEnum,
+        @Param("billDate") LocalDateTime billDate);
 }
 

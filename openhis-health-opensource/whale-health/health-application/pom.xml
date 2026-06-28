@@ -69,6 +69,29 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- MRMS 首页 PDF -->
+        <dependency>
+            <groupId>com.github.librepdf</groupId>
+            <artifactId>openpdf</artifactId>
+            <version>1.3.30</version>
+        </dependency>
+
+        <!-- MRMS EMR 入院病情（optional，仅 support/emr） -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>emr-domain</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- MRMS 卷宗 PDF 导出（optional，with-emr 时启用 OpenPdfRenderer） -->
+        <dependency>
+            <groupId>com.openhis</groupId>
+            <artifactId>emr-application</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
+
         
         <!-- Spring Boot Starter (含 validation，供 DTO/Request 校验) -->
         <dependency>

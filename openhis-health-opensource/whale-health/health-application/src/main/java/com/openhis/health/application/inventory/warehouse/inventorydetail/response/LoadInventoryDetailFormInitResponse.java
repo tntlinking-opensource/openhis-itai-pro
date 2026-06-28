@@ -22,10 +22,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 库存明细页初始化出参（IF-INV-DTL-01）。
@@ -33,10 +31,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Getter
 @Setter
 @Accessors(chain = true)
-/** 库存明细页初始化 IF-INV-DTL-01。 */
 @Schema(description = "库存明细页初始化 IF-INV-DTL-01")
 public class LoadInventoryDetailFormInitResponse {
 
+    /** 医保等级筛选项。 */
     @Schema(description = "医保等级筛选项")
     private List<OptionDto> chrgitmLvOptions;
 
@@ -55,4 +53,12 @@ public class LoadInventoryDetailFormInitResponse {
     /** 库存范围筛选项（仅 {@code 2=数量等于0}、{@code 3=数量大于0}）。 */
     @Schema(description = "库存范围筛选项（数量等于0 / 数量大于0）")
     private List<OptionDto> inventoryRangeOptions;
+
+    /** 管辖范围内启用态药库与药房筛选项。 */
+    @Schema(description = "管辖范围内启用态药库与药房筛选项")
+    private List<OptionDto> warehouseOptions;
+
+    /** 供应商筛选项。 */
+    @Schema(description = "供应商筛选项")
+    private List<OptionDto> supplierOptions;
 }

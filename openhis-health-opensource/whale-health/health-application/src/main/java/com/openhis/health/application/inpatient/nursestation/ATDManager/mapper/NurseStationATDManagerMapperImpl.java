@@ -258,11 +258,21 @@ public class NurseStationATDManagerMapperImpl implements NurseStationATDManagerM
      */
     @Override
     public OccupyBedCommand toOccupyBedCommand(Long bedLocationId, Long encounterId, Long operatorId) {
+        return this.toOccupyBedCommand(bedLocationId, encounterId, operatorId, false);
+    }
+
+    @Override
+    public OccupyBedCommand toOccupyBedCommand(
+        Long bedLocationId,
+        Long encounterId,
+        Long operatorId,
+        boolean occupyFromReservation) {
         OccupyBedCommand command = new OccupyBedCommand();
         command.setOperatorId(operatorId);
         OccupyBedCommand.OccupyBedItemCommand item = new OccupyBedCommand.OccupyBedItemCommand();
         item.setLocationId(bedLocationId);
         item.setEncounterId(encounterId);
+        item.setOccupyFromReservation(occupyFromReservation);
         command.setItem(item);
         return command;
     }

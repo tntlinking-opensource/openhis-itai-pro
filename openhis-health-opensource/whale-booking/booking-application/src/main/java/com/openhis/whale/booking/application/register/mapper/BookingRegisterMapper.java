@@ -184,14 +184,20 @@ public class BookingRegisterMapper {
      *
      * @param request 创建门诊预约请求
      * @param slot 目标号源明细
+     * @param slotId 已解析号源主键
      * @param destinationLocationId 目的地位置主键
+     * @param healthcareServiceId 医疗服务主键（防重冗余）
+     * @param bookingDate 预约自然日（防重冗余）
      * @param operatorId 操作人主键
      * @return 创建预约命令
      */
     public CreateAppointmentCommand toCreateAppointmentCommand(
         CreateOutpatientBookingRequest request,
         SlotDetailModel slot,
+        Long slotId,
         Long destinationLocationId,
+        Long healthcareServiceId,
+        java.time.LocalDate bookingDate,
         Long operatorId) {
         CreateAppointmentCommand command = new CreateAppointmentCommand();
         command.setOperatorId(operatorId);
@@ -199,7 +205,9 @@ public class BookingRegisterMapper {
         item.setAppointmentKind(OUTPATIENT_BOOKING_KIND);
         item.setOrganizationId(request.getOrganizationId());
         item.setPatientId(request.getPatientId());
-        item.setSlotId(request.getSlotId());
+        item.setSlotId(slotId);
+        item.setHealthcareServiceId(healthcareServiceId);
+        item.setBookingDate(bookingDate);
         item.setDestinationLocationId(destinationLocationId);
         item.setStartInstant(slot.getStartTime());
         item.setEndInstant(slot.getEndTime());
@@ -255,7 +263,11 @@ public class BookingRegisterMapper {
      * @return 门诊改约命令
      */
     public RescheduleOutpatientBookingCommand toRescheduleOutpatientBookingCommand(
-        RescheduleBookingRequest request, SlotDetailModel newSlot, Long operatorId) {
+        RescheduleBookingRequest request,
+        SlotDetailModel newSlot,
+        Long healthcareServiceId,
+        java.time.LocalDate bookingDate,
+        Long operatorId) {
         RescheduleOutpatientBookingCommand command = new RescheduleOutpatientBookingCommand();
         command.setOperatorId(operatorId);
         command.setAppointmentId(request.getAppointmentId());
@@ -263,6 +275,8 @@ public class BookingRegisterMapper {
         command.setNewStartInstant(newSlot.getStartTime());
         command.setNewEndInstant(newSlot.getEndTime());
         command.setDestinationLocationId(request.getDestinationLocationId());
+        command.setHealthcareServiceId(healthcareServiceId);
+        command.setBookingDate(bookingDate);
         return command;
     }
 

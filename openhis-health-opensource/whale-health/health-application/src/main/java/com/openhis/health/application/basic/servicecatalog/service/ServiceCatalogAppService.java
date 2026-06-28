@@ -350,6 +350,11 @@ public class ServiceCatalogAppService {
      * @param request 创建请求
      */
     public void createServiceCatalog(CreateServiceCatalogRequest request) {
+        this.assertItemTypeCodeWhenPricingPresent(
+            request.getItemTypeCode(),
+            request.getRetailPrice(),
+            request.getPurchasePrice(),
+            "新建诊疗目录失败");
         // 先落诊疗项目主数据，再写入实例维度定价行（含零售价 SALE）。
         Long createdId = activityDefinitionDomainService.createActivityDefinition(
             serviceCatalogMapper.converterToCreateParam(request));
@@ -372,6 +377,11 @@ public class ServiceCatalogAppService {
      * @param request 更新请求
      */
     public void editServiceCatalog(UpdateServiceCatalogRequest request) {
+        this.assertItemTypeCodeWhenPricingPresent(
+            request.getItemTypeCode(),
+            request.getRetailPrice(),
+            request.getPurchasePrice(),
+            "更新诊疗目录失败");
         // 步骤一：更新诊疗项目主数据（含子项与医保属性）
         activityDefinitionDomainService.updateActivityDefinition(serviceCatalogMapper.converterToUpdateParam(request));
         // 步骤二：主键存在时同步刷新实例维度定价行
@@ -531,6 +541,27 @@ public class ServiceCatalogAppService {
         SaveAllChargeItemDefinitionsCommand saveCommand = new SaveAllChargeItemDefinitionsCommand();
         saveCommand.setItems(items);
         chargeItemDefinitionDomainService.saveAllChargeItemDefinitions(saveCommand);
+    }
+
+    /**
+     * 维护页有价格时须显式携带 fin_type（itemTypeCode）。
+     *
+     * @param itemTypeCode  财务类型
+     * @param retailPrice   零售价
+     * @param purchasePrice 进价
+     * @param messagePrefix 校验失败前缀
+     */
+    private void assertItemTypeCodeWhenPricingPresent(
+        String itemTypeCode,
+        BigDecimal retailPrice,
+        BigDecimal purchasePrice,
+        String messagePrefix) {
+        if (retailPrice == null && purchasePrice == null) {
+            return;
+        }
+        if (itemTypeCode == null || itemTypeCode.trim().isEmpty()) {
+            throw new ValidationException(messagePrefix + "：维护价格时财务类型不能为空");
+        }
     }
 
     /**

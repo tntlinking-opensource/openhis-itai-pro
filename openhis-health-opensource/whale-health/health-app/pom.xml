@@ -152,39 +152,11 @@
             </dependencies>
         </profile>
         <profile>
-            <id>with-mrms</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.openhis</groupId>
-                    <artifactId>mrms-starter</artifactId>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
             <id>with-booking</id>
             <activation>
                 <activeByDefault>true</activeByDefault>
             </activation>
             <dependencies>
-                <dependency>
-                    <groupId>com.openhis</groupId>
-                    <artifactId>booking-starter</artifactId>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>with-report</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.openhis</groupId>
-                    <artifactId>report-starter</artifactId>
-                </dependency>
                 <dependency>
                     <groupId>com.openhis</groupId>
                     <artifactId>booking-starter</artifactId>

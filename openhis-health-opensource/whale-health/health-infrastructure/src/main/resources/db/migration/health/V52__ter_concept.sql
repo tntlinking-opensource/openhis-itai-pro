@@ -3246,6 +3246,26 @@ VALUES
     ('900008037', '900008', 'STOOL_VOL', '大便量', 'g', NULL, '37', true, NULL, 'default', NULL, '1', '2026-06-19 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
 ON CONFLICT ("code_system_id", "code") DO NOTHING;
 
+INSERT INTO "ter_concept" (
+    "id", "code_system_id", "code", "display", "definition", "parent_id", "sort_order",
+    "is_active", "css_class", "list_class", "is_default", "tenant_id",
+    "created_at", "updated_at", "created_by", "updated_by", "is_deleted", "deleted_at", "deleted_by"
+)
+VALUES
+    ('900009001', '900009', 'ADMISSION', '入院', NULL, NULL, '1', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009002', '900009', 'TRANSFER', '转科', NULL, NULL, '2', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009003', '900009', 'SURGERY', '手术', NULL, NULL, '3', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009004', '900009', 'DELIVERY', '分娩', NULL, NULL, '4', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009005', '900009', 'DISCHARGE', '出院', NULL, NULL, '5', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009006', '900009', 'DEATH', '死亡', NULL, NULL, '6', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009007', '900009', 'OUT_FOR_EXAM', '外出检查', NULL, NULL, '7', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009008', '900009', 'REFUSE_TEMP', '拒测体温', NULL, NULL, '8', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009009', '900009', 'PHYSICAL_COOLING', '物理降温', NULL, NULL, '9', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009010', '900009', 'MEDICATION_COOLING', '药物降温', NULL, NULL, '10', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009011', '900009', 'TEMP_NOT_RISING', '体温不升', NULL, NULL, '11', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL),
+    ('900009012', '900009', 'PULSE_DEFICIT', '脉搏短绌', NULL, NULL, '12', true, NULL, 'default', NULL, '1', '2026-06-28 00:00:00.000+00', NULL, '1', '1', false, NULL, NULL)
+ON CONFLICT ("code_system_id", "code") DO NOTHING;
+
 INSERT INTO ter_concept (
     id,
     code_system_id,

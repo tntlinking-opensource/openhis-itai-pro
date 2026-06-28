@@ -211,7 +211,7 @@ openhis:
     chs:
       enabled: true
     elep:
-      enabled: false
+      enabled: true
     report:
       enabled: true
     booking:

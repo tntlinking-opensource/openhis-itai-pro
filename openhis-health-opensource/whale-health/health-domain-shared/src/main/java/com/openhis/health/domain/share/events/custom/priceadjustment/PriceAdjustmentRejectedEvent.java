@@ -18,23 +18,25 @@
 package com.openhis.health.domain.share.events.custom.priceadjustment;
 
 /**
- * 价格调整已审批拒绝事件。
+ * 调价单审批驳回领域事件（DM-CUS-011 §5）。
+ *
+ * <p>触发于库存解锁与主行状态迁移为 rejected 之后。</p>
  */
 public class PriceAdjustmentRejectedEvent extends PriceAdjustmentSnapshotEvent {
+
     /**
-     * 处理逻辑。
-     * @return 返回结果
+     * 反序列化/框架用默认构造。
      */
     public PriceAdjustmentRejectedEvent() {
         super();
     }
 
     /**
-     * 处理Long adjustmentId逻辑。
-     * @return 返回结果
+     * 按锚点主键构造。
+     *
+     * @param aggregateId 调价单首行主键
      */
-    public PriceAdjustmentRejectedEvent(Long adjustmentId) {
-        super(adjustmentId);
+    public PriceAdjustmentRejectedEvent(Long aggregateId) {
+        super(aggregateId);
     }
 }
-

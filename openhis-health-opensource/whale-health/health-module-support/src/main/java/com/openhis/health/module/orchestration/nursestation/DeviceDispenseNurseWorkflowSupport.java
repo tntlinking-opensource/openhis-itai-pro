@@ -42,9 +42,11 @@ import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQ
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestListModel;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
+import com.openhis.health.module.orchestration.support.HealthConcurrencySupport;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -71,6 +73,7 @@ public class DeviceDispenseNurseWorkflowSupport {
     private final DeviceDispenseDomainService deviceDispenseDomainService;
     private final DoctorStationAdviceFifoAllocationAssembler doctorStationAdviceFifoAllocationAssembler;
     private final InventoryItemQueryService inventoryItemQueryService;
+    private final HealthConcurrencySupport healthConcurrencySupport;
 
     /**
      * 住院临时路径（护士划价/绑定执行）：草稿发放单在 promote 后按开关推进为已配药或已发药。
@@ -163,36 +166,41 @@ public class DeviceDispenseNurseWorkflowSupport {
         List<Long> sortedIds = new ArrayList<>(dispenseIds);
         Collections.sort(sortedIds);
         Set<Long> fifoReplacedRequestIds = new HashSet<>();
-        for (Long dispenseId : sortedIds) {
-            DeviceDispenseValidationModel preparable = this.deviceDispenseQueryService.validateDeviceDispensePreparable(dispenseId);
-            if (preparable == null || Boolean.FALSE.equals(preparable.getAllow())) {
-                // 并发或非准备中态，跳过本行。
-                continue;
-            }
-            DeviceDispenseModel dispense = this.deviceDispenseQueryService.mustGetDeviceDispense(dispenseId);
-            if (this.deviceAutoInventoryDeductSettingSupport.isEnabled()) {
-                Long deviceReqId = dispense.getDeviceReqId();
-                if (deviceReqId != null && !fifoReplacedRequestIds.contains(deviceReqId)) {
-                    if (this.needsFifoReplaceBeforeDispense(dispense, fallbackInventoryLocationId)) {
-                        DeviceRequestListModel request = this.requireDeviceRequestListModel(deviceReqId);
-                        Long locationId = this.resolveDispenseLocationId(dispense, fallbackInventoryLocationId);
-                        this.replaceFifoDraftsAtLocation(request, locationId, operatorId);
-                        fifoReplacedRequestIds.add(deviceReqId);
-                        this.deviceDispenseDomainService.promoteDraftDispensesForDeviceRequests(
-                            List.of(deviceReqId), operatorId);
-                        List<Long> activeIds = this.deviceDispenseQueryService.listDeviceDispenseIdsByDeviceRequest(deviceReqId);
-                        for (Long activeId : activeIds) {
-                            this.processOutpatientAutoDeductLine(
-                                activeId, operatorId, preparerId, performerId, completedDispenseIdsOut, inventoryDecreaseAccumulator);
-                        }
-                        continue;
-                    }
+        try {
+            for (Long dispenseId : sortedIds) {
+                DeviceDispenseValidationModel preparable = this.deviceDispenseQueryService.validateDeviceDispensePreparable(dispenseId);
+                if (preparable == null || Boolean.FALSE.equals(preparable.getAllow())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.DEVICE_DISPENSE_INVALID_STATUS,
+                        "耗材发放单状态已变更，请刷新后重试");
                 }
-                this.processOutpatientAutoDeductLine(
-                    dispenseId, operatorId, preparerId, performerId, completedDispenseIdsOut, inventoryDecreaseAccumulator);
-            } else {
-                this.processOutpatientPreparedOnlyLine(dispenseId, operatorId, preparerId, completedDispenseIdsOut);
+                DeviceDispenseModel dispense = this.deviceDispenseQueryService.mustGetDeviceDispense(dispenseId);
+                if (this.deviceAutoInventoryDeductSettingSupport.isEnabled()) {
+                    Long deviceReqId = dispense.getDeviceReqId();
+                    if (deviceReqId != null && !fifoReplacedRequestIds.contains(deviceReqId)) {
+                        if (this.needsFifoReplaceBeforeDispense(dispense, fallbackInventoryLocationId)) {
+                            DeviceRequestListModel request = this.requireDeviceRequestListModel(deviceReqId);
+                            Long locationId = this.resolveDispenseLocationId(dispense, fallbackInventoryLocationId);
+                            this.replaceFifoDraftsAtLocation(request, locationId, operatorId);
+                            fifoReplacedRequestIds.add(deviceReqId);
+                            this.deviceDispenseDomainService.promoteDraftDispensesForDeviceRequests(
+                                List.of(deviceReqId), operatorId);
+                            List<Long> activeIds = this.deviceDispenseQueryService.listDeviceDispenseIdsByDeviceRequest(deviceReqId);
+                            for (Long activeId : activeIds) {
+                                this.processOutpatientAutoDeductLine(
+                                    activeId, operatorId, preparerId, performerId, completedDispenseIdsOut, inventoryDecreaseAccumulator);
+                            }
+                            continue;
+                        }
+                    }
+                    this.processOutpatientAutoDeductLine(
+                        dispenseId, operatorId, preparerId, performerId, completedDispenseIdsOut, inventoryDecreaseAccumulator);
+                } else {
+                    this.processOutpatientPreparedOnlyLine(dispenseId, operatorId, preparerId, completedDispenseIdsOut);
+                }
             }
+        } catch (OptimisticLockingFailureException ex) {
+            throw this.healthConcurrencySupport.mapDeviceDispenseOptimisticLock(ex);
         }
     }
 

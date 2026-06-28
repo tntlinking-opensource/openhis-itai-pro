@@ -25,4 +25,7 @@ public interface WhalePlatformRoleCodeConstants {
     String ROLE_WAREHOUSE = "ROLE_WAREHOUSE";
 
     String ROLE_ACCOUNTANT = "ROLE_ACCOUNTANT";
+
+    /** 财务审批：动账类供应单与调价单的审批/驳回岗位。 */
+    String ROLE_FINANCE_APPROVER = "ROLE_FINANCE_APPROVER";
 }

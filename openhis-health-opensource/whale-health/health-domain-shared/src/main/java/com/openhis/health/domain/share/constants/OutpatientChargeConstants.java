@@ -69,6 +69,8 @@ public interface OutpatientChargeConstants {
     String MESSAGE_CODE_SETTLE_AMOUNT_MISMATCH = "EX-OPC-405";
     /** 正式结算失败：收费项状态非法。 */
     String MESSAGE_CODE_SETTLE_CHARGE_ITEM_STATUS_INVALID = "EX-OPC-406";
+    /** 正式结算失败：医嘱已签退或费用已回草稿，须重新预结算（GAP-STALE-001）。 */
+    String MESSAGE_CODE_SETTLE_ADVICE_CHANGED = "EX-OPC-411";
 
     /**
      * 收银队列汇总收费状态编码：同一就诊下多条收费明细状态不一致（非 {@code ChargeItemStatus} 枚举字面量）。

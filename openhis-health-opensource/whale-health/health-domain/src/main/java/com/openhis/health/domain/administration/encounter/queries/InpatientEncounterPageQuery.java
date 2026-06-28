@@ -42,6 +42,8 @@ public class InpatientEncounterPageQuery extends AbstractPageQuery {
     private String statusEnum;
     /** 登记列表状态（与挂号/登记读侧队列语义对齐）。 */
     private String registrationListStatus;
+    /** 登记列表状态多选（与 {@link #registrationListStatus} 语义一致，优先于单值）。 */
+    private List<String> registrationListStatuses;
     /** 入院日期；按自然日过滤在院候选。 */
     private LocalDate admissionDate;
     /** 为 {@code true} 时仅返回预交金页左侧队列可见就诊（清床前，含 {@code COMPLETED} 待清床）。 */

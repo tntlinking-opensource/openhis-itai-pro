@@ -12,7 +12,6 @@ import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQue
 import com.openhis.health.domain.administration.encounter.entity.EncounterDiagnosis;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.clinical.condition.service.ConditionQueryService;
-import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
@@ -219,7 +218,6 @@ public class OutpatientInsuranceChargeGrouper {
             return Map.of();
         }
         List<EncounterDiagnosis> rows = encounterQueryService.listEncounterDiagnosisEntitiesByIds(encounterDxIds);
-        LinkedHashSet<Long> definitionIds = new LinkedHashSet<>();
         Map<Long, Long> definitionIdByDxId = new HashMap<>();
         Map<Long, String> descriptionByDxId = new HashMap<>();
         for (EncounterDiagnosis row : rows) {
@@ -231,15 +229,18 @@ public class OutpatientInsuranceChargeGrouper {
             }
             Long definitionId = conditionQueryService.findDefinitionIdByConditionId(row.getConditionId());
             if (definitionId != null) {
-                definitionIds.add(definitionId);
                 definitionIdByDxId.put(row.getId(), definitionId);
             }
         }
-        Map<Long, ConditionDefinitionBatchItemQueryModel> definitionById = new HashMap<>();
-        if (!definitionIds.isEmpty()) {
-            List<ConditionDefinitionBatchItemQueryModel> definitions =
-                conditionDefinitionQueryService.getConditionDefinitionListByIds(new ArrayList<>(definitionIds));
-            for (ConditionDefinitionBatchItemQueryModel definition : definitions) {
+        // Pre：批量加载目录（含 yb_no），避免按诊断逐条 IN 查询
+        Map<Long, com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel>
+            definitionById = new HashMap<>();
+        if (!definitionIdByDxId.isEmpty()) {
+            List<com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel> definitions =
+                conditionDefinitionQueryService.getConditionDefinitionListByIds(
+                    new ArrayList<>(new LinkedHashSet<>(definitionIdByDxId.values())));
+            for (com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel definition :
+                definitions) {
                 if (definition != null && definition.getId() != null) {
                     definitionById.put(definition.getId(), definition);
                 }
@@ -247,15 +248,16 @@ public class OutpatientInsuranceChargeGrouper {
         }
         Map<Long, DiagnosisYbContext> out = new HashMap<>();
         for (Map.Entry<Long, Long> entry : definitionIdByDxId.entrySet()) {
-            ConditionDefinitionBatchItemQueryModel definition = definitionById.get(entry.getValue());
-            String diseCodg = null;
+            Long definitionId = entry.getValue();
             String diseName = descriptionByDxId.get(entry.getKey());
-            if (definition != null) {
-                if (StringUtils.isNotBlank(definition.getConditionCode())) {
-                    diseCodg = definition.getConditionCode().trim();
-                }
-                if (StringUtils.isBlank(diseName) && StringUtils.isNotBlank(definition.getName())) {
-                    diseName = definition.getName().trim();
+            com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel batchItem =
+                definitionById.get(definitionId);
+            String diseCodg = null;
+            if (batchItem != null) {
+                diseCodg = InsuranceDiagnosisCodeSupport.resolveNationalDiagCode(
+                    batchItem.getYbNo(), batchItem.getConditionCode());
+                if (StringUtils.isBlank(diseName) && StringUtils.isNotBlank(batchItem.getName())) {
+                    diseName = batchItem.getName().trim();
                 }
             }
             out.put(entry.getKey(), new DiagnosisYbContext(diseCodg, diseName));

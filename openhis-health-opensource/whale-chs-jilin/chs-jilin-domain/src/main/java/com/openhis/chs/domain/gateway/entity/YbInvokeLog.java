@@ -12,7 +12,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
 
-/** 医保平台网关调用日志（2206/2207 等 request/response 全文）。 */
+/** 医保平台网关调用日志（全 infno request/response；V17 增 infname、err_msg）。 */
 @Getter
 @Setter
 @Entity
@@ -25,8 +25,13 @@ public class YbInvokeLog extends BaseAuditedEntity implements IExcludeFromAudit 
     @Column(name = "contract_bus_no", length = 64)
     private String contractBusNo;
 
+    /** 交易编号（如 2401）。 */
     @Column(name = "infno", nullable = false, length = 16)
     private String infno;
+
+    /** 交易中文名（{@link com.openhis.chs.api.ChsInfNo#resolveDisplayName}）。 */
+    @Column(name = "infname", length = 128)
+    private String infname;
 
     @Column(name = "msgid", length = 64)
     private String msgid;
@@ -48,6 +53,10 @@ public class YbInvokeLog extends BaseAuditedEntity implements IExcludeFromAudit 
 
     @Column(name = "infcode", length = 8)
     private String infcode;
+
+    /** 平台 err_msg 或 HTTP/签到异常摘要（便于联调 SQL 筛选）。 */
+    @Column(name = "err_msg", length = 512)
+    private String errMsg;
 
     @Column(name = "duration_ms")
     private Integer durationMs;

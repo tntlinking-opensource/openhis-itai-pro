@@ -120,6 +120,39 @@ public class MedicationDispenseQueryService {
     }
 
     /**
+     * 长期嘱自然月累计：汇总指定医嘱在锚点所在自然月内未软删发放行的 {@code quantity} 合计（GAP-EXE-010）。
+     *
+     * @param medReqId   药品医嘱主键
+     * @param anchorTime 计划执行时刻（用于确定自然月窗口）
+     * @return 数量合计；无记录时返回 0
+     */
+    public BigDecimal sumActiveDispenseQuantityByMedReqIdInNaturalMonth(Long medReqId, LocalDateTime anchorTime) {
+        if (medReqId == null || anchorTime == null) {
+            return BigDecimal.ZERO;
+        }
+        LocalDateTime monthStart = anchorTime.toLocalDate().withDayOfMonth(1).atStartOfDay();
+        LocalDateTime monthEnd = anchorTime.toLocalDate()
+            .withDayOfMonth(anchorTime.toLocalDate().lengthOfMonth())
+            .atTime(23, 59, 59);
+        Specification<MedicationDispense> specification = (root, cq, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.MED_REQ_ID), medReqId));
+            predicates.add(cb.greaterThanOrEqualTo(root.get(FieldNameConstants.CREATED_AT), monthStart));
+            predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.CREATED_AT), monthEnd));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<MedicationDispense> rows = medicationDispenseRepository.findAll(specification);
+        BigDecimal total = BigDecimal.ZERO;
+        for (MedicationDispense row : rows) {
+            if (row != null && row.getQuantity() != null) {
+                total = total.add(row.getQuantity());
+            }
+        }
+        return total;
+    }
+
+    /**
      * 医生站医嘱列表回显：对每个药品医嘱取「发放主键升序第一条」的库位。
      *
      * @param medReqIds 医嘱申请主键集合
@@ -655,15 +688,52 @@ public class MedicationDispenseQueryService {
     }
 
     /**
+     * 核发/配药 Gate：按库房+药品汇总待发预占（拆零单位），可排除当前发放行（GAP-EXE-003）。
+     */
+    public BigDecimal sumDispenseExeReserveQuantityInSplitUnit(
+        Long locationId,
+        Long medicationId,
+        com.openhis.health.domain.share.product.MedicationProductUnitConversionSource productDefinition,
+        Long excludeDispenseId) {
+        if (locationId == null || medicationId == null) {
+            return BigDecimal.ZERO;
+        }
+        Specification<MedicationDispense> specification = (root, cq, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.LOCATION_ID), locationId));
+            predicates.add(cb.equal(root.get(FieldNameConstants.MEDICATION_ID), medicationId));
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
+                NurseStationExecutionConstants.DISPENSE_RESERVE_STATUSES_FOR_EXECUTION_GATE));
+            if (excludeDispenseId != null) {
+                predicates.add(cb.notEqual(root.get(FieldNameConstants.ID), excludeDispenseId));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        BigDecimal reserve = BigDecimal.ZERO;
+        for (MedicationDispense row : medicationDispenseRepository.findAll(specification)) {
+            if (row == null || row.getQuantity() == null) {
+                continue;
+            }
+            BigDecimal splitQty = com.openhis.health.domain.workflow.inventoryitem.support.MedicationProductQuantityToSplitUnitConverter
+                .medicationQuantityToSplitUnit(productDefinition, row.getUnitCode(), row.getQuantity());
+            reserve = reserve.add(splitQty);
+        }
+        return reserve;
+    }
+
+    /**
      * 按主键强制加载发放单。
      *
      * @param id 发放单标识
      * @return 发放单
      */
     public MedicationDispense mustGetMedicationDispense(Long id) {
-        // 状态门控与详情读侧统一：缺失即业务异常，不返回 null
-        return medicationDispenseRepository.findById(id).orElseThrow(
+        // 状态门控与详情读侧统一：缺失或已软删即业务异常，不返回 null（GAP-STALE-003）
+        MedicationDispense dispense = medicationDispenseRepository.findById(id).orElseThrow(
             () -> new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_NOT_FOUND, "药品发放记录不存在"));
+        dispense.assertNotDeleted();
+        return dispense;
     }
 
     /**
@@ -676,7 +746,14 @@ public class MedicationDispenseQueryService {
         if (ids == null || ids.isEmpty()) {
             return List.of();
         }
-        return medicationDispenseRepository.findByIdIn(ids);
+        List<MedicationDispense> rows = medicationDispenseRepository.findByIdIn(ids);
+        List<MedicationDispense> result = new ArrayList<>();
+        for (MedicationDispense row : rows) {
+            if (row != null && !Boolean.TRUE.equals(row.getIsDeleted())) {
+                result.add(row);
+            }
+        }
+        return result;
     }
 
     /**
@@ -686,7 +763,10 @@ public class MedicationDispenseQueryService {
      * @return 当前处于配药中状态时为 true
      */
     public boolean validateDispensePreparable(Long id) {
-        MedicationDispense dispense = this.mustGetMedicationDispense(id);
+        MedicationDispense dispense = this.findById(id);
+        if (dispense == null) {
+            return false;
+        }
         // 仅「配药中」可继续配药操作
         return DispenseStatus.PREPARATION.equals(dispense.getStatusEnum());
     }
@@ -698,7 +778,10 @@ public class MedicationDispenseQueryService {
      * @return 已配药或已汇总待发放时为 true
      */
     public boolean validateDispensable(Long id) {
-        MedicationDispense dispense = this.mustGetMedicationDispense(id);
+        MedicationDispense dispense = this.findById(id);
+        if (dispense == null) {
+            return false;
+        }
         // 已配药、发药中或已汇总待窗口发药
         return DispenseStatus.PREPARED.equals(dispense.getStatusEnum())
             || DispenseStatus.IN_PROGRESS.equals(dispense.getStatusEnum())
@@ -712,7 +795,10 @@ public class MedicationDispenseQueryService {
      * @return 尚未完成发药闭环时为 true
      */
     public boolean validateDispenseCancellable(Long id) {
-        MedicationDispense dispense = this.mustGetMedicationDispense(id);
+        MedicationDispense dispense = this.findById(id);
+        if (dispense == null) {
+            return false;
+        }
         // 未完成发药闭环前允许作废未发
         return DispenseStatus.DRAFT.equals(dispense.getStatusEnum())
             || DispenseStatus.PREPARATION.equals(dispense.getStatusEnum())
@@ -727,7 +813,10 @@ public class MedicationDispenseQueryService {
      * @return 已完成发药或处于待退药处理时为 true
      */
     public boolean validateRefundable(Long id) {
-        MedicationDispense dispense = this.mustGetMedicationDispense(id);
+        MedicationDispense dispense = this.findById(id);
+        if (dispense == null) {
+            return false;
+        }
         // 已发完或已进入退药流程
         return DispenseStatus.COMPLETED.equals(dispense.getStatusEnum())
             || DispenseStatus.PART_COMPLETED.equals(dispense.getStatusEnum())
@@ -782,6 +871,46 @@ public class MedicationDispenseQueryService {
             return false;
         }
         return medicationDispenseRepository.existsByMedicationId(medicationId);
+    }
+
+    /**
+     * 判断药品是否存在非终态发放行（调价提交互斥 BR-PRC-SUB-003：在途发药）。
+     *
+     * @param medicationId 药品定义主键
+     * @return 存在在途发放时为 true
+     */
+    public boolean existsInTransitDispenseByMedicationId(Long medicationId) {
+        if (medicationId == null) {
+            return false;
+        }
+        // 非终态发放（待发、配药中、部分完成等）视为在途发药
+        Specification<MedicationDispense> specification = (root, cq, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            predicates.add(cb.equal(root.get(FieldNameConstants.MEDICATION_ID), medicationId));
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(this.inTransitDispenseStatusCodes()));
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+        return medicationDispenseRepository.count(specification) > 0;
+    }
+
+    /**
+     * 在途发放状态码：草稿、待发、配药中、部分完成、退药中等非终态。
+     *
+     * @return 状态 code 列表
+     */
+    private List<String> inTransitDispenseStatusCodes() {
+        List<String> codes = new ArrayList<>();
+        codes.add(DispenseStatus.DRAFT.getCode());
+        codes.add(DispenseStatus.PREPARATION.getCode());
+        codes.add(DispenseStatus.PREPARED.getCode());
+        codes.add(DispenseStatus.IN_PROGRESS.getCode());
+        codes.add(DispenseStatus.SUMMARIZED.getCode());
+        codes.add(DispenseStatus.PART_COMPLETED.getCode());
+        codes.add(DispenseStatus.ON_HOLD.getCode());
+        codes.add(DispenseStatus.PENDING_REFUND.getCode());
+        codes.add(DispenseStatus.PART_REFUND.getCode());
+        return codes;
     }
 
     /**

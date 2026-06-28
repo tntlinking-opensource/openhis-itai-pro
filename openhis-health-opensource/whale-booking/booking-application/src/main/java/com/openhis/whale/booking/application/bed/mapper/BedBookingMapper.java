@@ -146,7 +146,9 @@ public class BedBookingMapper {
                     }
                 } else if (date.equals(today)) {
                     String operational;
-                    if (bed.getOperationalEnum() != null) {
+                    if (reservation != null) {
+                        operational = STATUS_RESERVED;
+                    } else if (bed.getOperationalEnum() != null) {
                         operational = bed.getOperationalEnum();
                     } else {
                         operational = STATUS_NOT_IN_USE;

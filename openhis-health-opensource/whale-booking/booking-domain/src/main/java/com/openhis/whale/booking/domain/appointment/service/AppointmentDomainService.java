@@ -45,6 +45,7 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -108,6 +109,8 @@ public class AppointmentDomainService {
             appointment.setDisplayOrder(item.getDisplayOrder());
         }
         appointment.setSlotId(item.getSlotId());
+        appointment.setHealthcareServiceId(item.getHealthcareServiceId());
+        appointment.setBookingDate(item.getBookingDate());
         appointment.setAppointmentTypeCode(item.getAppointmentTypeCode());
         appointment.setStartInstant(item.getStartInstant());
         appointment.setEndInstant(item.getEndInstant());
@@ -340,7 +343,11 @@ public class AppointmentDomainService {
         }
         appointment.markTerminalByReason(reasonText, item.getCancellationReasonCode(), LocalDateTime.now());
         // 持久化：先落库，再发布过号/取消事件。
-        appointmentRepository.save(appointment);
+        try {
+            appointmentRepository.save(appointment);
+        } catch (OptimisticLockingFailureException ex) {
+            throw new BusinessException(ErrorCodeConstants.APPOINTMENT_RULE_CONFLICT, "预约已被修改，请刷新后重试");
+        }
         domainEventPublisher.publish(new AppointmentNoShowEvent(
             appointment.getId(), appointment.getCancellationAt(), item.getCancellationReasonCode()));
     }
@@ -381,8 +388,18 @@ public class AppointmentDomainService {
         if (command.getDestinationLocationId() != null) {
             appointment.setDestinationLocationId(command.getDestinationLocationId());
         }
+        if (command.getHealthcareServiceId() != null) {
+            appointment.setHealthcareServiceId(command.getHealthcareServiceId());
+        }
+        if (command.getBookingDate() != null) {
+            appointment.setBookingDate(command.getBookingDate());
+        }
         // 持久化：更新号源与时段快照。
-        return appointmentRepository.save(appointment);
+        try {
+            return appointmentRepository.save(appointment);
+        } catch (OptimisticLockingFailureException ex) {
+            throw new BusinessException(ErrorCodeConstants.APPOINTMENT_RULE_CONFLICT, "预约已被修改，请刷新后重试");
+        }
     }
 
     /**

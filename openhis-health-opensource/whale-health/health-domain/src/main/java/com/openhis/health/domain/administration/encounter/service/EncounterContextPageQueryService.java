@@ -69,6 +69,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -965,28 +966,40 @@ public class EncounterContextPageQueryService {
         Root<Encounter> root,
         jakarta.persistence.criteria.CriteriaBuilder cb,
         InpatientEncounterPageQuery query) {
-        String listStatus = query.getRegistrationListStatus();
-        if (StringUtils.isBlank(listStatus)) {
+        List<String> listStatuses = query.getRegistrationListStatuses();
+        if (listStatuses == null || listStatuses.isEmpty()) {
+            if (StringUtils.isNotBlank(query.getRegistrationListStatus())) {
+                listStatuses = List.of(query.getRegistrationListStatus().trim());
+            }
+        }
+        if (listStatuses == null || listStatuses.isEmpty()) {
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
+                EncounterStatus.PLANNED.getCode(),
+                EncounterStatus.REGISTERED.getCode(),
+                EncounterStatus.IN_PROGRESS.getCode()));
             return;
         }
-        if (InpatientRegistrationConstants.LIST_STATUS_PLANNED.equals(listStatus)) {
-            predicates.add(cb.equal(
-                root.get(FieldNameConstants.STATUS_ENUM), EncounterStatus.PLANNED.getCode()));
+        LinkedHashSet<String> encounterStatuses = new LinkedHashSet<>();
+        for (String listStatus : listStatuses) {
+            if (StringUtils.isBlank(listStatus)) {
+                continue;
+            }
+            String encounterStatus = InpatientRegistrationConstants.toEncounterStatusCode(listStatus);
+            if (encounterStatus == null) {
+                throw new BusinessException(
+                    ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
+                    "registrationListStatus 无效: " + listStatus);
+            }
+            encounterStatuses.add(encounterStatus);
+        }
+        if (encounterStatuses.isEmpty()) {
+            predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(
+                EncounterStatus.PLANNED.getCode(),
+                EncounterStatus.REGISTERED.getCode(),
+                EncounterStatus.IN_PROGRESS.getCode()));
             return;
         }
-        if (InpatientRegistrationConstants.LIST_STATUS_WAIT_ADMISSION.equals(listStatus)) {
-            predicates.add(cb.equal(
-                root.get(FieldNameConstants.STATUS_ENUM), EncounterStatus.REGISTERED.getCode()));
-            return;
-        }
-        if (InpatientRegistrationConstants.LIST_STATUS_ADMITTED.equals(listStatus)) {
-            predicates.add(cb.equal(
-                root.get(FieldNameConstants.STATUS_ENUM), EncounterStatus.IN_PROGRESS.getCode()));
-            return;
-        }
-        throw new BusinessException(
-            ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
-            "registrationListStatus 无效: " + listStatus);
+        predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(encounterStatuses));
     }
 
     private void applyWardScope(

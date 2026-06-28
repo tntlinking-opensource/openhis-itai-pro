@@ -51,6 +51,7 @@ import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -249,6 +250,9 @@ public class DeviceCatalogAppService {
         if (request.getRetailPrice() == null) {
             throw new ValidationException("创建耗材失败：零售价不能为空");
         }
+        if (StringUtils.isBlank(request.getItemTypeCode())) {
+            throw new ValidationException("创建耗材失败：财务类型不能为空");
+        }
 
         this.normalizeManufacturerSupplyForWrite(request);
         // 先落主数据，再原子替换实例维度下的收费定价行（与药品目录模式一致）。
@@ -305,6 +309,9 @@ public class DeviceCatalogAppService {
         }
         if (request.getEditabilityCode() == null || request.getEditabilityCode().trim().isEmpty()) {
             throw new ValidationException("更新耗材失败：editabilityCode 不能为空");
+        }
+        if (StringUtils.isBlank(request.getItemTypeCode())) {
+            throw new ValidationException("更新耗材失败：财务类型不能为空");
         }
         long id = GatewayIdParseUtil.parseRequiredLong(request.getId(), "更新耗材失败：id 不能为空");
 
@@ -698,7 +705,7 @@ public class DeviceCatalogAppService {
      * 一次性重建设备实例下的定价行：先清空实例维度旧定价，再按页面传入的非空金额写入新行。
      *
      * @param instanceId        设备定义主键
-     * @param itemTypeCode      财务分类编码（可空）
+     * @param itemTypeCode      财务分类编码（fin_type_code，必填）
      * @param ybType            医保类别（可空）
      * @param purchasePrice     采购价（必填，每包装单位）
      * @param retailPrice       零售价（必填，每包装单位）

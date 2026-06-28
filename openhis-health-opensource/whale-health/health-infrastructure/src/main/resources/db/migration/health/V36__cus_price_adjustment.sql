@@ -1,4 +1,4 @@
--- cus_price_adjustment（建表）
+-- cus_price_adjustment（建表 · 单据型调价项目行最终态）
 -- Flyway V36
 
 CREATE TABLE IF NOT EXISTS "public"."cus_price_adjustment" (
@@ -12,11 +12,11 @@ CREATE TABLE IF NOT EXISTS "public"."cus_price_adjustment" (
     "deleted_at" timestamptz(6),
     "deleted_by" int8,
     "version" int4 NOT NULL DEFAULT 0,
-    "definition_id" int8 NOT NULL,
-    "price_type" varchar(255) NOT NULL,
-    "lot_number" varchar(255),
-    "old_amount" numeric(19,6) NOT NULL,
-    "new_amount" numeric(19,6) NOT NULL,
+    "bus_no" varchar(255) NOT NULL,
+    "item_table" varchar(255) NOT NULL,
+    "item_id" int8 NOT NULL,
+    "new_purchase_amount" numeric(19, 6),
+    "new_selling_amount" numeric(19, 6),
     "adjustment_reason" varchar(255) NOT NULL,
     "adjustment_time" timestamp(6) NOT NULL,
     "status_enum" varchar(255) NOT NULL,
@@ -27,12 +27,13 @@ CREATE TABLE IF NOT EXISTS "public"."cus_price_adjustment" (
     "approve_comment" varchar(255),
     "operator_id" int8 NOT NULL,
     "org_id" int8 NOT NULL,
-    "stock_quantity" int4,
-    "adjustment_delta" numeric(19,6),
-    "total_impact" numeric(19,6),
     CONSTRAINT "cus_price_adjustment_pkey" PRIMARY KEY ("id")
 );
-COMMENT ON TABLE cus_price_adjustment IS '自定义 price adjustment';
+
+CREATE INDEX IF NOT EXISTS idx_cus_price_adjustment_bus_no ON cus_price_adjustment (bus_no);
+CREATE INDEX IF NOT EXISTS idx_cus_price_adjustment_item_pending ON cus_price_adjustment (item_table, item_id, status_enum);
+
+COMMENT ON TABLE cus_price_adjustment IS '调价单项目行（同 bus_no 多行）';
 COMMENT ON COLUMN cus_price_adjustment.id IS '主键';
 COMMENT ON COLUMN cus_price_adjustment.tenant_id IS '租户标识';
 COMMENT ON COLUMN cus_price_adjustment.created_at IS '创建时间';
@@ -43,11 +44,11 @@ COMMENT ON COLUMN cus_price_adjustment.is_deleted IS '软删标记';
 COMMENT ON COLUMN cus_price_adjustment.deleted_at IS '删除时间';
 COMMENT ON COLUMN cus_price_adjustment.deleted_by IS '删除人';
 COMMENT ON COLUMN cus_price_adjustment.version IS '乐观锁版本号';
-COMMENT ON COLUMN cus_price_adjustment.definition_id IS '定义标识';
-COMMENT ON COLUMN cus_price_adjustment.price_type IS '价格类型';
-COMMENT ON COLUMN cus_price_adjustment.lot_number IS '批号';
-COMMENT ON COLUMN cus_price_adjustment.old_amount IS 'old金额';
-COMMENT ON COLUMN cus_price_adjustment.new_amount IS 'new金额';
+COMMENT ON COLUMN cus_price_adjustment.bus_no IS '调价单号';
+COMMENT ON COLUMN cus_price_adjustment.item_table IS '项目物理表（药品/耗材定义表）';
+COMMENT ON COLUMN cus_price_adjustment.item_id IS '项目定义主键';
+COMMENT ON COLUMN cus_price_adjustment.new_purchase_amount IS '目标进价（可空表示不调进价）';
+COMMENT ON COLUMN cus_price_adjustment.new_selling_amount IS '目标售价（可空表示不调售价）';
 COMMENT ON COLUMN cus_price_adjustment.adjustment_reason IS '调价原因';
 COMMENT ON COLUMN cus_price_adjustment.adjustment_time IS '调价时间';
 COMMENT ON COLUMN cus_price_adjustment.status_enum IS '状态枚举值';
@@ -58,6 +59,3 @@ COMMENT ON COLUMN cus_price_adjustment.approve_time IS 'approve时间';
 COMMENT ON COLUMN cus_price_adjustment.approve_comment IS '审批意见';
 COMMENT ON COLUMN cus_price_adjustment.operator_id IS '操作人标识';
 COMMENT ON COLUMN cus_price_adjustment.org_id IS '机构标识';
-COMMENT ON COLUMN cus_price_adjustment.stock_quantity IS 'stock数量';
-COMMENT ON COLUMN cus_price_adjustment.adjustment_delta IS '调价delta';
-COMMENT ON COLUMN cus_price_adjustment.total_impact IS '合计impact';

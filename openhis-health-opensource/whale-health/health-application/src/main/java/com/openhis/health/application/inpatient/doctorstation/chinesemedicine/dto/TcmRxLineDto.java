@@ -71,7 +71,7 @@ public class TcmRxLineDto {
     @Schema(description = "数量单位展示名")
     private String unitName;
 
-    /** 单剂用量单位零售价（元/剂量单位，目录 DOSE 槽参考价）。 */
+    /** 单剂用量单位零售价（元/剂量单位；已挂费取 ChargeItem.unit_price，否则 DOSE 槽目录价，BR-PRICE-SRC-001）。 */
     @Schema(description = "单剂用量单位零售价")
     private BigDecimal retailUnitPrice;
 

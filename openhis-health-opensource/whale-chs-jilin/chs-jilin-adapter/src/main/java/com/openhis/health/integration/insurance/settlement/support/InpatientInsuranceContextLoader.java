@@ -17,13 +17,12 @@ import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.domain.clinical.condition.queries.model.EncounterDiagnosisQueryModel;
 import com.openhis.health.domain.clinical.condition.service.ConditionQueryService;
-import com.openhis.health.domain.clinical.conditiondefinition.queries.model.ConditionDefinitionBatchItemQueryModel;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
 import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -48,6 +47,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -66,6 +66,7 @@ import java.util.Map;
 public class InpatientInsuranceContextLoader {
 
     private final EncounterContextFacade encounterContextFacade;
+    private final EncounterQueryService encounterQueryService;
     private final ChargeItemQueryService chargeItemQueryService;
     private final ConditionQueryService conditionQueryService;
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
@@ -190,10 +191,17 @@ public class InpatientInsuranceContextLoader {
         ctx.setAdmBed(encounter.getBedName());
         ctx.setDscgBed(encounter.getBedName());
         ctx.setDscgWay(encounter.getOutWayCode());
-        if (doctor != null) {
-            ctx.setAtddrNo(doctor.getYbNo());
-            ctx.setChfpdrName(doctor.getName());
+        // Gate：2401 必填主治医生医保编码，禁止 blankToDash 后以 "-" 上传平台
+        if (doctor == null) {
+            throw new BusinessException("INS-011", "2401 医保入院须选择主治医生");
         }
+        if (StringUtils.isBlank(doctor.getYbNo())) {
+            throw new BusinessException(
+                "INS-011",
+                "2401 主治医生缺少医保编码(yb_no): " + doctor.getName());
+        }
+        ctx.setAtddrNo(doctor.getYbNo());
+        ctx.setChfpdrName(doctor.getName());
         ctx.setMainDiagCode(diagnosis.code());
         ctx.setMainDiagName(diagnosis.name());
         ctx.setAdmDiagDscr(diagnosis.name());
@@ -350,25 +358,13 @@ public class InpatientInsuranceContextLoader {
     }
 
     private DiagnosisHeader resolveDiagnosis(Long encounterId) {
-        List<EncounterDiagnosisQueryModel> diagnoses = conditionQueryService.getEncounterDiagnosis(encounterId);
-        if (diagnoses.isEmpty()) {
-            return new DiagnosisHeader(null, null);
-        }
-        EncounterDiagnosisQueryModel first = diagnoses.get(0);
-        String mainDiagCode = null;
-        String mainDiagName = null;
-        if (first.getDefinitionId() != null) {
-            List<ConditionDefinitionBatchItemQueryModel> defs =
-                conditionDefinitionQueryService.getConditionDefinitionListByIds(List.of(first.getDefinitionId()));
-            if (!defs.isEmpty()) {
-                mainDiagCode = defs.get(0).getConditionCode();
-                mainDiagName = defs.get(0).getName();
-            }
-        }
-        if (StringUtils.isBlank(mainDiagName)) {
-            mainDiagName = first.getDescription();
-        }
-        return new DiagnosisHeader(mainDiagCode, mainDiagName);
+        // Cmd：adapter 统一从 HIS 主诊断目录解析 yb_no（见 InsuranceDiagnosisCodeSupport）
+        InsuranceDiagnosisCodeSupport.MainDiagnosis diagnosis = InsuranceDiagnosisCodeSupport.resolveMainDiagnosis(
+            encounterId,
+            encounterQueryService,
+            conditionQueryService,
+            conditionDefinitionQueryService);
+        return new DiagnosisHeader(diagnosis.code(), diagnosis.name());
     }
 
     private record DiagnosisHeader(String code, String name) {

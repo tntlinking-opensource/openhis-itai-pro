@@ -42,4 +42,9 @@ public interface BusinessSequenceConstants {
      * 诊疗/耗材目录 busNo 序号位数：前缀 2 位（AD/DD）+ 本字段 = 共 10 位。
      */
     int CATALOG_DEFINITION_BUS_NO_SEQ_LENGTH = MASTER_DATA_2_PREFIX_SEQ_LENGTH;
+
+    /**
+     * 库存明细备份批次单号序号位数（DM-DOC-001 · {@code ABU}+{@code yyyyMMdd}+本字段）。
+     */
+    int INVENTORY_DETAIL_SNAPSHOT_BUS_NO_SEQ_LENGTH = 2;
 }

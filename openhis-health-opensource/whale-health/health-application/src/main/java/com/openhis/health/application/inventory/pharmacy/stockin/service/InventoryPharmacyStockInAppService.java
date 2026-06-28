@@ -900,7 +900,7 @@ public class InventoryPharmacyStockInAppService {
     }
 
     /**
-     * 详情行槽价：目录 {@code PURCHASE}、批号 {@code LOT_NUMBER_COST} 原样落槽；{@code STOCK}/{@code SPLIT} 仅包装锚换算。
+     * 详情行槽价：仅锚 {@code SupplyRequest} 持久化行价（**BR-PRICE-SRC-001**）。
      *
      * @param lines 详情行列表，可为 null 或空
      */
@@ -916,21 +916,8 @@ public class InventoryPharmacyStockInAppService {
             if (cat == null) {
                 continue;
             }
-            // —— 已确保 productCatalog 非空：先补 PURCHASE 参考价，再按行价口径写槽单价。——
-            BigDecimal purchase = this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
-                dto.getItemTable(), dto.getItemId());
-            cat.setPurchasePrice(purchase);
-            List<ProductDefinitionCatalogUnitBandDto> bands = cat.getUnitBands();
-            if (bands == null || bands.isEmpty()) {
-                continue;
-            }
-            BigDecimal lotPackagePrice = null;
-            if (StringUtils.isNotBlank(dto.getLotNumber())) {
-                lotPackagePrice = this.chargeItemDefinitionQueryService.resolveFirstLotNumberCostPriceValue(
-                    dto.getItemTable(), dto.getItemId(), dto.getLotNumber().trim());
-            }
-            ProductDefinitionCatalogUnitBandsAssembler.applyInboundWarehouseDetailLineBandPrices(
-                bands, null, purchase, lotPackagePrice, dto.getPrice(), dto.getUnitCode());
+            ProductDefinitionCatalogUnitBandsAssembler.enrichWarehouseDetailCatalogFromPersistedSupplyLinePrice(
+                cat, dto.getPrice(), dto.getUnitCode(), null);
         }
     }
 

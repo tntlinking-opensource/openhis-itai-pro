@@ -917,21 +917,8 @@ public class InventoryWarehouseTransferInAppService {
             if (cat == null) {
                 continue;
             }
-            // —— 已确保 productCatalog 非空：先补 PURCHASE 参考价，再按行价口径写槽单价。——
-            BigDecimal purchase = this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
-                dto.getItemTable(), dto.getItemId());
-            cat.setPurchasePrice(purchase);
-            List<ProductDefinitionCatalogUnitBandDto> bands = cat.getUnitBands();
-            if (bands == null || bands.isEmpty()) {
-                continue;
-            }
-            BigDecimal lotPackagePrice = null;
-            if (StringUtils.isNotBlank(dto.getLotNumber())) {
-                lotPackagePrice = this.chargeItemDefinitionQueryService.resolveFirstLotNumberCostPriceValue(
-                    dto.getItemTable(), dto.getItemId(), dto.getLotNumber().trim());
-            }
-            ProductDefinitionCatalogUnitBandsAssembler.applyInboundWarehouseDetailLineBandPrices(
-                bands, null, purchase, lotPackagePrice, dto.getPrice(), dto.getUnitCode());
+            ProductDefinitionCatalogUnitBandsAssembler.enrichWarehouseDetailCatalogFromPersistedSupplyLinePrice(
+                cat, dto.getPrice(), dto.getUnitCode(), null);
         }
     }
 

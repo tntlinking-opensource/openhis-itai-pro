@@ -5,10 +5,10 @@ Whale 电子病历（EMR）扩展包：TipTap 文书编辑、元数据解析、O
 | 类型 | 说明 | 本模块 |
 |------|------|--------|
 | A 病历 | 入院记录、病程、文书树 | whale-emr |
-| B 单证 | 处方、小票等 | whale-report |
-| C 查询 | 报表 | whale-report |
+| B 单证 | 处方、小票等 | PrintTemplate（AS-BAS-PRT） |
+| C 查询 | 统计报表 | health AppService（范围外，不保留 SqlReport） |
 
-打印单证与病案首页分别见 **whale-report**、**whale-mrms**。
+打印单证见 **PrintTemplate（AS-BAS-PRT）**；病案首页见 **health 内嵌 MRMS**（`MrmsAppService`）。
 
 ---
 

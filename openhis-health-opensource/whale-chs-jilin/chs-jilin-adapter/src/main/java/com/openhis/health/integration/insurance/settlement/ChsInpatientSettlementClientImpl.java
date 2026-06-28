@@ -17,6 +17,8 @@ import com.openhis.chs.domain.inpatient.dto.IpSettleContext;
 import com.openhis.chs.domain.inpatient.entity.YbInpatientPreSettle;
 import com.openhis.chs.domain.inpatient.facade.ChsInpatientSettleOperations;
 import com.openhis.chs.domain.inpatient.repository.YbInpatientPreSettleRepository;
+import com.openhis.chs.domain.outpatient.entity.YbEncounterPlatformMap;
+import com.openhis.chs.domain.outpatient.repository.YbEncounterPlatformMapRepository;
 import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.share.utils.InsuranceContractCategorySupport;
@@ -29,6 +31,7 @@ import com.openhis.whale.chs.jilin.contracts.command.IpInsuranceConfirmCommand;
 import com.openhis.whale.chs.jilin.contracts.result.IpInsuranceConfirmResult;
 import com.openhis.whale.chs.jilin.contracts.command.IpInsuranceEncounterCommand;
 import com.openhis.whale.chs.jilin.contracts.command.IpInsurancePreSettleCommand;
+import com.openhis.whale.chs.jilin.contracts.result.IpInsurancePlatformAdmissionSnapshot;
 import com.openhis.whale.chs.jilin.contracts.result.IpInsurancePreSettleResult;
 import com.openhis.whale.chs.jilin.contracts.command.IpInsuranceRevokeFeeDetailCommand;
 import com.openhis.whale.chs.jilin.contracts.result.IpInsuranceRevokeFeeDetailResult;
@@ -40,7 +43,10 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -65,6 +71,7 @@ public class ChsInpatientSettlementClientImpl implements ChsInpatientSettlementC
     private final ChsInpatientSettleOperations inpatientSettleOperations;
     private final InpatientInsuranceContextLoader contextLoader;
     private final YbInpatientPreSettleRepository inpatientPreSettleRepository;
+    private final YbEncounterPlatformMapRepository encounterPlatformMapRepository;
     private final CurrentOperatorResolver currentOperatorResolver;
 
     /**
@@ -215,6 +222,48 @@ public class ChsInpatientSettlementClientImpl implements ChsInpatientSettlementC
         // Asm
         IpInsuranceRevokeFeeDetailResult result = new IpInsuranceRevokeFeeDetailResult();
         result.setRevokedCount(platform.getRevokedCount());
+        return result;
+    }
+
+    /** 批量查询平台入院登记快照（yb_encounter_platform_map）。 */
+    @Override
+    public List<IpInsurancePlatformAdmissionSnapshot> listPlatformAdmissionSnapshots(List<Long> encounterIds) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return List.of();
+        }
+        Long tenantId = TenantUtils.getCurrentTenantId();
+        LinkedHashSet<Long> unique = new LinkedHashSet<>();
+        for (Long id : encounterIds) {
+            if (id != null) {
+                unique.add(id);
+            }
+        }
+        if (unique.isEmpty()) {
+            return List.of();
+        }
+        List<YbEncounterPlatformMap> maps =
+            encounterPlatformMapRepository.findByEncounterIdInAndTenantIdAndIsDeletedFalse(unique, tenantId);
+        Map<Long, YbEncounterPlatformMap> mapByEncounter = new HashMap<>();
+        for (YbEncounterPlatformMap row : maps) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            mapByEncounter.putIfAbsent(row.getEncounterId(), row);
+        }
+        List<IpInsurancePlatformAdmissionSnapshot> result = new ArrayList<>();
+        for (Long encounterId : unique) {
+            IpInsurancePlatformAdmissionSnapshot snap = new IpInsurancePlatformAdmissionSnapshot();
+            snap.setEncounterId(encounterId);
+            YbEncounterPlatformMap mapped = mapByEncounter.get(encounterId);
+            if (mapped != null) {
+                snap.setContractId(mapped.getContractId());
+                snap.setMdtrtId(mapped.getMdtrtId());
+                snap.setPlatformAdmitted(Boolean.TRUE);
+            } else {
+                snap.setPlatformAdmitted(Boolean.FALSE);
+            }
+            result.add(snap);
+        }
         return result;
     }
 

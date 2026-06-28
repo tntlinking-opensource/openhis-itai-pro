@@ -73,6 +73,9 @@ public class ProductDefinitionDisplayDto {
     private Boolean rxFlag;
     private String ybNo;
 
+    /** 批准文号/国药准字（药品定义 {@code approval_number}）。 */
+    private String approvalNumber;
+
     private String pyStr;
     private String wbStr;
 

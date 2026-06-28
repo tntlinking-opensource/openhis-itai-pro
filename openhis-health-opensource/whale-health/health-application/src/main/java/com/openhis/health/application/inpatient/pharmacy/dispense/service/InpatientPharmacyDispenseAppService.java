@@ -43,7 +43,10 @@ import com.openhis.health.application.inpatient.pharmacy.dispense.response.PageE
 import com.openhis.health.application.inpatient.pharmacy.dispense.response.PagePendingDispenseInpatientEncounterQueueResponse;
 import com.openhis.health.application.inpatient.pharmacy.dispense.response.SavePrepareInpatientMedicationDispenseResponse;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
+import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
+import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecordQueryModel;
+import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
 import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
 import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.domain.administration.location.entity.Location;
@@ -75,7 +78,9 @@ import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.DispenseStatus;
+import com.openhis.health.domain.share.enums.EventStatus;
 import com.openhis.health.domain.share.enums.MedicationDispenseType;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.TherapyType;
@@ -156,6 +161,8 @@ public class InpatientPharmacyDispenseAppService {
     private final InpatientMedicationDispenseChargePricingLoader inpatientMedicationDispenseChargePricingLoader;
     private final InpatientPharmacyDispenseMapper inpatientPharmacyDispenseMapper;
     private final EncounterMedicationDispenseSlipPageLoader encounterMedicationDispenseSlipPageLoader;
+    private final ChargeItemQueryService chargeItemQueryService;
+    private final ProcedureQueryService procedureQueryService;
 
     /**
      * 加载住院发药页初始化元数据与调配药师分页候选。
@@ -383,14 +390,15 @@ public class InpatientPharmacyDispenseAppService {
                 InpatientMedicationRequestExecutionMeasureSupport.assertTemporaryDispenseUnitMatchesRequest(
                     medicationRequestDetail, dispense.getUnitCode(), productRow);
             }
-            inventoryItemQueryService.assertSufficientForMedicationDispense(
+            inventoryItemQueryService.assertSufficientForMedicationDispenseWithReserve(
                 TableNameConstants.MED_MEDICATION_DEFINITION,
                 dispense.getMedicationId(),
                 dispense.getLocationId(),
                 dispense.getLotNumber(),
                 dispenseQty,
                 dispense.getUnitCode(),
-                ProductDefinitionDisplaySupport.toUnitConversionSource(productRow));
+                ProductDefinitionDisplaySupport.toUnitConversionSource(productRow),
+                dispense.getId());
         }
         traceNumberRecordQueryService.assertNoDuplicateTraceCodes(traceCodeInputs);
         traceNumberRecordQueryService.assertCodesNotAlreadyOutbound(traceCodeInputs);
@@ -460,6 +468,7 @@ public class InpatientPharmacyDispenseAppService {
             if (!medicationDispenseQueryService.validateDispensable(dispense.getId())) {
                 throw new BusinessException(ErrorCodeConstants.EX_OPP_203_DISPENSE_STATUS_NOT_ALLOWED, "当前状态不允许发药");
             }
+            this.assertDispenseExecutionChargeGate(dispense, request.getEncounterId());
             if (dispenseTraceGateExtension.isEnabled()) {
                 dispenseTraceGateExtension.assertTraceAllowedForDispense(
                     DispenseTraceGateCommandSupport.from(dispense));
@@ -474,14 +483,15 @@ public class InpatientPharmacyDispenseAppService {
             if (productRowForStockAssert == null) {
                 throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID, "缺少药品目录投影，无法校验库存");
             }
-            inventoryItemQueryService.assertSufficientForMedicationDispense(
+            inventoryItemQueryService.assertSufficientForMedicationDispenseWithReserve(
                 TableNameConstants.MED_MEDICATION_DEFINITION,
                 dispense.getMedicationId(),
                 dispense.getLocationId(),
                 dispense.getLotNumber(),
                 requiredQuantity,
                 dispense.getUnitCode(),
-                ProductDefinitionDisplaySupport.toUnitConversionSource(productRowForStockAssert));
+                ProductDefinitionDisplaySupport.toUnitConversionSource(productRowForStockAssert),
+                dispense.getId());
             dispensersInSubmitOrder.add(dispense);
         }
         DispenseMedicationCommand dispenseCommand = inpatientPharmacyDispenseMapper.toDispenseCommand(
@@ -577,6 +587,56 @@ public class InpatientPharmacyDispenseAppService {
         if (dispenseType != MedicationDispenseType.INPATIENT && dispenseType != MedicationDispenseType.TEMPORARY) {
             throw new BusinessException(
                 ErrorCodeConstants.EX_OPP_203_DISPENSE_STATUS_NOT_ALLOWED, "非住院药品发放不在本工作站处理范围");
+        }
+    }
+
+    /**
+     * 核发 Gate：执行记录未被取消对冲，且关联 Charge 仍为 {@code PENDING_SETTLEMENT}（GAP-STALE-004）。
+     */
+    private void assertDispenseExecutionChargeGate(MedicationDispense dispense, Long encounterId) {
+        if (dispense == null || dispense.getId() == null) {
+            return;
+        }
+        Long procedureId = dispense.getProcedureId();
+        if (procedureId != null && dispense.getMedReqId() != null) {
+            List<ProcedureRecordQueryModel> siblings = procedureQueryService.getProcedureRecords(
+                dispense.getMedReqId(), TableNameConstants.MED_MEDICATION_REQUEST);
+            for (ProcedureRecordQueryModel sibling : siblings) {
+                if (sibling == null) {
+                    continue;
+                }
+                if (!EventStatus.isCancelExecutionStatusCode(sibling.getStatusEnum())) {
+                    continue;
+                }
+                if (procedureId.equals(sibling.getRefundId())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.EX_OPP_203_DISPENSE_STATUS_NOT_ALLOWED,
+                        "执行记录已取消，不允许核发");
+                }
+            }
+        }
+        boolean hasPendingSettlementCharge = false;
+        List<ChargeItem> pendingByDispense = chargeItemQueryService.listPendingSettlementChargeItemsForMedicationDispensePricing(
+            encounterId, List.of(dispense.getId()));
+        if (pendingByDispense != null && !pendingByDispense.isEmpty()) {
+            hasPendingSettlementCharge = true;
+        }
+        if (!hasPendingSettlementCharge && procedureId != null) {
+            List<ChargeItem> procedureCharges = chargeItemQueryService.listChargeItemsByProcedureIds(List.of(procedureId));
+            for (ChargeItem charge : procedureCharges) {
+                if (charge == null || charge.getStatusEnum() == null) {
+                    continue;
+                }
+                if (ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(charge.getStatusEnum())) {
+                    hasPendingSettlementCharge = true;
+                    break;
+                }
+            }
+        }
+        if (!hasPendingSettlementCharge) {
+            throw new BusinessException(
+                ErrorCodeConstants.EX_OPP_203_DISPENSE_STATUS_NOT_ALLOWED,
+                "关联费用已变更，请刷新后重试");
         }
     }
 

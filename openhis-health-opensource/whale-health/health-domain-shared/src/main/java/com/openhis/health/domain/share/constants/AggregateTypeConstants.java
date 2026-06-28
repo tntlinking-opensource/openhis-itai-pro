@@ -148,6 +148,11 @@ public interface AggregateTypeConstants {
     String SUPPLY_REQUEST = "SQ";
     /** 库存项聚合类型名称。 */
     String INVENTORY_ITEM = "II";
+
+    /**
+     * 库存明细备份快照批次单号前缀（DM-DOC-001 · {@code ABU}+{@code yyyyMMdd}+序号）。
+     */
+    String INVENTORY_DETAIL_SNAPSHOT_BACKUP = "ABU";
     /** 号源日程聚合类型名称。 */
     String SCHEDULE = "SC";
     /** 号源时段聚合类型名称。 */
@@ -177,6 +182,11 @@ public interface AggregateTypeConstants {
      * 追溯码记录聚合类型名称。
      */
     String TRACE_NUMBER_RECORD = "TNR";
+
+    /**
+     * 画布打印模板聚合类型名称（busNo 前缀 PT）。
+     */
+    String PRINT_TEMPLATE = "PT";
 
     /**
      * 取药科室模板聚合类型名称。
@@ -252,4 +262,11 @@ public interface AggregateTypeConstants {
      * 样本定义聚合类型名称。
      */
     String SPECIMEN_DEFINITION = "SPD";
+
+    /**
+     * 病案主档聚合类型（领域事件 {@code aggregateType}）。
+     *
+     * <p>值 {@code "case_record"} 为 Wave 1 定稿，与短码 {@code "CR"} 并存语义；事件载荷已发布，暂不改为短码以免破坏订阅方匹配。</p>
+     */
+    String CASE_RECORD = "case_record";
 }

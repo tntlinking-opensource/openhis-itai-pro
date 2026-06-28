@@ -75,6 +75,7 @@ public final class ProductDefinitionDisplaySupport {
         dto.setActiveFlag(definition.getActiveFlag());
         dto.setRxFlag(definition.getRxFlag());
         dto.setYbNo(definition.getYbNo());
+        dto.setApprovalNumber(trimToNull(definition.getApprovalNumber()));
         dto.setPyStr(definition.getPyStr());
         dto.setWbStr(definition.getWbStr());
         dto.setChrgitmLv(definition.getChrgitmLv());

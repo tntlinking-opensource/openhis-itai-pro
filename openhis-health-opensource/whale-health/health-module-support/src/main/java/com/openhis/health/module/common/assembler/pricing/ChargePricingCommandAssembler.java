@@ -19,6 +19,9 @@ package com.openhis.health.module.common.assembler.pricing;
 
 import com.openhis.health.domain.administration.chargeitemdefinition.command.SaveAllChargeItemDefinitionsCommand;
 import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.whale.core.application.exception.BusinessException;
+import org.apache.commons.lang3.StringUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -43,7 +46,7 @@ public final class ChargePricingCommandAssembler {
      * @param items 批量命令条目列表
      * @param instanceTable 实例表名
      * @param instanceId 实例主键
-     * @param typeCode 业务类型编码
+     * @param typeCode 财务类型编码（fin_type_code，必填；由领域层校验）
      * @param ybType 医保类别
      * @param priceTypeCode 定价类型
      * @param yuanPrice 元；{@code null} 跳过
@@ -61,10 +64,16 @@ public final class ChargePricingCommandAssembler {
         if (yuanPrice == null) {
             return;
         }
+        // Gate：有金额必有 fin_type，禁止落库空 type_code（BR-CHGDEF-WR-002）
+        if (StringUtils.isBlank(typeCode)) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_DEFINITION_INVALID_ARGUMENT,
+                "定价行缺少财务类型 type_code，instanceTable=" + instanceTable + ", instanceId=" + instanceId);
+        }
         SaveAllChargeItemDefinitionsCommand.Item item = new SaveAllChargeItemDefinitionsCommand.Item();
         item.setInstanceTable(instanceTable);
         item.setInstanceId(instanceId);
-        item.setTypeCode(typeCode);
+        item.setTypeCode(typeCode.trim());
         item.setYbType(ybType);
         item.setPriceTypeCode(priceTypeCode);
         item.setChargeName(chargeName);

@@ -98,6 +98,8 @@ public class ScheduleDomainService {
         Schedule schedule = new Schedule();
         schedule.setOrganizationId(item.getOrganizationId());
         schedule.setName(item.getName());
+        schedule.setSourceScheduleTemplateId(item.getSourceScheduleTemplateId());
+        schedule.setSlotProvisionTemplateId(item.getSlotProvisionTemplateId());
         schedule.initDraft();
         schedule.assertActorNotEmpty(item.getActors().size());
 
@@ -331,6 +333,22 @@ public class ScheduleDomainService {
         }
         Schedule schedule = this.mustGetSchedule(scheduleId);
         schedule.updateName(name);
+        scheduleRepository.save(schedule);
+    }
+
+    /**
+     * 更新草稿的模板血缘快照（T2/T1 引用）。
+     *
+     * @param scheduleId 日程主键
+     * @param sourceScheduleTemplateId 来源 T2 主键
+     * @param slotProvisionTemplateId 关联 T1 主键
+     */
+    public void updateTemplateSnapshot(Long scheduleId, Long sourceScheduleTemplateId, Long slotProvisionTemplateId) {
+        if (scheduleId == null) {
+            throw new BusinessException(ErrorCodeConstants.SCHEDULE_INVALID_ARGUMENT, "scheduleId 不能为空");
+        }
+        Schedule schedule = this.mustGetSchedule(scheduleId);
+        schedule.updateTemplateSnapshot(sourceScheduleTemplateId, slotProvisionTemplateId);
         scheduleRepository.save(schedule);
     }
 

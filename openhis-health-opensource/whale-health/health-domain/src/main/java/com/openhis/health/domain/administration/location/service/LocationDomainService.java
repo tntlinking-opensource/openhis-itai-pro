@@ -297,12 +297,19 @@ public class LocationDomainService {
      */
     public void occupyBed(OccupyBedCommand command) {
         List<OccupyBedCommand.OccupyBedItemCommand> items = command.resolveItems();
-        Map<Long, Location> map = this.loadLocationMap(CommandBatchUtil.extractIds(items, OccupyBedCommand.OccupyBedItemCommand::getLocationId));
+        List<OccupyBedCommand.OccupyBedItemCommand> sortedItems = new ArrayList<>(items);
+        sortedItems.sort(Comparator.comparing(
+            OccupyBedCommand.OccupyBedItemCommand::getLocationId,
+            Comparator.nullsLast(Comparator.naturalOrder())));
         List<Location> toSave = new ArrayList<>();
-        for (OccupyBedCommand.OccupyBedItemCommand item : items) {
-            Location location = this.requireLocation(map, item.getLocationId());
-            this.assertBedLocation(location);
+        for (OccupyBedCommand.OccupyBedItemCommand item : sortedItems) {
+            Location location = this.requireBedForUpdate(item.getLocationId());
             location.assertPatientAssignable();
+            if (Boolean.TRUE.equals(item.getOccupyFromReservation())) {
+                location.assertReservedForOccupy();
+            } else {
+                location.assertVacantForOccupy();
+            }
             location.occupy();
             toSave.add(location);
         }
@@ -317,11 +324,14 @@ public class LocationDomainService {
      */
     public void releaseBed(ReleaseBedCommand command) {
         List<ReleaseBedCommand.ReleaseBedItemCommand> items = command.resolveItems();
-        Map<Long, Location> map = this.loadLocationMap(CommandBatchUtil.extractIds(items, ReleaseBedCommand.ReleaseBedItemCommand::getLocationId));
+        List<ReleaseBedCommand.ReleaseBedItemCommand> sortedItems = new ArrayList<>(items);
+        sortedItems.sort(Comparator.comparing(
+            ReleaseBedCommand.ReleaseBedItemCommand::getLocationId,
+            Comparator.nullsLast(Comparator.naturalOrder())));
         List<Location> toSave = new ArrayList<>();
-        for (ReleaseBedCommand.ReleaseBedItemCommand item : items) {
-            Location location = this.requireLocation(map, item.getLocationId());
-            this.assertBedLocation(location);
+        for (ReleaseBedCommand.ReleaseBedItemCommand item : sortedItems) {
+            Location location = this.requireBedForUpdate(item.getLocationId());
+            location.assertOccupiedForRelease();
             location.release();
             toSave.add(location);
         }
@@ -332,22 +342,101 @@ public class LocationDomainService {
     }
 
     /**
-     * 预留床位。
+     * 互换床运营态：双床按 id 排序加锁后 release + 交叉 occupy 一次落库（GAP-ATD-003）。
+     *
+     * @param releaseCommand 双方原床释放项
+     * @param occupyCommand  交叉占床项（A→bedB，B→bedA）
+     */
+    public void swapBedsOperational(ReleaseBedCommand releaseCommand, OccupyBedCommand occupyCommand) {
+        List<ReleaseBedCommand.ReleaseBedItemCommand> releaseItems = releaseCommand.resolveItems();
+        List<OccupyBedCommand.OccupyBedItemCommand> occupyItems = occupyCommand.resolveItems();
+        Set<Long> bedIds = new LinkedHashSet<>();
+        for (ReleaseBedCommand.ReleaseBedItemCommand item : releaseItems) {
+            if (item.getLocationId() != null) {
+                bedIds.add(item.getLocationId());
+            }
+        }
+        for (OccupyBedCommand.OccupyBedItemCommand item : occupyItems) {
+            if (item.getLocationId() != null) {
+                bedIds.add(item.getLocationId());
+            }
+        }
+        List<Long> sortedBedIds = new ArrayList<>(bedIds);
+        sortedBedIds.sort(Comparator.naturalOrder());
+        Map<Long, Location> lockedById = new LinkedHashMap<>();
+        for (Long bedId : sortedBedIds) {
+            lockedById.put(bedId, this.requireBedForUpdate(bedId));
+        }
+        for (ReleaseBedCommand.ReleaseBedItemCommand item : releaseItems) {
+            Location location = this.requireLockedBed(lockedById, item.getLocationId());
+            location.assertOccupiedForRelease();
+            location.release();
+        }
+        List<OccupyBedCommand.OccupyBedItemCommand> sortedOccupyItems = new ArrayList<>(occupyItems);
+        sortedOccupyItems.sort(Comparator.comparing(
+            OccupyBedCommand.OccupyBedItemCommand::getLocationId,
+            Comparator.nullsLast(Comparator.naturalOrder())));
+        for (OccupyBedCommand.OccupyBedItemCommand item : sortedOccupyItems) {
+            Location location = this.requireLockedBed(lockedById, item.getLocationId());
+            location.assertPatientAssignable();
+            location.assertVacantForOccupy();
+            location.occupy();
+        }
+        locationRepository.saveAll(new ArrayList<>(lockedById.values()));
+        for (ReleaseBedCommand.ReleaseBedItemCommand item : releaseItems) {
+            domainEventPublisher.publish(new BedReleasedEvent(item.getLocationId(), item.getEncounterId()));
+        }
+        for (OccupyBedCommand.OccupyBedItemCommand item : occupyItems) {
+            domainEventPublisher.publish(new BedOccupiedEvent(item.getLocationId(), item.getEncounterId()));
+        }
+    }
+
+    /**
+     * 预留床位（GAP-ATD-007：悲观行锁 + {@code NOT_IN_USE → RESERVED}）。
      */
     public void reserveBed(ReserveBedCommand command) {
         List<ReserveBedCommand.ReserveBedItemCommand> items = command.resolveItems();
-        Map<Long, Location> map = this.loadLocationMap(CommandBatchUtil.extractIds(items, ReserveBedCommand.ReserveBedItemCommand::getLocationId));
+        List<ReserveBedCommand.ReserveBedItemCommand> sortedItems = new ArrayList<>(items);
+        sortedItems.sort(Comparator.comparing(
+            ReserveBedCommand.ReserveBedItemCommand::getLocationId,
+            Comparator.nullsLast(Comparator.naturalOrder())));
         List<Location> toSave = new ArrayList<>();
-        for (ReserveBedCommand.ReserveBedItemCommand item : items) {
-            Location location = this.requireLocation(map, item.getLocationId());
-            this.assertBedLocation(location);
+        for (ReserveBedCommand.ReserveBedItemCommand item : sortedItems) {
+            Location location = this.requireBedForUpdate(item.getLocationId());
             location.assertPatientAssignable();
-            location.occupy();
+            location.assertVacantForReserve();
+            location.reserve();
             toSave.add(location);
         }
-        locationRepository.saveAll(toSave);
-        for (ReserveBedCommand.ReserveBedItemCommand item : items) {
+        if (!toSave.isEmpty()) {
+            locationRepository.saveAll(toSave);
+        }
+        for (ReserveBedCommand.ReserveBedItemCommand item : sortedItems) {
             domainEventPublisher.publish(new BedReservedEvent(item.getLocationId(), item.getReason()));
+        }
+    }
+
+    /**
+     * 释放床位预留（{@code RESERVED → NOT_IN_USE}，取消/入院确认前释床用）。
+     */
+    public void releaseReservedBed(ReleaseBedCommand command) {
+        List<ReleaseBedCommand.ReleaseBedItemCommand> items = command.resolveItems();
+        List<ReleaseBedCommand.ReleaseBedItemCommand> sortedItems = new ArrayList<>(items);
+        sortedItems.sort(Comparator.comparing(
+            ReleaseBedCommand.ReleaseBedItemCommand::getLocationId,
+            Comparator.nullsLast(Comparator.naturalOrder())));
+        List<Location> toSave = new ArrayList<>();
+        for (ReleaseBedCommand.ReleaseBedItemCommand item : sortedItems) {
+            Location location = this.requireBedForUpdate(item.getLocationId());
+            location.assertReservedForRelease();
+            location.release();
+            toSave.add(location);
+        }
+        if (!toSave.isEmpty()) {
+            locationRepository.saveAll(toSave);
+        }
+        for (ReleaseBedCommand.ReleaseBedItemCommand item : sortedItems) {
+            domainEventPublisher.publish(new BedReleasedEvent(item.getLocationId(), item.getEncounterId()));
         }
     }
 
@@ -396,6 +485,37 @@ public class LocationDomainService {
     private void assertBedLocation(Location location) {
         // 委托聚合根 assertIsBed() 完成床位形态校验，遵守 §D3.2 硬门禁。
         location.assertIsBed();
+    }
+
+    /**
+     * 按主键悲观锁加载床位，供占床路径消除读 Gate 与写之间的 TOCTOU。
+     *
+     * @param locationId 床位主键
+     * @return 床位聚合根
+     */
+    private Location requireBedForUpdate(Long locationId) {
+        Location location = locationRepository
+            .findByIdAndFormEnumAndIsDeletedFalse(locationId, LocationForm.BED.getCode())
+            .orElse(null);
+        if (location == null) {
+            throw new BusinessException(ErrorCodeConstants.LOCATION_NOT_FOUND, "位置不存在");
+        }
+        return location;
+    }
+
+    /**
+     * 从互换床预锁映射中取出床位。
+     *
+     * @param lockedById 已加锁床位映射
+     * @param locationId 床位主键
+     * @return 床位聚合根
+     */
+    private Location requireLockedBed(Map<Long, Location> lockedById, Long locationId) {
+        Location location = lockedById.get(locationId);
+        if (location == null) {
+            throw new BusinessException(ErrorCodeConstants.LOCATION_NOT_FOUND, "位置不存在");
+        }
+        return location;
     }
 
     /**

@@ -5,6 +5,7 @@
 package com.openhis.chs.application.gateway;
 
 import com.alibaba.fastjson2.JSON;
+import com.openhis.chs.api.ChsInfNo;
 import com.openhis.chs.api.InvokeContext;
 import com.openhis.chs.api.InsuranceGatewayClient;
 import com.openhis.chs.api.ResultBody;
@@ -55,13 +56,17 @@ public class PersistingInsuranceGatewayClient implements InsuranceGatewayClient 
         long startNanos = System.nanoTime();
         String requestJson = serialize(input);
         ResultBody body = null;
+        RuntimeException invokeError = null;
         try {
             // Cmd：委托真实客户端发 HTTP
             body = delegate.invoke(contractBusNo, infNo, input, context);
             return body;
+        } catch (RuntimeException ex) {
+            invokeError = ex;
+            throw ex;
         } finally {
-            // Asm：无论成功/异常均写 yb_invoke_log（finally 保证超时也有审计）
-            writeLog(contractBusNo, infNo, requestJson, body, startNanos);
+            // Asm：无论成功/异常均写 yb_invoke_log（独立事务，业务回滚不丢审计）
+            writeLog(contractBusNo, infNo, requestJson, body, invokeError, startNanos);
         }
     }
 
@@ -94,6 +99,7 @@ public class PersistingInsuranceGatewayClient implements InsuranceGatewayClient 
         String infNo,
         String requestJson,
         ResultBody body,
+        RuntimeException invokeError,
         long startNanos) {
         // 测试/无 Writer 时跳过
         if (invokeLogWriter == null) {
@@ -103,12 +109,12 @@ public class PersistingInsuranceGatewayClient implements InsuranceGatewayClient 
         YbInvokeLogCommand command = new YbInvokeLogCommand()
             .setContractBusNo(contractBusNo)
             .setInfno(infNo)
+            .setInfname(ChsInfNo.resolveDisplayName(infNo))
             .setRequestJson(requestJson)
-            .setInfcode(YbInvokeLogWriter.extractInfcode(body))
+            .setInfcode(resolveInfcode(body, invokeError))
+            .setErrMsg(resolveErrMsg(body, invokeError))
             .setDurationMs((int) ((System.nanoTime() - startNanos) / 1_000_000L));
-        if (body != null) {
-            command.setResponseJson(body.getOutput());
-        }
+        command.setResponseJson(resolveResponseJson(body, invokeError));
         // 合并 ThreadLocal 中的业务关联键（由 AppService 在编排前 set）
         if (ctx != null) {
             command.setContractId(ctx.getContractId())
@@ -164,5 +170,32 @@ public class PersistingInsuranceGatewayClient implements InsuranceGatewayClient 
             return (String) input;
         }
         return JSON.toJSONString(input);
+    }
+
+    private static String resolveInfcode(ResultBody body, RuntimeException invokeError) {
+        if (body != null && body.getInfcode() != null) {
+            return body.getInfcode();
+        }
+        if (invokeError != null) {
+            return "-1";
+        }
+        return null;
+    }
+
+    private static String resolveErrMsg(ResultBody body, RuntimeException invokeError) {
+        if (invokeError != null) {
+            return invokeError.getMessage();
+        }
+        return YbInvokeLogWriter.extractPlatformErrMsg(body);
+    }
+
+    private static String resolveResponseJson(ResultBody body, RuntimeException invokeError) {
+        if (body != null) {
+            return YbInvokeLogWriter.serializeResponseBody(body);
+        }
+        if (invokeError != null) {
+            return YbInvokeLogWriter.serializeInvokeException(invokeError);
+        }
+        return null;
     }
 }

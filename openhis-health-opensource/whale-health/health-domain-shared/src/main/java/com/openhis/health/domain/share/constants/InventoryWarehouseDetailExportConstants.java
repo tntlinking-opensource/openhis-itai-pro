@@ -62,4 +62,19 @@ public interface InventoryWarehouseDetailExportConstants {
 
     String INVENTORY_DETAIL_EXPORT_DEFAULT_FILENAME = "库存明细.xlsx";
 
+    /**
+     * 备份库存导出参与行数上限（AS-SDD IF-INV-DTL-07 · 100000）。
+     */
+    Integer INVENTORY_DETAIL_BACKUP_EXPORT_MAX_ROWS = 100000;
+
+    /**
+     * 备份库存导出默认文件名（不含路径）。
+     */
+    String INVENTORY_DETAIL_BACKUP_EXPORT_DEFAULT_FILENAME = "库存明细备份.xlsx";
+
+    /**
+     * 定时快照分页拉取每页行数（AS-SDD INV-DTL-SDD-R-008）。
+     */
+    Integer INVENTORY_DETAIL_SNAPSHOT_PAGE_SIZE = 1000;
+
 }

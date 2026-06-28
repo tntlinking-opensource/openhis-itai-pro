@@ -400,9 +400,12 @@ public class LocationQueryService {
                 || !LocationStatus.ACTIVE.getCode().equals(bed.getStatusEnum())) {
                 continue;
             }
-            if (vacantOnly
-                && LocationOperational.IN_USE.getCode().equals(bed.getOperationalEnum())) {
-                continue;
+            if (vacantOnly) {
+                String operational = bed.getOperationalEnum();
+                if (LocationOperational.IN_USE.getCode().equals(operational)
+                    || LocationOperational.RESERVED.getCode().equals(operational)) {
+                    continue;
+                }
             }
             count++;
         }

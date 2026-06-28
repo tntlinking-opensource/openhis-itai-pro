@@ -215,7 +215,7 @@ VALUES
 ('14', 'Navigation.DeptManagement', '科室管理', 'Navigation', '菜单入口: dept_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('15', 'Navigation.HealthcareServiceManagement', '挂号类型管理', 'Navigation', '菜单入口: healthcare_service_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('16', 'Navigation.ContractManagement', '费用性质管理', 'Navigation', '菜单入口: contract_management', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
-('17', 'Navigation.Analytics', '概览', 'Navigation', '菜单入口: Analytics', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
+('17', 'Navigation.Analytics', '工作台', 'Navigation', '菜单入口: Analytics', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('18', 'Navigation.Frequency', '频次管理', 'Navigation', '菜单入口: Frequency', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('19', 'Navigation.Supplier', '供应商管理', 'Navigation', '菜单入口: Supplier', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
 ('20', 'Navigation.Medicine', '药品管理', 'Navigation', '菜单入口: Medicine', NULL, '2026-05-26 20:00:00.000+00', NULL, '1', NULL, false, NULL, NULL),
@@ -964,7 +964,7 @@ VALUES
 ('2007', 'dept_management', 'DeptManagement', '科室管理', 'lucide:building', '/basic/department', '/basic/department/index', 'Navigation.DeptManagement', '2000', 1, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('2008', 'healthcare_service_management', 'HealthcareServiceManagement', '挂号类型管理', 'lucide:clipboard-list', '/basic/registrationtype', '/basic/registrationtype/index', 'Navigation.HealthcareServiceManagement', '2000', 11, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('2010', 'contract_management', 'ContractManagement', '费用性质管理', 'lucide:credit-card', '/basic/chargetype', '/basic/chargetype/index', 'Navigation.ContractManagement', '2000', 10, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
-('279418897187213312', 'Analytics', 'Analytics', '概览', 'lucide:chart-line', '/analytics', '/_core/analytics/index', 'Navigation.Analytics', NULL, 0, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
+('279418897187213312', 'Analytics', 'Analytics', '工作台', 'lucide:chart-line', '/analytics', '/_core/analytics/index', 'Navigation.Analytics', NULL, 0, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('284501743746682880', 'Frequency', 'Frequency', '频次管理', 'lucide:alarm-clock', '/basic/frequency', '/basic/frequency/index', 'Navigation.Frequency', '2000', 9, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('284502213630365696', 'Supplier', 'Supplier', '供应商管理', 'lucide:truck', '/basic/supplier', '/basic/supplier/index', 'Navigation.Supplier', '2000', 8, true, false, false, '', 'menu', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
 ('284503862625177600', 'Warehouse', 'Warehouse', '库房管理', 'lucide:warehouse', '/inventory', '', NULL, NULL, 9, true, false, false, '', 'directory', '', NULL, '2026-05-26 20:00:00.000+00', '2026-05-26 20:00:00.000+00', '1', '1', false, NULL, NULL, true),
@@ -2208,12 +2208,15 @@ INSERT INTO whale_permissions (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
 )
 VALUES
-    ('310900000000000001', 'Booking', '统一预约', NULL,
+    ('310900000000000001', 'Booking', '排班预约', NULL,
      'whale-booking 模块入口权限分组', NULL,
      TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('310900000000000002', 'Booking.Schedule.View', '排班与号源', 'Booking',
-     '门诊排班、号源日历', NULL,
+    ('310900000000000002', 'Booking.OutpatientSchedule.View', '门诊排班', 'Booking',
+     '菜单入口: BookingOutpatientSchedule', NULL,
      TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310900000000000012', 'Booking.SlotCalendar.View', '号源日历', 'Booking',
+     '菜单入口: BookingSlotCalendar', NULL,
+     TIMESTAMP '2026-06-25 00:00:00+00', TIMESTAMP '2026-06-25 00:00:00+00', 1, 1, FALSE, NULL, NULL),
     ('310900000000000003', 'Booking.Register.View', '门诊预约', 'Booking',
      '门诊预约登记', NULL,
      TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
@@ -2238,8 +2241,8 @@ VALUES
     ('310900000000000010', 'Booking.QueueDisplay.View', '叫号大屏', 'Booking',
      '候诊叫号大屏', NULL,
      TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL),
-    ('310900000000000011', 'Booking.Template.View', '排班模板', 'Booking',
-     'T1/T2/TW 排班模板维护', NULL,
+    ('310900000000000011', 'Booking.Template.View', '排班设置', 'Booking',
+     '日排班、周排班、放号时段与日历例外配置', NULL,
      TIMESTAMP '2026-06-14 00:00:00+00', TIMESTAMP '2026-06-14 00:00:00+00', 1, 1, FALSE, NULL, NULL)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
@@ -2258,54 +2261,54 @@ INSERT INTO whale_menus (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
 )
 VALUES
-    ('310900000000000100', 'BookingHub', 'BookingHub', '统一预约', 'lucide:calendar-range',
+    ('310900000000000100', 'BookingHub', 'BookingHub', '排班预约', 'lucide:calendar-range',
      '/booking', '', NULL, NULL, 8, TRUE, FALSE, FALSE, '', 'directory',
      '门诊排班 / 号源 / 预约 / 候诊叫号 / 策略 / 模板', NULL,
      TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000112', 'BookingScheduleTemplate', 'BookingScheduleTemplate', '排班设置', 'lucide:layout-template',
+     '/booking/schedule-template', '/booking/schedule-template/index', 'Booking.Template.View', '310900000000000100', 1,
+     TRUE, FALSE, FALSE, '', 'menu', 'ScheduleTemplateAppService · 日/周排班惯例与放号时段', NULL,
+     TIMESTAMP '2026-06-14 00:00:00+00', TIMESTAMP '2026-06-14 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
     ('310900000000000101', 'BookingOutpatientSchedule', 'BookingOutpatientSchedule', '门诊排班', 'lucide:calendar-clock',
-     '/booking/outpatient-schedule', '/booking/outpatient-schedule/index', 'Booking.Schedule.View', '310900000000000100', 1,
+     '/booking/outpatient-schedule', '/booking/outpatient-schedule/index', 'Booking.OutpatientSchedule.View', '310900000000000100', 2,
      TRUE, FALSE, FALSE, '', 'menu', 'OutpatientScheduleAppService', NULL,
      TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
     ('310900000000000102', 'BookingSlotCalendar', 'BookingSlotCalendar', '号源日历', 'lucide:calendar-days',
-     '/booking/slot-calendar', '/booking/slot-calendar/index', 'Booking.Schedule.View', '310900000000000100', 2,
+     '/booking/slot-calendar', '/booking/slot-calendar/index', 'Booking.SlotCalendar.View', '310900000000000100', 3,
      TRUE, FALSE, FALSE, '', 'menu', 'SlotManageAppService', NULL,
      TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
     ('310900000000000103', 'BookingOutpatientRegister', 'BookingOutpatientRegister', '门诊预约', 'lucide:calendar-check',
-     '/booking/outpatient-register', '/booking/outpatient-register/index', 'Booking.Register.View', '310900000000000100', 3,
-     TRUE, FALSE, FALSE, '', 'menu', 'BookingRegisterAppService', NULL,
+     '/booking/outpatient-register', '/booking/outpatient-register/index', 'Booking.Register.View', '310900000000000100', 4,
+     TRUE, TRUE, FALSE, '', 'menu', 'BookingRegisterAppService', NULL,
      TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
     ('310900000000000104', 'BookingQueueBoard', 'BookingQueueBoard', '候诊叫号', 'lucide:megaphone',
-     '/booking/queue-board', '/booking/queue-board/index', 'Booking.Queue.View', '310900000000000100', 4,
-     TRUE, FALSE, FALSE, '', 'menu', 'QueueBoardAppService', NULL,
-     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
-    ('310900000000000105', 'BookingPolicy', 'BookingPolicy', '放号策略', 'lucide:settings-2',
-     '/booking/policy', '/booking/policy/index', 'Booking.Policy.View', '310900000000000100', 5,
-     TRUE, FALSE, FALSE, '', 'menu', 'BookingPolicyAppService', NULL,
-     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
-    ('310900000000000106', 'BookingMedTech', 'BookingMedTech', '医技预约', 'lucide:stethoscope',
-     '/booking/med-tech', '/booking/med-tech/index', 'Booking.MedTech.View', '310900000000000100', 6,
-     TRUE, FALSE, FALSE, '', 'menu', 'MedTechBookingAppService', NULL,
-     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
-    ('310900000000000107', 'BookingBed', 'BookingBed', '床位预约', 'lucide:bed',
-     '/booking/bed', '/booking/bed/index', 'Booking.Bed.View', '310900000000000100', 7,
-     TRUE, FALSE, FALSE, '', 'menu', 'BedBookingAppService', NULL,
-     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
-    ('310900000000000108', 'BookingHealthCheckup', 'BookingHealthCheckup', '体检预约', 'lucide:heart-pulse',
-     '/booking/health-checkup', '/booking/health-checkup/index', 'Booking.HealthCheckup.View', '310900000000000100', 8,
-     TRUE, FALSE, FALSE, '', 'menu', 'HealthCheckupBookingAppService', NULL,
-     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
-    ('310900000000000109', 'BookingChannel', 'BookingChannel', '渠道配置', 'lucide:share-2',
-     '/booking/channel', '/booking/channel/index', 'Booking.Channel.View', '310900000000000100', 9,
-     TRUE, FALSE, FALSE, '', 'menu', 'ChannelBookingAppService', NULL,
+     '/booking/queue-board', '/booking/queue-board/index', 'Booking.Queue.View', '310900000000000100', 5,
+     TRUE, TRUE, FALSE, '', 'menu', 'QueueBoardAppService', NULL,
      TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
     ('310900000000000110', 'BookingQueueDisplay', 'BookingQueueDisplay', '叫号大屏', 'lucide:monitor',
-     '/booking/queue-display', '/booking/queue-display/index', 'Booking.QueueDisplay.View', '310900000000000100', 10,
-     TRUE, FALSE, FALSE, '', 'menu', 'Queue display fullscreen', NULL,
+     '/booking/queue-display', '/booking/queue-display/index', 'Booking.QueueDisplay.View', '310900000000000100', 6,
+     TRUE, TRUE, FALSE, '', 'menu', 'Queue display fullscreen', NULL,
      TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, FALSE),
-    ('310900000000000112', 'BookingScheduleTemplate', 'BookingScheduleTemplate', '排班模板', 'lucide:layout-template',
-     '/booking/schedule-template', '/booking/schedule-template/index', 'Booking.Template.View', '310900000000000100', 11,
-     TRUE, FALSE, FALSE, '', 'menu', 'ScheduleTemplateAppService T1/T2/TW', NULL,
-     TIMESTAMP '2026-06-14 00:00:00+00', TIMESTAMP '2026-06-14 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+    ('310900000000000106', 'BookingMedTech', 'BookingMedTech', '医技预约', 'lucide:stethoscope',
+     '/booking/med-tech', '/booking/med-tech/index', 'Booking.MedTech.View', '310900000000000100', 7,
+     TRUE, TRUE, FALSE, '', 'menu', 'MedTechBookingAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000107', 'BookingBed', 'BookingBed', '床位预约', 'lucide:bed',
+     '/booking/bed', '/booking/bed/index', 'Booking.Bed.View', '310900000000000100', 8,
+     TRUE, TRUE, FALSE, '', 'menu', 'BedBookingAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000108', 'BookingHealthCheckup', 'BookingHealthCheckup', '体检预约', 'lucide:heart-pulse',
+     '/booking/health-checkup', '/booking/health-checkup/index', 'Booking.HealthCheckup.View', '310900000000000100', 9,
+     TRUE, TRUE, FALSE, '', 'menu', 'HealthCheckupBookingAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000105', 'BookingPolicy', 'BookingPolicy', '预约策略', 'lucide:settings-2',
+     '/booking/policy', '/booking/policy/index', 'Booking.Policy.View', '310900000000000100', 10,
+     TRUE, TRUE, FALSE, '', 'menu', 'BookingPolicyAppService · 挂号策略与停诊策略', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000109', 'BookingChannel', 'BookingChannel', '渠道配置', 'lucide:share-2',
+     '/booking/channel', '/booking/channel/index', 'Booking.Channel.View', '310900000000000100', 11,
+     TRUE, TRUE, FALSE, '', 'menu', 'ChannelBookingAppService', NULL,
+     TIMESTAMP '2026-06-13 00:00:00+00', TIMESTAMP '2026-06-13 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
 ON CONFLICT (id) DO UPDATE SET
     code = EXCLUDED.code,
     name = EXCLUDED.name,
@@ -2385,16 +2388,9 @@ INSERT INTO whale_permission_grants (
     tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
 )
 VALUES
-    ('310900000000000011', 'Booking.Schedule.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('310900000000000012', 'Booking.Register.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('310900000000000013', 'Booking.Queue.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310900000000000011', 'Booking.OutpatientSchedule.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000037', 'Booking.SlotCalendar.View', 'R', '1', NULL, TIMESTAMP '2026-06-25 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('310900000000000014', 'Booking', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('310900000000000015', 'Booking.Policy.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('310900000000000016', 'Booking.MedTech.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('310900000000000017', 'Booking.Bed.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('310900000000000018', 'Booking.HealthCheckup.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('310900000000000019', 'Booking.Channel.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
-    ('310900000000000020', 'Booking.QueueDisplay.View', 'R', '1', NULL, TIMESTAMP '2026-06-13 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('310900000000000021', 'Booking.Template.View', 'R', '1', NULL, TIMESTAMP '2026-06-14 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('317000463887929351', 'Navigation.SpecimenDefinition', 'R', '1', NULL, TIMESTAMP '2026-06-12 08:18:12.580+00', NULL, 1, NULL, FALSE, NULL, NULL),
     ('10071', 'Navigation.Chsnationalcatalog', 'R', '1', NULL, TIMESTAMP '2026-06-17 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
@@ -2548,6 +2544,56 @@ INSERT INTO whale_qrtz_cron_triggers (
     '住院滚费_trigger',
     'DEFAULT',
     '0 5 0 * * ?',
+    'Asia/Shanghai'
+) ON CONFLICT (sched_name, trigger_name, trigger_group) DO NOTHING;
+
+INSERT INTO whale_qrtz_job_details (
+    sched_name, job_name, job_group, description, job_class_name,
+    is_durable, is_nonconcurrent, is_update_data, requests_recovery, job_data
+) VALUES (
+    'WhaleScheduler',
+    '库存备份',
+    'DEFAULT',
+    '库存备份',
+    'com.openhis.whale.core.infrastructure.job.QuartzDisallowConcurrentJobAdapter',
+    false,
+    true,
+    false,
+    false,
+    '\x0d0a2353756e204a756e2032382031323a30303a30302043535420323032360d0a6a6f624265616e4e616d653d696e76656e746f727957617265686f757365496e76656e746f727944657461696c2f65786563757465496e76656e746f727944657461696c536e617073686f740d0a646973706c61794e616d653d5c75354539335c75354235385c75353930375c75344546440d0a74656e616e7449643d310d0a6d697366697265506f6c6963793d44454641554c540d0a636f6e63757272656e74506f6c6963793d444953414c4c4f570d0a'::bytea
+) ON CONFLICT (sched_name, job_name, job_group) DO NOTHING;
+
+INSERT INTO whale_qrtz_triggers (
+    sched_name, trigger_name, trigger_group, job_name, job_group,
+    description, next_fire_time, prev_fire_time, priority,
+    trigger_state, trigger_type, start_time, end_time,
+    calendar_name, misfire_instr, job_data
+) VALUES (
+    'WhaleScheduler',
+    '库存备份_trigger',
+    'DEFAULT',
+    '库存备份',
+    'DEFAULT',
+    NULL,
+    0,
+    -1,
+    5,
+    'PAUSED',
+    'CRON',
+    (EXTRACT(EPOCH FROM TIMESTAMP '2026-01-01 00:00:00+08') * 1000)::bigint,
+    0,
+    NULL,
+    0,
+    NULL
+) ON CONFLICT (sched_name, trigger_name, trigger_group) DO NOTHING;
+
+INSERT INTO whale_qrtz_cron_triggers (
+    sched_name, trigger_name, trigger_group, cron_expression, time_zone_id
+) VALUES (
+    'WhaleScheduler',
+    '库存备份_trigger',
+    'DEFAULT',
+    '0 0 1 * * ?',
     'Asia/Shanghai'
 ) ON CONFLICT (sched_name, trigger_name, trigger_group) DO NOTHING;
 
@@ -3174,10 +3220,58 @@ UPDATE whale_menus SET sort_order = 3,  is_hidden = FALSE, updated_at = TIMESTAM
 UPDATE whale_menus SET display_name = '打印设计器', sort_order = 24, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310600000000000102' AND code = 'PrintTemplateDesigner' AND is_deleted = FALSE;
 UPDATE whale_menus SET sort_order = 25, is_hidden = FALSE, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310600000000000101' AND code = 'PrintTemplate' AND is_deleted = FALSE;
 
--- 10.7 排班预约（前三项改名重排；菜单与权限一一对应）
+-- 10.7 统一预约子菜单排序（原 booking V10；flyway 整理时勿遗漏）
 UPDATE whale_menus SET display_name = '排班设置', sort_order = 1, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000112' AND code = 'BookingScheduleTemplate' AND is_deleted = FALSE;
 UPDATE whale_menus SET display_name = '门诊排班', sort_order = 2, permission_name = 'Booking.OutpatientSchedule.View', updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000101' AND code = 'BookingOutpatientSchedule' AND is_deleted = FALSE;
 UPDATE whale_menus SET display_name = '号源日历', sort_order = 3, permission_name = 'Booking.SlotCalendar.View', updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000102' AND code = 'BookingSlotCalendar' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 4, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000103' AND code = 'BookingOutpatientRegister' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 5, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000104' AND code = 'BookingQueueBoard' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 6, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000110' AND code = 'BookingQueueDisplay' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 7, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000106' AND code = 'BookingMedTech' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 8, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000107' AND code = 'BookingBed' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 9, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000108' AND code = 'BookingHealthCheckup' AND is_deleted = FALSE;
+UPDATE whale_menus SET display_name = '预约策略', sort_order = 10, remark = 'BookingPolicyAppService · 挂号策略与停诊策略', updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000105' AND code = 'BookingPolicy' AND is_deleted = FALSE;
+UPDATE whale_menus SET sort_order = 11, updated_at = TIMESTAMP '2026-06-25 00:00:00+00' WHERE id = '310900000000000109' AND code = 'BookingChannel' AND is_deleted = FALSE;
+
+-- 10.8 排班预约：默认仅展示 sort 1～3；扩展菜单隐藏并撤销授权（原 booking V11）
+UPDATE whale_menus
+SET display_name = '排班预约',
+    remark       = '门诊排班 / 号源 / 预约 / 候诊叫号 / 策略 / 模板',
+    updated_at   = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id = '310900000000000100'
+  AND code = 'BookingHub'
+  AND is_deleted = FALSE;
+
+UPDATE whale_menus
+SET is_hidden  = TRUE,
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE id IN (
+    '310900000000000103',
+    '310900000000000104',
+    '310900000000000110',
+    '310900000000000106',
+    '310900000000000107',
+    '310900000000000108',
+    '310900000000000105',
+    '310900000000000109'
+)
+  AND is_deleted = FALSE;
+
+UPDATE whale_permission_grants
+SET is_deleted = TRUE,
+    deleted_at = TIMESTAMP '2026-06-25 00:00:00+00',
+    updated_at = TIMESTAMP '2026-06-25 00:00:00+00'
+WHERE permission_name IN (
+    'Booking.Register.View',
+    'Booking.Queue.View',
+    'Booking.QueueDisplay.View',
+    'Booking.MedTech.View',
+    'Booking.Bed.View',
+    'Booking.HealthCheckup.View',
+    'Booking.Policy.View',
+    'Booking.Channel.View'
+)
+  AND is_deleted = FALSE;
 
 -- ---------------------------------------------------------------------------
 -- 11. 权限 display_name 与菜单显示名对齐
@@ -3547,6 +3641,8 @@ INSERT INTO whale_roles (
     ('15', 'medical_technician', '医技', 'ROLE_MEDICAL_TECH', '医技人员，负责检验检查等医技工作', true, true, NULL,
      '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
     ('16', 'staff_other', '其他', 'ROLE_STAFF_OTHER', '其他岗位人员（老库 STAFF_TYPE=1）', true, true, NULL,
+     '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL),
+    ('17', 'finance_approver', '财务审批', 'ROLE_FINANCE_APPROVER', '财务审批岗位，负责动账类供应单与调价单的审批与驳回', true, true, NULL,
      '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL)
 ON CONFLICT (id) DO NOTHING;
 
@@ -3563,4 +3659,319 @@ INSERT INTO whale_role_claims (
     ('105026', '11', 'StaffScope', 'NURSE_ORG', NULL,
      '2026-06-25 12:00:00.000+00', '2026-06-25 12:00:00.000+00', NULL, NULL, false, NULL, NULL)
 ON CONFLICT (id) DO NOTHING;
+
+-- V97：财务管理 / 调价管理、调价明细菜单
+
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310700000000000020', 'Finance', '财务管理', NULL,
+     '财务域菜单入口权限分组', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000021', 'Navigation.PriceAdjustment', '调价管理', 'Navigation',
+     '菜单入口: PriceAdjustment — 批量调价单与审批', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('310700000000000022', 'Navigation.PriceAdjustmentDetail', '调价明细', 'Navigation',
+     '菜单入口: PriceAdjustmentDetail — 已生效调价项目明细查询', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('310900000000000200', 'FinanceManagement', 'FinanceManagement', '财务管理', 'lucide:landmark',
+     '/finance', '', NULL, NULL, 13, TRUE, FALSE, FALSE, '', 'directory',
+     '财务域：调价管理、调价明细等', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000201', 'PriceAdjustment', 'PriceAdjustment', '调价管理', 'lucide:trending-up',
+     '/finance/price-adjustment', '/finance/price-adjustment/index', 'Navigation.PriceAdjustment', '310900000000000200', 1,
+     TRUE, FALSE, FALSE, '', 'menu', 'PriceAdjustment 批量调价单与审批', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+    ('310900000000000202', 'PriceAdjustmentDetail', 'PriceAdjustmentDetail', '调价明细', 'lucide:scroll-text',
+     '/finance/price-adjustment-detail', '/finance/price-adjustment-detail/index', 'Navigation.PriceAdjustmentDetail', '310900000000000200', 2,
+     TRUE, FALSE, FALSE, '', 'menu', 'PriceAdjustmentDetail 已生效调价项目明细查询', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', TIMESTAMP '2026-06-27 00:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('310800000000000039', 'Navigation.PriceAdjustment', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('310800000000000040', 'Navigation.PriceAdjustmentDetail', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 00:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-27 00:00:00+00';
+
+-- ---------------------------------------------------------------------------
+-- 14. 病案管理（MRMS）菜单 + 权限种子（openhis-pro-ui views/mrms）
+-- ---------------------------------------------------------------------------
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('880020000000000001', 'Navigation.MrmsCaseRecordList', '病案检索', 'Navigation',
+     '菜单入口: MrmsCaseRecordList — 病案检索列表', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000002', 'Navigation.MrmsQcWorkbench', '质控工作台', 'Navigation',
+     '菜单入口: MrmsQcWorkbench — 病案质控与归档', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000003', 'Navigation.MrmsBorrow', '借阅复印', 'Navigation',
+     '菜单入口: MrmsBorrow — 病案借阅复印审批', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000004', 'Navigation.MrmsUpload', '4401上传', 'Navigation',
+     '菜单入口: MrmsUpload — 医保病案首页手动上传', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000005', 'Navigation.MrmsCaseRecordHomepage', '病案首页编辑', 'Navigation',
+     '隐藏路由: MrmsCaseRecordHomepage — 全屏首页编辑', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000006', 'Navigation.MrmsCaseRecordVolume', '卷宗预览', 'Navigation',
+     '隐藏路由: MrmsCaseRecordVolume — 卷宗 PDF 预览', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('880010000000000000', 'MrmsManagement', 'MrmsManagement', '病案管理', 'lucide:folder-archive',
+     '/mrms', '', NULL, NULL, 12, TRUE, FALSE, FALSE, '', 'directory',
+     '病案检索 / 质控 / 借阅 / 4401 手动上传', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000001', 'MrmsCaseRecordList', 'MrmsCaseRecordList', '病案检索', 'lucide:search',
+     '/mrms/case-record', '/mrms/case-record/index', 'Navigation.MrmsCaseRecordList', '880010000000000000', 1,
+     TRUE, FALSE, FALSE, '', 'menu', '病案室/医生检索与打开首页', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000002', 'MrmsQcWorkbench', 'MrmsQcWorkbench', '质控工作台', 'lucide:clipboard-check',
+     '/mrms/qc-workbench', '/mrms/qc-workbench/index', 'Navigation.MrmsQcWorkbench', '880010000000000000', 2,
+     TRUE, FALSE, FALSE, '', 'menu', '质控、归档、解档', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000003', 'MrmsBorrow', 'MrmsBorrow', '借阅复印', 'lucide:book-open',
+     '/mrms/borrow', '/mrms/borrow/index', 'Navigation.MrmsBorrow', '880010000000000000', 3,
+     TRUE, FALSE, FALSE, '', 'menu', '借阅申请审批与借还', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000004', 'MrmsUpload', 'MrmsUpload', '4401上传', 'lucide:upload-cloud',
+     '/mrms/upload', '/mrms/upload/index', 'Navigation.MrmsUpload', '880010000000000000', 4,
+     TRUE, FALSE, FALSE, '', 'menu', '医保病案首页手动上传（无自动上传）', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000005', 'MrmsCaseRecordHomepage', 'MrmsCaseRecordHomepage', '病案首页', 'lucide:file-text',
+     '/mrms/case-record/homepage/:caseRecordId', '/mrms/case-record/homepage/index',
+     'Navigation.MrmsCaseRecordHomepage', '880010000000000000', 10,
+     TRUE, TRUE, FALSE, '', 'menu', '列表跳转全屏编辑，不单独展示', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000006', 'MrmsCaseRecordVolume', 'MrmsCaseRecordVolume', '卷宗预览', 'lucide:files',
+     '/mrms/case-record/volume/:caseRecordId', '/mrms/case-record/volume/index',
+     'Navigation.MrmsCaseRecordVolume', '880010000000000000', 11,
+     TRUE, TRUE, FALSE, '', 'menu', '卷宗 PDF 预览，列表/质控跳转', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('880030000000000001', 'Navigation.MrmsCaseRecordList', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000002', 'Navigation.MrmsQcWorkbench', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000003', 'Navigation.MrmsBorrow', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000004', 'Navigation.MrmsUpload', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000005', 'Navigation.MrmsCaseRecordHomepage', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000006', 'Navigation.MrmsCaseRecordVolume', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-27 12:00:00+00';
+
+-- ---------------------------------------------------------------------------
+-- 14. 病案管理（MRMS）菜单 + 权限种子（openhis-pro-ui views/mrms）
+-- ---------------------------------------------------------------------------
+INSERT INTO whale_permissions (
+    id, name, display_name, parent_name, description,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('880020000000000001', 'Navigation.MrmsCaseRecordList', '病案检索', 'Navigation',
+     '菜单入口: MrmsCaseRecordList — 病案检索列表', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000002', 'Navigation.MrmsQcWorkbench', '质控工作台', 'Navigation',
+     '菜单入口: MrmsQcWorkbench — 病案质控与归档', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000003', 'Navigation.MrmsBorrow', '借阅复印', 'Navigation',
+     '菜单入口: MrmsBorrow — 病案借阅复印审批', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000004', 'Navigation.MrmsUpload', '4401上传', 'Navigation',
+     '菜单入口: MrmsUpload — 医保病案首页手动上传', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000005', 'Navigation.MrmsCaseRecordHomepage', '病案首页编辑', 'Navigation',
+     '隐藏路由: MrmsCaseRecordHomepage — 全屏首页编辑', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL),
+    ('880020000000000006', 'Navigation.MrmsCaseRecordVolume', '卷宗预览', 'Navigation',
+     '隐藏路由: MrmsCaseRecordVolume — 卷宗 PDF 预览', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL)
+ON CONFLICT (id) DO UPDATE SET
+    name          = EXCLUDED.name,
+    display_name  = EXCLUDED.display_name,
+    parent_name   = EXCLUDED.parent_name,
+    description   = EXCLUDED.description,
+    is_deleted    = FALSE,
+    deleted_at    = NULL,
+    deleted_by    = NULL,
+    updated_at    = EXCLUDED.updated_at;
+
+INSERT INTO whale_menus (
+    id, code, name, display_name, icon, path, component, permission_name, parent_id,
+    sort_order, is_enabled, is_hidden, is_external, external_url, menu_type, remark,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by, keep_alive
+)
+VALUES
+    ('880010000000000000', 'MrmsManagement', 'MrmsManagement', '病案管理', 'lucide:folder-archive',
+     '/mrms', '', NULL, NULL, 12, TRUE, FALSE, FALSE, '', 'directory',
+     '病案检索 / 质控 / 借阅 / 4401 手动上传', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000001', 'MrmsCaseRecordList', 'MrmsCaseRecordList', '病案检索', 'lucide:search',
+     '/mrms/case-record', '/mrms/case-record/index', 'Navigation.MrmsCaseRecordList', '880010000000000000', 1,
+     TRUE, FALSE, FALSE, '', 'menu', '病案室/医生检索与打开首页', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000002', 'MrmsQcWorkbench', 'MrmsQcWorkbench', '质控工作台', 'lucide:clipboard-check',
+     '/mrms/qc-workbench', '/mrms/qc-workbench/index', 'Navigation.MrmsQcWorkbench', '880010000000000000', 2,
+     TRUE, FALSE, FALSE, '', 'menu', '质控、归档、解档', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000003', 'MrmsBorrow', 'MrmsBorrow', '借阅复印', 'lucide:book-open',
+     '/mrms/borrow', '/mrms/borrow/index', 'Navigation.MrmsBorrow', '880010000000000000', 3,
+     TRUE, FALSE, FALSE, '', 'menu', '借阅申请审批与借还', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000004', 'MrmsUpload', 'MrmsUpload', '4401上传', 'lucide:upload-cloud',
+     '/mrms/upload', '/mrms/upload/index', 'Navigation.MrmsUpload', '880010000000000000', 4,
+     TRUE, FALSE, FALSE, '', 'menu', '医保病案首页手动上传（无自动上传）', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000005', 'MrmsCaseRecordHomepage', 'MrmsCaseRecordHomepage', '病案首页', 'lucide:file-text',
+     '/mrms/case-record/homepage/:caseRecordId', '/mrms/case-record/homepage/index',
+     'Navigation.MrmsCaseRecordHomepage', '880010000000000000', 10,
+     TRUE, TRUE, FALSE, '', 'menu', '列表跳转全屏编辑，不单独展示', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE),
+
+    ('880010000000000006', 'MrmsCaseRecordVolume', 'MrmsCaseRecordVolume', '卷宗预览', 'lucide:files',
+     '/mrms/case-record/volume/:caseRecordId', '/mrms/case-record/volume/index',
+     'Navigation.MrmsCaseRecordVolume', '880010000000000000', 11,
+     TRUE, TRUE, FALSE, '', 'menu', '卷宗 PDF 预览，列表/质控跳转', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', TIMESTAMP '2026-06-27 12:00:00+00', 1, 1, FALSE, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    code            = EXCLUDED.code,
+    name            = EXCLUDED.name,
+    display_name    = EXCLUDED.display_name,
+    icon            = EXCLUDED.icon,
+    path            = EXCLUDED.path,
+    component       = EXCLUDED.component,
+    permission_name = EXCLUDED.permission_name,
+    parent_id       = EXCLUDED.parent_id,
+    sort_order      = EXCLUDED.sort_order,
+    is_enabled      = EXCLUDED.is_enabled,
+    is_hidden       = EXCLUDED.is_hidden,
+    remark          = EXCLUDED.remark,
+    is_deleted      = FALSE,
+    deleted_at      = NULL,
+    deleted_by      = NULL,
+    updated_at      = EXCLUDED.updated_at;
+
+INSERT INTO whale_permission_grants (
+    id, permission_name, provider_name, provider_key,
+    tenant_id, created_at, updated_at, created_by, updated_by, is_deleted, deleted_at, deleted_by
+)
+VALUES
+    ('880030000000000001', 'Navigation.MrmsCaseRecordList', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000002', 'Navigation.MrmsQcWorkbench', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000003', 'Navigation.MrmsBorrow', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000004', 'Navigation.MrmsUpload', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000005', 'Navigation.MrmsCaseRecordHomepage', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL),
+    ('880030000000000006', 'Navigation.MrmsCaseRecordVolume', 'R', '1', NULL,
+     TIMESTAMP '2026-06-27 12:00:00+00', NULL, 1, NULL, FALSE, NULL, NULL)
+ON CONFLICT (permission_name, provider_name, provider_key) DO UPDATE SET
+    is_deleted = FALSE,
+    deleted_at = NULL,
+    deleted_by = NULL,
+    updated_at = TIMESTAMP '2026-06-27 12:00:00+00';
 

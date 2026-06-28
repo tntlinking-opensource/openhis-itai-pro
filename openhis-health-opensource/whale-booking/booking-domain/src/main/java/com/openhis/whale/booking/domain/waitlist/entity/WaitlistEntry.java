@@ -4,6 +4,7 @@ import com.openhis.whale.core.domain.BaseAuditedEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -47,4 +48,9 @@ public class WaitlistEntry extends BaseAuditedEntity {
     /** 取消原因。 */
     @Column(name = "cancel_reason")
     private String cancelReason;
+
+    /** 乐观锁版本号。 */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Integer version;
 }

@@ -41,6 +41,7 @@ import com.openhis.health.application.inpatient.financial.registration.request.L
 import com.openhis.health.application.inpatient.financial.registration.request.LoadWardBedCapacityRequest;
 import com.openhis.health.application.inpatient.financial.registration.request.PageRegistrationQueueRequest;
 import com.openhis.health.application.inpatient.financial.registration.request.SubmitRegistrationRequest;
+import com.openhis.health.application.inpatient.financial.registration.response.CancelInsuranceInpatientAdmissionResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.CancelRegistrationResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.ListWardsByDepartmentResponse;
 import com.openhis.health.application.inpatient.financial.registration.response.LoadInpatientRegistrationPageInitResponse;
@@ -53,6 +54,7 @@ import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.encounter.command.CancelInpatientAdmissionCommand;
 import com.openhis.health.domain.administration.encounter.command.RegisterInpatientEncounterCommand;
+import com.openhis.health.domain.administration.encounter.command.SaveNurseStationPatientCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
@@ -83,8 +85,10 @@ import com.openhis.health.domain.administration.encounter.queries.InpatientEncou
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.domain.share.constants.InpatientRegistrationConstants;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.EncounterClass;
+import com.openhis.health.domain.share.enums.EncounterParticipantRole;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
@@ -93,11 +97,13 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.health.integration.insurance.inpatient.InpatientChargeInsuranceExtension;
 import com.openhis.health.integration.insurance.inpatient.command.InpatientChargeAdmissionCommand;
 import com.openhis.health.integration.insurance.inpatient.command.InpatientChargeEncounterCommand;
+import com.openhis.health.integration.insurance.inpatient.result.InpatientChargeAdmissionPlatformSnapshot;
 import com.openhis.health.integration.insurance.inpatient.result.InpatientChargeAdmissionResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -189,14 +195,18 @@ public class InpatientRegistrationAppService {
             request,
             InpatientRegistrationConstants.EX_IP_REG_101,
             "分页参数不合法，请检查页码与每页条数");
-        this.validateRegistrationListStatus(request.getRegistrationListStatus());
-        // Pre：绑定分页参数与默认登记状态筛选。
+        this.validateRegistrationListStatuses(request.getRegistrationListStatuses());
+        if (StringUtils.isNotBlank(request.getRegistrationListStatus())) {
+            this.validateRegistrationListStatuses(List.of(request.getRegistrationListStatus().trim()));
+        }
+        // Pre：绑定分页参数与登记状态筛选。
         InpatientEncounterPageQuery query = new InpatientEncounterPageQuery();
         PageQueryBinder.bind(request, query);
-        if (StringUtils.isNotBlank(request.getRegistrationListStatus())) {
-            query.setRegistrationListStatus(request.getRegistrationListStatus().trim());
-        } else {
-            query.setRegistrationListStatus(InpatientRegistrationConstants.DEFAULT_LIST_STATUS);
+        if (request.getRegistrationListStatuses() != null && !request.getRegistrationListStatuses().isEmpty()) {
+            query.setRegistrationListStatuses(
+                this.normalizeRegistrationListStatuses(request.getRegistrationListStatuses()));
+        } else if (StringUtils.isNotBlank(request.getRegistrationListStatus())) {
+            query.setRegistrationListStatuses(List.of(request.getRegistrationListStatus().trim()));
         }
         // Pre：按身份证精确命中患者；未命中则直接返回空页，避免全表扫描。
         if (StringUtils.isNotBlank(request.getIdCard())) {
@@ -227,6 +237,7 @@ public class InpatientRegistrationAppService {
                 ambEncounterIdByEncounterId,
                 displayOverlay,
                 inWayLabelByCode);
+        this.enrichRegistrationQueueInsurance(rows);
         return inpatientRegistrationMapper.toPageRegistrationQueueResponse(rows, page);
     }
 
@@ -394,9 +405,24 @@ public class InpatientRegistrationAppService {
             }
             this.assertNoAdmissionDiagnosesOnPlannedRegistration(request);
             this.clearAdmissionDiagnosesOnRegisterCommand(registerCommand);
-            encounterDomainService.registerInpatientEncounter(registerCommand);
+            try {
+                encounterDomainService.registerInpatientEncounter(registerCommand);
+            } catch (BusinessException ex) {
+                // 登记并发或状态漂移：领域 ENCOUNTER_INVALID_STATUS 映射为 EX-IP-REG-003（GAP-ATD-004）。
+                if (ErrorCodeConstants.ENCOUNTER_INVALID_STATUS.equals(ex.getErrorCode())) {
+                    throw new BusinessException(
+                        InpatientRegistrationConstants.EX_IP_REG_003,
+                        "当前就诊状态不允许登记，请刷新列表");
+                }
+                throw ex;
+            } catch (OptimisticLockingFailureException ex) {
+                throw new BusinessException(
+                    InpatientRegistrationConstants.EX_IP_REG_003,
+                    "当前就诊状态不允许登记，请刷新列表");
+            }
         }
         encounterInpatientAdmissionWriteSupport.completeAfterInpatientRegistration(registerCommand);
+        this.saveAttendingDoctorOnRegistration(request, encounterId, registrarId);
         boolean accountOpened = true;
         // Cmd：可选收取预交金并完成支付落账与账户余额调整。
         Long paymentId = this.collectAdvanceDepositIfRequired(request, patientId, encounterId);
@@ -426,6 +452,7 @@ public class InpatientRegistrationAppService {
                 InpatientRegistrationConstants.EX_IP_REG_002,
                 "医保登记须先读卡获取人员编号");
         }
+        this.assertAttendingDoctorForInsurance(request);
         InpatientChargeAdmissionCommand command = new InpatientChargeAdmissionCommand();
         command.setEncounterId(encounterId);
         command.setContractId(request.getContractId());
@@ -443,11 +470,62 @@ public class InpatientRegistrationAppService {
         return result.getEncounterPlatformId().trim();
     }
 
+    /**
+     * 登记提交时写入主治医生参与者（供 2401 atddr_no 解析）。
+     *
+     * @param request     登记请求
+     * @param encounterId 住院就诊 ID
+     * @param operatorId  操作人 ID
+     */
+    private void saveAttendingDoctorOnRegistration(
+        SubmitRegistrationRequest request,
+        Long encounterId,
+        Long operatorId) {
+        if (request.getAttendingDoctorId() == null) {
+            return;
+        }
+        SaveNurseStationPatientCommand command = new SaveNurseStationPatientCommand();
+        command.setOperatorId(operatorId);
+        SaveNurseStationPatientCommand.ItemCommand item = new SaveNurseStationPatientCommand.ItemCommand();
+        item.setEncounterId(encounterId);
+        SaveNurseStationPatientCommand.ParticipantLine line = new SaveNurseStationPatientCommand.ParticipantLine();
+        line.setRoleCode(EncounterParticipantRole.ATTENDING_DOCTOR.getCode());
+        line.setPractitionerId(request.getAttendingDoctorId());
+        item.setParticipants(List.of(line));
+        command.setItem(item);
+        encounterDomainService.saveNurseStationPatient(command);
+    }
+
+    /**
+     * 医保登记门禁：须选择主治医生且医师主档含 yb_no。
+     *
+     * @param request 登记请求
+     * @throws BusinessException 未选医师或缺 yb_no
+     */
+    private void assertAttendingDoctorForInsurance(SubmitRegistrationRequest request) {
+        if (request.getAttendingDoctorId() == null) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_002,
+                "医保登记须选择主治医生");
+        }
+        Practitioner doctor = practitionerQueryService.findById(request.getAttendingDoctorId());
+        if (doctor == null) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_002,
+                "主治医生无效，请重新选择");
+        }
+        if (StringUtils.isBlank(doctor.getYbNo())) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_002,
+                "主治医生缺少医保编码(yb_no): " + doctor.getName());
+        }
+    }
+
     private void runInsuranceRevokeAdmissionIfNeeded(EncounterDetailQueryModel encounter, Account account) {
         if (!inpatientChargeInsuranceExtension.isEnabled() || encounter == null) {
             return;
         }
-        Long contractId = resolveInsuranceContractId(account);
+        Long contractId = this.resolveInsuranceContractId(account, encounter.getId());
         if (contractId == null || !inpatientChargeInsuranceExtension.supportsThirdPartyContract(contractId)) {
             return;
         }
@@ -457,7 +535,52 @@ public class InpatientRegistrationAppService {
         inpatientChargeInsuranceExtension.revokeAdmission(command);
     }
 
-    private Long resolveInsuranceContractId(Account account) {
+    /**
+     * 是否已向医保平台撤销入院登记（2404）。
+     *
+     * @param encounter 住院就诊
+     * @param account     登记账户
+     * @return 已调用并成功撤销平台入院时为 true
+     */
+    private boolean runInsuranceRevokeAdmissionReturningRevoked(
+        EncounterDetailQueryModel encounter,
+        Account account) {
+        if (!inpatientChargeInsuranceExtension.isEnabled() || encounter == null) {
+            return false;
+        }
+        Long contractId = this.resolveInsuranceContractId(account, encounter.getId());
+        if (contractId == null || !inpatientChargeInsuranceExtension.supportsThirdPartyContract(contractId)) {
+            return false;
+        }
+        InpatientChargeEncounterCommand command = new InpatientChargeEncounterCommand();
+        command.setEncounterId(encounter.getId());
+        command.setContractId(contractId);
+        inpatientChargeInsuranceExtension.revokeAdmission(command);
+        return true;
+    }
+
+    private Long resolveInsuranceContractId(Account account, Long encounterId) {
+        Long contractId = this.resolveInsuranceContractIdFromAccount(account);
+        if (contractId != null) {
+            return contractId;
+        }
+        if (encounterId == null || !inpatientChargeInsuranceExtension.isEnabled()) {
+            return null;
+        }
+        List<InpatientChargeAdmissionPlatformSnapshot> snapshots =
+            inpatientChargeInsuranceExtension.findAdmissionPlatformSnapshots(List.of(encounterId));
+        for (InpatientChargeAdmissionPlatformSnapshot snapshot : snapshots) {
+            if (snapshot == null || snapshot.getEncounterId() == null) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(snapshot.getPlatformAdmitted()) && snapshot.getContractId() != null) {
+                return snapshot.getContractId();
+            }
+        }
+        return null;
+    }
+
+    private Long resolveInsuranceContractIdFromAccount(Account account) {
         if (account == null || StringUtils.isBlank(account.getContractNo())) {
             return null;
         }
@@ -518,6 +641,108 @@ public class InpatientRegistrationAppService {
     }
 
     /**
+     * 待入科（REGISTERED）医保退入院：撤销 2404 并取消住院登记（对齐门诊待挂号医保退号）。
+     *
+     * @param request 取消请求（就诊 ID、操作人）
+     * @return 撤销结果
+     * @throws BusinessException 非待入科、预交金未清零或平台撤销失败时抛出
+     */
+    public CancelInsuranceInpatientAdmissionResponse cancelInsuranceInpatientAdmission(
+        CancelRegistrationRequest request) {
+        if (request.getEncounterId() == null || request.getOperatorId() == null) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_001,
+                "取消登记缺少就诊或操作人");
+        }
+        EncounterDetailQueryModel encounter = encounterQueryService.mustGetEncounterOfClass(
+            request.getEncounterId(),
+            EncounterClass.IMP.getCode(),
+            InpatientRegistrationConstants.EX_IP_REG_006,
+            "就诊记录不是住院类别，不能取消住院登记");
+        if (!EncounterStatus.REGISTERED.getCode().equals(encounter.getStatusEnum())) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_006,
+                "仅待入科状态可医保退入院");
+        }
+        Long patientId = encounter.getPatientId();
+        Account account = accountQueryService.getRegistrationAccount(patientId, request.getEncounterId());
+        long balanceSnapshot = 0L;
+        if (account != null && account.getBalance() != null) {
+            if (account.getBalance().compareTo(BigDecimal.ZERO) > 0) {
+                throw new BusinessException(
+                    InpatientRegistrationConstants.EX_IP_REG_005,
+                    "预交金余额不为 0，请先退费后再取消登记");
+            }
+            balanceSnapshot = account.getBalance().longValue();
+        }
+        boolean platformAdmitted = this.isInsurancePlatformAdmitted(request.getEncounterId());
+        if (!platformAdmitted) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_006,
+                "该记录未在医保平台完成入院登记，请使用取消登记");
+        }
+        CancelInpatientAdmissionCommand cancelCommand =
+            inpatientRegistrationMapper.toCancelInpatientAdmissionCommand(request, balanceSnapshot);
+        boolean insuranceRevoked = false;
+        try {
+            insuranceRevoked = this.runInsuranceRevokeAdmissionReturningRevoked(encounter, account);
+            encounterDomainService.cancelInpatientAdmission(cancelCommand);
+        } catch (BusinessException ex) {
+            throw new BusinessException(
+                InpatientRegistrationConstants.EX_IP_REG_006,
+                ex.getMessage());
+        }
+        return new CancelInsuranceInpatientAdmissionResponse()
+            .setEncounterStatus(EncounterStatus.CANCELLED.getCode())
+            .setInsurancePlatformRevoked(insuranceRevoked);
+    }
+
+    private void enrichRegistrationQueueInsurance(List<RegistrationQueueItemDto> rows) {
+        if (rows == null || rows.isEmpty() || !inpatientChargeInsuranceExtension.isEnabled()) {
+            return;
+        }
+        List<Long> encounterIds = new ArrayList<>();
+        for (RegistrationQueueItemDto row : rows) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterIds.add(row.getEncounterId());
+            }
+        }
+        if (encounterIds.isEmpty()) {
+            return;
+        }
+        Map<Long, InpatientChargeAdmissionPlatformSnapshot> snapshotByEncounter = new HashMap<>();
+        for (InpatientChargeAdmissionPlatformSnapshot snapshot :
+            inpatientChargeInsuranceExtension.findAdmissionPlatformSnapshots(encounterIds)) {
+            if (snapshot != null && snapshot.getEncounterId() != null) {
+                snapshotByEncounter.put(snapshot.getEncounterId(), snapshot);
+            }
+        }
+        for (RegistrationQueueItemDto row : rows) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            InpatientChargeAdmissionPlatformSnapshot snapshot = snapshotByEncounter.get(row.getEncounterId());
+            if (snapshot != null) {
+                row.setInsurancePlatformRegistered(snapshot.getPlatformAdmitted());
+            }
+        }
+    }
+
+    private boolean isInsurancePlatformAdmitted(Long encounterId) {
+        if (encounterId == null || !inpatientChargeInsuranceExtension.isEnabled()) {
+            return false;
+        }
+        List<InpatientChargeAdmissionPlatformSnapshot> snapshots =
+            inpatientChargeInsuranceExtension.findAdmissionPlatformSnapshots(List.of(encounterId));
+        for (InpatientChargeAdmissionPlatformSnapshot snapshot : snapshots) {
+            if (snapshot != null && Boolean.TRUE.equals(snapshot.getPlatformAdmitted())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 按住院科室查询下属病区下拉（IF-IP-REG-04）。
      *
      * @param request 科室 ID
@@ -561,24 +786,42 @@ public class InpatientRegistrationAppService {
     }
 
     /**
-     * 校验登记列表状态筛选码。
+     * 校验登记列表状态筛选码列表。
      *
-     * @param registrationListStatus 筛选码，可空
+     * @param registrationListStatuses 筛选码列表，可空
      * @throws BusinessException 非法筛选码
      */
-    private void validateRegistrationListStatus(String registrationListStatus) {
-        if (StringUtils.isBlank(registrationListStatus)) {
+    private void validateRegistrationListStatuses(List<String> registrationListStatuses) {
+        if (registrationListStatuses == null || registrationListStatuses.isEmpty()) {
             return;
         }
-        String code = registrationListStatus.trim();
-        boolean valid = InpatientRegistrationConstants.LIST_STATUS_PLANNED.equals(code)
-            || InpatientRegistrationConstants.LIST_STATUS_WAIT_ADMISSION.equals(code)
-            || InpatientRegistrationConstants.LIST_STATUS_ADMITTED.equals(code);
-        if (!valid) {
-            throw new BusinessException(
-                InpatientRegistrationConstants.EX_IP_REG_101,
-                "登记状态筛选无效，请重新选择");
+        for (String raw : registrationListStatuses) {
+            if (StringUtils.isBlank(raw)) {
+                continue;
+            }
+            String code = raw.trim();
+            if (!InpatientRegistrationConstants.isValidRegistrationListStatus(code)) {
+                throw new BusinessException(
+                    InpatientRegistrationConstants.EX_IP_REG_101,
+                    "登记状态筛选无效，请重新选择");
+            }
         }
+    }
+
+    /**
+     * 去重并规范化登记列表状态筛选码。
+     *
+     * @param registrationListStatuses 原始筛选码
+     * @return 非空去重列表
+     */
+    private List<String> normalizeRegistrationListStatuses(List<String> registrationListStatuses) {
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (String raw : registrationListStatuses) {
+            if (StringUtils.isNotBlank(raw)) {
+                unique.add(raw.trim());
+            }
+        }
+        return new ArrayList<>(unique);
     }
 
     /**

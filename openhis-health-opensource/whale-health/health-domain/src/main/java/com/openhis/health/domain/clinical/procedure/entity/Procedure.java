@@ -119,6 +119,9 @@ public class Procedure extends BaseAuditedEntity {
     @Column(name = "refund_id")
     /** 退费主键。 */
     private Long refundId;
+    @Column(name = "occurrence_slot_active", nullable = false)
+    /** 计划点占用标记；CANCEL 对冲后释放。 */
+    private Boolean occurrenceSlotActive = true;
 
     /**
      * 校验请求、患者与就诊锚点已绑定。
