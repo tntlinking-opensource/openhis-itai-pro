@@ -9,7 +9,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/whale
     username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:xZ_TTSL123}
+    password: ${DB_PASSWORD:root}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 20
