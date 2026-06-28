@@ -1,0 +1,103 @@
+/**
+ * sv-print 标尺布局（摘自 sv-print@0.2.21 dist/style.css ruler_x / ruler_y / ruler_xy）
+ */
+.hiprint-designer-root .svp-designer {
+  position: relative;
+}
+
+/* 左上角交汇区 ruler_xy */
+.hiprint-designer-root .global-ruler-corner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  width: var(--rulerSize);
+  height: var(--rulerSize);
+  user-select: none;
+  background: var(--sv-ruler-bg);
+  border-right: 1px solid var(--sv-border);
+  border-bottom: 1px solid var(--sv-border);
+}
+
+/* 顶部横标尺 ruler_x */
+.hiprint-designer-root .global-ruler-x-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 9;
+  width: calc(100% - var(--rulerSize));
+  height: var(--rulerSize);
+  margin-left: var(--rulerSize);
+  overflow: hidden;
+  user-select: none;
+  border-bottom: 1px solid var(--sv-border);
+}
+
+/* 左侧纵标尺 ruler_y */
+.hiprint-designer-root .global-ruler-y-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 9;
+  width: var(--rulerSize);
+  height: calc(100% - var(--rulerSize));
+  margin-top: var(--rulerSize);
+  overflow: hidden;
+  user-select: none;
+  border-right: 1px solid var(--sv-border);
+}
+
+.hiprint-designer-root .global-ruler-x-track,
+.hiprint-designer-root .global-ruler-y-track {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.hiprint-designer-root .global-ruler-x-track canvas,
+.hiprint-designer-root .global-ruler-y-track canvas {
+  display: block;
+}
+
+/* sv-print x-line / y-line：标尺悬停坐标指示 */
+.hiprint-designer-root .global-ruler-x-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  display: none;
+  width: 1px;
+  height: 100vh;
+  pointer-events: none;
+  background: var(--sv-primary);
+}
+
+.hiprint-designer-root .global-ruler-x-line-label {
+  position: absolute;
+  top: var(--rulerSize);
+  left: 3px;
+  font-size: 10px;
+  color: var(--sv-text-muted);
+  white-space: nowrap;
+}
+
+.hiprint-designer-root .global-ruler-y-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  display: none;
+  width: 100vw;
+  height: 1px;
+  pointer-events: none;
+  background: var(--sv-primary);
+}
+
+.hiprint-designer-root .global-ruler-y-line-label {
+  position: absolute;
+  top: 3px;
+  left: var(--rulerSize);
+  font-size: 10px;
+  color: var(--sv-text-muted);
+  white-space: nowrap;
+}

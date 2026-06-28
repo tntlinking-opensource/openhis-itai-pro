@@ -23,6 +23,7 @@ import {
 import BookingRegisterPanel from '#/views/booking/components/booking-register-panel.vue';
 import { useBookingOrganization } from '#/views/booking/composables/use-booking-organization';
 import { useRequest } from '#/hooks/use-request';
+import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 import {
   ElButton,
   ElDatePicker,
@@ -42,6 +43,7 @@ const total = ref(0);
 const detailVisible = ref(false);
 const detail = ref<BookingDetailDto | null>(null);
 const rescheduleVisible = ref(false);
+const cancelSubmitting = ref(false);
 const rescheduleRow = ref<BookingListItemDto | null>(null);
 const rescheduleDate = ref('');
 const rescheduleSlots = ref<BookableSlotDto[]>([]);
@@ -85,6 +87,7 @@ const { run: runRescheduleSlots, loading: rescheduleSlotsLoading } = useRequest(
 
 const { run: runReschedule, loading: rescheduleLoading } = useRequest(rescheduleBookingApi, {
   manual: true,
+  refreshOnStale: () => loadData(),
   onSuccess: (res) => {
     ElMessage.success(`改约成功：${res?.busNo ?? ''}`);
     rescheduleVisible.value = false;
@@ -133,14 +136,19 @@ function handlePagination(pagination: { limit: number; page: number }) {
 }
 
 async function handleCancel(row: BookingListItemDto) {
-  if (!row.appointmentId) return;
+  if (!row.appointmentId || cancelSubmitting.value) return;
   try {
     await ElMessageBox.confirm(`确认取消预约 ${row.busNo ?? ''}？`, '取消预约');
+    cancelSubmitting.value = true;
     await cancelBookingApi({ appointmentId: row.appointmentId, reason: '窗口取消' });
     ElMessage.success('已取消');
     await loadData();
-  } catch {
-    // cancel
+  } catch (error) {
+    if (isStaleCrossRoleError(error)) {
+      await loadData();
+    }
+  } finally {
+    cancelSubmitting.value = false;
   }
 }
 
@@ -200,7 +208,9 @@ onMounted(loadData);
               详情
             </ElButton>
             <ElButton link type="primary" @click="openReschedule(row)">改约</ElButton>
-            <ElButton link type="danger" @click="handleCancel(row)">取消</ElButton>
+            <ElButton link type="danger" :loading="cancelSubmitting" @click="handleCancel(row)">
+              取消
+            </ElButton>
           </template>
         </TableLayout>
       </div>

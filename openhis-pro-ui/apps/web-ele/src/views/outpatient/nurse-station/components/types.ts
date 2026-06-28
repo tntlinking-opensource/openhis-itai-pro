@@ -42,6 +42,8 @@ export interface NurseAdviceExecuteRow {
   /** 已执行次数列展示（接口字段组装） */
   executedCountDisplay?: string;
   groupItems?: DrugGroupDisplayItem[];
+  /** 成组合并后的成员行（打印等需展开全部 requestId） */
+  mergedMedicationMembers?: NurseAdviceExecuteRow[];
   name?: string;
   procedureContent?: string;
   procedureDosageText?: string;
@@ -64,6 +66,14 @@ export interface NurseAdviceExecuteRow {
   applyFormNo?: string;
   /** 药品类目展示文案 */
   medCategoryCodeText?: string;
+  /** 是否输液/注射相关（后端 infusion_flag / inject_flag 回落） */
+  infusionFlag?: boolean | null;
+  /** 是否皮试药（med_medication_request.skin_test_flag） */
+  skinTestFlag?: boolean | null;
+  /** 是否中药医嘱（med_medication_request.tcm_flag） */
+  tcmFlag?: boolean | null;
+  /** 给药途径 code（术语 method_code） */
+  methodCode?: string;
   /** 诊疗类目 code（检验/处置等） */
   serviceCategoryCode?: string;
   /** 诊疗类目展示文案 */

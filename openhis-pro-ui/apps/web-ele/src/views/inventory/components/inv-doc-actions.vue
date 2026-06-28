@@ -16,6 +16,8 @@ withDefaults(
     removeDisabled?: boolean;
     saveAndSubmitDisabled?: boolean;
     saveDisabled?: boolean;
+    /** 动账类单据：无财务审批岗位时不渲染审批/驳回 */
+    showApprovalActions?: boolean;
     submitApprovalDisabled?: boolean;
     withdrawDisabled?: boolean;
   }>(),
@@ -25,6 +27,7 @@ withDefaults(
     removeDisabled: false,
     saveAndSubmitDisabled: false,
     saveDisabled: false,
+    showApprovalActions: true,
     submitApprovalDisabled: false,
     withdrawDisabled: false,
   },
@@ -56,9 +59,11 @@ const emit = defineEmits<{
   <ElButton :icon="RefreshLeft" :disabled="withdrawDisabled" @click="emit('withdraw')">
     撤回
   </ElButton>
-  <InvActionSep />
-  <ElButton type="success" :icon="Check" :disabled="approveDisabled" @click="emit('approve')">
-    审批
-  </ElButton>
-  <ElButton type="warning" :disabled="rejectDisabled" @click="emit('reject')">驳回</ElButton>
+  <template v-if="showApprovalActions">
+    <InvActionSep />
+    <ElButton type="success" :icon="Check" :disabled="approveDisabled" @click="emit('approve')">
+      审批
+    </ElButton>
+    <ElButton type="warning" :disabled="rejectDisabled" @click="emit('reject')">驳回</ElButton>
+  </template>
 </template>

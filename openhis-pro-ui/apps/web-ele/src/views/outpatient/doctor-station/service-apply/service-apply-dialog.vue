@@ -10,6 +10,7 @@ import type {
   TerminologyOptionDto,
 } from '#/api/doctor-station/advice.types';
 import type { EncounterDiagnosisRowDto } from '#/api/doctor-station/diagnosis.types';
+import type { ServiceApplyPrintMeta } from '#/utils/print/print-service-apply';
 
 import { computed, ref, watch } from 'vue';
 
@@ -30,6 +31,7 @@ import AppDialog from '#/components/app-dialog.vue';
 import { DiagnosisPickerDialog } from '#/components/doctor-station/diagnosis';
 import { useAuthStore } from '#/store';
 import { decimalAdd, decimalMul } from '#/utils/format/decimal-util';
+import { printServiceApplyForms } from '#/utils/print/print-service-apply';
 import * as inpatientServiceApplyApi from '#/views/inpatient/doctor-station/service-apply/inpatient-service-apply.service';
 
 import AdviceDraftBindDialog from '../advice/components/advice-draft-bind-dialog.vue';
@@ -58,6 +60,8 @@ const props = withDefaults(
     modelValue: boolean;
     patient?: ServiceApplyPatientSummary;
     patientId?: string;
+    /** 门诊打印抬头：机构名、科室、开单医师 */
+    printMeta?: ServiceApplyPrintMeta;
     /** 门诊 / 住院：决定申请单保存与签发所调 HTTP */
     stationScope?: 'inpatient' | 'outpatient';
   }>(),
@@ -73,6 +77,7 @@ const props = withDefaults(
       encounterNo: '—',
       feeNatureText: '—',
     }),
+    printMeta: () => ({}),
   },
 );
 
@@ -393,6 +398,53 @@ async function resolveServiceApplyBindOnSign(
   });
 }
 
+/** 签发申请单（保存 → 绑定 → 签发生效） */
+async function executeSignRequests(): Promise<{
+  encounterId: string;
+  patientId: string;
+  prescriptionNo: string;
+}> {
+  const { encounterId, patientId, request, requestIds } = await persistApplyForm();
+  await resolveServiceApplyBindOnSign(encounterId, patientId, request, {
+    prescriptionNo: savedPrescriptionNo.value,
+    requestIds,
+  });
+  await serviceApplyApi.value.signServiceApplyRequests({ encounterId, patientId, requestIds });
+  return {
+    encounterId,
+    patientId,
+    prescriptionNo: savedPrescriptionNo.value,
+  };
+}
+
+/** 签发成功后按弹窗内已选项目打印（非静默，可弹打印机选择） */
+async function printSignedApplyForm(signResult: {
+  encounterId: string;
+  patientId: string;
+  prescriptionNo: string;
+}) {
+  const performOrgName = orgOptions.value.find((item) => item.value === orgId.value)?.label ?? '';
+  const results = await printServiceApplyForms({
+    applyKind: props.applyKind,
+    encounterId: signResult.encounterId,
+    patientId: signResult.patientId,
+    prescriptionNo: signResult.prescriptionNo,
+    patient: props.patient,
+    items: [...selectedItems.value],
+    performOrgId: orgId.value,
+    performOrgName,
+    encounterDiagnosisId: encounterDiagnosisId.value,
+    encounterDiagnosisRows: encounterDiagnosisRows.value,
+    bodyStructureOptions: bodyStructureOptions.value,
+    specimenDefinitionOptions: specimenDefinitionOptions.value,
+    printMeta: props.printMeta,
+  });
+  const successCount = results.filter((item) => item.ok).length;
+  if (successCount > 0) {
+    ElMessage.success(`已提交 ${successCount} 张申请单打印`);
+  }
+}
+
 /** 暂存申请单 */
 async function handleSaveDraft() {
   if (!contextReady.value) {
@@ -423,13 +475,35 @@ async function handleSign() {
   }
   actionLoading.value = true;
   try {
-    const { encounterId, patientId, request, requestIds } = await persistApplyForm();
-    await resolveServiceApplyBindOnSign(encounterId, patientId, request, {
-      prescriptionNo: savedPrescriptionNo.value,
-      requestIds,
-    });
-    await serviceApplyApi.value.signServiceApplyRequests({ encounterId, patientId, requestIds });
+    await executeSignRequests();
     ElMessage.success('签发成功');
+    emit('saved');
+    emit('signed');
+    handleClose();
+  } catch (error: unknown) {
+    const msg =
+      error && typeof error === 'object' && 'message' in error
+        ? String((error as { message?: unknown }).message)
+        : '签发失败';
+    ElMessage.error(msg);
+  } finally {
+    actionLoading.value = false;
+  }
+}
+
+/** 签发并打印（门诊：签发成功后立即打印；住院仅签发） */
+async function handleSignAndPrint() {
+  if (!contextReady.value) {
+    ElMessage.warning('缺少就诊或患者信息');
+    return;
+  }
+  actionLoading.value = true;
+  try {
+    const signResult = await executeSignRequests();
+    ElMessage.success('签发成功');
+    if (!isInpatientScope.value) {
+      await printSignedApplyForm(signResult);
+    }
     emit('saved');
     emit('signed');
     handleClose();
@@ -752,6 +826,16 @@ watch(keyword, () => {
             @click="handleSign"
           >
             签发
+          </ElButton>
+          <ElButton
+            v-if="!isInpatientScope"
+            type="primary"
+            plain
+            :loading="actionLoading"
+            :disabled="!contextReady"
+            @click="handleSignAndPrint"
+          >
+            签发并打印
           </ElButton>
         </div>
       </div>

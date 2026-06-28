@@ -5,23 +5,18 @@ import type {
   RegisterConfirmDetail,
 } from '../services';
 
-import type { PayChannelOption } from '#/utils/payment/payment-channel-options';
-
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 
 import { ElAlert, ElButton, ElInput, ElMessage, ElRadioButton, ElRadioGroup } from 'element-plus';
 
 import AppDialog from '#/components/app-dialog.vue';
-import { isScanPayChannel, useUnionPayScanPay } from '#/composables/payment/useUnionPayScanPay';
-import {
-  FALLBACK_PAY_CHANNEL_OPTIONS,
-  optionDtosToPayChannelOptions,
-} from '#/utils/payment/payment-channel-options';
+import { isScanPayChannel } from '#/composables/payment/useUnionPayScanPay';
 import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
 import { schedulePrintRegistrationReceipt } from '#/utils/print/print-registration-receipt';
 
-import { loadRegisterFormInit } from '../services/register.service';
+import { useRegisterPayChannels } from '../composables/use-register-pay-channels';
+
 import {
   formatInsuranceCredentialExpiredHint,
   isEcVoucherMediumType,
@@ -50,10 +45,9 @@ const credentialExpiredHint = ref(false);
 const payChannelCode = ref(DEFAULT_REGISTER_PAY_CHANNEL_CODE);
 const scanCode = ref('');
 const scanStatusText = ref('');
-const payChannelOptions = ref<PayChannelOption[]>([...FALLBACK_PAY_CHANNEL_OPTIONS]);
 
-const { scanPayEnabled, effectivePayChannelOptions, refreshUnionPayCapabilities } =
-  useUnionPayScanPay(() => payChannelOptions.value);
+const { scanPayEnabled, effectivePayChannelOptions, ensurePayChannelsLoaded } =
+  useRegisterPayChannels();
 
 const showScanPaySection = computed(
   () => scanPayEnabled.value && isScanPayChannel(payChannelCode.value),
@@ -99,18 +93,6 @@ const ecVoucherStale = computed(
 const showRescanSection = computed(
   () => insurancePreSettled.value && isEcVoucherMediumType(insuranceMediumType.value),
 );
-
-onMounted(() => {
-  void (async () => {
-    try {
-      const init = await loadRegisterFormInit({});
-      payChannelOptions.value = optionDtosToPayChannelOptions(init.paymentChannelOptions);
-    } catch {
-      payChannelOptions.value = [...FALLBACK_PAY_CHANNEL_OPTIONS];
-    }
-    await refreshUnionPayCapabilities();
-  })();
-});
 
 const registerIntro = '请核对以下信息，确认后将按预结算金额发起收费。';
 
@@ -206,6 +188,7 @@ function open(
   scanStatusText.value = '';
   payChannelCode.value = DEFAULT_REGISTER_PAY_CHANNEL_CODE;
   visible.value = true;
+  void ensurePayChannelsLoaded();
 }
 
 function resetState() {

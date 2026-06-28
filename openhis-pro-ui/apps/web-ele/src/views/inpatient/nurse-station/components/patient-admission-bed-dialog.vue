@@ -29,6 +29,7 @@ import {
 import { httpExecuteBedOperation } from '#/api/inpatient/nurse-station/inpatient-nurse-station-atd.http';
 import AppDialog from '#/components/app-dialog.vue';
 import { useRequest } from '#/hooks/use-request';
+import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 import { PATIENT_CONDITION_OPTIONS } from '#/views/inpatient/charge/register/inpatient-register.constants';
 
 import type { AdmissionBedOperationIntent } from '../services/admission-bed-operation';
@@ -95,7 +96,12 @@ const admissionForm = reactive({
 
 const detailRequest = useRequest(httpGetPatientDetail, { manual: true });
 const saveRequest = useRequest(httpSavePatientInfo, { manual: true });
-const bedOperationRequest = useRequest(httpExecuteBedOperation, { manual: true });
+const bedOperationRequest = useRequest(httpExecuteBedOperation, {
+  manual: true,
+  refreshOnStale: () => {
+    emit('saved');
+  },
+});
 
 const dialogTitle = computed(() => admissionBedDialogTitle(props.bedOperation));
 const confirmButtonLabel = computed(() => admissionBedConfirmLabel(props.bedOperation));
@@ -393,29 +399,36 @@ async function handleAdmit() {
   const op = props.bedOperation;
   const vitalPayload = buildAdmissionVitalSignsFromForm();
   const assignWithBed = op?.type === 'assign';
-  await saveRequest.run({
-    encounterId: id,
-    priorityEnum: admissionForm.priorityEnum || undefined,
-    participants: participants.length > 0 ? participants : undefined,
-    admissionVitalSigns: assignWithBed ? undefined : vitalPayload,
-  });
-  if (op) {
-    const execBody = buildExecuteBedOperationFromIntent(
-      op,
-      id,
-      participants,
-      admissionForm.priorityEnum || undefined,
-      assignWithBed ? vitalPayload : undefined,
-    );
-    await bedOperationRequest.run(execBody);
-    ElMessage.success(
-      bedOperationSuccessMessage(execBody.operationType, patientName.value, op.targetBedName),
-    );
-  } else {
-    ElMessage.success('患者信息已保存');
+  try {
+    await saveRequest.run({
+      encounterId: id,
+      priorityEnum: admissionForm.priorityEnum || undefined,
+      participants: participants.length > 0 ? participants : undefined,
+      admissionVitalSigns: assignWithBed ? undefined : vitalPayload,
+    });
+    if (op) {
+      const execBody = buildExecuteBedOperationFromIntent(
+        op,
+        id,
+        participants,
+        admissionForm.priorityEnum || undefined,
+        assignWithBed ? vitalPayload : undefined,
+      );
+      await bedOperationRequest.run(execBody);
+      ElMessage.success(
+        bedOperationSuccessMessage(execBody.operationType, patientName.value, op.targetBedName),
+      );
+    } else {
+      ElMessage.success('患者信息已保存');
+    }
+    emit('saved');
+    closeDialog();
+  } catch (error) {
+    if (isStaleCrossRoleError(error)) {
+      emit('saved');
+      closeDialog();
+    }
   }
-  emit('saved');
-  closeDialog();
 }
 
 watch(visible, (open) => {

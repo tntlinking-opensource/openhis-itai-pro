@@ -1,0 +1,190 @@
+/**
+ * sv-print 画布区样式（灰底工作区 + 白纸网格，标尺与画布分离）
+ * 主题色变量见 sv-print-theme.css
+ */
+.hiprint-designer-root .designer-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 中间画布列（sv-print svp-designer） */
+.hiprint-designer-root .svp-designer {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--sv-workspace-bg);
+}
+
+/* 画布滚动区（sv-print svp-paperBox：inset 标尺宽度） */
+.hiprint-designer-root .svp-paperBox {
+  position: absolute;
+  top: var(--rulerSize);
+  left: var(--rulerSize);
+  display: flex;
+  flex-direction: column;
+  width: calc(100% - var(--rulerSize));
+  height: calc(100% - var(--rulerSize));
+  overflow: auto;
+  box-sizing: border-box;
+  background: var(--sv-workspace-bg);
+}
+
+/* hiprint design() 注入的贴纸张 SVG 标尺（createRuler → hiprint_rul_wrapper） */
+.hiprint-designer-root .hiprint_rul_wrapper,
+.hiprint-designer-root .hiprint-printPaper .h_img,
+.hiprint-designer-root .hiprint-printPaper .v_img {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  visibility: hidden !important;
+}
+
+.hiprint-designer-root .printTemplate {
+  width: max-content;
+}
+
+.hiprint-designer-root .hiprint-printTemplate {
+  width: max-content;
+}
+
+.hiprint-designer-root .hiprint-printPaper,
+.hiprint-designer-root .hiprint-printPanel {
+  box-sizing: border-box;
+}
+
+.hiprint-designer-root .hiprint-printPaper.design,
+.hiprint-designer-root .hiprint-printTemplate .hiprint-printPaper.design {
+  margin: 0 !important;
+  overflow: hidden;
+  color: #000;
+  background: #fff;
+  border: none !important;
+  outline: none !important;
+  box-shadow:
+    0 2px 8px rgb(0 0 0 / 12%),
+    0 4px 16px rgb(0 0 0 / 8%);
+}
+
+.hiprint-designer-root .hiprint-printPaper.design .hiprint-printPaper-content {
+  overflow: visible !important;
+  box-sizing: border-box;
+}
+
+.hiprint-designer-root .hiprint-printPaper.design.grid {
+  background-color: #fff;
+  background-image:
+    linear-gradient(to right, var(--sv-grid-color) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--sv-grid-color) 1px, transparent 1px);
+  background-size: 5mm 5mm;
+  background-position: left top;
+}
+
+/* 多面板页签（hiprint-printPagination）已禁用，若注入则隐藏 */
+.hiprint-designer-root .hiprint-printPagination,
+.hiprint-designer-root .canvas-pagination {
+  display: none !important;
+}
+
+/* ── 页眉 / 页脚线（hiprint-headerLine / hiprint-footerLine） ── */
+.hiprint-designer-root .hiprint-headerLine,
+.hiprint-designer-root .hiprint-footerLine {
+  z-index: 2;
+  box-sizing: content-box;
+  cursor: move !important;
+  border-top: 2px dashed var(--sv-header-footer-line) !important;
+}
+
+.hiprint-designer-root .hiprint-headerLine:hover,
+.hiprint-designer-root .hiprint-footerLine:hover,
+.hiprint-designer-root .hiprint-headerLine:active,
+.hiprint-designer-root .hiprint-footerLine:active {
+  cursor: move !important;
+  border-top-width: 4px !important;
+}
+
+.hiprint-designer-root .hiprint-headerLine::before,
+.hiprint-designer-root .hiprint-footerLine::before {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  display: none;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--sv-header-footer-line);
+  white-space: nowrap;
+  pointer-events: none;
+  content: '';
+  background: #fff;
+  transform: translate(-50%, -50%);
+}
+
+.hiprint-designer-root .hiprint-headerLine:hover::before {
+  display: block;
+  content: '页眉线';
+}
+
+.hiprint-designer-root .hiprint-footerLine:hover::before {
+  display: block;
+  content: '页脚线';
+}
+
+/*
+ * hiprint 注入样式在 paperHeader=0 / paperFooter=height 时加 hide* 类并 border-top:0 隐藏边线。
+ * 设计器要求：页眉线贴纸上边、页脚线贴纸下边，且两条线默认都可见。
+ */
+.hiprint-designer-root .hiprint-printPaper.design .hiprint-headerLine.hideheaderLinetarget,
+.hiprint-designer-root .hiprint-printPaper .hiprint-headerLine.hideheaderLinetarget {
+  top: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  padding-bottom: 10px !important;
+  border-top: 2px dashed var(--sv-header-footer-line) !important;
+}
+
+.hiprint-designer-root .hiprint-printPaper.design .hiprint-headerLine.hideheaderLinetarget:hover,
+.hiprint-designer-root .hiprint-printPaper .hiprint-headerLine.hideheaderLinetarget:hover,
+.hiprint-designer-root .hiprint-printPaper.design .hiprint-headerLine.hideheaderLinetarget:active,
+.hiprint-designer-root .hiprint-printPaper .hiprint-headerLine.hideheaderLinetarget:active {
+  cursor: move !important;
+  border-top-width: 4px !important;
+}
+
+.hiprint-designer-root
+  .hiprint-printPaper.design
+  .hiprint-headerLine.hideheaderLinetarget:hover::before,
+.hiprint-designer-root .hiprint-printPaper .hiprint-headerLine.hideheaderLinetarget:hover::before {
+  display: block !important;
+  content: '页眉线';
+}
+
+.hiprint-designer-root .hiprint-printPaper.design .hiprint-footerLine.hidefooterLinetarget,
+.hiprint-designer-root .hiprint-printPaper .hiprint-footerLine.hidefooterLinetarget {
+  bottom: auto !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  padding-top: 10px !important;
+  margin-top: -10px !important;
+  border-top: 2px dashed var(--sv-header-footer-line) !important;
+}
+
+.hiprint-designer-root .hiprint-printPaper.design .hiprint-footerLine.hidefooterLinetarget:hover,
+.hiprint-designer-root .hiprint-printPaper .hiprint-footerLine.hidefooterLinetarget:hover,
+.hiprint-designer-root .hiprint-printPaper.design .hiprint-footerLine.hidefooterLinetarget:active,
+.hiprint-designer-root .hiprint-printPaper .hiprint-footerLine.hidefooterLinetarget:active {
+  cursor: move !important;
+  border-top-width: 4px !important;
+}
+
+.hiprint-designer-root
+  .hiprint-printPaper.design
+  .hiprint-footerLine.hidefooterLinetarget:hover::before,
+.hiprint-designer-root .hiprint-printPaper .hiprint-footerLine.hidefooterLinetarget:hover::before {
+  display: block !important;
+  content: '页脚线';
+}

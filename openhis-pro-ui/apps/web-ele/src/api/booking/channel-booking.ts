@@ -3,6 +3,7 @@
  */
 import { publicRequestClient } from '#/api/request';
 
+import type { BookingEntityId } from './booking-id';
 import type { BookingPagedResult } from './booking-types';
 
 export interface ChannelConfigDto {
@@ -36,7 +37,7 @@ export async function pageChannelConfigsApi(params: PageChannelConfigsRequest) {
   );
 }
 
-export async function loadChannelConfigApi(params: { id: number }) {
+export async function loadChannelConfigApi(params: { id: BookingEntityId }) {
   return publicRequestClient.post<ChannelConfigDto>('/channelBooking/loadChannelConfig', params);
 }
 
@@ -44,6 +45,6 @@ export async function saveChannelConfigApi(params: SaveChannelConfigRequest) {
   return publicRequestClient.post<{ id?: number }>('/channelBooking/saveChannelConfig', params);
 }
 
-export async function deleteChannelConfigApi(params: { id: number }) {
+export async function deleteChannelConfigApi(params: { id: BookingEntityId }) {
   return publicRequestClient.post<void>('/channelBooking/deleteChannelConfig', params);
 }

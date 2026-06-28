@@ -25,8 +25,10 @@ import {
   formatInventoryTotalAmountDisplay,
   formatInventoryUnitPriceDisplay,
 } from '#/utils/inventory/inventory-qty-unit-display';
+import { shouldInventoryRowShowPersistedForm } from '#/utils/inventory/inventory-doc-grid-edit';
 
 import ProductSelectTable from '../components/select-product.vue';
+import SelectPriceAdjustmentItem from '../components/select-price-adjustment-item.vue';
 import SelectPurchaseOrderMedicine from '../components/select-purchase-order-medicine.vue';
 import SelectPurchaseReturnMedicine from '../components/select-purchase-return-medicine.vue';
 import WarehouseProductSelectTable from '../components/select-warehouse-product.vue';
@@ -129,7 +131,7 @@ setupVbenVxeTable({
       },
     });
     /** 药库订货单：medication-info 下拉选品（与采购入库 ProductSelectTable 同模式） */
-    vxeUI.renderer.add('PurchaseOrderMedicineSelect', {
+    const purchaseOrderMedicineSelectRenderer = {
       autofocus: '.vxe-input--inner',
       renderTableEdit(renderOpts, { row, column }) {
         const { props } = renderOpts;
@@ -138,6 +140,36 @@ setupVbenVxeTable({
           | undefined;
 
         return h(SelectPurchaseOrderMedicine, {
+          ...props,
+          modelValue: row[column.field],
+          'onUpdate:modelValue': (val: TableCellValue) => {
+            row[column.field] = val;
+            if (val && onSelected) {
+              onSelected(val as TableRow, row);
+            }
+          },
+        });
+      },
+      renderTableCell(renderOpts, { row, column }) {
+        if (shouldInventoryRowShowPersistedForm(row)) {
+          return purchaseOrderMedicineSelectRenderer.renderTableEdit(renderOpts, { row, column });
+        }
+        const v = row[column.field] as undefined | { name?: string };
+        return h('span', v?.name ?? row.itemName ?? '');
+      },
+    };
+    vxeUI.renderer.add('PurchaseOrderMedicineSelect', purchaseOrderMedicineSelectRenderer);
+
+    /** 调价单：可选项目下拉选品（同构药库进货单 PurchaseOrderMedicineSelect） */
+    vxeUI.renderer.add('PriceAdjustmentItemSelect', {
+      autofocus: '.vxe-input--inner',
+      renderTableEdit(renderOpts, { row, column }) {
+        const { props } = renderOpts;
+        const onSelected = props?.onSelected as
+          | ((item: TableRow, row: TableRow) => void)
+          | undefined;
+
+        return h(SelectPriceAdjustmentItem, {
           ...props,
           modelValue: row[column.field],
           'onUpdate:modelValue': (val: TableCellValue) => {
@@ -245,7 +277,7 @@ setupVbenVxeTable({
       },
     });
 
-    vxeUI.renderer.add('ElDatePicker', {
+    const elDatePickerRenderer = {
       autofocus: '.el-input__inner',
       renderTableEdit(renderOpts, { row, column }) {
         const { props } = renderOpts;
@@ -317,6 +349,9 @@ setupVbenVxeTable({
         });
       },
       renderTableCell(renderOpts, { row, column }) {
+        if (shouldInventoryRowShowPersistedForm(row)) {
+          return elDatePickerRenderer.renderTableEdit(renderOpts, { row, column });
+        }
         const value = row[column.field];
         const pickerType = (renderOpts.props?.type as string | undefined) ?? 'datetime';
         if (pickerType === 'daterange') {
@@ -333,13 +368,109 @@ setupVbenVxeTable({
           : value;
         return h('span', String(formatted));
       },
-    });
+    };
+    vxeUI.renderer.add('ElDatePicker', elDatePickerRenderer);
+
+    /** 未完成行常驻：ElInput 文本列（批号/备注等） */
+    const inventoryPersistElInputRenderer = {
+      autofocus: '.el-input__inner',
+      renderTableEdit(renderOpts, { row, column }) {
+        const { props } = renderOpts;
+        const maxlength = props?.maxlength as number | undefined;
+        const clearable = props?.clearable === true;
+        return h(ElInput, {
+          class: '!w-full',
+          clearable,
+          maxlength,
+          modelValue: String(row[column.field] ?? ''),
+          'onUpdate:modelValue': (val: string) => {
+            row[column.field] = val;
+          },
+        });
+      },
+      renderTableCell(renderOpts, { row, column }) {
+        if (shouldInventoryRowShowPersistedForm(row)) {
+          return inventoryPersistElInputRenderer.renderTableEdit(renderOpts, { row, column });
+        }
+        return h('span', String(row[column.field] ?? ''));
+      },
+    };
+    vxeUI.renderer.add('InventoryPersistElInput', inventoryPersistElInputRenderer);
+
+    /** 未完成行常驻：ElInputNumber 数字列（数量/损益数量等） */
+    const inventoryPersistElInputNumberRenderer = {
+      autofocus: '.el-input__inner',
+      renderTableEdit(renderOpts, { row, column }) {
+        const { props } = renderOpts;
+        const raw = Number(row[column.field]);
+        const model = Number.isFinite(raw) ? raw : undefined;
+        return h(ElInputNumber, {
+          align: (props?.align as string | undefined) ?? 'center',
+          class: '!w-full',
+          controls: props?.controls !== false,
+          controlsPosition: props?.controlsPosition as 'right' | undefined,
+          min: (props?.min as number | undefined) ?? 0,
+          precision: props?.precision as number | undefined,
+          modelValue: model,
+          'onUpdate:modelValue': (val: number | undefined) => {
+            row[column.field] = val === undefined || val === null ? undefined : val;
+          },
+        });
+      },
+      renderTableCell(renderOpts, { row, column }) {
+        if (shouldInventoryRowShowPersistedForm(row)) {
+          return inventoryPersistElInputNumberRenderer.renderTableEdit(renderOpts, { row, column });
+        }
+        const val = row[column.field];
+        return h('span', val === undefined || val === null || val === '' ? '' : String(val));
+      },
+    };
+    vxeUI.renderer.add('InventoryPersistElInputNumber', inventoryPersistElInputNumberRenderer);
+
+    /** 未完成行常驻：ElSelect 下拉列（变更原因等） */
+    const inventoryPersistElSelectRenderer = {
+      autofocus: '.el-input__inner',
+      renderTableEdit(renderOpts, { row, column }) {
+        const { props, options } = renderOpts;
+        type RowOpt = { label: string; value: string };
+        const opts = (options ?? props?.options ?? []) as RowOpt[];
+        return h(
+          ElSelect,
+          {
+            class: 'w-full',
+            filterable: props?.filterable === true,
+            clearable: props?.clearable === true,
+            placeholder: props?.placeholder as string | undefined,
+            modelValue: row[column.field],
+            'onUpdate:modelValue': (val: string) => {
+              row[column.field] = val;
+            },
+          },
+          () =>
+            opts.map((opt) =>
+              h(ElOption, { key: String(opt.value), label: opt.label, value: opt.value }),
+            ),
+        );
+      },
+      renderTableCell(renderOpts, { row, column }) {
+        if (shouldInventoryRowShowPersistedForm(row)) {
+          return inventoryPersistElSelectRenderer.renderTableEdit(renderOpts, { row, column });
+        }
+        const { options, props } = renderOpts;
+        type RowOpt = { label: string; value: string };
+        const opts = (options ?? props?.options ?? []) as RowOpt[];
+        const val = String(row[column.field] ?? '');
+        const label = opts.find((o) => String(o.value) === val)?.label ?? val;
+        return h('span', label);
+      },
+    };
+    vxeUI.renderer.add('InventoryPersistElSelect', inventoryPersistElSelectRenderer);
 
     /**
      * 数量 + 单位合并单元格（药库进货/出库/药房入库等）。
      * props: qtyField, unitField, useBandSelect（默认 true=UnitSelect），onUnitChange
      */
-    vxeUI.renderer.add('InventoryQtyUnitCell', {
+    const inventoryQtyUnitCellRenderer = {
       autofocus: '.el-input__inner',
       renderTableEdit(renderOpts, { row, column }) {
         const { props } = renderOpts;
@@ -396,17 +527,22 @@ setupVbenVxeTable({
           unitInput,
         ]);
       },
-      renderTableCell(renderOpts, { row }) {
+      renderTableCell(renderOpts, params) {
+        if (shouldInventoryRowShowPersistedForm(params.row)) {
+          return inventoryQtyUnitCellRenderer.renderTableEdit(renderOpts, params);
+        }
+        const { row } = params;
         const { props } = renderOpts;
         const qtyField = String(props?.qtyField ?? 'itemQuantity');
         const unitField = String(props?.unitField ?? 'selectedBandKind');
         const text = formatInventoryQtyUnitCellText(row, qtyField, unitField);
         return h('span', { class: 'block w-full text-center' }, text);
       },
-    });
+    };
+    vxeUI.renderer.add('InventoryQtyUnitCell', inventoryQtyUnitCellRenderer);
 
     /** 单价：编辑为数字；回显两位小数 + 计量单位 */
-    vxeUI.renderer.add('InventoryUnitPriceCell', {
+    const inventoryUnitPriceCellRenderer = {
       autofocus: '.el-input__inner',
       renderTableEdit(renderOpts, { row, column }) {
         const { props } = renderOpts;
@@ -426,6 +562,9 @@ setupVbenVxeTable({
         });
       },
       renderTableCell(renderOpts, { row, column }) {
+        if (shouldInventoryRowShowPersistedForm(row)) {
+          return inventoryUnitPriceCellRenderer.renderTableEdit(renderOpts, { row, column });
+        }
         const { props } = renderOpts;
         const priceField = String(props?.priceField ?? column.field ?? 'unitPrice');
         const unitField = String(props?.unitField ?? 'selectedBandKind');
@@ -440,7 +579,8 @@ setupVbenVxeTable({
         const text = formatInventoryUnitPriceDisplay(row, priceField, unitField);
         return h('span', { class: 'block w-full text-right' }, text);
       },
-    });
+    };
+    vxeUI.renderer.add('InventoryUnitPriceCell', inventoryUnitPriceCellRenderer);
 
     /** 总金额：只读回显两位小数 + `元` */
     vxeUI.renderer.add('InventoryTotalAmountCell', {

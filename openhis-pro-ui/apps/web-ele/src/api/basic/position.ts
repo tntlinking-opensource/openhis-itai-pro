@@ -70,6 +70,7 @@ export const PLATFORM_ROLE_CODE = {
   PHARMACIST: 'ROLE_PHARMACIST',
   WAREHOUSE: 'ROLE_WAREHOUSE',
   ACCOUNTANT: 'ROLE_ACCOUNTANT',
+  FINANCE_APPROVER: 'ROLE_FINANCE_APPROVER',
 } as const;
 
 /** 岗位分配可选内置角色（服务端解析 id，勿写死种子 id） */

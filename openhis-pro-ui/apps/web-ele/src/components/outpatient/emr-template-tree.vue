@@ -4,6 +4,7 @@ import type { TreeNodeData } from 'element-plus/es/components/tree/src/tree.type
 
 import type { EmrTemplateTreeNode } from './build-emr-template-tree';
 
+import type { DocumentTypeDto } from '#/api/emr/document-type';
 import type { TemplateDto } from '#/api/emr/template';
 import type { EmrTemplateStationKind } from '#/views/basic/emr-template/emr-template-scope.constants';
 
@@ -11,8 +12,13 @@ import { nextTick, onMounted, ref, watch } from 'vue';
 
 import { ElMessage, ElTree } from 'element-plus';
 
-import { getTemplateDocumentTypesApi, listTemplatesForStationApi } from '#/api/emr/template';
-import { EMR_TEMPLATE_STATION_KIND } from '#/views/basic/emr-template/emr-template-scope.constants';
+import { getDocumentTypeListApi } from '#/api/emr/document-type';
+import { getTemplateListApi, listTemplatesForStationApi } from '#/api/emr/template';
+import { unwrapApiList } from '#/utils/api/unwrap-api-list';
+import {
+  EMR_TEMPLATE_ENCOUNTER_CLASS,
+  EMR_TEMPLATE_STATION_KIND,
+} from '#/views/basic/emr-template/emr-template-scope.constants';
 
 import { buildEmrTemplateTree } from './build-emr-template-tree';
 
@@ -47,37 +53,106 @@ const treeRef = ref<InstanceType<typeof ElTree>>();
 const loading = ref(false);
 const treeData = ref<EmrTemplateTreeNode[]>([]);
 
+const PAGE_SIZE = 200;
+
+function resolveEncounterClassCode(kind: EmrTemplateStationKind | undefined): string | undefined {
+  if (kind === EMR_TEMPLATE_STATION_KIND.OUTPATIENT) {
+    return EMR_TEMPLATE_ENCOUNTER_CLASS.AMB;
+  }
+  if (kind === EMR_TEMPLATE_STATION_KIND.INPATIENT) {
+    return EMR_TEMPLATE_ENCOUNTER_CLASS.IMP;
+  }
+  return undefined;
+}
+
+/** 文书类型：走 documentType/getList（维护页同源，含 sortOrder） */
+async function fetchDocumentTypesForTree(): Promise<DocumentTypeDto[]> {
+  const params = props.documentTypesEnabledOnly ? { enabled: true } : {};
+  const list = await getDocumentTypeListApi(params);
+  return unwrapApiList<DocumentTypeDto>(list);
+}
+
+/** 模板分页拉全量（listForStation 不可用时的回退） */
+async function fetchTemplatesByPagedList(encounterClassCode?: string): Promise<TemplateDto[]> {
+  const all: TemplateDto[] = [];
+  let pageNo = 1;
+  while (true) {
+    const res = await getTemplateListApi({
+      pageNo,
+      pageSize: PAGE_SIZE,
+      enabled: props.templatesEnabledOnly ? true : undefined,
+      encounterClassCode,
+    });
+    const batch = res?.content ?? [];
+    all.push(...batch);
+    if (batch.length === 0 || batch.length < PAGE_SIZE) break;
+    pageNo += 1;
+  }
+  return all;
+}
+
 async function fetchTemplatesForTree(): Promise<TemplateDto[]> {
   const kind = props.stationKind;
+  const encounterClassCode = resolveEncounterClassCode(kind);
   if (
-    kind === EMR_TEMPLATE_STATION_KIND.OUTPATIENT ||
-    kind === EMR_TEMPLATE_STATION_KIND.INPATIENT
+    kind !== EMR_TEMPLATE_STATION_KIND.OUTPATIENT &&
+    kind !== EMR_TEMPLATE_STATION_KIND.INPATIENT
   ) {
+    return fetchTemplatesByPagedList(undefined);
+  }
+
+  try {
     const list = await listTemplatesForStationApi({
       stationKind: kind,
       enabled: props.templatesEnabledOnly ? true : undefined,
     });
-    return Array.isArray(list) ? list : [];
+    return unwrapApiList<TemplateDto>(list);
+  } catch (stationError) {
+    console.warn('[EmrTemplateTree] listForStation failed, fallback to getList', stationError);
+    return fetchTemplatesByPagedList(encounterClassCode);
   }
-  return [];
 }
 
 async function loadTree() {
   loading.value = true;
+  let partialFailure = false;
   try {
-    const docTypeParams = props.documentTypesEnabledOnly ? { enabled: true } : {};
-    const [types, templates] = await Promise.all([
-      getTemplateDocumentTypesApi(docTypeParams),
+    const [typesResult, templatesResult] = await Promise.allSettled([
+      fetchDocumentTypesForTree(),
       fetchTemplatesForTree(),
     ]);
-    const typeList = Array.isArray(types) ? types : [];
+
+    const typeList =
+      typesResult.status === 'fulfilled'
+        ? typesResult.value
+        : ((partialFailure = true), console.error(typesResult.reason), []);
+    const templates =
+      templatesResult.status === 'fulfilled'
+        ? templatesResult.value
+        : ((partialFailure = true), console.error(templatesResult.reason), []);
+
+    if (typeList.length === 0 && templates.length === 0) {
+      const reason =
+        typesResult.status === 'rejected'
+          ? typesResult.reason
+          : templatesResult.status === 'rejected'
+            ? templatesResult.reason
+            : undefined;
+      if (reason) {
+        throw reason;
+      }
+    }
+
     treeData.value = buildEmrTemplateTree(typeList, templates);
+    if (partialFailure) {
+      ElMessage.warning('部分模板数据加载失败，已展示可用内容');
+    }
     await nextTick();
     treeRef.value?.filter((props.filterText ?? '').trim());
   } catch (error) {
     console.error(error);
-    ElMessage.error('加载病历模板树失败');
     treeData.value = [];
+    ElMessage.error('加载病历模板树失败');
   } finally {
     loading.value = false;
   }
@@ -94,6 +169,13 @@ watch(
   () => props.filterText,
   (val) => {
     treeRef.value?.filter((val ?? '').trim());
+  },
+);
+
+watch(
+  () => props.stationKind,
+  () => {
+    void loadTree();
   },
 );
 

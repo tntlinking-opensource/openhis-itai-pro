@@ -16,6 +16,7 @@ import { TableLayout } from '@vben-core/table-layout-ui';
 import { executeApproval, init, pagePendingApprovalOrders } from '#/api/finance';
 import type { ApiOptionItem } from '#/types/api-response';
 import { useRequest } from '#/hooks/use-request';
+import { useFinanceApprovalAccess } from '#/composables/use-finance-approval-access';
 
 import WarehouseAdapter from './components/warehouse-adapter.vue';
 import { ElMessage } from 'element-plus';
@@ -23,6 +24,8 @@ import { ElMessage } from 'element-plus';
 defineOptions({
   name: 'FinanceApproval',
 });
+
+const { canFinanceApprove } = useFinanceApprovalAccess();
 
 const tableData = ref<PagePendingApprovalOrdersResponse[]>([]);
 const total = ref(0);
@@ -264,7 +267,7 @@ onMounted(() => {
       <template #actions="{ row }">
         <ElButton link type="primary" @click="handleView(row)">查看</ElButton>
         <ElButton
-          v-if="row.statusEnum === '2'"
+          v-if="row.statusEnum === '2' && canFinanceApprove"
           link
           type="primary"
           @click="handleExecute(row, 'agree')"
@@ -272,7 +275,7 @@ onMounted(() => {
           通过
         </ElButton>
         <ElButton
-          v-if="row.statusEnum === '2'"
+          v-if="row.statusEnum === '2' && canFinanceApprove"
           link
           type="danger"
           @click="handleExecute(row, 'reject')"
@@ -283,7 +286,7 @@ onMounted(() => {
     </TableLayout>
     <WarehouseAdapter ref="warehouseAdapterRef">
       <template #footer="{ row }">
-        <template v-if="row?.statusEnum === '2'">
+        <template v-if="row?.statusEnum === '2' && canFinanceApprove">
           <ElButton type="primary" :loading="executeLoading" @click="handleExecute(row, 'agree')">
             通过
           </ElButton>

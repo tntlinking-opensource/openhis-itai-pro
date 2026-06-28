@@ -3,6 +3,7 @@ import type { AdviceDrugItem, AdviceProductOption, AdviceRowItem } from './advic
 import type { OrderTemplateLineRowItem } from '#/api/basic/order-template';
 import type {
   DoctorStationAdviceCatalogRowDto,
+  DoctorStationAdviceDraftLineRequest,
   PrepickedProductKeyDto,
   TerminologyOptionDto,
 } from '#/api/doctor-station/advice.types';
@@ -36,7 +37,13 @@ import {
   hydrateDraftLineDoseFromDosageText,
 } from '#/views/basic/ordertemplate/order-template-medication-units';
 
-import { saveAdviceDraftBatchWithBindResolution } from './advice-draft-bind.service';
+import {
+  buildBindSourceGroupsFromDialogRows,
+  filterResolvableDialogRowCandidates,
+  resolveAdviceDraftBindDialogRows,
+  saveAdviceDraftBatchWithBindResolution,
+} from './advice-draft-bind.service';
+import type { AdviceDraftBindDialogRow } from './advice-draft-bind.types';
 import {
   buildWesternProductSelectPatch,
   createAdviceDrugItem,
@@ -47,7 +54,13 @@ import { mapCatalogRowToOption } from './advice-list';
 import { buildAdviceDraftLines } from './advice-medication-draft';
 import { inferAdviceLineEditorKind, validateWesternEditLineItem } from './advice-row';
 import { ADVICE_PRICING_SOURCE_CODE } from './advice-tab.constants';
+import { totalAmountUnitDisplayLabel } from './medication-unit-bands';
 import { unitCodeByBandKind } from './medication-unit-bands';
+import type {
+  OrderTemplateApplyConfirmLineKind,
+  OrderTemplateApplyConfirmPreview,
+  OrderTemplateApplyConfirmTemplateRow,
+} from './order-template-apply-confirm.types';
 
 /** 组套套用：药品库存不足明细 */
 export interface OrderTemplateMedicationStockIssue {
@@ -67,6 +80,14 @@ export interface ApplyOrderTemplateParams {
   feeNatureOptions: TerminologyOptionDto[];
   /** 当前就诊主表行，用于药品 sortNumber 追加 */
   existingAdviceRows?: AdviceRowItem[];
+  /** 已在合并弹窗确认后的暂存行（跳过组内重建） */
+  preparedDraftLines?: DoctorStationAdviceDraftLineRequest[];
+  /** 已在合并弹窗确认后的组套行（删行 / 改数量） */
+  preConfirmedTemplateRows?: OrderTemplateApplyConfirmTemplateRow[];
+  /** 已在合并弹窗确认后的带出行 */
+  preConfirmedBindDialogRows?: AdviceDraftBindDialogRow[];
+  /** 与 preConfirmedBindDialogRows 配合：写入「不再提示」缓存的来源键 */
+  preConfirmedBindSkipSourceKeys?: string[];
 }
 
 /** 组套套用结果 */
@@ -495,7 +516,11 @@ function buildAdviceDrugItemFromTemplateLine(
 
   if (tbl === 'wkf_activity_definition') {
     const uCode = templateUnitCode || '次';
-    const uName = templateUnitName || uCode;
+    const uName = resolveServiceTemplateUnitDisplayName(
+      templateUnitName,
+      templateUnitCode,
+      catalog,
+    );
     const orgId =
       performOrgId ||
       (params.organizationUnitId ? String(params.organizationUnitId).trim() : undefined);
@@ -584,10 +609,325 @@ async function loadEncounterDiagnosisRows(
   return Array.isArray(list) ? list : [];
 }
 
-/** 组套套用至当前就诊草稿（静默保存） */
-export async function applyOrderTemplateToAdviceDraft(
+/** 组套行 → 展示类型 */
+function resolveTemplateLineKindLabel(line: OrderTemplateLineRowItem): string {
+  const text = String(line.lineKindEnumText ?? '').trim();
+  if (text === '药品行') {
+    return '药品';
+  }
+  if (text === '耗材行') {
+    return '耗材';
+  }
+  if (text === '诊疗行') {
+    return '诊疗';
+  }
+  if (text) {
+    return text;
+  }
+  switch (line.lineKindEnum) {
+    case ORDER_TEMPLATE_LINE_KIND_MEDICATION: {
+      return '药品';
+    }
+    case ORDER_TEMPLATE_LINE_KIND_SERVICE: {
+      return '诊疗';
+    }
+    case ORDER_TEMPLATE_LINE_KIND_DEVICE: {
+      return '耗材';
+    }
+    default: {
+      return '项目';
+    }
+  }
+}
+
+/** 药品行剂量展示（优先组套 dosageText，回落编辑行单次剂量） */
+function resolveMedicationConfirmDosageText(
+  line: OrderTemplateLineRowItem,
+  item: AdviceDrugItem,
+): string | undefined {
+  const fromLine = String(line.dosageText ?? '').trim();
+  if (fromLine) {
+    return fromLine;
+  }
+  const singleDose = Number(item.singleDose);
+  if (!Number.isFinite(singleDose) || singleDose <= 0) {
+    return undefined;
+  }
+  const doseUnit = String(item.doseMainUnit ?? item.doseSubUnit ?? '').trim();
+  return doseUnit ? `${singleDose}${doseUnit}` : String(singleDose);
+}
+
+/** 诊疗组套行：预览无单位名时回落「次」，避免字典 code 当展示名 */
+function resolveServiceTemplateUnitDisplayName(
+  templateUnitName: string,
+  templateUnitCode: string,
+  catalog: AdviceProductOption,
+): string {
+  const fromTemplate = String(templateUnitName ?? '').trim();
+  if (fromTemplate && fromTemplate !== templateUnitCode) {
+    return fromTemplate;
+  }
+  const catalogUnitName = String(catalog.defaultUnitName ?? catalog.unitName ?? '').trim();
+  const catalogUnitCode = String(catalog.defaultUnitCode ?? '').trim();
+  if (catalogUnitName && catalogUnitName !== catalogUnitCode) {
+    return catalogUnitName;
+  }
+  const code = String(templateUnitCode ?? '').trim();
+  if (code && !/^\d+$/.test(code)) {
+    return code;
+  }
+  return '次';
+}
+
+/** 确认弹窗：总量/数量单位展示名（不落字典 code） */
+function resolveTemplateConfirmUnitLabel(
+  item: AdviceDrugItem,
+  lineKind: OrderTemplateApplyConfirmLineKind,
+): string {
+  const salesName = String(item.totalUnitSalesName ?? '').trim();
+  const packageName = String(item.totalUnitPackageName ?? '').trim();
+  const unitCode = String(item.totalAmountUnit ?? '').trim();
+  const fromBands = totalAmountUnitDisplayLabel(item);
+  if (lineKind === 'SERVICE') {
+    if (salesName && salesName !== unitCode) {
+      return salesName;
+    }
+    if (fromBands && fromBands !== unitCode && !/^\d+$/.test(fromBands)) {
+      return fromBands;
+    }
+    return '次';
+  }
+  if (fromBands && fromBands !== unitCode) {
+    return fromBands;
+  }
+  if (salesName && salesName !== unitCode) {
+    return salesName;
+  }
+  if (packageName && packageName !== unitCode) {
+    return packageName;
+  }
+  return fromBands;
+}
+
+/** 组套项目名称：规格为计价单位时不拼入名称 */
+function shouldAppendTemplateProductSpec(
+  baseName: string,
+  spec: string,
+  lineKind?: OrderTemplateApplyConfirmLineKind,
+): boolean {
+  const specNorm = String(spec ?? '').trim();
+  if (!specNorm || baseName.includes(specNorm)) {
+    return false;
+  }
+  if (lineKind === 'SERVICE' && ['次', '项', 'U'].includes(specNorm)) {
+    return false;
+  }
+  return true;
+}
+
+function resolveTemplateConfirmLineKind(
+  item: AdviceDrugItem | undefined,
+  line: OrderTemplateLineRowItem,
+): OrderTemplateApplyConfirmLineKind {
+  if (item) {
+    const kind = inferAdviceLineEditorKind(item);
+    if (kind === 'SERVICE' || kind === 'DEVICE') {
+      return kind;
+    }
+    return 'MEDICATION';
+  }
+  switch (line.lineKindEnum) {
+    case ORDER_TEMPLATE_LINE_KIND_SERVICE: {
+      return 'SERVICE';
+    }
+    case ORDER_TEMPLATE_LINE_KIND_DEVICE: {
+      return 'DEVICE';
+    }
+    default: {
+      return 'MEDICATION';
+    }
+  }
+}
+
+/** 组套行 + 套用编辑行 → 确认弹窗展示行 */
+function buildTemplateConfirmRows(
+  normalizedLines: OrderTemplateLineRowItem[],
+  catalogMap: Map<string, AdviceProductOption>,
+  drugItems: AdviceDrugItem[],
+): OrderTemplateApplyConfirmTemplateRow[] {
+  return normalizedLines.map((line, index) => {
+    const key = prepickedKeyFromTemplateLine(line);
+    const catalog = key
+      ? catalogMap.get(`${key.productTableName}:${key.productDefinitionId}`)
+      : undefined;
+    const item = drugItems[index];
+    const lineKind = resolveTemplateConfirmLineKind(item, line);
+    const lineName = String(line.productName ?? '').trim();
+    const catalogName = String(catalog?.name ?? item?.selectedDrugName ?? '').trim();
+    const spec = String(catalog?.spec ?? line.productSpec ?? item?.selectedDrugSpec ?? '').trim();
+    const baseName = lineName || catalogName;
+    const itemName = baseName
+      ? shouldAppendTemplateProductSpec(baseName, spec, lineKind)
+        ? `${baseName} ${spec}`
+        : baseName
+      : `第 ${index + 1} 项`;
+
+    if (lineKind === 'SERVICE' && item) {
+      const quantity =
+        Number.isFinite(Number(item.serviceQuantity)) && Number(item.serviceQuantity) > 0
+          ? Number(item.serviceQuantity)
+          : 1;
+      const unitName = resolveTemplateConfirmUnitLabel(item, lineKind);
+      const execCount = Number(item.totalAmount);
+      const dosageText =
+        Number.isFinite(execCount) && execCount > 0 ? `执行 ${execCount} 次` : undefined;
+      return {
+        key: `tpl-${String(line.lineId ?? index)}`,
+        lineIndex: index,
+        lineKind,
+        itemName,
+        kindLabel: resolveTemplateLineKindLabel(line),
+        quantity,
+        unitName,
+        dosageText,
+      };
+    }
+
+    if (lineKind === 'DEVICE' && item) {
+      const quantity =
+        Number.isFinite(Number(item.totalAmount)) && Number(item.totalAmount) > 0
+          ? Number(item.totalAmount)
+          : 1;
+      return {
+        key: `tpl-${String(line.lineId ?? index)}`,
+        lineIndex: index,
+        lineKind,
+        itemName,
+        kindLabel: resolveTemplateLineKindLabel(line),
+        quantity,
+        unitName: resolveTemplateConfirmUnitLabel(item, lineKind),
+        dosageText: undefined,
+      };
+    }
+
+    if (item) {
+      const quantity =
+        Number.isFinite(Number(item.totalAmount)) && Number(item.totalAmount) > 0
+          ? Number(item.totalAmount)
+          : 1;
+      return {
+        key: `tpl-${String(line.lineId ?? index)}`,
+        lineIndex: index,
+        lineKind,
+        itemName,
+        kindLabel: resolveTemplateLineKindLabel(line),
+        quantity,
+        unitName: resolveTemplateConfirmUnitLabel(item, lineKind),
+        dosageText: resolveMedicationConfirmDosageText(line, item),
+      };
+    }
+
+    const qtyRaw = Number(line.defaultQuantity);
+    const quantity = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 1;
+    return {
+      key: `tpl-${String(line.lineId ?? index)}`,
+      lineIndex: index,
+      lineKind,
+      itemName,
+      kindLabel: resolveTemplateLineKindLabel(line),
+      quantity,
+      unitName: String(line.defaultUnitName ?? '').trim() || (lineKind === 'SERVICE' ? '次' : ''),
+      dosageText: String(line.dosageText ?? '').trim() || undefined,
+    };
+  });
+}
+
+/** 确认弹窗：按保留组套行重建暂存批次并写入修改后的数量 */
+export function buildDraftLinesFromConfirmedTemplateRows(
+  draftLines: DoctorStationAdviceDraftLineRequest[],
+  templateRows: OrderTemplateApplyConfirmTemplateRow[],
+): DoctorStationAdviceDraftLineRequest[] {
+  return [...templateRows]
+    .sort((left, right) => left.lineIndex - right.lineIndex)
+    .map((row) => {
+      const source = draftLines[row.lineIndex];
+      if (!source) {
+        return undefined;
+      }
+      const qty = Number.isFinite(row.quantity) && row.quantity > 0 ? row.quantity : 1;
+      if (row.lineKind === 'SERVICE') {
+        return {
+          ...source,
+          servicePayload: source.servicePayload
+            ? { ...source.servicePayload, quantity: qty }
+            : source.servicePayload,
+        };
+      }
+      if (row.lineKind === 'DEVICE') {
+        return {
+          ...source,
+          devicePayload: source.devicePayload
+            ? { ...source.devicePayload, quantity: qty }
+            : source.devicePayload,
+        };
+      }
+      return {
+        ...source,
+        medicationPayload: source.medicationPayload
+          ? { ...source.medicationPayload, quantity: qty }
+          : source.medicationPayload,
+      };
+    })
+    .filter((line): line is DoctorStationAdviceDraftLineRequest => line !== undefined);
+}
+
+/** 确认弹窗：组套删行后重映射带出行触发行下标 */
+export function remapBindRowsForConfirmedTemplateRows(
+  bindRows: AdviceDraftBindDialogRow[],
+  templateRows: OrderTemplateApplyConfirmTemplateRow[],
+): AdviceDraftBindDialogRow[] {
+  const keptIndices = [...templateRows]
+    .map((row) => row.lineIndex)
+    .sort((left, right) => left - right);
+  const indexRemap = new Map<number, number>();
+  keptIndices.forEach((oldIndex, newIndex) => {
+    indexRemap.set(oldIndex, newIndex);
+  });
+
+  return bindRows
+    .filter((row) => {
+      const triggerIndex = row.bindItem.triggerLineIndex;
+      if (triggerIndex === undefined || triggerIndex === null) {
+        return true;
+      }
+      return indexRemap.has(triggerIndex);
+    })
+    .map((row) => {
+      const triggerIndex = row.bindItem.triggerLineIndex;
+      if (triggerIndex === undefined || triggerIndex === null) {
+        return row;
+      }
+      const newIndex = indexRemap.get(triggerIndex);
+      if (newIndex === undefined) {
+        return row;
+      }
+      return {
+        ...row,
+        bindItem: { ...row.bindItem, triggerLineIndex: newIndex },
+      };
+    });
+}
+
+interface OrderTemplateApplyDraftPack {
+  draftLines: DoctorStationAdviceDraftLineRequest[];
+  normalizedLines: OrderTemplateLineRowItem[];
+  templateRows: OrderTemplateApplyConfirmTemplateRow[];
+}
+
+/** 校验组套行并组装暂存批次（不含落库） */
+async function buildOrderTemplateApplyDraftPack(
   params: ApplyOrderTemplateParams,
-): Promise<ApplyOrderTemplateResult> {
+): Promise<OrderTemplateApplyDraftPack> {
   const encounterId = params.encounterId.trim();
   const patientId = params.patientId.trim();
   if (!encounterId || !patientId) {
@@ -683,16 +1023,80 @@ export async function applyOrderTemplateToAdviceDraft(
       throw new OrderTemplateApplyError(error instanceof Error ? error.message : '请求组包失败');
     }
   })();
+
+  const templateRows = buildTemplateConfirmRows(normalizedLines, catalogMap, drugItems);
+
+  return { draftLines, normalizedLines, templateRows };
+}
+
+/** 组套套用前：组装确认弹窗所需组套行与带出行 */
+export async function prepareOrderTemplateApplyConfirm(
+  params: ApplyOrderTemplateParams & { templateName?: string },
+): Promise<OrderTemplateApplyConfirmPreview> {
+  const { draftLines, templateRows } = await buildOrderTemplateApplyDraftPack(params);
+
+  const dialogRowCandidates = await resolveAdviceDraftBindDialogRows({
+    encounterId: params.encounterId.trim(),
+    patientId: params.patientId.trim(),
+    lines: draftLines,
+  });
+  const bindRows = filterResolvableDialogRowCandidates(
+    dialogRowCandidates,
+    draftLines,
+    params.existingAdviceRows ?? [],
+  );
+  const bindSourceGroups = buildBindSourceGroupsFromDialogRows(bindRows);
+
+  return {
+    templateName: String(params.templateName ?? '').trim(),
+    templateRows,
+    bindRows,
+    bindSourceGroups,
+    draftLines,
+  };
+}
+
+/** 组套套用至当前就诊草稿（静默保存） */
+export async function applyOrderTemplateToAdviceDraft(
+  params: ApplyOrderTemplateParams,
+): Promise<ApplyOrderTemplateResult> {
+  const encounterId = params.encounterId.trim();
+  const patientId = params.patientId.trim();
+  if (!encounterId || !patientId) {
+    throw new OrderTemplateApplyError('缺少就诊或患者信息，无法套用组套');
+  }
+
+  let draftLines =
+    params.preparedDraftLines ?? (await buildOrderTemplateApplyDraftPack(params)).draftLines;
+
+  if (params.preConfirmedTemplateRows !== undefined) {
+    draftLines = buildDraftLinesFromConfirmedTemplateRows(
+      draftLines,
+      params.preConfirmedTemplateRows,
+    );
+  }
+
+  let preConfirmedBindDialogRows = params.preConfirmedBindDialogRows;
+  if (preConfirmedBindDialogRows && params.preConfirmedTemplateRows !== undefined) {
+    preConfirmedBindDialogRows = remapBindRowsForConfirmedTemplateRows(
+      preConfirmedBindDialogRows,
+      params.preConfirmedTemplateRows,
+    );
+  }
+
   const saveRes = await saveAdviceDraftBatchWithBindResolution({
     encounterId,
     patientId,
     pricingSourceCode: ADVICE_PRICING_SOURCE_CODE,
     lines: draftLines,
     existingAdviceRows: params.existingAdviceRows ?? [],
+    preConfirmedBindDialogRows,
+    preConfirmedBindSkipSourceKeys: params.preConfirmedBindSkipSourceKeys,
   });
   if (saveRes.success === false) {
     throw new OrderTemplateApplyError(String(saveRes.message ?? '').trim() || '保存医嘱草稿失败');
   }
 
-  return { appliedLineCount: draftLines.length };
+  const bindCount = preConfirmedBindDialogRows?.length ?? 0;
+  return { appliedLineCount: draftLines.length + bindCount };
 }

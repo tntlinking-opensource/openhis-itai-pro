@@ -6,7 +6,7 @@ import type {
   PatientCardPatient,
 } from '#/components/outpatient/patient-card.types';
 
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 import { RotateCw, Search } from '@vben/icons';
 import { formatDateTime, getOutpatientStatusTagStyles, getPaymentTypeTagStyles } from '@vben/utils';
@@ -30,6 +30,9 @@ defineOptions({
   name: 'DoctorPatientList',
 });
 
+/** 患者队列 Tab 内：全部 / 待诊 / 在诊 / 完诊 */
+export type DoctorWaitingQueueStatusFilter = 'all' | 'completed' | 'in-progress' | 'waiting';
+
 interface Props {
   currentQueue?: 'away' | 'completed' | 'current' | 'waiting';
   patients?: DoctorStationPatient[];
@@ -37,6 +40,10 @@ interface Props {
   loading?: boolean;
   /** 待诊患者总数，用于「患者队列」页签角标 */
   waitingCount?: number;
+  /** 吸底统计：待诊人数（当前关键字结果集） */
+  waitingStatusStatCount?: number;
+  /** 吸底统计：已接诊人数（在诊/暂离，当前关键字结果集） */
+  receivedStatusStatCount?: number;
   /** 父级正在提交接诊，忽略队列内二次双击避免重复请求 */
   receptionLocked?: boolean;
 }
@@ -46,15 +53,21 @@ const props = withDefaults(defineProps<Props>(), {
   selectedPatientId: '',
   loading: false,
   waitingCount: 0,
+  waitingStatusStatCount: 0,
+  receivedStatusStatCount: 0,
   receptionLocked: false,
 });
 
 const filterDate = defineModel<string>('filterDate', { required: true });
+const queueStatusFilter = defineModel<DoctorWaitingQueueStatusFilter>('queueStatusFilter', {
+  default: 'waiting',
+});
 
 const emit = defineEmits<{
   accept: [patient: DoctorStationPatient];
   dateChange: [date: string];
   queueChange: [queue: 'away' | 'completed' | 'current' | 'waiting'];
+  queueStatusFilterChange: [filter: DoctorWaitingQueueStatusFilter];
   quickAction: [
     action: 'allergy' | 'exam' | 'lab' | 'pathology' | 'report' | 'surgery' | 'transfusion',
   ];
@@ -149,6 +162,29 @@ const handleQueueRadioChange = (val: boolean | number | string | undefined) => {
   }
 };
 
+/** 患者队列底栏：全部 / 待诊 / 在诊 / 完诊文字 Tab 项 */
+const queueStatusTabs: Array<{ label: string; value: DoctorWaitingQueueStatusFilter }> = [
+  { label: '全部', value: 'all' },
+  { label: '待诊', value: 'waiting' },
+  { label: '在诊', value: 'in-progress' },
+  { label: '完诊', value: 'completed' },
+];
+
+/** 患者队列内切换待诊 / 在诊 / 完诊筛选 */
+const handleQueueStatusFilterPick = (filter: DoctorWaitingQueueStatusFilter) => {
+  if (queueStatusFilter.value === filter) return;
+  queueStatusFilter.value = filter;
+  emit('queueStatusFilterChange', filter);
+};
+
+/** 患者队列空态文案：随状态筛选变化 */
+const waitingQueueEmptyHint = computed(() => {
+  if (queueStatusFilter.value === 'all') return '当前无患者';
+  if (queueStatusFilter.value === 'in-progress') return '当前无在诊患者';
+  if (queueStatusFilter.value === 'completed') return '当前无完诊患者';
+  return '当前无待诊患者';
+});
+
 const handleQuickAction = (
   action: 'allergy' | 'exam' | 'lab' | 'pathology' | 'report' | 'surgery' | 'transfusion',
 ) => {
@@ -194,19 +230,6 @@ const handleRefresh = () => {
         </div>
         <ElRadioButton value="current" class="min-w-0 flex-1">在诊患者</ElRadioButton>
       </ElRadioGroup>
-      <ElInput
-        v-if="currentQueue !== 'current'"
-        v-model="searchKeyword"
-        placeholder="请输入患者名"
-        clearable
-        class="flex-1"
-        @keyup.enter="handleSearch"
-        @clear="handleSearch"
-      >
-        <template #prefix>
-          <Search class="h-4 w-4" />
-        </template>
-      </ElInput>
       <div class="flex items-center gap-2">
         <ElDatePicker
           v-model="filterDate"
@@ -221,12 +244,25 @@ const handleRefresh = () => {
           <RotateCw class="h-4 w-4" :class="{ 'animate-spin': isRefreshing }" />
         </ElButton>
       </div>
+      <ElInput
+        v-if="currentQueue === 'waiting'"
+        v-model="searchKeyword"
+        placeholder="请输入患者名"
+        clearable
+        class="w-full"
+        @keyup.enter="handleSearch"
+        @clear="handleSearch"
+      >
+        <template #prefix>
+          <Search class="h-4 w-4" />
+        </template>
+      </ElInput>
     </div>
 
-    <div class="flex-1 overflow-y-auto px-3">
+    <div class="min-h-0 flex-1 overflow-y-auto px-3">
       <div v-if="loading" class="text-text-sub py-8 text-center text-sm">加载中...</div>
       <div v-else-if="patients.length === 0" class="text-text-sub py-8 text-center text-sm">
-        {{ currentQueue === 'waiting' ? '当前无待诊患者' : '双击左侧患者卡片接诊' }}
+        {{ currentQueue === 'waiting' ? waitingQueueEmptyHint : '双击左侧患者卡片接诊' }}
       </div>
       <div v-else-if="currentQueue === 'current'" class="space-y-2">
         <div
@@ -312,6 +348,31 @@ const handleRefresh = () => {
         </div>
       </div>
     </div>
+
+    <div
+      v-if="currentQueue === 'waiting'"
+      class="doctor-queue-bottom-bar border-border-base mt-auto border-t"
+    >
+      <div class="doctor-queue-bottom-bar__tabs" role="tablist" aria-label="患者队列状态筛选">
+        <span
+          v-for="tab in queueStatusTabs"
+          :key="tab.value"
+          role="tab"
+          class="doctor-queue-status-tab"
+          :class="{ 'is-active': queueStatusFilter === tab.value }"
+          :aria-selected="queueStatusFilter === tab.value"
+          @click="handleQueueStatusFilterPick(tab.value)"
+        >
+          {{ tab.label }}
+        </span>
+      </div>
+      <div class="doctor-queue-bottom-bar__stats">
+        <span>待诊 {{ waitingStatusStatCount }}</span>
+        <span class="doctor-queue-bottom-bar__stats-sep">·</span>
+        <span>已接诊 {{ receivedStatusStatCount }}</span>
+      </div>
+    </div>
+
     <div
       v-if="currentQueue === 'current'"
       class="quick-action-footer border-border-base mt-auto border-t"
@@ -407,6 +468,80 @@ const handleRefresh = () => {
 .doctor-queue-radio
   :deep(.doctor-queue-tab-first + .el-radio-button.is-active .el-radio-button__inner) {
   box-shadow: none !important;
+}
+
+.doctor-queue-bottom-bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  background-color: var(--el-fill-color-blank);
+}
+
+.doctor-queue-bottom-bar__tabs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.doctor-queue-status-tab {
+  position: relative;
+  flex: 1;
+  padding: 2px 0 8px;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  transition: color 0.15s ease;
+  user-select: none;
+}
+
+.doctor-queue-status-tab:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 1px;
+  height: 12px;
+  transform: translateY(calc(-50% - 3px));
+  background-color: var(--el-border-color-lighter);
+}
+
+.doctor-queue-status-tab.is-active {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+
+.doctor-queue-status-tab.is-active::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  background-color: var(--el-color-primary);
+}
+
+.doctor-queue-status-tab:hover:not(.is-active) {
+  color: var(--el-text-color-primary);
+}
+
+.doctor-queue-bottom-bar__stats {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--el-text-color-regular);
+}
+
+.doctor-queue-bottom-bar__stats-sep {
+  color: var(--el-text-color-secondary);
 }
 
 .patient-card-dblclick-wrap {

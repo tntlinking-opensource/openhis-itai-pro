@@ -54,6 +54,13 @@ export interface NurseStationTreatmentLineDto {
   doseUnitName?: null | string;
   encounterId?: null | string;
   groupId?: null | string;
+  /** 是否输液/注射相关（优先 med_medication_request.infusion_flag，未落库时回落 med_medication_definition.inject_flag） */
+  infusionFlag?: boolean | null;
+  infusionFlagText?: null | string;
+  /** 是否皮试药（med_medication_request.skin_test_flag） */
+  skinTestFlag?: boolean | null;
+  /** 是否中药医嘱（med_medication_request.tcm_flag） */
+  tcmFlag?: boolean | null;
   itemCode?: null | string;
   itemName?: null | string;
   lastPerformerDisplay?: null | string;

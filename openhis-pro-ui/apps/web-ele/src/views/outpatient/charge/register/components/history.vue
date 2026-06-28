@@ -4,7 +4,6 @@ import type { TableColumn } from '@vben-core/table-layout-ui';
 import type { RegisterHistoryTableRow } from '../services';
 
 import type { DateRangeQuickSpec } from '#/utils/format/date-range-quick';
-import type { PayChannelOption } from '#/utils/payment/payment-channel-options';
 
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
@@ -24,12 +23,8 @@ import {
 
 import AppDialog from '#/components/app-dialog.vue';
 import SelectFuzzyInput from '#/components/select-fuzzy-input.vue';
-import { isScanPayChannel, useUnionPayScanPay } from '#/composables/payment/useUnionPayScanPay';
+import { isScanPayChannel } from '#/composables/payment/useUnionPayScanPay';
 import { getDateRangeQuick } from '#/utils/format/date-range-quick';
-import {
-  FALLBACK_PAY_CHANNEL_OPTIONS,
-  optionDtosToPayChannelOptions,
-} from '#/utils/payment/payment-channel-options';
 import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
 import { submitScanRefund } from '#/utils/payment/submit-scan-refund';
@@ -39,6 +34,8 @@ import {
   schedulePrintRegistrationReceipt,
 } from '#/utils/print/print-registration-receipt';
 
+import { useRegisterPayChannels } from '../composables/use-register-pay-channels';
+
 import {
   cancelPlannedRegisterEncounter,
   cancelRegisterEncounter,
@@ -46,7 +43,6 @@ import {
   ENCOUNTER_CANCELABLE_STATUS_CODES,
   ENCOUNTER_STATUS_CODE,
   ENCOUNTER_STATUS_EL_TAG_MAP,
-  loadRegisterFormInit,
   pageRegisterHistoryForTable,
   payRegisterFee,
   refreshRegisterFeeInsurancePreSettle,
@@ -87,10 +83,9 @@ const reprintEncounterId = ref<null | string>(null);
 const payChannelCode = ref(DEFAULT_REGISTER_PAY_CHANNEL_CODE);
 const scanCode = ref('');
 const scanStatusText = ref('');
-const payChannelOptions = ref<PayChannelOption[]>([...FALLBACK_PAY_CHANNEL_OPTIONS]);
 
-const { scanPayEnabled, effectivePayChannelOptions, refreshUnionPayCapabilities } =
-  useUnionPayScanPay(() => payChannelOptions.value);
+const { scanPayEnabled, effectivePayChannelOptions, ensurePayChannelsLoaded } =
+  useRegisterPayChannels();
 
 const showScanPaySection = computed(
   () =>
@@ -622,7 +617,7 @@ function applyDateRangeQuick(spec: DateRangeQuickSpec) {
   handleDateRangeChange();
 }
 
-/** 进入页面默认按「今天」条件拉一次列表 */
+/** 进入页面默认按「今天」条件拉一次列表（不等待本地 Win / 支付渠道 init） */
 onMounted(() => {
   if (typeof ResizeObserver !== 'undefined' && tableAreaRef.value) {
     tableAreaResizeObserver = new ResizeObserver(() => {
@@ -632,16 +627,8 @@ onMounted(() => {
     tableAreaResizeObserver.observe(tableAreaRef.value);
   }
 
-  void (async () => {
-    try {
-      const init = await loadRegisterFormInit({});
-      payChannelOptions.value = optionDtosToPayChannelOptions(init.paymentChannelOptions);
-    } catch {
-      payChannelOptions.value = [...FALLBACK_PAY_CHANNEL_OPTIONS];
-    }
-    await refreshUnionPayCapabilities();
-    await handleQuery();
-  })();
+  void handleQuery();
+  void ensurePayChannelsLoaded();
 });
 
 onBeforeUnmount(() => {
@@ -964,7 +951,7 @@ defineExpose({
   white-space: nowrap;
 }
 
-.register-history__table :deep(.el-table__body td.el-table-fixed-column--right .cell) {
+.register-history__table :deep(.vxe-table--fixed-right-wrapper .vxe-body--column .vxe-cell) {
   overflow: visible;
   text-overflow: clip;
 }

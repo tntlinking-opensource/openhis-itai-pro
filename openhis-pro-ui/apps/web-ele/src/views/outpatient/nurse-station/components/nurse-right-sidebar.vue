@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   cancelSupply: [id: string];
+  print: [label: string];
   showAllRecords: [];
   supplyChange: [id: string, checked: boolean];
 }>();
@@ -25,6 +26,8 @@ interface Props {
   selectedSupplyIds: string[];
   supplyRoomOptions: SupplyRoomOption[];
   recentActionRecords: ActionRecord[];
+  /** 未选患者时禁用打印 */
+  canPrint: boolean;
   /** 皮试 Tab 下隐藏耗材区 */
   showSupplySection?: boolean;
 }
@@ -33,6 +36,10 @@ const selectedSupplyRoomId = defineModel<string | undefined>('supplyRoomId');
 
 const onSupplyChange = (id: string, checked: boolean) => {
   emit('supplyChange', id, checked);
+};
+
+const onPrint = (label: string) => {
+  emit('print', label);
 };
 </script>
 
@@ -95,6 +102,33 @@ const onSupplyChange = (id: string, checked: boolean) => {
       </p>
     </div>
 
+    <div class="bg-background px-2 py-1.5">
+      <SectionTitle title="打印" />
+    </div>
+    <div class="print-action-grid bg-background min-w-0 px-2 py-1.5">
+      <ElButton type="primary" size="small" :disabled="!canPrint" @click="onPrint('打印瓶贴')">
+        打印瓶贴
+      </ElButton>
+      <ElButton size="small" :disabled="!canPrint" @click="onPrint('打印处置单')">
+        打印处置单
+      </ElButton>
+      <ElButton size="small" :disabled="!canPrint" @click="onPrint('打印采血码')">
+        打印采血码
+      </ElButton>
+      <ElButton size="small" :disabled="!canPrint" @click="onPrint('打印处方单')">
+        打印处方单
+      </ElButton>
+      <ElButton size="small" :disabled="!canPrint" @click="onPrint('打印皮试标签')">
+        皮试标签
+      </ElButton>
+      <ElButton size="small" :disabled="!canPrint" @click="onPrint('打印雾化标签')">
+        雾化标签
+      </ElButton>
+      <ElButton size="small" :disabled="!canPrint" @click="onPrint('打印处置申请单')">
+        处置申请单
+      </ElButton>
+    </div>
+
     <div class="bg-background flex min-h-0 flex-1 flex-col px-2 py-1.5">
       <div class="mb-1.5 flex shrink-0 items-center justify-between gap-2">
         <SectionTitle title="最近执行记录" class="min-w-0 flex-1" />
@@ -128,4 +162,31 @@ const onSupplyChange = (id: string, checked: boolean) => {
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.print-action-grid {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: auto;
+  align-items: stretch;
+  gap: 0.375rem;
+}
+
+.print-action-grid :deep(.el-button) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0 !important;
+  max-width: 100%;
+  margin: 0 !important;
+  height: 100%;
+  min-height: 2rem;
+  justify-content: center;
+  padding: 4px 6px;
+  font-size: 12px;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+</style>

@@ -13,8 +13,13 @@ import type {
 
 import { formatDateTime } from '@vben/utils';
 
-import { buildServiceApplyFormExtensionText } from '#/utils/service-apply-display';
+import {
+  mergeConsecutiveRowsByDrugGroup,
+  type DrugGroupDisplayItem,
+  type DrugGroupKey,
+} from '#/utils/doctor-station/drug-group-table';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { buildServiceApplyFormExtensionText } from '#/utils/service-apply-display';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -90,15 +95,18 @@ function isMedicationRequestTable(requestTable: string): boolean {
   return u === 'MEDICATION' || u.includes('MEDICATION_REQUEST');
 }
 
-/** 护士执行表行是否为药品医嘱（requestTable / MR: 行主键，勿用 type 展示文案） */
+/** 护士执行表行是否为药品医嘱（requestTable / MR: / 成组合并行主键，勿用 type 展示文案） */
 export function isNurseExecuteMedicationRow(
-  row: Pick<NurseAdviceExecuteRow, 'key' | 'requestTable'>,
+  row: Pick<NurseAdviceExecuteRow, 'key' | 'requestTable' | 'type'>,
 ): boolean {
   const table = String(row.requestTable ?? '').trim();
   if (table && isMedicationRequestTable(table)) {
     return true;
   }
-  return row.key.startsWith('MR:');
+  if (row.key.startsWith('MR:') || row.key.startsWith('merged-med-')) {
+    return true;
+  }
+  return row.type === '药品';
 }
 
 /** 判断处置行是否属于耗材请求表 */
@@ -397,6 +405,10 @@ export function mapTreatmentLineToExecuteRow(
     prescriptionNo: (row.prescriptionNo ?? '').trim() || undefined,
     applyFormNo: resolveNurseExecuteApplyFormNo(row.prescriptionNo),
     medCategoryCodeText: (row.medCategoryCodeText ?? '').trim() || undefined,
+    infusionFlag: row.infusionFlag ?? undefined,
+    skinTestFlag: row.skinTestFlag ?? undefined,
+    tcmFlag: row.tcmFlag ?? undefined,
+    methodCode: (row.methodCode ?? '').trim() || undefined,
     serviceCategoryCode: (row.serviceCategoryCode ?? '').trim() || undefined,
     serviceCategoryCodeText: (row.serviceCategoryCodeText ?? '').trim() || undefined,
   };
@@ -413,6 +425,61 @@ function nurseMedicationLineSortSeq(raw: NurseStationTreatmentLineDto['sortNumbe
 function nurseMedicationGroupSortKey(row: NurseStationTreatmentLineDto): string {
   const gid = String(row.groupId ?? '').trim();
   return gid === '' ? '\uFFFF' : gid;
+}
+
+function nurseMedicationGroupMergeKey(row: NurseStationTreatmentLineDto): DrugGroupKey {
+  const gid = String(row.groupId ?? '').trim();
+  return gid === '' ? '' : gid;
+}
+
+/** 药品行 → 成组括线展示项（与医生站 advice-list 字段对齐） */
+function nurseStationTreatmentLineToDrugGroupItem(
+  row: NurseStationTreatmentLineDto,
+): DrugGroupDisplayItem {
+  return {
+    selectedDrugName: trimDisplayText(row.itemName),
+    selectedDrugSpec: trimDisplayText(row.specText),
+    pharmacy: '',
+    singleDose: row.dose ?? '',
+    doseSubUnit: trimDisplayText(row.doseUnitName ?? row.doseUnitCode),
+    totalAmount: row.quantity ?? '',
+    totalAmountUnit: trimDisplayText(row.unitName ?? row.unitCode),
+    usage: trimDisplayText(row.methodName ?? row.methodCode),
+    frequency: trimDisplayText(row.rateName ?? row.rateCode),
+    medicationDays: row.dispensePerDuration ?? '',
+  };
+}
+
+/** 相同 groupId 且连续的药品行合并为一行，挂 groupItems 供 AdviceOrderDisplayCell 括线展示 */
+function mergeMedicationExecuteRowsForDisplay(
+  lines: NurseStationTreatmentLineDto[],
+): NurseAdviceExecuteRow[] {
+  const sorted = sortNurseStationMedicationLines(lines);
+  return mergeConsecutiveRowsByDrugGroup(sorted, {
+    getGroupKey: nurseMedicationGroupMergeKey,
+    toGroupItem: nurseStationTreatmentLineToDrugGroupItem,
+    buildMergedRow: ({ slice, groupItems }) => {
+      const members = slice.map((line) => mapTreatmentLineToExecuteRow(line));
+      const firstMember = members[0];
+      if (firstMember === undefined) {
+        throw new Error('mergeMedicationExecuteRowsForDisplay: empty slice');
+      }
+      if (slice.length === 1) {
+        return { ...firstMember };
+      }
+      const gid = String(slice[0]?.groupId ?? '').trim();
+      const idPart = slice
+        .map((line) => preserveApiIdForRequest(line.requestId) ?? '')
+        .filter((part) => part.length > 0)
+        .join('&');
+      return {
+        ...firstMember,
+        key: gid ? `merged-med-${gid}-${idPart}` : `merged-med-${idPart}`,
+        groupItems,
+        mergedMedicationMembers: members,
+      };
+    },
+  });
 }
 
 /** 药品行排序：与医生站 BR-ORD-018 一致（sortNumber 升序 → 成组聚邻 → requestId） */
@@ -476,9 +543,7 @@ export function mapTreatmentSheetToExecuteRows(
   for (const line of sortNurseStationServiceLinesForApplyForm(serviceLines)) {
     rows.push(mapTreatmentLineToExecuteRow(line));
   }
-  for (const line of sortNurseStationMedicationLines(medicationLines)) {
-    rows.push(mapTreatmentLineToExecuteRow(line));
-  }
+  rows.push(...mergeMedicationExecuteRowsForDisplay(medicationLines));
   return rows;
 }
 

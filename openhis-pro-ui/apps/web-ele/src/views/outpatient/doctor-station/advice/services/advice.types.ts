@@ -1,6 +1,7 @@
 import type {
   DoctorStationAdviceInventoryRowDto,
   DoctorStationMedicationUnitBandDto,
+  ServiceRequestDetailSummaryDto,
 } from '#/api/doctor-station/advice.types';
 import type { DrugGroupDisplayItem } from '#/utils/doctor-station/drug-group-table';
 
@@ -143,4 +144,10 @@ export interface AdviceRowItem {
   basedOnServiceRequestId?: string;
   /** 申请单整单号（诊疗 AR 前缀 prescriptionNo，同单多行共享） */
   applyFormNo?: string;
+  /** 申请单行备注（打印注意事项） */
+  remark?: string;
+  /** 申请单部位/样本明细 */
+  serviceRequestDetails?: ServiceRequestDetailSummaryDto[];
+  /** 目录类别 code：检验 PROOF、检查 TEST */
+  catalogCategoryCode?: string;
 }

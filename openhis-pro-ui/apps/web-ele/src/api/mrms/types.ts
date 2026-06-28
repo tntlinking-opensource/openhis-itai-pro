@@ -202,3 +202,210 @@ export interface PdfGenerateResultDto {
   /** @deprecated 后端未返回，打印日志可选 */
   contentHash?: string;
 }
+
+/** 质控缺陷（QcDefectDto） */
+export interface QcDefectDto {
+  defectId?: string;
+  caseRecordId?: string;
+  ruleCode?: string;
+  defectMessage?: string;
+  severityCode?: QcDefectSeverityCode | string;
+  statusCode?: QcDefectStatusCode | string;
+  responsiblePractitionerId?: string;
+  rectifiedAt?: string;
+  closedAt?: string;
+  createdAt?: string;
+}
+
+export type QcDefectSeverityCode = 'block' | 'info' | 'warn';
+
+export type QcDefectStatusCode = 'closed' | 'open' | 'rectified';
+
+/** 质控执行结果（QcRunResultDto） */
+export interface QcRunResultDto {
+  qcRunId?: string;
+  passed?: boolean;
+  openBlockCount?: number;
+  openWarnCount?: number;
+  defects?: QcDefectDto[];
+  caseRecord?: CaseRecordDetailDto;
+}
+
+/** 质控批次摘要（QcRunSummaryDto） */
+export interface QcRunSummaryDto {
+  qcRunId?: string;
+  triggerCode?: string;
+  passed?: boolean;
+  defectOpenCount?: number;
+  defectWarnCount?: number;
+  finishedAt?: string;
+}
+
+export interface StartQcParams {
+  caseRecordId: string;
+}
+
+export interface RerunQcParams {
+  caseRecordId: string;
+}
+
+export interface ListDefectsParams {
+  caseRecordId: string;
+  statusCode?: string;
+  severityCode?: string;
+}
+
+export interface ListQcRunsParams {
+  caseRecordId: string;
+}
+
+export interface DefectActionParams {
+  defectId: string;
+}
+
+export interface AddManualDefectParams {
+  caseRecordId: string;
+  severityCode: string;
+  defectMessage: string;
+}
+
+export interface ArchiveCaseRecordParams {
+  caseRecordId: string;
+  qualityGradeCode?: string;
+}
+
+/** 卷宗目录项（VolumeItemDto） */
+export interface VolumeItemDto {
+  itemType?: 'emr_document' | 'homepage' | string;
+  refId?: string;
+  title?: string;
+  documentTypeCode?: string;
+  documentTypeName?: string;
+  createdAt?: string;
+  printable?: boolean;
+}
+
+/** 卷宗目录（VolumeCatalogDto） */
+export interface VolumeCatalogDto {
+  caseRecordId?: string;
+  medcasno?: string;
+  homepageItem?: VolumeItemDto;
+  documents?: VolumeItemDto[];
+}
+
+export interface GetVolumeCatalogParams {
+  caseRecordId: string;
+}
+
+export interface PreviewVolumeParams {
+  caseRecordId: string;
+  documentIds?: string[];
+  includeHomepage?: boolean;
+}
+
+export interface VolumePdfResultDto {
+  pdfBase64?: string;
+  pageCount?: number;
+  renderedAt?: string;
+}
+
+/** 借阅申请（BorrowRequestItemDto） */
+export interface BorrowRequestItemDto {
+  id?: string;
+  caseRecordId?: string;
+  medcasno?: string;
+  psnName?: string;
+  requestTypeCode?: string;
+  applicantName?: string;
+  applicantDeptName?: string;
+  purpose?: string;
+  scopeDesc?: string;
+  copyCount?: number;
+  statusCode?: string;
+  approveComment?: string;
+  approvedAt?: string;
+  borrowedAt?: string;
+  dueReturnAt?: string;
+  returnedAt?: string;
+  createdAt?: string;
+}
+
+export interface ApplyBorrowParams {
+  caseRecordId: string;
+  requestTypeCode?: string;
+  applicantName?: string;
+  applicantDeptName?: string;
+  purpose: string;
+  scopeDesc?: string;
+  copyCount?: number;
+  patientAuthorizationInfo?: string;
+}
+
+export interface BorrowActionParams {
+  borrowRequestId: string;
+  comment?: string;
+}
+
+export interface BorrowLifecycleParams {
+  borrowRequestId: string;
+  dueReturnAt?: string;
+}
+
+export interface QueryBorrowPageParams extends PageParams {
+  statusCode?: string;
+  keyword?: string;
+  caseRecordId?: string;
+}
+
+/** 4401 上传摘要（CaseRecordUploadSummaryDto） */
+export interface CaseRecordUploadSummaryDto {
+  caseRecordId?: string;
+  medcasno?: string;
+  psnName?: string;
+  dscgTime?: string;
+  archivedAt?: string;
+  chsUploadStatusCode?: string;
+  chsUploadError?: string;
+}
+
+export interface UploadResultDto {
+  statusCode?: string;
+  uploadLogId?: string;
+  infcode?: string;
+  errMsg?: string;
+  assembledAt?: string;
+}
+
+export interface UploadLogDto {
+  id?: string;
+  caseRecordId?: string;
+  contractBusNo?: string;
+  statusCode?: string;
+  infcode?: string;
+  errMsg?: string;
+  requestDigest?: string;
+  createdAt?: string;
+}
+
+export interface Upload4401Params {
+  caseRecordId: string;
+  contractBusNo: string;
+}
+
+export interface RetryUploadParams {
+  uploadLogId: string;
+}
+
+export interface ListUploadLogsParams {
+  caseRecordId: string;
+}
+
+export interface QueryUploadPageParams extends PageParams {
+  statusCode?: string;
+  keyword?: string;
+}
+
+export interface UnarchiveCaseRecordParams {
+  caseRecordId: string;
+  unarchiveReason: string;
+}

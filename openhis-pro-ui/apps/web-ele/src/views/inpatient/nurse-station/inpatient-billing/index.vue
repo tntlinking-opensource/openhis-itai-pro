@@ -646,8 +646,8 @@ watch(activeTab, (tab) => {
   <div class="inpatient-billing-page flex min-h-0 flex-1 flex-col">
     <InpatientPatientInfoHeader :patient-info="stickyPatientInfo" />
     <ElTabs v-model="activeTab" class="billing-tabs">
-      <ElTabPane label="划价确费" name="pricing-confirmation" />
       <ElTabPane label="医嘱计费" name="order-billing" />
+      <ElTabPane label="非医嘱计费" name="pricing-confirmation" />
       <ElTabPane label="自动计费" name="auto-roll" />
     </ElTabs>
 

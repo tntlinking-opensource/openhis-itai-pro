@@ -487,8 +487,8 @@ async function finishLoginAndNavigate() {
   accessStore.setAccessRoutes(accessibleRoutes);
   accessStore.setIsAccessChecked(true);
 
-  void import('#/utils/print/runtime/hiprint-client').then(({ warmupHiprintClient }) => {
-    warmupHiprintClient();
+  void import('#/utils/print/runtime/hiprint-client').then(({ schedulePrintClientWarmup }) => {
+    schedulePrintClientWarmup();
   });
 
   await nextTick();

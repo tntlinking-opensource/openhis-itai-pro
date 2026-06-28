@@ -38,6 +38,8 @@ import {
 } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
+import { useFinanceApprovalAccess } from '#/composables/use-finance-approval-access';
 import {
   agreeReturnFromDownstreamApi,
   createReturnFromDownstreamApi,
@@ -108,6 +110,8 @@ const emit = defineEmits<{
   documentRemoved: [];
   documentSaved: [{ busNo?: string }];
 }>();
+
+const { canFinanceApprove } = useFinanceApprovalAccess();
 
 const userStore = useUserStore();
 const HEAD_ITEM_TABLE_TYPE = 'med_medication_definition';
@@ -260,6 +264,22 @@ function mapDetailLineToGrid(
   };
 }
 
+function isReturnFromDownstreamRowComplete(row: ReturnPreviewRow): boolean {
+  if (!String(row.itemTable ?? '').trim() || !isPresentItemId(row.itemId)) return false;
+  const qty = Number(row.itemQuantity);
+  if (!Number.isFinite(qty) || qty <= 0) return false;
+  return !!String(row.unitCode ?? '').trim();
+}
+
+let returnFromDownstreamGridEdit!: ReturnType<typeof useInventoryDocGridEdit<ReturnPreviewRow>>;
+
+function handleReturnFromDownstreamProductPick(row: ReturnPreviewRow) {
+  void nextTick(async () => {
+    await nextTick();
+    await returnFromDownstreamGridEdit.onProductSelected(row);
+  });
+}
+
 const columns: VxeGridPropTypes.Column[] = [
   { type: 'checkbox', width: 48, fixed: 'left', align: 'center' },
   { type: 'seq', title: '序号', width: 52, fixed: 'left', align: 'center' },
@@ -278,6 +298,7 @@ const columns: VxeGridPropTypes.Column[] = [
         }),
         onSelected: (product: Record<string, unknown>, row: ReturnPreviewRow) => {
           syncRowFromProductPick(product, row);
+          handleReturnFromDownstreamProductPick(row);
         },
       },
     },
@@ -288,35 +309,38 @@ const columns: VxeGridPropTypes.Column[] = [
     title: '数量',
     width: 120,
     align: 'center',
-    editRender: { name: 'ElInputNumber', props: { min: 0, controlsPosition: 'right' } },
+    editRender: {
+      name: 'InventoryPersistElInputNumber',
+      props: { min: 0, controlsPosition: 'right' },
+    },
   },
   { field: 'unitCode', title: '单位', width: 88, showOverflow: true },
   {
     field: 'lotNumber',
     title: '批号',
     width: 120,
-    editRender: { name: 'ElInput', props: { maxlength: 64, clearable: true } },
+    editRender: { name: 'InventoryPersistElInput', props: { maxlength: 64, clearable: true } },
     showOverflow: true,
   },
   {
     field: 'traceNo',
     title: '追溯码',
     minWidth: 140,
-    editRender: { name: 'ElInput', props: { maxlength: 512, clearable: true } },
+    editRender: { name: 'InventoryPersistElInput', props: { maxlength: 512, clearable: true } },
     showOverflow: true,
   },
   {
     field: 'reason',
     title: '退库原因',
     minWidth: 120,
-    editRender: { name: 'ElInput', props: { maxlength: 200, clearable: true } },
+    editRender: { name: 'InventoryPersistElInput', props: { maxlength: 200, clearable: true } },
     showOverflow: true,
   },
   {
     field: 'remake',
     title: '备注',
     minWidth: 120,
-    editRender: { name: 'ElInput', props: { maxlength: 200, clearable: true } },
+    editRender: { name: 'InventoryPersistElInput', props: { maxlength: 200, clearable: true } },
     showOverflow: true,
   },
   {
@@ -336,38 +360,103 @@ const gridOptions: VxeGridProps<ReturnPreviewRow> = reactive({
   stripe: true,
   showOverflow: true,
   size: 'medium',
+  keepSource: true,
   columnConfig: { resizable: true },
   data: [],
   editConfig: {
     enabled: true,
     trigger: 'click',
-    mode: 'cell',
-    autoClear: true,
+    mode: 'row',
+    autoClear: false,
     beforeEditMethod: () => documentEditable.value,
   },
   columns,
   pagerConfig: { enabled: false },
 });
 
+const RETURN_FROM_DOWNSTREAM_EDITABLE_COLUMN_FIELDS = new Set([
+  'itemQuantity',
+  'lotNumber',
+  'medicinePick',
+  'reason',
+  'remake',
+  'traceNo',
+]);
+
+const RETURN_FROM_DOWNSTREAM_EDIT_FIELD_ORDER = [
+  'medicinePick',
+  'itemQuantity',
+  'lotNumber',
+  'traceNo',
+  'reason',
+  'remake',
+] as const;
+
+type ReturnFromDownstreamEditField = (typeof RETURN_FROM_DOWNSTREAM_EDIT_FIELD_ORDER)[number];
+
+const RETURN_FROM_DOWNSTREAM_VERTICAL_NAV_FIELDS = new Set<ReturnFromDownstreamEditField>([
+  'itemQuantity',
+  'lotNumber',
+  'reason',
+  'remake',
+  'traceNo',
+]);
+
+const returnFromDownstreamGridKeyboardRef = ref<HTMLElement | null>(null);
+
 const [Grid, gridApi] = useVbenVxeGrid<ReturnPreviewRow>({
   gridOptions,
+  gridEvents: {
+    cellClick: (params: { column?: { field?: string; type?: string }; row: ReturnPreviewRow }) =>
+      returnFromDownstreamGridEdit.onCellClick(params),
+    editClosed(params: { row: ReturnPreviewRow }) {
+      returnFromDownstreamGridEdit.syncRowFormMode(params.row);
+    },
+  },
   class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
   gridClass: '!p-0',
 });
 
-function patchGridEditConfig() {
-  gridOptions.editConfig = {
-    ...gridOptions.editConfig,
-    enabled: documentEditable.value,
-    beforeEditMethod: () => documentEditable.value,
-  };
+returnFromDownstreamGridEdit = useInventoryDocGridEdit<ReturnPreviewRow>({
+  getGridApi: () => gridApi ?? null,
+  gridWrapRef: returnFromDownstreamGridKeyboardRef,
+  documentEditable: () => documentEditable.value,
+  collectRows: collectGridRows,
+  config: {
+    rowKey: (row) => row.id,
+    productField: 'medicinePick',
+    editFieldOrder: RETURN_FROM_DOWNSTREAM_EDIT_FIELD_ORDER,
+    editableFields: RETURN_FROM_DOWNSTREAM_EDITABLE_COLUMN_FIELDS,
+    verticalNavFields: RETURN_FROM_DOWNSTREAM_VERTICAL_NAV_FIELDS,
+    firstFillFieldAfterPick: 'itemQuantity',
+    hasProduct: (row) => isPresentItemId(row.itemId),
+    isRowComplete: isReturnFromDownstreamRowComplete,
+  },
+});
+
+function patchReturnFromDownstreamGridEditConfig() {
+  const patched = returnFromDownstreamGridEdit.patchGridOptions({
+    ...(gridOptions as Record<string, unknown>),
+    editConfig: {
+      ...(gridOptions.editConfig as Record<string, unknown>),
+      enabled: documentEditable.value,
+    },
+  });
+  Object.assign(gridOptions, patched);
 }
 
 watch(
   () => documentEditable.value,
-  () => {
-    patchGridEditConfig();
+  (editable) => {
+    patchReturnFromDownstreamGridEditConfig();
+    void nextTick(() => {
+      if (!editable) {
+        returnFromDownstreamGridEdit.resetFormMode();
+        returnFromDownstreamGridEdit.clearGridEdit();
+      }
+    });
   },
+  { immediate: true },
 );
 
 function collectGridRows(): ReturnPreviewRow[] {
@@ -384,13 +473,16 @@ function resetDetailForCreate() {
   sourceLocationId.value =
     props.departmentOptions[0]?.locationId ?? props.pharmacyOptions[0]?.locationId;
   initHeadApplyTimeFromContext();
+  returnFromDownstreamGridEdit.resetFormMode();
   void nextTick(() => {
     gridApi?.grid?.loadData([]);
-    patchGridEditConfig();
+    patchReturnFromDownstreamGridEditConfig();
   });
 }
 
 async function loadDetail(busNo: string) {
+  returnFromDownstreamGridEdit.resetFormMode();
+  returnFromDownstreamGridEdit.clearGridEdit();
   try {
     const res = await getReturnFromDownstreamDetailApi({ busNo });
     const data = res.data;
@@ -421,12 +513,12 @@ async function loadDetail(busNo: string) {
     const gridRows = (data.lines ?? []).map((ln, i) => mapDetailLineToGrid(ln, i));
     void nextTick(() => {
       gridApi?.grid?.loadData(gridRows);
-      patchGridEditConfig();
+      patchReturnFromDownstreamGridEditConfig();
     });
   } catch {
     void nextTick(() => {
       gridApi?.grid?.loadData([]);
-      patchGridEditConfig();
+      patchReturnFromDownstreamGridEditConfig();
     });
   }
 }
@@ -662,7 +754,7 @@ async function addItem() {
   await $grid.$nextTick();
   if (row) {
     await $grid.scrollToRow(row);
-    await $grid.setEditCell(row, 'medicinePick');
+    await returnFromDownstreamGridEdit.enterRowFormMode(row as ReturnPreviewRow, 'medicinePick');
   }
 }
 
@@ -778,6 +870,7 @@ watch(
         <div class="flex w-full flex-wrap items-center justify-end gap-2">
           <InvDocActions
             v-bind="docActionFlags"
+            :show-approval-actions="canFinanceApprove"
             @approve="handleApprove"
             @reject="handleReject"
             @remove-doc="handleRemoveDoc"
@@ -789,7 +882,10 @@ watch(
         </div>
       </template>
 
-      <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2">
+      <div
+        class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2"
+        @mousedown="returnFromDownstreamGridEdit.onSurfaceMouseDown"
+      >
         <div class="return-from-downstream-head-panel shrink-0">
           <div
             class="return-from-downstream-head-panel__bar flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
@@ -886,7 +982,9 @@ watch(
         </div>
 
         <div
+          ref="returnFromDownstreamGridKeyboardRef"
           class="return-from-downstream-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col"
+          @keydown.capture="returnFromDownstreamGridEdit.onGridKeydown"
         >
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>

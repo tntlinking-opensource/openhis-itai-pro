@@ -29,13 +29,16 @@ function buildTemplateLeafLabel(tpl: TemplateDto): string {
 }
 
 function toLeaf(tpl: TemplateDto, leafIndex: number): EmrTemplateTreeNode {
+  const codeText = String(tpl.code ?? 'tpl');
   const idStr =
     tpl.id === null || tpl.id === undefined
-      ? `noid-${(tpl.code ?? 'tpl').replaceAll(/\W/g, '')}-${leafIndex}`
+      ? `noid-${codeText.replace(/\W/g, '')}-${leafIndex}`
       : String(tpl.id);
+  const documentTypeCode = String(tpl.documentTypeCode ?? '').trim() || undefined;
   return {
     nodeKey: `tpl:${idStr}`,
     label: buildTemplateLeafLabel(tpl),
+    documentTypeCode,
     templateId: tpl.id === null || tpl.id === undefined ? undefined : String(tpl.id),
     isDocumentType: false,
     template: tpl,
@@ -72,7 +75,7 @@ export function buildEmrTemplateTree(
   const nodes: EmrTemplateTreeNode[] = [];
 
   sortedTypes.forEach((dt, index) => {
-    const code = (dt.code ?? '').trim();
+    const code = String(dt.code ?? '').trim();
     const rawList = byCode.get(code) ?? [];
     byCode.delete(code);
     const children = sortTemplates(rawList).map((tpl, i) => toLeaf(tpl, i));

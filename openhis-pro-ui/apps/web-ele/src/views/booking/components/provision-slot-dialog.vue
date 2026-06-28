@@ -13,6 +13,7 @@ import {
   mergePendingTemplates,
 } from '#/api/booking/provision-slot-presets';
 import { provisionSlotBatchApi } from '#/api/booking/outpatient-schedule';
+import { loadSlotProvisionTemplateApi } from '#/api/booking/schedule-template';
 import { deleteSlotsApi, pageSlotsByDateApi } from '#/api/booking/slot-manage';
 import { useRequest } from '#/hooks/use-request';
 import {
@@ -33,6 +34,8 @@ const props = defineProps<{
   visible: boolean;
   organizationId?: BookingEntityId;
   scheduleId?: BookingEntityId;
+  /** 日程关联的 T1 放号时段模板 */
+  slotProvisionTemplateId?: BookingEntityId;
   /** 周历选中日期，用于查询当日已放号源 */
   selectedDate?: string;
 }>();
@@ -47,6 +50,7 @@ const rangeStart = ref('');
 const rangeEnd = ref('');
 const slotMinutes = ref(30);
 const pendingTemplates = ref<SlotTemplateRequest[]>([]);
+const t1FillLoading = ref(false);
 
 const existingSlots = ref<SlotListItemDto[]>([]);
 const deletingSlotId = ref<BookingEntityId>();
@@ -142,6 +146,53 @@ async function handleSubmit() {
 
 function resolveDate() {
   return props.selectedDate ?? new Date().toISOString().slice(0, 10);
+}
+
+async function handleFillFromT1() {
+  if (!props.slotProvisionTemplateId) {
+    ElMessage.warning('该日程未关联放号时段模板');
+    return;
+  }
+  t1FillLoading.value = true;
+  try {
+    const detail = await loadSlotProvisionTemplateApi({
+      id: props.slotProvisionTemplateId,
+    });
+    const date = resolveDate();
+    const generated: SlotTemplateRequest[] = (detail?.slotTemplates ?? [])
+      .filter((item) => item.startTime && item.endTime)
+      .map((item) => {
+        const start = item.startTime!.length <= 5 ? `${item.startTime}:00` : item.startTime!;
+        const end = item.endTime!.length <= 5 ? `${item.endTime}:00` : item.endTime!;
+        return {
+          startTime: `${date}T${start}`,
+          endTime: `${date}T${end}`,
+          capacity: item.capacity ?? 1,
+        };
+      });
+    if (generated.length === 0) {
+      ElMessage.warning('放号时段模板无有效时段行');
+      return;
+    }
+    const { accepted, skippedExisting } = filterAgainstExistingStarts(
+      generated,
+      existingStartTimes.value,
+    );
+    const beforeCount = pendingTemplates.value.length;
+    pendingTemplates.value = mergePendingTemplates(pendingTemplates.value, accepted);
+    const added = pendingTemplates.value.length - beforeCount;
+    if (added <= 0) {
+      ElMessage.warning('放号时段均已存在或已在待放号列表中');
+      return;
+    }
+    ElMessage.success(
+      `已按放号时段模板添加 ${added} 个时段${skippedExisting > 0 ? `，跳过 ${skippedExisting} 个已放号` : ''}`,
+    );
+  } catch (error) {
+    ElMessage.error((error as Error).message || '加载放号时段失败');
+  } finally {
+    t1FillLoading.value = false;
+  }
 }
 
 function formatTimeLabel(time: string) {
@@ -293,6 +344,12 @@ async function handleDeleteSlot(slot: SlotListItemDto) {
 
     <section class="provision-slot-dialog__section">
       <header class="provision-slot-dialog__section-title">添加时段</header>
+      <div v-if="slotProvisionTemplateId" class="provision-slot-dialog__t1-row">
+        <ElButton :loading="t1FillLoading" type="primary" plain @click="handleFillFromT1">
+          按放号时段模板填充
+        </ElButton>
+        <span class="provision-slot-dialog__hint">将排班设置中的 T1 时段加入待放号列表</span>
+      </div>
       <p class="provision-slot-dialog__hint">{{ previewHint }}</p>
       <ElForm inline label-width="72px" class="provision-slot-dialog__range-form">
         <ElFormItem label="开始">
@@ -415,6 +472,14 @@ async function handleDeleteSlot(slot: SlotListItemDto) {
   margin: 0 0 8px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+.provision-slot-dialog__t1-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
 }
 
 .provision-slot-dialog__hint--secondary {

@@ -66,14 +66,44 @@ const coreRoutes: RouteRecordRaw[] = [
           title: '病案首页',
         },
       },
-      /** C 类报表设计器（无侧栏入口，从报表模板「设计」跳转） */
+      /** 质控工作台（菜单 component 由后台配置） */
       {
-        name: 'WhaleReportDesigner',
-        path: '/reports/designer',
-        component: () => import('#/views/report/designer/index.vue'),
+        name: 'MrmsQcWorkbench',
+        path: '/mrms/qc-workbench',
+        component: () => import('#/views/mrms/qc-workbench/index.vue'),
         meta: {
           hideInMenu: true,
-          title: '报表设计器',
+          title: '质控工作台',
+        },
+      },
+      /** 卷宗预览 */
+      {
+        name: 'MrmsCaseRecordVolume',
+        path: '/mrms/case-record/volume/:caseRecordId',
+        component: () => import('#/views/mrms/case-record/volume/index.vue'),
+        meta: {
+          hideInMenu: true,
+          title: '卷宗预览',
+        },
+      },
+      /** 借阅复印（W3） */
+      {
+        name: 'MrmsBorrowWorkbench',
+        path: '/mrms/borrow',
+        component: () => import('#/views/mrms/borrow/index.vue'),
+        meta: {
+          hideInMenu: true,
+          title: '借阅复印',
+        },
+      },
+      /** 4401 上传（W3） */
+      {
+        name: 'MrmsUploadWorkbench',
+        path: '/mrms/upload',
+        component: () => import('#/views/mrms/upload/index.vue'),
+        meta: {
+          hideInMenu: true,
+          title: '4401 上传',
         },
       },
     ],

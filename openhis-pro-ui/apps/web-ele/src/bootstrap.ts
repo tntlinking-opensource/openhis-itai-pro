@@ -84,7 +84,10 @@ async function bootstrap(namespace: string) {
   // 配置路由及路由守卫
   app.use(router);
 
-  // 先挂载并关闭全局 Loading，重型依赖在首屏之后加载
+  // i18n 须在 mount 前就绪，避免生产冷启动首屏 $t 回显 key（如 common.login）
+  const { setupI18n, $t } = await import('#/locales');
+  await setupI18n(app);
+
   app.mount('#app');
   unmountGlobalLoading();
 
@@ -101,8 +104,7 @@ async function bootstrap(namespace: string) {
     }
 
     try {
-      const [localesMod] = await Promise.all([
-        import('#/locales'),
+      await Promise.all([
         import('@vben/common-ui/es/tippy').then(({ initTippy }) => {
           initTippy(app);
         }),
@@ -116,9 +118,7 @@ async function bootstrap(namespace: string) {
           app.use(MotionPlugin);
         }),
       ]);
-      const { setupI18n, $t } = localesMod;
       const { preferences } = await import('@vben/preferences/es/preferences-manager');
-      await setupI18n(app);
       watchEffect(() => {
         if (preferences.app.dynamicTitle) {
           const routeTitle = router.currentRoute.value.meta?.title;

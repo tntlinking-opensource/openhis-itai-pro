@@ -324,7 +324,7 @@ export function getAdviceStatusTagType(
 
   if (code === 'VERIFIED' || text === '已校对') return 'warning';
   if (code === 'HOLD' || text === '暂挂') return 'warning';
-  if (code === 'STOPPED' || text === '已停嘱') return 'warning';
+  if (code === 'STOPPED' || text === '已停嘱') return 'danger';
   if (code === 'COMPLETED' || text === '已完成') return 'success';
   if (code === 'REFUNDING' || text === '待退费' || text.includes('待退费')) return 'warning';
   if (code === 'REFUNDED' || text === '已退费' || text.includes('已退费')) return 'danger';

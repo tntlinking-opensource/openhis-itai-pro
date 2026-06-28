@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import type { RegistrationListStatus } from '../inpatient-register.constants';
+
+import { nextTick } from 'vue';
+
 import { ElButton, ElInput, ElOption, ElSelect } from 'element-plus';
 
 import SelectFuzzyInput from '#/components/select-fuzzy-input.vue';
@@ -13,12 +17,12 @@ const props = withDefaults(
   defineProps<{
     idCard: string;
     keyword: string;
-    registrationListStatus: string;
+    registrationListStatuses: RegistrationListStatus[];
   }>(),
   {
     idCard: '',
     keyword: '',
-    registrationListStatus: '',
+    registrationListStatuses: () => [],
   },
 );
 
@@ -27,7 +31,7 @@ const emit = defineEmits<{
   search: [];
   'update:idCard': [value: string];
   'update:keyword': [value: string];
-  'update:registrationListStatus': [value: string];
+  'update:registrationListStatuses': [value: RegistrationListStatus[]];
 }>();
 
 /** 同步姓名关键字。 */
@@ -40,9 +44,10 @@ function handleIdCardChange(value: string) {
   emit('update:idCard', value);
 }
 
-/** 同步登记状态筛选并自动刷新列表。 */
-function handleStatusChange(value: string) {
-  emit('update:registrationListStatus', value);
+/** 同步登记状态多选并在父组件写入后再刷新列表。 */
+async function handleStatusChange(value: RegistrationListStatus[] | null | undefined) {
+  emit('update:registrationListStatuses', value ?? []);
+  await nextTick();
   emit('search');
 }
 
@@ -75,10 +80,13 @@ function handleOpenNoRecord() {
         @update:model-value="handleIdCardChange"
       />
       <ElSelect
-        :model-value="props.registrationListStatus"
+        :model-value="props.registrationListStatuses"
         clearable
+        collapse-tags
+        collapse-tags-tooltip
+        multiple
         placeholder="登记状态"
-        style="width: 220px; max-width: 220px; flex: 0 0 220px"
+        style="width: 280px; max-width: 280px; flex: 0 0 280px"
         @update:model-value="handleStatusChange"
       >
         <ElOption

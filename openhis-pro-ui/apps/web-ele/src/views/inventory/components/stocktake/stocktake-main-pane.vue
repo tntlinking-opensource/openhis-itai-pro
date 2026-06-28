@@ -27,6 +27,7 @@ import {
 } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
 import {
   agreePharmacyStocktakeApi,
   createPharmacyStocktakeApi,
@@ -283,6 +284,13 @@ function handleStocktakeUnitBandChanged(row: StocktakePreviewRow) {
   recalcStocktakeLine(row);
 }
 
+/** 详情回显：持久化金额原样格式化，禁止 load 时用单价×数量重算覆盖后端 total_price。 */
+function formatStocktakeDetailPersistedAmount(total: unknown): string {
+  if (total === undefined || total === null || total === '') return '';
+  return typeof total === 'number' ? total.toFixed(2) : String(total);
+}
+
+/** 编辑态：按数量 × 单价刷新实盘/盈亏金额（详情 load 不调用）。 */
 function recalcStocktakeLine(row: StocktakePreviewRow) {
   const book = toStocktakeQty(row.bookQuantity);
   const actual = toStocktakeQty(row.actualQuantity);
@@ -419,8 +427,8 @@ function mapDetailLineToGrid(
     selectedBandKind: 'LEGACY',
     unitList: [{ value: 'LEGACY', label: unitCodeStr.trim() === '' ? '单位' : unitCodeStr }],
     price: ln.price === undefined || ln.price === null ? 0 : Number(ln.price),
-    actualAmount: ln.actualAmount === undefined ? '' : String(ln.actualAmount),
-    profitLossAmount: ln.profitLossAmount === undefined ? '' : String(ln.profitLossAmount),
+    actualAmount: formatStocktakeDetailPersistedAmount(ln.actualAmount),
+    profitLossAmount: formatStocktakeDetailPersistedAmount(ln.profitLossAmount),
     remark: String(ln.remake ?? ''),
     _occurrenceTime: ln.occurrenceTime,
   };
@@ -446,9 +454,39 @@ function mapDetailLineToGrid(
 
     base.unitList = inboundUnitBandSelectOptions(bands);
     applyWarehouseNonInboundBandKindToRow(base, actualLoaded.bandKind, ln.price);
+    const lnPrice = ln.price === undefined || ln.price === null ? undefined : Number(ln.price);
+    if (lnPrice !== undefined && Number.isFinite(lnPrice)) {
+      base.price = lnPrice;
+    }
   }
 
   return base;
+}
+
+function isPresentItemId(v: unknown): boolean {
+  if (v === undefined || v === null) return false;
+  if (typeof v === 'string') return v.trim() !== '';
+  if (typeof v === 'number') return Number.isFinite(v);
+  if (typeof v === 'bigint') return true;
+  return String(v).trim() !== '';
+}
+
+/** 明细行必填项是否已齐（与 validateBeforeSave 保存校验对齐） */
+function isStocktakeRowComplete(row: StocktakePreviewRow): boolean {
+  if (!String(row.itemTable ?? '').trim() || !isPresentItemId(row.itemId)) return false;
+  if (!String(row.unitCode ?? '').trim()) return false;
+  const actual = Number(row.actualQuantity);
+  if (!Number.isFinite(actual) || actual < 0) return false;
+  return canConvertDisplayQtyToSplitForBands(row.unitBands ?? [], actual, row.selectedBandKind);
+}
+
+let stocktakeGridEdit!: ReturnType<typeof useInventoryDocGridEdit<StocktakePreviewRow>>;
+
+function handleStocktakeProductPick(row: StocktakePreviewRow) {
+  void nextTick(async () => {
+    await nextTick();
+    await stocktakeGridEdit.onProductSelected(row);
+  });
 }
 
 const columns: VxeGridPropTypes.Column[] = [
@@ -474,6 +512,7 @@ const columns: VxeGridPropTypes.Column[] = [
         }),
         onSelected: (product: Record<string, unknown>, row: StocktakePreviewRow) => {
           syncRowFromStocktakePick(product, row);
+          handleStocktakeProductPick(row);
         },
       },
     },
@@ -561,7 +600,7 @@ const columns: VxeGridPropTypes.Column[] = [
     minWidth: 100,
     showOverflow: true,
     editRender: {
-      name: 'ElInput',
+      name: 'InventoryPersistElInput',
       props: { maxlength: 200, clearable: true },
     },
   },
@@ -583,49 +622,84 @@ const gridOptions: VxeGridProps<StocktakePreviewRow> = reactive({
   showOverflow: true,
   showFooter: false,
   size: 'medium',
+  keepSource: true,
   columnConfig: { resizable: true },
   data: [],
   editConfig: {
     enabled: true,
     trigger: 'click',
     mode: 'row',
+    autoClear: false,
     beforeEditMethod: () => documentEditable.value,
   },
   columns,
   pagerConfig: { enabled: false },
 });
 
+const STOCKTAKE_EDITABLE_COLUMN_FIELDS = new Set(['_actualQtyUnit', 'medicinePick', 'remark']);
+
+const STOCKTAKE_EDIT_FIELD_ORDER = ['medicinePick', '_actualQtyUnit', 'remark'] as const;
+
+type StocktakeEditField = (typeof STOCKTAKE_EDIT_FIELD_ORDER)[number];
+
+const STOCKTAKE_VERTICAL_NAV_FIELDS = new Set<StocktakeEditField>(['_actualQtyUnit', 'remark']);
+
+const stocktakeGridKeyboardRef = ref<HTMLElement | null>(null);
+
 const [Grid, gridApi] = useVbenVxeGrid<StocktakePreviewRow>({
   gridOptions,
   gridEvents: {
+    cellClick: (params: { column?: { field?: string; type?: string }; row: StocktakePreviewRow }) =>
+      stocktakeGridEdit.onCellClick(params),
     editClosed(params: { row: StocktakePreviewRow; column?: { field?: string } }) {
       const f = params.column?.field;
       if (f === 'actualQuantity' || f === '_actualQtyUnit') {
         recalcStocktakeLine(params.row);
       }
+      stocktakeGridEdit.syncRowFormMode(params.row);
     },
   },
   class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
   gridClass: '!p-0',
 });
 
-function patchGridEditConfig() {
-  gridOptions.editConfig = {
-    ...gridOptions.editConfig,
-    enabled: documentEditable.value,
-    trigger: 'click',
-    mode: 'row',
-    beforeEditMethod: () => documentEditable.value,
-  };
+stocktakeGridEdit = useInventoryDocGridEdit<StocktakePreviewRow>({
+  getGridApi: () => gridApi ?? null,
+  gridWrapRef: stocktakeGridKeyboardRef,
+  documentEditable: () => documentEditable.value,
+  collectRows: collectGridRows,
+  config: {
+    rowKey: (row) => row.id,
+    productField: 'medicinePick',
+    editFieldOrder: STOCKTAKE_EDIT_FIELD_ORDER,
+    editableFields: STOCKTAKE_EDITABLE_COLUMN_FIELDS,
+    verticalNavFields: STOCKTAKE_VERTICAL_NAV_FIELDS,
+    firstFillFieldAfterPick: '_actualQtyUnit',
+    hasProduct: (row) => isPresentItemId(row.itemId),
+    isRowComplete: isStocktakeRowComplete,
+  },
+});
+
+function patchStocktakeGridEditConfig() {
+  const patched = stocktakeGridEdit.patchGridOptions({
+    ...(gridOptions as Record<string, unknown>),
+    editConfig: {
+      ...(gridOptions.editConfig as Record<string, unknown>),
+      enabled: documentEditable.value,
+    },
+  });
+  Object.assign(gridOptions, patched);
 }
 
 watch(
   () => documentEditable.value,
-  () => {
-    patchGridEditConfig();
+  (editable) => {
+    patchStocktakeGridEditConfig();
     void nextTick(() => {
-      const g = gridApi?.grid as undefined | { clearEdit?: () => void };
-      if (!documentEditable.value) g?.clearEdit?.();
+      if (!editable) {
+        stocktakeGridEdit.resetFormMode();
+        stocktakeGridEdit.clearGridEdit();
+      }
     });
   },
   { immediate: true },
@@ -658,13 +732,16 @@ function resetDetailForCreate() {
   detailStatusEnum.value = undefined;
   const pid = normalizeLocationId(props.sidebarPurposeLocationId);
   purposeLocationId.value = pid ?? props.locationOptions[0]?.locationId;
+  stocktakeGridEdit.resetFormMode();
   void nextTick(() => {
     gridApi?.grid?.loadData([]);
-    patchGridEditConfig();
+    patchStocktakeGridEditConfig();
   });
 }
 
 async function loadDetail(busNo: string) {
+  stocktakeGridEdit.resetFormMode();
+  stocktakeGridEdit.clearGridEdit();
   try {
     const res =
       props.variant === 'pharmacy'
@@ -682,17 +759,15 @@ async function loadDetail(busNo: string) {
     purposeLocationId.value = data.purposeLocationId ?? undefined;
 
     const gridRows = (data.lines ?? []).map((ln, i) => mapDetailLineToGrid(ln, i));
+    // 详情回显：单价/实盘金额/盈亏金额以后端 SupplyRequest 落库为准，不在 load 时重算
     void nextTick(() => {
       gridApi?.grid?.loadData(gridRows);
-      patchGridEditConfig();
-      for (const r of gridRows) {
-        recalcStocktakeLine(r);
-      }
+      patchStocktakeGridEditConfig();
     });
   } catch {
     void nextTick(() => {
       gridApi?.grid?.loadData([]);
-      patchGridEditConfig();
+      patchStocktakeGridEditConfig();
     });
   }
 }
@@ -998,7 +1073,7 @@ async function addItem() {
   await $grid.$nextTick();
   if (row) {
     await $grid.scrollToRow(row);
-    await $grid.setEditCell(row, 'medicinePick');
+    await stocktakeGridEdit.enterRowFormMode(row as StocktakePreviewRow, 'medicinePick');
   }
 }
 
@@ -1105,7 +1180,10 @@ onMounted(() => {
         </div>
       </template>
 
-      <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2">
+      <div
+        class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2"
+        @mousedown="stocktakeGridEdit.onSurfaceMouseDown"
+      >
         <div class="shrink-0">
           <SectionTitle :title="headSectionTitle" />
           <div class="mt-1 flex flex-wrap items-center gap-2">
@@ -1159,7 +1237,11 @@ onMounted(() => {
           </ElForm>
         </div>
 
-        <div class="stocktake-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          ref="stocktakeGridKeyboardRef"
+          class="stocktake-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col"
+          @keydown.capture="stocktakeGridEdit.onGridKeydown"
+        >
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>
               <ElButton

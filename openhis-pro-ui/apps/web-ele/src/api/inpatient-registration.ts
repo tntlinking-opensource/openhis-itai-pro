@@ -14,13 +14,24 @@ export interface OptionDto {
 }
 
 /** 登记列表状态筛选码 */
-export type RegistrationListStatus = 'ADMITTED' | 'PLANNED' | 'WAIT_ADMISSION';
+export type RegistrationListStatus =
+  | 'ADMITTED'
+  | 'CANCELLED'
+  | 'COMPLETED'
+  | 'DISCHARGED'
+  | 'ENTERED_IN_ERROR'
+  | 'ON_HOLD'
+  | 'PENDING'
+  | 'PLANNED'
+  | 'PRE_ADMISSION'
+  | 'WAIT_ADMISSION';
 
 /** 待办列表分页请求 */
 export interface PageRegistrationQueueParams extends PageParams {
   idCard?: string;
   keyword?: string;
   registrationListStatus?: RegistrationListStatus;
+  registrationListStatuses?: RegistrationListStatus[];
 }
 
 /** 待办列表行 */
@@ -31,6 +42,7 @@ export interface RegistrationQueueItemDto {
   cancelable: boolean;
   encounterBusNo: string;
   encounterId: string;
+  insurancePlatformRegistered?: boolean;
   inWayCode?: string;
   inWayCodeText?: string;
   organizationId?: string;
@@ -84,6 +96,10 @@ export interface RegistrationEncounterDto {
   bedId?: string;
   /** 护士分床后的床位名称 */
   bedName?: string;
+  /** 主治医生医务人员 ID */
+  attendingDoctorId?: string;
+  /** 主治医生姓名 */
+  attendingDoctorName?: string;
 }
 
 /** 登记上下文加载响应 */
@@ -118,6 +134,7 @@ export interface SubmitRegistrationParams {
   admissionDiagnoses?: AdmissionDiagnosisSubmitDto[];
   admitSourceCode?: string;
   advanceDepositAmount?: number | string;
+  attendingDoctorId?: string;
   birthDate?: string;
   contractId: string;
   encounterId?: string;
@@ -164,6 +181,12 @@ export interface CancelRegistrationResult {
   encounterId: string;
   statusEnum: string;
   success: boolean;
+}
+
+/** 待入科医保退入院响应 */
+export interface CancelInsuranceInpatientAdmissionResult {
+  encounterStatus?: string;
+  insurancePlatformRevoked?: boolean;
 }
 
 /** 按科室查询病区列表请求 */
@@ -231,6 +254,16 @@ export async function httpCancelInpatientRegistration(
 ): Promise<CancelRegistrationResult> {
   return publicRequestClient.post<CancelRegistrationResult>(
     '/inpatientRegistration/cancelInpatientRegistration',
+    body,
+  );
+}
+
+/** 待入科医保退入院（撤销 2404 并取消登记） */
+export async function httpCancelInsuranceInpatientAdmission(
+  body: CancelRegistrationParams,
+): Promise<CancelInsuranceInpatientAdmissionResult> {
+  return publicRequestClient.post<CancelInsuranceInpatientAdmissionResult>(
+    '/inpatientRegistration/cancelInsuranceInpatientAdmission',
     body,
   );
 }

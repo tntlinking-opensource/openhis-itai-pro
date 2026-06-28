@@ -94,9 +94,22 @@ const detailDialogLines = ref<NurseStationDispenseSummarySlipLineDto[]>([]);
 
 const pendingLinesRequest = useRequest(httpPagePendingDispenseSummaryLines, { manual: true });
 const summaryHeadersRequest = useRequest(httpPageMedicationSummarySlipHeaders, { manual: true });
-const createSummaryRequest = useRequest(httpCreateMedicationSummary, { manual: true });
-const submitSummaryRequest = useRequest(httpSubmitMedicationSummary, { manual: true });
-const cancelSummaryRequest = useRequest(httpCancelMedicationSummary, { manual: true });
+const staleSummaryRefresh = async () => {
+  await loadPendingLines();
+  await loadSummaryHeaders();
+};
+const createSummaryRequest = useRequest(httpCreateMedicationSummary, {
+  manual: true,
+  refreshOnStale: staleSummaryRefresh,
+});
+const submitSummaryRequest = useRequest(httpSubmitMedicationSummary, {
+  manual: true,
+  refreshOnStale: staleSummaryRefresh,
+});
+const cancelSummaryRequest = useRequest(httpCancelMedicationSummary, {
+  manual: true,
+  refreshOnStale: staleSummaryRefresh,
+});
 
 const encounterIds = computed(() =>
   props.patients.map((p) => String(p.id).trim()).filter((id) => id.length > 0),

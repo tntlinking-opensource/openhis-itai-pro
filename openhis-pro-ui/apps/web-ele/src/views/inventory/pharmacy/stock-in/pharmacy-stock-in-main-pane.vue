@@ -33,6 +33,7 @@ import {
 } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
 import { getChargeTypeListApi } from '#/api/core/common';
 import {
   getPharmacyRequisitionDetailApi,
@@ -252,6 +253,13 @@ function triggerPaneFlash() {
   }, 420);
 }
 
+/** 详情回显：持久化 total_price 原样格式化。 */
+function formatPharmacyStockInDetailTotalPrice(total: unknown): string {
+  if (total === undefined || total === null || total === '') return '';
+  return typeof total === 'number' ? total.toFixed(2) : String(total);
+}
+
+/** 编辑态：按数量 × 单价刷新合计（详情 load 不调用）。 */
 function recalcPharmacyStockInLineTotal(row: PharmacyStockInPreviewRow) {
   const qty = Number(row.itemQuantity);
   const unit = Number(row.price);
@@ -405,7 +413,7 @@ function mapPharmacyStockInDetailLineToGrid(
     unitList: [{ value: 'LEGACY', label: unitCodeStr.trim() === '' ? '单位' : unitCodeStr }],
     __prevBandKind: 'LEGACY',
     price: ln.price === undefined || ln.price === null ? 0 : Number(ln.price),
-    totalPrice: '',
+    totalPrice: formatPharmacyStockInDetailTotalPrice(ln.totalPrice),
     lotNumber: String(ln.lotNumber ?? '').trim(),
     traceNo: String(ln.traceNo ?? '').trim(),
     remark: String(ln.remake ?? ''),
@@ -494,6 +502,38 @@ function mapPharmacyRequisitionDetailLineToGrid(
   };
 }
 
+/** 明细行必填项是否已齐（与 validateBeforeSave 保存校验对齐） */
+function isPharmacyStockInRowComplete(row: PharmacyStockInPreviewRow): boolean {
+  if (!String(row.itemTable ?? '').trim() || !isPresentItemId(row.itemId)) return false;
+  const qty = Number(row.itemQuantity);
+  if (!Number.isFinite(qty) || qty <= 0) return false;
+  const unitCode = String(row.unitCode ?? '').trim();
+  if (!unitCode) return false;
+  const bands = row.unitBands ?? [];
+  const bandKind = String(row.selectedBandKind ?? 'LEGACY')
+    .trim()
+    .toUpperCase();
+  if (
+    bands.length > 0 &&
+    bandKind !== 'LEGACY' &&
+    bandKind !== 'SPLIT' &&
+    String(findInboundUnitBandByKind(bands, 'SPLIT')?.unitCode ?? '').trim()
+  ) {
+    const c = convertInboundQtyBetweenBandKinds(qty, bandKind, 'SPLIT', bands);
+    if (c === undefined) return false;
+  }
+  return true;
+}
+
+let pharmacyStockInGridEdit!: ReturnType<typeof useInventoryDocGridEdit<PharmacyStockInPreviewRow>>;
+
+function handlePharmacyStockInProductPick(row: PharmacyStockInPreviewRow) {
+  void nextTick(async () => {
+    await nextTick();
+    await pharmacyStockInGridEdit.onProductSelected(row);
+  });
+}
+
 const columns: VxeGridPropTypes.Column[] = [
   { type: 'checkbox', width: 48, fixed: 'left', align: 'center' },
   { type: 'seq', title: '序号', width: 52, fixed: 'left', align: 'center' },
@@ -512,6 +552,7 @@ const columns: VxeGridPropTypes.Column[] = [
         }),
         onSelected: (product: Record<string, unknown>, row: PharmacyStockInPreviewRow) => {
           syncRowFromPharmacyStockInMedicinePick(product, row);
+          handlePharmacyStockInProductPick(row);
         },
       },
     },
@@ -585,7 +626,7 @@ const columns: VxeGridPropTypes.Column[] = [
     minWidth: 100,
     showOverflow: true,
     editRender: {
-      name: 'ElInput',
+      name: 'InventoryPersistElInput',
       props: { maxlength: 64, clearable: true },
     },
   },
@@ -595,7 +636,7 @@ const columns: VxeGridPropTypes.Column[] = [
     minWidth: 120,
     showOverflow: true,
     editRender: {
-      name: 'ElInput',
+      name: 'InventoryPersistElInput',
       props: { maxlength: 200, clearable: true },
     },
   },
@@ -617,46 +658,97 @@ const gridOptions: VxeGridProps<PharmacyStockInPreviewRow> = reactive({
   showOverflow: true,
   showFooter: false,
   size: 'medium',
+  keepSource: true,
   columnConfig: { resizable: true },
   data: [],
   editConfig: {
     enabled: true,
     trigger: 'click',
     mode: 'row',
+    autoClear: false,
     beforeEditMethod: () => documentEditable.value,
   },
   columns,
   pagerConfig: { enabled: false },
 });
 
+const PHARMACY_STOCK_IN_EDITABLE_COLUMN_FIELDS = new Set([
+  '_qtyUnit',
+  'medicinePick',
+  'remark',
+  'traceNo',
+]);
+
+const PHARMACY_STOCK_IN_EDIT_FIELD_ORDER = [
+  'medicinePick',
+  '_qtyUnit',
+  'traceNo',
+  'remark',
+] as const;
+
+type PharmacyStockInEditField = (typeof PHARMACY_STOCK_IN_EDIT_FIELD_ORDER)[number];
+
+const PHARMACY_STOCK_IN_VERTICAL_NAV_FIELDS = new Set<PharmacyStockInEditField>([
+  '_qtyUnit',
+  'remark',
+  'traceNo',
+]);
+
+const pharmacyStockInGridKeyboardRef = ref<HTMLElement | null>(null);
+
 const [Grid, gridApi] = useVbenVxeGrid<PharmacyStockInPreviewRow>({
   gridOptions,
   gridEvents: {
+    cellClick: (params: {
+      column?: { field?: string; type?: string };
+      row: PharmacyStockInPreviewRow;
+    }) => pharmacyStockInGridEdit.onCellClick(params),
     editClosed(params: { row: PharmacyStockInPreviewRow }) {
       recalcPharmacyStockInLineTotal(params.row);
+      pharmacyStockInGridEdit.syncRowFormMode(params.row);
     },
   },
   class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
   gridClass: '!p-0',
 });
 
+pharmacyStockInGridEdit = useInventoryDocGridEdit<PharmacyStockInPreviewRow>({
+  getGridApi: () => gridApi ?? null,
+  gridWrapRef: pharmacyStockInGridKeyboardRef,
+  documentEditable: () => documentEditable.value,
+  collectRows: collectGridRows,
+  config: {
+    rowKey: (row) => row.id,
+    productField: 'medicinePick',
+    editFieldOrder: PHARMACY_STOCK_IN_EDIT_FIELD_ORDER,
+    editableFields: PHARMACY_STOCK_IN_EDITABLE_COLUMN_FIELDS,
+    verticalNavFields: PHARMACY_STOCK_IN_VERTICAL_NAV_FIELDS,
+    firstFillFieldAfterPick: '_qtyUnit',
+    hasProduct: (row) => isPresentItemId(row.itemId),
+    isRowComplete: isPharmacyStockInRowComplete,
+  },
+});
+
 function patchPharmacyStockInGridEditConfig() {
-  gridOptions.editConfig = {
-    ...gridOptions.editConfig,
-    enabled: documentEditable.value,
-    trigger: 'click',
-    mode: 'row',
-    beforeEditMethod: () => documentEditable.value,
-  };
+  const patched = pharmacyStockInGridEdit.patchGridOptions({
+    ...(gridOptions as Record<string, unknown>),
+    editConfig: {
+      ...(gridOptions.editConfig as Record<string, unknown>),
+      enabled: documentEditable.value,
+    },
+  });
+  Object.assign(gridOptions, patched);
 }
 
 watch(
   () => documentEditable.value,
-  () => {
+  (editable) => {
     patchPharmacyStockInGridEditConfig();
     void nextTick(() => {
-      const g = gridApi?.grid as undefined | { clearEdit?: () => void };
-      if (!documentEditable.value) g?.clearEdit?.();
+      if (!editable) {
+        pharmacyStockInGridEdit.resetFormMode();
+        pharmacyStockInGridEdit.clearGridEdit();
+      }
     });
   },
   { immediate: true },
@@ -701,6 +793,7 @@ function resetDetailForCreate() {
   detailSourceLocationId.value = sid ?? props.warehouseOptions[0]?.locationId;
   const pid = normalizeLocationId(props.sidebarPurposeLocationId);
   purposeLocationId.value = pid ?? props.pharmacyOptions[0]?.locationId;
+  pharmacyStockInGridEdit.resetFormMode();
   void nextTick(() => {
     gridApi?.grid?.loadData([]);
     patchPharmacyStockInGridEditConfig();
@@ -709,6 +802,8 @@ function resetDetailForCreate() {
 
 /** 按单号加载入库单详情并填充表单与明细。 */
 async function loadDetail(busNo: string) {
+  pharmacyStockInGridEdit.resetFormMode();
+  pharmacyStockInGridEdit.clearGridEdit();
   try {
     const res = await getPharmacyStockInDetailApi({ busNo });
     const data = res.data;
@@ -732,12 +827,10 @@ async function loadDetail(busNo: string) {
     }
 
     const gridRows = mapDetailLinesToGridRows(detailLines);
+    // 详情回显：单价/总价以后端 SupplyRequest 落库为准，不在 load 时重算
     void nextTick(() => {
       gridApi?.grid?.loadData(gridRows);
       patchPharmacyStockInGridEditConfig();
-      for (const r of gridRows) {
-        recalcPharmacyStockInLineTotal(r);
-      }
     });
   } catch {
     void nextTick(() => {
@@ -1058,7 +1151,10 @@ async function addItem() {
   await $grid.$nextTick();
   if (row) {
     await $grid.scrollToRow(row);
-    await $grid.setEditCell(row, 'medicinePick');
+    await pharmacyStockInGridEdit.enterRowFormMode(
+      row as PharmacyStockInPreviewRow,
+      'medicinePick',
+    );
   }
 }
 
@@ -1133,6 +1229,8 @@ async function applyLinkablePharmacyRequisition(row: StockOutListRowDto) {
     const gridRows = (data.lines ?? []).map((ln, i) =>
       mapPharmacyRequisitionDetailLineToGrid(ln, i),
     );
+    pharmacyStockInGridEdit.resetFormMode();
+    pharmacyStockInGridEdit.clearGridEdit();
     void nextTick(() => {
       gridApi?.grid?.loadData(gridRows);
       patchPharmacyStockInGridEditConfig();
@@ -1265,7 +1363,10 @@ onMounted(() => {
         </div>
       </template>
 
-      <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2">
+      <div
+        class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2"
+        @mousedown="pharmacyStockInGridEdit.onSurfaceMouseDown"
+      >
         <div class="shrink-0">
           <SectionTitle title="入库单信息" />
           <div class="mt-1 flex flex-wrap items-center gap-2">
@@ -1353,7 +1454,11 @@ onMounted(() => {
           </ElForm>
         </div>
 
-        <div class="pharmacy-stock-in-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          ref="pharmacyStockInGridKeyboardRef"
+          class="pharmacy-stock-in-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col"
+          @keydown.capture="pharmacyStockInGridEdit.onGridKeydown"
+        >
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>
               <ElButton

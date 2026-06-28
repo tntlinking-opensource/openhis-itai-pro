@@ -1,5 +1,5 @@
 /**
- * 药库库存明细 — AS-INV-WHS-004-SDD IF-INV-DTL-01/02/03/06/08/09。
+ * 药库库存明细 — 现库 IF-01/02/03/06/08/09；备份 IF-04/05/07/11。
  * {@code POST /api/app/inventoryWarehouseInventoryDetail/{methodName}}
  */
 import type { ApiResponse } from '#/types/api-response';
@@ -26,66 +26,77 @@ export interface LoadInventoryDetailFormInitResponse {
   deviceCategoryOptions?: OptionDto[];
   /** inventory_range 术语：2=数量等于0，3=数量大于0 */
   inventoryRangeOptions?: OptionDto[];
+  warehouseOptions?: OptionDto[];
+  supplierOptions?: OptionDto[];
 }
 
-/** IF-INV-DTL-02 分页入参（与 AbstractPageQuery + PageInventoryDetailCurrentRequest 对齐）。 */
+/** IF-INV-DTL-02 分页入参。 */
 export interface PageInventoryDetailCurrentRequest {
   pageNo: number;
   pageSize: number;
   keyword?: string;
   medicationCategoryCodes?: string[];
   deviceCategoryCodes?: string[];
-  /** 库房主键多选；Long 以 string 传递 */
   warehouseIds?: string[];
   supplierIds?: string[];
   chrgitmLvList?: number[];
-  /** true 数量等于0；false 数量大于0；不传不限 */
   zeroStockOnly?: boolean;
-  /** BR-003 剩余天数 ≤ 参数 */
   expireWithinDays?: number;
-  /** PublicationStatus#getCode() */
   inventoryStatusEnums?: string[];
 }
 
-/** IF-INV-DTL-02 行 DTO（与后端 InventoryDetailListRowDto 同名字段）。 */
+/**
+ * IF-INV-DTL-02 行 DTO。
+ * 事实字段 + 服务端拼装的少量展示串/Label；价格口径均为包装单位。
+ */
 export interface InventoryDetailListRowDto {
   id?: string;
   itemTable?: string;
   itemId?: string;
   chargeItemDefinitionId?: string;
+  productBusNo?: string;
   name?: string;
+  merchandiseName?: string;
+  totalVolume?: string;
+  manufacturer?: string;
+  approvalNumber?: string;
+  ybNo?: string;
+  traceNo?: string;
   pyStr?: string;
   wbStr?: string;
   lotNumber?: string;
-  /** 库存数量展示串（如 2盒3片，后端拼接） */
-  displayQuantityText?: string;
-  displayCostUnitPrice?: number | string | null;
-  displayCostUnitName?: string;
-  displayPriceUnitPrice?: number | string | null;
-  displayPriceUnitName?: string;
-  unitCode?: string;
-  unitName?: string;
   warehouseId?: string;
   warehouseName?: string;
   supplierId?: string;
   supplierName?: string;
-  expirationDate?: string;
   productionDate?: string;
+  expirationDate?: string;
+  remainingDays?: number | null;
+  /** 供应状态码 */
   inventoryStatusEnum?: string;
-  inventoryStatusText?: string;
+  inventoryStatusLabel?: string;
   chrgitmLv?: number | null;
-  chrgitmLvText?: string;
+  chrgitmLvLabel?: string;
   medicationCategoryCode?: string;
-  medicationCategoryText?: string;
   deviceCategoryCode?: string;
-  deviceCategoryText?: string;
+  categoryLabel?: string;
+  doseFormCode?: string;
+  doseFormLabel?: string;
+  packageUnitCode?: string;
+  packageUnitName?: string;
+  splitUnitName?: string;
+  /** 1 包装 = ratio 拆零 */
+  packageUnitRatio?: number | string | null;
+  packageStockText?: string;
+  splitStockText?: string;
+  /** 批号进价（元/包装单位） */
+  lotCostPrice?: number | string | null;
+  /** 批号售价（元/包装单位） */
+  lotSalePrice?: number | string | null;
   lineCostTotal?: number | string | null;
   linePriceTotal?: number | string | null;
-  /** 若后端扩展追溯码字段则展示；当前 DTO 可能未下发 */
-  traceNo?: string;
 }
 
-/** IF-INV-DTL-08 停供 */
 export interface RetireInventoryItemsRequest {
   inventoryItemIds: string[];
 }
@@ -94,12 +105,9 @@ export interface RetireInventoryItemsResponse {
   affectedRows?: number;
 }
 
-/** IF-INV-DTL-09 恢复供应 */
 export type ResumeInventoryItemsRequest = RetireInventoryItemsRequest;
-
 export type ResumeInventoryItemsResponse = RetireInventoryItemsResponse;
 
-/** IF-INV-DTL-02 分页出参（PagedResult：content + totalCount）。 */
 export interface PageInventoryDetailCurrentResponse {
   content?: InventoryDetailListRowDto[];
   totalCount?: number | string;
@@ -107,7 +115,6 @@ export interface PageInventoryDetailCurrentResponse {
   pageSize?: number;
 }
 
-/** 页面消费的分页结果（由 API 层从 PagedResult 归一化）。 */
 export interface PageInventoryDetailCurrentResult {
   rows: InventoryDetailListRowDto[];
   totalElements: number;
@@ -115,7 +122,6 @@ export interface PageInventoryDetailCurrentResult {
   pageSize?: number;
 }
 
-/** IF-INV-DTL-03 汇总入参（无分页键）。 */
 export interface SumInventoryDetailCurrentRequest {
   keyword?: string;
   medicationCategoryCodes?: string[];
@@ -128,27 +134,61 @@ export interface SumInventoryDetailCurrentRequest {
   inventoryStatusEnums?: string[];
 }
 
-/** IF-INV-DTL-03 汇总出参。 */
 export interface SumInventoryDetailCurrentResponse {
   sumLineCostTotal?: number | string | null;
   sumLinePriceTotal?: number | string | null;
   truncated?: boolean;
 }
 
-/** IF-INV-DTL-06 导出入参（与汇总筛选同构）。 */
 export type ExportInventoryDetailCurrentRequest = SumInventoryDetailCurrentRequest;
 
-/** IF-INV-DTL-06 导出出参。 */
 export interface ExportInventoryDetailCurrentResponse {
   fileName?: string;
   contentType?: string;
-  /** JSON 多为 Base64 字符串；联调以实际为准 */
-  body?: string | number[] | null;
+  /** Jackson 序列化 byte[] 为 base64 字符串 */
+  body?: string;
   exportedRowCount?: number;
   truncated?: boolean;
 }
 
-/** IF-INV-DTL-01 */
+/** 备份分页/汇总/导出行与现库列表 DTO 同构（冻结列 + 展示 enrich）。 */
+export type InventoryDetailBackupListRowDto = InventoryDetailListRowDto;
+
+/** 备份分页入参：在现库筛选基础上增加可选 backupBusNo（未传则后端解析当天最新批次）。 */
+export interface PageInventoryDetailBackupRequest extends PageInventoryDetailCurrentRequest {
+  backupBusNo?: string;
+}
+
+export interface PageInventoryDetailBackupResponse {
+  content?: InventoryDetailBackupListRowDto[];
+  totalCount?: number | string;
+  pageNo?: number;
+  pageSize?: number;
+}
+
+export interface PageInventoryDetailBackupResult {
+  rows: InventoryDetailBackupListRowDto[];
+  totalElements: number;
+  pageNo?: number;
+  pageSize?: number;
+}
+
+export interface SumInventoryDetailBackupRequest extends SumInventoryDetailCurrentRequest {
+  backupBusNo?: string;
+}
+
+export type SumInventoryDetailBackupResponse = SumInventoryDetailCurrentResponse;
+
+export type ExportInventoryDetailBackupRequest = SumInventoryDetailBackupRequest;
+
+export type ExportInventoryDetailBackupResponse = ExportInventoryDetailCurrentResponse;
+
+export type ListInventoryDetailBackupBusNoRequest = Record<string, never>;
+
+export interface ListInventoryDetailBackupBusNoResponse {
+  backupBusNoList?: string[];
+}
+
 export async function loadInventoryDetailFormInitApi(body?: LoadInventoryDetailFormInitRequest) {
   const res = await requestClient.post<ApiResponse<LoadInventoryDetailFormInitResponse>>(
     `${BASE}/loadInventoryDetailFormInit`,
@@ -157,7 +197,6 @@ export async function loadInventoryDetailFormInitApi(body?: LoadInventoryDetailF
   return res.data;
 }
 
-/** IF-INV-DTL-02 */
 export async function pageInventoryDetailCurrentApi(
   body: PageInventoryDetailCurrentRequest,
 ): Promise<PageInventoryDetailCurrentResult> {
@@ -175,7 +214,6 @@ export async function pageInventoryDetailCurrentApi(
   };
 }
 
-/** IF-INV-DTL-03 */
 export async function sumInventoryDetailCurrentApi(body: SumInventoryDetailCurrentRequest) {
   const res = await requestClient.post<ApiResponse<SumInventoryDetailCurrentResponse>>(
     `${BASE}/sumInventoryDetailCurrent`,
@@ -184,7 +222,6 @@ export async function sumInventoryDetailCurrentApi(body: SumInventoryDetailCurre
   return res.data;
 }
 
-/** IF-INV-DTL-06 */
 export async function exportInventoryDetailCurrentApi(body: ExportInventoryDetailCurrentRequest) {
   const res = await requestClient.post<ApiResponse<ExportInventoryDetailCurrentResponse>>(
     `${BASE}/exportInventoryDetailCurrent`,
@@ -193,7 +230,6 @@ export async function exportInventoryDetailCurrentApi(body: ExportInventoryDetai
   return res.data;
 }
 
-/** IF-INV-DTL-08 */
 export async function retireInventoryItemsApi(body: RetireInventoryItemsRequest) {
   const res = await requestClient.post<ApiResponse<RetireInventoryItemsResponse>>(
     `${BASE}/retireInventoryItems`,
@@ -202,11 +238,65 @@ export async function retireInventoryItemsApi(body: RetireInventoryItemsRequest)
   return res.data;
 }
 
-/** IF-INV-DTL-09 */
 export async function resumeInventoryItemsApi(body: ResumeInventoryItemsRequest) {
   const res = await requestClient.post<ApiResponse<ResumeInventoryItemsResponse>>(
     `${BASE}/resumeInventoryItems`,
     body,
   );
   return res.data;
+}
+
+export async function pageInventoryDetailBackupApi(
+  body: PageInventoryDetailBackupRequest,
+): Promise<PageInventoryDetailBackupResult> {
+  const res = await requestClient.post<ApiResponse<PageInventoryDetailBackupResponse>>(
+    `${BASE}/pageInventoryDetailBackup`,
+    body,
+  );
+  const { content, totalCount, pageNo, pageSize } =
+    parsePagedRowsFromApiData<InventoryDetailBackupListRowDto>(res.data);
+  return {
+    rows: content,
+    totalElements: totalCount,
+    pageNo,
+    pageSize,
+  };
+}
+
+export async function sumInventoryDetailBackupApi(body: SumInventoryDetailBackupRequest) {
+  const res = await requestClient.post<ApiResponse<SumInventoryDetailBackupResponse>>(
+    `${BASE}/sumInventoryDetailBackup`,
+    body,
+  );
+  return res.data;
+}
+
+export async function exportInventoryDetailBackupApi(body: ExportInventoryDetailBackupRequest) {
+  const res = await requestClient.post<ApiResponse<ExportInventoryDetailBackupResponse>>(
+    `${BASE}/exportInventoryDetailBackup`,
+    body,
+  );
+  return res.data;
+}
+
+export async function listInventoryDetailBackupBusNoApi(
+  body?: ListInventoryDetailBackupBusNoRequest,
+) {
+  const res = await requestClient.post<ApiResponse<ListInventoryDetailBackupBusNoResponse>>(
+    `${BASE}/listInventoryDetailBackupBusNo`,
+    body ?? {},
+  );
+  return res.data;
+}
+
+/** 单价 + 包装单位名展示 */
+export function fmtPackageUnitPrice(
+  price?: number | string | null,
+  unitName?: string | null,
+): string {
+  if (price === null || price === undefined || price === '') {
+    return '—';
+  }
+  const unit = unitName?.trim();
+  return unit ? `${price}元/${unit}` : String(price);
 }

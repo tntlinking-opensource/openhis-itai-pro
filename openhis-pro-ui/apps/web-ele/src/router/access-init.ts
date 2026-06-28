@@ -61,8 +61,8 @@ async function ensureAccessRoutes(router: Router) {
       accessStore.setAccessMenus(accessibleMenus);
       accessStore.setAccessRoutes(accessibleRoutes);
       accessStore.setIsAccessChecked(true);
-      void import('#/utils/print/runtime/hiprint-client').then(({ warmupHiprintClient }) => {
-        warmupHiprintClient();
+      void import('#/utils/print/runtime/hiprint-client').then(({ schedulePrintClientWarmup }) => {
+        schedulePrintClientWarmup();
       });
       void refreshEinvoiceCompensationMenuBadge();
       // 触发从 localStorage 恢复租户列表（供布局等读取）

@@ -420,7 +420,7 @@ async function persistActivePrescriptionDraft(options?: {
   }
 }
 
-/** 激活 / 工具栏刷新 / 写操作后统一拉数 */
+/** 激活 / 工具栏刷新后拉数（接诊仅在写操作前触发，不在此自动写库） */
 async function reload() {
   if (!contextReady.value) {
     diagnosisGroups.value = [];
@@ -430,10 +430,6 @@ async function reload() {
     prescriptions.value = [];
     activePrescriptionKey.value = '';
     loadActivePrescriptionForm();
-    return;
-  }
-  const receptionOk = await ensureReceptionBeforeClinicalWork();
-  if (!receptionOk) {
     return;
   }
   await runLoadTcmTab();

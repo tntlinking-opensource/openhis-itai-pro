@@ -34,13 +34,17 @@ import {
   previewOutpatientDailySettlementApi,
   submitOutpatientDailySettlementApi,
 } from '#/api/outpatient/daily-settlement';
+import { usePrintClientWarmup } from '#/composables/use-print-client-warmup';
 import { useRequest } from '#/hooks/use-request';
 import { useAuthStore } from '#/store/auth';
 import { preserveApiIdForRequest } from '#/utils/format/preserve-api-id';
+import { printDailySettlement } from '#/utils/print/print-daily-settlement';
 
 defineOptions({
   name: 'ChargeOpDailySettlement',
 });
+
+usePrintClientWarmup();
 
 interface SummaryItem {
   label: string;
@@ -75,6 +79,7 @@ const queryForm = reactive<QueryFormState>({
 const pageInit = ref<LoadOutpatientDailySettlementPageInitResponse | null>(null);
 const previewResult = ref<null | PreviewOutpatientDailySettlementResponse>(null);
 const hasQueried = ref(false);
+const printSubmitting = ref(false);
 
 const { run: runInit, loading: initLoading } = useRequest(
   loadOutpatientDailySettlementPageInitApi,
@@ -117,6 +122,10 @@ const canSubmitSettlement = computed(() => {
   const count = previewResult.value?.paymentCount ?? 0;
   return hasQueried.value && count > 0 && !queryLoading.value && !submitLoading.value;
 });
+
+const canPrintSettlement = computed(
+  () => hasSummaryDisplay.value && !queryLoading.value && !printSubmitting.value,
+);
 
 // 将渠道行与汇总字段拆成多列网格，便于日结单式展示（非表格）。
 function chunkItems<T>(items: T[], size: number): T[][] {
@@ -323,6 +332,28 @@ function handleSubmitReconciliation() {
   // 仅保留页面结构
 }
 
+async function handlePrintSettlement() {
+  if (!previewResult.value?.summary) {
+    ElMessage.warning('请先查询日结汇总后再打印');
+    return;
+  }
+  printSubmitting.value = true;
+  try {
+    await printDailySettlement({
+      cashierId: queryForm.cashierId,
+      source: {
+        hospitalName: '',
+        cashierName: selectedCashierLabel.value === '—' ? '' : selectedCashierLabel.value,
+        settlementPeriodText: headerDateRangeText.value === '—' ? '' : headerDateRangeText.value,
+        rows: previewResult.value.rows,
+        summary: previewResult.value.summary,
+      },
+    });
+  } finally {
+    printSubmitting.value = false;
+  }
+}
+
 onMounted(async () => {
   try {
     await loadPageInit();
@@ -398,6 +429,14 @@ watch(
             <div class="ml-auto flex shrink-0 items-center gap-2">
               <ElButton type="primary" :loading="queryLoading || initLoading" @click="handleSearch">
                 查询
+              </ElButton>
+              <ElButton
+                plain
+                :loading="printSubmitting"
+                :disabled="!canPrintSettlement"
+                @click="handlePrintSettlement"
+              >
+                打印日结单
               </ElButton>
               <ElButton
                 type="primary"

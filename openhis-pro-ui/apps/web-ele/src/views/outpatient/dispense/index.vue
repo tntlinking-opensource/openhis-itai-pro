@@ -30,9 +30,10 @@ import {
   filterInsuranceChargeTypes,
   resolveDefaultInsuranceBusNo,
 } from '#/chs/constants/insurance-contract';
+import { usePrintClientWarmup } from '#/composables/use-print-client-warmup';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
-import { PRINT_SCENARIO, groupSlipRowsByPrescriptionNo, print } from '#/utils/print/runtime';
+import { groupSlipRowsByPrescriptionNo, print, PRINT_SCENARIO } from '#/utils/print/runtime';
 
 import DispenseQueuePanel from './components/dispense-queue-panel.vue';
 import DispenseRxCenter from './components/dispense-rx-center.vue';
@@ -51,6 +52,8 @@ import {
 defineOptions({
   name: 'PharmacyDispenseOutpatient',
 });
+
+usePrintClientWarmup();
 
 const keyword = ref('');
 const today = new Date().toISOString().slice(0, 10);

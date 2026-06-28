@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { ServiceApplyPrintMeta } from '#/utils/print/print-service-apply';
+import type { ServiceApplyPatientSummary } from '../service-apply/service-apply.types';
+
 import { ref } from 'vue';
 
 import AdviceWorkspace from './components/advice-workspace.vue';
@@ -9,6 +12,8 @@ const props = withDefaults(
   defineProps<{
     encounterId?: string;
     patientId?: string;
+    serviceApplyPatient?: ServiceApplyPatientSummary;
+    serviceApplyPrintMeta?: ServiceApplyPrintMeta;
   }>(),
   { encounterId: '', patientId: '' },
 );

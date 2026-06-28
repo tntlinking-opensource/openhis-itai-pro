@@ -10,6 +10,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 
 import { submitDirectBedOperation } from './services/execute-bed-operation';
 import { submitRecallInpatientDischarge } from './services/recall-inpatient-discharge';
+import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 
 import PatientAdmissionBedDialog from './components/patient-admission-bed-dialog.vue';
 import { nurseStationPatientListPanelContextKey } from './components/patient-list-panel.context';
@@ -74,6 +75,8 @@ const admissionBedDialogVisible = ref(false);
 const admissionBedDialogPatient = ref<null | PatientItem>(null);
 const admissionBedDialogOperation = ref<AdmissionBedOperationIntent | null>(null);
 const operationTabLoading = ref(false);
+/** 换床/互换直提交 loading（E4） */
+const directBedSubmitting = ref(false);
 const loadedOperationTabs = ref<Set<OperationTab>>(new Set(['医嘱执行']));
 const { selectedPatients, singlePanelPatients } = useNurseStationPatientProjections({
   activePatientId,
@@ -108,7 +111,7 @@ const currentOperationProps = computed<Record<string, unknown>>(() => {
     return {
       activePatientId: activePatientId.value,
       bedBoardGroups: bedBoardGroups.value,
-      bedBoardLoading: bedBoardLoading.value,
+      bedBoardLoading: bedBoardLoading.value || directBedSubmitting.value,
       patients: patients.value,
       regionNameById: regionNameByIdRecord.value,
       onSelectPatient: handleBedMapSelectPatient,
@@ -249,6 +252,9 @@ async function handleExecuteDirectBed(payload: {
   intent: AdmissionBedOperationIntent;
 }) {
   const { patient, intent } = payload;
+  if (directBedSubmitting.value) {
+    return;
+  }
   if (intent.type === 'swap' && intent.swapPartnerName) {
     try {
       await ElMessageBox.confirm(
@@ -260,13 +266,22 @@ async function handleExecuteDirectBed(payload: {
       return;
     }
   }
-  const message = await submitDirectBedOperation(patient, intent);
-  if (!message) {
-    ElMessage.warning('换床提交失败，请稍后重试');
-    return;
+  directBedSubmitting.value = true;
+  try {
+    const message = await submitDirectBedOperation(patient, intent);
+    if (!message) {
+      ElMessage.warning('换床提交失败，请稍后重试');
+      return;
+    }
+    ElMessage.success(message);
+    await handleAdmissionBedDialogSaved();
+  } catch (error) {
+    if (isStaleCrossRoleError(error)) {
+      await handleAdmissionBedDialogSaved();
+    }
+  } finally {
+    directBedSubmitting.value = false;
   }
-  ElMessage.success(message);
-  await handleAdmissionBedDialogSaved();
 }
 
 /** 弹窗保存后刷新患者队列与床位图（选中态由 selection watch 恢复） */

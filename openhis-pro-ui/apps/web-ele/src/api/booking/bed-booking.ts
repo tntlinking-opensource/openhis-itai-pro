@@ -3,6 +3,7 @@
  */
 import { publicRequestClient } from '#/api/request';
 
+import type { BookingEntityId } from './booking-id';
 import type { BookingOptionDto, BookingPagedResult } from './booking-types';
 
 export interface WardTreeNodeDto extends BookingOptionDto {
@@ -10,7 +11,7 @@ export interface WardTreeNodeDto extends BookingOptionDto {
 }
 
 export interface LoadWardTreeRequest {
-  organizationId: number;
+  organizationId: BookingEntityId;
 }
 
 export interface LoadWardTreeResponse {
@@ -18,8 +19,8 @@ export interface LoadWardTreeResponse {
 }
 
 export interface PageBedMatrixRequest {
-  organizationId: number;
-  wardLocationId: number;
+  organizationId: BookingEntityId;
+  wardLocationId: BookingEntityId;
   rangeStart: string;
   rangeEnd: string;
 }
@@ -46,9 +47,9 @@ export interface PageBedMatrixResponse {
 }
 
 export interface ReserveBedRequest {
-  organizationId: number;
-  bedLocationId: number;
-  patientId: number;
+  organizationId: BookingEntityId;
+  bedLocationId: BookingEntityId;
+  patientId: BookingEntityId;
   intendedAdmissionDate: string;
   commentText?: string;
 }
@@ -59,7 +60,7 @@ export interface ReserveBedResponse {
 }
 
 export interface CancelBedReservationRequest {
-  appointmentId: number;
+  appointmentId: BookingEntityId;
   reason?: string;
 }
 

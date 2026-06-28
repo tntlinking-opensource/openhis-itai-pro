@@ -36,6 +36,7 @@ import {
 import {
   pageScheduleTemplatesApi,
   pageWeekScheduleTemplatesApi,
+  listSlotProvisionTemplateOptionsApi,
 } from '#/api/booking/schedule-template';
 import type { ScheduleTemplateDto, WeekScheduleTemplateDto } from '#/api/booking/schedule-template';
 import ScheduleActionDrawer from '#/views/booking/components/schedule-action-drawer.vue';
@@ -106,6 +107,7 @@ const t2GenerateRangeStart = ref('');
 const t2GenerateRangeEnd = ref('');
 const t2TemplateOptions = ref<ScheduleTemplateDto[]>([]);
 const twTemplateOptions = ref<WeekScheduleTemplateDto[]>([]);
+const t1TemplateOptions = ref<BookingOptionDto[]>([]);
 
 const monthTitle = computed(() => monthLabel(yearMonth.value));
 
@@ -155,6 +157,15 @@ function pickScheduleOrganizationId(
   return toBookingId(departments?.[0]?.value) ?? pref;
 }
 
+async function loadT1TemplateOptions(orgId?: BookingEntityId) {
+  if (!orgId) {
+    t1TemplateOptions.value = [];
+    return;
+  }
+  const res = await listSlotProvisionTemplateOptionsApi({ organizationId: orgId });
+  t1TemplateOptions.value = res?.options ?? [];
+}
+
 async function loadFormInit(preferredOrganizationId?: BookingEntityId) {
   const candidate =
     preferredOrganizationId ?? scheduleOrganizationId.value ?? loginOrganizationId.value;
@@ -164,6 +175,7 @@ async function loadFormInit(preferredOrganizationId?: BookingEntityId) {
     response = await runInit({ organizationId: resolved });
   }
   scheduleOrganizationId.value = resolved;
+  await loadT1TemplateOptions(resolved);
   return response;
 }
 
@@ -421,6 +433,13 @@ async function handleGenerateFromT2Template() {
   ElMessage.success(msg);
 }
 
+watch(actionVisible, (open) => {
+  if (!open) {
+    return;
+  }
+  void loadT1TemplateOptions(scheduleOrganizationId.value);
+});
+
 watch(loginOrganizationId, (organizationId) => {
   const id = toBookingId(organizationId);
   if (!id) {
@@ -578,6 +597,7 @@ onMounted(refreshAll);
         :practitioners="initData.practitioners"
         :clinic-locations="initData.clinicLocations"
         :healthcare-services="initData.healthcareServices"
+        :slot-provision-template-options="t1TemplateOptions"
         @refreshed="handleDrawerRefreshed"
       />
 

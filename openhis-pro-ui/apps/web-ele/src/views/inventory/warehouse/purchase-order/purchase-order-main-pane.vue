@@ -32,6 +32,8 @@ import {
 } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import { useFinanceApprovalAccess } from '#/composables/use-finance-approval-access';
+import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
 import {
   agreePurchaseOrderApi,
   createPurchaseOrderApi,
@@ -77,6 +79,8 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   docChanged: [payload?: { busNo?: string }];
 }>();
+
+const { canFinanceApprove } = useFinanceApprovalAccess();
 
 type MedicinePick = Record<string, unknown> & {
   id?: string;
@@ -195,6 +199,13 @@ function syncRowFromMedicinePick(pick: Record<string, unknown>, row: OrderLineRo
   recalcOrderLineTotal(row);
 }
 
+/** 详情回显：持久化 total_price 原样格式化。 */
+function formatPurchaseOrderDetailTotalAmount(total: unknown): string {
+  if (total === undefined || total === null || total === '') return '';
+  return typeof total === 'number' ? total.toFixed(2) : String(total);
+}
+
+/** 编辑态：按数量 × 单价刷新合计（详情 load 不调用）。 */
 function recalcOrderLineTotal(row: OrderLineRow) {
   const qty = Number(row.orderQty);
   const unit = Number(row.unitPrice);
@@ -232,7 +243,7 @@ function createEmptyOrderRow(): OrderLineRow {
   };
 }
 
-function resetPaneForNewDraft() {
+function resetPaneForNewDraftHeader() {
   headerBusNo.value = undefined;
   detailStatusEnum.value = undefined;
   detailRowVersion.value = undefined;
@@ -246,12 +257,11 @@ function resetPaneForNewDraft() {
     (isAllWarehousesListFilter()
       ? props.warehouseOptions[0]?.locationId
       : resolveActivePurposeWarehouseId());
-  void nextTick(() => {
-    gridApi?.grid?.loadData([]);
-  });
 }
 
 async function loadDetail(busNo: string) {
+  orderGridEdit.resetFormMode();
+  orderGridEdit.clearGridEdit();
   try {
     const res = await getPurchaseOrderDetailApi({ busNo });
     const data = res.data;
@@ -289,21 +299,50 @@ async function loadDetail(busNo: string) {
       orderQty: ln.itemQuantity === undefined ? 1 : Number(ln.itemQuantity),
       orderUnit: String(ln.unitCode ?? ''),
       unitPrice: ln.price === undefined ? 0 : Number(ln.price),
-      totalAmount:
-        ln.totalPrice !== undefined && ln.totalPrice !== null ? String(ln.totalPrice) : '',
+      totalAmount: formatPurchaseOrderDetailTotalAmount(ln.totalPrice),
       remark: String(ln.remake ?? ''),
     }));
+    // 详情回显：单价/总价以后端 SupplyRequest 落库为准，不在 load 时重算
     void nextTick(() => {
       gridApi?.grid?.loadData(gridRows);
-      for (const r of gridRows) {
-        recalcOrderLineTotal(r);
-      }
+      patchOrderGridEditConfig();
     });
   } catch {
     void nextTick(() => {
       gridApi?.grid?.loadData([]);
+      patchOrderGridEditConfig();
     });
   }
+}
+
+function isPresentItemId(v: unknown): boolean {
+  if (v === undefined || v === null) return false;
+  if (typeof v === 'string') return v.trim() !== '';
+  if (typeof v === 'number') return Number.isFinite(v);
+  if (typeof v === 'bigint') return true;
+  return String(v).trim() !== '';
+}
+
+/** 明细行必填项是否已齐（与 buildLinesPayload 保存校验对齐） */
+function isOrderRowComplete(row: OrderLineRow): boolean {
+  if (!String(row.itemTable ?? '').trim() || !isPresentItemId(row.itemId)) return false;
+  const qty = Number(row.orderQty);
+  if (!Number.isFinite(qty) || qty <= 0) return false;
+  return !!String(row.orderUnit ?? '').trim();
+}
+
+let orderGridEdit!: ReturnType<typeof useInventoryDocGridEdit<OrderLineRow>>;
+
+function handleOrderProductPick(row: OrderLineRow) {
+  void nextTick(async () => {
+    await nextTick();
+    await orderGridEdit.onProductSelected(row);
+  });
+}
+
+function collectGridRows(): OrderLineRow[] {
+  const g = gridApi?.grid as null | { getFullData?: () => OrderLineRow[] };
+  return g?.getFullData?.() ?? [];
 }
 
 const columns: VxeGridPropTypes.Column[] = [
@@ -321,6 +360,7 @@ const columns: VxeGridPropTypes.Column[] = [
         query: async () => ({ supplierId: supplierId.value }),
         onSelected: (product: Record<string, unknown>, row: OrderLineRow) => {
           syncRowFromMedicinePick(product, row);
+          handleOrderProductPick(row);
         },
       },
     },
@@ -386,7 +426,7 @@ const columns: VxeGridPropTypes.Column[] = [
     minWidth: 120,
     showOverflow: true,
     editRender: {
-      name: 'ElInput',
+      name: 'InventoryPersistElInput',
       props: { maxlength: 200, clearable: true },
     },
   },
@@ -408,35 +448,91 @@ const gridOptions: VxeGridProps<OrderLineRow> = reactive({
   showOverflow: true,
   showFooter: false,
   size: 'medium',
+  keepSource: true,
   columnConfig: { resizable: true },
   data: [],
   editConfig: {
     enabled: true,
     trigger: 'click',
     mode: 'row',
+    autoClear: false,
+    beforeEditMethod: () => canEditLines.value,
   },
   columns,
   pagerConfig: { enabled: false },
 });
 
+const ORDER_EDITABLE_COLUMN_FIELDS = new Set(['_qtyUnit', 'medicinePick', 'remark', 'unitPrice']);
+
+const ORDER_EDIT_FIELD_ORDER = ['medicinePick', '_qtyUnit', 'unitPrice', 'remark'] as const;
+
+type OrderEditField = (typeof ORDER_EDIT_FIELD_ORDER)[number];
+
+const ORDER_VERTICAL_NAV_FIELDS = new Set<OrderEditField>(['_qtyUnit', 'unitPrice', 'remark']);
+
+const orderGridKeyboardRef = ref<HTMLElement | null>(null);
+
 const [Grid, gridApi] = useVbenVxeGrid<OrderLineRow>({
   gridOptions,
   gridEvents: {
-    editClosed(params: { column: { field?: string }; row: OrderLineRow }) {
-      const field = params.column.field;
-      if (field === 'orderQty' || field === 'unitPrice') {
-        recalcOrderLineTotal(params.row);
-      }
+    cellClick: (params: { column?: { field?: string; type?: string }; row: OrderLineRow }) =>
+      orderGridEdit.onCellClick(params),
+    editClosed(params: { row: OrderLineRow }) {
+      recalcOrderLineTotal(params.row);
+      orderGridEdit.syncRowFormMode(params.row);
     },
   },
   class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
   gridClass: '!p-0',
 });
 
+orderGridEdit = useInventoryDocGridEdit<OrderLineRow>({
+  getGridApi: () => gridApi ?? null,
+  gridWrapRef: orderGridKeyboardRef,
+  documentEditable: () => canEditLines.value,
+  collectRows: collectGridRows,
+  config: {
+    rowKey: (row) => row.id,
+    productField: 'medicinePick',
+    editFieldOrder: ORDER_EDIT_FIELD_ORDER,
+    editableFields: ORDER_EDITABLE_COLUMN_FIELDS,
+    verticalNavFields: ORDER_VERTICAL_NAV_FIELDS,
+    firstFillFieldAfterPick: '_qtyUnit',
+    hasProduct: (row) => isPresentItemId(row.itemId),
+    isRowComplete: isOrderRowComplete,
+  },
+});
+
+function patchOrderGridEditConfig() {
+  const patched = orderGridEdit.patchGridOptions({
+    ...(gridOptions as Record<string, unknown>),
+    editConfig: {
+      ...(gridOptions.editConfig as Record<string, unknown>),
+      enabled: canEditLines.value,
+    },
+  });
+  Object.assign(gridOptions, patched);
+}
+
+function resetPaneForNewDraft() {
+  resetPaneForNewDraftHeader();
+  orderGridEdit.resetFormMode();
+  void nextTick(() => {
+    gridApi?.grid?.loadData([]);
+    patchOrderGridEditConfig();
+  });
+}
+
 watch(
   () => canEditLines.value,
-  (v) => {
-    gridOptions.editConfig = { ...gridOptions.editConfig, enabled: v };
+  (editable) => {
+    patchOrderGridEditConfig();
+    void nextTick(() => {
+      if (!editable) {
+        orderGridEdit.resetFormMode();
+        orderGridEdit.clearGridEdit();
+      }
+    });
   },
   { immediate: true },
 );
@@ -467,8 +563,10 @@ watch(
       headerBusNo.value = undefined;
       detailStatusEnum.value = undefined;
       detailRowVersion.value = undefined;
+      orderGridEdit.resetFormMode();
       void nextTick(() => {
         gridApi?.grid?.loadData([]);
+        patchOrderGridEditConfig();
       });
     }
   },
@@ -502,7 +600,7 @@ async function addItem() {
   await $grid.$nextTick();
   if (row) {
     await $grid.scrollToRow(row);
-    await $grid.setEditCell(row, 'medicinePick');
+    await orderGridEdit.enterRowFormMode(row as OrderLineRow, 'medicinePick');
   }
 }
 
@@ -695,6 +793,7 @@ async function handleReject() {
     <InvMainShell>
       <template #actionBar>
         <InvDocActions
+          :show-approval-actions="canFinanceApprove"
           @save="handleSave"
           @save-and-submit="handleSaveAndSubmit"
           @remove-doc="handleRemoveDoc"
@@ -705,7 +804,10 @@ async function handleReject() {
         />
       </template>
 
-      <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2">
+      <div
+        class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2"
+        @mousedown="orderGridEdit.onSurfaceMouseDown"
+      >
         <div class="shrink-0">
           <SectionTitle title="订货单信息" />
           <div class="mt-1 flex flex-wrap items-center gap-2">
@@ -779,7 +881,11 @@ async function handleReject() {
           </ElForm>
         </div>
 
-        <div class="purchase-order-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          ref="orderGridKeyboardRef"
+          class="purchase-order-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col"
+          @keydown.capture="orderGridEdit.onGridKeydown"
+        >
           <Grid>
             <template #toolbar-actions>
               <ElButton class="mr-2" type="primary" :icon="Plus" @click="addItem">添加行</ElButton>

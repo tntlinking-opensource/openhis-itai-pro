@@ -107,7 +107,7 @@ export async function pageReleasePoliciesApi(params: PageReleasePoliciesRequest)
   );
 }
 
-export async function loadReleasePolicyApi(params: { id: number }) {
+export async function loadReleasePolicyApi(params: { id: BookingEntityId }) {
   return publicRequestClient.post<ReleasePolicyDto>('/bookingPolicy/loadReleasePolicy', params);
 }
 
@@ -115,7 +115,7 @@ export async function saveReleasePolicyApi(params: SaveReleasePolicyRequest) {
   return publicRequestClient.post<{ id?: number }>('/bookingPolicy/saveReleasePolicy', params);
 }
 
-export async function deleteReleasePolicyApi(params: { id: number }) {
+export async function deleteReleasePolicyApi(params: { id: BookingEntityId }) {
   return publicRequestClient.post<void>('/bookingPolicy/deleteReleasePolicy', params);
 }
 

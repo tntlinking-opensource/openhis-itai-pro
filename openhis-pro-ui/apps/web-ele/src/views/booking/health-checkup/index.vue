@@ -12,6 +12,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { Page } from '@vben/common-ui';
 
 import { pagePatientsForSelectApi } from '#/api/booking/booking-register';
+import { toBookingId } from '#/api/booking/booking-id';
 import {
   batchBookGroupRosterApi,
   checkInHealthCheckupApi,
@@ -287,9 +288,9 @@ async function handleIndividualBook() {
   }
   await runIndBook({
     organizationId: organizationId.value,
-    patientId: Number(selectedPatientId.value),
-    packageId: selectedPackageId.value,
-    slotId: selectedSlotId.value,
+    patientId: toBookingId(selectedPatientId.value)!,
+    packageId: toBookingId(selectedPackageId.value)!,
+    slotId: toBookingId(selectedSlotId.value)!,
     originChannel: 'WINDOW',
   });
 }

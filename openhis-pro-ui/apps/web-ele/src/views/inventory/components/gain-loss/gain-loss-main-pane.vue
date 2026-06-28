@@ -28,6 +28,8 @@ import {
 } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
+import { useFinanceApprovalAccess } from '#/composables/use-finance-approval-access';
 import {
   agreeDeptGainLossApi,
   createDeptGainLossApi,
@@ -134,6 +136,8 @@ const emit = defineEmits<{
   documentRemoved: [];
   documentSaved: [{ busNo?: string }];
 }>();
+
+const { canFinanceApprove } = useFinanceApprovalAccess();
 
 const userStore = useUserStore();
 
@@ -283,6 +287,24 @@ function mapDetailLineToGrid(
   };
 }
 
+function isGainLossRowComplete(row: GainLossPreviewRow): boolean {
+  if (!String(row.itemTable ?? '').trim() || !isPresentItemId(row.itemId)) return false;
+  const qty = Number(row.gainLossQuantity);
+  if (!Number.isFinite(qty) || qty === 0) return false;
+  if (!String(row.unitCode ?? '').trim()) return false;
+  if (!String(row.lotNumber ?? '').trim()) return false;
+  return !!String(row.reason ?? '').trim();
+}
+
+let gainLossGridEdit!: ReturnType<typeof useInventoryDocGridEdit<GainLossPreviewRow>>;
+
+function handleGainLossProductPick(row: GainLossPreviewRow) {
+  void nextTick(async () => {
+    await nextTick();
+    await gainLossGridEdit.onProductSelected(row);
+  });
+}
+
 const columns: VxeGridPropTypes.Column[] = [
   { type: 'checkbox', width: 48, fixed: 'left', align: 'center' },
   { type: 'seq', title: '序号', width: 52, fixed: 'left', align: 'center' },
@@ -301,6 +323,7 @@ const columns: VxeGridPropTypes.Column[] = [
         }),
         onSelected: (product: Record<string, unknown>, row: GainLossPreviewRow) => {
           syncRowFromProductPick(product, row);
+          handleGainLossProductPick(row);
         },
       },
     },
@@ -311,7 +334,7 @@ const columns: VxeGridPropTypes.Column[] = [
     title: '损益数量',
     width: 120,
     align: 'center',
-    editRender: { name: 'ElInputNumber', props: { controlsPosition: 'right' } },
+    editRender: { name: 'InventoryPersistElInputNumber', props: { controlsPosition: 'right' } },
   },
   {
     field: 'unitCode',
@@ -323,7 +346,7 @@ const columns: VxeGridPropTypes.Column[] = [
     field: 'lotNumber',
     title: '批号',
     width: 120,
-    editRender: { name: 'ElInput', props: { maxlength: 64, clearable: true } },
+    editRender: { name: 'InventoryPersistElInput', props: { maxlength: 64, clearable: true } },
     showOverflow: true,
   },
   {
@@ -331,7 +354,7 @@ const columns: VxeGridPropTypes.Column[] = [
     title: '变更原因',
     minWidth: 160,
     editRender: {
-      name: 'ElSelect',
+      name: 'InventoryPersistElSelect',
       options: GAIN_LOSS_INV_CHG_TYPE_OPTIONS.map((o) => ({
         label: o.label,
         value: o.value,
@@ -357,38 +380,97 @@ const gridOptions: VxeGridProps<GainLossPreviewRow> = reactive({
   stripe: true,
   showOverflow: true,
   size: 'medium',
+  keepSource: true,
   columnConfig: { resizable: true },
   data: [],
   editConfig: {
     enabled: true,
     trigger: 'click',
-    mode: 'cell',
-    autoClear: true,
+    mode: 'row',
+    autoClear: false,
     beforeEditMethod: () => documentEditable.value,
   },
   columns,
   pagerConfig: { enabled: false },
 });
 
+const GAIN_LOSS_EDITABLE_COLUMN_FIELDS = new Set([
+  'gainLossQuantity',
+  'lotNumber',
+  'medicinePick',
+  'reason',
+]);
+
+const GAIN_LOSS_EDIT_FIELD_ORDER = [
+  'medicinePick',
+  'gainLossQuantity',
+  'lotNumber',
+  'reason',
+] as const;
+
+type GainLossEditField = (typeof GAIN_LOSS_EDIT_FIELD_ORDER)[number];
+
+const GAIN_LOSS_VERTICAL_NAV_FIELDS = new Set<GainLossEditField>([
+  'gainLossQuantity',
+  'lotNumber',
+  'reason',
+]);
+
+const gainLossGridKeyboardRef = ref<HTMLElement | null>(null);
+
 const [Grid, gridApi] = useVbenVxeGrid<GainLossPreviewRow>({
   gridOptions,
+  gridEvents: {
+    cellClick: (params: { column?: { field?: string; type?: string }; row: GainLossPreviewRow }) =>
+      gainLossGridEdit.onCellClick(params),
+    editClosed(params: { row: GainLossPreviewRow }) {
+      gainLossGridEdit.syncRowFormMode(params.row);
+    },
+  },
   class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
   gridClass: '!p-0',
 });
 
-function patchGridEditConfig() {
-  gridOptions.editConfig = {
-    ...gridOptions.editConfig,
-    enabled: documentEditable.value,
-    beforeEditMethod: () => documentEditable.value,
-  };
+gainLossGridEdit = useInventoryDocGridEdit<GainLossPreviewRow>({
+  getGridApi: () => gridApi ?? null,
+  gridWrapRef: gainLossGridKeyboardRef,
+  documentEditable: () => documentEditable.value,
+  collectRows: collectGridRows,
+  config: {
+    rowKey: (row) => row.id,
+    productField: 'medicinePick',
+    editFieldOrder: GAIN_LOSS_EDIT_FIELD_ORDER,
+    editableFields: GAIN_LOSS_EDITABLE_COLUMN_FIELDS,
+    verticalNavFields: GAIN_LOSS_VERTICAL_NAV_FIELDS,
+    firstFillFieldAfterPick: 'gainLossQuantity',
+    hasProduct: (row) => isPresentItemId(row.itemId),
+    isRowComplete: isGainLossRowComplete,
+  },
+});
+
+function patchGainLossGridEditConfig() {
+  const patched = gainLossGridEdit.patchGridOptions({
+    ...(gridOptions as Record<string, unknown>),
+    editConfig: {
+      ...(gridOptions.editConfig as Record<string, unknown>),
+      enabled: documentEditable.value,
+    },
+  });
+  Object.assign(gridOptions, patched);
 }
 
 watch(
   () => documentEditable.value,
-  () => {
-    patchGridEditConfig();
+  (editable) => {
+    patchGainLossGridEditConfig();
+    void nextTick(() => {
+      if (!editable) {
+        gainLossGridEdit.resetFormMode();
+        gainLossGridEdit.clearGridEdit();
+      }
+    });
   },
+  { immediate: true },
 );
 
 function collectGridRows(): GainLossPreviewRow[] {
@@ -405,13 +487,16 @@ function resetDetailForCreate() {
     resolveLoginPractitionerIdForRequest(userStore.userInfo as null | Record<string, unknown>) ??
     props.practitionerOptions[0]?.value;
   headApplyTime.value = formatDateTime(new Date());
+  gainLossGridEdit.resetFormMode();
   void nextTick(() => {
     gridApi?.grid?.loadData([]);
-    patchGridEditConfig();
+    patchGainLossGridEditConfig();
   });
 }
 
 async function loadDetail(busNo: string) {
+  gainLossGridEdit.resetFormMode();
+  gainLossGridEdit.clearGridEdit();
   try {
     const res =
       props.variant === 'pharmacy'
@@ -437,12 +522,12 @@ async function loadDetail(busNo: string) {
     const gridRows = (data.lines ?? []).map((ln, i) => mapDetailLineToGrid(ln, i));
     void nextTick(() => {
       gridApi?.grid?.loadData(gridRows);
-      patchGridEditConfig();
+      patchGainLossGridEditConfig();
     });
   } catch {
     void nextTick(() => {
       gridApi?.grid?.loadData([]);
-      patchGridEditConfig();
+      patchGainLossGridEditConfig();
     });
   }
 }
@@ -696,7 +781,7 @@ async function addItem() {
   await $grid.$nextTick();
   if (row) {
     await $grid.scrollToRow(row);
-    await $grid.setEditCell(row, 'medicinePick');
+    await gainLossGridEdit.enterRowFormMode(row as GainLossPreviewRow, 'medicinePick');
   }
 }
 
@@ -788,6 +873,7 @@ onMounted(() => {
           <div class="flex w-full flex-wrap items-center justify-end gap-2">
             <InvDocActions
               v-bind="docActionFlags"
+              :show-approval-actions="canFinanceApprove"
               @approve="handleApprove"
               @reject="handleReject"
               @remove-doc="handleRemoveDoc"
@@ -800,7 +886,10 @@ onMounted(() => {
         </div>
       </template>
 
-      <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2">
+      <div
+        class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2"
+        @mousedown="gainLossGridEdit.onSurfaceMouseDown"
+      >
         <div class="gain-loss-head-panel shrink-0">
           <div
             class="gain-loss-head-panel__bar flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
@@ -865,7 +954,11 @@ onMounted(() => {
           </ElForm>
         </div>
 
-        <div class="gain-loss-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          ref="gainLossGridKeyboardRef"
+          class="gain-loss-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col"
+          @keydown.capture="gainLossGridEdit.onGridKeydown"
+        >
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>
               <ElButton

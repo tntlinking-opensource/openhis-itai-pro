@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { BookableSlotDto, BookingPatientItem } from '#/api/booking/booking-register';
+import type { BookingEntityId } from '#/api/booking/booking-id';
+import { bookingOptionValue, toBookingId } from '#/api/booking/booking-id';
 import type { BookingOptionDto } from '#/api/booking/booking-types';
 
 import { computed, reactive, ref } from 'vue';
@@ -30,8 +32,8 @@ const selectedSlotKey = ref('');
 
 const form = reactive({
   date: '',
-  practitionerId: undefined as number | undefined,
-  healthcareServiceId: undefined as number | undefined,
+  practitionerId: undefined as BookingEntityId | undefined,
+  healthcareServiceId: undefined as BookingEntityId | undefined,
 });
 
 const patientColumns = [
@@ -74,6 +76,10 @@ const { run: runSlots, loading: slotsLoading } = useRequest(listBookableSlotsApi
 
 const { run: runCreate, loading: createLoading } = useRequest(createOutpatientBookingApi, {
   manual: true,
+  refreshOnStale: async () => {
+    emit('booked');
+    await loadBookableSlots();
+  },
   onSuccess: (res) => {
     ElMessage.success(`预约成功：${res?.busNo ?? ''}`);
     emit('booked');
@@ -83,6 +89,10 @@ const { run: runCreate, loading: createLoading } = useRequest(createOutpatientBo
 
 const { run: runJoinWaitlist, loading: waitlistLoading } = useRequest(joinWaitlistApi, {
   manual: true,
+  refreshOnStale: async () => {
+    emit('booked');
+    await loadBookableSlots();
+  },
   onSuccess: (res) => {
     ElMessage.success(`已加入候补，排队序号 ${res?.queuePosition ?? '-'}`);
     emit('booked');
@@ -134,8 +144,8 @@ async function handleSubmit() {
   if (isWaitlistMode.value && slot.slotId) {
     await runJoinWaitlist({
       organizationId: organizationId.value,
-      patientId: Number(selectedPatientId.value),
-      slotId: slot.slotId,
+      patientId: toBookingId(selectedPatientId.value)!,
+      slotId: toBookingId(slot.slotId)!,
     });
     return;
   }
@@ -145,8 +155,8 @@ async function handleSubmit() {
   }
   await runCreate({
     organizationId: organizationId.value,
-    patientId: Number(selectedPatientId.value),
-    slotId: slot.slotId,
+    patientId: toBookingId(selectedPatientId.value)!,
+    slotId: toBookingId(slot.slotId),
     virtualSlotKey: slot.virtualSlotKey,
     originChannel: 'WINDOW',
   });
@@ -198,7 +208,7 @@ bootstrap();
           v-for="item in practitioners"
           :key="item.value"
           :label="item.label"
-          :value="Number(item.value)"
+          :value="bookingOptionValue(item.value)"
         />
       </ElSelect>
       <ElSelect
@@ -213,7 +223,7 @@ bootstrap();
           v-for="item in healthcareServices"
           :key="item.value"
           :label="item.label"
-          :value="Number(item.value)"
+          :value="bookingOptionValue(item.value)"
         />
       </ElSelect>
       <ElButton :loading="slotsLoading" @click="loadBookableSlots">刷新可约</ElButton>

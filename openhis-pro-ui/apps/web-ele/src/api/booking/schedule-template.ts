@@ -101,7 +101,7 @@ export async function pageSlotProvisionTemplatesApi(params: PageTemplatesRequest
   );
 }
 
-export async function loadSlotProvisionTemplateApi(params: { id: number }) {
+export async function loadSlotProvisionTemplateApi(params: { id: BookingEntityId }) {
   return publicRequestClient.post<SlotProvisionTemplateDto>(
     '/scheduleTemplate/loadSlotProvisionTemplate',
     params,
@@ -115,7 +115,7 @@ export async function saveSlotProvisionTemplateApi(params: SaveSlotProvisionTemp
   );
 }
 
-export async function deleteSlotProvisionTemplateApi(params: { id: number }) {
+export async function deleteSlotProvisionTemplateApi(params: { id: BookingEntityId }) {
   return publicRequestClient.post<void>('/scheduleTemplate/deleteSlotProvisionTemplate', params);
 }
 
@@ -135,7 +135,7 @@ export async function pageScheduleTemplatesApi(params: PageTemplatesRequest) {
   );
 }
 
-export async function loadScheduleTemplateApi(params: { id: number }) {
+export async function loadScheduleTemplateApi(params: { id: BookingEntityId }) {
   return publicRequestClient.post<ScheduleTemplateDto>(
     '/scheduleTemplate/loadScheduleTemplate',
     params,
@@ -149,7 +149,7 @@ export async function saveScheduleTemplateApi(params: SaveScheduleTemplateReques
   );
 }
 
-export async function deleteScheduleTemplateApi(params: { id: number }) {
+export async function deleteScheduleTemplateApi(params: { id: BookingEntityId }) {
   return publicRequestClient.post<void>('/scheduleTemplate/deleteScheduleTemplate', params);
 }
 
@@ -197,7 +197,7 @@ export async function pageWeekScheduleTemplatesApi(params: PageTemplatesRequest)
   );
 }
 
-export async function loadWeekScheduleTemplateApi(params: { id: number }) {
+export async function loadWeekScheduleTemplateApi(params: { id: BookingEntityId }) {
   return publicRequestClient.post<WeekScheduleTemplateDto>(
     '/scheduleTemplate/loadWeekScheduleTemplate',
     params,
@@ -211,6 +211,6 @@ export async function saveWeekScheduleTemplateApi(params: SaveWeekScheduleTempla
   );
 }
 
-export async function deleteWeekScheduleTemplateApi(params: { id: number }) {
+export async function deleteWeekScheduleTemplateApi(params: { id: BookingEntityId }) {
   return publicRequestClient.post<void>('/scheduleTemplate/deleteWeekScheduleTemplate', params);
 }

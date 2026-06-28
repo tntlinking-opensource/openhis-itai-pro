@@ -44,12 +44,17 @@ const props = withDefaults(
     selectedOrder?: null | Record<string, unknown>;
     /** 是否展示供应商（采购进货等少数场景为 true；默认 false 突出库房） */
     showSupplier?: boolean;
+    /** 票尾金额列标题（默认「总金额」） */
+    footerAmountLabel?: string;
+    /** 覆盖默认金额解析（如调价单进价/售价盈亏） */
+    resolveAmountLine?: (row: Record<string, unknown>) => string | undefined;
   }>(),
   {
     applicantRoleLabel: '制单人',
     approverRoleLabel: '审批人',
     cabinetListOptions: () => [],
     emptyDescription: '暂无单据',
+    footerAmountLabel: '总金额',
     practitionerOption: () => [],
     showSupplier: false,
   },
@@ -142,6 +147,10 @@ function formatApplyTimeForDisplay(value: unknown): string {
 
 /** 从行上解析总金额展示（兼容 totalPrice / totalAmount 等；两位小数 + `元`） */
 function displayTotalAmount(row: Record<string, unknown>): string {
+  const fromFn = props.resolveAmountLine?.(row);
+  if (fromFn !== undefined && fromFn !== null && String(fromFn).trim() !== '') {
+    return String(fromFn).trim();
+  }
   const keys = ['totalPrice', 'totalAmount', 'totalMoney', 'sumTotalPrice', 'amount'];
   for (const k of keys) {
     const raw = row[k];
@@ -289,7 +298,7 @@ function displayApproverLine(item: Record<string, unknown>): string {
                 }}</span>
               </div>
               <div class="queue-footer-right shrink-0">
-                <span class="queue-label">总金额</span>
+                <span class="queue-label">{{ footerAmountLabel }}</span>
                 <span class="queue-amount-num">{{ displayTotalAmount(item) || '—' }}</span>
               </div>
             </div>

@@ -1,0 +1,47 @@
+/**
+ * 设计器「打印预览」对话框：纸张居中、白底阴影，与设计画布样式分离
+ */
+.preview-wrap .preview-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.preview-wrap .preview-content .hiprint-printTemplate {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: center;
+  width: 100%;
+}
+
+.preview-wrap .preview-content .hiprint-printPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: center;
+  width: 100%;
+}
+
+.preview-wrap .preview-content .hiprint-printPaper {
+  margin: 0 auto;
+  overflow: hidden;
+  background: #fff;
+  box-shadow:
+    0 2px 8px rgb(0 0 0 / 12%),
+    0 4px 16px rgb(0 0 0 / 8%);
+}
+
+.preview-wrap .preview-content .hiprint-printPaper.design {
+  border: none !important;
+}
+
+.preview-wrap .preview-content .hiprint-printElement-text-content svg,
+.preview-wrap .preview-content .hiprint-printElement-longText-content svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

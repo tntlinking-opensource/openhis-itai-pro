@@ -33,10 +33,13 @@ import {
 import {
   applyOrderTemplateToAdviceDraft,
   OrderTemplateApplyError,
+  prepareOrderTemplateApplyConfirm,
 } from '../services/order-template-apply.service';
+import { openOrderTemplateApplyConfirmDialog } from '../services/order-template-apply-confirm-dialog.controller';
 import AdviceDraftBindDialog from './advice-draft-bind-dialog.vue';
 import AdviceEditCard from './advice-edit-card.vue';
 import HistoryAdviceDrawer from './history-advice-drawer.vue';
+import OrderTemplateApplyConfirmDialog from './order-template-apply-confirm-dialog.vue';
 import OrderTemplateSidePanel from './order-template-side-panel.vue';
 import SaveAsOrderTemplateDialog from './save-as-order-template-dialog.vue';
 import WesternAdviceCollapsed from './western-advice-collapsed.vue';
@@ -70,6 +73,7 @@ const {
   handleEditorDirtyChange,
   handleMedicationAssignGroup,
   handleMedicationUngroup,
+  handlePrintServiceApply,
   handleRowDblclick,
   handleSaveGroup,
   handleSign,
@@ -85,6 +89,7 @@ const {
   productColumns,
   queryProductOptions,
   reload,
+  serviceApplyPrintLoading,
   validateWesternRow,
 } = useAdviceTab(props);
 
@@ -132,7 +137,7 @@ const orderTemplateApplyLoading = ref(false);
 /** 另存组套：当前列表非编辑行快照 */
 const saveOrderTemplateAdviceRows = computed(() => getTableRows().filter((row) => !row.isEditor));
 
-/** 侧栏点击组套：拉明细并直接套用至当前就诊草稿 */
+/** 侧栏点击组套：预览明细与带出行，确认后套用至当前就诊草稿 */
 async function handleOrderTemplateSelect(header: null | OrderTemplateHeaderItem) {
   if (!header || orderTemplateApplyLoading.value) {
     return;
@@ -166,8 +171,10 @@ async function handleOrderTemplateSelect(header: null | OrderTemplateHeaderItem)
       workstationKindCode: ORDER_TEMPLATE_WORKSTATION_OUTPATIENT,
     });
     const lines = preview?.lines ?? [];
-    const result = await applyOrderTemplateToAdviceDraft({
+    const templateName = preview?.header?.name ?? header.name ?? '';
+    const applyParams = {
       templateKindEnum: preview?.header?.templateKindEnum ?? header.templateKindEnum,
+      templateName,
       lines,
       encounterId: encounter,
       patientId: patient,
@@ -176,10 +183,29 @@ async function handleOrderTemplateSelect(header: null | OrderTemplateHeaderItem)
       medicationRouteOptions: medicationRouteOptions.value,
       feeNatureOptions: feeNatureOptions.value,
       existingAdviceRows: getTableRows().filter((row) => !row.isEditor),
+    };
+    const confirmPreview = await prepareOrderTemplateApplyConfirm(applyParams);
+    orderTemplateApplyLoading.value = false;
+    const dialogResult = await openOrderTemplateApplyConfirmDialog({
+      templateName: confirmPreview.templateName || templateName,
+      templateRows: confirmPreview.templateRows,
+      bindRows: confirmPreview.bindRows,
+      bindSourceGroups: confirmPreview.bindSourceGroups,
     });
-    ElMessage.success(
-      `已套用组套「${preview?.header?.name ?? header.name ?? ''}」（${result.appliedLineCount} 项）`,
-    );
+    if (!dialogResult) {
+      orderTemplateSidePanelRef.value?.clearSelection();
+      return;
+    }
+    orderTemplateApplyLoading.value = true;
+    await applyOrderTemplateToAdviceDraft({
+      ...applyParams,
+      preparedDraftLines: confirmPreview.draftLines,
+      preConfirmedTemplateRows: dialogResult.templateRows,
+      preConfirmedBindDialogRows: dialogResult.bindRows,
+      preConfirmedBindSkipSourceKeys: dialogResult.skipSourceKeys,
+    });
+    const appliedLineCount = dialogResult.templateRows.length + dialogResult.bindRows.length;
+    ElMessage.success(`已套用组套「${templateName}」（${appliedLineCount} 项）`);
     orderTemplateSidePanelRef.value?.clearSelection();
     await reload();
   } catch (error) {
@@ -299,6 +325,9 @@ defineExpose({
         <ElButton plain @click="handleMedicationUngroup">拆组</ElButton>
         <ElButton plain @click="handleMedicationAssignGroup">并组</ElButton>
         <ElButton plain @click="handleOpenHistoryAdviceDrawer">历史医嘱</ElButton>
+        <ElButton plain :loading="serviceApplyPrintLoading" @click="handlePrintServiceApply">
+          打印申请单
+        </ElButton>
         <ElButton plain @click="handleOpenSaveAsOrderTemplateDialog">另存为组套</ElButton>
       </div>
 
@@ -447,6 +476,8 @@ defineExpose({
     />
 
     <AdviceDraftBindDialog />
+
+    <OrderTemplateApplyConfirmDialog />
   </div>
 </template>
 

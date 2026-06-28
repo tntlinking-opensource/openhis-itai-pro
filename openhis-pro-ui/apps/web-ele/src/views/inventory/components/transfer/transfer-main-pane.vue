@@ -28,6 +28,7 @@ import {
 } from 'element-plus';
 
 import { useVbenVxeGrid } from '#/adapter/vxe-table';
+import { useInventoryDocGridEdit } from '#/composables/use-inventory-doc-grid-edit';
 import { getChargeTypeListApi } from '#/api/core/common';
 import {
   agreeTransferInApi,
@@ -249,6 +250,30 @@ function mapDetailLineToGrid(
   };
 }
 
+function isPresentItemId(v: unknown): boolean {
+  if (v === undefined || v === null) return false;
+  if (typeof v === 'string') return v.trim() !== '';
+  if (typeof v === 'number') return Number.isFinite(v);
+  if (typeof v === 'bigint') return true;
+  return String(v).trim() !== '';
+}
+
+function isTransferRowComplete(row: TransferPreviewRow): boolean {
+  if (!String(row.itemTable ?? '').trim() || !isPresentItemId(row.itemId)) return false;
+  const qty = Number(row.itemQuantity);
+  if (!Number.isFinite(qty) || qty <= 0) return false;
+  return !!String(row.unitCode ?? '').trim();
+}
+
+let transferGridEdit!: ReturnType<typeof useInventoryDocGridEdit<TransferPreviewRow>>;
+
+function handleTransferProductPick(row: TransferPreviewRow) {
+  void nextTick(async () => {
+    await nextTick();
+    await transferGridEdit.onProductSelected(row);
+  });
+}
+
 const columns: VxeGridPropTypes.Column[] = [
   { type: 'checkbox', width: 48, fixed: 'left', align: 'center' },
   { type: 'seq', title: '序号', width: 52, fixed: 'left', align: 'center' },
@@ -267,6 +292,7 @@ const columns: VxeGridPropTypes.Column[] = [
         }),
         onSelected: (product: Record<string, unknown>, row: TransferPreviewRow) => {
           syncRowFromProductPick(product, row);
+          handleTransferProductPick(row);
         },
       },
     },
@@ -277,28 +303,31 @@ const columns: VxeGridPropTypes.Column[] = [
     title: '数量',
     width: 120,
     align: 'center',
-    editRender: { name: 'ElInputNumber', props: { min: 0, controlsPosition: 'right' } },
+    editRender: {
+      name: 'InventoryPersistElInputNumber',
+      props: { min: 0, controlsPosition: 'right' },
+    },
   },
   { field: 'unitCode', title: '单位', width: 88, showOverflow: true },
   {
     field: 'lotNumber',
     title: '批号',
     width: 120,
-    editRender: { name: 'ElInput', props: { maxlength: 64, clearable: true } },
+    editRender: { name: 'InventoryPersistElInput', props: { maxlength: 64, clearable: true } },
     showOverflow: true,
   },
   {
     field: 'traceNo',
     title: '追溯码',
     minWidth: 140,
-    editRender: { name: 'ElInput', props: { maxlength: 512, clearable: true } },
+    editRender: { name: 'InventoryPersistElInput', props: { maxlength: 512, clearable: true } },
     showOverflow: true,
   },
   {
     field: 'remake',
     title: '备注',
     minWidth: 120,
-    editRender: { name: 'ElInput', props: { maxlength: 200, clearable: true } },
+    editRender: { name: 'InventoryPersistElInput', props: { maxlength: 200, clearable: true } },
     showOverflow: true,
   },
   {
@@ -318,36 +347,100 @@ const gridOptions: VxeGridProps<TransferPreviewRow> = reactive({
   stripe: true,
   showOverflow: true,
   size: 'medium',
+  keepSource: true,
   columnConfig: { resizable: true },
   data: [],
   editConfig: {
     enabled: true,
     trigger: 'click',
-    mode: 'cell',
-    autoClear: true,
+    mode: 'row',
+    autoClear: false,
     beforeEditMethod: () => documentEditable.value,
   },
   columns,
   pagerConfig: { enabled: false },
 });
 
+const TRANSFER_EDITABLE_COLUMN_FIELDS = new Set([
+  'itemQuantity',
+  'lotNumber',
+  'medicinePick',
+  'remake',
+  'traceNo',
+]);
+
+const TRANSFER_EDIT_FIELD_ORDER = [
+  'medicinePick',
+  'itemQuantity',
+  'lotNumber',
+  'traceNo',
+  'remake',
+] as const;
+
+type TransferEditField = (typeof TRANSFER_EDIT_FIELD_ORDER)[number];
+
+const TRANSFER_VERTICAL_NAV_FIELDS = new Set<TransferEditField>([
+  'itemQuantity',
+  'lotNumber',
+  'remake',
+  'traceNo',
+]);
+
+const transferGridKeyboardRef = ref<HTMLElement | null>(null);
+
 const [Grid, gridApi] = useVbenVxeGrid<TransferPreviewRow>({
   gridOptions,
+  gridEvents: {
+    cellClick: (params: { column?: { field?: string; type?: string }; row: TransferPreviewRow }) =>
+      transferGridEdit.onCellClick(params),
+    editClosed(params: { row: TransferPreviewRow }) {
+      transferGridEdit.syncRowFormMode(params.row);
+    },
+  },
   class: 'min-h-0 flex-1 !rounded-none !bg-transparent shadow-none',
   gridClass: '!p-0',
 });
 
-function patchGridEditConfig() {
-  gridOptions.editConfig = {
-    ...gridOptions.editConfig,
-    enabled: documentEditable.value,
-    beforeEditMethod: () => documentEditable.value,
-  };
+transferGridEdit = useInventoryDocGridEdit<TransferPreviewRow>({
+  getGridApi: () => gridApi ?? null,
+  gridWrapRef: transferGridKeyboardRef,
+  documentEditable: () => documentEditable.value,
+  collectRows: collectGridRows,
+  config: {
+    rowKey: (row) => row.id,
+    productField: 'medicinePick',
+    editFieldOrder: TRANSFER_EDIT_FIELD_ORDER,
+    editableFields: TRANSFER_EDITABLE_COLUMN_FIELDS,
+    verticalNavFields: TRANSFER_VERTICAL_NAV_FIELDS,
+    firstFillFieldAfterPick: 'itemQuantity',
+    hasProduct: (row) => isPresentItemId(row.itemId),
+    isRowComplete: isTransferRowComplete,
+  },
+});
+
+function patchTransferGridEditConfig() {
+  const patched = transferGridEdit.patchGridOptions({
+    ...(gridOptions as Record<string, unknown>),
+    editConfig: {
+      ...(gridOptions.editConfig as Record<string, unknown>),
+      enabled: documentEditable.value,
+    },
+  });
+  Object.assign(gridOptions, patched);
 }
 
 watch(
   () => documentEditable.value,
-  () => patchGridEditConfig(),
+  (editable) => {
+    patchTransferGridEditConfig();
+    void nextTick(() => {
+      if (!editable) {
+        transferGridEdit.resetFormMode();
+        transferGridEdit.clearGridEdit();
+      }
+    });
+  },
+  { immediate: true },
 );
 
 function collectGridRows(): TransferPreviewRow[] {
@@ -371,13 +464,16 @@ function resetDetailForCreate() {
     resolveLoginPractitionerIdForRequest(userStore.userInfo as null | Record<string, unknown>) ??
     props.practitionerOptions[0]?.value;
   headApplyTime.value = formatDateTime(new Date());
+  transferGridEdit.resetFormMode();
   void nextTick(() => {
     gridApi?.grid?.loadData([]);
-    patchGridEditConfig();
+    patchTransferGridEditConfig();
   });
 }
 
 async function loadDetail(busNo: string) {
+  transferGridEdit.resetFormMode();
+  transferGridEdit.clearGridEdit();
   try {
     const res =
       props.variant === 'in'
@@ -398,12 +494,12 @@ async function loadDetail(busNo: string) {
     const gridRows = (data.lines ?? []).map((ln, i) => mapDetailLineToGrid(ln, i));
     void nextTick(() => {
       gridApi?.grid?.loadData(gridRows);
-      patchGridEditConfig();
+      patchTransferGridEditConfig();
     });
   } catch {
     void nextTick(() => {
       gridApi?.grid?.loadData([]);
-      patchGridEditConfig();
+      patchTransferGridEditConfig();
     });
   }
 }
@@ -648,7 +744,7 @@ async function addItem() {
   await $grid.$nextTick();
   if (row) {
     await $grid.scrollToRow(row);
-    await $grid.setEditCell(row, 'medicinePick');
+    await transferGridEdit.enterRowFormMode(row as TransferPreviewRow, 'medicinePick');
   }
 }
 
@@ -728,7 +824,10 @@ onMounted(() => {
         </div>
       </template>
 
-      <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2">
+      <div
+        class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-2 pt-2"
+        @mousedown="transferGridEdit.onSurfaceMouseDown"
+      >
         <div class="transfer-head-panel shrink-0">
           <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <SectionTitle :title="headSectionTitle" />
@@ -815,7 +914,11 @@ onMounted(() => {
           </ElForm>
         </div>
 
-        <div class="transfer-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          ref="transferGridKeyboardRef"
+          class="transfer-main-pane__grid-wrap flex min-h-0 min-w-0 flex-1 flex-col"
+          @keydown.capture="transferGridEdit.onGridKeydown"
+        >
           <Grid class="min-h-0 flex-1">
             <template #toolbar-actions>
               <ElButton

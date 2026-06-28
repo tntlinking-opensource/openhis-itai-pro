@@ -642,7 +642,6 @@ onMounted(() => {
         >
           保存
         </ElButton>
-        <ElButton size="small" link class="card-header-btn">保存并签发</ElButton>
         <ElButton size="small" link class="card-header-btn" @click="emit('close')">关闭</ElButton>
       </div>
     </div>

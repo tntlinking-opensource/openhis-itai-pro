@@ -44,6 +44,8 @@ export interface ScheduleCalendarCellDto {
   fromTemplate?: boolean;
   weekScheduleTemplateId?: BookingEntityId;
   dayScheduleTemplateId?: BookingEntityId;
+  sourceScheduleTemplateId?: BookingEntityId;
+  slotProvisionTemplateId?: BookingEntityId;
   bookable?: boolean;
   substitutePractitionerId?: BookingEntityId;
   originalPractitionerId?: BookingEntityId;
@@ -111,6 +113,8 @@ export interface CreateScheduleRequest {
   /** 规划窗口起；新建草稿须绑定才能在周历占格 */
   planningHorizonStart?: string;
   planningHorizonEnd?: string;
+  /** 关联 T1 放号时段模板主键 */
+  slotProvisionTemplateId?: BookingEntityId;
 }
 
 export interface CreateScheduleResponse {
@@ -124,6 +128,7 @@ export interface UpdateScheduleDraftRequest {
   planningHorizonStart?: string;
   planningHorizonEnd?: string;
   commentMarkdown?: string;
+  slotProvisionTemplateId?: BookingEntityId;
 }
 
 export interface PublishScheduleRequest {
@@ -151,6 +156,11 @@ export interface ProvisionSlotBatchResponse {
 }
 
 export interface DeactivateScheduleRequest {
+  scheduleId: BookingEntityId;
+  reason?: string;
+}
+
+export interface RetireScheduleRequest {
   scheduleId: BookingEntityId;
   reason?: string;
 }
@@ -381,6 +391,10 @@ export async function provisionSlotBatchApi(params: ProvisionSlotBatchRequest) {
 
 export async function deactivateScheduleApi(params: DeactivateScheduleRequest) {
   return publicRequestClient.post<void>('/outpatientSchedule/deactivateSchedule', params);
+}
+
+export async function retireScheduleApi(params: RetireScheduleRequest) {
+  return publicRequestClient.post<void>('/outpatientSchedule/retireSchedule', params);
 }
 
 export async function copyScheduleToNextWeekApi(params: CopyScheduleToNextWeekRequest) {

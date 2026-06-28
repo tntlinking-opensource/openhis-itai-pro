@@ -43,6 +43,7 @@ import EinvoiceBillAmountMismatchBanner from '#/components/einvoice/EinvoiceBill
 import SectionTitle from '#/components/layouts/section-title.vue';
 import StationTriPaneLayout from '#/components/layouts/station-tri-pane-layout.vue';
 import SelectFuzzyInput from '#/components/select-fuzzy-input.vue';
+import { usePrintClientWarmup } from '#/composables/use-print-client-warmup';
 import { useUnionPayScanPay } from '#/composables/payment/useUnionPayScanPay';
 import { useRequest } from '#/hooks/use-request';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
@@ -50,23 +51,26 @@ import { decimalAdd } from '#/utils/format/decimal-util';
 import { optionDtosToPayChannelOptions } from '#/utils/payment/payment-channel-options';
 import { settleWithScanRecovery } from '#/utils/payment/scan-settle-recovery';
 import { submitScanPayment } from '#/utils/payment/submit-scan-payment';
-import { schedulePrintChargeReceipt, printChargeReceipt } from '#/utils/print/print-charge-receipt';
+import { printChargeReceipt, schedulePrintChargeReceipt } from '#/utils/print/print-charge-receipt';
 
+import {
+  formatPatientFeeMoney,
+  summarizeOutpatientChargeFeeAmounts,
+} from '../services/patient-fee-summary.service';
 import {
   CHARGE_ITEM_STATUS_LABEL_TAG,
   DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE,
   OUTPATIENT_CHARGE_PAY_CHANNEL_OPTIONS,
   OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED,
 } from './outpatient-charge.constants';
+import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 import ChargeSettlementDialog from './settlement-dialog.vue';
-import {
-  formatPatientFeeMoney,
-  summarizeOutpatientChargeFeeAmounts,
-} from '../services/patient-fee-summary.service';
 
 defineOptions({
   name: 'ChargeOpCharge',
 });
+
+usePrintClientWarmup();
 
 const QUEUE_TAB = {
   ALL: 'ALL',
@@ -192,6 +196,20 @@ function isOutpatientChargeItemSettled(row: PendingChargeItemRowDto) {
 /** 仅非「已结算」行可勾选 */
 function isPendingChargeItemSelectable(row: PendingChargeItemRowDto) {
   return !isOutpatientChargeItemSettled(row);
+}
+
+/** 正式结算失败：Stale 跨角色（如签退后旧 draft） */
+function isOutpatientChargeStaleSettlementError(error: unknown) {
+  return isStaleCrossRoleError(error);
+}
+
+async function resetSettlementAfterAdviceChanged() {
+  settlementVisible.value = false;
+  scanCode.value = '';
+  scanStatusText.value = '';
+  preSettleSnapshot.value = null;
+  lockedChargeItemIds.value = [];
+  await loadPendingForSelectedEncounter();
 }
 
 /**
@@ -715,8 +733,14 @@ const handleConfirmSettlement = async () => {
       jobName: '收费小票',
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : '门诊收费失败';
-    ElMessage.error(message);
+    if (isOutpatientChargeStaleSettlementError(error)) {
+      await resetSettlementAfterAdviceChanged();
+      return;
+    }
+    if (!isStaleCrossRoleError(error)) {
+      const message = error instanceof Error ? error.message : '门诊收费失败';
+      ElMessage.error(message);
+    }
   } finally {
     confirmSettleLoading.value = false;
     if (!settlementVisible.value) {

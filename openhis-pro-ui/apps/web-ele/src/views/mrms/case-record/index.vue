@@ -27,6 +27,7 @@ import {
   CASE_RECORD_STATUS_OPTIONS,
   CASE_RECORD_STATUS_TAG,
 } from './case-record.constants';
+import { VOLUME_ACCESS_STATUSES } from '../qc-workbench/qc.constants';
 import { buildDefaultListQuery, detectRecordRoomRole } from './homepage/homepage-form.util';
 
 defineOptions({ name: 'MrmsCaseRecordList' });
@@ -119,7 +120,7 @@ const tableColumns: TableColumn[] = [
   { prop: 'admTime', label: '入院时间', width: 168, slot: 'admTime' },
   { prop: 'dscgTime', label: '出院时间', width: 168, slot: 'dscgTime' },
   { prop: 'mainDiagName', label: '主诊断', minWidth: 160, showOverflowTooltip: true },
-  { label: '操作', width: 120, fixed: 'right', slot: 'actions', align: 'center' },
+  { label: '操作', width: 200, fixed: 'right', slot: 'actions', align: 'center' },
 ];
 
 /** 格式化日期时间展示 */
@@ -187,6 +188,32 @@ function openHomepage(row: CaseRecordListItemDto) {
   router.push({ name: 'MrmsCaseRecordHomepage', params: { caseRecordId: id } });
 }
 
+/** 打开质控工作台并选中该病案 */
+function openQc(row: CaseRecordListItemDto) {
+  const id = preserveApiIdForRequest(row.caseRecordId);
+  if (!id) {
+    return;
+  }
+  router.push({ name: 'MrmsQcWorkbench', query: { caseRecordId: id } });
+}
+
+/** 打开卷宗预览 */
+function openVolume(row: CaseRecordListItemDto) {
+  const id = preserveApiIdForRequest(row.caseRecordId);
+  if (!id) {
+    return;
+  }
+  router.push({ name: 'MrmsCaseRecordVolume', params: { caseRecordId: id } });
+}
+
+function canQc(row: CaseRecordListItemDto): boolean {
+  return isRecordRoom.value && (row.statusCode === 'received' || row.statusCode === 'qcing');
+}
+
+function canVolume(row: CaseRecordListItemDto): boolean {
+  return VOLUME_ACCESS_STATUSES.includes(row.statusCode as never);
+}
+
 /** 应用角色默认筛选并首次查询 */
 function applyRoleDefaults() {
   const defaults = buildDefaultListQuery(
@@ -249,6 +276,10 @@ onActivated(() => {
       </template>
       <template #actions="{ row }">
         <ElButton link type="primary" @click="openHomepage(row)"> 病案首页 </ElButton>
+        <ElButton v-if="canQc(row)" link type="primary" @click="openQc(row)"> 质控 </ElButton>
+        <ElButton v-if="canVolume(row)" link type="primary" @click="openVolume(row)">
+          卷宗
+        </ElButton>
       </template>
     </TableLayout>
   </Page>

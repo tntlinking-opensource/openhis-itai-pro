@@ -3,6 +3,7 @@
  */
 import { publicRequestClient } from '#/api/request';
 
+import type { BookingEntityId } from './booking-id';
 import type { BookingPagedResult } from './booking-types';
 
 export interface PageBookingsRequest {
@@ -29,11 +30,11 @@ export interface BookingListItemDto {
 }
 
 export interface ListBookableSlotsRequest {
-  organizationId: number;
+  organizationId: BookingEntityId;
   date: string;
-  practitionerId?: number;
-  healthcareServiceId?: number;
-  scheduleId?: number;
+  practitionerId?: BookingEntityId;
+  healthcareServiceId?: BookingEntityId;
+  scheduleId?: BookingEntityId;
 }
 
 export interface BookableSlotDto {
@@ -56,11 +57,11 @@ export interface ListBookableSlotsResponse {
 }
 
 export interface CreateOutpatientBookingRequest {
-  patientId: number;
-  slotId?: number;
+  patientId: BookingEntityId;
+  slotId?: BookingEntityId;
   virtualSlotKey?: string;
-  organizationId: number;
-  destinationLocationId?: number;
+  organizationId: BookingEntityId;
+  destinationLocationId?: BookingEntityId;
   originChannel?: string;
 }
 
@@ -81,9 +82,9 @@ export interface CancelBookingResponse {
 }
 
 export interface JoinWaitlistRequest {
-  organizationId: number;
-  patientId: number;
-  slotId: number;
+  organizationId: BookingEntityId;
+  patientId: BookingEntityId;
+  slotId: BookingEntityId;
 }
 
 export interface JoinWaitlistResponse {

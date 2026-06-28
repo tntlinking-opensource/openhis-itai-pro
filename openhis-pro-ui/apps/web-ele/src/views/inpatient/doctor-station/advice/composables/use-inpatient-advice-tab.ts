@@ -46,6 +46,7 @@ import {
 } from '#/api/inpatient/doctor-station/inpatient-doctor-station-advice.http';
 import { useAuthStore } from '#/store';
 import { parsePagedRowsFromApiData } from '#/utils/api/unwrap-paged-response';
+import { isStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 
 import { ENSURE_CLINICAL_RECEPTION_KEY } from '#/components/doctor-station/clinical-reception-context';
 import { defaultContractSelection, firstTerminologyCode } from '../services/advice-format';
@@ -388,6 +389,10 @@ export function useInpatientAdviceTab(props: UseInpatientAdviceTabProps) {
         clearAdviceTableSelection();
         await loadAdviceList();
       } catch (error: unknown) {
+        if (isStaleCrossRoleError(error)) {
+          await loadAdviceList();
+          return;
+        }
         const msg =
           error && typeof error === 'object' && 'message' in error
             ? String((error as { message?: unknown }).message)

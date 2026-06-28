@@ -89,9 +89,18 @@ const ordersByEncounterId = ref<Map<string, NurseStationOrderExecuteTableRow[]>>
 const executeDeadline = ref(dayjs().endOf('day').format('YYYY-MM-DD HH:mm:ss'));
 
 const listRequest = useRequest(httpListNurseStationOrderExecute, { manual: true });
-const executeRequest = useRequest(httpExecuteNurseStationOrders, { manual: true });
-const skipRequest = useRequest(httpSkipNurseStationOrderSlots, { manual: true });
-const cancelExecuteRequest = useRequest(httpCancelNurseStationOrderExecutions, { manual: true });
+const executeRequest = useRequest(httpExecuteNurseStationOrders, {
+  manual: true,
+  refreshOnStale: () => loadExecuteList(),
+});
+const skipRequest = useRequest(httpSkipNurseStationOrderSlots, {
+  manual: true,
+  refreshOnStale: () => loadExecuteList(),
+});
+const cancelExecuteRequest = useRequest(httpCancelNurseStationOrderExecutions, {
+  manual: true,
+  refreshOnStale: () => loadExecuteList(),
+});
 
 const encounterIds = computed(() =>
   props.patients.map((p) => String(p.id).trim()).filter((id) => id.length > 0),

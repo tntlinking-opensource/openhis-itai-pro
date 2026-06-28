@@ -96,8 +96,8 @@ export interface ChangeOverRequest {
 }
 
 export interface GetQueueDisplaySnapshotRequest {
-  organizationId: number;
-  destinationLocationId: number;
+  organizationId: BookingEntityId;
+  destinationLocationId: BookingEntityId;
 }
 
 export interface QueueDisplaySnapshotDto {

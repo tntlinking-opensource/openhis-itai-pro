@@ -184,7 +184,7 @@ const handleSelect = () => {
         <template
           v-if="inpatient && (variantResolved === 'doctor' || variantResolved === 'dispense')"
         >
-          <span class="min-w-0 flex-1 truncate text-base font-medium text-gray-800">
+          <span class="shrink-0 text-base font-medium text-gray-800">
             {{
               inpatient.isRegistered && (inpatient.name ?? '').trim() ? inpatient.name : '无档登记'
             }}
@@ -196,7 +196,7 @@ const handleSelect = () => {
           }}</span>
         </template>
         <template v-else-if="outpatient">
-          <span class="min-w-0 flex-1 truncate text-base font-medium text-gray-800">
+          <span class="shrink-0 text-base font-medium text-gray-800">
             {{
               outpatient.patientName && String(outpatient.patientName).trim()
                 ? outpatient.patientName
@@ -204,7 +204,7 @@ const handleSelect = () => {
             }}
           </span>
         </template>
-        <span class="shrink-0 text-right text-xs leading-snug text-gray-600">
+        <span class="min-w-0 truncate text-right text-xs leading-snug text-gray-600">
           <template v-if="inpatient">
             {{ inpatient.gender }}・{{ inpatient.age }}岁・{{ inpatient.priority || '普通' }}
           </template>

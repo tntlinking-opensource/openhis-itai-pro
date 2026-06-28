@@ -27,6 +27,17 @@ export interface YbPluginInitInput {
   SFZ_DRIVER_TYPE?: number;
 }
 
+/**
+ * 国家局电子凭证用码业务类型（code_biz_type，5 位）。
+ * 见定点机构接口规范字典 9.1；02xxx 为药店，非住院。
+ */
+export const YB_EC_BUSINESS_TYPE = {
+  /** 门诊挂号 */
+  OUTPATIENT_REGISTER: '01101',
+  /** 入院登记（住院登记） */
+  INPATIENT_ADMISSION: '01103',
+} as const;
+
 /** FunctionId=3 医保电子凭证（ec.query） */
 export interface YbEcVoucherQueryInput extends YbPluginInitInput {
   url: string;

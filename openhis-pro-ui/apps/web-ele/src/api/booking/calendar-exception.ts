@@ -3,6 +3,7 @@
  */
 import { publicRequestClient } from '#/api/request';
 
+import type { BookingEntityId } from './booking-id';
 import type { BookingPagedResult } from './booking-types';
 
 export type CalendarExceptionType = 'CLOSED' | 'REDUCED' | 'OVERRIDE' | 'EXTRA';
@@ -52,7 +53,7 @@ export async function pageCalendarExceptionsApi(params: PageCalendarExceptionsRe
   );
 }
 
-export async function loadCalendarExceptionApi(params: { id: number }) {
+export async function loadCalendarExceptionApi(params: { id: BookingEntityId }) {
   return publicRequestClient.post<CalendarExceptionDto>(
     '/calendarException/loadCalendarException',
     params,
@@ -66,7 +67,7 @@ export async function saveCalendarExceptionApi(params: SaveCalendarExceptionRequ
   );
 }
 
-export async function deleteCalendarExceptionApi(params: { id: number }) {
+export async function deleteCalendarExceptionApi(params: { id: BookingEntityId }) {
   return publicRequestClient.post<void>('/calendarException/deleteCalendarException', params);
 }
 

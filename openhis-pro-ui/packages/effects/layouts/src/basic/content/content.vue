@@ -23,11 +23,16 @@ const currentRoute = useRoute();
 const { getCachedTabs, getExcludeCachedTabs, renderRouteView } = storeToRefs(tabbarStore);
 
 /**
- * 住院护士站页面使用贴边布局，去掉内容区默认留白。
+ * 贴边布局：去掉内容区默认留白，让页面背景铺满（住院护士站、首页工作台）。
  */
-const isInpatientNurseStationPage = computed(() =>
-  currentRoute.path.startsWith('/inpatient/nurse-station'),
-);
+const isFullBleedContentPage = computed(() => {
+  const path = currentRoute.path;
+  return (
+    path.startsWith('/inpatient/nurse-station') ||
+    path === '/analytics' ||
+    path.endsWith('/analytics')
+  );
+});
 
 /**
  * 是否使用动画
@@ -115,7 +120,7 @@ function transformComponent(component: VNode, route: RouteLocationNormalizedLoad
     <div
       :class="{
         'pt-[35px]': preferences.breadcrumb.enable,
-        'px-2 pb-2': !isInpatientNurseStationPage,
+        'px-2 pb-2': !isFullBleedContentPage,
       }"
       class="bg-background-page h-full"
     >

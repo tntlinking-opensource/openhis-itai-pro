@@ -3,12 +3,30 @@ export const REGISTRATION_LIST_STATUS = {
   PLANNED: 'PLANNED',
   WAIT_ADMISSION: 'WAIT_ADMISSION',
   ADMITTED: 'ADMITTED',
+  PRE_ADMISSION: 'PRE_ADMISSION',
+  ON_HOLD: 'ON_HOLD',
+  PENDING: 'PENDING',
+  COMPLETED: 'COMPLETED',
+  DISCHARGED: 'DISCHARGED',
+  CANCELLED: 'CANCELLED',
+  ENTERED_IN_ERROR: 'ENTERED_IN_ERROR',
 } as const;
 
+export type RegistrationListStatus =
+  (typeof REGISTRATION_LIST_STATUS)[keyof typeof REGISTRATION_LIST_STATUS];
+
+/** 登记状态筛选项（对齐住院 IMP 状态展示文案） */
 export const REGISTRATION_LIST_STATUS_OPTIONS = [
   { label: '待登记', value: REGISTRATION_LIST_STATUS.PLANNED },
   { label: '待入科', value: REGISTRATION_LIST_STATUS.WAIT_ADMISSION },
   { label: '已入科', value: REGISTRATION_LIST_STATUS.ADMITTED },
+  { label: '预入院', value: REGISTRATION_LIST_STATUS.PRE_ADMISSION },
+  { label: '暂离', value: REGISTRATION_LIST_STATUS.ON_HOLD },
+  { label: '待结算', value: REGISTRATION_LIST_STATUS.PENDING },
+  { label: '已结算', value: REGISTRATION_LIST_STATUS.COMPLETED },
+  { label: '已出院', value: REGISTRATION_LIST_STATUS.DISCHARGED },
+  { label: '取消登记', value: REGISTRATION_LIST_STATUS.CANCELLED },
+  { label: '错误录入', value: REGISTRATION_LIST_STATUS.ENTERED_IN_ERROR },
 ] as const;
 
 /** 就诊状态 code（EncounterStatus） */

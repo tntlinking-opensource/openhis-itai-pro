@@ -125,8 +125,14 @@ const initLoading = ref(false);
 
 const summaryListRequest = useRequest(httpPagePendingMedicationSummarySlips, { manual: true });
 const summaryDetailRequest = useRequest(httpGetMedicationSummaryDispenseDetail, { manual: true });
-const summaryDispenseRequest = useRequest(httpDispenseSummaryMedications, { manual: true });
-const summaryRejectRequest = useRequest(httpRejectSummaryDispense, { manual: true });
+const summaryDispenseRequest = useRequest(httpDispenseSummaryMedications, {
+  manual: true,
+  refreshOnStale: () => reloadSummarySlips(true),
+});
+const summaryRejectRequest = useRequest(httpRejectSummaryDispense, {
+  manual: true,
+  refreshOnStale: () => reloadSummarySlips(true),
+});
 
 /** 复用门诊处方区组件：映射为 DispenseQueuePatient */
 const selectedPatientForRxCenter = computed<DispenseQueuePatient | null>(() => {

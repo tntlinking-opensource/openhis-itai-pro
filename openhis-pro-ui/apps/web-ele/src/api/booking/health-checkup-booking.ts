@@ -3,6 +3,7 @@
  */
 import { publicRequestClient } from '#/api/request';
 
+import type { BookingEntityId } from './booking-id';
 import type { BookingPagedResult } from './booking-types';
 import type { BookableSlotDto } from './booking-register';
 
@@ -61,7 +62,7 @@ export async function saveGroupOrgApi(params: Partial<GroupOrgDto> & { orgName: 
   return publicRequestClient.post<{ id?: number }>('/healthCheckupBooking/saveGroupOrg', params);
 }
 
-export async function deleteGroupOrgApi(params: { id: number }) {
+export async function deleteGroupOrgApi(params: { id: BookingEntityId }) {
   return publicRequestClient.post<void>('/healthCheckupBooking/deleteGroupOrg', params);
 }
 
@@ -80,7 +81,7 @@ export async function saveGroupBatchApi(params: Partial<GroupBatchDto> & { batch
   return publicRequestClient.post<{ id?: number }>('/healthCheckupBooking/saveGroupBatch', params);
 }
 
-export async function deleteGroupBatchApi(params: { id: number }) {
+export async function deleteGroupBatchApi(params: { id: BookingEntityId }) {
   return publicRequestClient.post<void>('/healthCheckupBooking/deleteGroupBatch', params);
 }
 
@@ -140,10 +141,10 @@ export async function listIndividualBookableSlotsApi(params: {
 }
 
 export async function createIndividualBookingApi(params: {
-  organizationId: number;
-  patientId: number;
-  packageId: number;
-  slotId: number;
+  organizationId: BookingEntityId;
+  patientId: BookingEntityId;
+  packageId: BookingEntityId;
+  slotId: BookingEntityId;
   originChannel?: string;
 }) {
   return publicRequestClient.post<{ appointmentId?: number; busNo?: string }>(

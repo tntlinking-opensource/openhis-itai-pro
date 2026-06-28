@@ -53,6 +53,8 @@ export const useAuthStore = defineStore('auth', () => {
   const userInfo = ref<AuthApi.LoginUser | null>(null);
   /** 当前用户是否为平台管理员（登录 configuration 写入） */
   const platformAdmin = ref(false);
+  /** 当前用户是否具备财务审批岗位（登录 configuration 写入） */
+  const canFinanceApprove = ref(false);
   /** 平台管理员在无科室时是否已跳过选科 */
   const organizationUnitSkipped = ref(false);
 
@@ -121,6 +123,7 @@ export const useAuthStore = defineStore('auth', () => {
             username: user?.userName ?? configuration?.currentUser?.userName,
           }),
         );
+        setCanFinanceApprove(Boolean(configuration?.currentUser?.canFinanceApprove));
 
         if (accessStore.loginExpired) {
           accessStore.setLoginExpired(false);
@@ -221,6 +224,22 @@ export const useAuthStore = defineStore('auth', () => {
     return localStorage.getItem('platformAdmin') === '1';
   }
 
+  function setCanFinanceApprove(value: boolean) {
+    canFinanceApprove.value = value;
+    if (value) {
+      localStorage.setItem('canFinanceApprove', '1');
+    } else {
+      localStorage.removeItem('canFinanceApprove');
+    }
+  }
+
+  function getCanFinanceApprove(): boolean {
+    if (canFinanceApprove.value) {
+      return true;
+    }
+    return localStorage.getItem('canFinanceApprove') === '1';
+  }
+
   function setOrganizationUnitSkipped(skipped: boolean) {
     organizationUnitSkipped.value = skipped;
     if (skipped) {
@@ -282,6 +301,7 @@ export const useAuthStore = defineStore('auth', () => {
           setSelectedHospital('');
           setSelectedOrganization('');
           setPlatformAdmin(false);
+          setCanFinanceApprove(false);
           setOrganizationUnitSkipped(false);
           setTenantList([]);
           setUserInfo(null);
@@ -346,6 +366,7 @@ export const useAuthStore = defineStore('auth', () => {
     fetchUserInfo,
     getSelectedHospital,
     getPlatformAdmin,
+    getCanFinanceApprove,
     getSelectedOrganization,
     getSelectedTenant,
     getTenantList,
@@ -358,6 +379,7 @@ export const useAuthStore = defineStore('auth', () => {
     selectedOrganizationId,
     selectedTenantId,
     setPlatformAdmin,
+    setCanFinanceApprove,
     setOrganizationUnitSkipped,
     setSelectedHospital,
     setSelectedOrganization,

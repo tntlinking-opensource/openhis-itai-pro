@@ -80,6 +80,7 @@ function applyConfiguration(
       username: configuration?.currentUser?.userName ?? user?.userName,
     }),
   );
+  authStore.setCanFinanceApprove(Boolean(configuration?.currentUser?.canFinanceApprove));
 }
 
 function backupAdminSession() {

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { QueueDisplaySnapshotDto } from '#/api/booking/queue-board';
+import { toBookingId } from '#/api/booking/booking-id';
+import type { BookingEntityId } from '#/api/booking/booking-id';
 
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
@@ -14,16 +16,14 @@ const loading = ref(false);
 const errorText = ref('');
 const pollTimer = ref<number>();
 
-const organizationId = computed(() => {
+const organizationId = computed((): BookingEntityId | undefined => {
   const raw = route.query.orgId ?? route.query.organizationId;
-  const id = Number(raw);
-  return Number.isFinite(id) && id > 0 ? id : undefined;
+  return toBookingId(raw);
 });
 
-const destinationLocationId = computed(() => {
+const destinationLocationId = computed((): BookingEntityId | undefined => {
   const raw = route.query.locationId ?? route.query.destinationLocationId;
-  const id = Number(raw);
-  return Number.isFinite(id) && id > 0 ? id : undefined;
+  return toBookingId(raw);
 });
 
 const titleText = computed(() => {

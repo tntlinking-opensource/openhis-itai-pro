@@ -345,6 +345,10 @@ export function mapAdviceListRowDto(dto: DoctorStationAdviceRowDto): AdviceRowIt
       preserveApiIdForRequest(dto.basedOnMedicationRequestId) || undefined,
     basedOnServiceRequestId: preserveApiIdForRequest(dto.basedOnServiceRequestId) || undefined,
     applyFormNo: resolveServiceApplyFormNo(dto.prescriptionNo),
+    remark: String(dto.remark ?? '').trim() || undefined,
+    serviceRequestDetails: dto.serviceRequestDetails ?? undefined,
+    catalogCategoryCode:
+      String(dto.catalogCategoryCode ?? dto.categoryCode ?? '').trim() || undefined,
   };
 }
 

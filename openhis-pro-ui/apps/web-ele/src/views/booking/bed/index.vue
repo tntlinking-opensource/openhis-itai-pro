@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { BedMatrixRowDto, WardTreeNodeDto } from '#/api/booking/bed-booking';
+import type { BookingEntityId } from '#/api/booking/booking-id';
+import { toBookingId } from '#/api/booking/booking-id';
 
 import { computed, onMounted, reactive, ref } from 'vue';
 
@@ -32,12 +34,12 @@ defineOptions({ name: 'BookingBed' });
 
 const { organizationId } = useBookingOrganization();
 const wardTree = ref<WardTreeNodeDto[]>([]);
-const selectedWardId = ref<number>();
+const selectedWardId = ref<BookingEntityId>();
 const matrixDates = ref<string[]>([]);
 const matrixRows = ref<BedMatrixRowDto[]>([]);
 const reserveVisible = ref(false);
 const reserveTarget = reactive({
-  bedLocationId: 0,
+  bedLocationId: '' as BookingEntityId,
   bedName: '',
   date: '',
 });
@@ -60,8 +62,8 @@ const { run: runTree, loading: treeLoading } = useRequest(loadWardTreeApi, {
   onSuccess: (res) => {
     wardTree.value = res?.wards ?? [];
     if (!selectedWardId.value && wardTree.value.length > 0) {
-      const first = Number(wardTree.value[0]?.value);
-      if (Number.isFinite(first)) {
+      const first = toBookingId(wardTree.value[0]?.value);
+      if (first) {
         selectedWardId.value = first;
         void loadMatrix();
       }
@@ -97,8 +99,8 @@ async function loadMatrix() {
 }
 
 function handleWardClick(node: WardTreeNodeDto) {
-  const id = Number(node.value);
-  if (!Number.isFinite(id)) return;
+  const id = toBookingId(node.value);
+  if (!id) return;
   selectedWardId.value = id;
   void loadMatrix();
 }
@@ -125,12 +127,12 @@ function openReserve(
 ) {
   if (cell.operationalCode !== 'NOT_IN_USE' && cell.operationalCode !== undefined) {
     if (cell.appointmentId) {
-      void handleCancelReservation(cell.appointmentId);
+      void handleCancelReservation(toBookingId(cell.appointmentId)!);
     }
     return;
   }
   if (!row.bedLocationId) return;
-  reserveTarget.bedLocationId = row.bedLocationId;
+  reserveTarget.bedLocationId = toBookingId(row.bedLocationId)!;
   reserveTarget.bedName = row.bedName ?? String(row.bedLocationId);
   reserveTarget.date = date;
   selectedPatientId.value = '';
@@ -138,7 +140,7 @@ function openReserve(
   reserveVisible.value = true;
 }
 
-async function handleCancelReservation(appointmentId: number) {
+async function handleCancelReservation(appointmentId: BookingEntityId) {
   try {
     await cancelBedReservationApi({ appointmentId, reason: '窗口取消预留' });
     ElMessage.success('已取消床位预留');
@@ -156,7 +158,7 @@ async function handleReserve() {
   await runReserve({
     organizationId: organizationId.value,
     bedLocationId: reserveTarget.bedLocationId,
-    patientId: Number(selectedPatientId.value),
+    patientId: toBookingId(selectedPatientId.value)!,
     intendedAdmissionDate: reserveTarget.date,
     commentText: reserveComment.value || undefined,
   });

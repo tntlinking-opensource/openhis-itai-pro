@@ -20,6 +20,8 @@ import {
   ElMessageBox,
   ElOption,
   ElSelect,
+  ElTabPane,
+  ElTabs,
   ElTag,
 } from 'element-plus';
 
@@ -39,6 +41,7 @@ import {
 } from '../case-record.constants';
 import HomepageDiagnosisGrid from './components/homepage-diagnosis-grid.vue';
 import HomepageProcedureGrid from './components/homepage-procedure-grid.vue';
+import HomepageQcPanel from './components/homepage-qc-panel.vue';
 import { useCaseRecordContext } from './composables/use-case-record-context';
 import {
   detectRecordRoomRole,
@@ -78,9 +81,25 @@ const isRecordRoom = computed(() =>
 
 const returnDialogVisible = ref(false);
 const returnReason = ref('');
+const activeTab = ref('edit');
 
 const statusCode = computed(
   () => (caseRecord.value?.statusCode ?? '') as CaseRecordStatusCode | '',
+);
+
+const showQcTab = computed(() => {
+  const code = statusCode.value;
+  if (!code || code === 'draft') {
+    return false;
+  }
+  if (isRecordRoom.value) {
+    return ['submitted', 'received', 'returned', 'qcing', 'archived'].includes(code);
+  }
+  return code === 'returned' || code === 'qcing';
+});
+
+const canOpenVolume = computed(
+  () => statusCode.value === 'qcing' || statusCode.value === 'archived',
 );
 
 const isFrozen = computed(() => homepage.value?.frozen === true);
@@ -127,6 +146,24 @@ const { run: runReturn, loading: returning } = useRequest(returnHomepageApi, {
 /** 返回病案列表 */
 function goBack() {
   router.back();
+}
+
+/** 打开卷宗预览 */
+function openVolume() {
+  const id = caseRecordId.value;
+  if (!id) {
+    return;
+  }
+  router.push({ name: 'MrmsCaseRecordVolume', params: { caseRecordId: id } });
+}
+
+/** 打开质控工作台 */
+function openQcWorkbench() {
+  const id = caseRecordId.value;
+  if (!id) {
+    return;
+  }
+  router.push({ name: 'MrmsQcWorkbench', query: { caseRecordId: id } });
 }
 
 /** 章节 HIS 导入 */
@@ -237,229 +274,247 @@ onMounted(() => {
           <ElButton v-if="canReturn" type="warning" :loading="returning" @click="openReturnDialog">
             退回
           </ElButton>
+          <ElButton v-if="isRecordRoom && showQcTab" @click="openQcWorkbench">质控工作台</ElButton>
+          <ElButton v-if="canOpenVolume" @click="openVolume">卷宗预览</ElButton>
         </div>
       </header>
 
-      <ElEmpty
-        v-if="!loading && !formModel"
-        class="flex-1"
-        :description="loadError || '未加载到病案首页数据'"
-      >
-        <ElButton type="primary" @click="loadAll">重新加载</ElButton>
-      </ElEmpty>
-
-      <ElAlert
-        v-if="showImportHint"
-        class="mb-12px"
-        type="info"
-        show-icon
-        :closable="false"
-        title="首页尚未写入明细"
-        description="病案主档创建后，首页表默认为空。请点击顶栏「全部导入」从 HIS 拉取患者/住院/诊断/手术等；导入后需保存。"
-      />
-
-      <div v-if="formModel" class="gap-16px flex min-h-0 flex-1">
-        <aside class="w-120px shrink-0">
-          <ElAnchor :offset="80">
-            <ElAnchorLink
-              v-for="sec in HOMEPAGE_ANCHOR_SECTIONS"
-              :key="sec.id"
-              :href="`#${sec.id}`"
-              :title="sec.label"
-            />
-          </ElAnchor>
-        </aside>
-
-        <main class="pr-8px min-h-0 flex-1 overflow-y-auto">
-          <ElForm
-            :model="formModel"
-            label-width="108px"
-            label-position="right"
-            :disabled="!canDoctorEdit"
-            size="default"
-            class="mrms-homepage-form"
+      <ElTabs v-model="activeTab" class="flex min-h-0 flex-1 flex-col">
+        <ElTabPane label="首页编辑" name="edit" class="min-h-0 flex-1">
+          <ElEmpty
+            v-if="!loading && !formModel"
+            class="flex-1"
+            :description="loadError || '未加载到病案首页数据'"
           >
-            <section :id="HOMEPAGE_ANCHOR_SECTIONS[0].id" class="mb-24px">
-              <div class="mb-12px flex items-center justify-between">
-                <h3 class="section-title">基本信息</h3>
-                <ElButton
-                  v-if="canImportAll"
-                  link
-                  type="primary"
-                  :loading="refreshing"
-                  @click="importSection('basic')"
-                >
-                  导入本章
-                </ElButton>
-              </div>
-              <div class="gap-x-16px grid grid-cols-2">
-                <ElFormItem label="姓名">
-                  <ElInput v-model="formModel.psnName" @input="markDirty" />
-                  <span v-if="sourceHint('psnName')" class="ml-4px text-12px opacity-60">
-                    {{ sourceHint('psnName') }}
-                  </span>
-                </ElFormItem>
-                <ElFormItem label="性别">
-                  <ElSelect
-                    v-model="formModel.gendCode"
-                    clearable
-                    class="w-full"
-                    @change="markDirty"
-                  >
-                    <ElOption
-                      v-for="opt in GENDER_OPTIONS"
-                      :key="opt.value"
-                      :label="opt.label"
-                      :value="opt.value"
-                    />
-                  </ElSelect>
-                </ElFormItem>
-                <ElFormItem label="出生日期">
-                  <ElInput v-model="formModel.brdy" placeholder="YYYY-MM-DD" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="证件号">
-                  <ElInput v-model="formModel.certno" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="现住址" class="col-span-2">
-                  <ElInput v-model="formModel.currAddr" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="电话">
-                  <ElInput v-model="formModel.psnTel" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="联系人">
-                  <ElInput v-model="formModel.conerName" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="联系人电话">
-                  <ElInput v-model="formModel.conerTel" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="联系人地址" class="col-span-2">
-                  <ElInput v-model="formModel.conerAddr" @input="markDirty" />
-                </ElFormItem>
-              </div>
-            </section>
+            <ElButton type="primary" @click="loadAll">重新加载</ElButton>
+          </ElEmpty>
 
-            <section :id="HOMEPAGE_ANCHOR_SECTIONS[1].id" class="mb-24px">
-              <div class="mb-12px flex items-center justify-between">
-                <h3 class="section-title">住院信息</h3>
-                <ElButton
-                  v-if="canImportAll"
-                  link
-                  type="primary"
-                  :loading="refreshing"
-                  @click="importSection('inpatient')"
-                >
-                  导入本章
-                </ElButton>
-              </div>
-              <div class="gap-x-16px grid grid-cols-2">
-                <ElFormItem label="住院号">
-                  <ElInput v-model="formModel.iptNo" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="实际住院天数">
-                  <ElInputNumber
-                    v-model="formModel.iptDays"
-                    :min="0"
-                    class="w-full"
+          <ElAlert
+            v-if="showImportHint"
+            class="mb-12px"
+            type="info"
+            show-icon
+            :closable="false"
+            title="首页尚未写入明细"
+            description="病案主档创建后，首页表默认为空。请点击顶栏「全部导入」从 HIS 拉取患者/住院/诊断/手术等；导入后需保存。"
+          />
+
+          <div v-if="formModel" class="gap-16px flex min-h-0 flex-1">
+            <aside class="w-120px shrink-0">
+              <ElAnchor :offset="80">
+                <ElAnchorLink
+                  v-for="sec in HOMEPAGE_ANCHOR_SECTIONS"
+                  :key="sec.id"
+                  :href="`#${sec.id}`"
+                  :title="sec.label"
+                />
+              </ElAnchor>
+            </aside>
+
+            <main class="pr-8px min-h-0 flex-1 overflow-y-auto">
+              <ElForm
+                :model="formModel"
+                label-width="108px"
+                label-position="right"
+                :disabled="!canDoctorEdit"
+                size="default"
+                class="mrms-homepage-form"
+              >
+                <section :id="HOMEPAGE_ANCHOR_SECTIONS[0].id" class="mb-24px">
+                  <div class="mb-12px flex items-center justify-between">
+                    <h3 class="section-title">基本信息</h3>
+                    <ElButton
+                      v-if="canImportAll"
+                      link
+                      type="primary"
+                      :loading="refreshing"
+                      @click="importSection('basic')"
+                    >
+                      导入本章
+                    </ElButton>
+                  </div>
+                  <div class="gap-x-16px grid grid-cols-2">
+                    <ElFormItem label="姓名">
+                      <ElInput v-model="formModel.psnName" @input="markDirty" />
+                      <span v-if="sourceHint('psnName')" class="ml-4px text-12px opacity-60">
+                        {{ sourceHint('psnName') }}
+                      </span>
+                    </ElFormItem>
+                    <ElFormItem label="性别">
+                      <ElSelect
+                        v-model="formModel.gendCode"
+                        clearable
+                        class="w-full"
+                        @change="markDirty"
+                      >
+                        <ElOption
+                          v-for="opt in GENDER_OPTIONS"
+                          :key="opt.value"
+                          :label="opt.label"
+                          :value="opt.value"
+                        />
+                      </ElSelect>
+                    </ElFormItem>
+                    <ElFormItem label="出生日期">
+                      <ElInput
+                        v-model="formModel.brdy"
+                        placeholder="YYYY-MM-DD"
+                        @input="markDirty"
+                      />
+                    </ElFormItem>
+                    <ElFormItem label="证件号">
+                      <ElInput v-model="formModel.certno" @input="markDirty" />
+                    </ElFormItem>
+                    <ElFormItem label="现住址" class="col-span-2">
+                      <ElInput v-model="formModel.currAddr" @input="markDirty" />
+                    </ElFormItem>
+                    <ElFormItem label="电话">
+                      <ElInput v-model="formModel.psnTel" @input="markDirty" />
+                    </ElFormItem>
+                    <ElFormItem label="联系人">
+                      <ElInput v-model="formModel.conerName" @input="markDirty" />
+                    </ElFormItem>
+                    <ElFormItem label="联系人电话">
+                      <ElInput v-model="formModel.conerTel" @input="markDirty" />
+                    </ElFormItem>
+                    <ElFormItem label="联系人地址" class="col-span-2">
+                      <ElInput v-model="formModel.conerAddr" @input="markDirty" />
+                    </ElFormItem>
+                  </div>
+                </section>
+
+                <section :id="HOMEPAGE_ANCHOR_SECTIONS[1].id" class="mb-24px">
+                  <div class="mb-12px flex items-center justify-between">
+                    <h3 class="section-title">住院信息</h3>
+                    <ElButton
+                      v-if="canImportAll"
+                      link
+                      type="primary"
+                      :loading="refreshing"
+                      @click="importSection('inpatient')"
+                    >
+                      导入本章
+                    </ElButton>
+                  </div>
+                  <div class="gap-x-16px grid grid-cols-2">
+                    <ElFormItem label="住院号">
+                      <ElInput v-model="formModel.iptNo" @input="markDirty" />
+                    </ElFormItem>
+                    <ElFormItem label="实际住院天数">
+                      <ElInputNumber
+                        v-model="formModel.iptDays"
+                        :min="0"
+                        class="w-full"
+                        @change="markDirty"
+                      />
+                    </ElFormItem>
+                    <ElFormItem label="入院时间">
+                      <ElInput v-model="formModel.admTime" @input="markDirty" />
+                    </ElFormItem>
+                    <ElFormItem label="出院时间">
+                      <ElInput v-model="formModel.dscgTime" @input="markDirty" />
+                    </ElFormItem>
+                    <ElFormItem label="入院科别">
+                      <ElInput v-model="formModel.admCatyName" @input="markDirty" />
+                    </ElFormItem>
+                    <ElFormItem label="出院科别">
+                      <ElInput v-model="formModel.dscgCatyName" @input="markDirty" />
+                    </ElFormItem>
+                    <ElFormItem label="转科摘要" class="col-span-2">
+                      <ElInput
+                        v-model="formModel.transferDeptSummary"
+                        type="textarea"
+                        :rows="2"
+                        @input="markDirty"
+                      />
+                    </ElFormItem>
+                  </div>
+                </section>
+
+                <section :id="HOMEPAGE_ANCHOR_SECTIONS[2].id" class="mb-24px">
+                  <div class="mb-12px flex items-center justify-between">
+                    <h3 class="section-title">诊断编码</h3>
+                    <ElButton
+                      v-if="canImportAll"
+                      link
+                      type="primary"
+                      :loading="refreshing"
+                      @click="importSection('diagnosis')"
+                    >
+                      导入本章
+                    </ElButton>
+                  </div>
+                  <HomepageDiagnosisGrid
+                    v-model:rows="formModel.diagnoses"
+                    :readonly="!canDoctorEdit"
                     @change="markDirty"
                   />
-                </ElFormItem>
-                <ElFormItem label="入院时间">
-                  <ElInput v-model="formModel.admTime" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="出院时间">
-                  <ElInput v-model="formModel.dscgTime" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="入院科别">
-                  <ElInput v-model="formModel.admCatyName" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="出院科别">
-                  <ElInput v-model="formModel.dscgCatyName" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="转科摘要" class="col-span-2">
-                  <ElInput
-                    v-model="formModel.transferDeptSummary"
-                    type="textarea"
-                    :rows="2"
-                    @input="markDirty"
+                </section>
+
+                <section :id="HOMEPAGE_ANCHOR_SECTIONS[3].id" class="mb-24px">
+                  <div class="mb-12px flex items-center justify-between">
+                    <h3 class="section-title">手术操作</h3>
+                    <ElButton
+                      v-if="canImportAll"
+                      link
+                      type="primary"
+                      :loading="refreshing"
+                      @click="importSection('procedure')"
+                    >
+                      导入本章
+                    </ElButton>
+                  </div>
+                  <HomepageProcedureGrid
+                    v-model:rows="formModel.procedures"
+                    :readonly="!canDoctorEdit"
+                    @change="markDirty"
                   />
-                </ElFormItem>
-              </div>
-            </section>
+                </section>
 
-            <section :id="HOMEPAGE_ANCHOR_SECTIONS[2].id" class="mb-24px">
-              <div class="mb-12px flex items-center justify-between">
-                <h3 class="section-title">诊断编码</h3>
-                <ElButton
-                  v-if="canImportAll"
-                  link
-                  type="primary"
-                  :loading="refreshing"
-                  @click="importSection('diagnosis')"
-                >
-                  导入本章
-                </ElButton>
-              </div>
-              <HomepageDiagnosisGrid
-                v-model:rows="formModel.diagnoses"
-                :readonly="!canDoctorEdit"
-                @change="markDirty"
-              />
-            </section>
+                <section :id="HOMEPAGE_ANCHOR_SECTIONS[4].id" class="mb-24px">
+                  <div class="mb-12px flex items-center justify-between">
+                    <h3 class="section-title">医护人员</h3>
+                    <ElButton
+                      v-if="canImportAll"
+                      link
+                      type="primary"
+                      :loading="refreshing"
+                      @click="importSection('staff')"
+                    >
+                      导入本章
+                    </ElButton>
+                  </div>
+                  <div class="gap-x-16px grid grid-cols-2">
+                    <ElFormItem label="科主任">
+                      <ElInput v-model="formModel.deptDirectorName" @input="markDirty" />
+                    </ElFormItem>
+                    <ElFormItem label="主任医师">
+                      <ElInput v-model="formModel.chfdrName" @input="markDirty" />
+                    </ElFormItem>
+                    <ElFormItem label="主治医师">
+                      <ElInput v-model="formModel.atddrName" @input="markDirty" />
+                    </ElFormItem>
+                    <ElFormItem label="住院医师">
+                      <ElInput v-model="formModel.iptDrName" @input="markDirty" />
+                    </ElFormItem>
+                    <ElFormItem label="责任护士">
+                      <ElInput v-model="formModel.respNursName" @input="markDirty" />
+                    </ElFormItem>
+                  </div>
+                </section>
+              </ElForm>
+            </main>
+          </div>
+        </ElTabPane>
 
-            <section :id="HOMEPAGE_ANCHOR_SECTIONS[3].id" class="mb-24px">
-              <div class="mb-12px flex items-center justify-between">
-                <h3 class="section-title">手术操作</h3>
-                <ElButton
-                  v-if="canImportAll"
-                  link
-                  type="primary"
-                  :loading="refreshing"
-                  @click="importSection('procedure')"
-                >
-                  导入本章
-                </ElButton>
-              </div>
-              <HomepageProcedureGrid
-                v-model:rows="formModel.procedures"
-                :readonly="!canDoctorEdit"
-                @change="markDirty"
-              />
-            </section>
-
-            <section :id="HOMEPAGE_ANCHOR_SECTIONS[4].id" class="mb-24px">
-              <div class="mb-12px flex items-center justify-between">
-                <h3 class="section-title">医护人员</h3>
-                <ElButton
-                  v-if="canImportAll"
-                  link
-                  type="primary"
-                  :loading="refreshing"
-                  @click="importSection('staff')"
-                >
-                  导入本章
-                </ElButton>
-              </div>
-              <div class="gap-x-16px grid grid-cols-2">
-                <ElFormItem label="科主任">
-                  <ElInput v-model="formModel.deptDirectorName" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="主任医师">
-                  <ElInput v-model="formModel.chfdrName" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="主治医师">
-                  <ElInput v-model="formModel.atddrName" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="住院医师">
-                  <ElInput v-model="formModel.iptDrName" @input="markDirty" />
-                </ElFormItem>
-                <ElFormItem label="责任护士">
-                  <ElInput v-model="formModel.respNursName" @input="markDirty" />
-                </ElFormItem>
-              </div>
-            </section>
-          </ElForm>
-        </main>
-      </div>
+        <ElTabPane v-if="showQcTab" label="质控缺陷" name="qc">
+          <HomepageQcPanel
+            :case-record-id="caseRecordId"
+            :status-code="statusCode"
+            :is-record-room="isRecordRoom"
+          />
+        </ElTabPane>
+      </ElTabs>
     </div>
 
     <AppDialog v-model="returnDialogVisible" title="退回病案" width="480px">
@@ -488,5 +543,10 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+.mrms-homepage-page :deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 </style>

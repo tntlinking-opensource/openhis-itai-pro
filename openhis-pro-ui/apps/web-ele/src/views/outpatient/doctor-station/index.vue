@@ -38,6 +38,7 @@ import {
   formatLocalDateYmd,
   getLocalDayRangeDateTimeStrings,
 } from '#/utils/format/date-range-quick';
+import { resolvePrintHospitalName } from '#/utils/print/resolve-print-hospital-name';
 
 import { AdviceList } from './advice';
 import PrescriptionSheetDialog from './components/prescription-sheet-dialog.vue';
@@ -53,6 +54,13 @@ defineOptions({
 
 const QUEUE_IN_PROGRESS = 'IN_PROGRESS';
 
+/** 患者队列 Tab 内：全部 / 待诊 / 在诊 / 完诊状态筛选 */
+type DoctorWaitingQueueStatusFilter = 'all' | 'completed' | 'in-progress' | 'waiting';
+
+const WAITING_STATUS_CODES = new Set(['PLANNED', 'REGISTERED', 'TRIAGED']);
+const IN_PROGRESS_STATUS_CODES = new Set(['IN_PROGRESS', 'ON_HOLD']);
+const COMPLETED_STATUS_CODES = new Set(['COMPLETED', 'DISCHARGED']);
+
 /**
  * 双击需调接诊写接口的状态（与后端契约对齐；计划队列分页行常见为 `PLANNED`，勿漏判导致只走前端无写库）。
  */
@@ -62,6 +70,40 @@ const RECEPTION_WRITE_STATUSES = new Set(['COMPLETED', 'ON_HOLD', 'PLANNED', 'RE
 function normalizeQueueStatusEnum(value: DoctorStationPatient['statusEnum']): string {
   if (value === null || value === undefined || value === '') return '';
   return String(value).trim().toUpperCase();
+}
+
+/** 患者队列侧栏：按全部 / 待诊 / 在诊 / 完诊筛选 */
+function matchDoctorQueueStatusFilter(
+  statusEnum: DoctorStationPatient['statusEnum'],
+  filter: DoctorWaitingQueueStatusFilter,
+): boolean {
+  if (filter === 'all') return true;
+  const code = normalizeQueueStatusEnum(statusEnum);
+  if (filter === 'waiting') return WAITING_STATUS_CODES.has(code);
+  if (filter === 'in-progress') return IN_PROGRESS_STATUS_CODES.has(code);
+  if (filter === 'completed') return COMPLETED_STATUS_CODES.has(code);
+  return true;
+}
+
+/** 当前关键字结果集内、按状态筛选后的患者队列行 */
+function filterWaitingPatientsByStatus(
+  rows: DoctorStationPatient[],
+  filter: DoctorWaitingQueueStatusFilter,
+): DoctorStationPatient[] {
+  return rows.filter((p) => matchDoctorQueueStatusFilter(p.statusEnum, filter));
+}
+
+/** 患者队列拉取后：当前为「待诊」筛选且无待诊行时，自动切到「在诊」（仅在有在诊行时切换）。 */
+function maybeAutoSwitchQueueStatusFilter(
+  rows: DoctorStationPatient[],
+  options?: { skip?: boolean },
+): void {
+  if (options?.skip) return;
+  if (patientQueue.value !== 'waiting') return;
+  if (queueStatusFilter.value !== 'waiting') return;
+  if (filterWaitingPatientsByStatus(rows, 'waiting').length > 0) return;
+  if (filterWaitingPatientsByStatus(rows, 'in-progress').length === 0) return;
+  queueStatusFilter.value = 'in-progress';
 }
 
 const authStore = useAuthStore();
@@ -108,6 +150,8 @@ type DoctorTab = (typeof DOCTOR_TABS)[keyof typeof DOCTOR_TABS];
 // 当前激活的功能标签
 const activeTab = ref<DoctorTab>(DOCTOR_TABS.MEDICAL_RECORD);
 const patientQueue = ref<'current' | 'waiting'>('waiting');
+/** 患者队列 Tab：待诊 / 在诊 / 完诊筛选，默认待诊 */
+const queueStatusFilter = ref<DoctorWaitingQueueStatusFilter>('waiting');
 
 /** 侧栏列表查询日 */
 const listDateStr = ref(formatLocalDateYmd());
@@ -119,14 +163,29 @@ const listLoading = ref(false);
 /** 正在提交接诊，避免双击等重复触发 */
 const acceptingEncounterId = ref<null | string>(null);
 
-const filteredPatients = computed(() =>
-  patientQueue.value === 'current' ? currentPatients.value : waitingPatients.value,
-);
+const filteredPatients = computed(() => {
+  if (patientQueue.value === 'current') return currentPatients.value;
+  return filterWaitingPatientsByStatus(waitingPatients.value, queueStatusFilter.value);
+});
 
 /** 「患者队列」角标：仅统计展示为「待诊」的行（与 encounterQueueStatusDisplayText 的 REGISTERED 一致） */
 const waitingPatientCount = computed(
   () =>
     waitingPatients.value.filter((p) => normalizeQueueStatusEnum(p.statusEnum) === 'REGISTERED')
+      .length,
+);
+
+/** 吸底统计：当前列表结果集内待诊人数 */
+const waitingStatusStatCount = computed(
+  () =>
+    waitingPatients.value.filter((p) => matchDoctorQueueStatusFilter(p.statusEnum, 'waiting'))
+      .length,
+);
+
+/** 吸底统计：当前列表结果集内已接诊（在诊/暂离）人数 */
+const receivedStatusStatCount = computed(
+  () =>
+    waitingPatients.value.filter((p) => matchDoctorQueueStatusFilter(p.statusEnum, 'in-progress'))
       .length,
 );
 
@@ -186,6 +245,8 @@ const doctorStationContextBindings = computed(() => {
     return {
       encounterId,
       patientId,
+      serviceApplyPatient: serviceApplyPatientSummary.value,
+      serviceApplyPrintMeta: serviceApplyPrintMeta.value,
     };
   }
   if (activeTab.value === DOCTOR_TABS.MEDICAL_RECORD) {
@@ -234,10 +295,21 @@ async function loadDoctorStationLists(options?: {
     waitingPatients.value = waitingRows;
     currentPatients.value = [];
 
+    maybeAutoSwitchQueueStatusFilter(waitingRows, { skip: options?.skipDefaultSelection });
+
     if (options?.skipDefaultSelection) return waitingRows;
 
     if (patientQueue.value === 'waiting') {
-      await applySelectedPatientChange(waitingPatients.value[0] ?? null);
+      const selId = (selectedPatient.value?.encounterId ?? '').trim();
+      if (selId) {
+        const fresh = waitingRows.find((p) => String(p.encounterId ?? '').trim() === selId);
+        if (fresh) {
+          await applySelectedPatientChange(fresh);
+          return waitingRows;
+        }
+      }
+      const visible = filterWaitingPatientsByStatus(waitingRows, queueStatusFilter.value);
+      await applySelectedPatientChange(visible[0] ?? null);
       return waitingRows;
     }
 
@@ -289,12 +361,18 @@ const handlePatientSelect = async (patient: DoctorStationPatient) => {
   await applySelectedPatientChange(patient);
 };
 
+/** 切换侧栏「患者队列 / 在诊患者」仅改列表视图，不自动改右侧当前就诊（避免误触接诊写接口） */
 const handleQueueChange = async (queue: 'away' | 'completed' | 'current' | 'waiting') => {
   if (queue !== 'current' && queue !== 'waiting') return;
-  const nextPatients = queue === 'current' ? currentPatients.value : waitingPatients.value;
-  const nextPatient = nextPatients[0] ?? null;
-  const applied = await applySelectedPatientChange(nextPatient);
-  if (!applied) return;
+  if (queue === 'current') {
+    const selId = (selectedPatient.value?.encounterId ?? '').trim();
+    const stillSelected =
+      selId && currentPatients.value.some((p) => String(p.encounterId ?? '').trim() === selId);
+    if (!stillSelected && currentPatients.value.length > 0) {
+      const applied = await applySelectedPatientChange(currentPatients.value[0] ?? null);
+      if (!applied) return;
+    }
+  }
   patientQueue.value = queue;
 };
 
@@ -337,6 +415,13 @@ const serviceApplyPatientSummary = computed<ServiceApplyPatientSummary>(() => {
     feeNatureText: (info.serviceTypeName ?? '').trim() || '普通门诊',
   };
 });
+
+/** 检验/检查申请单打印抬头 */
+const serviceApplyPrintMeta = computed(() => ({
+  hospitalName: resolvePrintHospitalName(),
+  departmentName: (selectedPatient.value?.organizationName ?? '').trim(),
+  orderingPractitionerName: doctorDisplayName.value === '—' ? '' : doctorDisplayName.value.trim(),
+}));
 
 /** 打开检验/检查申请演示面板 */
 function openServiceApplyDialog(kind: ServiceApplyKind) {
@@ -440,6 +525,14 @@ async function ensureReceptionForPatient(patient: DoctorStationPatient): Promise
   }
 }
 
+/** 接诊前是否已有在诊/暂离患者（决定双击接诊后右侧页签：无 → 病历，有 → 医嘱） */
+function hasInProgressConsultationBeforeAccept(): boolean {
+  if (currentPatients.value.length > 0) return true;
+  return waitingPatients.value.some((p) =>
+    IN_PROGRESS_STATUS_CODES.has(normalizeQueueStatusEnum(p.statusEnum)),
+  );
+}
+
 /** 当前选中患者：临床写操作前自动接诊 / 切在诊（供子页 inject）。 */
 const ensureReceptionForClinicalWork: EnsureClinicalReceptionFn = async () => {
   const p = selectedPatient.value;
@@ -461,7 +554,10 @@ const handlePatientAccept = async (patient: DoctorStationPatient) => {
     const ok = await guardEmrUnsavedBeforeLeaveMedicalRecord();
     if (!ok) return;
   }
-  await ensureReceptionForPatient(patient);
+  const navigateToOrder = hasInProgressConsultationBeforeAccept();
+  const accepted = await ensureReceptionForPatient(patient);
+  if (!accepted) return;
+  activeTab.value = navigateToOrder ? DOCTOR_TABS.ORDER : DOCTOR_TABS.MEDICAL_RECORD;
 };
 
 const handleFormUpdate = (data: Record<string, unknown>) => {
@@ -532,9 +628,12 @@ const handleAdmission = () => {
   <div class="flex h-full flex-row pt-2">
     <DoctorPatientList
       v-model:filter-date="listDateStr"
+      v-model:queue-status-filter="queueStatusFilter"
       :patients="filteredPatients"
       :current-queue="patientQueue"
       :waiting-count="waitingPatientCount"
+      :waiting-status-stat-count="waitingStatusStatCount"
+      :received-status-stat-count="receivedStatusStatCount"
       :loading="listLoading"
       :reception-locked="acceptingEncounterId !== null"
       :selected-patient-id="selectedPatient?.encounterId"
@@ -617,6 +716,7 @@ const handleAdmission = () => {
       :encounter-id="selectedPatient?.encounterId ?? ''"
       :patient-id="selectedPatient?.patientId ?? ''"
       :patient="serviceApplyPatientSummary"
+      :print-meta="serviceApplyPrintMeta"
       @signed="handleServiceApplySigned"
     />
   </div>

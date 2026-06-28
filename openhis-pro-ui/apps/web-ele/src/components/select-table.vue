@@ -77,6 +77,8 @@ const emit = defineEmits<{
 const showPopup = ref(false);
 const loading = ref(false);
 const isBeforeClosePending = ref(false);
+/** 仅用户鼠标点选输入框时为 true，防止程序 focus / 方向键切格误弹下拉 */
+const openDropdownOnFocus = ref(false);
 const keyword = ref('');
 const gridRef = ref<VxeGridInstance<OptionItem>>();
 /** 下拉打开时，与表格当前行同步的键盘高亮索引（当前页 data 下标） */
@@ -249,6 +251,20 @@ function openDropdown() {
   showPopup.value = true;
 }
 
+/** 用户鼠标按下输入框：允许随后 focus 时打开下拉 */
+function handleInputMouseDown() {
+  openDropdownOnFocus.value = true;
+}
+
+/** 仅用户点选触发的 focus 才打开下拉；程序 focus / Tab / 方向键切格不打开 */
+function handleInputFocus() {
+  if (!openDropdownOnFocus.value) {
+    return;
+  }
+  openDropdownOnFocus.value = false;
+  openDropdown();
+}
+
 const suffixClick = () => {
   if (props.disabled) return;
   showPopup.value = !showPopup.value;
@@ -373,7 +389,8 @@ defineExpose({ getKeywordDraft });
         :clearable="clearable"
         @click="openDropdown"
         @clear="clearEvent"
-        @focus="openDropdown"
+        @mousedown="handleInputMouseDown"
+        @focus="handleInputFocus"
         @blur="handleInputBlur"
         @suffix-click="suffixClick"
         @keydown="handleInputKeydown"

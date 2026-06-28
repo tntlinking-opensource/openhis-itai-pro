@@ -2,11 +2,18 @@ import { ref, shallowRef } from 'vue';
 
 import { ElMessage } from 'element-plus';
 
+import {
+  isStaleCrossRoleError,
+  refreshOnStaleCrossRoleError,
+} from '#/utils/http/stale-cross-role-error';
+
 export interface UseRequestOptions<TData, TParams extends any[]> {
   manual?: boolean;
   defaultParams?: TParams;
   showErrorMessage?: boolean;
   errorMessage?: ((error: unknown) => string) | string;
+  /** Stale 跨角色写失败时刷新列表（E3）；与全局统一文案配合，避免重复弹窗 */
+  refreshOnStale?: () => void | Promise<void>;
   onSuccess?: (data: TData, params: TParams) => void;
   onError?: (error: unknown, params: TParams) => void;
   onFinally?: (params: TParams) => void;
@@ -41,8 +48,9 @@ export function useRequest<TData, TParams extends any[]>(
       return res;
     } catch (error_) {
       error.value = error_;
+      await refreshOnStaleCrossRoleError(error_, mergedOptions.refreshOnStale);
       mergedOptions.onError?.(error_, params);
-      if (mergedOptions.showErrorMessage !== false) {
+      if (mergedOptions.showErrorMessage !== false && !isStaleCrossRoleError(error_)) {
         const msg =
           typeof mergedOptions.errorMessage === 'function'
             ? mergedOptions.errorMessage(error_)

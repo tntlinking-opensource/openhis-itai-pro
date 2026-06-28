@@ -59,11 +59,30 @@ export async function pageRegisterPatientsForSelect(params: {
   };
 }
 
-/** 加载挂号页面初始化下拉数据 */
+/** 加载挂号页面初始化下拉数据（同参数并发去重） */
+const initInflight = new Map<string, Promise<LoadRegisterFormInitResult>>();
+
+function serializeRegisterInitParams(params: LoadRegisterFormInitParams): string {
+  return [
+    String(params.organizationId ?? ''),
+    String(params.practitionerId ?? ''),
+    String(params.registrationDate ?? ''),
+  ].join('|');
+}
+
 export async function loadRegisterFormInit(
   params: LoadRegisterFormInitParams = {},
 ): Promise<LoadRegisterFormInitResult> {
-  return httpLoadRegisterFormInit(params);
+  const key = serializeRegisterInitParams(params);
+  const existing = initInflight.get(key);
+  if (existing) {
+    return existing;
+  }
+  const promise = httpLoadRegisterFormInit(params).finally(() => {
+    initInflight.delete(key);
+  });
+  initInflight.set(key, promise);
+  return promise;
 }
 
 /** 查询医生下拉数据（支持按科室过滤） */

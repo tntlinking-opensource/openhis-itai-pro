@@ -1,0 +1,139 @@
+/**
+ * 元素辅助线 + 标尺悬停辅助线（对齐 sv-print 体验版）
+ */
+
+/* ── 元素选中：四向虚线辅助线（覆盖 hiprint 默认灰色） ── */
+.hiprint-designer-root .toplineOfPosition,
+.hiprint-designer-root .bottomlineOfPosition {
+  z-index: 8;
+  border: 0 !important;
+  border-top: 1px dashed var(--sv-primary) !important;
+}
+
+.hiprint-designer-root .leftlineOfPosition,
+.hiprint-designer-root .rightlineOfPosition {
+  z-index: 8;
+  border: 0 !important;
+  border-left: 1px dashed var(--sv-primary) !important;
+}
+
+/* 坐标标签：与主题色统一 */
+.hiprint-designer-root .topPosition-lineMode,
+.hiprint-designer-root .leftPosition-lineMode {
+  z-index: 9;
+  font-size: 11px;
+  color: var(--sv-primary) !important;
+  white-space: nowrap;
+  background: unset !important;
+}
+
+.hiprint-designer-root .topPosition:not(.topPosition-lineMode),
+.hiprint-designer-root .leftPosition:not(.leftPosition-lineMode) {
+  z-index: 9;
+  min-width: 10px;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--sv-text-on-primary) !important;
+  background: var(--sv-primary) !important;
+  border-radius: 999px;
+}
+
+/* ── 标尺上选中元素高亮区（x-rect / y-rect） ── */
+.hiprint-designer-root .global-ruler-x-rect-box {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.hiprint-designer-root .global-ruler-y-rect-box {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.hiprint-designer-root .global-ruler-x-rect {
+  position: absolute;
+  bottom: 0;
+  z-index: 1;
+  height: 100%;
+  background: var(--sv-primary);
+  opacity: 0.2;
+}
+
+.hiprint-designer-root .global-ruler-y-rect {
+  position: absolute;
+  right: 0;
+  z-index: 1;
+  width: 100%;
+  background: var(--sv-primary);
+  opacity: 0.2;
+}
+
+/* ── 标尺悬停：贯穿画布的十字辅助线 ── */
+.hiprint-designer-root .designer-guide-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.hiprint-designer-root .designer-guide-x {
+  position: absolute;
+  top: var(--rulerSize);
+  bottom: 0;
+  left: 0;
+  display: none;
+  width: 1px;
+  background: var(--sv-primary);
+}
+
+.hiprint-designer-root .designer-guide-y {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: var(--rulerSize);
+  display: none;
+  height: 1px;
+  background: var(--sv-primary);
+}
+
+.hiprint-designer-root .designer-guide-x-label {
+  position: absolute;
+  top: calc(var(--rulerSize) + 2px);
+  left: 0;
+  display: none;
+  font-size: 10px;
+  color: var(--sv-text-muted);
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.hiprint-designer-root .designer-guide-y-label {
+  position: absolute;
+  top: 0;
+  left: calc(var(--rulerSize) + 2px);
+  display: none;
+  font-size: 10px;
+  color: var(--sv-text-muted);
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+
+/* 标尺条内短线（仅标尺区域） */
+.hiprint-designer-root .global-ruler-x-line {
+  background: var(--sv-primary);
+}
+
+.hiprint-designer-root .global-ruler-y-line {
+  background: var(--sv-primary);
+}

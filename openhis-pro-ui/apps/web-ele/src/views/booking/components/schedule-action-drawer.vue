@@ -15,6 +15,7 @@ import {
   previewStopClinicImpactApi,
   publishScheduleApi,
   reactivateScheduleApi,
+  retireScheduleApi,
   substitutePractitionerApi,
   updateScheduleDraftApi,
 } from '#/api/booking/outpatient-schedule';
@@ -65,6 +66,7 @@ const props = defineProps<{
   practitioners?: BookingOptionDto[];
   clinicLocations?: BookingOptionDto[];
   healthcareServices?: BookingOptionDto[];
+  slotProvisionTemplateOptions?: BookingOptionDto[];
 }>();
 
 const emit = defineEmits<{
@@ -84,6 +86,7 @@ const partialSlotIds = ref<BookingEntityId[]>([]);
 const partialStopWizardVisible = ref(false);
 const slotsLoading = ref(false);
 const publishLoading = ref(false);
+const retireLoading = ref(false);
 /** 模板生成的草稿默认只读确认；需改字段时再切编辑 */
 const draftEditMode = ref(false);
 
@@ -92,6 +95,12 @@ const isCreateMode = computed(() => props.createMode === true);
 const isExistingDraft = computed(
   () =>
     !isCreateMode.value && props.schedule?.statusEnum === 'draft' && !!props.schedule?.scheduleId,
+);
+
+const canRetireSchedule = computed(
+  () =>
+    !!props.schedule?.scheduleId &&
+    (props.schedule?.statusEnum === 'draft' || props.schedule?.statusEnum === 'inactive'),
 );
 
 const isTemplateCell = computed(
@@ -166,6 +175,7 @@ function fillDraftFormFromSchedule() {
   if (!draftForm.healthcareServiceId) {
     draftForm.healthcareServiceId = toBookingId(props.schedule?.healthcareServiceId);
   }
+  draftForm.slotProvisionTemplateId = toBookingId(props.schedule?.slotProvisionTemplateId);
   applyHorizonToForm(
     draftForm,
     props.schedule?.planningHorizonStart,
@@ -209,6 +219,7 @@ async function createDraftSchedule() {
     actors: buildDraftActors(draftForm),
     planningHorizonStart: horizon.planningHorizonStart,
     planningHorizonEnd: horizon.planningHorizonEnd,
+    slotProvisionTemplateId: draftForm.slotProvisionTemplateId,
   });
   if (!res?.scheduleId) {
     throw new Error('创建日程失败');
@@ -232,6 +243,7 @@ async function saveDraftSchedule() {
     actors: buildDraftActors(draftForm),
     planningHorizonStart: horizon.planningHorizonStart,
     planningHorizonEnd: horizon.planningHorizonEnd,
+    slotProvisionTemplateId: draftForm.slotProvisionTemplateId,
   });
 }
 
@@ -342,6 +354,34 @@ async function handlePublishGeneratedDraft() {
 function enterDraftEditMode() {
   draftEditMode.value = true;
   fillDraftFormFromSchedule();
+}
+
+async function handleRetireSchedule() {
+  if (!props.schedule?.scheduleId) {
+    return;
+  }
+  const isDraft = props.schedule.statusEnum === 'draft';
+  try {
+    await ElMessageBox.confirm(
+      isDraft
+        ? '删除后该草稿将从周历移除，且不可恢复。确认删除？'
+        : '作废后该日程将从周历移除。确认作废？',
+      isDraft ? '删除草稿' : '作废日程',
+      { type: 'warning' },
+    );
+    retireLoading.value = true;
+    await retireScheduleApi({
+      scheduleId: props.schedule.scheduleId,
+      reason: isDraft ? '误操作删除草稿' : '作废日程',
+    });
+    ElMessage.success(isDraft ? '草稿已删除' : '日程已作废');
+    emitRefreshed();
+    emit('update:visible', false);
+  } catch {
+    // cancel or error
+  } finally {
+    retireLoading.value = false;
+  }
 }
 
 async function handleMaterializeFromTemplate() {
@@ -571,6 +611,9 @@ async function handleDeactivate() {
           发布
         </ElButton>
         <ElButton link type="primary" @click="enterDraftEditMode">修改后再发布</ElButton>
+        <ElButton link type="danger" :loading="retireLoading" @click="handleRetireSchedule">
+          删除草稿
+        </ElButton>
       </div>
     </div>
 
@@ -580,11 +623,21 @@ async function handleDeactivate() {
         :practitioners="practitioners"
         :clinic-locations="clinicLocations"
         :healthcare-services="healthcareServices"
+        :slot-provision-template-options="slotProvisionTemplateOptions"
       />
       <div class="schedule-action__row">
         <ElButton :loading="saveDraftLoading" @click="handleSaveDraft">保存草稿</ElButton>
         <ElButton type="primary" :loading="publishLoading" @click="handlePublishWithLoading">
           发布
+        </ElButton>
+        <ElButton
+          v-if="canRetireSchedule && !isCreateMode"
+          type="danger"
+          plain
+          :loading="retireLoading"
+          @click="handleRetireSchedule"
+        >
+          {{ schedule?.statusEnum === 'draft' ? '删除草稿' : '作废日程' }}
         </ElButton>
       </div>
     </div>
@@ -687,12 +740,27 @@ async function handleDeactivate() {
         将日程从 inactive 恢复为 active；不会自动恢复已封锁/释放的号源，须手动批量放号。
       </p>
       <ElButton type="primary" @click="handleReactivate">恢复开诊</ElButton>
+
+      <h4>作废日程</h4>
+      <p class="schedule-action__hint">
+        从周历永久移除该日程；不会自动恢复号源，删除后该日可重新新建或生成排班。若号源仍有人预约，须先通过停诊向导处理预约。
+      </p>
+      <ElButton
+        v-if="canRetireSchedule"
+        type="danger"
+        plain
+        :loading="retireLoading"
+        @click="handleRetireSchedule"
+      >
+        作废日程
+      </ElButton>
     </div>
 
     <ProvisionSlotDialog
       v-model:visible="provisionVisible"
       :organization-id="organizationId"
       :schedule-id="schedule?.scheduleId"
+      :slot-provision-template-id="schedule?.slotProvisionTemplateId"
       :selected-date="selectedDate"
       @done="handleProvisionDone"
     />

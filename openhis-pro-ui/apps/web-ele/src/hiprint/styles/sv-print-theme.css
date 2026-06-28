@@ -1,0 +1,347 @@
+/**
+ * sv-print 风格主题变量与 hiprint 内置面板覆写
+ * 主色对齐项目 preferences.theme（sky-blue / --el-color-primary）
+ */
+.hiprint-designer-root {
+  --sv-primary: var(--el-color-primary);
+  --sv-primary-dark: var(--el-color-primary-dark-2);
+  --sv-primary-light: var(--el-color-primary-light-3);
+  --sv-primary-bg: var(--el-color-primary-light-9);
+  --sv-header-h: 40px;
+  --sv-subbar-h: 44px;
+  --sv-panel-header-h: 36px;
+  --sv-workspace-bg: var(--el-fill-color-light);
+  --sv-panel-bg: var(--el-bg-color);
+  --sv-border: var(--el-border-color);
+  --sv-text-on-primary: var(--el-color-white);
+  --sv-text-muted: var(--el-text-color-secondary);
+  --sv-label-color: var(--el-text-color-primary);
+  --sv-grid-color: var(--el-border-color-lighter);
+  --sv-header-footer-line: var(--el-color-primary);
+  --sv-toolbar-bg: var(--el-fill-color-blank);
+  --sv-toolbar-hover-bg: var(--el-color-primary-light-9);
+  --sv-focus-ring: color-mix(in srgb, var(--el-color-primary) 20%, transparent);
+  --sv-shadow-primary: color-mix(in srgb, var(--el-color-primary) 12%, transparent);
+  --rulerSize: 24px;
+  --sv-ruler-bg: var(--el-bg-color);
+}
+
+/* ── 右侧属性面板（hiprint 注入 DOM）：label 左 + 表单右，单列 12px ── */
+.hiprint-designer-root .designer-options .hiprint-option-title {
+  display: none;
+}
+
+/* 面板属性（无 Tab）：直接挂在 .designer-options 下 */
+.hiprint-designer-root .designer-options > .hiprint-option-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 16px;
+  font-size: 12px;
+}
+
+/* 元素属性 Tab 内容：默认隐藏，仅 .active 显示（与 hiprint 切换逻辑一致） */
+.hiprint-designer-root .designer-options .prop-tabs .hiprint-option-items {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 16px;
+  font-size: 12px;
+}
+
+.hiprint-designer-root .designer-options .prop-tabs .hiprint-option-items.active {
+  display: flex !important;
+}
+
+.hiprint-designer-root .designer-options .hiprint-option-item,
+.hiprint-designer-root .designer-options .hiprint-option-items .hiprint-option-item-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  float: none !important;
+  gap: 8px;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box;
+}
+
+.hiprint-designer-root .designer-options .hiprint-option-item.oh-fn-option,
+.hiprint-designer-root
+  .designer-options
+  .hiprint-option-items
+  .hiprint-option-item-row.oh-fn-option {
+  align-items: flex-start !important;
+}
+
+.hiprint-designer-root .designer-options .hiprint-option-item-label {
+  flex: 0 0 88px;
+  margin: 0 !important;
+  font-size: 12px !important;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--sv-label-color);
+  text-align: right;
+  white-space: normal;
+}
+
+.hiprint-designer-root .designer-options .hiprint-option-item-field {
+  flex: 1 1 0;
+  width: auto !important;
+  min-width: 0;
+  font-size: 12px;
+}
+
+/* 复合项（面板排列、水印）：多 field 纵向堆叠 */
+.hiprint-designer-root
+  .designer-options
+  .hiprint-option-item-row:has(.hiprint-option-item-field + .hiprint-option-item-field) {
+  flex-wrap: wrap;
+  align-items: flex-start !important;
+}
+
+.hiprint-designer-root
+  .designer-options
+  .hiprint-option-item-row:has(.hiprint-option-item-field + .hiprint-option-item-field)
+  .hiprint-option-item-label {
+  flex: 0 0 100%;
+  width: 100%;
+  margin-bottom: 2px !important;
+  font-weight: 600;
+  text-align: left;
+}
+
+.hiprint-designer-root
+  .designer-options
+  .hiprint-option-item-row:has(.hiprint-option-item-field + .hiprint-option-item-field)
+  .hiprint-option-item-field {
+  flex: 1 1 100%;
+  width: 100% !important;
+  margin-top: 2px;
+}
+
+/* 复合项内子 label（排列方式、水印内容等） */
+.hiprint-designer-root .designer-options .hiprint-option-item-field[style*='display: flex'],
+.hiprint-designer-root .designer-options .hiprint-option-item-field[style*='display:flex'] {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 8px;
+  align-items: center !important;
+}
+
+.hiprint-designer-root .designer-options .hiprint-option-item-field > div:first-child {
+  flex: 0 0 88px;
+  width: auto !important;
+  font-size: 12px !important;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--sv-label-color) !important;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.hiprint-designer-root .designer-options .hiprint-option-item-field > select,
+.hiprint-designer-root .designer-options .hiprint-option-item-field > input[type='text'],
+.hiprint-designer-root .designer-options .hiprint-option-item-field > input[type='number'],
+.hiprint-designer-root .designer-options .hiprint-option-item-field > input[type='range'] {
+  flex: 1 1 0;
+  width: auto !important;
+  min-width: 0;
+}
+
+.hiprint-designer-root .designer-options .hiprint-option-item-field input,
+.hiprint-designer-root .designer-options .hiprint-option-item-field select,
+.hiprint-designer-root .designer-options .hiprint-option-item-field textarea {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 28px !important;
+  padding: 4px 8px !important;
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+  border: 1px solid var(--sv-border) !important;
+  border-radius: 4px !important;
+}
+
+.hiprint-designer-root .designer-options .hiprint-option-item-field input:focus,
+.hiprint-designer-root .designer-options .hiprint-option-item-field select:focus,
+.hiprint-designer-root .designer-options .hiprint-option-item-field textarea:focus {
+  border-color: var(--sv-primary-light) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 2px var(--sv-focus-ring) !important;
+}
+
+.hiprint-designer-root .designer-options .hiprint-option-item-settingBtn,
+.hiprint-designer-root .designer-options .hiprint-option-item-submitBtn,
+.hiprint-designer-root .designer-options .hiprint-option-item-deleteBtn {
+  width: calc(50% - 4px) !important;
+  height: 28px !important;
+  margin: 4px 0 0 !important;
+  padding: 0 8px !important;
+  font-size: 12px !important;
+  line-height: 28px !important;
+  border-radius: 4px !important;
+}
+
+.hiprint-designer-root .designer-options .hiprint-option-item-submitBtn {
+  margin-right: 4px !important;
+  color: var(--sv-text-on-primary) !important;
+  background: var(--sv-primary) !important;
+  border: none !important;
+}
+
+.hiprint-designer-root .designer-options .hiprint-option-item-deleteBtn {
+  margin-left: 4px !important;
+  color: var(--el-color-error) !important;
+  background: var(--el-bg-color) !important;
+  border: 1px solid var(--el-color-error-light-7) !important;
+}
+
+.hiprint-designer-root .designer-options .hiprint-option-item-field .options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.hiprint-designer-root .designer-options .hiprint-option-item-field .option {
+  font-size: 12px !important;
+}
+
+/* ── 元素属性 Tab：居中、12px、主题选中态 ── */
+.hiprint-designer-root .designer-options .prop-tabs {
+  margin: 0;
+  background: var(--sv-panel-bg);
+}
+
+.hiprint-designer-root .designer-options .prop-tabs .prop-tab-items {
+  display: flex !important;
+  gap: 4px;
+  align-items: stretch;
+  justify-content: center;
+  height: auto !important;
+  padding: 0 12px;
+  margin: 0;
+  line-height: normal !important;
+  list-style: none;
+  border-bottom: 1px solid var(--sv-border);
+}
+
+.hiprint-designer-root .designer-options .prop-tabs .prop-tab-items .prop-tab-item {
+  flex: 0 0 auto;
+  display: inline-block !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: normal !important;
+  cursor: pointer;
+  list-style: none;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0;
+}
+
+.hiprint-designer-root .designer-options .prop-tabs .prop-tab-items .prop-tab-item .tab-title {
+  display: block;
+  padding: 10px 12px 8px;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+  color: var(--sv-text-muted);
+  transition: color 0.15s;
+}
+
+.hiprint-designer-root
+  .designer-options
+  .prop-tabs
+  .prop-tab-items
+  .prop-tab-item:hover
+  .tab-title {
+  color: var(--sv-primary-light);
+}
+
+/* 覆盖 hiprint 注入的 li.active 蓝色粗下划线 */
+.hiprint-designer-root .designer-options .prop-tabs .prop-tab-items li.active,
+.hiprint-designer-root .designer-options .prop-tabs .prop-tab-items .prop-tab-item.active {
+  height: auto !important;
+  line-height: normal !important;
+  color: inherit !important;
+  background: transparent !important;
+  border: none !important;
+  border-bottom: none !important;
+}
+
+.hiprint-designer-root .designer-options .prop-tabs .prop-tab-items li.active .tab-title,
+.hiprint-designer-root
+  .designer-options
+  .prop-tabs
+  .prop-tab-items
+  .prop-tab-item.active
+  .tab-title {
+  font-weight: 600 !important;
+  color: var(--sv-primary) !important;
+  box-shadow: inset 0 -2px 0 var(--sv-primary);
+}
+
+/* ── 函数编辑控件 ── */
+.hiprint-designer-root .designer-options .oh-fn-edit-btn {
+  display: block;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--sv-primary);
+  cursor: pointer;
+  background: var(--sv-primary-bg);
+  border: 1px solid var(--el-color-primary-light-7);
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.hiprint-designer-root .designer-options .oh-fn-edit-btn:hover {
+  background: var(--el-color-primary-light-8);
+}
+
+.hiprint-designer-root .designer-options .oh-fn-preview {
+  width: 100%;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 12px;
+}
+
+/* 画布纸张样式见 sv-print-canvas.css */
+
+/* ── 分页器 ── */
+.hiprint-designer-root .hiprint-printPagination {
+  padding: 8px 16px;
+}
+
+.hiprint-designer-root .hiprint-pagination {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.hiprint-designer-root .hiprint-pagination .page-btn {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 28px;
+  color: var(--el-text-color-regular);
+  text-align: center;
+  cursor: pointer;
+  background: var(--el-bg-color);
+  border: 1px solid var(--sv-border);
+  border-radius: 4px;
+}
+
+/* hiprint 注入样式中的分页选中态 */
+.hiprint-designer-root .hiprint-pagination .selected {
+  border-color: var(--sv-primary) !important;
+}
+
+.hiprint-designer-root .hiprint-pagination .page-btn.active {
+  color: var(--sv-text-on-primary);
+  background: var(--sv-primary);
+  border-color: var(--sv-primary);
+}

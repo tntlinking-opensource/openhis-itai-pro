@@ -216,6 +216,7 @@ export interface ConfirmOutpatientChargeSettlementResponse {
 /** 收费小票收费项目行 */
 export interface ChargeReceiptChargeLineDto {
   itemName?: string;
+  quantityText?: string;
   amountText?: string;
   chargeCategoryText?: string;
 }

@@ -67,6 +67,8 @@ export namespace AuthApi {
     practitionerId?: null | number | string;
     /** adm_organization.id / 医务人员主档 org_id */
     organizationId?: null | number | string;
+    /** 是否具备财务审批角色（动账类供应单与调价 approve/reject） */
+    canFinanceApprove?: boolean;
   }
 
   /** 当前租户信息 */

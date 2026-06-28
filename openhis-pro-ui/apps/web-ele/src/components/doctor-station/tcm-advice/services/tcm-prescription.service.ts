@@ -212,7 +212,7 @@ export function resolveTcmRxStatusTagType(
   if (status === 'REFUNDING') return 'warning';
   if (status === 'ACTIVE' || status === 'COMPLETED') return 'success';
   if (status === 'DRAFT') return 'info';
-  if (status === 'STOPPED') return 'warning';
+  if (status === 'STOPPED') return 'danger';
   if (status === 'CANCELLED' || status === 'REVOKED') return 'warning';
   if (status === 'ENTERED_IN_ERROR') return 'danger';
   return '';

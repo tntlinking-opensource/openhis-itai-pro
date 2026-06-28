@@ -20,6 +20,9 @@ export const CHARGE_ITEM_STATUS_LABEL_TAG: Record<
 /** 正式结算支付结果枚举编码（与支付流水域 `PaymentOutcome` 表 4.4 一致：`COMPLETED`=1） */
 export const OUTPATIENT_CHARGE_SETTLE_OUTCOME_COMPLETED = '1';
 
+/** 正式结算失败：医嘱已变更须重新预结算（GAP-STALE-001 / EX-OPC-411） */
+export const OUTPATIENT_CHARGE_SETTLE_ADVICE_CHANGED_CODE = 'EX-OPC-411';
+
 /** 默认支付渠道 */
 export const DEFAULT_OUTPATIENT_CHARGE_PAY_CHANNEL_CODE = FALLBACK_DEFAULT_PAY_CHANNEL;
 

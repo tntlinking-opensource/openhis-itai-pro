@@ -147,10 +147,10 @@ const executeTableCellClassName = ({
   column,
   columnIndex,
 }: {
-  row: NurseAdviceExecuteRow;
-  rowIndex: number;
   column?: { fixed?: boolean | string; property?: string };
   columnIndex: number;
+  row: NurseAdviceExecuteRow;
+  rowIndex: number;
 }) => {
   if (!row?.applyFormNo?.trim()) {
     return '';

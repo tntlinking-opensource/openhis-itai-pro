@@ -1,12 +1,11 @@
 <!--
-  药库库存明细（现库）：T2 查询 + T3 行内停供/恢复；契约 AS-INV-WHS-004-SDD。
-  状态分层 — 业务：筛选、rows、汇总、追溯弹窗；视图：分页；临时：无。
+  药库库存明细：现库 T2+T3（停供/恢复）；选备份单号时只读查静表快照。
+  状态分层 — 业务：筛选（含 backupBusNo）、rows、汇总；视图：分页；临时：追溯弹窗。
 -->
 <script setup lang="ts">
 import type { FormItemConfig, TableColumn } from '@vben-core/table-layout-ui';
 
 import type {
-  ExportInventoryDetailCurrentResponse,
   InventoryDetailListRowDto,
   OptionDto,
   SumInventoryDetailCurrentRequest,
@@ -22,12 +21,19 @@ import { TableLayout } from '@vben-core/table-layout-ui';
 import { Download } from '@element-plus/icons-vue';
 import { ElButton, ElInput, ElMessage, ElMessageBox } from 'element-plus';
 
+import { downloadBinaryExportFile } from '#/utils/export/download-binary-export';
+
 import {
+  exportInventoryDetailBackupApi,
   exportInventoryDetailCurrentApi,
+  fmtPackageUnitPrice,
+  listInventoryDetailBackupBusNoApi,
   loadInventoryDetailFormInitApi,
+  pageInventoryDetailBackupApi,
   pageInventoryDetailCurrentApi,
   resumeInventoryItemsApi,
   retireInventoryItemsApi,
+  sumInventoryDetailBackupApi,
   sumInventoryDetailCurrentApi,
 } from '#/api/inventory/warehouse/inventory-detail';
 import AppDialog from '#/components/app-dialog.vue';
@@ -40,11 +46,17 @@ defineOptions({ name: 'InventoryWarehouseInventoryDetailPage' });
 const INVENTORY_RANGE_ZERO_CODE = '2';
 const INVENTORY_RANGE_GT_ZERO_CODE = '3';
 
-/** 与 IF-02 对齐的筛选 + 分页；`zeroStockFilter` 为术语码，请求前映射为 `zeroStockOnly`。 */
+/** 筛选 + 分页；有 backupBusNo 时走备份读，否则走现库。 */
 interface InventoryDetailFormState {
   pageNo: number;
   pageSize: number;
   keyword?: string;
+  /** 备份批次单号；有值查备份静表，空则查现库 */
+  backupBusNo?: string;
+  /** 库房主键多选（Long 以 string 传递） */
+  warehouseIds?: string[];
+  /** 供应商主键多选 */
+  supplierIds?: string[];
   medicationCategoryCodes?: string[];
   deviceCategoryCodes?: string[];
   inventoryStatusEnums?: string[];
@@ -65,12 +77,18 @@ const inventoryStatusOptions = ref<ApiOptionItem[]>([]);
 const medicationCategoryOptions = ref<ApiOptionItem[]>([]);
 const deviceCategoryOptions = ref<ApiOptionItem[]>([]);
 const inventoryRangeOptions = ref<ApiOptionItem[]>([]);
+const warehouseOptions = ref<ApiOptionItem[]>([]);
+const supplierOptions = ref<ApiOptionItem[]>([]);
+const backupBusNoOptions = ref<ApiOptionItem[]>([]);
 
 const queryParams = reactive<InventoryDetailFormState>({
   pageNo: 1,
   pageSize: 10,
   zeroStockFilter: INVENTORY_RANGE_GT_ZERO_CODE,
 });
+
+/** 是否按备份单号查静表（有单号即备份读；未选则现库）。 */
+const isBackupQuery = computed(() => Boolean(queryParams.backupBusNo?.trim()));
 
 // OptionDto → 表格筛选用 ApiOptionItem（value 一律 string，医保等级在请求体中再转 Integer）。
 function optionDtosToSelectItems(list?: OptionDto[]): ApiOptionItem[] {
@@ -80,18 +98,9 @@ function optionDtosToSelectItems(list?: OptionDto[]): ApiOptionItem[] {
   }));
 }
 
-/** 数量：后端已拼接展示串，前端直接显示。 */
-function fmtDisplayQuantityCell(row: InventoryDetailListRowDto): string {
-  return String(row.displayQuantityText ?? '').trim();
-}
-
 /** 单价 + 单位名（元/单位）。 */
 function fmtUnitPriceCell(price: unknown, unitName?: string): string {
-  const amt = fmtAmt(price);
-  const unit = String(unitName ?? '').trim();
-  if (!amt) return '';
-  if (!unit) return amt;
-  return `${amt} 元/${unit}`;
+  return fmtPackageUnitPrice(price as string | number | null | undefined, unitName);
 }
 
 // 金额/数量类展示：空则空白，否则本地化数字。
@@ -127,7 +136,7 @@ function mapInventoryRangeToZeroStockOnly(code?: string | string[]): boolean {
   return false;
 }
 
-// 组装 IF-02 分页请求体。
+// 组装现库分页请求体。
 function buildPageRequest() {
   const z = mapInventoryRangeToZeroStockOnly(queryParams.zeroStockFilter);
   const ed = queryParams.expireWithinDays?.trim();
@@ -136,6 +145,8 @@ function buildPageRequest() {
     pageNo: queryParams.pageNo,
     pageSize: queryParams.pageSize,
     keyword: queryParams.keyword?.trim() || undefined,
+    warehouseIds: emptyToUndef(queryParams.warehouseIds),
+    supplierIds: emptyToUndef(queryParams.supplierIds),
     medicationCategoryCodes: emptyToUndef(queryParams.medicationCategoryCodes),
     deviceCategoryCodes: emptyToUndef(queryParams.deviceCategoryCodes),
     inventoryStatusEnums: emptyToUndef(queryParams.inventoryStatusEnums),
@@ -145,17 +156,39 @@ function buildPageRequest() {
   };
 }
 
-// 组装 IF-03/06 同筛选请求体（无分页键）。
+// 组装现库汇总/导出同筛选请求体（无分页键）。
 function buildSumExportFilter(): SumInventoryDetailCurrentRequest {
   const p = buildPageRequest();
   return {
     keyword: p.keyword,
+    warehouseIds: p.warehouseIds,
+    supplierIds: p.supplierIds,
     medicationCategoryCodes: p.medicationCategoryCodes,
     deviceCategoryCodes: p.deviceCategoryCodes,
     chrgitmLvList: p.chrgitmLvList,
     zeroStockOnly: p.zeroStockOnly,
     expireWithinDays: p.expireWithinDays,
     inventoryStatusEnums: p.inventoryStatusEnums,
+  };
+}
+
+// 组装备份分页请求体（关键字不含批号，由后端约束）。
+function buildBackupPageRequest() {
+  const base = buildPageRequest();
+  const busNo = queryParams.backupBusNo?.trim();
+  return {
+    ...base,
+    backupBusNo: busNo || undefined,
+  };
+}
+
+// 组装备份汇总/导出同筛选请求体。
+function buildBackupSumExportFilter() {
+  const base = buildSumExportFilter();
+  const busNo = queryParams.backupBusNo?.trim();
+  return {
+    ...base,
+    backupBusNo: busNo || undefined,
   };
 }
 
@@ -168,8 +201,23 @@ const { run: runInit, loading: initLoading } = useRequest(loadInventoryDetailFor
     medicationCategoryOptions.value = optionDtosToSelectItems(d.medicationCategoryOptions);
     deviceCategoryOptions.value = optionDtosToSelectItems(d.deviceCategoryOptions);
     inventoryRangeOptions.value = optionDtosToSelectItems(d.inventoryRangeOptions);
+    warehouseOptions.value = optionDtosToSelectItems(d.warehouseOptions);
+    supplierOptions.value = optionDtosToSelectItems(d.supplierOptions);
   },
 });
+
+const { run: runListBackupBusNo, loading: busNoLoading } = useRequest(
+  listInventoryDetailBackupBusNoApi,
+  {
+    manual: true,
+    onSuccess: (data) => {
+      backupBusNoOptions.value = (data?.backupBusNoList ?? []).map((busNo) => ({
+        label: busNo,
+        value: busNo,
+      }));
+    },
+  },
+);
 
 const { run: runPage, loading: pageLoading } = useRequest(pageInventoryDetailCurrentApi, {
   manual: true,
@@ -179,7 +227,27 @@ const { run: runPage, loading: pageLoading } = useRequest(pageInventoryDetailCur
   },
 });
 
+const { run: runBackupPage, loading: backupPageLoading } = useRequest(
+  pageInventoryDetailBackupApi,
+  {
+    manual: true,
+    onSuccess: (data) => {
+      tableData.value = data?.rows ?? [];
+      total.value = Number(data?.totalElements ?? 0);
+    },
+  },
+);
+
 const { run: runSum, loading: sumLoading } = useRequest(sumInventoryDetailCurrentApi, {
+  manual: true,
+  onSuccess: (data) => {
+    sumLineCostTotal.value = fmtAmt(data?.sumLineCostTotal);
+    sumLinePriceTotal.value = fmtAmt(data?.sumLinePriceTotal);
+    sumTruncated.value = Boolean(data?.truncated);
+  },
+});
+
+const { run: runBackupSum, loading: backupSumLoading } = useRequest(sumInventoryDetailBackupApi, {
   manual: true,
   onSuccess: (data) => {
     sumLineCostTotal.value = fmtAmt(data?.sumLineCostTotal);
@@ -192,6 +260,14 @@ const { run: runExport, loading: exportLoading } = useRequest(exportInventoryDet
   manual: true,
   showErrorMessage: true,
 });
+
+const { run: runBackupExport, loading: backupExportLoading } = useRequest(
+  exportInventoryDetailBackupApi,
+  {
+    manual: true,
+    showErrorMessage: true,
+  },
+);
 
 const { run: runRetire, loading: retireLoading } = useRequest(retireInventoryItemsApi, {
   manual: true,
@@ -213,12 +289,50 @@ const traceDialogVisible = ref(false);
 const traceDialogTitle = ref('追溯码');
 const traceDialogText = ref('');
 
+const keywordPlaceholder = computed(() => {
+  if (isBackupQuery.value) {
+    return '名称、编码、商品名、拼音、五笔';
+  }
+  return '名称、编码、商品名、拼音、五笔、批号';
+});
+
 const formItems = computed<FormItemConfig[]>(() => [
+  {
+    label: '备份单号',
+    prop: 'backupBusNo',
+    type: 'select',
+    placeholder: '不选则查现库存',
+    multiple: false,
+    filterable: true,
+    clearable: true,
+    collapseTags: false,
+    options: backupBusNoOptions.value,
+  },
   {
     label: '关键字',
     prop: 'keyword',
     type: 'input',
-    placeholder: '名称、编码、拼音、五笔、批号',
+    placeholder: keywordPlaceholder.value,
+  },
+  {
+    label: '库房',
+    prop: 'warehouseIds',
+    type: 'select',
+    placeholder: '可多选',
+    multiple: true,
+    collapseTags: true,
+    clearable: true,
+    options: warehouseOptions.value,
+  },
+  {
+    label: '供应商',
+    prop: 'supplierIds',
+    type: 'select',
+    placeholder: '可多选',
+    multiple: true,
+    collapseTags: true,
+    clearable: true,
+    options: supplierOptions.value,
   },
   {
     label: '近效期(天)',
@@ -278,7 +392,7 @@ const formItems = computed<FormItemConfig[]>(() => [
   },
 ]);
 
-const tableColumns: TableColumn[] = [
+const baseTableColumns: TableColumn[] = [
   {
     type: 'index',
     label: '序号',
@@ -288,13 +402,38 @@ const tableColumns: TableColumn[] = [
     fixed: 'left',
   },
   {
+    prop: 'productBusNo',
+    label: '编码',
+    width: 110,
+    align: 'center',
+    headerAlign: 'center',
+    showOverflowTooltip: true,
+    fixed: 'left',
+  },
+  {
     prop: 'name',
-    label: '名称',
-    minWidth: 160,
+    label: '项目名称',
+    minWidth: 140,
     align: 'left',
     headerAlign: 'center',
     showOverflowTooltip: true,
     fixed: 'left',
+  },
+  {
+    prop: 'merchandiseName',
+    label: '商品名称',
+    minWidth: 120,
+    align: 'left',
+    headerAlign: 'center',
+    showOverflowTooltip: true,
+  },
+  {
+    prop: 'categoryLabel',
+    label: '项目类别',
+    width: 100,
+    align: 'center',
+    headerAlign: 'center',
+    showOverflowTooltip: true,
   },
   {
     prop: 'lotNumber',
@@ -305,12 +444,26 @@ const tableColumns: TableColumn[] = [
     showOverflowTooltip: true,
   },
   {
-    prop: 'displayQuantityText',
-    label: '库存数量',
-    minWidth: 120,
+    prop: 'packageStockText',
+    label: '库存(包装)',
+    minWidth: 100,
     align: 'right',
     headerAlign: 'center',
-    formatter: (row) => fmtDisplayQuantityCell(row as InventoryDetailListRowDto),
+  },
+  {
+    prop: 'splitStockText',
+    label: '库存(最小)',
+    minWidth: 100,
+    align: 'right',
+    headerAlign: 'center',
+  },
+  {
+    prop: 'packageUnitRatio',
+    label: '拆零换算比',
+    width: 80,
+    align: 'center',
+    headerAlign: 'center',
+    formatter: (row) => fmtAmt((row as InventoryDetailListRowDto).packageUnitRatio),
   },
   {
     prop: 'warehouseName',
@@ -321,10 +474,50 @@ const tableColumns: TableColumn[] = [
     showOverflowTooltip: true,
   },
   {
+    prop: 'totalVolume',
+    label: '规格',
+    minWidth: 100,
+    align: 'center',
+    headerAlign: 'center',
+    showOverflowTooltip: true,
+  },
+  {
+    prop: 'manufacturer',
+    label: '厂家',
+    minWidth: 120,
+    align: 'left',
+    headerAlign: 'center',
+    showOverflowTooltip: true,
+  },
+  {
     prop: 'supplierName',
     label: '供应商',
     minWidth: 140,
     align: 'left',
+    headerAlign: 'center',
+    showOverflowTooltip: true,
+  },
+  {
+    prop: 'doseFormLabel',
+    label: '剂型',
+    width: 90,
+    align: 'center',
+    headerAlign: 'center',
+    showOverflowTooltip: true,
+  },
+  {
+    prop: 'approvalNumber',
+    label: '国药准字',
+    minWidth: 120,
+    align: 'center',
+    headerAlign: 'center',
+    showOverflowTooltip: true,
+  },
+  {
+    prop: 'ybNo',
+    label: '医保码',
+    minWidth: 120,
+    align: 'center',
     headerAlign: 'center',
     showOverflowTooltip: true,
   },
@@ -343,57 +536,48 @@ const tableColumns: TableColumn[] = [
     headerAlign: 'center',
   },
   {
-    prop: 'inventoryStatusText',
+    prop: 'remainingDays',
+    label: '剩余天数',
+    width: 90,
+    align: 'center',
+    headerAlign: 'center',
+  },
+  {
+    prop: 'inventoryStatusLabel',
     label: '供应状态',
     width: 100,
     align: 'center',
     headerAlign: 'center',
   },
   {
-    prop: 'chrgitmLvText',
+    prop: 'chrgitmLvLabel',
     label: '医保等级',
     width: 100,
     align: 'center',
     headerAlign: 'center',
   },
   {
-    prop: 'medicationCategoryText',
-    label: '药品分类',
-    width: 100,
-    align: 'center',
-    headerAlign: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'deviceCategoryText',
-    label: '耗材分类',
-    width: 100,
-    align: 'center',
-    headerAlign: 'center',
-    showOverflowTooltip: true,
-  },
-  {
-    prop: 'displayCostUnitPrice',
+    prop: 'lotCostPrice',
     label: '进价',
     width: 130,
     align: 'right',
     headerAlign: 'center',
     formatter: (row) =>
       fmtUnitPriceCell(
-        (row as InventoryDetailListRowDto).displayCostUnitPrice,
-        (row as InventoryDetailListRowDto).displayCostUnitName,
+        (row as InventoryDetailListRowDto).lotCostPrice,
+        (row as InventoryDetailListRowDto).packageUnitName,
       ),
   },
   {
-    prop: 'displayPriceUnitPrice',
+    prop: 'lotSalePrice',
     label: '售价',
     width: 130,
     align: 'right',
     headerAlign: 'center',
     formatter: (row) =>
       fmtUnitPriceCell(
-        (row as InventoryDetailListRowDto).displayPriceUnitPrice,
-        (row as InventoryDetailListRowDto).displayPriceUnitName,
+        (row as InventoryDetailListRowDto).lotSalePrice,
+        (row as InventoryDetailListRowDto).packageUnitName,
       ),
   },
   {
@@ -412,18 +596,32 @@ const tableColumns: TableColumn[] = [
     headerAlign: 'center',
     formatter: (_row, _c, cell) => fmtAmt(cell),
   },
-  {
-    label: '操作',
-    width: 220,
-    align: 'center',
-    headerAlign: 'center',
-    fixed: 'right',
-    slot: 'rowActions',
-  },
 ];
 
-// 同步拉分页与底部汇总（IF-02 + IF-03）。
+const actionColumn: TableColumn = {
+  label: '操作',
+  width: 220,
+  align: 'center',
+  headerAlign: 'center',
+  fixed: 'right',
+  slot: 'rowActions',
+};
+
+const tableColumns = computed<TableColumn[]>(() => {
+  if (isBackupQuery.value) {
+    return baseTableColumns;
+  }
+  return [...baseTableColumns, actionColumn];
+});
+
+// 同步拉分页与底部汇总（有备份单号走静表，否则现库）。
 async function getList() {
+  if (isBackupQuery.value) {
+    const pageBody = buildBackupPageRequest();
+    const sumBody = buildBackupSumExportFilter();
+    await Promise.all([runBackupPage(pageBody), runBackupSum(sumBody)]);
+    return;
+  }
   const pageBody = buildPageRequest();
   const sumBody = buildSumExportFilter();
   await Promise.all([runPage(pageBody), runSum(sumBody)]);
@@ -438,6 +636,9 @@ function handleTopQuery() {
 // 清空筛选并回到第一页。
 function handleReset() {
   queryParams.keyword = undefined;
+  queryParams.backupBusNo = undefined;
+  queryParams.warehouseIds = undefined;
+  queryParams.supplierIds = undefined;
   queryParams.expireWithinDays = undefined;
   queryParams.medicationCategoryCodes = undefined;
   queryParams.deviceCategoryCodes = undefined;
@@ -448,42 +649,22 @@ function handleReset() {
   getList();
 }
 
-// 将导出字节写入本地下载（body 支持 Base64 或 number[]）。
-function triggerFileDownload(data: ExportInventoryDetailCurrentResponse) {
-  const raw = data?.body;
-  if (raw === null || raw === undefined) {
+// 按当前筛选导出 Excel（有备份单号则导备份）。
+async function handleExportExcel() {
+  const defaultFileName = isBackupQuery.value ? '库存明细备份.xlsx' : '库存明细.xlsx';
+  const data = isBackupQuery.value
+    ? await runBackupExport(buildBackupSumExportFilter())
+    : await runExport(buildSumExportFilter());
+  if (!data?.body?.trim()) {
     ElMessage.warning('导出内容为空');
     return;
   }
-  let bytes: Uint8Array;
-  if (typeof raw === 'string') {
-    const bin = atob(raw);
-    bytes = Uint8Array.from({ length: bin.length }, (_, i) => bin.codePointAt(i) ?? 0);
-  } else if (Array.isArray(raw)) {
-    bytes = new Uint8Array(raw);
+  downloadBinaryExportFile(data, defaultFileName);
+  if (data.truncated) {
+    ElMessage.warning('导出数据已触达行数上限，部分记录未包含在文件中');
   } else {
-    ElMessage.warning('导出数据格式异常');
-    return;
+    ElMessage.success(`导出成功，共 ${data.exportedRowCount ?? 0} 行`);
   }
-  const blob = new Blob([bytes as unknown as BlobPart], {
-    type: data.contentType ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = data.fileName ?? 'inventory-detail.xlsx';
-  a.click();
-  URL.revokeObjectURL(url);
-  if (data.truncated === true) {
-    ElMessage.warning('导出已按行数上限截断');
-  }
-}
-
-// IF-06：按当前筛选导出 Excel。
-async function handleExportExcel() {
-  const body = buildSumExportFilter();
-  const data = await runExport(body);
-  triggerFileDownload(data);
 }
 
 function handlePageSizeChange(limit: number) {
@@ -505,11 +686,11 @@ function canResumeInventoryRow(row: InventoryDetailListRowDto): boolean {
   return row.inventoryStatusEnum === PublicationStatusCode.INACTIVE;
 }
 
-// 打开追溯码弹窗：无 traceNo 时提示待后端字段。
+// 打开追溯码弹窗。
 function handleOpenTrace(row: InventoryDetailListRowDto) {
   const t = row.traceNo?.trim();
   if (!t) {
-    ElMessage.info('当前行未下发追溯码（traceNo），请在后端 DTO 补字段后展示');
+    ElMessage.info('当前行无追溯码');
     return;
   }
   traceDialogTitle.value = `追溯码 · ${row.name ?? ''}`;
@@ -549,6 +730,7 @@ async function handleResumeInventoryRow(row: InventoryDetailListRowDto) {
 
 onMounted(() => {
   runInit();
+  runListBackupBusNo({});
   getList();
 });
 </script>
@@ -560,9 +742,13 @@ onMounted(() => {
         :table-data="tableData"
         :loading="
           initLoading ||
+          busNoLoading ||
           pageLoading ||
+          backupPageLoading ||
           sumLoading ||
+          backupSumLoading ||
           exportLoading ||
+          backupExportLoading ||
           retireLoading ||
           resumeLoading
         "
@@ -583,7 +769,7 @@ onMounted(() => {
             type="danger"
             plain
             :icon="Download"
-            :loading="exportLoading"
+            :loading="exportLoading || backupExportLoading"
             @click="handleExportExcel"
           >
             导出Excel

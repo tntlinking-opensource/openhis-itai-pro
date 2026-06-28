@@ -22,6 +22,7 @@ import type { AuthApi } from '#/api/core/auth';
 
 import { isTenantScopeLostError, restoreLoginScopeOnce } from '#/utils/auth/restore-login-scope';
 import { formatInsuranceRegisterError } from '#/utils/http/format-insurance-register-error';
+import { formatStaleCrossRoleError } from '#/utils/http/stale-cross-role-error';
 import { showPersistentUserError } from '#/utils/http/show-persistent-user-message';
 
 import { refreshTokenApi } from './core';
@@ -185,6 +186,15 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
       );
       if (registerInsuranceError) {
         void showPersistentUserError(registerInsuranceError);
+        return;
+      }
+
+      const staleCrossRoleError = formatStaleCrossRoleError(
+        typeof errorCode === 'string' ? errorCode : undefined,
+        displayMessage,
+      );
+      if (staleCrossRoleError) {
+        ElMessage.warning(staleCrossRoleError);
         return;
       }
 
