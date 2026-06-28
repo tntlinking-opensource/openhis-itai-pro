@@ -26,3 +26,6 @@ local-secrets/license/*
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Framework 预编译 JAR 须提交（覆盖父仓 openhis-itai-pro 的 *.jar）
+!dist/framework-maven-repo/**/*.jar
