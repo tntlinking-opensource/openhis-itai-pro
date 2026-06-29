@@ -7,7 +7,7 @@ spring:
     allow-bean-definition-overriding: true  # 允许应用层配置覆盖框架配置，避免 Repository 重复注册
   
   datasource:
-    url: jdbc:postgresql://localhost:5432/whale
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:whale}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:root}
     driver-class-name: org.postgresql.Driver
