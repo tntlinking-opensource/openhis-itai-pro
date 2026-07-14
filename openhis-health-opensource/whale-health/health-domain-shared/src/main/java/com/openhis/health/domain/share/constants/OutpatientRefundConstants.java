@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 /**
@@ -22,31 +9,34 @@ package com.openhis.health.domain.share.constants;
  */
 public interface OutpatientRefundConstants {
 
-    /** 初始化失败。 */
+/** OutpatientRefund 共享常量：code init load failed，值 {@code EX-REF-101}。 */
     String MESSAGE_CODE_INIT_LOAD_FAILED = "EX-REF-101";
 
-    /** 队列查询失败。 */
+/** OutpatientRefund 共享常量：code queue query failed，值 {@code EX-REF-102}。 */
     String MESSAGE_CODE_QUEUE_QUERY_FAILED = "EX-REF-102";
 
     /** 就诊无效或无可执行退费明细。 */
     String MESSAGE_CODE_EXECUTION_DETAIL_INVALID = "EX-REF-103";
 
-    /** 须先完成退药。 */
+/** OutpatientRefund 共享常量：code medication return pending，值 {@code EX-REF-201}。 */
     String MESSAGE_CODE_MEDICATION_RETURN_PENDING = "EX-REF-201";
 
-    /** 须先完成退耗材。 */
+/** OutpatientRefund 共享常量：code device return pending，值 {@code EX-REF-202}。 */
     String MESSAGE_CODE_DEVICE_RETURN_PENDING = "EX-REF-202";
 
-    /** 目标账户不存在。 */
+/** OutpatientRefund 共享常量：code account not found，值 {@code EX-REF-401}。 */
     String MESSAGE_CODE_ACCOUNT_NOT_FOUND = "EX-REF-401";
 
-    /** 账户切换失败。 */
+/** OutpatientRefund 共享常量：code account switch failed，值 {@code EX-REF-402}。 */
     String MESSAGE_CODE_ACCOUNT_SWITCH_FAILED = "EX-REF-402";
 
-    /** 无半退保留行。 */
+    /** 就诊仅单一记账账户，不支持半退保留行转医保/转自费。 */
+    String MESSAGE_CODE_DUAL_ACCOUNT_REQUIRED = "EX-REF-404";
+
+/** OutpatientRefund 共享常量：code no preserved lines，值 {@code EX-REF-403}。 */
     String MESSAGE_CODE_NO_PRESERVED_LINES = "EX-REF-403";
 
-    /** 支付不可退。 */
+/** OutpatientRefund 共享常量：code payment not refundable，值 {@code EX-REF-301}。 */
     String MESSAGE_CODE_PAYMENT_NOT_REFUNDABLE = "EX-REF-301";
 
     /** 收费行状态已变化。 */
@@ -55,12 +45,18 @@ public interface OutpatientRefundConstants {
     /** 实退金额与应退不一致。 */
     String MESSAGE_CODE_REFUND_AMOUNT_MISMATCH = "EX-REF-303";
 
-    /** 半退再结算失败。 */
+/** OutpatientRefund 共享常量：code half refund settle failed，值 {@code EX-REF-304}。 */
     String MESSAGE_CODE_HALF_REFUND_SETTLE_FAILED = "EX-REF-304";
 
-    /** 退费执行成功。 */
+    /** 同一原支付禁止分次退费（一次收须一次退，EX-REF-305）。 */
+    String MESSAGE_CODE_HALF_REFUND_NOT_SUPPORTED = "EX-REF-305";
+
+    /** 退费渠道须与原支付明细渠道及分桶金额一致（原路返回）。 */
+    String MESSAGE_CODE_REFUND_CHANNEL_MUST_ORIGINAL = "EX-REF-306";
+
+/** OutpatientRefund 共享常量：code refund success，值 {@code EX-REF-410}。 */
     String MESSAGE_CODE_REFUND_SUCCESS = "EX-REF-410";
 
-    /** 账户切换成功。 */
+/** OutpatientRefund 共享常量：code account switch success，值 {@code EX-REF-409}。 */
     String MESSAGE_CODE_ACCOUNT_SWITCH_SUCCESS = "EX-REF-409";
 }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.wardbed.service;
 
 import com.openhis.health.application.basic.wardbed.dto.WardBedDto;
@@ -37,7 +24,7 @@ import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -66,6 +53,8 @@ public class WardBedAppService {
      * @return 初始化 DTO
      */
     public WardBedInitDto init() {
+        // Gate：只读页初始化，无写侧操作人
+        // Pre：加载位置状态字典、住院科室树、形态枚举与病区/病房候选
         WardBedInitDto dto = new WardBedInitDto();
         dto.setLocationStatusOptions(codeSystemQueryService.getOptionListByEnum(LocationStatus.class));
         dto.setOrganizationOptions(this.loadOrganizationOptions());
@@ -75,6 +64,7 @@ public class WardBedAppService {
         dto.setWardOptions(wardList);
         dto.setHouseOptions(houseList);
         log.info("病区床位初始化：{} 个病区，{} 个病房", wardList.size(), houseList.size());
+        // Asm：映射维护页初始化 DTO
         return dto;
     }
 
@@ -86,12 +76,16 @@ public class WardBedAppService {
      */
     public List<WardBedDto> getWardList(QueryWardBedRequest query) {
         List<Location> wards;
+        // 业务分支：传机构 id 时仅查该机构下病区，否则查全院病区
         if (query != null && query.getId() != null) {
+            // Pre：按机构与 WARD 形态过滤
             wards = locationQueryService.listByOrganizationIdAndFormCode(
                 query.getId(), LocationForm.WARD.getCode());
         } else {
+            // Pre：按 WARD 形态全量过滤
             wards = locationQueryService.listAllByFormCode(LocationForm.WARD.getCode());
         }
+        // Asm：映射病区 DTO 列表
         return this.mapToDtoList(wards);
     }
 
@@ -102,9 +96,11 @@ public class WardBedAppService {
      * @return 病房 DTO，{@code children} 为床位
      */
     public List<WardBedDto> getHouseAndBedList(QueryWardBedRequest query) {
+        // Gate：病区主键缺失时返回空树，避免误查全库
         if (query == null || query.getId() == null) {
             return new ArrayList<>();
         }
+        // Pre：加载病区下病房及各自床位
         List<Location> rooms = locationQueryService.listRoomsUnderWard(query.getId());
         List<WardBedDto> houses = new ArrayList<>();
         for (Location room : rooms) {
@@ -113,6 +109,7 @@ public class WardBedAppService {
             houseDto.setChildren(this.mapToDtoList(beds));
             houses.add(houseDto);
         }
+        // Asm：映射病房+床位二级树
         return houses;
     }
 
@@ -123,11 +120,14 @@ public class WardBedAppService {
      * @return DTO
      */
     public WardBedDto getById(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("位置ID不能为空");
         }
+        // Pre：按 id 加载位置实体
         Location entity = locationQueryService.findOptionalById(id)
             .orElseThrow(() -> new EntityNotFoundException("位置", id));
+        // Asm：映射 DTO 并 enrich 父级快照
         WardBedDto dto = wardBedMapper.toDto(entity);
         this.attachParentIfPresent(entity, dto);
         return dto;
@@ -140,16 +140,19 @@ public class WardBedAppService {
      * @return 新建位置 DTO
      */
     public WardBedDto create(CreateWardBedRequest request) {
+        // Gate：请求体、形态与挂靠机构必填
         if (request == null) {
             throw new ValidationException("创建请求不能为空");
         }
-        if (StringUtils.isBlank(request.getFormEnum())) {
+        if (StringUtils.isEmpty(request.getFormEnum())) {
             throw new ValidationException("位置类型不能为空");
         }
         if (request.getOrganizationId() == null) {
             throw new ValidationException("机构不能为空");
         }
+        // Cmd：领域登记位置（登记即启用）
         Long createdId = locationDomainService.registerLocation(wardBedMapper.toCreateCommand(request));
+        // Asm：按新主键回查完整 DTO
         return this.getById(createdId);
     }
 
@@ -160,11 +163,14 @@ public class WardBedAppService {
      * @return 更新后 DTO
      */
     public WardBedDto edit(UpdateWardBedRequest request) {
+        // Gate：主键非空
         if (request == null || request.getId() == null) {
             throw new ValidationException("位置ID不能为空");
         }
+        // Cmd：领域更新位置基础信息
         EditLocationInfoCommand command = wardBedMapper.toUpdateCommand(request);
         locationDomainService.editLocationInfo(command);
+        // Asm：回查最新 DTO
         return this.getById(request.getId());
     }
 
@@ -174,9 +180,11 @@ public class WardBedAppService {
      * @param id 位置主键
      */
     public void deleteLocation(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("位置ID不能为空");
         }
+        // Cmd：领域废止位置
         locationDomainService.abolishLocation(wardBedMapper.toAbolishCommand(id));
         log.info("废止位置: {}", id);
     }
@@ -188,9 +196,11 @@ public class WardBedAppService {
      * @return 命令已下发时恒为 true
      */
     public boolean enableLocation(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("位置ID不能为空");
         }
+        // Cmd：领域启用位置
         locationDomainService.activateLocation(wardBedMapper.toActivateCommand(id));
         return true;
     }
@@ -202,9 +212,11 @@ public class WardBedAppService {
      * @return 命令已下发时恒为 true
      */
     public boolean deactivateLocation(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("位置ID不能为空");
         }
+        // Cmd：领域停用位置
         locationDomainService.deactivateLocation(wardBedMapper.toDeactivateCommand(id));
         return true;
     }

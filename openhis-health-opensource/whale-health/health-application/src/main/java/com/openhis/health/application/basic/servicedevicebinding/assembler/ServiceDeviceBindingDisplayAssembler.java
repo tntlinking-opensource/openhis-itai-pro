@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.servicedevicebinding.assembler;
 
 import com.openhis.health.application.basic.servicedevicebinding.dto.ServiceDeviceBindingDto;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.common.converter.TextValueConverter;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.converter.TextValueConverter;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
 import com.openhis.health.domain.administration.devicedefinition.service.DeviceDefinitionQueryService;
 import com.openhis.health.domain.share.constants.CustomConstants;
@@ -38,7 +25,7 @@ import com.openhis.health.domain.workflow.activitydefinition.queries.model.Activ
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
 import com.openhis.whale.core.application.dto.OptionDto;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -52,14 +39,14 @@ import java.util.Set;
 /**
  * 诊疗耗材绑定列表展示 enrich 与初始化下拉装配（WH-BND001）。
  *
- * <p>批量 I/O：用法来源名经术语体系一次加载；诊疗/目标项经 QueryService 或 {@link ProductDefinitionBatchLoader} 批量解析。</p>
+ * <p>批量 I/O：用法来源名经术语体系一次加载；诊疗/目标项经 QueryService 或 {@link ProductDefinitionDisplayTerminologyAssembler} 批量解析。</p>
  */
 @Component
 @RequiredArgsConstructor
 public class ServiceDeviceBindingDisplayAssembler {
 
     private final TerminologyOptionLoader terminologyOptionLoader;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
     private final DeviceDefinitionQueryService deviceDefinitionQueryService;
 
@@ -78,7 +65,7 @@ public class ServiceDeviceBindingDisplayAssembler {
 
         // 第一遍：收集各来源类型与目标项的批量查询键
         for (ServiceDeviceBindingDto row : rows) {
-            if (row == null || StringUtils.isBlank(row.getItemNo())) {
+            if (row == null || StringUtils.isEmpty(row.getItemNo())) {
                 continue;
             }
             String typeCode = row.getTypeCode();
@@ -88,7 +75,7 @@ public class ServiceDeviceBindingDisplayAssembler {
                     activitySourceIds.add(activityId);
                 }
             }
-            if (row.getDevActId() == null || StringUtils.isBlank(row.getDevActTable())) {
+            if (row.getDevActId() == null || StringUtils.isEmpty(row.getDevActTable())) {
                 continue;
             }
             String table = row.getDevActTable().trim();
@@ -107,7 +94,7 @@ public class ServiceDeviceBindingDisplayAssembler {
             productLookups.add(lookup);
         }
 
-        Map<String, ProductDefinitionDisplayDto> productByKey = productDefinitionBatchLoader.loadAsMap(productLookups);
+        Map<String, ProductDefinitionDisplayDto> productByKey = productDefinitionDisplayTerminologyAssembler.loadAsMap(productLookups);
         Map<String, String> methodLabelByCode =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.METHOD_CODE);
         Map<Long, String> activitySourceNameById = this.buildActivityDefinitionNameMap(activitySourceIds);
@@ -138,12 +125,12 @@ public class ServiceDeviceBindingDisplayAssembler {
             } else {
                 row.setDevActTableName(row.getDevActTable());
             }
-            if (StringUtils.isNotBlank(row.getUnitCode())) {
+            if (StringUtils.isNotEmpty(row.getUnitCode())) {
                 row.setUnitName(unitLabels.get(row.getUnitCode().trim()));
             }
             row.setItemName(this.resolveSourceItemName(
                 row, methodLabelByCode, activitySourceNameById, productByKey));
-            if (row.getDevActId() != null && StringUtils.isNotBlank(row.getDevActTable())) {
+            if (row.getDevActId() != null && StringUtils.isNotEmpty(row.getDevActTable())) {
                 String key = ProductDefinitionKeyUtil.buildCompositeKey(row.getDevActTable().trim(), row.getDevActId());
                 ProductDefinitionDisplayDto product = productByKey.get(key);
                 if (product != null) {
@@ -188,7 +175,7 @@ public class ServiceDeviceBindingDisplayAssembler {
      */
     public List<OptionDto> buildDeviceDefOptions(String keyword) {
         List<DeviceDefinition> deviceList;
-        if (StringUtils.isBlank(keyword)) {
+        if (StringUtils.isEmpty(keyword)) {
             deviceList = deviceDefinitionQueryService.getDeviceManageInit();
         } else {
             deviceList = deviceDefinitionQueryService.searchByKeyWord(keyword.trim());
@@ -199,7 +186,7 @@ public class ServiceDeviceBindingDisplayAssembler {
                 continue;
             }
             String label = item.getName();
-            if (StringUtils.isNotBlank(item.getBusNo())) {
+            if (StringUtils.isNotEmpty(item.getBusNo())) {
                 label = item.getBusNo() + " " + item.getName();
             }
             options.add(new OptionDto(0L, String.valueOf(item.getId()), label));
@@ -255,14 +242,14 @@ public class ServiceDeviceBindingDisplayAssembler {
         Map<Long, String> activitySourceNameById,
         Map<String, ProductDefinitionDisplayDto> productByKey
     ) {
-        if (StringUtils.isBlank(row.getItemNo())) {
+        if (StringUtils.isEmpty(row.getItemNo())) {
             return null;
         }
         String itemKey = row.getItemNo().trim();
         String typeCode = row.getTypeCode();
         if (ServiceDeviceTemplateTypeCode.USAGE.getCode().equals(typeCode)) {
             String label = methodLabelByCode.get(itemKey);
-            if (StringUtils.isNotBlank(label)) {
+            if (StringUtils.isNotEmpty(label)) {
                 return label;
             }
             return itemKey;

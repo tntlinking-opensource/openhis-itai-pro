@@ -1,43 +1,28 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.response;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.experimental.Accessors;
 
 /**
- *
- * <p>{@link #success} 与 {@link #statusEnum} 由
- * {@link com.openhis.health.application.inventory.warehouse.inboundreceipt.mapper.InventoryWarehouseInboundReceiptMapper#toWithdrawInboundReceiptApprovalResponse}
- * 装配；{@code statusEnum} 非空时为 {@link com.openhis.health.domain.share.enums.SupplyStatus#getCode()}（B.10.8.1），取自撤回后同号首行回读。
- * 缺失时客户端应重新拉取详情以对齐乐观锁与展示。</p>
+ * 撤回药库入库审批响应（IF-WHS-IN-07）。
  */
 @Getter
 @Setter
+@Accessors(chain = true)
+@Schema(description = "撤回药库入库审批 IF-WHS-IN-07")
 public class WithdrawInboundReceiptApprovalResponse {
 
-    /**
-     * 撤回操作是否成功落库。
-     */
+    /** 是否成功。 */
+    @Schema(description = "是否成功")
     private Boolean success;
 
-    /**
-     * 撤回后的单据状态持久化码；可为 null（见类说明）。
-     */
+    /** 撤回后状态 SupplyStatus#getCode。 */
+    @Schema(description = "撤回后状态 SupplyStatus#getCode")
     private String statusEnum;
 }

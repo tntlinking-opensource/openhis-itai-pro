@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.supplier.repository;
 
 import com.openhis.health.domain.custom.supplier.entity.Supplier;
@@ -30,6 +17,12 @@ import java.util.Optional;
  */
 public interface SupplierRepository extends JpaRepository<Supplier, Long> {
 
+    /**
+     * 按主键加载供应商（含已软删，供框架默认对齐）。
+     *
+     * @param id 供应商主键
+     * @return 供应商实体
+     */
     Optional<Supplier> findById(Long id);
 
     /**
@@ -49,11 +42,36 @@ public interface SupplierRepository extends JpaRepository<Supplier, Long> {
      */
     boolean existsByBusNo(String busNo);
 
+    /**
+     * 信用代码在有效记录内是否已占用（见类注释 BR-SUP-004）。
+     *
+     * @param creditCode 统一社会信用代码
+     * @return {@code true} 表示冲突
+     */
     boolean existsByCreditCode(String creditCode);
 
+    /**
+     * 列出全部有效供应商（主数据规模受控；下拉预热）。
+     *
+     * @return 供应商列表
+     */
     List<Supplier> findAllBy();
 
+    /**
+     * 按供应商类型与状态筛选（采购/入库下拉）。
+     *
+     * @param typeEnum 类型持久化码
+     * @param statusEnum 状态持久化码
+     * @return 匹配的供应商列表
+     */
     List<Supplier> findAllByTypeEnumAndStatusEnum(String typeEnum, String statusEnum);
 
+    /**
+     * 按名称模糊分页查询供应商。
+     *
+     * @param name 名称关键字
+     * @param pageable 分页参数
+     * @return 分页结果
+     */
     Page<Supplier> findAllByNameContaining(String name, Pageable pageable);
 }

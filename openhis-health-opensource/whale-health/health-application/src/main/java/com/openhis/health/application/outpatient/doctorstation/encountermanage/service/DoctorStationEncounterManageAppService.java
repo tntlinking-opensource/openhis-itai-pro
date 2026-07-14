@@ -1,22 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.encountermanage.service;
 
+import com.openhis.health.application.outpatient.doctorstation.encountermanage.dto.OutpatientInfoItemDto;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.mapper.DoctorStationEncounterManageMapper;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.CompleteOutpatientEncounterRequest;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.MarkOutpatientLeaveRequest;
@@ -36,7 +24,7 @@ import com.openhis.health.domain.administration.encounter.queries.model.Encounte
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientEncounterPageQuery;
@@ -45,6 +33,9 @@ import com.openhis.health.domain.administration.encounter.queries.OutpatientEnco
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.EncounterClass;
+import com.openhis.health.infrastructure.integration.workinjury.WorkInjuryEncounterContextExtension;
+import com.openhis.health.infrastructure.integration.workinjury.ExtensionIn.WorkInjuryEncounterContextQueryExtensionIn;
+import com.openhis.health.infrastructure.integration.workinjury.ExtensionOut.WorkInjuryEncounterContextExtensionOut;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -69,7 +60,7 @@ public class DoctorStationEncounterManageAppService {
 
     /** 就诊读侧：门诊上下文分页、完诊预检与 mustGet。 */
     private final EncounterQueryService encounterQueryService;
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
     /** 就诊写侧：接诊、暂离、完诊命令编排。 */
     private final EncounterDomainService encounterDomainService;
     /** 字段映射：Request/QueryModel ↔ 医生站列表与命令 DTO。 */
@@ -78,6 +69,9 @@ public class DoctorStationEncounterManageAppService {
     private final PractitionerQueryService practitionerQueryService;
     /** 收费明细读侧：列表页按就诊批量汇总费用。 */
     private final ChargeItemQueryService chargeItemQueryService;
+
+    /** 工伤就诊上下文（队列角标）。 */
+    private final WorkInjuryEncounterContextExtension workInjuryEncounterContextExtension;
 
     /**
      * 分页查询本科室门诊患者列表（读模型）。
@@ -98,16 +92,43 @@ public class DoctorStationEncounterManageAppService {
             this.doctorStationEncounterManageMapper.toOutpatientEncounterPageQuery(request);
         // 下推到就诊上下文分页查询，避免应用层全表加载。
         Page<OutpatientEncounterContextQueryModel> page =
-            this.encounterContextFacade.pageOutpatientEncounterContexts(pageQuery);
+            this.EncounterContextReader.pageOutpatientEncounterContexts(pageQuery);
         // 读模型未投影金额；按就诊一次批量拉收费明细，内存汇总（不查支付流水、不按号源锚点拆挂号费）。
         Map<Long, OutpatientEncounterListFinancialTotals> chargeTotals =
             this.buildChargeItemTotalsForDoctorStationPage(page.getContent());
         // 将读模型分页装配为前端列表契约（无写库）。
         PageOutpatientInfoForDoctorStationResponse resp =
             this.doctorStationEncounterManageMapper.toPageOutpatientInfoForDoctorStationResponse(page, chargeTotals);
+        this.applyWorkInjuryContextLabels(resp);
         // 费用性质下拉随就诊挂号分类变化，患者列表页不附带（由医嘱 init 按 encounterId 加载）。
         resp.setFeeNatureOptions(Collections.emptyList());
         return resp;
+    }
+
+    /**
+     * 门诊医生站列表：按就诊解析工伤上下文并回填 workInjury 相关展示列。
+     *
+     * @param resp 分页响应
+     */
+    private void applyWorkInjuryContextLabels(PageOutpatientInfoForDoctorStationResponse resp) {
+        if (resp == null || resp.getContent() == null || resp.getContent().isEmpty()) {
+            return;
+        }
+        for (OutpatientInfoItemDto row : resp.getContent()) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            WorkInjuryEncounterContextExtensionOut ctx = workInjuryEncounterContextExtension.resolveContext(
+                    new WorkInjuryEncounterContextQueryExtensionIn().setEncounterId(row.getEncounterId()));
+            if (ctx == null) {
+                continue;
+            }
+            row.setWorkInjuryEncounter(ctx.isWorkInjuryEncounter());
+            row.setWorkInjuryApprovalStatusLabel(ctx.getApprovalStatusLabel());
+            row.setWorkInjuryContractId(ctx.getContractId());
+            row.setWorkInjuryQualificationValid(ctx.isQualificationValid());
+            row.setWorkInjuryNeeds2301Upload(ctx.isNeeds2301Upload());
+        }
     }
 
     /**

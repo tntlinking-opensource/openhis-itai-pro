@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.servicerequest.command;
 
 import com.openhis.health.domain.share.command.BatchCommand;
@@ -32,27 +19,43 @@ import java.util.List;
 @Setter
 public class ModifyServiceRequestDraftCommand extends BatchCommand<ModifyServiceRequestDraftCommand.ModifyServiceRequestDraftItemCommand> {
 
+    /** 当前操作人（审计与部分字段覆盖写）。 */
     private Long operatorId;
 
     @Getter
     @Setter
     public static class ModifyServiceRequestDraftItemCommand {
+        /** 服务申请主键 {@code wkf_service_request.id}。 */
         private Long id;
+        /** 修订后数量；非空时覆盖。 */
         private BigDecimal quantity;
+        /** 修订后计量单位编码；非空时覆盖。 */
         private String unitCode;
         /** 计划执行次数（临嘱；长嘱可空）。 */
         private Integer executionCount;
+        /** 医嘱类别持久化码；非空时覆盖。 */
         private String categoryEnum;
+        /** 治疗类别持久化码；非空时覆盖。 */
         private String therapyEnum;
+        /** 开嘱人 practitioner 主键；非空时覆盖。 */
         private Long requesterId;
+        /** 修订原因/说明（审计留痕）。 */
         private String reasonText;
+        /** 执行人 practitioner 主键；非空时覆盖。 */
         private Long performerId;
+        /** 执行地点 {@code adm_location.id}；非空时覆盖。 */
         private Long locationId;
+        /** 执行科室 {@code adm_organization.id}；非空时覆盖。 */
         private Long orgId;
+        /** 行备注；非空时覆盖。 */
         private String remark;
+        /** 嘱托内容；非空时覆盖。 */
         private String entrustContent;
+        /** 明细引用全量替换列表；非 null 时软删旧明细后重建。 */
         private List<DetailItemCommand> detailItems;
+        /** 计划执行开始时刻；非空时覆盖。 */
         private LocalDateTime occurrenceStartTime;
+        /** 计划执行结束时刻；非空时覆盖。 */
         private LocalDateTime occurrenceEndTime;
         /** 医生站列表展示排序号；非空时更新。 */
         private Integer sortNumber;

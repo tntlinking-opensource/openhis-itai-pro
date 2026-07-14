@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.feedetail.mapper;
 
 import com.openhis.health.application.outpatient.financial.feedetail.dto.OutpatientFeeDetailAmountSummaryDto;
@@ -16,9 +16,9 @@ import com.openhis.health.application.outpatient.financial.feedetail.response.Pa
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailPageQuery;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientFeeDetailConstants;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.whale.core.application.dto.OptionDto;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -236,10 +236,10 @@ public class OutpatientFeeDetailMapperImpl implements OutpatientFeeDetailMapper 
         String productCodeKeyword,
         Long cashierId,
         String tradeDirection) {
-        if (StringUtils.isNotBlank(dateFrom)) {
+        if (StringUtils.isNotEmpty(dateFrom)) {
             query.setBillDateFrom(LocalDate.parse(dateFrom.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
-        if (StringUtils.isNotBlank(dateTo)) {
+        if (StringUtils.isNotEmpty(dateTo)) {
             query.setBillDateTo(LocalDate.parse(dateTo.trim(), GeneralSharedConstants.DATE_DISPLAY_FORMATTER));
         }
         query.setRegistrationDepartmentId(registrationDepartmentId);

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
@@ -24,33 +11,19 @@ package com.openhis.health.domain.share.enums;
  */
 public enum InventoryLedgerBusinessType implements EnumInterface {
 
-    /**
-     * INBOUND_OR_INIT。
-     */
+    /** 入库/初始化（InventoryLedgerBusinessType，编码 {@code 1}）。 */
     INBOUND_OR_INIT(0L, "1", "入库/初始化", "库存项创建、数量增加等。", 1L),
-    /**
-     * OUTBOUND。
-     */
+    /** 出库（InventoryLedgerBusinessType，编码 {@code 2}）。 */
     OUTBOUND(0L, "2", "出库", "数量减少、分配扣减等。", 2L),
-    /**
-     * LOCKED。
-     */
+    /** 锁定（InventoryLedgerBusinessType，编码 {@code 3}）。 */
     LOCKED(0L, "3", "锁定", "库存锁定。", 3L),
-    /**
-     * UNLOCKED。
-     */
+    /** 解锁（InventoryLedgerBusinessType，编码 {@code 4}）。 */
     UNLOCKED(0L, "4", "解锁", "库存解锁。", 4L),
-    /**
-     * SUPPLY_STATUS_CHANGE。
-     */
+    /** 供应状态变更（InventoryLedgerBusinessType，编码 {@code 5}）。 */
     SUPPLY_STATUS_CHANGE(0L, "5", "供应状态变更", "停供、恢复供应。", 5L),
-    /**
-     * DELETED_ON_ZERO。
-     */
+    /** 清零删除（InventoryLedgerBusinessType，编码 {@code 6}）。 */
     DELETED_ON_ZERO(0L, "6", "清零删除", "库存清零删除。", 6L),
-    /**
-     * BELOW_THRESHOLD。
-     */
+    /** 低于预警阈值（InventoryLedgerBusinessType，编码 {@code 7}）。 */
     BELOW_THRESHOLD(0L, "7", "低于预警阈值", "库存低于预警阈值。", 7L);
 
     private final Long codeSystemId;
@@ -60,7 +33,7 @@ public enum InventoryLedgerBusinessType implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * InventoryLedgerBusinessType。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     InventoryLedgerBusinessType(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

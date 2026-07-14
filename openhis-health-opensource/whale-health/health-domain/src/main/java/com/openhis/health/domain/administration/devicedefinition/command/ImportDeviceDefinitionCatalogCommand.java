@@ -1,26 +1,18 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.devicedefinition.command;
 
 import com.openhis.health.domain.share.command.BatchCommand;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * 器材目录批量导入命令（DM-ADM-008 §6.1.5）。
+ *
+ * <p>{@link #overwrite} 控制遇重复业务编码时覆盖或跳过；明细行见 {@link Item}。</p>
+ */
 @Getter
 @Setter
 public class ImportDeviceDefinitionCatalogCommand extends BatchCommand<ImportDeviceDefinitionCatalogCommand.Item> {

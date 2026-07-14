@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.orderaudit.mapper;
 
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditPatientGroupDto;
@@ -27,7 +14,7 @@ import com.openhis.health.domain.administration.encounter.command.InitiateDepart
 import com.openhis.health.domain.medication.medicationrequest.command.RejectMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.VerifyMedicationOrderCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
-import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
 import com.openhis.health.domain.workflow.servicerequest.command.RejectServiceRequestToDraftCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.VerifyServiceRequestCommand;
 

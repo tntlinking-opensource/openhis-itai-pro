@@ -1,29 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.purchaseorder.mapper;
 
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderDetailLineDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderLineDto;
-import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.SupplierOptionDto;
-import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.WarehouseDocumentDetailRowDto;
-import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.WarehouseOptionDto;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderListRowDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.AgreePurchaseOrderRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.CreatePurchaseOrderRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.RejectPurchaseOrderRequest;
@@ -45,29 +30,42 @@ import com.openhis.health.application.inventory.warehouse.purchaseorder.response
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
-import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
-import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
+import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
+import com.openhis.whale.core.application.dto.OptionDto;
+import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.SupplyCategory;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.enums.SupplierType;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.supplyrequest.command.AgreeRequestCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreatePurchaseOrderCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.RejectRequestCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.RemoveByBusNoCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.SubmitApprovalCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.WithdrawApprovalCommand;
-import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.request.PageProductsForPurchaseRequest;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
+import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 药库订货单装配实现：{@link InventoryWarehousePurchaseOrderMapper}。
@@ -78,122 +76,319 @@ import java.util.Map;
  * 禁止仅用单独一行 {@code @inheritDoc} 作为方法说明占位（B.1）。</p>
  */
 @Component
+@RequiredArgsConstructor
 public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWarehousePurchaseOrderMapper {
 
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
 
     private final LocationQueryService locationQueryService;
 
-    public InventoryWarehousePurchaseOrderMapperImpl(
-        ChargeItemDefinitionQueryService chargeItemDefinitionQueryService,
-        LocationQueryService locationQueryService) {
-        this.chargeItemDefinitionQueryService = chargeItemDefinitionQueryService;
-        this.locationQueryService = locationQueryService;
-    }
-
-    /** 将启用药库位置列表映射为下拉选项 DTO。 */
+    /**
+     * 将启用位置列表映射为 {@link OptionDto} 下拉（B.10.5）。
+     *
+     * @param locations 启用库位列表
+     * @return 下拉选项；{@code null} 输入返回空列表
+     */
     @Override
-    public List<WarehouseOptionDto> toWarehouseOptionDtoList(List<Location> locations) {
-        List<WarehouseOptionDto> list = new ArrayList<>();
-        // —— 空输入返回空列表，避免前端判 null。——
+    public List<OptionDto> toOptionDtoListFromLocations(List<Location> locations) {
+        List<OptionDto> list = new ArrayList<>();
         if (locations == null) {
             return list;
         }
         for (Location location : locations) {
-            if (location == null) {
+            if (location == null || location.getId() == null) {
                 continue;
             }
-            WarehouseOptionDto dto = new WarehouseOptionDto();
-            dto.setLocationId(location.getId());
-            dto.setDisplayName(location.getName());
-            dto.setActive(Boolean.TRUE);
-            list.add(dto);
+            Long id = location.getId();
+            String label = location.getName();
+            if (StringUtils.isEmpty(label)) {
+                label = String.valueOf(id);
+            }
+            list.add(new OptionDto(id, String.valueOf(id), label));
         }
         return list;
     }
 
-    /** 将启用供应商列表映射为下拉选项 DTO。 */
+    /**
+     * 将供应商列表映射为 {@link OptionDto} 下拉。
+     *
+     * @param suppliers 供应商列表项
+     * @return 下拉选项；标签格式为「名称（类型展示名）」
+     */
     @Override
-    public List<SupplierOptionDto> toSupplierOptionDtoList(List<SupplierListItemQueryModel> suppliers) {
-        List<SupplierOptionDto> list = new ArrayList<>();
-        // —— 空输入返回空列表，与库房下拉策略一致。——
+    public List<OptionDto> toOptionDtoListFromSuppliers(List<SupplierListItemQueryModel> suppliers) {
+        List<OptionDto> list = new ArrayList<>();
         if (suppliers == null) {
             return list;
         }
         for (SupplierListItemQueryModel row : suppliers) {
-            if (row == null) {
+            if (row == null || row.getId() == null) {
                 continue;
             }
-            SupplierOptionDto dto = new SupplierOptionDto();
-            dto.setSupplierId(row.getId());
-            dto.setSupplierName(row.getName());
-            // —— 供应商类型枚举转展示文本；无法识别时回落原码，避免信息丢失。——
+            Long id = row.getId();
             SupplierType st = EnumUtil.fromCode(SupplierType.class, row.getTypeEnum());
+            String typeLabel;
             if (st != null) {
-                dto.setSupplierType(st.getDisplay());
+                typeLabel = st.getDisplay();
             } else {
-                dto.setSupplierType(row.getTypeEnum());
+                typeLabel = row.getTypeEnum();
             }
-            list.add(dto);
+            String baseName = row.getName();
+            if (StringUtils.isEmpty(baseName)) {
+                baseName = String.valueOf(id);
+            }
+            String label = baseName;
+            if (StringUtils.isNotEmpty(typeLabel)) {
+                label = baseName + "（" + typeLabel + "）";
+            }
+            list.add(new OptionDto(id, String.valueOf(id), label));
         }
         return list;
     }
 
-    /** 装配订货页初始化响应（药库/供应商选项挂接）。 */
+    /**
+     * 装配订货页初始化响应。
+     *
+     * @param warehouseLocationOptions     药库选项（含「全部」由 AppService 前置）
+     * @param supplierOptions              供应商选项
+     * @param warehouseKeeperOptions       库管员选项
+     * @param statusOptions                单据状态选项
+     * @param purchaseItemTableTypeOptions 物品来源表选项
+     * @return 页初始化响应
+     */
     @Override
     public LoadPurchaseOrderFormInitResponse toLoadPurchaseOrderFormInitResponse(
-        List<WarehouseOptionDto> warehouseOptions,
-        List<SupplierOptionDto> supplierOptions) {
+        List<OptionDto> warehouseLocationOptions,
+        List<OptionDto> supplierOptions,
+        List<OptionDto> warehouseKeeperOptions,
+        List<OptionDto> statusOptions,
+        List<OptionDto> purchaseItemTableTypeOptions) {
         LoadPurchaseOrderFormInitResponse res = new LoadPurchaseOrderFormInitResponse();
-        // —— 初始化响应仅做字段挂接，不含业务分支；各集合由 AppService 预收窄。——
-        res.setWarehouseOptions(warehouseOptions);
+        res.setWarehouseLocationOptions(warehouseLocationOptions);
         res.setSupplierOptions(supplierOptions);
+        res.setWarehouseKeeperOptions(warehouseKeeperOptions);
+        res.setStatusOptions(statusOptions);
+        res.setPurchaseItemTableTypeOptions(purchaseItemTableTypeOptions);
         return res;
     }
 
     /**
+     * 将医务人员列表映射为下拉选项。
      *
-     * <p>使用 {@link PagePurchaseOrdersResponse}（继承 {@link PagedResult}）构建分页响应，
-     * {@code content} 为列表行数据，{@code totalCount} 为总条数，{@code pageNo} 为 1-based。</p>
-     *
-     * @param page 库房单据读模型分页
-     * @return 订货单分页响应；行内枚举语义为持久化 code（B.10.8.1）
+     * @param practitioners 医务人员列表
+     * @return 下拉选项
      */
     @Override
-    public PagePurchaseOrdersResponse toPagePurchaseOrdersResponse(Page<WarehouseDocumentDetailQueryModel> page) {
-        List<WarehouseDocumentDetailRowDto> content = new ArrayList<>();
-        for (WarehouseDocumentDetailQueryModel row : page.getContent()) {
-            if (row == null) {
+    public List<OptionDto> toOptionDtoListFromPractitioners(List<Practitioner> practitioners) {
+        List<OptionDto> list = new ArrayList<>();
+        if (practitioners == null) {
+            return list;
+        }
+        for (Practitioner p : practitioners) {
+            if (p == null || p.getId() == null) {
                 continue;
             }
-            content.add(this.toWarehouseDocumentDetailRowDto(row));
+            Long id = p.getId();
+            String label = p.getName();
+            if (StringUtils.isEmpty(label)) {
+                label = String.valueOf(id);
+            }
+            list.add(new OptionDto(id, String.valueOf(id), label));
         }
-        return PagedResultBuilder.build(new PagePurchaseOrdersResponse(), content, page);
+        return list;
     }
 
-    /** 将库房单据读模型行装配为列表行 DTO（枚举转 sortOrder 供前端排序）。 */
-    private WarehouseDocumentDetailRowDto toWarehouseDocumentDetailRowDto(WarehouseDocumentDetailQueryModel row) {
-        WarehouseDocumentDetailRowDto dto = new WarehouseDocumentDetailRowDto();
-        dto.setId(row.getId());
-        dto.setBusNo(row.getBusNo());
-        // —— 枚举对外转 sortOrder 整型，与前端表格排序口径一致（B.10.8.1 扩展）。——
-        dto.setTypeEnum(this.toApiSortSupplyType(row.getTypeEnum()));
-        dto.setStatusEnum(this.toApiSortSupplyStatus(row.getStatusEnum()));
-        dto.setSourceLocationId(row.getSourceLocationId());
-        dto.setPurposeLocationId(row.getPurposeLocationId());
-        dto.setSupplierId(row.getSupplierId());
-        dto.setItemId(row.getItemId());
-        dto.setItemTable(row.getItemTable());
-        dto.setItemQuantity(row.getItemQuantity());
-        dto.setUnitCode(row.getUnitCode());
-        dto.setOccurrenceTime(row.getOccurrenceTime());
-        dto.setApplyTime(row.getApplyTime());
-        dto.setApprovalTime(row.getApprovalTime());
-        dto.setTotalPrice(row.getTotalPrice());
-        return dto;
+    /**
+     * 装配供应请求状态枚举选项（持久化 code）。
+     *
+     * @return 按 {@link SupplyStatus#getSortOrder()} 排序的状态下拉
+     */
+    @Override
+    public List<OptionDto> toOptionDtoListSupplyStatuses() {
+        List<SupplyStatus> ordered = new ArrayList<>();
+        for (SupplyStatus st : SupplyStatus.values()) {
+            ordered.add(st);
+        }
+        ordered.sort(Comparator.comparing(SupplyStatus::getSortOrder));
+        List<OptionDto> list = new ArrayList<>();
+        for (SupplyStatus st : ordered) {
+            list.add(new OptionDto(st.getSortOrder(), st.getCode(), st.getDisplay()));
+        }
+        return list;
     }
 
-    /** 将同号供应请求明细与产品读模型装配为订货单详情响应。 */
+    /**
+     * 装配物品来源表（药品/耗材）选项。
+     *
+     * @return 物品表下拉（药品、耗材固定两项）
+     */
+    @Override
+    public List<OptionDto> toOptionDtoListPurchaseItemTableTypes() {
+        List<OptionDto> list = new ArrayList<>();
+        list.add(new OptionDto(1L, TableNameConstants.MED_MEDICATION_DEFINITION, "药品"));
+        list.add(new OptionDto(2L, TableNameConstants.ADM_DEVICE_DEFINITION, "耗材"));
+        return list;
+    }
+
+    /**
+     * 将选品分页请求转为产品定义读模型查询。
+     *
+     * @param request 选品分页请求
+     * @return 读模型查询对象
+     */
+    @Override
+    public ProductDefinitionPageQuery toProductDefinitionPageQuery(PageProductsForPurchaseRequest request) {
+        ProductDefinitionPageQuery query = new ProductDefinitionPageQuery();
+        query.setProductTableName(request.getProductTableName());
+        query.setCategoryCode(request.getCategoryCode());
+        query.setActiveFlag(request.getActiveFlag());
+        query.setSupplierId(request.getSupplierId());
+        query.setManufacturer(request.getManufacturer());
+        query.setIncludeInventory(request.getIncludeInventory());
+        PageQueryBinder.bind(request, query);
+        query.setSortField(request.getSortField());
+        query.setSortOrder(request.getSortOrder());
+        return query;
+    }
+
+    /**
+     * 按 busNo 顺序聚合供应请求明细为订货列表行（同号一行，头字段不一致时抛 WHS_PO_102）。
+     *
+     * @param busNoPageOrder 分页单号顺序
+     * @param detailRows     同页明细行
+     * @return 聚合列表行
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_PO_102} 同号头字段不一致
+     */
+    @Override
+    public List<PurchaseOrderListRowDto> toPurchaseOrderListAggregated(
+        List<String> busNoPageOrder,
+        List<SupplyRequestModel> detailRows) {
+        List<PurchaseOrderListRowDto> out = new ArrayList<>();
+        if (busNoPageOrder == null || busNoPageOrder.isEmpty()) {
+            return out;
+        }
+        if (detailRows == null || detailRows.isEmpty()) {
+            return out;
+        }
+        // —— 先按单号分组，便于按分页给出的单号顺序输出且每单只出一行聚合 DTO
+        LinkedHashMap<String, List<SupplyRequestModel>> byBusNo = new LinkedHashMap<>();
+        for (SupplyRequestModel row : detailRows) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
+                continue;
+            }
+            String bn = row.getBusNo().trim();
+            byBusNo.computeIfAbsent(bn, k -> new ArrayList<>()).add(row);
+        }
+        for (String busNoRaw : busNoPageOrder) {
+            if (StringUtils.isEmpty(busNoRaw)) {
+                continue;
+            }
+            String busNo = busNoRaw.trim();
+            List<SupplyRequestModel> lines = byBusNo.get(busNo);
+            if (lines == null || lines.isEmpty()) {
+                continue;
+            }
+            List<SupplyRequestModel> sortedByApply = new ArrayList<>(lines);
+            sortedByApply.sort(this::compareSupplyModelApplyTimeDescNullsLast);
+            SupplyRequestModel head = sortedByApply.get(0);
+            // —— 同号多行应共享单据头：供应商/状态/目的药库不一致时直接失败，避免列表展示「假一致」
+            for (SupplyRequestModel line : lines) {
+                if (line == null) {
+                    continue;
+                }
+                if (!Objects.equals(head.getSupplierId(), line.getSupplierId())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.WHS_PO_102, "同号订货单供应商头字段不一致: " + busNo);
+                }
+                if (!Objects.equals(head.getStatusEnum(), line.getStatusEnum())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.WHS_PO_102, "同号订货单状态头字段不一致: " + busNo);
+                }
+                if (!Objects.equals(head.getPurposeLocationId(), line.getPurposeLocationId())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.WHS_PO_102, "同号订货单目的药库头字段不一致: " + busNo);
+                }
+            }
+            BigDecimal totalAmount = BigDecimal.ZERO;
+            LocalDateTime maxApply = null;
+            LocalDateTime maxOccurrence = null;
+            for (SupplyRequestModel line : lines) {
+                if (line == null) {
+                    continue;
+                }
+                if (line.getTotalPrice() != null) {
+                    totalAmount = totalAmount.add(line.getTotalPrice());
+                }
+                if (line.getApplyTime() != null) {
+                    if (maxApply == null || line.getApplyTime().isAfter(maxApply)) {
+                        maxApply = line.getApplyTime();
+                    }
+                }
+                if (line.getOccurrenceTime() != null) {
+                    if (maxOccurrence == null || line.getOccurrenceTime().isAfter(maxOccurrence)) {
+                        maxOccurrence = line.getOccurrenceTime();
+                    }
+                }
+            }
+            LocalDateTime approvalTime = null;
+            List<SupplyRequestModel> sortedById = new ArrayList<>(lines);
+            sortedById.sort(this::compareSupplyModelIdAscNullsLast);
+            // —— 审批时刻取主键升序下第一条非空：稳定且不依赖数据库返回行序
+            for (SupplyRequestModel line : sortedById) {
+                if (line != null && line.getApprovalTime() != null) {
+                    approvalTime = line.getApprovalTime();
+                    break;
+                }
+            }
+            PurchaseOrderListRowDto dto = new PurchaseOrderListRowDto();
+            dto.setBusNo(busNo);
+            dto.setPurposeLocationId(head.getPurposeLocationId());
+            dto.setStatusEnum(head.getStatusEnum());
+            // 驳回态：把供应行 reason 带到列表 rejectReason，供侧栏卡片展示
+            if (SupplyStatus.REJECT.getCode().equals(head.getStatusEnum())) {
+                dto.setRejectReason(head.getReason());
+            }
+            dto.setApproverId(head.getApproverId());
+            dto.setTotalAmount(totalAmount);
+            dto.setApprovalTime(approvalTime);
+            dto.setApplyTime(maxApply);
+            dto.setOccurrenceTime(maxOccurrence);
+            out.add(dto);
+        }
+        return out;
+    }
+
+    /**
+     * 用聚合列表行构建分页响应（B.10.11）。
+     *
+     * @param mergedTotal 不重复 busNo 总数
+     * @param pageNo      1-based 页码
+     * @param pageSize    页大小
+     * @param records     当前页聚合行
+     * @return 分页响应
+     */
+    @Override
+    public PagePurchaseOrdersResponse toPagePurchaseOrdersAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<PurchaseOrderListRowDto> records) {
+        List<PurchaseOrderListRowDto> content;
+        if (records == null) {
+            content = new ArrayList<>();
+        } else {
+            content = records;
+        }
+        return PagedResultBuilder.build(new PagePurchaseOrdersResponse(), content, mergedTotal, pageNo, pageSize);
+    }
+
+    /**
+     * 将同号供应请求明细与产品读模型装配为订货单详情响应。
+     *
+     * @param lines        供应请求明细行
+     * @param productByKey 产品定义读模型映射
+     * @return 详情响应（含 {@code rowVersion} 供修订乐观锁）
+     */
     @Override
     public GetPurchaseOrderDetailResponse toGetPurchaseOrderDetailResponse(
         List<SupplyRequestModel> lines,
@@ -205,15 +400,19 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         // —— 头字段取自第一行：同号多行共享头信息，与列表聚合口径一致。——
         SupplyRequestModel head = lines.get(0);
         res.setBusNo(head.getBusNo());
-        res.setTypeEnum(this.toApiSortSupplyType(head.getTypeEnum()));
-        res.setStatusEnum(this.toApiSortSupplyStatus(head.getStatusEnum()));
+        res.setTypeEnum(head.getTypeEnum());
+        res.setStatusEnum(head.getStatusEnum());
         res.setSupplierId(head.getSupplierId());
         res.setSourceLocationId(head.getSourceLocationId());
         res.setPurposeLocationId(head.getPurposeLocationId());
         res.setSourceTypeEnum(head.getSourceTypeEnum());
         res.setPurposeTypeEnum(head.getPurposeTypeEnum());
         res.setCategoryEnum(head.getCategoryEnum());
+        res.setPractitionerId(head.getPractitionerId());
+        // —— rowVersion 供修订乐观锁带回；优先首行 version，与进货详情同口径
+        res.setRowVersion(this.resolvePurchaseOrderDocumentRowVersion(lines, head));
         List<PurchaseOrderDetailLineDto> detailLines = new ArrayList<>();
+        // —— 逐行映射写模型明细；产品名等读模型字段在 toDetailLine 内按需补齐
         for (SupplyRequestModel line : lines) {
             detailLines.add(this.toDetailLine(line, productByKey));
         }
@@ -221,7 +420,13 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return res;
     }
 
-    /** 将供应请求明细行与产品读模型装配为订货单详情行 DTO。 */
+    /**
+     * 将供应请求明细行与产品读模型装配为订货单详情行 DTO。
+     *
+     * @param line          供应请求写模型行
+     * @param productByKey  产品定义读模型 compositeKey 映射，可为 null
+     * @return 详情行 DTO；读模型未命中时产品展示字段保持 null
+     */
     private PurchaseOrderDetailLineDto toDetailLine(SupplyRequestModel line, Map<String, ProductDefinitionDisplayDto> productByKey) {
         PurchaseOrderDetailLineDto dto = new PurchaseOrderDetailLineDto();
         dto.setId(line.getId());
@@ -239,12 +444,21 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
             ProductDefinitionDisplayDto pr = productByKey.get(key);
             if (pr != null) {
                 dto.setProductName(pr.getProductName());
+                dto.setSpecification(pr.getTotalVolume());
+                dto.setManufacturer(pr.getManufacturer());
             }
         }
         return dto;
     }
 
-    /** 将新建订货请求装配为领域 CreatePurchaseOrderCommand。 */
+    /**
+     * 将新建订货请求装配为领域 CreatePurchaseOrderCommand。
+     *
+     * @param request     新建请求
+     * @param operatorId  操作人
+     * @param applicantId 制单人员
+     * @return 领域写命令
+     */
     @Override
     public CreatePurchaseOrderCommand toCreatePurchaseOrderCommand(
         CreatePurchaseOrderRequest request,
@@ -295,7 +509,15 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return command;
     }
 
-    /** 将修订订货请求装配为领域 CreatePurchaseOrderCommand（同号全量对齐）。 */
+    /**
+     * 将修订订货请求装配为领域 CreatePurchaseOrderCommand（同号全量对齐）。
+     *
+     * @param request     修订请求
+     * @param operatorId  操作人
+     * @param applicantId 制单人员
+     * @return 领域写命令
+     * @throws IllegalArgumentException {@code rowVersion} 超出整型范围
+     */
     @Override
     public CreatePurchaseOrderCommand toCreatePurchaseOrderCommandForUpdate(
         UpdatePurchaseOrderRequest request,
@@ -303,6 +525,13 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         Long applicantId) {
         CreatePurchaseOrderCommand command = new CreatePurchaseOrderCommand();
         command.setOperatorId(operatorId);
+        Long rowVer = request.getRowVersion();
+        if (rowVer != null) {
+            if (rowVer > Integer.MAX_VALUE || rowVer < Integer.MIN_VALUE) {
+                throw new IllegalArgumentException("rowVersion 超出整型范围");
+            }
+            command.setExpectedRowVersionForRevision(rowVer.intValue());
+        }
         List<CreatePurchaseOrderCommand.CreatePurchaseOrderItemCommand> items = new ArrayList<>();
         // —— 明细缺失：返回空项命令，由领域门控拒绝空单。——
         if (request.getLines() == null) {
@@ -346,27 +575,42 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return command;
     }
 
-    /** 装配新建订货成功响应（含 busNo 与待审批状态）。 */
+    /**
+     * 装配新建订货成功响应。
+     *
+     * @param busNo 领域返回的业务单号
+     * @return 含 {@code busNo} 与待审批 {@code statusEnum} code
+     */
     @Override
     public CreatePurchaseOrderResponse toCreatePurchaseOrderResponse(String busNo) {
         CreatePurchaseOrderResponse res = new CreatePurchaseOrderResponse();
         res.setBusNo(busNo);
-        // —— 新建成功默认定为待审批状态，返回 sortOrder 整型与前端表格排序口径一致。——
-        res.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getSortOrder().intValue());
+        res.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getCode());
         return res;
     }
 
-    /** 装配修订订货成功响应（含 busNo 与待审批状态）。 */
+    /**
+     * 装配修订订货成功响应。
+     *
+     * @param busNo 同号修订后的业务单号
+     * @return 含 {@code busNo} 与待审批 {@code statusEnum} code
+     */
     @Override
     public UpdatePurchaseOrderResponse toUpdatePurchaseOrderResponse(String busNo) {
         UpdatePurchaseOrderResponse res = new UpdatePurchaseOrderResponse();
         res.setBusNo(busNo);
-        // —— 修订成功回退至待审批状态，返回 sortOrder 整型。——
-        res.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getSortOrder().intValue());
+        res.setStatusEnum(SupplyStatus.PENDING_APPROVAL.getCode());
         return res;
     }
 
-    /** 将提交审批请求装配为领域 SubmitApprovalCommand。 */
+    /**
+     * 将提交审批请求装配为领域 {@link SubmitApprovalCommand}。
+     *
+     * @param request     提交请求
+     * @param operatorId  操作人
+     * @param applicantId 制单人员（申请人）
+     * @return 领域写命令
+     */
     @Override
     public SubmitApprovalCommand toSubmitApprovalCommand(SubmitPurchaseOrderApprovalRequest request, Long operatorId, Long applicantId) {
         SubmitApprovalCommand command = new SubmitApprovalCommand();
@@ -378,17 +622,29 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return command;
     }
 
-    /** 装配提交审批成功响应。 */
+    /**
+     * 装配提交审批成功响应。
+     *
+     * @param status 提交后头行状态，可为 null
+     * @return 提交响应
+     */
     @Override
-    public SubmitPurchaseOrderApprovalResponse toSubmitPurchaseOrderApprovalResponse() {
+    public SubmitPurchaseOrderApprovalResponse toSubmitPurchaseOrderApprovalResponse(SupplyStatus status) {
         SubmitPurchaseOrderApprovalResponse res = new SubmitPurchaseOrderApprovalResponse();
         res.setSuccess(Boolean.TRUE);
-        // —— 提交成功后状态为已提交审批，返回 sortOrder 整型。——
-        res.setStatusEnum(SupplyStatus.APPROVAL.getSortOrder().intValue());
+        if (status != null) {
+            res.setStatusEnum(status.getCode());
+        }
         return res;
     }
 
-    /** 将撤回审批请求装配为领域 WithdrawApprovalCommand。 */
+    /**
+     * 将撤回审批请求装配为领域 {@link WithdrawApprovalCommand}。
+     *
+     * @param request    撤回请求
+     * @param operatorId 操作人
+     * @return 领域写命令
+     */
     @Override
     public WithdrawApprovalCommand toWithdrawApprovalCommand(WithdrawPurchaseOrderApprovalRequest request, Long operatorId) {
         WithdrawApprovalCommand command = new WithdrawApprovalCommand();
@@ -399,17 +655,29 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return command;
     }
 
-    /** 装配撤回审批成功响应。 */
+    /**
+     * 装配撤回审批成功响应。
+     *
+     * @param status 撤回后头行状态，可为 null
+     * @return 撤回响应
+     */
     @Override
-    public WithdrawPurchaseOrderApprovalResponse toWithdrawPurchaseOrderApprovalResponse() {
+    public WithdrawPurchaseOrderApprovalResponse toWithdrawPurchaseOrderApprovalResponse(SupplyStatus status) {
         WithdrawPurchaseOrderApprovalResponse res = new WithdrawPurchaseOrderApprovalResponse();
         res.setSuccess(Boolean.TRUE);
-        // —— 撤回成功后状态为已撤回，返回 sortOrder 整型。——
-        res.setStatusEnum(SupplyStatus.WITHDRAW.getSortOrder().intValue());
+        if (status != null) {
+            res.setStatusEnum(status.getCode());
+        }
         return res;
     }
 
-    /** 将同意请求装配为领域 AgreeRequestCommand。 */
+    /**
+     * 将同意请求装配为领域 {@link AgreeRequestCommand}（订货同意不含发放链）。
+     *
+     * @param request    同意请求
+     * @param operatorId 审批人/操作人
+     * @return 领域写命令
+     */
     @Override
     public AgreeRequestCommand toAgreeRequestCommand(AgreePurchaseOrderRequest request, Long operatorId) {
         AgreeRequestCommand command = new AgreeRequestCommand();
@@ -421,7 +689,11 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return command;
     }
 
-    /** 装配同意订货成功响应。 */
+    /**
+     * 装配同意订货成功响应。
+     *
+     * @return 同意响应（{@code success=true}）
+     */
     @Override
     public AgreePurchaseOrderResponse toAgreePurchaseOrderResponse() {
         AgreePurchaseOrderResponse res = new AgreePurchaseOrderResponse();
@@ -429,7 +701,13 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return res;
     }
 
-    /** 将驳回请求装配为领域 RejectRequestCommand。 */
+    /**
+     * 将驳回请求装配为领域 {@link RejectRequestCommand}。
+     *
+     * @param request    驳回请求
+     * @param operatorId 审批人/操作人
+     * @return 领域写命令
+     */
     @Override
     public RejectRequestCommand toRejectRequestCommand(RejectPurchaseOrderRequest request, Long operatorId) {
         RejectRequestCommand command = new RejectRequestCommand();
@@ -442,7 +720,11 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return command;
     }
 
-    /** 装配驳回订货成功响应。 */
+    /**
+     * 装配驳回订货成功响应。
+     *
+     * @return 驳回响应（{@code success=true}）
+     */
     @Override
     public RejectPurchaseOrderResponse toRejectPurchaseOrderResponse() {
         RejectPurchaseOrderResponse res = new RejectPurchaseOrderResponse();
@@ -450,7 +732,13 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return res;
     }
 
-    /** 将删除请求装配为领域 RemoveByBusNoCommand。 */
+    /**
+     * 将删除请求装配为领域 {@link RemoveByBusNoCommand}。
+     *
+     * @param request    删除请求
+     * @param operatorId 操作人
+     * @return 领域写命令
+     */
     @Override
     public RemoveByBusNoCommand toRemoveByBusNoCommand(RemovePurchaseOrderRequest request, Long operatorId) {
         RemoveByBusNoCommand command = new RemoveByBusNoCommand();
@@ -461,7 +749,11 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return command;
     }
 
-    /** 装配删除订货成功响应。 */
+    /**
+     * 装配删除订货成功响应。
+     *
+     * @return 删除响应（{@code success=true}）
+     */
     @Override
     public RemovePurchaseOrderResponse toRemovePurchaseOrderResponse() {
         RemovePurchaseOrderResponse res = new RemovePurchaseOrderResponse();
@@ -489,7 +781,12 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         return PagedResultBuilder.build(new PageProductsForPurchaseResponse(), content, page);
     }
 
-    /** 将产品定义读模型装配为订货选品行 DTO（含采购价解析）。 */
+    /**
+     * 将产品定义读模型装配为订货选品行 DTO（含 PURCHASE 进价解析）。
+     *
+     * @param pr 产品定义读模型
+     * @return 选品行；{@code availableQuantity} 固定 null（订货不汇总库存）
+     */
     private ProductDefinitionItemDto toProductDefinitionItemDto(ProductDefinitionDisplayDto pr) {
         ProductDefinitionItemDto dto = new ProductDefinitionItemDto();
         dto.setProductDefinitionId(pr.getProductDefinitionId());
@@ -502,42 +799,16 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
         dto.setCategoryCode(pr.getCategoryCode());
         dto.setCategoryCodeDictText(pr.getCategoryCodeDictText());
         dto.setPrice(pr.getPrice());
-        if (StringUtils.isNotBlank(pr.getProductTableName()) && pr.getProductDefinitionId() != null) {
+        if (StringUtils.isNotEmpty(pr.getProductTableName()) && pr.getProductDefinitionId() != null) {
             dto.setPurchasePrice(chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
                 pr.getProductTableName().trim(), pr.getProductDefinitionId()));
         }
         dto.setManufacturer(pr.getManufacturer());
+        dto.setTotalVolume(pr.getTotalVolume());
         dto.setPyStr(pr.getPyStr());
         dto.setWbStr(pr.getWbStr());
+        dto.setAvailableQuantity(null);
         return dto;
-    }
-
-    /**
-     * 供应类型枚举 code 转前端排序用 sortOrder 整型（B.10.8.1 扩展）。
-     *
-     * @param code 持久化 code
-     * @return sortOrder 整型；无法识别时返回 null
-     */
-    private Integer toApiSortSupplyType(String code) {
-        SupplyType t = EnumUtil.fromCode(SupplyType.class, code);
-        if (t == null) {
-            return null;
-        }
-        return t.getSortOrder().intValue();
-    }
-
-    /**
-     * 供应状态枚举 code 转前端排序用 sortOrder 整型（B.10.8.1 扩展）。
-     *
-     * @param code 持久化 code
-     * @return sortOrder 整型；无法识别时返回 null
-     */
-    private Integer toApiSortSupplyStatus(String code) {
-        SupplyStatus s = EnumUtil.fromCode(SupplyStatus.class, code);
-        if (s == null) {
-            return null;
-        }
-        return s.getSortOrder().intValue();
     }
 
     /**
@@ -562,7 +833,7 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
      * @throws IllegalArgumentException 非空白但码不在枚举白名单
      */
     private String resolveSupplyCategoryCode(String categoryCodeRaw) {
-        if (StringUtils.isBlank(categoryCodeRaw)) {
+        if (StringUtils.isEmpty(categoryCodeRaw)) {
             // —— 与历史订货默认类别对齐，减少前端必传负担。——
             return SupplyCategory.STOCK_SUPPLY.getCode();
         }
@@ -571,5 +842,70 @@ public class InventoryWarehousePurchaseOrderMapperImpl implements InventoryWareh
             throw new IllegalArgumentException("categoryEnum 非法");
         }
         return category.getCode();
+    }
+
+    /**
+     * 供应请求头行排序：按 {@code apply_time} 降序，null 排最后（列表/详情取头行代表）。
+     *
+     * @param left  左操作数
+     * @param right 右操作数
+     * @return Comparator 约定比较结果
+     */
+    private int compareSupplyModelApplyTimeDescNullsLast(SupplyRequestModel left, SupplyRequestModel right) {
+        LocalDateTime ta = left.getApplyTime();
+        LocalDateTime tb = right.getApplyTime();
+        if (ta == null && tb == null) {
+            return 0;
+        }
+        if (ta == null) {
+            return 1;
+        }
+        if (tb == null) {
+            return -1;
+        }
+        return tb.compareTo(ta);
+    }
+
+    /**
+     * 供应请求行 tie-break：按行主键升序，null 排最后（同 apply_time 时稳定排序）。
+     *
+     * @param left  左操作数
+     * @param right 右操作数
+     * @return Comparator 约定比较结果
+     */
+    private int compareSupplyModelIdAscNullsLast(SupplyRequestModel left, SupplyRequestModel right) {
+        Long ida = left.getId();
+        Long idb = right.getId();
+        if (ida == null && idb == null) {
+            return 0;
+        }
+        if (ida == null) {
+            return 1;
+        }
+        if (idb == null) {
+            return -1;
+        }
+        return ida.compareTo(idb);
+    }
+
+    /**
+     * 解析订货单文档级 rowVersion：优先头行 {@code version}，否则取任一行非空版本，仍空则 0。
+     *
+     * @param lines 同号全部明细
+     * @param head  头行（可为 null）
+     * @return 供详情/修订使用的乐观锁版本
+     */
+    private Integer resolvePurchaseOrderDocumentRowVersion(List<SupplyRequestModel> lines, SupplyRequestModel head) {
+        if (head != null && head.getVersion() != null) {
+            return head.getVersion();
+        }
+        if (lines != null) {
+            for (SupplyRequestModel line : lines) {
+                if (line != null && line.getVersion() != null) {
+                    return line.getVersion();
+                }
+            }
+        }
+        return Integer.valueOf(0);
     }
 }

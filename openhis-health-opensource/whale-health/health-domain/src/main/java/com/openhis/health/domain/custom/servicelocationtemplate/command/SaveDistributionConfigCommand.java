@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.servicelocationtemplate.command;
 
 import com.openhis.health.domain.share.command.BatchCommand;
@@ -46,15 +33,25 @@ public class SaveDistributionConfigCommand extends BatchCommand<SaveDistribution
     @Getter
     @Setter
     public static class DistributionRuleItemCommand {
+        /** 物品来源表（药品/耗材定义表名）。 */
         private String itemTable;
+        /** 发药类别字典码（西药/中药/耗材等分流）。 */
         private String distributionCategoryCode;
+        /** 默认发药位置 {@code adm_location.id}。 */
         private Long defLocationId;
+        /** 物品定义主键（细粒度规则；与类别规则二选一或叠加）。 */
         private Long itemDefinitionId;
+        /** 发药方式字典码（窗口/配药中心等）。 */
         private String methodCode;
+        /** 规则生效日始时刻（闭区间左端，可空表示全天）。 */
         private LocalTime startTime;
+        /** 规则生效日止时刻（闭区间右端，可空表示全天）。 */
         private LocalTime endTime;
+        /** 同科室多条规则时的匹配优先级（数值越小越优先）。 */
         private Integer priority;
+        /** 维护页展示排序号。 */
         private Integer displayOrder;
+        /** 规则备注（不落库到业务单据）。 */
         private String remark;
     }
 }

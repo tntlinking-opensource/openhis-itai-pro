@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.encounter.queries.model;
 
 import lombok.Getter;
@@ -27,7 +14,7 @@ import java.time.LocalDateTime;
  * 住院就诊上下文查询模型（替代 {@code InpatientInfoReadModel} 读侧投影行）。
  *
  * <p>字段与 {@code hisrm_inpatient_info} 读模型列及
- * {@link com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler} 消费列对齐。</p>
+ * {@link com.openhis.health.application.shared.inpatient.InpatientInfoQueueDisplayAssembler} 消费列对齐。</p>
  */
 @Getter
 @Setter

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.supplyrequest.queries;
 
 import com.openhis.health.domain.share.query.AbstractPageQuery;
@@ -42,8 +29,15 @@ public class SupplyRequestDocumentListQuery extends AbstractPageQuery {
 
     /**
      * 供应类型持久化码（{@link com.openhis.health.domain.share.enums.SupplyType#getCode()}）；非空时等值过滤。
+     * <p>与 {@link #typeEnums} 互斥，本字段非空时优先。</p>
      */
     private String typeEnum;
+
+    /**
+     * 供应类型多选（IN）；与 {@link #typeEnum} 互斥。
+     * <p>用于出库可关联请领默认「药房请领 + 科室请领」并集等场景。</p>
+     */
+    private List<String> typeEnums;
 
     /** 源位置主键；与 {@code source_location_id} 对齐。 */
     private Long sourceLocationId;
@@ -68,4 +62,10 @@ public class SupplyRequestDocumentListQuery extends AbstractPageQuery {
 
     /** 可选租户；与 {@code tenant_id} 对齐。 */
     private Long tenantId;
+
+    /**
+     * 业务单号白名单（IN）；与关键字筛选取交集。
+     * <p>住院汇总发药「已发药」列表由应用层按 {@code med_medication_dispense} 终态写入，禁止仅用 Supply 审批态替代。</p>
+     */
+    private List<String> busNoIn;
 }

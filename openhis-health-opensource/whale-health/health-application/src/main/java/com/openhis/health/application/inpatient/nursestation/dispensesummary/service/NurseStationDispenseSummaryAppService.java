@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.dispensesummary.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 
-import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.application.shared.validator.CurrentManagedWardLocationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler.NurseStationDispenseSummaryListAssembler;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler.NurseStationDispenseSummaryWriteAssembler;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler.NurseStationDispenseSummaryWriteAssembler.SummaryMergeGroup;
@@ -42,11 +29,11 @@ import com.openhis.health.application.inpatient.nursestation.dispensesummary.res
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.PageMedicationSummarySlipHeadersResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.PagePendingDispenseSummaryLinesResponse;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.response.SubmitMedicationSummaryResponse;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.module.querysupport.pharmacy.InpatientMedicationDispenseChargePricingLoader;
-import com.openhis.health.module.querysupport.pharmacy.MedicationSummarySlipQuerySupport;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.inpatient.pharmacy.dispense.support.InpatientMedicationDispenseChargePricingLoader;
+import com.openhis.health.application.inpatient.pharmacy.summarydispense.support.MedicationSummarySlipLoader;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
@@ -77,7 +64,7 @@ import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQue
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -117,7 +104,7 @@ public class NurseStationDispenseSummaryAppService {
     /** 分页窗口 Gate（pageNo/pageSize 必填 IF）。 */
     private final PageWindowGate pageWindowGate;
     /** 住院就诊上下文批量加载。 */
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
     /** 药品申请执行列表（medReq 预解析）。 */
     private final MedicationRequestQueryService medicationRequestQueryService;
     /** 发放读侧（待汇总分页、写前强加载）。 */
@@ -127,7 +114,7 @@ public class NurseStationDispenseSummaryAppService {
     /** 发放 ↔ 待结算账单只读协作（B.6.1.3）。 */
     private final InpatientMedicationDispenseChargePricingLoader inpatientMedicationDispenseChargePricingLoader;
     /** 汇总单头 SupplyRequest + SupplyDelivery 读编排（B.6.1.3）。 */
-    private final MedicationSummarySlipQuerySupport medicationSummarySlipQuerySupport;
+    private final MedicationSummarySlipLoader medicationSummarySlipLoader;
     /** Supply 读侧（汇总单头/明细、busNo 回读）。 */
     private final SupplyRequestQueryService supplyRequestQueryService;
     /** Supply 写侧（createSummarySupplyRequest / submitApproval / removeByBusNo）。 */
@@ -135,7 +122,7 @@ public class NurseStationDispenseSummaryAppService {
     /** 位置名称展示。 */
     private final LocationQueryService locationQueryService;
     /** 药品目录批量读侧（展示 + unitBands）。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     /** Request/Query/Command/Response 映射。 */
     private final NurseStationDispenseSummaryMapper nurseStationDispenseSummaryMapper;
     /** 待汇总/汇总 Tab 列表分组装配。 */
@@ -165,7 +152,7 @@ public class NurseStationDispenseSummaryAppService {
             InpatientEncounterPageQuery visibilityQuery = nurseStationDispenseSummaryMapper.toInpatientEncounterPageQuery(
                 requestedEncounterIds, managedWardIds);
             List<InpatientEncounterContextQueryModel> visibleRows =
-                encounterContextFacade.listInpatientEncounterContexts(visibilityQuery);
+                EncounterContextReader.listInpatientEncounterContexts(visibilityQuery);
             List<Long> visibleEncounterIds = this.retainRequestedVisibleEncounterIds(requestedEncounterIds, visibleRows);
             if (visibleEncounterIds.isEmpty()) {
                 throw new BusinessException(
@@ -192,7 +179,7 @@ public class NurseStationDispenseSummaryAppService {
                 page.getContent());
             // Pre ⑧：药品展示批量加载
             Map<String, ProductDefinitionDisplayDto> productByKey =
-                productDefinitionBatchLoader.loadAsMap(this.collectProductLookupsFromPendingPage(page));
+                productDefinitionDisplayTerminologyAssembler.loadAsMap(this.collectProductLookupsFromPendingPage(page));
             // Pre ⑨：药房展示批量加载
             Set<Long> locationIds = this.collectLocationIdsFromPendingPage(page);
             Map<Long, Location> locationById = nurseStationDispenseSummaryListAssembler.indexLocations(
@@ -234,7 +221,7 @@ public class NurseStationDispenseSummaryAppService {
                 request, purposeLocationIds);
             // Pre ④：域分页汇总单头
             Page<MedicationSummarySlipQueryModel> page =
-                medicationSummarySlipQuerySupport.pageMedicationSummarySlips(listQuery);
+                medicationSummarySlipLoader.pageMedicationSummarySlips(listQuery);
             // Asm ⑤：单头 DTO + 展示 enrichment
             List<NurseStationDispenseSummarySlipHeaderDto> rows =
                 nurseStationDispenseSummaryMapper.toSlipHeaderDtos(page);
@@ -260,7 +247,7 @@ public class NurseStationDispenseSummaryAppService {
         GetMedicationSummarySlipDetailRequest request) {
         try {
             // Gate ①：summaryNo 非空
-            if (request == null || StringUtils.isBlank(request.getSummaryNo())) {
+            if (request == null || StringUtils.isEmpty(request.getSummaryNo())) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_SUM_103,
                     "汇总单不存在或已失效，请刷新");
@@ -280,7 +267,7 @@ public class NurseStationDispenseSummaryAppService {
             NurseStationDispenseSummarySlipHeaderDto header = this.loadSlipHeaderBySummaryNo(summaryNo);
             // Pre ④：药品展示批量加载
             Map<String, ProductDefinitionDisplayDto> productByKey =
-                productDefinitionBatchLoader.loadAsMap(this.collectProductLookupsFromSlipLines(domainLines));
+                productDefinitionDisplayTerminologyAssembler.loadAsMap(this.collectProductLookupsFromSlipLines(domainLines));
             // Asm ⑤：合并行 DTO
             List<NurseStationDispenseSummarySlipLineDto> lines =
                 nurseStationDispenseSummaryListAssembler.buildSlipLineDtos(domainLines, productByKey);
@@ -329,7 +316,7 @@ public class NurseStationDispenseSummaryAppService {
             Map<Long, ChargeItem> chargeByDispenseId = this.loadChargeByDispenseId(request, dispenses);
             // Pre ⑥：药品 unitBands 源
             Map<String, ProductDefinitionDisplayDto> productByMedId =
-                productDefinitionBatchLoader.loadAsMap(this.collectProductLookupsFromDispenses(dispenses));
+                productDefinitionDisplayTerminologyAssembler.loadAsMap(this.collectProductLookupsFromDispenses(dispenses));
             // Pre ⑦：按药房+单价分组合并
             Map<Long, List<SummaryMergeGroup>> groupsByLocation =
                 nurseStationDispenseSummaryWriteAssembler.buildMergeGroupsByLocationAndPrice(
@@ -350,10 +337,12 @@ public class NurseStationDispenseSummaryAppService {
                 Long locationId = entry.getKey();
                 List<SummaryMergeGroup> locationGroups = entry.getValue();
                 List<Long> locationDispenseIds = this.collectDispenseIdsFromGroups(locationGroups);
-                // Cmd 9a：发放汇总 → summaryNo（条件更新，GAP-INV-003 / GAP-STALE-006）
-                String summaryNo = this.summarizeMedicationDispensesOrThrow201(
+                // Cmd 9a～9b：预分配 MSO 单号 → 发放 summary_no 与 Supply bus_no 同源（AS-IP-NUR-010 §2.1）
+                String summaryNo = supplyRequestDomainService.allocateBusNoForType(
+                    SupplyType.MEDICATION_SUMMARY_ORDER.getCode());
+                this.summarizeMedicationDispensesOrThrow201(
                     nurseStationDispenseSummaryMapper.toSummarizeMedicationDispensesCommand(
-                        locationId, locationDispenseIds, operatorId));
+                        locationId, locationDispenseIds, operatorId, summaryNo));
                 // Cmd 9b：SupplyRequest type 27（初态 PENDING_APPROVAL；不创建 SupplyDelivery）
                 supplyRequestDomainService.createSummarySupplyRequest(
                     nurseStationDispenseSummaryMapper.toCreateSummarySupplyRequestCommand(
@@ -440,6 +429,12 @@ public class NurseStationDispenseSummaryAppService {
         }
     }
 
+    /**
+     * 待发药汇总明细分页请求门禁：须选就诊、合法药品分类 Tab 与长临筛选项（EX-IP-SUM-101）。
+     *
+     * @param request 分页请求
+     * @throws BusinessException EX-IP-SUM-101 参数无效或无权
+     */
     private void assertPendingLinesRequestGate(PagePendingDispenseSummaryLinesRequest request) {
         if (request == null
             || request.getEncounterIds() == null
@@ -463,6 +458,12 @@ public class NurseStationDispenseSummaryAppService {
         }
     }
 
+    /**
+     * 创建汇总单请求门禁：明细非空、批量上限与 dispenseId/encounterId 成对（EX-IP-SUM-204）。
+     *
+     * @param request 创建请求
+     * @throws BusinessException EX-IP-SUM-204 明细无效或超批量
+     */
     private void assertCreateSummaryRequestGate(CreateMedicationSummaryRequest request) {
         if (request == null
             || request.getDispenseItems() == null
@@ -485,6 +486,12 @@ public class NurseStationDispenseSummaryAppService {
         }
     }
 
+    /**
+     * 发送汇总单请求门禁：汇总单号非空且单次不超过 50 张（EX-IP-SUM-205）。
+     *
+     * @param request 发送请求
+     * @throws BusinessException EX-IP-SUM-205 参数无效或超批量
+     */
     private void assertSubmitSummaryRequestGate(SubmitMedicationSummaryRequest request) {
         if (request == null
             || request.getSummaryNos() == null
@@ -499,7 +506,7 @@ public class NurseStationDispenseSummaryAppService {
                 "发送失败，单次最多发送 50 张汇总单");
         }
         for (String summaryNo : request.getSummaryNos()) {
-            if (StringUtils.isBlank(summaryNo)) {
+            if (StringUtils.isEmpty(summaryNo)) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_SUM_205,
                     "发送失败，汇总单号不能为空");
@@ -507,6 +514,12 @@ public class NurseStationDispenseSummaryAppService {
         }
     }
 
+    /**
+     * 撤销汇总单请求门禁：汇总单号非空且单次不超过 50 张（EX-IP-SUM-206）。
+     *
+     * @param request 撤销请求
+     * @throws BusinessException EX-IP-SUM-206 参数无效或超批量
+     */
     private void assertCancelSummaryRequestGate(CancelMedicationSummaryRequest request) {
         if (request == null
             || request.getSummaryNos() == null
@@ -521,7 +534,7 @@ public class NurseStationDispenseSummaryAppService {
                 "撤销失败，单次最多撤销 50 张汇总单");
         }
         for (String summaryNo : request.getSummaryNos()) {
-            if (StringUtils.isBlank(summaryNo)) {
+            if (StringUtils.isEmpty(summaryNo)) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_SUM_206,
                     "撤销失败，汇总单号不能为空");
@@ -529,6 +542,12 @@ public class NurseStationDispenseSummaryAppService {
         }
     }
 
+    /**
+     * 汇总单须为 type=27 且 Supply 状态为待发送方可撤销（EX-IP-SUM-103/206）。
+     *
+     * @param summaryNo 汇总单 bus_no
+     * @throws BusinessException 单不存在、非汇总类型或状态不可撤销
+     */
     private void assertMedicationSummarySlipCancellable(String summaryNo) {
         SupplyByBusNoQuery query = new SupplyByBusNoQuery();
         query.setBusNo(summaryNo.trim());
@@ -560,6 +579,12 @@ public class NurseStationDispenseSummaryAppService {
         }
     }
 
+    /**
+     * 汇总单须存在且含 type=27 汇总 Supply 行方可发送（EX-IP-SUM-103）。
+     *
+     * @param summaryNo 汇总单 bus_no
+     * @throws BusinessException 单不存在或非汇总类型
+     */
     private void assertMedicationSummarySlipSubmittable(String summaryNo) {
         SupplyByBusNoQuery query = new SupplyByBusNoQuery();
         query.setBusNo(summaryNo.trim());
@@ -583,6 +608,12 @@ public class NurseStationDispenseSummaryAppService {
         }
     }
 
+    /**
+     * 待发药行须全部为 PREPARATION 且未绑定 summaryNo（EX-IP-SUM-201）。
+     *
+     * @param dispenses 待汇总发放行
+     * @throws BusinessException 已汇总或状态不可汇总
+     */
     private void assertAllDispensesSummarizable(List<MedicationDispense> dispenses) {
         for (MedicationDispense dispense : dispenses) {
             if (dispense == null) {
@@ -595,7 +626,7 @@ public class NurseStationDispenseSummaryAppService {
                     InpatientNurseStationConstants.EX_IP_SUM_201,
                     "所选药品已汇总，请勿重复操作");
             }
-            if (StringUtils.isNotBlank(dispense.getSummaryNo())) {
+            if (StringUtils.isNotEmpty(dispense.getSummaryNo())) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_SUM_201,
                     "所选药品已汇总，请勿重复操作");
@@ -603,6 +634,13 @@ public class NurseStationDispenseSummaryAppService {
         }
     }
 
+    /**
+     * 调用领域汇总发放并映射无效状态为 EX-IP-SUM-201。
+     *
+     * @param command 领域汇总命令
+     * @return 新生成 summaryNo
+     * @throws BusinessException EX-IP-SUM-201 重复汇总；其他领域码透传
+     */
     private String summarizeMedicationDispensesOrThrow201(SummarizeMedicationDispensesCommand command) {
         try {
             return medicationDispenseDomainService.summarizeMedicationDispenses(command);
@@ -616,6 +654,14 @@ public class NurseStationDispenseSummaryAppService {
         }
     }
 
+    /**
+     * 按就诊分组加载待发药对应待结算 ChargeItem（缺账单抛 EX-IP-SUM-203）。
+     *
+     * @param request   创建请求（含 encounter-dispense 对）
+     * @param dispenses 已加载发放行
+     * @return dispenseId → ChargeItem
+     * @throws BusinessException EX-IP-SUM-203 缺执行账单
+     */
     private Map<Long, ChargeItem> loadChargeByDispenseId(
         CreateMedicationSummaryRequest request,
         List<MedicationDispense> dispenses) {
@@ -647,11 +693,17 @@ public class NurseStationDispenseSummaryAppService {
         return chargeByDispenseId;
     }
 
+    /**
+     * 汇总单号去重并保持请求顺序。
+     *
+     * @param summaryNos 原始单号列表
+     * @return 去重后的单号
+     */
     private List<String> distinctSummaryNos(List<String> summaryNos) {
         LinkedHashSet<String> set = new LinkedHashSet<>();
         if (summaryNos != null) {
             for (String summaryNo : summaryNos) {
-                if (StringUtils.isNotBlank(summaryNo)) {
+                if (StringUtils.isNotEmpty(summaryNo)) {
                     set.add(summaryNo.trim());
                 }
             }
@@ -659,6 +711,13 @@ public class NurseStationDispenseSummaryAppService {
         return new ArrayList<>(set);
     }
 
+    /**
+     * 按 bus_no 精确加载汇总单头 DTO（EX-IP-SUM-103 不存在时抛错）。
+     *
+     * @param summaryNo 汇总单号
+     * @return 匹配的汇总单头
+     * @throws BusinessException 单不存在或已失效
+     */
     private NurseStationDispenseSummarySlipHeaderDto loadSlipHeaderBySummaryNo(String summaryNo) {
         PageMedicationSummarySlipHeadersRequest pageRequest = new PageMedicationSummarySlipHeadersRequest();
         pageRequest.setPageNo(1);
@@ -666,7 +725,7 @@ public class NurseStationDispenseSummaryAppService {
         pageRequest.setKeyword(summaryNo);
         SupplyRequestDocumentListQuery listQuery = nurseStationDispenseSummaryMapper.toSupplyRequestDocumentListQuery(
             pageRequest, null);
-        Page<MedicationSummarySlipQueryModel> page = medicationSummarySlipQuerySupport.pageMedicationSummarySlips(listQuery);
+        Page<MedicationSummarySlipQueryModel> page = medicationSummarySlipLoader.pageMedicationSummarySlips(listQuery);
         List<NurseStationDispenseSummarySlipHeaderDto> headers =
             nurseStationDispenseSummaryMapper.toSlipHeaderDtos(page);
         if (headers.isEmpty()) {
@@ -682,6 +741,12 @@ public class NurseStationDispenseSummaryAppService {
         return headers.get(0);
     }
 
+    /**
+     * 解析汇总单列表查询的目的地 location 过滤（单选非 0 时返回单元素列表）。
+     *
+     * @param request 列表请求
+     * @return purposeLocationId 列表；未指定时 null 表示不过滤
+     */
     private List<Long> resolveSummaryPurposeLocationIds(PageMedicationSummarySlipHeadersRequest request) {
         Long purposeLocationId = null;
         if (request != null) {
@@ -695,6 +760,12 @@ public class NurseStationDispenseSummaryAppService {
         return null;
     }
 
+    /**
+     * 断言请求 encounter 均在护士站可见病区范围内（EX-IP-SUM-101）。
+     *
+     * @param encounterIds 待校验就诊 id
+     * @throws BusinessException 空列表或含不可见就诊
+     */
     private void requireVisibleEncounters(List<Long> encounterIds) {
         if (encounterIds == null || encounterIds.isEmpty()) {
             throw new BusinessException(
@@ -705,7 +776,7 @@ public class NurseStationDispenseSummaryAppService {
         InpatientEncounterPageQuery query = nurseStationDispenseSummaryMapper.toInpatientEncounterPageQuery(
             encounterIds, managedWardIds);
         List<InpatientEncounterContextQueryModel> visibleRows =
-            encounterContextFacade.listInpatientEncounterContexts(query);
+            EncounterContextReader.listInpatientEncounterContexts(query);
         List<Long> visibleEncounterIds = this.retainRequestedVisibleEncounterIds(encounterIds, visibleRows);
         if (visibleEncounterIds.size() != encounterIds.size()) {
             throw new BusinessException(
@@ -714,6 +785,12 @@ public class NurseStationDispenseSummaryAppService {
         }
     }
 
+    /**
+     * 从待发药分页结果收集药品定义批量查询键（去重）。
+     *
+     * @param page 待发药分页
+     * @return ProductDefinition 批量 lookup 列表
+     */
     private List<ProductDefinitionBatchLookup> collectProductLookupsFromPendingPage(
         Page<MedicationDispensePickupPendingQueryModel> page) {
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
@@ -737,6 +814,12 @@ public class NurseStationDispenseSummaryAppService {
         return lookups;
     }
 
+    /**
+     * 从汇总单明细行收集药品定义批量查询键（去重）。
+     *
+     * @param domainLines 汇总单明细读模型
+     * @return ProductDefinition 批量 lookup 列表
+     */
     private List<ProductDefinitionBatchLookup> collectProductLookupsFromSlipLines(
         List<MedicationSummarySlipLineQueryModel> domainLines) {
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
@@ -760,6 +843,12 @@ public class NurseStationDispenseSummaryAppService {
         return lookups;
     }
 
+    /**
+     * 从发放实体列表收集药品定义批量查询键（去重）。
+     *
+     * @param dispenses 发放行
+     * @return ProductDefinition 批量 lookup 列表
+     */
     private List<ProductDefinitionBatchLookup> collectProductLookupsFromDispenses(List<MedicationDispense> dispenses) {
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         Set<String> dedupe = new HashSet<>();
@@ -782,6 +871,12 @@ public class NurseStationDispenseSummaryAppService {
         return lookups;
     }
 
+    /**
+     * 从待发药分页收集 locationId 集合（展示用）。
+     *
+     * @param page 待发药分页
+     * @return locationId 集合
+     */
     private Set<Long> collectLocationIdsFromPendingPage(Page<MedicationDispensePickupPendingQueryModel> page) {
         Set<Long> ids = new HashSet<>();
         if (page == null || page.getContent() == null) {
@@ -795,6 +890,12 @@ public class NurseStationDispenseSummaryAppService {
         return ids;
     }
 
+    /**
+     * 按 id 逐条加载 Location 实体（可选存在）。
+     *
+     * @param locationIds 位置 id 集合
+     * @return 已存在的 Location 列表
+     */
     private List<Location> loadLocations(Set<Long> locationIds) {
         List<Location> locations = new ArrayList<>();
         if (locationIds == null) {
@@ -809,6 +910,12 @@ public class NurseStationDispenseSummaryAppService {
         return locations;
     }
 
+    /**
+     * 从创建汇总请求收集 dispenseId（去重保序）。
+     *
+     * @param request 创建请求
+     * @return dispenseId 列表
+     */
     private List<Long> collectDispenseIdsFromWriteRequest(CreateMedicationSummaryRequest request) {
         LinkedHashSet<Long> ids = new LinkedHashSet<>();
         for (CreateMedicationSummaryDispenseItemDto item : request.getDispenseItems()) {
@@ -819,6 +926,12 @@ public class NurseStationDispenseSummaryAppService {
         return new ArrayList<>(ids);
     }
 
+    /**
+     * 从创建汇总请求收集 encounterId（去重保序）。
+     *
+     * @param request 创建请求
+     * @return encounterId 列表
+     */
     private List<Long> collectEncounterIdsFromWriteRequest(CreateMedicationSummaryRequest request) {
         LinkedHashSet<Long> ids = new LinkedHashSet<>();
         for (CreateMedicationSummaryDispenseItemDto item : request.getDispenseItems()) {
@@ -829,6 +942,12 @@ public class NurseStationDispenseSummaryAppService {
         return new ArrayList<>(ids);
     }
 
+    /**
+     * 从合并分组收集全部 dispenseId（去重保序）。
+     *
+     * @param groups 汇总合并分组
+     * @return dispenseId 列表
+     */
     private List<Long> collectDispenseIdsFromGroups(List<SummaryMergeGroup> groups) {
         LinkedHashSet<Long> ids = new LinkedHashSet<>();
         if (groups == null) {
@@ -847,6 +966,12 @@ public class NurseStationDispenseSummaryAppService {
         return new ArrayList<>(ids);
     }
 
+    /**
+     * 医嘱执行列表 → id 索引 Map。
+     *
+     * @param executeOrders 医嘱读模型列表
+     * @return medReqId → 读模型
+     */
     private Map<Long, MedicationRequestListQueryModel> indexMedReqById(
         List<MedicationRequestListQueryModel> executeOrders) {
         Map<Long, MedicationRequestListQueryModel> map = new HashMap<>();
@@ -861,6 +986,13 @@ public class NurseStationDispenseSummaryAppService {
         return map;
     }
 
+    /**
+     * 可见就诊上下文 → encounterId 索引（限 visibleEncounterIds 子集）。
+     *
+     * @param visibleRows          可见就诊行
+     * @param visibleEncounterIds  允许的 encounterId
+     * @return encounterId → 上下文
+     */
     private Map<Long, InpatientEncounterContextQueryModel> indexEncounters(
         List<InpatientEncounterContextQueryModel> visibleRows,
         List<Long> visibleEncounterIds) {
@@ -877,6 +1009,12 @@ public class NurseStationDispenseSummaryAppService {
         return map;
     }
 
+    /**
+     * Long id 列表去重并保持顺序。
+     *
+     * @param ids 原始 id 列表
+     * @return 去重后的 id
+     */
     private List<Long> distinctIds(List<Long> ids) {
         LinkedHashSet<Long> set = new LinkedHashSet<>();
         if (ids != null) {
@@ -889,6 +1027,13 @@ public class NurseStationDispenseSummaryAppService {
         return new ArrayList<>(set);
     }
 
+    /**
+     * 按请求顺序保留可见 encounter 交集（护士站病区过滤后）。
+     *
+     * @param requestedEncounterIds 请求就诊 id
+     * @param visibleRows           可见就诊上下文
+     * @return 可见且被请求的 encounterId（保序）
+     */
     private List<Long> retainRequestedVisibleEncounterIds(
         List<Long> requestedEncounterIds,
         List<InpatientEncounterContextQueryModel> visibleRows) {
@@ -912,6 +1057,12 @@ public class NurseStationDispenseSummaryAppService {
         return result;
     }
 
+    /**
+     * 长临筛选项是否合法（全部/长期/临时）。
+     *
+     * @param therapy 筛选项 code
+     * @return 允许为 true
+     */
     private boolean isAllowedTherapyFilter(String therapy) {
         if (InpatientNurseStationConstants.THERAPY_FILTER_ALL.equals(therapy)) {
             return true;

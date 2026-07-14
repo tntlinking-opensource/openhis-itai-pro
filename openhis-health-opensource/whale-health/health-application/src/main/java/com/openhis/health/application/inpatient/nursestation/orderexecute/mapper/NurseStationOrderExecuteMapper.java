@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.orderexecute.mapper;
 
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ListNurseStationOrderExecuteRequest;
-import com.openhis.health.module.querysupport.nursestation.NurseStationOrderExecuteListQuery;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderExecuteRowDto;
-import com.openhis.health.module.querysupport.nursestation.NurseStationOrderExecuteListResult;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.support.NurseStationOrderExecuteListQuery;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteRowDto;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.support.NurseStationOrderExecuteListResult;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteWriteSlotDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ExecuteNurseStationOrdersResponse;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ListNurseStationOrderExecuteResponse;
@@ -35,7 +22,7 @@ import com.openhis.health.domain.clinical.procedure.command.SkipProcedureRecordC
 import com.openhis.health.domain.clinical.procedure.command.StartProcedureExecutionCommand;
 import com.openhis.health.domain.medication.medicationdispense.command.GenerateDispenseFromExecutionCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
-import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
 import com.openhis.health.domain.workflow.devicedispense.command.GenerateDeviceDispenseFromTemporaryPathCommand;
 import com.openhis.health.domain.workflow.devicerequest.command.CreateExecutedDeviceOrderCommand;
 

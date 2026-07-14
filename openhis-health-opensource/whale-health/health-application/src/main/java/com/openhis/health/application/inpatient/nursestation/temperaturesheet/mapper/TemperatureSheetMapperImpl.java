@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.temperaturesheet.mapper;
 
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto.TemperatureSheetPaginationDto;
@@ -11,8 +11,8 @@ import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dt
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.request.SaveNurseStationTemperatureSheetAtRecordedTimeRequest;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.response.LoadNurseStationTemperatureSheetInitResponse;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.response.SaveNurseStationTemperatureSheetAtRecordedTimeResponse;
-import com.openhis.health.module.common.assembler.nursestation.TemperatureSheetDetailItemSupport;
-import com.openhis.health.module.common.assembler.nursestation.TemperatureSheetRecordedAtSupport;
+import com.openhis.health.application.inpatient.nursestation.temperaturesheet.support.TemperatureSheetDetailItemHelper;
+import com.openhis.health.application.inpatient.nursestation.temperaturesheet.support.TemperatureSheetRecordedAtResolver;
 import com.openhis.health.domain.diagnosis.vitalsign.command.SaveVitalSignCommand;
 import com.openhis.health.domain.diagnosis.vitalsign.queries.VitalSignEncounterQuery;
 import com.openhis.health.domain.diagnosis.vitalsign.queries.VitalSignTemperatureSeriesQuery;
@@ -43,7 +43,7 @@ public class TemperatureSheetMapperImpl implements TemperatureSheetMapper {
     public LoadNurseStationTemperatureSheetInitResponse buildInitResponse(List<OptionDto> specialEventOptions) {
         LoadNurseStationTemperatureSheetInitResponse response = new LoadNurseStationTemperatureSheetInitResponse();
         List<TemperatureSheetTimeSlotOptionDto> timeSlotOptions = new ArrayList<>();
-        for (String slot : TemperatureSheetRecordedAtSupport.TIME_SLOTS) {
+        for (String slot : TemperatureSheetRecordedAtResolver.TIME_SLOTS) {
             TemperatureSheetTimeSlotOptionDto option = new TemperatureSheetTimeSlotOptionDto();
             option.setCode(slot);
             option.setDisplayText(slot + ":00");
@@ -56,7 +56,11 @@ public class TemperatureSheetMapperImpl implements TemperatureSheetMapper {
         windowOptions.add(buildWindowOption(InpatientNurseStationConstants.TEMPERATURE_SHEET_WINDOW_14D, "14 天", false));
         response.setWindowOptions(windowOptions);
         response.setDefaultWindowRange(InpatientNurseStationConstants.TEMPERATURE_SHEET_WINDOW_7D);
-        response.setSpecialEventOptions(specialEventOptions == null ? new ArrayList<>() : specialEventOptions);
+        if (specialEventOptions == null) {
+            response.setSpecialEventOptions(new ArrayList<>());
+        } else {
+            response.setSpecialEventOptions(specialEventOptions);
+        }
         return response;
     }
 
@@ -156,7 +160,7 @@ public class TemperatureSheetMapperImpl implements TemperatureSheetMapper {
     }
 
     /**
-     * 保存请求 → 领域 SaveVitalSignCommand（明细项经 {@link TemperatureSheetDetailItemSupport} 映射）。
+     * 保存请求 → 领域 SaveVitalSignCommand（明细项经 {@link TemperatureSheetDetailItemHelper} 映射）。
      *
      * @param request      保存请求
      * @param recordedAt   已校验记录时点
@@ -178,8 +182,8 @@ public class TemperatureSheetMapperImpl implements TemperatureSheetMapper {
         Long recorderId,
         Long operatorId,
         String typeEnum) {
-        TemperatureSheetDetailItemSupport.DetailItemMappingResult mapping =
-            TemperatureSheetDetailItemSupport.toSaveCommands(request.getDetailItems());
+        TemperatureSheetDetailItemHelper.DetailItemMappingResult mapping =
+            TemperatureSheetDetailItemHelper.toSaveCommands(request.getDetailItems());
         SaveVitalSignCommand command = new SaveVitalSignCommand();
         command.setId(vitalSignId);
         command.setEncounterId(request.getEncounterId());
@@ -230,6 +234,14 @@ public class TemperatureSheetMapperImpl implements TemperatureSheetMapper {
         return header.getBusNo();
     }
 
+    /**
+     * 体温单时间窗下拉选项 DTO。
+     *
+     * @param code            选项码
+     * @param displayText     展示文案
+     * @param defaultSelected 是否默认选中
+     * @return 选项 DTO
+     */
     private TemperatureSheetWindowOptionDto buildWindowOption(
         String code,
         String displayText,

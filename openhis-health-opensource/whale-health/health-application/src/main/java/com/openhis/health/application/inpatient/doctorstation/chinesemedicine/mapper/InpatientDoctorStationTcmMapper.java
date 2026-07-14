@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.mapper;
 
@@ -38,10 +39,13 @@ public interface InpatientDoctorStationTcmMapper {
      *
      * @param tcmMethodOptions 中药用法下拉选项
      * @param rateOptions      用药频次下拉选项
+     * @param dosageInstructionOptions 单味特殊煎法下拉选项
      * @return 初始化响应（含默认长临筛选）
      */
     InitInpatientDoctorStationTcmResponse toInitInpatientDoctorStationTcmResponse(
-        List<OptionDto> tcmMethodOptions, List<OptionDto> rateOptions);
+        List<OptionDto> tcmMethodOptions,
+        List<OptionDto> rateOptions,
+        List<OptionDto> dosageInstructionOptions);
 
     /**
      * 装配 IF-IP-TCM-30 病证组列表响应。

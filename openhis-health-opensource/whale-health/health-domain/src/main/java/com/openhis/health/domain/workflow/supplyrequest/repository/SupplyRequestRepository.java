@@ -1,31 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.supplyrequest.repository;
 
 import com.openhis.health.domain.workflow.supplyrequest.entity.SupplyRequest;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 
-import java.time.LocalDateTime;
-
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,17 +23,34 @@ import java.util.Optional;
 public interface SupplyRequestRepository extends JpaRepository<SupplyRequest, Long>, JpaSpecificationExecutor<SupplyRequest> {
 
     /**
-     * 按业务单号加载全部未物理删除行（同号多行，顺序由持久化实现决定）。
+     * 按业务单号加载<strong>未软删</strong>行（同号多行；方法名显式 {@code IsDeletedFalse}，
+     * 不依赖 Session Filter 是否启用，避免「软删重插后仍读到旧行」）。
      *
      * @param busNo 业务单号 {@code bus_no}
      * @return 行列表；无数据时返回空列表
      */
+    List<SupplyRequest> findByBusNoAndIsDeletedFalse(String busNo);
+
+    /**
+     * 按业务单号加载行（含已软删）；仅审计/修复类场景；业务读请用 {@link #findByBusNoAndIsDeletedFalse(String)}。
+     *
+     * @param busNo 业务单号
+     * @return 行列表
+     */
     List<SupplyRequest> findByBusNo(String busNo);
 
     /**
-     * 按多个业务单号批量加载。
+     * 按多个业务单号批量加载<strong>未软删</strong>行。
      *
      * @param busNoList 业务单号集合；空集合行为由调用方规避
+     * @return 命中行列表
+     */
+    List<SupplyRequest> findByBusNoInAndIsDeletedFalse(List<String> busNoList);
+
+    /**
+     * 按多个业务单号批量加载（含已软删）；业务读请用 {@link #findByBusNoInAndIsDeletedFalse(List)}。
+     *
+     * @param busNoList 业务单号集合
      * @return 命中行列表
      */
     List<SupplyRequest> findByBusNoIn(List<String> busNoList);
@@ -62,6 +62,25 @@ public interface SupplyRequestRepository extends JpaRepository<SupplyRequest, Lo
      * @return 行列表
      */
     List<SupplyRequest> findByOriginalBusNo(String originalBusNo);
+
+    /**
+     * 判断是否存在未软删行以 {@code original_bus_no} 引用来源单且类型匹配（用于订货→进货互斥等门控）。
+     *
+     * @param originalBusNo 来源业务单号
+     * @param typeEnum      {@code type_enum} 持久化 code
+     * @return 存在任一行则为 {@code true}
+     */
+    boolean existsByOriginalBusNoAndTypeEnum(String originalBusNo, String typeEnum);
+
+    /**
+     * 判断是否存在未软删行以 {@code original_bus_no} 引用来源单、类型匹配且 {@code bus_no} 不等于排除单号（改单自引用豁免）。
+     *
+     * @param originalBusNo 来源业务单号
+     * @param typeEnum      {@code type_enum} 持久化 code
+     * @param busNo         改单时排除的本单 {@code bus_no}
+     * @return 存在其它单号占用则为 {@code true}
+     */
+    boolean existsByOriginalBusNoAndTypeEnumAndBusNoNot(String originalBusNo, String typeEnum, String busNo);
 
     /**
      * 按汇总主键集合加载（汇总类供应场景）。
@@ -97,24 +116,11 @@ public interface SupplyRequestRepository extends JpaRepository<SupplyRequest, Lo
     boolean existsByBusNoAndStatusEnum(String busNo, String statusEnum);
 
     /**
-     * 审批同意：仅当源态为 {@code APPROVAL} 时同号全行迁移至 {@code AGREE}（GAP-INV-004 / GAP-STALE-002）。
+     * 判断指定物品是否出现在审核中或已同意的供应单行（目录入库锁定门控）。
      *
-     * @return 实际更新行数
+     * @param itemId      物品主键 {@code item_id}
+     * @param statusEnums 供应状态持久化码集合
+     * @return 命中任一行时为 true
      */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-        UPDATE SupplyRequest s
-           SET s.statusEnum = :targetStatus,
-               s.approverId = :approverId,
-               s.approvalTime = :approvalTime
-         WHERE s.busNo = :busNo
-           AND s.statusEnum = :sourceStatus
-           AND s.isDeleted = false
-        """)
-    int approveToAgreeWhereBusNoAndSourceStatus(
-        @Param("busNo") String busNo,
-        @Param("targetStatus") String targetStatus,
-        @Param("sourceStatus") String sourceStatus,
-        @Param("approverId") Long approverId,
-        @Param("approvalTime") LocalDateTime approvalTime);
+    boolean existsByItemIdAndStatusEnumInAndIsDeletedFalse(Long itemId, Collection<String> statusEnums);
 }

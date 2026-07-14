@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 import java.time.format.DateTimeFormatter;
@@ -23,9 +10,7 @@ import java.util.regex.Pattern;
 /** 跨模块通用字面量与格式（拼接模板、正则、时间格式、批量上限等）。 */
 public interface GeneralSharedConstants {
 
-    /**
-     * 格式符
-     */
+/** GeneralShared 共享常量：FORMAT，值 {@code %s}。 */
     String FORMAT = "%s";
 
     /**
@@ -33,14 +18,10 @@ public interface GeneralSharedConstants {
      */
     String LIKE_PERCENT = "%";
 
-    /**
-     * 逗号（用于拼接）
-     */
+/** GeneralShared 共享常量：format，值 {@code %s,%s}。 */
     String COMMA_FORMAT = "%s,%s";
 
-    /**
-     * 拼接符（三项）
-     */
+/** GeneralShared 共享常量：format，值 {@code %s%s%s}。 */
     String MONTAGE_FORMAT = "%s%s%s";
 
     /**
@@ -53,9 +34,7 @@ public interface GeneralSharedConstants {
      */
     String S_DD_FORMAT = "%s-%d-%d";
 
-    /**
-     * 逗号
-     */
+/** GeneralShared 共享常量：COMMA，值 {@code ,}。 */
     String COMMA = ",";
 
     /**
@@ -68,9 +47,7 @@ public interface GeneralSharedConstants {
      */
     String SEMICOLON_SPACE = "; ";
 
-    /**
-     * 点
-     */
+/** GeneralShared 共享常量：POINT，值 {@code .}。 */
     String POINT = ".";
 
     /**
@@ -91,9 +68,7 @@ public interface GeneralSharedConstants {
      */
     Integer THREE = 3;
 
-    /**
-     * 中杠
-     */
+/** GeneralShared 共享常量：DASH，值 {@code -}。 */
     String DASH = "-";
 
     /**
@@ -192,6 +167,16 @@ public interface GeneralSharedConstants {
     DateTimeFormatter EXPORT_FILE_TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern(EXPORT_FILE_TIMESTAMP_PATTERN);
 
     /**
+     * 紧凑日期格式（业务编号日期段、{@code LocalDate} 无分隔符，如 {@code 20260626}）。
+     */
+    String DATE_COMPACT_PATTERN = "yyyyMMdd";
+
+    /**
+     * 紧凑日期格式化器。
+     */
+    DateTimeFormatter DATE_COMPACT_FORMATTER = DateTimeFormatter.ofPattern(DATE_COMPACT_PATTERN);
+
+    /**
      * 年月格式（医保累计等 {@code YearMonth} 传参，如 {@code 202506}）。
      */
     String YEAR_MONTH_PATTERN = "yyyyMM";
@@ -247,9 +232,7 @@ public interface GeneralSharedConstants {
      */
     String EMPTY_STRING = "";
 
-    /**
-     * 零
-     */
+/** GeneralShared 共享常量：ZERO，值 {@code 0}。 */
     String ZERO = "0";
 
     /**
@@ -263,4 +246,3 @@ public interface GeneralSharedConstants {
     String SKIN_TEST_INSPECTION_ACTIVITY_NAME = "皮试检查";
 
 }
-

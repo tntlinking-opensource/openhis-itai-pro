@@ -1,6 +1,0 @@
-{
-  "moduleId": "emr",
-  "enabledProperty": "openhis.modules.emr.enabled",
-  "locations": "classpath:db/migration/emr",
-  "historyTable": "flyway_schema_history_emr"
-}

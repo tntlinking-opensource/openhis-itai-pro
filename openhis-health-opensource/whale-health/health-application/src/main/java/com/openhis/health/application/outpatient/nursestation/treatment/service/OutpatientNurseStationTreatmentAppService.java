@@ -1,28 +1,32 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
 package com.openhis.health.application.outpatient.nursestation.treatment.service;
 
 import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.share.constants.OutpatientNurseStationConstants;
-import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
-import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.module.common.validator.DeviceAutoInventoryDeductSettingSupport;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.assembler.clinical.ProcedurePerformerDisplayAssembler;
-import com.openhis.health.module.orchestration.advice.ServiceApplyFormOrchestrationSupport;
-import com.openhis.health.module.orchestration.nursestation.DeviceDispenseNurseWorkflowSupport;
-import com.openhis.health.module.orchestration.nursestation.ProcedureExecutionPerformerOrchestrationSupport;
-import com.openhis.health.module.common.assembler.advice.AdviceChargeAnchorRollupSupport;
-import com.openhis.health.module.common.assembler.advice.AdviceChargeDisplayStatusSupport;
-import com.openhis.health.module.common.assembler.advice.AdviceChargeDisplayStatusSupport.ListDisplayStatus;
-import com.openhis.health.module.common.assembler.advice.ServiceAdviceDraftCommandSupport;
-import com.openhis.health.module.common.assembler.advice.TcmMethodCodeDisplaySupport;
-import com.openhis.health.module.common.assembler.order.OrderCatalogDisplayAssembler;
-import com.openhis.health.module.common.assembler.order.OrderRequestCatalogWarmAssembler;
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.querysupport.order.dto.OrderRequestCatalogWarmContext;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.option.OptionDtoAssembler;
+import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.application.shared.nursestation.DeviceAutoInventoryDeductSettingResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.outpatient.nursestation.treatment.support.ProcedurePerformerDisplayAssembler;
+import com.openhis.health.application.outpatient.doctorstation.advice.support.ServiceApplyFormOrchestrator;
+import com.openhis.health.application.shared.nursestation.DeviceDispenseNurseWorkflowOrchestrator;
+import com.openhis.health.application.shared.nursestation.ProcedureExecutionPerformerOrchestrator;
+import com.openhis.health.application.outpatient.nursestation.treatment.support.AdviceChargeAnchorRollupHelper;
+import com.openhis.health.application.shared.advice.AdviceChargeDisplayStatusAssembler;
+import com.openhis.health.application.shared.advice.AdviceChargeDisplayStatusAssembler.ListDisplayStatus;
+import com.openhis.health.application.shared.advice.ServiceAdviceDraftCommandHelper;
+import com.openhis.health.application.shared.advice.TcmMethodCodeDisplayAssembler;
+import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
+import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.application.shared.option.FrequencyOptionLoader;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmContext;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.assembler.ServiceApplyFormAssembler;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceRequestDetailSummaryDto;
 import com.openhis.health.application.outpatient.nursestation.treatment.dto.NurseStationTreatmentLineDto;
@@ -49,11 +53,11 @@ import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQuery
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.procedure.OrderExecutionSheetLoader;
+import com.openhis.health.application.outpatient.nursestation.treatment.support.OrderExecutionSheetLoader;
 import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureDetailQueryModel;
 import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecordQueryModel;
 import com.openhis.health.domain.clinical.procedure.service.ProcedureDomainService;
-import com.openhis.health.domain.clinical.procedure.support.ProcedurePerformCountGateSupport;
+import com.openhis.health.domain.clinical.procedure.support.ProcedurePerformCountGate;
 import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestDetailQueryModel;
@@ -65,7 +69,8 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
-import com.openhis.health.module.querysupport.nursestation.NurseStationSkinTestExecuteExcludeSupport;
+import com.openhis.health.application.outpatient.nursestation.skintest.support.NurseStationOutpatientTcmExecuteExcludeHelper;
+import com.openhis.health.application.outpatient.nursestation.skintest.support.NurseStationSkinTestExecuteExcludeHelper;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.DispenseStatus;
@@ -82,11 +87,12 @@ import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRe
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestQueryModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
+import com.openhis.health.application.shared.advice.ServiceRequestDetailListAssembler;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -112,9 +118,9 @@ import java.util.Set;
  *   <li>{@link ChargeItemQueryService}：IF-NUR-02 计费聚合与 IF-NUR-04 已计费门控只读输入。</li>
  *   <li>{@link ProcedureQueryService}：IF-NUR-03 医嘱执行单分页与 IF-NUR-02 次数统计、IF-NUR-04/05 门控输入。</li>
  *   <li>{@link ProcedureDomainService}：IF-NUR-04/05 执行登记/取消写路径。</li>
-     *   <li>{@link DeviceDispenseQueryService} / {@link DeviceDispenseNurseWorkflowSupport} / {@link InventoryItemDomainService}：IF-NUR-02 发放态装载与 IF-NUR-04/05 耗材写路径。</li>
+     *   <li>{@link DeviceDispenseQueryService} / {@link DeviceDispenseNurseWorkflowOrchestrator} / {@link InventoryItemDomainService}：IF-NUR-02 发放态装载与 IF-NUR-04/05 耗材写路径。</li>
  *   <li>{@link OrderRequestCatalogWarmAssembler}：IF-NUR-02 目录定义与类目术语批量预热。</li>
- *   <li>{@link TerminologyOptionLoader} / {@link FrequencyOptionLoader} / {@link ProductDefinitionBatchLoader}：IF-NUR-02 药品行用法/频次/单位 code+展示名装配（对齐 IF-DOR-10 **BR-ORD-022**）。</li>
+ *   <li>{@link TerminologyOptionLoader} / {@link FrequencyOptionLoader} / {@link ProductDefinitionDisplayTerminologyAssembler}：IF-NUR-02 药品行用法/频次/单位 code+展示名装配（对齐 IF-DOR-10 **BR-ORD-022**）。</li>
  *   <li>{@link OutpatientNurseStationTreatmentMapper}：Request→Query/Command 与查询模型/DTO→Response 字段搬运。</li>
  * </ul>
  *
@@ -135,6 +141,7 @@ public class OutpatientNurseStationTreatmentAppService {
      * 诊疗服务申请只读查询：IF-NUR-02 诊疗列表与 IF-NUR-04 计划次数门控。
      */
     private final ServiceRequestQueryService serviceRequestQueryService;
+    private final ServiceRequestDetailListAssembler serviceRequestDetailListAssembler;
 
     /**
      * 药品申请只读查询：IF-NUR-02 药品列表与 IF-NUR-04 计划次数门控。
@@ -173,7 +180,7 @@ public class OutpatientNurseStationTreatmentAppService {
      * 执行记录写服务：IF-NUR-04/05 诊疗/药品执行登记与取消。
      */
     private final ProcedureDomainService procedureDomainService;
-    private final ProcedurePerformCountGateSupport procedurePerformCountGateSupport;
+    private final ProcedurePerformCountGate procedurePerformCountGate;
 
     /**
      * 库存项写服务：IF-NUR-04/05 合并扣减/回补（允许空映射短路）。
@@ -203,16 +210,16 @@ public class OutpatientNurseStationTreatmentAppService {
     /**
      * IF-NUR-02 药品行单位展示回落（产品字典文案）。
      */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /** 「耗材是否自动扣库」开关读取。 */
-    private final DeviceAutoInventoryDeductSettingSupport deviceAutoInventoryDeductSettingSupport;
+    private final DeviceAutoInventoryDeductSettingResolver deviceAutoInventoryDeductSettingResolver;
 
     /** 护士站耗材发放编排（已配药 / FIFO 已发药 + 合并扣库）。 */
-    private final DeviceDispenseNurseWorkflowSupport deviceDispenseNurseWorkflowSupport;
+    private final DeviceDispenseNurseWorkflowOrchestrator deviceDispenseNurseWorkflowOrchestrator;
 
     /** 写路径：Procedure 完成后登记主执行人（cln_procedure_performer，1:1）。 */
-    private final ProcedureExecutionPerformerOrchestrationSupport procedureExecutionPerformerOrchestrationSupport;
+    private final ProcedureExecutionPerformerOrchestrator procedureExecutionPerformerOrchestrator;
 
     /** 当前登录医务人员解析（B.6.5）。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
@@ -245,8 +252,8 @@ public class OutpatientNurseStationTreatmentAppService {
         // Pre：装载收费明细全集，用于三列表行级计费聚合（Q-ORD-006）。
         ChargeItemQueryCommand chargeCmd = this.outpatientNurseStationTreatmentMapper.toChargeItemQueryCommand(request.getEncounterId());
         List<ChargeItem> chargeItems = this.chargeItemQueryService.listChargeItemsByEncounterId(chargeCmd);
-        Map<String, AdviceChargeAnchorRollupSupport.RequestAnchorChargeAggregation> chargeByAnchor =
-            AdviceChargeAnchorRollupSupport.buildRequestAnchorChargeIndex(
+        Map<String, AdviceChargeAnchorRollupHelper.RequestAnchorChargeAggregation> chargeByAnchor =
+            AdviceChargeAnchorRollupHelper.buildRequestAnchorChargeIndex(
                 chargeItems, this.medicationDispenseQueryService, this.deviceDispenseQueryService);
         // Pre：装载诊疗/药品/耗材请求列表，并在应用层过滤已完成态（护士站处置视图口径）。
         List<ServiceRequestListModel> serviceRequests =
@@ -277,32 +284,32 @@ public class OutpatientNurseStationTreatmentAppService {
         List<Long> applyFormServiceRequestIds = new ArrayList<>();
         for (ServiceRequestListModel serviceRow : serviceRequests) {
             if (serviceRow.getId() != null
-                && ServiceApplyFormOrchestrationSupport.isRequisitionApplicationPrescriptionNo(
+                && ServiceApplyFormOrchestrator.isRequisitionApplicationPrescriptionNo(
                     serviceRow.getPrescriptionNo())) {
                 applyFormServiceRequestIds.add(serviceRow.getId());
             }
         }
         Map<Long, List<ServiceRequestDetailListModel>> applyFormDetailsByRequestId =
-            this.serviceRequestQueryService.mapDetailListModelsByServiceRequestIds(applyFormServiceRequestIds);
+            this.serviceRequestDetailListAssembler.mapDetailListModelsByServiceRequestIds(applyFormServiceRequestIds);
         Long skinTestActivityId = this.activityDefinitionQueryService.requireIdByExactName(
             GeneralSharedConstants.SKIN_TEST_INSPECTION_ACTIVITY_NAME);
         List<NurseStationTreatmentLineDto> serviceLines = new ArrayList<>();
         Map<NurseStationTreatmentLineDto, Long> latestCompletedProcedureByLine = new HashMap<>();
         for (ServiceRequestListModel row : serviceRequests) {
-            if (NurseStationSkinTestExecuteExcludeSupport.shouldExcludeServiceFromNurseStationExecuteList(
+            if (NurseStationSkinTestExecuteExcludeHelper.shouldExcludeServiceFromNurseStationExecuteList(
                 skinTestActivityId, row)) {
                 continue;
             }
-            if (AdviceChargeDisplayStatusSupport.isRefundOrderCopyRequest(row.getRefundServiceId())) {
+            if (AdviceChargeDisplayStatusAssembler.isRefundOrderCopyRequest(row.getRefundServiceId())) {
                 continue;
             }
             String serviceChargeStatus = this.resolveAggregatedChargeStatus(
                 TableNameConstants.WKF_SERVICE_REQUEST, row.getId(), chargeByAnchor);
-            if (!AdviceChargeDisplayStatusSupport.shouldIncludeNurseStationTreatmentSheetRow(
+            if (!AdviceChargeDisplayStatusAssembler.shouldIncludeNurseStationTreatmentSheetRow(
                 row.getStatusEnum(), TableNameConstants.WKF_SERVICE_REQUEST, row.getId(), serviceChargeStatus)) {
                 continue;
             }
-            if (StringUtils.isNotBlank(request.getServiceCategoryCode())) {
+            if (StringUtils.isNotEmpty(request.getServiceCategoryCode())) {
                 if (row.getTherapyEnum() == null) {
                     continue;
                 }
@@ -337,15 +344,18 @@ public class OutpatientNurseStationTreatmentAppService {
         }
         List<NurseStationTreatmentLineDto> medicationLines = new ArrayList<>();
         for (MedicationRequestListQueryModel row : medicationRequests) {
-            if (NurseStationSkinTestExecuteExcludeSupport.shouldExcludeMedicationFromNurseStationExecuteList(row)) {
+            if (NurseStationSkinTestExecuteExcludeHelper.shouldExcludeMedicationFromNurseStationExecuteList(row)) {
                 continue;
             }
-            if (AdviceChargeDisplayStatusSupport.isRefundOrderCopyRequest(row.getRefundMedicineId())) {
+            if (NurseStationOutpatientTcmExecuteExcludeHelper.shouldExcludeMedicationFromOutpatientNurseStationExecuteList(row)) {
+                continue;
+            }
+            if (AdviceChargeDisplayStatusAssembler.isRefundOrderCopyRequest(row.getRefundMedicineId())) {
                 continue;
             }
             String medicationChargeStatus = this.resolveAggregatedChargeStatus(
                 TableNameConstants.MED_MEDICATION_REQUEST, row.getId(), chargeByAnchor);
-            if (!AdviceChargeDisplayStatusSupport.shouldIncludeNurseStationTreatmentSheetRow(
+            if (!AdviceChargeDisplayStatusAssembler.shouldIncludeNurseStationTreatmentSheetRow(
                 row.getStatusEnum(), TableNameConstants.MED_MEDICATION_REQUEST, row.getId(), medicationChargeStatus)) {
                 continue;
             }
@@ -363,12 +373,12 @@ public class OutpatientNurseStationTreatmentAppService {
         }
         List<NurseStationTreatmentLineDto> deviceLines = new ArrayList<>();
         for (DeviceRequestListModel row : deviceRequests) {
-            if (AdviceChargeDisplayStatusSupport.isRefundOrderCopyRequest(row.getRefundDeviceId())) {
+            if (AdviceChargeDisplayStatusAssembler.isRefundOrderCopyRequest(row.getRefundDeviceId())) {
                 continue;
             }
             String deviceChargeStatus = this.resolveAggregatedChargeStatus(
                 TableNameConstants.WKF_DEVICE_REQUEST, row.getId(), chargeByAnchor);
-            if (!AdviceChargeDisplayStatusSupport.shouldIncludeNurseStationTreatmentSheetRow(
+            if (!AdviceChargeDisplayStatusAssembler.shouldIncludeNurseStationTreatmentSheetRow(
                 row.getStatusEnum(), TableNameConstants.WKF_DEVICE_REQUEST, row.getId(), deviceChargeStatus)) {
                 continue;
             }
@@ -443,7 +453,7 @@ public class OutpatientNurseStationTreatmentAppService {
         if (request == null || request.getEncounterId() == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "encounterId 不能为空");
         }
-        if (request.getRequestId() != null && StringUtils.isBlank(request.getRequestTable())) {
+        if (request.getRequestId() != null && StringUtils.isEmpty(request.getRequestTable())) {
             throw new BusinessException(ErrorCodeConstants.PROCEDURE_INVALID_ARGUMENT, "缩窄来源请求时 requestTable 不能为空");
         }
         // Pre：就诊存在，保证列表与取消操作同属一次就诊上下文。
@@ -480,8 +490,8 @@ public class OutpatientNurseStationTreatmentAppService {
         // 判断是否存在耗材执行项
         boolean hasDevice = request.getDeviceDispenseIds() != null && !request.getDeviceDispenseIds().isEmpty();
         // 自动扣库时：前端传入耗材房优先；未传时回落发放单 location_id；仍缺库房且需 FIFO 时报错
-        if (hasDevice && this.deviceAutoInventoryDeductSettingSupport.isEnabled()) {
-            this.deviceDispenseNurseWorkflowSupport.validateOutpatientAutoDeductInventoryLocation(
+        if (hasDevice && this.deviceAutoInventoryDeductSettingResolver.isEnabled()) {
+            this.deviceDispenseNurseWorkflowOrchestrator.validateOutpatientAutoDeductInventoryLocation(
                 request.getDeviceDispenseIds(),
                 request.getInventoryLocationId());
             if (request.getInventoryLocationId() != null) {
@@ -512,34 +522,37 @@ public class OutpatientNurseStationTreatmentAppService {
         // Pre：批量执行前整批校验净次数（GAP-EXE-006，满额整批失败）。
         for (Long serviceRequestId : retainedServiceIds) {
             ServiceRequestListModel listRow = serviceRowById.get(serviceRequestId);
-            if (NurseStationSkinTestExecuteExcludeSupport.shouldExcludeServiceFromNurseStationExecuteList(
+            if (NurseStationSkinTestExecuteExcludeHelper.shouldExcludeServiceFromNurseStationExecuteList(
                 skinTestActivityId, listRow)) {
                 continue;
             }
             int planned = this.resolvePlannedServicePerformCount(listRow);
-            this.procedurePerformCountGateSupport.assertPerformCountBelowPlanned(
+            this.procedurePerformCountGate.assertPerformCountBelowPlanned(
                 serviceRequestId, TableNameConstants.WKF_SERVICE_REQUEST, planned);
         }
         for (Long medicationRequestId : retainedMedicationIds) {
             MedicationRequestListQueryModel listRow = medicationRowById.get(medicationRequestId);
-            if (NurseStationSkinTestExecuteExcludeSupport.shouldExcludeMedicationFromNurseStationExecuteList(listRow)) {
+            if (NurseStationSkinTestExecuteExcludeHelper.shouldExcludeMedicationFromNurseStationExecuteList(listRow)) {
+                continue;
+            }
+            if (NurseStationOutpatientTcmExecuteExcludeHelper.shouldExcludeMedicationFromOutpatientNurseStationExecuteList(listRow)) {
                 continue;
             }
             MedicationRequestDetailQueryModel med = this.medicationRequestQueryService.loadMedicationRequestById(medicationRequestId);
             int planned = this.resolvePlannedMedicationPerformCount(listRow, med);
-            this.procedurePerformCountGateSupport.assertPerformCountBelowPlanned(
+            this.procedurePerformCountGate.assertPerformCountBelowPlanned(
                 medicationRequestId, TableNameConstants.MED_MEDICATION_REQUEST, planned);
         }
         // Cmd：诊疗路径——逐条校验净次数门控后执行 create→start→complete（护士站通过 CreateProcedureRecordCommand#skipDuplicateRequestAnchorCheck 允许多次登记）。
         for (Long serviceRequestId : retainedServiceIds) {
             ServiceRequestListModel listRow = serviceRowById.get(serviceRequestId);
-            if (NurseStationSkinTestExecuteExcludeSupport.shouldExcludeServiceFromNurseStationExecuteList(
+            if (NurseStationSkinTestExecuteExcludeHelper.shouldExcludeServiceFromNurseStationExecuteList(
                 skinTestActivityId, listRow)) {
                 continue;
             }
             ServiceRequestQueryModel sr = this.serviceRequestQueryService.mustGetServiceRequest(serviceRequestId);
             int planned = this.resolvePlannedServicePerformCount(listRow);
-            this.procedurePerformCountGateSupport.assertPerformCountBelowPlanned(
+            this.procedurePerformCountGate.assertPerformCountBelowPlanned(
                 serviceRequestId, TableNameConstants.WKF_SERVICE_REQUEST, planned);
             LocalDateTime now = LocalDateTime.now();
             com.openhis.health.domain.clinical.procedure.command.CreateProcedureRecordCommand createCmd =
@@ -557,19 +570,22 @@ public class OutpatientNurseStationTreatmentAppService {
             this.procedureDomainService.completeProcedureRecord(
                 this.outpatientNurseStationTreatmentMapper.toCompleteProcedureRecordCommand(procedureId, practitionerId));
             // Cmd：登记主执行人（与 Procedure 1:1 写入 cln_procedure_performer）。
-            this.procedureExecutionPerformerOrchestrationSupport.registerPrimaryPerformer(
+            this.procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
                 procedureId, practitionerId, practitionerId, now);
             performedServiceIds.add(serviceRequestId);
         }
         // Cmd：药品路径——净次数门控计划次数取自 execute_num（BR-NUR-005，见 MedicationRequestDetailQueryModel）。
         for (Long medicationRequestId : retainedMedicationIds) {
             MedicationRequestListQueryModel listRow = medicationRowById.get(medicationRequestId);
-            if (NurseStationSkinTestExecuteExcludeSupport.shouldExcludeMedicationFromNurseStationExecuteList(listRow)) {
+            if (NurseStationSkinTestExecuteExcludeHelper.shouldExcludeMedicationFromNurseStationExecuteList(listRow)) {
+                continue;
+            }
+            if (NurseStationOutpatientTcmExecuteExcludeHelper.shouldExcludeMedicationFromOutpatientNurseStationExecuteList(listRow)) {
                 continue;
             }
             MedicationRequestDetailQueryModel med = this.medicationRequestQueryService.loadMedicationRequestById(medicationRequestId);
             int planned = this.resolvePlannedMedicationPerformCount(listRow, med);
-            this.procedurePerformCountGateSupport.assertPerformCountBelowPlanned(
+            this.procedurePerformCountGate.assertPerformCountBelowPlanned(
                 medicationRequestId, TableNameConstants.MED_MEDICATION_REQUEST, planned);
             LocalDateTime now = LocalDateTime.now();
             String category = med.getTherapyEnum();
@@ -591,7 +607,7 @@ public class OutpatientNurseStationTreatmentAppService {
             this.procedureDomainService.completeProcedureRecord(
                 this.outpatientNurseStationTreatmentMapper.toCompleteProcedureRecordCommand(procedureId, practitionerId));
             // Cmd：登记主执行人（与 Procedure 1:1 写入 cln_procedure_performer）。
-            this.procedureExecutionPerformerOrchestrationSupport.registerPrimaryPerformer(
+            this.procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
                 procedureId, practitionerId, practitionerId, now);
             performedMedicationIds.add(medicationRequestId);
         }
@@ -600,7 +616,7 @@ public class OutpatientNurseStationTreatmentAppService {
             List<Long> sortedDispenseIds = new ArrayList<>(request.getDeviceDispenseIds());
             Collections.sort(sortedDispenseIds);
             Map<Long, BigDecimal> inventoryIdToDecreaseQty = new HashMap<>();
-            this.deviceDispenseNurseWorkflowSupport.applyOutpatientNurseDeviceDispenses(
+            this.deviceDispenseNurseWorkflowOrchestrator.applyOutpatientNurseDeviceDispenses(
                 sortedDispenseIds,
                 practitionerId,
                 practitionerId,
@@ -678,7 +694,7 @@ public class OutpatientNurseStationTreatmentAppService {
             List<Long> sortedDispenseIds = new ArrayList<>(request.getDeviceDispenseIds());
             Collections.sort(sortedDispenseIds);
             Map<Long, BigDecimal> inventoryIdToIncreaseQty = new HashMap<>();
-            this.deviceDispenseNurseWorkflowSupport.revertOutpatientNurseDeviceDispenses(
+            this.deviceDispenseNurseWorkflowOrchestrator.revertOutpatientNurseDeviceDispenses(
                 sortedDispenseIds,
                 practitionerId,
                 revertedDeviceDispenseIds,
@@ -724,7 +740,7 @@ public class OutpatientNurseStationTreatmentAppService {
         if (request.getEncounterId() == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "encounterId 不能为空");
         }
-        if (StringUtils.isBlank(request.getStatusReasonText())) {
+        if (StringUtils.isEmpty(request.getStatusReasonText())) {
             throw new BusinessException(ErrorCodeConstants.PROCEDURE_INVALID_ARGUMENT, "取消原因不能为空");
         }
         boolean any = false;
@@ -784,7 +800,7 @@ public class OutpatientNurseStationTreatmentAppService {
             this.outpatientNurseStationTreatmentMapper.toCancelProcedureRecordCommand(
                 procedureId, statusReasonText, offsetCompletedProcedureId, operatorId));
         // Cmd：登记取消操作人（与 CANCEL Procedure 1:1 写入 cln_procedure_performer）。
-        this.procedureExecutionPerformerOrchestrationSupport.registerPrimaryPerformer(
+        this.procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
             procedureId, operatorId, operatorId, now);
     }
 
@@ -853,7 +869,7 @@ public class OutpatientNurseStationTreatmentAppService {
      * @return 是否为诊疗或药品请求表
      */
     private boolean isNurseStationProcedureRequestTable(String requestTable) {
-        if (StringUtils.isBlank(requestTable)) {
+        if (StringUtils.isEmpty(requestTable)) {
             return false;
         }
         if (TableNameConstants.WKF_SERVICE_REQUEST.equals(requestTable)) {
@@ -1043,7 +1059,7 @@ public class OutpatientNurseStationTreatmentAppService {
             }
             line.setLastPerformerPractitionerId(practitionerId);
             String displayName = nameByPractitionerId.get(practitionerId);
-            if (StringUtils.isNotBlank(displayName)) {
+            if (StringUtils.isNotEmpty(displayName)) {
                 line.setLastPerformerDisplay(displayName);
             }
         }
@@ -1131,7 +1147,7 @@ public class OutpatientNurseStationTreatmentAppService {
         Map<Long, ServiceRequestListModel> serviceById,
         Map<Long, MedicationRequestListQueryModel> medicationById,
         OrderRequestCatalogWarmContext catalogContext) {
-        if (record == null || record.getRequestId() == null || StringUtils.isBlank(record.getRequestTable())) {
+        if (record == null || record.getRequestId() == null || StringUtils.isEmpty(record.getRequestTable())) {
             return OutpatientNurseStationConstants.OUTPATIENT_NURSE_STATION_SERVICE_LINE_NAME_FALLBACK;
         }
         String requestTable = record.getRequestTable().trim();
@@ -1185,20 +1201,20 @@ public class OutpatientNurseStationTreatmentAppService {
             resultText = resultText.trim();
         }
         if (EventStatus.CANCEL.getCode().equals(statusCode)) {
-            if (StringUtils.isNotBlank(resultText)) {
+            if (StringUtils.isNotEmpty(resultText)) {
                 return resultText;
             }
             return OutpatientNurseStationConstants.EXECUTION_RECORD_ACTION_CANCEL;
         }
         if (EventStatus.COMPLETED.getCode().equals(statusCode)) {
-            if (StringUtils.isNotBlank(resultText)
+            if (StringUtils.isNotEmpty(resultText)
                 && !OutpatientNurseStationConstants.OUTPATIENT_NURSE_STATION_PROCEDURE_RESULT_TEXT.equals(resultText)) {
                 return resultText;
             }
             return OutpatientNurseStationConstants.EXECUTION_RECORD_ACTION_COMPLETED;
         }
         if (EventStatus.STOPPED.getCode().equals(statusCode)) {
-            if (StringUtils.isNotBlank(resultText)) {
+            if (StringUtils.isNotEmpty(resultText)) {
                 return resultText;
             }
             return OutpatientNurseStationConstants.EXECUTION_RECORD_ACTION_STOPPED;
@@ -1209,10 +1225,10 @@ public class OutpatientNurseStationTreatmentAppService {
         if (EventStatus.PREPARATION.getCode().equals(statusCode)) {
             return OutpatientNurseStationConstants.EXECUTION_RECORD_ACTION_PREPARATION;
         }
-        if (StringUtils.isNotBlank(resultText)) {
+        if (StringUtils.isNotEmpty(resultText)) {
             return resultText;
         }
-        if (StringUtils.isNotBlank(record.getStatusEnumText())) {
+        if (StringUtils.isNotEmpty(record.getStatusEnumText())) {
             return record.getStatusEnumText().trim();
         }
         return OutpatientNurseStationConstants.EXECUTION_RECORD_ACTION_DEFAULT;
@@ -1306,7 +1322,7 @@ public class OutpatientNurseStationTreatmentAppService {
         Set<Long> billable = new HashSet<>();
         if (chargeItems != null) {
             for (ChargeItem item : chargeItems) {
-                if (item.getServiceId() == null || StringUtils.isBlank(item.getServiceTable())) {
+                if (item.getServiceId() == null || StringUtils.isEmpty(item.getServiceTable())) {
                     continue;
                 }
                 if (!serviceTable.equals(item.getServiceTable())) {
@@ -1359,7 +1375,7 @@ public class OutpatientNurseStationTreatmentAppService {
      * @return 计划次数
      */
     private int resolvePlannedServicePerformCount(ServiceRequestListModel listRow) {
-        return ServiceAdviceDraftCommandSupport.resolvePlannedServicePerformCount(listRow);
+        return ServiceAdviceDraftCommandHelper.resolvePlannedServicePerformCount(listRow);
     }
 
     /**
@@ -1410,7 +1426,7 @@ public class OutpatientNurseStationTreatmentAppService {
             return warm;
         }
         Set<Long> medicationDefIds = new LinkedHashSet<>();
-        // Pre：收集本就诊药品定义 id，供 ProductDefinitionBatchLoader 一次 IN 批量加载。
+        // Pre：收集本就诊药品定义 id，供 ProductDefinitionDisplayTerminologyAssembler 一次 IN 批量加载。
         for (MedicationRequestListQueryModel row : medicationRequests) {
             if (row.getMedicationId() != null) {
                 medicationDefIds.add(row.getMedicationId());
@@ -1437,7 +1453,7 @@ public class OutpatientNurseStationTreatmentAppService {
             lookup.setProductDefinitionId(medicationDefId);
             lookups.add(lookup);
         }
-        return this.productDefinitionBatchLoader.loadAsMap(lookups);
+        return this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
     }
 
     /**
@@ -1512,10 +1528,10 @@ public class OutpatientNurseStationTreatmentAppService {
      * @return 排序键
      */
     private String resolveApplyFormGroupingKey(String prescriptionNo) {
-        if (ServiceApplyFormOrchestrationSupport.isRequisitionApplicationPrescriptionNo(prescriptionNo)) {
+        if (ServiceApplyFormOrchestrator.isRequisitionApplicationPrescriptionNo(prescriptionNo)) {
             return "0_" + prescriptionNo.trim();
         }
-        if (StringUtils.isNotBlank(prescriptionNo)) {
+        if (StringUtils.isNotEmpty(prescriptionNo)) {
             return "1_" + prescriptionNo.trim();
         }
         return "2_";
@@ -1546,7 +1562,7 @@ public class OutpatientNurseStationTreatmentAppService {
     private NurseStationTreatmentLineDto buildServiceLine(
         ServiceRequestListModel row,
         Long encounterId,
-        Map<String, AdviceChargeAnchorRollupSupport.RequestAnchorChargeAggregation> chargeByAnchor,
+        Map<String, AdviceChargeAnchorRollupHelper.RequestAnchorChargeAggregation> chargeByAnchor,
         OrderRequestCatalogWarmContext catalogContext) {
         NurseStationTreatmentLineDto line = new NurseStationTreatmentLineDto();
         line.setEncounterId(encounterId);
@@ -1568,7 +1584,7 @@ public class OutpatientNurseStationTreatmentAppService {
         line.setItemName(OrderCatalogDisplayAssembler.resolveItemDisplayName(
             activityName,
             OutpatientNurseStationConstants.OUTPATIENT_NURSE_STATION_SERVICE_LINE_NAME_FALLBACK));
-        if (StringUtils.isNotBlank(row.getPrescriptionNo())) {
+        if (StringUtils.isNotEmpty(row.getPrescriptionNo())) {
             line.setPrescriptionNo(row.getPrescriptionNo().trim());
         }
         line.setSpecText(null);
@@ -1580,7 +1596,7 @@ public class OutpatientNurseStationTreatmentAppService {
             line.setWbStr(null);
         }
         String serviceCategoryCode = null;
-        if (activityDef != null && StringUtils.isNotBlank(activityDef.getCategoryCode())) {
+        if (activityDef != null && StringUtils.isNotEmpty(activityDef.getCategoryCode())) {
             serviceCategoryCode = activityDef.getCategoryCode().trim();
         }
         line.setServiceCategoryCode(serviceCategoryCode);
@@ -1620,10 +1636,10 @@ public class OutpatientNurseStationTreatmentAppService {
         if (line == null || row == null) {
             return;
         }
-        if (!ServiceApplyFormOrchestrationSupport.isRequisitionApplicationPrescriptionNo(row.getPrescriptionNo())) {
+        if (!ServiceApplyFormOrchestrator.isRequisitionApplicationPrescriptionNo(row.getPrescriptionNo())) {
             return;
         }
-        if (StringUtils.isNotBlank(row.getRemark())) {
+        if (StringUtils.isNotEmpty(row.getRemark())) {
             line.setRemark(row.getRemark().trim());
         }
         if (applyFormDetailsByRequestId == null || row.getId() == null) {
@@ -1634,7 +1650,7 @@ public class OutpatientNurseStationTreatmentAppService {
             return;
         }
         List<ServiceRequestDetailSummaryDto> detailDtos = this.serviceApplyFormAssembler.toDetailSummaryDtos(
-            ServiceApplyFormOrchestrationSupport.toDetailSummaryModels(detailModels));
+            ServiceApplyFormOrchestrator.toDetailSummaryModels(detailModels));
         if (detailDtos != null && !detailDtos.isEmpty()) {
             line.setServiceRequestDetails(detailDtos);
         }
@@ -1653,7 +1669,7 @@ public class OutpatientNurseStationTreatmentAppService {
     private NurseStationTreatmentLineDto buildMedicationLine(
         MedicationRequestListQueryModel row,
         Long encounterId,
-        Map<String, AdviceChargeAnchorRollupSupport.RequestAnchorChargeAggregation> chargeByAnchor,
+        Map<String, AdviceChargeAnchorRollupHelper.RequestAnchorChargeAggregation> chargeByAnchor,
         OrderRequestCatalogWarmContext catalogContext,
         NurseStationMedicationDisplayWarmContext medicationDisplayWarm) {
         NurseStationTreatmentLineDto line = new NurseStationTreatmentLineDto();
@@ -1676,7 +1692,7 @@ public class OutpatientNurseStationTreatmentAppService {
         line.setItemName(OrderCatalogDisplayAssembler.resolveItemDisplayName(
             medicationName,
             OutpatientNurseStationConstants.OUTPATIENT_NURSE_STATION_MEDICATION_LINE_NAME_FALLBACK));
-        if (StringUtils.isNotBlank(row.getPrescriptionNo())) {
+        if (StringUtils.isNotEmpty(row.getPrescriptionNo())) {
             line.setPrescriptionNo(row.getPrescriptionNo().trim());
         }
         line.setSpecText(OrderCatalogDisplayAssembler.resolveMedicationSpecText(medicationDef));
@@ -1692,7 +1708,7 @@ public class OutpatientNurseStationTreatmentAppService {
         line.setDeviceCategoryCode(null);
         line.setDeviceCategoryCodeText(null);
         String medCategoryCode = null;
-        if (medicationDef != null && StringUtils.isNotBlank(medicationDef.getCategoryCode())) {
+        if (medicationDef != null && StringUtils.isNotEmpty(medicationDef.getCategoryCode())) {
             medCategoryCode = medicationDef.getCategoryCode().trim();
         }
         line.setMedCategoryCode(medCategoryCode);
@@ -1713,7 +1729,7 @@ public class OutpatientNurseStationTreatmentAppService {
             line.setDoseUnitName(ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
                 medicationDisplayWarm.getDoseUnitLabelByCode(), row.getDoseUnitCode(), medProduct));
             line.setMethodCode(row.getMethodCode());
-            line.setMethodName(TcmMethodCodeDisplaySupport.resolveMethodDisplayName(
+            line.setMethodName(TcmMethodCodeDisplayAssembler.resolveMethodDisplayName(
                 medicationDisplayWarm.getTcmMethodLabelByCode(),
                 medicationDisplayWarm.getMethodLabelByCode(),
                 row.getTcmFlag(),
@@ -1777,7 +1793,7 @@ public class OutpatientNurseStationTreatmentAppService {
     private NurseStationTreatmentLineDto buildDeviceLine(
         DeviceRequestListModel row,
         Long encounterId,
-        Map<String, AdviceChargeAnchorRollupSupport.RequestAnchorChargeAggregation> chargeByAnchor,
+        Map<String, AdviceChargeAnchorRollupHelper.RequestAnchorChargeAggregation> chargeByAnchor,
         List<DeviceDispenseListModel> deviceDispenses,
         Map<Long, List<Long>> deviceDispenseIdsByRequest,
         OrderRequestCatalogWarmContext catalogContext) {
@@ -1802,9 +1818,9 @@ public class OutpatientNurseStationTreatmentAppService {
         line.setItemName(OrderCatalogDisplayAssembler.resolveItemDisplayName(
             deviceName,
             OutpatientNurseStationConstants.OUTPATIENT_NURSE_STATION_DEVICE_LINE_NAME_FALLBACK));
-        if (StringUtils.isNotBlank(row.getDeviceSpecifications())) {
+        if (StringUtils.isNotEmpty(row.getDeviceSpecifications())) {
             line.setSpecText(row.getDeviceSpecifications().trim());
-        } else if (deviceDef != null && StringUtils.isNotBlank(deviceDef.getTotalVolume())) {
+        } else if (deviceDef != null && StringUtils.isNotEmpty(deviceDef.getTotalVolume())) {
             line.setSpecText(deviceDef.getTotalVolume().trim());
         } else {
             line.setSpecText(null);
@@ -1819,7 +1835,7 @@ public class OutpatientNurseStationTreatmentAppService {
         line.setServiceCategoryCode(null);
         line.setServiceCategoryCodeText(null);
         String deviceCategoryCode = null;
-        if (deviceDef != null && StringUtils.isNotBlank(deviceDef.getCategoryCode())) {
+        if (deviceDef != null && StringUtils.isNotEmpty(deviceDef.getCategoryCode())) {
             deviceCategoryCode = deviceDef.getCategoryCode().trim();
         }
         line.setDeviceCategoryCode(deviceCategoryCode);
@@ -1927,19 +1943,19 @@ public class OutpatientNurseStationTreatmentAppService {
         NurseStationTreatmentLineDto line,
         String serviceTable,
         Long requestId,
-        Map<String, AdviceChargeAnchorRollupSupport.RequestAnchorChargeAggregation> chargeByAnchor) {
+        Map<String, AdviceChargeAnchorRollupHelper.RequestAnchorChargeAggregation> chargeByAnchor) {
         if (requestId == null || chargeByAnchor == null) {
             return;
         }
-        String key = AdviceChargeAnchorRollupSupport.buildChargeAnchorKey(serviceTable, requestId);
-        AdviceChargeAnchorRollupSupport.RequestAnchorChargeAggregation agg = chargeByAnchor.get(key);
+        String key = AdviceChargeAnchorRollupHelper.buildChargeAnchorKey(serviceTable, requestId);
+        AdviceChargeAnchorRollupHelper.RequestAnchorChargeAggregation agg = chargeByAnchor.get(key);
         if (agg == null) {
             return;
         }
         String chargeStatusEnum = agg.getChargeStatusEnum();
         line.setChargeStatusEnum(chargeStatusEnum);
         line.setChargeStatusEnumText(
-            AdviceChargeDisplayStatusSupport.resolveChargeStatusDisplayTextForAdviceList(chargeStatusEnum));
+            AdviceChargeDisplayStatusAssembler.resolveChargeStatusDisplayTextForAdviceList(chargeStatusEnum));
         line.setDisplayTotalPrice(agg.getSumTotalPrice());
     }
 
@@ -1949,15 +1965,15 @@ public class OutpatientNurseStationTreatmentAppService {
     private String resolveAggregatedChargeStatus(
         String serviceTable,
         Long requestId,
-        Map<String, AdviceChargeAnchorRollupSupport.RequestAnchorChargeAggregation> chargeByAnchor) {
+        Map<String, AdviceChargeAnchorRollupHelper.RequestAnchorChargeAggregation> chargeByAnchor) {
         if (requestId == null || chargeByAnchor == null) {
             return null;
         }
-        String key = AdviceChargeAnchorRollupSupport.buildChargeAnchorKey(serviceTable, requestId);
+        String key = AdviceChargeAnchorRollupHelper.buildChargeAnchorKey(serviceTable, requestId);
         if (key == null) {
             return null;
         }
-        AdviceChargeAnchorRollupSupport.RequestAnchorChargeAggregation agg = chargeByAnchor.get(key);
+        AdviceChargeAnchorRollupHelper.RequestAnchorChargeAggregation agg = chargeByAnchor.get(key);
         if (agg == null) {
             return null;
         }
@@ -1969,7 +1985,7 @@ public class OutpatientNurseStationTreatmentAppService {
      */
     private void finalizeNurseTreatmentLineDisplay(NurseStationTreatmentLineDto line) {
         String executionText = this.resolveNurseTreatmentExecutionDisplayText(line);
-        ListDisplayStatus display = AdviceChargeDisplayStatusSupport.resolveNurseTreatmentLineDisplayStatus(
+        ListDisplayStatus display = AdviceChargeDisplayStatusAssembler.resolveNurseTreatmentLineDisplayStatus(
             line.getChargeStatusEnum(), executionText);
         line.setDisplayStatusEnum(display.displayStatusEnum());
         line.setDisplayStatusEnumText(display.displayStatusEnumText());

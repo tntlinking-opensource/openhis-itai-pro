@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.orderaudit.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -32,7 +19,6 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
-/** 医嘱校对列表行。 */
 @Schema(description = "医嘱校对列表行")
 public class NurseStationOrderAuditRowDto {
 
@@ -75,7 +61,7 @@ public class NurseStationOrderAuditRowDto {
     @Schema(description = "长临展示")
     private String therapyDisplay;
 
-    /** 医嘱名称摘要（BR-IP-AUD-006）。 */
+    /** 医嘱名称摘要。 */
     @Schema(description = "医嘱名称摘要")
     private String adviceDisplayName;
 
@@ -113,15 +99,20 @@ public class NurseStationOrderAuditRowDto {
     @Schema(description = "执行/发药位置展示")
     private String performerLocationDisplay;
 
-    /** 诊疗类目（转科/出院等）；药品行 null。 */
+    /** 诊疗类目；药品行 null。 */
     @Schema(description = "诊疗类目；药品行 null")
     private String categoryEnum;
+
+    /** 类型列展示：药品/诊疗/出院/转科/护理（IF-IP-AUD-01，与 medicineCategoryTab 无关）。 */
+    @Schema(description = "类型列展示：药品/诊疗/出院/转科/护理")
+    private String orderKindDisplay;
 
     /**
      * 药品成组号（{@code med_medication_request.group_id}；同组前端相邻展示；仅药嘱行有效，诊嘱为 null）。
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "药品成组号（仅药嘱）")
+    /** 药品成组号（仅药嘱）。 */
     private Long groupId;
 
     /** 药品组号/排序号（排序用）。 */
@@ -136,20 +127,20 @@ public class NurseStationOrderAuditRowDto {
     @Schema(description = "是否中药饮片方")
     private Boolean tcmFlag;
 
-    /** 处方号（中药整方展示）。 */
+    /** 处方号。 */
     @Schema(description = "处方号")
     private String prescriptionNo;
 
-    /** 方内全部药品申请 id（整方校对/退回扩行）。 */
+    /** 方内药品申请 id 列表。 */
     @Schema(description = "方内药品申请 id 列表")
     @JsonSerialize(contentUsing = ToStringSerializer.class)
     private java.util.List<Long> lineRequestIds;
 
-    /** 代煎标志（方头）。 */
+    /** 代煎标志。 */
     @Schema(description = "代煎标志")
     private Boolean sufferingFlag;
 
-    /** 中药付数（方头）。 */
+    /** 中药付数。 */
     @Schema(description = "中药付数")
     private java.math.BigDecimal chineseHerbsDoseQuantity;
 }

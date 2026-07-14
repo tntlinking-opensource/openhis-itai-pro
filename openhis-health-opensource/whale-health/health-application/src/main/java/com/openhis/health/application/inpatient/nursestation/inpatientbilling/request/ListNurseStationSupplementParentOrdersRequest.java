@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -33,20 +20,19 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 医嘱补费父医嘱列表请求。 */
 @Schema(description = "医嘱补费父医嘱列表请求")
 public class ListNurseStationSupplementParentOrdersRequest {
 
-    /** 左侧多选就诊；服务端收窄为管理病区可见集合。 */
+    /** 多选就诊主键。 */
     @NotEmpty(message = "就诊列表不能为空")
     @Schema(description = "多选就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<Long> encounterIds;
 
-    /** 长临筛选：{@code all} 不过滤 / {@code long} 长期 / {@code temp} 临时。 */
+    /** 长临筛选：all/long/temp。 */
     @Schema(description = "长临筛选：all/long/temp")
     private String therapyType;
 
-    /** 医嘱摘要名称关键字（不区分大小写包含匹配）。 */
+    /** 医嘱名称关键字。 */
     @Schema(description = "医嘱名称关键字")
     private String keyword;
 

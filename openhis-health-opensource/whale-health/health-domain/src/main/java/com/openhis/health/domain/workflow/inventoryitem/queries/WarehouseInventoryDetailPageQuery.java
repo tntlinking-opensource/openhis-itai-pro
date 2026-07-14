@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.inventoryitem.queries;
 
 import com.openhis.health.domain.share.query.AbstractPageQuery;
@@ -72,22 +59,28 @@ public class WarehouseInventoryDetailPageQuery extends AbstractPageQuery {
     private Integer expireWithinDays;
 
     /**
-     * 应用层解析后的药品定义主键（{@code item_table=med_medication_definition}）；由 {@code InventoryCatalogFilterSupport} 写入。
+     * 库存预警：仅保留全院品种汇总后命中低库存阈值的批号行；{@code null} 表示不限；
+     * 空集合表示无命中（列表应返回空页）。
+     */
+    private List<InventoryProductAggregateKey> lowStockWarningAggregateKeys;
+
+    /**
+     * 应用层解析后的药品定义主键（{@code item_table=med_medication_definition}）；由 {@code InventoryCatalogFilter} 写入。
      */
     private List<Long> resolvedMedicationDefinitionIds;
 
     /**
-     * 应用层解析后的耗材定义主键（{@code item_table=adm_device_definition}）；由 {@code InventoryCatalogFilterSupport} 写入。
+     * 应用层解析后的耗材定义主键（{@code item_table=adm_device_definition}）；由 {@code InventoryCatalogFilter} 写入。
      */
     private List<Long> resolvedDeviceDefinitionIds;
 
     /**
-     * 关键字预解析的药品定义主键（编码/商品名等）；由 {@code InventoryCatalogFilterSupport#enrichKeywordDefinitionIds} 写入。
+     * 关键字预解析的药品定义主键（编码/商品名等）；由 {@code InventoryCatalogFilter#enrichKeywordDefinitionIds} 写入。
      */
     private List<Long> resolvedMedicationDefinitionIdsForKeyword;
 
     /**
-     * 关键字预解析的耗材定义主键（编码/商品名等）；由 {@code InventoryCatalogFilterSupport#enrichKeywordDefinitionIds} 写入。
+     * 关键字预解析的耗材定义主键（编码/商品名等）；由 {@code InventoryCatalogFilter#enrichKeywordDefinitionIds} 写入。
      */
     private List<Long> resolvedDeviceDefinitionIdsForKeyword;
 }

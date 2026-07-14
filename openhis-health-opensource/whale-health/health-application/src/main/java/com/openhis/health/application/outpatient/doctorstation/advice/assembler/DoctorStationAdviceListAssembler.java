@@ -1,45 +1,34 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.advice.assembler;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 
-import com.openhis.health.module.orchestration.advice.ServiceApplyFormOrchestrationSupport;
-import com.openhis.health.module.common.assembler.advice.TcmMethodCodeDisplaySupport;
-import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.common.assembler.advice.AdviceChargeDisplayStatusSupport;
-import com.openhis.health.module.common.assembler.order.OrderCatalogDisplayAssembler;
-import com.openhis.health.module.common.assembler.order.OrderRequestCatalogWarmAssembler;
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.advice.dto.AdvicePackageChildItemDto;
-import com.openhis.health.module.querysupport.advice.AdviceExtensionJsonSupport;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.order.dto.OrderRequestCatalogWarmContext;
+import com.openhis.health.application.outpatient.doctorstation.advice.support.ServiceApplyFormOrchestrator;
+import com.openhis.health.application.shared.advice.TcmMethodCodeDisplayAssembler;
+import com.openhis.health.application.shared.option.FrequencyOptionLoader;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.advice.AdviceChargeDisplayStatusAssembler;
+import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
+import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.advice.AdviceExtensionJsonParser.AdvicePackageChildItemDto;
+import com.openhis.health.application.shared.advice.AdviceExtensionJsonParser;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.application.shared.advice.OrderRequestCatalogWarmContext;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.share.enums.ClinicalStatus;
 import com.openhis.health.domain.share.enums.EnumInterface;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceRowDto;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
+import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
@@ -72,13 +61,13 @@ import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestDetailListModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
+import com.openhis.health.application.shared.advice.ServiceRequestDetailListAssembler;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -107,6 +96,7 @@ public class DoctorStationAdviceListAssembler {
     private final MedicationRequestQueryService medicationRequestQueryService;
     /** 诊疗服务申请读侧：按医生站生成来源过滤本就诊明细。 */
     private final ServiceRequestQueryService serviceRequestQueryService;
+    private final ServiceRequestDetailListAssembler serviceRequestDetailListAssembler;
     /** 耗材请求读侧：按医生站生成来源过滤本就诊明细。 */
     private final DeviceRequestQueryService deviceRequestQueryService;
     /** 收费明细读侧：本就诊全部 ChargeItem，供列表费用归并。 */
@@ -118,7 +108,7 @@ public class DoctorStationAdviceListAssembler {
     /** 目录定义与三类类目术语预热（B.6.1）。 */
     private final OrderRequestCatalogWarmAssembler orderRequestCatalogWarmAssembler;
     /** 产品定义批量加载：单位 code 未命中术语时回落各槽字典文本。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     /** 术语码表 label 批量解析。 */
     private final TerminologyOptionLoader terminologyOptionLoader;
     /** 频次展示码表：cus_frequency 主数据。 */
@@ -133,6 +123,8 @@ public class DoctorStationAdviceListAssembler {
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
     /** 库位名称批量解析（FIFO 发放首选库位展示）。 */
     private final LocationQueryService locationQueryService;
+    /** 机构/科室名称批量解析（诊疗执行科室 org_id 展示）。 */
+    private final OrganizationQueryService organizationQueryService;
 
     /** 诊疗套餐子项批量加载（B.6.2，禁止透出 children_json 串）。 */
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
@@ -222,6 +214,7 @@ public class DoctorStationAdviceListAssembler {
         Set<Long> deviceDefIds = new HashSet<>();
         Set<Long> practitionerIds = new HashSet<>();
         Set<Long> adviceConditionDefinitionIds = new HashSet<>();
+        Set<Long> servicePerformOrgIds = new HashSet<>();
         // Loop：扫描药品行，收集定义 id、开立者与关联诊断，供后续批量预热与展示回填。
         for (MedicationRequestListQueryModel row : medicationRows) {
             if (row.getMedicationId() != null) {
@@ -237,7 +230,7 @@ public class DoctorStationAdviceListAssembler {
                 adviceConditionDefinitionIds.add(row.getConditionDefinitionId());
             }
         }
-        // Loop：扫描诊疗行，收集活动定义 id、开立者与诊断定义 id。
+        // Loop：扫描诊疗行，收集活动定义 id、开立者、诊断定义 id、执行科室 org_id。
         for (ServiceRequestListModel row : serviceRows) {
             if (row.getActivityId() != null) {
                 activityDefIds.add(row.getActivityId());
@@ -247,6 +240,12 @@ public class DoctorStationAdviceListAssembler {
             }
             if (row.getConditionDefinitionId() != null) {
                 adviceConditionDefinitionIds.add(row.getConditionDefinitionId());
+            }
+            if (row.getOrgId() != null) {
+                servicePerformOrgIds.add(row.getOrgId());
+            }
+            if (row.getLocationId() != null) {
+                servicePerformOrgIds.add(row.getLocationId());
             }
         }
         // Loop：扫描耗材行，收集器材定义 id、开立者与诊断定义 id。
@@ -270,6 +269,7 @@ public class DoctorStationAdviceListAssembler {
             activityDefinitionQueryService.listChildrenByActivityIds(activityDefIds);
         Map<Long, DeviceDefinition> deviceDefinitionById = catalogWarm.getDeviceDefinitionById();
         Map<Long, String> practitionerNameById = loadPractitionerNames(practitionerIds);
+        Map<Long, String> servicePerformOrgNameById = organizationQueryService.mapNamesByIds(servicePerformOrgIds);
         Map<Long, String> conditionDefinitionDisplayByDefinitionId =
             loadConditionDefinitionDisplayNames(adviceConditionDefinitionIds);
 
@@ -329,12 +329,12 @@ public class DoctorStationAdviceListAssembler {
         for (ServiceRequestListModel serviceRow : serviceRows) {
             // 申请单行（AR 前缀）须批量预取 Detail，供列表回填 serviceRequestDetails。
             if (serviceRow.getId() != null
-                && ServiceApplyFormOrchestrationSupport.isRequisitionApplicationPrescriptionNo(serviceRow.getPrescriptionNo())) {
+                && ServiceApplyFormOrchestrator.isRequisitionApplicationPrescriptionNo(serviceRow.getPrescriptionNo())) {
                 applyFormServiceRequestIds.add(serviceRow.getId());
             }
         }
         Map<Long, List<ServiceRequestDetailListModel>> applyFormDetailsByRequestId =
-            serviceRequestQueryService.mapDetailListModelsByServiceRequestIds(applyFormServiceRequestIds);
+            serviceRequestDetailListAssembler.mapDetailListModelsByServiceRequestIds(applyFormServiceRequestIds);
 
         // Pre：皮试药（med_medication_request.skin_test_flag=true）经 companion 皮试检查 SR 关联 AllergyIntolerance 临床结果
         Map<Long, AllergyIntoleranceRecordQueryModel> skinTestOutcomeByMedicationRequestId =
@@ -344,6 +344,10 @@ public class DoctorStationAdviceListAssembler {
 
         // 装配：药品行——患者可见的医嘱名、剂量频次等由定义+字典拼装，金额来自收费归并
         for (MedicationRequestListQueryModel medicationRow : medicationRows) {
+            // 读侧排除退药逆向复制行（refund_medicine_id 非空）；原医嘱行保留并展示退费态（BR-ORD-030）
+            if (AdviceChargeDisplayStatusAssembler.isRefundOrderCopyRequest(medicationRow.getRefundMedicineId())) {
+                continue;
+            }
             Long medAuthorId = resolveMedicationAuthorId(medicationRow);
             // onlyMine：非当前用户开立的药品行不进入统一列表，避免「只看本人」失效。
             if (Boolean.TRUE.equals(onlyMine) && currentUserId != null && !currentUserId.equals(medAuthorId)) {
@@ -377,7 +381,7 @@ public class DoctorStationAdviceListAssembler {
             line.setDoseUnitName(ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
                 doseUnitLabelByCode, medicationRow.getDoseUnitCode(), medProduct));
             line.setMethodCode(medicationRow.getMethodCode());
-            line.setMethodName(TcmMethodCodeDisplaySupport.resolveMethodDisplayName(
+            line.setMethodName(TcmMethodCodeDisplayAssembler.resolveMethodDisplayName(
                 tcmMethodLabelByCode, methodLabelByCode, medicationRow.getTcmFlag(), medicationRow.getMethodCode()));
             line.setRateCode(medicationRow.getRateCode());
             line.setRateName(OrderCatalogDisplayAssembler.resolveCategoryDisplay(rateLabelByCode, medicationRow.getRateCode()));
@@ -385,7 +389,7 @@ public class DoctorStationAdviceListAssembler {
             line.setDispensePerDuration(medicationRow.getDispensePerDuration());
             line.setPerformLocationId(medicationRow.getPerformLocation());
             line.setRemark(medicationRow.getRemark());
-            line.setRequestExtensions(AdviceExtensionJsonSupport.parseRequestExtensions(medicationRow.getContentJson()));
+            line.setRequestExtensions(AdviceExtensionJsonParser.parseRequestExtensions(medicationRow.getContentJson()));
             fillMedicationCatalogCategory(line, def, medicationCategoryLabelByCode);
             line.setDosageInstructionCode(medicationRow.getDosageInstruction());
             line.setDosageInstructionText(resolveSingleConceptDisplay(
@@ -398,7 +402,7 @@ public class DoctorStationAdviceListAssembler {
             if (Boolean.TRUE.equals(medicationRow.getSkinTestFlag()) && medicationRow.getId() != null) {
                 AllergyIntoleranceRecordQueryModel skinTestOutcome =
                     skinTestOutcomeByMedicationRequestId.get(medicationRow.getId());
-                if (skinTestOutcome != null && StringUtils.isNotBlank(skinTestOutcome.getClinicalStatusEnum())) {
+                if (skinTestOutcome != null && StringUtils.isNotEmpty(skinTestOutcome.getClinicalStatusEnum())) {
                     line.setSkinTestOutcomeCode(skinTestOutcome.getClinicalStatusEnum());
                     line.setSkinTestOutcomeText(
                         this.resolveEnumCodeDisplay(ClinicalStatus.class, skinTestOutcome.getClinicalStatusEnum()));
@@ -440,6 +444,10 @@ public class DoctorStationAdviceListAssembler {
 
         // 装配：诊疗行——套餐子项 JSON 取自活动定义；状态码兼容历史数字串
         for (ServiceRequestListModel serviceRow : serviceRows) {
+            // 读侧排除退费逆向复制行（refund_service_id 非空）；诊疗全退通常不建复制行，防御性过滤（BR-ORD-030）
+            if (AdviceChargeDisplayStatusAssembler.isRefundOrderCopyRequest(serviceRow.getRefundServiceId())) {
+                continue;
+            }
             // onlyMine：非当前用户开立的诊疗行跳过。
             if (Boolean.TRUE.equals(onlyMine) && currentUserId != null && !currentUserId.equals(serviceRow.getRequesterId())) {
                 continue;
@@ -459,7 +467,7 @@ public class DoctorStationAdviceListAssembler {
             if (def != null) {
                 line.setAdviceDisplayName(def.getName());
                 List<AdvicePackageChildItemDto> packageChildren =
-                    AdviceExtensionJsonSupport.toPackageChildItems(packageChildrenByActivityId.get(def.getId()));
+                    AdviceExtensionJsonParser.toPackageChildItems(packageChildrenByActivityId.get(def.getId()));
                 line.setPackageChildren(packageChildren);
                 fillServiceCatalogAndActivityType(line, def, activityCategoryLabelByCode);
             }
@@ -473,10 +481,17 @@ public class DoctorStationAdviceListAssembler {
                 unitLabelByCode, serviceRow.getUnitCode(), activityProduct));
             line.setRateCode(serviceRow.getRateCode());
             line.setRateName(OrderCatalogDisplayAssembler.resolveCategoryDisplay(rateLabelByCode, serviceRow.getRateCode()));
-            line.setPerformLocationId(serviceRow.getLocationId());
+            Long performOrgId = serviceRow.getOrgId();
+            if (performOrgId == null) {
+                performOrgId = serviceRow.getLocationId();
+            }
+            line.setPerformLocationId(performOrgId);
+            if (performOrgId != null) {
+                line.setPerformLocationName(servicePerformOrgNameById.get(performOrgId));
+            }
             line.setRemark(serviceRow.getRemark());
             line.setEntrustContent(serviceRow.getEntrustContent());
-            line.setRequestExtensions(AdviceExtensionJsonSupport.parseRequestExtensions(serviceRow.getContentJson()));
+            line.setRequestExtensions(AdviceExtensionJsonParser.parseRequestExtensions(serviceRow.getContentJson()));
             line.setBasedOnServiceRequestId(resolveBasedOnServiceRequestId(serviceRow.getBasedOnTable(), serviceRow.getBasedOnId()));
             line.setBasedOnMedicationRequestId(
                 resolveBasedOnMedicationRequestId(serviceRow.getBasedOnTable(), serviceRow.getBasedOnId()));
@@ -499,9 +514,9 @@ public class DoctorStationAdviceListAssembler {
             line.setContentSummary(buildServiceSummary(line));
             line.setPrescriptionNo(serviceRow.getPrescriptionNo());
             // 申请单行透出部位/样本摘要，非申请单行保持 null。
-            if (ServiceApplyFormOrchestrationSupport.isRequisitionApplicationPrescriptionNo(serviceRow.getPrescriptionNo())) {
+            if (ServiceApplyFormOrchestrator.isRequisitionApplicationPrescriptionNo(serviceRow.getPrescriptionNo())) {
                 line.setServiceRequestDetails(serviceApplyFormAssembler.toDetailSummaryDtos(
-                    ServiceApplyFormOrchestrationSupport.toDetailSummaryModels(
+                    ServiceApplyFormOrchestrator.toDetailSummaryModels(
                         applyFormDetailsByRequestId.get(serviceRow.getId()))));
             }
             unifiedRows.add(line);
@@ -509,6 +524,10 @@ public class DoctorStationAdviceListAssembler {
 
         // 装配：耗材行——规格优先取请求侧描述，缺省回落器材定义体积类展示
         for (DeviceRequestListModel deviceRow : deviceRows) {
+            // 读侧排除退耗逆向复制行（refund_device_id 非空）；原医嘱行保留并展示退费态（BR-ORD-030）
+            if (AdviceChargeDisplayStatusAssembler.isRefundOrderCopyRequest(deviceRow.getRefundDeviceId())) {
+                continue;
+            }
             // onlyMine：非当前用户开立的耗材行跳过。
             if (Boolean.TRUE.equals(onlyMine) && currentUserId != null && !currentUserId.equals(deviceRow.getRequesterId())) {
                 continue;
@@ -574,7 +593,7 @@ public class DoctorStationAdviceListAssembler {
         // 装配：申请单号聚邻后按 sortNumber、开立时间、requestId 排序（BR-NUR-015 / BR-ORD-018）
         unifiedRows.sort(Comparator
             .comparing((DoctorStationAdviceRowDto row) ->
-                ServiceApplyFormOrchestrationSupport.resolveApplyFormGroupingSortKey(row.getPrescriptionNo()))
+                ServiceApplyFormOrchestrator.resolveApplyFormGroupingSortKey(row.getPrescriptionNo()))
             .thenComparing(DoctorStationAdviceRowDto::getSortNumber, Comparator.nullsLast(Comparator.naturalOrder()))
             .thenComparing(DoctorStationAdviceRowDto::getAuthoredAt, Comparator.nullsLast(Comparator.reverseOrder()))
             .thenComparing(DoctorStationAdviceRowDto::getRequestId, Comparator.nullsLast(Comparator.naturalOrder())));
@@ -665,7 +684,7 @@ public class DoctorStationAdviceListAssembler {
      * @return 展示名；未命中时 {@code null}
      */
     private <E extends Enum<E> & EnumInterface> String resolveEnumCodeDisplay(Class<E> enumClass, String code) {
-        if (StringUtils.isBlank(code)) {
+        if (StringUtils.isEmpty(code)) {
             return null;
         }
         E enumValue = EnumUtil.fromCode(enumClass, code);
@@ -697,7 +716,7 @@ public class DoctorStationAdviceListAssembler {
         if (rollup != null) {
             line.setChargeStatusEnum(rollup.chargeStatusEnum);
             line.setChargeStatusEnumText(
-                AdviceChargeDisplayStatusSupport.resolveChargeStatusDisplayTextForAdviceList(rollup.chargeStatusEnum));
+                AdviceChargeDisplayStatusAssembler.resolveChargeStatusDisplayTextForAdviceList(rollup.chargeStatusEnum));
             line.setPrimaryChargeItemId(rollup.primaryChargeItemId);
             if (!rollup.chargeItemIds.isEmpty()) {
                 line.setChargeItemIds(new ArrayList<>(rollup.chargeItemIds));
@@ -714,8 +733,8 @@ public class DoctorStationAdviceListAssembler {
      * @param line 已写入请求态与收费汇总态的列表行
      */
     private void applyListDisplayStatus(DoctorStationAdviceRowDto line) {
-        AdviceChargeDisplayStatusSupport.ListDisplayStatus display =
-            AdviceChargeDisplayStatusSupport.resolveAdviceListDisplayStatus(
+        AdviceChargeDisplayStatusAssembler.ListDisplayStatus display =
+            AdviceChargeDisplayStatusAssembler.resolveAdviceListDisplayStatus(
                 line.getStatusEnum(), line.getStatusEnumText(), line.getChargeStatusEnum());
         line.setDisplayStatusEnum(display.displayStatusEnum());
         line.setDisplayStatusEnumText(display.displayStatusEnumText());
@@ -728,7 +747,7 @@ public class DoctorStationAdviceListAssembler {
         if (value == null) {
             return null;
         }
-        return value.setScale(DoctorStationAdviceConstants.ADVICE_LIST_CHARGE_DISPLAY_DECIMAL_SCALE, RoundingMode.HALF_UP);
+        return MonetaryAmountSupport.scaleCalc(value);
     }
 
     /**
@@ -743,7 +762,7 @@ public class DoctorStationAdviceListAssembler {
         MedicationDefinition def,
         Map<String, String> medicationCategoryLabelByCode
     ) {
-        if (def == null || StringUtils.isBlank(def.getCategoryCode())) {
+        if (def == null || StringUtils.isEmpty(def.getCategoryCode())) {
             return;
         }
         line.setCatalogCategoryCode(def.getCategoryCode().trim());
@@ -762,11 +781,11 @@ public class DoctorStationAdviceListAssembler {
         ActivityDefinition def,
         Map<String, String> activityCategoryLabelByCode
     ) {
-        if (StringUtils.isNotBlank(def.getCategoryCode())) {
+        if (StringUtils.isNotEmpty(def.getCategoryCode())) {
             line.setCatalogCategoryCode(def.getCategoryCode().trim());
             line.setCatalogCategoryName(OrderCatalogDisplayAssembler.resolveCategoryDisplay(activityCategoryLabelByCode, def.getCategoryCode()));
         }
-        if (StringUtils.isNotBlank(def.getTypeEnum())) {
+        if (StringUtils.isNotEmpty(def.getTypeEnum())) {
             line.setActivityTypeCode(def.getTypeEnum().trim());
             ActivityType activityType = EnumUtil.fromCode(ActivityType.class, def.getTypeEnum().trim());
             if (activityType != null) {
@@ -787,7 +806,7 @@ public class DoctorStationAdviceListAssembler {
         DeviceDefinition def,
         Map<String, String> deviceCategoryLabelByCode
     ) {
-        if (def == null || StringUtils.isBlank(def.getCategoryCode())) {
+        if (def == null || StringUtils.isEmpty(def.getCategoryCode())) {
             return;
         }
         line.setCatalogCategoryCode(def.getCategoryCode().trim());
@@ -992,7 +1011,7 @@ public class DoctorStationAdviceListAssembler {
      */
     private String buildMedicationSummary(DoctorStationAdviceRowDto line) {
         StringBuilder sb = new StringBuilder();
-        if (StringUtils.isNotBlank(line.getAdviceDisplayName())) {
+        if (StringUtils.isNotEmpty(line.getAdviceDisplayName())) {
             sb.append(line.getAdviceDisplayName());
         }
         if (line.getDose() != null) {
@@ -1000,13 +1019,13 @@ public class DoctorStationAdviceListAssembler {
                 sb.append(' ');
             }
             sb.append(line.getDose());
-            if (StringUtils.isNotBlank(line.getDoseUnitName())) {
+            if (StringUtils.isNotEmpty(line.getDoseUnitName())) {
                 sb.append(line.getDoseUnitName());
-            } else if (StringUtils.isNotBlank(line.getDoseUnitCode())) {
+            } else if (StringUtils.isNotEmpty(line.getDoseUnitCode())) {
                 sb.append(line.getDoseUnitCode());
             }
         }
-        if (sb.length() == 0 && StringUtils.isNotBlank(line.getPrescriptionNo())) {
+        if (sb.length() == 0 && StringUtils.isNotEmpty(line.getPrescriptionNo())) {
             sb.append(DoctorStationAdviceConstants.ADVICE_LIST_PRESCRIPTION_LABEL_PREFIX).append(line.getPrescriptionNo());
         }
         if (sb.length() == 0) {
@@ -1022,7 +1041,7 @@ public class DoctorStationAdviceListAssembler {
      * @return 摘要字符串
      */
     private String buildServiceSummary(DoctorStationAdviceRowDto line) {
-        if (StringUtils.isNotBlank(line.getAdviceDisplayName())) {
+        if (StringUtils.isNotEmpty(line.getAdviceDisplayName())) {
             return line.getAdviceDisplayName();
         }
         return DoctorStationAdviceConstants.ADVICE_LIST_SERVICE_NARROW_FALLBACK_OUTPATIENT;
@@ -1035,7 +1054,7 @@ public class DoctorStationAdviceListAssembler {
      * @return 摘要字符串
      */
     private String buildDeviceSummary(DoctorStationAdviceRowDto line) {
-        if (StringUtils.isNotBlank(line.getAdviceDisplayName())) {
+        if (StringUtils.isNotEmpty(line.getAdviceDisplayName())) {
             return line.getAdviceDisplayName();
         }
         return DoctorStationAdviceConstants.ADVICE_LIST_DEVICE_NARROW_FALLBACK_OUTPATIENT;
@@ -1237,7 +1256,7 @@ public class DoctorStationAdviceListAssembler {
         if (lookups.isEmpty()) {
             return new HashMap<>();
         }
-        return productDefinitionBatchLoader.loadAsMap(lookups);
+        return productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
     }
 
     /**
@@ -1311,6 +1330,15 @@ public class DoctorStationAdviceListAssembler {
         return result;
     }
 
+    /**
+     * 门诊医嘱列表源过滤：开单科室与 status 筛选均命中时保留。
+     *
+     * @param orgId                  请求 org_id
+     * @param statusEnum             请求状态码
+     * @param orderingDepartmentId   筛选科室（可空）
+     * @param requestStatusEnumIn    允许状态列表
+     * @return true 表示保留
+     */
     private static boolean matchesAdviceQuerySourceFilter(
         Long orgId,
         String statusEnum,
@@ -1357,8 +1385,8 @@ public class DoctorStationAdviceListAssembler {
          * @param outer 外层装配器（用于状态归并函数）
          */
         private void absorb(ChargeItem item, DoctorStationAdviceListAssembler outer) {
-            if (StringUtils.isNotBlank(item.getStatusEnum())) {
-                chargeStatusEnum = AdviceChargeDisplayStatusSupport.mergeChargeStatusForRollup(
+            if (StringUtils.isNotEmpty(item.getStatusEnum())) {
+                chargeStatusEnum = AdviceChargeDisplayStatusAssembler.mergeChargeStatusForRollup(
                     chargeStatusEnum, item.getStatusEnum());
             }
             if (item.getId() != null) {

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 import lombok.Getter;
@@ -24,13 +11,9 @@ import lombok.Getter;
  */
 @Getter
 public enum TherapyType implements EnumInterface {
-    /**
-     * LONG_TERM。
-     */
+    /** 长期医嘱（TherapyType，编码 {@code LONG_TERM}）。 */
     LONG_TERM(0L, "LONG_TERM", "长期医嘱", "", 1L),
-    /**
-     * TEMPORARY。
-     */
+    /** 临时医嘱（TherapyType，编码 {@code TEMPORARY}）。 */
     TEMPORARY(0L, "TEMPORARY", "临时医嘱", "", 2L);
 
     private final Long codeSystemId;
@@ -39,9 +22,7 @@ public enum TherapyType implements EnumInterface {
     private final String definition;
     private final Long sortOrder;
 
-    /**
-     * TherapyType。
-     */
+    /** 枚举构造：绑定编码系统、持久化 code、展示名与排序。 */
     TherapyType(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;
         this.code = code;

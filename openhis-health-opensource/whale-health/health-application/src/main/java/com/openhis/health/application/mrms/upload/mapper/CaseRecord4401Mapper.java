@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.mrms.upload.mapper;
 
 import com.alibaba.fastjson2.JSON;
@@ -14,12 +14,11 @@ import com.openhis.health.domain.mrms.caserecord.entity.HomepageDiagnosis;
 import com.openhis.health.domain.mrms.caserecord.entity.HomepageProcedure;
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordHomepageDomainService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
-import com.openhis.health.domain.share.constants.MrmsErrorCodes;
-import com.openhis.health.integration.insurance.medcas.dto.MedcasHomepageBaseInfo;
-import com.openhis.health.integration.insurance.medcas.dto.MedcasHomepageDiseInfo;
-import com.openhis.health.integration.insurance.medcas.dto.MedcasHomepageIcuInfo;
-import com.openhis.health.integration.insurance.medcas.dto.MedcasHomepageOprnInfo;
-import com.openhis.health.integration.insurance.medcas.dto.MedcasHomepagePayload;
+import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepageBaseInfo;
+import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepageDiseInfo;
+import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepageIcuInfo;
+import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepageOprnInfo;
+import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepagePayload;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

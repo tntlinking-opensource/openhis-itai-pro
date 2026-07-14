@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.ATDManager.mapper;
 
 import static com.openhis.whale.core.application.util.StringUtils.firstNonBlank;
 
 import com.openhis.health.application.inpatient.nursestation.ATDManager.response.*;
-import com.openhis.health.module.common.assembler.inpatient.AdmissionPrimaryDiagnosisAssembler;
-import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.application.shared.inpatient.AdmissionPrimaryDiagnosisAssembler;
+import com.openhis.health.application.shared.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardItemDto;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardLocationBlockDto;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardOccupantDto;
@@ -50,6 +37,8 @@ import com.openhis.health.domain.administration.location.command.OccupyBedComman
 import com.openhis.health.domain.administration.location.command.ReleaseBedCommand;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+import com.openhis.health.domain.share.utils.AdministrativeGenderDisplayUtil;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -63,13 +52,10 @@ import java.util.List;
  * <p>职责：Request/Command/Response 字段搬运与诊断展示回落；禁止业务流程判断与 Gate/Pre。</p>
  */
 @Component
+@RequiredArgsConstructor
 public class NurseStationATDManagerMapperImpl implements NurseStationATDManagerMapper {
 
     private final AdmissionPrimaryDiagnosisAssembler admissionPrimaryDiagnosisAssembler;
-
-    public NurseStationATDManagerMapperImpl(AdmissionPrimaryDiagnosisAssembler admissionPrimaryDiagnosisAssembler) {
-        this.admissionPrimaryDiagnosisAssembler = admissionPrimaryDiagnosisAssembler;
-    }
 
     /**
      * 床位列表行 → 列表响应。
@@ -144,7 +130,12 @@ public class NurseStationATDManagerMapperImpl implements NurseStationATDManagerM
         dto.setEncounterId(row.getEncounterId());
         dto.setPatientId(row.getPatientId());
         dto.setPatientName(firstNonBlank(row.getPatientName(), overlayPatientName));
-        dto.setGenderEnum(row.getGenderEnum());
+        String genderCode = row.getGenderEnum();
+        if (overlay != null) {
+            genderCode = firstNonBlank(genderCode, overlay.getGenderEnum());
+        }
+        dto.setGenderEnum(genderCode);
+        dto.setGenderEnumText(AdministrativeGenderDisplayUtil.toDisplayText(genderCode));
         dto.setAgeText(row.getAgeText());
         dto.setEncounterBusNo(firstNonBlank(row.getEncounterBusNo(), overlayBusNo));
         dto.setStatusEnum(row.getStatusEnum());

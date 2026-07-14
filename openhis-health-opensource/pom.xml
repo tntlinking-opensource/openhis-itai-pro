@@ -14,7 +14,7 @@
 
     <groupId>com.openhis</groupId>
     <artifactId>whale</artifactId>
-    <version>2.0.2-SNAPSHOT</version>
+    <version>2.0.3-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>OpenHIS All</name>
@@ -37,27 +37,22 @@
 
         <lombok.version>1.18.30</lombok.version>
         <mapstruct.version>1.5.5.Final</mapstruct.version>
-        <openhis.framework.maven.repo>file://${maven.multiModuleProjectDirectory}/dist/framework-maven-repo</openhis.framework.maven.repo>
+        <spotless.version>2.43.0</spotless.version>
     </properties>
-    <repositories>
-        <repository>
-            <id>openhis-framework-binary</id>
-            <name>OpenHIS Framework (prebuilt binaries)</name>
-            <url>${openhis.framework.maven.repo}</url>
-            <releases><enabled>true</enabled></releases>
-            <snapshots><enabled>true</enabled></snapshots>
-        </repository>
-    </repositories>
+
     <!-- 默认构建 BOM + framework + 全部业务 Module（health-app 扩展依赖仍由 with-* Profile 控制） -->
     <modules>
         <module>whale-dependencies</module>
+        <module>whale-framework</module>
+        <module>whale-module-booking</module>
+        <module>whale-module-emr</module>
         <module>whale-health</module>
-        <module>whale-emr</module>
-        <module>whale-booking</module>
-        <module>whale-chs-jilin</module>
-        <module>whale-elep-jilin</module>
-        <module>whale-einvoice-boss</module>
-        <module>whale-unionpay-bpc</module>
+        <module>whale-module-chs-jilin</module>
+        <module>whale-module-work-injury</module>
+        <module>whale-module-elep-jilin</module>
+        <module>whale-module-einvoice-boss</module>
+        <module>whale-module-unionpay-bpc</module>
+        <module>whale-module-crb</module>
     </modules>
 
     <dependencyManagement>
@@ -75,45 +70,27 @@
     <profiles>
         <profile>
             <id>with-emr</id>
-    <modules>
-        <module>whale-dependencies</module>
-        <module>whale-health</module>
-        <module>whale-emr</module>
-        <module>whale-booking</module>
-        <module>whale-chs-jilin</module>
-        <module>whale-elep-jilin</module>
-        <module>whale-einvoice-boss</module>
-        <module>whale-unionpay-bpc</module>
-    </modules>
+            <modules>
+                <module>whale-module-emr</module>
+            </modules>
         </profile>
         <profile>
             <id>with-chs</id>
-    <modules>
-        <module>whale-dependencies</module>
-        <module>whale-health</module>
-        <module>whale-emr</module>
-        <module>whale-booking</module>
-        <module>whale-chs-jilin</module>
-        <module>whale-elep-jilin</module>
-        <module>whale-einvoice-boss</module>
-        <module>whale-unionpay-bpc</module>
-    </modules>
+            <modules>
+                <module>whale-module-chs-jilin</module>
+            </modules>
         </profile>
         <profile>
             <id>with-elep</id>
-    <modules>
-        <module>whale-dependencies</module>
-        <module>whale-health</module>
-        <module>whale-emr</module>
-        <module>whale-booking</module>
-        <module>whale-chs-jilin</module>
-        <module>whale-elep-jilin</module>
-        <module>whale-einvoice-boss</module>
-        <module>whale-unionpay-bpc</module>
-    </modules>
+            <modules>
+                <module>whale-module-elep-jilin</module>
+            </modules>
         </profile>
         <profile>
             <id>with-booking</id>
+            <modules>
+                <module>whale-module-booking</module>
+            </modules>
         </profile>
         <profile>
             <id>with-einvoice-boss</id>
@@ -123,9 +100,11 @@
         </profile>
         <profile>
             <id>with-crb</id>
+            <modules>
+                <module>whale-module-crb</module>
+            </modules>
         </profile>
-        <!-- 开源仓：仅 HIS 核心（无扩展模块） -->
-</profiles>
+    </profiles>
 
     <build>
         <pluginManagement>
@@ -138,9 +117,46 @@
                         <source>${java.version}</source>
                         <target>${java.version}</target>
                         <encoding>${project.build.sourceEncoding}</encoding>
+                        <fork>true</fork>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>com.diffplug.spotless</groupId>
+                    <artifactId>spotless-maven-plugin</artifactId>
+                    <version>${spotless.version}</version>
+                    <configuration>
+                        <java>
+                            <includes>
+                                <include>src/main/java/**/*.java</include>
+                                <include>src/test/java/**/*.java</include>
+                            </includes>
+                            <excludes>
+                                <exclude>**/package-info.java</exclude>
+                            </excludes>
+                            <licenseHeader>
+                                <file>${session.executionRootDirectory}/tools/copyright-prep/java-copyright-header.txt</file>
+                            </licenseHeader>
+                            <removeUnusedImports/>
+                            <trimTrailingWhitespace/>
+                            <endWithNewline/>
+                        </java>
                     </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+            </plugin>
+        </plugins>
     </build>
 </project>

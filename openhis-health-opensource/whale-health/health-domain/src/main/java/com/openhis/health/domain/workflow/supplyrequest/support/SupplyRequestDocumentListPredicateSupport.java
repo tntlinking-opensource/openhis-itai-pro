@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.supplyrequest.support;
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
@@ -24,7 +11,7 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDoc
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -58,10 +45,24 @@ public final class SupplyRequestDocumentListPredicateSupport {
         if (query == null) {
             return predicates;
         }
-        if (StringUtils.isNotBlank(query.getTypeEnum())) {
+        // 类型：单值等值优先于多选 IN（与 WarehouseDocumentDetailPageQuery 同构）。
+        if (StringUtils.isNotEmpty(query.getTypeEnum())) {
             predicates.add(cb.equal(root.get(FieldNameConstants.TYPE_ENUM), query.getTypeEnum().trim()));
+        } else if (query.getTypeEnums() != null) {
+            List<String> typeCodes = new ArrayList<>();
+            for (String code : query.getTypeEnums()) {
+                if (StringUtils.isNotEmpty(code)) {
+                    typeCodes.add(code.trim());
+                }
+            }
+            // 显式传空集合：无匹配类型，结果须为空（禁止退化为不过滤类型）。
+            if (typeCodes.isEmpty()) {
+                predicates.add(cb.disjunction());
+            } else {
+                predicates.add(root.get(FieldNameConstants.TYPE_ENUM).in(typeCodes));
+            }
         }
-        if (StringUtils.isNotBlank(query.getStatusEnum())) {
+        if (StringUtils.isNotEmpty(query.getStatusEnum())) {
             predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), query.getStatusEnum().trim()));
         }
         if (query.getTenantId() != null) {
@@ -83,13 +84,17 @@ public final class SupplyRequestDocumentListPredicateSupport {
         if (query.getEndDate() != null) {
             predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.APPLY_TIME), query.getEndDate()));
         }
-        if (StringUtils.isNotBlank(query.getKeyword())) {
+        if (StringUtils.isNotEmpty(query.getKeyword())) {
             // 用户关键字：列侧 lower + 模式侧 SearchCodeUtil，禁止手写 % 拼接（B.2.1）。
             String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
             Predicate busNoLike = cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc);
             Predicate reasonLike = cb.like(cb.lower(root.get(FieldNameConstants.REASON)), likeIc);
             Predicate remakeLike = cb.like(cb.lower(root.get(FieldNameConstants.REMAKE)), likeIc);
             predicates.add(cb.or(busNoLike, reasonLike, remakeLike));
+        }
+        if (query.getBusNoIn() != null && !query.getBusNoIn().isEmpty()) {
+            // 住院汇总发药：应用层按发放表门控写入 busNo 白名单
+            predicates.add(root.get(FieldNameConstants.BUS_NO).in(query.getBusNoIn()));
         }
         return predicates;
     }

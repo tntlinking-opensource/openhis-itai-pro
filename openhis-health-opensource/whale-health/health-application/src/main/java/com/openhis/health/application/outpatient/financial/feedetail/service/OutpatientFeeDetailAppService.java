@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.feedetail.service;
 
 import com.openhis.health.application.outpatient.financial.feedetail.assembler.OutpatientFeeDetailAssembler;
@@ -38,21 +38,22 @@ import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.module.common.assembler.financial.PaymentEntererMatchSupport;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.querysupport.feedetail.OutpatientFeeDetailQuerySupport;
-import com.openhis.health.module.querysupport.financial.DailySettlementFinTypeAmountSupport;
-import com.openhis.health.module.querysupport.product.ChargeItemProductLookupSupport;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionDisplaySupport;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.basic.administration.support.PractitionerCashierOptionProvider;
+import com.openhis.health.application.shared.financial.PaymentEntererMatchResolver;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.outpatient.financial.feedetail.support.OutpatientFeeDetailLoader;
+import com.openhis.health.application.shared.financial.DailySettlementFinTypeAmountLoader;
+import com.openhis.health.application.shared.product.ChargeItemProductLookupHelper;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
 import com.openhis.whale.core.application.util.AnnotatedExcelExporter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -72,7 +73,7 @@ import java.util.Set;
  * <p>职责边界：</p>
  * <ul>
  *   <li>Gate：登录、日期窗、收退 Tab 与分页参数。</li>
- *   <li>Pre：{@link OutpatientFeeDetailQuerySupport} scope 预解析与跨聚合批量读 enrichment。</li>
+ *   <li>Pre：{@link OutpatientFeeDetailLoader} scope 预解析与跨聚合批量读 enrichment。</li>
  *   <li>Asm：{@link OutpatientFeeDetailAssembler} 金额列 + Mapper 装配响应/导出。</li>
  * </ul>
  *
@@ -103,22 +104,25 @@ public class OutpatientFeeDetailAppService {
     private final PractitionerQueryService practitionerQueryService;
 
     /** 产品定义批量读侧。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /** 号源类型（挂号费）单条回落读侧。 */
     private final HealthcareServiceQueryService healthcareServiceQueryService;
 
     /** payment enterer_id 匹配（Practitioner + 用户主键存量兼容）。 */
-    private final PaymentEntererMatchSupport paymentEntererMatchSupport;
+    private final PaymentEntererMatchResolver paymentEntererMatchResolver;
 
     /** 术语下拉与单位译文。 */
     private final TerminologyOptionLoader terminologyOptionLoader;
 
+    /** 收费员下拉：排除绑定用户已删/未启用的 practitioner。 */
+    private final PractitionerCashierOptionProvider practitionerCashierOptionProvider;
+
     /** 跨聚合 scope 预解析。 */
-    private final OutpatientFeeDetailQuerySupport outpatientFeeDetailQuerySupport;
+    private final OutpatientFeeDetailLoader outpatientFeeDetailLoader;
 
     /** 定价行 fin_type 解析（与日结口径一致）。 */
-    private final DailySettlementFinTypeAmountSupport dailySettlementFinTypeAmountSupport;
+    private final DailySettlementFinTypeAmountLoader dailySettlementFinTypeAmountLoader;
 
     /** 金额列装配。 */
     private final OutpatientFeeDetailAssembler outpatientFeeDetailAssembler;
@@ -198,7 +202,7 @@ public class OutpatientFeeDetailAppService {
             OutpatientFeeDetailPageQuery query = this.outpatientFeeDetailMapper.toOutpatientFeeDetailPageQuery(request);
             this.applyEntererMatchToFeeDetailQuery(query);
             // Pre：SDD §3.3 步骤 4 — scope 预解析
-            this.outpatientFeeDetailQuerySupport.prepareOutpatientFeeDetailQueryScopes(query);
+            this.outpatientFeeDetailLoader.prepareOutpatientFeeDetailQueryScopes(query);
             // Pre：SDD §3.3 步骤 5 — 当前页就诊块分页
             Page<OutpatientFeeDetailEncounterBlockQueryModel> blockPage =
                 this.chargeItemQueryService.pageOutpatientFeeDetailEncounterBlocks(query);
@@ -251,7 +255,7 @@ public class OutpatientFeeDetailAppService {
             OutpatientFeeDetailPageQuery query = this.outpatientFeeDetailMapper.toOutpatientFeeDetailPageQuery(request);
             this.applyEntererMatchToFeeDetailQuery(query);
             // Pre：复用 IF-02 步骤 4～13 全量 blocks
-            this.outpatientFeeDetailQuerySupport.prepareOutpatientFeeDetailQueryScopes(query);
+            this.outpatientFeeDetailLoader.prepareOutpatientFeeDetailQueryScopes(query);
             List<OutpatientFeeDetailEncounterBlockDto> allBlocks =
                 this.loadAllEncounterBlocks(query);
             List<OutpatientFeeDetailExportRowDto> exportRows = new ArrayList<>();
@@ -313,7 +317,7 @@ public class OutpatientFeeDetailAppService {
         Integer pageNo,
         Integer pageSize) {
         // Gate：起止日期均须填写
-        if (StringUtils.isBlank(dateFrom) || StringUtils.isBlank(dateTo)) {
+        if (StringUtils.isEmpty(dateFrom) || StringUtils.isEmpty(dateTo)) {
             throw new BusinessException(
                 OutpatientFeeDetailConstants.EX_OP_FDT_102,
                 "请选择有效的查询日期");
@@ -327,7 +331,7 @@ public class OutpatientFeeDetailAppService {
                 "请选择有效的查询日期");
         }
         String resolvedTradeDirection = tradeDirection;
-        if (StringUtils.isBlank(resolvedTradeDirection)) {
+        if (StringUtils.isEmpty(resolvedTradeDirection)) {
             resolvedTradeDirection = OutpatientFeeDetailConstants.TRADE_DIRECTION_ALL;
         }
         // Gate：收退 Tab 须在白名单内
@@ -491,10 +495,10 @@ public class OutpatientFeeDetailAppService {
         if (chargeItemId != null && bundle.finTypeCodeByChargeItemId != null) {
             finTypeCode = bundle.finTypeCodeByChargeItemId.get(chargeItemId);
         }
-        if (StringUtils.isNotBlank(finTypeCode) && bundle.finTypeLabelByCode != null) {
+        if (StringUtils.isNotEmpty(finTypeCode) && bundle.finTypeLabelByCode != null) {
             finTypeDisplay = bundle.finTypeLabelByCode.get(finTypeCode.trim());
         }
-        if (StringUtils.isBlank(finTypeDisplay) && StringUtils.isNotBlank(finTypeCode)) {
+        if (StringUtils.isEmpty(finTypeDisplay) && StringUtils.isNotEmpty(finTypeCode)) {
             finTypeDisplay = finTypeCode.trim();
         }
         OutpatientFeeDetailLineDto lineDto =
@@ -504,9 +508,9 @@ public class OutpatientFeeDetailAppService {
             return null;
         }
         String unitCode = row.getChargeItem().getQuantityUnit();
-        if (StringUtils.isNotBlank(unitCode)) {
+        if (StringUtils.isNotEmpty(unitCode)) {
             String unitDisplay = unitLabelByCode.get(unitCode.trim());
-            if (StringUtils.isNotBlank(unitDisplay)) {
+            if (StringUtils.isNotEmpty(unitDisplay)) {
                 lineDto.setQuantityUnitDisplay(unitDisplay);
             } else {
                 // 字典未命中时回落持久化 code
@@ -592,11 +596,11 @@ public class OutpatientFeeDetailAppService {
         // Pre：SDD §3.3 步骤 9 — PractitionerQueryService#findAllByIds / mapDisplayNameByEntererIds
         bundle.practitionerNameById = this.loadPractitionerNameMap(practitionerIds);
         List<ProductDefinitionBatchLookup> lookupList = new ArrayList<>(productLookups);
-        // Pre：SDD §3.3 步骤 10 — ProductDefinitionBatchLoader#loadAsMap
-        bundle.productByCompositeKey = this.productDefinitionBatchLoader.loadAsMap(lookupList);
+        // Pre：SDD §3.3 步骤 10 — ProductDefinitionDisplayTerminologyAssembler#loadAsMap
+        bundle.productByCompositeKey = this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookupList);
         // Pre：定价行 fin_type 批量解析，供细分类展示与日结口径对齐
         bundle.finTypeCodeByChargeItemId =
-            this.dailySettlementFinTypeAmountSupport.mapFinTypeCodeByChargeItemId(chargeItemsForFinType);
+            this.dailySettlementFinTypeAmountLoader.mapFinTypeCodeByChargeItemId(chargeItemsForFinType);
         bundle.finTypeLabelByCode =
             this.terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
         return bundle;
@@ -615,7 +619,7 @@ public class OutpatientFeeDetailAppService {
         if (row == null || row.getChargeItem() == null) {
             return null;
         }
-        ProductDefinitionBatchLookup lookup = ChargeItemProductLookupSupport.buildLookupFromChargeItem(row.getChargeItem());
+        ProductDefinitionBatchLookup lookup = ChargeItemProductLookupHelper.buildLookupFromChargeItem(row.getChargeItem());
         if (lookup == null) {
             return null;
         }
@@ -650,7 +654,7 @@ public class OutpatientFeeDetailAppService {
         if (row == null || row.getChargeItem() == null) {
             return null;
         }
-        return ChargeItemProductLookupSupport.buildLookupFromChargeItem(row.getChargeItem());
+        return ChargeItemProductLookupHelper.buildLookupFromChargeItem(row.getChargeItem());
     }
 
     /**
@@ -666,13 +670,13 @@ public class OutpatientFeeDetailAppService {
         }
         List<Practitioner> practitioners = this.practitionerQueryService.findAllByIds(practitionerIds);
         for (Practitioner practitioner : practitioners) {
-            if (practitioner != null && practitioner.getId() != null && StringUtils.isNotBlank(practitioner.getName())) {
+            if (practitioner != null && practitioner.getId() != null && StringUtils.isNotEmpty(practitioner.getName())) {
                 nameById.put(practitioner.getId(), practitioner.getName());
             }
         }
         Map<Long, String> entererNames = this.practitionerQueryService.mapDisplayNameByEntererIds(practitionerIds);
         for (Map.Entry<Long, String> entry : entererNames.entrySet()) {
-            if (entry.getKey() != null && StringUtils.isNotBlank(entry.getValue())) {
+            if (entry.getKey() != null && StringUtils.isNotEmpty(entry.getValue())) {
                 nameById.putIfAbsent(entry.getKey(), entry.getValue());
             }
         }
@@ -774,23 +778,14 @@ public class OutpatientFeeDetailAppService {
      * @return 收费员 OptionDto 列表
      */
     private List<OptionDto> buildCashierOptions() {
-        List<OptionDto> options = new ArrayList<>();
         Page<Practitioner> page = this.practitionerQueryService.pageActivePractitionersForPosition(
             null,
             null,
             PageRequest.of(0, OutpatientFeeDetailConstants.CASHIER_OPTION_PAGE_SIZE),
             true);
-        for (Practitioner practitioner : page.getContent()) {
-            if (practitioner == null || practitioner.getId() == null) {
-                // 跳过无有效主键的 practitioner
-                continue;
-            }
-            OptionDto option = new OptionDto();
-            option.setValue(String.valueOf(practitioner.getId()));
-            option.setLabel(practitioner.getName());
-            options.add(option);
-        }
-        return options;
+        List<Practitioner> eligiblePractitioners =
+            this.practitionerCashierOptionProvider.filterWithActiveBoundSystemUser(page.getContent());
+        return this.practitionerCashierOptionProvider.toCashierOptions(eligiblePractitioners);
     }
 
     /**
@@ -837,7 +832,7 @@ public class OutpatientFeeDetailAppService {
             return;
         }
         query.setEntererMatchIds(
-            this.paymentEntererMatchSupport.resolveEntererMatchIds(query.getCashierId()));
+            this.paymentEntererMatchResolver.resolveEntererMatchIds(query.getCashierId()));
     }
 
     /**

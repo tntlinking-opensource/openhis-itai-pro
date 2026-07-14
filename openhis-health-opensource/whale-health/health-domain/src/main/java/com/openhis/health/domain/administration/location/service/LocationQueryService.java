@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.location.service;
 
 import com.openhis.health.domain.administration.location.entity.Location;
@@ -29,7 +16,7 @@ import com.openhis.health.domain.share.enums.SupplyRequestType;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
@@ -49,6 +36,7 @@ import java.util.Set;
  * <p>职责：按机构与位置形态查询病区、药房、药库及床位级空闲统计，供住院与药品业务选点使用。</p>
  *
  * <p>边界：只读；床位空闲统计在内存遍历子床位，规模受单病区床位数约束。</p>
+ * <p>聚合边界：仅本聚合 {@link LocationRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -74,7 +62,7 @@ public class LocationQueryService {
      * @return 位置列表；{@code formCode} 为空时返回空列表
      */
     public List<Location> listAllByFormCode(String formCode) {
-        if (StringUtils.isBlank(formCode)) {
+        if (StringUtils.isEmpty(formCode)) {
             return List.of();
         }
         return locationRepository.findAllByFormEnum(formCode.trim());
@@ -88,7 +76,7 @@ public class LocationQueryService {
      * @return 位置列表
      */
     public List<Location> listByOrganizationIdAndFormCode(Long organizationId, String formCode) {
-        if (organizationId == null || StringUtils.isBlank(formCode)) {
+        if (organizationId == null || StringUtils.isEmpty(formCode)) {
             return List.of();
         }
         return locationRepository.findAllByOrganizationIdAndFormEnum(organizationId, formCode.trim());
@@ -130,7 +118,7 @@ public class LocationQueryService {
      * @return 床位 location 主键
      */
     public List<Long> listActiveBedIdsByNameKeyword(String keyword) {
-        if (StringUtils.isBlank(keyword)) {
+        if (StringUtils.isEmpty(keyword)) {
             return List.of();
         }
         String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keyword.trim());
@@ -243,13 +231,22 @@ public class LocationQueryService {
     }
 
     /**
-     * 按主键批量加载启用态药房（{@link LocationForm#PHARMACY}）。
+     * 按主键批量加载启用态药房与科室药房（{@link LocationForm#PHARMACY}、{@link LocationForm#DEPARTMENT_PHARMACY}）。
      *
      * @param locationIds {@code adm_location.id} 集合
      * @return 药房位置列表，永不为 {@code null}
      */
     public List<Location> findActivePharmaciesByIds(Collection<Long> locationIds) {
-        return this.findActiveLocationsByIdsAndForm(locationIds, LocationForm.PHARMACY.getCode());
+        List<Location> pharmacies = this.findActiveLocationsByIdsAndForm(locationIds, LocationForm.PHARMACY.getCode());
+        List<Location> departmentPharmacies = this.findActiveLocationsByIdsAndForm(
+            locationIds, LocationForm.DEPARTMENT_PHARMACY.getCode());
+        if (departmentPharmacies.isEmpty()) {
+            return pharmacies;
+        }
+        List<Location> combined = new ArrayList<>(pharmacies.size() + departmentPharmacies.size());
+        combined.addAll(pharmacies);
+        combined.addAll(departmentPharmacies);
+        return combined;
     }
 
     /**
@@ -329,7 +326,7 @@ public class LocationQueryService {
      * @return 直接子节点列表，按 {@code display_order}、主键排序
      */
     public List<Location> listChildrenByParentBusNo(String parentBusNo, String formCode) {
-        if (StringUtils.isBlank(parentBusNo)) {
+        if (StringUtils.isEmpty(parentBusNo)) {
             return List.of();
         }
         String prefix = parentBusNo.trim() + GeneralSharedConstants.POINT;
@@ -347,7 +344,7 @@ public class LocationQueryService {
             if (remainder.contains(GeneralSharedConstants.POINT)) {
                 continue;
             }
-            if (StringUtils.isNotBlank(formCode) && !formCode.trim().equals(candidate.getFormEnum())) {
+            if (StringUtils.isNotEmpty(formCode) && !formCode.trim().equals(candidate.getFormEnum())) {
                 continue;
             }
             children.add(candidate);
@@ -362,7 +359,7 @@ public class LocationQueryService {
      * @return 病房列表
      */
     public List<Location> listActiveHousesByWardBusNo(String wardBusNo) {
-        if (StringUtils.isBlank(wardBusNo)) {
+        if (StringUtils.isEmpty(wardBusNo)) {
             return List.of();
         }
         List<Location> directChildren =
@@ -429,8 +426,17 @@ public class LocationQueryService {
      * @return 药房位置列表
      */
     public List<Location> listPharmaciesByOrganization(Long organizationId) {
-        return locationRepository.findAllByOrganizationIdAndFormEnumAndStatusEnum(
+        List<Location> pharmacies = locationRepository.findAllByOrganizationIdAndFormEnumAndStatusEnum(
             organizationId, LocationForm.PHARMACY.getCode(), LocationStatus.ACTIVE.getCode());
+        List<Location> departmentPharmacies = locationRepository.findAllByOrganizationIdAndFormEnumAndStatusEnum(
+            organizationId, LocationForm.DEPARTMENT_PHARMACY.getCode(), LocationStatus.ACTIVE.getCode());
+        if (departmentPharmacies.isEmpty()) {
+            return pharmacies;
+        }
+        List<Location> combined = new ArrayList<>(pharmacies.size() + departmentPharmacies.size());
+        combined.addAll(pharmacies);
+        combined.addAll(departmentPharmacies);
+        return combined;
     }
 
     /**
@@ -448,6 +454,25 @@ public class LocationQueryService {
      * 列出全部启用中的药房位置（不按机构主键过滤；与 {@link #listPharmaciesByOrganization(Long)} 区分）。
      */
     public List<Location> listAllActivePharmacies() {
+        List<Location> pharmacies = locationRepository.findAllByFormEnumAndStatusEnum(
+            LocationForm.PHARMACY.getCode(), LocationStatus.ACTIVE.getCode());
+        List<Location> departmentPharmacies = locationRepository.findAllByFormEnumAndStatusEnum(
+            LocationForm.DEPARTMENT_PHARMACY.getCode(), LocationStatus.ACTIVE.getCode());
+        if (departmentPharmacies.isEmpty()) {
+            return pharmacies;
+        }
+        List<Location> combined = new ArrayList<>(pharmacies.size() + departmentPharmacies.size());
+        combined.addAll(pharmacies);
+        combined.addAll(departmentPharmacies);
+        return combined;
+    }
+
+    /**
+     * 列出全部启用中的药房位置（仅 {@link LocationForm#PHARMACY}，不含科室药房；供药房平级调拨门控）。
+     *
+     * @return 启用中药房位置列表
+     */
+    public List<Location> listAllActivePharmacyOnlyLocations() {
         return locationRepository.findAllByFormEnumAndStatusEnum(
             LocationForm.PHARMACY.getCode(), LocationStatus.ACTIVE.getCode());
     }
@@ -461,16 +486,29 @@ public class LocationQueryService {
     }
 
     /**
-     * 列出全部库房与药房位置（含各启用/停用态，供基础维护页平铺列表）。
+     * 列出全部启用中的科室药房位置（形态 {@link LocationForm#DEPARTMENT_PHARMACY}，不按机构主键过滤）。
      *
-     * @return 形态为仓库或药房的位置列表
+     * @return 启用中的科室药房位置列表
+     */
+    public List<Location> listAllActiveDepartmentPharmacies() {
+        return locationRepository.findAllByFormEnumAndStatusEnum(
+            LocationForm.DEPARTMENT_PHARMACY.getCode(), LocationStatus.ACTIVE.getCode());
+    }
+
+    /**
+     * 列出全部库房、药房与科室药房位置（含各启用/停用态，供基础维护页平铺列表）。
+     *
+     * @return 形态为仓库、药房或科室药房的位置列表
      */
     public List<Location> listAllWarehouseAndPharmacyLocations() {
         List<Location> warehouses = locationRepository.findAllByFormEnum(LocationForm.WAREHOUSE.getCode());
         List<Location> pharmacies = locationRepository.findAllByFormEnum(LocationForm.PHARMACY.getCode());
-        List<Location> combined = new ArrayList<>(warehouses.size() + pharmacies.size());
+        List<Location> departmentPharmacies = locationRepository.findAllByFormEnum(
+            LocationForm.DEPARTMENT_PHARMACY.getCode());
+        List<Location> combined = new ArrayList<>(warehouses.size() + pharmacies.size() + departmentPharmacies.size());
         combined.addAll(warehouses);
         combined.addAll(pharmacies);
+        combined.addAll(departmentPharmacies);
         return combined;
     }
 
@@ -502,7 +540,9 @@ public class LocationQueryService {
      * {@code purpose_type_enum} 等与供应单头一致的位置类型落库（B.10.8.1，持久化为枚举 {@code getCode()}）。
      *
      * <p>与 {@link #listLocationsByType(Long, int)} 的「形态 → 供应类型」口径对齐：
-     * {@link LocationForm#PHARMACY}→{@link SupplyRequestType#PHARMACY}、{@link LocationForm#WAREHOUSE}→{@link SupplyRequestType#CABINET}、
+     * {@link LocationForm#PHARMACY}→{@link SupplyRequestType#PHARMACY}、
+     * {@link LocationForm#DEPARTMENT_PHARMACY}→{@link SupplyRequestType#PHARMACY}、
+     * {@link LocationForm#WAREHOUSE}→{@link SupplyRequestType#CABINET}、
      * {@link LocationForm#WARD}→{@link SupplyRequestType#DEPARTMENT}。床位等其它形态当前不参与库房供应链头，须拒绝以免误落库。</p>
      *
      * @param locationId 位置主键
@@ -519,10 +559,13 @@ public class LocationQueryService {
         }
         Location location = row.get();
         String formCode = location.getFormEnum();
-        if (StringUtils.isBlank(formCode)) {
+        if (StringUtils.isEmpty(formCode)) {
             throw new BusinessException(ErrorCodeConstants.LOCATION_RULE_CONFLICT, "位置形态为空，无法解析供应类型");
         }
         if (LocationForm.PHARMACY.getCode().equals(formCode)) {
+            return SupplyRequestType.PHARMACY;
+        }
+        if (LocationForm.DEPARTMENT_PHARMACY.getCode().equals(formCode)) {
             return SupplyRequestType.PHARMACY;
         }
         if (LocationForm.WAREHOUSE.getCode().equals(formCode)) {
@@ -541,14 +584,22 @@ public class LocationQueryService {
      * 按机构与形态类型列出启用中的位置。
      * 用于供应请求模块按 source_type_enum / purpose_type_enum（对应 LocationForm）筛选下拉。
      *
-     * <p>类型映射：SupplyRequestType.sortOrder → LocationForm.sortOrder。
-     * 目前支持 DEPARTMENT(2)→WARD(4)、PHARMACY(16)→PHARMACY(16)。
+     * <p>类型映射：SupplyRequestType.sortOrder → LocationForm。
+     * DEPARTMENT(2)→WARD(4)、PHARMACY(16)→启用中 {@link LocationForm#PHARMACY}
+     * 与 {@link LocationForm#DEPARTMENT_PHARMACY} 并集（供应头 {@code purpose_type_enum} 均为 PHARMACY）。</p>
      *
      * @param organizationId 机构标识
      * @param typeSortOrder 形态类型序号（来自 SupplyRequestType 或 LocationForm 的 sortOrder）
      * @return 符合条件的位置列表
      */
     public List<Location> listLocationsByType(Long organizationId, int typeSortOrder) {
+        if (organizationId == null) {
+            return List.of();
+        }
+        // 供应类型 PHARMACY(16) 须覆盖科室药房，与 listPharmaciesByOrganization 口径一致
+        if (typeSortOrder == SupplyRequestType.PHARMACY.getSortOrder().intValue()) {
+            return this.listPharmaciesByOrganization(organizationId);
+        }
         String formEnumCode = resolveFormEnumCode(typeSortOrder);
         if (formEnumCode == null) {
             return List.of();
@@ -678,6 +729,12 @@ public class LocationQueryService {
         return this.sortByDisplayOrder(locations);
     }
 
+    /**
+     * 库位按 displayOrder、id 升序排序（返回新列表）。
+     *
+     * @param locations 原始列表
+     * @return 排序副本；空输入返回不可变空列表
+     */
     private List<Location> sortByDisplayOrder(List<Location> locations) {
         if (locations == null || locations.isEmpty()) {
             return List.of();

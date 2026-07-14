@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationdefinition.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -28,7 +15,7 @@ import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -246,12 +233,18 @@ public class MedicationDefinitionDomainService {
      */
     private String buildSimpleIndexCode(String name) {
         // 业务分支：空值校验失败则跳过该行计入失败。
-        if (StringUtils.isBlank(name)) {
+        if (StringUtils.isEmpty(name)) {
             return null;
         }
         return name.trim().toUpperCase();
     }
 
+    /**
+     * 新建药品定义：从创建 Command 项填充实体字段（含助记码与版本默认值）。
+     *
+     * @param definition 待写入实体
+     * @param item       创建项
+     */
     private void fillDefinitionFromCreateItem(
         MedicationDefinition definition,
         CreateMedicationDefinitionCommand.CreateMedicationDefinitionItemCommand item) {
@@ -284,6 +277,7 @@ public class MedicationDefinitionDomainService {
         definition.setYbNo(item.getYbNo());
         definition.setYbMatchFlag(item.getYbMatchFlag());
         definition.setChrgitmLv(item.getChrgitmLv());
+        definition.setMrSettlementTypeCode(item.getMrSettlementTypeCode());
         definition.setPharmacologyCategoryCode(item.getPharmacologyCategoryCode());
         definition.setManufacturerId(item.getManufacturerId());
         definition.setManufacturerText(item.getManufacturerText());
@@ -319,6 +313,12 @@ public class MedicationDefinitionDomainService {
         definition.setMaxRateCode(item.getMaxRateCode());
     }
 
+    /**
+     * 编辑药品定义：从编辑 Command 项覆盖可变字段（含助记码重算）。
+     *
+     * @param definition 待更新实体
+     * @param item       编辑项
+     */
     private void fillDefinitionFromEditItem(
         MedicationDefinition definition,
         EditMedicationDefinitionCommand.EditMedicationDefinitionItemCommand item) {
@@ -347,6 +347,7 @@ public class MedicationDefinitionDomainService {
         definition.setYbNo(item.getYbNo());
         definition.setYbMatchFlag(item.getYbMatchFlag());
         definition.setChrgitmLv(item.getChrgitmLv());
+        definition.setMrSettlementTypeCode(item.getMrSettlementTypeCode());
         definition.setPharmacologyCategoryCode(item.getPharmacologyCategoryCode());
         definition.setManufacturerId(item.getManufacturerId());
         definition.setManufacturerText(item.getManufacturerText());
@@ -382,22 +383,42 @@ public class MedicationDefinitionDomainService {
         definition.setMaxRateCode(item.getMaxRateCode());
     }
 
+    /**
+     * 拼音助记码：入参非空时规范化大写，否则由源名称自动生成。
+     *
+     * @param inputCode   请求携带 py；可空
+     * @param sourceName  回落源名称（品名/商品名）
+     * @return 拼音助记码
+     */
     private String resolvePyCode(String inputCode, String sourceName) {
-        if (StringUtils.isNotBlank(inputCode)) {
+        if (StringUtils.isNotEmpty(inputCode)) {
             return inputCode.trim().toUpperCase();
         }
         return SearchCodeUtil.toPyStr(StringUtils.defaultString(sourceName));
     }
 
+    /**
+     * 五笔助记码：入参非空时规范化大写，否则由源名称自动生成。
+     *
+     * @param inputCode   请求携带 wb；可空
+     * @param sourceName  回落源名称（品名/商品名）
+     * @return 五笔助记码
+     */
     private String resolveWbCode(String inputCode, String sourceName) {
-        if (StringUtils.isNotBlank(inputCode)) {
+        if (StringUtils.isNotEmpty(inputCode)) {
             return inputCode.trim().toUpperCase();
         }
         return SearchCodeUtil.toWbStr(StringUtils.defaultString(sourceName));
     }
 
+    /**
+     * 药品定义版本号递增：空版本从 1 起，数字版本 +1，非数字版本追加 {@code _1}。
+     *
+     * @param currentVersion 当前版本字符串
+     * @return 下一版本号
+     */
     private String nextVersion(String currentVersion) {
-        if (StringUtils.isBlank(currentVersion)) {
+        if (StringUtils.isEmpty(currentVersion)) {
             return "1";
         }
         try {
@@ -407,4 +428,3 @@ public class MedicationDefinitionDomainService {
         }
     }
 }
-

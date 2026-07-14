@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.nursestation.skintest.mapper;
 
 import com.openhis.health.application.outpatient.nursestation.skintest.dto.OutpatientSkinTestRowDto;
@@ -14,7 +14,7 @@ import com.openhis.health.domain.administration.practitioner.entity.Practitioner
 import com.openhis.health.domain.clinical.allergyintolerance.command.DeleteSkinTestRecordCommand;
 import com.openhis.health.domain.clinical.allergyintolerance.command.SaveSkinTestRecordCommand;
 import com.openhis.whale.core.application.dto.OptionDto;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -56,7 +56,7 @@ public class OutpatientSkinTestMapperImpl implements OutpatientSkinTestMapper {
             }
             Long id = practitioner.getId();
             String label = practitioner.getName();
-            if (StringUtils.isBlank(label)) {
+            if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
             list.add(new OptionDto(id, String.valueOf(id), label));

@@ -1,31 +1,21 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 编码系统状态
- * 
+ *
  * <p>FHIR标准：CodeSystem.status</p>
- * 
+ *
  */
 public enum CodeSystemStatus implements EnumInterface {
+/** 草稿 编码系统正在开发中，尚未正式使用（CodeSystemStatus，编码 {@code DRAFT}）。 */
     DRAFT(0L, "DRAFT", "草稿 编码系统正在开发中，尚未正式使用", "", 1L),
+/** 活跃 编码系统已正式发布，正在使用中（CodeSystemStatus，编码 {@code ACTIVE}）。 */
     ACTIVE(0L, "ACTIVE", "活跃 编码系统已正式发布，正在使用中", "", 2L),
+/** 已废弃 编码系统已被新版本替代，不再使用（CodeSystemStatus，编码 {@code RETIRED}）。 */
     RETIRED(0L, "RETIRED", "已废弃 编码系统已被新版本替代，不再使用", "", 3L);
 
     private final Long codeSystemId;

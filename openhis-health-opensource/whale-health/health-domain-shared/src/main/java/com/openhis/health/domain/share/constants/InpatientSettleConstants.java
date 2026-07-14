@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 /**
@@ -45,6 +32,12 @@ public interface InpatientSettleConstants {
 
     /** 就诊未处于待结算态却按出院全结提交（EX-IP-STL-108）。 */
     String EX_IP_STL_108 = "EX-IP-STL-108";
+
+    /** 待出院（ON_HOLD）禁止任何结算，须先护士办理出院（EX-IP-STL-111）。 */
+    String EX_IP_STL_111 = "EX-IP-STL-111";
+
+    /** 本期不支持中途结算（EX-IP-STL-112）。 */
+    String EX_IP_STL_112 = "EX-IP-STL-112";
 
     /** 支付结算失败（EX-IP-STL-109）。 */
     String EX_IP_STL_109 = "EX-IP-STL-109";
@@ -109,10 +102,10 @@ public interface InpatientSettleConstants {
     /** 结算金额与明细合计比较小数位。 */
     int SETTLE_AMOUNT_COMPARE_SCALE = 2;
 
-    /** 出院全结模式。 */
+/** InpatientSettle 共享常量：mode discharge full，值 {@code DISCHARGE_FULL}。 */
     String SETTLE_MODE_DISCHARGE_FULL = "DISCHARGE_FULL";
 
-    /** 中途结算模式。 */
+/** InpatientSettle 共享常量：mode mid，值 {@code MID_SETTLE}。 */
     String SETTLE_MODE_MID = "MID_SETTLE";
 
     /** 医保：PENDING 部分勾选未声明中途（INS-IP-001）。 */

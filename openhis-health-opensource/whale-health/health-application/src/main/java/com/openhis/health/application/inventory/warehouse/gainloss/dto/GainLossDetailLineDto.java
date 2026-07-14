@@ -1,119 +1,114 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.gainloss.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import io.swagger.v3.oas.annotations.media.Schema;
 
-@Data
+/**
+ * 药库损益单详情明细行（IF-WHS-GL-03）。
+ *
+ * <p>{@code gainLossQuantity} 映射持久化 {@code item_quantity}；{@code actualQuantity} 映射 {@code total_quantity}。</p>
+ */
+@Getter
+@Setter
 @Accessors(chain = true)
-/** 药库盘库单详情明细行。 */
-@Schema(description = "药库盘库单详情明细行")
+@Schema(description = "药库损益单详情明细行")
 public class GainLossDetailLineDto {
 
-    /** 供应请求行主键。 */
-    @JsonSerialize(using = ToStringSerializer.class)
     /** 明细行主键 lineId。 */
+    @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "明细行主键 lineId")
     private Long lineId;
 
-    /** 物品定义物理表名。 */
+    /** 物品来源表名 itemTable。 */
     @Schema(description = "物品来源表名 itemTable")
     private String itemTable;
 
-    /** 物品定义主键。 */
-    @JsonSerialize(using = ToStringSerializer.class)
     /** 物品定义主键 itemId。 */
+    @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "物品定义主键 itemId")
     private Long itemId;
 
-    /** 产品展示名称。 */
+    /** 物品名称 productName。 */
     @Schema(description = "物品名称 productName")
     private String productName;
 
-    /** 规格展示。 */
+    /** 规格 specification。 */
     @Schema(description = "规格 specification")
     private String specification;
 
-    /** 厂家展示。 */
+    /** 厂家 manufacturer。 */
     @Schema(description = "厂家 manufacturer")
     private String manufacturer;
 
-    /** 批号。 */
+    /** 批号 lotNumber。 */
     @Schema(description = "批号 lotNumber")
     private String lotNumber;
 
-    /** 效期止点。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    /** 剩余追溯码 traceNo。 */
+    @Schema(description = "剩余追溯码 traceNo")
+    private String traceNo;
+
     /** 效期 expirationDate。 */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "效期 expirationDate")
     private LocalDateTime expirationDate;
 
-    /** 计量单位编码。 */
+    /** 计量单位 unitCode。 */
     @Schema(description = "计量单位 unitCode")
     private String unitCode;
 
-    /** 账面数量（实时可用量展示）。 */
+    /** 账面数量 bookQuantity。 */
     @Schema(description = "账面数量 bookQuantity")
     private BigDecimal bookQuantity;
 
-    /** 盈亏数量（持久化 item_quantity）。 */
+    /** 盈亏数量 gainLossQuantity。 */
     @Schema(description = "盈亏数量 gainLossQuantity")
     private BigDecimal gainLossQuantity;
 
-    /** 实盘数量（持久化 total_quantity）。 */
+    /** 实盘数量 actualQuantity。 */
     @Schema(description = "实盘数量 actualQuantity")
     private BigDecimal actualQuantity;
 
-    /** 实盘金额（持久化 total_price）。 */
+    /** 实盘金额 actualAmount。 */
     @Schema(description = "实盘金额 actualAmount")
     private BigDecimal actualAmount;
 
-    /** 盈亏金额（持久化 profit_loss_price）。 */
+    /** 盈亏金额 gainLossAmount。 */
     @Schema(description = "盈亏金额 gainLossAmount")
     private BigDecimal gainLossAmount;
 
-    /** 行单价。 */
+    /** 单价 price。 */
     @Schema(description = "单价 price")
     private BigDecimal price;
 
-    /** 行备注。 */
+    /** 变更原因 reason。 */
+    @Schema(description = "变更原因 reason")
+    private String reason;
+
+    /** 备注 remake。 */
     @Schema(description = "备注 remake")
     private String remake;
 
-    /** 业务发生时间。 */
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     /** 业务发生时间 occurrenceTime。 */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "业务发生时间 occurrenceTime")
     private LocalDateTime occurrenceTime;
 
-    /** 多单位目录提示。 */
+    /** 产品目录 productCatalog。 */
     @Schema(description = "产品目录 productCatalog")
     private ProductDefinitionCatalogEditorHintsDto productCatalog;
 }

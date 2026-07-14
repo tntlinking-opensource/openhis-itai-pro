@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.pharmacy.stockin.mapper;
 
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.PharmacyStockInDetailLineDto;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.PharmacyStockInLineDto;
 import com.openhis.health.application.inventory.pharmacy.stockin.dto.PharmacyStockInListRowDto;
@@ -44,7 +31,7 @@ import com.openhis.health.application.inventory.pharmacy.stockin.response.Withdr
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.SupplyCategory;
@@ -62,7 +49,8 @@ import com.openhis.health.domain.workflow.supplyrequest.command.WithdrawApproval
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -80,13 +68,10 @@ import java.util.Objects;
  * <p>各 {@code @Override} 方法 JavaDoc 与接口保持同义完整说明（B.1），禁止仅以单独一行 {@code @inheritDoc} 占位。</p>
  */
 @Component
+@RequiredArgsConstructor
 public class InventoryPharmacyStockInMapperImpl implements InventoryPharmacyStockInMapper {
 
     private final LocationQueryService locationQueryService;
-
-    public InventoryPharmacyStockInMapperImpl(LocationQueryService locationQueryService) {
-        this.locationQueryService = locationQueryService;
-    }
 
     /**
      * 将位置实体列表装配为下拉（IF-PHA-IN-01）。
@@ -109,7 +94,7 @@ public class InventoryPharmacyStockInMapperImpl implements InventoryPharmacyStoc
             Long id = location.getId();
             String label = location.getName();
             // 名称为空时用主键兜底展示，避免空白项误导操作者。
-            if (StringUtils.isBlank(label)) {
+            if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
             list.add(new OptionDto(id, String.valueOf(id), label));
@@ -136,7 +121,7 @@ public class InventoryPharmacyStockInMapperImpl implements InventoryPharmacyStoc
             Long id = p.getId();
             String label = p.getName();
             // 人员姓名为空时用 id 兜底，与位置下拉策略一致。
-            if (StringUtils.isBlank(label)) {
+            if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
             list.add(new OptionDto(id, String.valueOf(id), label));
@@ -229,7 +214,7 @@ public class InventoryPharmacyStockInMapperImpl implements InventoryPharmacyStoc
         }
         LinkedHashMap<String, List<SupplyRequestModel>> byBusNo = new LinkedHashMap<>();
         for (SupplyRequestModel row : detailRows) {
-            if (row == null || StringUtils.isBlank(row.getBusNo())) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
                 continue;
             }
             String bn = row.getBusNo().trim();
@@ -237,7 +222,7 @@ public class InventoryPharmacyStockInMapperImpl implements InventoryPharmacyStoc
             byBusNo.computeIfAbsent(bn, k -> new ArrayList<>()).add(row);
         }
         for (String busNoRaw : busNoPageOrder) {
-            if (StringUtils.isBlank(busNoRaw)) {
+            if (StringUtils.isEmpty(busNoRaw)) {
                 continue;
             }
             String busNo = busNoRaw.trim();
@@ -296,6 +281,10 @@ public class InventoryPharmacyStockInMapperImpl implements InventoryPharmacyStoc
             dto.setBusNo(busNo);
             dto.setTypeEnum(SupplyType.PHARMACY_STOCK_IN.getCode());
             dto.setStatusEnum(head.getStatusEnum());
+            // 驳回态：把供应行 reason 带到列表 rejectReason，供侧栏卡片展示
+            if (SupplyStatus.REJECT.getCode().equals(head.getStatusEnum())) {
+                dto.setRejectReason(head.getReason());
+            }
             dto.setSourceLocationId(head.getSourceLocationId());
             dto.setPurposeLocationId(head.getPurposeLocationId());
             dto.setApproverId(head.getApproverId());
@@ -543,7 +532,7 @@ public class InventoryPharmacyStockInMapperImpl implements InventoryPharmacyStoc
             }
             CreateRequisitionCommand.CreateRequisitionItemCommand item = new CreateRequisitionCommand.CreateRequisitionItemCommand();
             // 修订路径强制使用既有 bus_no；新建路径允许显式号或交由领域按日生成。
-            if (StringUtils.isNotBlank(revisionTrim)) {
+            if (StringUtils.isNotEmpty(revisionTrim)) {
                 item.setBusNo(revisionTrim);
             } else {
                 item.setBusNo(explicitBus);
@@ -674,7 +663,13 @@ public class InventoryPharmacyStockInMapperImpl implements InventoryPharmacyStoc
         return res;
     }
 
-    /** 装配同意成功 Response。 */
+    /**
+     * 将药房入库同意请求装配为领域 {@link AgreeRequestCommand}（IF-PHA-IN-08）。
+     *
+     * @param request    同意请求，须含 busNo
+     * @param operatorId 当前操作人主键，同时写入 approver_id
+     * @return 领域同意命令
+     */
     @Override
     public AgreeRequestCommand toAgreeRequestCommand(AgreePharmacyStockInRequest request, Long operatorId) {
         AgreeRequestCommand command = new AgreeRequestCommand();
@@ -753,9 +748,9 @@ public class InventoryPharmacyStockInMapperImpl implements InventoryPharmacyStoc
         item.setApproverId(operatorId);
         item.setApprovalClock(null);
         String mergedReason = null;
-        if (StringUtils.isNotBlank(request.getChangeReason())) {
+        if (StringUtils.isNotEmpty(request.getChangeReason())) {
             mergedReason = request.getChangeReason().trim();
-        } else if (StringUtils.isNotBlank(request.getChangeReasonCode())) {
+        } else if (StringUtils.isNotEmpty(request.getChangeReasonCode())) {
             mergedReason = request.getChangeReasonCode().trim();
         }
         item.setChangeReasonCode(mergedReason);
@@ -915,7 +910,7 @@ public class InventoryPharmacyStockInMapperImpl implements InventoryPharmacyStoc
      * @throws IllegalArgumentException 码不在枚举白名单
      */
     private String resolveSupplyCategoryCode(String categoryCodeRaw) {
-        if (StringUtils.isBlank(categoryCodeRaw)) {
+        if (StringUtils.isEmpty(categoryCodeRaw)) {
             // 与历史进货/请领默认类别对齐，减少前端必传负担。
             return SupplyCategory.STOCK_SUPPLY.getCode();
         }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.clinical.procedure.service;
 
 import com.alibaba.fastjson2.JSON;
@@ -31,12 +18,17 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 执行记录写侧服务。
+ * 执行记录（{@code cln_procedure}）聚合写侧领域服务。
+ *
+ * <p>职责：创建/启动/完成/取消/不执行及执行人轨迹维护；同 request 锚点幂等与 occurrence 占用校验（BR-PRO/BR-NUR）。</p>
+ * <p>不变量：完成须具结果语义（BR-PRO-004）；持久化先于 Procedure 领域事件发布。</p>
+ * <p>仅注入本聚合 {@link ProcedureRepository}、{@link ProcedurePerformerRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -62,7 +54,8 @@ public class ProcedureDomainService {
             if (!existed.isEmpty()) {
                 throw new BusinessException(ErrorCodeConstants.PROCEDURE_RULE_CONFLICT, "同请求已存在执行记录");
             }
-        } else if (cmd.getOccurrenceTime() != null) {
+        } else if (cmd.getOccurrenceTime() != null
+            && !Boolean.TRUE.equals(cmd.getSkipOccurrenceSlotCheck())) {
             this.assertOccurrenceSlotAvailable(cmd.getRequestId(), cmd.getRequestTable(), cmd.getOccurrenceTime());
         }
         Procedure entity = new Procedure();
@@ -96,10 +89,13 @@ public class ProcedureDomainService {
      * 启动执行。
      *
      * @param cmd 启动命令
+     * @throws BusinessException 执行记录不存在或状态不允许启动时
      */
     public void startProcedureExecution(StartProcedureExecutionCommand cmd) {
+        // 加载/组装：加载执行记录并迁移至执行中
         Procedure entity = this.loadProcedure(cmd.getProcedureId());
         entity.startExecution();
+        // 持久化
         procedureRepository.save(entity);
     }
 
@@ -134,16 +130,24 @@ public class ProcedureDomainService {
     }
 
     /**
-     * 完成执行记录。
+     * 完成执行记录；当 {@code operatorId} 非空时写入 {@code recorder_id} 与 {@code recorded_time}（DM-CLN-004 §6.1.4）。
      *
-     * @param cmd 完成命令
+     * @param cmd 完成命令；{@code operatorId} 为 {@code adm_practitioner.id}，供工作量统计闭区间筛选
      */
     public void completeProcedureRecord(CompleteProcedureRecordCommand cmd) {
         Procedure entity = this.loadProcedure(cmd.getProcedureId());
         entity.setResultText(cmd.getResultText());
         entity.setReportJson(cmd.getReportJson());
+        // 完成时写入记录人与记录时间，供 AS-RPT-002 recorded_time 闭区间与列表展示
+        if (cmd.getOperatorId() != null) {
+            entity.setRecorderId(cmd.getOperatorId());
+        }
+        if (entity.getRecordedTime() == null) {
+            entity.setRecordedTime(LocalDateTime.now());
+        }
         // Assert：BR-PRO-004 完成动作必须具备结果语义（结果/报告至少一项）。
         entity.complete();
+        // 持久化：状态 COMPLETED 与 recorder/recorded 同事务提交
         procedureRepository.save(entity);
         ProcedureRecordCompletedEvent event = new ProcedureRecordCompletedEvent(
             entity.getId(), entity.getStatusEnum(), entity.getResultText(), entity.getReportJson());
@@ -156,15 +160,19 @@ public class ProcedureDomainService {
      * 取消执行记录。
      *
      * @param cmd 取消命令
+     * @throws BusinessException 执行记录不存在或状态不允许取消时
      */
     public void cancelProcedureRecord(CancelProcedureRecordCommand cmd) {
+        // 加载/组装：加载执行记录并写入取消原因
         Procedure entity = this.loadProcedure(cmd.getProcedureId());
         entity.setStatusReasonText(cmd.getStatusReasonText());
         entity.setRefundId(cmd.getRefundId());
         // Assert：BR-PRO-005 取消动作必须可追溯（状态原因与链路标识）。
         entity.cancel();
+        // 持久化
         procedureRepository.save(entity);
         this.releaseOccurrenceSlotIfRefunded(cmd.getRefundId());
+        // 发布事件：执行记录已取消
         domainEventPublisher.publish(new ProcedureRecordCancelledEvent(entity.getId(), entity.getStatusEnum(), entity.getStatusReasonText(), entity.getRefundId()));
     }
 
@@ -208,6 +216,10 @@ public class ProcedureDomainService {
 
     /**
      * 加载执行记录实体。
+     *
+     * @param procedureId 执行记录主键
+     * @return 执行记录聚合根
+     * @throws BusinessException 记录不存在时
      */
     private Procedure loadProcedure(Long procedureId) {
         return procedureRepository.findById(procedureId).orElseThrow(

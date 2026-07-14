@@ -1,32 +1,21 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.chargeitem.repository;
 
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
 
+/**
+ * 收费明细聚合仓储（{@code adm_charge_item}）。
+ *
+ * <p>职责：按就诊、上游业务锚点、发放锚点、执行记录等维度批量加载收费行；供 {@code ChargeItemQueryService} 与写侧 Gate 使用。</p>
+ */
 public interface ChargeItemRepository extends JpaRepository<ChargeItem, Long>, JpaSpecificationExecutor<ChargeItem> {
 
     /**
@@ -204,38 +193,11 @@ public interface ChargeItemRepository extends JpaRepository<ChargeItem, Long>, J
         Collection<Long> procedureIds, String statusEnum, String generateSourceEnum);
 
     /**
-     * 门诊正式结算：仅当源态为 {@code PLANNED} 时批量迁移至 {@code SETTLED} 并写入收款人（GAP-FIN-003 / GAP-STALE-001）。
+     * 按主键集合与源收费状态批量加载（正式结算等需 DB 侧源态过滤的乐观门禁，GAP-FIN-003 / GAP-STALE-001）。
      *
-     * @return 实际更新行数
+     * @param ids        主键集合
+     * @param statusEnum 源收费状态持久化码
+     * @return 仍处源态的明细列表
      */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-        UPDATE ChargeItem c
-           SET c.statusEnum = :targetStatus,
-               c.performerId = :performerId
-         WHERE c.id IN :ids
-           AND c.statusEnum = :sourceStatus
-        """)
-    int updateStatusAndPerformerWhereIdInAndSourceStatus(
-        @Param("ids") Collection<Long> ids,
-        @Param("targetStatus") String targetStatus,
-        @Param("performerId") Long performerId,
-        @Param("sourceStatus") String sourceStatus);
-
-    /**
-     * 住院正式结算：仅当源态匹配时批量迁移目标态（GAP-FIN-001 / GAP-STALE-002）。
-     *
-     * @return 实际更新行数
-     */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-        UPDATE ChargeItem c
-           SET c.statusEnum = :targetStatus
-         WHERE c.id IN :ids
-           AND c.statusEnum = :sourceStatus
-        """)
-    int updateStatusWhereIdInAndSourceStatus(
-        @Param("ids") Collection<Long> ids,
-        @Param("targetStatus") String targetStatus,
-        @Param("sourceStatus") String sourceStatus);
+    List<ChargeItem> findAllByIdInAndStatusEnum(Collection<Long> ids, String statusEnum);
 }

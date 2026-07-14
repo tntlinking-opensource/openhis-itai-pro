@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.terminologycodemapping.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -25,7 +12,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.time.LocalDateTime;
 
@@ -64,13 +51,13 @@ public class TerminologyCodeMapping extends BaseAuditedEntity {
      * 断言必填字段。
      */
     public void assertRequiredFields() {
-        if (StringUtils.isBlank(this.sourceItemTable)) {
+        if (StringUtils.isEmpty(this.sourceItemTable)) {
             throw new BusinessException(ErrorCodeConstants.TERMINOLOGY_MAPPING_INVALID_ARGUMENT, "源对象类型不能为空");
         }
-        if (StringUtils.isBlank(this.sourceItemNo)) {
+        if (StringUtils.isEmpty(this.sourceItemNo)) {
             throw new BusinessException(ErrorCodeConstants.TERMINOLOGY_MAPPING_INVALID_ARGUMENT, "源编码不能为空");
         }
-        if (StringUtils.isBlank(this.targetItemNo)) {
+        if (StringUtils.isEmpty(this.targetItemNo)) {
             throw new BusinessException(ErrorCodeConstants.TERMINOLOGY_MAPPING_INVALID_ARGUMENT, "目标编码不能为空");
         }
     }

@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.mrms.qc.service;
 
 import com.openhis.health.domain.mrms.qc.entity.QcDefect;
@@ -25,8 +25,10 @@ import java.util.Optional;
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 /**
- * 质控缺陷（{@code mrms_qc_defect}）与质控执行记录读写的领域服务。
+ * 质控缺陷与执行批次（{@code mrms_qc_defect} / {@code mrms_qc_run}）写侧领域服务。
  *
+ * <p>职责：缺陷登记/整改/关闭、规则命中 upsert、归档前阻断级断言及质控批次汇总。</p>
+ * <p>不变量：归档前不得存在 open/rectified 阻断级缺陷（BR-QC-ARCHIVE）；持久化先于下游订阅。</p>
  * <p>仅注入本聚合 {@link QcDefectRepository}、{@link QcRunRepository}。</p>
  */
 @Service
@@ -105,6 +107,7 @@ public class QcDefectDomainService {
             String severityCode,
             String message,
             Long operatorId) {
+        // 加载/组装：手工补录 open 缺陷
         QcDefect defect = new QcDefect();
         defect.setTenantId(tenantId);
         defect.setCaseRecordId(caseRecordId);
@@ -114,6 +117,7 @@ public class QcDefectDomainService {
         defect.setCreatedAt(LocalDateTime.now());
         defect.setCreatedBy(operatorId);
         defect.setIsDeleted(false);
+        // 持久化
         return qcDefectRepository.save(defect);
     }
 
@@ -126,8 +130,9 @@ public class QcDefectDomainService {
      */
     @Transactional(rollbackFor = Exception.class)
     public QcDefect markRectified(Long defectId, Long operatorId) {
+        // 加载/组装：加载缺陷
         QcDefect defect = requireDefect(defectId);
-        // 仅 open 可转 rectified
+        // 前置校验：仅 open 可转 rectified
         if (!QcDefectStatus.OPEN.getCode().equals(defect.getStatusCode())) {
             throw new BusinessException(MrmsErrorCodes.QC_DEFECT_INVALID_STATUS, "仅待整改缺陷可标记已整改");
         }
@@ -135,6 +140,7 @@ public class QcDefectDomainService {
         defect.setRectifiedAt(LocalDateTime.now());
         defect.setUpdatedAt(LocalDateTime.now());
         defect.setUpdatedBy(operatorId);
+        // 持久化
         return qcDefectRepository.save(defect);
     }
 
@@ -147,12 +153,13 @@ public class QcDefectDomainService {
      */
     @Transactional(rollbackFor = Exception.class)
     public QcDefect closeDefect(Long defectId, Long operatorId) {
+        // 加载/组装聚合
         QcDefect defect = requireDefect(defectId);
         // 已关闭则幂等返回
         if (QcDefectStatus.CLOSED.getCode().equals(defect.getStatusCode())) {
             return defect;
         }
-        // 非 open/rectified 状态不可关闭
+        // 前置校验：非 open/rectified 状态不可关闭
         if (!QcDefectStatus.OPEN.getCode().equals(defect.getStatusCode())
                 && !QcDefectStatus.RECTIFIED.getCode().equals(defect.getStatusCode())) {
             throw new BusinessException(MrmsErrorCodes.QC_DEFECT_INVALID_STATUS, "当前缺陷状态不可关闭");
@@ -161,6 +168,7 @@ public class QcDefectDomainService {
         defect.setClosedAt(LocalDateTime.now());
         defect.setUpdatedAt(LocalDateTime.now());
         defect.setUpdatedBy(operatorId);
+        // 持久化
         return qcDefectRepository.save(defect);
     }
 
@@ -193,10 +201,11 @@ public class QcDefectDomainService {
             defect.setSeverityCode(severityCode);
             defect.setUpdatedAt(now);
             defect.setUpdatedBy(operatorId);
+            // 持久化
             qcDefectRepository.save(defect);
             return;
         }
-        // 首次命中：新建 open 缺陷
+        // 加载/组装聚合：首次命中新建 open 缺陷
         QcDefect defect = new QcDefect();
         defect.setTenantId(tenantId);
         defect.setCaseRecordId(caseRecordId);
@@ -207,6 +216,7 @@ public class QcDefectDomainService {
         defect.setCreatedAt(now);
         defect.setCreatedBy(operatorId);
         defect.setIsDeleted(false);
+        // 持久化
         qcDefectRepository.save(defect);
     }
 
@@ -288,6 +298,7 @@ public class QcDefectDomainService {
             boolean passed,
             Long operatorId,
             LocalDateTime finishedAt) {
+        // Cmd：组装质控执行批次快照（开放阻断/警告计数与通过标志）
         QcRun run = new QcRun();
         run.setTenantId(tenantId);
         run.setCaseRecordId(caseRecordId);
@@ -299,10 +310,15 @@ public class QcDefectDomainService {
         run.setCreatedAt(finishedAt);
         run.setCreatedBy(operatorId);
         run.setIsDeleted(false);
+        // 持久化批次留痕
         return qcRunRepository.save(run);
     }
 
-    /** 加载缺陷，不存在时抛 {@link EntityNotFoundException}。 */
+    /** 加载缺陷，不存在时抛 {@link EntityNotFoundException}。
+     *
+     * @param defectId 缺陷主键
+     * @return 未软删的缺陷实体
+     */
     private QcDefect requireDefect(Long defectId) {
         return qcDefectRepository.findByIdAndIsDeletedFalse(defectId)
                 .orElseThrow(() -> new EntityNotFoundException("质控缺陷", defectId));

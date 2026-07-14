@@ -1,26 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.diagnosis.mapper;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
-import com.openhis.health.module.shared.diagnosis.DiagnosisJsonSnapshotParser;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.converter.TextValueConverter;
+import com.openhis.health.application.shared.diagnosis.DiagnosisJsonSnapshotParser;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
 import com.openhis.health.application.inpatient.doctorstation.diagnosis.request.SaveEncounterDiagnosisChildRequest;
@@ -46,7 +34,8 @@ import com.openhis.health.domain.share.utils.DiagnosisKindPresentationUtil;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -72,19 +61,11 @@ import java.util.Set;
  * </ul></p>
  */
 @Component
+@RequiredArgsConstructor
 public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDoctorStationDiagnosisMapper {
 
     /** 读模型 {@code diagnosisJson} 快照解析，与 bridge 展示路径共用同一解析器。 */
     private final DiagnosisJsonSnapshotParser diagnosisJsonSnapshotParser;
-
-    /**
-     * 构造：注入诊断快照 JSON 解析器。
-     *
-     * @param diagnosisJsonSnapshotParser 与 {@code module.shared.diagnosis} 共用的解析组件
-     */
-    public InpatientDoctorStationDiagnosisMapperImpl(DiagnosisJsonSnapshotParser diagnosisJsonSnapshotParser) {
-        this.diagnosisJsonSnapshotParser = diagnosisJsonSnapshotParser;
-    }
 
     /**
      * Gate：校验请求患者与读模型快照患者一致，防止串患者上下文。
@@ -131,6 +112,12 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
         return result;
     }
 
+    /**
+     * JSON 快照解析行 → 就诊诊断列表 DTO。
+     *
+     * @param source 解析结果
+     * @return 列表行 DTO
+     */
     private static EncounterDiagnosisRowDto toEncounterDiagnosisRowDto(
             DiagnosisJsonSnapshotParser.ParsedDiagnosisRow source) {
         EncounterDiagnosisRowDto dto = new EncounterDiagnosisRowDto();
@@ -250,7 +237,7 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
      */
     @Override
     public List<String> parseDiagnosisKindSourceFilter(String diagnosisKindCode) {
-        if (StringUtils.isBlank(diagnosisKindCode)) {
+        if (StringUtils.isEmpty(diagnosisKindCode)) {
             return null;
         }
         String trimmed = diagnosisKindCode.trim();
@@ -289,7 +276,7 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
         String diagnosisKind = this.resolveDiagnosisKind(model.getSourceEnum());
         definitionRow.setDiagnosisKind(diagnosisKind);
         definitionRow.setDiagnosisKindText(DiagnosisKindPresentationUtil.toDisplay(diagnosisKind));
-        Integer sourceInt = this.tryParseInt(model.getSourceEnum());
+        Integer sourceInt = TextValueConverter.toNullableInteger(model.getSourceEnum());
         definitionRow.setSourceEnum(sourceInt);
         String sourceText = null;
         if (sourceDisplayByCode != null && model.getSourceEnum() != null) {
@@ -538,7 +525,7 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
         row.setDiagnosisKind(diagnosisKind);
         row.setDiagnosisKindText(DiagnosisKindPresentationUtil.toDisplay(diagnosisKind));
         row.setYbNo(model.getYbNo());
-        row.setSourceEnum(this.tryParseInt(model.getSourceEnum()));
+        row.setSourceEnum(TextValueConverter.toNullableInteger(model.getSourceEnum()));
         if (sourceDisplayByCode != null && model.getSourceEnum() != null) {
             row.setSourceEnumText(sourceDisplayByCode.get(model.getSourceEnum()));
         }
@@ -584,35 +571,7 @@ public class InpatientDoctorStationDiagnosisMapperImpl implements InpatientDocto
      *         {@link DoctorStationDiagnosisConstants#DIAGNOSIS_KIND_TAG_TCM} / {@code null}
      */
     private String resolveDiagnosisKind(String sourceEnumRaw) {
-        Integer v = this.tryParseInt(sourceEnumRaw);
-        if (v == null) {
-            return null;
-        }
-        String asSourceCode = String.valueOf(v);
-        if (DoctorStationDiagnosisConstants.CONDITION_SOURCE_CODES_WESTERN.contains(asSourceCode)) {
-            return DoctorStationDiagnosisConstants.DIAGNOSIS_KIND_TAG_WESTERN;
-        }
-        if (DoctorStationDiagnosisConstants.CONDITION_SOURCE_CODES_TCM.contains(asSourceCode)) {
-            return DoctorStationDiagnosisConstants.DIAGNOSIS_KIND_TAG_TCM;
-        }
-        return null;
-    }
-
-    /**
-     * 安全解析整数。
-     *
-     * @param raw 原始串
-     * @return 整数或 null
-     */
-    private Integer tryParseInt(String raw) {
-        if (StringUtils.isBlank(raw)) {
-            return null;
-        }
-        try {
-            return Integer.parseInt(raw.trim());
-        } catch (NumberFormatException ex) {
-            return null;
-        }
+        return DoctorStationDiagnosisConstants.resolveDiagnosisKindFromSource(sourceEnumRaw);
     }
 
     /**

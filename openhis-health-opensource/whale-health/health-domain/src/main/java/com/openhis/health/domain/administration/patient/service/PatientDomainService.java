@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.patient.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -41,15 +28,18 @@ import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import com.openhis.whale.core.infrastructure.util.ChineseConvertUtils;
 import com.openhis.whale.core.infrastructure.security.ICurrentUser;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 
 /**
- * 患者写侧领域服务：建档、标识符、学生扩展档与领域事件；批量写路径遵循 B.14 先落库后发布。
+ * 患者（{@code adm_patient}）聚合写侧领域服务。
+ *
+ * <p>职责：建档、档案修改、标识符与学生扩展档维护及领域事件发布。</p>
+ * <p>不变量：身份证唯一、批量上限、标识符跨患者唯一；持久化先于患者领域事件（B.14）。</p>
+ * <p>仅注入本聚合 {@link PatientRepository} 及标识符/学生子表仓储。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -75,7 +65,7 @@ public class PatientDomainService {
      */
     public Long registerPatient(RegisterPatientCommand command) {
         LocalDateTime occurredAt = command.getOccurredAt();
-        // 业务分支处理。
+        // 命令未带发生时刻时取服务器当前时间
         if (occurredAt == null) {
             occurredAt = LocalDateTime.now();
         }
@@ -112,7 +102,7 @@ public class PatientDomainService {
             this.collectIdentifierEntities(allIdentifiers, patient.getId(), item.getIdentifierItems(), true);
         }
         this.assertIdentifierUniqueAcrossPatientsBatch(allIdentifiers);
-        // 业务分支处理。
+        // 持久化：建档时同步写入患者标识符子表
         if (!allIdentifiers.isEmpty()) {
             patientIdentifierRepository.saveAll(allIdentifiers);
         }
@@ -192,7 +182,7 @@ public class PatientDomainService {
         this.syncIdentifiersBatch(input);
         for (SyncPatientIdentifiersCommand.SyncPatientIdentifiersItemCommand item : items) {
             int count = 0;
-            // 业务分支处理。
+            // 命令显式传入该字段时才覆盖写，null 表示本条不变更
             if (item.getIdentifierItems() != null) {
                 count = item.getIdentifierItems().size();
             }
@@ -402,7 +392,7 @@ public class PatientDomainService {
         Map<Long, Patient> patientMap = loadPatientMap(CommandBatchUtil.extractIds(items, UpsertPatientStudentRecordCommand.UpsertPatientStudentRecordItemCommand::getPatientId));
         Set<Long> studentIds = new HashSet<>();
         for (UpsertPatientStudentRecordCommand.UpsertPatientStudentRecordItemCommand item : items) {
-            // 业务分支处理。
+            // 命令显式传入该字段时才覆盖写，null 表示本条不变更
             if (item.getStudentId() != null) {
                 studentIds.add(item.getStudentId());
             }
@@ -444,7 +434,7 @@ public class PatientDomainService {
             Patient patient = this.requirePatient(patientMap, item.getPatientId());
             patient.assertStudentRecordDisableAllowed();
             PatientStudent student = studentMap.get(item.getStudentId());
-            // 业务分支处理。
+            // 业务条件分支：见相邻判断的业务后果
             if (student == null || !student.getPatientId().equals(item.getPatientId())) {
                 throw new BusinessException(ErrorCodeConstants.PATIENT_NOT_FOUND, "学生资质记录不存在");
             }
@@ -464,16 +454,16 @@ public class PatientDomainService {
      * @param patientId 患者标识
      */
     private void assertIdCardUnique(String idCard, Long patientId) {
-        // 业务分支处理。
-        if (StringUtils.isBlank(idCard)) {
+        // 身份证为空时跳过唯一性校验（临时患者等场景）
+        if (StringUtils.isEmpty(idCard)) {
             return;
         }
         String normalizedIdCard = this.normalizeIdCard(idCard);
-        // 业务分支处理。
+        // 身份证格式非法时拒绝建档/修改，防止脏数据进入医保链路
         if (!normalizedIdCard.matches(GeneralSharedConstants.ID_CARD_REGEX)) {
             throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "身份证号格式不正确");
         }
-        // 业务分支处理。
+        // 新建场景：全库检索身份证唯一性
         if (patientId == null) {
             // DOC-CONFLICT: BR-PAT-002 要求身份证号全局唯一（含已逻辑删除记录），
             // 因此唯一性校验不追加  过滤条件。
@@ -508,20 +498,20 @@ public class PatientDomainService {
             List<PatientIdentifierItemCommand> inputList = entry.getValue();
             Map<String, PatientIdentifier> existedByKey = new HashMap<>();
             List<PatientIdentifier> existedList = existingMap.get(patientId);
-            // 业务分支处理。
+            // 命令显式传入该字段时才覆盖写，null 表示本条不变更
             if (existedList != null) {
                 for (PatientIdentifier existed : existedList) {
                     existedByKey.put(this.buildIdentifierKey(existed.getTypeCode(), existed.getIdentifierNo()), existed);
                 }
             }
             Set<String> incomingKeys = new HashSet<>();
-            // 业务分支处理。
+            // 命令显式传入该字段时才覆盖写，null 表示本条不变更
             if (inputList != null) {
                 for (PatientIdentifierItemCommand item : inputList) {
                     String key = this.buildIdentifierKey(item.getTypeCode(), item.getIdentifierNo());
                     incomingKeys.add(key);
                     PatientIdentifier entity = existedByKey.get(key);
-                    // 业务分支处理。
+                    // 必填入参缺失时拒绝继续，避免写脏数据
                     if (entity == null) {
                         entity = this.buildIdentifierEntity(patientId, item, true);
                     } else {
@@ -537,11 +527,11 @@ public class PatientDomainService {
                     toSave.add(entity);
                 }
             }
-            // 业务分支处理。
+            // 命令显式传入该字段时才覆盖写，null 表示本条不变更
             if (existedList != null) {
                 for (PatientIdentifier existed : existedList) {
                     String key = this.buildIdentifierKey(existed.getTypeCode(), existed.getIdentifierNo());
-                    // 业务分支处理。
+                    // 业务条件分支：见相邻判断的业务后果
                     if (!incomingKeys.contains(key)) {
                         existed.setIsDeleted(Boolean.TRUE);
                         existed.setDeletedAt(LocalDateTime.now());
@@ -552,7 +542,7 @@ public class PatientDomainService {
             }
         }
         this.assertIdentifierUniqueAcrossPatientsBatch(toSave);
-        // 业务分支处理。
+        // 持久化：标识符变更有待落库行时批量保存
         if (!toSave.isEmpty()) {
             patientIdentifierRepository.saveAll(toSave);
         }
@@ -564,7 +554,7 @@ public class PatientDomainService {
      * @param identifiers 待校验标识集合
      */
     private void assertIdentifierUniqueAcrossPatientsBatch(List<PatientIdentifier> identifiers) {
-        // 业务分支处理。
+        // 无标识符输入时跳过批量唯一性校验
         if (identifiers == null || identifiers.isEmpty()) {
             return;
         }
@@ -572,25 +562,25 @@ public class PatientDomainService {
         Set<String> identifierNos = new HashSet<>();
         Map<String, Long> incomingOwners = new HashMap<>();
         for (PatientIdentifier identifier : identifiers) {
-            // 业务分支处理。
+            // 业务条件分支：见相邻判断的业务后果
             if (identifier == null || Boolean.TRUE.equals(identifier.getIsDeleted())) {
                 continue;
             }
-            // 业务分支处理。
-            if (StringUtils.isBlank(identifier.getTypeCode()) || StringUtils.isBlank(identifier.getIdentifierNo())) {
+            // 业务条件分支：见相邻判断的业务后果
+            if (StringUtils.isEmpty(identifier.getTypeCode()) || StringUtils.isEmpty(identifier.getIdentifierNo())) {
                 continue;
             }
             typeCodes.add(identifier.getTypeCode());
             identifierNos.add(identifier.getIdentifierNo());
             String key = this.buildIdentifierKey(identifier.getTypeCode(), identifier.getIdentifierNo());
             Long existingOwner = incomingOwners.get(key);
-            // 业务分支处理。
+            // 业务条件分支：见相邻判断的业务后果
             if (existingOwner != null && !Objects.equals(existingOwner, identifier.getPatientId())) {
                 throw new BusinessException(ErrorCodeConstants.PATIENT_IDENTIFIER_CONFLICT, "证件标识在其他患者下已存在");
             }
             incomingOwners.put(key, identifier.getPatientId());
         }
-        // 业务分支处理。
+        // 业务条件分支：见相邻判断的业务后果
         if (typeCodes.isEmpty() || identifierNos.isEmpty()) {
             return;
         }
@@ -598,24 +588,24 @@ public class PatientDomainService {
             typeCodes, identifierNos);
         Map<String, Long> existedOwners = new HashMap<>();
         for (PatientIdentifier old : existed) {
-            // 业务分支处理。
-            if (old == null || StringUtils.isBlank(old.getTypeCode()) || StringUtils.isBlank(old.getIdentifierNo())) {
+            // 业务条件分支：见相邻判断的业务后果
+            if (old == null || StringUtils.isEmpty(old.getTypeCode()) || StringUtils.isEmpty(old.getIdentifierNo())) {
                 continue;
             }
             existedOwners.put(this.buildIdentifierKey(old.getTypeCode(), old.getIdentifierNo()), old.getPatientId());
         }
         for (PatientIdentifier identifier : identifiers) {
-            // 业务分支处理。
+            // 业务条件分支：见相邻判断的业务后果
             if (identifier == null || Boolean.TRUE.equals(identifier.getIsDeleted())) {
                 continue;
             }
-            // 业务分支处理。
-            if (StringUtils.isBlank(identifier.getTypeCode()) || StringUtils.isBlank(identifier.getIdentifierNo())) {
+            // 业务条件分支：见相邻判断的业务后果
+            if (StringUtils.isEmpty(identifier.getTypeCode()) || StringUtils.isEmpty(identifier.getIdentifierNo())) {
                 continue;
             }
             String key = this.buildIdentifierKey(identifier.getTypeCode(), identifier.getIdentifierNo());
             Long existedOwner = existedOwners.get(key);
-            // 业务分支处理。
+            // 业务条件分支：见相邻判断的业务后果
             if (existedOwner != null && !Objects.equals(existedOwner, identifier.getPatientId())) {
                 throw new BusinessException(ErrorCodeConstants.PATIENT_IDENTIFIER_CONFLICT, "证件标识在其他患者下已存在");
             }
@@ -632,20 +622,20 @@ public class PatientDomainService {
     private void assertIdentifierStatePriority(Long patientId, PatientIdentifier entity,
                                                Map<Long, List<PatientIdentifier>> existingMap) {
         List<PatientIdentifier> existed = existingMap.get(patientId);
-        // 业务分支处理。
+        // 必填入参缺失时拒绝继续，避免写脏数据
         if (existed == null) {
             return;
         }
         for (PatientIdentifier old : existed) {
-            // 业务分支处理。
+            // 业务条件分支：见相邻判断的业务后果
             if (!old.getTypeCode().equals(entity.getTypeCode())) {
                 continue;
             }
-            // 业务分支处理。
+            // 业务条件分支：见相邻判断的业务后果
             if (Boolean.TRUE.equals(old.getIsDeleted())) {
                 continue;
             }
-            // 业务分支处理。
+            // 必填入参缺失时拒绝继续，避免写脏数据
             if (entity.getStateEnum() == null || old.getStateEnum() == null) {
                 continue;
             }
@@ -684,7 +674,7 @@ public class PatientDomainService {
         identifier.setStateEnum(item.getStateEnum());
         identifier.setStartTime(item.getStartTime());
         identifier.setEndTime(item.getEndTime());
-        // 业务分支处理。
+        // 业务条件分支：见相邻判断的业务后果
         if (normalizeState) {
             identifier.normalizeState();
         }
@@ -703,7 +693,7 @@ public class PatientDomainService {
     private void collectIdentifierEntities(List<PatientIdentifier> collector, Long patientId,
                                            List<PatientIdentifierItemCommand> identifierItems,
                                            boolean normalizeState) {
-        // 业务分支处理。
+        // 业务条件分支：见相邻判断的业务后果
         if (identifierItems == null || identifierItems.isEmpty()) {
             return;
         }
@@ -779,7 +769,7 @@ public class PatientDomainService {
      */
     private Map<Long, PatientStudent> loadStudentMap(Set<Long> studentIds) {
         Map<Long, PatientStudent> map = new HashMap<>();
-        // 业务分支处理。
+        // 业务条件分支：见相邻判断的业务后果
         if (studentIds.isEmpty()) {
             return map;
         }
@@ -799,7 +789,7 @@ public class PatientDomainService {
      */
     private Patient requirePatient(Map<Long, Patient> map, Long patientId) {
         Patient patient = map.get(patientId);
-        // 业务分支处理。
+        // 必填入参缺失时拒绝继续，避免写脏数据
         if (patient == null) {
             throw new BusinessException(ErrorCodeConstants.PATIENT_NOT_FOUND, "患者不存在或已删除");
         }
@@ -812,7 +802,7 @@ public class PatientDomainService {
      * @param size 当前条数
      */
     private void assertBatchSize(int size) {
-        // 业务分支处理。
+        // 业务条件分支：见相邻判断的业务后果
         if (size > GeneralSharedConstants.BATCH_LIMIT) {
             throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "批量处理超过上限");
         }
@@ -825,8 +815,8 @@ public class PatientDomainService {
      * @return 拼音检索码
      */
     private String buildPyStr(String name) {
-        // 业务分支处理。
-        if (StringUtils.isBlank(name)) {
+        // 业务条件分支：见相邻判断的业务后果
+        if (StringUtils.isEmpty(name)) {
             return null;
         }
         return ChineseConvertUtils.toPinyinFirstLetter(name).toUpperCase(Locale.ROOT);
@@ -839,8 +829,8 @@ public class PatientDomainService {
      * @return 五笔检索码
      */
     private String buildWbStr(String name) {
-        // 业务分支处理。
-        if (StringUtils.isBlank(name)) {
+        // 业务条件分支：见相邻判断的业务后果
+        if (StringUtils.isEmpty(name)) {
             return null;
         }
         return ChineseConvertUtils.toWBFirstLetter(name).toUpperCase(Locale.ROOT);
@@ -854,12 +844,12 @@ public class PatientDomainService {
     private void assertNoDuplicateIdCardInBatch(List<RegisterPatientCommand.RegisterPatientItemCommand> items) {
         Set<String> idCards = new HashSet<>();
         for (RegisterPatientCommand.RegisterPatientItemCommand item : items) {
-            // 业务分支处理。
-            if (item == null || StringUtils.isBlank(item.getIdCard())) {
+            // 业务条件分支：见相邻判断的业务后果
+            if (item == null || StringUtils.isEmpty(item.getIdCard())) {
                 continue;
             }
             String normalized = this.normalizeIdCard(item.getIdCard());
-            // 业务分支处理。
+            // 业务条件分支：见相邻判断的业务后果
             if (!idCards.add(normalized)) {
                 throw new BusinessException(ErrorCodeConstants.PATIENT_ID_CARD_CONFLICT, "批量入参存在重复身份证号");
             }
@@ -873,7 +863,7 @@ public class PatientDomainService {
      * @return 归一化后的身份证号
      */
     private String normalizeIdCard(String idCard) {
-        // 业务分支处理。
+        // 必填入参缺失时拒绝继续，避免写脏数据
         if (idCard == null) {
             return null;
         }
@@ -956,16 +946,16 @@ public class PatientDomainService {
         }
         this.addChangedField(changed, "bloodTypeAbo", oldBloodTypeAbo, item.getBloodTypeAbo());
         this.addChangedField(changed, "bloodTypeRh", oldBloodTypeRh, item.getBloodTypeRh());
-        // 业务分支处理。
+        // 业务条件分支：见相邻判断的业务后果
         if (!Objects.equals(patient.getName(), item.getName())) {
             changed.add("pyStr");
             changed.add("wbStr");
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getIdentifierItems() != null) {
             changed.add("identifiers");
         }
-        // 业务分支处理。
+        // 业务条件分支：见相邻判断的业务后果
         if (changed.isEmpty()) {
             changed.add("profile");
         }
@@ -981,7 +971,7 @@ public class PatientDomainService {
      * @param newValue 新值
      */
     private void addChangedField(List<String> changed, String field, Object oldValue, Object newValue) {
-        // 业务分支处理。
+        // 业务条件分支：见相邻判断的业务后果
         if (!Objects.equals(oldValue, newValue)) {
             changed.add(field);
         }
@@ -999,15 +989,15 @@ public class PatientDomainService {
                                                 UpsertPatientStudentRecordCommand.UpsertPatientStudentRecordItemCommand item,
                                                 Map<Long, PatientStudent> studentMap) {
         PatientStudent student = null;
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getStudentId() != null) {
             student = studentMap.get(item.getStudentId());
-            // 业务分支处理。
+            // 必填入参缺失时拒绝继续，避免写脏数据
             if (student == null) {
                 throw new BusinessException(ErrorCodeConstants.PATIENT_NOT_FOUND, "学籍记录不存在");
             }
         }
-        // 业务分支处理。
+        // 必填入参缺失时拒绝继续，避免写脏数据
         if (student == null) {
             student = new PatientStudent();
         }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.invoice.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -35,6 +22,13 @@ import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import org.springframework.stereotype.Service;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * 票据（{@code adm_invoice}）聚合写侧领域服务。
+ *
+ * <p>职责：支付后草稿创建、电子票开具、冲红与草稿作废；状态迁移委托 {@link Invoice} 聚合根断言。</p>
+ * <p>不变量：DRAFT/ISSUED/CANCELLED 状态机不可逆混用；持久化先于 {@code InvoiceDraftCreatedEvent} 等领域事件。</p>
+ * <p>仅注入本聚合 {@link InvoiceRepository}。</p>
+ */
 @Service
 @RequiredArgsConstructor
 public class InvoiceDomainService {
@@ -50,6 +44,7 @@ public class InvoiceDomainService {
      * @return 新建票据主键
      */
     public Long createDraftInvoiceAfterPayment(CreateDraftInvoiceCommand cmd) {
+        // 加载/组装：装配草稿行并生成业务流水号
         Invoice row = new Invoice();
         row.setPatientId(cmd.getPatientId());
         row.setPaymentId(cmd.getPaymentId());
@@ -57,8 +52,11 @@ public class InvoiceDomainService {
         row.setAmount(cmd.getAmount());
         row.setStatusEnum(InvoiceStatus.DRAFT.getCode());
         row.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.INVOICE, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
+        // 前置校验：草稿行必填与金额口径
         row.assertPersistableDraftRow();
+        // 持久化
         row = repository.save(row);
+        // 发布事件：草稿已创建
         domainEventPublisher.publish(new InvoiceDraftCreatedEvent(
             row.getId(), row.getPatientId(), row.getPaymentId(), row.getTypeCode(), row.getAmount()));
         return row.getId();
@@ -72,12 +70,15 @@ public class InvoiceDomainService {
      * @param cmd 开具命令，含票据主键、电子票据编号、批次码及开具时间
      */
     public void issueElectronicInvoice(IssueElectronicInvoiceCommand cmd) {
+        // 加载/组装：加载票据并迁移至 ISSUED
         Invoice row = this.requireById(cmd.getInvoiceId());
         // 开具前无状态前置断言（当前 SDD 未要求，保留现状）；如需门控请在 Invoice 实体添加 assertIssuable()。
         row.setStatusEnum(InvoiceStatus.ISSUED.getCode());
         row.setBillNo(cmd.getBillNo());
         row.setIssuedAt(cmd.getBillCreateTime());
+        // 持久化
         repository.save(row);
+        // 发布事件：电子票已开具
         InvoiceIssuedEvent event = new InvoiceIssuedEvent(
             row.getId(), row.getPatientId(), row.getReconciliationId(),
             cmd.getBillNo(), cmd.getBillBatchCode(), cmd.getBillCreateTime(), row.getTypeCode());
@@ -94,11 +95,14 @@ public class InvoiceDomainService {
      * @param cmd 取消命令，含票据主键、取消原因及操作人
      */
     public void writeoffInvoiceAndCreateRedRecord(CancelInvoiceCommand cmd) {
+        // 加载/组装：加载已开具票据
         Invoice row = this.requireById(cmd.getInvoiceId());
-        // 仅 ISSUED 状态允许冲红，委托聚合根执行前置状态断言（P1-N9 修复）。
+        // 前置校验：仅 ISSUED 状态允许冲红，委托聚合根执行前置状态断言（P1-N9 修复）。
         row.assertWriteoffable();
         row.markCancelled(cmd.getReason());
+        // 持久化
         repository.save(row);
+        // 发布事件：票据已冲红
         InvoiceCancelledEvent event = new InvoiceCancelledEvent(
             row.getId(), cmd.getReason(), cmd.getOperatorId(), row.getTypeCode());
         event.setEntererId(cmd.getOperatorId());
@@ -113,11 +117,14 @@ public class InvoiceDomainService {
      * @param cmd 取消命令，含票据主键、取消原因及操作人
      */
     public void voidDraftInvoice(CancelInvoiceCommand cmd) {
+        // 加载/组装：加载草稿票据
         Invoice row = this.requireById(cmd.getInvoiceId());
-        // 仅 DRAFT 状态允许作废，委托聚合根执行前置状态断言（P1-N9 修复：不再复用 writeoff）。
+        // 前置校验：仅 DRAFT 状态允许作废，委托聚合根执行前置状态断言（P1-N9 修复：不再复用 writeoff）。
         row.assertVoidable();
         row.markCancelled(cmd.getReason());
+        // 持久化
         repository.save(row);
+        // 发布事件：草稿已作废
         InvoiceCancelledEvent event = new InvoiceCancelledEvent(
             row.getId(), cmd.getReason(), cmd.getOperatorId(), row.getTypeCode());
         event.setEntererId(cmd.getOperatorId());
@@ -126,10 +133,13 @@ public class InvoiceDomainService {
 
     /**
      * 按主键加载票据，不存在则抛出业务异常。
+     *
+     * @param id 票据主键
+     * @return 票据聚合根
+     * @throws BusinessException 票据不存在时
      */
     private Invoice requireById(Long id) {
         return repository.findById(id)
             .orElseThrow(() -> new BusinessException(ErrorCodeConstants.INVOICE_NOT_FOUND, "票据不存在"));
     }
 }
-

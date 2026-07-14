@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.supplydelivery.queries.model;
 
 import lombok.Getter;
@@ -38,6 +25,6 @@ public class SupplyDeliverySlipHeaderQueryModel {
     /** 发放状态持久化码。 */
     private String statusEnum;
 
-    /** 核发/接收时间。 */
+    /** 发药时间（{@code receive_time}）。 */
     private LocalDateTime receiveTime;
 }

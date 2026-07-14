@@ -1,25 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.specimendefinition.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 
-import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 import com.openhis.health.domain.administration.specimendefinition.command.ActivateSpecimenDefinitionsCommand;
 import com.openhis.health.domain.administration.specimendefinition.command.CreateSpecimenDefinitionCommand;
@@ -42,7 +28,7 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -81,10 +67,10 @@ public class SpecimenDefinitionDomainService {
             AggregateTypeConstants.SPECIMEN_DEFINITION, BusinessSequenceConstants.MASTER_DATA_3_PREFIX_SEQ_LENGTH));
         entity.setName(trimToEmpty(command.getName()));
         entity.setTypeEnum(trimToEmpty(command.getTypeEnum()));
-        if (StringUtils.isNotBlank(command.getPyStr())) {
+        if (StringUtils.isNotEmpty(command.getPyStr())) {
             entity.setPyStr(command.getPyStr().trim());
         }
-        if (StringUtils.isNotBlank(command.getWbStr())) {
+        if (StringUtils.isNotEmpty(command.getWbStr())) {
             entity.setWbStr(command.getWbStr().trim());
         }
         entity.initAsActive();
@@ -289,6 +275,13 @@ public class SpecimenDefinitionDomainService {
         }
     }
 
+    /**
+     * 按主键加载样本定义；不存在或已软删视为不存在。
+     *
+     * @param id 主键
+     * @return 可写聚合根
+     * @throws BusinessException {@link ErrorCodeConstants#SPECIMEN_DEFINITION_NOT_FOUND}
+     */
     private SpecimenDefinition loadSpecimenDefinition(Long id) {
         SpecimenDefinition entity = repository.findById(id)
             .orElseThrow(() -> new BusinessException(ErrorCodeConstants.SPECIMEN_DEFINITION_NOT_FOUND, "样本定义不存在"));
@@ -299,6 +292,12 @@ public class SpecimenDefinitionDomainService {
         return entity;
     }
 
+    /**
+     * 样本定义 busNo 唯一性 Gate（BR-SPDEF-001）；编辑时排除自身。
+     *
+     * @param entity 待持久化实体
+     * @throws BusinessException {@link ErrorCodeConstants#SPECIMEN_DEFINITION_BUS_NO_CONFLICT}
+     */
     private void assertBusNoNotConflict(SpecimenDefinition entity) {
         if (entity.getId() == null) {
             // 业务分支：新建场景按业务编码查重（BR-SPDEF-001）

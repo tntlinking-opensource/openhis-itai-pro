@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.servicedevicetemplate.service;
 
 import com.openhis.health.domain.custom.servicedevicetemplate.command.*;
@@ -50,7 +37,7 @@ public class ServiceDeviceTemplateDomainService {
      */
     public Long createBinding(CreateBindingCommand command) {
         ServiceDeviceTemplate binding = new ServiceDeviceTemplate();
-        // 业务分支处理。
+        // 适用范围未传时默认全院级绑定。
         if (command.getRangeCode() == null) {
             binding.setRangeCode(ServiceDeviceTemplateRangeCode.HOSPITAL.getCode());
         } else {
@@ -63,7 +50,7 @@ public class ServiceDeviceTemplateDomainService {
         binding.setDevActId(command.getDevActId());
         binding.setQuantity(command.getQuantity());
         binding.setUnitCode(command.getUnitCode());
-        // 业务分支处理。
+        // 状态未传时默认启用，保证新建绑定可立即参与匹配。
         if (command.getStatusEnum() == null) {
             binding.initActiveStatus();
         } else {
@@ -92,35 +79,35 @@ public class ServiceDeviceTemplateDomainService {
         if (command.getRangeCode() != null) {
             binding.setRangeCode(command.getRangeCode());
         }
-        // 业务分支处理。
+        // 命令传入绑定类型时覆盖类型码。
         if (command.getTypeCode() != null) {
             binding.setTypeCode(command.getTypeCode());
         }
-        // 业务分支处理。
+        // 命令传入物品表名时覆盖物品锚点表。
         if (command.getItemTable() != null) {
             binding.setItemTable(command.getItemTable());
         }
-        // 业务分支处理。
+        // 命令传入物品主键时覆盖物品锚点 ID。
         if (command.getItemId() != null) {
             binding.setItemId(command.getItemId());
         }
-        // 业务分支处理。
+        // 命令传入设备活动表名时覆盖活动锚点表。
         if (command.getDevActTable() != null) {
             binding.setDevActTable(command.getDevActTable());
         }
-        // 业务分支处理。
+        // 命令传入设备活动主键时覆盖活动锚点 ID。
         if (command.getDevActId() != null) {
             binding.setDevActId(command.getDevActId());
         }
-        // 业务分支处理。
+        // 命令传入数量时覆盖绑定数量。
         if (command.getQuantity() != null) {
             binding.setQuantity(command.getQuantity());
         }
-        // 业务分支处理。
+        // 命令传入单位时覆盖计量单位。
         if (command.getUnitCode() != null) {
             binding.setUnitCode(command.getUnitCode());
         }
-        // 业务分支处理。
+        // 命令传入状态时覆盖启用/停用态。
         if (command.getStatusEnum() != null) {
             binding.setStatusEnum(command.getStatusEnum());
         }

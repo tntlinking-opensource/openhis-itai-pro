@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.print.printtemplate.mapper;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 import com.openhis.health.application.print.printtemplate.dto.PrtTemplateDto;
 import com.openhis.health.application.print.printtemplate.request.SaveDraftRequest;
-import com.openhis.health.application.print.printtemplate.support.PrintJsonSupport;
+import com.openhis.health.application.print.printtemplate.support.PrintJsonHelper;
 import com.openhis.health.domain.print.printtemplate.command.PublishTemplateCommand;
 import com.openhis.health.domain.print.printtemplate.command.SaveDraftCommand;
 import com.openhis.health.domain.print.printtemplate.entity.PrtTemplate;
@@ -36,7 +23,7 @@ import org.springframework.stereotype.Component;
 public class PrintTemplateMapperImpl implements PrintTemplateMapper {
 
   /** PrintJson 序列化/反序列化。 */
-  private final PrintJsonSupport printJsonSupport;
+  private final PrintJsonHelper printJsonHelper;
 
   /**
    * 保存草稿请求转领域命令。
@@ -124,8 +111,8 @@ public class PrintTemplateMapperImpl implements PrintTemplateMapper {
     dto.setStatus(template.getStatus());
     dto.setVersion(template.getVersion());
     dto.setSchemaVersion(template.getSchemaVersion());
-    dto.setPrintJson(printJsonSupport.parseJsonOrNull(template.getPrintJson()));
-    dto.setSamplePrintData(printJsonSupport.parseJsonOrNull(template.getSamplePrintData()));
+    dto.setPrintJson(printJsonHelper.parseJsonOrNull(template.getPrintJson()));
+    dto.setSamplePrintData(printJsonHelper.parseJsonOrNull(template.getSamplePrintData()));
     return dto;
   }
 }

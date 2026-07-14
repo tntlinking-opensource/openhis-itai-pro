@@ -1,13 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.mrms.volume.mapper;
 
 import com.openhis.health.application.mrms.volume.dto.VolumeCatalogDto;
 import com.openhis.health.application.mrms.volume.dto.VolumeItemDto;
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecord;
-import com.openhis.health.integration.emr.dto.EmrDocumentSnapshot;
+import com.openhis.health.infrastructure.integration.emr.ExtensionOut.EmrDocumentQueryExtensionOut;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -26,7 +26,7 @@ public class VolumeMapper {
      * @param emrDocuments  EMR 文书快照列表
      * @return 卷宗目录 DTO
      */
-    public VolumeCatalogDto toCatalog(CaseRecord record, List<EmrDocumentSnapshot> emrDocuments) {
+    public VolumeCatalogDto toCatalog(CaseRecord record, List<EmrDocumentQueryExtensionOut> emrDocuments) {
         VolumeCatalogDto catalog = new VolumeCatalogDto();
         catalog.setCaseRecordId(record.getId());
         catalog.setMedcasno(record.getMedcasno());
@@ -56,13 +56,13 @@ public class VolumeMapper {
      * @param emrDocuments 文书快照，可为 null
      * @return 卷宗项列表
      */
-    public List<VolumeItemDto> toEmrItems(List<EmrDocumentSnapshot> emrDocuments) {
+    public List<VolumeItemDto> toEmrItems(List<EmrDocumentQueryExtensionOut> emrDocuments) {
         List<VolumeItemDto> items = new ArrayList<>();
         if (emrDocuments == null) {
             return items;
         }
         // 逐份 EMR 文书转卷宗目录项
-        for (EmrDocumentSnapshot row : emrDocuments) {
+        for (EmrDocumentQueryExtensionOut row : emrDocuments) {
             VolumeItemDto item = new VolumeItemDto();
             item.setItemType("emr_document");
             item.setRefId(row.getDocumentId());

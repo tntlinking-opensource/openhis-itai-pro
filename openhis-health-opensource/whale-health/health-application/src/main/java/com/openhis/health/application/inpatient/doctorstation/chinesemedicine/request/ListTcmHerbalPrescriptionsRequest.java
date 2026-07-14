@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.request;
 
@@ -30,7 +31,7 @@ public class ListTcmHerbalPrescriptionsRequest {
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
-    /** 长临筛选：LONG_TERM/TEMPORARY；空表示全部。 */
+    /** 长临筛选编码。 */
     @Schema(description = "长临筛选编码")
     private String therapyTypeCode;
 }

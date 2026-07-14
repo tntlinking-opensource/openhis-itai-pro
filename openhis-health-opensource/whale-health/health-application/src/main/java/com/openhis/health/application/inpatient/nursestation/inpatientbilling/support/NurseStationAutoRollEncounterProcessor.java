@@ -1,34 +1,18 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.support;
 
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler.NurseStationAutoRollWriteAssembler;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.AutoRollChargeLineResolved;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.AutoRollEncounterProcessResult;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.AutoRollLineContext;
-import com.openhis.health.application.inpatient.nursestation.inpatientbilling.mapper.NurseStationAutoRollMapper;
-import com.openhis.health.domain.administration.chargeitem.service.ChargeItemDomainService;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientAutoRollEncounterQueryModel;
 import com.openhis.health.domain.custom.chargeitemautogen.queries.model.ChargeItemAutoGenActiveRuleQueryModel;
 import com.openhis.health.domain.custom.chargeitemautogen.queries.model.ChargeItemAutoGenRuleQueryModel;
 import com.openhis.health.domain.custom.chargeitemautogen.service.ChargeItemAutoGenQueryService;
-import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.InpatientAutoRollNursingLevelQueryModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import lombok.RequiredArgsConstructor;
@@ -44,7 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * IF-IP-ARG-08：单 encounter 住院滚费事务处理器（Request + Charge 成对落库）。
+ * IF-IP-ARG-08：单 encounter 住院滚费处理器（长期医嘱执行轨 IF-IP-EXE-02，非划价轨）。
  */
 @Slf4j
 @Component
@@ -60,17 +44,17 @@ public class NurseStationAutoRollEncounterProcessor {
     /**
      * 处理单个在院 encounter 的滚费（床位配置 + 护理分支）。
      *
-     * @param ctx               滚费就诊上下文
-     * @param billDate          业务日
-     * @param operatorId        任务操作人
-     * @param defaultRequesterId 缺省开立人（床位规则）
+     * @param ctx         滚费就诊上下文
+     * @param billDate    业务日
+     * @param operatorId  任务操作人
+     * @param performerId 主执行人（责任护士）
      * @return 本 encounter 计数
      */
     public AutoRollEncounterProcessResult processEncounter(
         InpatientAutoRollEncounterQueryModel ctx,
         LocalDate billDate,
         Long operatorId,
-        Long defaultRequesterId) {
+        Long performerId) {
         AutoRollEncounterProcessResult result = new AutoRollEncounterProcessResult();
         if (ctx == null || ctx.getEncounterId() == null) {
             return result;
@@ -79,7 +63,13 @@ public class NurseStationAutoRollEncounterProcessor {
         Map<Long, LocalDateTime> createdAtByRuleId = this.loadCreatedAtByRuleId(ctx.getEncounterId());
         List<ChargeItemAutoGenActiveRuleQueryModel> activeRules =
             chargeItemAutoGenQueryService.findActiveRulesByEncounter(ctx.getEncounterId(), ctx.getOrganizationId());
-        // Loop：床位服务 ACTIVE 配置逐条落账（与护理分支串行、非互斥）
+        if (activeRules.isEmpty()) {
+            log.debug(
+                "住院滚费无激活床位配置 encounterId={} organizationId={}",
+                ctx.getEncounterId(),
+                ctx.getOrganizationId());
+        }
+        // Loop：床位服务 ACTIVE 配置逐条执行长期 SR（与护理分支串行、非互斥）
         for (ChargeItemAutoGenActiveRuleQueryModel rule : activeRules) {
             if (rule == null || rule.getChargeDefinitionId() == null) {
                 continue;
@@ -90,9 +80,21 @@ public class NurseStationAutoRollEncounterProcessor {
                 result.setSkippedCount(result.getSkippedCount() + 1);
                 continue;
             }
-            // Pre：同日同 definition 幂等（BR-IP-ARG-010）
-            if (chargeItemQueryService.existsAutoRollChargeItemForBillDate(
-                ctx.getEncounterId(), rule.getChargeDefinitionId(), billDate)) {
+            // Pre：仅查 IF-IP-ARG-03 新建配置时已 ensure 的长期床位 SR；缺失计失败，任务侧不补建
+            Optional<Long> bedServiceRequestId =
+                serviceRequestQueryService.findAutoRollBedServiceRequestIdByRuleId(rule.getId());
+            if (bedServiceRequestId.isEmpty()) {
+                log.warn(
+                    "住院滚费跳过：配置缺少长期床位 SR ruleId={} encounterId={}",
+                    rule.getId(),
+                    ctx.getEncounterId());
+                result.setFailedCount(result.getFailedCount() + 1);
+                continue;
+            }
+            Long serviceRequestId = bedServiceRequestId.get();
+            // Pre：同日同 SR 幂等（BR-IP-ARG-010）
+            if (chargeItemQueryService.existsOrderExecuteChargeForServiceRequestBillDate(
+                serviceRequestId, billDate)) {
                 result.setSkippedCount(result.getSkippedCount() + 1);
                 continue;
             }
@@ -105,16 +107,15 @@ public class NurseStationAutoRollEncounterProcessor {
                 result.setFailedCount(result.getFailedCount() + 1);
                 continue;
             }
-            AutoRollLineContext line = this.buildLineContext(
+            AutoRollLineContext line = this.buildExecutionLineContext(
                 ctx,
                 billDate,
+                serviceRequestId,
                 rule.getTriggerSourceId(),
                 rule.getChargeDefinitionId(),
                 rule.getQuantityValue(),
-                priceLine,
-                ServiceRequestCategoryConstants.SERVICE_CATEGORY_BED_SERVICE,
-                defaultRequesterId);
-            if (this.postAutoRollLine(line, operatorId, result)) {
+                priceLine.getUnitCode());
+            if (this.postAutoRollLine(line, operatorId, performerId, result)) {
                 result.setProcessedEncounter(true);
             }
         }
@@ -123,43 +124,41 @@ public class NurseStationAutoRollEncounterProcessor {
             serviceRequestQueryService.findLastEffectiveNursingLevelForAutoRoll(ctx.getEncounterId(), billDate);
         if (nursing.isPresent()) {
             InpatientAutoRollNursingLevelQueryModel nursingModel = nursing.get();
-            Long nursingChargeDefinitionId =
-                nurseStationAutoRollWriteAssembler.resolveNursingChargeDefinitionId(nursingModel.getActivityId());
-            // 护理 activity 无法反查有效定价 → 记失败，不阻断床位已落账行
-            if (nursingChargeDefinitionId == null) {
+            Long nursingServiceRequestId = nursingModel.getServiceRequestId();
+            if (nursingServiceRequestId == null) {
                 result.setFailedCount(result.getFailedCount() + 1);
-            } else if (chargeItemQueryService.existsAutoRollChargeItemForBillDate(
-                ctx.getEncounterId(), nursingChargeDefinitionId, billDate)) {
+            } else if (chargeItemQueryService.existsOrderExecuteChargeForServiceRequestBillDate(
+                nursingServiceRequestId, billDate)) {
                 result.setSkippedCount(result.getSkippedCount() + 1);
             } else {
-                BigDecimal nursingQty = nursingModel.getQuantity();
-                if (nursingQty == null || nursingQty.compareTo(BigDecimal.ZERO) <= 0) {
-                    nursingQty = BigDecimal.ONE;
-                }
-                AutoRollChargeLineResolved priceLine = nurseStationAutoRollWriteAssembler.resolveAutoRollChargeLine(
-                    nursingChargeDefinitionId,
-                    nursingModel.getActivityId(),
-                    nursingQty,
-                    ctx.getOrganizationId());
-                if (!priceLine.isResolved()) {
+                Long nursingChargeDefinitionId =
+                    nurseStationAutoRollWriteAssembler.resolveNursingChargeDefinitionId(nursingModel.getActivityId());
+                if (nursingChargeDefinitionId == null) {
                     result.setFailedCount(result.getFailedCount() + 1);
                 } else {
-                    Long requesterId = nursingModel.getRequesterId();
-                    // 护理医嘱缺开嘱人时回退任务缺省开嘱人
-                    if (requesterId == null) {
-                        requesterId = defaultRequesterId;
+                    BigDecimal nursingQty = nursingModel.getQuantity();
+                    if (nursingQty == null || nursingQty.compareTo(BigDecimal.ZERO) <= 0) {
+                        nursingQty = BigDecimal.ONE;
                     }
-                    AutoRollLineContext line = this.buildLineContext(
-                        ctx,
-                        billDate,
-                        nursingModel.getActivityId(),
+                    AutoRollChargeLineResolved priceLine = nurseStationAutoRollWriteAssembler.resolveAutoRollChargeLine(
                         nursingChargeDefinitionId,
+                        nursingModel.getActivityId(),
                         nursingQty,
-                        priceLine,
-                        ServiceRequestCategoryConstants.SERVICE_CATEGORY_NURSING,
-                        requesterId);
-                    if (this.postAutoRollLine(line, operatorId, result)) {
-                        result.setProcessedEncounter(true);
+                        ctx.getOrganizationId());
+                    if (!priceLine.isResolved()) {
+                        result.setFailedCount(result.getFailedCount() + 1);
+                    } else {
+                        AutoRollLineContext line = this.buildExecutionLineContext(
+                            ctx,
+                            billDate,
+                            nursingServiceRequestId,
+                            nursingModel.getActivityId(),
+                            nursingChargeDefinitionId,
+                            nursingQty,
+                            nursingModel.getUnitCode());
+                        if (this.postAutoRollLine(line, operatorId, performerId, result)) {
+                            result.setProcessedEncounter(true);
+                        }
                     }
                 }
             }
@@ -187,28 +186,27 @@ public class NurseStationAutoRollEncounterProcessor {
     }
 
     /**
-     * 组装滚费落账行。
+     * 组装滚费执行行（锚定已有长期 SR）。
      *
-     * @param ctx                 就诊上下文
-     * @param billDate            业务日
-     * @param activityId          活动 id
-     * @param chargeDefinitionId  定价 id
-     * @param quantity            数量
-     * @param priceLine           定价解析结果
-     * @param categoryEnum        诊疗类目
-     * @param requesterId         开立人
-     * @return 落账行
+     * @param ctx                就诊上下文
+     * @param billDate           业务日
+     * @param serviceRequestId   长期 SR
+     * @param activityId         活动 id
+     * @param chargeDefinitionId 定价 id
+     * @param quantity           数量
+     * @param unitCode           单位
+     * @return 执行行
      */
-    private AutoRollLineContext buildLineContext(
+    private AutoRollLineContext buildExecutionLineContext(
         InpatientAutoRollEncounterQueryModel ctx,
         LocalDate billDate,
+        Long serviceRequestId,
         Long activityId,
         Long chargeDefinitionId,
         BigDecimal quantity,
-        AutoRollChargeLineResolved priceLine,
-        String categoryEnum,
-        Long requesterId) {
+        String unitCode) {
         AutoRollLineContext line = new AutoRollLineContext();
+        line.setServiceRequestId(serviceRequestId);
         line.setEncounterId(ctx.getEncounterId());
         line.setPatientId(ctx.getPatientId());
         line.setAccountId(ctx.getAccountId());
@@ -220,33 +218,42 @@ public class NurseStationAutoRollEncounterProcessor {
             qty = BigDecimal.ONE;
         }
         line.setQuantity(qty);
-        line.setUnitCode(priceLine.getUnitCode());
-        line.setCategoryEnum(categoryEnum);
-        line.setRequesterId(requesterId);
+        line.setUnitCode(unitCode);
         line.setBillDate(billDate);
         line.setOccurrenceTime(billDate.atStartOfDay());
-        line.setUnitPrice(priceLine.getUnitPrice());
-        line.setTotalPrice(priceLine.getTotalPrice());
         return line;
     }
 
     /**
-     * 单条滚费落账（Request + Charge）。
+     * 单条滚费执行落账。
      *
-     * @param line       落账行
-     * @param operatorId 操作人
-     * @param result     累计计数器
-     * @return 落账成功时 true
+     * @param line        执行行
+     * @param operatorId  操作人
+     * @param performerId 主执行人
+     * @param result      累计计数器
+     * @return 新建 Charge 成功时 true
      */
     private boolean postAutoRollLine(
         AutoRollLineContext line,
         Long operatorId,
+        Long performerId,
         AutoRollEncounterProcessResult result) {
-        boolean posted = nurseStationAutoRollLinePoster.postLine(line, operatorId);
-        if (posted) {
+        InpatientAutoRollOrderExecutionOrchestrator.Outcome outcome =
+            nurseStationAutoRollLinePoster.postLine(line, operatorId, performerId);
+        if (outcome == InpatientAutoRollOrderExecutionOrchestrator.Outcome.CREATED) {
             result.setCreatedChargeItemCount(result.getCreatedChargeItemCount() + 1);
             return true;
         }
+        if (outcome == InpatientAutoRollOrderExecutionOrchestrator.Outcome.SKIPPED) {
+            result.setSkippedCount(result.getSkippedCount() + 1);
+            return false;
+        }
+        log.warn(
+            "住院滚费落账失败 encounterId={} serviceRequestId={} chargeDefinitionId={} billDate={}",
+            line.getEncounterId(),
+            line.getServiceRequestId(),
+            line.getChargeDefinitionId(),
+            line.getBillDate());
         result.setFailedCount(result.getFailedCount() + 1);
         return false;
     }

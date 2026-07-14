@@ -1,40 +1,24 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * ABO 血型枚举。
  */
 public enum BloodTypeAbo implements EnumInterface {
+/** A 型（BloodTypeAbo，编码 {@code A}）。 */
     A(0L, "A", "A 型", "", 1L),
+/** B 型（BloodTypeAbo，编码 {@code B}）。 */
     B(0L, "B", "B 型", "", 2L),
+/** O 型（BloodTypeAbo，编码 {@code O}）。 */
     O(0L, "O", "O 型", "", 3L),
-    /**
-     * AB。
-     */
+    /** AB 型（BloodTypeAbo，编码 {@code AB}）。 */
     AB(0L, "AB", "AB 型", "", 4L),
-    /**
-     * UNKNOWN。
-     */
+    /** 不详（BloodTypeAbo，编码 {@code UNKNOWN}）。 */
     UNKNOWN(0L, "UNKNOWN", "不详", "", 5L),
-    /**
-     * UNTESTED。
-     */
+    /** 未查（BloodTypeAbo，编码 {@code UNTESTED}）。 */
     UNTESTED(0L, "UNTESTED", "未查", "", 9L);
 
     private final Long codeSystemId;
@@ -44,7 +28,7 @@ public enum BloodTypeAbo implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * BloodTypeAbo。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     BloodTypeAbo(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

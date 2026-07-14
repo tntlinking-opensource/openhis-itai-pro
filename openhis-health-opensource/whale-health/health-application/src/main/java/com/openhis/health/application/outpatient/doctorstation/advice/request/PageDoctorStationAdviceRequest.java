@@ -1,25 +1,12 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.advice.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.application.shared.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -37,11 +24,10 @@ import java.util.List;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
-/** 门诊医生站-医嘱分页查询请求。 */
 @Schema(description = "门诊医生站-医嘱分页查询请求")
 public class PageDoctorStationAdviceRequest extends AbstractHealthPageRequest {
 
-    /** 当前工作站就诊主键；当前 Tab 查询锚点，历史 Tab 排除锚点。 */
+    /** 就诊主键。 */
     @NotNull(message = "就诊标识不能为空")
     @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
@@ -69,6 +55,7 @@ public class PageDoctorStationAdviceRequest extends AbstractHealthPageRequest {
      */
     @Schema(description = "开单科室组织主键（adm_organization.id）；空表示不按科室过滤")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 医嘱发布态 RequestStatus code 集合。 */
     private Long orderingDepartmentId;
 
     @Schema(description = "医嘱发布态 RequestStatus code 集合")

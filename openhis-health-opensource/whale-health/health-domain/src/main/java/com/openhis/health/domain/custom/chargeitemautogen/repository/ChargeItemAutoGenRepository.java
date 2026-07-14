@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.chargeitemautogen.repository;
 
 import com.openhis.health.domain.custom.chargeitemautogen.entity.ChargeItemAutoGen;
@@ -31,6 +18,12 @@ import java.util.Optional;
  */
 public interface ChargeItemAutoGenRepository extends JpaRepository<ChargeItemAutoGen, Long>, JpaSpecificationExecutor<ChargeItemAutoGen> {
 
+    /**
+     * 按主键加载规则行（含已软删，供框架默认对齐）。
+     *
+     * @param id 规则主键
+     * @return 规则实体
+     */
     Optional<ChargeItemAutoGen> findById(Long id);
 
     /**
@@ -44,6 +37,17 @@ public interface ChargeItemAutoGenRepository extends JpaRepository<ChargeItemAut
         Long chargeDefinitionId
     );
 
+    /**
+     * 编辑场景：除当前规则外是否仍存在相同触发键组合（有效记录内唯一）。
+     *
+     * @param encounterId 就诊主键
+     * @param triggerSourceTable 触发源表名
+     * @param triggerSourceId 触发源主键
+     * @param performingOrgId 执行科室
+     * @param chargeDefinitionId 收费项目定义主键
+     * @param id 当前规则主键（排除自身）
+     * @return {@code true} 表示冲突
+     */
     boolean existsByEncounterIdAndTriggerSourceTableAndTriggerSourceIdAndPerformingOrgIdAndChargeDefinitionIdAndIdNot(
         Long encounterId,
         String triggerSourceTable,
@@ -53,14 +57,39 @@ public interface ChargeItemAutoGenRepository extends JpaRepository<ChargeItemAut
         Long id
     );
 
+    /**
+     * 按触发源查全部有效规则，按优先级与主键升序（医嘱/申请落费时匹配）。
+     *
+     * @param triggerSourceTable 触发源表名
+     * @param triggerSourceId 触发源主键
+     * @return 规则列表
+     */
     List<ChargeItemAutoGen> findAllByTriggerSourceTableAndTriggerSourceIdAndIsDeletedFalseOrderByPriorityAscIdAsc(
         String triggerSourceTable,
         Long triggerSourceId
     );
 
+    /**
+     * 按就诊列出全部有效自动生成规则。
+     *
+     * @param encounterId 就诊主键
+     * @return 规则列表
+     */
     List<ChargeItemAutoGen> findAllByEncounterIdAndIsDeletedFalseOrderByPriorityAscIdAsc(Long encounterId);
 
+    /**
+     * 按收费项目定义反查关联规则（维护页联动）。
+     *
+     * @param chargeDefinitionId 收费项目定义主键
+     * @return 规则列表
+     */
     List<ChargeItemAutoGen> findAllByChargeDefinitionIdAndIsDeletedFalseOrderByIdAsc(Long chargeDefinitionId);
 
+    /**
+     * 分页列出全部规则（管理端；须配合 Specification 软删过滤）。
+     *
+     * @param pageable 分页参数
+     * @return 分页结果
+     */
     Page<ChargeItemAutoGen> findAllBy(Pageable pageable);
 }

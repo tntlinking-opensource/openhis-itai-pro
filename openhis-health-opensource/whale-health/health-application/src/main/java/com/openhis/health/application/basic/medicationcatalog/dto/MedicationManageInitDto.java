@@ -1,21 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
-/* (C)2026 */
 package com.openhis.health.application.basic.medicationcatalog.dto;
 
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -37,42 +23,46 @@ import java.util.List;
 public class MedicationManageInitDto {
 
     @Schema(description = "状态选项列表")
+    /** 适用范围选项列表。 */
     private List<OptionDto> statusFlagOptions;
 
     @Schema(description = "适用范围选项列表")
     private List<OptionDto> domainFlagOptions;
 
-    /** 主数据供应商列表，value 多为供应商主键字符串。 */
+    /** 供应商下拉选项（value=id, label=名称）。 */
     @Schema(description = "供应商下拉选项（value=id, label=名称）")
     private List<OptionDto> supplierListOptions;
 
-    /** 前端分类树（支持 children 层级）。 */
+    /** 页面药品分类树（value/label/children）。 */
     @Schema(description = "页面药品分类树（value/label/children）")
     private List<OptionDto> medicationCategoryCodeOptions;
 
-    /** 计量与包装相关单位术语选项。 */
+    /** 单位编码选项（value/label）。 */
     @Schema(description = "单位编码选项（value/label）")
     private List<OptionDto> unitCodeOptions;
 
-    /** 是否类字典（如启用、皮试）统一数据源。 */
+    /** 是/否状态选项。 */
     @Schema(description = "是/否状态选项")
     private List<OptionDto> statusWeatherOptions;
 
-    /** 处方权或专科权限限制相关字典。 */
+    /** 权限限制选项。 */
     @Schema(description = "权限限制选项")
     private List<OptionDto> statusRestrictedOptions;
 
-    /** 医嘱拆分/摆药属性字典。 */
+    /** 拆分属性选项。 */
     @Schema(description = "拆分属性选项")
     private List<OptionDto> partAttributeEnumOptions;
 
-    /** 住院临时医嘱专用的拆分策略字典。 */
+    /** 住院临时医嘱拆分属性选项。 */
     @Schema(description = "住院临时医嘱拆分属性选项")
     private List<OptionDto> tempOrderSplitPropertyEnumOptions;
 
-    /** 医保甲乙丙类等等级下拉。 */
+    /** 医保等级选项。 */
     @Schema(description = "医保等级选项")
     private List<OptionDto> chrgitmLvOptions;
+
+    /** 病案结算类型（术语 {@code mr_settlement_type_code}）。 */
+    private List<OptionDto> mrSettlementTypeCodeOptions;
 
     /**
      * 体系/系统分类选项：系统级别的分类字典列表（例如分类体系、科室体系等）

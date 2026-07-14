@@ -1,33 +1,24 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler;
 
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.AutoRollChargeLineResolved;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
-import com.openhis.health.domain.share.constants.ChargeItemDmConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogUnitPriceCommand;
+import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
+import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
+import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.application.shared.product.ClinicalCatalogUnitPriceQuery;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -43,7 +34,25 @@ import java.util.Map;
 public class NurseStationAutoRollWriteAssembler {
 
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
-    private final ClinicalCatalogPriceResolveSupport clinicalCatalogPriceResolveSupport;
+    private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
+
+    /**
+     * 解析诊疗活动开立/执行数量单位持久化码（packageUnitCode，禁止回落汉字缺省「次」）。
+     *
+     * @param activityId 诊疗活动定义主键
+     * @return 单位 code；未维护时为 null
+     */
+    public String resolveActivityOrderUnitCode(Long activityId) {
+        if (activityId == null) {
+            return null;
+        }
+        ProductDefinitionDisplayDto product = this.loadActivityProduct(activityId);
+        if (product == null) {
+            return null;
+        }
+        return ProductDefinitionCatalogUnitBandsAssembler.resolveDoctorStationBandPricingUnitCode(product, null);
+    }
 
     /**
      * 按已锚定的定价 id 解析滚费入账行（床位配置分支）。
@@ -78,14 +87,14 @@ public class NurseStationAutoRollWriteAssembler {
         BigDecimal unitPrice = definition.getPriceValue();
         // Pre：定价行无显式单价时，走目录择优（同 BR-IP-PRC-017）
         if (unitPrice == null) {
-            ClinicalCatalogUnitPriceCommand priceCmd = ClinicalCatalogUnitPriceCommand.builder()
+            ClinicalCatalogUnitPriceQuery priceCmd = ClinicalCatalogUnitPriceQuery.builder()
                 .productTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION)
                 .productDefinitionId(activityId)
                 .organizationId(organizationId)
                 .priceLines(chargeItemDefinitionQueryService.findSaleItemByInstanceId(
                     this.buildInstanceQuery(activityId)))
                 .build();
-            ChargeItemDefinition picked = clinicalCatalogPriceResolveSupport.resolveCatalogUnitPrice(priceCmd);
+            ChargeItemDefinition picked = clinicalCatalogPriceResolver.resolveCatalogUnitPrice(priceCmd);
             if (picked == null || picked.getPriceValue() == null) {
                 return resolved;
             }
@@ -95,7 +104,7 @@ public class NurseStationAutoRollWriteAssembler {
         resolved.setResolved(true);
         resolved.setChargeDefinitionId(definition.getId());
         resolved.setActivityId(activityId);
-        resolved.setUnitCode(ChargeItemDmConstants.DEFAULT_QUANTITY_UNIT);
+        resolved.setUnitCode(this.resolveActivityOrderUnitCode(activityId));
         resolved.setUnitPrice(unitPrice);
         resolved.setTotalPrice(unitPrice.multiply(qty));
         return resolved;
@@ -116,12 +125,12 @@ public class NurseStationAutoRollWriteAssembler {
         if (lines == null || lines.isEmpty()) {
             return null;
         }
-        ClinicalCatalogUnitPriceCommand priceCmd = ClinicalCatalogUnitPriceCommand.builder()
+        ClinicalCatalogUnitPriceQuery priceCmd = ClinicalCatalogUnitPriceQuery.builder()
             .productTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION)
             .productDefinitionId(activityId)
             .priceLines(lines)
             .build();
-        ChargeItemDefinition picked = clinicalCatalogPriceResolveSupport.resolveCatalogUnitPrice(priceCmd);
+        ChargeItemDefinition picked = clinicalCatalogPriceResolver.resolveCatalogUnitPrice(priceCmd);
         if (picked == null || !this.isChargeDefinitionUsable(picked)) {
             return null;
         }
@@ -138,7 +147,7 @@ public class NurseStationAutoRollWriteAssembler {
         if (definition == null || Boolean.TRUE.equals(definition.getIsDeleted())) {
             return false;
         }
-        if (StringUtils.isNotBlank(definition.getStatusEnum())
+        if (StringUtils.isNotEmpty(definition.getStatusEnum())
             && PublicationStatus.DISCARDED.getCode().equals(definition.getStatusEnum())) {
             return false;
         }
@@ -156,5 +165,21 @@ public class NurseStationAutoRollWriteAssembler {
         cmd.setInstanceTable(TableNameConstants.WKF_ACTIVITY_DEFINITION);
         cmd.setInstanceId(activityId);
         return cmd;
+    }
+
+    /**
+     * 加载诊疗活动产品读模型。
+     *
+     * @param activityId 活动定义主键
+     * @return 产品读模型；缺失时 null
+     */
+    private ProductDefinitionDisplayDto loadActivityProduct(Long activityId) {
+        ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+        lookup.setProductTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION);
+        lookup.setProductDefinitionId(activityId);
+        Map<String, ProductDefinitionDisplayDto> loaded =
+            productDefinitionDisplayTerminologyAssembler.loadAsMap(List.of(lookup));
+        return loaded.get(ProductDefinitionKeyUtil.buildCompositeKey(
+            TableNameConstants.WKF_ACTIVITY_DEFINITION, activityId));
     }
 }

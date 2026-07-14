@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.encounter.queries;
 
 import com.openhis.health.domain.share.query.AbstractPageQuery;
@@ -48,6 +35,12 @@ public class InpatientEncounterPageQuery extends AbstractPageQuery {
     private LocalDate admissionDate;
     /** 为 {@code true} 时仅返回预交金页左侧队列可见就诊（清床前，含 {@code COMPLETED} 待清床）。 */
     private Boolean prepayEligibleOnly;
+    /**
+     * 是否在上下文组装时加载诊断快照（{@code diagnosisJson}）。
+     *
+     * <p>{@code false} 时跳过逐条诊断 enrich（预交金/登记卡片队列等无需诊断列的场景，防 N+1）。</p>
+     */
+    private Boolean includeDiagnosisSnapshot;
     /** 为 {@code true} 时激活护士站专用队列过滤（EXISTS 任务/在院口径）。 */
     private Boolean nurseStationQueue;
     /** 为 {@code true} 时激活住院医生站在院队列过滤（IMP + 在科状态 + 科室收窄）。 */

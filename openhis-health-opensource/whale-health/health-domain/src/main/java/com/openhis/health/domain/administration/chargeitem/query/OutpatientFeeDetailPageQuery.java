@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.chargeitem.query;
 
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.OutpatientFeeDetailChargePaymentLinkQueryModel;
@@ -21,7 +21,7 @@ import java.util.Map;
  * <p>payment 侧筛选（{@code billDateFrom/To}、{@code cashierId}、{@code tradeDirection}）由
  * {@link com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService}
  * 解析为 {@link #paymentChargeItemLinks}；就诊/患者/产品筛选项由
- * {@link com.openhis.health.module.querysupport.feedetail.OutpatientFeeDetailQuerySupport} 预解析后写入 scope 字段。</p>
+ * {@link com.openhis.health.application.outpatient.financial.feedetail.support.OutpatientFeeDetailLoader} 预解析后写入 scope 字段。</p>
  */
 @Getter
 @Setter

@@ -1,14 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.nursingrecord.mapper;
 
 import com.openhis.health.application.inpatient.nursestation.nursingrecord.dto.NursingRecordPaperHeaderDto;
 import com.openhis.health.application.inpatient.nursestation.nursingrecord.request.SaveNurseStationNursingRecordRequest;
 import com.openhis.health.application.inpatient.nursestation.nursingrecord.request.SaveNursingRecordItemRequest;
 import com.openhis.health.application.inpatient.nursestation.nursingrecord.response.LoadNurseStationNursingRecordInitResponse;
-import com.openhis.health.domain.share.utils.BloodPressureParser;
 import com.openhis.health.domain.share.utils.BloodPressureParser.BloodPressureParseResult;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.diagnosis.vitalsign.command.SaveVitalSignCommand;

@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.mrms.caserecord.service;
 
 import com.openhis.health.domain.mrms.caserecord.command.RefreshAutoFillCommand;
@@ -251,7 +251,9 @@ public class CaseRecordDomainService {
      */
     @Transactional(rollbackFor = Exception.class)
     public CaseRecord refreshSummary(CaseRecord record, CaseRecordHomepage homepage) {
+        // Cmd：从首页冗余字段回写主档列表摘要（主诊断名由读侧解析）
         record.refreshSummaryFrom(homepage, resolveMainDiagName(record.getId()));
+        // 持久化主档冗余列
         return caseRecordRepository.save(record);
     }
 

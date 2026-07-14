@@ -1,9 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.financial.dailysettlement.dto;
 
+import com.openhis.health.application.outpatient.financial.dailysettlement.dto.DailySettlementPaymentChargeLineDto;
+import com.openhis.health.application.outpatient.financial.dailysettlement.dto.DailySettlementPaymentPayMethodDto;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -14,6 +16,7 @@ import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 住院日结候选 payment 明细行（IF-IP-DCL-02）。
@@ -81,4 +84,12 @@ public class InpatientDailySettlementPaymentItemDto {
     /** 展示分类（病区/预交金/渠道）。 */
     @Schema(description = "展示分类")
     private String categoryLabel;
+
+    /** 收费项目明细。 */
+    @Schema(description = "收费项目明细")
+    private List<DailySettlementPaymentChargeLineDto> chargeLines;
+
+    /** 自付支付方式明细。 */
+    @Schema(description = "自付支付方式明细")
+    private List<DailySettlementPaymentPayMethodDto> payMethods;
 }

@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.feedetail.assembler;
 
 import com.openhis.health.application.outpatient.financial.feedetail.dto.OutpatientFeeDetailAmountSummaryDto;
@@ -9,34 +9,29 @@ import com.openhis.health.application.outpatient.financial.feedetail.dto.Outpati
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailChargeRowQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.OutpatientFeeDetailPaymentContextQueryModel;
-import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientFeeDetailConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.List;
 
 /**
- * 门诊费用明细金额列与合计装配（AS-OP-FIN-005 §1.3.1；**BR-OP-FDT-010～012**）。
+ * 门诊费用明细金额列与合计装配（AS-OP-FIN-005 §1.3.1；**BR-OP-FDT-010～012**；金额刻度 **BR-MON-001**）。
  *
  * <p>只读展示计算；禁止承载筛选或持久化逻辑。细分类取定价行 {@code fin_type_code}，与日结交账口径一致。
- * 医保分摊 Gate 与
+ * 行级金额 API 出参保持 6 位（{@link MonetaryAmountSupport#scaleCalc}）；块/就诊合计先 6 位代数加总再
+ * {@link MonetaryAmountSupport#scaleSettle} 到 2 位，禁止对先行舍入的行金额再相加。</p>
+ * <p>医保分摊 Gate 与
  * {@link com.openhis.health.domain.financial.paymentreconciliation.support.PaymentYbSettlementSupport#hasConfirmed}
  * 口径一致：仅当 payment 上下文 {@code ybFundAndAcctTotal} 大于 0 时分摊（**BR-OP-FDT-011**）。</p>
  */
 @Component
 public class OutpatientFeeDetailAssembler {
-
-    private static final RoundingMode DISPLAY_ROUNDING = RoundingMode.HALF_UP;
-
-    private static final int DISPLAY_SCALE = 2;
-
-    private static final int CALC_SCALE = ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE;
 
     /**
      * 装配单行金额列与基础展示字段（不含患者/就诊头信息）。
@@ -72,8 +67,8 @@ public class OutpatientFeeDetailAssembler {
             line.setCashierId(context.getCashierId());
         }
         line.setOrderingDoctorId(chargeItem.getEntererId());
-        line.setQuantityValue(this.scaleDisplay(chargeItem.getQuantityValue()));
-        line.setUnitPrice(this.scaleDisplay(chargeItem.getUnitPrice()));
+        line.setQuantityValue(this.scaleQuantityDisplay(chargeItem.getQuantityValue()));
+        line.setUnitPrice(MonetaryAmountSupport.scaleCalc(chargeItem.getUnitPrice()));
         String feeCategoryCode = this.resolveFeeCategoryCode(chargeItem.getServiceTable());
         line.setFeeCategoryCode(feeCategoryCode);
         line.setFeeCategoryDisplay(this.resolveFeeCategoryLabel(feeCategoryCode));
@@ -82,18 +77,18 @@ public class OutpatientFeeDetailAssembler {
             line.setProductCode(product.getProductBusNo());
             line.setSpecification(this.resolveSpecification(product));
             line.setInsuranceLevelDisplay(product.getChrgitmLvText());
-            if (StringUtils.isNotBlank(product.getRateCodeDictText())) {
+            if (StringUtils.isNotEmpty(product.getRateCodeDictText())) {
                 line.setInsuranceTypeDisplay(product.getRateCodeDictText());
             } else {
                 line.setInsuranceTypeDisplay(product.getRateCode());
             }
         }
-        if (StringUtils.isNotBlank(finTypeCode)) {
+        if (StringUtils.isNotEmpty(finTypeCode)) {
             line.setSubCategoryCode(finTypeCode.trim());
         }
-        if (StringUtils.isNotBlank(finTypeDisplay)) {
+        if (StringUtils.isNotEmpty(finTypeDisplay)) {
             line.setSubCategoryDisplay(finTypeDisplay.trim());
-        } else if (StringUtils.isNotBlank(finTypeCode)) {
+        } else if (StringUtils.isNotEmpty(finTypeCode)) {
             // 财务类型字典未命中时回落 code，便于前端仍可筛选
             line.setSubCategoryDisplay(finTypeCode.trim());
         }
@@ -103,10 +98,10 @@ public class OutpatientFeeDetailAssembler {
         } else {
             line.setTradeDirection(OutpatientFeeDetailConstants.TRADE_DIRECTION_CHARGE);
         }
-        BigDecimal baseAmount = this.nullToZero(chargeItem.getBaseAmount());
+        BigDecimal baseAmount = MonetaryAmountSupport.nullToZero(chargeItem.getBaseAmount());
         BigDecimal receivableAmount = this.resolveReceivableAmount(chargeItem);
         BigDecimal discountedAmount = this.resolveDiscountedAmount(chargeItem);
-        BigDecimal lineAmountRaw = this.nullToZero(chargeItem.getTotalPrice());
+        BigDecimal lineAmountRaw = MonetaryAmountSupport.nullToZero(chargeItem.getTotalPrice());
         BigDecimal discountGap = baseAmount.subtract(receivableAmount);
         BigDecimal discountAmount = BigDecimal.ZERO;
         if (discountGap.compareTo(BigDecimal.ZERO) > 0) {
@@ -118,8 +113,8 @@ public class OutpatientFeeDetailAssembler {
             // Gate：ybFundAndAcctTotal 仅含已确认医保凭证（同 PaymentYbSettlementSupport#hasConfirmed）
             insuranceRaw = this.allocateInsuranceAmount(
                 lineAbsAmount,
-                this.nullToZero(context.getYbFundAndAcctTotal()),
-                this.nullToZero(context.getPaymentSnapshotAbsAmountTotal()));
+                MonetaryAmountSupport.nullToZero(context.getYbFundAndAcctTotal()),
+                MonetaryAmountSupport.nullToZero(context.getPaymentSnapshotAbsAmountTotal()));
         }
         BigDecimal actualReceivedRaw = lineAmountRaw;
         BigDecimal selfPayRaw = actualReceivedRaw.subtract(insuranceRaw);
@@ -128,59 +123,69 @@ public class OutpatientFeeDetailAssembler {
             // 退费 payment 链路金额列统一取负展示（BR-OP-FDT-012）
             signMultiplier = new BigDecimal("-1");
         }
-        line.setBaseAmount(this.applySignAndDisplay(baseAmount, signMultiplier));
-        line.setDiscountAmount(this.applySignAndDisplay(discountAmount, signMultiplier));
-        line.setReceivableAmount(this.applySignAndDisplay(receivableAmount, signMultiplier));
-        line.setDiscountedAmount(this.applySignAndDisplay(discountedAmount, signMultiplier));
-        line.setLineAmount(this.applySignAndDisplay(lineAmountRaw.abs(), signMultiplier));
-        line.setActualReceivedAmount(this.applySignAndDisplay(actualReceivedRaw.abs(), signMultiplier));
-        line.setInsuranceAmount(this.applySignAndDisplay(insuranceRaw, signMultiplier));
-        line.setSelfPayAmount(this.applySignAndDisplay(selfPayRaw.abs(), signMultiplier));
+        // Asm：行级金额保持 6 位出参，退费行带符号（BR-MON-001）
+        line.setBaseAmount(MonetaryAmountSupport.applySignAtCalcScale(baseAmount, signMultiplier));
+        line.setDiscountAmount(MonetaryAmountSupport.applySignAtCalcScale(discountAmount, signMultiplier));
+        line.setReceivableAmount(MonetaryAmountSupport.applySignAtCalcScale(receivableAmount, signMultiplier));
+        line.setDiscountedAmount(MonetaryAmountSupport.applySignAtCalcScale(discountedAmount, signMultiplier));
+        line.setLineAmount(MonetaryAmountSupport.applySignAtCalcScale(lineAmountRaw.abs(), signMultiplier));
+        line.setActualReceivedAmount(MonetaryAmountSupport.applySignAtCalcScale(actualReceivedRaw.abs(), signMultiplier));
+        line.setInsuranceAmount(MonetaryAmountSupport.applySignAtCalcScale(insuranceRaw, signMultiplier));
+        line.setSelfPayAmount(MonetaryAmountSupport.applySignAtCalcScale(selfPayRaw.abs(), signMultiplier));
         line.setDiscountRateDisplay(this.computeDiscountRateDisplay(baseAmount, receivableAmount));
         return line;
     }
 
     /**
-     * 对块内或全量明细行金额列代数求和（已含退单负号）。
+     * 对块内或全量明细行金额列代数求和（已含退单负号）；合计列按 **BR-MON-001** 先 6 位加总再 settle 到 2 位。
      *
      * @param lines 明细行列表；空时返回各列 0
-     * @return 合计 DTO
+     * @return 合计 DTO（结算刻度 2 位）
      */
     public OutpatientFeeDetailAmountSummaryDto assembleEncounterSubtotal(List<OutpatientFeeDetailLineDto> lines) {
         OutpatientFeeDetailAmountSummaryDto summary = new OutpatientFeeDetailAmountSummaryDto();
-        summary.setBaseAmountTotal(BigDecimal.ZERO.setScale(DISPLAY_SCALE, DISPLAY_ROUNDING));
-        summary.setDiscountAmountTotal(BigDecimal.ZERO.setScale(DISPLAY_SCALE, DISPLAY_ROUNDING));
-        summary.setReceivableAmountTotal(BigDecimal.ZERO.setScale(DISPLAY_SCALE, DISPLAY_ROUNDING));
-        summary.setDiscountedAmountTotal(BigDecimal.ZERO.setScale(DISPLAY_SCALE, DISPLAY_ROUNDING));
-        summary.setLineAmountTotal(BigDecimal.ZERO.setScale(DISPLAY_SCALE, DISPLAY_ROUNDING));
-        summary.setActualReceivedAmountTotal(BigDecimal.ZERO.setScale(DISPLAY_SCALE, DISPLAY_ROUNDING));
-        summary.setInsuranceAmountTotal(BigDecimal.ZERO.setScale(DISPLAY_SCALE, DISPLAY_ROUNDING));
-        summary.setSelfPayAmountTotal(BigDecimal.ZERO.setScale(DISPLAY_SCALE, DISPLAY_ROUNDING));
+        summary.setBaseAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setDiscountAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setReceivableAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setDiscountedAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setLineAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setActualReceivedAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setInsuranceAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
+        summary.setSelfPayAmountTotal(MonetaryAmountSupport.scaleSettle(BigDecimal.ZERO));
         if (lines == null || lines.isEmpty()) {
             return summary;
         }
+        BigDecimal baseSum = BigDecimal.ZERO;
+        BigDecimal discountSum = BigDecimal.ZERO;
+        BigDecimal receivableSum = BigDecimal.ZERO;
+        BigDecimal discountedSum = BigDecimal.ZERO;
+        BigDecimal lineSum = BigDecimal.ZERO;
+        BigDecimal actualReceivedSum = BigDecimal.ZERO;
+        BigDecimal insuranceSum = BigDecimal.ZERO;
+        BigDecimal selfPaySum = BigDecimal.ZERO;
+        // Pre：按行 6 位金额原值累加，禁止先 round(line,2) 再相加（BR-MON-001）
         for (OutpatientFeeDetailLineDto line : lines) {
             if (line == null) {
                 continue;
             }
-            summary.setBaseAmountTotal(summary.getBaseAmountTotal().add(this.nullToZero(line.getBaseAmount())));
-            summary.setDiscountAmountTotal(summary.getDiscountAmountTotal().add(this.nullToZero(line.getDiscountAmount())));
-            summary.setReceivableAmountTotal(summary.getReceivableAmountTotal().add(this.nullToZero(line.getReceivableAmount())));
-            summary.setDiscountedAmountTotal(summary.getDiscountedAmountTotal().add(this.nullToZero(line.getDiscountedAmount())));
-            summary.setLineAmountTotal(summary.getLineAmountTotal().add(this.nullToZero(line.getLineAmount())));
-            summary.setActualReceivedAmountTotal(
-                summary.getActualReceivedAmountTotal().add(this.nullToZero(line.getActualReceivedAmount())));
-            summary.setInsuranceAmountTotal(summary.getInsuranceAmountTotal().add(this.nullToZero(line.getInsuranceAmount())));
-            summary.setSelfPayAmountTotal(summary.getSelfPayAmountTotal().add(this.nullToZero(line.getSelfPayAmount())));
+            baseSum = baseSum.add(MonetaryAmountSupport.nullToZero(line.getBaseAmount()));
+            discountSum = discountSum.add(MonetaryAmountSupport.nullToZero(line.getDiscountAmount()));
+            receivableSum = receivableSum.add(MonetaryAmountSupport.nullToZero(line.getReceivableAmount()));
+            discountedSum = discountedSum.add(MonetaryAmountSupport.nullToZero(line.getDiscountedAmount()));
+            lineSum = lineSum.add(MonetaryAmountSupport.nullToZero(line.getLineAmount()));
+            actualReceivedSum = actualReceivedSum.add(MonetaryAmountSupport.nullToZero(line.getActualReceivedAmount()));
+            insuranceSum = insuranceSum.add(MonetaryAmountSupport.nullToZero(line.getInsuranceAmount()));
+            selfPaySum = selfPaySum.add(MonetaryAmountSupport.nullToZero(line.getSelfPayAmount()));
         }
-        summary.setBaseAmountTotal(this.scaleDisplay(summary.getBaseAmountTotal()));
-        summary.setDiscountAmountTotal(this.scaleDisplay(summary.getDiscountAmountTotal()));
-        summary.setReceivableAmountTotal(this.scaleDisplay(summary.getReceivableAmountTotal()));
-        summary.setDiscountedAmountTotal(this.scaleDisplay(summary.getDiscountedAmountTotal()));
-        summary.setLineAmountTotal(this.scaleDisplay(summary.getLineAmountTotal()));
-        summary.setActualReceivedAmountTotal(this.scaleDisplay(summary.getActualReceivedAmountTotal()));
-        summary.setInsuranceAmountTotal(this.scaleDisplay(summary.getInsuranceAmountTotal()));
-        summary.setSelfPayAmountTotal(this.scaleDisplay(summary.getSelfPayAmountTotal()));
+        // Asm：各合计列统一 settle 到 2 位，供页脚/支付展示
+        summary.setBaseAmountTotal(MonetaryAmountSupport.scaleSettle(baseSum));
+        summary.setDiscountAmountTotal(MonetaryAmountSupport.scaleSettle(discountSum));
+        summary.setReceivableAmountTotal(MonetaryAmountSupport.scaleSettle(receivableSum));
+        summary.setDiscountedAmountTotal(MonetaryAmountSupport.scaleSettle(discountedSum));
+        summary.setLineAmountTotal(MonetaryAmountSupport.scaleSettle(lineSum));
+        summary.setActualReceivedAmountTotal(MonetaryAmountSupport.scaleSettle(actualReceivedSum));
+        summary.setInsuranceAmountTotal(MonetaryAmountSupport.scaleSettle(insuranceSum));
+        summary.setSelfPayAmountTotal(MonetaryAmountSupport.scaleSettle(selfPaySum));
         return summary;
     }
 
@@ -196,18 +201,18 @@ public class OutpatientFeeDetailAssembler {
         BigDecimal lineAbsAmount,
         BigDecimal paymentYbTotal,
         BigDecimal paymentSnapshotAbsTotal) {
-        BigDecimal lineAbs = this.nullToZero(lineAbsAmount);
-        BigDecimal ybTotal = this.nullToZero(paymentYbTotal);
-        BigDecimal denominator = this.nullToZero(paymentSnapshotAbsTotal);
+        BigDecimal lineAbs = MonetaryAmountSupport.nullToZero(lineAbsAmount);
+        BigDecimal ybTotal = MonetaryAmountSupport.nullToZero(paymentYbTotal);
+        BigDecimal denominator = MonetaryAmountSupport.nullToZero(paymentSnapshotAbsTotal);
         if (ybTotal.compareTo(BigDecimal.ZERO) <= 0) {
             // 纯自费 payment 不参与医保分摊
-            return BigDecimal.ZERO.setScale(CALC_SCALE, DISPLAY_ROUNDING);
+            return MonetaryAmountSupport.scaleCalc(BigDecimal.ZERO);
         }
         if (denominator.compareTo(BigDecimal.ZERO) <= 0) {
             // 快照分母为 0 时无法占比，医保列置 0
-            return BigDecimal.ZERO.setScale(CALC_SCALE, DISPLAY_ROUNDING);
+            return MonetaryAmountSupport.scaleCalc(BigDecimal.ZERO);
         }
-        return lineAbs.multiply(ybTotal).divide(denominator, CALC_SCALE, DISPLAY_ROUNDING);
+        return MonetaryAmountSupport.proportionAtCalcScale(lineAbs, ybTotal, denominator);
     }
 
     /**
@@ -218,13 +223,13 @@ public class OutpatientFeeDetailAssembler {
      * @return 如 {@code 85%}；原价为 0 时返回 {@code null}
      */
     public String computeDiscountRateDisplay(BigDecimal baseAmount, BigDecimal receivableAmount) {
-        BigDecimal base = this.nullToZero(baseAmount);
+        BigDecimal base = MonetaryAmountSupport.nullToZero(baseAmount);
         if (base.compareTo(BigDecimal.ZERO) <= 0) {
             return null;
         }
-        BigDecimal receivable = this.nullToZero(receivableAmount);
+        BigDecimal receivable = MonetaryAmountSupport.nullToZero(receivableAmount);
         BigDecimal rate = receivable.multiply(new BigDecimal("100"))
-            .divide(base, 0, DISPLAY_ROUNDING);
+            .divide(base, 0, MonetaryAmountSupport.MONETARY_ROUNDING);
         return rate.toPlainString() + "%";
     }
 
@@ -235,7 +240,7 @@ public class OutpatientFeeDetailAssembler {
      * @return 费用大类 code
      */
     private String resolveFeeCategoryCode(String serviceTable) {
-        if (StringUtils.isBlank(serviceTable)) {
+        if (StringUtils.isEmpty(serviceTable)) {
             throw new IllegalArgumentException("charge item service_table is blank");
         }
         String normalized = serviceTable.trim();
@@ -289,10 +294,10 @@ public class OutpatientFeeDetailAssembler {
         if (product == null) {
             return null;
         }
-        if (StringUtils.isNotBlank(product.getTotalVolume())) {
+        if (StringUtils.isNotEmpty(product.getTotalVolume())) {
             return product.getTotalVolume();
         }
-        if (StringUtils.isNotBlank(product.getDoseFormCodeDictText())) {
+        if (StringUtils.isNotEmpty(product.getDoseFormCodeDictText())) {
             return product.getDoseFormCodeDictText();
         }
         return null;
@@ -321,7 +326,7 @@ public class OutpatientFeeDetailAssembler {
         if (chargeItem.getDiscountAmount() != null) {
             return chargeItem.getDiscountAmount();
         }
-        return this.nullToZero(chargeItem.getTotalPrice());
+        return MonetaryAmountSupport.nullToZero(chargeItem.getTotalPrice());
     }
 
     /**
@@ -337,54 +342,19 @@ public class OutpatientFeeDetailAssembler {
         if (chargeItem.getDiscountAmount() != null) {
             return chargeItem.getDiscountAmount();
         }
-        return this.nullToZero(chargeItem.getTotalPrice());
+        return MonetaryAmountSupport.nullToZero(chargeItem.getTotalPrice());
     }
 
     /**
-     * 绝对值金额按退负符号乘后保留 2 位展示。
+     * 数量列展示（非金额；保留 2 位便于阅读）。
      *
-     * @param absoluteValue   绝对值
-     * @param signMultiplier  1 或 -1
-     * @return 展示刻度金额
+     * @param value 数量
+     * @return 展示数量
      */
-    private BigDecimal applySignAndDisplay(BigDecimal absoluteValue, BigDecimal signMultiplier) {
-        BigDecimal scaled = this.scaleCalc(this.nullToZero(absoluteValue));
-        return scaled.multiply(signMultiplier).setScale(DISPLAY_SCALE, DISPLAY_ROUNDING);
-    }
-
-    /**
-     * 计算中间值统一 6 位 HALF_UP（**AS-OP-FIN-005 §1.3**）。
-     *
-     * @param value 原始金额
-     * @return 计算刻度金额
-     */
-    private BigDecimal scaleCalc(BigDecimal value) {
-        return this.nullToZero(value).setScale(CALC_SCALE, DISPLAY_ROUNDING);
-    }
-
-    /**
-     * 展示列统一 2 位 HALF_UP。
-     *
-     * @param value 原始金额
-     * @return 展示刻度金额
-     */
-    private BigDecimal scaleDisplay(BigDecimal value) {
+    private BigDecimal scaleQuantityDisplay(BigDecimal value) {
         if (value == null) {
-            return BigDecimal.ZERO.setScale(DISPLAY_SCALE, DISPLAY_ROUNDING);
+            return BigDecimal.ZERO.setScale(2, MonetaryAmountSupport.MONETARY_ROUNDING);
         }
-        return value.setScale(DISPLAY_SCALE, DISPLAY_ROUNDING);
-    }
-
-    /**
-     * {@code null} 安全转零。
-     *
-     * @param value 金额
-     * @return 非 null 金额
-     */
-    private BigDecimal nullToZero(BigDecimal value) {
-        if (value == null) {
-            return BigDecimal.ZERO;
-        }
-        return value;
+        return value.setScale(2, MonetaryAmountSupport.MONETARY_ROUNDING);
     }
 }

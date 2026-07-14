@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.ordertemplate.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -36,7 +23,7 @@ import lombok.experimental.Accessors;
 @Schema(description = "预览组套套用请求")
 public class PreviewOrderTemplateApplyRequest {
 
-    /** 组套模板头主键。 */
+    /** 组套模板 id。 */
     @NotNull(message = "组套模板标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "组套模板 id", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -60,7 +47,7 @@ public class PreviewOrderTemplateApplyRequest {
     @Schema(description = "套用上下文：DOCTOR / NURSE_PRICING", requiredMode = Schema.RequiredMode.REQUIRED)
     private String applyContextCode;
 
-    /** 医生站工作站类型：OUTPATIENT / INPATIENT（applyContext=DOCTOR 时必填）。 */
+    /** 工作站类型：OUTPATIENT / INPATIENT。 */
     @Schema(description = "工作站类型：OUTPATIENT / INPATIENT")
     private String workstationKindCode;
 }

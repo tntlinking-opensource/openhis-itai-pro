@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.servicelocationtemplate.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
@@ -27,12 +14,12 @@ import com.openhis.health.application.basic.servicelocationtemplate.mapper.Servi
 import com.openhis.health.application.basic.servicelocationtemplate.request.ListServiceLocationTemplateByOrganizationRequest;
 import com.openhis.health.application.basic.servicelocationtemplate.request.SaveServiceLocationTemplateConfigItemRequest;
 import com.openhis.health.application.basic.servicelocationtemplate.request.SaveServiceLocationTemplateConfigRequest;
-import com.openhis.health.module.common.assembler.advice.TcmMethodCodeDisplaySupport;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.common.assembler.order.OrderCatalogDisplayAssembler;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.advice.TcmMethodCodeDisplayAssembler;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.entity.Organization;
@@ -51,7 +38,7 @@ import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -70,7 +57,7 @@ import java.util.Set;
  *   <li>{@link ServiceLocationTemplateQueryService}：按科室列出有效规则（配置读侧）</li>
  *   <li>{@link ServiceLocationTemplateDomainService}：整科覆盖保存（先软删后插，单事务在领域层）</li>
  *   <li>{@link OrganizationQueryService} / {@link LocationQueryService}：科室树、药房/药库位置与展示名</li>
- *   <li>{@link ProductDefinitionBatchLoader}：具体药品/耗材定义名称 enrich（复用既有目录读能力）</li>
+ *   <li>{@link ProductDefinitionDisplayTerminologyAssembler}：具体药品/耗材定义名称 enrich（复用既有目录读能力）</li>
  * </ul>
  *
  * <p>接入方式：由 {@code AppServiceControllerRegistrar} 注册为
@@ -101,7 +88,7 @@ public class ServiceLocationTemplateAppService {
     /** 术语下拉与码→文案映射。 */
     private final TerminologyOptionLoader terminologyOptionLoader;
     /** 药品/耗材定义批量展示加载。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /**
      * 返回取药科室配置页初始化下拉（科室树、药房/药库、物品表类型、分类与用法分码表）。
@@ -109,6 +96,9 @@ public class ServiceLocationTemplateAppService {
      * @return 初始化 DTO，各选项列表非 {@code null}
      */
     public ServiceLocationTemplateInitDto init() {
+        // Gate：只读页初始化，不写库
+        // Pre：装配科室树、药房/药库、物品表与分类/用法下拉
+        // Asm：映射页初始化响应
         ServiceLocationTemplateInitDto dto = new ServiceLocationTemplateInitDto();
         dto.setOrganizationOptions(this.buildOrganizationOptions());
         dto.setDefLocationOptions(this.buildDefLocationOptions());
@@ -132,14 +122,15 @@ public class ServiceLocationTemplateAppService {
      * @throws BusinessException 开立科室不存在时
      */
     public List<ServiceLocationTemplateDto> listByOrganization(ListServiceLocationTemplateByOrganizationRequest request) {
+        // Gate：开立科室非空且须存在
         if (request == null || request.getOrganizationId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "开立科室不能为空");
         }
-        // 先确认科室存在，避免对无效 org 返回空列表造成误判
         Organization organization = organizationQueryService.loadOrganizationByIdForDisplay(request.getOrganizationId());
         if (organization == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "开立科室不存在");
         }
+        // Pre：拉取该科室全部有效规则
         List<ServiceLocationTemplateQueryModel> rows =
             serviceLocationTemplateQueryService.listDistributionRulesByOrganization(request.getOrganizationId());
         List<ServiceLocationTemplateDto> result = new ArrayList<>();
@@ -147,6 +138,7 @@ public class ServiceLocationTemplateAppService {
             result.add(serviceLocationTemplateMapper.toDto(row));
         }
         this.enrichDtoList(result, organization.getName());
+        // Asm：返回 enrich 后的规则列表
         return result;
     }
 
@@ -157,15 +149,17 @@ public class ServiceLocationTemplateAppService {
      * @throws BusinessException 参数非法、库位无效或配置键冲突时
      */
     public void saveDistributionConfig(SaveServiceLocationTemplateConfigRequest request) {
+        // Gate：开立科室非空
         if (request == null || request.getOrganizationId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT, "开立科室不能为空");
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.SERVICE_LOCATION_TEMPLATE_INVALID_ARGUMENT,
             "请先登录后再保存取药科室配置");
+        // Gate：保存前复合校验（科室、物品表、库位、用法码表）
         this.validateSaveDistributionConfigRequest(request);
         SaveDistributionConfigCommand command = serviceLocationTemplateMapper.toSaveCommand(request, operatorId);
-        // 整科覆盖落库：领域层单事务内先软删后插，保存后医生站 match/listCandidate 立即读到新规则
+        // Cmd：整科覆盖落库（领域层单事务先软删后插）
         serviceLocationTemplateDomainService.saveDistributionConfig(command);
     }
 
@@ -278,7 +272,7 @@ public class ServiceLocationTemplateAppService {
             if (row.getDefLocationId() != null) {
                 locationIds.add(row.getDefLocationId());
             }
-            if (row.getItemDefinitionId() != null && StringUtils.isNotBlank(row.getItemTable())) {
+            if (row.getItemDefinitionId() != null && StringUtils.isNotEmpty(row.getItemTable())) {
                 ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
                 lookup.setProductTableName(row.getItemTable());
                 lookup.setProductDefinitionId(row.getItemDefinitionId());
@@ -286,7 +280,7 @@ public class ServiceLocationTemplateAppService {
             }
         }
         Map<Long, String> locationNameById = locationQueryService.mapNamesByIds(locationIds);
-        Map<String, ProductDefinitionDisplayDto> productByKey = productDefinitionBatchLoader.loadAsMap(productLookups);
+        Map<String, ProductDefinitionDisplayDto> productByKey = productDefinitionDisplayTerminologyAssembler.loadAsMap(productLookups);
         Map<String, String> medicationCategoryLabels =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.MEDICATION_CATEGORY_CODE);
         Map<String, String> deviceCategoryLabels =
@@ -315,12 +309,12 @@ public class ServiceLocationTemplateAppService {
                 herbalCategoryFlag = this.isHerbalMedicationCategory(row.getDistributionCategoryCode());
             }
             row.setMethodCode_dictText(
-                TcmMethodCodeDisplaySupport.resolveMethodDisplayName(
+                TcmMethodCodeDisplayAssembler.resolveMethodDisplayName(
                     tcmMethodLabels,
                     westernMethodLabels,
                     herbalCategoryFlag,
                     row.getMethodCode()));
-            if (row.getItemDefinitionId() != null && StringUtils.isNotBlank(row.getItemTable())) {
+            if (row.getItemDefinitionId() != null && StringUtils.isNotEmpty(row.getItemTable())) {
                 String key = ProductDefinitionKeyUtil.buildCompositeKey(row.getItemTable(), row.getItemDefinitionId());
                 ProductDefinitionDisplayDto product = productByKey.get(key);
                 if (product != null) {

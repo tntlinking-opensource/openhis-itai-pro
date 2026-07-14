@@ -1,37 +1,18 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 在校状态枚举。
  */
 public enum StudentStatus implements EnumInterface {
-    /**
-     * IN_SCHOOL。
-     */
+    /** 在校（StudentStatus，编码 {@code IN_SCHOOL}）。 */
     IN_SCHOOL(0L, "IN_SCHOOL", "在校", "", 0L),
-    /**
-     * ON_LEAVE。
-     */
+    /** 休学（StudentStatus，编码 {@code ON_LEAVE}）。 */
     ON_LEAVE(0L, "ON_LEAVE", "休学", "", 1L),
-    /**
-     * LEFT_SCHOOL。
-     */
+    /** 离校（StudentStatus，编码 {@code LEFT_SCHOOL}）。 */
     LEFT_SCHOOL(0L, "LEFT_SCHOOL", "离校", "", 2L);
 
     private final Long codeSystemId;
@@ -40,9 +21,7 @@ public enum StudentStatus implements EnumInterface {
     private final String definition;
     private final Long sortOrder;
 
-    /**
-     * StudentStatus。
-     */
+    /** 枚举构造：绑定编码系统、持久化 code、展示名与排序。 */
     StudentStatus(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;
         this.code = code;

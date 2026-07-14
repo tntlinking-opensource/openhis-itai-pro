@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.wardbed.mapper;
 
 import com.openhis.health.application.basic.wardbed.dto.WardBedDto;
@@ -31,7 +18,7 @@ import com.openhis.health.domain.share.enums.LocationMode;
 import com.openhis.health.domain.share.enums.LocationStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.exception.ValidationException;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.Collections;
@@ -203,7 +190,7 @@ public class WardBedMapperImpl implements WardBedMapper {
      * @return 非空 JSON 字符串
      */
     private String resolveTypeJson(String typeJson) {
-        if (StringUtils.isBlank(typeJson)) {
+        if (StringUtils.isEmpty(typeJson)) {
             return "{}";
         }
         return typeJson;
@@ -216,7 +203,7 @@ public class WardBedMapperImpl implements WardBedMapper {
      * @return 领域形态 code
      */
     private String requireLocationFormCode(String formCode) {
-        if (StringUtils.isBlank(formCode)) {
+        if (StringUtils.isEmpty(formCode)) {
             throw new ValidationException("物理形式不能为空");
         }
         LocationForm form = EnumUtil.fromCode(LocationForm.class, formCode.trim());
@@ -233,7 +220,7 @@ public class WardBedMapperImpl implements WardBedMapper {
      * @return 领域模式 code
      */
     private String resolveModeCode(String modeCode) {
-        if (StringUtils.isBlank(modeCode)) {
+        if (StringUtils.isEmpty(modeCode)) {
             return LocationMode.INSTANCE.getCode();
         }
         LocationMode mode = EnumUtil.fromCode(LocationMode.class, modeCode.trim());

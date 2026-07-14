@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.chargeitemautogen.service;
 
 import com.openhis.health.domain.share.constants.CustomConstants;
@@ -31,7 +18,11 @@ import java.math.BigDecimal;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 收费明细自动生成规则写侧领域服务。
+ * 收费明细自动生成规则（{@code cus_charge_item_auto_gen}）聚合写侧领域服务。
+ *
+ * <p>职责：按就诊+触发源+执行科室+定价行维护自动计费规则；组合键唯一（BR-CAG）。</p>
+ * <p>不变量：DISCARDED 终态不可编辑；持久化先于 {@link ChargeItemAutoGenEditedEvent} 发布。</p>
+ * <p>仅注入本聚合 {@link ChargeItemAutoGenRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -58,13 +49,13 @@ public class ChargeItemAutoGenDomainService {
         rule.setTriggerSourceId(command.getTriggerSourceId());
         rule.setChargeDefinitionId(command.getChargeDefinitionId());
         rule.setPerformingOrgId(command.getPerformingOrgId());
-        // 业务分支处理：数量缺省为 1。
+        // 数量未传时默认 1，保证自动计费有有效计量。
         if (command.getQuantityValue() == null) {
             rule.setQuantityValue(BigDecimal.ONE);
         } else {
             rule.setQuantityValue(command.getQuantityValue());
         }
-        // 业务分支处理：优先级缺省为 0。
+        // 优先级未传时默认 0，多规则并存时按最低优先级参与匹配。
         if (command.getPriority() == null) {
             rule.setPriority(0);
         } else {
@@ -72,7 +63,7 @@ public class ChargeItemAutoGenDomainService {
         }
         rule.setRemark(command.getRemark());
 
-        // 业务分支处理：默认状态 ACTIVE（DM §6.1.1 缺省约定）。
+        // 状态未传时默认 ACTIVE（DM §6.1.1 缺省约定）。
         if (command.getStatusEnum() == null) {
             rule.initActiveStatus();
         } else {
@@ -88,14 +79,15 @@ public class ChargeItemAutoGenDomainService {
             rule.getPerformingOrgId(),
             rule.getChargeDefinitionId()
         );
-        // 业务分支处理：组合键冲突时抛异常。
+        // 同就诊+触发源+执行科室+定价组合已存在则拒绝重复建规。
         if (exists) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_IDENTITY_CONFLICT, "规则组合键已存在");
         }
 
+        // 持久化
         ChargeItemAutoGen saved = repository.save(rule);
 
-        // Event：发布新增成功事件（OP_CREATE）。
+        // 发布事件：规则已创建（OP_CREATE）
         domainEventPublisher.publish(new ChargeItemAutoGenEditedEvent(
             saved.getId(),
             CustomConstants.ChargeItemAutoGenOperation.OP_CREATE,
@@ -116,39 +108,39 @@ public class ChargeItemAutoGenDomainService {
         // Pre：校验目标行存在且未软删（BR-CAG-003/010）。
         ChargeItemAutoGen rule = loadMutableRule(command.getRuleId());
 
-        // 业务分支处理：规则名称变更。
+        // 命令传入规则名称时覆盖展示名称。
         if (command.getRuleName() != null) {
             rule.setRuleName(command.getRuleName());
         }
-        // 业务分支处理：住院就诊变更。
+        // 命令传入住院就诊时覆盖规则归属就诊。
         if (command.getEncounterId() != null) {
             rule.setEncounterId(command.getEncounterId());
         }
-        // 业务分支处理：触发源表变更。
+        // 命令传入触发源表时覆盖上游业务表锚点。
         if (command.getTriggerSourceTable() != null) {
             rule.setTriggerSourceTable(command.getTriggerSourceTable());
         }
-        // 业务分支处理：触发源标识变更。
+        // 命令传入触发源标识时覆盖上游业务主键。
         if (command.getTriggerSourceId() != null) {
             rule.setTriggerSourceId(command.getTriggerSourceId());
         }
-        // 业务分支处理：目标定价变更。
+        // 命令传入目标定价时覆盖计费项目定义。
         if (command.getChargeDefinitionId() != null) {
             rule.setChargeDefinitionId(command.getChargeDefinitionId());
         }
-        // 业务分支处理：执行科室标识变更。
+        // 命令传入执行科室时覆盖计费执行科室。
         if (command.getPerformingOrgId() != null) {
             rule.setPerformingOrgId(command.getPerformingOrgId());
         }
-        // 业务分支处理：数量值变更。
+        // 命令传入数量时覆盖自动计费数量。
         if (command.getQuantityValue() != null) {
             rule.setQuantityValue(command.getQuantityValue());
         }
-        // 业务分支处理：优先级变更。
+        // 命令传入优先级时覆盖规则匹配权重。
         if (command.getPriority() != null) {
             rule.setPriority(command.getPriority());
         }
-        // 业务分支处理：备注变更。
+        // 命令传入备注时覆盖规则说明。
         if (command.getRemark() != null) {
             rule.setRemark(command.getRemark());
         }
@@ -163,7 +155,7 @@ public class ChargeItemAutoGenDomainService {
             rule.getChargeDefinitionId(),
             rule.getId()
         );
-        // 业务分支处理：组合键冲突时抛异常。
+        // 同就诊+触发源+执行科室+定价组合已存在则拒绝重复建规。
         if (exists) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_AUTO_GEN_IDENTITY_CONFLICT, "规则组合键已存在");
         }

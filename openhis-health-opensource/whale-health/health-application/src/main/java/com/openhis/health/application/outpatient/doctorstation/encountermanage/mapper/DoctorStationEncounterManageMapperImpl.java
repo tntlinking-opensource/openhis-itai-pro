@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.encountermanage.mapper;
 
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.CompleteOutpatientEncounterRequest;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.MarkOutpatientLeaveRequest;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.request.PageOutpatientInfoForDoctorStationRequest;
@@ -29,7 +16,7 @@ import com.openhis.health.application.outpatient.doctorstation.encountermanage.r
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.response.StartOutpatientReceptionResponse;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.mapper.DoctorStationDiagnosisMapper;
 import com.openhis.health.application.outpatient.doctorstation.encountermanage.dto.OutpatientInfoItemDto;
-import com.openhis.health.module.common.converter.TextValueConverter;
+import com.openhis.health.application.shared.converter.TextValueConverter;
 import com.openhis.health.domain.administration.encounter.command.CompleteOutpatientEncounterCommand;
 import com.openhis.health.domain.administration.encounter.command.MarkOutpatientLeaveCommand;
 import com.openhis.health.domain.administration.encounter.command.StartOutpatientReceptionCommand;

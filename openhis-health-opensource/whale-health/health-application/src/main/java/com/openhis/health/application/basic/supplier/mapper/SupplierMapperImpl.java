@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.supplier.mapper;
 
 import com.openhis.health.application.basic.supplier.dto.SupplierDto;
@@ -27,6 +14,8 @@ import com.openhis.health.domain.custom.supplier.entity.Supplier;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierDetailQueryModel;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
 import com.openhis.health.domain.share.enums.SupplierStatus;
+import com.openhis.health.domain.share.enums.SupplierType;
+import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.stereotype.Component;
 
@@ -106,7 +95,7 @@ public class SupplierMapperImpl implements SupplierMapper {
         supplierDto.setId(supplier.getId());
         supplierDto.setBusNo(supplier.getBusNo());
         supplierDto.setName(supplier.getName());
-        supplierDto.setTypeEnum(parseInt(supplier.getTypeEnum()));
+        supplierDto.setTypeEnum(EnumUtil.toDisplayIntegerFromCodeOrNumber(SupplierType.class, supplier.getTypeEnum()));
         supplierDto.setAddress(supplier.getAddress());
         supplierDto.setCreditCode(supplier.getCreditCode());
         supplierDto.setLegalRepresentative(supplier.getLegalRepresentative());
@@ -137,7 +126,7 @@ public class SupplierMapperImpl implements SupplierMapper {
         dto.setId(supplier.getId());
         dto.setBusNo(supplier.getBusNo());
         dto.setName(supplier.getName());
-        dto.setTypeEnum(parseInt(supplier.getTypeEnum()));
+        dto.setTypeEnum(EnumUtil.toDisplayIntegerFromCodeOrNumber(SupplierType.class, supplier.getTypeEnum()));
         dto.setAddress(supplier.getAddress());
         dto.setCreditCode(supplier.getCreditCode());
         dto.setLegalRepresentative(supplier.getLegalRepresentative());
@@ -168,7 +157,7 @@ public class SupplierMapperImpl implements SupplierMapper {
         dto.setId(supplier.getId());
         dto.setBusNo(supplier.getBusNo());
         dto.setName(supplier.getName());
-        dto.setTypeEnum(parseInt(supplier.getTypeEnum()));
+        dto.setTypeEnum(EnumUtil.toDisplayIntegerFromCodeOrNumber(SupplierType.class, supplier.getTypeEnum()));
         fillStatusFields(dto, supplier.getStatusEnum());
         dto.setPyStr(supplier.getPyStr());
         dto.setAddress(supplier.getAddress());
@@ -201,23 +190,6 @@ public class SupplierMapperImpl implements SupplierMapper {
                 null);
 
         return supplierDto;
-    }
-
-    /**
-     * 将可空数字字符串解析为 {@link Integer}；空白或非法格式返回 null。
-     *
-     * @param value 原始字符串
-     * @return 解析结果或 null
-     */
-    private Integer parseInt(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        try {
-            return Integer.parseInt(value);
-        } catch (NumberFormatException ex) {
-            return null;
-        }
     }
 
     /**

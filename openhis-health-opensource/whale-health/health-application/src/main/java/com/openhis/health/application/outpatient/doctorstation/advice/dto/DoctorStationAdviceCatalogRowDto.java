@@ -1,26 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.advice.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -37,32 +24,31 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 医生站医嘱开立目录行。 */
 @Schema(description = "医生站医嘱开立目录行")
 public class DoctorStationAdviceCatalogRowDto {
 
-    /** 目录锚点：产品定义主键。 */
+    /** 产品定义主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "产品定义主键")
     private Long productDefinitionId;
 
-    /** 目录锚点：产品来源物理表名。 */
+    /** 产品来源表名。 */
     @Schema(description = "产品来源表名")
     private String productTableName;
 
-    /** 业务编码（读模型 {@code product_bus_no}）。 */
+    /** 业务编码。 */
     @Schema(description = "业务编码")
     private String busNo;
 
-    /** 展示名称（读模型 {@code product_name}）。 */
+    /** 展示名称。 */
     @Schema(description = "展示名称")
     private String name;
 
-    /** 名称拼音检索码（读模型 {@code py_str}）。 */
+    /** 拼音检索码。 */
     @Schema(description = "拼音检索码")
     private String pyCode;
 
-    /** 名称五笔检索码（读模型 {@code wb_str}）。 */
+    /** 五笔检索码。 */
     @Schema(description = "五笔检索码")
     private String wbCode;
 
@@ -70,7 +56,7 @@ public class DoctorStationAdviceCatalogRowDto {
     @Schema(description = "目录类别编码")
     private String categoryCode;
 
-    /** 目录类别展示名（读模型 {@code category_code_dict_text}）。 */
+    /** 目录类别展示名。 */
     @Schema(description = "目录类别展示名")
     private String categoryCodeDictText;
 
@@ -81,6 +67,7 @@ public class DoctorStationAdviceCatalogRowDto {
     private String unitCode;
 
     @Schema(description = "计价主单位展示名")
+    /** 计价主单位展示名。 */
     private String unitName;
 
     /**
@@ -89,7 +76,7 @@ public class DoctorStationAdviceCatalogRowDto {
     @Schema(description = "五类单位槽列表")
     private List<ProductDefinitionCatalogUnitBandDto> unitBands;
 
-    /** 默认用药频次编码（药品读模型投影）。 */
+    /** 默认频次编码。 */
     @Schema(description = "默认频次编码")
     private String rateCode;
 
@@ -97,7 +84,7 @@ public class DoctorStationAdviceCatalogRowDto {
     @Schema(description = "默认频次展示名")
     private String rateCodeDictText;
 
-    /** 默认用法编码（药品）。 */
+    /** 默认用法编码。 */
     @Schema(description = "默认用法编码")
     private String methodCode;
 
@@ -105,7 +92,7 @@ public class DoctorStationAdviceCatalogRowDto {
     @Schema(description = "默认用法展示名")
     private String methodCodeDictText;
 
-    /** 剂型编码（药品）。 */
+    /** 剂型编码。 */
     @Schema(description = "剂型编码")
     private String doseFormCode;
 
@@ -121,7 +108,7 @@ public class DoctorStationAdviceCatalogRowDto {
     @Schema(description = "限制使用范围说明")
     private String restrictedScope;
 
-    /** 限制用药等级枚举编码。 */
+    /** 限制用药等级编码。 */
     @Schema(description = "限制用药等级编码")
     private String restrictedEnum;
 
@@ -129,11 +116,11 @@ public class DoctorStationAdviceCatalogRowDto {
     @Schema(description = "限制用药等级展示名")
     private String restrictedEnumDictText;
 
-    /** 拆零属性持久化码。 */
+    /** 拆零属性码。 */
     @Schema(description = "拆零属性码")
     private String partAttributeEnum;
 
-    /** 拆零属性术语展示名。 */
+    /** 拆零属性展示名。 */
     @Schema(description = "拆零属性展示名")
     private String partAttributeEnumDictText;
 
@@ -141,23 +128,23 @@ public class DoctorStationAdviceCatalogRowDto {
     @Schema(description = "住院临时拆分属性码")
     private String thoPartAttributeEnum;
 
-    /** 住院临时拆分属性术语展示名。 */
+    /** 住院临时拆分属性展示名。 */
     @Schema(description = "住院临时拆分属性展示名")
     private String thoPartAttributeEnumDictText;
 
-    /** 包装规格（读模型 {@code total_volume}）。 */
+    /** 包装规格。 */
     @Schema(description = "包装规格")
     private String totalVolume;
 
-    /** 诊疗活动类型 code（字符串化整型）。 */
+    /** 诊疗活动类型 code。 */
     @Schema(description = "诊疗活动类型 code")
     private String activityTypeCode;
 
-    /** 是否皮试药（读模型标志）。 */
+    /** 皮试标志。 */
     @Schema(description = "皮试标志")
     private Boolean skinTestFlag;
 
-    /** 是否注射给药相关（读模型标志）。 */
+    /** 注射标志。 */
     @Schema(description = "注射标志")
     private Boolean injectFlag;
 
@@ -177,15 +164,15 @@ public class DoctorStationAdviceCatalogRowDto {
     @Schema(description = "默认发药/发材库房 id")
     private Long defaultDispenseLocationId;
 
-    /** 默认库房名称（当前装配不解析名称，预留与库位主数据对齐）。 */
+    /** 默认库房名称。 */
     @Schema(description = "默认库房名称")
     private String defaultDispenseLocationName;
 
-    /** 默认发点下可开总量（药/材预减后汇总，单位与目录库存列展示单位一致，见 {@code ProductDefinitionCatalogUnitBandsAssembler#convertDoctorStationCatalogAvailableQuantity}）。 */
+    /** 默认发点下可开总量展示列（展示单位，非拆零小单位）。 */
     @Schema(description = "默认发点下可开总量展示列（展示单位，非拆零小单位）")
     private BigDecimal availableQuantity;
 
-    /** 预减后的库存行列表（仅药/材；批号在明细行）。 */
+    /** 预减后的库存行列表（仅药/材）。 */
     @Schema(description = "预减后的库存行列表（仅药/材）")
     private List<DoctorStationAdviceInventoryRowDto> inventoryList;
 
@@ -196,7 +183,7 @@ public class DoctorStationAdviceCatalogRowDto {
     @Schema(description = "目录展示单价（元）；药耗有库存时与首条库存批号的批号售价一致")
     private BigDecimal unitPrice;
 
-    /** 与 {@link #unitPrice} 对应的收费项定义主键。 */
+    /** 收费项定义主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "收费项定义主键")
     private Long chargeItemDefinitionId;

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 /**
@@ -30,6 +17,9 @@ public interface OutpatientDailySettlementConstants {
 
     /** 日结查询失败（EX-OP-DCL-103）。 */
     String EX_OP_DCL_103 = "EX-OP-DCL-103";
+
+    /** 勾选 payment 非法（EX-OP-DCL-105）。 */
+    String EX_OP_DCL_105 = "EX-OP-DCL-105";
 
     /** 无可交账流水（EX-OP-DCL-201）。 */
     String EX_OP_DCL_201 = "EX-OP-DCL-201";
@@ -58,13 +48,25 @@ public interface OutpatientDailySettlementConstants {
     /** 优惠金额占位（本期固定 0.00）。 */
     String DISCOUNT_AMOUNT_ZERO = "0.00";
 
-    /** 金额展示小数位。 */
+/** OutpatientDailySettlement 共享常量：display scale，值 {@code 2}。 */
     int AMOUNT_DISPLAY_SCALE = 2;
 
     /** 财务代交账经办人下拉单次加载上限。 */
     int CASHIER_OPTION_PAGE_SIZE = 500;
 
-    /** 诊察费财务类别码（号源/挂号在日结汇总特列，对齐 ter_concept 236/1012）。 */
+    /** charge_item 无定义名时的项目行展示兜底。 */
+    String CHARGE_LINE_NAME_FALLBACK = "收费项目";
+
+    /** 交账弹窗支付方式：费用性质与渠道分隔符。 */
+    String PAY_METHOD_LABEL_SEPARATOR = "·";
+
+    /** 医保渠道短名：统筹。 */
+    String PAY_METHOD_INSURANCE_FUND_SHORT = "统筹";
+
+    /** 医保渠道短名：个账。 */
+    String PAY_METHOD_INSURANCE_ACCT_SHORT = "个账";
+
+    /** 诊察费财务类别码（号源/挂号在日结汇总归并目标，对齐 ter_concept 236/1012）。 */
     String REGISTRATION_FEE_FIN_TYPE_CODE = "1012";
 
     /** 体检财务类别码（fin_type_code，老日结单 peisCnt 锚点）。 */

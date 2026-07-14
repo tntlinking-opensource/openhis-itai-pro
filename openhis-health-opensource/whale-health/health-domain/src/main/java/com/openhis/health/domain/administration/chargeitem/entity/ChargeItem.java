@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.chargeitem.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -25,7 +12,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -221,16 +208,16 @@ public class ChargeItem extends BaseAuditedEntity {
         if (this.encounterId == null) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细就诊标识不能为空");
         }
-        if (StringUtils.isBlank(this.busNo)) {
+        if (StringUtils.isEmpty(this.busNo)) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细业务流水号不能为空");
         }
-        if (StringUtils.isBlank(this.statusEnum)) {
+        if (StringUtils.isEmpty(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细状态枚举不能为空");
         }
-        if (StringUtils.isBlank(this.generateSourceEnum)) {
+        if (StringUtils.isEmpty(this.generateSourceEnum)) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细生成来源不能为空");
         }
-        if (StringUtils.isBlank(this.contextEnum)) {
+        if (StringUtils.isEmpty(this.contextEnum)) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细收费上下文不能为空");
         }
         if (this.occurrenceTime == null) {
@@ -242,13 +229,13 @@ public class ChargeItem extends BaseAuditedEntity {
         if (this.totalPrice == null) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细总价不能为空");
         }
-        if (this.quantityValue == null || StringUtils.isBlank(this.quantityUnit)) {
+        if (this.quantityValue == null || StringUtils.isEmpty(this.quantityUnit)) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细数量及单位不能为空");
         }
         if (this.unitPrice == null || this.baseAmount == null || this.discountAmount == null || this.surchargeAmount == null) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细金额字段不完整");
         }
-        if (StringUtils.isBlank(this.serviceTable) || this.serviceId == null) {
+        if (StringUtils.isEmpty(this.serviceTable) || this.serviceId == null) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细业务来源锚点不能为空");
         }
         if (this.accountId == null) {

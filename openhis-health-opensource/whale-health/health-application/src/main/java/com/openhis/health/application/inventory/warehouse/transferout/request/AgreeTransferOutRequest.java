@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.transferout.request;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -23,21 +10,21 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
+ * 同意药库调出单请求（IF-WHS-TR-08）。
  *
- * <p>触发同意链：领域同意、发放、源库扣减、目的入账、药房入库壳单与追溯写入由应用服务编排，单事务边界见 AS-SDD。</p>
+ * <p>触发同意链：领域同意、发放、源库扣减、目的入账、对侧调入壳单与追溯写入由应用服务编排，单事务边界见 AS-SDD。</p>
  */
 @Getter
 @Setter
 @Accessors(chain = true)
 public class AgreeTransferOutRequest {
 
-    @Schema(description = "出库业务单号", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 调出业务单号。 */
+    @Schema(description = "调出业务单号", requiredMode = Schema.RequiredMode.REQUIRED)
     private String busNo;
 
     /**
@@ -45,6 +32,7 @@ public class AgreeTransferOutRequest {
      */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "已废弃：审批时间由服务端写入，可忽略", deprecated = true)
+    /** 已废弃：审批时间由服务端写入，可忽略。 */
     private LocalDateTime approvalTime;
 
     /**
@@ -53,11 +41,12 @@ public class AgreeTransferOutRequest {
     @Schema(description = "已废弃：审批人取当前登录用户，可忽略", deprecated = true)
     private Long approverId;
 
-    /** @deprecated CHS 模块启用即上传，此开关不再生效。 */
+    /** 同意后是否上传医保进销存。 */
     @Deprecated
     @Schema(description = "同意后是否上传医保进销存")
     private Boolean medicareUploadEnabled;
 
+    /** 医保契约 busNo。 */
     @Schema(description = "医保契约 busNo")
     private String contractBusNo;
 }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.registration.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -29,12 +16,15 @@ import lombok.experimental.Accessors;
 @Schema(description = "挂号小票收费项目行")
 public class RegistrationReceiptChargeLineDto {
 
+    /** 项目名称。 */
     @Schema(description = "项目名称")
     private String itemName;
 
+    /** 金额展示文本。 */
     @Schema(description = "金额展示文本")
     private String amountText;
 
+    /** 费用类别展示文本。 */
     @Schema(description = "费用类别展示文本")
     private String chargeCategoryText;
 }

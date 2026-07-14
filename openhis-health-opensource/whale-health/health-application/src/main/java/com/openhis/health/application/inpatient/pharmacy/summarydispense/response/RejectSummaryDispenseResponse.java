@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.pharmacy.summarydispense.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -30,14 +17,14 @@ import java.util.List;
 @Getter
 @Setter
 @Accessors(chain = true)
-/** 批量汇总驳回响应。 */
 @Schema(description = "批量汇总驳回响应")
 public class RejectSummaryDispenseResponse {
 
+    /** 本轮已成功驳回的汇总单号（Supply REJECT + 发放行释放 summary_no）。 */
     @Schema(description = "已驳回汇总单号")
     private List<String> summaryNos;
 
-    /** 成功提示。 */
+    /** 成功提示（批量时含处理张数）。 */
     @Schema(description = "成功提示")
     private String message;
 }

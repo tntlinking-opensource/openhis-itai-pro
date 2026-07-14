@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.response;
 
@@ -19,13 +20,17 @@ import java.util.List;
 @Schema(description = "住院中医 Tab 初始化响应")
 public class InitInpatientDoctorStationTcmResponse {
 
-    /** 中药用法下拉（tcm_method_code）。 */
+    /** 中药用法下拉。 */
     @Schema(description = "中药用法下拉")
     private List<OptionDto> tcmMethodCodeOptions = new ArrayList<>();
 
     /** 用药频次下拉。 */
     @Schema(description = "用药频次下拉")
     private List<OptionDto> medicationRateOptions = new ArrayList<>();
+
+    /** 单味特殊煎法下拉。 */
+    @Schema(description = "单味特殊煎法下拉")
+    private List<OptionDto> dosageInstructionOptions = new ArrayList<>();
 
     /** 长临筛选默认值。 */
     @Schema(description = "长临筛选默认值")

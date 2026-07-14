@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.temperaturesheet.response;
 
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto.TemperatureSheetDerivedMetaDto;
@@ -24,23 +24,23 @@ import java.util.List;
 @Schema(description = "体温单数据响应")
 public class GetNurseStationTemperatureSheetDataResponse {
 
-    /** 曲线点（仅主表体温）。 */
+    /** 曲线点。 */
     @Schema(description = "曲线点")
     private List<TemperatureSheetTemperaturePointDto> temperaturePoints = new ArrayList<>();
 
-    /** 日×6 槽宽表行。 */
+    /** 网格行。 */
     @Schema(description = "网格行")
     private List<TemperatureSheetGridRowDto> gridRows = new ArrayList<>();
 
-    /** 分页窗口。 */
+    /** 分页。 */
     @Schema(description = "分页")
     private TemperatureSheetPaginationDto pagination;
 
-    /** 住院天数/周次/术后天数等派生元数据。 */
+    /** 派生元数据。 */
     @Schema(description = "派生元数据")
     private TemperatureSheetDerivedMetaDto derivedMeta;
 
-    /** focusRecordDate 有值时的 6 槽+补充项回显。 */
+    /** 录入槽回显。 */
     @Schema(description = "录入槽回显")
     private List<TemperatureSheetFillSlotDto> fillSlots = new ArrayList<>();
 }

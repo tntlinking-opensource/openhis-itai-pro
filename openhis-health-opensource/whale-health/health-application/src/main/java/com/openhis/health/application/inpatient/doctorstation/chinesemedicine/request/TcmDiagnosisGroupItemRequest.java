@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -32,7 +19,7 @@ import lombok.experimental.Accessors;
 @Schema(description = "中医病证组批次元素")
 public class TcmDiagnosisGroupItemRequest {
 
-    /** 中医证候组号；空表示新建组。 */
+    /** 中医证候组号。 */
     @Schema(description = "中医证候组号")
     private String tcmSyndromeGroup;
 
@@ -42,7 +29,7 @@ public class TcmDiagnosisGroupItemRequest {
     @Schema(description = "病名目录主键", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long diseaseDefinitionId;
 
-    /** 病名病情事实主键（更新时）。 */
+    /** 病名病情事实主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "病名病情事实主键")
     private Long diseaseConditionId;
@@ -53,7 +40,7 @@ public class TcmDiagnosisGroupItemRequest {
     @Schema(description = "证候目录主键", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long syndromeDefinitionId;
 
-    /** 证候病情事实主键（更新时）。 */
+    /** 证候病情事实主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "证候病情事实主键")
     private Long syndromeConditionId;

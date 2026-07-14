@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.chinesemedicine.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -59,7 +46,7 @@ public class TcmRxLineDto {
     @Schema(description = "单剂用量单位展示名")
     private String doseUnitName;
 
-    /** 请求数量（单剂×付数）。 */
+    /** 请求数量。 */
     @Schema(description = "请求数量")
     private BigDecimal quantity;
 
@@ -71,7 +58,7 @@ public class TcmRxLineDto {
     @Schema(description = "数量单位展示名")
     private String unitName;
 
-    /** 单剂用量单位零售价（元/剂量单位，与开立目录 DOSE 槽口径一致）。 */
+    /** 单剂用量单位零售价。 */
     @Schema(description = "单剂用量单位零售价")
     private BigDecimal retailUnitPrice;
 
@@ -86,4 +73,12 @@ public class TcmRxLineDto {
     /** 行状态枚举码。 */
     @Schema(description = "行状态枚举码")
     private String lineStatusEnum;
+
+    /** 特殊煎法术语 code。 */
+    @Schema(description = "特殊煎法术语 code")
+    private String dosageInstructionCode;
+
+    /** 特殊煎法展示名。 */
+    @Schema(description = "特殊煎法展示名")
+    private String dosageInstructionText;
 }

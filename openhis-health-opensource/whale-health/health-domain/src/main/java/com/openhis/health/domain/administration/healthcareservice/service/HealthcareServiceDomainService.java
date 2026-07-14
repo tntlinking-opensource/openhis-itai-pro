@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.healthcareservice.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -39,7 +26,7 @@ import java.util.*;
  * <p>管理医疗服务的创建、发布、修改、停用、重新发布和废弃全生命周期。
  * 所有写操作均遵循「先落库后发事件」时序（通用规范 B.14 硬门禁）。</p>
  *
- * <p>对应 DM-ADM-007 §6.1 写侧方法集。</p>
+ * <p>对应 DM-ADM-007 §6.1 写侧方法集；仅注入本聚合 {@link HealthcareServiceRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.body.service;
 
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
@@ -67,8 +54,10 @@ public class BodyAppService {
      * @return 树根选项列表（ 承载子树）
      */
     public List<OptionDto> getBodyStructureTree() {
-        // 读侧树模型 → 前端统一 OptionDto 树，不做写命令。
+        // Gate：只读树查询，无写侧门禁
+        // Pre：读侧加载身体部位树模型
         List<BodyStructureTreeQueryModel> roots = bodyStructureQueryService.getBodyStructureTree();
+        // Asm：映射为前端 OptionDto 树
         return bodyStructureMapper.toOptionTree(roots);
     }
 
@@ -78,7 +67,9 @@ public class BodyAppService {
      * @return 部位 DTO 列表（过滤空元素）
      */
     public List<BodyDto> getBodyList() {
-        // 全量平面列表：不分页，仅供管理端简易表格；数据量大时应改为分页接口。
+        // Gate：只读全量列表，无分页窗口
+        // Pre：读侧平面列表（不分页）
+        // Asm：过滤空元素并映射 DTO
         return bodyStructureQueryService.getList(null, false, Pageable.unpaged())
             .getContent()
             .stream()
@@ -96,14 +87,16 @@ public class BodyAppService {
      * @throws EntityNotFoundException 部位不存在或已删除
      */
     public BodyDto getBody(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("查询身体部位失败：id 不能为空");
         }
-        // 单条详情：查询模型 → DTO，缺失时明确 404 语义。
+        // Pre：按 id 加载详情查询模型
         BodyStructureInfoQueryModel model = bodyStructureQueryService.getBodyStructureInfo(id);
         if (model == null) {
             throw new EntityNotFoundException("身体部位不存在或已删除");
         }
+        // Asm：映射详情 DTO
         return bodyStructureMapper.toDto(model);
     }
 
@@ -116,18 +109,21 @@ public class BodyAppService {
      * @throws EntityNotFoundException 回读详情失败（写入成功但查询不到）
      */
     public BodyDto createBody(CreateBodyRequest request) {
+        // Gate：请求体与部位名称必填
         if (request == null) {
             throw new ValidationException("创建身体部位失败：请求体不能为空");
         }
         if (request.getName() == null || request.getName().trim().isEmpty()) {
             throw new ValidationException("创建身体部位失败：部位名称不能为空");
         }
-        // 新增：Mapper → 领域统一写入口 addOrEdit → 按返回 id 回读详情。
+        // Pre：请求映射为领域写命令
         var command = bodyStructureMapper.toCreateCommand(request);
+        // Cmd：领域新增或编辑统一入口
         Long id = bodyStructureDomainService.addOrEditBodyStructure(command);
         if (id == null) {
             throw new ValidationException("创建身体部位失败：保存失败");
         }
+        // Asm：按新主键回读详情
         return getBody(id);
     }
 
@@ -140,19 +136,22 @@ public class BodyAppService {
      * @throws EntityNotFoundException 回读时部位不存在
      */
     public BodyDto updateBody(UpdateBodyRequest request) {
+        // Gate：主键与名称必填
         if (request == null || request.getId() == null) {
             throw new ValidationException("更新身体部位失败：id 不能为空");
         }
         if (request.getName() == null || request.getName().trim().isEmpty()) {
             throw new ValidationException("更新身体部位失败：部位名称不能为空");
         }
-        // 更新：仍走 addOrEdit；若写侧未返回 id，则回退用请求 id 回读（兼容领域实现差异）。
+        // Pre：请求映射为领域写命令
         var command = bodyStructureMapper.toUpdateCommand(request);
+        // Cmd：领域更新（仍走 addOrEdit 统一入口）
         Long id = bodyStructureDomainService.addOrEditBodyStructure(command);
+        // 业务分支：写侧未返回 id 时回退用请求 id 回读
         if (id == null) {
-            // 写侧返回首条保存记录的 id；更新语义下如果返回空，回退使用请求 id 回读。
             id = request.getId();
         }
+        // Asm：回读最新详情
         return getBody(id);
     }
 
@@ -163,10 +162,11 @@ public class BodyAppService {
      * @throws ValidationException {@code id} 为空
      */
     public void deleteBody(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("删除身体部位失败：id 不能为空");
         }
-        // 批量命令形态下单条删除：领域层统一逻辑删除语义。
+        // Cmd：领域逻辑删除（批量命令形态下单条）
         DeleteBodyStructureCommand command = new DeleteBodyStructureCommand();
         DeleteBodyStructureCommand.DeleteBodyStructureItemCommand item = new DeleteBodyStructureCommand.DeleteBodyStructureItemCommand();
         item.setId(id);
@@ -183,15 +183,17 @@ public class BodyAppService {
      * @throws EntityNotFoundException 启用后回读失败
      */
     public BodyDto activeBody(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("启用身体部位失败：id 不能为空");
         }
-        // 状态迁移：发布（启用）→ 回读对外展示。
+        // Cmd：领域启用（发布）
         ActiveBodyStructureCommand command = new ActiveBodyStructureCommand();
         ActiveBodyStructureCommand.ActiveBodyStructureItemCommand item = new ActiveBodyStructureCommand.ActiveBodyStructureItemCommand();
         item.setId(id);
         command.setItems(java.util.Collections.singletonList(item));
         bodyStructureDomainService.activeBodyStructure(command);
+        // Asm：回读启用后详情
         return getBody(id);
     }
 
@@ -204,15 +206,17 @@ public class BodyAppService {
      * @throws EntityNotFoundException 停用后回读失败
      */
     public BodyDto inactiveBodyStructure(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("停用身体部位失败：id 不能为空");
         }
-        // 状态迁移：停用 → 回读对外展示。
+        // Cmd：领域停用
         InactiveBodyStructureCommand command = new InactiveBodyStructureCommand();
         InactiveBodyStructureCommand.InactiveBodyStructureItemCommand item = new InactiveBodyStructureCommand.InactiveBodyStructureItemCommand();
         item.setId(id);
         command.setItems(java.util.Collections.singletonList(item));
         bodyStructureDomainService.inactiveBodyStructure(command);
+        // Asm：回读停用后详情
         return getBody(id);
     }
 }

@@ -1,32 +1,19 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 
-import com.openhis.health.module.common.assembler.product.MedicationPackageSplitQuantityDisplaySupport;
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.application.shared.product.MedicationPackageSplitQuantityDisplayAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummaryOrderRowDto;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummaryPatientGroupDto;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummarySlipHeaderDto;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummarySlipLineDto;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummaryTimePointDto;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispensePickupPendingQueryModel;
@@ -41,7 +28,7 @@ import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.MedicationSummarySlipLineQueryModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.MedicationSummarySlipQueryModel;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -218,7 +205,7 @@ public class NurseStationDispenseSummaryListAssembler {
                 dto.setSpecificationText(this.resolveSpecificationText(product));
                 dto.setUnitCodeText(ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
                     null, row.getUnitCode(), product));
-                dto.setDisplayQuantityText(MedicationPackageSplitQuantityDisplaySupport.buildDisplayQuantityText(
+                dto.setDisplayQuantityText(MedicationPackageSplitQuantityDisplayAssembler.buildDisplayQuantityText(
                     row.getItemQuantity(), product));
             }
             lines.add(dto);
@@ -242,6 +229,15 @@ public class NurseStationDispenseSummaryListAssembler {
         return map;
     }
 
+    /**
+     * 组装领药汇总「医嘱行」：药品名、规格、用法频次、执行科室与长临展示。
+     *
+     * @param line          待发药明细读模型
+     * @param medReqById    药品请求索引
+     * @param productByKey  产品目录投影
+     * @param locationById  执行地点索引
+     * @return 医嘱汇总行 DTO
+     */
     private NurseStationDispenseSummaryOrderRowDto buildOrderRow(
         MedicationDispensePickupPendingQueryModel line,
         Map<Long, MedicationRequestListQueryModel> medReqById,
@@ -279,6 +275,13 @@ public class NurseStationDispenseSummaryListAssembler {
         return orderRow;
     }
 
+    /**
+     * 组装领药汇总「计划发药时点」：数量、单位、计划时间与单价展示。
+     *
+     * @param line         待发药明细读模型
+     * @param productByKey 产品目录投影（单位文案）
+     * @return 时点 DTO
+     */
     private NurseStationDispenseSummaryTimePointDto buildTimePoint(
         MedicationDispensePickupPendingQueryModel line,
         Map<String, ProductDefinitionDisplayDto> productByKey) {
@@ -297,6 +300,12 @@ public class NurseStationDispenseSummaryListAssembler {
         return timePoint;
     }
 
+    /**
+     * 药品规格展示：优先 total_volume，回落商品名。
+     *
+     * @param product 产品目录投影
+     * @return 规格文案；product 为空时 null
+     */
     private String resolveSpecificationText(ProductDefinitionDisplayDto product) {
         if (product == null) {
             return null;
@@ -304,8 +313,14 @@ public class NurseStationDispenseSummaryListAssembler {
         return StringUtils.firstNonBlank(product.getTotalVolume(), product.getMerchandiseName());
     }
 
+    /**
+     * 长临嘱 code → 护士站展示文案。
+     *
+     * @param therapyCode 长临 code
+     * @return 展示文案；空或未知 code 时 null
+     */
     private String resolveTherapyDisplay(String therapyCode) {
-        if (StringUtils.isBlank(therapyCode)) {
+        if (StringUtils.isEmpty(therapyCode)) {
             return null;
         }
         TherapyType therapyType = EnumUtil.fromCode(TherapyType.class, therapyCode);
@@ -315,8 +330,14 @@ public class NurseStationDispenseSummaryListAssembler {
         return null;
     }
 
+    /**
+     * 领药申请供应状态 code → 汇总页固定展示文案（草稿/审批/同意等）。
+     *
+     * @param supplyStatusEnum 供应状态 code
+     * @return 展示文案；空或未知时 null
+     */
     private String resolveSupplyStatusText(String supplyStatusEnum) {
-        if (StringUtils.isBlank(supplyStatusEnum)) {
+        if (StringUtils.isEmpty(supplyStatusEnum)) {
             return null;
         }
         SupplyStatus status = EnumUtil.fromCode(SupplyStatus.class, supplyStatusEnum.trim());
@@ -341,8 +362,14 @@ public class NurseStationDispenseSummaryListAssembler {
         return status.getDisplay();
     }
 
+    /**
+     * 发药配送状态 code → 汇总页固定展示文案（待发/已完成等）。
+     *
+     * @param deliveryStatusEnum 发药状态 code
+     * @return 展示文案；空或未知时 null
+     */
     private String resolveDeliveryStatusText(String deliveryStatusEnum) {
-        if (StringUtils.isBlank(deliveryStatusEnum)) {
+        if (StringUtils.isEmpty(deliveryStatusEnum)) {
             return null;
         }
         DispenseStatus status = EnumUtil.fromCode(DispenseStatus.class, deliveryStatusEnum.trim());

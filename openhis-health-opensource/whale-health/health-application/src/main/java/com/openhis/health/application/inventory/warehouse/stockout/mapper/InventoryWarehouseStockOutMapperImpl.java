@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.stockout.mapper;
 
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.WarehouseDocumentDetailRowDto;
 import com.openhis.health.application.inventory.warehouse.stockout.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.stockout.dto.StockOutDetailLineDto;
@@ -33,6 +20,7 @@ import com.openhis.health.application.inventory.warehouse.stockout.request.Submi
 import com.openhis.health.application.inventory.warehouse.stockout.request.WithdrawStockOutApprovalRequest;
 import com.openhis.health.application.inventory.warehouse.stockout.response.AgreeStockOutResponse;
 import com.openhis.health.application.inventory.warehouse.stockout.response.CreateStockOutResponse;
+import com.openhis.health.application.inventory.warehouse.stockout.response.GetLinkablePharmacyRequisitionDetailResponse;
 import com.openhis.health.application.inventory.warehouse.stockout.response.GetStockOutDetailResponse;
 import com.openhis.health.application.inventory.warehouse.stockout.response.LoadStockOutFormInitResponse;
 import com.openhis.health.application.inventory.warehouse.stockout.response.PageLinkableRequisitionsResponse;
@@ -46,8 +34,7 @@ import com.openhis.health.application.inventory.warehouse.stockout.response.With
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.SupplyCategory;
@@ -66,7 +53,8 @@ import com.openhis.health.domain.workflow.supplyrequest.command.WithdrawApproval
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -82,19 +70,21 @@ import java.util.Objects;
 /**
  * 药库出库单装配实现：{@link InventoryWarehouseStockOutMapper}。
  *
- * 11 选品、12 可关联请领、08 同意后的发放与壳单命令。枚举持久化口径遵循 B.10.8.1；各 {@code @Override} 方法 JavaDoc 与接口保持同义完整说明（B.1），
+ * <p>11 选品、12 可关联请领、08 同意后的发放与壳单命令。枚举持久化口径遵循 B.10.8.1；各 {@code @Override} 方法 JavaDoc 与接口保持同义完整说明（B.1），
  * 禁止仅以单独一行 {@code @inheritDoc} 作为方法说明占位。</p>
  */
 @Component
+@RequiredArgsConstructor
 public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseStockOutMapper {
 
     private final LocationQueryService locationQueryService;
 
-    public InventoryWarehouseStockOutMapperImpl(LocationQueryService locationQueryService) {
-        this.locationQueryService = locationQueryService;
-    }
-
-    /** 将启用位置列表映射为下拉选项（id/编码/展示名） */
+    /**
+     * 将启用位置列表映射为下拉选项（id/编码/展示名）。
+     *
+     * @param locations 启用库位列表，可为 null
+     * @return 位置下拉选项，永不为 null
+     */
     @Override
     public List<OptionDto> toOptionDtoListFromLocations(List<Location> locations) {
         List<OptionDto> list = new ArrayList<>();
@@ -108,7 +98,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
             }
             Long id = location.getId();
             String label = location.getName();
-            if (StringUtils.isBlank(label)) {
+            if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
             list.add(new OptionDto(id, String.valueOf(id), label));
@@ -116,7 +106,12 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return list;
     }
 
-    /** 将医务人员列表映射为下拉选项 */
+    /**
+     * 将医务人员列表映射为下拉选项。
+     *
+     * @param practitioners 医务人员列表，可为 null
+     * @return 人员下拉选项，永不为 null
+     */
     @Override
     public List<OptionDto> toOptionDtoListFromPractitioners(List<Practitioner> practitioners) {
         List<OptionDto> list = new ArrayList<>();
@@ -130,7 +125,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
             }
             Long id = p.getId();
             String label = p.getName();
-            if (StringUtils.isBlank(label)) {
+            if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
             list.add(new OptionDto(id, String.valueOf(id), label));
@@ -138,7 +133,11 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return list;
     }
 
-    /** 装配供应请求状态枚举选项（持久化 code） */
+    /**
+     * 装配供应请求状态枚举选项（持久化 code）。
+     *
+     * @return 按 {@link SupplyStatus#getSortOrder()} 升序的选项列表
+     */
     @Override
     public List<OptionDto> toOptionDtoListSupplyStatuses() {
         List<SupplyStatus> ordered = new ArrayList<>();
@@ -154,7 +153,11 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return list;
     }
 
-    /** 装配物品来源表（药品/耗材）选项 */
+    /**
+     * 装配物品来源表（药品/耗材）选项。
+     *
+     * @return 两档物理表名下拉
+     */
     @Override
     public List<OptionDto> toOptionDtoListInboundItemTableTypes() {
         List<OptionDto> list = new ArrayList<>();
@@ -164,7 +167,17 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return list;
     }
 
-    /** 装配页初始化响应（选项集合写入各字段）。 */
+    /**
+     * 装配页初始化响应（选项集合写入各字段）。
+     *
+     * @param warehouseOpts  药库位置下拉
+     * @param pharmacyOpts   药房位置下拉
+     * @param inboundTypes   物品来源表类型
+     * @param statusOpts     单据状态
+     * @param pharmacistOpts 药师下拉
+     * @param keeperOpts     库管员下拉
+     * @return 初始化响应体
+     */
     @Override
     public LoadStockOutFormInitResponse toLoadStockOutFormInitResponse(
         List<OptionDto> warehouseOpts,
@@ -184,7 +197,13 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return res;
     }
 
-    /** 按 busNo 顺序聚合供应请求明细为列表行 DTO。 */
+    /**
+     * 按 busNo 顺序聚合供应请求明细为列表行 DTO。
+     *
+     * @param busNoPageOrder 当前页单号顺序
+     * @param detailRows     同页明细读模型行
+     * @return 聚合列表行
+     */
     @Override
     public List<StockOutListRowDto> toStockOutListAggregated(List<String> busNoPageOrder, List<SupplyRequestModel> detailRows) {
         List<StockOutListRowDto> out = new ArrayList<>();
@@ -197,14 +216,14 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         // —— 先按 bus_no 分组：一页内可能含多单多行，后续按单号顺序输出聚合头。——
         LinkedHashMap<String, List<SupplyRequestModel>> byBusNo = new LinkedHashMap<>();
         for (SupplyRequestModel row : detailRows) {
-            if (row == null || StringUtils.isBlank(row.getBusNo())) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
                 continue;
             }
             String bn = row.getBusNo().trim();
             byBusNo.computeIfAbsent(bn, k -> new ArrayList<>()).add(row);
         }
         for (String busNoRaw : busNoPageOrder) {
-            if (StringUtils.isBlank(busNoRaw)) {
+            if (StringUtils.isEmpty(busNoRaw)) {
                 continue;
             }
             String busNo = busNoRaw.trim();
@@ -269,6 +288,10 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
             dto.setBusNo(busNo);
             dto.setTypeEnum(SupplyType.CABINET_STOCK_OUT.getCode());
             dto.setStatusEnum(head.getStatusEnum());
+            // 驳回态：把供应行 reason 带到列表 rejectReason，供侧栏卡片展示
+            if (SupplyStatus.REJECT.getCode().equals(head.getStatusEnum())) {
+                dto.setRejectReason(head.getReason());
+            }
             dto.setSourceLocationId(head.getSourceLocationId());
             dto.setPurposeLocationId(head.getPurposeLocationId());
             dto.setApproverId(head.getApproverId());
@@ -283,7 +306,15 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return out;
     }
 
-    /** 用聚合列表行构建分页响应。 */
+    /**
+     * 用聚合列表行构建分页响应。
+     *
+     * @param mergedTotal 合并后总条数
+     * @param pageNo      页码（从 1 开始）
+     * @param pageSize    页大小
+     * @param records     当前页聚合行
+     * @return 分页响应
+     */
     @Override
     public PageStockOutsResponse toPageStockOutsAggregatedResponse(long mergedTotal, int pageNo, int pageSize, List<StockOutListRowDto> records) {
         // —— records 永不为 null：避免前端列表组件对 null 与空数组分支分叉。——
@@ -296,7 +327,13 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return PagedResultBuilder.build(new PageStockOutsResponse(), content, mergedTotal, pageNo, pageSize);
     }
 
-    /** 将供应请求行列表映射为详情响应（含明细增强字段）。 */
+    /**
+     * 将供应请求行列表映射为详情响应（含明细增强字段）。
+     *
+     * @param lines        同号全部明细行
+     * @param productHints 行 id → 产品目录提示
+     * @return 详情响应
+     */
     @Override
     public GetStockOutDetailResponse toGetStockOutDetailResponse(
         List<SupplyRequestModel> lines,
@@ -336,7 +373,12 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return res;
     }
 
-    /** 单条供应请求行映射为详情明细 DTO。 */
+    /**
+     * 单条供应请求行映射为详情明细 DTO。
+     *
+     * @param line 供应请求读模型行
+     * @return 详情明细 DTO；{@code line} 为 null 时返回 null
+     */
     @Override
     public StockOutDetailLineDto toStockOutDetailLineDto(SupplyRequestModel line) {
         if (line == null) {
@@ -365,7 +407,15 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return dto;
     }
 
-    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 */
+    /**
+     * 将新建请求映射为领域 Create 命令（含操作人与申请人）。
+     *
+     * @param request     新建请求
+     * @param operatorId  操作人主键
+     * @param applicantId 申请人主键
+     * @param busNo       业务单号（修订时非空）
+     * @return 领域创建命令
+     */
     @Override
     public CreateStockOutCommand toCreateStockOutCommand(
         CreateStockOutRequest request,
@@ -459,7 +509,12 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return this.toCreateStockOutCommand(synthetic, operatorId, applicantId, busNo);
     }
 
-    /** 装配创建成功响应（写入 busNo 等）。 */
+    /**
+     * 装配创建成功响应。
+     *
+     * @param busNo 业务单号
+     * @return 创建响应
+     */
     @Override
     public CreateStockOutResponse toCreateStockOutResponse(String busNo) {
         CreateStockOutResponse res = new CreateStockOutResponse();
@@ -467,7 +522,12 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return res;
     }
 
-    /** 装配更新成功响应。 */
+    /**
+     * 装配更新成功响应。
+     *
+     * @param busNo 业务单号
+     * @return 更新响应
+     */
     @Override
     public UpdateStockOutResponse toUpdateStockOutResponse(String busNo) {
         UpdateStockOutResponse res = new UpdateStockOutResponse();
@@ -475,7 +535,14 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return res;
     }
 
-    /** 将提交审批请求映射为 SubmitApprovalCommand。 */
+    /**
+     * 将提交审批请求映射为 SubmitApprovalCommand。
+     *
+     * @param request     提交请求
+     * @param operatorId  操作人主键
+     * @param applicantId 申请人主键
+     * @return 领域提交命令
+     */
     @Override
     public SubmitApprovalCommand toSubmitApprovalCommand(SubmitStockOutApprovalRequest request, Long operatorId, Long applicantId) {
         SubmitApprovalCommand command = new SubmitApprovalCommand();
@@ -487,7 +554,12 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return command;
     }
 
-    /** 装配提交审批响应。 */
+    /**
+     * 装配提交审批响应。
+     *
+     * @param statusAfter 提交后状态枚举
+     * @return 提交审批响应
+     */
     @Override
     public SubmitStockOutApprovalResponse toSubmitStockOutApprovalResponse(SupplyStatus statusAfter) {
         SubmitStockOutApprovalResponse res = new SubmitStockOutApprovalResponse();
@@ -499,7 +571,13 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return res;
     }
 
-    /** 将撤回审批请求映射为 WithdrawApprovalCommand。 */
+    /**
+     * 将撤回审批请求映射为 WithdrawApprovalCommand。
+     *
+     * @param request    撤回请求
+     * @param operatorId 操作人主键
+     * @return 领域撤回命令
+     */
     @Override
     public WithdrawApprovalCommand toWithdrawApprovalCommand(WithdrawStockOutApprovalRequest request, Long operatorId) {
         WithdrawApprovalCommand command = new WithdrawApprovalCommand();
@@ -511,7 +589,12 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return command;
     }
 
-    /** 装配撤回审批响应。 */
+    /**
+     * 装配撤回审批响应。
+     *
+     * @param statusAfter 撤回后状态枚举
+     * @return 撤回审批响应
+     */
     @Override
     public WithdrawStockOutApprovalResponse toWithdrawStockOutApprovalResponse(SupplyStatus statusAfter) {
         WithdrawStockOutApprovalResponse res = new WithdrawStockOutApprovalResponse();
@@ -523,7 +606,13 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return res;
     }
 
-    /** 将同意请求映射为领域 AgreeRequestCommand。 */
+    /**
+     * 将同意请求映射为领域 AgreeRequestCommand。
+     *
+     * @param request    同意请求
+     * @param operatorId 操作人/审批人主键
+     * @return 领域同意命令
+     */
     @Override
     public AgreeRequestCommand toAgreeRequestCommand(AgreeStockOutRequest request, Long operatorId) {
         AgreeRequestCommand command = new AgreeRequestCommand();
@@ -536,7 +625,13 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return command;
     }
 
-    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 将已同意供应请求行装配为发放命令。 */
+    /**
+     * 将已同意供应请求行装配为出库发放命令。
+     *
+     * @param lines      已同意明细行
+     * @param operatorId 操作人主键
+     * @return 发放命令
+     */
     @Override
     public CreateSupplyDeliveryCommand toCreateSupplyDeliveryCommandForStockOut(List<SupplyRequestModel> lines, Long operatorId) {
         CreateSupplyDeliveryCommand cmd = new CreateSupplyDeliveryCommand();
@@ -565,13 +660,23 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return cmd;
     }
 
-    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 */
+    /**
+     * 将已同意出库行装配为对侧入库壳单 CreateRequisition 命令。
+     *
+     * @param agreedOutLines      已同意出库明细行
+     * @param outboundBusNo       出库业务单号（写入 original_bus_no）
+     * @param operatorId          操作人主键
+     * @param applicantId         申请人主键
+     * @param inboundTypeEnumCode 壳单供应类型持久化码（药房入库或科室入库）
+     * @return 壳单创建命令（引导态 AGREE）
+     */
     @Override
-    public CreateRequisitionCommand toCreateRequisitionCommandForShellPharmacyStockIn(
+    public CreateRequisitionCommand toCreateRequisitionCommandForShellInboundStockIn(
         List<SupplyRequestModel> agreedOutLines,
         String outboundBusNo,
         Long operatorId,
-        Long applicantId) {
+        Long applicantId,
+        String inboundTypeEnumCode) {
         CreateRequisitionCommand command = new CreateRequisitionCommand();
         command.setOperatorId(operatorId);
         command.setBootstrapFinalStatusCode(SupplyStatus.AGREE.getCode());
@@ -580,10 +685,16 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         if (outboundBusNo != null) {
             obn = outboundBusNo.trim();
         }
-        // 壳单须带非空 apply_time：列表 IF-PHA-IN-02 对 apply_time 做时刻窗比较，NULL 恒不满足谓词，会导致「已生成壳单但列表查不到」。
+        String shellTypeCode = inboundTypeEnumCode;
+        if (StringUtils.isEmpty(shellTypeCode)) {
+            shellTypeCode = SupplyType.PHARMACY_STOCK_IN.getCode();
+        } else {
+            shellTypeCode = shellTypeCode.trim();
+        }
+        // 壳单须带非空 apply_time：列表 IF-PHA-IN-02 / IF-DEPT-IN-02 对 apply_time 做时刻窗比较，NULL 恒不满足谓词。
         LocalDateTime shellApplyTime = LocalDateTime.now();
         if (agreedOutLines != null) {
-            // —— 壳单：行类型固定为药房入库；original_bus_no 绑定出库单号，便于对侧追溯；业务单号由领域重新取号故行 busNo 置空。——
+            // —— 壳单：行类型由目的库位形态决定；original_bus_no 绑定出库单号，便于对侧追溯；业务单号由领域重新取号故行 busNo 置空。——
             for (SupplyRequestModel line : agreedOutLines) {
                 if (line == null) {
                     continue;
@@ -591,7 +702,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
                 CreateRequisitionCommand.CreateRequisitionItemCommand item = new CreateRequisitionCommand.CreateRequisitionItemCommand();
                 item.setBusNo(null);
                 item.setOriginalBusNo(obn);
-                item.setTypeEnum(SupplyType.PHARMACY_STOCK_IN.getCode());
+                item.setTypeEnum(shellTypeCode);
                 item.setItemTable(line.getItemTable());
                 item.setItemId(line.getItemId());
                 item.setItemQuantity(line.getItemQuantity());
@@ -617,7 +728,37 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return command;
     }
 
-    /** 装配同意成功响应。 */
+    /**
+     * 将已同意出库行装配为药房入库壳单 CreateRequisition 命令。
+     *
+     * @param agreedOutLines 已同意出库明细行
+     * @param outboundBusNo  出库业务单号（写入 original_bus_no）
+     * @param operatorId     操作人主键
+     * @param applicantId    申请人主键
+     * @return 壳单创建命令（引导态 AGREE）
+     */
+    @Override
+    public CreateRequisitionCommand toCreateRequisitionCommandForShellPharmacyStockIn(
+        List<SupplyRequestModel> agreedOutLines,
+        String outboundBusNo,
+        Long operatorId,
+        Long applicantId) {
+        return this.toCreateRequisitionCommandForShellInboundStockIn(
+            agreedOutLines,
+            outboundBusNo,
+            operatorId,
+            applicantId,
+            SupplyType.PHARMACY_STOCK_IN.getCode());
+    }
+
+    /**
+     * 装配同意成功响应。
+     *
+     * @param outboundBusNo      出库业务单号
+     * @param statusEnum         同意后状态持久化码
+     * @param generatedInBusNo   系统生成的药房入库壳单号
+     * @return 同意响应
+     */
     @Override
     public AgreeStockOutResponse toAgreeStockOutResponse(String outboundBusNo, String statusEnum, String generatedInBusNo) {
         AgreeStockOutResponse res = new AgreeStockOutResponse();
@@ -645,7 +786,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         item.setApprovalClock(null);
         // —— 驳回原因：优先落展示文案，缺省时再回落到原因码，便于审计与通知模板统一取「人读串」。——
         String mergedReason;
-        if (StringUtils.isBlank(request.getChangeReason())) {
+        if (StringUtils.isEmpty(request.getChangeReason())) {
             mergedReason = request.getChangeReasonCode();
         } else {
             mergedReason = request.getChangeReason();
@@ -655,7 +796,12 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return command;
     }
 
-    /** 装配驳回响应。 */
+    /**
+     * 装配驳回响应。
+     *
+     * @param ok 是否成功
+     * @return 驳回响应
+     */
     @Override
     public RejectStockOutResponse toRejectStockOutResponse(boolean ok) {
         RejectStockOutResponse res = new RejectStockOutResponse();
@@ -663,7 +809,13 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return res;
     }
 
-    /** 将删除请求映射为 RemoveByBusNoCommand。 */
+    /**
+     * 将删除请求映射为 RemoveByBusNoCommand。
+     *
+     * @param request    删除请求
+     * @param operatorId 操作人主键
+     * @return 领域删除命令
+     */
     @Override
     public RemoveByBusNoCommand toRemoveByBusNoCommand(RemoveStockOutRequest request, Long operatorId) {
         RemoveByBusNoCommand command = new RemoveByBusNoCommand();
@@ -674,7 +826,12 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
         return command;
     }
 
-    /** 装配删除响应。 */
+    /**
+     * 装配删除响应。
+     *
+     * @param ok 是否成功
+     * @return 删除响应
+     */
     @Override
     public RemoveStockOutResponse toRemoveStockOutResponse(boolean ok) {
         RemoveStockOutResponse res = new RemoveStockOutResponse();
@@ -703,56 +860,191 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
     }
 
     /**
+     * 按 busNo 顺序聚合请领明细为可关联选单行（一行一单；金额为同行 totalPrice 之和）。
      *
-     * <p>使用 {@link PagedResult} 统一构建分页响应，{@code content} 为请领候选行数据。</p>
-     *
-     * @param page 库房单据读模型分页
-     * @return 请领候选分页响应
+     * @param busNoPageOrder 当前页单号顺序
+     * @param detailRows     同页请领明细读模型行
+     * @return 聚合选单行
      */
     @Override
-    public PageLinkableRequisitionsResponse toPageLinkableRequisitionsResponse(Page<WarehouseDocumentDetailQueryModel> page) {
-        List<WarehouseDocumentDetailRowDto> content = new ArrayList<>();
-        for (WarehouseDocumentDetailQueryModel row : page.getContent()) {
-            if (row == null) {
-                // —— 分页 content 偶发 null 占位时跳过，避免响应列表含 null 元素。——
+    public List<WarehouseDocumentDetailRowDto> toLinkableRequisitionRows(
+        List<String> busNoPageOrder,
+        List<SupplyRequestModel> detailRows) {
+        List<WarehouseDocumentDetailRowDto> out = new ArrayList<>();
+        if (busNoPageOrder == null || busNoPageOrder.isEmpty()) {
+            return out;
+        }
+        if (detailRows == null || detailRows.isEmpty()) {
+            return out;
+        }
+        // —— 先按 bus_no 分组：一页内可能含多单多行，后续按单号顺序输出聚合头。——
+        LinkedHashMap<String, List<SupplyRequestModel>> byBusNo = new LinkedHashMap<>();
+        for (SupplyRequestModel row : detailRows) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
                 continue;
             }
-            content.add(this.toWarehouseDocumentDetailRowDto(row));
+            String bn = row.getBusNo().trim();
+            byBusNo.computeIfAbsent(bn, k -> new ArrayList<>()).add(row);
         }
-        return PagedResultBuilder.build(new PageLinkableRequisitionsResponse(), content, page);
+        for (String busNoRaw : busNoPageOrder) {
+            if (StringUtils.isEmpty(busNoRaw)) {
+                continue;
+            }
+            String busNo = busNoRaw.trim();
+            List<SupplyRequestModel> lines = byBusNo.get(busNo);
+            if (lines == null || lines.isEmpty()) {
+                continue;
+            }
+            // —— 头行口径：同号多行取「申请时刻最新」者为展示头，头字段须与全行一致。——
+            List<SupplyRequestModel> sortedByApply = new ArrayList<>(lines);
+            sortedByApply.sort(this::compareSupplyModelApplyTimeDescNullsLast);
+            SupplyRequestModel head = sortedByApply.get(0);
+            for (SupplyRequestModel line : lines) {
+                if (line == null) {
+                    continue;
+                }
+                if (!Objects.equals(head.getStatusEnum(), line.getStatusEnum())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.WHS_SO_102, "同号请领单状态头字段不一致: " + busNo);
+                }
+                if (!Objects.equals(head.getSourceLocationId(), line.getSourceLocationId())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.WHS_SO_102, "同号请领单源库房头字段不一致: " + busNo);
+                }
+                if (!Objects.equals(head.getPurposeLocationId(), line.getPurposeLocationId())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.WHS_SO_102, "同号请领单目的库房头字段不一致: " + busNo);
+                }
+                if (!Objects.equals(head.getTypeEnum(), line.getTypeEnum())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.WHS_SO_102, "同号请领单类型头字段不一致: " + busNo);
+                }
+            }
+            // —— 列表金额与出库/进货选单同构：各行 total_price 之和（行级 6 位刻度加总，展示层再取 2 位）。——
+            BigDecimal totalAmount = BigDecimal.ZERO;
+            LocalDateTime maxApply = null;
+            for (SupplyRequestModel line : lines) {
+                if (line == null) {
+                    continue;
+                }
+                if (line.getTotalPrice() != null) {
+                    totalAmount = totalAmount.add(line.getTotalPrice());
+                }
+                if (line.getApplyTime() != null) {
+                    if (maxApply == null || line.getApplyTime().isAfter(maxApply)) {
+                        maxApply = line.getApplyTime();
+                    }
+                }
+            }
+            LocalDateTime approvalTime = null;
+            List<SupplyRequestModel> sortedById = new ArrayList<>(lines);
+            sortedById.sort(this::compareSupplyModelIdAscNullsLast);
+            for (SupplyRequestModel line : sortedById) {
+                if (line != null && line.getApprovalTime() != null) {
+                    approvalTime = line.getApprovalTime();
+                    break;
+                }
+            }
+            WarehouseDocumentDetailRowDto dto = new WarehouseDocumentDetailRowDto();
+            dto.setBusNo(busNo);
+            dto.setOriginalBusNo(head.getOriginalBusNo());
+            dto.setTypeEnum(head.getTypeEnum());
+            dto.setStatusEnum(head.getStatusEnum());
+            dto.setCategoryEnum(head.getCategoryEnum());
+            dto.setSourceLocationId(head.getSourceLocationId());
+            dto.setPurposeLocationId(head.getPurposeLocationId());
+            dto.setApplicantId(head.getApplicantId());
+            dto.setApplyTime(maxApply);
+            dto.setApprovalTime(approvalTime);
+            dto.setTotalAmount(totalAmount);
+            out.add(dto);
+        }
+        return out;
     }
 
-    /** Assemble mapping result for WarehouseDocumentDetailRowDto. */
+    /**
+     * 用按 busNo 去重后的聚合行构建可关联请领分页响应（B.10.11）。
+     *
+     * @param mergedTotal 不重复 busNo 总数
+     * @param pageNo      1-based 页码
+     * @param pageSize    页大小
+     * @param records     当前页聚合行
+     * @return 可关联请领分页响应
+     */
     @Override
-    public WarehouseDocumentDetailRowDto toWarehouseDocumentDetailRowDto(WarehouseDocumentDetailQueryModel rm) {
-        if (rm == null) {
-            return null;
+    public PageLinkableRequisitionsResponse toPageLinkableRequisitionsAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<WarehouseDocumentDetailRowDto> records) {
+        List<WarehouseDocumentDetailRowDto> content;
+        if (records == null) {
+            content = new ArrayList<>();
+        } else {
+            content = records;
         }
-        // —— 请领候选列表：读模型列与 DTO 一一拷贝；枚举展示字典由前端按 code 解析，此处不做 display 富化。——
-        WarehouseDocumentDetailRowDto dto = new WarehouseDocumentDetailRowDto();
-        dto.setId(rm.getId());
-        dto.setBusNo(rm.getBusNo());
-        dto.setOriginalBusNo(rm.getOriginalBusNo());
-        dto.setTypeEnum(rm.getTypeEnum());
-        dto.setStatusEnum(rm.getStatusEnum());
-        dto.setCategoryEnum(rm.getCategoryEnum());
-        dto.setSourceLocationId(rm.getSourceLocationId());
-        dto.setPurposeLocationId(rm.getPurposeLocationId());
-        dto.setSupplierId(rm.getSupplierId());
-        dto.setItemId(rm.getItemId());
-        dto.setItemTable(rm.getItemTable());
-        dto.setItemQuantity(rm.getItemQuantity());
-        dto.setUnitCode(rm.getUnitCode());
-        dto.setLotNumber(rm.getLotNumber());
-        dto.setTraceNo(rm.getTraceNo());
-        dto.setPrice(rm.getPrice());
-        dto.setTotalPrice(rm.getTotalPrice());
-        dto.setApplyTime(rm.getApplyTime());
-        dto.setApprovalTime(rm.getApprovalTime());
-        return dto;
+        return PagedResultBuilder.build(
+            new PageLinkableRequisitionsResponse(),
+            content,
+            mergedTotal,
+            pageNo,
+            pageSize);
     }
 
-    /** 产品读模型映射为选品行 DTO。 */
+    /**
+     * 将已同意药房请领单读模型行装配为出库草稿预填响应。
+     *
+     * @param requisitionLines 请领单供应请求行，非空
+     * @param productHints     供应行 id → 产品目录单位带（可空 map）
+     * @return 出库表单预填 DTO
+     */
+    @Override
+    public GetLinkablePharmacyRequisitionDetailResponse toGetLinkablePharmacyRequisitionDetailResponse(
+        List<SupplyRequestModel> requisitionLines,
+        Map<Long, ProductDefinitionCatalogEditorHintsDto> productHints) {
+        GetLinkablePharmacyRequisitionDetailResponse res = new GetLinkablePharmacyRequisitionDetailResponse();
+        if (requisitionLines == null || requisitionLines.isEmpty()) {
+            return res;
+        }
+        SupplyRequestModel head = requisitionLines.get(0);
+        String busNo = head.getBusNo();
+        res.setOriginalBusNo(busNo);
+        res.setRequisitionBusNo(busNo);
+        res.setSourceLocationId(head.getSourceLocationId());
+        res.setPurposeLocationId(head.getPurposeLocationId());
+        res.setCategoryEnum(head.getCategoryEnum());
+        res.setPractitionerId(head.getPractitionerId());
+        Map<Long, ProductDefinitionCatalogEditorHintsDto> safeHints = productHints;
+        if (safeHints == null) {
+            safeHints = new LinkedHashMap<>();
+        }
+        List<StockOutDetailLineDto> lines = new ArrayList<>();
+        for (SupplyRequestModel line : requisitionLines) {
+            if (line == null) {
+                continue;
+            }
+            StockOutDetailLineDto dto = this.toStockOutDetailLineDto(line);
+            if (dto != null && line.getId() != null) {
+                ProductDefinitionCatalogEditorHintsDto hint = safeHints.get(line.getId());
+                if (hint != null) {
+                    dto.setProductCatalog(hint);
+                }
+            }
+            if (dto != null) {
+                lines.add(dto);
+            }
+        }
+        res.setLines(lines);
+        return res;
+    }
+
+    /**
+     * 库存读模型与产品展示 DTO 映射为选品行。
+     *
+     * @param inv 库存项读模型
+     * @param pr  产品定义展示 DTO，可为 null
+     * @return 选品行 DTO
+     */
     @Override
     public ProductDefinitionItemDto toProductDefinitionItemDtoFromInventory(InventoryItemModel inv, ProductDefinitionDisplayDto pr) {
         ProductDefinitionItemDto dto = new ProductDefinitionItemDto();
@@ -857,7 +1149,7 @@ public class InventoryWarehouseStockOutMapperImpl implements InventoryWarehouseS
      * @return 持久化 code
      */
     private String resolveSupplyCategoryCode(String categoryCodeRaw) {
-        if (StringUtils.isBlank(categoryCodeRaw)) {
+        if (StringUtils.isEmpty(categoryCodeRaw)) {
             return SupplyCategory.STOCK_SUPPLY.getCode();
         }
         SupplyCategory category = EnumUtil.fromCode(SupplyCategory.class, categoryCodeRaw.trim());

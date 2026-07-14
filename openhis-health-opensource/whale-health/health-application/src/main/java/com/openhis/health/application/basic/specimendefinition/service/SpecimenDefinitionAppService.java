@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.specimendefinition.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
@@ -38,14 +25,14 @@ import com.openhis.health.domain.administration.specimendefinition.service.Speci
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.enums.SpecimenType;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.core.application.exception.ValidationException;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -201,6 +188,7 @@ public class SpecimenDefinitionAppService {
         if (id == null) {
             throw new ValidationException("启用样本定义失败：id 不能为空");
         }
+        // Cmd：复用批量启用路径，保证状态迁移口径一致
         batchEnable(Collections.singletonList(id));
         return getSpecimenDefinition(id);
     }
@@ -216,6 +204,7 @@ public class SpecimenDefinitionAppService {
         if (id == null) {
             throw new ValidationException("停用样本定义失败：id 不能为空");
         }
+        // Cmd：复用批量停用路径，保证状态迁移口径一致
         batchDisable(Collections.singletonList(id));
         return getSpecimenDefinition(id);
     }
@@ -291,6 +280,12 @@ public class SpecimenDefinitionAppService {
         return result;
     }
 
+    /**
+     * 分页请求空值回落：默认第 1 页、每页 50 条。
+     *
+     * @param request 原始分页请求
+     * @return 非空分页请求
+     */
     private PageSpecimenDefinitionRequest ensurePageRequest(PageSpecimenDefinitionRequest request) {
         if (request != null) {
             return request;
@@ -301,30 +296,49 @@ public class SpecimenDefinitionAppService {
         return safeRequest;
     }
 
+    /**
+     * 新建样本定义入参校验：名称与标本种类不可空。
+     *
+     * @param request 新建请求
+     * @throws ValidationException 必填缺失
+     */
     private void validateCreateRequest(CreateSpecimenDefinitionRequest request) {
         if (request == null) {
             throw new ValidationException("新建样本定义失败：请求体不能为空");
         }
-        if (StringUtils.isBlank(request.getName())) {
+        if (StringUtils.isEmpty(request.getName())) {
             throw new ValidationException("新建样本定义失败：样本名称不能为空");
         }
-        if (StringUtils.isBlank(request.getTypeEnum())) {
+        if (StringUtils.isEmpty(request.getTypeEnum())) {
             throw new ValidationException("新建样本定义失败：标本种类不能为空");
         }
     }
 
+    /**
+     * 维护样本定义入参校验：主键、名称与标本种类不可空。
+     *
+     * @param request 更新请求
+     * @throws ValidationException 必填缺失
+     */
     private void validateUpdateRequest(UpdateSpecimenDefinitionRequest request) {
         if (request == null || request.getId() == null) {
             throw new ValidationException("维护样本定义失败：id 不能为空");
         }
-        if (StringUtils.isBlank(request.getName())) {
+        if (StringUtils.isEmpty(request.getName())) {
             throw new ValidationException("维护样本定义失败：样本名称不能为空");
         }
-        if (StringUtils.isBlank(request.getTypeEnum())) {
+        if (StringUtils.isEmpty(request.getTypeEnum())) {
             throw new ValidationException("维护样本定义失败：标本种类不能为空");
         }
     }
 
+    /**
+     * 批量操作前置：主键列表不可空。
+     *
+     * @param ids          待操作主键
+     * @param errorMessage 为空时 ValidationException 文案
+     * @throws ValidationException ids 为空
+     */
     private void requireIds(List<Long> ids, String errorMessage) {
         if (ids == null || ids.isEmpty()) {
             throw new ValidationException(errorMessage);

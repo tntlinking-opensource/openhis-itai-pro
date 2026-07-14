@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.chinesemedicine.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -48,7 +35,7 @@ public class TcmRxHistoryRowDto {
     @Schema(description = "开立时间")
     private LocalDateTime authoredAt;
 
-    /** 方摘要（药味数+付数）。 */
+    /** 方摘要。 */
     @Schema(description = "方摘要")
     private String summaryText;
 

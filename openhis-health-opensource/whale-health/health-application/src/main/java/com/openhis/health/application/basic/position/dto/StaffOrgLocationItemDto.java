@@ -1,12 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.position.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -21,9 +16,11 @@ import lombok.Data;
 @Data
 public class StaffOrgLocationItemDto {
 
+    /** 科室主键 {@code adm_organization.id}；出诊/护士科室类岗位使用。 */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long orgId;
 
+    /** 物理位置主键 {@code adm_location.id}；药库/药房/病区类岗位使用。 */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long locationId;
 }

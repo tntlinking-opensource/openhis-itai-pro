@@ -1,33 +1,16 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 诊疗耗材绑定类型编码枚举。
  */
 public enum ServiceDeviceTemplateTypeCode implements EnumInterface {
-    /**
-     * USAGE。
-     */
+    /** 用法绑定（ServiceDeviceTemplateTypeCode，编码 {@code USAGE}）。 */
     USAGE(0L, "USAGE", "用法绑定", "", 1L),
-    /**
-     * ACTIVITY。
-     */
+    /** 诊疗绑定（ServiceDeviceTemplateTypeCode，编码 {@code ACTIVITY}）。 */
     ACTIVITY(0L, "ACTIVITY", "诊疗绑定", "", 2L);
 
     private final Long codeSystemId;
@@ -37,7 +20,7 @@ public enum ServiceDeviceTemplateTypeCode implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * ServiceDeviceTemplateTypeCode。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     ServiceDeviceTemplateTypeCode(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

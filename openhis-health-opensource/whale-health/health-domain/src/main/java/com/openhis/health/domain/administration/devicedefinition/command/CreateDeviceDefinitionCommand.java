@@ -1,26 +1,18 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.devicedefinition.command;
 
 import com.openhis.health.domain.share.command.BatchCommand;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * 批量创建器材定义命令（DM-ADM-008 §6.1）。
+ *
+ * <p>外层 {@link #operatorId} 为审计操作人；明细在 {@link Item} 中携带主数据字段。</p>
+ */
 @Getter
 @Setter
 public class CreateDeviceDefinitionCommand extends BatchCommand<CreateDeviceDefinitionCommand.Item> {
@@ -71,6 +63,10 @@ public class CreateDeviceDefinitionCommand extends BatchCommand<CreateDeviceDefi
         private String modelNumber;
         /** 高值器材标志（0/1）。 */
         private Integer hvcmFlag;
+        /** 是否为收费耗材标记（0/1）。 */
+        private Integer chargeableFlag;
+        /** 病案结算类型编码。 */
+        private String mrSettlementTypeCode;
         /** 批准文号。 */
         private String approvalNumber;
         /** 医保标记（0/1）。 */

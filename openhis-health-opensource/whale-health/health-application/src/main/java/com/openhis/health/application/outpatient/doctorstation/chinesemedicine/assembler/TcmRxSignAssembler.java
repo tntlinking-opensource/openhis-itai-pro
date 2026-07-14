@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.outpatient.doctorstation.chinesemedicine.assembler;
 
@@ -144,6 +145,12 @@ public class TcmRxSignAssembler {
         return PrescriptionSplitConstants.RX_TYPE_OUTPATIENT_HERBAL;
     }
 
+    /**
+     * 方内任一行已有 prescription_no 即作为整方历史处方号。
+     *
+     * @param requestIds 药嘱 id 列表
+     * @return 处方号；均无则 null
+     */
     private String findExistingPrescriptionNo(List<Long> requestIds) {
         if (requestIds == null || requestIds.isEmpty()) {
             return null;

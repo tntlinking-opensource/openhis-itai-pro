@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.priceadjustment.support;
 
 import com.openhis.health.domain.custom.priceadjustment.entity.PriceAdjustment;
@@ -25,7 +12,7 @@ import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -62,7 +49,7 @@ public final class PriceAdjustmentApprovedLineListPredicateSupport {
         if (query == null) {
             return predicates;
         }
-        if (StringUtils.isNotBlank(query.getItemTable())) {
+        if (StringUtils.isNotEmpty(query.getItemTable())) {
             predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), query.getItemTable().trim()));
         }
         if (query.getItemIds() != null) {
@@ -76,13 +63,19 @@ public final class PriceAdjustmentApprovedLineListPredicateSupport {
         if (end != null) {
             predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.APPROVE_TIME), end));
         }
-        if (StringUtils.isNotBlank(query.getBusNo())) {
+        if (StringUtils.isNotEmpty(query.getBusNo())) {
             String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getBusNo().trim());
             predicates.add(cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc));
         }
         return predicates;
     }
 
+    /**
+     * LocalDateTime → java.util.Date（系统默认时区）；null 输入 null。
+     *
+     * @param value 本地时间
+     * @return Date 或 null
+     */
     private static Date toDate(LocalDateTime value) {
         if (value == null) {
             return null;

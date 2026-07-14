@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.clinical.conditiondefinition.command;
 
 import lombok.Getter;
@@ -43,9 +30,12 @@ public class AddDiseaseCommand {
     /** 状态枚举编码。 */
     private String statusEnum;
 
+    /** 是否纳入医保目录（主数据维护页勾选）。 */
     private Boolean ybFlag;
+    /** 国家/地方疾病编码（与 {@link #conditionCode} 可不同，医保对照用）。 */
     private String diseaseCode;
+    /** 医保目录编号或对照码。 */
     private String ybNo;
+    /** 是否已完成医保编码匹配（对照状态，非业务准入）。 */
     private Boolean ybMatchFlag;
 }
-

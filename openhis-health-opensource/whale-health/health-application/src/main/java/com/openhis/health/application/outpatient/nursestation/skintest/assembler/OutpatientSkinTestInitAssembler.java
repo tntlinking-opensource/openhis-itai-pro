@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.nursestation.skintest.assembler;
 
 import com.openhis.health.application.outpatient.nursestation.skintest.dto.OutpatientSkinTestEnumOptionDto;
@@ -37,6 +37,12 @@ public class OutpatientSkinTestInitAssembler {
         return response;
     }
 
+    /**
+     * 通用 OptionDto → 皮试枚举选项 DTO（code + displayText）。
+     *
+     * @param source 源选项
+     * @return 皮试选项列表
+     */
     private List<OutpatientSkinTestEnumOptionDto> toSkinTestOptions(List<OptionDto> source) {
         List<OutpatientSkinTestEnumOptionDto> target = new ArrayList<>();
         if (source == null) {

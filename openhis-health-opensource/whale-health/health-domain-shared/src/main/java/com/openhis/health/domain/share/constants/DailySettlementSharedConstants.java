@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 /**
@@ -9,11 +9,14 @@ package com.openhis.health.domain.share.constants;
  */
 public interface DailySettlementSharedConstants {
 
-    /** 诊察费财务类别码（号源定价 type_code 与日结特列，对齐 ter_concept 236/1012）。 */
+    /** 诊察费财务类别码（号源定价 type_code 与日结归并目标，对齐 ter_concept 236/1012）。 */
     String CONSULTATION_FEE_FIN_TYPE_CODE = "1012";
 
-    /** 号源/挂号收费在日结汇总中的 fin_type 特列（与 {@link #CONSULTATION_FEE_FIN_TYPE_CODE} 同码）。 */
+    /** 号源/挂号收费在日结汇总中的 fin_type 归并码（与 {@link #CONSULTATION_FEE_FIN_TYPE_CODE} 同码）。 */
     String REGISTRATION_FEE_FIN_TYPE_CODE = "1012";
+
+    /** 已废止挂号费 fin_type_code（ter_concept 236/1011；历史快照须归并至 {@link #CONSULTATION_FEE_FIN_TYPE_CODE}，日结上半区不展示）。 */
+    String DEPRECATED_REGISTRATION_FEE_FIN_TYPE_CODE = "1011";
 
     /** 西药 fin_type_code（ter_concept 236/1001）。 */
     String WESTERN_MEDICINE_FIN_TYPE_CODE = "1001";

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.frequency.mapper;
 
 import com.openhis.health.application.basic.frequency.dto.FrequencyDto;
@@ -33,6 +20,12 @@ import org.springframework.stereotype.Component;
 @Component
 public class FrequencyMapperImpl implements FrequencyMapper {
 
+    /**
+     * 频次实体 → 列表/详情 DTO。
+     *
+     * @param entity 频次实体
+     * @return DTO；entity 为 null 时返回 null
+     */
     @Override
     public FrequencyDto toDto(Frequency entity) {
         if (entity == null) {
@@ -57,6 +50,12 @@ public class FrequencyMapperImpl implements FrequencyMapper {
         return dto;
     }
 
+    /**
+     * 分页行读模型 → DTO。
+     *
+     * @param model 分页行读模型
+     * @return DTO；model 为 null 时返回 null
+     */
     @Override
     public FrequencyDto toDto(FrequencyPageItemQueryModel model) {
         if (model == null) {
@@ -81,6 +80,14 @@ public class FrequencyMapperImpl implements FrequencyMapper {
         return dto;
     }
 
+    /**
+     * 创建请求 → 领域新建命令（含操作人）。
+     *
+     * @param request    HTTP 创建请求
+     * @param operatorId 操作人主键
+     * @return 新建命令
+     * @throws ValidationException 请求体为空时
+     */
     @Override
     public CreateFrequencyCommand toCreateCommand(CreateFrequencyRequest request, Long operatorId) {
         if (request == null) {
@@ -104,6 +111,14 @@ public class FrequencyMapperImpl implements FrequencyMapper {
         return command;
     }
 
+    /**
+     * 更新请求 → 领域维护命令（含操作人）。
+     *
+     * @param request    HTTP 更新请求
+     * @param operatorId 操作人主键
+     * @return 维护命令
+     * @throws ValidationException 请求体为空时
+     */
     @Override
     public ModifyFrequencyCommand toModifyCommand(UpdateFrequencyRequest request, Long operatorId) {
         if (request == null) {
@@ -127,6 +142,12 @@ public class FrequencyMapperImpl implements FrequencyMapper {
         return command;
     }
 
+    /**
+     * Boolean 标志 → 整型持久化（true=1，false=0，null 保持 null）。
+     *
+     * @param value 请求/实体布尔标志
+     * @return 库表 int 标志
+     */
     private Integer toIntFlag(Boolean value) {
         if (Boolean.TRUE.equals(value)) {
             return 1;
@@ -137,6 +158,12 @@ public class FrequencyMapperImpl implements FrequencyMapper {
         return null;
     }
 
+    /**
+     * 整型持久化标志 → Boolean（1=true，其余非 null 为 false，null 保持 null）。
+     *
+     * @param value 库表 int 标志
+     * @return 命令/响应布尔字段
+     */
     private Boolean toBooleanFlag(Integer value) {
         if (value == null) {
             return null;

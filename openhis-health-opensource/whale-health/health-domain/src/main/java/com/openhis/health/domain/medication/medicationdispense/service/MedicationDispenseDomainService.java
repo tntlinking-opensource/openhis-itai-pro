@@ -1,25 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationdispense.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
-import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.medication.medicationdispense.command.*;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.repository.MedicationDispenseRepository;
@@ -31,22 +17,23 @@ import com.openhis.health.domain.share.events.medication.medicationdispense.*;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 药品发放写侧领域服务。
+ * 药品发放（{@code med_medication_dispense}）聚合写侧领域服务。
  *
- * <p>事件发布须严格晚于同批次 {@code save}/{@code saveAll}（《代码生成通用规范》B.14），避免幽灵事件。</p>
+ * <p>职责：配药、发药、取消、退药及汇总单状态推进。</p>
+ * <p>不变量：发放状态机门禁、数量与批号追溯；持久化先于发放领域事件（B.14）。</p>
+ * <p>仅注入本聚合 {@link MedicationDispenseRepository}；库存扣减由应用层编排。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -466,21 +453,27 @@ public class MedicationDispenseDomainService {
         if (dispenseIds == null || dispenseIds.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "待汇总发放单不能为空");
         }
-        String agg = AggregateTypeConstants.MEDICATION_DISPENSE;
-        String seqFull = businessSequenceService.getSeqByDay(agg, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH);
-        String summaryNo = MedicationCommonConstants.SUMMARY_NO_PREFIX + seqFull.substring(agg.length());
-        LocalDateTime statusChangedTime = LocalDateTime.now();
-        int updated = medicationDispenseRepository.summarizeIfPreparationWhereIdIn(
+        if (StringUtils.isEmpty(command.getSummaryNo())) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "汇总单号不能为空");
+        }
+        String summaryNo = command.getSummaryNo().trim();
+        List<MedicationDispense> dispenses = medicationDispenseRepository.findByIdInAndStatusEnumAndIsDeletedFalse(
             dispenseIds,
-            summaryNo,
-            DispenseStatus.SUMMARIZED,
-            DispenseStatus.PREPARATION,
-            statusChangedTime);
-        if (updated != dispenseIds.size()) {
+            DispenseStatus.PREPARATION);
+        if (dispenses.size() != dispenseIds.size()) {
             throw new BusinessException(
                 ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_STATUS,
                 "所选药品已汇总，请勿重复操作");
         }
+        for (MedicationDispense dispense : dispenses) {
+            if (StringUtils.isNotEmpty(dispense.getSummaryNo())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_STATUS,
+                    "所选药品已汇总，请勿重复操作");
+            }
+            dispense.applySummaryState(summaryNo);
+        }
+        medicationDispenseRepository.saveAll(dispenses);
         // Event：汇总事实落库后再发布绑定事件，头表状态码由载荷显式携带（B.14/B.15）。
         MedicationDispenseSummarizedEvent summarizedEvent =
             new MedicationDispenseSummarizedEvent(summaryNo, dispenseIds, command.getOperatorId());
@@ -512,30 +505,77 @@ public class MedicationDispenseDomainService {
     }
 
     /**
-     * 完成汇总发药。
+     * 住院护士站：汇总核发后为已发放行分配追溯码（**AS-IP-NUR-015 · IF-IP-TRC-04**）。
      *
-     * @param command 汇总发药命令
+     * <p>仅 UPDATE {@code trace_no}；不发布 {@link MedicationDispensedEvent}、不写追溯 OUT。</p>
+     *
+     * @param command 分配命令
+     */
+    public void assignTraceNoToCompletedDispense(AssignTraceNoToCompletedDispenseCommand command) {
+        List<MedicationDispense> toSave = new ArrayList<>();
+        for (AssignTraceNoToCompletedDispenseCommand.Item item : command.resolveItems()) {
+            if (item == null || item.getId() == null) {
+                continue;
+            }
+            if (StringUtils.isEmpty(item.getTraceNo())) {
+                continue;
+            }
+            MedicationDispense dispense = this.mustGet(item.getId());
+            if (command.getEncounterId() != null
+                && !command.getEncounterId().equals(dispense.getEncounterId())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.MEDICATION_DISPENSE_RULE_CONFLICT,
+                    "发放行与就诊不匹配");
+            }
+            // Pre：汇总路径 + 已核发态才允许护士追溯落账
+            dispense.ensureTraceAssignableOnCompleted();
+            dispense.applyTraceNoOnly(item.getTraceNo());
+            toSave.add(dispense);
+        }
+        if (toSave.isEmpty()) {
+            return;
+        }
+        // 持久化：仅 trace 字段变更， deliberately 不发领域事件
+        this.saveAllMedicationDispenses(toSave);
+    }
+
+    /**
+     * 完成汇总发药：同 {@code summary_no} 下 {@link DispenseStatus#SUMMARIZED} 行批量写入配药/发药事实并推进 {@link DispenseStatus#COMPLETED}。
+     *
+     * <p>发放表为核发终态真源；Supply {@code AGREE} 仅为审批链中转，不得替代本方法对 {@code med_medication_dispense} 的更新。</p>
+     *
+     * @param command 汇总单号、发药人、调配药师与操作人
      */
     public void completeSummaryDispense(CompleteSummaryDispenseCommand command) {
-        List<MedicationDispense> dispenses = medicationDispenseRepository.findBySummaryNo(command.getSummaryNo());
+        if (command == null || StringUtils.isEmpty(command.getSummaryNo())) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "汇总单号不能为空");
+        }
+        if (command.getPractitionerId() == null || command.getPreparerId() == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "发药人与调配药师均不能为空");
+        }
+        String summaryNo = command.getSummaryNo().trim();
+        List<MedicationDispense> dispenses = medicationDispenseRepository.findBySummaryNoAndStatusEnumAndIsDeletedFalse(
+            summaryNo,
+            DispenseStatus.SUMMARIZED);
         if (dispenses.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_NOT_FOUND, "汇总发放记录不存在");
         }
+        LocalDateTime completedTime = LocalDateTime.now();
         for (MedicationDispense dispense : dispenses) {
-            dispense.ensureStatusForDispense();
+            if (dispense.getSummaryNo() == null || !summaryNo.equals(dispense.getSummaryNo().trim())) {
+                throw new BusinessException(
+                    ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_STATUS,
+                    "汇总单号与发放行不一致");
+            }
+            BigDecimal actualQuantity = dispense.getQuantity();
+            if (actualQuantity == null) {
+                actualQuantity = dispense.getDispenseQuantity();
+            }
+            // 前置：须仍为 SUMMARIZED 中间态；终态 COMPLETED 由本方法一次性写入人员与时间
+            dispense.completeSummaryDispenseFacts(
+                command.getPractitionerId(), command.getPreparerId(), actualQuantity, completedTime);
         }
-        LocalDateTime dispenseTime = LocalDateTime.now();
-        int updated = medicationDispenseRepository.completeSummaryDispenseWhereSummaryNoAndSourceStatus(
-            command.getSummaryNo(),
-            DispenseStatus.COMPLETED,
-            DispenseStatus.SUMMARIZED,
-            command.getPractitionerId(),
-            dispenseTime);
-        if (updated != dispenses.size()) {
-            throw new BusinessException(
-                ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_STATUS,
-                "汇总单已核发或状态不允许，请刷新");
-        }
+        medicationDispenseRepository.saveAll(dispenses);
         List<Long> completedIds = new ArrayList<>();
         for (MedicationDispense dispense : dispenses) {
             completedIds.add(dispense.getId());
@@ -677,6 +717,12 @@ public class MedicationDispenseDomainService {
         pending.setPlannedDispenseTime(origin.getPlannedDispenseTime());
     }
 
+    /**
+     * 批量保存发放单；乐观锁冲突映射为业务码 MEDICATION_DISPENSE_RULE_CONFLICT。
+     *
+     * @param toSave 待保存实体
+     * @throws BusinessException 并发更新
+     */
     private void saveAllMedicationDispenses(List<MedicationDispense> toSave) {
         try {
             medicationDispenseRepository.saveAll(toSave);

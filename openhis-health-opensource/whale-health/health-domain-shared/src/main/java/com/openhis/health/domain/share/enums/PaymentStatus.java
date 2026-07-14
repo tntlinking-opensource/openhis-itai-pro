@@ -1,53 +1,26 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 支付流水状态枚举。
  */
 public enum PaymentStatus implements EnumInterface {
-    /**
-     * DRAFT。
-     */
+    /** 草稿（预结算已生成，尚未收款）（PaymentStatus，编码 {@code DRAFT}）。 */
     DRAFT(0L, "DRAFT", "草稿（预结算已生成，尚未收款）", "", 0L),
-    /**
-     * SUCCESS。
-     */
+    /** 成功（收款已完成）（PaymentStatus，编码 {@code SUCCESS}）。 */
     SUCCESS(0L, "SUCCESS", "成功（收款已完成）", "", 1L),
-    /**
-     * CANCELLED。
-     */
+    /** 已取消（收费前放弃）（PaymentStatus，编码 {@code CANCELLED}）。 */
     CANCELLED(0L, "CANCELLED", "已取消（收费前放弃）", "", 2L),
-    /**
-     * REFUNDED。
-     */
+    /** 已全额退款（PaymentStatus，编码 {@code REFUNDED}）。 */
     REFUNDED(0L, "REFUNDED", "已全额退款", "", 3L),
-    /**
-     * PARTIAL_REFUNDED。
-     */
+    /** 已部分退款（PaymentStatus，编码 {@code PARTIAL_REFUNDED}）。 */
     PARTIAL_REFUNDED(0L, "PARTIAL_REFUNDED", "已部分退款", "", 4L),
-    /**
-     * REFUND_PROCESSING。
-     */
+    /** 退款受理中（PaymentStatus，编码 {@code REFUND_PROCESSING}）。 */
     REFUND_PROCESSING(0L, "REFUND_PROCESSING", "退款受理中", "", 5L),
-    /**
-     * ERROR。
-     */
+    /** 错误（支付处理失败或误录）（PaymentStatus，编码 {@code ERROR}）。 */
     ERROR(0L, "ERROR", "错误（支付处理失败或误录）", "", 9L);
 
     private final Long codeSystemId;
@@ -57,7 +30,7 @@ public enum PaymentStatus implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * PaymentStatus。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     PaymentStatus(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

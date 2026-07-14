@@ -1,41 +1,20 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 病案 4401 上传状态（主档冗余 + 日志）。
  */
 public enum ChsUploadStatus implements EnumInterface {
-    /**
-     * 已归档待上传。
-     */
+/** 待上传（ChsUploadStatus，持久化编码 {@code pending}）。 */
     PENDING(0L, "pending", "待上传", "", 0L),
-    /**
-     * 上传成功。
-     */
+/** 上传成功（ChsUploadStatus，持久化编码 {@code success}）。 */
     SUCCESS(0L, "success", "上传成功", "", 1L),
-    /**
-     * 上传失败。
-     */
+/** 上传失败（ChsUploadStatus，持久化编码 {@code failed}）。 */
     FAILED(0L, "failed", "上传失败", "", 2L),
-    /**
-     * 自费/无需上传。
-     */
+/** 无需上传（ChsUploadStatus，持久化编码 {@code skipped}）。 */
     SKIPPED(0L, "skipped", "无需上传", "", 3L);
 
     private final Long codeSystemId;

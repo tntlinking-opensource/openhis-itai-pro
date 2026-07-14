@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.mrms.caserecord.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -448,6 +448,14 @@ public class CaseRecordHomepageDomainService {
         putIfAllowed(homepage, sources, "resp_nurs_name", enc.getRespNursName(), force);
     }
 
+    /**
+     * 首页自动填充：合并出院/入院诊断子表；manual 锁定且非 force 时跳过。
+     *
+     * @param record   病案
+     * @param homepage 首页快照
+     * @param force    是否强制覆盖 manual 段
+     * @return true 表示已写入
+     */
     private boolean mergeDiagnosisSection(CaseRecord record, CaseRecordHomepage homepage, boolean force) {
         // 诊断子表已 manual 锁定且非强制覆盖时跳过
         if (!force && isManualSection(homepage, "diagnoses")) {
@@ -478,6 +486,14 @@ public class CaseRecordHomepageDomainService {
         return true;
     }
 
+    /**
+     * 首页自动填充：合并手术子表；manual 锁定且非 force 时跳过。
+     *
+     * @param record   病案
+     * @param homepage 首页快照
+     * @param force    是否强制覆盖 manual 段
+     * @return true 表示已写入
+     */
     private boolean mergeProcedureSection(CaseRecord record, CaseRecordHomepage homepage, boolean force) {
         // 手术子表已 manual 锁定且非强制覆盖时跳过
         if (!force && isManualSection(homepage, "procedures")) {

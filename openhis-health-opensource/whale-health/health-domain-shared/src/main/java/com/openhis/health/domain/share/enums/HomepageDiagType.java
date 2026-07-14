@@ -1,45 +1,22 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 首页诊断行类型（院内 diag_type_code）。
  */
 public enum HomepageDiagType implements EnumInterface {
-    /**
-     * 出院主诊断。
-     */
+/** 出院主诊断（HomepageDiagType，持久化编码 {@code discharge_main}）。 */
     DISCHARGE_MAIN(0L, "discharge_main", "出院主诊断", "", 0L),
-    /**
-     * 出院其他诊断。
-     */
+/** 出院其他诊断（HomepageDiagType，持久化编码 {@code discharge_other}）。 */
     DISCHARGE_OTHER(0L, "discharge_other", "出院其他诊断", "", 1L),
-    /**
-     * 入院主诊断。
-     */
+/** 入院主诊断（HomepageDiagType，持久化编码 {@code admission_main}）。 */
     ADMISSION_MAIN(0L, "admission_main", "入院主诊断", "", 2L),
-    /**
-     * 入院其他诊断。
-     */
+/** 入院其他诊断（HomepageDiagType，持久化编码 {@code admission_other}）。 */
     ADMISSION_OTHER(0L, "admission_other", "入院其他诊断", "", 3L),
-    /**
-     * 病理诊断。
-     */
+/** 病理诊断（HomepageDiagType，持久化编码 {@code pathology}）。 */
     PATHOLOGY(0L, "pathology", "病理诊断", "", 4L),
     /**
      * 损伤中毒外部原因。

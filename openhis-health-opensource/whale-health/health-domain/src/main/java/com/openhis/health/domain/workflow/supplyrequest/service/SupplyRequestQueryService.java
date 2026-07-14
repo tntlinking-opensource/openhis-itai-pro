@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.supplyrequest.service;
 
 import com.openhis.health.domain.share.enums.SupplyType;
@@ -34,7 +21,10 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequ
 import com.openhis.health.domain.workflow.supplyrequest.queries.WarehouseDocumentDetailPageQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
 import com.openhis.health.domain.workflow.supplyrequest.repository.SupplyRequestRepository;
+import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestSettlementWindowQuery;
+import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestSettlementLineQueryModel;
 import com.openhis.health.domain.workflow.supplyrequest.support.SupplyRequestDocumentListPredicateSupport;
+import com.openhis.health.domain.workflow.supplyrequest.support.SupplyRequestSettlementWindowPredicateSupport;
 import com.openhis.health.domain.workflow.supplyrequest.support.WarehouseDocumentDetailPagePredicateSupport;
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.EntityManager;
@@ -45,6 +35,7 @@ import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import lombok.RequiredArgsConstructor;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -52,16 +43,10 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -71,11 +56,12 @@ import java.util.Set;
  *
  * <p>另提供 {@code wkf_supply_request} 上「按 {@code bus_no} 聚合」的通用单据列表能力（{@link #countDistinctBusNo}、{@link #listDistinctBusNoPage}、
  * {@link #listByBusNosWithFilter}），进货/订货/退货等各 AS 通过 {@link com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDocumentListQuery}
- * 收窄 {@code type_enum} 与位置等条件后复用。</p>
+ * 收窄 {@code type_enum} 与位置等条件后复用；库房日结期间动账见 {@link #listAgreedLinesByWarehouseAndApprovalWindow}。</p>
  *
  * <p>读模型 {@link com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel} 中 {@code typeEnum}/{@code statusEnum} 等字段
  * 与实体列一致，均为持久化 {@code getCode()} 字符串（B.10.8.1）；本服务内与 {@link com.openhis.health.domain.share.enums.SupplyStatus} 比对时使用
  * {@code SupplyStatus.XXX.getCode()}。</p>
+ * <p>聚合边界：仅本聚合 {@link SupplyRequestRepository}；{@link EntityManager} 仅用于 {@code COUNT(DISTINCT bus_no)} 等派生无法表达的只读查询。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -100,7 +86,7 @@ public class SupplyRequestQueryService {
         if (query == null || query.getBusNo() == null || query.getBusNo().trim().isEmpty()) {
             return Collections.emptyList();
         }
-        List<SupplyRequest> entities = supplyRequestRepository.findByBusNo(query.getBusNo().trim());
+        List<SupplyRequest> entities = supplyRequestRepository.findByBusNoAndIsDeletedFalse(query.getBusNo().trim());
         return this.toModels(entities);
     }
 
@@ -114,7 +100,7 @@ public class SupplyRequestQueryService {
         if (query == null || query.getBusNoList() == null || query.getBusNoList().isEmpty()) {
             return Collections.emptyList();
         }
-        List<SupplyRequest> entities = supplyRequestRepository.findByBusNoIn(query.getBusNoList());
+        List<SupplyRequest> entities = supplyRequestRepository.findByBusNoInAndIsDeletedFalse(query.getBusNoList());
         return this.toModels(entities);
     }
 
@@ -130,6 +116,33 @@ public class SupplyRequestQueryService {
         }
         List<SupplyRequest> entities = supplyRequestRepository.findByOriginalBusNo(query.getOriginalBusNo().trim());
         return this.toModels(entities);
+    }
+
+    /**
+     * 判断是否存在未软删的指定类型供应单以 {@code original_bus_no} 引用来源单号（不区分审批状态；已软删行由仓储过滤器排除）。
+     *
+     * @param originalBusNo 来源单号（如订货 {@code bus_no}）
+     * @param typeEnum      下游单据 {@code type_enum} 持久化 code
+     * @param excludeBusNo  改单时排除的下游 {@code bus_no}，可 blank
+     * @return 已被其它未删除下游单引用时 {@code true}
+     */
+    public boolean existsUndeletedSupplyByOriginalBusNo(
+        String originalBusNo,
+        String typeEnum,
+        String excludeBusNo) {
+        if (originalBusNo == null || originalBusNo.trim().isEmpty()) {
+            return false;
+        }
+        if (typeEnum == null || typeEnum.trim().isEmpty()) {
+            return false;
+        }
+        String trimmedOriginal = originalBusNo.trim();
+        String trimmedType = typeEnum.trim();
+        if (excludeBusNo != null && !excludeBusNo.trim().isEmpty()) {
+            return supplyRequestRepository.existsByOriginalBusNoAndTypeEnumAndBusNoNot(
+                trimmedOriginal, trimmedType, excludeBusNo.trim());
+        }
+        return supplyRequestRepository.existsByOriginalBusNoAndTypeEnum(trimmedOriginal, trimmedType);
     }
 
     /**
@@ -195,7 +208,7 @@ public class SupplyRequestQueryService {
         if (query.getItemId() == null) {
             throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "itemId 不能为空");
         }
-        List<SupplyRequest> entities = supplyRequestRepository.findByBusNo(query.getBusNo().trim());
+        List<SupplyRequest> entities = supplyRequestRepository.findByBusNoAndIsDeletedFalse(query.getBusNo().trim());
         // Loop：遍历单号下全部行，逐条校验是否允许编辑
         for (SupplyRequest entity : entities) {
             if (entity == null) {
@@ -215,6 +228,22 @@ public class SupplyRequestQueryService {
     }
 
     /**
+     * 判断指定目录物品是否已有审核中或已同意的供应入库事实（三大目录库存侧锁定门控）。
+     *
+     * @param itemId 物品主键 {@code wkf_supply_request.item_id}
+     * @return 存在时为 true
+     */
+    public boolean existsInboundByItemId(Long itemId) {
+        if (itemId == null) {
+            return false;
+        }
+        List<String> blockingStatuses = new ArrayList<>();
+        blockingStatuses.add(SupplyStatus.APPROVAL.getCode());
+        blockingStatuses.add(SupplyStatus.AGREE.getCode());
+        return supplyRequestRepository.existsByItemIdAndStatusEnumInAndIsDeletedFalse(itemId, blockingStatuses);
+    }
+
+    /**
      * 取该业务单号下首行的物品主表名（多行时取列表首条）。
      *
      * @param busNo 业务单号
@@ -225,7 +254,7 @@ public class SupplyRequestQueryService {
         if (busNo == null || busNo.trim().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "busNo 不能为空");
         }
-        List<SupplyRequest> entities = supplyRequestRepository.findByBusNo(busNo.trim());
+        List<SupplyRequest> entities = supplyRequestRepository.findByBusNoAndIsDeletedFalse(busNo.trim());
         if (entities.isEmpty()) {
             return null;
         }
@@ -244,7 +273,7 @@ public class SupplyRequestQueryService {
         if (busNo == null || busNo.trim().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "busNo 不能为空");
         }
-        List<SupplyRequest> entities = supplyRequestRepository.findByBusNo(busNo.trim());
+        List<SupplyRequest> entities = supplyRequestRepository.findByBusNoAndIsDeletedFalse(busNo.trim());
         Set<Long> itemIdSet = new HashSet<>();
         // Loop：遍历单号下全部行，汇总去重物品标识
         for (SupplyRequest entity : entities) {
@@ -419,6 +448,12 @@ public class SupplyRequestQueryService {
         return model;
     }
 
+    /**
+     * SupplyRequest 实体 → 药库单据详情读模型（头+行公共字段）。
+     *
+     * @param entity 供应请求实体
+     * @return 详情读模型
+     */
     private WarehouseDocumentDetailQueryModel mapToWarehouseDocumentDetailQueryModel(SupplyRequest entity) {
         WarehouseDocumentDetailQueryModel model = new WarehouseDocumentDetailQueryModel();
         model.setId(entity.getId());
@@ -436,11 +471,13 @@ public class SupplyRequestQueryService {
         model.setItemTable(entity.getItemTable());
         model.setItemId(entity.getItemId());
         model.setItemQuantity(entity.getItemQuantity());
+        model.setTotalQuantity(entity.getTotalQuantity());
         model.setUnitCode(entity.getUnitCode());
         model.setLotNumber(entity.getLotNumber());
         model.setTraceNo(entity.getTraceNo());
         model.setPrice(entity.getPrice());
         model.setTotalPrice(entity.getTotalPrice());
+        model.setProfitLossPrice(entity.getProfitLossPrice());
         model.setSupplierId(entity.getSupplierId());
         model.setApplicantId(entity.getApplicantId());
         model.setApplyTime(entity.getApplyTime());
@@ -498,5 +535,76 @@ public class SupplyRequestQueryService {
             result.add(model);
         }
         return result;
+    }
+
+    /**
+     * 库房日结期间供应动账批量读（**AS-INV-RPT-001** · **DM-WKF-006 §6.2.12**）。
+     *
+     * <p>仅返回 {@link SupplyStatus#AGREE} 明细行；源/目的 ± 与品种汇总由应用层完成。</p>
+     *
+     * @param query 库房、审批时刻窗、{@code item_table} 与类型白名单；关键入参缺失时返回空列表
+     * @return 供应明细行读模型；允许空列表
+     */
+    public List<SupplyRequestSettlementLineQueryModel> listAgreedLinesByWarehouseAndApprovalWindow(
+        SupplyRequestSettlementWindowQuery query) {
+        if (query == null || query.getWarehouseId() == null) {
+            return Collections.emptyList();
+        }
+        if (StringUtils.isEmpty(query.getItemTable())) {
+            return Collections.emptyList();
+        }
+        if (query.getTypeEnumWhitelist() == null || query.getTypeEnumWhitelist().isEmpty()) {
+            return Collections.emptyList();
+        }
+        Specification<SupplyRequest> specification = (root, criteriaQuery, cb) -> cb.and(
+            SupplyRequestSettlementWindowPredicateSupport.collectPredicates(root, cb, query)
+                .toArray(new Predicate[0]));
+        List<SupplyRequest> rows = this.supplyRequestRepository.findAll(
+            specification, Sort.by(Sort.Order.asc(FieldNameConstants.APPROVAL_TIME), Sort.Order.asc(FieldNameConstants.ID)));
+        return this.toSettlementLineModels(rows);
+    }
+
+    /**
+     * 供应实体列表映射为库房日结行读模型。
+     *
+     * @param entities 持久化行
+     * @return 日结行列表
+     */
+    private List<SupplyRequestSettlementLineQueryModel> toSettlementLineModels(List<SupplyRequest> entities) {
+        if (entities == null || entities.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<SupplyRequestSettlementLineQueryModel> models = new ArrayList<>();
+        for (SupplyRequest entity : entities) {
+            if (entity == null) {
+                continue;
+            }
+            models.add(this.mapEntityToSettlementLineModel(entity));
+        }
+        return models;
+    }
+
+    /**
+     * 单条供应行映射为日结读模型（仅日结所需字段）。
+     *
+     * @param entity 供应请求实体
+     * @return 日结行读模型
+     */
+    private SupplyRequestSettlementLineQueryModel mapEntityToSettlementLineModel(SupplyRequest entity) {
+        SupplyRequestSettlementLineQueryModel model = new SupplyRequestSettlementLineQueryModel();
+        model.setId(entity.getId());
+        model.setBusNo(entity.getBusNo());
+        model.setTypeEnum(entity.getTypeEnum());
+        model.setSourceLocationId(entity.getSourceLocationId());
+        model.setPurposeLocationId(entity.getPurposeLocationId());
+        model.setItemTable(entity.getItemTable());
+        model.setItemId(entity.getItemId());
+        model.setItemQuantity(entity.getItemQuantity());
+        model.setPrice(entity.getPrice());
+        model.setTotalPrice(entity.getTotalPrice());
+        model.setProfitLossPrice(entity.getProfitLossPrice());
+        model.setLotNumber(entity.getLotNumber());
+        model.setApprovalTime(entity.getApprovalTime());
+        return model;
     }
 }

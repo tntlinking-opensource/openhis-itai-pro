@@ -1,21 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
-/* (C)2026 */
 package com.openhis.health.application.basic.supplier.service;
 
 
@@ -84,15 +70,16 @@ public class SupplierAppService {
      * @return 初始化 DTO
      */
     public SupplierInitDto init() {
+        // Gate：只读页初始化，无写侧操作人
         SupplierInitDto initDto = new SupplierInitDto();
-        // 类型枚举走术语系统，保证与领域 SupplierType 展示一致。
+        // Pre：加载供应商类型术语与机构树
         List<OptionDto> supplierTypeOptions = codeSystemQueryService.getOptionListByEnum(SupplierType.class);
         initDto.setSupplierTypeOptions(supplierTypeOptions);
         List<Organization> organizationTree = organizationQueryService.getOrganizationTree();
-        // 机构树当前为平铺列表，逐项转为 OptionDto 供前端下拉。
         List<OptionDto> organizationDictDto =
             organizationTree.stream().map(supplierMapper::ConverterSupplierDto).collect(Collectors.toList());
         initDto.setOrganizationOptions(organizationDictDto);
+        // Asm：映射维护页初始化 DTO
         return initDto;
     }
 
@@ -104,13 +91,17 @@ public class SupplierAppService {
      * @throws ValidationException 请求体为空或领域校验失败时
      */
     public SupplierDto createSupplier(CreateSupplierRequest request) {
+        // Gate：请求体非空
         if (request == null) {
             throw new ValidationException("创建供应商失败：请求体不能为空");
         }
+        // Pre：请求映射为领域注册命令
         RegisterSupplierCommand command = supplierMapper.ConverterRegisterSupplierCommand(request);
-        // 领域注册返回技术主键，再回读实体装配完整 DTO
+        // Cmd：领域注册供应商
         Long id = supplierDomainService.registerSupplier(command);
+        // Pre：回读实体快照
         var supplier = supplierQueryService.findSupplierById(id);
+        // Asm：映射展示 DTO
         return supplierMapper.ConverterSupplierDto(supplier);
     }
 
@@ -123,13 +114,18 @@ public class SupplierAppService {
      * @throws RuntimeException 领域或查询失败时由当前实现包装抛出
      */
     public SupplierDto editSupplier(UpdateSupplierRequest request) {
+        // Gate：请求体与主键非空
         if (request == null || request.getId() == null) {
             throw new ValidationException("编辑供应商失败：请求体或主键不能为空");
         }
         try {
+            // Pre：请求映射为维护命令
             MaintainSupplierInfoCommand command = supplierMapper.ConverterMaintainSupplierInfoCommand(request);
+            // Cmd：领域维护供应商信息
             supplierDomainService.maintainSupplierInfo(command);
+            // Pre：回读最新快照
             var supplier = supplierQueryService.findSupplierById(request.getId());
+            // Asm：映射展示 DTO
             return supplierMapper.ConverterSupplierDto(supplier);
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -146,14 +142,17 @@ public class SupplierAppService {
      * @throws RuntimeException 查询失败时
      */
     public SupplierDto getSupplier(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("查询供应商失败：id 不能为空");
         }
         try {
+            // Pre：按 id 加载供应商
             var supplier = supplierQueryService.findSupplierById(id);
             if (supplier == null) {
                 throw new EntityNotFoundException("供应商不存在或已删除", id);
             }
+            // Asm：映射展示 DTO
             return supplierMapper.ConverterSupplierDto(supplier);
         } catch (Exception e) {
             throw new RuntimeException("查询供应商失败：" + e);
@@ -170,10 +169,12 @@ public class SupplierAppService {
      */
     public List<SupplierDto> getSupplierList() {
         try {
+            // Pre：读侧全量列表（无分页）
             List<SupplierListItemQueryModel> supplierList = supplierQueryService.listSuppliers();
             if (supplierList == null || supplierList.isEmpty()) {
                 return new ArrayList<>();
             }
+            // Asm：映射 DTO 列表
             return supplierList.stream()
                 .map(supplierMapper::ConverterSupplierDto)
                 .collect(Collectors.toList());
@@ -190,6 +191,7 @@ public class SupplierAppService {
      * @throws RuntimeException 查询失败
      */
     public PagedResult<SupplierDto> pageSupplierList(QuerySupplierRequest request) {
+        // Gate：请求体缺省时补默认分页窗口
         if (request == null) {
             request = new QuerySupplierRequest();
             request.setPageNo(1);
@@ -198,8 +200,10 @@ public class SupplierAppService {
         try {
             int pageIndex = request.springPageIndex();
             int pageSize = request.getBoundedPageSize();
+            // Pre：读侧分页查询
             Page<SupplierListItemQueryModel> page =
                 supplierQueryService.pageSuppliers(request.getKeyword(), pageIndex, pageSize);
+            // Asm：映射分页 DTO
             return PagedResult.fromPage(page.map(supplierMapper::ConverterSupplierDto));
         } catch (Exception e) {
             throw new RuntimeException("查询供应商失败：" + e);
@@ -217,19 +221,23 @@ public class SupplierAppService {
      * @throws RuntimeException 领域或查询失败
      */
     public SupplierDto deleteSupplier(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("删除供应商失败：id 不能为空");
         }
         try {
+            // Cmd：领域作废供应商
             RetireSupplierCommand command = new RetireSupplierCommand();
             RetireSupplierCommand.RetireSupplierItemCommand item = new RetireSupplierCommand.RetireSupplierItemCommand();
             item.setSupplierId(id);
             command.setItems(List.of(item));
             supplierDomainService.retireSupplier(command);
+            // Pre：回读作废后快照（可能已不可见）
             var supplier = supplierQueryService.findSupplierById(id);
             if (supplier == null) {
                 return null;
             }
+            // Asm：映射展示 DTO
             return supplierMapper.ConverterSupplierDto(supplier);
         } catch (Exception e) {
             throw new RuntimeException("删除供应商失败：" + e);
@@ -245,6 +253,7 @@ public class SupplierAppService {
      * @throws RuntimeException 领域失败
      */
     public int batchEnableSupplier(List<Long> ids) {
+        // Gate：批量主键列表非空
         if (ids == null || ids.isEmpty()) {
             throw new ValidationException("批量启用供应商失败：ids 不能为空");
         }
@@ -253,12 +262,14 @@ public class SupplierAppService {
             if (validIds.isEmpty()) {
                 throw new ValidationException("批量启用供应商失败：ids 中无有效主键");
             }
+            // Pre：组装批量激活命令
             ActivateSupplierCommand command = new ActivateSupplierCommand();
             command.setItems(validIds.stream().map(id -> {
                 ActivateSupplierCommand.ActivateSupplierItemCommand item = new ActivateSupplierCommand.ActivateSupplierItemCommand();
                 item.setSupplierId(id);
                 return item;
             }).toList());
+            // Cmd：领域批量启用
             supplierDomainService.activateSupplier(command);
             return validIds.size();
         } catch (Exception e) {
@@ -275,6 +286,7 @@ public class SupplierAppService {
      * @throws RuntimeException 领域失败
      */
     public int batchDisableSupplier(List<Long> ids) {
+        // Gate：批量主键列表非空
         if (ids == null || ids.isEmpty()) {
             throw new ValidationException("批量停用供应商失败：ids 不能为空");
         }
@@ -283,12 +295,14 @@ public class SupplierAppService {
             if (validIds.isEmpty()) {
                 throw new ValidationException("批量停用供应商失败：ids 中无有效主键");
             }
+            // Pre：组装批量暂停命令
             SuspendSupplierCommand command = new SuspendSupplierCommand();
             command.setItems(validIds.stream().map(id -> {
                 SuspendSupplierCommand.SuspendSupplierItemCommand item = new SuspendSupplierCommand.SuspendSupplierItemCommand();
                 item.setSupplierId(id);
                 return item;
             }).toList());
+            // Cmd：领域批量暂停
             supplierDomainService.suspendSupplier(command);
             return validIds.size();
         } catch (Exception e) {

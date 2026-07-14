@@ -1,26 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.inventoryitem.support;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.product.MedicationProductUnitConversionSource;
 import com.openhis.whale.core.application.exception.BusinessException;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.math.BigDecimal;
 
@@ -45,31 +32,31 @@ public final class MedicationProductQuantityToSplitUnitConverter {
         if (product == null) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "缺少药品目录单位信息，无法把发放数量换算为库存最小单位");
         }
-        if (StringUtils.isBlank(businessUnitCode)) {
+        if (StringUtils.isEmpty(businessUnitCode)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "发放单位编码为空，无法换算库存最小单位数量");
         }
         String unitTrimmed = businessUnitCode.trim();
-        if (StringUtils.isNotBlank(product.getSplitUnitCode())) {
+        if (StringUtils.isNotEmpty(product.getSplitUnitCode())) {
             if (unitTrimmed.equals(product.getSplitUnitCode().trim())) {
                 return quantity;
             }
         }
-        if (StringUtils.isNotBlank(product.getDoseUnitCode())) {
+        if (StringUtils.isNotEmpty(product.getDoseUnitCode())) {
             if (unitTrimmed.equals(product.getDoseUnitCode().trim())) {
                 return multiplyQuantityByRatio(quantity, product.getDoseUnitRatio(), "剂量单位");
             }
         }
-        if (StringUtils.isNotBlank(product.getPurchaseUnitCode())) {
+        if (StringUtils.isNotEmpty(product.getPurchaseUnitCode())) {
             if (unitTrimmed.equals(product.getPurchaseUnitCode().trim())) {
                 return multiplyQuantityByRatio(quantity, product.getPurchaseUnitRatio(), "采购单位");
             }
         }
-        if (StringUtils.isNotBlank(product.getStockUnitCode())) {
+        if (StringUtils.isNotEmpty(product.getStockUnitCode())) {
             if (unitTrimmed.equals(product.getStockUnitCode().trim())) {
                 return multiplyQuantityByRatio(quantity, product.getStockUnitRatio(), "库存单位");
             }
         }
-        if (StringUtils.isNotBlank(product.getPackageUnitCode())) {
+        if (StringUtils.isNotEmpty(product.getPackageUnitCode())) {
             if (unitTrimmed.equals(product.getPackageUnitCode().trim())) {
                 return multiplyQuantityByRatio(quantity, product.getPackageUnitRatio(), "销售单位");
             }
@@ -79,6 +66,15 @@ public final class MedicationProductQuantityToSplitUnitConverter {
             "发放单位不在目录拆零/剂量/采购/库存/销售五类单位内，无法换算库存最小单位数量");
     }
 
+    /**
+     * 数量 × 换算比；比缺失或非正数时抛 INVALID_ARGUMENT。
+     *
+     * @param quantity 原数量
+     * @param ratio    换算比
+     * @param label    错误提示中的单位标签
+     * @return 乘积
+     * @throws BusinessException 换算比非法
+     */
     private static BigDecimal multiplyQuantityByRatio(BigDecimal quantity, BigDecimal ratio, String label) {
         if (ratio == null || ratio.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(

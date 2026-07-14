@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.financial.dailysettlement.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -20,8 +20,8 @@ public class InpatientDailySettlementSummaryDto {
     @Schema(description = "日期范围")
     private String dateRange;
 
-    /** 总收入。 */
-    @Schema(description = "总收入")
+    /** 总收入（仅住院结算 fin_type 上半区合计，不含预交金）。 */
+    @Schema(description = "总收入（fin_type 上半区合计；不含预交金）")
     private String totalIncome;
 
     /** 应收。 */
@@ -52,8 +52,8 @@ public class InpatientDailySettlementSummaryDto {
     @Schema(description = "现金小计")
     private String cashAmount;
 
-    /** 预交金小计（住院特有）。 */
-    @Schema(description = "预交金小计")
+    /** 预交金小计（住院特有；独立汇总，不参与 totalIncome 及其他下半区加和）。 */
+    @Schema(description = "预交金小计（独立展示，不参与总收入加和）")
     private String depositAmount;
 
     /** 自费现金总额。 */
@@ -112,13 +112,9 @@ public class InpatientDailySettlementSummaryDto {
     @Schema(description = "市医保总额")
     private String municipalInsuranceTotal;
 
-    /** 现金收入总额（各合同现金之和）。 */
-    @Schema(description = "现金收入总额")
+    /** 自费总额（接口字段名 totalCashIncome，对齐老日结单展示项；含微信/现金等全渠道净额）。 */
+    @Schema(description = "自费总额")
     private String totalCashIncome;
-
-    /** 体检人次。 */
-    @Schema(description = "体检人次")
-    private Integer physicalExamCount;
 
     /** 含医保关联 payment 条数（兼容旧字段）。 */
     @Schema(description = "医保条数")

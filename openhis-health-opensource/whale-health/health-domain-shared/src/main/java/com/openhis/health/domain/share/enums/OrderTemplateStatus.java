@@ -1,37 +1,18 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 组套模板状态枚举。
  */
 public enum OrderTemplateStatus implements EnumInterface {
-    /**
-     * DRAFT。
-     */
+    /** 草稿（OrderTemplateStatus，编码 {@code DRAFT}）。 */
     DRAFT(0L, "DRAFT", "草稿", "", 1L),
-    /**
-     * ACTIVE。
-     */
+    /** 已启用（OrderTemplateStatus，编码 {@code ACTIVE}）。 */
     ACTIVE(0L, "ACTIVE", "已启用", "", 2L),
-    /**
-     * RETIRED。
-     */
+    /** 已停用（OrderTemplateStatus，编码 {@code RETIRED}）。 */
     RETIRED(0L, "RETIRED", "已停用", "", 3L);
 
     private final Long codeSystemId;
@@ -41,7 +22,7 @@ public enum OrderTemplateStatus implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * OrderTemplateStatus。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     OrderTemplateStatus(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

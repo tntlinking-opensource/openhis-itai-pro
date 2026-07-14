@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -27,7 +27,7 @@ public class TemperatureSheetGridRowDto {
     @Schema(description = "业务日期")
     private LocalDate recordDate;
 
-    /** 当日 6 槽单元（顺序与 TIME_SLOTS 一致）。 */
+    /** 当日 6 槽单元。 */
     @Schema(description = "当日 6 槽单元")
     private List<TemperatureSheetGridSlotCellDto> slotCells = new ArrayList<>();
 }

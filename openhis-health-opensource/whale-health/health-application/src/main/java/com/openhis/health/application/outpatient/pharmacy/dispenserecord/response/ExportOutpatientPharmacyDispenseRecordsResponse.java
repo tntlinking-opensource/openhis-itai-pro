@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.pharmacy.dispenserecord.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;

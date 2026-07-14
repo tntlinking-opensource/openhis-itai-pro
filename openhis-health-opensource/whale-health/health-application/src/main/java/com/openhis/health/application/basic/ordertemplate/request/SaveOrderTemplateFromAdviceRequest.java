@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.ordertemplate.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -40,7 +27,7 @@ import java.util.List;
 @Schema(description = "医生站另存医嘱模板请求")
 public class SaveOrderTemplateFromAdviceRequest {
 
-    /** 就诊主键。 */
+    /** 就诊标识。 */
     @NotNull(message = "就诊标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -67,7 +54,7 @@ public class SaveOrderTemplateFromAdviceRequest {
     @Schema(description = "绑定类型：DEPARTMENT（默认）/ PERSONAL")
     private String bindingEnum;
 
-    /** 选中源行键集合。 */
+    /** 选中源行。 */
     @NotEmpty(message = "请至少选择一条医嘱")
     @Valid
     @Schema(description = "选中源行", requiredMode = Schema.RequiredMode.REQUIRED)

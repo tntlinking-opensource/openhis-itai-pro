@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.activitydefinition.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -27,7 +14,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -146,6 +133,10 @@ public class ActivityDefinition extends BaseAuditedEntity {
     @Column(name = "chrgitm_lv")
     private Integer chrgitmLv;
 
+    /** 病案结算类型编码（术语 {@code mr_settlement_type_code}）。 */
+    @Column(name = "mr_settlement_type_code")
+    private String mrSettlementTypeCode;
+
     /** 子项 JSON 快照。 */
     @Column(name = "children_json")
     private String childrenJson;
@@ -160,10 +151,10 @@ public class ActivityDefinition extends BaseAuditedEntity {
      * @throws BusinessException 参数非法
      */
     public void assertRequiredFieldsProvided() {
-        if (StringUtils.isBlank(this.categoryCode)) {
+        if (StringUtils.isEmpty(this.categoryCode)) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "诊疗项目目录类别编码不能为空");
         }
-        if (StringUtils.isBlank(this.name)) {
+        if (StringUtils.isEmpty(this.name)) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "诊疗项目名称不能为空");
         }
         if (this.typeEnum == null) {
@@ -177,7 +168,7 @@ public class ActivityDefinition extends BaseAuditedEntity {
      * @throws BusinessException 参数非法
      */
     public void assertBusNoGenerated() {
-        if (StringUtils.isBlank(this.busNo)) {
+        if (StringUtils.isEmpty(this.busNo)) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "诊疗项目业务编码不能为空");
         }
     }
@@ -196,7 +187,7 @@ public class ActivityDefinition extends BaseAuditedEntity {
      * 按商品名称重算商品拼音码与五笔码。
      */
     public void rebuildMerchandiseSearchCodes() {
-        if (StringUtils.isBlank(this.merchandiseName)) {
+        if (StringUtils.isEmpty(this.merchandiseName)) {
             this.merchandisePyStr = null;
             this.merchandiseWbStr = null;
             return;
@@ -300,4 +291,3 @@ public class ActivityDefinition extends BaseAuditedEntity {
         this.setDeletedAt(LocalDateTime.now());
     }
 }
-

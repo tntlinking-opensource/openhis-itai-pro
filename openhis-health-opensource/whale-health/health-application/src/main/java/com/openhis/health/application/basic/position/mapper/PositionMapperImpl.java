@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.position.mapper;
 
 import com.openhis.health.application.basic.position.dto.PositionUserWorkbenchRowDto;
@@ -27,12 +14,13 @@ import com.openhis.health.domain.administration.practitionerrole.entity.Practiti
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
-import com.openhis.health.module.common.converter.position.PositionRoleApiCompat;
+import com.openhis.health.application.basic.position.support.PositionRoleApiCompat;
 import com.openhis.whale.identity.infrastructure.repository.RoleRepository;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.identity.application.dto.RoleDto;
 import com.openhis.whale.identity.application.dto.UserDto;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -46,6 +34,7 @@ import java.util.stream.Collectors;
  * <p>机构名、位置文案依赖查询服务在映射时补全，避免 AppService 内重复拼装。</p>
  */
 @Component
+@RequiredArgsConstructor
 public class PositionMapperImpl implements PositionMapper {
 
     /** 组织读侧：岗位行补全科室名称。 */
@@ -55,15 +44,6 @@ public class PositionMapperImpl implements PositionMapper {
 
     /** 平台角色读侧：岗位行补全角色展示名。 */
     private final RoleRepository roleRepository;
-
-    public PositionMapperImpl(
-        OrganizationQueryService organizationQueryService,
-        LocationQueryService locationQueryService,
-        RoleRepository roleRepository) {
-        this.organizationQueryService = organizationQueryService;
-        this.locationQueryService = locationQueryService;
-        this.roleRepository = roleRepository;
-    }
 
     /**
      * 将系统用户、角色与医务人员主档装配为岗位工作台左侧行。
@@ -106,7 +86,7 @@ public class PositionMapperImpl implements PositionMapper {
                 if (r == null) {
                     return null;
                 }
-                if (StringUtils.isNotBlank(r.getDisplayName())) {
+                if (StringUtils.isNotEmpty(r.getDisplayName())) {
                     return r.getDisplayName();
                 }
                 return r.getName();
@@ -211,13 +191,19 @@ public class PositionMapperImpl implements PositionMapper {
         return name + "（" + formLabel + "）";
     }
 
+    /**
+     * 角色 id → 展示名；优先 displayName，回落 name。
+     *
+     * @param roleId 角色主键
+     * @return 展示名；未命中返回空串
+     */
     private String resolveRoleDisplayName(Long roleId) {
         if (roleId == null) {
             return GeneralSharedConstants.EMPTY_STRING;
         }
         return roleRepository.findById(roleId)
             .map(role -> {
-                if (StringUtils.isNotBlank(role.getDisplayName())) {
+                if (StringUtils.isNotEmpty(role.getDisplayName())) {
                     return role.getDisplayName();
                 }
                 return role.getName();

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.advice.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -33,11 +20,11 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
-/** 医生站医嘱绑定明细行。 */
 @Schema(description = "医生站医嘱绑定明细行")
 public class InpatientDoctorStationAdviceOrderBindRowDto {
 
     @Schema(description = "绑定类型回显")
+    /** 绑定类型回显。 */
     private String bindType;
 
     /** 诊疗耗材绑定模板主键（{@code cus_service_device_template.id}）。 */
@@ -62,7 +49,7 @@ public class InpatientDoctorStationAdviceOrderBindRowDto {
     @Schema(description = "目标定义主键")
     private Long targetItemId;
 
-    /** 目标定义物理表（{@code wkf_activity_definition} / {@code adm_device_definition}）。 */
+    /** 目标定义物理表。 */
     @Schema(description = "目标定义物理表")
     private String targetItemTable;
 
@@ -78,7 +65,7 @@ public class InpatientDoctorStationAdviceOrderBindRowDto {
     @Schema(description = "目标规格展示")
     private String specificationText;
 
-    /** 零售单价（每包装单位售价）。 */
+    /** 零售单价。 */
     @Schema(description = "零售单价")
     private BigDecimal unitPrice;
 
@@ -100,7 +87,7 @@ public class InpatientDoctorStationAdviceOrderBindRowDto {
     @Schema(description = "单位编码")
     private String unitCode;
 
-    /** 与 {@link #unitCode} 对应的单位展示名。 */
+    /** 单位展示名。 */
     @Schema(description = "单位展示名")
     private String unitName;
 

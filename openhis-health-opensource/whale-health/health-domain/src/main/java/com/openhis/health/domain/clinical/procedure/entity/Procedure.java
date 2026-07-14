@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.clinical.procedure.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -26,7 +13,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.time.LocalDateTime;
 
@@ -129,7 +116,7 @@ public class Procedure extends BaseAuditedEntity {
      * @throws BusinessException 锚点缺失
      */
     public void assertRequestBound() {
-        if (this.requestId == null || StringUtils.isBlank(this.requestTable) || this.patientId == null || this.encounterId == null) {
+        if (this.requestId == null || StringUtils.isEmpty(this.requestTable) || this.patientId == null || this.encounterId == null) {
             throw new BusinessException(ErrorCodeConstants.PROCEDURE_INVALID_ARGUMENT, "请求、患者、就诊锚点不能为空");
         }
     }
@@ -200,7 +187,7 @@ public class Procedure extends BaseAuditedEntity {
      */
     public void assertCompletable() {
         this.assertStateTransitionAllowed(EventStatus.IN_PROGRESS.getCode());
-        if (StringUtils.isBlank(this.resultText) && StringUtils.isBlank(this.reportJson)) {
+        if (StringUtils.isEmpty(this.resultText) && StringUtils.isEmpty(this.reportJson)) {
             throw new BusinessException(ErrorCodeConstants.PROCEDURE_RULE_CONFLICT, "完成执行需要结果或报告");
         }
     }
@@ -216,9 +203,8 @@ public class Procedure extends BaseAuditedEntity {
         if (!canCancel) {
             throw new BusinessException(ErrorCodeConstants.PROCEDURE_INVALID_STATUS, "当前状态不允许取消");
         }
-        if (StringUtils.isBlank(this.statusReasonText)) {
+        if (StringUtils.isEmpty(this.statusReasonText)) {
             throw new BusinessException(ErrorCodeConstants.PROCEDURE_INVALID_ARGUMENT, "取消原因不能为空");
         }
     }
 }
-

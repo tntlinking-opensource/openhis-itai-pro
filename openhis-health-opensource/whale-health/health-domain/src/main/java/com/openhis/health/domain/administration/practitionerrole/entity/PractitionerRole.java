@@ -1,12 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.practitionerrole.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -121,5 +116,17 @@ public class PractitionerRole extends BaseAuditedEntity {
         this.setIsDeleted(Boolean.TRUE);
         this.setDeletedBy(operatorId);
         this.setDeletedAt(LocalDateTime.now());
+    }
+
+    /**
+     * 全量替换场景复用历史软删行：恢复有效态并清空删除审计字段。
+     *
+     * <p>与 {@code whale_user_roles} 分配角色时的「删后重加」策略对齐，避免同业务键重复插入。</p>
+     */
+    public void reactivateFromSync() {
+        this.setIsDeleted(Boolean.FALSE);
+        this.setDeletedAt(null);
+        this.setDeletedBy(null);
+        this.activeFlag = Boolean.TRUE;
     }
 }

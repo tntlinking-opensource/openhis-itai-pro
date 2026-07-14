@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.specimendefinition.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -29,7 +16,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.time.LocalDateTime;
 
@@ -73,7 +60,7 @@ public class SpecimenDefinition extends BaseAuditedEntity {
      * 校验业务编码非空。
      */
     public void assertBusNoNotBlank() {
-        if (StringUtils.isBlank(this.busNo)) {
+        if (StringUtils.isEmpty(this.busNo)) {
             throw new BusinessException(ErrorCodeConstants.SPECIMEN_DEFINITION_INVALID_ARGUMENT, "样本定义业务编码不能为空");
         }
     }
@@ -82,7 +69,7 @@ public class SpecimenDefinition extends BaseAuditedEntity {
      * 校验样本名称非空。
      */
     public void assertNameNotBlank() {
-        if (StringUtils.isBlank(this.name)) {
+        if (StringUtils.isEmpty(this.name)) {
             throw new BusinessException(ErrorCodeConstants.SPECIMEN_DEFINITION_INVALID_ARGUMENT, "样本定义名称不能为空");
         }
     }
@@ -100,13 +87,13 @@ public class SpecimenDefinition extends BaseAuditedEntity {
      * 按名称回填检索码（命令未显式传入时生成拼音/五笔码）。
      */
     public void refreshSearchCodeFromName() {
-        if (StringUtils.isBlank(this.name)) {
+        if (StringUtils.isEmpty(this.name)) {
             return;
         }
-        if (StringUtils.isBlank(this.pyStr)) {
+        if (StringUtils.isEmpty(this.pyStr)) {
             this.pyStr = SearchCodeUtil.toPyStr(this.name);
         }
-        if (StringUtils.isBlank(this.wbStr)) {
+        if (StringUtils.isEmpty(this.wbStr)) {
             this.wbStr = SearchCodeUtil.toWbStr(this.name);
         }
     }

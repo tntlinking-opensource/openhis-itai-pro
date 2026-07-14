@@ -1,14 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.mrms.upload.support;
 
 import lombok.Getter;
 import lombok.Setter;
 
 /**
- * MRMS 4401 组装用医保就诊上下文（由 {@link MrmsInsuranceEncounterSupport} 填充）。
+ * MRMS 4401 组装用医保就诊上下文（由 {@link MrmsInsuranceEncounterLoader} 填充）。
  */
 @Getter
 @Setter

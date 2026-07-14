@@ -1,10 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.returntosupplier.mapper;
-
-import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.ProductDefinitionItemDto;
+import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.LinkableGoodsReceiptListRowDto;
+import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.ReturnableInboundLineDto;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.ReturnToSupplierDetailLineDto;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.ReturnToSupplierLineDto;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.ReturnToSupplierListRowDto;
@@ -12,7 +12,9 @@ import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.S
 import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.WarehouseOptionDto;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.request.*;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.response.*;
-import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
+import com.openhis.health.application.inventory.warehouse.returntosupplier.support.ReturnToSupplierInboundLineHelper;
+import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
@@ -32,30 +34,37 @@ import com.openhis.health.domain.workflow.supplyrequest.command.SubmitApprovalCo
 import com.openhis.health.domain.workflow.supplyrequest.command.WithdrawApprovalCommand;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.data.domain.Page;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogEditorHintsAssembler;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
+/**
+ * 药库退货单应用层 Mapper 实现（AS-INV-WHS-005）：HTTP DTO 与领域命令/读模型之间的字段搬运。
+ *
+ * <p>不写业务门禁；枚举对外 sortOrder 与持久化 code 的转换在本类完成。</p>
+ */
 @Component
+@RequiredArgsConstructor
 public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWarehouseReturnToSupplierMapper {
 
-    private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     private final LocationQueryService locationQueryService;
 
-    public InventoryWarehouseReturnToSupplierMapperImpl(
-        ChargeItemDefinitionQueryService chargeItemDefinitionQueryService,
-        LocationQueryService locationQueryService) {
-        this.chargeItemDefinitionQueryService = chargeItemDefinitionQueryService;
-        this.locationQueryService = locationQueryService;
-    }
-
-    /** 位置实体列表映射为库房/科室选项 DTO。 */
+    /**
+     * 将启用药库位置列表映射为下拉选项 DTO。
+     *
+     * @param locations 启用库位列表
+     * @return 药库下拉选项
+     */
     @Override
     public List<WarehouseOptionDto> toWarehouseOptionDtoList(List<Location> locations) {
         List<WarehouseOptionDto> list = new ArrayList<>();
@@ -75,7 +84,12 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return list;
     }
 
-    /** Assemble mapping result for SupplierOptionDtoList. */
+    /**
+     * 将供应商列表项映射为下拉选项 DTO。
+     *
+     * @param suppliers 启用供应商列表项
+     * @return 供应商下拉选项
+     */
     @Override
     public List<SupplierOptionDto> toSupplierOptionDtoList(List<SupplierListItemQueryModel> suppliers) {
         List<SupplierOptionDto> list = new ArrayList<>();
@@ -100,7 +114,13 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return list;
     }
 
-    /** 装配页初始化响应（选项集合写入各字段）。 */
+    /**
+     * 装配退供应商页初始化响应。
+     *
+     * @param warehouseOptions 药库选项
+     * @param supplierOptions  供应商选项
+     * @return 页初始化响应
+     */
     @Override
     public LoadReturnToSupplierFormInitResponse toLoadReturnToSupplierFormInitResponse(
         List<WarehouseOptionDto> warehouseOptions,
@@ -111,32 +131,12 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return res;
     }
 
-    /** Assemble mapping result for SuppliersResponse. */
-    @Override
-    public PageReturnToSuppliersResponse toPageReturnToSuppliersResponse(Page<WarehouseDocumentDetailQueryModel> page) {
-        List<ReturnToSupplierListRowDto> content = new ArrayList<>();
-        for (WarehouseDocumentDetailQueryModel row : page.getContent()) {
-            if (row == null) {
-                continue;
-            }
-            content.add(this.toReturnToSupplierListRowDto(row));
-        }
-        return PagedResultBuilder.build(new PageReturnToSuppliersResponse(), content, page);
-    }
-
-    /** Assemble mapping result for PageLinkableGoodsReceiptsResponse. */
-    @Override
-    public PageLinkableGoodsReceiptsResponse toPageLinkableGoodsReceiptsResponse(Page<WarehouseDocumentDetailQueryModel> page) {
-        List<ReturnToSupplierListRowDto> content = new ArrayList<>();
-        for (WarehouseDocumentDetailQueryModel row : page.getContent()) {
-            if (row == null) {
-                continue;
-            }
-            content.add(this.toReturnToSupplierListRowDto(row));
-        }
-        return PagedResultBuilder.build(new PageLinkableGoodsReceiptsResponse(), content, page);
-    }
-
+    /**
+     * 库房单据读模型 → 退供应商列表行 DTO（枚举转 API sortOrder）。
+     *
+     * @param row 库房单据读模型
+     * @return 列表行 DTO
+     */
     private ReturnToSupplierListRowDto toReturnToSupplierListRowDto(WarehouseDocumentDetailQueryModel row) {
         ReturnToSupplierListRowDto dto = new ReturnToSupplierListRowDto();
         dto.setId(row.getId());
@@ -161,7 +161,13 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return dto;
     }
 
-    /** 将供应请求行列表映射为详情响应（含明细增强字段）。 */
+    /**
+     * 将同号供应请求明细与产品读模型装配为退供应商详情响应。
+     *
+     * @param lines        供应请求明细行
+     * @param productByKey 产品定义读模型映射
+     * @return 详情响应
+     */
     @Override
     public GetReturnToSupplierDetailResponse toGetReturnToSupplierDetailResponse(
         List<SupplyRequestModel> lines,
@@ -190,6 +196,13 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return res;
     }
 
+    /**
+     * 供应请求明细 → 退供应商详情行 DTO（按产品键回填品名）。
+     *
+     * @param line         供应请求明细
+     * @param productByKey 产品复合键 → 展示 DTO
+     * @return 详情行 DTO
+     */
     private ReturnToSupplierDetailLineDto toDetailLine(
         SupplyRequestModel line,
         Map<String, ProductDefinitionDisplayDto> productByKey) {
@@ -208,13 +221,26 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
             String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
             ProductDefinitionDisplayDto pr = productByKey.get(key);
             if (pr != null) {
+                // —— 品名 + 单位展示名 + 计量带目录，对齐进货详情 IF-WHS-IN-03 富化口径。——
                 dto.setProductName(pr.getProductName());
+                dto.setUnitCodeDictText(
+                    com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler
+                        .resolveUnitDisplayName(null, line.getUnitCode(), pr));
+                dto.setProductCatalog(ProductDefinitionCatalogEditorHintsAssembler.fromDisplayDto(pr));
             }
         }
         return dto;
     }
 
-    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 */
+    /**
+     * 将新建退供应商请求装配为领域 CreateReturnToSupplierCommand。
+     *
+     * @param request               新建请求
+     * @param operatorId            操作人
+     * @param applicantId           制单人员
+     * @param originalBusNoSnapshot 关联上游进货单号快照
+     * @return 领域写命令
+     */
     @Override
     public CreateReturnToSupplierCommand toCreateReturnToSupplierCommand(
         CreateReturnToSupplierRequest request,
@@ -227,6 +253,7 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
             request.getPurposeLocationId(),
             request.getCategoryEnum(),
             request.getSupplierId(),
+            request.getPractitionerId(),
             request.getLines(),
             null,
             operatorId,
@@ -234,7 +261,15 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
             originalBusNoSnapshot);
     }
 
-    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 */
+    /**
+     * 将修订退供应商请求装配为领域 CreateReturnToSupplierCommand（同号全量对齐）。
+     *
+     * @param request               修订请求
+     * @param operatorId            操作人
+     * @param applicantId           制单人员
+     * @param originalBusNoSnapshot 关联上游进货单号快照
+     * @return 领域写命令
+     */
     @Override
     public CreateReturnToSupplierCommand toCreateReturnToSupplierCommandForUpdate(
         UpdateReturnToSupplierRequest request,
@@ -247,6 +282,7 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
             request.getPurposeLocationId(),
             request.getCategoryEnum(),
             request.getSupplierId(),
+            request.getPractitionerId(),
             request.getLines(),
             request.getBusNo(),
             operatorId,
@@ -254,12 +290,29 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
             originalBusNoSnapshot);
     }
 
+    /**
+     * 新建/修订退供应商请求公共写命令装配（解析库位类型与供应类别）。
+     *
+     * @param originalBusNo           请求体关联进货单号
+     * @param sourceLocationId        源药库库位
+     * @param purposeLocationId       目的库位（供应商侧占位）
+     * @param categoryEnumSort        前端供应类别 sort
+     * @param supplierId              供应商
+     * @param practitionerId          经办人
+     * @param lines                   明细行
+     * @param busNo                   修订时业务单号；新建为 null
+     * @param operatorId              操作人
+     * @param applicantId             制单人
+     * @param originalBusNoSnapshot   关联单号快照（优先于 originalBusNo）
+     * @return 领域 CreateReturnToSupplierCommand
+     */
     private CreateReturnToSupplierCommand buildCreateReturnToSupplierCommand(
         String originalBusNo,
         Long sourceLocationId,
         Long purposeLocationId,
         Integer categoryEnumSort,
         Long supplierId,
+        Long practitionerId,
         List<ReturnToSupplierLineDto> lines,
         String busNo,
         Long operatorId,
@@ -277,7 +330,8 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         String categoryCode = this.resolveSupplyCategoryCode(categoryEnumSort);
         String typeCode = SupplyType.CABINET_RETURN_TO_SUPPLIER.getCode();
         String resolvedOriginal = originalBusNoSnapshot;
-        if (StringUtils.isBlank(resolvedOriginal)) {
+        if (StringUtils.isEmpty(resolvedOriginal)) {
+            // 新建路径使用请求体 originalBusNo
             resolvedOriginal = originalBusNo;
         }
         for (ReturnToSupplierLineDto line : lines) {
@@ -303,6 +357,7 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
             item.setPurposeTypeEnum(purposeTypeCode);
             item.setPurposeLocationId(purposeLocationId);
             item.setSupplierId(supplierId);
+            item.setPractitionerId(practitionerId);
             item.setOccurrenceTime(line.getOccurrenceTime());
             item.setApplicantId(applicantId);
             item.setApplyTime(null);
@@ -315,7 +370,12 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return command;
     }
 
-    /** 装配创建成功响应（写入 busNo 等）。 */
+    /**
+     * 装配新建退供应商成功响应。
+     *
+     * @param busNo 新建业务单号
+     * @return 新建响应
+     */
     @Override
     public CreateReturnToSupplierResponse toCreateReturnToSupplierResponse(String busNo) {
         CreateReturnToSupplierResponse res = new CreateReturnToSupplierResponse();
@@ -324,7 +384,12 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return res;
     }
 
-    /** 装配更新成功响应。 */
+    /**
+     * 装配修订退供应商成功响应。
+     *
+     * @param busNo 业务单号
+     * @return 修订响应
+     */
     @Override
     public UpdateReturnToSupplierResponse toUpdateReturnToSupplierResponse(String busNo) {
         UpdateReturnToSupplierResponse res = new UpdateReturnToSupplierResponse();
@@ -333,7 +398,14 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return res;
     }
 
-    /** 将提交审批请求映射为 SubmitApprovalCommand。 */
+    /**
+     * 将提交审批请求装配为领域 SubmitApprovalCommand。
+     *
+     * @param request     提交请求
+     * @param operatorId  操作人
+     * @param applicantId 制单人员
+     * @return 领域写命令
+     */
     @Override
     public SubmitApprovalCommand toSubmitApprovalCommand(
         SubmitReturnToSupplierApprovalRequest request,
@@ -348,7 +420,11 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return command;
     }
 
-    /** 装配提交审批响应。 */
+    /**
+     * 装配提交审批成功响应。
+     *
+     * @return 提交响应
+     */
     @Override
     public SubmitReturnToSupplierApprovalResponse toSubmitReturnToSupplierApprovalResponse() {
         SubmitReturnToSupplierApprovalResponse res = new SubmitReturnToSupplierApprovalResponse();
@@ -357,7 +433,13 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return res;
     }
 
-    /** 将撤回审批请求映射为 WithdrawApprovalCommand。 */
+    /**
+     * 将撤回审批请求装配为领域 WithdrawApprovalCommand。
+     *
+     * @param request    撤回请求
+     * @param operatorId 操作人
+     * @return 领域写命令
+     */
     @Override
     public WithdrawApprovalCommand toWithdrawApprovalCommand(
         WithdrawReturnToSupplierApprovalRequest request,
@@ -370,7 +452,11 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return command;
     }
 
-    /** 装配撤回审批响应。 */
+    /**
+     * 装配撤回审批成功响应。
+     *
+     * @return 撤回响应
+     */
     @Override
     public WithdrawReturnToSupplierApprovalResponse toWithdrawReturnToSupplierApprovalResponse() {
         WithdrawReturnToSupplierApprovalResponse res = new WithdrawReturnToSupplierApprovalResponse();
@@ -379,7 +465,13 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return res;
     }
 
-    /** 将同意请求映射为领域 AgreeRequestCommand。 */
+    /**
+     * 将同意请求装配为领域 AgreeRequestCommand。
+     *
+     * @param request    同意请求
+     * @param operatorId 操作人
+     * @return 领域写命令
+     */
     @Override
     public AgreeRequestCommand toAgreeRequestCommand(AgreeReturnToSupplierRequest request, Long operatorId) {
         AgreeRequestCommand command = new AgreeRequestCommand();
@@ -396,7 +488,13 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return command;
     }
 
-    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 将已同意供应请求行装配为发放命令。 */
+    /**
+     * 将已同意明细行装配为退供应商发放命令。
+     *
+     * @param lines      已同意的供应请求明细行
+     * @param operatorId 操作人
+     * @return 发放命令
+     */
     @Override
     public CreateSupplyDeliveryCommand toCreateSupplyDeliveryCommandForReturnToSupplier(
         List<SupplyRequestModel> lines,
@@ -426,7 +524,12 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return cmd;
     }
 
-    /** 装配同意成功响应。 */
+    /**
+     * 装配同意退供应商成功响应。
+     *
+     * @param ok 是否同意成功
+     * @return 同意响应
+     */
     @Override
     public AgreeReturnToSupplierResponse toAgreeReturnToSupplierResponse(boolean ok) {
         AgreeReturnToSupplierResponse res = new AgreeReturnToSupplierResponse();
@@ -434,7 +537,13 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return res;
     }
 
-    /** 将驳回请求映射为 RejectRequestCommand。 */
+    /**
+     * 将驳回请求装配为领域 RejectRequestCommand。
+     *
+     * @param request    驳回请求
+     * @param operatorId 操作人
+     * @return 领域写命令
+     */
     @Override
     public RejectRequestCommand toRejectRequestCommand(RejectReturnToSupplierRequest request, Long operatorId) {
         RejectRequestCommand command = new RejectRequestCommand();
@@ -452,7 +561,12 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return command;
     }
 
-    /** 装配驳回响应。 */
+    /**
+     * 装配驳回退供应商成功响应。
+     *
+     * @param ok 是否驳回成功
+     * @return 驳回响应
+     */
     @Override
     public RejectReturnToSupplierResponse toRejectReturnToSupplierResponse(boolean ok) {
         RejectReturnToSupplierResponse res = new RejectReturnToSupplierResponse();
@@ -460,7 +574,13 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return res;
     }
 
-    /** 将删除请求映射为 RemoveByBusNoCommand。 */
+    /**
+     * 将删除请求装配为领域 RemoveByBusNoCommand。
+     *
+     * @param request    删除请求
+     * @param operatorId 操作人
+     * @return 领域写命令
+     */
     @Override
     public RemoveByBusNoCommand toRemoveByBusNoCommand(RemoveReturnToSupplierRequest request, Long operatorId) {
         RemoveByBusNoCommand command = new RemoveByBusNoCommand();
@@ -471,7 +591,12 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return command;
     }
 
-    /** 装配删除响应。 */
+    /**
+     * 装配删除退供应商成功响应。
+     *
+     * @param ok 是否删除成功
+     * @return 删除响应
+     */
     @Override
     public RemoveReturnToSupplierResponse toRemoveReturnToSupplierResponse(boolean ok) {
         RemoveReturnToSupplierResponse res = new RemoveReturnToSupplierResponse();
@@ -479,40 +604,12 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return res;
     }
 
-    /** 将产品/库存分页映射为选品分页响应。 */
-    @Override
-    public PageProductsForReturnToSupplierResponse toPageProductsForReturnToSupplierResponse(
-        Page<ProductDefinitionDisplayDto> page) {
-        List<ProductDefinitionItemDto> content = new ArrayList<>();
-        for (ProductDefinitionDisplayDto pr : page.getContent()) {
-            if (pr == null) {
-                continue;
-            }
-            content.add(this.toProductDefinitionItemDto(pr));
-        }
-        return PagedResultBuilder.build(new PageProductsForReturnToSupplierResponse(), content, page);
-    }
-
-    private ProductDefinitionItemDto toProductDefinitionItemDto(ProductDefinitionDisplayDto pr) {
-        ProductDefinitionItemDto dto = new ProductDefinitionItemDto();
-        dto.setProductDefinitionId(pr.getProductDefinitionId());
-        dto.setProductTableName(pr.getProductTableName());
-        dto.setProductName(pr.getProductName());
-        dto.setMerchandiseName(pr.getMerchandiseName());
-        dto.setUnitCode(pr.getPurchaseUnitCode());
-        dto.setMinUnitCode(pr.getSplitUnitCode());
-        dto.setCategoryCode(pr.getCategoryCode());
-        dto.setPrice(pr.getPrice());
-        if (StringUtils.isNotBlank(pr.getProductTableName()) && pr.getProductDefinitionId() != null) {
-            dto.setPurchasePrice(chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
-                pr.getProductTableName().trim(), pr.getProductDefinitionId()));
-        }
-        dto.setManufacturer(pr.getManufacturer());
-        dto.setPyStr(pr.getPyStr());
-        dto.setWbStr(pr.getWbStr());
-        return dto;
-    }
-
+    /**
+     * 供应类型持久化 code → API sortOrder。
+     *
+     * @param code 持久化 code
+     * @return sortOrder；无法解析则 null
+     */
     private Integer toApiSortSupplyType(String code) {
         SupplyType t = EnumUtil.fromCode(SupplyType.class, code);
         if (t == null) {
@@ -521,6 +618,12 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return t.getSortOrder().intValue();
     }
 
+    /**
+     * 供应状态持久化 code → API sortOrder。
+     *
+     * @param code 持久化 code
+     * @return sortOrder；无法解析则 null
+     */
     private Integer toApiSortSupplyStatus(String code) {
         SupplyStatus s = EnumUtil.fromCode(SupplyStatus.class, code);
         if (s == null) {
@@ -529,6 +632,12 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return s.getSortOrder().intValue();
     }
 
+    /**
+     * 供应类别持久化 code → API sortOrder。
+     *
+     * @param code 持久化 code
+     * @return sortOrder；无法解析则 null
+     */
     private Integer toApiSortSupplyCategory(String code) {
         SupplyCategory c = EnumUtil.fromCode(SupplyCategory.class, code);
         if (c == null) {
@@ -537,6 +646,12 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return c.getSortOrder().intValue();
     }
 
+    /**
+     * 供应请求位置类型持久化 code → API sortOrder。
+     *
+     * @param code 持久化 code
+     * @return sortOrder；无法解析则 null
+     */
     private Integer toApiSortSupplyRequestType(String code) {
         SupplyRequestType t = EnumUtil.fromCode(SupplyRequestType.class, code);
         if (t == null) {
@@ -545,11 +660,250 @@ public class InventoryWarehouseReturnToSupplierMapperImpl implements InventoryWa
         return t.getSortOrder().intValue();
     }
 
+    /**
+     * 前端供应类别 sort → 持久化 category code；缺省为常备供应。
+     *
+     * @param categoryEnumSort 前端 sort；可空
+     * @return 持久化 category code
+     */
     private String resolveSupplyCategoryCode(Integer categoryEnumSort) {
         if (categoryEnumSort == null) {
             return SupplyCategory.STOCK_SUPPLY.getCode();
         }
         SupplyCategory category = EnumUtil.requireFromSortOrder(SupplyCategory.class, categoryEnumSort.longValue());
         return category.getCode();
+    }
+
+    /**
+     * 按 busNo 顺序聚合退货供应请求明细为列表行 DTO。
+     *
+     * @param busNoPageOrder 分页单号顺序
+     * @param detailRows     同页全部明细
+     * @return 聚合列表行
+     */
+    @Override
+    public List<ReturnToSupplierListRowDto> toReturnToSupplierListAggregated(
+        List<String> busNoPageOrder,
+        List<SupplyRequestModel> detailRows) {
+        List<ReturnToSupplierListRowDto> out = new ArrayList<>();
+        if (busNoPageOrder == null || busNoPageOrder.isEmpty()) {
+            return out;
+        }
+        if (detailRows == null || detailRows.isEmpty()) {
+            return out;
+        }
+        LinkedHashMap<String, List<SupplyRequestModel>> byBusNo = new LinkedHashMap<>();
+        for (SupplyRequestModel row : detailRows) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
+                continue;
+            }
+            String bn = row.getBusNo().trim();
+            byBusNo.computeIfAbsent(bn, k -> new ArrayList<>()).add(row);
+        }
+        for (String busNoRaw : busNoPageOrder) {
+            if (StringUtils.isEmpty(busNoRaw)) {
+                continue;
+            }
+            String busNo = busNoRaw.trim();
+            List<SupplyRequestModel> lines = byBusNo.get(busNo);
+            if (lines == null || lines.isEmpty()) {
+                continue;
+            }
+            SupplyRequestModel head = lines.get(0);
+            for (SupplyRequestModel line : lines) {
+                if (line == null) {
+                    continue;
+                }
+                if (!Objects.equals(head.getStatusEnum(), line.getStatusEnum())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.WHS_RT_102, "同号退货单状态头字段不一致: " + busNo);
+                }
+                if (!Objects.equals(head.getOriginalBusNo(), line.getOriginalBusNo())) {
+                    throw new BusinessException(
+                        ErrorCodeConstants.WHS_RT_102, "同号退货单来源进货单不一致: " + busNo);
+                }
+            }
+            BigDecimal totalAmount = BigDecimal.ZERO;
+            LocalDateTime maxApply = null;
+            LocalDateTime maxOccurrence = null;
+            for (SupplyRequestModel line : lines) {
+                if (line == null) {
+                    continue;
+                }
+                if (line.getTotalPrice() != null) {
+                    totalAmount = totalAmount.add(line.getTotalPrice());
+                }
+                if (line.getApplyTime() != null) {
+                    if (maxApply == null || line.getApplyTime().isAfter(maxApply)) {
+                        maxApply = line.getApplyTime();
+                    }
+                }
+                if (line.getOccurrenceTime() != null) {
+                    if (maxOccurrence == null || line.getOccurrenceTime().isAfter(maxOccurrence)) {
+                        maxOccurrence = line.getOccurrenceTime();
+                    }
+                }
+            }
+            LocalDateTime approvalTime = null;
+            for (SupplyRequestModel line : lines) {
+                if (line != null && line.getApprovalTime() != null) {
+                    approvalTime = line.getApprovalTime();
+                    break;
+                }
+            }
+            ReturnToSupplierListRowDto dto = new ReturnToSupplierListRowDto();
+            dto.setBusNo(busNo);
+            dto.setOriginalBusNo(head.getOriginalBusNo());
+            dto.setTypeEnum(this.toApiSortSupplyType(head.getTypeEnum()));
+            dto.setStatusEnum(this.toApiSortSupplyStatus(head.getStatusEnum()));
+            dto.setCategoryEnum(this.toApiSortSupplyCategory(head.getCategoryEnum()));
+            dto.setSourceLocationId(head.getSourceLocationId());
+            dto.setPurposeLocationId(head.getPurposeLocationId());
+            dto.setSupplierId(head.getSupplierId());
+            dto.setTotalPrice(totalAmount);
+            dto.setApplyTime(maxApply);
+            dto.setApprovalTime(approvalTime);
+            out.add(dto);
+        }
+        return out;
+    }
+
+    /**
+     * 用聚合列表行构建退货单分页响应。
+     *
+     * @param mergedTotal 去重后总单数
+     * @param pageNo      页码
+     * @param pageSize    页大小
+     * @param records     列表行
+     * @return 分页响应
+     */
+    @Override
+    public PageReturnToSuppliersResponse toPageReturnToSuppliersAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<ReturnToSupplierListRowDto> records) {
+        List<ReturnToSupplierListRowDto> content;
+        if (records == null) {
+            content = new ArrayList<>();
+        } else {
+            content = records;
+        }
+        return PagedResultBuilder.build(new PageReturnToSuppliersResponse(), content, mergedTotal, pageNo, pageSize);
+    }
+
+    /**
+     * 用可关联进货单聚合行构建分页响应。
+     *
+     * @param mergedTotal 去重后总单数
+     * @param pageNo      页码
+     * @param pageSize    页大小
+     * @param records     列表行
+     * @return 分页响应
+     */
+    @Override
+    public PageLinkableGoodsReceiptsResponse toPageLinkableGoodsReceiptsAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<LinkableGoodsReceiptListRowDto> records) {
+        List<LinkableGoodsReceiptListRowDto> content;
+        if (records == null) {
+            content = new ArrayList<>();
+        } else {
+            content = records;
+        }
+        return PagedResultBuilder.build(new PageLinkableGoodsReceiptsResponse(), content, mergedTotal, pageNo, pageSize);
+    }
+
+    /**
+     * 将已同意进货单与可退余量映射为退货预填响应。
+     *
+     * @param inboundLines    进货明细
+     * @param returnableByKey   行键 → 可退余量
+     * @param returnedByKey     行键 → 已退占用量
+     * @param availableByKey    行键 → 源库可用量
+     * @param productByKey      产品读模型
+     * @return 预填响应
+     */
+    @Override
+    public GetLinkableGoodsReceiptDetailResponse toGetLinkableGoodsReceiptDetailResponse(
+        List<SupplyRequestModel> inboundLines,
+        Map<String, BigDecimal> returnableByKey,
+        Map<String, BigDecimal> returnedByKey,
+        Map<String, BigDecimal> availableByKey,
+        Map<String, ProductDefinitionDisplayDto> productByKey) {
+        GetLinkableGoodsReceiptDetailResponse res = new GetLinkableGoodsReceiptDetailResponse();
+        if (inboundLines == null || inboundLines.isEmpty()) {
+            res.setLines(new ArrayList<>());
+            return res;
+        }
+        SupplyRequestModel head = inboundLines.get(0);
+        String busNo = head.getBusNo();
+        res.setOriginalBusNo(busNo);
+        res.setGoodsReceiptBusNo(busNo);
+        Long purposeLocationId = head.getPurposeLocationId();
+        res.setPurposeLocationId(purposeLocationId);
+        res.setSourceLocationId(purposeLocationId);
+        res.setSupplierId(head.getSupplierId());
+        res.setCategoryEnum(head.getCategoryEnum());
+        res.setPractitionerId(head.getPractitionerId());
+        Map<String, BigDecimal> safeReturnable = returnableByKey;
+        if (safeReturnable == null) {
+            safeReturnable = new LinkedHashMap<>();
+        }
+        Map<String, BigDecimal> safeReturned = returnedByKey;
+        if (safeReturned == null) {
+            safeReturned = new LinkedHashMap<>();
+        }
+        Map<String, BigDecimal> safeAvailable = availableByKey;
+        if (safeAvailable == null) {
+            safeAvailable = new LinkedHashMap<>();
+        }
+        Map<String, ProductDefinitionDisplayDto> safeProducts = productByKey;
+        if (safeProducts == null) {
+            safeProducts = new LinkedHashMap<>();
+        }
+        Map<String, BigDecimal> inboundByKey = ReturnToSupplierInboundLineHelper.sumSplitQuantitiesByLineKey(inboundLines);
+        List<ReturnableInboundLineDto> lines = new ArrayList<>();
+        for (SupplyRequestModel line : inboundLines) {
+            if (line == null || line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
+                continue;
+            }
+            String key = ReturnToSupplierInboundLineHelper.buildInboundLineKey(
+                line.getItemTable(), line.getItemId(), line.getLotNumber());
+            if (key.isEmpty()) {
+                continue;
+            }
+            ReturnableInboundLineDto dto = new ReturnableInboundLineDto();
+            dto.setItemTable(line.getItemTable());
+            dto.setItemId(line.getItemId());
+            dto.setInboundQuantity(inboundByKey.getOrDefault(key, line.getItemQuantity()));
+            dto.setReturnedQuantity(safeReturned.getOrDefault(key, BigDecimal.ZERO));
+            dto.setReturnableQuantity(safeReturnable.getOrDefault(key, BigDecimal.ZERO));
+            dto.setSourceAvailableQuantity(safeAvailable.getOrDefault(key, BigDecimal.ZERO));
+            dto.setUnitCode(line.getUnitCode());
+            dto.setLotNumber(line.getLotNumber());
+            dto.setTraceNo(line.getTraceNo());
+            dto.setPrice(line.getPrice());
+            dto.setTotalPrice(line.getTotalPrice());
+            dto.setOccurrenceTime(line.getOccurrenceTime());
+            dto.setRemake(line.getRemake());
+            String productKey = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
+            ProductDefinitionDisplayDto product = safeProducts.get(productKey);
+            if (product != null) {
+                // —— 产品展示富化：行价仍取源进货落库价，不回落当前目录价。——
+                dto.setProductName(product.getProductName());
+                dto.setSpecification(product.getTotalVolume());
+                dto.setManufacturer(product.getManufacturer());
+                dto.setUnitCodeDictText(
+                    com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler
+                        .resolveUnitDisplayName(null, line.getUnitCode(), product));
+                dto.setProductCatalog(ProductDefinitionCatalogEditorHintsAssembler.fromDisplayDto(product));
+            }
+            lines.add(dto);
+        }
+        res.setLines(lines);
+        return res;
     }
 }

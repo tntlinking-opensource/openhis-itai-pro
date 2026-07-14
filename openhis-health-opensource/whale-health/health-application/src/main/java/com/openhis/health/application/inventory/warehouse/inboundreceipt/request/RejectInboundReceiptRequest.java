@@ -1,56 +1,44 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.request;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.experimental.Accessors;
 
 import java.time.LocalDateTime;
 
 /**
+ * 审批驳回药库入库请求（IF-WHS-IN-09）。
  *
- * <p>驳回仅变更供应请求状态与原因，不触发放与库存。{@link #rejectReason} 为展示与审计用文本或约定编码字符串，
- * 由 Mapper 映射为领域驳回命令的「变更原因」载荷；若未来存在独立字典枚举，仍须以 {@code getCode()} 持久化（B.10.8.1）。</p>
- *
- * <p>应用入口：
- * {@link com.openhis.health.application.inventory.warehouse.inboundreceipt.service.InventoryWarehouseInboundReceiptAppService#rejectInboundReceipt(RejectInboundReceiptRequest)}。</p>
+ * <p>驳回仅变更供应请求状态与原因，不触发放与库存。
+ * {@link #rejectReason} 写入领域驳回项的变更原因字段。</p>
  */
 @Getter
 @Setter
+@Accessors(chain = true)
+@Schema(description = "审批驳回药库入库 IF-WHS-IN-09")
 public class RejectInboundReceiptRequest {
 
-    /**
-     * 进货业务单号；应用服务在门控阶段对首尾空白 {@code trim}，再下推领域查询。
-     */
+    /** 业务单号 busNo。 */
+    @Schema(description = "业务单号 busNo")
     private String busNo;
 
-    /**
-     * 审批人主键；可空，空时由应用层回落为当前操作人（与同意/提交路径一致）。
-     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    /** 审批人 approverId。 */
+    @Schema(description = "审批人 approverId")
     private Long approverId;
 
-    /**
-     * 审批业务时钟；可空时由领域或命令默认值填充，用于审计时间线对齐。
-     */
+    /** 审批时刻 approvalClock。 */
+    @Schema(description = "审批时刻 approvalClock")
     private LocalDateTime approvalClock;
 
-    /**
-     * 驳回原因：须非空白；写入领域驳回项的变更原因字段，供列表/详情展示与追溯。
-     */
+    /** 驳回原因 rejectReason。 */
+    @Schema(description = "驳回原因 rejectReason")
     private String rejectReason;
 }

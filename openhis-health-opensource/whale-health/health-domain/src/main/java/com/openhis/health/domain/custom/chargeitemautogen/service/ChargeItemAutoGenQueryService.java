@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.chargeitemautogen.service;
 
 
@@ -27,7 +14,7 @@ import com.openhis.health.domain.custom.chargeitemautogen.queries.model.ChargeIt
 import com.openhis.health.domain.custom.chargeitemautogen.queries.model.ChargeItemAutoGenRuleQueryModel;
 import com.openhis.health.domain.custom.chargeitemautogen.repository.ChargeItemAutoGenRepository;
 import com.openhis.health.domain.share.enums.PublicationStatus;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -44,6 +31,8 @@ import lombok.RequiredArgsConstructor;
  * <p>职责：按触发源解析启用规则、按目标定价反查规则、分页检索规则维护列表。</p>
  *
  * <p>边界：只读；科室匹配语义见 {@link #isOrgMatched(Long, Long)}（{@code null} 执行科室表示全院规则）。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link ChargeItemAutoGenRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -168,7 +157,7 @@ public class ChargeItemAutoGenQueryService {
                 if (query.getPerformingOrgId() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.PERFORMING_ORG_ID), query.getPerformingOrgId()));
                 }
-                if (StringUtils.isNotBlank(query.getRuleNameKeyword())) {
+                if (StringUtils.isNotEmpty(query.getRuleNameKeyword())) {
                     String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getRuleNameKeyword().trim());
                     predicates.add(cb.like(cb.lower(root.get(FieldNameConstants.RULE_NAME)), likeIc));
                 }

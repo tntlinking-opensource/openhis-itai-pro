@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.costdetail.response;
 
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationCostDetailLineDto;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationCostDetailTotalsDto;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationCostDetailLineDto;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationCostDetailTotalsDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostSummaryLineDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -31,21 +18,22 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 住院护士站费用明细查询响应。 */
 @Schema(description = "住院护士站费用明细查询响应")
 public class QueryNurseStationInpatientCostDetailResponse {
 
     @Schema(description = "展示模式")
+    /** 展示模式。 */
     private String presentationMode;
 
     @Schema(description = "明细行列表")
+    /** 明细行列表。 */
     private List<NurseStationCostDetailLineDto> detailLines;
 
-    /** 汇总行；DETAIL 模式为空列表。 */
+    /** 汇总行列表。 */
     @Schema(description = "汇总行列表")
     private List<NurseStationCostSummaryLineDto> summaryLines;
 
-    /** 合计块（两种模式均返回）。 */
+    /** 合计块。 */
     @Schema(description = "合计块")
     private NurseStationCostDetailTotalsDto totals;
 }

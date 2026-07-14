@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -28,14 +15,15 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
-/** 医嘱补费父锚点。 */
 @Schema(description = "医嘱补费父锚点")
 public class NurseStationPricingParentRequestAnchorDto {
 
     @Schema(description = "父医嘱类型：MED_REQUEST / SERVICE_REQUEST", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 父医嘱类型：MED_REQUEST / SERVICE_REQUEST。 */
     private String orderType;
 
     @Schema(description = "父药品/诊疗申请主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 父药品/诊疗申请主键。 */
     private Long requestId;
 }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.purchaseorder.request;
 
 import lombok.Getter;
@@ -23,16 +10,29 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * 审批同意请求。
+ *
+ * <p>订货单同意（IF-WHS-PO-08）：领域 {@code agreeRequest} 仅迁移供应请求审批态为已同意，<strong>不</strong>触库存、
+ * <strong>不</strong>生成进货单。业务单号在应用服务侧 {@code trim}；{@link #approverId} 可空时回落为当前操作人。</p>
+ *
+ * <p>应用入口：
+ * {@link com.openhis.health.application.inventory.warehouse.purchaseorder.service.InventoryWarehousePurchaseOrderAppService#agreePurchaseOrder(AgreePurchaseOrderRequest)}。</p>
  */
 @Getter
 @Setter
 public class AgreePurchaseOrderRequest {
 
-    /** 单据号。 */
+    /**
+     * 订货业务单号；应用服务门控非空并对首尾空白 {@code trim}。
+     */
     private String busNo;
-    /** 审批人；缺省当前用户。 */
+
+    /**
+     * 审批人主键；可空，空时由应用层回落为当前操作人（单岗工作站可不传）。
+     */
     private Long approverId;
-    /** 审批时间。 */
+
+    /**
+     * 审批业务时钟；可空时由领域或命令默认值填充，用于审计与状态迁移时间线。
+     */
     private LocalDateTime approvalClock;
 }

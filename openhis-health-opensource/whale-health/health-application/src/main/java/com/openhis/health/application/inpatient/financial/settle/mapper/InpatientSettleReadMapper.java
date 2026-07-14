@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.financial.settle.mapper;
 
 import com.openhis.health.application.inpatient.financial.settle.request.LoadInpatientSettleSummaryRequest;
@@ -10,12 +10,12 @@ import com.openhis.health.application.inpatient.financial.settle.request.QueryIn
 import com.openhis.health.application.inpatient.financial.settle.response.LoadInpatientSettleSummaryResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.LoadSettledInpatientPaymentViewResponse;
 import com.openhis.health.application.inpatient.financial.settle.response.QueryInpatientSettleChargesResponse;
-import com.openhis.health.module.querysupport.financial.InpatientSettleChargesQuery;
-import com.openhis.health.module.querysupport.financial.InpatientSettleChargesResult;
-import com.openhis.health.module.querysupport.financial.InpatientSettleSummaryQuery;
-import com.openhis.health.module.querysupport.financial.InpatientSettleSummaryResult;
-import com.openhis.health.module.querysupport.financial.SettledInpatientPaymentViewQuery;
-import com.openhis.health.module.querysupport.financial.SettledInpatientPaymentViewResult;
+import com.openhis.health.application.inpatient.financial.settle.support.InpatientSettleChargesQuery;
+import com.openhis.health.application.inpatient.financial.settle.support.InpatientSettleChargesResult;
+import com.openhis.health.application.inpatient.financial.settle.support.InpatientSettleSummaryQuery;
+import com.openhis.health.application.inpatient.financial.settle.support.InpatientSettleSummaryResult;
+import com.openhis.health.application.inpatient.financial.settle.support.SettledInpatientPaymentViewQuery;
+import com.openhis.health.application.inpatient.financial.settle.support.SettledInpatientPaymentViewResult;
 import org.springframework.stereotype.Component;
 
 /** 住院结算读路径 Query/Result 与 HTTP Request/Response 映射。 */

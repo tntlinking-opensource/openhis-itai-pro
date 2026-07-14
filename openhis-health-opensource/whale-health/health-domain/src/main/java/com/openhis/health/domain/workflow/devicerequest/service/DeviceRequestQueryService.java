@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.devicerequest.service;
 
 import com.openhis.health.domain.workflow.devicerequest.repository.DeviceRequestRepository;
@@ -49,6 +36,7 @@ import lombok.RequiredArgsConstructor;
  * 耗材请求读侧查询服务。
  *
  * <p>约束：只读查询，不写库；默认过滤软删。</p>
+ * <p>聚合边界：仅本聚合 {@link DeviceRequestRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -85,6 +73,19 @@ public class DeviceRequestQueryService {
             map.put(request.getId(), this.toListModel(request));
         }
         return map;
+    }
+
+    /**
+     * 判断指定器材定义是否已被有效耗材申请引用（目录编辑门控）。
+     *
+     * @param deviceDefId 器材定义主键
+     * @return 存在引用时为 true
+     */
+    public boolean existsByDeviceDefId(Long deviceDefId) {
+        if (deviceDefId == null) {
+            return false;
+        }
+        return deviceRequestRepository.existsByDeviceDefIdAndIsDeletedFalse(deviceDefId);
     }
 
     /**

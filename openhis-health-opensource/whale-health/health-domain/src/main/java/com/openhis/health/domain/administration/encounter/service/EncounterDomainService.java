@@ -1,22 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.encounter.service;
 
+import java.util.Objects;
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -47,7 +35,7 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,7 +45,11 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 /**
- * 就诊写侧领域服务：门诊/住院开立、状态迁移、参与者与位置、诊断子表及领域事件发布（B.14 先落库后发事件）。
+ * 就诊（{@code adm_encounter}）聚合写侧领域服务。
+ *
+ * <p>职责：门诊/住院开立、状态迁移、参与者与位置子表、诊断关联及领域事件发布。</p>
+ * <p>不变量：状态迁移门禁（BR-ENC-004/006 等）、主诊断唯一、持久化先于事件（B.14）。</p>
+ * <p>仅注入本聚合 {@link EncounterRepository} 及参与者/位置/诊断子表仓储。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -80,14 +72,14 @@ public class EncounterDomainService {
         List<RegisterOutpatientEncounterCommand.RegisterOutpatientEncounterItemCommand> items = command.resolveItems();
         List<Encounter> toSave = new ArrayList<>();
         LocalDateTime occurredAt = command.getOccurredAt();
-        // 业务分支处理。
+        // 命令未带发生时刻时取服务器当前时间，保证事件与落库时间轴一致
         if (occurredAt == null) {
             occurredAt = LocalDateTime.now();
         }
         List<String> encounterBusNos = this.allocateEncounterBusNos(items.size());
         for (int index = 0; index < items.size(); index++) {
             RegisterOutpatientEncounterCommand.RegisterOutpatientEncounterItemCommand item = items.get(index);
-            // 先执行门诊防重：同日、同患者、同目标科室且已存在已交费就诊时不允许再开立草稿。
+            // 先执行门诊防重：同日、同患者、同目标科室已存在占名额就诊（含待挂号）时不允许再开立。
             this.assertNoOutpatientDuplicate(item.getPatientId(), item.getOrganizationId(), occurredAt.toLocalDate());
             Encounter encounter = new Encounter();
             encounter.setPatientId(item.getPatientId());
@@ -150,7 +142,7 @@ public class EncounterDomainService {
                 initParticipants.add(participant);
             }
         }
-        // 业务分支处理。
+        // 持久化：挂号指定医师时同步写入参与者子表
         if (!initParticipants.isEmpty()) {
             participantRepository.saveAll(initParticipants);
         }
@@ -170,9 +162,21 @@ public class EncounterDomainService {
         List<EncounterParticipant> participantUpserts = new ArrayList<>();
         for (StartOutpatientReceptionCommand.StartOutpatientReceptionItemCommand item : items) {
             Encounter encounter = this.requireEncounter(encounterMap, item.getEncounterId());
-            encounter.assertReceptionAllowed();
-            LocalDateTime receptionTime = this.defaultNow(item.getReceptionTime());
-            encounter.transitToInProgress(receptionTime);
+            LocalDateTime receptionTime;
+            if (item.getReceptionTime() == null) {
+                receptionTime = LocalDateTime.now();
+            } else {
+                receptionTime = item.getReceptionTime();
+            }
+            // 诊毕/暂离重新接诊与常规待诊接诊分流，避免终止态被 assertNotTerminal 拦截。
+            if (EncounterStatus.DISCHARGED.getCode().equals(encounter.getStatusEnum())) {
+                encounter.resumeOutpatientReceptionFromDischarged(receptionTime);
+            } else if (EncounterStatus.ON_HOLD.getCode().equals(encounter.getStatusEnum())) {
+                encounter.resumeOutpatientFromOnHold();
+            } else {
+                encounter.assertReceptionAllowed();
+                encounter.transitToInProgress(receptionTime);
+            }
             toSave.add(encounter);
 
             // 同角色只能有一个活动参与者，先收口旧接诊医生。
@@ -191,7 +195,7 @@ public class EncounterDomainService {
             participantUpserts.add(participant);
         }
         encounterRepository.saveAll(toSave);
-        // 业务分支处理。
+        // 持久化：接诊医生参与者收口与新建须先于事件发布
         if (!participantUpserts.isEmpty()) {
             participantRepository.saveAll(participantUpserts);
         }
@@ -249,7 +253,13 @@ public class EncounterDomainService {
             this.assertDoctorParticipantExists(encounter.getId());
             // BR-ENC-006：完诊前必须存在主诊断。
             this.assertPrimaryDiagnosisExists(encounter.getId());
-            encounter.transitToDischarged(this.defaultNow(item.getCompletedAt()));
+            LocalDateTime completedAt;
+            if (item.getCompletedAt() == null) {
+                completedAt = LocalDateTime.now();
+            } else {
+                completedAt = item.getCompletedAt();
+            }
+            encounter.transitToDischarged(completedAt);
             toSave.add(encounter);
         }
         encounterRepository.saveAll(toSave);
@@ -695,17 +705,22 @@ public class EncounterDomainService {
             encounter.assertClass(EncounterClass.IMP.getCode());
             // 委托聚合根 assertInpatientRegistrationAllowed() 校验住院登记前置状态，遵守 §D3.2 硬门禁。
             encounter.assertInpatientRegistrationAllowed();
-            LocalDateTime admitTime = this.defaultNow(item.getRegisterTime());
+            LocalDateTime admitTime;
+            if (item.getRegisterTime() == null) {
+                admitTime = LocalDateTime.now();
+            } else {
+                admitTime = item.getRegisterTime();
+            }
             encounter.transitToInpatientRegistered(admitTime);
             encounter.setRegistrarId(item.getRegistrarId());
             encounter.setOrganizationId(item.getDepartmentId());
-            if (StringUtils.isNotBlank(item.getAdmitSourceCode())) {
+            if (StringUtils.isNotEmpty(item.getAdmitSourceCode())) {
                 encounter.setAdmitSourceCode(item.getAdmitSourceCode());
             }
-            if (StringUtils.isNotBlank(item.getInWayCode())) {
+            if (StringUtils.isNotEmpty(item.getInWayCode())) {
                 encounter.setInWayCode(item.getInWayCode());
             }
-            if (StringUtils.isNotBlank(item.getPriorityCode())) {
+            if (StringUtils.isNotEmpty(item.getPriorityCode())) {
                 encounter.setPriorityEnum(item.getPriorityCode());
             }
             toSave.add(encounter);
@@ -741,7 +756,12 @@ public class EncounterDomainService {
         if (item.getEncounterId() != null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "直登登记不应携带既有就诊标识");
         }
-        LocalDateTime admitTime = this.defaultNow(item.getRegisterTime());
+        LocalDateTime admitTime;
+        if (item.getRegisterTime() == null) {
+            admitTime = LocalDateTime.now();
+        } else {
+            admitTime = item.getRegisterTime();
+        }
         Encounter encounter = new Encounter();
         encounter.setPatientId(command.getPatientId());
         encounter.setOrganizationId(item.getDepartmentId());
@@ -749,13 +769,13 @@ public class EncounterDomainService {
         encounter.initInpatientRegistered();
         encounter.setStartTime(admitTime);
         encounter.setRegistrarId(item.getRegistrarId());
-        if (StringUtils.isNotBlank(item.getAdmitSourceCode())) {
+        if (StringUtils.isNotEmpty(item.getAdmitSourceCode())) {
             encounter.setAdmitSourceCode(item.getAdmitSourceCode());
         }
-        if (StringUtils.isNotBlank(item.getInWayCode())) {
+        if (StringUtils.isNotEmpty(item.getInWayCode())) {
             encounter.setInWayCode(item.getInWayCode());
         }
-        if (StringUtils.isNotBlank(item.getPriorityCode())) {
+        if (StringUtils.isNotEmpty(item.getPriorityCode())) {
             encounter.setPriorityEnum(item.getPriorityCode());
         }
         Encounter saved = encounterRepository.save(encounter);
@@ -814,7 +834,7 @@ public class EncounterDomainService {
             // Pre：仅待入科（REGISTERED）允许首次分床。
             encounter.assertInpatientBedAssignmentAllowed();
             LocalDateTime assignAt = LocalDateTime.now();
-            if (StringUtils.isNotBlank(item.getPriorityEnum())) {
+            if (StringUtils.isNotEmpty(item.getPriorityEnum())) {
                 encounter.setPriorityEnum(item.getPriorityEnum().trim());
             }
             List<AssignInpatientBedCommand.ParticipantLine> participantItems = item.getParticipants();
@@ -829,7 +849,7 @@ public class EncounterDomainService {
             this.appendActiveLocation(item.getEncounterId(), item.getHouseId(), LocationForm.HOUSE.getCode(),
                 assignAt, locationToSave);
             String bedFormEnum = item.getFormEnum();
-            if (StringUtils.isBlank(bedFormEnum)) {
+            if (StringUtils.isEmpty(bedFormEnum)) {
                 bedFormEnum = LocationForm.BED.getCode();
             }
             this.appendActiveLocation(item.getEncounterId(), item.getBedId(), bedFormEnum, assignAt, locationToSave);
@@ -880,7 +900,7 @@ public class EncounterDomainService {
             this.appendActiveLocation(item.getEncounterId(), item.getToHouseId(), LocationForm.HOUSE.getCode(),
                 effectiveAt, toSave);
             String toBedFormEnum = item.getToFormEnum();
-            if (StringUtils.isBlank(toBedFormEnum)) {
+            if (StringUtils.isEmpty(toBedFormEnum)) {
                 toBedFormEnum = LocationForm.BED.getCode();
             }
             this.appendActiveLocation(item.getEncounterId(), item.getToBedId(), toBedFormEnum, effectiveAt, toSave);
@@ -971,7 +991,12 @@ public class EncounterDomainService {
             // organizationId 保持为转出科室，待 confirmDepartmentTransfer 时再更新为目标科室。
             toSave.add(encounter);
             // 关闭旧责任关系：收口当前全部活动参与者。
-            LocalDateTime initiatedAt = this.defaultNow(item.getInitiatedAt());
+            LocalDateTime initiatedAt;
+            if (item.getInitiatedAt() == null) {
+                initiatedAt = LocalDateTime.now();
+            } else {
+                initiatedAt = item.getInitiatedAt();
+            }
             List<EncounterParticipant> active = participantRepository
                 .findAllByEncounterIdAndStatusEnum(encounter.getId(), EncounterActivityStatus.ACTIVE.getCode());
             for (EncounterParticipant old : active) {
@@ -982,7 +1007,7 @@ public class EncounterDomainService {
         if (!toSave.isEmpty()) {
             encounterRepository.saveAll(toSave);
         }
-        // 业务分支处理。
+        // 持久化：转科收口的活动参与者须与主档同事务落库
         if (!participantUpdates.isEmpty()) {
             participantRepository.saveAll(participantUpdates);
         }
@@ -1015,7 +1040,12 @@ public class EncounterDomainService {
                     ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
                     "仅待转科过渡状态的住院就诊可确认转科");
             }
-            LocalDateTime effectiveAt = this.defaultNow(item.getEffectiveAt());
+            LocalDateTime effectiveAt;
+            if (item.getEffectiveAt() == null) {
+                effectiveAt = LocalDateTime.now();
+            } else {
+                effectiveAt = item.getEffectiveAt();
+            }
             encounter.setStatusEnum(EncounterStatus.REGISTERED.getCode());
             // 确认转科时更新科室归属为目标科室。
             encounter.setOrganizationId(item.getTargetDepartmentId());
@@ -1036,18 +1066,28 @@ public class EncounterDomainService {
         if (!toSave.isEmpty()) {
             encounterRepository.saveAll(toSave);
         }
-        // 业务分支处理。
+        // 持久化：转科位置轨迹变更须与主档同事务落库
         if (!locationUpdates.isEmpty()) {
             locationRepository.saveAll(locationUpdates);
         }
         for (ConfirmDepartmentTransferCommand.ConfirmDepartmentTransferItemCommand item : sortedItems) {
+            LocalDateTime effectiveAt;
+            if (item.getEffectiveAt() == null) {
+                effectiveAt = LocalDateTime.now();
+            } else {
+                effectiveAt = item.getEffectiveAt();
+            }
             domainEventPublisher.publish(new DepartmentTransferConfirmedEvent(
-                item.getEncounterId(), item.getTargetDepartmentId(), this.defaultNow(item.getEffectiveAt())));
+                item.getEncounterId(), item.getTargetDepartmentId(), effectiveAt));
         }
     }
 
     /**
-     * 住院出院医嘱开立（在科 → 待出院，{@code IN_PROGRESS} → {@code ON_HOLD}，GAP-ATD-006）。
+     * 住院出院医嘱校对后进入待出院（在科 → 待出院，{@code IN_PROGRESS} → {@code ON_HOLD}，GAP-ATD-006）。
+     *
+     * <p>仅迁移 Encounter 主档 {@code status_enum} 与 {@code out_way_code}；<strong>禁止</strong>写 {@code end_time}、
+     * 禁止收口 {@code adm_encounter_location}/{@code adm_encounter_participant}、禁止 {@code releaseBed}（释床仅清床
+     * {@link #clearDischargedBed}，AS-IP-NUR-002 IF-IP-NUR-ATD-06）。</p>
      *
      * @param command 命令
      */
@@ -1074,6 +1114,7 @@ public class EncounterDomainService {
             this.assertPrimaryDiagnosisExists(encounter.getId());
             encounter.transitToOnHold();
             encounter.setOutWayCode(item.getOutWayCode());
+            // Cmd：仅主档待出院态；占床轨迹与床运营态保持不变，直至护士清床。
             toSave.add(encounter);
         }
         if (!toSave.isEmpty()) {
@@ -1108,7 +1149,12 @@ public class EncounterDomainService {
                 item.getEncounterId(), EncounterClass.IMP.getCode());
             encounter.assertClass(EncounterClass.IMP.getCode());
             boolean transferHold = Boolean.TRUE.equals(item.getTransferHold());
-            LocalDateTime revertedAt = this.defaultNow(item.getRevertedAt());
+            LocalDateTime revertedAt;
+            if (item.getRevertedAt() == null) {
+                revertedAt = LocalDateTime.now();
+            } else {
+                revertedAt = item.getRevertedAt();
+            }
             encounter.revertHoldToInProgress(!transferHold);
             toSave.add(encounter);
             if (transferHold) {
@@ -1153,7 +1199,12 @@ public class EncounterDomainService {
                     ErrorCodeConstants.ENCOUNTER_INVALID_STATUS,
                     "仅待出院状态的住院就诊可办理出院");
             }
-            LocalDateTime dischargedAt = this.defaultNow(item.getDischargedAt());
+            LocalDateTime dischargedAt;
+            if (item.getDischargedAt() == null) {
+                dischargedAt = LocalDateTime.now();
+            } else {
+                dischargedAt = item.getDischargedAt();
+            }
             encounter.transitToPending();
             encounter.setEndTime(dischargedAt);
             toSave.add(encounter);
@@ -1204,7 +1255,9 @@ public class EncounterDomainService {
     }
 
     /**
-     * 住院取消出院全结时回退就诊财务态：COMPLETED → PENDING（CHS 取消结算外挂）。
+     * 住院取消出院全结时回退就诊临床态：COMPLETED → IN_PROGRESS（AS-IP-FIN-004 反结；DM-ADM-002 §6.1.25 未清床轨）。
+     *
+     * <p>出院嘱退回草稿后须重新校对/办理出院，不得停留在 {@code PENDING} 待结算窗口。</p>
      *
      * @param encounterId 住院就诊主键
      */
@@ -1216,8 +1269,8 @@ public class EncounterDomainService {
         if (!EncounterStatus.COMPLETED.getCode().equals(encounter.getStatusEnum())) {
             return;
         }
-        // Cmd：出院全结取消后恢复为待结算，患者可再次进入结算队列。
-        encounter.transitToPending();
+        // Cmd：反结后恢复已入科，清空出院时间/离院方式；活动床/参与者轨迹保持不变。
+        encounter.recallFromCompletedToInProgress();
         encounterRepository.save(encounter);
     }
 
@@ -1225,7 +1278,7 @@ public class EncounterDomainService {
      * 出院召回（DM-ADM-002 §6.1.25，AS-IP-NUR-002 IF-IP-NUR-ATD-07，GAP-ATD-005）。
      *
      * <p>仅 {@code DISCHARGED→REGISTERED} + INSERT 活动 {@code WARD}。
-     * 反结与撤销出院嘱由应用层 **AS-IP-FIN-004** 或 **ATD {@code RecallReverseSettleSupport}** 先行完成；本方法悲观行锁后迁移就诊主档与病区轨迹。</p>
+     * 反结与撤销出院嘱由应用层 **AS-IP-FIN-004** 或 **ATD {@code RecallReverseSettleOrchestrator}** 先行完成；本方法悲观行锁后迁移就诊主档与病区轨迹。</p>
      *
      * @param command 召回命令
      */
@@ -1246,7 +1299,12 @@ public class EncounterDomainService {
             encounterMap.put(encounter.getId(), encounter);
             encounter.assertClass(EncounterClass.IMP.getCode());
             String previousStatus = encounter.getStatusEnum();
-            LocalDateTime recalledAt = this.defaultNow(item.getRecalledAt());
+            LocalDateTime recalledAt;
+            if (item.getRecalledAt() == null) {
+                recalledAt = LocalDateTime.now();
+            } else {
+                recalledAt = item.getRecalledAt();
+            }
             InpatientDischargeRecalledEvent event = new InpatientDischargeRecalledEvent(
                 encounter.getId(), encounter.getPatientId());
             event.setPreviousStatusEnum(previousStatus);
@@ -1303,7 +1361,12 @@ public class EncounterDomainService {
                 item.getEncounterId(), EncounterClass.IMP.getCode());
             encounterMap.put(encounter.getId(), encounter);
             encounter.assertClearBedAllowed();
-            LocalDateTime clearedAt = this.defaultNow(item.getClearedAt());
+            LocalDateTime clearedAt;
+            if (item.getClearedAt() == null) {
+                clearedAt = LocalDateTime.now();
+            } else {
+                clearedAt = item.getClearedAt();
+            }
             List<EncounterLocation> activeLocations = locationRepository
                 .findAllByEncounterIdAndStatusEnum(item.getEncounterId(), EncounterActivityStatus.ACTIVE.getCode());
             for (EncounterLocation old : activeLocations) {
@@ -1334,8 +1397,14 @@ public class EncounterDomainService {
                 encounter.getId(), encounter.getPatientId(), encounter.getOutWayCode(), encounter.getEndTime());
             dischargedEvent.setStatusEnum(encounter.getStatusEnum());
             domainEventPublisher.publish(dischargedEvent);
+            LocalDateTime clearedAt;
+            if (item.getClearedAt() == null) {
+                clearedAt = LocalDateTime.now();
+            } else {
+                clearedAt = item.getClearedAt();
+            }
             domainEventPublisher.publish(new TerminalCleaningCompletedEvent(
-                item.getEncounterId(), item.getBedId(), this.defaultNow(item.getClearedAt())));
+                item.getEncounterId(), item.getBedId(), clearedAt));
         }
     }
 
@@ -1359,8 +1428,8 @@ public class EncounterDomainService {
             LocalDateTime savedAt = LocalDateTime.now();
             savedAtByEncounterId.put(item.getEncounterId(), savedAt);
             boolean encounterDirty = false;
-            if (StringUtils.isNotBlank(item.getPriorityEnum())
-                && !StringUtils.equals(item.getPriorityEnum(), encounter.getPriorityEnum())) {
+            if (StringUtils.isNotEmpty(item.getPriorityEnum())
+                && !Objects.equals(item.getPriorityEnum(), encounter.getPriorityEnum())) {
                 encounter.setPriorityEnum(item.getPriorityEnum().trim());
                 encounterDirty = true;
             }
@@ -1371,7 +1440,7 @@ public class EncounterDomainService {
             if (participantItems != null && !participantItems.isEmpty()) {
                 Set<String> roleCodes = new HashSet<>();
                 for (SaveNurseStationPatientCommand.ParticipantLine row : participantItems) {
-                    if (row == null || StringUtils.isBlank(row.getRoleCode()) || row.getPractitionerId() == null) {
+                    if (row == null || StringUtils.isEmpty(row.getRoleCode()) || row.getPractitionerId() == null) {
                         throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
                             "参与者角色与医务人员不能为空");
                     }
@@ -1461,9 +1530,9 @@ public class EncounterDomainService {
     }
 
     /**
-     * 断言同日、同目标科室门诊防重：凡已产生有效就诊事实（含诊毕）均占名额，除非 {@link EncounterStatus#CANCELLED} 退号。
+     * 断言同日、同目标科室门诊防重：凡已产生占名额就诊事实（含待挂号 {@link EncounterStatus#PLANNED} 及诊毕）均阻断，除非 {@link EncounterStatus#CANCELLED} 退号或撤销。
      *
-     * <p>门诊类别限定为 {@link EncounterClass#AMB}；{@link EncounterStatus#PLANNED} 未交费不占名额。</p>
+     * <p>门诊类别限定为 {@link EncounterClass#AMB}。</p>
      *
      * @param registrationDay 本次开立所属自然日（与 occurredAt 对齐）
      */
@@ -1477,15 +1546,8 @@ public class EncounterDomainService {
         }
         LocalDateTime dayStart = day.atStartOfDay();
         LocalDateTime dayEndExclusive = day.plusDays(1).atStartOfDay();
-        // 已交费或诊毕等有效事实占名额；仅 CANCELLED 退号后释放。
-        List<String> blockingStatuses = Arrays.asList(
-            EncounterStatus.REGISTERED.getCode(),
-            EncounterStatus.TRIAGED.getCode(),
-            EncounterStatus.IN_PROGRESS.getCode(),
-            EncounterStatus.ON_HOLD.getCode(),
-            EncounterStatus.DISCHARGED.getCode(),
-            EncounterStatus.COMPLETED.getCode()
-        );
+        // 待挂号 PLANNED 与已挂号/诊毕等同样占名额，仅 CANCELLED 退号或撤销后释放。
+        List<String> blockingStatuses = EncounterStatus.outpatientDuplicateBlockingStatusCodes();
         List<String> outpatientClasses = Collections.singletonList(EncounterClass.AMB.getCode());
         Specification<Encounter> specification = buildPaidOutpatientDaySpec(
             patientId,
@@ -1496,7 +1558,7 @@ public class EncounterDomainService {
             dayEndExclusive);
         if (encounterRepository.count(specification) > 0) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT,
-                "本科室当日已有门诊挂号记录（含诊毕），须退号后方可再挂");
+                EncounterConstants.OUTPATIENT_DUPLICATE_REGISTRATION_MESSAGE);
         }
     }
 
@@ -1546,7 +1608,7 @@ public class EncounterDomainService {
     private void assertPrimaryDiagnosisExists(Long encounterId) {
         boolean exists = diagnosisRepository
             .findFirstByEncounterIdAndPrimaryFlagTrue(encounterId).isPresent();
-        // 业务分支处理。
+        // 就诊尚无主诊断时拒绝完诊/出院，防止无诊断结算
         if (!exists) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT, "完诊/出院前必须存在主诊断");
         }
@@ -1559,7 +1621,7 @@ public class EncounterDomainService {
         List<EncounterParticipant> activeDoctors = participantRepository
             .findAllByEncounterIdAndRoleCodeAndStatusEnum(
                 encounterId, EncounterConstants.ROLE_ADMITTER, EncounterActivityStatus.ACTIVE.getCode());
-        // 业务分支处理。
+        // 无活动接诊医生时拒绝完诊，与 BR-ENC-004 一致
         if (activeDoctors.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT, "完诊前必须存在负责医生参与者");
         }
@@ -1572,15 +1634,15 @@ public class EncounterDomainService {
         Map<Long, Integer> primaryCountMap = new HashMap<>();
         Map<String, Boolean> rankMap = new HashMap<>();
         for (UpsertEncounterDiagnosisAssociationCommand.UpsertEncounterDiagnosisAssociationItemCommand item : items) {
-            // 业务分支处理。
+            // 主诊断计数：同批次仅允许一个 primary=true
             if (Boolean.TRUE.equals(item.getPrimaryFlag())) {
                 Integer count = primaryCountMap.getOrDefault(item.getEncounterId(), 0);
                 primaryCountMap.put(item.getEncounterId(), count + 1);
             }
-            // 业务分支处理。
+            // 排序号在同就诊内须唯一，供列表展示顺序稳定
             if (item.getRank() != null) {
                 String key = item.getEncounterId() + "\u0001" + item.getRank();
-                // 业务分支处理。
+                // 重复排序号拒绝写入，避免诊断列表顺序歧义
                 if (rankMap.containsKey(key)) {
                     throw new BusinessException(ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT, "同一就诊诊断排序号不能重复");
                 }
@@ -1588,7 +1650,7 @@ public class EncounterDomainService {
             }
         }
         for (Map.Entry<Long, Integer> entry : primaryCountMap.entrySet()) {
-            // 业务分支处理。
+            // 同就诊出现多个主诊断时拒绝，满足 BR-ENC-014
             if (entry.getValue() > 1) {
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT, "同一就诊主诊断必须唯一");
             }
@@ -1602,16 +1664,16 @@ public class EncounterDomainService {
         int primaryCount = 0;
         Set<Integer> ranks = new HashSet<>();
         for (BatchUpsertEncounterDiagnosisAssociationCommand.DiagnosisItemCommand diagnosisItem : item.getDiagnosisItems()) {
-            // 业务分支处理。
+            // 统计本批次主诊断个数，用于唯一性校验
             if (Boolean.TRUE.equals(diagnosisItem.getPrimaryFlag())) {
                 primaryCount++;
             }
-            // 业务分支处理。
+            // 西医批次排序号不得重复
             if (diagnosisItem.getRank() != null && !ranks.add(diagnosisItem.getRank())) {
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT, "同一就诊诊断排序号不能重复");
             }
         }
-        // 业务分支处理。
+        // 批次内主诊断超过一个时拒绝
         if (primaryCount > 1) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT, "同一就诊主诊断必须唯一");
         }
@@ -1731,17 +1793,6 @@ public class EncounterDomainService {
     }
 
     /**
-     * 私有方法：defaultNow。
-     */
-    private LocalDateTime defaultNow(LocalDateTime input) {
-        // 业务分支处理。
-        if (input == null) {
-            return LocalDateTime.now();
-        }
-        return input;
-    }
-
-    /**
      * 私有方法：loadEncounterMap。
      */
     private Map<Long, Encounter> loadEncounterMap(List<Long> encounterIds) {
@@ -1758,7 +1809,7 @@ public class EncounterDomainService {
      */
     private Encounter requireEncounter(Map<Long, Encounter> map, Long encounterId) {
         Encounter encounter = map.get(encounterId);
-        // 业务分支处理。
+        // 批量映射中无此就诊，说明主键无效或已删除
         if (encounter == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_NOT_FOUND, "就诊记录不存在");
         }
@@ -1783,13 +1834,16 @@ public class EncounterDomainService {
     }
 
     /**
-     * 判断就诊是否存在活动床位级位置（已分床，DM §6.1.23 取消门禁）。
+     * 判断就诊是否已存在活动床位级位置（用于取消登记等门禁）。
      *
-     * @param encounterId 住院就诊主键
-     * @return 已分床返回 true
+     * @param encounterId 就诊主键
+     * @return 存在活动 {@code BED} 形态位置时 true
      */
     /**
      * 住院护士站保存患者信息门禁：仅 {@code IMP} 且状态为 {@code REGISTERED} 或 {@code IN_PROGRESS}。
+     *
+     * @param encounter 住院就诊聚合根
+     * @throws BusinessException 类别或状态不允许保存时
      */
     private void assertNurseStationPatientSavable(Encounter encounter) {
         encounter.assertClass(EncounterClass.IMP.getCode());
@@ -1923,7 +1977,7 @@ public class EncounterDomainService {
         List<EncounterParticipant> sink) {
         Set<String> roleCodes = new HashSet<>();
         for (AssignInpatientBedCommand.ParticipantLine row : lines) {
-            if (row == null || StringUtils.isBlank(row.getRoleCode()) || row.getPractitionerId() == null) {
+            if (row == null || StringUtils.isEmpty(row.getRoleCode()) || row.getPractitionerId() == null) {
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
                     "参与者角色与医务人员不能为空");
             }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.diagnosis.vitalsign.service;
 
 import com.openhis.health.domain.diagnosis.vitalsign.entity.VitalSign;
@@ -36,7 +23,7 @@ import com.openhis.health.domain.share.constants.VitalSignConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -53,6 +40,8 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 /**
  * 生命体征读侧查询服务（DM-DIA-002 v2.1 §6.2）。
+ *
+ * <p>聚合边界：仅本聚合 {@link VitalSignRepository} / {@link VitalSignDetailRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -72,7 +61,8 @@ public class VitalSignQueryService {
             throw new BusinessException(ErrorCodeConstants.VITAL_SIGN_INVALID_ARGUMENT, "就诊标识不能为空");
         }
         Specification<VitalSign> spec = buildHeaderSpecification(query);
-        List<VitalSign> rows = headerRepository.findAll(spec, headerDescSort());
+        List<VitalSign> rows = headerRepository.findAll(
+            spec, Sort.by(Sort.Direction.DESC, FieldNameConstants.RECORDED_AT));
         List<VitalSignHeaderQueryModel> result = new ArrayList<>();
         for (VitalSign row : rows) {
             result.add(toHeaderModel(row));
@@ -97,7 +87,8 @@ public class VitalSignQueryService {
         headerQuery.setRecordedAtFrom(query.getRecordedAtFrom());
         headerQuery.setRecordedAtTo(query.getRecordedAtTo());
         Specification<VitalSign> spec = buildHeaderSpecification(headerQuery);
-        List<VitalSign> rows = headerRepository.findAll(spec, headerAscSort());
+        List<VitalSign> rows = headerRepository.findAll(
+            spec, Sort.by(Sort.Direction.ASC, FieldNameConstants.RECORDED_AT));
         if (rows.isEmpty()) {
             return List.of();
         }
@@ -295,6 +286,12 @@ public class VitalSignQueryService {
         return false;
     }
 
+    /**
+     * 体征主表分页/列表查询谓词：就诊、记录时间窗、类型与婴儿序号。
+     *
+     * @param query 就诊侧查询条件
+     * @return JPA Specification
+     */
     private static Specification<VitalSign> buildHeaderSpecification(VitalSignEncounterQuery query) {
         return (root, cq, cb) -> {
             List<Predicate> preds = new ArrayList<>();
@@ -306,7 +303,7 @@ public class VitalSignQueryService {
             if (query.getRecordedAtTo() != null) {
                 preds.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.RECORDED_AT), query.getRecordedAtTo()));
             }
-            if (StringUtils.isNotBlank(query.getTypeEnum())) {
+            if (StringUtils.isNotEmpty(query.getTypeEnum())) {
                 preds.add(cb.equal(root.get(FieldNameConstants.TYPE_ENUM), query.getTypeEnum()));
             }
             if (query.getBabyNo() != null) {
@@ -324,14 +321,12 @@ public class VitalSignQueryService {
         };
     }
 
-    private static Sort headerDescSort() {
-        return Sort.by(Sort.Direction.DESC, FieldNameConstants.RECORDED_AT);
-    }
-
-    private static Sort headerAscSort() {
-        return Sort.by(Sort.Direction.ASC, FieldNameConstants.RECORDED_AT);
-    }
-
+    /**
+     * 体征主表实体 → 头读模型。
+     *
+     * @param row 主表实体
+     * @return 头读模型
+     */
     private static VitalSignHeaderQueryModel toHeaderModel(VitalSign row) {
         VitalSignHeaderQueryModel model = new VitalSignHeaderQueryModel();
         model.setId(row.getId());
@@ -347,6 +342,13 @@ public class VitalSignQueryService {
         return model;
     }
 
+    /**
+     * 体征明细实体与主表头 → 明细行读模型（曲线/表格展示用）。
+     *
+     * @param detail 明细实体
+     * @param header 所属主表头
+     * @return 明细行读模型
+     */
     private static VitalSignDetailRowQueryModel toDetailModel(VitalSignDetail detail, VitalSign header) {
         VitalSignDetailRowQueryModel model = new VitalSignDetailRowQueryModel();
         model.setId(detail.getId());

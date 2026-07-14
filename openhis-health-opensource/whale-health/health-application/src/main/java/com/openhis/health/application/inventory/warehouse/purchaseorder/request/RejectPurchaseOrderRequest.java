@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.purchaseorder.request;
 
 import lombok.Getter;
@@ -23,18 +10,33 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * 审批驳回请求。
+ *
+ * <p>订货单驳回（IF-WHS-PO-09）：领域 {@code rejectRequest} 迁移审批态为已驳回；须携带驳回原因供审计。</p>
+ *
+ * <p>应用入口：
+ * {@link com.openhis.health.application.inventory.warehouse.purchaseorder.service.InventoryWarehousePurchaseOrderAppService#rejectPurchaseOrder(RejectPurchaseOrderRequest)}。</p>
  */
 @Getter
 @Setter
 public class RejectPurchaseOrderRequest {
 
-    /** 单据号。 */
+    /**
+     * 订货业务单号；应用服务门控非空并对首尾空白 {@code trim}。
+     */
     private String busNo;
-    /** 审批人；缺省当前用户。 */
+
+    /**
+     * 审批人主键；可空，空时由应用层回落为当前操作人。
+     */
     private Long approverId;
-    /** 审批时间。 */
+
+    /**
+     * 审批业务时钟；可空时由领域或命令默认值填充。
+     */
     private LocalDateTime approvalClock;
-    /** 驳回原因。 */
+
+    /**
+     * 驳回原因；领域门控非空，供审批轨迹与前端展示。
+     */
     private String rejectReason;
 }

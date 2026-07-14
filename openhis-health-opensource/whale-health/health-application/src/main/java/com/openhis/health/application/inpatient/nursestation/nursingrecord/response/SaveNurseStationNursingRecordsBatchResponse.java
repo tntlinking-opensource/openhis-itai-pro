@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.nursingrecord.response;
 
 import com.openhis.health.application.inpatient.nursestation.nursingrecord.dto.NursingRecordRowDto;
@@ -23,7 +23,7 @@ public class SaveNurseStationNursingRecordsBatchResponse {
     @Schema(description = "成功保存行数")
     private Integer savedCount;
 
-    /** 保存后的行列表（按请求顺序）。 */
+    /** 保存后的行列表。 */
     @Schema(description = "保存后的行列表")
     private List<NursingRecordRowDto> rows;
 }

@@ -1,45 +1,26 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler;
 
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
+import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingWriteItemDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.mapper.NurseStationInpatientBillingMapper;
-import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
-import com.openhis.health.domain.administration.chargeitem.service.ChargeItemDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
-import com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionChildQueryModel;
-import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
-import com.openhis.health.domain.workflow.servicerequest.command.CreateFromNursePricingCommand;
-import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -53,7 +34,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * IF-IP-PRC-02/04 写路径专项装配：权威定价重算、吸氧/心电时长 Gate（BR-IP-PRC-010）与套餐子项展开（BR-IP-PRC-011）。
+ * IF-IP-PRC-02/04 写路径专项装配：权威定价重算、吸氧/心电时长 Gate（BR-IP-PRC-010）。
+ *
+ * <p>诊疗套餐（BR-IP-PRC-011）全局仅落父项一条 {@code ChargeItem}；子项由
+ * {@link com.openhis.health.application.basic.activitydefinition.support.ActivityDefinitionPackageChildResolver} 在需要时解析。</p>
  *
  * <p>耗材 {@code performLocation} 须为 IF-IP-PRC-01 {@code defaultDispenseLocationId} 回传；
  * {@link #reapplyAuthoritativeWritePricing} 经 {@code resolveDraftChargePriceLine} 透传库位，废止服务端二次 match 模板。</p>
@@ -62,16 +46,13 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class NurseStationInpatientBillingWriteAssembler {
 
-    private final ChargeItemDomainService chargeItemDomainService;
     private final ServiceRequestQueryService serviceRequestQueryService;
     private final EncounterQueryService encounterQueryService;
-    private final EncounterContextFacade encounterContextFacade;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
-    private final ActivityDefinitionQueryService activityDefinitionQueryService;
-    private final ServiceRequestDomainService serviceRequestDomainService;
+    private final EncounterContextReader EncounterContextReader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final NurseStationInpatientBillingCatalogAssembler nurseStationInpatientBillingCatalogAssembler;
     private final NurseStationInpatientBillingMapper nurseStationInpatientBillingMapper;
-    private final ClinicalCatalogPriceResolveSupport clinicalCatalogPriceResolveSupport;
+    private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
 
     /**
      * 写路径入账前批量重算价目与单价（后端定权威；前端 unitPrice 仅展示参考）。
@@ -94,7 +75,7 @@ public class NurseStationInpatientBillingWriteAssembler {
         LinkedHashMap<String, ProductDefinitionBatchLookup> lookupByKey = new LinkedHashMap<>();
         for (NurseStationPricingWriteItemDto row : items) {
             if (row == null || row.getProductDefinitionId() == null
-                || StringUtils.isBlank(row.getProductTableName())) {
+                || StringUtils.isEmpty(row.getProductTableName())) {
                 continue;
             }
             String productKey = ProductDefinitionKeyUtil.buildCompositeKey(
@@ -107,12 +88,12 @@ public class NurseStationInpatientBillingWriteAssembler {
             }
         }
         Map<String, ProductDefinitionDisplayDto> productByKey =
-            productDefinitionBatchLoader.loadAsMap(new ArrayList<>(lookupByKey.values()));
+            productDefinitionDisplayTerminologyAssembler.loadAsMap(new ArrayList<>(lookupByKey.values()));
         // Pre：批量解析各就诊开立机构，供 FIFO 定价与模板回落
         var encounterQuery = nurseStationInpatientBillingMapper.toInpatientEncounterPageQuery(
             encounterIds, managedWardLocationIds);
         List<InpatientEncounterContextQueryModel> encounterRows =
-            encounterContextFacade.listInpatientEncounterContexts(encounterQuery);
+            EncounterContextReader.listInpatientEncounterContexts(encounterQuery);
         Map<Long, Long> organizationIdByEncounter = new HashMap<>();
         for (InpatientEncounterContextQueryModel encounterRow : encounterRows) {
             if (encounterRow != null && encounterRow.getEncounterId() != null) {
@@ -120,8 +101,9 @@ public class NurseStationInpatientBillingWriteAssembler {
             }
         }
         for (NurseStationPricingWriteItemDto row : items) {
+            // Gate：缺产品锚点视为非法划价行（EX-IP-PRC-204）
             if (row == null || row.getProductDefinitionId() == null
-                || StringUtils.isBlank(row.getProductTableName())) {
+                || StringUtils.isEmpty(row.getProductTableName())) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_PRC_204,
                     "划价项目无效或价格异常，请重新选品");
@@ -138,7 +120,7 @@ public class NurseStationInpatientBillingWriteAssembler {
                         "耗材划价失败：请选择发放库房");
                 }
                 Long organizationId = organizationIdByEncounter.get(row.getEncounterId());
-                selected = clinicalCatalogPriceResolveSupport.resolveDraftChargePriceLine(
+                selected = clinicalCatalogPriceResolver.resolveDraftChargePriceLine(
                     row.getProductTableName(),
                     row.getProductDefinitionId(),
                     productRow,
@@ -149,7 +131,7 @@ public class NurseStationInpatientBillingWriteAssembler {
                 );
             } else if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(row.getProductTableName())) {
                 // 诊疗写路径：SALE 择优，不涉及 performLocation
-                selected = clinicalCatalogPriceResolveSupport.resolveDraftChargePriceLine(
+                selected = clinicalCatalogPriceResolver.resolveDraftChargePriceLine(
                     row.getProductTableName(),
                     row.getProductDefinitionId(),
                     productRow,
@@ -159,10 +141,12 @@ public class NurseStationInpatientBillingWriteAssembler {
                     null
                 );
             } else {
+                // Gate：划价仅允许诊疗+耗材物理表
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_PRC_204,
                     "划价项目无效或价格异常，请重新选品");
             }
+            // Gate：无 SALE 价目时拒绝落账，避免 0 元费用
             if (selected == null || selected.getPriceValue() == null) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_PRC_204,
@@ -189,10 +173,11 @@ public class NurseStationInpatientBillingWriteAssembler {
         }
         // 优先用选品带回的 Gate 类型，否则按活动 id 查产品名解析
         String gateKind = row.getDurationGateKind();
-        if (StringUtils.isBlank(gateKind)) {
+        if (StringUtils.isEmpty(gateKind)) {
             gateKind = this.resolveDurationGateKindByActivityId(row.getActivityId());
         }
-        if (StringUtils.isBlank(gateKind)) {
+        if (StringUtils.isEmpty(gateKind)) {
+            // 非吸氧/心电计时类诊疗，跳过时长 Gate
             return;
         }
         BigDecimal add = row.getQuantity();
@@ -213,10 +198,12 @@ public class NurseStationInpatientBillingWriteAssembler {
 
         int dailyMax = InpatientNurseStationConstants.OXYGEN_DAILY_DURATION_MAX_HOURS;
         if (InpatientNurseStationConstants.DURATION_GATE_KIND_ECG.equals(gateKind)) {
+            // 心电监测当日上限与吸氧不同
             dailyMax = InpatientNurseStationConstants.ECG_DAILY_DURATION_MAX_HOURS;
         }
         BigDecimal todayTotal = BigDecimal.valueOf(accumulatedToday).add(add);
         if (todayTotal.compareTo(BigDecimal.valueOf(dailyMax)) > 0) {
+            // Gate：当日累计 + 本次超过 BR-IP-PRC-010 上限
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_PRC_203,
                 "吸氧/心电监测时长超出当日上限，请核对数量");
@@ -226,76 +213,10 @@ public class NurseStationInpatientBillingWriteAssembler {
         long inpatientHours = this.resolveInpatientHoursCap(row.getEncounterId());
         BigDecimal stayTotal = BigDecimal.valueOf(accumulatedStay).add(add);
         if (stayTotal.compareTo(BigDecimal.valueOf(inpatientHours)) > 0) {
+            // Gate：在院累计 + 本次超过入院至当前可用小时（BR-SRQ-018）
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_PRC_203,
                 "吸氧/心电监测时长超出在院可用余量，请核对数量");
-        }
-    }
-
-    /**
-     * 套餐父诊疗确认后展开子项请求与费用（BR-IP-PRC-011）。
-     *
-     * @param parentRow           父诊疗写行
-     * @param operatorId          操作人
-     * @param requesterId         申请人
-     * @param orgId               机构
-     * @param createdServiceIds   汇总新建诊疗 id
-     */
-    public void expandPackageChildrenIfPresent(
-        NurseStationPricingWriteItemDto parentRow,
-        Long operatorId,
-        Long requesterId,
-        Long orgId,
-        List<Long> createdServiceIds) {
-        if (parentRow == null || parentRow.getActivityId() == null) {
-            return;
-        }
-        // 无子表配置则视为非套餐，由父项单独落库
-        List<ActivityDefinitionChildQueryModel> tableChildren =
-            activityDefinitionQueryService.listChildrenByActivityId(parentRow.getActivityId());
-        if (tableChildren.isEmpty()) {
-            return;
-        }
-        BigDecimal parentQty = parentRow.getQuantity();
-        if (parentQty == null) {
-            parentQty = BigDecimal.ONE;
-        }
-        for (ActivityDefinitionChildQueryModel child : tableChildren) {
-            if (child == null || child.getChildrenId() == null) {
-                continue;
-            }
-            // 子项数量 = 父数量 × childrenNum（默认 1）
-            BigDecimal multiplier = BigDecimal.ONE;
-            if (child.getChildrenNum() != null) {
-                multiplier = BigDecimal.valueOf(child.getChildrenNum());
-            }
-            NurseStationPricingWriteItemDto childRow = new NurseStationPricingWriteItemDto();
-            childRow.setEncounterId(parentRow.getEncounterId());
-            childRow.setPatientId(parentRow.getPatientId());
-            childRow.setAccountId(parentRow.getAccountId());
-            childRow.setActivityId(child.getChildrenId());
-            childRow.setQuantity(parentQty.multiply(multiplier));
-            childRow.setUnitCode(parentRow.getUnitCode());
-            childRow.setParentRequestAnchor(parentRow.getParentRequestAnchor());
-            nurseStationInpatientBillingCatalogAssembler.applyChildActivityPricing(
-                childRow, child.getChildrenId());
-            this.assertWriteRowPricingComplete(childRow);
-            CreateFromNursePricingCommand childCmd = nurseStationInpatientBillingMapper.toCreateFromNursePricingCommand(
-                List.of(childRow), operatorId, requesterId);
-            List<Long> childIds = serviceRequestDomainService.createFromNursePricing(childCmd);
-            if (childIds.isEmpty()) {
-                continue;
-            }
-            createdServiceIds.add(childIds.get(0));
-            CreateChargeItemCommand chargeCmd = nurseStationInpatientBillingMapper.toCreateChargeItemCommand(
-                childRow,
-                TableNameConstants.WKF_SERVICE_REQUEST,
-                childIds.get(0),
-                null,
-                null,
-                operatorId,
-                orgId);
-            chargeItemDomainService.priceByNurseStation(chargeCmd);
         }
     }
 
@@ -315,9 +236,9 @@ public class NurseStationInpatientBillingWriteAssembler {
         lookup.setProductTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION);
         lookup.setProductDefinitionId(activityId);
         Map<String, ProductDefinitionDisplayDto> products =
-            productDefinitionBatchLoader.loadAsMap(List.of(lookup));
+            productDefinitionDisplayTerminologyAssembler.loadAsMap(List.of(lookup));
         ProductDefinitionDisplayDto product = products.get(key);
-        if (product == null || StringUtils.isBlank(product.getProductName())) {
+        if (product == null || StringUtils.isEmpty(product.getProductName())) {
             return null;
         }
         return nurseStationInpatientBillingCatalogAssembler.resolveDurationGateKind(product.getProductName());
@@ -330,28 +251,16 @@ public class NurseStationInpatientBillingWriteAssembler {
      * @return 可用于吸氧/心电 Gate 的小时数
      */
     private long resolveInpatientHoursCap(Long encounterId) {
-        var context = encounterContextFacade.mustGetInpatientContextByEncounterId(encounterId);
+        var context = EncounterContextReader.mustGetInpatientContextByEncounterId(encounterId);
+        // 缺入院时间时用心电默认上限，避免 Gate 变为 0
         if (context == null || context.getStartTime() == null) {
             return InpatientNurseStationConstants.ECG_DAILY_DURATION_MAX_HOURS;
         }
         long hours = Duration.between(context.getStartTime(), LocalDateTime.now()).toHours();
+        // 在院不足 1 小时按 1 小时计，与累计 quantity 口径一致
         if (hours < 1L) {
             hours = 1L;
         }
         return hours;
-    }
-
-    /**
-     * 套餐子项展开前校验价目与数量完整（与 AppService#validateWriteRow 同口径）。
-     *
-     * @param row 子项写行
-     */
-    private void assertWriteRowPricingComplete(NurseStationPricingWriteItemDto row) {
-        if (row.getAccountId() == null || row.getChargeItemDefinitionId() == null
-            || row.getQuantity() == null || row.getUnitPrice() == null) {
-            throw new BusinessException(
-                InpatientNurseStationConstants.EX_IP_PRC_204,
-                "划价项目无效或价格异常，请重新选品");
-        }
     }
 }

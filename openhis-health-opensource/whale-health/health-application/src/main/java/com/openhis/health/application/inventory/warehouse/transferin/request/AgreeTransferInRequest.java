@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.transferin.request;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -26,22 +13,21 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
- * 审批同意药房入库（手工单）请求（IF-PHA-IN-08）。
+ * 审批同意药库调入（手工单）请求（IF-WHS-TI-08）。
  *
+ * <p>本服务为只读台账侧，接口统一拒绝手工同意；请求体保留契约兼容。</p>
  */
 @Getter
 @Setter
 @Accessors(chain = true)
-/** 审批同意药房入库 IF-PHA-IN-08。 */
-@Schema(description = "审批同意药房入库 IF-PHA-IN-08", requiredProperties = {"busNo"})
+@Schema(description = "审批同意药库调入 IF-WHS-TI-08", requiredProperties = {"busNo"})
 public class AgreeTransferInRequest {
 
+    /** 业务单号。 */
     @NotBlank(message = "busNo 不能为空")
     @Schema(description = "业务单号", requiredMode = Schema.RequiredMode.REQUIRED)
     private String busNo;
@@ -51,6 +37,7 @@ public class AgreeTransferInRequest {
      */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "已废弃：审批时间由服务端写入，可忽略", deprecated = true)
+    /** 已废弃：审批时间由服务端写入，可忽略。 */
     private LocalDateTime approvalTime;
 
     /**
@@ -58,13 +45,15 @@ public class AgreeTransferInRequest {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "已废弃：审批人取当前登录用户，可忽略", deprecated = true)
+    /** 已废弃：审批人取当前登录用户，可忽略。 */
     private Long approverId;
 
-    /** @deprecated CHS 模块启用即上传，此开关不再生效。 */
+    /** 同意后是否上传医保进销存。 */
     @Deprecated
     @Schema(description = "同意后是否上传医保进销存")
     private Boolean medicareUploadEnabled;
 
+    /** 医保契约 busNo。 */
     @Schema(description = "医保契约 busNo")
     private String contractBusNo;
 }

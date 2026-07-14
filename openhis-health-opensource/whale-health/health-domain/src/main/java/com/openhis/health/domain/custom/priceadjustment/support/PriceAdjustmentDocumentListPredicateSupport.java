@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.priceadjustment.support;
 
 import com.openhis.health.domain.custom.priceadjustment.entity.PriceAdjustment;
@@ -24,7 +11,7 @@ import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -60,7 +47,7 @@ public final class PriceAdjustmentDocumentListPredicateSupport {
         if (query.getOrgId() != null) {
             predicates.add(cb.equal(root.get(FieldNameConstants.ORG_ID), query.getOrgId()));
         }
-        if (StringUtils.isNotBlank(query.getStatusEnum())) {
+        if (StringUtils.isNotEmpty(query.getStatusEnum())) {
             predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), query.getStatusEnum().trim()));
         }
         Date start = toDate(query.getStartDate());
@@ -76,13 +63,19 @@ public final class PriceAdjustmentDocumentListPredicateSupport {
                 predicates.add(cb.lessThanOrEqualTo(listTime, end));
             }
         }
-        if (StringUtils.isNotBlank(query.getKeyword())) {
+        if (StringUtils.isNotEmpty(query.getKeyword())) {
             String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
             predicates.add(cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc));
         }
         return predicates;
     }
 
+    /**
+     * LocalDateTime → java.util.Date（系统默认时区）；null 输入 null。
+     *
+     * @param value 本地时间
+     * @return Date 或 null
+     */
     private static Date toDate(LocalDateTime value) {
         if (value == null) {
             return null;

@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.nursingrecord.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -19,19 +19,19 @@ import lombok.experimental.Accessors;
 @Schema(description = "删除护理记录请求", requiredProperties = {"vitalSignId", "encounterId", "patientId"})
 public class DeleteNurseStationNursingRecordRequest {
 
-    /** 待删主表 id。 */
+    /** 主表 id。 */
     @NotNull(message = "记录标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "主表 id", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long vitalSignId;
 
-    /** 当前选中就诊（归属校验）。 */
+    /** 就诊标识。 */
     @NotNull(message = "就诊标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long encounterId;
 
-    /** 左侧卡片患者 id（可见性 Gate 用）。 */
+    /** 患者标识。 */
     @NotNull(message = "患者标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)

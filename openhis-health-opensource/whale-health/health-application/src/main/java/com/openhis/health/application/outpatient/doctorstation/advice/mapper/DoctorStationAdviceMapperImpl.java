@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.advice.mapper;
 
-import com.openhis.health.module.common.assembler.advice.OrderChargeDraftAssembler;
-import com.openhis.health.module.common.assembler.advice.ServiceAdviceCommandAssembler;
-import com.openhis.health.module.common.assembler.advice.ServiceAdviceDraftCommandSupport;
-import com.openhis.health.module.orchestration.advice.ServiceApplyFormOrchestrationSupport;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.advice.OrderChargeDraftAssembler;
+import com.openhis.health.application.shared.advice.ServiceAdviceCommandAssembler;
+import com.openhis.health.application.shared.advice.ServiceAdviceDraftCommandHelper;
+import com.openhis.health.application.outpatient.doctorstation.advice.support.ServiceApplyFormOrchestrator;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceDraftLineRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.PrepickedProductKeyDto;
@@ -37,14 +24,14 @@ import com.openhis.health.domain.medication.medicationrequest.command.CreateMedi
 import com.openhis.health.domain.medication.medicationrequest.command.RemoveMedicationOrderDraftCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.SignMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.SignOffMedicationOrderCommand;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
-import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.TherapyType;
-import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
+import com.openhis.health.application.shared.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.domain.workflow.devicerequest.command.ChangeDeviceOrderDraftCommand;
 import com.openhis.health.domain.workflow.devicerequest.command.CreateDeviceOrderDraftCommand;
 import com.openhis.health.domain.workflow.devicerequest.command.RemoveDeviceOrderDraftCommand;
@@ -57,8 +44,7 @@ import com.openhis.health.domain.workflow.servicerequest.command.SignServiceRequ
 import com.openhis.health.domain.workflow.servicerequest.command.WithdrawSignedServiceRequestCommand;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.BeanUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -140,8 +126,8 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         if (request.getExcludeMedicationCategoryCodes() != null && !request.getExcludeMedicationCategoryCodes().isEmpty()) {
             q.setExcludeMedicationCategoryCodes(new ArrayList<>(request.getExcludeMedicationCategoryCodes()));
         }
-        if (StringUtils.isNotBlank(request.getCategoryEnum())) {
-            q.setCategoryCode(ServiceApplyFormOrchestrationSupport.resolveApplyFormCategoryCode(request.getCategoryEnum()));
+        if (StringUtils.isNotEmpty(request.getCategoryEnum())) {
+            q.setCategoryCode(ServiceApplyFormOrchestrator.resolveApplyFormCategoryCode(request.getCategoryEnum()));
         }
         return q;
     }
@@ -363,11 +349,11 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
         item.setPatientId(parent.getPatientId());
         SaveServiceAdviceDraftLinePayload servicePayload = line.getServicePayload();
         item.setActivityId(servicePayload.getActivityDefinitionId());
-        item.setQuantity(ServiceAdviceDraftCommandSupport.requireQuantity(
+        item.setQuantity(ServiceAdviceDraftCommandHelper.requireQuantity(
             servicePayload.getQuantity(), servicePayload.getChildOverridesJson()));
-        item.setUnitCode(ServiceAdviceDraftCommandSupport.requireUnitCode(
+        item.setUnitCode(ServiceAdviceDraftCommandHelper.requireUnitCode(
             servicePayload.getUnitCode(), servicePayload.getChildOverridesJson(), productRm));
-        item.setExecutionCount(ServiceAdviceDraftCommandSupport.requireExecutionCount(
+        item.setExecutionCount(ServiceAdviceDraftCommandHelper.requireExecutionCount(
             servicePayload.getExecutionCount(), servicePayload.getChildOverridesJson(), TherapyType.TEMPORARY.getCode()));
         item.setCategoryEnum(StringUtils.firstNonBlank(productRm.getCategoryCode(), "1"));
         item.setTherapyEnum(TherapyType.TEMPORARY.getCode());
@@ -406,17 +392,17 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
             item.setConditionDefinitionId(servicePayload.getConditionDefinitionId());
             item.setEncounterDiagnosisId(servicePayload.getEncounterDiagnosisId());
             item.setOrgId(servicePayload.getPerformOrgId());
-            BigDecimal quantity = ServiceAdviceDraftCommandSupport.resolveQuantityForModify(
+            BigDecimal quantity = ServiceAdviceDraftCommandHelper.resolveQuantityForModify(
                 servicePayload.getQuantity(), servicePayload.getChildOverridesJson());
             if (quantity != null && quantity.compareTo(BigDecimal.ZERO) > 0) {
                 item.setQuantity(quantity);
             }
-            String unitCode = ServiceAdviceDraftCommandSupport.resolveUnitCodeForModify(
+            String unitCode = ServiceAdviceDraftCommandHelper.resolveUnitCodeForModify(
                 servicePayload.getUnitCode(), servicePayload.getChildOverridesJson());
             if (unitCode != null) {
                 item.setUnitCode(unitCode);
             }
-            Integer executionCount = ServiceAdviceDraftCommandSupport.resolveExecutionCountForModify(
+            Integer executionCount = ServiceAdviceDraftCommandHelper.resolveExecutionCountForModify(
                 servicePayload.getExecutionCount(), servicePayload.getChildOverridesJson());
             if (executionCount != null) {
                 item.setExecutionCount(executionCount);
@@ -699,7 +685,7 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
     @Override
     public String resolveOrderBindSourceItemKey(String bindType, String itemNo, Long itemId) {
         if (DoctorStationAdviceConstants.BIND_TYPE_USAGE.equals(bindType)) {
-            if (StringUtils.isNotBlank(itemNo)) {
+            if (StringUtils.isNotEmpty(itemNo)) {
                 return itemNo.trim();
             }
             throw new BusinessException(
@@ -710,13 +696,13 @@ public class DoctorStationAdviceMapperImpl implements DoctorStationAdviceMapper 
             if (itemId != null) {
                 return String.valueOf(itemId);
             }
-            if (StringUtils.isBlank(itemNo)) {
+            if (StringUtils.isEmpty(itemNo)) {
                 throw new BusinessException(
                     ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
                     DoctorStationAdviceConstants.MSG_BIND_SOURCE_ITEM_ID_REQUIRED);
             }
             String trimmed = itemNo.trim();
-            if (!StringUtils.isNumeric(trimmed)) {
+            if (StringUtils.isEmpty(trimmed) || !trimmed.chars().allMatch(Character::isDigit)) {
                 throw new BusinessException(
                     ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
                     DoctorStationAdviceConstants.MSG_BIND_SOURCE_ITEM_NO_NOT_NUMERIC);

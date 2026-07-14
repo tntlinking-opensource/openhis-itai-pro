@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.pharmacy.dispense.mapper;
 
-import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.option.OptionDtoAssembler;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.outpatient.pharmacy.dispense.dto.CancelMedicationDispenseLineSubmitDto;
 import com.openhis.health.application.outpatient.pharmacy.dispense.dto.EncounterMedicationDispenseSlipRowDto;
 import com.openhis.health.application.outpatient.pharmacy.dispense.dto.MedicationDispenseInventoryDetailDto;
@@ -40,9 +27,9 @@ import com.openhis.health.domain.medication.medicationdispense.entity.Medication
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
-import com.openhis.health.module.querysupport.pharmacy.EncounterMedicationDispenseSlipReadAssembler;
-import com.openhis.health.module.querysupport.pharmacy.dto.MedicationDispenseSlipPageResult;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.outpatient.pharmacy.dispense.support.EncounterMedicationDispenseSlipReadAssembler;
+import com.openhis.health.application.outpatient.pharmacy.dispense.dto.MedicationDispenseSlipPageResult;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.Page;
@@ -258,7 +245,8 @@ public class OutpatientPharmacyDispenseMapperImpl implements OutpatientPharmacyD
             doseUnitLabelMap,
             businessUnitLabelMap,
             rxFlagLabelMap,
-            partAttributeLabelMap);
+            partAttributeLabelMap,
+            Map.of());
         return toSlipPageResponse(result);
     }
 
@@ -270,7 +258,7 @@ public class OutpatientPharmacyDispenseMapperImpl implements OutpatientPharmacyD
         }
         List<EncounterMedicationDispenseSlipRowDto> rows = new ArrayList<>();
         if (result.getContent() != null) {
-            for (com.openhis.health.module.querysupport.pharmacy.dto.EncounterMedicationDispenseSlipRowDto source
+            for (com.openhis.health.application.outpatient.pharmacy.dispense.dto.EncounterMedicationDispenseSlipRowDto source
                 : result.getContent()) {
                 if (source == null) {
                     continue;
@@ -279,7 +267,7 @@ public class OutpatientPharmacyDispenseMapperImpl implements OutpatientPharmacyD
                 BeanUtils.copyProperties(source, target);
                 if (source.getInventoryDetailList() != null) {
                     List<MedicationDispenseInventoryDetailDto> inventoryRows = new ArrayList<>();
-                    for (com.openhis.health.module.querysupport.pharmacy.dto.MedicationDispenseInventoryDetailDto inv
+                    for (com.openhis.health.application.outpatient.pharmacy.dispense.dto.MedicationDispenseInventoryDetailDto inv
                         : source.getInventoryDetailList()) {
                         if (inv == null) {
                             continue;
@@ -297,25 +285,25 @@ public class OutpatientPharmacyDispenseMapperImpl implements OutpatientPharmacyD
             response, rows, result.getTotalCount(), result.getPageNo(), result.getPageSize());
     }
 
-    private static Map<Long, List<com.openhis.health.module.querysupport.pharmacy.dto.MedicationDispenseInventoryDetailDto>>
+    private static Map<Long, List<com.openhis.health.application.outpatient.pharmacy.dispense.dto.MedicationDispenseInventoryDetailDto>>
     toQuerySupportInventoryMap(Map<Long, List<MedicationDispenseInventoryDetailDto>> inventoryDetailListByDispenseId) {
         if (inventoryDetailListByDispenseId == null) {
             return Map.of();
         }
-        Map<Long, List<com.openhis.health.module.querysupport.pharmacy.dto.MedicationDispenseInventoryDetailDto>> mapped =
+        Map<Long, List<com.openhis.health.application.outpatient.pharmacy.dispense.dto.MedicationDispenseInventoryDetailDto>> mapped =
             new HashMap<>();
         for (Map.Entry<Long, List<MedicationDispenseInventoryDetailDto>> entry : inventoryDetailListByDispenseId.entrySet()) {
             if (entry.getKey() == null || entry.getValue() == null) {
                 continue;
             }
-            List<com.openhis.health.module.querysupport.pharmacy.dto.MedicationDispenseInventoryDetailDto> converted =
+            List<com.openhis.health.application.outpatient.pharmacy.dispense.dto.MedicationDispenseInventoryDetailDto> converted =
                 new ArrayList<>();
             for (MedicationDispenseInventoryDetailDto source : entry.getValue()) {
                 if (source == null) {
                     continue;
                 }
-                com.openhis.health.module.querysupport.pharmacy.dto.MedicationDispenseInventoryDetailDto target =
-                    new com.openhis.health.module.querysupport.pharmacy.dto.MedicationDispenseInventoryDetailDto();
+                com.openhis.health.application.outpatient.pharmacy.dispense.dto.MedicationDispenseInventoryDetailDto target =
+                    new com.openhis.health.application.outpatient.pharmacy.dispense.dto.MedicationDispenseInventoryDetailDto();
                 BeanUtils.copyProperties(source, target);
                 converted.add(target);
             }

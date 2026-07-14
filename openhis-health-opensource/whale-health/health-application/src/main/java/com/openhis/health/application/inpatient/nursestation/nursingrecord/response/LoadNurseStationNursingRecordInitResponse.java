@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.nursingrecord.response;
 
 import com.openhis.health.application.inpatient.nursestation.nursingrecord.dto.NursingRecordViewModeOptionDto;
@@ -20,15 +20,15 @@ import java.util.List;
 @Schema(description = "护理记录页初始化响应")
 public class LoadNurseStationNursingRecordInitResponse {
 
-    /** 视图模式选项（时间轴/纸质单）。 */
+    /** 视图模式选项。 */
     @Schema(description = "视图模式选项")
     private List<NursingRecordViewModeOptionDto> viewModeOptions;
 
-    /** 护理记录常用体征项（术语 vital_signs_code 子集）。 */
+    /** 常用体征项选项。 */
     @Schema(description = "常用体征项选项")
     private List<OptionDto> vitalSignItemOptions;
 
-    /** 默认周区间说明文案。 */
+    /** 默认周区间说明。 */
     @Schema(description = "默认周区间说明")
     private String defaultWeekRangeDescription;
 }

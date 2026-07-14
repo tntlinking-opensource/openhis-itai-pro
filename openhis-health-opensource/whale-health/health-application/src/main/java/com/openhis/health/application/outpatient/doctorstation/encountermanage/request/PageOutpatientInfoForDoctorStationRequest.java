@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.encountermanage.request;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -22,7 +9,7 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.openhis.health.domain.share.enums.EncounterStatus;
-import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.application.shared.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -39,7 +26,6 @@ import java.time.LocalDateTime;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
-/** 医生站-分页查询就诊患者列表请求。 */
 @Schema(description = "医生站-分页查询就诊患者列表请求")
 public class PageOutpatientInfoForDoctorStationRequest extends AbstractHealthPageRequest {
 
@@ -50,6 +36,7 @@ public class PageOutpatientInfoForDoctorStationRequest extends AbstractHealthPag
      * 医师可见性由 {@link #staffPractitionerId} 与 BR-DOR-009 在读侧判定。</p>
      */
     @Schema(description = "就诊状态队列；不传则默认已挂号+在诊+暂离+诊毕并集")
+    /** 就诊状态队列；不传则默认已挂号+在诊+暂离+诊毕并集。 */
     private EncounterStatus encounterStatus;
 
     /**
@@ -59,6 +46,7 @@ public class PageOutpatientInfoForDoctorStationRequest extends AbstractHealthPag
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "当前登录医师主键（必填；待诊按挂号医生、在诊/暂离按接诊医生、诊毕科室共享）",
         requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 当前登录医师主键（必填；待诊按挂号医生、在诊/暂离按接诊医生、诊毕科室共享）。 */
     private Long staffPractitionerId;
 
     @Override

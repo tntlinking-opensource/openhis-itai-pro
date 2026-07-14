@@ -1,38 +1,23 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.mapper;
 
-import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.AutoRollLineContext;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.ActivateAutoGenRuleRequest;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.CreateAutoGenRuleRequest;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.DeleteAutoGenRuleRequest;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.SuspendAutoGenRuleRequest;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.request.UpdateAutoGenRuleRequest;
-import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
 import com.openhis.health.domain.custom.chargeitemautogen.command.ActivateAutoGenRuleCommand;
 import com.openhis.health.domain.custom.chargeitemautogen.command.CreateAutoGenRuleCommand;
 import com.openhis.health.domain.custom.chargeitemautogen.command.DeleteAutoGenRuleCommand;
 import com.openhis.health.domain.custom.chargeitemautogen.command.SuspendAutoGenRuleCommand;
 import com.openhis.health.domain.custom.chargeitemautogen.command.UpdateAutoGenRuleCommand;
-import com.openhis.health.domain.workflow.servicerequest.command.CreateFromAutoRollCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.EnsureAutoRollBedLongTermServiceRequestCommand;
 
 /**
- * AS-IP-NUR-013：自动计费 Request ↔ 领域 Command / 滚费 DTO 映射。
+ * AS-IP-NUR-013：自动计费 Request ↔ 领域 Command 映射。
  */
 public interface NurseStationAutoRollMapper {
 
@@ -82,24 +67,15 @@ public interface NurseStationAutoRollMapper {
     SuspendAutoGenRuleCommand toSuspendAutoGenRuleCommand(SuspendAutoGenRuleRequest request, Long operatorId);
 
     /**
-     * 滚费行 → 建单命令（单条批次）。
+     * 新增配置成功后 ensure 长期床位 SR 命令。
      *
-     * @param line       落账行
+     * @param request    新增请求
+     * @param ruleId     配置主键
      * @param operatorId 操作人
-     * @return 滚费建单命令
+     * @return ensure 命令
      */
-    CreateFromAutoRollCommand toCreateFromAutoRollCommand(AutoRollLineContext line, Long operatorId);
-
-    /**
-     * 滚费行 → 收费明细命令。
-     *
-     * @param line              落账行
-     * @param serviceRequestId  新建诊疗申请 id
-     * @param operatorId        操作人
-     * @return 收费命令
-     */
-    CreateChargeItemCommand toCreateChargeItemCommandForAutoRoll(
-        AutoRollLineContext line,
-        Long serviceRequestId,
+    EnsureAutoRollBedLongTermServiceRequestCommand toEnsureAutoRollBedLongTermServiceRequestCommand(
+        CreateAutoGenRuleRequest request,
+        Long ruleId,
         Long operatorId);
 }

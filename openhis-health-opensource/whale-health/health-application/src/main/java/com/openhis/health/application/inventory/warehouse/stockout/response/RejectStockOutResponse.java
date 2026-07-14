@@ -1,36 +1,24 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.stockout.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
+/**
+ * 审批驳回药库出库响应（IF-WHS-SO-09）。
+ */
 @Getter
 @Setter
 @Accessors(chain = true)
-/** 驳回出库响应。 */
-@Schema(description = "驳回出库响应")
+@Schema(description = "审批驳回药库出库 IF-WHS-SO-09")
 public class RejectStockOutResponse {
 
-    /** 操作是否成功。 */
+    /** 是否成功。 */
     @Schema(description = "是否成功")
     private Boolean success;
 }

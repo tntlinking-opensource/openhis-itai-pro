@@ -1,16 +1,22 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
 package com.openhis.health.application.inpatient.nursestation.orderexecute.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
-import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
+import com.openhis.health.application.shared.validator.CurrentManagedWardLocationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.advice.InpatientNursingOrderGate;
+import com.openhis.health.application.shared.validator.InpatientPendingSettlementClinicalGate;
+import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
+import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.assembler.NurseStationExecutionInventoryAssembler;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.assembler.NurseStationOrderExecuteListAssembler;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderExecuteBindItemDto;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteBindItemDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteWriteSlotDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.mapper.NurseStationOrderExecuteMapper;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ExecuteNurseStationOrdersRequest;
@@ -19,10 +25,10 @@ import com.openhis.health.application.inpatient.nursestation.orderexecute.reques
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ExecuteNurseStationOrdersResponse;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ListNurseStationOrderExecuteResponse;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.SkipNurseStationOrderSlotsResponse;
-import com.openhis.health.application.inpatient.nursestation.orderexecute.support.InpatientTcmDecoctionExecuteSupport;
-import com.openhis.health.module.querysupport.nursestation.InpatientNurseStationTcmSupport;
-import com.openhis.health.module.querysupport.order.InpatientOrderLookupLoader;
-import com.openhis.health.module.querysupport.nursestation.NurseStationOrderExecuteListLoader;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.support.InpatientTcmDecoctionExecuteOrchestrator;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.support.InpatientNurseStationTcmOrchestrator;
+import com.openhis.health.application.shared.advice.InpatientOrderLookupLoader;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.support.NurseStationOrderExecuteListLoader;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemDomainService;
@@ -34,41 +40,36 @@ import com.openhis.health.domain.clinical.procedure.command.CreateProcedureRecor
 import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecordQueryModel;
 import com.openhis.health.domain.clinical.procedure.service.ProcedureDomainService;
 import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
-import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseDomainService;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
-import com.openhis.health.module.common.assembler.advice.InpatientMedicationRequestExecutionMeasureSupport;
-import com.openhis.health.module.common.assembler.order.InpatientOrderListMergeAssembler;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
+import com.openhis.health.application.shared.advice.InpatientMedicationRequestExecutionMeasureHelper;
+import com.openhis.health.application.shared.advice.InpatientOrderListMergeAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogDispenseLocationResolveSupport;
+import com.openhis.health.application.shared.product.ClinicalCatalogDispenseLocationResolver;
 import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
-import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.GenerateSource;
-import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
-import com.openhis.health.module.common.assembler.product.DoctorStationAdviceFifoAllocationAssembler;
-import com.openhis.health.module.common.validator.DeviceAutoInventoryDeductSettingSupport;
-import com.openhis.health.module.common.assembler.product.DoctorStationAdviceFifoAllocationAssembler;
-import com.openhis.health.module.common.validator.DeviceAutoInventoryDeductSettingSupport;
-import com.openhis.health.module.orchestration.support.HealthConcurrencySupport;
-import com.openhis.health.module.orchestration.nursestation.LongTermMedicationMonthlyDispenseCapSupport;
-import com.openhis.health.module.orchestration.nursestation.DeviceDispenseNurseWorkflowSupport;
-import com.openhis.health.module.orchestration.nursestation.ProcedureExecutionPerformerOrchestrationSupport;
+import com.openhis.health.application.shared.product.DoctorStationAdviceFifoAllocationAssembler;
+import com.openhis.health.application.shared.nursestation.DeviceAutoInventoryDeductSettingResolver;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.support.NurseStationProcedureOccurrenceConcurrencyGate;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.support.LongTermMedicationMonthlyDispenseCapGate;
+import com.openhis.health.application.shared.nursestation.DeviceDispenseNurseWorkflowOrchestrator;
+import com.openhis.health.application.shared.nursestation.ProcedureExecutionPerformerOrchestrator;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestDomainService;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseDomainService;
 import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQueryService;
@@ -80,7 +81,7 @@ import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQ
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -125,7 +126,7 @@ public class NurseStationOrderExecuteAppService {
     private final CurrentManagedWardLocationIdsResolver managedWardLocationIdsResolver;
     /** 住院就诊上下文：可见 encounter 收窄。 */
     private final EncounterQueryService encounterQueryService;
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
     /** 医嘱全景读模型。 */
     private final InpatientOrderListMergeAssembler inpatientOrderListMergeAssembler;
     private final InpatientOrderLookupLoader inpatientOrderLookupLoader;
@@ -147,7 +148,7 @@ public class NurseStationOrderExecuteAppService {
     private final ChargeItemQueryService chargeItemQueryService;
     /** 收费定价读侧（执行新建费用时补全 definitionId）。 */
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
-    private final ClinicalCatalogPriceResolveSupport clinicalCatalogPriceResolveSupport;
+    private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
     /** 诊疗写侧（绑定派生）。 */
     private final ServiceRequestDomainService serviceRequestDomainService;
     /** 耗材请求写侧（绑定耗材派生）。 */
@@ -156,11 +157,11 @@ public class NurseStationOrderExecuteAppService {
     private final DeviceDispenseDomainService deviceDispenseDomainService;
     /** 耗材发放读侧（绑定耗材 Charge 锚点）。 */
     private final DeviceDispenseQueryService deviceDispenseQueryService;
-    private final DeviceDispenseNurseWorkflowSupport deviceDispenseNurseWorkflowSupport;
+    private final DeviceDispenseNurseWorkflowOrchestrator deviceDispenseNurseWorkflowOrchestrator;
     /** Procedure 完成后登记主执行人（cln_procedure_performer，1:1）。 */
-    private final ProcedureExecutionPerformerOrchestrationSupport procedureExecutionPerformerOrchestrationSupport;
+    private final ProcedureExecutionPerformerOrchestrator procedureExecutionPerformerOrchestrator;
     /** 长期嘱自然月累计发放上限（GAP-EXE-010）。 */
-    private final LongTermMedicationMonthlyDispenseCapSupport longTermMedicationMonthlyDispenseCapSupport;
+    private final LongTermMedicationMonthlyDispenseCapGate longTermMedicationMonthlyDispenseCapGate;
     private final InventoryItemDomainService inventoryItemDomainService;
     /** 映射器。 */
     private final NurseStationOrderExecuteMapper nurseStationOrderExecuteMapper;
@@ -169,19 +170,23 @@ public class NurseStationOrderExecuteAppService {
     private final NurseStationOrderExecuteListLoader nurseStationOrderExecuteListLoader;
     /** 库存 Gate FIFO。 */
     private final NurseStationExecutionInventoryAssembler nurseStationExecutionInventoryAssembler;
-    private final HealthConcurrencySupport healthConcurrencySupport;
+    private final NurseStationProcedureOccurrenceConcurrencyGate procedureOccurrenceConcurrencyGate;
     private final DoctorStationAdviceFifoAllocationAssembler doctorStationAdviceFifoAllocationAssembler;
-    private final DeviceAutoInventoryDeductSettingSupport deviceAutoInventoryDeductSettingSupport;
+    private final DeviceAutoInventoryDeductSettingResolver deviceAutoInventoryDeductSettingResolver;
+    /** BR-IP-EXE-027：护理级别禁止护士站执行/不执行。 */
+    private final InpatientNursingOrderGate inpatientNursingOrderGate;
+    /** 就诊待结算禁止执行/不执行写路径。 */
+    private final InpatientPendingSettlementClinicalGate inpatientPendingSettlementClinicalGate;
 
     /** 中药整方扩行。 */
-    private final InpatientNurseStationTcmSupport inpatientNurseStationTcmSupport;
+    private final InpatientNurseStationTcmOrchestrator inpatientNurseStationTcmOrchestrator;
 
     /** 住院执行代煎费（BR-IP-TCM-008）。 */
-    private final InpatientTcmDecoctionExecuteSupport inpatientTcmDecoctionExecuteSupport;
+    private final InpatientTcmDecoctionExecuteOrchestrator inpatientTcmDecoctionExecuteOrchestrator;
     /** 药品目录批量读侧（执行新建 Charge 比例换算单价）。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     /** 发放库房模板解析（绑定耗材 performLocation，对齐护士划价）。 */
-    private final ClinicalCatalogDispenseLocationResolveSupport clinicalCatalogDispenseLocationResolveSupport;
+    private final ClinicalCatalogDispenseLocationResolver clinicalCatalogDispenseLocationResolver;
 
     /**
      * IF-IP-EXE-01：医嘱执行列表查询。
@@ -248,8 +253,8 @@ public class NurseStationOrderExecuteAppService {
                 // 业务拒绝（Gate/库存/槽位变更）整批回滚
                 throw ex;
             } catch (RuntimeException ex) {
-                if (healthConcurrencySupport.isProcedureOccurrenceConflict(ex)) {
-                    throw healthConcurrencySupport.procedureOccurrenceConflictException();
+                if (procedureOccurrenceConcurrencyGate.isProcedureOccurrenceConflict(ex)) {
+                    throw procedureOccurrenceConcurrencyGate.procedureOccurrenceConflictException();
                 }
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_EXE_304,
@@ -293,6 +298,8 @@ public class NurseStationOrderExecuteAppService {
                 // 从预加载上下文取 OrderInfo，避免写循环内再查读模型
                 InpatientOrderListSkeleton order = context.orderByKey.get(this.buildOrderKey(item));
                 OrderExecutionContext orderCtx = context.resolveOrderContext(item);
+                // Gate（BR-IP-EXE-027）：护理级别仅校对，禁止登记不执行
+                this.assertServiceOrderNotNursingLevel(orderCtx);
                 String requestTable = this.resolveRequestTable(item.getOrderType());
                 Long requestId = item.getOrderId();
                 // categoryEnum 写入 Procedure，供后续报表按长临归类
@@ -343,6 +350,8 @@ public class NurseStationOrderExecuteAppService {
         Set<String> decoctionKeys) {
         InpatientOrderListSkeleton order = context.orderByKey.get(this.buildOrderKey(item));
         OrderExecutionContext orderCtx = context.resolveOrderContext(item);
+        // Gate（BR-IP-EXE-027）：护理级别仅校对，禁止护士站执行
+        this.assertServiceOrderNotNursingLevel(orderCtx);
         // requestTable/requestId 供 Procedure 锚定到具体 Request 聚合
         String requestTable = this.resolveRequestTable(item.getOrderType());
         Long requestId = item.getOrderId();
@@ -364,7 +373,7 @@ public class NurseStationOrderExecuteAppService {
         procedureDomainService.completeProcedureRecord(
             nurseStationOrderExecuteMapper.toCompleteProcedureRecordCommand(procedureId, operatorId));
         // Cmd：登记主执行人（与 Procedure 1:1 写入 cln_procedure_performer）。
-        procedureExecutionPerformerOrchestrationSupport.registerPrimaryPerformer(
+        procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
             procedureId, performerId, operatorId, actualTime);
         Long orgId = context.encounterOrgIds.get(order.getEncounterId());
         // ④ 主医嘱联动：药嘱 FIFO 分段新建 Dispense+Charge；诊嘱新建 Charge（长临同构，BR-IP-EXE-016/018）
@@ -409,7 +418,7 @@ public class NurseStationOrderExecuteAppService {
         if (fifoSegments == null || fifoSegments.isEmpty()) {
             throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_302, "库存 Gate 未通过");
         }
-        String unitCode = InpatientMedicationRequestExecutionMeasureSupport.resolveDispenseUnitCodeFromRequest(
+        String unitCode = InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseUnitCodeFromRequest(
             med.getUnitCode());
         ChargeItem template = this.findChargeTemplate(context, order.getEncounterId(),
             TableNameConstants.MED_MEDICATION_REQUEST, med.getId());
@@ -457,6 +466,12 @@ public class NurseStationOrderExecuteAppService {
         }
     }
 
+    /**
+     * FIFO 分段数量求和；null 段或 null 数量跳过。
+     *
+     * @param fifoSegments 分段列表
+     * @return 合计数量
+     */
     private BigDecimal sumMedicationFifoSegmentQuantities(
         List<NurseStationExecutionInventoryAssembler.MedicationFifoSegment> fifoSegments) {
         BigDecimal total = BigDecimal.ZERO;
@@ -489,7 +504,7 @@ public class NurseStationOrderExecuteAppService {
         if (med == null) {
             return;
         }
-        this.longTermMedicationMonthlyDispenseCapSupport.assertMonthlyDispenseWithinCap(
+        this.longTermMedicationMonthlyDispenseCapGate.assertMonthlyDispenseWithinCap(
             med,
             item.getPlanTime(),
             this.sumMedicationFifoSegmentQuantities(fifoSegments));
@@ -638,7 +653,7 @@ public class NurseStationOrderExecuteAppService {
         procedureDomainService.completeProcedureRecord(
             nurseStationOrderExecuteMapper.toCompleteProcedureRecordCommand(bindProcedureId, operatorId));
         // Cmd：绑定诊疗 Procedure 同样登记主执行人。
-        procedureExecutionPerformerOrchestrationSupport.registerPrimaryPerformer(
+        procedureExecutionPerformerOrchestrator.registerPrimaryPerformer(
             bindProcedureId, performerId, operatorId, actualTime);
         // ③ 新建待结算 Charge，service=派生 Request，product=ActivityDefinition
         BigDecimal quantity = this.resolveBindItemQuantity(bindItem);
@@ -693,7 +708,7 @@ public class NurseStationOrderExecuteAppService {
             this.loadProductDefinition(context, TableNameConstants.ADM_DEVICE_DEFINITION, deviceDefId);
         String unitCode = this.resolveBindItemUnitCode(bindItem, deviceProduct);
         Long performLocation = this.resolveBindDevicePerformLocation(orgId, deviceDefId, deviceProduct);
-        if (this.deviceAutoInventoryDeductSettingSupport.isEnabled()) {
+        if (this.deviceAutoInventoryDeductSettingResolver.isEnabled()) {
             this.doctorStationAdviceFifoAllocationAssembler.allocateDeviceFifoAtPerformLocation(
                 order.getEncounterId(),
                 performLocation,
@@ -725,12 +740,12 @@ public class NurseStationOrderExecuteAppService {
                 unitCode,
                 item.getPlanTime(),
                 operatorId));
-        deviceDispenseNurseWorkflowSupport.finalizeInpatientTemporaryPathDispense(
+        deviceDispenseNurseWorkflowOrchestrator.finalizeInpatientTemporaryPathDispense(
             deviceReqId,
             operatorId,
             performerId,
             context.getDeviceInventoryDecreaseAccumulator());
-        Long dispenseId = this.resolvePrimaryDeviceDispenseId(deviceReqId);
+        Long dispenseId = deviceDispenseQueryService.resolvePrimaryDispenseIdForDeviceRequest(deviceReqId);
         ChargeItemDefinition priceLine = this.requirePriceLineForExecution(
             context,
             TableNameConstants.ADM_DEVICE_DEFINITION,
@@ -759,29 +774,6 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
-     * 解析耗材请求下主发放行 id（id 最小者），供收费锚点关联。
-     *
-     * @param deviceReqId 耗材请求主键
-     * @return 主发放行 id；无则 null
-     */
-    private Long resolvePrimaryDeviceDispenseId(Long deviceReqId) {
-        List<Long> ids = this.deviceDispenseQueryService.listDeviceDispenseIdsByDeviceRequest(deviceReqId);
-        if (ids == null || ids.isEmpty()) {
-            return null;
-        }
-        Long primary = null;
-        for (Long id : ids) {
-            if (id == null) {
-                continue;
-            }
-            if (primary == null || id < primary) {
-                primary = id;
-            }
-        }
-        return primary;
-    }
-
-    /**
      * 绑定耗材默认发放库房：按机构 + 耗材分类解析 ServiceLocationTemplate（对齐护士划价）。
      *
      * @param orgId          机构主键
@@ -799,10 +791,10 @@ public class NurseStationOrderExecuteAppService {
                 "绑定耗材执行失败：未配置该住院科室的发放库房");
         }
         String distributionCategory = MedicationCommonConstants.DEFAULT_SERVICE_LOCATION_DISTRIBUTION_CATEGORY_CODE;
-        if (deviceProduct != null && StringUtils.isNotBlank(deviceProduct.getCategoryCode())) {
+        if (deviceProduct != null && StringUtils.isNotEmpty(deviceProduct.getCategoryCode())) {
             distributionCategory = deviceProduct.getCategoryCode();
         }
-        Long performLocation = clinicalCatalogDispenseLocationResolveSupport.matchDefaultDeviceDispenseLocationId(
+        Long performLocation = clinicalCatalogDispenseLocationResolver.matchDefaultDeviceDispenseLocationId(
             orgId, deviceDefId, distributionCategory);
         if (performLocation == null) {
             throw new BusinessException(
@@ -902,9 +894,9 @@ public class NurseStationOrderExecuteAppService {
             line.setMedicationId(med.getMedicationId());
             line.setMethodCode(med.getMethodCode());
             // categoryCode 由库存装配器按产品读模型 category_code 解析（与住院医生站 FIFO 口径一致）
-            line.setBusinessQuantity(InpatientMedicationRequestExecutionMeasureSupport.resolveDispenseQuantityFromRequest(
+            line.setBusinessQuantity(InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseQuantityFromRequest(
                 med.getQuantity()));
-            line.setUnitCode(InpatientMedicationRequestExecutionMeasureSupport.resolveDispenseUnitCodeFromRequest(
+            line.setUnitCode(InpatientMedicationRequestExecutionMeasureHelper.resolveDispenseUnitCodeFromRequest(
                 med.getUnitCode()));
             lines.add(line);
         }
@@ -981,7 +973,7 @@ public class NurseStationOrderExecuteAppService {
         lookup.setProductTableName(productTable);
         lookup.setProductDefinitionId(productDefinitionId);
         Map<String, ProductDefinitionDisplayDto> loaded =
-            productDefinitionBatchLoader.loadAsMap(List.of(lookup));
+            productDefinitionDisplayTerminologyAssembler.loadAsMap(List.of(lookup));
         ProductDefinitionDisplayDto product = loaded.get(cacheKey);
         if (product != null) {
             context.putProductDefinition(cacheKey, product);
@@ -1042,7 +1034,7 @@ public class NurseStationOrderExecuteAppService {
             priceLines = chargeItemDefinitionQueryService.findPriceLinesByProjects(priceQuery);
             context.putPriceLinesForInstance(instanceTable, instanceId, priceLines);
         }
-        ChargeItemDefinition priceLine = clinicalCatalogPriceResolveSupport.selectExecutionPriceLineForChargeDraft(
+        ChargeItemDefinition priceLine = clinicalCatalogPriceResolver.selectExecutionPriceLineForChargeDraft(
             instanceTable, priceLines, executionLotNumber);
         if (priceLine != null) {
             return priceLine;
@@ -1099,6 +1091,7 @@ public class NurseStationOrderExecuteAppService {
         if (charges == null) {
             ChargeItemQueryCommand cmd = new ChargeItemQueryCommand();
             cmd.setEncounterId(encounterId);
+            cmd.setExcludeSupersededSettledLines(true);
             charges = chargeItemQueryService.listChargeItemsByEncounterId(cmd);
             context.chargesByEncounterId.put(encounterId, charges);
         }
@@ -1215,7 +1208,7 @@ public class NurseStationOrderExecuteAppService {
         if (encounterId != null && medByEncounter != null) {
             encounterMeds = medByEncounter.get(encounterId);
         }
-        return inpatientNurseStationTcmSupport.expandMedRequestIdsByPrescriptionNo(
+        return inpatientNurseStationTcmOrchestrator.expandMedRequestIdsByPrescriptionNo(
             encounterId, item.getOrderId(), encounterMeds);
     }
 
@@ -1281,7 +1274,7 @@ public class NurseStationOrderExecuteAppService {
             // 整方多味药行共享同一 planTime，代煎费只挂一次
             return;
         }
-        inpatientTcmDecoctionExecuteSupport.replaceOrderExecuteDecoctionChargeIfNeeded(
+        inpatientTcmDecoctionExecuteOrchestrator.replaceOrderExecuteDecoctionChargeIfNeeded(
             encounterId,
             order.getPatientId(),
             item.getAccountId(),
@@ -1326,7 +1319,7 @@ public class NurseStationOrderExecuteAppService {
         InpatientEncounterPageQuery query = nurseStationOrderExecuteMapper.toInpatientEncounterPageQuery(
             new ArrayList<>(encounterIds), managedWardIds);
         List<InpatientEncounterContextQueryModel> visible =
-            encounterContextFacade.listInpatientEncounterContexts(query);
+            EncounterContextReader.listInpatientEncounterContexts(query);
         List<Long> requestedEncounterIds = new ArrayList<>(encounterIds);
         List<Long> visibleEncounterIds = this.retainRequestedVisibleEncounterIds(requestedEncounterIds, visible);
         bundle.visibleEncounterIds = new HashSet<>(visibleEncounterIds);
@@ -1341,6 +1334,11 @@ public class NurseStationOrderExecuteAppService {
             }
         }
         bundle.encounterOrgIds = this.indexEncounterOrgIds(matchedVisibleRows);
+        // Gate：待结算就诊禁止执行/不执行（EX-IP-EXE-307）
+        inpatientPendingSettlementClinicalGate.assertEncountersAllowOrderClinicalMutation(
+            matchedVisibleRows,
+            InpatientNurseStationConstants.EX_IP_EXE_307,
+            InpatientNurseStationConstants.MSG_ENCOUNTER_PENDING_SETTLEMENT_ORDER_FORBIDDEN);
         // 按就诊预热药/诊域明细，供长临判定与 Gate 数量解析
         String doctorSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
         for (Long encounterId : encounterIds) {
@@ -1363,6 +1361,7 @@ public class NurseStationOrderExecuteAppService {
         for (Long encounterId : encounterIds) {
             ChargeItemQueryCommand cmd = new ChargeItemQueryCommand();
             cmd.setEncounterId(encounterId);
+            cmd.setExcludeSupersededSettledLines(true);
             List<ChargeItem> charges = chargeItemQueryService.listChargeItemsByEncounterId(cmd);
             bundle.chargesByEncounterId.put(encounterId, charges);
         }
@@ -1463,7 +1462,7 @@ public class NurseStationOrderExecuteAppService {
         }
         if (!productLookups.isEmpty()) {
             Map<String, ProductDefinitionDisplayDto> loadedProducts =
-                productDefinitionBatchLoader.loadAsMap(productLookups);
+                productDefinitionDisplayTerminologyAssembler.loadAsMap(productLookups);
             for (Map.Entry<String, ProductDefinitionDisplayDto> entry : loadedProducts.entrySet()) {
                 if (entry.getValue() != null) {
                     context.putProductDefinition(entry.getKey(), entry.getValue());
@@ -1557,15 +1556,16 @@ public class NurseStationOrderExecuteAppService {
             // 越权防护：患者已转科/不在管理病区时不允许执行
             throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_303, "就诊不在护士站可见范围");
         }
-        if (!RequestStatus.VERIFIED.getCode().equals(order.getStatusEnum())) {
-            // 仅已校对医嘱可执行；草稿/停嘱等状态拒绝
-            throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_303, "仅已校对医嘱允许执行");
-        }
         if (item.getActualTime() == null) {
             // IF-IP-EXE-02 必填：护士录入的实际执行时刻
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "实际执行时刻不能为空");
         }
         OrderExecutionContext orderCtx = context.resolveOrderContext(item);
+        if (!nurseStationOrderExecuteListAssembler.isRequestStatusExecutableForWrite(
+            order, orderCtx.medDetail, orderCtx.svcDetail)) {
+            // 与列表 Q-IP-EXE-001 对齐：已停嘱医嘱仍可在停嘱时刻前的 planTime 执行
+            throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_303, "仅已校对或已停嘱医嘱允许执行");
+        }
         if (nurseStationOrderExecuteListAssembler.isPlanTimeAfterStopTime(
             order, orderCtx.medDetail, orderCtx.svcDetail, item.getPlanTime())) {
             throw new BusinessException(InpatientNurseStationConstants.EX_IP_EXE_303, "计划点晚于停嘱时间，不可执行");
@@ -1630,12 +1630,12 @@ public class NurseStationOrderExecuteAppService {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "截止时间不能为空");
         }
         String tab = trimToEmpty(request.getExecuteTab());
-        if (StringUtils.isBlank(tab) || !this.isAllowedExecuteTab(tab)) {
+        if (StringUtils.isEmpty(tab) || !this.isAllowedExecuteTab(tab)) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "执行 Tab 不合法");
         }
-        inpatientNurseStationTcmSupport.resolveMedicineCategoryTabOrDefault(request.getMedicineCategoryTab());
+        inpatientNurseStationTcmOrchestrator.resolveMedicineCategoryTabOrDefault(request.getMedicineCategoryTab());
         String therapy = request.getTherapyType();
-        if (StringUtils.isBlank(therapy)) {
+        if (StringUtils.isEmpty(therapy)) {
             // 未传长临筛选视为 all，不做额外校验
             return;
         }
@@ -1659,7 +1659,7 @@ public class NurseStationOrderExecuteAppService {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "单次最多处理50条计划点");
         }
         for (NurseStationOrderExecuteWriteSlotDto item : items) {
-            if (item == null || item.getOrderId() == null || StringUtils.isBlank(item.getOrderType())) {
+            if (item == null || item.getOrderId() == null || StringUtils.isEmpty(item.getOrderType())) {
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "医嘱锚点不完整");
             }
             if (!ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())
@@ -1685,6 +1685,21 @@ public class NurseStationOrderExecuteAppService {
     }
 
     /**
+     * 护理级别诊疗医嘱禁止护士站执行/不执行写路径（BR-IP-EXE-027）。
+     *
+     * @param orderCtx 预加载医嘱上下文
+     */
+    private void assertServiceOrderNotNursingLevel(OrderExecutionContext orderCtx) {
+        if (orderCtx == null || orderCtx.svcDetail == null) {
+            return;
+        }
+        inpatientNursingOrderGate.assertNotExecutableAtNurseStation(
+            orderCtx.svcDetail.getCategoryEnum(),
+            InpatientNurseStationConstants.EX_IP_EXE_306,
+            InpatientNurseStationConstants.MSG_NURSING_LEVEL_NOT_EXECUTABLE);
+    }
+
+    /**
      * 解析 Procedure 执行类目（长临 code），供 create/skip 命令 categoryEnum 字段。
      *
      * @param order    医嘱读模型
@@ -1693,21 +1708,21 @@ public class NurseStationOrderExecuteAppService {
      */
     private String resolveProcedureCategory(InpatientOrderListSkeleton order, OrderExecutionContext orderCtx) {
         if (ReadModelOrderTypeConstants.MED_REQUEST.equals(order.getOrderType())) {
-            if (orderCtx.medDetail != null && StringUtils.isNotBlank(orderCtx.medDetail.getTherapyEnum())) {
+            if (orderCtx.medDetail != null && StringUtils.isNotEmpty(orderCtx.medDetail.getTherapyEnum())) {
                 // 药嘱长临以域明细为准（与发药/计费分轨一致）
                 return orderCtx.medDetail.getTherapyEnum();
             }
-            if (StringUtils.isNotBlank(order.getTherapyEnum())) {
+            if (StringUtils.isNotEmpty(order.getTherapyEnum())) {
                 return order.getTherapyEnum();
             }
             // 缺省临时，避免 category 空导致 Procedure 校验失败
             return TherapyType.TEMPORARY.getCode();
         }
         // 诊嘱：优先 ServiceRequest 明细的长临
-        if (orderCtx.svcDetail != null && StringUtils.isNotBlank(orderCtx.svcDetail.getTherapyEnum())) {
+        if (orderCtx.svcDetail != null && StringUtils.isNotEmpty(orderCtx.svcDetail.getTherapyEnum())) {
             return orderCtx.svcDetail.getTherapyEnum();
         }
-        if (StringUtils.isNotBlank(order.getCategoryEnum())) {
+        if (StringUtils.isNotEmpty(order.getCategoryEnum())) {
             // OrderInfo.categoryEnum 在诊嘱场景通常承载长临
             return order.getCategoryEnum();
         }
@@ -2010,7 +2025,7 @@ public class NurseStationOrderExecuteAppService {
                 }
             }
             InpatientOrderListSkeleton order = orderByKey.get(item.getOrderId() + ":" + item.getOrderType());
-            if (StringUtils.isBlank(ctx.therapyEnum) && order != null) {
+            if (StringUtils.isEmpty(ctx.therapyEnum) && order != null) {
                 // 域明细缺长临时回落 OrderInfo 骨架
                 ctx.therapyEnum = order.getTherapyEnum();
             }

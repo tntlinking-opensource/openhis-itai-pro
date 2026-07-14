@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.conditiontemplate.service;
 
 import com.openhis.health.domain.custom.conditiontemplate.command.AdjustSortWeightCommand;
@@ -37,9 +24,11 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 诊断常用模板写侧领域服务。
+ * 诊断常用模板（{@code cus_condition_template}）聚合写侧领域服务。
  *
- * <p>维护对象（如医生、科室）与诊断定义模板之间的绑定：批量绑定、解绑与排序调整；成功后发布领域事件供读模型与集成消费。</p>
+ * <p>维护对象（如医生、科室）与诊断定义模板之间的绑定：批量绑定、解绑与排序调整。</p>
+ * <p>不变量：同对象+绑定类型下 definitionId 幂等；持久化先于模板领域事件发布。</p>
+ * <p>仅注入本聚合 {@link ConditionTemplateRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -80,12 +69,12 @@ public class ConditionTemplateDomainService {
             if (item.getDefinitionId() == null) {
                 throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "诊断定义标识不能为空");
             }
-            // 业务分支处理：命令内重复 definitionId 去重。
+            // 命令内重复 definitionId 去重，避免同批重复绑定。
             if (dedupDefinitionIds.contains(item.getDefinitionId())) {
                 continue;
             }
             dedupDefinitionIds.add(item.getDefinitionId());
-            // 业务分支处理：已存在绑定则幂等跳过。
+            // 已存在绑定则幂等跳过，不重复插入。
             if (existedDefinitionIds.contains(item.getDefinitionId())) {
                 continue;
             }
@@ -93,7 +82,7 @@ public class ConditionTemplateDomainService {
             row.setObjectId(command.getObjectId());
             row.setDefinitionId(item.getDefinitionId());
             row.setBindingEnum(command.getBindingEnum());
-            // 业务分支处理：排序权重缺省为 0。
+            // 排序权重缺省为 0，保证列表有稳定次序。
             if (item.getSortWeight() == null) {
                 row.setSortWeight(0);
             } else {
@@ -116,7 +105,7 @@ public class ConditionTemplateDomainService {
                 row.getDefinitionId()
             , command.getOperatorId()));
         }
-        // 业务分支处理：有新增时发布批量创建事件。
+        // 有新增绑定时发布批量创建事件。
         if (!ids.isEmpty()) {
             domainEventPublisher.publish(new ConditionTemplateBatchCreatedEvent(
                 ids.get(0),
@@ -144,7 +133,7 @@ public class ConditionTemplateDomainService {
             }
             templateIds.add(item.getTemplateId());
         }
-        // 业务分支处理：无待删主键时直接返回。
+        // 无待删主键时直接返回，删除入参为空则幂等。
         if (templateIds.isEmpty()) {
             return;
         }
@@ -187,10 +176,11 @@ public class ConditionTemplateDomainService {
         if (command.getSortWeight() == null || command.getSortWeight() < 0) {
             throw new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_INVALID_ARGUMENT, "排序权重必须为非负整数");
         }
-        // Pre：加载目标模板行。
+        // Pre：加载目标模板行
         ConditionTemplate row = repository.findById(command.getTemplateId())
             .orElseThrow(() -> new BusinessException(ErrorCodeConstants.CONDITION_TEMPLATE_NOT_FOUND, "模板行不存在"));
         row.setSortWeight(command.getSortWeight());
+        // 持久化
         repository.save(row);
     }
 }

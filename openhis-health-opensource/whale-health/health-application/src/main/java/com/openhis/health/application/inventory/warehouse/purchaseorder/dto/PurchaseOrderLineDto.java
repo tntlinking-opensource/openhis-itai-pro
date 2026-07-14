@@ -1,49 +1,119 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.purchaseorder.dto;
 
+
+
 import lombok.Getter;
+
 import lombok.Setter;
 
+
+
 import java.math.BigDecimal;
+
 import java.time.LocalDateTime;
 
+
+
 /**
- * 订货单行（新建/编辑请求共用）。
+
+ *
+
+ * <p>与领域 {@code wkf_supply_request} 行字段对齐；{@code unitCode} 等为字典或计量持久化码（B.10.8.1）。
+
+ * 新建/修订请求共用（IF-WHS-PO-04/05）；{@link #occurrenceTime} 为业务制单时刻，由前端随明细传入并落库
+
+ * {@code occurrence_time}（草稿阶段不写 {@code apply_time}）。</p>
+
  */
+
 @Getter
+
 @Setter
+
 public class PurchaseOrderLineDto {
 
-    /** 物品来源表。 */
+
+
+    /**
+
+     * 物品来源物理表名，与供应请求 {@code item_table} 及选品 {@code productTableName} 白名单一致。
+
+     */
+
     private String itemTable;
-    /** 物品定义主键。 */
+
+
+
+    /**
+
+     * 物品定义主键，与 {@code item_id} 一致。
+
+     */
+
     private Long itemId;
-    /** 数量。 */
+
+
+
+    /**
+
+     * 订货数量（业务口径正数）。
+
+     */
+
     private BigDecimal itemQuantity;
-    /** 单位编码。 */
+
+
+
+    /**
+
+     * 计量单位编码（字典/持久化码），与行数量同一语义维度；须与 catalog 单位槽一致。
+
+     */
+
     private String unitCode;
-    /** 单价。 */
+
+
+
+    /**
+
+     * 含税或约定口径下的单价；落库 {@code price}，槽价锚点（BR-PRICE-SRC-001）。
+
+     */
+
     private BigDecimal price;
-    /** 行总价。 */
+
+
+
+    /**
+
+     * 行总价；落库 {@code total_price}。
+
+     */
+
     private BigDecimal totalPrice;
-    /** 期望到货等业务时间。 */
+
+
+
+    /**
+
+     * 制单或业务发生时刻；落库 {@code occurrence_time}，AppService 门控非空。
+
+     */
+
     private LocalDateTime occurrenceTime;
-    /** 行备注。 */
+
+
+
+    /**
+
+     * 行级备注；落库 {@code remake}。
+
+     */
+
     private String remake;
+
 }

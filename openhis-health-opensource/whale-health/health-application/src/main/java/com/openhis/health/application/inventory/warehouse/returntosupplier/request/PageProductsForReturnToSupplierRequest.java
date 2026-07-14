@@ -1,41 +1,50 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.returntosupplier.request;
-
-import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.application.shared.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
-import io.swagger.v3.oas.annotations.media.Schema;
 
+/**
+ * 产品选品分页请求（IF-WHS-RT-11，已废弃：本场景禁止自由选品，接口固定拒绝）。
+ */
 @Getter
 @Setter
+@Schema(description = "退供应商选品分页 IF-WHS-RT-11（已废弃）")
 public class PageProductsForReturnToSupplierRequest extends AbstractHealthPageRequest {
 
-    /** 物品表名。 */
+    /** 物品表 productTableName。 */
     @Schema(description = "物品表 productTableName")
     private String productTableName;
-    /** 物资分类编码。 */
+
+    /** 分类编码 categoryCode。 */
     @Schema(description = "分类编码 categoryCode")
     private String categoryCode;
-    /** 启用标志。 */
+
+    /** 启用标志 activeFlag。 */
     @Schema(description = "启用标志 activeFlag")
     private Boolean activeFlag;
-    /** 供应商主键。 */
+
+    /** 供应商 supplierId。 */
     @Schema(description = "供应商 supplierId")
     private Long supplierId;
-    /** 生产厂家。 */
+
+    /** 生产厂家 manufacturer。 */
     @Schema(description = "生产厂家 manufacturer")
     private String manufacturer;
-    /** 是否附带库存量。 */
+
+    /** 附带库存 includeInventory。 */
     @Schema(description = "附带库存 includeInventory")
     private Boolean includeInventory;
-    /** 排序字段。 */
+
+    /** 排序字段 sortField。 */
     @Schema(description = "排序字段 sortField")
     private String sortField;
-    /** 排序方向。 */
+
+    /** 排序方向 sortOrder。 */
     @Schema(description = "排序方向 sortOrder")
     private String sortOrder;
 }

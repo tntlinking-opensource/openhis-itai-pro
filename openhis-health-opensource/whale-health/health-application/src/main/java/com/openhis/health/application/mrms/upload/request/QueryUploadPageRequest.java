@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.mrms.upload.request;
 
 import com.openhis.health.domain.share.query.AbstractPageQuery;
@@ -15,6 +15,7 @@ import lombok.Setter;
 @Setter
 public class QueryUploadPageRequest extends AbstractPageQuery {
 
+    /** 序列化版本号。 */
     private static final long serialVersionUID = 1L;
 
     /** CHS 上传状态过滤。 */

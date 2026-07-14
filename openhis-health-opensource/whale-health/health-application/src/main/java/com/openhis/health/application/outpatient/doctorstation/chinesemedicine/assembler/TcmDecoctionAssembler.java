@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.outpatient.doctorstation.chinesemedicine.assembler;
 
@@ -30,11 +31,11 @@ import com.openhis.health.domain.workflow.servicerequest.command.SignServiceRequ
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
-import com.openhis.health.module.common.assembler.advice.OrderChargeDraftAssembler;
-import com.openhis.health.module.common.assembler.advice.ServiceAdviceCommandAssembler;
-import com.openhis.health.module.common.assembler.advice.ServiceAdviceDraftCommandSupport;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.advice.OrderChargeDraftAssembler;
+import com.openhis.health.application.shared.advice.ServiceAdviceCommandAssembler;
+import com.openhis.health.application.shared.advice.ServiceAdviceDraftCommandHelper;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
@@ -61,7 +62,7 @@ public class TcmDecoctionAssembler {
     private final ChargeItemQueryService chargeItemQueryService;
     private final ServiceRequestDomainService serviceRequestDomainService;
     private final ServiceRequestQueryService serviceRequestQueryService;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /**
      * 按付数刷新同处方号下代煎费（先 void 旧项，再签发 ServiceRequest 并升 PLANNED 费用）。
@@ -98,7 +99,7 @@ public class TcmDecoctionAssembler {
         ChargeItemDefinition saleLine = requireDecoctionSaleLine(activityId);
         BigDecimal quantity = doseQuantity;
         String therapyEnum = resolveTherapyEnum(anchorRow);
-        String unitCode = ServiceAdviceDraftCommandSupport.requireUnitCode(null, null, activityProductRow);
+        String unitCode = ServiceAdviceDraftCommandHelper.requireUnitCode(null, null, activityProductRow);
         // Cmd：落库代煎 ServiceRequest 草稿并立即签发至 ACTIVE
         CreateServiceRequestDraftCommand createCmd = buildDecoctionServiceRequestDraftCommand(
             encounterId, patientId, operatorId, orgId, prescriptionNo, activityId,
@@ -227,7 +228,7 @@ public class TcmDecoctionAssembler {
         item.setActivityId(activityId);
         item.setQuantity(quantity);
         item.setUnitCode(unitCode);
-        item.setExecutionCount(ServiceAdviceDraftCommandSupport.requireExecutionCount(1, null, therapyEnum));
+        item.setExecutionCount(ServiceAdviceDraftCommandHelper.requireExecutionCount(1, null, therapyEnum));
         item.setCategoryEnum(StringUtils.firstNonBlankOrEmpty(activityProductRow.getCategoryCode(), "1"));
         item.setTherapyEnum(therapyEnum);
         item.setOrgId(orgId);
@@ -366,7 +367,7 @@ public class TcmDecoctionAssembler {
         ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
         lookup.setProductTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION);
         lookup.setProductDefinitionId(activityId);
-        Map<String, ProductDefinitionDisplayDto> map = productDefinitionBatchLoader.loadAsMap(List.of(lookup));
+        Map<String, ProductDefinitionDisplayDto> map = productDefinitionDisplayTerminologyAssembler.loadAsMap(List.of(lookup));
         String key = ProductDefinitionKeyUtil.buildCompositeKey(
             TableNameConstants.WKF_ACTIVITY_DEFINITION, activityId);
         ProductDefinitionDisplayDto row = map.get(key);

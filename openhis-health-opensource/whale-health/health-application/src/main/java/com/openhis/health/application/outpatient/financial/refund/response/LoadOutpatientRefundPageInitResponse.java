@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.refund.response;
 
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -29,15 +16,14 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 门诊退费页初始化响应。 */
 @Schema(description = "门诊退费页初始化响应")
 public class LoadOutpatientRefundPageInitResponse {
 
-    @Schema(description = "收费项状态筛选项")
     /** 收费项状态筛选项（业务字段）。 */
+    @Schema(description = "收费项状态筛选项")
     private List<OptionDto> chargeItemStatusOptions;
 
-    @Schema(description = "支付渠道下拉选项")
     /** 当前用户可选的支付渠道选项（ADR-PAY-001 语义码 ∩ 477 active）。 */
+    @Schema(description = "支付渠道下拉选项")
     private List<OptionDto> paymentChannelOptions;
 }

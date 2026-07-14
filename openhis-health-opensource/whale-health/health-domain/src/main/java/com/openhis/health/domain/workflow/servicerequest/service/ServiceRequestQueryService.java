@@ -1,35 +1,18 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.servicerequest.service;
 
-import com.openhis.health.domain.administration.specimendefinition.queries.model.SpecimenDefinitionBatchItemQueryModel;
-import com.openhis.health.domain.administration.specimendefinition.service.SpecimenDefinitionQueryService;
-import com.openhis.health.domain.diagnosis.bodystructure.service.BodyStructureQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
-import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequest;
 import com.openhis.health.domain.workflow.servicerequest.entity.ServiceRequestDetail;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.InpatientAutoRollNursingLevelQueryModel;
-import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestDetailListModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.OffsetVerificationModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestHistoryModel;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
@@ -39,7 +22,7 @@ import com.openhis.health.domain.workflow.servicerequest.repository.ServiceReque
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -60,6 +43,7 @@ import java.util.Optional;
  * 服务申请读侧查询服务。
  *
  * <p>职责：按就诊、患者、诊疗项目等维度查询检查/治疗等服务申请，并提供冲销余额、重复转科出院门控等只读编排；不写库。</p>
+ * <p>聚合边界：仅本聚合 {@link ServiceRequestRepository} / {@link ServiceRequestDetailRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -67,9 +51,6 @@ public class ServiceRequestQueryService {
 
     private final ServiceRequestRepository serviceRequestRepository;
     private final ServiceRequestDetailRepository serviceRequestDetailRepository;
-    private final BodyStructureQueryService bodyStructureQueryService;
-    private final SpecimenDefinitionQueryService specimenDefinitionQueryService;
-
 
     /**
      * 按主键尝试加载服务申请；不存在返回 null（与强制加载区分，供展示型接口）。
@@ -83,6 +64,26 @@ public class ServiceRequestQueryService {
             return null;
         }
         return this.toQueryModel(request);
+    }
+
+    /**
+     * 按床位自动计费配置规则主键解析关联的长期床位滚费医嘱（AS-IP-NUR-013 BR-IP-ARG-019）。
+     *
+     * @param ruleId 配置表主键 {@code cus_charge_item_auto_gen.id}
+     * @return 诊疗申请主键；无命中时 empty
+     */
+    public Optional<Long> findAutoRollBedServiceRequestIdByRuleId(Long ruleId) {
+        if (ruleId == null) {
+            return Optional.empty();
+        }
+        Optional<ServiceRequest> row = serviceRequestRepository.findFirstByBasedOnTableAndBasedOnIdAndGenerateSourceEnumAndIsDeletedFalse(
+            TableNameConstants.CUS_CHARGE_ITEM_AUTO_GEN,
+            ruleId,
+            GenerateSource.AUTO_ROLL_FEES.getCode());
+        if (row.isEmpty() || row.get().getId() == null) {
+            return Optional.empty();
+        }
+        return Optional.of(row.get().getId());
     }
 
     /**
@@ -130,6 +131,38 @@ public class ServiceRequestQueryService {
             map.put(request.getId(), this.toListModel(request));
         }
         return map;
+    }
+
+    /**
+     * 护士工作量：按就诊集合批量解析 {@code category_enum}（DM-WKF-004 §6.2.26；AS-RPT-002）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return serviceRequestId → categoryEnum；无命中时返回空 Map
+     */
+    public Map<Long, String> mapCategoryEnumByEncounterIds(Collection<Long> encounterIds) {
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashSet<Long> distinctEncounterIds = new LinkedHashSet<>();
+        for (Long encounterId : encounterIds) {
+            if (encounterId != null) {
+                distinctEncounterIds.add(encounterId);
+            }
+        }
+        if (distinctEncounterIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        // Pre：按就诊集合批量加载 SR，构建 serviceRequestId → category_enum 索引
+        List<ServiceRequest> rows =
+            serviceRequestRepository.findByEncounterIdInAndIsDeletedFalse(distinctEncounterIds);
+        Map<Long, String> categoryByServiceRequestId = new HashMap<>();
+        for (ServiceRequest request : rows) {
+            if (request == null || request.getId() == null) {
+                continue;
+            }
+            categoryByServiceRequestId.put(request.getId(), request.getCategoryEnum());
+        }
+        return categoryByServiceRequestId;
     }
 
     /**
@@ -369,7 +402,7 @@ public class ServiceRequestQueryService {
      */
     public List<ServiceRequestListModel> listByEncounterAndPrescriptionNo(
         Long encounterId, String prescriptionNo, String generateSourceEnum) {
-        if (encounterId == null || StringUtils.isBlank(prescriptionNo) || StringUtils.isBlank(generateSourceEnum)) {
+        if (encounterId == null || StringUtils.isEmpty(prescriptionNo) || StringUtils.isEmpty(generateSourceEnum)) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
                 "按申请单号查询时 encounterId/prescriptionNo/generateSourceEnum 不能为空");
@@ -396,6 +429,19 @@ public class ServiceRequestQueryService {
             models.add(this.toListModel(request));
         }
         return models;
+    }
+
+    /**
+     * 判断指定诊疗定义是否已被有效服务申请引用（目录编辑门控）。
+     *
+     * @param activityId 诊疗定义主键
+     * @return 存在引用时为 true
+     */
+    public boolean existsByActivityId(Long activityId) {
+        if (activityId == null) {
+            return false;
+        }
+        return serviceRequestRepository.existsByActivityIdAndIsDeletedFalse(activityId);
     }
 
     /**
@@ -517,7 +563,7 @@ public class ServiceRequestQueryService {
         if (idSet.isEmpty()) {
             return Collections.emptyList();
         }
-        if (StringUtils.isBlank(statusEnum)) {
+        if (StringUtils.isEmpty(statusEnum)) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
                 "按就诊批量查询时 statusEnum 不能为空");
@@ -595,7 +641,7 @@ public class ServiceRequestQueryService {
     }
 
     /**
-     * 按主键解析医嘱业务单号（Port 读路径）。
+     * 按主键解析医嘱业务单号（adapter 读路径）。
      */
     public String resolveBusNoByServiceRequestId(Long serviceRequestId) {
         if (serviceRequestId == null) {
@@ -609,7 +655,29 @@ public class ServiceRequestQueryService {
     }
 
     /**
-     * 按主键解析医嘱所属就诊（Port 读路径）。
+     * 按原服务申请主键批量查询关联退诊疗/负向申请（DM-WKF-004 §6.2；AS-OP-FIN-003 IF-REF-04 扩展）。
+     *
+     * @param refundServiceIds 原服务申请主键集合（{@code refund_service_id} 指向方）
+     * @return 命中关联字段的申请行；入参为空时返回空列表
+     */
+    public List<ServiceRequest> listByRefundServiceIdIn(Collection<Long> refundServiceIds) {
+        if (refundServiceIds == null || refundServiceIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        for (Long id : refundServiceIds) {
+            if (id != null) {
+                ids.add(id);
+            }
+        }
+        if (ids.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return this.serviceRequestRepository.findByRefundServiceIdIn(ids);
+    }
+
+    /**
+     * 按主键解析医嘱所属就诊（adapter 读路径）。
      */
     public Long resolveEncounterIdByServiceRequestId(Long serviceRequestId) {
         if (serviceRequestId == null) {
@@ -699,6 +767,109 @@ public class ServiceRequestQueryService {
     }
 
     /**
+     * 同就诊是否存在并发有效护理级别医嘱（医生开立；排除指定主键）。
+     *
+     * <p>有效态：{@code DRAFT}/{@code ACTIVE}/{@code VERIFIED}；已停嘱/已取消不计入（BR-SRQ-020；AS-IP-DOR-003 BR-IP-ORD-026）。</p>
+     *
+     * @param encounterId            就诊主键
+     * @param excludeServiceRequestId 排除的护理级别医嘱主键（修改/签发自身时传入）；新建时传 null
+     * @return 存在其它有效护理级别医嘱时为 true
+     */
+    public boolean existsConcurrentNursingLevelOrder(Long encounterId, Long excludeServiceRequestId) {
+        if (encounterId == null) {
+            return false;
+        }
+        List<ServiceRequest> rows = serviceRequestRepository.findByEncounterIdAndCategoryEnumIn(
+            encounterId, List.of(ServiceRequestCategoryConstants.SERVICE_CATEGORY_NURSING));
+        for (ServiceRequest row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (excludeServiceRequestId != null && excludeServiceRequestId.equals(row.getId())) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            if (!GenerateSource.DOCTOR_PRESCRIPTION.getCode().equals(row.getGenerateSourceEnum())) {
+                continue;
+            }
+            if (RequestStatus.STOPPED.getCode().equals(row.getStatusEnum())) {
+                continue;
+            }
+            if (RequestStatus.CANCELLED.getCode().equals(row.getStatusEnum())) {
+                continue;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 批量解析患者队列展示用当前护理级别（AS-IP-NUR-001 IF-IP-NUR-02 / AS-IP-DOR-001 IF-IP-DOR-01）。
+     *
+     * <p>口径：仅展示护士校对后生效的护理级别，与 {@link #findLastEffectiveNursingLevelForAutoRoll} 一致；
+     * {@code referenceDate} 当日最后有效校对护理级别；未校对 {@code DRAFT}/{@code ACTIVE} 不参与展示。</p>
+     *
+     * @param encounterIds  就诊主键集合
+     * @param referenceDate 展示参考自然日；null 时按调用方约定（App 层通常传当日）
+     * @return encounterId → 护理级别读模型；无匹配就诊不出现在 Map 中
+     */
+    public Map<Long, InpatientAutoRollNursingLevelQueryModel> mapNursingLevelForPatientQueueByEncounterIds(
+        Collection<Long> encounterIds,
+        LocalDate referenceDate) {
+        Map<Long, InpatientAutoRollNursingLevelQueryModel> result = new HashMap<>();
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return result;
+        }
+        List<Long> encounterIdList = new ArrayList<>();
+        for (Long encounterId : encounterIds) {
+            if (encounterId != null) {
+                encounterIdList.add(encounterId);
+            }
+        }
+        if (encounterIdList.isEmpty()) {
+            return result;
+        }
+        LocalDate billDate = referenceDate;
+        if (billDate == null) {
+            billDate = LocalDate.now();
+        }
+        Specification<ServiceRequest> specification = (root, criteriaQuery, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            root.get(FieldNameConstants.ENCOUNTER_ID).in(encounterIdList),
+            cb.equal(root.get(FieldNameConstants.CATEGORY_ENUM), ServiceRequestCategoryConstants.SERVICE_CATEGORY_NURSING),
+            cb.equal(root.get(FieldNameConstants.GENERATE_SOURCE_ENUM), GenerateSource.DOCTOR_PRESCRIPTION.getCode()),
+            root.get(FieldNameConstants.STATUS_ENUM).in(
+                RequestStatus.VERIFIED.getCode(),
+                RequestStatus.STOPPED.getCode()));
+        List<ServiceRequest> rows = serviceRequestRepository.findAll(specification);
+        if (rows.isEmpty()) {
+            return result;
+        }
+        Map<Long, List<ServiceRequest>> rowsByEncounterId = new HashMap<>();
+        for (ServiceRequest row : rows) {
+            if (row == null || row.getEncounterId() == null) {
+                continue;
+            }
+            List<ServiceRequest> bucket = rowsByEncounterId.get(row.getEncounterId());
+            if (bucket == null) {
+                bucket = new ArrayList<>();
+                rowsByEncounterId.put(row.getEncounterId(), bucket);
+            }
+            bucket.add(row);
+        }
+        for (Map.Entry<Long, List<ServiceRequest>> entry : rowsByEncounterId.entrySet()) {
+            InpatientAutoRollNursingLevelQueryModel model =
+                this.resolveNursingLevelForPatientQueue(entry.getValue(), billDate);
+            if (model != null) {
+                result.put(entry.getKey(), model);
+            }
+        }
+        return result;
+    }
+
+    /**
      * 按主键加载诊疗申请列表行（供按表路由）。
      */
     public ServiceRequestListModel getListModelById(Long id) {
@@ -716,14 +887,19 @@ public class ServiceRequestQueryService {
      * 按主键强制加载诊疗申请列表行。
      */
     public ServiceRequestListModel mustGetListModelById(Long id) {
-        return this.toListModel(this.mustGetEntity(id));
+        return this.toListModel(serviceRequestRepository.findById(id).orElseThrow(
+            () -> new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_NOT_FOUND, "服务申请不存在")));
     }
 
-    private ServiceRequest mustGetEntity(Long id) {
-        return serviceRequestRepository.findById(id).orElseThrow(
-            () -> new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_NOT_FOUND, "服务申请不存在"));
-    }
-
+    /**
+     * 住院医生开立医嘱查询：来源为医生处方、可按单就诊/批量就诊、状态与长临过滤。
+     *
+     * @param singleEncounterId 单就诊过滤；非空时忽略 encounterIds
+     * @param encounterIds      批量就诊过滤
+     * @param statusEnumIn      请求状态 code 集合；可 null 表示不限
+     * @param therapyEnum       长临 code；可空表示不限
+     * @return 未逻辑删除的实体列表，按创建时间降序
+     */
     private List<ServiceRequest> findInpatientDoctorPrescriptionOrders(
         Long singleEncounterId,
         List<Long> encounterIds,
@@ -743,7 +919,7 @@ public class ServiceRequestQueryService {
             if (statusEnumIn != null && !statusEnumIn.isEmpty()) {
                 predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(statusEnumIn));
             }
-            if (StringUtils.isNotBlank(therapyEnum)) {
+            if (StringUtils.isNotEmpty(therapyEnum)) {
                 predicates.add(cb.equal(root.get(FieldNameConstants.THERAPY_ENUM), therapyEnum));
             }
             return cb.and(predicates.toArray(new Predicate[0]));
@@ -752,6 +928,15 @@ public class ServiceRequestQueryService {
         return serviceRequestRepository.findAll(specification, sort);
     }
 
+    /**
+     * 住院护士补费/计价医嘱查询：来源为护士计价，按就诊集合与时间窗过滤。
+     *
+     * @param encounterIds      就诊主键集合
+     * @param pricedTimeFrom    计价时间下界；可 null
+     * @param pricedTimeTo      计价时间上界；可 null
+     * @param parentBasedOnId   父锚点 based_on_id；可 null 表示不限
+     * @return 未逻辑删除的实体列表，按创建时间降序
+     */
     private List<ServiceRequest> findInpatientNursePricingOrders(
         List<Long> encounterIds,
         LocalDateTime pricedTimeFrom,
@@ -779,6 +964,12 @@ public class ServiceRequestQueryService {
         return serviceRequestRepository.findAll(specification, sort);
     }
 
+    /**
+     * 批量将诊疗申请实体映射为列表读模型。
+     *
+     * @param requests 实体集合
+     * @return 列表模型；空入参时返回空列表
+     */
     private List<ServiceRequestListModel> mapListModels(List<ServiceRequest> requests) {
         List<ServiceRequestListModel> models = new ArrayList<>();
         for (ServiceRequest request : requests) {
@@ -787,6 +978,14 @@ public class ServiceRequestQueryService {
         return models;
     }
 
+    /**
+     * 批量住院查询入参门禁：就诊集合与状态集合均不可空。
+     *
+     * @param encounterIds  就诊主键集合
+     * @param statusEnumIn  请求状态 code 集合
+     * @param sceneLabel    场景标签（拼入异常文案）
+     * @throws BusinessException encounterIds 或 statusEnumIn 为空
+     */
     private void validateEncounterIdsAndStatusIn(
         List<Long> encounterIds, List<String> statusEnumIn, String sceneLabel) {
         if (encounterIds == null || encounterIds.isEmpty()) {
@@ -884,55 +1083,17 @@ public class ServiceRequestQueryService {
     }
 
     /**
-     * 按服务申请主键批量加载明细行，并解析部位/样本展示名（DM-WKF-004 §6.2.24）。
-     *
-     * <p>用于医生站申请单列表、统一医嘱列表等读路径；排除逻辑删除明细；未知 {@code target_table} 时
-     * {@code targetDisplayName} 为 null。</p>
+     * 按服务申请主键批量加载未逻辑删除的明细实体（供 querysupport 展示 enrich）。
      *
      * @param serviceRequestIds 服务申请主键集合
-     * @return 服务申请主键 → 明细行列表（无明细时该键不出现或映射为空列表，实现采用空列表值）
+     * @return 明细实体列表；无命中时空列表
      */
-    public Map<Long, List<ServiceRequestDetailListModel>> mapDetailListModelsByServiceRequestIds(
-        Collection<Long> serviceRequestIds) {
+    public List<ServiceRequestDetail> findActiveDetailsByServiceRequestIds(Collection<Long> serviceRequestIds) {
         Collection<Long> idSet = this.distinctNonNullServiceRequestIds(serviceRequestIds);
         if (idSet.isEmpty()) {
-            return Collections.emptyMap();
+            return Collections.emptyList();
         }
-        List<ServiceRequestDetail> detailRows = serviceRequestDetailRepository.findByServiceReqIdIn(new ArrayList<>(idSet));
-        if (detailRows.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        List<Long> bodyStructureIds = new ArrayList<>();
-        List<Long> specimenDefinitionIds = new ArrayList<>();
-        for (ServiceRequestDetail detail : detailRows) {
-            if (detail == null || Boolean.TRUE.equals(detail.getIsDeleted())) {
-                continue;
-            }
-            if (TableNameConstants.DIA_BODY_STRUCTURE.equals(detail.getTargetTable()) && detail.getTargetId() != null) {
-                bodyStructureIds.add(detail.getTargetId());
-            } else if (TableNameConstants.ADM_SPECIMEN_DEFINITION.equals(detail.getTargetTable())
-                && detail.getTargetId() != null) {
-                specimenDefinitionIds.add(detail.getTargetId());
-            }
-        }
-        Map<Long, String> bodyStructureNameMap = bodyStructureQueryService.mapNamesByIds(bodyStructureIds);
-        Map<Long, String> specimenNameMap = this.mapSpecimenNamesByIds(specimenDefinitionIds);
-        Map<Long, List<ServiceRequestDetailListModel>> grouped = new HashMap<>();
-        for (ServiceRequestDetail detail : detailRows) {
-            if (detail == null || detail.getServiceReqId() == null || Boolean.TRUE.equals(detail.getIsDeleted())) {
-                continue;
-            }
-            ServiceRequestDetailListModel model = new ServiceRequestDetailListModel();
-            model.setId(detail.getId());
-            model.setServiceReqId(detail.getServiceReqId());
-            model.setTargetTable(detail.getTargetTable());
-            model.setTargetId(detail.getTargetId());
-            model.setRemark(detail.getRemark());
-            model.setTargetDisplayName(this.resolveDetailTargetDisplayName(
-                detail.getTargetTable(), detail.getTargetId(), bodyStructureNameMap, specimenNameMap));
-            grouped.computeIfAbsent(detail.getServiceReqId(), key -> new ArrayList<>()).add(model);
-        }
-        return grouped;
+        return this.serviceRequestDetailRepository.findByServiceReqIdIn(new ArrayList<>(idSet));
     }
 
     /**
@@ -952,52 +1113,6 @@ public class ServiceRequestQueryService {
             }
         }
         return idSet;
-    }
-
-    /**
-     * 批量解析样本定义展示名。
-     *
-     * @param specimenDefinitionIds 样本定义主键集合
-     * @return id → 名称
-     */
-    private Map<Long, String> mapSpecimenNamesByIds(List<Long> specimenDefinitionIds) {
-        Map<Long, String> result = new HashMap<>();
-        if (specimenDefinitionIds == null || specimenDefinitionIds.isEmpty()) {
-            return result;
-        }
-        List<SpecimenDefinitionBatchItemQueryModel> rows = specimenDefinitionQueryService.listByIds(specimenDefinitionIds);
-        for (SpecimenDefinitionBatchItemQueryModel row : rows) {
-            if (row != null && row.getId() != null) {
-                result.put(row.getId(), row.getName());
-            }
-        }
-        return result;
-    }
-
-    /**
-     * 按 target 白名单解析明细目标展示名。
-     *
-     * @param targetTable 目标表名
-     * @param targetId 目标主键
-     * @param bodyStructureNameMap 部位名称映射
-     * @param specimenNameMap 样本名称映射
-     * @return 展示名或 null
-     */
-    private String resolveDetailTargetDisplayName(
-        String targetTable,
-        Long targetId,
-        Map<Long, String> bodyStructureNameMap,
-        Map<Long, String> specimenNameMap) {
-        if (targetId == null || targetTable == null) {
-            return null;
-        }
-        if (TableNameConstants.DIA_BODY_STRUCTURE.equals(targetTable)) {
-            return bodyStructureNameMap.get(targetId);
-        }
-        if (TableNameConstants.ADM_SPECIMEN_DEFINITION.equals(targetTable)) {
-            return specimenNameMap.get(targetId);
-        }
-        return null;
     }
 
     /**
@@ -1056,6 +1171,13 @@ public class ServiceRequestQueryService {
         return model;
     }
 
+    /**
+     * 定时诊疗是否落在指定发生日：优先 occurrence_start_time，回落 authored_time、created_at。
+     *
+     * @param request    诊疗申请实体
+     * @param filterDate 筛选日期
+     * @return 锚点日期与 filterDate 相同为 true
+     */
     private boolean matchesTimedServiceOccurrenceDate(ServiceRequest request, LocalDate filterDate) {
         LocalDateTime anchor = request.getOccurrenceStartTime();
         if (anchor == null) {
@@ -1065,5 +1187,70 @@ public class ServiceRequestQueryService {
             anchor = request.getCreatedAt();
         }
         return anchor != null && filterDate.equals(anchor.toLocalDate());
+    }
+
+    /**
+     * 单就诊护理级别候选中解析患者队列展示口径（仅已校对生效态）。
+     *
+     * @param rows          同就诊护理级别医嘱候选（须已校对 {@code VERIFIED}/{@code STOPPED}）
+     * @param referenceDate 展示参考自然日
+     * @return 读模型；无有效校对护理级别时 null
+     */
+    private InpatientAutoRollNursingLevelQueryModel resolveNursingLevelForPatientQueue(
+        List<ServiceRequest> rows,
+        LocalDate referenceDate) {
+        if (rows == null || rows.isEmpty()) {
+            return null;
+        }
+        ServiceRequest verifiedBest = null;
+        for (ServiceRequest row : rows) {
+            if (row == null || row.getCheckTime() == null) {
+                continue;
+            }
+            if (!RequestStatus.VERIFIED.getCode().equals(row.getStatusEnum())
+                && !RequestStatus.STOPPED.getCode().equals(row.getStatusEnum())) {
+                continue;
+            }
+            LocalDate verifiedDate = row.getCheckTime().toLocalDate();
+            // 校对日晚于参考日则参考日尚未生效
+            if (verifiedDate.isAfter(referenceDate)) {
+                continue;
+            }
+            if (RequestStatus.STOPPED.getCode().equals(row.getStatusEnum())) {
+                LocalDateTime endTime = row.getOccurrenceEndTime();
+                if (endTime != null && endTime.toLocalDate().isBefore(referenceDate)) {
+                    continue;
+                }
+            }
+            if (verifiedBest == null) {
+                verifiedBest = row;
+                continue;
+            }
+            if (row.getCheckTime().isAfter(verifiedBest.getCheckTime())) {
+                verifiedBest = row;
+            }
+        }
+        if (verifiedBest == null) {
+            return null;
+        }
+        return this.toNursingLevelQueryModel(verifiedBest);
+    }
+
+    /**
+     * 服务申请实体 → 护理级别读模型（患者队列/滚费共用字段集）。
+     *
+     * @param request 护理级别服务申请
+     * @return 读模型
+     */
+    private InpatientAutoRollNursingLevelQueryModel toNursingLevelQueryModel(ServiceRequest request) {
+        InpatientAutoRollNursingLevelQueryModel model = new InpatientAutoRollNursingLevelQueryModel();
+        model.setServiceRequestId(request.getId());
+        model.setActivityId(request.getActivityId());
+        model.setQuantity(request.getQuantity());
+        model.setUnitCode(request.getUnitCode());
+        model.setRequesterId(request.getRequesterId());
+        model.setCheckTime(request.getCheckTime());
+        model.setStatusEnum(request.getStatusEnum());
+        return model;
     }
 }

@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.financial.registration.mapper;
 
 import static com.openhis.whale.core.application.util.StringUtils.firstNonBlank;
 
-import com.openhis.health.module.common.assembler.inpatient.AdmissionPrimaryDiagnosisAssembler;
-import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.inpatient.AdmissionPrimaryDiagnosisAssembler;
+import com.openhis.health.application.shared.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.financial.registration.dto.AdmissionDiagnosisSubmitDto;
 import com.openhis.health.application.inpatient.financial.registration.dto.PaymentDetailDto;
 import com.openhis.health.application.inpatient.financial.registration.dto.RegistrationEncounterDto;
@@ -53,7 +40,8 @@ import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.PaymentKind;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.whale.core.application.dto.OptionDto;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -68,13 +56,10 @@ import java.util.Map;
  * {@link InpatientRegistrationMapper} 的 Spring 实现：纯字段映射，不含业务分支。
  */
 @Component
+@RequiredArgsConstructor
 public class InpatientRegistrationMapperImpl implements InpatientRegistrationMapper {
 
     private final AdmissionPrimaryDiagnosisAssembler admissionPrimaryDiagnosisAssembler;
-
-    public InpatientRegistrationMapperImpl(AdmissionPrimaryDiagnosisAssembler admissionPrimaryDiagnosisAssembler) {
-        this.admissionPrimaryDiagnosisAssembler = admissionPrimaryDiagnosisAssembler;
-    }
 
     /**
      * 装配住院登记页初始化响应。
@@ -152,6 +137,7 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
      * @param organizationOptions 入院科室下拉
      * @param inWayCodeOptions    入院方式下拉
      * @param admitSourceCodeOptions 入院类型下拉
+     * @param admCondCodeOptions  患者病情下拉
      * @param readOnly            是否只读查看
      * @return 上下文响应
      */
@@ -163,6 +149,7 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
         List<OptionDto> organizationOptions,
         List<OptionDto> inWayCodeOptions,
         List<OptionDto> admitSourceCodeOptions,
+        List<OptionDto> admCondCodeOptions,
         boolean readOnly) {
         LoadRegistrationContextResponse response = new LoadRegistrationContextResponse();
         response.setPatient(patient);
@@ -171,6 +158,7 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
         response.setOrganizationOptions(organizationOptions);
         response.setInWayCodeOptions(inWayCodeOptions);
         response.setAdmitSourceCodeOptions(admitSourceCodeOptions);
+        response.setAdmCondCodeOptions(admCondCodeOptions);
         response.setReadOnly(readOnly);
         return response;
     }
@@ -247,7 +235,7 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
         dto.setAttendingDoctorId(row.getAttendingDoctorId());
         dto.setAttendingDoctorName(row.getAttendingDoctorName());
         if (encounterHead != null) {
-            if (StringUtils.isNotBlank(encounterHead.getBusNo())) {
+            if (StringUtils.isNotEmpty(encounterHead.getBusNo())) {
                 dto.setEncounterBusNo(encounterHead.getBusNo());
             }
             dto.setAdmitSourceCode(encounterHead.getAdmitSourceCode());
@@ -389,7 +377,7 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
         CollectAdvanceDepositCommand command = new CollectAdvanceDepositCommand();
         command.setEncounterId(encounterId);
         command.setPatientId(patientId);
-        command.setEntererId(request.getOperatorId());
+        // entererId 由 AppService 写入 practitioner.id（对齐门诊登记 BR-PRICE 写路径）
         command.setTenderedAmount(request.getAdvanceDepositAmount());
         command.setDisplayAmount(request.getAdvanceDepositAmount());
         command.setKindEnum(PaymentKind.HOSPITAL_DEPOSIT);
@@ -581,7 +569,7 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
      * @return 展示文案或 null
      */
     private String resolveTerminologyLabel(Map<String, String> labelByCode, String code) {
-        if (labelByCode == null || StringUtils.isBlank(code)) {
+        if (labelByCode == null || StringUtils.isEmpty(code)) {
             return null;
         }
         return labelByCode.get(code.trim());
@@ -621,6 +609,8 @@ public class InpatientRegistrationMapperImpl implements InpatientRegistrationMap
             item.setConditionDefinitionId(row.getConditionDefinitionId());
             item.setPrimaryFlag(row.getPrimaryFlag());
             item.setDescription(row.getDescription());
+            item.setTcmFlag(row.getTcmFlag());
+            item.setTcmSyndromeGroup(row.getTcmSyndromeGroup());
             items.add(item);
         }
         return items;

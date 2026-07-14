@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.mrms.caserecord.entity;
 
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -229,6 +229,13 @@ public class CaseRecord extends BaseAuditedEntity {
         this.setUpdatedAt(LocalDateTime.now());
     }
 
+    /**
+     * 病案流转 Gate：按动作与角色校验当前 statusEnum 是否允许迁移。
+     *
+     * @param action 流转动作
+     * @param role   操作角色（医生/病案室等）
+     * @throws BusinessException 状态或角色不允许
+     */
     private void assertTransitionAllowed(CaseRecordTransitionAction action, WorkflowRole role) {
         if (statusEnum == null) {
             throw new BusinessException(MrmsErrorCodes.CASE_RECORD_INVALID_STATUS, "病案状态无效");
@@ -323,6 +330,12 @@ public class CaseRecord extends BaseAuditedEntity {
         this.setUpdatedBy(operatorId);
     }
 
+    /**
+     * 流转动作 → 目标病案状态。
+     *
+     * @param action 流转动作
+     * @return 目标状态枚举
+     */
     private CaseRecordStatus resolveTargetStatus(CaseRecordTransitionAction action) {
         if (action == CaseRecordTransitionAction.SUBMIT) {
             return CaseRecordStatus.SUBMITTED;

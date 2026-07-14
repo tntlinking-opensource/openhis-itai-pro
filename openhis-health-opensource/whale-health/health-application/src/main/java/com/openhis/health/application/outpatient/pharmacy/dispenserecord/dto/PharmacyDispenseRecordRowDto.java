@@ -1,12 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.pharmacy.dispenserecord.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.whale.core.application.annotation.Excel;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -135,6 +134,10 @@ public class PharmacyDispenseRecordRowDto {
     /** 用法用量摘要。 */
     @Schema(description = "用法用量")
     private String usageText;
+
+    /** 生产厂家展示。 */
+    @Schema(description = "厂家")
+    private String manufacturerText;
 
     /** 汇总单号。 */
     @Schema(description = "汇总单号")

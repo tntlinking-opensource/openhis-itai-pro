@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationdefinition.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -26,7 +13,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -169,6 +156,9 @@ public class MedicationDefinition extends BaseAuditedEntity {
     /** 医保等级。 */
     @Column(name = "chrgitm_lv")
     private Integer chrgitmLv;
+    /** 病案结算类型编码（术语 {@code mr_settlement_type_code}）。 */
+    @Column(name = "mr_settlement_type_code")
+    private String mrSettlementTypeCode;
     /** 处方药标志。 */
     @Column(name = "rx_flag")
     private Boolean rxFlag;
@@ -266,7 +256,7 @@ public class MedicationDefinition extends BaseAuditedEntity {
      * 断言创建必填。
      */
     public void validateRequiredForCreate() {
-        if (StringUtils.isBlank(this.name)) {
+        if (StringUtils.isEmpty(this.name)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DEFINITION_INVALID_ARGUMENT, "药品名称不能为空");
         }
         if (this.orgId == null) {
@@ -334,9 +324,8 @@ public class MedicationDefinition extends BaseAuditedEntity {
      * 校验医保对码参数。
      */
     public void validateInsuranceMapping() {
-        if (Boolean.TRUE.equals(this.ybMatchFlag) && StringUtils.isBlank(this.ybNo)) {
+        if (Boolean.TRUE.equals(this.ybMatchFlag) && StringUtils.isEmpty(this.ybNo)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DEFINITION_INVALID_ARGUMENT, "医保对码时医保编码不能为空");
         }
     }
 }
-

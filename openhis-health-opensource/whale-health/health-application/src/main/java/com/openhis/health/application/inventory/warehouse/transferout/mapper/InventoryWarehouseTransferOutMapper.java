@@ -1,23 +1,9 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.transferout.mapper;
 
-import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.WarehouseDocumentDetailRowDto;
 import com.openhis.health.application.inventory.warehouse.transferout.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.transferout.dto.TransferOutDetailLineDto;
 import com.openhis.health.application.inventory.warehouse.transferout.dto.TransferOutListRowDto;
@@ -25,13 +11,11 @@ import com.openhis.health.application.inventory.warehouse.transferout.request.*;
 import com.openhis.health.application.inventory.warehouse.transferout.response.*;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.supplydelivery.command.CreateTransferDeliveryCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.AgreeRequestCommand;
-import com.openhis.health.domain.workflow.supplyrequest.command.CreateRequisitionCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreateTransferCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.RejectRequestCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.RemoveByBusNoCommand;
@@ -45,7 +29,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 药库调拨出库单应用层装配契约：HTTP 请求/响应与领域命令、读模型行之间的转换。
+ * 药库调拨调出单应用层装配契约：HTTP 请求/响应与领域命令、读模型行之间的转换。
  *
  * <p>职责边界：仅做字段搬运与枚举 code 归一；不承载库存、审批状态机等业务流程判断（见实现类与 {@link com.openhis.health.application.inventory.warehouse.transferout.service.InventoryWarehouseTransferOutAppService}）。</p>
  */
@@ -68,7 +52,7 @@ public interface InventoryWarehouseTransferOutMapper {
     List<OptionDto> toOptionDtoListFromPractitioners(List<Practitioner> practitioners);
 
     /**
-     * 装配入库项目类型两档固定下拉选项。
+     * 装配调拨项目类型两档固定下拉选项。
      *
      * @return 药品/耗材类型选项
      */
@@ -82,11 +66,11 @@ public interface InventoryWarehouseTransferOutMapper {
     List<OptionDto> toOptionDtoListSupplyStatuses();
 
     /**
-     * 装配调拨出库页初始化响应。
+     * 装配调拨调出页初始化响应。
      *
      * @param warehouseOpts  药库选项
      * @param pharmacyOpts   目的药房选项
-     * @param inboundTypes   入库项目类型选项
+     * @param inboundTypes   调拨项目类型选项
      * @param statusOpts     状态选项
      * @param pharmacistOpts 药师选项
      * @param keeperOpts     库管选项
@@ -101,7 +85,7 @@ public interface InventoryWarehouseTransferOutMapper {
         List<OptionDto> keeperOpts);
 
     /**
-     * 将分页单号顺序与同页明细行聚合为调拨出库列表行。
+     * 将分页单号顺序与同页明细行聚合为调拨调出列表行。
      *
      * @param busNoPageOrder 当前页单号顺序
      * @param detailRows     当前页涉及的全部明细行
@@ -110,7 +94,7 @@ public interface InventoryWarehouseTransferOutMapper {
     List<TransferOutListRowDto> toTransferOutListAggregated(List<String> busNoPageOrder, List<SupplyRequestModel> detailRows);
 
     /**
-     * 装配调拨出库列表分页响应（pageNo 为 1-based）。
+     * 装配调拨调出列表分页响应（pageNo 为 1-based）。
      *
      * @param mergedTotal 去重后的总单数
      * @param pageNo      页码（1-based）
@@ -121,7 +105,7 @@ public interface InventoryWarehouseTransferOutMapper {
     PageTransferOutsResponse toPageTransferOutsAggregatedResponse(long mergedTotal, int pageNo, int pageSize, List<TransferOutListRowDto> records);
 
     /**
-     * 将同号供应请求明细与产品目录提示装配为调拨出库详情响应。
+     * 将同号供应请求明细与产品目录提示装配为调拨调出详情响应。
      *
      * @param lines        供应请求明细行
      * @param productHints 行 id 到目录编辑提示的映射
@@ -129,10 +113,10 @@ public interface InventoryWarehouseTransferOutMapper {
      */
     GetTransferOutDetailResponse toGetTransferOutDetailResponse(
         List<SupplyRequestModel> lines,
-        Map<Long, com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto> productHints);
+        Map<Long, com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto> productHints);
 
     /**
-     * 将单行供应请求明细装配为调拨出库详情行 DTO。
+     * 将单行供应请求明细装配为调拨调出详情行 DTO。
      *
      * @param line 供应请求明细行
      * @return 详情行 DTO
@@ -140,7 +124,7 @@ public interface InventoryWarehouseTransferOutMapper {
     TransferOutDetailLineDto toTransferOutDetailLineDto(SupplyRequestModel line);
 
     /**
-     * 将新建调拨出库请求装配为领域 CreateTransferCommand。
+     * 将新建调拨调出请求装配为领域 CreateTransferCommand。
      *
      * @param request     新建请求
      * @param operatorId  操作人
@@ -169,7 +153,7 @@ public interface InventoryWarehouseTransferOutMapper {
         Long applicantId);
 
     /**
-     * 装配新建调拨出库成功响应。
+     * 装配新建调拨调出成功响应。
      *
      * @param busNo 新建业务单号
      * @return 新建响应
@@ -177,7 +161,7 @@ public interface InventoryWarehouseTransferOutMapper {
     CreateTransferOutResponse toCreateTransferOutResponse(String busNo);
 
     /**
-     * 装配修订调拨出库成功响应。
+     * 装配修订调拨调出成功响应。
      *
      * @param busNo 业务单号
      * @return 修订响应
@@ -238,29 +222,32 @@ public interface InventoryWarehouseTransferOutMapper {
     CreateTransferDeliveryCommand toCreateTransferDeliveryCommand(List<SupplyRequestModel> lines, Long operatorId);
 
     /**
-     * 将已同意调拨出库行装配为壳药房入库请领命令（跨库联动）。
+     * 将已同意药库调出行装配为对侧调入壳单命令（初态 {@code AGREE}，只读台账）。
      *
-     * @param agreedOutLines 已同意的调拨出库明细行
-     * @param outboundBusNo  调拨出库业务单号
-     * @param operatorId     操作人
-     * @param applicantId    制单人员
-     * @return 请领命令
+     * @param agreedOutLines   已同意的调出明细行
+     * @param outboundBusNo    调出业务单号
+     * @param counterpartyType 对侧调入 type 持久化码（如 {@code PHARMACY_TRANSFER_IN} / {@code CABINET_TRANSFER_IN}）
+     * @param operatorId       操作人
+     * @param applicantId      制单人员
+     * @return 调拨创建命令
      */
-    CreateRequisitionCommand toCreateRequisitionCommandForShellPharmacyStockIn(
+    CreateTransferCommand toCreateTransferCommandForShellCounterpartyTransferIn(
         List<SupplyRequestModel> agreedOutLines,
         String outboundBusNo,
+        String counterpartyType,
         Long operatorId,
         Long applicantId);
 
     /**
-     * 装配同意调拨出库成功响应（含联动生成的入库单号）。
+     * 装配同意药库调出成功响应（含联动生成的对侧调入壳单号）。
      *
-     * @param outboundBusNo    调拨出库业务单号
-     * @param statusEnum       同意后状态 code
-     * @param generatedInBusNo 联动生成的入库单号，可为 null
+     * @param outboundBusNo            调出业务单号
+     * @param statusEnum               同意后状态 code
+     * @param generatedTransferInBusNo 联动生成的调入壳单号，可为 null
      * @return 同意响应
      */
-    AgreeTransferOutResponse toAgreeTransferOutResponse(String outboundBusNo, String statusEnum, String generatedInBusNo);
+    AgreeTransferOutResponse toAgreeTransferOutResponse(
+        String outboundBusNo, String statusEnum, String generatedTransferInBusNo);
 
     /**
      * 将驳回请求装配为领域 RejectRequestCommand。
@@ -274,7 +261,7 @@ public interface InventoryWarehouseTransferOutMapper {
     RejectRequestCommand toRejectRequestCommand(RejectTransferOutRequest request, Long operatorId);
 
     /**
-     * 装配驳回调拨出库成功响应。
+     * 装配驳回调拨调出成功响应。
      *
      * @param ok 是否驳回成功
      * @return 驳回响应
@@ -291,7 +278,7 @@ public interface InventoryWarehouseTransferOutMapper {
     RemoveByBusNoCommand toRemoveByBusNoCommand(RemoveTransferOutRequest request, Long operatorId);
 
     /**
-     * 装配删除调拨出库成功响应。
+     * 装配删除调拨调出成功响应。
      *
      * @param ok 是否删除成功
      * @return 删除响应
@@ -299,28 +286,12 @@ public interface InventoryWarehouseTransferOutMapper {
     RemoveTransferOutResponse toRemoveTransferOutResponse(boolean ok);
 
     /**
-     * 将现库库存分页装配为调拨出库选品分页响应。
+     * 将现库库存分页装配为调拨选品分页响应。
      *
      * @param page 库存读模型分页
      * @return 选品分页响应
      */
     PageProductsForTransferOutResponse toPageProductsForTransferOutResponse(Page<InventoryItemModel> page);
-
-    /**
-     * 将可关联请领单读模型分页装配为选单响应。
-     *
-     * @param page 可关联请领单分页
-     * @return 可关联单据分页响应
-     */
-    PageLinkableRequisitionsResponse toPageLinkableRequisitionsResponse(Page<WarehouseDocumentDetailQueryModel> page);
-
-    /**
-     * 将库房单据读模型行装配为通用单据明细行 DTO。
-     *
-     * @param rm 库房单据读模型行
-     * @return 单据明细行 DTO
-     */
-    WarehouseDocumentDetailRowDto toWarehouseDocumentDetailRowDto(WarehouseDocumentDetailQueryModel rm);
 
     /**
      * 将库存行与产品读模型装配为选品行 DTO。

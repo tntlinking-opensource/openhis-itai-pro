@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.terminology.service;
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
@@ -31,7 +18,7 @@ import com.openhis.whale.core.infrastructure.util.SearchUtils;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
@@ -55,6 +42,7 @@ import java.util.stream.Stream;
  *   <li>CodeSystem 列表分页查询不做强缓存（筛选/排序多、易过期）；Concept 字典/Option 走缓存。</li>
  *   <li>写侧 {@link CodeSystemDomainService} 完成变更后应调用本类的 evict 方法做写后失效，保证一致性。</li>
  * </ul>
+ * <p>聚合边界：仅本聚合 {@link CodeSystemRepository} / {@link ConceptRepository}。</p>
  */
 @Slf4j
 @Service

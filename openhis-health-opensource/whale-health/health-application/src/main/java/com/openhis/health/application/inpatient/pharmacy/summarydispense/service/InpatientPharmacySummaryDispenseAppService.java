@@ -1,25 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.pharmacy.summarydispense.service;
 
-import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.domain.share.product.MedicationProductUnitConversionSource;
+import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.assembler.InpatientPharmacySummaryDispenseAssembler;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.dto.InpatientPharmacySummaryDispenseItemDto;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.dto.InpatientPharmacySummarySlipHeaderDto;
@@ -34,12 +22,12 @@ import com.openhis.health.application.inpatient.pharmacy.summarydispense.respons
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.response.GetMedicationSummaryDispenseDetailResponse;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.response.PagePendingMedicationSummarySlipsResponse;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.response.RejectSummaryDispenseResponse;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.module.querysupport.pharmacy.InpatientMedicationDispenseChargePricingLoader;
-import com.openhis.health.module.querysupport.pharmacy.MedicationSummarySlipQuerySupport;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionDisplaySupport;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.inpatient.pharmacy.dispense.support.InpatientMedicationDispenseChargePricingLoader;
+import com.openhis.health.application.inpatient.pharmacy.summarydispense.support.MedicationSummarySlipLoader;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.location.entity.Location;
@@ -47,10 +35,12 @@ import com.openhis.health.domain.administration.location.service.LocationQuerySe
 import com.openhis.health.domain.administration.patient.service.PatientQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.domain.custom.tracenumberrecord.service.TraceNumberRecordDomainService;
-import com.openhis.health.domain.custom.tracenumberrecord.service.TraceNumberRecordQueryService;
+import com.openhis.health.domain.custom.tracenumber.queries.model.TraceNumberQueryModel;
+import com.openhis.health.domain.custom.tracenumber.service.TraceNumberQueryService;
+import com.openhis.health.application.shared.tracenumber.TraceNumberDispenseTraceOrchestrator;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSummaryItemQueryModel;
+import com.openhis.health.domain.medication.medicationdispense.queries.model.SummaryDispenseGateQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseDomainService;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -65,6 +55,7 @@ import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.inventoryitem.command.AllocateAndDecreaseCommand;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
+import com.openhis.health.application.shared.pharmacy.MedicationDispenseInventoryAvailabilityGate;
 import com.openhis.health.domain.workflow.inventoryitem.support.MedicationProductQuantityToSplitUnitConverter;
 import com.openhis.health.domain.workflow.supplydelivery.queries.SupplyDeliveryRequestIdListQuery;
 import com.openhis.health.domain.workflow.supplydelivery.queries.model.SupplyDeliveryByRequestModel;
@@ -77,14 +68,12 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.Medication
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
-import com.openhis.health.integration.support.insurance.inventory.DispenseTraceGateCommandSupport;
-import com.openhis.health.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
-import com.openhis.health.integration.insurance.inventory.DispenseTraceGateExtension;
-import com.openhis.health.integration.insurance.inventory.command.InventoryUploadAfterDispenseCommand;
+import com.openhis.health.infrastructure.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterDispenseExtensionIn;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -106,7 +95,7 @@ import java.util.regex.Pattern;
  *
  * <p>职责边界：</p>
  * <ul>
- *   <li><b>IF-IPS-01</b>：待核发（APPROVAL）/ 已核发（AGREE）type 27 汇总单头分页</li>
+ *   <li><b>IF-IPS-01</b>：Tab 仅 {@code summaryDispenseCompletedOnly}；发放表门控（{@code SUMMARIZED}/{@code COMPLETED}）收窄 {@code busNoIn}，已发药不以 Supply {@code AGREE} 为准</li>
  *   <li><b>IF-IPS-02</b>：合并 Supply 行 + 底层发放行明细（含批号）</li>
  *   <li><b>IF-IPS-03</b>：批量核发（扣库 → complete → Delivery → AGREE → 追溯）</li>
  *   <li><b>IF-IPS-04</b>：批量驳回（reject → 释放发放行）</li>
@@ -122,11 +111,8 @@ public class InpatientPharmacySummaryDispenseAppService {
 
     private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
-    private final DispenseTraceGateExtension dispenseTraceGateExtension;
-
     /** 写路径操作人门控（B.6.1）。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
-    /** 写路径发药药师/applicant 解析。 */
     /** 可操作药房 location 收窄（BR-IPS-001）。 */
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     /** 分页窗口 Gate（IF-IPS-01 pageNo/pageSize 必填）。 */
@@ -145,14 +131,15 @@ public class InpatientPharmacySummaryDispenseAppService {
     private final SupplyDeliveryDomainService supplyDeliveryDomainService;
     /** 库存读侧（充足校验、批号解析）。 */
     private final InventoryItemQueryService inventoryItemQueryService;
+    private final MedicationDispenseInventoryAvailabilityGate medicationDispenseInventoryAvailabilityGate;
     /** 库存写侧（合并扣减/分配扣减）。 */
     private final InventoryItemDomainService inventoryItemDomainService;
     /** 追溯读侧（出库冲突校验）。 */
-    private final TraceNumberRecordQueryService traceNumberRecordQueryService;
+    private final TraceNumberQueryService traceNumberQueryService;
     /** 追溯写侧（核发后出库记录）。 */
-    private final TraceNumberRecordDomainService traceNumberRecordDomainService;
+    private final TraceNumberDispenseTraceOrchestrator traceNumberDispenseTraceOrchestrator;
     /** 药品目录批量读侧。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     /** 医务人员查询（调配药师校验）。 */
     private final PractitionerQueryService practitionerQueryService;
     /** 库位名称展示。 */
@@ -160,32 +147,32 @@ public class InpatientPharmacySummaryDispenseAppService {
     /** 患者姓名批量展示。 */
     private final PatientQueryService patientQueryService;
     /** 住院就诊上下文（床号展示）。 */
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader encounterContextReader;
     /** 发放 ↔ 待结算账单只读协作（B.6.1.3）。 */
     private final InpatientMedicationDispenseChargePricingLoader inpatientMedicationDispenseChargePricingLoader;
     /** 汇总单头 SupplyRequest + SupplyDelivery 读编排（B.6.1.3）。 */
-    private final MedicationSummarySlipQuerySupport medicationSummarySlipQuerySupport;
+    private final MedicationSummarySlipLoader medicationSummarySlipLoader;
     /** Request/Query/Command/Response 映射。 */
     private final InpatientPharmacySummaryDispenseMapper inpatientPharmacySummaryDispenseMapper;
     /** 详情合并行/发放行装配。 */
     private final InpatientPharmacySummaryDispenseAssembler inpatientPharmacySummaryDispenseAssembler;
 
     /**
-     * IF-IPS-01：分页查询待核发汇总单头。
+     * IF-IPS-01：分页查询汇总单头（待核对 / 已发药 Tab）。
      *
-     * @param request 药房、时段、关键字与分页
-     * @return 待核发单头分页
+     * @param request {@code summaryDispenseCompletedOnly} 切换 Tab；发放表门控收窄单号，不接受客户端 Supply 审批态入参
+     * @return 汇总单头分页（含 {@code summaryDispenseCompleted} 门控字段）
      * @throws BusinessException {@code EX-IPS-101} 未登录或无权；{@code EX-IPS-102} 查询失败
      */
     public PagePendingMedicationSummarySlipsResponse pagePendingMedicationSummarySlips(
         PagePendingMedicationSummarySlipsRequest request) {
         try {
-            // Gate ①：分页参数必填
+            // Gate：分页参数必填
             pageWindowGate.requirePositivePageWindow(
                 request,
                 InpatientPharmacySummaryDispenseConstants.EX_IPS_102,
                 "加载失败，请稍后重试");
-            // Gate ②：解析当前用户可操作药房（与护士站 IF-IP-SUM-02 同族门控）
+            // Gate：解析当前用户可操作药房（与护士站 IF-IP-SUM-02 同族门控）
             List<Long> purposeLocationIds = this.resolvePharmacyPurposeLocationIds(request);
             // 严格模式且无岗位可操作药房：拒绝（非 strict 且 empty 时不拼 purpose 谓词，与护士站汇总 Tab 一致）
             if (purposeLocationIds.isEmpty() && managedLocationIdsResolver.isLocationScopeEnforcementActive()) {
@@ -193,18 +180,34 @@ public class InpatientPharmacySummaryDispenseAppService {
                     InpatientPharmacySummaryDispenseConstants.EX_IPS_101,
                     "未登录或无权操作该药房");
             }
-            // Pre ③：指定药房须在管辖集合内
+            // Pre：指定药房须在管辖集合内
             this.assertPurposeLocationInManagedScope(request, purposeLocationIds);
-            // Pre ④：装配 Query（固定 type 27 + APPROVAL）
+            boolean completedOnly =
+                request != null && Boolean.TRUE.equals(request.getSummaryDispenseCompletedOnly());
+            // Pre：Tab 对应发放表一致态（待发 SUMMARIZED / 已发药 COMPLETED），不以 Supply AGREE 替代
+            DispenseStatus requiredDispenseStatus = DispenseStatus.SUMMARIZED;
+            if (completedOnly) {
+                requiredDispenseStatus = DispenseStatus.COMPLETED;
+            }
+            List<String> busNoIn = medicationDispenseQueryService.listSummaryNosWhereAllDispenseRowsHaveStatus(
+                requiredDispenseStatus, purposeLocationIds);
+            // 发放表无满足门控的单号：直接空页，避免回退查全量 Supply
+            if (busNoIn.isEmpty()) {
+                return inpatientPharmacySummaryDispenseMapper.toPagePendingMedicationSummarySlipsResponse(
+                    Page.empty(), new ArrayList<>());
+            }
+            // Pre：装配 Query（type 27 + busNoIn；待发服务端写死 Supply APPROVAL）
             SupplyRequestDocumentListQuery listQuery =
                 inpatientPharmacySummaryDispenseMapper.toSupplyRequestDocumentListQuery(request, purposeLocationIds);
-            // Pre ⑤：域分页查询待核发单头
+            listQuery.setBusNoIn(busNoIn);
+            // Pre：域分页查询汇总单头
             Page<MedicationSummarySlipQueryModel> page =
-                medicationSummarySlipQuerySupport.pageMedicationSummarySlips(listQuery);
-            // Asm ⑥：单头 DTO + 展示 enrichment
+                medicationSummarySlipLoader.pageMedicationSummarySlips(listQuery);
+            // Asm：单头 DTO + 发放表门控 enrichment
             List<InpatientPharmacySummarySlipHeaderDto> rows =
                 inpatientPharmacySummaryDispenseMapper.toSummarySlipHeaderDtos(page);
-            // Asm ⑦：分页响应
+            this.enrichSummarySlipHeadersWithDispenseGate(rows);
+            // Asm：分页响应
             return inpatientPharmacySummaryDispenseMapper.toPagePendingMedicationSummarySlipsResponse(page, rows);
         } catch (BusinessException ex) {
             throw ex;
@@ -226,20 +229,34 @@ public class InpatientPharmacySummaryDispenseAppService {
     public GetMedicationSummaryDispenseDetailResponse getMedicationSummaryDispenseDetail(
         GetMedicationSummaryDispenseDetailRequest request) {
         try {
-            // Gate ①：summaryNo 非空
-            if (request == null || StringUtils.isBlank(request.getSummaryNo())) {
+            // Gate：summaryNo 非空
+            if (request == null || StringUtils.isEmpty(request.getSummaryNo())) {
                 throw new BusinessException(
                     InpatientPharmacySummaryDispenseConstants.EX_IPS_103,
                     "汇总单不存在或已失效，请刷新");
             }
             String summaryNo = request.getSummaryNo().trim();
-            // Pre ②：强加载 type 27 Supply 行并解析可读审批态（待发 APPROVAL / 已核发 AGREE）
+            // Pre：强加载 type 27 Supply 行（中转单据，不用于判定已发药）
             List<SupplyRequestModel> supplyLines = this.loadSummarySupplyLinesOrThrow(summaryNo);
-            String supplyStatus = this.requireReadableSupplyStatus(
-                supplyLines,
+            // Pre：同号发放行明细（已发药真源）
+            List<MedicationDispenseSummaryItemQueryModel> dispenseRows =
+                medicationDispenseQueryService.listMedicationDispensesBySummaryNo(summaryNo);
+            SummaryDispenseGateQueryModel dispenseGate =
+                this.resolveSummaryDispenseGate(dispenseRows, summaryNo);
+            // Pre：发放行须同号且态统一（SUMMARIZED 待核对 / COMPLETED 已发药）
+            this.assertDispenseRowsReadable(
+                dispenseRows,
+                summaryNo,
                 InpatientPharmacySummaryDispenseConstants.EX_IPS_103,
                 "汇总单不存在或已失效，请刷新");
-            // Pre ③：合并 Supply 明细行
+            // 待发核对：Supply 须仍为 APPROVAL，拒绝 AGREE+SUMMARIZED 等脏数据可读
+            if (dispenseGate.isAllSummarized()) {
+                this.assertAllSupplyLinesApproval(
+                    supplyLines,
+                    InpatientPharmacySummaryDispenseConstants.EX_IPS_103,
+                    "汇总单不存在或已失效，请刷新");
+            }
+            // Pre：合并 Supply 明细行
             List<MedicationSummarySlipLineQueryModel> mergedDomainLines =
                 supplyRequestQueryService.listMedicationSummarySlipLinesByBusNo(summaryNo);
             if (mergedDomainLines.isEmpty()) {
@@ -247,23 +264,13 @@ public class InpatientPharmacySummaryDispenseAppService {
                     InpatientPharmacySummaryDispenseConstants.EX_IPS_103,
                     "汇总单不存在或已失效，请刷新");
             }
-            // Pre ③b：跨聚合只读累加单价/总价（BR-IP-SUM-009）
+            // Pre：跨聚合只读累加单价/总价（BR-IP-SUM-009）
             inpatientMedicationDispenseChargePricingLoader.enrichSummarySlipLineChargePricing(
                 summaryNo, mergedDomainLines);
-            // Pre ④：同号发放行明细
-            List<MedicationDispenseSummaryItemQueryModel> dispenseRows =
-                medicationDispenseQueryService.listMedicationDispensesBySummaryNo(summaryNo);
-            // Pre ⑤：发放行态须与 Supply 审批态一致（待发 SUMMARIZED / 已核发 COMPLETED）
-            this.assertDispenseRowsConsistentWithSupplyStatus(
-                dispenseRows,
-                summaryNo,
-                supplyStatus,
-                InpatientPharmacySummaryDispenseConstants.EX_IPS_103,
-                "汇总单不存在或已失效，请刷新");
-            // Pre ⑥：药品目录批量加载
+            // Pre：药品目录批量加载
             Map<String, ProductDefinitionDisplayDto> productByKey =
-                productDefinitionBatchLoader.loadAsMap(this.collectProductLookups(mergedDomainLines, dispenseRows));
-            // Pre ⑦：患者/就诊/库位展示批量索引
+                productDefinitionDisplayTerminologyAssembler.loadAsMap(this.collectProductLookups(mergedDomainLines, dispenseRows));
+            // Pre：患者/就诊/库位展示批量索引
             Set<Long> patientIds = new HashSet<>();
             Set<Long> encounterIds = new HashSet<>();
             Set<Long> locationIds = new HashSet<>();
@@ -284,21 +291,34 @@ public class InpatientPharmacySummaryDispenseAppService {
             Map<Long, String> patientNameById = patientQueryService.findPatientNamesByIds(patientIds);
             Map<Long, String> bedDisplayByEncounterId = this.loadBedDisplayByEncounterIds(encounterIds);
             Map<Long, String> locationNameById = locationQueryService.findLocationNamesByIds(locationIds);
-            // Pre ⑧：单头（与 IF-IPS-01 同构）
+            // Pre：单头（与 IF-IPS-01 同构）+ 发放表门控
             InpatientPharmacySummarySlipHeaderDto header = this.loadSlipHeaderBySummaryNo(summaryNo);
-            // Asm ⑨：合并行 DTO（禁止 lotNumber）
+            this.applySummaryDispenseGateToHeader(header, dispenseGate);
+            boolean summaryDispenseCompleted =
+                dispenseGate != null && dispenseGate.isAllCompleted();
+            // Asm：合并行 DTO（禁止 lotNumber；追溯码读 SupplyDelivery）
+            Map<Long, String> traceBySupplyRequestId =
+                this.loadTraceBySupplyRequestIdForDetail(supplyLines, summaryDispenseCompleted);
+            String purposeLocationName = null;
+            if (header != null) {
+                purposeLocationName = header.getPurposeLocationName();
+            }
             List<InpatientPharmacySummarySlipLineDto> mergedLines =
                 inpatientPharmacySummaryDispenseAssembler.buildMergedLineDtos(
                     mergedDomainLines,
                     productByKey,
-                    header != null ? header.getPurposeLocationName() : null);
-            // Asm ⑩：发放行 DTO（含批号/追溯）
+                    purposeLocationName,
+                    traceBySupplyRequestId);
+            // Asm：发放行 DTO（含批号；汇总路径不含追溯码）
             List<InpatientPharmacySummaryDispenseItemDto> dispenseItems =
                 inpatientPharmacySummaryDispenseAssembler.buildDispenseItemDtos(
                     dispenseRows, productByKey, patientNameById, bedDisplayByEncounterId, locationNameById);
-            // Asm ⑪：详情响应
-            return inpatientPharmacySummaryDispenseMapper.toGetMedicationSummaryDispenseDetailResponse(
-                summaryNo, header, mergedLines, dispenseItems);
+            // Asm：详情响应
+            GetMedicationSummaryDispenseDetailResponse response =
+                inpatientPharmacySummaryDispenseMapper.toGetMedicationSummaryDispenseDetailResponse(
+                    summaryNo, header, mergedLines, dispenseItems);
+            response.setSummaryDispenseCompleted(summaryDispenseCompleted);
+            return response;
         } catch (BusinessException ex) {
             throw ex;
         } catch (RuntimeException ex) {
@@ -317,7 +337,7 @@ public class InpatientPharmacySummaryDispenseAppService {
      * @throws BusinessException {@code EX-IPS-101}～{@code EX-IPS-205} 见 AS §5
      */
     public DispenseSummaryMedicationsResponse dispenseSummaryMedications(DispenseSummaryMedicationsRequest request) {
-        // Gate ①：批上限与必填参数
+        // Gate：批上限与必填参数
         List<String> summaryNos;
         if (request == null) {
             summaryNos = this.distinctSummaryNos(null);
@@ -344,22 +364,22 @@ public class InpatientPharmacySummaryDispenseAppService {
                 InpatientPharmacySummaryDispenseConstants.EX_IPS_204,
                 "追溯码冲突或请选择有效调配药师");
         }
-        // Gate ②：操作人
+        // Gate：操作人
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             InpatientPharmacySummaryDispenseConstants.EX_IPS_101,
             "未登录或无权操作该药房");
-        // Gate ③：发药药师
+        // Gate：发药药师
         Long dispenserPractitionerId = currentPractitionerResolver.requirePractitionerId(
             InpatientPharmacySummaryDispenseConstants.EX_IPS_101,
             "未登录或无权操作该药房");
-        // Gate ④：调配药师存在性
+        // Gate：调配药师存在性
         Practitioner preparer = practitionerQueryService.findById(request.getPreparerPractitionerId());
         if (preparer == null) {
             throw new BusinessException(
                 InpatientPharmacySummaryDispenseConstants.EX_IPS_204,
                 "追溯码冲突或请选择有效调配药师");
         }
-        // Gate ⑤：调配药师不得与发药药师同人（BR-IPS-005）
+        // Gate：调配药师不得与发药药师同人（BR-IPS-005）
         if (Objects.equals(request.getPreparerPractitionerId(), dispenserPractitionerId)) {
             throw new BusinessException(
                 InpatientPharmacySummaryDispenseConstants.EX_IPS_204,
@@ -369,13 +389,13 @@ public class InpatientPharmacySummaryDispenseAppService {
         List<MedicationDispense> succeededDispenses = new ArrayList<>();
         try {
             for (String summaryNo : summaryNos) {
-                // Pre 6a：强加载 Supply 行并断言 APPROVAL
+                // Pre：强加载 Supply 行并断言 APPROVAL
                 List<SupplyRequestModel> supplyLines = this.loadSummarySupplyLinesOrThrow(summaryNo);
                 this.assertAllSupplyLinesApproval(
                     supplyLines,
                     InpatientPharmacySummaryDispenseConstants.EX_IPS_201,
                     "汇总单已核发或状态不允许，请刷新");
-                // Pre 6c：强加载发放行实体
+                // Pre：强加载发放行实体
                 List<MedicationDispenseSummaryItemQueryModel> dispenseQueryRows =
                     medicationDispenseQueryService.listMedicationDispensesBySummaryNo(summaryNo);
                 this.assertAllDispenseRowsSummarized(
@@ -396,49 +416,39 @@ public class InpatientPharmacySummaryDispenseAppService {
                         InpatientPharmacySummaryDispenseConstants.EX_IPS_201,
                         "汇总单已核发或状态不允许，请刷新");
                 }
-                // Pre 6d：合并请求追溯码与实体持久化追溯码
-                this.mergeTraceLinesIntoDispenses(dispenses, request.getTraceLines());
-                if (dispenseTraceGateExtension.isEnabled()) {
-                    for (MedicationDispense dispense : dispenses) {
-                        List<String> lineTraceCodes = splitTraceCodesFromDispense(dispense);
-                        dispenseTraceGateExtension.assertTraceAllowedForPrepare(
-                            DispenseTraceGateCommandSupport.from(dispense), lineTraceCodes);
-                        dispenseTraceGateExtension.assertTraceAllowedForDispense(
-                            DispenseTraceGateCommandSupport.from(dispense));
-                    }
-                }
-                List<String> allTraceCodes = this.collectTraceCodesFromDispenses(dispenses);
-                for (MedicationDispense dispense : dispenses) {
-                    if (dispense == null) {
+                // Pre：汇总追溯码仅落 SupplyDelivery，不写入患者发放行
+                Map<Long, String> traceBySupplyRequestId =
+                    this.buildTraceOverrideBySupplyRequestId(request.getTraceLines());
+                List<String> allTraceCodes = this.collectTraceCodesFromSupplyLines(supplyLines, traceBySupplyRequestId);
+                for (SupplyRequestModel supplyLine : supplyLines) {
+                    if (supplyLine == null || supplyLine.getId() == null) {
                         continue;
                     }
-                    List<String> lineTraceCodes = splitTraceCodesFromDispense(dispense);
-                    if (!lineTraceCodes.isEmpty()) {
-                        traceNumberRecordQueryService.assertCodesInNetStockForDispenseLine(
-                            TableNameConstants.MED_MEDICATION_DEFINITION,
-                            dispense.getMedicationId(),
-                            dispense.getLotNumber(),
-                            dispense.getLocationId(),
-                            lineTraceCodes);
+                    String traceNoRaw = traceBySupplyRequestId.get(supplyLine.getId());
+                    List<String> lineTraceCodes = splitTraceCodes(traceNoRaw);
+                    if (lineTraceCodes.isEmpty()) {
+                        continue;
                     }
+                    if (supplyLine.getPurposeLocationId() == null) {
+                        throw new BusinessException(
+                            InpatientPharmacySummaryDispenseConstants.EX_IPS_204,
+                            "追溯码冲突或请选择有效调配药师");
+                    }
+                    traceNumberQueryService.assertCodesInNetStockForDispenseLine(
+                        TableNameConstants.MED_MEDICATION_DEFINITION,
+                        supplyLine.getItemId(),
+                        null,
+                        supplyLine.getPurposeLocationId(),
+                        lineTraceCodes);
                 }
-                traceNumberRecordQueryService.assertNoDuplicateTraceCodes(allTraceCodes);
-                // Pre 6e：追溯码未出库冲突校验
+                traceNumberQueryService.assertNoDuplicateTraceCodes(allTraceCodes);
                 if (!allTraceCodes.isEmpty()) {
-                    traceNumberRecordQueryService.assertCodesNotAlreadyOutbound(allTraceCodes);
+                    traceNumberQueryService.assertCodesInHospitalForDispense(allTraceCodes);
                 }
-                // Cmd 6f：Supply APPROVAL → AGREE（条件更新，须在扣库前占位，GAP-INV-004）
-                supplyRequestDomainService.agreeRequest(
-                    inpatientPharmacySummaryDispenseMapper.toAgreeRequestCommand(
-                        summaryNo, dispenserPractitionerId, operatorId));
-                // Cmd 6g：发放行 SUMMARIZED → COMPLETED（条件更新，GAP-INV-004）
-                medicationDispenseDomainService.completeSummaryDispense(
-                    inpatientPharmacySummaryDispenseMapper.toCompleteSummaryDispenseCommand(
-                        summaryNo, operatorId, dispenserPractitionerId));
-                // Pre 6h：药品目录（单位换算）
+                // Pre：药品目录（单位换算）
                 Map<String, ProductDefinitionDisplayDto> productByKey =
-                    productDefinitionBatchLoader.loadAsMap(this.collectProductLookupsFromDispenses(dispenses));
-                // Pre 6i：逐行库存充足预校验
+                    productDefinitionDisplayTerminologyAssembler.loadAsMap(this.collectProductLookupsFromDispenses(dispenses));
+                // Pre：逐行库存充足预校验（BR-IPS-006）
                 for (MedicationDispense dispense : dispenses) {
                     if (dispense == null) {
                         continue;
@@ -455,7 +465,7 @@ public class InpatientPharmacySummaryDispenseAppService {
                     if (requiredQuantity == null) {
                         requiredQuantity = dispense.getDispenseQuantity();
                     }
-                    inventoryItemQueryService.assertSufficientForMedicationDispenseWithReserve(
+                    medicationDispenseInventoryAvailabilityGate.assertSufficientForMedicationDispenseWithReserve(
                         TableNameConstants.MED_MEDICATION_DEFINITION,
                         dispense.getMedicationId(),
                         dispense.getLocationId(),
@@ -465,7 +475,7 @@ public class InpatientPharmacySummaryDispenseAppService {
                         ProductDefinitionDisplaySupport.toUnitConversionSource(productRow),
                         dispense.getId());
                 }
-                // Cmd 6j：按 lot+location 合并扣库（仅 MedicationDispense 行；库存为最后防线）
+                // Cmd：按 lot+location 合并扣库（仅 MedicationDispense 行；BR-IPS-008 须先于发放终态）
                 Map<Long, ProductDefinitionDisplayDto> productByMedicationId = new HashMap<>();
                 for (MedicationDispense dispense : dispenses) {
                     if (dispense == null || dispense.getMedicationId() == null) {
@@ -479,11 +489,18 @@ public class InpatientPharmacySummaryDispenseAppService {
                     }
                 }
                 this.applyInventoryDeductionForDispensedLines(dispenses, operatorId, productByMedicationId);
-                // Cmd 6k：创建 SupplyDelivery（写 receiverId）
+                // Cmd：发放行 SUMMARIZED → COMPLETED，写入配药/发药人与时刻（发放表为核发终态真源，BR-IPS-008）
+                medicationDispenseDomainService.completeSummaryDispense(
+                    inpatientPharmacySummaryDispenseMapper.toCompleteSummaryDispenseCommand(
+                        summaryNo,
+                        operatorId,
+                        dispenserPractitionerId,
+                        request.getPreparerPractitionerId()));
+                // Cmd：创建 SupplyDelivery（写 receiverId 与汇总追溯码）
                 supplyDeliveryDomainService.createSummarySupplyDelivery(
                     inpatientPharmacySummaryDispenseMapper.toCreateSummarySupplyDeliveryCommand(
-                        request.getReceiverId(), operatorId, supplyLines));
-                // Pre 6l：查新建 deliveryIds
+                        request.getReceiverId(), operatorId, supplyLines, traceBySupplyRequestId));
+                // Pre：查新建 deliveryIds
                 List<Long> supplyRequestIds = new ArrayList<>();
                 for (SupplyRequestModel line : supplyLines) {
                     if (line != null && line.getId() != null) {
@@ -501,17 +518,44 @@ public class InpatientPharmacySummaryDispenseAppService {
                     }
                 }
                 LocalDateTime completedTime = LocalDateTime.now();
-                // Cmd 6m：Delivery PREPARATION → COMPLETED
+                // Cmd：Delivery PREPARATION → COMPLETED
                 if (!deliveryIds.isEmpty()) {
                     supplyDeliveryDomainService.updateCompletedStatusBatch(
                         inpatientPharmacySummaryDispenseMapper.toUpdateCompletedStatusBatchCommand(
                             deliveryIds, dispenserPractitionerId, operatorId, completedTime));
                 }
-                // Cmd 6n：追溯出库
-                if (!allTraceCodes.isEmpty()) {
-                    traceNumberRecordDomainService.appendTraceRecords(
-                        inpatientPharmacySummaryDispenseMapper.toAppendTraceRecordsCommand(
-                            dispenses, summaryNo, operatorId));
+                // Cmd：Supply APPROVAL → AGREE（审批链收尾；Supply 仅为中转，终态以 MedicationDispense COMPLETED 为准）
+                supplyRequestDomainService.agreeRequest(
+                    inpatientPharmacySummaryDispenseMapper.toAgreeRequestCommand(
+                        summaryNo, dispenserPractitionerId, operatorId));
+                // Cmd：追溯出库（SupplyDelivery 维度）
+                for (SupplyRequestModel supplyLine : supplyLines) {
+                    if (supplyLine == null || supplyLine.getId() == null) {
+                        continue;
+                    }
+                    String traceNoRaw = traceBySupplyRequestId.get(supplyLine.getId());
+                    if (StringUtils.isEmpty(traceNoRaw)) {
+                        continue;
+                    }
+                    String productKey = ProductDefinitionKeyUtil.buildCompositeKey(
+                        TableNameConstants.MED_MEDICATION_DEFINITION, supplyLine.getItemId());
+                    ProductDefinitionDisplayDto productRow = productByKey.get(productKey);
+                    String lotNumber = this.resolveSummaryTraceLotNumber(supplyLine, traceNoRaw);
+                    MedicationProductUnitConversionSource unitConversionSource = null;
+                    if (productRow != null) {
+                        unitConversionSource = ProductDefinitionDisplaySupport.toUnitConversionSource(productRow);
+                    }
+                    traceNumberDispenseTraceOrchestrator.recordSummaryDispenseOutLine(
+                        TableNameConstants.MED_MEDICATION_DEFINITION,
+                        supplyLine.getItemId(),
+                        supplyLine.getPurposeLocationId(),
+                        lotNumber,
+                        traceNoRaw,
+                        supplyLine.getUnitCode(),
+                        supplyLine.getItemQuantity(),
+                        unitConversionSource,
+                        summaryNo,
+                        operatorId);
                 }
                 succeededSummaryNos.add(summaryNo);
                 succeededDispenses.addAll(dispenses);
@@ -530,6 +574,13 @@ public class InpatientPharmacySummaryDispenseAppService {
         }
     }
 
+    /**
+     * 汇总核发成功后尝试 3505 医保库存上传；失败不阻断主流程。
+     *
+     * @param request   核发请求
+     * @param dispenses 已核发发放单
+     * @param response  响应（可回填提示）
+     */
     private void tryUploadMedicareInventoryAfterSummaryDispense(
         DispenseSummaryMedicationsRequest request,
         List<MedicationDispense> dispenses,
@@ -541,6 +592,7 @@ public class InpatientPharmacySummaryDispenseAppService {
         if (dispenses == null || dispenses.isEmpty()) {
             return;
         }
+        // Pre：按 encounter 分组 dispenseId，供 3505 按就诊批量上传
         Map<Long, List<Long>> dispenseIdsByEncounter = new LinkedHashMap<>();
         for (MedicationDispense dispense : dispenses) {
             if (dispense == null || dispense.getId() == null || dispense.getEncounterId() == null) {
@@ -553,16 +605,18 @@ public class InpatientPharmacySummaryDispenseAppService {
         if (dispenseIdsByEncounter.isEmpty()) {
             return;
         }
+        // Gate：CHS 模块未启用时跳过上传，不影响本地核发结果
         if (!inventoryUploadExtension.isEnabled()) {
             return;
         }
         List<String> uploadWarnings = new ArrayList<>();
+        // Cmd：按就诊调用 3505；单就诊失败不 rollback 已完成的汇总核发
         for (Map.Entry<Long, List<Long>> entry : dispenseIdsByEncounter.entrySet()) {
             if (entry.getValue() == null || entry.getValue().isEmpty()) {
                 continue;
             }
             try {
-                InventoryUploadAfterDispenseCommand uploadCommand = new InventoryUploadAfterDispenseCommand()
+                InventoryUploadAfterDispenseExtensionIn uploadCommand = new InventoryUploadAfterDispenseExtensionIn()
                     .setEncounterId(entry.getKey())
                     .setDispenseIds(entry.getValue())
                     .setContractBusNo(request.getContractBusNo());
@@ -573,6 +627,7 @@ public class InpatientPharmacySummaryDispenseAppService {
             }
         }
         if (!uploadWarnings.isEmpty()) {
+            // Asm：部分上传失败时追加警告，不抛异常（本地核发已成功）
             String base;
             if (response.getMessage() != null) {
                 base = response.getMessage().trim();
@@ -592,7 +647,7 @@ public class InpatientPharmacySummaryDispenseAppService {
      * @throws BusinessException {@code EX-IPS-103}、{@code EX-IPS-202}、{@code EX-IPS-205}
      */
     public RejectSummaryDispenseResponse rejectSummaryDispense(RejectSummaryDispenseRequest request) {
-        // Gate ①：批上限与非空
+        // Gate：批上限与非空
         List<String> summaryNos;
         if (request == null) {
             summaryNos = this.distinctSummaryNos(null);
@@ -609,7 +664,7 @@ public class InpatientPharmacySummaryDispenseAppService {
                 InpatientPharmacySummaryDispenseConstants.EX_IPS_205,
                 "驳回失败，请检查汇总单状态");
         }
-        // Gate ②：操作人与审批人
+        // Gate：操作人与审批人
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             InpatientPharmacySummaryDispenseConstants.EX_IPS_101,
             "未登录或无权操作该药房");
@@ -619,14 +674,14 @@ public class InpatientPharmacySummaryDispenseAppService {
         List<String> rejectedSummaryNos = new ArrayList<>();
         try {
             for (String summaryNo : summaryNos) {
-                // Pre 3a：强加载 Supply 行
+                // Pre：强加载 Supply 行
                 List<SupplyRequestModel> supplyLines = this.loadSummarySupplyLinesOrThrow(summaryNo);
-                // Pre 3b：须全 APPROVAL
+                // Pre：须全 APPROVAL
                 this.assertAllSupplyLinesApproval(
                     supplyLines,
                     InpatientPharmacySummaryDispenseConstants.EX_IPS_202,
                     "当前状态无法驳回，请刷新");
-                // Cmd 3c：Supply APPROVAL → REJECT
+                // Cmd：Supply APPROVAL → REJECT
                 String rejectReasonCode;
                 if (request == null) {
                     rejectReasonCode = null;
@@ -639,13 +694,13 @@ public class InpatientPharmacySummaryDispenseAppService {
                         approverId,
                         operatorId,
                         rejectReasonCode));
-                // Cmd 3d：发放行 SUMMARIZED → PREPARATION，清 summary_no
+                // Cmd：发放行 SUMMARIZED → PREPARATION，清 summary_no
                 medicationDispenseDomainService.cancelMedicationDispenseSummary(
                     inpatientPharmacySummaryDispenseMapper.toCancelMedicationDispenseSummaryCommand(
                         summaryNo, operatorId));
                 rejectedSummaryNos.add(summaryNo);
             }
-            // Asm ④：驳回成功响应
+            // Asm：驳回成功响应
             return inpatientPharmacySummaryDispenseMapper.toRejectSummaryDispenseResponse(rejectedSummaryNos);
         } catch (BusinessException ex) {
             throw ex;
@@ -743,41 +798,6 @@ public class InpatientPharmacySummaryDispenseAppService {
     }
 
     /**
-     * 解析汇总单可读审批态：同号 Supply 行须一致，且为 APPROVAL（待发）或 AGREE（已核发）。
-     *
-     * @param supplyLines 汇总 Supply 行
-     * @param errorCode   失败业务码
-     * @param message     用户提示
-     * @return 统一审批态 code
-     */
-    private String requireReadableSupplyStatus(
-        List<SupplyRequestModel> supplyLines,
-        String errorCode,
-        String message) {
-        String approvalCode = SupplyStatus.APPROVAL.getCode();
-        String agreeCode = SupplyStatus.AGREE.getCode();
-        String uniformStatus = null;
-        for (SupplyRequestModel line : supplyLines) {
-            if (line == null) {
-                continue;
-            }
-            String lineStatus = line.getStatusEnum();
-            if (uniformStatus == null) {
-                uniformStatus = lineStatus;
-            } else if (!uniformStatus.equals(lineStatus)) {
-                throw new BusinessException(errorCode, message);
-            }
-        }
-        if (uniformStatus == null) {
-            throw new BusinessException(errorCode, message);
-        }
-        if (!approvalCode.equals(uniformStatus) && !agreeCode.equals(uniformStatus)) {
-            throw new BusinessException(errorCode, message);
-        }
-        return uniformStatus;
-    }
-
-    /**
      * 断言 Supply 行全部处于 APPROVAL（待发药审批态）。
      *
      * @param supplyLines 汇总 Supply 行
@@ -793,6 +813,7 @@ public class InpatientPharmacySummaryDispenseAppService {
             if (line == null) {
                 continue;
             }
+            // 任一供应行非 APPROVAL：不可核发/不可作待发详情
             if (!approvalCode.equals(line.getStatusEnum())) {
                 throw new BusinessException(errorCode, message);
             }
@@ -800,42 +821,127 @@ public class InpatientPharmacySummaryDispenseAppService {
     }
 
     /**
-     * 读路径断言：发放行 summaryNo 一致，且态与 Supply 审批态匹配（APPROVAL→SUMMARIZED，AGREE→COMPLETED）。
+     * 读路径断言：同 {@code summaryNo} 下发放行非空、summary_no 一致且态统一（SUMMARIZED 或 COMPLETED）。
      *
      * @param dispenseRows  发放行 QueryModel 列表
      * @param summaryNo     汇总单号
-     * @param supplyStatus  统一 Supply 审批态
      * @param errorCode     失败业务码
      * @param message       用户提示
      */
-    private void assertDispenseRowsConsistentWithSupplyStatus(
+    private void assertDispenseRowsReadable(
         List<MedicationDispenseSummaryItemQueryModel> dispenseRows,
         String summaryNo,
-        String supplyStatus,
         String errorCode,
         String message) {
         if (dispenseRows == null || dispenseRows.isEmpty()) {
             throw new BusinessException(errorCode, message);
         }
-        // 发放行 statusEnum 为 DispenseStatus 枚举；须与 Supply 审批态成对匹配，禁止 String 与枚举混比
-        DispenseStatus expectedDispenseStatus;
-        if (SupplyStatus.APPROVAL.getCode().equals(supplyStatus)) {
-            expectedDispenseStatus = DispenseStatus.SUMMARIZED;
-        } else if (SupplyStatus.AGREE.getCode().equals(supplyStatus)) {
-            expectedDispenseStatus = DispenseStatus.COMPLETED;
-        } else {
-            throw new BusinessException(errorCode, message);
-        }
+        DispenseStatus uniformStatus = null;
         for (MedicationDispenseSummaryItemQueryModel row : dispenseRows) {
             if (row == null) {
                 continue;
             }
-            if (!expectedDispenseStatus.equals(row.getStatusEnum())) {
+            if (StringUtils.isEmpty(row.getSummaryNo())) {
                 throw new BusinessException(errorCode, message);
             }
             if (summaryNo != null && row.getSummaryNo() != null && !summaryNo.equals(row.getSummaryNo())) {
                 throw new BusinessException(errorCode, message);
             }
+            DispenseStatus rowStatus = row.getStatusEnum();
+            // 读路径仅允许待发 SUMMARIZED 或已发药 COMPLETED，其余态视为不可读
+            if (!DispenseStatus.SUMMARIZED.equals(rowStatus)
+                && !DispenseStatus.COMPLETED.equals(rowStatus)) {
+                throw new BusinessException(errorCode, message);
+            }
+            if (uniformStatus == null) {
+                uniformStatus = rowStatus;
+            } else if (!uniformStatus.equals(rowStatus)) {
+                // 同号发放行态不一致：拒绝详情/列表穿透
+                throw new BusinessException(errorCode, message);
+            }
+        }
+        if (uniformStatus == null) {
+            throw new BusinessException(errorCode, message);
+        }
+    }
+
+    /**
+     * 由发放行列表解析汇总单号门控（已发药仅以 {@code COMPLETED} 为准）。
+     *
+     * @param dispenseRows 同号发放行 QueryModel
+     * @param summaryNo    汇总单号
+     * @return 门控快照（{@code allCompleted}/{@code allSummarized}）
+     */
+    private SummaryDispenseGateQueryModel resolveSummaryDispenseGate(
+        List<MedicationDispenseSummaryItemQueryModel> dispenseRows,
+        String summaryNo) {
+        SummaryDispenseGateQueryModel gate = new SummaryDispenseGateQueryModel();
+        gate.setSummaryNo(summaryNo);
+        if (dispenseRows == null || dispenseRows.isEmpty()) {
+            return gate;
+        }
+        boolean allCompleted = true;
+        boolean allSummarized = true;
+        for (MedicationDispenseSummaryItemQueryModel row : dispenseRows) {
+            if (row == null) {
+                continue;
+            }
+            if (!DispenseStatus.COMPLETED.equals(row.getStatusEnum())) {
+                allCompleted = false;
+            }
+            if (!DispenseStatus.SUMMARIZED.equals(row.getStatusEnum())) {
+                allSummarized = false;
+            }
+        }
+        gate.setAllCompleted(allCompleted);
+        gate.setAllSummarized(allSummarized);
+        return gate;
+    }
+
+    /**
+     * 列表单头批量回填发放表门控展示与发药时刻（覆盖 SupplyDelivery 时刻，以发放表为准）。
+     *
+     * @param rows IF-IPS-01 单头 DTO 列表
+     */
+    private void enrichSummarySlipHeadersWithDispenseGate(List<InpatientPharmacySummarySlipHeaderDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        List<String> summaryNos = new ArrayList<>();
+        for (InpatientPharmacySummarySlipHeaderDto row : rows) {
+            if (row != null && StringUtils.isNotEmpty(row.getBusNo())) {
+                summaryNos.add(row.getBusNo().trim());
+            }
+        }
+        Map<String, SummaryDispenseGateQueryModel> gateBySummaryNo =
+            medicationDispenseQueryService.indexSummaryDispenseGateBySummaryNos(summaryNos);
+        for (InpatientPharmacySummarySlipHeaderDto row : rows) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
+                continue;
+            }
+            SummaryDispenseGateQueryModel gate = gateBySummaryNo.get(row.getBusNo().trim());
+            this.applySummaryDispenseGateToHeader(row, gate);
+        }
+    }
+
+    /**
+     * 单头 DTO 回填发放表门控字段。
+     *
+     * @param header 待 enrichment 的单头
+     * @param gate   发放表门控读模型；空则跳过
+     */
+    private void applySummaryDispenseGateToHeader(
+        InpatientPharmacySummarySlipHeaderDto header,
+        SummaryDispenseGateQueryModel gate) {
+        if (header == null || gate == null) {
+            return;
+        }
+        header.setSummaryDispenseCompleted(gate.isAllCompleted());
+        header.setSummaryDispenseStatusText(
+            inpatientPharmacySummaryDispenseAssembler.resolveSummaryDispenseGateDisplayText(gate));
+        // 已发药时刻以发放行 dispense_time 最大值为准，不用 Supply 审批态推断
+        if (gate.getMaxDispenseTime() != null) {
+            header.setDispenseTime(gate.getMaxDispenseTime());
         }
     }
 
@@ -884,7 +990,7 @@ public class InpatientPharmacySummaryDispenseAppService {
         SupplyRequestDocumentListQuery listQuery =
             inpatientPharmacySummaryDispenseMapper.toSupplyRequestDocumentListQuery(pageRequest, null);
         listQuery.setStatusEnum(null);
-        Page<MedicationSummarySlipQueryModel> page = medicationSummarySlipQuerySupport.pageMedicationSummarySlips(listQuery);
+        Page<MedicationSummarySlipQueryModel> page = medicationSummarySlipLoader.pageMedicationSummarySlips(listQuery);
         List<InpatientPharmacySummarySlipHeaderDto> headers =
             inpatientPharmacySummaryDispenseMapper.toSummarySlipHeaderDtos(page);
         for (InpatientPharmacySummarySlipHeaderDto header : headers) {
@@ -901,7 +1007,7 @@ public class InpatientPharmacySummaryDispenseAppService {
     }
 
     /**
-     * 批量加载就诊 id → 床号展示（经 EncounterContextFacade）。
+     * 批量加载就诊 id → 床号展示（经 EncounterContextReader）。
      *
      * @param encounterIds 就诊主键集合
      * @return 床号展示索引
@@ -914,7 +1020,7 @@ public class InpatientPharmacySummaryDispenseAppService {
         InpatientEncounterPageQuery query = new InpatientEncounterPageQuery();
         query.setEncounterIdsIn(encounterIds);
         List<InpatientEncounterContextQueryModel> rows =
-            encounterContextFacade.listInpatientEncounterContexts(query);
+            encounterContextReader.listInpatientEncounterContexts(query);
         for (InpatientEncounterContextQueryModel row : rows) {
             if (row != null && row.getEncounterId() != null) {
                 bedByEncounterId.put(row.getEncounterId(), row.getBedName());
@@ -1009,7 +1115,7 @@ public class InpatientPharmacySummaryDispenseAppService {
         }
         Set<String> seen = new LinkedHashSet<>();
         for (String summaryNo : summaryNos) {
-            if (StringUtils.isBlank(summaryNo)) {
+            if (StringUtils.isEmpty(summaryNo)) {
                 continue;
             }
             String trimmed = summaryNo.trim();
@@ -1021,76 +1127,150 @@ public class InpatientPharmacySummaryDispenseAppService {
     }
 
     /**
-     * 将请求追溯码覆盖合并到发放实体（内存，供校验与出库）。
+     * 将请求追溯码按供应行 id 索引（汇总路径不落 MedicationDispense）。
      *
-     * @param dispenses  发放实体列表
      * @param traceLines 可选追溯码提交行
+     * @return supplyRequestId → 追溯码串
      */
-    private void mergeTraceLinesIntoDispenses(
-        List<MedicationDispense> dispenses,
+    private Map<Long, String> buildTraceOverrideBySupplyRequestId(
         List<SummaryDispenseTraceLineSubmitDto> traceLines) {
-        if (dispenses == null || dispenses.isEmpty()) {
-            return;
+        Map<Long, String> traceOverrideBySupplyRequestId = new HashMap<>();
+        if (traceLines == null) {
+            return traceOverrideBySupplyRequestId;
         }
-        Map<Long, String> traceOverrideByDispenseId = new HashMap<>();
-        if (traceLines != null) {
-            for (SummaryDispenseTraceLineSubmitDto traceLine : traceLines) {
-                if (traceLine == null || traceLine.getDispenseId() == null) {
-                    continue;
-                }
-                if (StringUtils.isNotBlank(traceLine.getTraceNo())) {
-                    traceOverrideByDispenseId.put(traceLine.getDispenseId(), traceLine.getTraceNo().trim());
-                }
-            }
-        }
-        for (MedicationDispense dispense : dispenses) {
-            if (dispense == null || dispense.getId() == null) {
+        for (SummaryDispenseTraceLineSubmitDto traceLine : traceLines) {
+            if (traceLine == null || traceLine.getSupplyRequestId() == null) {
                 continue;
             }
-            String overrideTrace = traceOverrideByDispenseId.get(dispense.getId());
-            if (overrideTrace != null) {
-                dispense.setTraceNo(overrideTrace);
+            if (StringUtils.isNotEmpty(traceLine.getTraceNo())) {
+                traceOverrideBySupplyRequestId.put(traceLine.getSupplyRequestId(), traceLine.getTraceNo().trim());
             }
         }
+        return traceOverrideBySupplyRequestId;
     }
 
     /**
-     * 从单条发放实体追溯串拆分为码列表。
+     * 已发药详情：从 SupplyDelivery 回填供应行追溯码（仅以发放表 COMPLETED 为门控）。
+     *
+     * @param supplyLines              type 27 供应行
+     * @param summaryDispenseCompleted 同号发放行是否已全部 COMPLETED
+     * @return supplyRequestId → 追溯码；未发药时为空 map
      */
-    private static List<String> splitTraceCodesFromDispense(MedicationDispense dispense) {
+    private Map<Long, String> loadTraceBySupplyRequestIdForDetail(
+        List<SupplyRequestModel> supplyLines,
+        boolean summaryDispenseCompleted) {
+        Map<Long, String> traceBySupplyRequestId = new HashMap<>();
+        // 待发核对不读 SupplyDelivery 追溯码，避免 Supply 态与发放表不一致时误展示
+        if (!summaryDispenseCompleted) {
+            return traceBySupplyRequestId;
+        }
+        List<Long> supplyRequestIds = new ArrayList<>();
+        for (SupplyRequestModel line : supplyLines) {
+            if (line != null && line.getId() != null) {
+                supplyRequestIds.add(line.getId());
+            }
+        }
+        if (supplyRequestIds.isEmpty()) {
+            return traceBySupplyRequestId;
+        }
+        SupplyDeliveryRequestIdListQuery deliveryQuery = new SupplyDeliveryRequestIdListQuery();
+        deliveryQuery.setRequestIdList(supplyRequestIds);
+        List<SupplyDeliveryByRequestModel> deliveryRows =
+            supplyDeliveryQueryService.selectByRequestIdList(deliveryQuery);
+        for (SupplyDeliveryByRequestModel deliveryRow : deliveryRows) {
+            if (deliveryRow == null || deliveryRow.getRequestId() == null) {
+                continue;
+            }
+            if (StringUtils.isNotEmpty(deliveryRow.getTraceNo())) {
+                traceBySupplyRequestId.put(deliveryRow.getRequestId(), deliveryRow.getTraceNo().trim());
+            }
+        }
+        return traceBySupplyRequestId;
+    }
+
+    /**
+     * 从汇总供应行收集全部追溯码片段。
+     *
+     * @param supplyLines              type 27 供应行
+     * @param traceBySupplyRequestId   供应行 id → 追溯码
+     * @return 追溯码片段列表
+     */
+    private List<String> collectTraceCodesFromSupplyLines(
+        List<SupplyRequestModel> supplyLines,
+        Map<Long, String> traceBySupplyRequestId) {
         List<String> codes = new ArrayList<>();
-        if (dispense == null || StringUtils.isBlank(dispense.getTraceNo())) {
+        if (supplyLines == null || traceBySupplyRequestId == null) {
             return codes;
         }
-        for (String part : dispense.getTraceNo().split(GeneralSharedConstants.COMMA)) {
-            String trimmed = part.trim();
-            if (!trimmed.isEmpty()) {
-                codes.add(trimmed);
+        for (SupplyRequestModel supplyLine : supplyLines) {
+            if (supplyLine == null || supplyLine.getId() == null) {
+                continue;
             }
+            codes.addAll(splitTraceCodes(traceBySupplyRequestId.get(supplyLine.getId())));
         }
         return codes;
     }
 
     /**
-     * 从发放实体追溯串拆分为码列表（逗号分隔）。
+     * 按药品 id 选取代表性发放行（追溯门控快照用；不用于追溯码落库）。
      *
-     * @param dispenses 发放实体列表
-     * @return 追溯码片段列表
+     * @param dispenses    汇总下发放行
+     * @param medicationId 药品定义 id
+     * @return 首条匹配行或 null
      */
-    private List<String> collectTraceCodesFromDispenses(List<MedicationDispense> dispenses) {
-        List<String> codes = new ArrayList<>();
-        if (dispenses == null) {
-            return codes;
+    private MedicationDispense findRepresentativeDispenseForItemId(
+        List<MedicationDispense> dispenses,
+        Long medicationId) {
+        if (dispenses == null || medicationId == null) {
+            return null;
         }
         for (MedicationDispense dispense : dispenses) {
-            if (dispense == null || StringUtils.isBlank(dispense.getTraceNo())) {
-                continue;
+            if (dispense != null && medicationId.equals(dispense.getMedicationId())) {
+                return dispense;
             }
-            for (String part : dispense.getTraceNo().split(GeneralSharedConstants.COMMA)) {
-                String trimmed = part.trim();
-                if (!trimmed.isEmpty()) {
-                    codes.add(trimmed);
-                }
+        }
+        return null;
+    }
+
+    /**
+     * 汇总核发写追溯时解析批号：供应行 → 主表首码 → 失败则抛业务异常。
+     *
+     * @param supplyLine  汇总供应行
+     * @param traceNoRaw  逗号追溯串
+     * @return 非空批号
+     * @throws BusinessException 无法解析批号时
+     */
+    private String resolveSummaryTraceLotNumber(SupplyRequestModel supplyLine, String traceNoRaw) {
+        if (supplyLine != null && StringUtils.isNotEmpty(supplyLine.getLotNumber())) {
+            return supplyLine.getLotNumber().trim();
+        }
+        List<String> codes = splitTraceCodes(traceNoRaw);
+        if (!codes.isEmpty()) {
+            TraceNumberQueryModel master = traceNumberQueryService.getTraceNumberByTraceNo(codes.get(0));
+            if (master != null && StringUtils.isNotEmpty(master.getLotNumber())) {
+                return master.getLotNumber().trim();
+            }
+        }
+        throw new BusinessException(
+            InpatientPharmacySummaryDispenseConstants.EX_IPS_204,
+            "追溯码缺少批号，无法写入主子表");
+    }
+
+    /**
+     * 拆分追溯码提交串（逗号分隔）；空串不产生条目。
+     *
+     * @param traceNo 原始串
+     * @return 去空白后的码片段列表
+     */
+    private static List<String> splitTraceCodes(String traceNo) {
+        List<String> codes = new ArrayList<>();
+        if (StringUtils.isEmpty(traceNo)) {
+            return codes;
+        }
+        for (String part : traceNo.split(GeneralSharedConstants.COMMA)) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                codes.add(trimmed);
             }
         }
         return codes;
@@ -1129,7 +1309,7 @@ public class InpatientPharmacySummaryDispenseAppService {
             }
             BigDecimal splitQty = MedicationProductQuantityToSplitUnitConverter.medicationQuantityToSplitUnit(
                 ProductDefinitionDisplaySupport.toUnitConversionSource(productRow), dispense.getUnitCode(), businessQty);
-            if (StringUtils.isNotBlank(dispense.getLotNumber())) {
+            if (StringUtils.isNotEmpty(dispense.getLotNumber())) {
                 String lotKey = dispense.getMedicationId() + sep + dispense.getLocationId() + sep + dispense.getLotNumber().trim();
                 BigDecimal existedLot = mergedLotDecreaseByLotKey.get(lotKey);
                 if (existedLot == null) {

@@ -1,43 +1,28 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.response;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.experimental.Accessors;
 
 /**
- *
- * <p>{@link #success} 与 {@link #statusEnum} 由
- * {@link com.openhis.health.application.inventory.warehouse.inboundreceipt.mapper.InventoryWarehouseInboundReceiptMapper#toSubmitInboundReceiptApprovalResponse}
- * 装配；{@code statusEnum} 非空时为 {@link com.openhis.health.domain.share.enums.SupplyStatus#getCode()}（B.10.8.1），取自提交后同号首行回读。
- * 若回读失败则可能不下发 {@code statusEnum}，客户端应以重新拉取详情为准。</p>
+ * 提交药库入库审批响应（IF-WHS-IN-06）。
  */
 @Getter
 @Setter
+@Accessors(chain = true)
+@Schema(description = "提交药库入库审批 IF-WHS-IN-06")
 public class SubmitInboundReceiptApprovalResponse {
 
-    /**
-     * 提交编排是否成功；领域校验失败时可能为 {@code false} 或改由应用层抛业务异常。
-     */
+    /** 是否成功。 */
+    @Schema(description = "是否成功")
     private Boolean success;
 
-    /**
-     * 提交后的单据状态持久化码；可为 null（见类说明）。
-     */
+    /** 提交后状态 SupplyStatus#getCode。 */
+    @Schema(description = "提交后状态 SupplyStatus#getCode")
     private String statusEnum;
 }

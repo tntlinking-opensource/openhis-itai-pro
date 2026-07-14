@@ -1,23 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.pharmacy.returnmedicine.mapper;
 
-import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.dto.DepartmentOptionDto;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.dto.RefundStatusOptionDto;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.dto.ReturnMedicineDetailRowDto;
@@ -32,8 +19,7 @@ import com.openhis.health.domain.medication.medicationdispense.queries.model.Ret
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.utils.AdministrativeGenderDisplayUtil;
-import com.openhis.health.domain.share.utils.EnumUtil;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -55,7 +41,7 @@ public class OutpatientPharmacyReturnMedicineMapperImpl implements OutpatientPha
     public PageReturnPatientQuery toPageReturnPatientQuery(PageReturnPatientRequest request) {
         PageReturnPatientQuery q = new PageReturnPatientQuery();
         PageQueryBinder.bind(request, q);
-        if (StringUtils.isBlank(q.getKeyword()) && StringUtils.isNotBlank(request.getSearchKey())) {
+        if (StringUtils.isEmpty(q.getKeyword()) && StringUtils.isNotEmpty(request.getSearchKey())) {
             q.setKeyword(request.getSearchKey().trim());
         }
         q.setDepartmentId(request.getDepartmentId());
@@ -139,7 +125,7 @@ public class OutpatientPharmacyReturnMedicineMapperImpl implements OutpatientPha
             dto.setEncounterId(row.getEncounterId());
             dto.setPatientName(row.getPatientName());
             dto.setGenderEnum(row.getGenderEnum());
-            if (StringUtils.isNotBlank(row.getGenderEnumText())) {
+            if (StringUtils.isNotEmpty(row.getGenderEnumText())) {
                 dto.setGenderEnumText(row.getGenderEnumText());
             } else {
                 dto.setGenderEnumText(AdministrativeGenderDisplayUtil.toDisplayText(row.getGenderEnum()));
@@ -202,7 +188,7 @@ public class OutpatientPharmacyReturnMedicineMapperImpl implements OutpatientPha
      * @return 脱敏串；空入参返回空串
      */
     private String maskIdCard(String raw) {
-        if (StringUtils.isBlank(raw)) {
+        if (StringUtils.isEmpty(raw)) {
             return GeneralSharedConstants.EMPTY_STRING;
         }
         String t = raw.trim();

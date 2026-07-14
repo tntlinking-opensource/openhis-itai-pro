@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.nursestation.skintest.response;
 
 import com.openhis.health.application.outpatient.nursestation.skintest.dto.OutpatientSkinTestRowDto;
@@ -17,5 +17,6 @@ import java.util.List;
 @Setter
 public class ListOutpatientSkinTestRowsResponse {
 
+    /** 皮试列表行。 */
     private List<OutpatientSkinTestRowDto> rows;
 }

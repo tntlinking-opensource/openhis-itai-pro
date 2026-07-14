@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.feedetail.mapper;
 
 import com.openhis.health.application.outpatient.financial.feedetail.dto.OutpatientFeeDetailAmountSummaryDto;
@@ -13,6 +13,7 @@ import com.openhis.health.application.outpatient.financial.feedetail.request.Pag
 import com.openhis.health.application.outpatient.financial.feedetail.response.ExportOutpatientFeeDetailResponse;
 import com.openhis.health.application.outpatient.financial.feedetail.response.LoadOutpatientFeeDetailPageInitResponse;
 import com.openhis.health.application.outpatient.financial.feedetail.response.PageOutpatientFeeDetailResponse;
+import com.openhis.health.application.outpatient.financial.feedetail.assembler.OutpatientFeeDetailAssembler;
 import com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailPageQuery;
 import com.openhis.whale.core.application.dto.OptionDto;
 
@@ -21,7 +22,7 @@ import java.util.List;
 /**
  * 门诊费用明细 Request/Response 与领域 Query 映射（AS-OP-FIN-005 IF-OP-FDT-01～03）。
  *
- * <p>禁止承载业务流程判断与金额计算（金额见 {@link com.openhis.health.application.outpatient.financial.feedetail.assembler.OutpatientFeeDetailAssembler}）。</p>
+ * <p>禁止承载业务流程判断与金额计算（金额见 {@link OutpatientFeeDetailAssembler}）。</p>
  */
 public interface OutpatientFeeDetailMapper {
 

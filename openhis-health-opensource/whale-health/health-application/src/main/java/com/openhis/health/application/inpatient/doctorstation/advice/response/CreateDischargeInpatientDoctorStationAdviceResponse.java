@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.advice.response;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -28,11 +15,10 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
-/** 住院医生站-开立出院医嘱响应。 */
 @Schema(description = "住院医生站-开立出院医嘱响应")
 public class CreateDischargeInpatientDoctorStationAdviceResponse {
 
-    /** 新创建的出院类 {@code ServiceRequest} 主键。 */
+    /** 出院 ServiceRequest 主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "出院 ServiceRequest 主键")
     private Long serviceRequestId;
@@ -43,11 +29,11 @@ public class CreateDischargeInpatientDoctorStationAdviceResponse {
     @Schema(description = "离院里程碑主键")
     private Long encounterHistoryId;
 
-    /** 整单事务是否成功完成。 */
+    /** 是否成功。 */
     @Schema(description = "是否成功")
     private Boolean success;
 
-    /** 面向前端展示的结果说明或错误提示。 */
+    /** 提示文案。 */
     @Schema(description = "提示文案")
     private String message;
 }

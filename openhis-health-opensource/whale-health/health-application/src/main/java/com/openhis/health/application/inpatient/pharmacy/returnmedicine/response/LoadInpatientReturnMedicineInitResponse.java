@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.pharmacy.returnmedicine.response;
 
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -30,12 +17,12 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 加载住院退药页初始化元数据响应。 */
 @Schema(description = "加载住院退药页初始化元数据响应")
 public class LoadInpatientReturnMedicineInitResponse implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
+    /** 当前用户管辖内启用药房下拉（value={@code adm_location.id}，队列/明细按库房收窄）。 */
     @Schema(description = "管辖内启用药房下拉；value 为 locationId")
     private List<OptionDto> pharmacyOrganizationOptions;
 

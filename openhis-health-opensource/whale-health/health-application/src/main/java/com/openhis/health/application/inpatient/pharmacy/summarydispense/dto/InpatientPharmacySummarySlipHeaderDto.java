@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.pharmacy.summarydispense.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -34,10 +21,10 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Accessors(chain = true)
-/** 汇总单头。 */
 @Schema(description = "汇总单头")
 public class InpatientPharmacySummarySlipHeaderDto {
 
+    /** 汇总单号（与 {@code bus_no} 同义）。 */
     @Schema(description = "汇总单号")
     private String busNo;
 
@@ -78,11 +65,19 @@ public class InpatientPharmacySummarySlipHeaderDto {
     @Schema(description = "领药人姓名")
     private String receiverName;
 
-    /** 审批态 code（列表固定 APPROVAL）。 */
+    /** Supply 审批态 code（中转展示，不作已发药门控）。 */
     @Schema(description = "审批态 code")
     private String supplyStatusEnum;
 
-    /** 审批态展示。 */
-    @Schema(description = "审批态展示")
+    /** 审批态展示（Supply 中转态，仅供排障）。 */
+    @Schema(description = "Supply 审批态展示")
     private String supplyStatusEnumText;
+
+    /** 是否已发药：仅以同号发放行全部为 COMPLETED 为准（BR-IPS-013）。 */
+    @Schema(description = "是否已发药（发放表终态）")
+    private Boolean summaryDispenseCompleted;
+
+    /** 汇总发药门控展示：待核对 / 已发药。 */
+    @Schema(description = "汇总发药门控展示")
+    private String summaryDispenseStatusText;
 }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 import com.openhis.health.domain.share.constants.PaymentChannelConstants;
@@ -32,13 +19,13 @@ import lombok.Getter;
 @Getter
 public enum PaymentChannel implements EnumInterface {
 
-    /** 现金。 */
+/** 现金（PaymentChannel）。 */
     CASH(PaymentChannelConstants.PAY_ENUM_CODE_SYSTEM_ID, "CASH", "现金", "", 1L, true),
 
-    /** 支付宝。 */
+/** 支付宝（PaymentChannel）。 */
     ALIPAY(PaymentChannelConstants.PAY_ENUM_CODE_SYSTEM_ID, "ALIPAY", "支付宝", "", 2L, true),
 
-    /** 微信。 */
+/** 微信（PaymentChannel）。 */
     WECHAT(PaymentChannelConstants.PAY_ENUM_CODE_SYSTEM_ID, "WECHAT", "微信", "", 3L, true),
 
     /** 银行卡（含 BPC UPAY 被扫落库）。 */

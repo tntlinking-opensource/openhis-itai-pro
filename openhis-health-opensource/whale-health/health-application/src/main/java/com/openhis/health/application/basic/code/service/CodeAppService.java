@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.code.service;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -98,9 +85,9 @@ public class CodeAppService {
     }
 
     /**
-     * 扫描 classpath 下术语枚举包内的全部枚举类型。
+     * 扫描 terminology 包下全部枚举类，构建简单类名 → Class 映射。
      *
-     * @return 简单类名 → 枚举 Class；扫描失败返回空映射
+     * @return 枚举映射；扫描失败返回空映射
      */
     @SuppressWarnings("unchecked")
     private static Map<String, Class<? extends Enum<?>>> scanEnumDicts() {
@@ -159,7 +146,9 @@ public class CodeAppService {
      * @return 编码体系 DTO 列表
      */
     public List<CodeSystemDto> getCodeSystemList(QueryCodeSystemRequest request) {
-        // 读侧全量列表：术语数据量可控；若后续按租户/关键字过滤，应在 QueryService 层下推条件。
+        // Gate：只读全量列表，当前未按 request 过滤
+        // Pre：读侧加载全部编码体系
+        // Asm：映射 DTO 列表
         return codeSystemQueryService.listAllCodeSystems()
             .stream()
             .map(codesystemMapper::toDto)
@@ -176,15 +165,17 @@ public class CodeAppService {
      * @throws ValidationException 请求体为空
      */
     public CodeSystemDto createCodeSystem(CreateCodeSystemRequest request) {
-        // 网关直达应用：空体立即失败，避免匿名命令污染术语聚合。
+        // Gate：请求体非空，避免匿名命令污染术语聚合
         if (request == null) {
             throw new ValidationException("创建编码系统失败：请求体不能为空");
         }
+        // Pre：请求映射为领域创建命令并绑定当前租户
         var command = codesystemMapper.toCreateCommand(request);
-        // 租户隔离：写入当前线程租户，避免跨租户误建。
         command.setTenantId(TenantUtils.getCurrentTenantId());
+        // Cmd：领域创建编码体系
         CodeSystem saved = codeSystemDomainService.create(command);
         codeSystemQueryService.clearAllDictCache();
+        // Asm：映射持久化结果 DTO
         return codesystemMapper.toDto(saved);
     }
 
@@ -198,13 +189,16 @@ public class CodeAppService {
      * @throws ValidationException 请求或主键为空
      */
     public CodeSystemDto updateCodeSystem(UpdateCodeSystemRequest request) {
-        // 更新语义必须定位主键：缺失 id 时领域无法加载聚合。
+        // Gate：请求体与主键非空
         if (request == null || request.getId() == null) {
             throw new ValidationException("更新编码系统失败：编码系统ID不能为空");
         }
+        // Pre：请求映射为领域更新命令
         var command = codesystemMapper.toUpdateCommand(request);
+        // Cmd：领域更新编码体系
         CodeSystem saved = codeSystemDomainService.update(command);
         codeSystemQueryService.clearAllDictCache();
+        // Asm：映射更新后 DTO
         return codesystemMapper.toDto(saved);
     }
 
@@ -217,10 +211,11 @@ public class CodeAppService {
      * @throws ValidationException {@code id} 为空
      */
     public void deleteCodeSystem(Long id) {
-        // 删除须指定目标体系，避免误删全租户术语根。
+        // Gate：主键非空，避免误删全租户术语根
         if (id == null) {
             throw new ValidationException("删除编码系统失败：编码系统ID不能为空");
         }
+        // Cmd：领域删除编码体系
         codeSystemDomainService.delete(id);
         codeSystemQueryService.clearAllDictCache();
     }
@@ -235,10 +230,12 @@ public class CodeAppService {
      * @throws ValidationException {@code codeSystemId} 为空
      */
     public List<ConceptDto> getConceptList(Long codeSystemId) {
-        // 概念列表挂载在编码体系之下，缺少父 id 无法界定命名空间。
+        // Gate：编码体系主键非空
         if (codeSystemId == null) {
             throw new ValidationException("获取编码列表失败：编码系统ID不能为空");
         }
+        // Pre：读侧加载体系下全部概念
+        // Asm：映射概念 DTO 列表
         return codeSystemQueryService.findConceptsByCodeSystem(codeSystemId)
             .stream()
             .map(codesystemMapper::toDto)
@@ -254,11 +251,13 @@ public class CodeAppService {
      * @throws ValidationException 请求或编码体系 id 为空
      */
     public void addConcept(CreateConceptRequest request) {
-        // 新建概念必须归属于某一编码体系，否则违反术语不变量。
+        // Gate：请求体与编码体系 id 非空
         if (request == null || request.getCodeSystemId() == null) {
             throw new ValidationException("新增编码失败：编码系统ID不能为空");
         }
+        // Pre：请求映射为领域创建概念命令
         var command = codesystemMapper.toCreateConceptCommand(request);
+        // Cmd：领域新增概念
         com.openhis.health.domain.terminology.entity.Concept saved = codeSystemDomainService.createConcept(command);
         codeSystemQueryService.evictDictByCodeSystemId(saved.getCodeSystemId());
     }
@@ -272,11 +271,13 @@ public class CodeAppService {
      * @throws ValidationException 请求或概念 id 为空
      */
     public void updatyeConcept(UpdateConceptRequest request) {
-        // 方法名为历史路由兼容拼写；更新仍需概念主键以加载术语行。
+        // Gate：请求体与概念主键非空（方法名为历史路由兼容拼写）
         if (request == null || request.getId() == null) {
             throw new ValidationException("更新编码失败：编码ID不能为空");
         }
+        // Pre：请求映射为领域更新概念命令
         var command = codesystemMapper.toUpdateConceptCommand(request);
+        // Cmd：领域更新概念
         com.openhis.health.domain.terminology.entity.Concept saved = codeSystemDomainService.updateConcept(command);
         codeSystemQueryService.evictDictByCodeSystemId(saved.getCodeSystemId());
     }
@@ -290,12 +291,14 @@ public class CodeAppService {
      * @throws ValidationException {@code id} 为空
      */
     public void deleteConcept(Long id) {
-        // 逻辑删除概念前须唯一定位行主键。
+        // Gate：概念主键非空
         if (id == null) {
             throw new ValidationException("删除编码失败：编码ID不能为空");
         }
+        // Pre：删除前失效对应体系字典缓存
         codeSystemQueryService.findConceptById(id).ifPresent(concept ->
             codeSystemQueryService.evictDictByCodeSystemId(concept.getCodeSystemId()));
+        // Cmd：领域删除概念
         codeSystemDomainService.deleteConcept(id);
     }
 
@@ -307,6 +310,9 @@ public class CodeAppService {
      * @return 枚举简单类名列表（当前 label 与 value 同为类名，便于前端表格复用）
      */
     public List<OrganizationDictDto> getEnumDictList() {
+        // Gate：只读枚举目录，无写侧门禁
+        // Pre：classpath 扫描枚举简单类名
+        // Asm：映射为前端表格兼容行
         return getEnumDictMap().keySet().stream()
             .map(k -> new OrganizationDictDto(k, k))
             .collect(Collectors.toList());
@@ -322,18 +328,19 @@ public class CodeAppService {
      * @throws ValidationException 参数为空或枚举名未在扫描结果中
      */
     public List<ConceptDto> getEnumConceptList(EnumDictRequest request) {
-        // 左侧表格依赖枚举简单类名唯一定位 classpath 类型。
+        // Gate：枚举简单类名非空
         if (request == null || request.getEnumName() == null || request.getEnumName().trim().isEmpty()) {
             throw new ValidationException("获取枚举字典失败：枚举名称不能为空");
         }
         String enumName = request.getEnumName().trim();
+        // Pre：从缓存映射解析枚举 Class
         Class<? extends Enum<?>> enumClass = getEnumDictMap().get(enumName);
-        // 未出现在扫描包内的名称视为非法，避免反射任意类。
+        // Gate：未出现在扫描包内的名称视为非法
         if (enumClass == null) {
             throw new ValidationException("获取枚举字典失败：不支持的枚举 " + request.getEnumName());
         }
 
-        // 优先走 EnumInterface：展示字段（编码、显示名、定义、排序）与术语概念对齐；解析失败则降级为 OptionDto 路径。
+        // 业务分支：EnumInterface 优先走完整字段映射
         try {
             if (EnumInterface.class.isAssignableFrom(enumClass)) {
                 EnumInterface[] values = (EnumInterface[]) enumClass.getMethod("values").invoke(null);
@@ -357,9 +364,10 @@ public class CodeAppService {
             log.warn("枚举 {} 未能按 EnumInterface 解析，降级为 OptionDto 解析。", enumName, e);
         }
 
-        // 降级：由术语服务将枚举转为通用 OptionDto，再适配为 ConceptDto（字段较少但保证可用）。
+        // 业务分支：降级为术语 OptionDto 再适配 ConceptDto
         @SuppressWarnings({"rawtypes", "unchecked"})
         List<OptionDto> options = codeSystemQueryService.getOptionListByEnum((Class) enumClass);
+        // Asm：映射为表格兼容概念行
         return options.stream()
             .map(o -> {
                 ConceptDto dto = new ConceptDto();

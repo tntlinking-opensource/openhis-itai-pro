@@ -1,31 +1,19 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.ordercancelexecute.service;
 
-import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.CurrentManagedWardLocationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.InpatientPendingSettlementClinicalGate;
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.assembler.NurseStationOrderCancelExecuteWriteAssembler;
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.dto.CancelExecutionSummaryRebuildContext;
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.mapper.NurseStationOrderCancelExecuteMapper;
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.request.CancelNurseStationOrderExecutionsRequest;
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.response.CancelNurseStationOrderExecutionsResponse;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.module.querysupport.nursestation.InpatientNurseStationTcmSupport;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.support.InpatientNurseStationTcmOrchestrator;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
@@ -47,7 +35,7 @@ import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequ
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -60,7 +48,7 @@ import java.util.*;
  * <p>职责边界：</p>
  * <ul>
  *   <li><b>IF-IP-CXL-01</b>：已执行 Tab 批量取消——绑定项回退 → CANCEL 对冲 → Dispense/Charge 分轨 → 汇总过滤重建</li>
- *   <li>{@link EncounterContextFacade} + 病区 Resolver：就诊可见性 Gate（BR-IP-CXL-001）</li>
+ *   <li>{@link EncounterContextReader} + 病区 Resolver：就诊可见性 Gate（BR-IP-CXL-001）</li>
  *   <li>{@link NurseStationOrderCancelExecuteWriteAssembler}：结算 Gate、绑定/Dispense/Charge/汇总重建写编排</li>
  * </ul>
  *
@@ -78,7 +66,7 @@ public class NurseStationOrderCancelExecuteAppService {
     /** 护士站管辖病区收窄（BR-IP-CXL-001）。 */
     private final CurrentManagedWardLocationIdsResolver managedWardLocationIdsResolver;
     /** 住院就诊上下文可见性。 */
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
     /** Procedure 读侧：Pre 加载与对冲检测。 */
     private final ProcedureQueryService procedureQueryService;
     /** 药品发放读侧：Pre 索引与汇总重建。 */
@@ -93,7 +81,9 @@ public class NurseStationOrderCancelExecuteAppService {
     private final NurseStationOrderCancelExecuteWriteAssembler nurseStationOrderCancelExecuteWriteAssembler;
 
     /** 中药整方扩行（同 planTime 取消执行）。 */
-    private final InpatientNurseStationTcmSupport inpatientNurseStationTcmSupport;
+    private final InpatientNurseStationTcmOrchestrator inpatientNurseStationTcmOrchestrator;
+    /** 就诊待结算禁止取消执行写路径。 */
+    private final InpatientPendingSettlementClinicalGate inpatientPendingSettlementClinicalGate;
 
     /** 药品申请读侧（方级扩行索引）。 */
     private final MedicationRequestQueryService medicationRequestQueryService;
@@ -108,7 +98,7 @@ public class NurseStationOrderCancelExecuteAppService {
     public CancelNurseStationOrderExecutionsResponse cancelNurseStationOrderExecutions(
         CancelNurseStationOrderExecutionsRequest request) {
         try {
-            // Gate ①：入参非空、procedureId 去重、批上限、取消原因（EX-IP-CXL-201）
+            // Gate：入参非空、procedureId 去重、批上限、取消原因（EX-IP-CXL-201）
             if (request == null) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_CXL_201,
@@ -118,14 +108,21 @@ public class NurseStationOrderCancelExecuteAppService {
                 nurseStationOrderCancelExecuteWriteAssembler.normalizeDistinctProcedureIds(request.getProcedureIds());
             this.assertCancelExecuteGate(request, distinctProcedureIds);
             List<Long> requestedEncounterIds = this.distinctEncounterIds(request.getEncounterIds());
-            // Gate ②：就诊须在护士管辖病区可见范围内（BR-IP-CXL-001）
-            Set<Long> visibleEncounterIds = this.resolveVisibleEncounterIdSet(requestedEncounterIds);
+            // Gate：就诊须在护士管辖病区可见范围内（BR-IP-CXL-001）
+            List<InpatientEncounterContextQueryModel> visibleEncounterRows =
+                this.listVisibleEncounterRows(requestedEncounterIds);
+            Set<Long> visibleEncounterIds = this.retainVisibleEncounterIds(requestedEncounterIds, visibleEncounterRows);
+            // Gate：待结算就诊禁止取消执行（EX-IP-CXL-206）
+            inpatientPendingSettlementClinicalGate.assertEncountersAllowOrderClinicalMutation(
+                visibleEncounterRows,
+                InpatientNurseStationConstants.EX_IP_CXL_206,
+                InpatientNurseStationConstants.MSG_ENCOUNTER_PENDING_SETTLEMENT_ORDER_FORBIDDEN);
             if (visibleEncounterIds.isEmpty()) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_CXL_201,
                     "请选择已执行且未取消的计划点");
             }
-            // Pre·中药方：按 prescription_no + occurrence 扩全方已执行 procedureId（扩行前 Gate 已校验条数）
+            // Pre：按 prescription_no + occurrence 扩全方已执行 procedureId（扩行前 Gate 已校验条数）
             List<Long> expandedProcedureIds =
                 this.expandCancelProcedureIdsByTcmPrescription(distinctProcedureIds, visibleEncounterIds);
             Long operatorId = currentPractitionerResolver.requireOperatorId(
@@ -135,7 +132,7 @@ public class NurseStationOrderCancelExecuteAppService {
                 InpatientNurseStationConstants.EX_IP_CXL_201,
                 "未解析到当前医务人员，无法取消执行");
             String statusReasonText = request.getStatusReasonText().trim();
-            // Pre ③：批量加载 COMPLETED 行并校验可取消（EX-IP-CXL-202）
+            // Pre：批量加载 COMPLETED 行并校验可取消（EX-IP-CXL-202）
             Map<Long, ProcedureRecordQueryModel> completedRowByProcedureId = new HashMap<>();
             Map<String, Set<Long>> basedOnIdsByTable = new HashMap<>();
             for (Long procedureId : expandedProcedureIds) {
@@ -151,7 +148,7 @@ public class NurseStationOrderCancelExecuteAppService {
                     bucket.add(row.getRequestId());
                 }
             }
-            // Pre ⑤⑥：主医嘱发放行与 Charge 索引
+            // Pre：主医嘱发放行与 Charge 索引
             List<MedicationDispense> dispensesByProcedure =
                 medicationDispenseQueryService.listMedicationDispensesByProcedureIds(expandedProcedureIds);
             Map<Long, List<MedicationDispense>> dispensesByProcedureId = new HashMap<>();
@@ -166,10 +163,11 @@ public class NurseStationOrderCancelExecuteAppService {
                 }
                 bucket.add(dispense);
             }
+            // Pre：按 procedureId 加载有效费用行（反结再生后排除源 SETTLED，BR-IP-RVS-011）
             List<ChargeItem> mainCharges =
-                chargeItemQueryService.listChargeItemsByProcedureIds(expandedProcedureIds);
+                chargeItemQueryService.listChargeItemsByProcedureIds(expandedProcedureIds, true);
             Map<Long, List<ChargeItem>> chargesByProcedureId = this.indexChargesByProcedureId(mainCharges);
-            // Pre ⑧⑨：based_on 反查绑定诊疗/耗材（按 requestTable 批量 IN）
+            // Pre：based_on 反查绑定诊疗/耗材（按 requestTable 批量 IN）
             List<ServiceRequest> bindingServiceRequests = new ArrayList<>();
             List<DeviceRequestListModel> bindingDeviceRequests = new ArrayList<>();
             for (Map.Entry<String, Set<Long>> basedOnEntry : basedOnIdsByTable.entrySet()) {
@@ -182,7 +180,7 @@ public class NurseStationOrderCancelExecuteAppService {
                     nurseStationOrderCancelExecuteWriteAssembler.loadBindingDeviceRequests(
                         basedOnTable, basedOnIds));
             }
-            // Pre ⑩：绑定 Charge / 派生 Procedure 预加载并入结算 Gate
+            // Pre：绑定 Charge / 派生 Procedure 预加载并入结算 Gate
             Map<Long, Set<Long>> bindingProcedureIdsByServiceRequestId =
                 this.indexBindingProcedureIdsByServiceRequestId(bindingServiceRequests);
             List<ChargeItem> allChargesForGate = new ArrayList<>(mainCharges);
@@ -193,17 +191,18 @@ public class NurseStationOrderCancelExecuteAppService {
                 }
             }
             if (!bindingProcedureIds.isEmpty()) {
-                allChargesForGate.addAll(chargeItemQueryService.listChargeItemsByProcedureIds(bindingProcedureIds));
+                allChargesForGate.addAll(
+                    chargeItemQueryService.listChargeItemsByProcedureIds(bindingProcedureIds, true));
             }
-            // Pre ⑥b：药房配药中 Gate（EX-IP-CXL-204，GAP-STALE-004）
+            // Pre：药房配药中 Gate（EX-IP-CXL-204，GAP-STALE-004）
             nurseStationOrderCancelExecuteWriteAssembler.assertPharmacyPreparingDispenseGate(dispensesByProcedure);
-            // Pre ⑦：结算 Gate（EX-IP-CXL-203）
+            // Pre：结算 Gate（EX-IP-CXL-203）
             nurseStationOrderCancelExecuteWriteAssembler.assertSettlementGate(allChargesForGate);
             Map<Long, List<ChargeItem>> bindingChargesByServiceRequestId =
                 this.indexBindingChargesByServiceRequestId(allChargesForGate, bindingProcedureIdsByServiceRequestId);
             CancelExecutionSummaryRebuildContext rebuildContext = new CancelExecutionSummaryRebuildContext();
             Map<Long, BigDecimal> inventoryIncreaseAcc = new HashMap<>();
-            // Cmd ⑪～⑬：先回退绑定项（BR-IP-CXL-006）
+            // Cmd：先回退绑定项（BR-IP-CXL-006）
             for (ServiceRequest derived : bindingServiceRequests) {
                 List<ChargeItem> derivedCharges = bindingChargesByServiceRequestId.get(derived.getId());
                 if (derivedCharges == null) {
@@ -216,13 +215,13 @@ public class NurseStationOrderCancelExecuteAppService {
                 nurseStationOrderCancelExecuteWriteAssembler.rollbackBindingDeviceRequest(
                     deviceReq, operatorId, inventoryIncreaseAcc);
             }
-            // Cmd ⑭：绑定耗材已发库存回补
+            // Cmd：绑定耗材已发库存回补
             if (!inventoryIncreaseAcc.isEmpty()) {
                 inventoryItemDomainService.increaseQuantities(
                     nurseStationOrderCancelExecuteMapper.toIncreaseQuantityCommand(operatorId, inventoryIncreaseAcc));
             }
             List<Long> cancelledProcedureIds = new ArrayList<>();
-            // Cmd ⑮～⑰：主医嘱 CANCEL 对冲 + Dispense/Charge 回退（按入参稳定顺序）
+            // Cmd：主医嘱 CANCEL 对冲 + Dispense/Charge 回退（按入参稳定顺序）
             for (Long completedProcedureId : expandedProcedureIds) {
                 ProcedureRecordQueryModel completedRow = completedRowByProcedureId.get(completedProcedureId);
                 if (completedRow == null) {
@@ -259,7 +258,7 @@ public class NurseStationOrderCancelExecuteAppService {
                 }
                 cancelledProcedureIds.add(completedProcedureId);
             }
-            // Cmd ⑱：汇总过滤重建
+            // Cmd：汇总过滤重建
             List<String> rebuiltSummaryNos = nurseStationOrderCancelExecuteWriteAssembler.withdrawAndRebuildSummaryIfNeeded(
                 rebuildContext, operatorId, applicantId);
             log.info(
@@ -325,7 +324,7 @@ public class NurseStationOrderCancelExecuteAppService {
                 InpatientNurseStationConstants.EX_IP_CXL_201,
                 "请选择已执行且未取消的计划点");
         }
-        if (StringUtils.isBlank(request.getStatusReasonText())) {
+        if (StringUtils.isEmpty(request.getStatusReasonText())) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_CXL_201,
                 "请选择已执行且未取消的计划点");
@@ -333,17 +332,33 @@ public class NurseStationOrderCancelExecuteAppService {
     }
 
     /**
-     * 解析前端勾选就诊在护士站可见范围内的 id 集合。
+     * 加载前端勾选就诊在护士站可见范围内的读模型行。
      *
      * @param requestedEncounterIds 前端勾选就诊
-     * @return 可见 encounterId 集合
+     * @return 可见就诊读模型
      */
-    private Set<Long> resolveVisibleEncounterIdSet(List<Long> requestedEncounterIds) {
+    private List<InpatientEncounterContextQueryModel> listVisibleEncounterRows(List<Long> requestedEncounterIds) {
         List<Long> managedWardIds = managedWardLocationIdsResolver.listManagedWardLocationIdsOrEmpty();
         InpatientEncounterPageQuery visibilityQuery =
             nurseStationOrderCancelExecuteMapper.toInpatientEncounterPageQuery(requestedEncounterIds, managedWardIds);
         List<InpatientEncounterContextQueryModel> visibleRows =
-            encounterContextFacade.listInpatientEncounterContexts(visibilityQuery);
+            EncounterContextReader.listInpatientEncounterContexts(visibilityQuery);
+        if (visibleRows == null) {
+            return Collections.emptyList();
+        }
+        return visibleRows;
+    }
+
+    /**
+     * 从可见读模型中收窄为请求就诊 id 集合。
+     *
+     * @param requestedEncounterIds 前端勾选就诊
+     * @param visibleRows           可见就诊读模型
+     * @return 可见 encounterId 集合
+     */
+    private Set<Long> retainVisibleEncounterIds(
+        List<Long> requestedEncounterIds,
+        List<InpatientEncounterContextQueryModel> visibleRows) {
         Set<Long> visibleIdSet = new HashSet<>();
         if (visibleRows != null) {
             for (InpatientEncounterContextQueryModel row : visibleRows) {
@@ -594,7 +609,7 @@ public class NurseStationOrderCancelExecuteAppService {
                 this.appendCancelProcedureDedupe(expanded, dedupe, seedProcedureId);
                 continue;
             }
-            List<Long> requestIds = inpatientNurseStationTcmSupport.expandMedRequestIdsByPrescriptionNo(
+            List<Long> requestIds = inpatientNurseStationTcmOrchestrator.expandMedRequestIdsByPrescriptionNo(
                 encounterId, seedRequestId, encounterMeds);
             boolean expandedAny = false;
             for (Long requestId : requestIds) {
@@ -672,7 +687,7 @@ public class NurseStationOrderCancelExecuteAppService {
         Long requestId,
         String requestTable,
         LocalDateTime occurrenceTime) {
-        if (requestId == null || StringUtils.isBlank(requestTable) || occurrenceTime == null) {
+        if (requestId == null || StringUtils.isEmpty(requestTable) || occurrenceTime == null) {
             return null;
         }
         List<ProcedureRecordQueryModel> rows = procedureQueryService.getProcedureRecords(requestId, requestTable);

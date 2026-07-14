@@ -1,11 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.dto.TcmRxDraftLineRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
@@ -35,7 +35,7 @@ public class SaveTcmHerbalPrescriptionDraftBatchRequest {
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
-    /** 一张或多张方。 */
+    /** 处方方头列表。 */
     @NotEmpty(message = "prescriptions 不能为空")
     @Valid
     @Schema(description = "处方方头列表", requiredMode = Schema.RequiredMode.REQUIRED)

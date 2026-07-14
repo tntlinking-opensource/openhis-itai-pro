@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.nursingrecord.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -25,7 +25,7 @@ public class NursingRecordPaperHeaderDto {
     @Schema(description = "入院时间")
     private LocalDateTime admitAt;
 
-    /** 年龄展示。 */
+    /** 年龄。 */
     @Schema(description = "年龄")
     private String age;
 
@@ -38,7 +38,7 @@ public class NursingRecordPaperHeaderDto {
     @Schema(description = "出院时间")
     private LocalDateTime dischargeAt;
 
-    /** 性别展示。 */
+    /** 性别。 */
     @Schema(description = "性别")
     private String gender;
 

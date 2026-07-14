@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.financial.paymentreconciliation.support;
 
 import com.openhis.health.domain.financial.paymentreconciliation.PaymentYbSettlementStatus;
@@ -9,7 +9,7 @@ import com.openhis.health.domain.financial.paymentreconciliation.command.Payment
 import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentYbSettlement;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentYbSettlementQueryModel;
 import com.openhis.health.domain.share.events.financial.paymentreconciliation.PaymentYbSettlementEventItem;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -22,7 +22,7 @@ public final class PaymentYbSettlementSupport {
     }
 
     public static List<PaymentYbSettlementItemCommand> optionalConfirmedItem(String setlId) {
-        if (StringUtils.isBlank(setlId)) {
+        if (StringUtils.isEmpty(setlId)) {
             return List.of();
         }
         PaymentYbSettlementItemCommand item = new PaymentYbSettlementItemCommand();
@@ -42,7 +42,7 @@ public final class PaymentYbSettlementSupport {
         }
         LinkedHashSet<String> seen = new LinkedHashSet<>();
         for (PaymentYbSettlementQueryModel row : rows) {
-            if (row == null || StringUtils.isBlank(row.getSetlId())) {
+            if (row == null || StringUtils.isEmpty(row.getSetlId())) {
                 continue;
             }
             if (PaymentYbSettlementStatus.REVOKED.equals(row.getStatus())) {
@@ -70,7 +70,7 @@ public final class PaymentYbSettlementSupport {
             if (row == null || PaymentYbSettlementStatus.REVOKED.equals(row.getStatus())) {
                 continue;
             }
-            if (StringUtils.isNotBlank(row.getMdtrtId())) {
+            if (StringUtils.isNotEmpty(row.getMdtrtId())) {
                 return row.getMdtrtId().trim();
             }
         }
@@ -83,7 +83,7 @@ public final class PaymentYbSettlementSupport {
             return result;
         }
         for (PaymentYbSettlementItemCommand item : items) {
-            if (item == null || StringUtils.isBlank(item.getSetlId())) {
+            if (item == null || StringUtils.isEmpty(item.getSetlId())) {
                 continue;
             }
             PaymentYbSettlementEventItem row = new PaymentYbSettlementEventItem();
@@ -92,7 +92,7 @@ public final class PaymentYbSettlementSupport {
             row.setMdtrtId(StringUtils.trimToNull(item.getMdtrtId()));
             row.setSettlementRecordId(item.getSettlementRecordId());
             row.setAccountId(item.getAccountId());
-            if (StringUtils.isNotBlank(item.getStatus())) {
+            if (StringUtils.isNotEmpty(item.getStatus())) {
                 row.setStatus(item.getStatus().trim());
             } else {
                 row.setStatus(PaymentYbSettlementStatus.CONFIRMED);
@@ -108,7 +108,7 @@ public final class PaymentYbSettlementSupport {
             return result;
         }
         for (PaymentYbSettlement row : rows) {
-            if (row == null || StringUtils.isBlank(row.getSetlId())) {
+            if (row == null || StringUtils.isEmpty(row.getSetlId())) {
                 continue;
             }
             PaymentYbSettlementEventItem item = new PaymentYbSettlementEventItem();

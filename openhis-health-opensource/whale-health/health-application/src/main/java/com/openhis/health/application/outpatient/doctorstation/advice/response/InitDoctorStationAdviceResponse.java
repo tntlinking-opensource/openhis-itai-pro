@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.advice.response;
 
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -29,11 +16,11 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 医生站-医嘱开立-初始化响应。 */
 @Schema(description = "医生站-医嘱开立-初始化响应")
 public class InitDoctorStationAdviceResponse {
 
     @Schema(description = "用药频次下拉")
+    /** 给药途径（用法）下拉。 */
     private List<OptionDto> medicationRateOptions;
 
     @Schema(description = "给药途径（用法）下拉")
@@ -46,6 +33,7 @@ public class InitDoctorStationAdviceResponse {
     private List<OptionDto> feeNatureOptions;
 
     @Schema(description = "身体部位下拉")
+    /** 样本定义下拉。 */
     private List<OptionDto> bodyStructureOptions;
 
     @Schema(description = "样本定义下拉")

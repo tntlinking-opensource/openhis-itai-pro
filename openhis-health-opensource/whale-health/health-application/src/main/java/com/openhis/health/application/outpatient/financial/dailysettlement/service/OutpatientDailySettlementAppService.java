@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.dailysettlement.service;
 
 import com.openhis.health.application.outpatient.financial.dailysettlement.mapper.OutpatientDailySettlementMapper;
@@ -11,6 +11,8 @@ import com.openhis.health.application.outpatient.financial.dailysettlement.reque
 import com.openhis.health.application.outpatient.financial.dailysettlement.response.LoadOutpatientDailySettlementPageInitResponse;
 import com.openhis.health.application.outpatient.financial.dailysettlement.response.PreviewOutpatientDailySettlementResponse;
 import com.openhis.health.application.outpatient.financial.dailysettlement.response.SubmitOutpatientDailySettlementResponse;
+import com.openhis.health.application.outpatient.financial.dailysettlement.support.DailySettlementPaymentDetailLoader;
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.financial.cashiersettlement.command.SubmitCashierSettlementCommand;
@@ -29,23 +31,23 @@ import com.openhis.health.domain.share.constants.OutpatientDailySettlementConsta
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.CashierSettlementType;
-import com.openhis.health.module.common.assembler.financial.ContractExpenseNatureAssembler;
-import com.openhis.health.module.common.assembler.financial.PaymentEntererMatchSupport;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
+import com.openhis.health.application.basic.administration.support.PractitionerCashierOptionProvider;
+import com.openhis.health.application.shared.financial.ContractExpenseNatureAssembler;
+import com.openhis.health.application.shared.financial.PaymentEntererMatchResolver;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -103,10 +105,16 @@ public class OutpatientDailySettlementAppService {
     private final ContractExpenseNatureAssembler contractExpenseNatureAssembler;
 
     /** payment enterer_id 匹配（Practitioner + 用户主键存量兼容）。 */
-    private final PaymentEntererMatchSupport paymentEntererMatchSupport;
+    private final PaymentEntererMatchResolver paymentEntererMatchResolver;
 
     /** fin_type_code 字典读侧。 */
     private final TerminologyOptionLoader terminologyOptionLoader;
+
+    /** 经办人下拉：排除绑定用户已删/未启用的 practitioner。 */
+    private final PractitionerCashierOptionProvider practitionerCashierOptionProvider;
+
+    /** payment 项目行与支付方式 enrichment。 */
+    private final DailySettlementPaymentDetailLoader dailySettlementPaymentDetailLoader;
 
     /**
      * IF-OP-DCL-01：门诊日结页初始化。
@@ -159,29 +167,36 @@ public class OutpatientDailySettlementAppService {
                 request,
                 CashierSettlementType.OUTPATIENT.getCode(),
                 cashierId);
-            this.applyEntererMatchToPreviewQuery(previewQuery);
+            this.applyEntererMatchToPreviewQuery(previewQuery, operatorId);
             PreviewCashierSettlementQueryModel previewModel =
                 this.paymentReconciliationQueryService.previewUnsettledPaymentsForCashierSettlement(previewQuery);
-            Set<Long> candidatePaymentIds = this.collectPaymentIds(previewModel);
-            LocalDateTime windowStart = request.getDateFrom().atStartOfDay();
-            LocalDateTime windowEnd = request.getDateTo().atTime(23, 59, 59);
-            List<PaymentReconciliationQueryModel> paymentModels =
-                this.paymentReconciliationQueryService.findPaymentByBillDateRange(windowStart, windowEnd);
-            List<PaymentReconciliationQueryModel> filteredPayments =
-                this.filterPaymentsByCandidateIds(paymentModels, candidatePaymentIds);
+            // Pre：展示汇总须含已交账流水，仅 paymentCount/items 保持未交账口径（BR-OP-DCL-014）
+            List<UnsettledPaymentPreviewItemQueryModel> summaryPreviewItems =
+                this.paymentReconciliationQueryService.previewPaymentsForCashierSettlementSummary(previewQuery);
+            Set<Long> displayPaymentIds = this.collectPaymentIdsFromPreviewItems(summaryPreviewItems);
+            List<PaymentReconciliationQueryModel> displayPaymentModels =
+                this.paymentReconciliationQueryService.findPaymentQueryModelsForCashierSettlementSummary(previewQuery);
             Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId =
-                this.loadRecDetailsByPaymentIds(candidatePaymentIds);
+                this.loadRecDetailsByPaymentIds(displayPaymentIds);
             Map<String, Boolean> insuranceByContractBusNo =
                 this.contractExpenseNatureAssembler.mapInsuranceFlagByContractBusNoIn(
-                    this.collectContractBusNos(previewModel));
+                    this.collectContractBusNosFromPreviewItems(summaryPreviewItems));
             List<OptionDto> finTypeOptions =
                 this.terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
+            // Pre：未交账候选 payment 加载 charge_item（弹窗项目行 enrichment）
+            Set<Long> unsettledPaymentIds = this.collectPaymentIdsFromPreviewItems(previewModel.getItems());
+            List<PaymentReconciliationQueryModel> unsettledPaymentModels =
+                this.filterPaymentModelsByIds(displayPaymentModels, unsettledPaymentIds);
+            Map<Long, List<ChargeItem>> chargeItemsByPaymentId =
+                this.dailySettlementPaymentDetailLoader.loadChargeItemsByPaymentModels(unsettledPaymentModels);
             // Asm：费用性质仅过滤 rows/summary 展示（按 fin_contract 判定）
             PreviewOutpatientDailySettlementResponse response =
                 this.outpatientDailySettlementMapper.toPreviewOutpatientDailySettlementResponse(
                     previewModel,
-                    filteredPayments,
+                    summaryPreviewItems,
+                    displayPaymentModels,
                     recDetailsByPaymentId,
+                    chargeItemsByPaymentId,
                     request.getExpenseProperty(),
                     insuranceByContractBusNo,
                     finTypeOptions);
@@ -226,21 +241,24 @@ public class OutpatientDailySettlementAppService {
             previewRequest,
             CashierSettlementType.OUTPATIENT.getCode(),
             cashierId);
-        this.applyEntererMatchToPreviewQuery(previewQuery);
-        // Pre：提交前重新锁定候选集，paymentCount 与领域写侧口径一致
+        this.applyEntererMatchToPreviewQuery(previewQuery, operatorId);
+        // Pre：提交前重新锁定候选集，paymentIds 须 ⊆ 未交账候选（BR-OP-DCL-018）
         PreviewCashierSettlementQueryModel locked =
             this.paymentReconciliationQueryService.previewUnsettledPaymentsForCashierSettlement(previewQuery);
-        Integer paymentCount = locked.getPaymentCount();
-        if (paymentCount == null) {
-            // 领域未返回条数时按 0 装配，避免响应字段为 null
-            paymentCount = 0;
-        }
+        List<Long> selectedPaymentIds = request.getPaymentIds();
+        this.assertPaymentIdsSubsetOfCandidates(
+            selectedPaymentIds,
+            locked,
+            OutpatientDailySettlementConstants.EX_OP_DCL_105,
+            OutpatientDailySettlementConstants.EX_OP_DCL_201);
+        Integer paymentCount = selectedPaymentIds.size();
         // Pre：请求转领域命令（不含 expenseProperty）
         SubmitCashierSettlementCommand command = this.outpatientDailySettlementMapper.toSubmitCashierSettlementCommand(
             request,
             CashierSettlementType.OUTPATIENT.getCode(),
             cashierId,
-            operatorId);
+            operatorId,
+            selectedPaymentIds);
         command.setEntererMatchIds(previewQuery.getEntererMatchIds());
         // Cmd：单事务写交账头并挂载 payment
         Long settlementId = this.cashierSettlementDomainService.submitCashierSettlement(command);
@@ -252,6 +270,12 @@ public class OutpatientDailySettlementAppService {
             paymentCount);
     }
 
+    /**
+     * 当前操作员是否具备财务代交账权限（会计或管理员岗位）。
+     *
+     * @param currentCashierId 当前经办人 Practitioner 主键
+     * @return 可代指定收费员交账时为 true
+     */
     private boolean isFinancialDelegateEnabled(Long currentCashierId) {
         Set<Long> accountantIds = this.practitionerRoleScopeLoader.resolvePractitionerIdsForActivePlatformRole(
             WhalePlatformRoleCodeConstants.ROLE_ACCOUNTANT,
@@ -267,6 +291,11 @@ public class OutpatientDailySettlementAppService {
         return adminIds.contains(currentCashierId);
     }
 
+    /**
+     * 构造费用性质下拉：启用中合同 busNo → 展示名。
+     *
+     * @return 费用性质 OptionDto 列表
+     */
     private List<OptionDto> buildExpensePropertyOptions() {
         List<OptionDto> options = new ArrayList<>();
         List<ContractListItemQueryModel> contracts = this.contractQueryService.listAllContracts();
@@ -277,7 +306,7 @@ public class OutpatientDailySettlementAppService {
             if (Boolean.FALSE.equals(contract.getActiveFlag())) {
                 continue;
             }
-            if (StringUtils.isBlank(contract.getBusNo()) || StringUtils.isBlank(contract.getName())) {
+            if (StringUtils.isEmpty(contract.getBusNo()) || StringUtils.isEmpty(contract.getName())) {
                 continue;
             }
             OptionDto option = new OptionDto();
@@ -307,25 +336,17 @@ public class OutpatientDailySettlementAppService {
                 null,
                 PageRequest.of(0, OutpatientDailySettlementConstants.CASHIER_OPTION_PAGE_SIZE),
                 true);
-            for (Practitioner practitioner : page.getContent()) {
-                if (practitioner == null || practitioner.getId() == null) {
-                    continue;
-                }
-                OptionDto option = new OptionDto();
-                option.setValue(String.valueOf(practitioner.getId()));
-                option.setLabel(practitioner.getName());
-                options.add(option);
-            }
-            return options;
+            List<Practitioner> eligiblePractitioners =
+                this.practitionerCashierOptionProvider.filterWithActiveBoundSystemUser(page.getContent());
+            return this.practitionerCashierOptionProvider.toCashierOptions(eligiblePractitioners);
         }
         if (currentPractitioner == null || currentPractitioner.getId() == null) {
             return options;
         }
-        OptionDto self = new OptionDto();
-        self.setValue(String.valueOf(currentPractitioner.getId()));
-        self.setLabel(currentPractitioner.getName());
-        options.add(self);
-        return options;
+        if (!this.practitionerCashierOptionProvider.hasActiveBoundSystemUser(currentPractitioner)) {
+            return options;
+        }
+        return this.practitionerCashierOptionProvider.toCashierOptions(List.of(currentPractitioner));
     }
 
     /**
@@ -348,6 +369,12 @@ public class OutpatientDailySettlementAppService {
         return this.practitionerQueryService.findByUserId(operatorUserId);
     }
 
+    /**
+     * 解析当前登录用户对应的收款人 Practitioner 主键。
+     *
+     * @param operatorUserId 当前登录用户主键
+     * @return Practitioner 主键；无法解析则 null
+     */
     private Long resolveCurrentCashierPractitionerId(Long operatorUserId) {
         Long practitionerId = this.currentPractitionerResolver.findPractitionerIdOrNull();
         if (practitionerId != null) {
@@ -363,6 +390,14 @@ public class OutpatientDailySettlementAppService {
         return practitioner.getId();
     }
 
+    /**
+     * 解析本次日结/交账经办人：默认本人，非本人须具备代交账权限。
+     *
+     * @param requestedCashierId 请求指定经办人；可空
+     * @param operatorId         当前操作员用户主键
+     * @return 生效经办人 Practitioner 主键
+     * @throws BusinessException 经办人缺失或越权时
+     */
     private Long resolveCashierId(Long requestedCashierId, Long operatorId) {
         Long currentCashierId = this.resolveCurrentCashierPractitionerId(operatorId);
         if (currentCashierId == null && requestedCashierId == null) {
@@ -390,6 +425,13 @@ public class OutpatientDailySettlementAppService {
         return requestedCashierId;
     }
 
+    /**
+     * 结账日期范围 Gate：起止均须填写且止日不早于起日。
+     *
+     * @param dateFrom 结账日起
+     * @param dateTo   结账日止
+     * @throws BusinessException 范围缺失或不合法时
+     */
     private void assertDateRangeValid(LocalDate dateFrom, LocalDate dateTo) {
         // Gate：结账日起止均须填写
         if (dateFrom == null || dateTo == null) {
@@ -405,13 +447,18 @@ public class OutpatientDailySettlementAppService {
         }
     }
 
-    private Set<Long> collectPaymentIds(PreviewCashierSettlementQueryModel previewModel) {
+    /**
+     * 从交账预览行收集 payment 主键（去重保序）。
+     *
+     * @param previewItems 预览行列表
+     * @return payment id 集合
+     */
+    private Set<Long> collectPaymentIdsFromPreviewItems(List<UnsettledPaymentPreviewItemQueryModel> previewItems) {
         Set<Long> paymentIds = new LinkedHashSet<>();
-        // 无候选时返回空集，后续 enrichment 短路
-        if (previewModel == null || previewModel.getItems() == null) {
+        if (previewItems == null) {
             return paymentIds;
         }
-        for (UnsettledPaymentPreviewItemQueryModel item : previewModel.getItems()) {
+        for (UnsettledPaymentPreviewItemQueryModel item : previewItems) {
             if (item != null && item.getPaymentId() != null) {
                 paymentIds.add(item.getPaymentId());
             }
@@ -419,12 +466,18 @@ public class OutpatientDailySettlementAppService {
         return paymentIds;
     }
 
-    private Set<String> collectContractBusNos(PreviewCashierSettlementQueryModel previewModel) {
+    /**
+     * 从交账预览行收集合同 busNo（去重保序）。
+     *
+     * @param previewItems 预览行列表
+     * @return 合同 busNo 集合
+     */
+    private Set<String> collectContractBusNosFromPreviewItems(List<UnsettledPaymentPreviewItemQueryModel> previewItems) {
         Set<String> contractBusNos = new LinkedHashSet<>();
-        if (previewModel == null || previewModel.getItems() == null) {
+        if (previewItems == null) {
             return contractBusNos;
         }
-        for (UnsettledPaymentPreviewItemQueryModel item : previewModel.getItems()) {
+        for (UnsettledPaymentPreviewItemQueryModel item : previewItems) {
             if (item == null || item.getContractNo() == null) {
                 continue;
             }
@@ -436,25 +489,12 @@ public class OutpatientDailySettlementAppService {
         return contractBusNos;
     }
 
-    private List<PaymentReconciliationQueryModel> filterPaymentsByCandidateIds(
-        List<PaymentReconciliationQueryModel> paymentModels,
-        Set<Long> candidatePaymentIds) {
-        List<PaymentReconciliationQueryModel> filtered = new ArrayList<>();
-        // 无候选 payment 时跳过 enrichment，避免全量误匹配
-        if (paymentModels == null || candidatePaymentIds.isEmpty()) {
-            return filtered;
-        }
-        for (PaymentReconciliationQueryModel paymentModel : paymentModels) {
-            if (paymentModel == null || paymentModel.getId() == null) {
-                continue;
-            }
-            if (candidatePaymentIds.contains(paymentModel.getId())) {
-                filtered.add(paymentModel);
-            }
-        }
-        return filtered;
-    }
-
+    /**
+     * 按 payment id 批量加载支付明细读模型。
+     *
+     * @param paymentIds payment 主键集合
+     * @return paymentId → 明细列表
+     */
     private Map<Long, List<PaymentRecDetailQueryModel>> loadRecDetailsByPaymentIds(Set<Long> paymentIds) {
         Map<Long, List<PaymentRecDetailQueryModel>> result = new LinkedHashMap<>();
         for (Long paymentId : paymentIds) {
@@ -465,6 +505,13 @@ public class OutpatientDailySettlementAppService {
         return result;
     }
 
+    /**
+     * 将结账日起止写入预览响应汇总块的 dateRange 展示文案。
+     *
+     * @param response 预览响应
+     * @param dateFrom 结账日起
+     * @param dateTo   结账日止
+     */
     private void applyDateRangeToSummary(PreviewOutpatientDailySettlementResponse response, LocalDate dateFrom, LocalDate dateTo) {
         if (response == null || response.getSummary() == null) {
             // 无汇总块时不改写 dateRange
@@ -476,15 +523,71 @@ public class OutpatientDailySettlementAppService {
     }
 
     /**
+     * 校验勾选 payment 主键均属于当前未交账候选集。
+     *
+     * @param paymentIds       请求勾选列表
+     * @param lockedPreview    提交前锁定的未交账预览
+     * @param invalidExCode    越权 ID 异常码
+     * @param emptyExCode      空列表异常码
+     */
+    private void assertPaymentIdsSubsetOfCandidates(
+        List<Long> paymentIds,
+        PreviewCashierSettlementQueryModel lockedPreview,
+        String invalidExCode,
+        String emptyExCode) {
+        if (paymentIds == null || paymentIds.isEmpty()) {
+            throw new BusinessException(emptyExCode, "请至少选择一笔待交账流水");
+        }
+        Set<Long> candidateIds = this.collectPaymentIdsFromPreviewItems(
+            lockedPreview == null ? null : lockedPreview.getItems());
+        for (Long paymentId : paymentIds) {
+            if (paymentId == null || !candidateIds.contains(paymentId)) {
+                throw new BusinessException(
+                    invalidExCode,
+                    "所选流水不在待交账范围内或已变更，请刷新后重试");
+            }
+        }
+    }
+
+    /**
+     * 按 payment 主键过滤读模型（保序）。
+     *
+     * @param paymentModels 展示窗 payment 读模型
+     * @param paymentIds    目标主键集合
+     * @return 命中子集
+     */
+    private List<PaymentReconciliationQueryModel> filterPaymentModelsByIds(
+        List<PaymentReconciliationQueryModel> paymentModels,
+        Set<Long> paymentIds) {
+        List<PaymentReconciliationQueryModel> result = new ArrayList<>();
+        if (paymentModels == null || paymentIds == null || paymentIds.isEmpty()) {
+            return result;
+        }
+        for (PaymentReconciliationQueryModel paymentModel : paymentModels) {
+            if (paymentModel != null
+                && paymentModel.getId() != null
+                && paymentIds.contains(paymentModel.getId())) {
+                result.add(paymentModel);
+            }
+        }
+        return result;
+    }
+
+    /**
      * 写入 payment {@code enterer_id} 匹配白名单，兼容 Practitioner 与用户主键存量。
      *
-     * @param previewQuery 日结预览/提交共用查询
+     * @param previewQuery  日结预览/提交共用查询
+     * @param sessionUserId 当前登录用户主键（存量 enterer 匹配）
      */
-    private void applyEntererMatchToPreviewQuery(PreviewCashierSettlementQuery previewQuery) {
+    private void applyEntererMatchToPreviewQuery(
+        PreviewCashierSettlementQuery previewQuery,
+        Long sessionUserId) {
         if (previewQuery == null || previewQuery.getCashierId() == null) {
             return;
         }
         previewQuery.setEntererMatchIds(
-            this.paymentEntererMatchSupport.resolveEntererMatchIds(previewQuery.getCashierId()));
+            this.paymentEntererMatchResolver.resolveEntererMatchIds(
+                previewQuery.getCashierId(),
+                sessionUserId));
     }
 }

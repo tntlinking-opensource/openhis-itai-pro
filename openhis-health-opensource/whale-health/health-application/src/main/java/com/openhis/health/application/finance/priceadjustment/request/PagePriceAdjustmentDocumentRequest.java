@@ -1,25 +1,12 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.finance.priceadjustment.request;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -37,16 +24,16 @@ import java.time.LocalDateTime;
 @Schema(description = "调价单列表分页请求")
 public class PagePriceAdjustmentDocumentRequest extends PageQueryBinder.AbstractHealthPageRequest {
 
-    /** 审批状态筛选（可选）。 */
+    /** 审批状态 code。 */
     @Schema(description = "审批状态 code")
     private String statusEnum;
 
-    /** 提交时间下限（兼容字段）。 */
+    /** 提交时间下限。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "提交时间下限")
     private LocalDateTime submitTimeFrom;
 
-    /** 提交时间上限（兼容字段）。 */
+    /** 提交时间上限。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "提交时间上限")
     private LocalDateTime submitTimeTo;

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.advice.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -30,11 +17,11 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
-/** 医生站医嘱目录库存行。 */
 @Schema(description = "医生站医嘱目录库存行")
 public class DoctorStationAdviceInventoryRowDto {
 
     @Schema(description = "物品主表名")
+    /** 物品主表名。 */
     private String itemTable;
 
     /** 物品定义主键。 */
@@ -53,7 +40,7 @@ public class DoctorStationAdviceInventoryRowDto {
     @Schema(description = "库存行主键")
     private Long inventoryId;
 
-    /** 预减后剩余量。 */
+    /** 预减后剩余量（小单位）。 */
     @Schema(description = "预减后剩余量（小单位）")
     private BigDecimal quantity;
 
@@ -61,11 +48,11 @@ public class DoctorStationAdviceInventoryRowDto {
     @Schema(description = "小单位编码")
     private String unitCode;
 
-    /** 与 {@link #unitCode} 对应的单位展示名。 */
+    /** 小单位展示名。 */
     @Schema(description = "小单位展示名")
     private String unitName;
 
-    /** 批号（与定价表 {@code adm_charge_item_definition.lot_no} 对齐，用于解析 {@code LOT_NUMBER_PRICE}）。 */
+    /** 批号。 */
     @Schema(description = "批号")
     private String lotNumber;
 
@@ -92,7 +79,7 @@ public class DoctorStationAdviceInventoryRowDto {
     @Schema(description = "批号售价（LOT_NUMBER_PRICE，随批号变化）")
     private BigDecimal price;
 
-    /** 与 {@link #price} 对应的收费项定义主键，开立锚定价明细时用。 */
+    /** 批号售价定价行主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "批号售价定价行主键")
     private Long chargeItemDefinitionId;

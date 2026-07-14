@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.mapper;
 
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingCancelItemDto;
@@ -25,8 +12,13 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.re
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
 import com.openhis.health.domain.administration.chargeitem.command.VoidNursePricingChargeItemsByServiceAnchorsCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
-import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
-import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.domain.clinical.procedure.command.CancelProcedureRecordCommand;
+import com.openhis.health.domain.clinical.procedure.command.CompleteProcedureRecordCommand;
+import com.openhis.health.domain.clinical.procedure.command.CreateProcedureRecordCommand;
+import com.openhis.health.domain.clinical.procedure.command.StartProcedureExecutionCommand;
+import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecordQueryModel;
+import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
+import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.workflow.devicerequest.command.CreateExecutedDeviceOrderCommand;
 import com.openhis.health.domain.workflow.devicerequest.command.RevokeExecutedDeviceOrderCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.GenerateDeviceDispenseFromTemporaryPathCommand;
@@ -36,6 +28,7 @@ import com.openhis.health.domain.workflow.servicerequest.command.RemoveFromNurse
 import com.openhis.health.domain.workflow.inventoryitem.command.IncreaseQuantityCommand;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -133,6 +126,7 @@ public interface NurseStationInpatientBillingMapper {
      * @param serviceId     服务 id
      * @param dispenseTable 发放表；可空
      * @param dispenseId    发放 id；可空
+     * @param procedureId   执行记录 id；诊疗划价必填
      * @param operatorId    操作人
      * @param orgId         机构
      * @return 收费命令
@@ -143,8 +137,72 @@ public interface NurseStationInpatientBillingMapper {
         Long serviceId,
         String dispenseTable,
         Long dispenseId,
+        Long procedureId,
         Long operatorId,
         Long orgId);
+
+    /**
+     * 护士划价诊疗 → 创建 Procedure 命令（category=TEMPORARY，锚定 wkf_service_request）。
+     *
+     * @param serviceRequestId 诊疗请求主键
+     * @param encounterId      就诊主键
+     * @param patientId        患者主键
+     * @param practitionerId   登录医务人员（{@code adm_practitioner.id}）；写入 Procedure operator/recorder
+     * @param occurrenceTime   执行发生时刻
+     * @return 创建命令
+     */
+    CreateProcedureRecordCommand toCreateNursePricingProcedureRecordCommand(
+        Long serviceRequestId,
+        Long encounterId,
+        Long patientId,
+        Long practitionerId,
+        LocalDateTime occurrenceTime);
+
+    /**
+     * 取消划价 CANCEL 对冲 → 创建 Procedure 命令（继承被对冲行锚点与 occurrence）。
+     *
+     * @param completedRow 被对冲 COMPLETED 行
+     * @param operatorId   操作人
+     * @param now          当前时刻（occurrence 回落用）
+     * @return 创建命令
+     */
+    CreateProcedureRecordCommand toCreateProcedureCancelOffsetCommand(
+        ProcedureRecordQueryModel completedRow,
+        Long operatorId,
+        LocalDateTime now);
+
+    /**
+     * 启动 Procedure 执行。
+     *
+     * @param procedureId 执行记录主键
+     * @param operatorId  操作人
+     * @return 启动命令
+     */
+    StartProcedureExecutionCommand toStartProcedureExecutionCommand(Long procedureId, Long operatorId);
+
+    /**
+     * 护士划价诊疗完成 Procedure。
+     *
+     * @param procedureId 执行记录主键
+     * @param operatorId  操作人
+     * @return 完成命令
+     */
+    CompleteProcedureRecordCommand toCompleteNursePricingProcedureRecordCommand(Long procedureId, Long operatorId);
+
+    /**
+     * 取消划价 CANCEL 对冲 Procedure。
+     *
+     * @param newProcedureId             新 CANCEL 行主键
+     * @param statusReasonText           取消原因
+     * @param offsetCompletedProcedureId 被对冲 COMPLETED 行主键
+     * @param operatorId                 操作人
+     * @return 取消命令
+     */
+    CancelProcedureRecordCommand toCancelNursePricingProcedureRecordCommand(
+        Long newProcedureId,
+        String statusReasonText,
+        Long offsetCompletedProcedureId,
+        Long operatorId);
 
     /**
      * 临时路径生成耗材发放草稿。

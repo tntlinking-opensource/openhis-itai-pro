@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationrequest.command;
 
 import lombok.Getter;
@@ -32,8 +19,23 @@ public class PrescriptionSplitLineContext {
     /** 药品申请主键。 */
     private Long requestId;
 
-    /** 药品定义主键（品种计数用）。 */
+    /** 药品目录定义主键（同药同用法重复判定以此为准；≤5 上限按 req 行数计，禁止用药名）。 */
     private Long medicationId;
+
+    /** 给药途径编码（用法签名组成字段）。 */
+    private String methodCode;
+
+    /** 用药频次编码（用法签名组成字段）。 */
+    private String rateCode;
+
+    /** 用药说明编码（用法签名组成字段）。 */
+    private String dosageInstruction;
+
+    /** 单次剂量（用法签名组成字段）。 */
+    private BigDecimal dose;
+
+    /** 剂量单位编码（用法签名组成字段）。 */
+    private String doseUnitCode;
 
     /**
      * 医保医疗类别（{@code adm_encounter_diagnosis.med_type}，{@link com.openhis.health.domain.share.enums.YbMedType#getCode()}）。

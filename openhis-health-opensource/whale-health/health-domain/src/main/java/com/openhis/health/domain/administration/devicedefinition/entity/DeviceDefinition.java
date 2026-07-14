@@ -1,22 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.devicedefinition.entity;
 
+import com.openhis.health.domain.share.constants.CatalogEditabilityConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
@@ -27,7 +15,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.math.BigDecimal;
 
@@ -104,6 +92,12 @@ public class DeviceDefinition extends BaseAuditedEntity {
     /** 高值器材标志。 */
     @Column(name = "hvcm_flag")
     private Boolean hvcmFlag;
+    /** 是否为收费耗材标记。 */
+    @Column(name = "chargeable_flag")
+    private Boolean chargeableFlag;
+    /** 病案结算类型编码（术语 {@code mr_settlement_type_code}）。 */
+    @Column(name = "mr_settlement_type_code")
+    private String mrSettlementTypeCode;
     /** 销售单位（5类单位之一）。 */
     @Column(name = "package_unit_code")
     private String packageUnitCode;
@@ -204,10 +198,10 @@ public class DeviceDefinition extends BaseAuditedEntity {
      * @throws BusinessException 参数非法
      */
     public void assertCreatable() {
-        if (StringUtils.isBlank(this.busNo)) {
+        if (StringUtils.isEmpty(this.busNo)) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_INVALID_ARGUMENT, "器材业务编码不能为空");
         }
-        if (StringUtils.isBlank(this.name)) {
+        if (StringUtils.isEmpty(this.name)) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_INVALID_ARGUMENT, "器材名称不能为空");
         }
     }
@@ -229,10 +223,10 @@ public class DeviceDefinition extends BaseAuditedEntity {
      * @throws BusinessException 规则冲突
      */
     public void assertUpdatableByBusinessCode(String editabilityCode) {
-        if (StringUtils.isBlank(editabilityCode)) {
+        if (StringUtils.isEmpty(editabilityCode)) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_INVALID_ARGUMENT, "编辑业务码不能为空");
         }
-        if (!"OK".equalsIgnoreCase(editabilityCode.trim())) {
+        if (!CatalogEditabilityConstants.isKnownCode(editabilityCode)) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_RULE_CONFLICT, "当前器材目录不允许编辑，业务码=" + editabilityCode);
         }
     }
@@ -254,7 +248,7 @@ public class DeviceDefinition extends BaseAuditedEntity {
      * 按商品名称重算商品拼音码与五笔码。
      */
     public void refreshMerchandiseSearchCodes() {
-        if (StringUtils.isBlank(this.merchandiseName)) {
+        if (StringUtils.isEmpty(this.merchandiseName)) {
             this.merchandisePyStr = null;
             this.merchandiseWbStr = null;
             return;
@@ -313,10 +307,10 @@ public class DeviceDefinition extends BaseAuditedEntity {
      * @throws BusinessException 参数非法
      */
     public void assertImportItemValid() {
-        if (StringUtils.isBlank(this.busNo)) {
+        if (StringUtils.isEmpty(this.busNo)) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_INVALID_ARGUMENT, "导入器材目录时 busNo 不能为空");
         }
-        if (StringUtils.isBlank(this.name)) {
+        if (StringUtils.isEmpty(this.name)) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_INVALID_ARGUMENT, "导入器材目录时 name 不能为空");
         }
     }

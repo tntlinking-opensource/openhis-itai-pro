@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
@@ -27,7 +14,7 @@ public enum EncounterParticipantRole implements EnumInterface {
     /** 挂号时指定的受理医生。 */
     REGISTRATION_DOCTOR(0L, "REGISTRATION_DOCTOR", "挂号医生", "挂号时指定的受理医生", 1L),
 
-    /** 实际接诊的医生。 */
+/** 接诊医生（EncounterParticipantRole）。 */
     ADMITTER(0L, "ADMITTER", "接诊医生", "实际接诊的医生", 2L),
 
     /** 负责治疗的主治医生。 */
@@ -36,10 +23,10 @@ public enum EncounterParticipantRole implements EnumInterface {
     /** 上级查房/会诊主任。 */
     CHIEF_DOCTOR(0L, "CHIEF_DOCTOR", "主任医生", "上级查房/会诊主任", 4L),
 
-    /** 住院责任护士。 */
+/** 责任护士（EncounterParticipantRole）。 */
     PRIMARY_NURSE(0L, "PRIMARY_NURSE", "责任护士", "住院责任护士", 5L),
 
-    /** 门诊分诊护士。 */
+/** 分诊护士（EncounterParticipantRole）。 */
     TRIAGE_NURSE(0L, "TRIAGE_NURSE", "分诊护士", "门诊分诊护士", 6L);
 
     private final Long codeSystemId;

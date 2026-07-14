@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.mrms.qc.repository;
 
 import com.openhis.health.domain.mrms.qc.entity.QcRun;

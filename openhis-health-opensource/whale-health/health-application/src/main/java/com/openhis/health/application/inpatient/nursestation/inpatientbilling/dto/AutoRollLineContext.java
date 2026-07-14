@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto;
 
 import lombok.Getter;
@@ -25,11 +12,14 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * IF-IP-ARG-08：单条滚费落账行上下文（Request + Charge 成对）。
+ * IF-IP-ARG-08：单条滚费执行行上下文（锚定已有长期 SR，走 IF-IP-EXE-02）。
  */
 @Getter
 @Setter
 public class AutoRollLineContext {
+
+    /** 长期诊疗申请主键。 */
+    private Long serviceRequestId;
 
     /** 就诊主键。 */
     private Long encounterId;

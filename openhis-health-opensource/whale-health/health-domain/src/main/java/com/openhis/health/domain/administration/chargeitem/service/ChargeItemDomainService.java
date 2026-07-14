@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.chargeitem.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -40,19 +27,14 @@ import com.openhis.health.domain.share.events.administration.chargeitem.ChargeIt
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import lombok.RequiredArgsConstructor;
+import java.util.*;
 
 /**
  * 收费明细领域服务，承载收费明细（ChargeItem）的写侧编排能力。
@@ -60,7 +42,7 @@ import lombok.RequiredArgsConstructor;
  * <p>管理收费明细的创建、状态批量迁移（激活/结算/退款等）和账户切换全流程。
  * 所有写操作均遵循「先落库后发事件」时序（通用规范 B.14 硬门禁），确保事件与数据一致性。</p>
  *
- * <p>对应 DM-ADM-011 §6.1 写侧方法集。</p>
+ * <p>对应 DM-ADM-011 §6.1 写侧方法集；仅注入本聚合 {@link ChargeItemRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -69,6 +51,7 @@ public class ChargeItemDomainService {
     private final IDomainEventPublisher domainEventPublisher;
     /** 收费明细 busNo：业务流水按日递增，前缀 {@link AggregateTypeConstants#CHARGE_ITEM}。 */
     private final BusinessSequenceService businessSequenceService;
+    private final ChargeItemRegenerationChainSupport regenerationChainSupport;
 
     /**
      * 创建挂号收费明细，初始状态为已计划（statusEnum=PLANNED），并发布 REGISTRATION_CREATED 事件。
@@ -102,7 +85,7 @@ public class ChargeItemDomainService {
         // Pre：查询本就诊、本锚点下仍处于草稿状态的收费明细。
         List<ChargeItem> rows = repository.findAllByEncounterIdAndServiceTableAndServiceIdAndStatusEnum(
             cmd.getEncounterId(), cmd.getServiceTable(), cmd.getServiceId(), ChargeItemStatus.DRAFT.getCode());
-        // 业务分支处理：无草稿行时静默跳过。
+        // 本锚点下无草稿收费行时静默跳过，重复调用幂等无操作。
         if (rows.isEmpty()) {
             return;
         }
@@ -208,13 +191,13 @@ public class ChargeItemDomainService {
      * @throws BusinessException 经 {@link #activateChargeItemAfterExecution} 间接抛出时，含义同批量状态迁移（如明细不存在）
      */
     public void planDraftChargeItemsAfterAdviceSigned(Long encounterId, String serviceTable, Long serviceId) {
-        if (encounterId == null || StringUtils.isBlank(serviceTable) || serviceId == null) {
+        if (encounterId == null || StringUtils.isEmpty(serviceTable) || serviceId == null) {
             return;
         }
         // Pre：仅处理本锚点、本就诊下仍为草稿的医嘱费用行，避免误升挂号费等其他 PLANNED 路径。
         List<ChargeItem> rows = repository.findAllByEncounterIdAndServiceTableAndServiceIdAndStatusEnum(
             encounterId, serviceTable, serviceId, ChargeItemStatus.DRAFT.getCode());
-        // 业务分支处理：无草稿行时静默跳过。
+        // 本锚点下无草稿收费行时静默跳过，重复调用幂等无操作。
         if (rows.isEmpty()) {
             return;
         }
@@ -233,14 +216,14 @@ public class ChargeItemDomainService {
      * @throws BusinessException 经 {@link #cancelExecutionRollbackChargeItem} 间接抛出时，含义同批量状态迁移（如明细不存在）
      */
     public void rollbackPlannedChargeItemsAfterAdviceSignedOff(Long encounterId, String serviceTable, Long serviceId) {
-        if (encounterId == null || StringUtils.isBlank(serviceTable) || serviceId == null) {
+        if (encounterId == null || StringUtils.isEmpty(serviceTable) || serviceId == null) {
             return;
         }
         // Pre：查询本锚点下仍处于已计划状态的收费明细。
         // 业务语义：签退后患者不应再就该医嘱行发起门诊预结算，回退为草稿与「未签发」费用语义一致。
         List<ChargeItem> rows = repository.findAllByEncounterIdAndServiceTableAndServiceIdAndStatusEnum(
             encounterId, serviceTable, serviceId, ChargeItemStatus.PLANNED.getCode());
-        // 业务分支处理：无已计划行时静默跳过。
+        // 本锚点下无已计划收费行时静默跳过，签退可能已无待回退费用。
         if (rows.isEmpty()) {
             return;
         }
@@ -256,7 +239,7 @@ public class ChargeItemDomainService {
      */
     public void voidUnbilledDraftChargeItemsByServiceAnchors(
         Long encounterId, String serviceTable, Collection<Long> serviceIds) {
-        if (encounterId == null || StringUtils.isBlank(serviceTable) || serviceIds == null || serviceIds.isEmpty()) {
+        if (encounterId == null || StringUtils.isEmpty(serviceTable) || serviceIds == null || serviceIds.isEmpty()) {
             return;
         }
         // Pre：循环去重并过滤 null 值，保证批量查询效率。
@@ -266,14 +249,14 @@ public class ChargeItemDomainService {
                 distinctIds.add(serviceId);
             }
         }
-        // 业务分支处理：去重后无有效 ID 时静默跳过。
+        // 去重后无有效上游主键时静默跳过，入参可能全为 null。
         if (distinctIds.isEmpty()) {
             return;
         }
         // Pre：批量查询本就诊、本表、多锚点下仍处于草稿状态的收费明细。
         List<ChargeItem> rows = repository.findAllByEncounterIdAndServiceTableAndServiceIdInAndStatusEnum(
             encounterId, serviceTable, distinctIds, ChargeItemStatus.DRAFT.getCode());
-        // 业务分支处理：无草稿行时静默跳过。
+        // 本锚点下无草稿收费行时静默跳过，重复调用幂等无操作。
         if (rows.isEmpty()) {
             return;
         }
@@ -289,7 +272,7 @@ public class ChargeItemDomainService {
      */
     public void planDraftChargeItemsAfterAdviceSignedForAnchors(
         Long encounterId, String serviceTable, Collection<Long> serviceIds) {
-        if (encounterId == null || StringUtils.isBlank(serviceTable) || serviceIds == null || serviceIds.isEmpty()) {
+        if (encounterId == null || StringUtils.isEmpty(serviceTable) || serviceIds == null || serviceIds.isEmpty()) {
             return;
         }
         // Pre：循环去重并过滤 null 值。
@@ -299,14 +282,14 @@ public class ChargeItemDomainService {
                 distinctIds.add(serviceId);
             }
         }
-        // 业务分支处理：去重后无有效 ID 时静默跳过。
+        // 去重后无有效上游主键时静默跳过，入参可能全为 null。
         if (distinctIds.isEmpty()) {
             return;
         }
         // Pre：批量查询草稿状态的收费明细。
         List<ChargeItem> rows = repository.findAllByEncounterIdAndServiceTableAndServiceIdInAndStatusEnum(
             encounterId, serviceTable, distinctIds, ChargeItemStatus.DRAFT.getCode());
-        // 业务分支处理：无草稿行时静默跳过。
+        // 本锚点下无草稿收费行时静默跳过，重复调用幂等无操作。
         if (rows.isEmpty()) {
             return;
         }
@@ -322,7 +305,7 @@ public class ChargeItemDomainService {
      */
     public void rollbackPlannedChargeItemsAfterAdviceSignedOffForAnchors(
         Long encounterId, String serviceTable, Collection<Long> serviceIds) {
-        if (encounterId == null || StringUtils.isBlank(serviceTable) || serviceIds == null || serviceIds.isEmpty()) {
+        if (encounterId == null || StringUtils.isEmpty(serviceTable) || serviceIds == null || serviceIds.isEmpty()) {
             return;
         }
         // Pre：循环去重并过滤 null 值。
@@ -332,14 +315,14 @@ public class ChargeItemDomainService {
                 distinctIds.add(serviceId);
             }
         }
-        // 业务分支处理：去重后无有效 ID 时静默跳过。
+        // 去重后无有效上游主键时静默跳过，入参可能全为 null。
         if (distinctIds.isEmpty()) {
             return;
         }
         // Pre：批量查询已计划状态的收费明细。
         List<ChargeItem> rows = repository.findAllByEncounterIdAndServiceTableAndServiceIdInAndStatusEnum(
             encounterId, serviceTable, distinctIds, ChargeItemStatus.PLANNED.getCode());
-        // 业务分支处理：无已计划行时静默跳过。
+        // 本锚点下无已计划收费行时静默跳过，签退可能已无待回退费用。
         if (rows.isEmpty()) {
             return;
         }
@@ -358,7 +341,7 @@ public class ChargeItemDomainService {
      */
     public void voidUnbilledDraftChargeItemsByDispenseAnchors(
         Long encounterId, String dispenseTable, Collection<Long> dispenseIds) {
-        if (encounterId == null || StringUtils.isBlank(dispenseTable) || dispenseIds == null || dispenseIds.isEmpty()) {
+        if (encounterId == null || StringUtils.isEmpty(dispenseTable) || dispenseIds == null || dispenseIds.isEmpty()) {
             return;
         }
         // Pre：循环去重并过滤 null 值。
@@ -368,14 +351,14 @@ public class ChargeItemDomainService {
                 distinctIds.add(dispenseId);
             }
         }
-        // 业务分支处理：仅 null 入参时集合可能退化为空，此时无目标行。
+        // 去重后无有效发放主键时静默跳过，入参可能全为 null。
         if (distinctIds.isEmpty()) {
             return;
         }
         // Pre：单次 IN 查询加载目标草稿行（A.9.1），避免循环逐条删除。
         List<ChargeItem> rows = repository.findAllByEncounterIdAndDispenseTableAndDispenseIdInAndStatusEnum(
             encounterId, dispenseTable, distinctIds, ChargeItemStatus.DRAFT.getCode());
-        // 业务分支处理：无草稿行时静默跳过。
+        // 本锚点下无草稿收费行时静默跳过，重复调用幂等无操作。
         if (rows.isEmpty()) {
             return;
         }
@@ -394,7 +377,7 @@ public class ChargeItemDomainService {
      */
     public void planDraftChargeItemsAfterAdviceSignedByDispenseAnchors(
         Long encounterId, String dispenseTable, Collection<Long> dispenseIds) {
-        if (encounterId == null || StringUtils.isBlank(dispenseTable) || dispenseIds == null || dispenseIds.isEmpty()) {
+        if (encounterId == null || StringUtils.isEmpty(dispenseTable) || dispenseIds == null || dispenseIds.isEmpty()) {
             return;
         }
         // Pre：循环去重并过滤 null 值。
@@ -404,14 +387,14 @@ public class ChargeItemDomainService {
                 distinctIds.add(dispenseId);
             }
         }
-        // 业务分支处理：去重后无有效 ID 时静默跳过。
+        // 去重后无有效上游主键时静默跳过，入参可能全为 null。
         if (distinctIds.isEmpty()) {
             return;
         }
         // Pre：批量查询草稿状态的收费明细。
         List<ChargeItem> rows = repository.findAllByEncounterIdAndDispenseTableAndDispenseIdInAndStatusEnum(
             encounterId, dispenseTable, distinctIds, ChargeItemStatus.DRAFT.getCode());
-        // 业务分支处理：无草稿行时静默跳过。
+        // 本锚点下无草稿收费行时静默跳过，重复调用幂等无操作。
         if (rows.isEmpty()) {
             return;
         }
@@ -430,7 +413,7 @@ public class ChargeItemDomainService {
      */
     public void rollbackPlannedChargeItemsAfterAdviceSignedOffByDispenseAnchors(
         Long encounterId, String dispenseTable, Collection<Long> dispenseIds) {
-        if (encounterId == null || StringUtils.isBlank(dispenseTable) || dispenseIds == null || dispenseIds.isEmpty()) {
+        if (encounterId == null || StringUtils.isEmpty(dispenseTable) || dispenseIds == null || dispenseIds.isEmpty()) {
             return;
         }
         // Pre：循环去重并过滤 null 值。
@@ -440,14 +423,14 @@ public class ChargeItemDomainService {
                 distinctIds.add(dispenseId);
             }
         }
-        // 业务分支处理：去重后无有效 ID 时静默跳过。
+        // 去重后无有效上游主键时静默跳过，入参可能全为 null。
         if (distinctIds.isEmpty()) {
             return;
         }
         // Pre：批量查询已计划状态的收费明细。
         List<ChargeItem> rows = repository.findAllByEncounterIdAndDispenseTableAndDispenseIdInAndStatusEnum(
             encounterId, dispenseTable, distinctIds, ChargeItemStatus.PLANNED.getCode());
-        // 业务分支处理：无已计划行时静默跳过。
+        // 本锚点下无已计划收费行时静默跳过，签退可能已无待回退费用。
         if (rows.isEmpty()) {
             return;
         }
@@ -472,15 +455,27 @@ public class ChargeItemDomainService {
      */
     public void voidOrderExecuteChargeItemsByProcedureIds(VoidOrderExecuteChargeItemsByProcedureIdsCommand cmd) {
         Collection<Long> procedureIds = this.distinctNonNullProcedureIds(cmd.getProcedureIds());
-        // 业务分支处理：无有效 procedureId 时静默跳过。
+        // 无有效 procedureId 时静默跳过，取消执行入参可能为空集合。
         if (procedureIds.isEmpty()) {
             return;
         }
         // Pre：加载各执行记录关联的全部收费明细，用于结算 Gate 与目标行筛选。
         List<ChargeItem> linkedRows = repository.findAllByProcedureIdIn(procedureIds);
-        // 业务分支处理：任一关联行已进入结算/退费链路则整批拒绝，避免部分回退造成账实不一致。
+        Long encounterId = null;
+        for (ChargeItem row : linkedRows) {
+            if (row != null && row.getEncounterId() != null) {
+                encounterId = row.getEncounterId();
+                break;
+            }
+        }
+        Set<Long> supersededSettledSourceIds =
+            this.resolveSupersededSettledSourceIds(encounterId, linkedRows);
+        // 任一关联行已进入结算/退费链路则整批拒绝，避免部分回退造成账实不一致。
         for (ChargeItem row : linkedRows) {
             if (this.isNonRollbackableChargeStatus(row.getStatusEnum())) {
+                if (row.getId() != null && supersededSettledSourceIds.contains(row.getId())) {
+                    continue;
+                }
                 throw new BusinessException(
                     ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
                     "执行记录 " + row.getProcedureId() + " 关联费用已结算或退费中，不允许取消执行回退");
@@ -490,7 +485,7 @@ public class ChargeItemDomainService {
             procedureIds,
             ChargeItemStatus.PENDING_SETTLEMENT.getCode(),
             GenerateSource.ORDER_EXECUTE.getCode());
-        // 业务分支处理：无长期执行新建行时静默跳过。
+        // 无长期执行新建行时静默跳过，取消执行可能已无待删费用。
         if (toDelete.isEmpty()) {
             return;
         }
@@ -551,7 +546,7 @@ public class ChargeItemDomainService {
      * @param cmd 就诊、上游表名与主键集合
      */
     public void voidNursePricingChargeItemsByServiceAnchors(VoidNursePricingChargeItemsByServiceAnchorsCommand cmd) {
-        if (cmd == null || cmd.getEncounterId() == null || StringUtils.isBlank(cmd.getServiceTable())
+        if (cmd == null || cmd.getEncounterId() == null || StringUtils.isEmpty(cmd.getServiceTable())
             || cmd.getServiceIds() == null || cmd.getServiceIds().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "撤销护士划价费用锚点参数不完整");
         }
@@ -561,15 +556,21 @@ public class ChargeItemDomainService {
                 distinctIds.add(serviceId);
             }
         }
-        // 业务分支处理：去重后无有效锚点时静默跳过。
+        // 去重后无有效划价锚点时静默跳过。
         if (distinctIds.isEmpty()) {
             return;
         }
         // Pre：加载本就诊、本表、多锚点下全部费用行，用于结算 Gate。
         List<ChargeItem> linkedRows = repository.findAllByEncounterIdAndServiceTableAndServiceIdIn(
             cmd.getEncounterId(), cmd.getServiceTable(), distinctIds);
+        Set<Long> supersededSettledSourceIds =
+            this.resolveSupersededSettledSourceIds(cmd.getEncounterId(), linkedRows);
         for (ChargeItem row : linkedRows) {
             if (this.isNonRollbackableChargeStatus(row.getStatusEnum())) {
+                // 反结/半退再生链上源 SETTLED 终态行不参与 Gate（BR-REF-020 / BR-IP-RVS-011）。
+                if (row.getId() != null && supersededSettledSourceIds.contains(row.getId())) {
+                    continue;
+                }
                 throw new BusinessException(
                     ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
                     "划价锚点关联费用已结算或退费中，不允许取消划价");
@@ -586,7 +587,7 @@ public class ChargeItemDomainService {
             }
             toDelete.add(row);
         }
-        // 业务分支处理：无待结算护士划价行时静默跳过。
+        // 无待结算护士划价行时静默跳过，撤销划价可能已无命中行。
         if (toDelete.isEmpty()) {
             return;
         }
@@ -616,7 +617,7 @@ public class ChargeItemDomainService {
         List<ChargeItem> toSave = new ArrayList<>();
         for (DeactivateChargeByExeCommand.Item item : items) {
             ChargeItem row = require(map, item.getChargeItemId());
-            // 业务分支处理：仅待结算态允许逆激活，与 activateChargeByExe 对称。
+            // 仅待结算态允许逆激活，与 activateChargeByExe 对称。
             if (!ChargeItemStatus.PENDING_SETTLEMENT.getCode().equals(row.getStatusEnum())) {
                 throw new BusinessException(
                     ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
@@ -669,16 +670,18 @@ public class ChargeItemDomainService {
                     "收费明细 " + id + " 状态非 PLANNED，不允许门诊结算");
             }
         }
-        int updated = repository.updateStatusAndPerformerWhereIdInAndSourceStatus(
-            ids,
-            ChargeItemStatus.SETTLED.getCode(),
-            cashierPractitionerId,
-            ChargeItemStatus.PLANNED.getCode());
-        if (updated != ids.size()) {
+        List<ChargeItem> toSettle = repository.findAllByIdInAndStatusEnum(
+            ids, ChargeItemStatus.PLANNED.getCode());
+        if (toSettle.size() != ids.size()) {
             throw new BusinessException(
                 ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
                 "收费明细状态已变更，不允许重复结算或结算已撤回医嘱");
         }
+        for (ChargeItem row : toSettle) {
+            row.setStatusEnum(ChargeItemStatus.SETTLED.getCode());
+            row.setPerformerId(cashierPractitionerId);
+        }
+        repository.saveAll(toSettle);
         // Event：SETTLED 为批量粒度事件，以首条 ID 代表整批次发布一次。
         this.publishByType(ChargeItemEventType.SETTLED, ids.get(0), ids);
     }
@@ -758,10 +761,10 @@ public class ChargeItemDomainService {
                 throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_RULE_CONFLICT,
                     "保留链新行落库要求源行为 SETTLED，chargeItemId=" + src.getId());
             }
-            if (StringUtils.isBlank(anchor.getNewServiceTable()) || anchor.getNewServiceId() == null) {
+            if (StringUtils.isEmpty(anchor.getNewServiceTable()) || anchor.getNewServiceId() == null) {
                 throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "再生后 service_table/service_id 不能为空");
             }
-            boolean dispenseTableBlank = StringUtils.isBlank(anchor.getNewDispenseTable());
+            boolean dispenseTableBlank = StringUtils.isEmpty(anchor.getNewDispenseTable());
             if (dispenseTableBlank && anchor.getNewDispenseId() != null) {
                 throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "发放表名为空时发放主键须为空");
             }
@@ -865,39 +868,85 @@ public class ChargeItemDomainService {
                     "收费明细 " + id + " 状态非待结算，不允许住院结算");
             }
         }
-        int updated = repository.updateStatusWhereIdInAndSourceStatus(
-            ids,
-            ChargeItemStatus.SETTLED.getCode(),
-            ChargeItemStatus.PENDING_SETTLEMENT.getCode());
-        if (updated != ids.size()) {
+        List<ChargeItem> toSettle = repository.findAllByIdInAndStatusEnum(
+            ids, ChargeItemStatus.PENDING_SETTLEMENT.getCode());
+        if (toSettle.size() != ids.size()) {
             throw new BusinessException(
                 ErrorCodeConstants.CHARGE_ITEM_INVALID_STATUS,
                 "收费明细状态已变更，不允许重复结算");
         }
+        for (ChargeItem row : toSettle) {
+            row.setStatusEnum(ChargeItemStatus.SETTLED.getCode());
+        }
+        repository.saveAll(toSettle);
         this.publishByType(ChargeItemEventType.INPATIENT_ITEMS_SETTLED, ids.get(0), ids);
     }
 
     /**
-     * 住院反结时回退收费明细：SETTLED → PENDING_SETTLEMENT，并发布 INPATIENT_ITEMS_REVERTED 事件。
+     * 住院反结再生收费明细：源 {@code SETTLED} 行保持终态不动，批量插入 {@code PENDING_SETTLEMENT} 新行并写 {@code refund_id} 链回源行（DM-ADM-011 §6.1.12a，AS-IP-FIN-004）。
      *
-     * @param cmd 批量收费明细主键命令
+     * <p>与门诊半退 {@link #createChargeItemsLinkingRegeneratedAnchors} 对称：禁止改写历史已结算行，保证支付快照绑定的明细在结算历史中可查。</p>
+     *
+     * @param cmd 源已结算收费明细主键命令（通常为支付单 {@code charge_item_ids} 快照子集）
      */
     public void revertInpatientSettledChargeItems(BatchChargeItemIdsCommand cmd) {
-        List<Long> ids = this.extractIds(cmd);
-        if (ids.isEmpty()) {
+        List<Long> sourceIds = this.extractIds(cmd);
+        if (sourceIds.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT, "收费明细批量入参不能为空");
         }
-        Map<Long, ChargeItem> map = this.loadMap(ids);
-        for (Long id : ids) {
-            ChargeItem row = require(map, id);
-            // Pre：仅已结算行允许回退，与 settleInpatientChargeItems 对称。
-            if (!ChargeItemStatus.SETTLED.getCode().equals(row.getStatusEnum())) {
+        Map<Long, ChargeItem> sourceMap = this.loadMap(sourceIds);
+        LinkedHashSet<Long> sourceIdSet = new LinkedHashSet<>(sourceIds);
+        List<String> busNos = businessSequenceService.getSeqByDay(
+            AggregateTypeConstants.CHARGE_ITEM, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH, sourceIds.size());
+        List<ChargeItem> toSave = new ArrayList<>();
+        for (int index = 0; index < sourceIds.size(); index++) {
+            Long sourceId = sourceIds.get(index);
+            ChargeItem sourceRow = require(sourceMap, sourceId);
+            // Pre：源行须仍为 SETTLED，已再生或已变更则拒绝重复反结。
+            if (!ChargeItemStatus.SETTLED.getCode().equals(sourceRow.getStatusEnum())) {
                 throw new BusinessException(
                     ErrorCodeConstants.CHARGE_ITEM_INVALID_ARGUMENT,
-                    "收费明细 " + id + " 状态非已结算，不允许反结回退");
+                    "收费明细 " + sourceId + " 状态非已结算，不允许反结再生");
+            }
+            toSave.add(this.cloneChargeItemForInpatientReverseSettle(sourceRow, busNos.get(index), cmd.getOperatorId()));
+        }
+        List<ChargeItem> saved = repository.saveAll(toSave);
+        Map<Long, Long> sourceToNewId = new HashMap<>();
+        for (ChargeItem savedRow : saved) {
+            if (savedRow.getRefundId() != null) {
+                sourceToNewId.put(savedRow.getRefundId(), savedRow.getId());
             }
         }
-        this.batchUpdateStatus(cmd, ChargeItemStatus.PENDING_SETTLEMENT, ChargeItemEventType.INPATIENT_ITEMS_REVERTED);
+        List<ChargeItem> parentRemapBatch = new ArrayList<>();
+        for (ChargeItem savedRow : saved) {
+            ChargeItem sourceRow = sourceMap.get(savedRow.getRefundId());
+            if (sourceRow == null || sourceRow.getParentId() == null) {
+                continue;
+            }
+            // 组套子行：仅当父行亦在本批再生时，将 parent_id 链到新父行主键。
+            if (!sourceIdSet.contains(sourceRow.getParentId())) {
+                continue;
+            }
+            Long newParentId = sourceToNewId.get(sourceRow.getParentId());
+            if (newParentId == null) {
+                continue;
+            }
+            if (!newParentId.equals(savedRow.getParentId())) {
+                savedRow.setParentId(newParentId);
+                parentRemapBatch.add(savedRow);
+            }
+        }
+        if (!parentRemapBatch.isEmpty()) {
+            repository.saveAll(parentRemapBatch);
+        }
+        List<Long> newIds = new ArrayList<>();
+        for (ChargeItem savedRow : saved) {
+            newIds.add(savedRow.getId());
+        }
+        // Event：发布反结再生事件，携带本批新行主键供待结算队列刷新。
+        if (!newIds.isEmpty()) {
+            domainEventPublisher.publish(new ChargeItemDomainEvents.InpatientChargeItemsRevertedEvent(newIds.get(0), newIds));
+        }
     }
 
     /**
@@ -965,7 +1014,7 @@ public class ChargeItemDomainService {
             }
             row.setQuantityValue(quantityValue);
             String quantityUnit = item.getQuantityUnit();
-            if (StringUtils.isBlank(quantityUnit)) {
+            if (StringUtils.isEmpty(quantityUnit)) {
                 quantityUnit = ChargeItemDmConstants.DEFAULT_QUANTITY_UNIT;
             }
             row.setQuantityUnit(quantityUnit);
@@ -992,7 +1041,7 @@ public class ChargeItemDomainService {
             row.setOccurrenceTime(occurrenceTime);
             // 业务来源表名缺省为就诊表，锚定挂号/就诊维度（BR-CHG-001）。
             String serviceTable = item.getServiceTable();
-            if (StringUtils.isBlank(serviceTable)) {
+            if (StringUtils.isEmpty(serviceTable)) {
                 serviceTable = TableNameConstants.ADM_ENCOUNTER;
             }
             row.setServiceTable(serviceTable);
@@ -1007,12 +1056,12 @@ public class ChargeItemDomainService {
             row.setProductId(item.getProductId());
             row.setDispenseTable(item.getDispenseTable());
             row.setDispenseId(item.getDispenseId());
-            if (StringUtils.isNotBlank(item.getPrescriptionNo())) {
+            if (StringUtils.isNotEmpty(item.getPrescriptionNo())) {
                 row.setPrescriptionNo(item.getPrescriptionNo().trim());
             }
             row.setProcedureId(item.getProcedureId());
             Long refundRootChargeItemId = item.getRefundRootChargeItemId();
-            // 业务分支处理：半退场景需记录源收费明细 ID，建立保留链。
+            // 半退场景须记录源收费明细 ID，建立保留链供读侧追溯。
             if (refundRootChargeItemId != null) {
                 row.setRefundId(refundRootChargeItemId);
             }
@@ -1036,7 +1085,7 @@ public class ChargeItemDomainService {
         for (int i = 0; i < saved.size(); i++) {
             ChargeItem row = saved.get(i);
             CreateChargeItemCommand.Item item = items.get(i);
-            // 业务分支处理：挂号创建事件需携带就诊与金额信息。
+            // 挂号创建事件须携带就诊与金额信息，供挂号列表投影刷新。
             if (eventType == ChargeItemEventType.REGISTRATION_CREATED) {
                 ChargeItemDomainEvents.RegistrationChargeItemCreatedEvent registrationCreatedEvent =
                     new ChargeItemDomainEvents.RegistrationChargeItemCreatedEvent(row.getId());
@@ -1044,7 +1093,7 @@ public class ChargeItemDomainService {
                 registrationCreatedEvent.setTotalPrice(row.getTotalPrice());
                 domainEventPublisher.publish(registrationCreatedEvent);
             } else if (eventType == ChargeItemEventType.PRESERVED_LINE_REGENERATED_CHARGE_CREATED) {
-                // 业务分支处理：半退保留链创建事件需携带源收费明细 ID。
+                // 半退保留链创建事件须携带源收费明细 ID，供读侧关联原行。
                 ChargeItemDomainEvents.PreservedLineRegeneratedChargeItemCreatedEvent preservedRegeneratedEvent =
                     new ChargeItemDomainEvents.PreservedLineRegeneratedChargeItemCreatedEvent(row.getId());
                 preservedRegeneratedEvent.setEncounterId(row.getEncounterId());
@@ -1067,7 +1116,7 @@ public class ChargeItemDomainService {
      */
     private void fillGenerateAndContext(ChargeItem row, CreateChargeItemCommand.Item item, ChargeItemEventType eventType) {
         // 生成来源：命令显式传入优先；否则按本次写事件类型落 DM 默认存储码。
-        if (StringUtils.isNotBlank(item.getGenerateSourceEnum())) {
+        if (StringUtils.isNotEmpty(item.getGenerateSourceEnum())) {
             row.setGenerateSourceEnum(item.getGenerateSourceEnum());
         } else if (eventType == ChargeItemEventType.REGISTRATION_CREATED) {
             row.setGenerateSourceEnum(GenerateSource.REGISTRATION_REGISTER.getCode());
@@ -1087,7 +1136,7 @@ public class ChargeItemDomainService {
             row.setGenerateSourceEnum(GenerateSource.REGISTRATION_REGISTER.getCode());
         }
         // 收费上下文：命令显式传入优先；挂号场景落「挂号」，其余活动类费用落「活动」。
-        if (StringUtils.isNotBlank(item.getContextEnum())) {
+        if (StringUtils.isNotEmpty(item.getContextEnum())) {
             row.setContextEnum(item.getContextEnum());
         } else if (eventType == ChargeItemEventType.REGISTRATION_CREATED) {
             row.setContextEnum(ChargeItemDmConstants.CONTEXT_REGISTER);
@@ -1125,7 +1174,7 @@ public class ChargeItemDomainService {
         // Event：事件类型 1-8 为单条记录粒度事件，逐条发布。
         for (ChargeItem r : toSave) {
             if (!eventType.isBatchEvent()) {
-                // 业务分支处理：挂号退费须携带就诊主键，供挂号列表与挂号单投影将金额摘要清零。
+                // 挂号退费须携带就诊主键，供挂号列表与挂号单投影将金额摘要清零。
                 if (eventType == ChargeItemEventType.REGISTRATION_REFUNDED) {
                     ChargeItemDomainEvents.RegistrationChargeItemRefundedEvent refundEvent =
                         new ChargeItemDomainEvents.RegistrationChargeItemRefundedEvent(r.getId());
@@ -1258,6 +1307,65 @@ public class ChargeItemDomainService {
     }
 
     /**
+     * 自源 {@code SETTLED} 行完整复刻业务事实并落为反结再生行（{@code PENDING_SETTLEMENT} + {@code refund_id}）。
+     *
+     * @param src        源已结算收费明细
+     * @param busNo      新业务流水号
+     * @param operatorId 操作员主键
+     * @return 待持久化新行
+     */
+    private ChargeItem cloneChargeItemForInpatientReverseSettle(ChargeItem src, String busNo, Long operatorId) {
+        ChargeItem row = new ChargeItem();
+        row.setPatientId(src.getPatientId());
+        row.setEncounterId(src.getEncounterId());
+        row.setAccountId(src.getAccountId());
+        row.setDefinitionId(src.getDefinitionId());
+        row.setDefDetailId(src.getDefDetailId());
+        row.setTotalPrice(src.getTotalPrice());
+        row.setUnitPrice(src.getUnitPrice());
+        row.setQuantityValue(src.getQuantityValue());
+        row.setQuantityUnit(src.getQuantityUnit());
+        row.setBaseAmount(src.getBaseAmount());
+        row.setDiscountAmount(src.getDiscountAmount());
+        row.setSurchargeAmount(src.getSurchargeAmount());
+        row.setSystemDiscountPrice(src.getSystemDiscountPrice());
+        row.setManualAdjustedPrice(src.getManualAdjustedPrice());
+        row.setOverrideReasonCode(src.getOverrideReasonCode());
+        row.setOverrideReasonText(src.getOverrideReasonText());
+        row.setOccurrenceTime(src.getOccurrenceTime());
+        row.setServiceTable(src.getServiceTable());
+        row.setServiceId(src.getServiceId());
+        row.setProductTable(src.getProductTable());
+        row.setProductId(src.getProductId());
+        row.setProcedureId(src.getProcedureId());
+        row.setDispenseTable(src.getDispenseTable());
+        row.setDispenseId(src.getDispenseId());
+        row.setPrescriptionNo(src.getPrescriptionNo());
+        row.setParentId(src.getParentId());
+        row.setPerformerId(src.getPerformerId());
+        row.setPerformingOrgId(src.getPerformingOrgId());
+        row.setCostOrgId(src.getCostOrgId());
+        row.setOrgId(src.getOrgId());
+        row.setRequestingOrgId(src.getRequestingOrgId());
+        row.setGenerateSourceEnum(src.getGenerateSourceEnum());
+        row.setContextEnum(src.getContextEnum());
+        row.setConditionId(src.getConditionId());
+        row.setEncounterDiagnosisId(src.getEncounterDiagnosisId());
+        row.setTcmFlag(src.getTcmFlag());
+        row.setClaimStateEnum(src.getClaimStateEnum());
+        row.setPrintCount(src.getPrintCount());
+        row.setRefundId(src.getId());
+        row.setStatusEnum(ChargeItemStatus.PENDING_SETTLEMENT.getCode());
+        row.setBusNo(busNo);
+        if (operatorId != null) {
+            row.setEntererId(operatorId);
+            row.setEnteredDate(src.getOccurrenceTime());
+        }
+        row.assertPersistableNewRow();
+        return row;
+    }
+
+    /**
      * 组装半退保留链单条创建项：可对齐金额与生成上下文自源 SETTLED 行复刻；service/dispense 取再生锚点；{@code refundRootChargeItemId} 链回源行。
      *
      * @param src    源结算行
@@ -1290,8 +1398,8 @@ public class ChargeItemDomainService {
         // 产品锚点复刻。
         out.setProductTable(src.getProductTable());
         out.setProductId(src.getProductId());
-        // 业务分支处理：发放锚点根据再生输入决定是否设置。
-        if (StringUtils.isBlank(anchor.getNewDispenseTable())) {
+        // 再生输入未携带发放锚点时清空 dispense 字段，避免沿用旧分段计费键。
+        if (StringUtils.isEmpty(anchor.getNewDispenseTable())) {
             out.setDispenseTable(null);
             out.setDispenseId(null);
         } else {
@@ -1361,6 +1469,48 @@ public class ChargeItemDomainService {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 解析同锚点/同 procedure 下已被半退或住院反结再生替代的源 {@code SETTLED} 行（BR-REF-020 / BR-IP-RVS-011）。
+     *
+     * <p>多轮结算/反结时沿 {@code refund_id} 链向上追溯，链末端存在有效再生叶则整条链上 SETTLED 祖先均忽略。</p>
+     *
+     * @param encounterId 就诊主键
+     * @param linkedRows  关联费用行
+     * @return 应忽略的源 SETTLED 行主键集合
+     */
+    private Set<Long> resolveSupersededSettledSourceIds(Long encounterId, List<ChargeItem> linkedRows) {
+        if (encounterId == null || linkedRows == null || linkedRows.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<Long> supersededAncestorIds = regenerationChainSupport.collectSupersededSettledAncestorIds(encounterId);
+        if (supersededAncestorIds.isEmpty()) {
+            return Collections.emptySet();
+        }
+        LinkedHashSet<Long> supersededInScope = new LinkedHashSet<>();
+        for (ChargeItem row : linkedRows) {
+            if (row == null || row.getId() == null) {
+                continue;
+            }
+            if (!ChargeItemStatus.SETTLED.getCode().equals(row.getStatusEnum())) {
+                continue;
+            }
+            if (supersededAncestorIds.contains(row.getId())) {
+                supersededInScope.add(row.getId());
+            }
+        }
+        return supersededInScope;
+    }
+
+    /**
+     * 有效再生行状态（门诊半退 PLANNED、住院反结 PENDING_SETTLEMENT）。
+     *
+     * @param statusEnum 收费状态 code
+     * @return 有效再生行时 true
+     */
+    private boolean isActiveSupersedingRegenerationStatus(String statusEnum) {
+        return regenerationChainSupport.isActiveSupersedingRegenerationStatus(statusEnum);
     }
 
     /**

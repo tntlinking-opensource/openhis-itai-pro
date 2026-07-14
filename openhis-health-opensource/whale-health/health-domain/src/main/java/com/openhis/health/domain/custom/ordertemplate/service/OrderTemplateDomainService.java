@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.ordertemplate.service;
 
 import com.openhis.health.domain.custom.ordertemplate.command.*;
@@ -57,6 +44,7 @@ public class OrderTemplateDomainService {
      * @throws BusinessException 编码冲突或不变式失败时
      */
     public Long createOrderTemplate(CreateOrderTemplateCommand command) {
+        // 加载/组装聚合：由命令字段初始化草稿态模板头
         OrderTemplate template = new OrderTemplate();
         template.setObjectId(command.getObjectId());
         template.setBindingEnum(command.getBindingEnum());
@@ -74,7 +62,7 @@ public class OrderTemplateDomainService {
         template.setTemplateCode(command.getTemplateCode());
         template.setName(command.getName());
         template.setDescription(command.getDescription());
-        // 业务分支处理。
+        // 排序权重未传时默认 0，保证列表展示有稳定次序。
         if (command.getSortWeight() == null) {
             template.setSortWeight(0);
         } else {
@@ -85,23 +73,25 @@ public class OrderTemplateDomainService {
         template.setDefaultSufferingFlag(command.getDefaultSufferingFlag());
         template.initDraft();
 
-        // 校验：必填与基础合法性（BR-OTL-001/002/005/011）
+        // 前置校验：必填与基础合法性（BR-OTL-001/002/005/011）
         template.assertRequiredFields();
 
-        // 校验：编码唯一（BR-OTL-003；仅当 templateCode 非空时）
+        // 前置校验：编码唯一（BR-OTL-003；仅当 templateCode 非空时）
         if (template.getTemplateCode() != null && !template.getTemplateCode().trim().isEmpty()) {
             boolean exists = orderTemplateRepository.existsByTemplateCodeAndObjectIdAndBindingEnum(
                 template.getTemplateCode().trim(),
                 template.getObjectId(),
                 template.getBindingEnum()
             );
-            // 业务分支处理。
+            // 同归属对象与绑定维度下编码已存在则拒绝创建。
             if (exists) {
                 throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_CODE_CONFLICT, "模板编码冲突");
             }
         }
 
+        // 持久化
         OrderTemplate saved = orderTemplateRepository.save(template);
+        // 发布事件
         domainEventPublisher.publish(new OrderTemplateCreatedEvent(saved.getId(), saved.getObjectId(), saved.getBindingEnum(), saved.getSceneEnum(), command.getOperatorId()));
         return saved.getId();
     }
@@ -113,14 +103,15 @@ public class OrderTemplateDomainService {
      * @throws BusinessException 模板不存在、不可编辑、编码冲突或退役禁止修改时
      */
     public void updateOrderTemplateHeader(UpdateOrderTemplateHeaderCommand command) {
+        // 加载/组装聚合
         OrderTemplate template = requireTemplate(command.getOrderTemplateId());
         template.assertEditable();
 
-        // 状态约束：RETIRED 禁止修改头（BR-OTL-017），委托聚合根执行门控。
+        // 前置校验：RETIRED 禁止修改头（BR-OTL-017），委托聚合根执行门控
         template.assertNotRetired();
 
         List<String> changedKeys = new ArrayList<>();
-        // 业务分支处理。
+        // 命令传入场景编码时覆盖并记入变更摘要。
         if (command.getSceneEnum() != null) {
             template.setSceneEnum(command.getSceneEnum());
             changedKeys.add("scene_enum");
@@ -129,27 +120,27 @@ public class OrderTemplateDomainService {
             template.setTemplateKindEnum(command.getTemplateKindEnum().trim());
             changedKeys.add("template_kind_enum");
         }
-        // 业务分支处理。
+        // 命令传入模板编码时覆盖并记入变更摘要。
         if (command.getTemplateCode() != null) {
             template.setTemplateCode(command.getTemplateCode());
             changedKeys.add("template_code");
         }
-        // 业务分支处理。
+        // 命令传入名称时覆盖并记入变更摘要。
         if (command.getName() != null) {
             template.setName(command.getName());
             changedKeys.add("name");
         }
-        // 业务分支处理。
+        // 命令传入描述时覆盖并记入变更摘要。
         if (command.getDescription() != null) {
             template.setDescription(command.getDescription());
             changedKeys.add("description");
         }
-        // 业务分支处理。
+        // 命令传入排序权重时覆盖并记入变更摘要。
         if (command.getSortWeight() != null) {
             template.setSortWeight(command.getSortWeight());
             changedKeys.add("sort_weight");
         }
-        // 业务分支处理。
+        // 命令传入备注时覆盖并记入变更摘要。
         if (command.getRemark() != null) {
             template.setRemark(command.getRemark());
             changedKeys.add("remark");
@@ -162,7 +153,7 @@ public class OrderTemplateDomainService {
             template.setDefaultSufferingFlag(command.getDefaultSufferingFlag());
             changedKeys.add("default_suffering_flag");
         }
-        // 业务分支处理。
+        // 命令传入状态码时覆盖并记入变更摘要。
         if (command.getStatusEnum() != null) {
             template.setStatusEnum(command.getStatusEnum());
             changedKeys.add("status_enum");
@@ -170,7 +161,7 @@ public class OrderTemplateDomainService {
 
         template.assertRequiredFields();
 
-        // 业务分支处理。
+        // 头表编码非空时须校验同维度唯一（排除自身）。
         if (template.getTemplateCode() != null && !template.getTemplateCode().trim().isEmpty()) {
             boolean exists = orderTemplateRepository.existsByTemplateCodeAndObjectIdAndBindingEnumAndIdNot(
                 template.getTemplateCode().trim(),
@@ -178,14 +169,15 @@ public class OrderTemplateDomainService {
                 template.getBindingEnum(),
                 template.getId()
             );
-            // 业务分支处理。
+            // 更新后编码与同归属维度冲突则拒绝保存。
             if (exists) {
                 throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_CODE_CONFLICT, "模板编码冲突");
             }
         }
 
+        // 持久化
         OrderTemplate saved = orderTemplateRepository.save(template);
-        // 业务分支处理。
+        // 发布事件
         if (!changedKeys.isEmpty()) {
             domainEventPublisher.publish(new OrderTemplateUpdatedEvent(saved.getId(), changedKeys, command.getOperatorId()));
         }
@@ -198,10 +190,11 @@ public class OrderTemplateDomainService {
      * @throws BusinessException 空壳不可发布或状态不允许时
      */
     public void publishOrderTemplate(PublishOrderTemplateCommand command) {
+        // 加载/组装聚合
         OrderTemplate template = requireTemplate(command.getOrderTemplateId());
         template.assertEditable();
 
-        // 校验：发布时必须至少有一条有效行（BR-OTL-006）；划价组套禁止药品行（BR-OTL-026）
+        // 前置校验：发布时必须至少有一条有效行（BR-OTL-006）；划价组套禁止药品行（BR-OTL-026）
         List<OrderTemplateLine> lines = orderTemplateLineRepository
             .findAllByOrderTemplateIdAndIsDeletedFalseOrderBySortOrderAscIdAsc(template.getId());
         if (lines.isEmpty()) {
@@ -213,7 +206,9 @@ public class OrderTemplateDomainService {
 
         template.assertReadyToPublish();
         template.publish();
+        // 持久化
         OrderTemplate saved = orderTemplateRepository.save(template);
+        // 发布事件
         domainEventPublisher.publish(new OrderTemplatePublishedEvent(saved.getId(), command.getOperatorId()));
     }
 
@@ -224,10 +219,13 @@ public class OrderTemplateDomainService {
      * @throws BusinessException 模板不存在或不可编辑时
      */
     public void retireOrderTemplate(RetireOrderTemplateCommand command) {
+        // 加载/组装聚合
         OrderTemplate template = requireTemplate(command.getOrderTemplateId());
         template.assertEditable();
         template.retire();
+        // 持久化
         OrderTemplate saved = orderTemplateRepository.save(template);
+        // 发布事件
         domainEventPublisher.publish(new OrderTemplateRetiredEvent(saved.getId(), command.getOperatorId()));
     }
 
@@ -238,21 +236,24 @@ public class OrderTemplateDomainService {
      * @throws BusinessException 模板不存在时
      */
     public void deleteOrderTemplate(DeleteOrderTemplateCommand command) {
+        // 加载/组装聚合
         OrderTemplate template = requireTemplate(command.getOrderTemplateId());
-        // 业务分支处理。
+        // 已软删则幂等返回
         if (Boolean.TRUE.equals(template.getIsDeleted())) {
             return;
         }
         template.markDeleted();
+        // 持久化：软删模板头
         orderTemplateRepository.save(template);
 
-        // 级联软删行（BR-OTL-021）
+        // 持久化：级联软删行（BR-OTL-021）
         List<OrderTemplateLine> lines = orderTemplateLineRepository.findAllByOrderTemplateId(template.getId());
         for (OrderTemplateLine line : lines) {
             line.markDeleted();
         }
         orderTemplateLineRepository.saveAll(lines);
 
+        // 发布事件
         domainEventPublisher.publish(new OrderTemplateDeletedEvent(template.getId(), command.getOperatorId()));
     }
 
@@ -264,6 +265,7 @@ public class OrderTemplateDomainService {
      * @throws BusinessException 模板不存在或不允许维护行、行校验失败时
      */
     public Long addOrderTemplateLine(AddOrderTemplateLineCommand command) {
+        // 加载/组装聚合
         OrderTemplate template = requireTemplate(command.getOrderTemplateId());
         template.assertLineMaintainable();
 
@@ -286,10 +288,13 @@ public class OrderTemplateDomainService {
         line.setChineseHerbsDoseQuantity(command.getChineseHerbsDoseQuantity());
         line.setSufferingFlag(command.getSufferingFlag());
 
+        // 前置校验：行必填与模板种类约束
         line.assertRequiredFields();
         line.assertLineKindAllowedForTemplateKind(template.getTemplateKindEnum());
 
+        // 持久化
         OrderTemplateLine saved = orderTemplateLineRepository.save(line);
+        // 发布事件
         domainEventPublisher.publish(new OrderTemplateLineAddedEvent(template.getId(), saved.getId(), saved.getLineKindEnum(), command.getOperatorId()));
         return saved.getId();
     }
@@ -305,43 +310,43 @@ public class OrderTemplateDomainService {
         OrderTemplate template = requireTemplate(line.getOrderTemplateId());
         template.assertLineMaintainable();
 
-        // 业务分支处理。
+        // 命令传入分组键时覆盖行分组。
         if (command.getGroupKey() != null) {
             line.setGroupKey(command.getGroupKey());
         }
-        // 业务分支处理。
+        // 命令传入排序号时覆盖行展示顺序。
         if (command.getSortOrder() != null) {
             line.setSortOrder(command.getSortOrder());
         }
-        // 业务分支处理。
+        // 命令传入默认数量时覆盖行开立数量。
         if (command.getDefaultQuantity() != null) {
             line.setDefaultQuantity(command.getDefaultQuantity());
         }
-        // 业务分支处理。
+        // 命令传入默认单位时覆盖行计量单位。
         if (command.getDefaultUnitCode() != null) {
             line.setDefaultUnitCode(command.getDefaultUnitCode());
         }
-        // 业务分支处理。
+        // 命令传入默认天数时覆盖行疗程天数。
         if (command.getDefaultDays() != null) {
             line.setDefaultDays(command.getDefaultDays());
         }
-        // 业务分支处理。
+        // 命令传入频次时覆盖行默认频次。
         if (command.getFrequencyId() != null) {
             line.setFrequencyId(command.getFrequencyId());
         }
-        // 业务分支处理。
+        // 命令传入给药途径时覆盖行默认途径。
         if (command.getRouteCode() != null) {
             line.setRouteCode(command.getRouteCode());
         }
-        // 业务分支处理。
+        // 命令传入剂量文本时覆盖行剂量说明。
         if (command.getDosageText() != null) {
             line.setDosageText(command.getDosageText());
         }
-        // 业务分支处理。
+        // 命令传入默认执行科室时覆盖行执行科室。
         if (command.getDefaultPerformOrgId() != null) {
             line.setDefaultPerformOrgId(command.getDefaultPerformOrgId());
         }
-        // 业务分支处理。
+        // 命令传入行备注时覆盖行说明。
         if (command.getLineRemark() != null) {
             line.setLineRemark(command.getLineRemark());
         }

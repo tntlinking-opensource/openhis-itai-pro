@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.response;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -36,20 +23,20 @@ import java.util.List;
 @Schema(description = "取消划价响应")
 public class CancelNurseStationPricingResponse {
 
-    /** 整批取消是否成功。 */
+    /** 整批成功。 */
     @Schema(description = "整批成功")
     private Boolean success;
 
-    /** 成功取消的行数。 */
+    /** 成功取消行数。 */
     @Schema(description = "成功取消行数")
     private Integer processedCount;
 
-    /** 已软删的 wkf_service_request id 列表。 */
+    /** 已取消诊疗请求 id。 */
     @Schema(description = "已取消诊疗请求 id")
     @JsonSerialize(contentUsing = ToStringSerializer.class)
     private List<Long> cancelledServiceRequestIds = new ArrayList<>();
 
-    /** 已软删的 wkf_device_request id 列表。 */
+    /** 已取消耗材请求 id。 */
     @Schema(description = "已取消耗材请求 id")
     @JsonSerialize(contentUsing = ToStringSerializer.class)
     private List<Long> cancelledDeviceRequestIds = new ArrayList<>();

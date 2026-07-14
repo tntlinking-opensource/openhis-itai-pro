@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 /**
  * 供应请求位置类型枚举。
@@ -22,17 +9,11 @@ package com.openhis.health.domain.share.enums;
  * <p>存储口径：{@code wkf_supply_request.source_type_enum} / {@code wkf_supply_request.purpose_type_enum}。</p>
  */
 public enum SupplyRequestType implements EnumInterface {
-    /**
-     * DEPARTMENT。
-     */
+    /** 科室（SupplyRequestType，编码 {@code DEPARTMENT}）。 */
     DEPARTMENT(0L, "DEPARTMENT", "科室", "", 2L),
-    /**
-     * CABINET。
-     */
+    /** 库房（SupplyRequestType，编码 {@code CABINET}）。 */
     CABINET(0L, "CABINET", "库房", "", 11L),
-    /**
-     * PHARMACY。
-     */
+    /** 药房（SupplyRequestType，编码 {@code PHARMACY}）。 */
     PHARMACY(0L, "PHARMACY", "药房", "", 16L);
 
     private final Long codeSystemId;
@@ -42,7 +23,7 @@ public enum SupplyRequestType implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * SupplyRequestType。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     SupplyRequestType(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

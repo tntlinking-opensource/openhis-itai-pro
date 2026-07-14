@@ -1,40 +1,31 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.transferout.request;
 
-import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.application.shared.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
+ * 药库调入选品分页请求（IF-WHS-TI-11）。
  *
- * <p>继承 {@link AbstractHealthPageRequest}（B.10.11）；{@code productTableName} 须落在药品定义表与耗材定义表白名单内，由应用层门禁。</p>
+ * <p>继承 {@link AbstractHealthPageRequest}（B.10.11）；{@code productTableName} 须落在药品/耗材定义表白名单内。</p>
  */
 @Getter
 @Setter
 @Accessors(chain = true)
 public class PageProductsForTransferOutRequest extends AbstractHealthPageRequest {
 
+    /** 源药库位置。 */
+
     @Schema(description = "源药库位置", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long sourceLocationId;
+
+    /** 物品表名白名单。 */
 
     @Schema(description = "物品表名白名单", requiredMode = Schema.RequiredMode.REQUIRED)
     private String productTableName;

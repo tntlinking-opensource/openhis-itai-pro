@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.supplyrequest.command;
 
 import com.openhis.health.domain.share.command.BatchCommand;
@@ -74,6 +61,7 @@ public class CreateStocktakeCommand extends BatchCommand<CreateStocktakeCommand.
         private LocalDateTime occurrenceTime;
         /** 申请人主键。 */
         private Long applicantId;
+        /** 盘点经手人 practitioner 主键（可与申请人不同）。 */
         private Long practitionerId;
         /** 申请时间。 */
         private LocalDateTime applyTime;
@@ -87,5 +75,7 @@ public class CreateStocktakeCommand extends BatchCommand<CreateStocktakeCommand.
         private BigDecimal totalPrice;
         /** 盈亏金额（盈为正、亏为负）。 */
         private BigDecimal profitLossPrice;
+        /** 实盘扫到的剩余追溯码逗号串（IF-TRC-14 草稿暂存）。 */
+        private String traceNo;
     }
 }

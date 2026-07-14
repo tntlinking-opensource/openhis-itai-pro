@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.nursestation.treatment.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -32,7 +19,6 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 门诊护士站处置单行。 */
 @Schema(description = "门诊护士站处置单行")
 public class NurseStationTreatmentLineDto {
 
@@ -41,6 +27,7 @@ public class NurseStationTreatmentLineDto {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊主键")
+    /** 就诊主键。 */
     private Long encounterId;
 
     /**
@@ -48,6 +35,7 @@ public class NurseStationTreatmentLineDto {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "请求主键")
+    /** 请求主键。 */
     private Long requestId;
 
     /**
@@ -55,6 +43,7 @@ public class NurseStationTreatmentLineDto {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "发放锚点；诊疗可空")
+    /** 发放锚点；诊疗可空。 */
     private Long dispenseId;
 
     /**
@@ -80,6 +69,7 @@ public class NurseStationTreatmentLineDto {
      * 诊疗行为 {@code wkf_service_request.prescription_no}，{@code AR} 前缀表示检验/检查/治疗申请单整单号。
      */
     @Schema(description = "处方/申请单号（诊疗 AR 前缀为申请单号）")
+    /** 处方/申请单号（诊疗 AR 前缀为申请单号）。 */
     private String prescriptionNo;
 
     /**
@@ -173,7 +163,7 @@ public class NurseStationTreatmentLineDto {
     private String doseUnitCode;
 
     /**
-     * 剂量单位展示名（**仅药品**；{@link com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler#resolveDoseUnitDisplayName}，对齐 **BR-ORD-022**）。
+     * 剂量单位展示名（**仅药品**；{@link com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler#resolveDoseUnitDisplayName}，对齐 **BR-ORD-022**）。
      */
     @Schema(description = "剂量单位展示名")
     private String doseUnitName;
@@ -309,6 +299,7 @@ public class NurseStationTreatmentLineDto {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "退费关联请求主键")
+    /** 退费关联请求主键。 */
     private Long refundPairRequestId;
 
     /**
@@ -316,6 +307,7 @@ public class NurseStationTreatmentLineDto {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "成组主键")
+    /** 成组主键。 */
     private Long groupId;
 
     /**
@@ -329,6 +321,7 @@ public class NurseStationTreatmentLineDto {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "最近主执行人主键")
+    /** 最近主执行人主键。 */
     private Long lastPerformerPractitionerId;
 
     /**

@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.mrms.qc.service;
 
 import com.openhis.health.application.mrms.homepage.dto.CaseRecordDetailDto;
@@ -10,7 +10,7 @@ import com.openhis.health.application.mrms.qc.dto.QcDefectDto;
 import com.openhis.health.application.mrms.qc.dto.QcRunResultDto;
 import com.openhis.health.application.mrms.qc.dto.QcRunSummaryDto;
 import com.openhis.health.application.mrms.qc.mapper.QcMapper;
-import com.openhis.health.application.mrms.qc.support.CaseRecordOverdueScanSupport;
+import com.openhis.health.application.mrms.qc.support.CaseRecordOverdueScanOrchestrator;
 import com.openhis.health.application.mrms.qc.request.AddManualDefectRequest;
 import com.openhis.health.application.mrms.qc.request.ArchiveCaseRecordRequest;
 import com.openhis.health.application.mrms.qc.request.DefectActionRequest;
@@ -30,9 +30,9 @@ import com.openhis.health.domain.mrms.qc.service.QcDefectDomainService;
 import com.openhis.health.domain.share.enums.CaseRecordTransitionAction;
 import com.openhis.health.domain.share.enums.QcTrigger;
 import com.openhis.health.domain.share.enums.WorkflowRole;
-import com.openhis.health.integration.emr.EmrDocumentExtension;
-import com.openhis.health.integration.support.IntegrationAfterCommitSupport;
-import com.openhis.health.module.common.validator.MrmsOperatorResolver;
+import com.openhis.health.infrastructure.integration.emr.EmrDocumentExtension;
+import com.openhis.health.infrastructure.integration.noop.IntegrationAfterCommitSupport;
+import com.openhis.health.application.mrms.support.MrmsOperatorResolver;
 import com.openhis.whale.core.application.exception.ValidationException;
 import com.openhis.whale.core.infrastructure.job.SchedulableJob;
 import lombok.RequiredArgsConstructor;
@@ -62,7 +62,7 @@ public class MrmsCaseRecordQcAppService {
     private final QcMapper qcMapper;
     private final MrmsOperatorResolver operatorResolver;
     private final EmrDocumentExtension emrDocumentExtension;
-    private final CaseRecordOverdueScanSupport caseRecordOverdueScanSupport;
+    private final CaseRecordOverdueScanOrchestrator caseRecordOverdueScanOrchestrator;
 
     /**
      * 病案室开始质控：received → qcing，并执行接收后规则集。
@@ -323,6 +323,6 @@ public class MrmsCaseRecordQcAppService {
      */
     @SchedulableJob("病案逾期扫描")
     public void scanOverdueCaseRecords() {
-        caseRecordOverdueScanSupport.scanAll();
+        caseRecordOverdueScanOrchestrator.scanAll();
     }
 }

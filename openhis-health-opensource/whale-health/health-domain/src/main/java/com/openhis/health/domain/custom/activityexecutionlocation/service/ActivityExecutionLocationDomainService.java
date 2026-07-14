@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.activityexecutionlocation.service;
 
 import com.openhis.health.domain.share.constants.CustomConstants;
@@ -32,7 +19,6 @@ import org.springframework.stereotype.Service;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -43,7 +29,11 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 执行科室规则写侧领域服务。
+ * 执行科室规则（{@code cus_activity_execution_location}）聚合写侧领域服务。
+ *
+ * <p>职责：维护活动类别/诊疗定义锚点下的执行科室与时段规则；批量新增时预取候选集校验闭区间不重叠（BR-ACT-EXEC-001）。</p>
+ * <p>不变量：同锚点时段不可重叠；软删后不再参与匹配；持久化先于 {@link ActivityExecutionLocationEditedEvent}。</p>
+ * <p>仅注入本聚合 {@link ActivityExecutionLocationRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -60,6 +50,7 @@ public class ActivityExecutionLocationDomainService {
      * @throws BusinessException 参数非法或时段重叠冲突时
      */
     public List<Long> createExecutionRule(CreateExecutionRuleCommand command) {
+        // 前置校验：活动类别、执行科室与明细非空
         if (command.getActivityCategoryCode() == null || command.getActivityCategoryCode().trim().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "活动类别编码不能为空");
         }
@@ -97,9 +88,10 @@ public class ActivityExecutionLocationDomainService {
         Map<AnchorGroupKey, List<ActivityExecutionLocation>> existedByAnchor = this.loadCandidatesForBatchCreate(newRulesByAnchor.keySet());
         this.assertNoTimeOverlapForBatchCreate(existedByAnchor, newRulesByAnchor);
 
+        // 持久化
         List<ActivityExecutionLocation> saved = repository.saveAll(toSave);
         List<Long> ids = new ArrayList<>();
-        // Event：遍历保存结果逐条发布领域事件。
+        // 发布事件：逐条通知规则变更
         for (ActivityExecutionLocation rule : saved) {
             ids.add(rule.getId());
             domainEventPublisher.publish(new ActivityExecutionLocationEditedEvent(
@@ -119,53 +111,54 @@ public class ActivityExecutionLocationDomainService {
      * @throws BusinessException 规则不存在或时段重叠冲突时
      */
     public void updateExecutionRule(UpdateExecutionRuleCommand command) {
-        // 先加载目标规则，确保只更新有效记录。
+        // 加载/组装：加载目标规则并合并命令字段
         ActivityExecutionLocation rule = repository.findById(command.getId())
             .orElseThrow(() -> new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_NOT_FOUND, "执行科室规则不存在"));
 
         // 合并命令字段到聚合根并执行必填与锚点校验。
-        // 业务分支处理：诊疗定义可空（大类默认规则），更新时须允许显式清空项目锚点。
+        // 诊疗定义可空（大类默认规则），更新时须允许显式清空项目锚点。
         rule.setActivityDefinitionId(command.getActivityDefinitionId());
-        // 业务分支处理：活动类别编码变更。
+        // 命令传入活动类别编码时覆盖头表类别。
         if (command.getActivityCategoryCode() != null) {
             rule.setActivityCategoryCode(command.getActivityCategoryCode());
         }
-        // 业务分支处理：执行科室标识变更。
+        // 命令传入执行科室标识时覆盖头表科室。
         if (command.getExecutionOrgId() != null) {
             rule.setExecutionOrgId(command.getExecutionOrgId());
         }
-        // 业务分支处理：执行地点标识变更。
+        // 命令传入执行地点标识时覆盖明细地点。
         if (command.getExecutionLocationId() != null) {
             rule.setExecutionLocationId(command.getExecutionLocationId());
         }
-        // 业务分支处理：时段开始时间变更。
+        // 命令传入时段开始时间时覆盖规则起始时刻。
         if (command.getStartTime() != null) {
             rule.setStartTime(command.getStartTime());
         }
-        // 业务分支处理：时段结束时间变更。
+        // 命令传入时段结束时间时覆盖规则截止时刻。
         if (command.getEndTime() != null) {
             rule.setEndTime(command.getEndTime());
         }
-        // 业务分支处理：优先级变更。
+        // 命令传入优先级时覆盖匹配排序权重。
         if (command.getPriority() != null) {
             rule.setPriority(command.getPriority());
         }
-        // 业务分支处理：展示排序变更。
+        // 命令传入展示排序时覆盖列表展示顺序。
         if (command.getDisplayOrder() != null) {
             rule.setDisplayOrder(command.getDisplayOrder());
         }
-        // 业务分支处理：备注信息变更。
+        // 命令传入备注时覆盖规则说明。
         if (command.getRemark() != null) {
             rule.setRemark(command.getRemark());
         }
         rule.assertRequiredFields();
         rule.assertAnchorPresent();
 
-        // 更新时排除自身后校验重叠不变式。
+        // 前置校验：更新时排除自身后校验时段重叠不变式
         this.assertNoTimeOverlapOnUpdate(rule);
 
-        // 持久化后再发事件，确保事件与数据库状态一致。
+        // 持久化
         repository.save(rule);
+        // 发布事件：规则已更新
         domainEventPublisher.publish(new ActivityExecutionLocationEditedEvent(
             rule.getId(),
             CustomConstants.OperationType.UPDATE,
@@ -181,13 +174,14 @@ public class ActivityExecutionLocationDomainService {
      * @throws BusinessException 规则不存在时
      */
     public void deleteExecutionRule(DeleteExecutionRuleCommand command) {
-        // 删除动作仅对可见规则生效，避免误删历史记录。
+        // 加载/组装：删除动作仅对可见规则生效
         ActivityExecutionLocation rule = repository.findById(command.getId())
             .orElseThrow(() -> new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_NOT_FOUND, "执行科室规则不存在"));
         rule.markDeleted(command.getOperatorId());
 
-        // 持久化软删后再发布删除事件。
+        // 持久化
         repository.save(rule);
+        // 发布事件：规则已软删
         domainEventPublisher.publish(new ActivityExecutionLocationEditedEvent(
             rule.getId(),
             CustomConstants.OperationType.DELETE,
@@ -207,11 +201,11 @@ public class ActivityExecutionLocationDomainService {
     private void assertNoTimeOverlapOnUpdate(ActivityExecutionLocation candidate) {
         List<ActivityExecutionLocation> existed = this.loadCandidates(candidate);
         for (ActivityExecutionLocation item : existed) {
-            // 业务分支处理。
+            // 更新校验时跳过自身，避免与旧时段误判重叠。
             if (Objects.equals(item.getId(), candidate.getId())) {
                 continue;
             }
-            // 业务分支处理。
+            // 与同锚点存量规则时段闭区间重叠则拒绝更新。
             if (this.isOverlapped(item.getStartTime(), item.getEndTime(), candidate.getStartTime(), candidate.getEndTime())) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_RULE_CONFLICT, "执行科室规则时段存在重叠");
             }
@@ -249,13 +243,13 @@ public class ActivityExecutionLocationDomainService {
      * @param rule 待新增规则
      */
     private void appendToNewRulesMap(Map<AnchorGroupKey, List<ActivityExecutionLocation>> newRulesByAnchor, ActivityExecutionLocation rule) {
-        // 业务分支处理。
+        // 分组前校验执行科室与活动类别必填，否则无法定位重叠校验锚点。
         if (rule.getExecutionOrgId() == null || rule.getActivityCategoryCode() == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室标识与活动类别编码不能为空");
         }
         AnchorGroupKey key;
         if (rule.getActivityDefinitionId() == null) {
-            // 业务分支处理：未配具体项目时，按「执行科室 + 活动类别」分组做时段重叠校验。
+            // 未配具体项目时，按「执行科室 + 活动类别」分组做时段重叠校验。
             key = AnchorGroupKey.forCategory(rule.getExecutionOrgId(), rule.getActivityCategoryCode());
         } else {
             key = AnchorGroupKey.forActivity(
@@ -275,7 +269,7 @@ public class ActivityExecutionLocationDomainService {
      */
     private void appendRule(Map<AnchorGroupKey, List<ActivityExecutionLocation>> newRulesByAnchor, AnchorGroupKey key, ActivityExecutionLocation rule) {
         List<ActivityExecutionLocation> list = newRulesByAnchor.get(key);
-        // 业务分支处理：key 不存在时初始化列表。
+        // 分组 key 首次出现时初始化列表容器。
         if (list == null) {
             list = new ArrayList<>();
             newRulesByAnchor.put(key, list);
@@ -369,7 +363,7 @@ public class ActivityExecutionLocationDomainService {
         for (Map.Entry<AnchorGroupKey, List<ActivityExecutionLocation>> entry : newRulesByAnchor.entrySet()) {
             List<ActivityExecutionLocation> combined = new ArrayList<>();
             List<ActivityExecutionLocation> existed = existedByAnchor.get(entry.getKey());
-            // 业务分支处理。
+            // 同锚点存在存量规则时并入待校验集合，校验存量与新增之间不重叠。
             if (existed != null && !existed.isEmpty()) {
                 combined.addAll(existed);
             }
@@ -384,7 +378,7 @@ public class ActivityExecutionLocationDomainService {
      * @param rules 同一锚点下的候选规则（包含存量与新增）
      */
     private void assertNoTimeOverlapInSameAnchorGroup(List<ActivityExecutionLocation> rules) {
-        // 业务分支处理。
+        // 单条或空集合无需做时段重叠检测。
         if (rules == null || rules.size() <= 1) {
             return;
         }
@@ -424,7 +418,7 @@ public class ActivityExecutionLocationDomainService {
      * @return 规范化开始时间
      */
     private LocalTime normalizeStart(LocalTime startTime) {
-        // 业务分支处理。
+        // 开始时间为空表示全天起始，按最小时刻参与重叠比较。
         if (startTime == null) {
             return LocalTime.MIN;
         }
@@ -438,7 +432,7 @@ public class ActivityExecutionLocationDomainService {
      * @return 规范化结束时间
      */
     private LocalTime normalizeEnd(LocalTime endTime) {
-        // 业务分支处理。
+        // 结束时间为空表示全天截止，按最大时刻参与重叠比较。
         if (endTime == null) {
             return LocalTime.MAX;
         }
@@ -460,21 +454,27 @@ public class ActivityExecutionLocationDomainService {
             this.activityCategoryCode = activityCategoryCode;
         }
 
+        /**
+         * @return 执行科室主键
+         */
         private Long getExecutionOrgId() {
             return executionOrgId;
         }
 
+        /**
+         * @return 活动类别 code
+         */
         private String getActivityCategoryCode() {
             return activityCategoryCode;
         }
 
         @Override
         public boolean equals(Object o) {
-            // 业务分支处理。
+            // 同一引用直接判定相等。
             if (this == o) {
                 return true;
             }
-            // 业务分支处理。
+            // 类型不匹配则分组键不等。
             if (!(o instanceof OrgCategoryKey)) {
                 return false;
             }
@@ -503,6 +503,14 @@ public class ActivityExecutionLocationDomainService {
             this.activityDefinitionId = activityDefinitionId;
         }
 
+        /**
+         * 构造「执行科室 + 活动类别 + 诊疗定义」锚点分组键（定义级规则）。
+         *
+         * @param executionOrgId        执行科室
+         * @param activityCategoryCode  活动类别 code
+         * @param activityDefinitionId  诊疗定义主键
+         * @return 锚点分组键
+         */
         private static AnchorGroupKey forActivity(
             Long executionOrgId,
             String activityCategoryCode,
@@ -511,6 +519,13 @@ public class ActivityExecutionLocationDomainService {
             return new AnchorGroupKey(executionOrgId, activityCategoryCode, activityDefinitionId);
         }
 
+        /**
+         * 构造「执行科室 + 活动类别」锚点分组键（类别级规则，无诊疗定义）。
+         *
+         * @param executionOrgId       执行科室
+         * @param activityCategoryCode 活动类别 code
+         * @return 锚点分组键（activityDefinitionId 为 null）
+         */
         private static AnchorGroupKey forCategory(
             Long executionOrgId,
             String activityCategoryCode
@@ -518,14 +533,23 @@ public class ActivityExecutionLocationDomainService {
             return new AnchorGroupKey(executionOrgId, activityCategoryCode, null);
         }
 
+        /**
+         * @return 执行科室主键
+         */
         private Long getExecutionOrgId() {
             return executionOrgId;
         }
 
+        /**
+         * @return 活动类别 code
+         */
         private String getActivityCategoryCode() {
             return activityCategoryCode;
         }
 
+        /**
+         * @return 诊疗定义主键；类别级规则时为 null
+         */
         private Long getActivityDefinitionId() {
             return activityDefinitionId;
         }
@@ -561,28 +585,28 @@ public class ActivityExecutionLocationDomainService {
      */
     private boolean isOverlapped(LocalTime leftStart, LocalTime leftEnd, LocalTime rightStart, LocalTime rightEnd) {
         LocalTime normalizedLeftStart;
-        // 业务分支处理。
+        // 左侧开始时间为空时按全天起始处理。
         if (leftStart == null) {
             normalizedLeftStart = LocalTime.MIN;
         } else {
             normalizedLeftStart = leftStart;
         }
         LocalTime normalizedLeftEnd;
-        // 业务分支处理。
+        // 左侧结束时间为空时按全天截止处理。
         if (leftEnd == null) {
             normalizedLeftEnd = LocalTime.MAX;
         } else {
             normalizedLeftEnd = leftEnd;
         }
         LocalTime normalizedRightStart;
-        // 业务分支处理。
+        // 右侧开始时间为空时按全天起始处理。
         if (rightStart == null) {
             normalizedRightStart = LocalTime.MIN;
         } else {
             normalizedRightStart = rightStart;
         }
         LocalTime normalizedRightEnd;
-        // 业务分支处理。
+        // 右侧结束时间为空时按全天截止处理。
         if (rightEnd == null) {
             normalizedRightEnd = LocalTime.MAX;
         } else {

@@ -1,25 +1,12 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.pharmacy.dispense.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.application.shared.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -30,12 +17,11 @@ import java.util.List;
 /**
  * 就诊下药品发药单分页请求。
  *
- * <p>分页与通用检索字段见 {@link AbstractPageQuery}（代码生成通用规范 B.10.11）；机构收窄由应用层 {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver#resolveOrganizationUnitIdForQuery()} 解析后传入读模型，本请求不传 organizationId。</p>
+ * <p>分页与通用检索字段见 {@link AbstractPageQuery}（代码生成通用规范 B.10.11）；机构收窄由应用层 {@link com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver#resolveOrganizationUnitIdForQuery()} 解析后传入读模型，本请求不传 organizationId。</p>
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
-/** 就诊下药品发药单分页请求。 */
 @Schema(description = "就诊下药品发药单分页请求")
 public class PageEncounterMedicationDispenseSlipsRequest extends AbstractHealthPageRequest {
 

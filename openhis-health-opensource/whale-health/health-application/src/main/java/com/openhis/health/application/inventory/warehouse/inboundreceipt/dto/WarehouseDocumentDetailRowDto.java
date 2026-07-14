@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.dto;
 
 import lombok.Getter;
@@ -24,10 +11,10 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 与同读模型装配，亦复用本 DTO；其它库房单据分页可再复用）。
+ * 库房单据明细分页行 DTO（进货可关联订货、出库可关联请领等场景共用读模型装配）。
  *
- * <p>与 {@link com.openhis.health.domain.workflow.supplyrequest.query.WarehouseDocumentDetailQueryModel} 列语义对齐；
- * 字段名含 {@code Enum} 或业务类型/状态/类别语义且类型为 {@link String} 者，均为持久化 {@code getCode()}（B.10.8.1），与领域查询模型一致。</p>
+ * <p>与 {@link com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel} 列语义对齐；
+ * 字段名含 {@code Enum} 或业务类型/状态/类别语义且类型为 {@link String} 者，均为持久化 {@code getCode()}（B.10.8.1）。</p>
  */
 @Getter
 @Setter
@@ -51,6 +38,17 @@ public class WarehouseDocumentDetailRowDto {
     private Long purposeLocationId;
     /** 供应商主键。 */
     private Long supplierId;
+
+    /** 供应商展示名（应用层批量解析；未命中主数据时为 null）。 */
+    private String supplierName;
+    /** 制单人展示名（列表富化）。 */
+    private String creatorName;
+    /** 申请人/制单人主键（明细头行口径）。 */
+    private Long applicantId;
+    /** 目的库位展示名（列表富化）。 */
+    private String purposeLocationName;
+    /** 单据明细金额合计（列表聚合）。 */
+    private BigDecimal totalAmount;
     /** 物品定义主键。 */
     private Long itemId;
     /** 物品来源表名。 */

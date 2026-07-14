@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.chargetype.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -24,11 +11,14 @@ import lombok.Data;
 @Data
 public class ChargeTypeDto {
 
+    /** 费用性质主键 {@code fin_charge_type.id}。 */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
 
+    /** 费用性质名称（展示用）。 */
     private String name;
 
+    /** 业务编码，与 {@link #code} 一致，供检索与下拉 value 使用。 */
     private String busNo;
 
     /**
@@ -41,6 +31,7 @@ public class ChargeTypeDto {
      */
     private String categoryEnum;
 
+    /** 费用性质分类展示文案（由 {@link #categoryEnum} 解析）。 */
     private String categoryEnumText;
 
     /**
@@ -48,5 +39,6 @@ public class ChargeTypeDto {
      */
     private Integer activeFlag;
 
+    /** 列表排序号，越小越靠前。 */
     private Integer displayOrder;
 }

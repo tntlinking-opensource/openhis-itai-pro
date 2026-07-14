@@ -1,45 +1,22 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 借阅申请工作流状态。
  */
 public enum BorrowRequestStatus implements EnumInterface {
-    /**
-     * 待审批。
-     */
+/** 待审（BorrowRequestStatus，持久化编码 {@code pending}）。 */
     PENDING(0L, "pending", "待审", "", 0L),
-    /**
-     * 已批准待借出。
-     */
+/** 已批准（BorrowRequestStatus，持久化编码 {@code approved}）。 */
     APPROVED(0L, "approved", "已批准", "", 1L),
-    /**
-     * 已拒绝。
-     */
+/** 已拒绝（BorrowRequestStatus，持久化编码 {@code rejected}）。 */
     REJECTED(0L, "rejected", "已拒绝", "", 2L),
-    /**
-     * 已借出。
-     */
+/** 已借（BorrowRequestStatus，持久化编码 {@code borrowed}）。 */
     BORROWED(0L, "borrowed", "已借", "", 3L),
-    /**
-     * 已归还。
-     */
+/** 已还（BorrowRequestStatus，持久化编码 {@code returned}）。 */
     RETURNED(0L, "returned", "已还", "", 4L);
 
     private final Long codeSystemId;

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.print.printtemplate.support;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
@@ -106,6 +93,13 @@ public class PrintTemplateListAssembler {
     return rows;
   }
 
+  /**
+   * 打印模板聚合列表关键字匹配：业务号、名称、场景码任一包含（不区分大小写）。
+   *
+   * @param row     聚合行
+   * @param keyword 已 trim 的小写关键字
+   * @return 命中为 true
+   */
   private boolean matchesKeyword(PrtTemplateListItemDto row, String keyword) {
     String lower = keyword.toLowerCase(Locale.ROOT);
     boolean busMatch =
@@ -118,6 +112,14 @@ public class PrintTemplateListAssembler {
     return busMatch || nameMatch || scenarioMatch;
   }
 
+  /**
+   * 同一 busNo 下 draft/published/archived 行聚合为列表项（展示态 draft &gt; published &gt; archived）。
+   *
+   * @param busNo    模板业务号
+   * @param rows     同 busNo 的物理行
+   * @param tenantId 当前租户（判定是否可删）
+   * @return 聚合 DTO；三种状态均无有效行时 null
+   */
   private PrtTemplateListItemDto toAggregatedListItem(
       String busNo, List<PrtTemplate> rows, Long tenantId) {
     PrtTemplate draft = null;
@@ -185,6 +187,13 @@ public class PrintTemplateListAssembler {
     return dto;
   }
 
+  /**
+   * 比较两物理行版本号：candidate 版本更高时为 true（null 版本视为更低）。
+   *
+   * @param candidate 候选行
+   * @param current   当前最优行
+   * @return candidate 更优为 true
+   */
   private boolean isHigherVersion(PrtTemplate candidate, PrtTemplate current) {
     if (candidate.getVersion() == null) {
       return false;
@@ -195,6 +204,14 @@ public class PrintTemplateListAssembler {
     return candidate.getVersion() > current.getVersion();
   }
 
+  /**
+   * 聚合列表场景码：draft → published → archived 顺序取首个非空 scenarioCode。
+   *
+   * @param draft          草稿行
+   * @param published      已发布行
+   * @param latestArchived 最新归档行
+   * @return 场景码；均无则 null
+   */
   private String resolveAggregatedScenarioCode(
       PrtTemplate draft, PrtTemplate published, PrtTemplate latestArchived) {
     if (draft != null && trimToNull(draft.getScenarioCode()) != null) {

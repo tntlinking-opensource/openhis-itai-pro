@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.request;
 
@@ -33,7 +34,7 @@ public class CancelStopLongTermTcmHerbalPrescriptionRequest {
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
-    /** 已停嘱处方号（整方）。 */
+    /** 已停嘱处方号列表。 */
     @NotEmpty(message = "prescriptionNos 不能为空")
     @Schema(description = "已停嘱处方号列表", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<String> prescriptionNos;

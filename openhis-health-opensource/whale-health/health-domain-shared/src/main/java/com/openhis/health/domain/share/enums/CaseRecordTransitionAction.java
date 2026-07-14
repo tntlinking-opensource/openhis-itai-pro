@@ -1,53 +1,26 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 病案状态迁移动作（工作流入口）。
  */
 public enum CaseRecordTransitionAction implements EnumInterface {
-    /**
-     * 创建主档。
-     */
+/** 创建（CaseRecordTransitionAction，持久化编码 {@code create}）。 */
     CREATE(0L, "create", "创建", "", 0L),
-    /**
-     * 医生提交首页。
-     */
+/** 提交（CaseRecordTransitionAction，持久化编码 {@code submit}）。 */
     SUBMIT(0L, "submit", "提交", "", 1L),
-    /**
-     * 病案室接收。
-     */
+/** 接收（CaseRecordTransitionAction，持久化编码 {@code receive}）。 */
     RECEIVE(0L, "receive", "接收", "", 2L),
-    /**
-     * 退回医生修改。
-     */
+/** 退回（CaseRecordTransitionAction，持久化编码 {@code return}）。 */
     RETURN(0L, "return", "退回", "", 3L),
-    /**
-     * 开始质控。
-     */
+/** 开始质控（CaseRecordTransitionAction，持久化编码 {@code startQc}）。 */
     START_QC(0L, "startQc", "开始质控", "", 4L),
-    /**
-     * 归档。
-     */
+/** 归档（CaseRecordTransitionAction，持久化编码 {@code archive}）。 */
     ARCHIVE(0L, "archive", "归档", "", 5L),
-    /**
-     * 解档（高权限）。
-     */
+/** 解档（CaseRecordTransitionAction，持久化编码 {@code unarchive}）。 */
     UNARCHIVE(0L, "unarchive", "解档", "", 6L);
 
     private final Long codeSystemId;

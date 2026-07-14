@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -22,17 +22,17 @@ import java.time.LocalDateTime;
 @Schema(description = "体温单曲线点")
 public class TemperatureSheetTemperaturePointDto {
 
-    /** 生命体征主表 id {@code dia_vital_sign.id}。 */
+    /** 生命体征主表 id。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "生命体征主表 id")
     private Long vitalSignId;
 
-    /** 记录时点（主表 {@code recorded_at}）。 */
+    /** 记录时点。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "记录时点")
     private LocalDateTime recordedAt;
 
-    /** 体温值（主表 temperature）。 */
+    /** 体温值。 */
     @Schema(description = "体温值")
     private String temperature;
 }

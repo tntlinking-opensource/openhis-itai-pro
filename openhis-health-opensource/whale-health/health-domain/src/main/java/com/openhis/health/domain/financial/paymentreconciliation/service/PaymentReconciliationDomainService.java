@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.financial.paymentreconciliation.service;
 
 import com.openhis.health.domain.financial.paymentreconciliation.command.*;
@@ -36,15 +23,13 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 支付流水聚合写侧领域服务。
@@ -56,7 +41,7 @@ import java.util.Map;
  *   <li>在主从落库成功后发布对应领域事件，供读模型与下游流程消费。</li>
  * </ul>
  *
- * <p>不负责内容：应用层参数门禁、跨聚合流程编排、展示口径组装。</p>
+ * <p>不负责内容：应用层参数门禁、跨聚合流程编排、展示口径组装；仅注入本聚合仓储。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -90,7 +75,7 @@ public class PaymentReconciliationDomainService {
         payment.setContractNo(cmd.getContractNo());
         payment.setPaymentNo(this.nextPaymentNo());
         payment.initDraft();
-        // 业务分支处理：命令显式传入状态时优先采用；未传则保持 initDraft 设定的 DRAFT
+        // 命令显式传入状态时优先采用；未传则保持 initDraft 设定的 DRAFT。
         if (cmd.getStatusEnum() != null) {
             payment.setStatusEnum(cmd.getStatusEnum());
         }
@@ -134,12 +119,12 @@ public class PaymentReconciliationDomainService {
      * @param contractNo 合同业务号（fin_contract.bus_no）；空则跳过
      */
     public void backfillPaymentContractNoIfBlank(Long paymentId, String contractNo) {
-        if (StringUtils.isBlank(contractNo)) {
+        if (StringUtils.isEmpty(contractNo)) {
             return;
         }
         PaymentReconciliation payment = this.mustGetPayment(paymentId);
         payment.assertStatusTransitionAllowed(PaymentStatus.DRAFT);
-        if (StringUtils.isNotBlank(payment.getContractNo())) {
+        if (StringUtils.isNotEmpty(payment.getContractNo())) {
             return;
         }
         payment.setContractNo(contractNo.trim());
@@ -156,17 +141,10 @@ public class PaymentReconciliationDomainService {
         // Pre：按主键加载支付主记录，不存在则抛出业务异常
         PaymentReconciliation payment = this.mustGetPayment(cmd.getPaymentId());
         payment.assertStatusTransitionAllowed(PaymentStatus.DRAFT);
-        int updated = paymentRepository.updateSettleFieldsWhereIdAndSourceStatus(
-            cmd.getPaymentId(),
-            PaymentStatus.SUCCESS,
-            PaymentStatus.DRAFT,
-            cmd.getOutcomeEnum(),
-            cmd.getBillDate());
-        if (updated != 1) {
-            throw new BusinessException(
-                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_STATUS,
-                "支付草稿状态非法或已被结算");
-        }
+        payment.setStatusEnum(PaymentStatus.SUCCESS);
+        payment.setOutcomeEnum(cmd.getOutcomeEnum());
+        payment.setBillDate(cmd.getBillDate());
+        paymentRepository.save(payment);
         List<PaymentYbSettlementItemCommand> ybItems = this.persistYbSettlements(payment.getId(), cmd.getYbSettlements());
         if (cmd.getPayReceiptDetails() != null) {
             this.replaceDetails(payment.getId(), cmd.getPayReceiptDetails());
@@ -189,17 +167,10 @@ public class PaymentReconciliationDomainService {
     public Long settleInpatientPayment(SettleInpatientPaymentCommand cmd) {
         PaymentReconciliation payment = this.mustGetPayment(cmd.getPaymentId());
         payment.assertStatusTransitionAllowed(PaymentStatus.DRAFT);
-        int updated = paymentRepository.updateSettleFieldsWhereIdAndSourceStatus(
-            cmd.getPaymentId(),
-            PaymentStatus.SUCCESS,
-            PaymentStatus.DRAFT,
-            cmd.getOutcomeEnum(),
-            cmd.getBillDate());
-        if (updated != 1) {
-            throw new BusinessException(
-                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_STATUS,
-                "支付草稿状态非法或已被结算");
-        }
+        payment.setStatusEnum(PaymentStatus.SUCCESS);
+        payment.setOutcomeEnum(cmd.getOutcomeEnum());
+        payment.setBillDate(cmd.getBillDate());
+        paymentRepository.save(payment);
         List<PaymentYbSettlementItemCommand> ybItems = this.persistYbSettlements(payment.getId(), cmd.getYbSettlements());
         payment = this.mustGetPayment(cmd.getPaymentId());
         InpatientPaymentSettledEvent event = new InpatientPaymentSettledEvent(
@@ -286,20 +257,6 @@ public class PaymentReconciliationDomainService {
         reverse.setStatusEnum(PaymentStatus.CANCELLED);
         reverse.setRelationId(null);
         paymentRepository.save(reverse);
-    }
-
-    /**
-     * 门诊账单退费执行：原支付主单收口（<strong>已废弃</strong>，原单不再改状态；保留空实现兼容旧编排引用）。
-     *
-     * @param cmd 原单收口命令（忽略）
-     * @deprecated 收费原单终态恒为 {@link PaymentStatus#SUCCESS}；冲退仅由逆向单表达
-     */
-    @Deprecated
-    public void finalizeOriginalOutpatientPayment(FinalizeOriginalOutpatientPaymentCommand cmd) {
-        if (cmd == null || cmd.getOriginalPaymentId() == null) {
-            return;
-        }
-        // 原单只读：不退费受理、不改 bill_date、不改 status
     }
 
     /**
@@ -609,7 +566,7 @@ public class PaymentReconciliationDomainService {
      */
     private void replaceDetails(Long paymentId, List<PaymentDetailItemCommand> details) {
         detailRepository.deleteByReconciliationId(paymentId);
-        // 业务分支处理：入参为空表示当前不保留任何支付明细，执行清空后直接返回
+        // 入参为空表示当前不保留任何支付明细，执行清空后直接返回。
         if (details == null || details.isEmpty()) {
             return;
         }
@@ -649,6 +606,13 @@ public class PaymentReconciliationDomainService {
         detailRepository.saveAll(toSave);
     }
 
+    /**
+     * 医保结算子表写路径：空输入跳过，否则全量替换并返回原命令列表。
+     *
+     * @param paymentId 对账主键
+     * @param items     医保结算行命令
+     * @return 持久化后的命令列表；空输入返回不可变空列表
+     */
     private List<PaymentYbSettlementItemCommand> persistYbSettlements(
         Long paymentId,
         List<PaymentYbSettlementItemCommand> items) {
@@ -659,6 +623,12 @@ public class PaymentReconciliationDomainService {
         return items;
     }
 
+    /**
+     * 按对账 id 先删后插医保结算子表；跳过 setlId 为空的行。
+     *
+     * @param paymentId 对账主键
+     * @param items     待写入命令
+     */
     private void replaceYbSettlements(Long paymentId, List<PaymentYbSettlementItemCommand> items) {
         ybSettlementRepository.deleteByReconciliationId(paymentId);
         if (items == null || items.isEmpty()) {
@@ -666,21 +636,21 @@ public class PaymentReconciliationDomainService {
         }
         List<PaymentYbSettlement> toSave = new ArrayList<>();
         for (PaymentYbSettlementItemCommand cmd : items) {
-            if (cmd == null || StringUtils.isBlank(cmd.getSetlId())) {
+            if (cmd == null || StringUtils.isEmpty(cmd.getSetlId())) {
                 continue;
             }
             PaymentYbSettlement row = new PaymentYbSettlement();
             row.setReconciliationId(paymentId);
             row.setSetlId(cmd.getSetlId().trim());
-            if (StringUtils.isNotBlank(cmd.getChrgBchno())) {
+            if (StringUtils.isNotEmpty(cmd.getChrgBchno())) {
                 row.setChrgBchno(cmd.getChrgBchno().trim());
             }
-            if (StringUtils.isNotBlank(cmd.getMdtrtId())) {
+            if (StringUtils.isNotEmpty(cmd.getMdtrtId())) {
                 row.setMdtrtId(cmd.getMdtrtId().trim());
             }
             row.setSettlementRecordId(cmd.getSettlementRecordId());
             row.setAccountId(cmd.getAccountId());
-            if (StringUtils.isNotBlank(cmd.getStatus())) {
+            if (StringUtils.isNotEmpty(cmd.getStatus())) {
                 row.setStatus(cmd.getStatus().trim());
             } else {
                 row.setStatus(PaymentYbSettlementStatus.CONFIRMED);

@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.assembler;
 
@@ -12,7 +13,7 @@ import com.openhis.health.domain.share.constants.PrescriptionSplitConstants;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -46,7 +47,7 @@ public class InpatientTcmRxSignAssembler {
         }
         Map<String, List<Long>> requestIdsByGroupKey = new LinkedHashMap<>();
         for (SignTcmRxTargetRequest target : signTargets) {
-            if (target == null || StringUtils.isBlank(target.getPrescriptionGroupKey())) {
+            if (target == null || StringUtils.isEmpty(target.getPrescriptionGroupKey())) {
                 continue;
             }
             String groupKey = target.getPrescriptionGroupKey().trim();
@@ -63,7 +64,7 @@ public class InpatientTcmRxSignAssembler {
         Map<String, String> existingNoByGroupKey = new HashMap<>();
         for (Map.Entry<String, List<Long>> entry : requestIdsByGroupKey.entrySet()) {
             String existingNo = findExistingPrescriptionNo(entry.getValue());
-            if (StringUtils.isNotBlank(existingNo)) {
+            if (StringUtils.isNotEmpty(existingNo)) {
                 existingNoByGroupKey.put(entry.getKey(), existingNo.trim());
             } else {
                 newRxCount++;
@@ -78,7 +79,7 @@ public class InpatientTcmRxSignAssembler {
         for (Map.Entry<String, List<Long>> entry : requestIdsByGroupKey.entrySet()) {
             String groupKey = entry.getKey();
             String prescriptionNo = existingNoByGroupKey.get(groupKey);
-            if (StringUtils.isBlank(prescriptionNo)) {
+            if (StringUtils.isEmpty(prescriptionNo)) {
                 prescriptionNo = newNos.get(newIdx);
                 newIdx++;
             }
@@ -102,6 +103,12 @@ public class InpatientTcmRxSignAssembler {
         return PrescriptionSplitConstants.RX_TYPE_OUTPATIENT_HERBAL;
     }
 
+    /**
+     * 方内任一行已有 prescription_no 即作为整方历史处方号。
+     *
+     * @param requestIds 药嘱 id 列表
+     * @return 处方号；均无则 null
+     */
     private String findExistingPrescriptionNo(List<Long> requestIds) {
         if (requestIds == null || requestIds.isEmpty()) {
             return null;
@@ -109,7 +116,7 @@ public class InpatientTcmRxSignAssembler {
         Set<Long> uniqueIds = new LinkedHashSet<>(requestIds);
         List<MedicationRequest> requests = medicationRequestQueryService.listByIds(uniqueIds);
         for (MedicationRequest request : requests) {
-            if (request != null && StringUtils.isNotBlank(request.getPrescriptionNo())) {
+            if (request != null && StringUtils.isNotEmpty(request.getPrescriptionNo())) {
                 return request.getPrescriptionNo();
             }
         }

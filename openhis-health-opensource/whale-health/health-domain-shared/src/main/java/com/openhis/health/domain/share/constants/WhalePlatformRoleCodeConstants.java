@@ -1,12 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 /**
@@ -14,16 +9,22 @@ package com.openhis.health.domain.share.constants;
  */
 public interface WhalePlatformRoleCodeConstants {
 
+/** WhalePlatformRoleCodeConstants：ROLE_ADMIN，值 {@code ROLE_ADMIN}。 */
     String ROLE_ADMIN = "ROLE_ADMIN";
 
+/** WhalePlatformRoleCodeConstants：ROLE_DOCTOR，值 {@code ROLE_DOCTOR}。 */
     String ROLE_DOCTOR = "ROLE_DOCTOR";
 
+/** WhalePlatformRoleCodeConstants：ROLE_NURSE，值 {@code ROLE_NURSE}。 */
     String ROLE_NURSE = "ROLE_NURSE";
 
+/** WhalePlatformRoleCodeConstants：ROLE_PHARMACIST，值 {@code ROLE_PHARMACIST}。 */
     String ROLE_PHARMACIST = "ROLE_PHARMACIST";
 
+/** WhalePlatformRoleCodeConstants：ROLE_WAREHOUSE，值 {@code ROLE_WAREHOUSE}。 */
     String ROLE_WAREHOUSE = "ROLE_WAREHOUSE";
 
+/** WhalePlatformRoleCodeConstants：ROLE_ACCOUNTANT，值 {@code ROLE_ACCOUNTANT}。 */
     String ROLE_ACCOUNTANT = "ROLE_ACCOUNTANT";
 
     /** 财务审批：动账类供应单与调价单的审批/驳回岗位。 */

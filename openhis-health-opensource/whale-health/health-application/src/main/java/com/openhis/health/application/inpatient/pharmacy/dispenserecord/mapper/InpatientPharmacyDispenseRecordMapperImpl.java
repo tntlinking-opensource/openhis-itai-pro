@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.pharmacy.dispenserecord.mapper;
 
 import com.openhis.health.application.inpatient.pharmacy.dispenserecord.dto.InpatientPharmacyDispenseRecordExportRowDto;
@@ -16,21 +16,18 @@ import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseRecordPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
-import com.openhis.health.domain.share.constants.InpatientPharmacyDispenseRecordConstants;
 import com.openhis.health.domain.share.constants.PharmacyDispenseRecordConstants;
 import com.openhis.health.domain.share.constants.PharmacyDispenseRecordExportConstants;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
-import com.openhis.health.module.querysupport.pharmacy.dto.InpatientPharmacyDispenseRecordQueryRowDto;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.inpatient.pharmacy.dispenserecord.dto.InpatientPharmacyDispenseRecordQueryRowDto;
 import com.openhis.whale.core.application.dto.OptionDto;
-import org.apache.commons.lang3.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.ArrayList;
 import java.util.List;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
@@ -39,14 +36,10 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
  * {@link InpatientPharmacyDispenseRecordMapper} 实现。
  */
 @Component
+@RequiredArgsConstructor
 public class InpatientPharmacyDispenseRecordMapperImpl implements InpatientPharmacyDispenseRecordMapper {
 
     private final OutpatientPharmacyDispenseRecordMapper outpatientPharmacyDispenseRecordMapper;
-
-    public InpatientPharmacyDispenseRecordMapperImpl(
-        OutpatientPharmacyDispenseRecordMapper outpatientPharmacyDispenseRecordMapper) {
-        this.outpatientPharmacyDispenseRecordMapper = outpatientPharmacyDispenseRecordMapper;
-    }
 
     /**
      * 分页查询请求 → 发放域记录查询入参。
@@ -223,6 +216,7 @@ public class InpatientPharmacyDispenseRecordMapperImpl implements InpatientPharm
         row.setOrderingDepartmentId(source.getOrderingDepartmentId());
         row.setOrderingDepartmentName(source.getOrderingDepartmentName());
         row.setUsageText(source.getUsageText());
+        row.setManufacturerText(source.getManufacturerText());
         row.setSummaryNo(source.getSummaryNo());
         row.setMedReqId(source.getMedReqId());
         return row;
@@ -251,6 +245,16 @@ public class InpatientPharmacyDispenseRecordMapperImpl implements InpatientPharm
         return response;
     }
 
+    /**
+     * 住院发药记录分页：解析展示日期、记录类型与库房/发药人筛选。
+     *
+     * @param query                    待填充 query
+     * @param dispenseDateFrom         起始 yyyy-MM-dd
+     * @param dispenseDateTo           截止 yyyy-MM-dd
+     * @param recordTypeCode           记录类型码
+     * @param pharmacyLocationId       药房 id
+     * @param dispenserPractitionerId  发药人 id
+     */
     private void applyFilterFields(
         MedicationDispenseRecordPageQuery query,
         String dispenseDateFrom,

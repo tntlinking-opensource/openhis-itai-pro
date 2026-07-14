@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.encounterhistory.service;
 
 import com.openhis.health.domain.share.constants.CustomConstants;
@@ -29,7 +16,11 @@ import org.springframework.stereotype.Service;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 就诊历史写侧领域服务。
+ * 就诊历史里程碑（{@code cus_encounter_history}）聚合写侧领域服务。
+ *
+ * <p>职责：转科/离院/入科/床卡打印等里程碑记录、受控更正与废弃。</p>
+ * <p>不变量：申请引用成对（BR-EHR）；跨聚合就诊校验由应用层 Gate 完成；持久化先于里程碑事件。</p>
+ * <p>仅注入本聚合 {@link EncounterHistoryRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -61,9 +52,10 @@ public class EncounterHistoryDomainService {
         history.assertRequestRefPair();
         history.assertTransferOrgTransitionNotEmpty();
 
+        // 持久化
         EncounterHistory saved = repository.save(history);
 
-        // Event：发布转科里程碑已记录事件。
+        // 发布事件：转科里程碑已记录
         domainEventPublisher.publish(new TransferMilestoneRecordedEvent(saved.getId(), saved.getEncounterId(), saved.getRequestId(), command.getOperatorId()));
         return saved.getId();
     }
@@ -108,6 +100,7 @@ public class EncounterHistoryDomainService {
      * @return 里程碑主键
      */
     public Long recordBedCardPrintMilestone(Long encounterId, Long bedId, Long operatorId) {
+        // 前置校验：就诊标识必填
         if (encounterId == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_HISTORY_INVALID_ARGUMENT, "就诊标识不能为空");
         }
@@ -116,6 +109,7 @@ public class EncounterHistoryDomainService {
         history.setEncounterId(encounterId);
         history.setTargetLocationId(bedId);
         history.assertRequiredFields();
+        // 持久化
         EncounterHistory saved = repository.save(history);
         return saved.getId();
     }
@@ -151,7 +145,7 @@ public class EncounterHistoryDomainService {
      * 更正里程碑。
      *
      * @param command 命令
-     * @preconditions 更正策略（新增更正行 vs 受控修改）应由应用服务按场景选择；当前实现采用受控修改，并保留审计字段（BR-EHR-006）。
+     * @throws BusinessException 更正原因为空或里程碑不存在时
      */
     public void correctMilestone(CorrectMilestoneCommand command) {
         if (command.getReason() == null || command.getReason().trim().isEmpty()) {
@@ -166,15 +160,17 @@ public class EncounterHistoryDomainService {
         history.setTargetOrganizationId(command.getTargetOrganizationId());
         history.setOriginalLocationId(command.getOriginalLocationId());
         history.setTargetLocationId(command.getTargetLocationId());
-        // 业务分支处理。
+        // 命令传入离院方式码时覆盖里程碑离院方式。
         if (command.getOutWayCode() != null) {
             history.setOutWayCode(command.getOutWayCode());
         }
 
         history.assertRequiredFields();
         history.assertRequestRefPair();
+        // 持久化
         repository.save(history);
 
+        // 发布事件：里程碑已更正
         domainEventPublisher.publish(new MilestoneCorrectedEvent(history.getId(), command.getReason(), command.getOperatorId()));
     }
 

@@ -1,14 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.orderexecute.assembler;
 
-import com.openhis.health.module.querysupport.nursestation.NurseStationOrderExecuteListReadAssembler;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderExecutePatientGroupDto;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.support.NurseStationOrderExecuteListReadAssembler;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecutePatientGroupDto;
 import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecordQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
-import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -69,5 +69,15 @@ public class NurseStationOrderExecuteListAssembler {
         ServiceRequestListModel svcDetail,
         LocalDateTime planTime) {
         return readAssembler.isPlanTimeAfterStopTime(order, medDetail, svcDetail, planTime);
+    }
+
+    /**
+     * 正向执行写 Gate：请求状态须为 VERIFIED 或 STOPPED（与列表 Q-IP-EXE-001 一致）。
+     */
+    public boolean isRequestStatusExecutableForWrite(
+        InpatientOrderListSkeleton order,
+        MedicationRequestListQueryModel medDetail,
+        ServiceRequestListModel svcDetail) {
+        return readAssembler.isRequestStatusExecutableForWrite(order, medDetail, svcDetail);
     }
 }

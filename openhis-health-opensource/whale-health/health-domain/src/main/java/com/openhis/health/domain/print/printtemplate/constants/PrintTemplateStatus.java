@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.print.printtemplate.constants;
 
 /**
@@ -22,8 +9,11 @@ package com.openhis.health.domain.print.printtemplate.constants;
  */
 public final class PrintTemplateStatus {
 
+    /** 草稿：可编辑，未对租户发布。 */
     public static final String DRAFT = "draft";
+    /** 已发布：租户可见并可用于打印绑定。 */
     public static final String PUBLISHED = "published";
+    /** 已归档：只读历史版本，不可再绑定。 */
     public static final String ARCHIVED = "archived";
 
     private PrintTemplateStatus() {

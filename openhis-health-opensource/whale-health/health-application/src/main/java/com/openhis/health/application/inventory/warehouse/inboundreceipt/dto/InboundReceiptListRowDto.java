@@ -1,99 +1,88 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.dto;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
+ * 药库入库单列表聚合行（IF-WHS-IN-02）。
  *
- * <p>金额与时刻等聚合口径在 Mapper 内计算；{@code supplierName}/{@code creatorName}/{@code approverName}/{@code purposeLocationName}/{@code statusEnumText} 由
+ * <p>金额与时点等聚合口径在 Mapper 内计算；{@code supplierName}/{@code creatorName}/{@code approverName}/
+ * {@code purposeLocationName}/{@code statusEnumText} 由
  * {@link com.openhis.health.application.inventory.warehouse.inboundreceipt.service.InventoryWarehouseInboundReceiptAppService}
- * 在返回前批量富化。{@code purposeLocationId} 由 Mapper 与头行一致写入。{@code statusEnum} 为
- * {@link com.openhis.health.domain.share.enums.SupplyStatus#getCode()}（B.10.8.1）；{@code statusEnumText} 为同枚举 {@code getDisplay()}。</p>
+ * 在返回前批量富化。{@code statusEnum} 为 {@link com.openhis.health.domain.share.enums.SupplyStatus#getCode()}（B.10.8.1）。</p>
  */
 @Getter
 @Setter
+@Accessors(chain = true)
+@Schema(description = "药库入库单列表聚合行")
 public class InboundReceiptListRowDto {
 
-    /** 业务单号（聚合键）。 */
+    /** 业务单号。 */
+    @Schema(description = "业务单号")
     private String busNo;
 
-    /**
-     * 供应商展示名：由供应商主数据解析，未命中时为 null。
-     */
+    /** 供应商展示名。 */
+    @Schema(description = "供应商展示名")
     private String supplierName;
 
-    /**
-     * 目的库房（入库去向）位置主键：与同号明细 {@code purpose_location_id} 头字段一致。
-     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    /** 目的库房位置主键。 */
+    @Schema(description = "目的库房位置主键")
     private Long purposeLocationId;
 
-    /**
-     * 目的库房展示名：由 {@link com.openhis.health.domain.administration.location.service.LocationQueryService} 解析，未命中时为 null。
-     */
+    /** 目的库房展示名。 */
+    @Schema(description = "目的库房展示名")
     private String purposeLocationName;
 
-    /**
-     * 单据状态持久化码（头行与各明细行须一致，否则 Mapper 抛错）。
-     */
+    /** 单据状态 SupplyStatus#getCode。 */
+    @Schema(description = "单据状态 SupplyStatus#getCode")
     private String statusEnum;
 
-    /**
-     * 单据状态展示文案：由 {@code statusEnum} 解析 {@link com.openhis.health.domain.share.enums.SupplyStatus#getDisplay()}；未知 code 时为 null。
-     */
+    /** 单据状态展示文案。 */
+    @Schema(description = "单据状态展示文案")
     private String statusEnumText;
 
-    /**
-     * 制单人（申请人）展示名：由申请人主键解析。
-     */
+    /** 驳回原因（status=REJECT 时取供应行 reason；其它态可空）。 */
+    @Schema(description = "驳回原因")
+    private String rejectReason;
+
+    /** 制单人展示名。 */
+    @Schema(description = "制单人展示名")
     private String creatorName;
 
-    /**
-     * 审批人主键（头行口径，与 Mapper 选取的「最新申请」头行一致）；展示名见 {@link #approverName}。
-     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    /** 审批人主键。 */
+    @Schema(description = "审批人主键")
     private Long approverId;
 
-    /**
-     * 审批人展示名。
-     */
+    /** 审批人展示名。 */
+    @Schema(description = "审批人展示名")
     private String approverName;
 
-    /**
-     * 该单下各明细 {@code total_price} 之和（未扣税等调整时即为列表展示金额）。
-     */
+    /** 单据总金额。 */
+    @Schema(description = "单据总金额")
     private BigDecimal totalAmount;
 
-    /**
-     * 审批时间：聚合组内按主键升序首条非空 {@code approval_time}（与 Mapper 稳定口径一致）。
-     */
+    /** 审批时间。 */
+    @Schema(description = "审批时间")
     private LocalDateTime approvalTime;
 
-    /**
-     * 申请时间：组内 {@code apply_time} 最大值（提交审批后由服务端写入；草稿阶段可为 null）。
-     */
+    /** 申请时间。 */
+    @Schema(description = "申请时间")
     private LocalDateTime applyTime;
 
-    /**
-     * 制单时间：组内各行 {@code occurrence_time} 的最大值（业务制单时刻，由前端随明细传入）。
-     */
+    /** 制单时间。 */
+    @Schema(description = "制单时间")
     private LocalDateTime occurrenceTime;
 }

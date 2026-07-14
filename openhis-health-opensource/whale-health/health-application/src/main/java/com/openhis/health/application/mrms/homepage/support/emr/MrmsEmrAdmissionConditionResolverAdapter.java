@@ -1,11 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.mrms.homepage.support.emr;
 
 import com.openhis.health.domain.mrms.caserecord.resolver.AdmissionConditionResolver;
-import com.openhis.health.integration.emr.EmrAdmissionConditionExtension;
+import com.openhis.health.infrastructure.integration.emr.EmrAdmissionConditionExtension;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

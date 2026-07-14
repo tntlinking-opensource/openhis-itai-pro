@@ -1,18 +1,22 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
 package com.openhis.health.application.inpatient.financial.settle.service;
 
-import com.openhis.health.module.common.assembler.financial.PaymentChannelDisplayAssembler;
-import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayDtoApplier;
-import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayAssembler;
-import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayResult;
-import com.openhis.health.module.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
-import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.validator.PageWindowGate;
-import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
-import com.openhis.health.module.common.assembler.financial.PaymentChannelOptionProvider;
-import com.openhis.health.module.common.validator.PaymentChannelGate;
-import com.openhis.health.module.common.support.ThirdPartyPaymentSettleSupport;
+import com.openhis.health.application.shared.financial.PaymentChannelDisplayAssembler;
+import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayDtoApplier;
+import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayAssembler;
+import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayResult;
+import com.openhis.health.application.shared.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.inpatient.nursestation.ATDManager.support.InpatientDischargeClinicalGate;
+import com.openhis.health.application.shared.validator.PageWindowGate;
+import com.openhis.health.application.shared.validator.PatientEncounterConsistencyGate;
+import com.openhis.health.application.shared.financial.PaymentChannelOptionProvider;
+import com.openhis.health.application.shared.validator.PaymentChannelGate;
+import com.openhis.health.application.shared.payment.ThirdPartyPaymentSettleOrchestrator;
 import com.openhis.health.application.inpatient.financial.prepay.mapper.InpatientPrepayMapper;
 import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettlePaymentDetailDto;
 import com.openhis.health.application.inpatient.financial.settle.dto.InpatientSettleQueueItemDto;
@@ -47,12 +51,11 @@ import com.openhis.health.domain.administration.encounter.command.CompleteInpati
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.module.querysupport.financial.InpatientSettleReadLoader;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.inpatient.financial.settle.support.InpatientSettleReadLoader;
 import com.openhis.health.domain.administration.invoice.command.CancelInvoiceCommand;
 import com.openhis.health.domain.administration.invoice.command.CreateDraftInvoiceCommand;
 import com.openhis.health.domain.administration.invoice.entity.Invoice;
-import com.openhis.health.domain.administration.invoice.query.InvoiceQueryCommand;
 import com.openhis.health.domain.administration.invoice.service.InvoiceDomainService;
 import com.openhis.health.domain.administration.invoice.service.InvoiceQueryService;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
@@ -75,7 +78,7 @@ import com.openhis.health.domain.financial.paymentreconciliation.service.Payment
 import com.openhis.health.domain.financial.contract.entity.Contract;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientSettleQueueTab;
@@ -90,20 +93,22 @@ import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.health.domain.share.constants.InpatientSettleConstants;
 import com.openhis.health.domain.workflow.servicerequest.command.RejectServiceRequestToDraftCommand;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
-import com.openhis.health.module.querysupport.financial.InpatientReverseSettlePreSupport;
+import com.openhis.health.application.inpatient.financial.settle.support.InpatientReverseSettlePreOrchestrator;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.health.integration.insurance.inpatient.InpatientChargeInsuranceExtension;
-import com.openhis.health.integration.support.einvoice.BossElectronicInvoiceIntegrationSupport;
-import com.openhis.health.integration.insurance.inpatient.command.InpatientChargeConfirmCommand;
-import com.openhis.health.integration.insurance.inpatient.command.InpatientChargePreSettleCommand;
-import com.openhis.health.integration.insurance.inpatient.result.InpatientChargeConfirmResult;
-import com.openhis.health.integration.insurance.inpatient.result.InpatientChargePreSettleResult;
-import com.openhis.health.integration.payment.dto.ClientScanResultDto;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.InpatientChargeInsuranceExtension;
+import com.openhis.health.infrastructure.integration.financial.orchestration.PaymentReconciliationSettleOrchestration;
+import com.openhis.health.infrastructure.integration.einvoice.orchestration.BossElectronicInvoiceAfterCommitOrchestration;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargeConfirmExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionIn.InpatientChargePreSettleExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargeConfirmExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.inpatient.ExtensionOut.InpatientChargePreSettleExtensionOut;
+import com.openhis.health.infrastructure.integration.payment.dto.ClientScanResultDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
@@ -143,24 +148,26 @@ public class InpatientSettleAppService {
 
     /** 写路径校对人门控（撤销出院嘱，BR-IP-RVS-007）。 */
 
-    /** 分页窗口入站门控（B.10.11）。 */
     private final PageWindowGate pageWindowGate;
 
     /** 支付渠道入站门控。 */
     private final PaymentChannelGate paymentChannelGate;
 
-    private final ThirdPartyPaymentSettleSupport thirdPartyPaymentSettleSupport;
+    private final ThirdPartyPaymentSettleOrchestrator thirdPartyPaymentSettleOrchestrator;
 
     private final PaymentChannelOptionProvider paymentChannelOptionProvider;
 
     /** 患者与就诊一致性门控。 */
     private final PatientEncounterConsistencyGate patientEncounterConsistencyGate;
 
+    /** 出院临床门禁（出院全结 Pre 与 ATD-05 同源，BR-IP-FLW-008 v1.2）。 */
+    private final InpatientDischargeClinicalGate inpatientDischargeClinicalGate;
+
     /** 就诊读侧（队列、门禁与上下文）。 */
     private final EncounterQueryService encounterQueryService;
 
     /** 住院就诊上下文门面（结算队列分页读模型）。 */
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
 
     /** 就诊写侧（出院财务全结）。 */
     private final EncounterDomainService encounterDomainService;
@@ -183,6 +190,9 @@ public class InpatientSettleAppService {
     /** 支付流水写侧。 */
     private final PaymentReconciliationDomainService paymentReconciliationDomainService;
 
+    /** 支付落账 + 第三方医保事后挂接。 */
+    private final PaymentReconciliationSettleOrchestration paymentReconciliationSettleOrchestration;
+
     /** 发票写侧。 */
     private final InvoiceDomainService invoiceDomainService;
 
@@ -193,7 +203,7 @@ public class InpatientSettleAppService {
     private final ContractQueryService contractQueryService;
 
     /** 产品定义批量加载（费用明细展示名）。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /** 结算读路径（IF-IP-STL-03/04/07）。 */
     private final InpatientSettleReadLoader inpatientSettleReadLoader;
@@ -210,7 +220,7 @@ public class InpatientSettleAppService {
     /** 住院第三方结算扩展（未装 Module 时为 NoOp）。 */
     private final InpatientChargeInsuranceExtension inpatientChargeInsuranceExtension;
 
-    private final BossElectronicInvoiceIntegrationSupport bossElectronicInvoiceIntegrationSupport;
+    private final BossElectronicInvoiceAfterCommitOrchestration bossElectronicInvoiceAfterCommitOrchestration;
 
     /** 预交金 Command 复用（出院退预交金结算收口）。 */
     private final InpatientPrepayMapper inpatientPrepayMapper;
@@ -225,7 +235,7 @@ public class InpatientSettleAppService {
     private final ServiceRequestDomainService serviceRequestDomainService;
 
     /** 反结 Pre 读侧与校验（module.querysupport，与护士站共用口径）。 */
-    private final InpatientReverseSettlePreSupport inpatientReverseSettlePreSupport;
+    private final InpatientReverseSettlePreOrchestrator inpatientReverseSettlePreOrchestrator;
 
     /**
      * IF-IP-STL-01：结算页初始化。
@@ -277,7 +287,7 @@ public class InpatientSettleAppService {
             InpatientEncounterPageQuery query = inpatientSettleMapper.toInpatientEncounterPageQuery(request);
             PageQueryBinder.bind(request, query);
             Page<InpatientEncounterContextQueryModel> page =
-                encounterContextFacade.pageInpatientSettleQueue(query);
+                EncounterContextReader.pageInpatientSettleQueue(query);
             Set<Long> encounterIds = new LinkedHashSet<>();
             // 遍历分页结果，收集就诊 ID 供后续批量 Pre 加载。
             for (InpatientEncounterContextQueryModel row : page.getContent()) {
@@ -418,7 +428,14 @@ public class InpatientSettleAppService {
                 }
                 content.add(item);
             }
-            return inpatientSettleMapper.toPageInpatientSettleQueueResponse(content, page);
+            Page<InpatientEncounterContextQueryModel> responsePage = page;
+            if (InpatientSettleQueueTab.SETTLED.equals(tabCode)) {
+                // Asm：已结算页签按住院号去重；多次结算在 IF-IP-STL-07 历史区查阅。
+                content = this.dedupeSettledQueueItemsByEncounterBusNo(content);
+                long distinctTotal = EncounterContextReader.countInpatientSettleQueueDistinctBusNo(query);
+                responsePage = new PageImpl<>(page.getContent(), page.getPageable(), distinctTotal);
+            }
+            return inpatientSettleMapper.toPageInpatientSettleQueueResponse(content, responsePage);
         } catch (BusinessException ex) {
             throw ex;
         } catch (RuntimeException ex) {
@@ -532,6 +549,8 @@ public class InpatientSettleAppService {
             selectedIds,
             allPendingIds,
             request.getSettleMode());
+        // Pre：出院全结须先通过 ATD-03/04/05 同源临床门禁（长期/临时/待发退药清零）。
+        this.assertDischargeClinicalGateForDischargeFullSettle(request.getEncounterId(), settleMode);
         // Pre：找出同就诊下未完成的 INPATIENT_CLINIC 草稿，后续逐条作废（BR-IP-STL-010）。
         List<PaymentReconciliationQueryModel> encounterPayments =
             paymentReconciliationQueryService.findPaymentsByEncounter(request.getEncounterId());
@@ -737,6 +756,10 @@ public class InpatientSettleAppService {
         }
         boolean dischargeFullSettle =
             InpatientSettleConstants.SETTLE_MODE_DISCHARGE_FULL.equals(settleMode);
+        // Pre：出院全结须先通过 ATD-03/04/05 同源临床门禁（长期/临时/待发退药清零）。
+        if (dischargeFullSettle) {
+            this.assertDischargeClinicalGateForDischargeFullSettle(request.getEncounterId(), settleMode);
+        }
         patientEncounterConsistencyGate.requireRequestPatientMatchesEncounter(
             request.getPatientId(),
             encounter.getPatientId(),
@@ -754,7 +777,7 @@ public class InpatientSettleAppService {
                 request.getPaymentDraftId(),
                 contractBusNo);
         }
-        InpatientChargeConfirmResult ybConfirmResult = null;
+        InpatientChargeConfirmExtensionOut ybConfirmResult = null;
         try {
             // Cmd：医保扩展开启时先 confirm 2304，再推进本地支付 SUCCESS。
             ybConfirmResult = this.runInsuranceConfirmIfNeeded(request);
@@ -781,7 +804,7 @@ public class InpatientSettleAppService {
                     receivableTotal);
             }
             // Cmd ①：支付草稿推进为 SUCCESS。
-            Long paymentId = paymentReconciliationDomainService.settleInpatientPayment(settleCommand);
+            Long paymentId = paymentReconciliationSettleOrchestration.settleInpatientPayment(settleCommand);
             BatchChargeItemIdsCommand settleChargeCmd =
                 inpatientSettleMapper.toBatchChargeItemIdsCommand(request.getChargeItemIds(), operatorId);
             if (!request.getChargeItemIds().isEmpty()) {
@@ -805,7 +828,7 @@ public class InpatientSettleAppService {
             invoiceCommand.setOperatorId(operatorId);
             // Cmd ③：创建发票草稿（BR-IP-STL-008）。
             Long invoiceDraftId = invoiceDomainService.createDraftInvoiceAfterPayment(invoiceCommand);
-            bossElectronicInvoiceIntegrationSupport.afterDraftCreated(invoiceDraftId);
+            bossElectronicInvoiceAfterCommitOrchestration.afterDraftCreated(invoiceDraftId);
             Long advanceRefundPaymentId = null;
             if (dischargeFullSettle) {
                 // Cmd ④：出院全结多退——退库内账户余额盈余（扣本批已结后）。
@@ -871,7 +894,7 @@ public class InpatientSettleAppService {
      * @throws BusinessException EX-IP-RVS-001～005
      */
     public ReverseInpatientSettleResponse reverseInpatientSettle(ReverseInpatientSettleRequest request) {
-        // Gate：收银台入口禁止 DISCHARGED 本页反结（BR-IP-RVS-008）；召回内嵌走 RecallReverseSettleSupport。
+        // Gate：收银台入口禁止 DISCHARGED 本页反结（BR-IP-RVS-008）；召回内嵌走 RecallReverseSettleOrchestrator。
         return this.executeReverseInpatientSettle(request, false);
     }
 
@@ -879,7 +902,7 @@ public class InpatientSettleAppService {
      * 住院反结编排序列内核（IF-IP-RVS-01）。
      *
      * @param request         反结请求
-     * @param allowDischarged 为 true 时跳过 DISCHARGED 本页拒绝（保留扩展；召回内嵌走 {@code RecallReverseSettleSupport}）
+     * @param allowDischarged 为 true 时跳过 DISCHARGED 本页拒绝（保留扩展；召回内嵌走 {@code RecallReverseSettleOrchestrator}）
      * @return 反结响应
      * @throws BusinessException EX-IP-RVS-001～005
      */
@@ -947,24 +970,20 @@ public class InpatientSettleAppService {
                 "请刷新并重新选择结算单");
         }
         List<Long> paymentBoundChargeItemIds =
-            inpatientReverseSettlePreSupport.parseBoundChargeItemIds(originalPayment.getChargeItemIds());
+            inpatientReverseSettlePreOrchestrator.parseBoundChargeItemIds(originalPayment.getChargeItemIds());
         ChargeItemQueryCommand loadCmd = new ChargeItemQueryCommand();
         loadCmd.setIds(paymentBoundChargeItemIds);
         List<ChargeItem> paymentBoundChargeItems = chargeItemQueryService.loadChargeItemsByIds(loadCmd);
         // Pre：原单绑定费用须均为 SETTLED，否则数据已变化。
-        inpatientReverseSettlePreSupport.assertAllChargeItemsSettledForReverse(
+        inpatientReverseSettlePreOrchestrator.assertAllChargeItemsSettledForReverse(
             paymentBoundChargeItems, paymentBoundChargeItemIds, request.getEncounterId());
-        // Pre：反结回退本就诊全部已结算行（本期无中途结算；避免绑定串遗漏导致余额虚高）。
-        List<Long> chargeItemIdsToRevert = chargeItemQueryService.listChargeItemIdsByEncounterIdAndStatusEnum(
-            request.getEncounterId(), ChargeItemStatus.SETTLED.getCode());
-        if (chargeItemIdsToRevert.isEmpty() && !paymentBoundChargeItemIds.isEmpty()) {
-            chargeItemIdsToRevert = paymentBoundChargeItemIds;
-        }
+        // Pre：反结仅再生本支付单快照绑定的已结算行，历史 SETTLED 行保持终态供结算历史查阅（BR-IP-RVS-011）。
+        List<Long> chargeItemIdsToRevert = paymentBoundChargeItemIds;
         // Pre：本期无中途结算，须存在可退回或已为草稿的医生开立出院嘱（category=34）。
         Long dischargeServiceRequestId =
-            inpatientReverseSettlePreSupport.resolveRejectableDischargeServiceRequestId(request.getEncounterId());
+            inpatientReverseSettlePreOrchestrator.resolveRejectableDischargeServiceRequestId(request.getEncounterId());
         if (dischargeServiceRequestId == null
-            && !inpatientReverseSettlePreSupport.hasDoctorDischargeRequestInDraft(request.getEncounterId())) {
+            && !inpatientReverseSettlePreOrchestrator.hasDoctorDischargeRequestInDraft(request.getEncounterId())) {
             // Pre：既无可退回出院嘱、也无 DRAFT 出院嘱，拒绝反结。
             throw new BusinessException(
                 InpatientSettleConstants.EX_IP_RVS_004,
@@ -981,12 +1000,12 @@ public class InpatientSettleAppService {
             if (!chargeItemIdsToRevert.isEmpty()) {
                 BatchChargeItemIdsCommand revertChargeCmd =
                     inpatientSettleMapper.toBatchChargeItemIdsCommand(chargeItemIdsToRevert, operatorId);
-                // Cmd：本就诊已结算费用 SETTLED → PENDING_SETTLEMENT，恢复可再次结算。
+                // Cmd：为本支付单快照内源 SETTLED 行批量插入 PENDING_SETTLEMENT 再生行（refund_id 链回源行）。
                 chargeItemDomainService.revertInpatientSettledChargeItems(revertChargeCmd);
             }
             // 出院结算（kind_enum=INPATIENT_CLINIC）反结不回冲账户余额；中途结算反结上线后按支付大类回冲本批已结扣款。
             this.creditAccountBalanceOnMidSettleReverseIfNeeded(originalPayment, chargeItemIdsToRevert, operatorId);
-            // Cmd：仅 COMPLETED 未清床时回退就诊财务态 PENDING；DISCHARGED 由召回路径处理。
+            // Cmd：仅 COMPLETED 未清床时回退就诊临床态 IN_PROGRESS；DISCHARGED 由召回路径处理。
             if (EncounterStatus.COMPLETED.getCode().equals(encounter.getStatusEnum())) {
                 encounterDomainService.revertInpatientFinancialSettlement(request.getEncounterId());
             }
@@ -1084,7 +1103,7 @@ public class InpatientSettleAppService {
                 InpatientSettleConstants.EX_IP_STL_103,
                 "请先完成住院登记");
         }
-        BigDecimal refundAmount = InpatientDisplayAccountBalanceAssembler.resolveAccountBalance(account)
+        BigDecimal refundAmount = InpatientAccountBalanceDisplayAssembler.resolveAccountBalance(account)
             .setScale(InpatientSettleConstants.SETTLE_AMOUNT_COMPARE_SCALE, RoundingMode.HALF_UP);
         if (refundAmount.compareTo(BigDecimal.ZERO) <= 0) {
             // 扣本批已结后账户无盈余，无需退预交金。
@@ -1103,7 +1122,7 @@ public class InpatientSettleAppService {
         if (settlementBillDate != null) {
             refundSettleCommand.setBillDate(settlementBillDate);
         }
-        paymentReconciliationDomainService.settleInpatientPayment(refundSettleCommand);
+        paymentReconciliationSettleOrchestration.settleInpatientPayment(refundSettleCommand);
         AdjustAdvanceDepositBalanceCommand balanceCmd = inpatientPrepayMapper.toRefundBalanceAdjustCommand(
             patientId,
             encounterId,
@@ -1288,51 +1307,60 @@ public class InpatientSettleAppService {
     }
 
     /**
-     * 判定本次结算模式：出院全结 / 中途结算（BR-IP-STL-011～014）。
+     * 判定本次结算模式：本期仅支持出院全结（BR-IP-STL-003/004；**无中途结算**）。
      *
      * @param encounterStatus         就诊状态
      * @param selectedChargeItemIds   用户选中 ID
      * @param allPendingChargeItemIds 就诊全部待结算 ID
      * @param requestSettleMode       请求显式指定模式（可 null）
-     * @return {@link InpatientSettleConstants#SETTLE_MODE_DISCHARGE_FULL} 或 {@code MID}
-     * @throws BusinessException 全选/部分选与就诊态冲突时
+     * @return {@link InpatientSettleConstants#SETTLE_MODE_DISCHARGE_FULL}
+     * @throws BusinessException 非 PENDING、部分选、待出院或显式中途结算时
      */
     private String resolveSettleMode(
         String encounterStatus,
         Set<Long> selectedChargeItemIds,
         Set<Long> allPendingChargeItemIds,
         String requestSettleMode) {
-        boolean fullSelection = selectedChargeItemIds.equals(allPendingChargeItemIds);
         if (InpatientSettleConstants.SETTLE_MODE_MID.equals(requestSettleMode)) {
-            // 显式中途结算：PENDING 态全选则拒绝（应走出院全结）。
-            if (fullSelection && EncounterStatus.PENDING.getCode().equals(encounterStatus)) {
-                throw new BusinessException(
-                    InpatientSettleConstants.INS_IP_016,
-                    "已全选待结算费用，请使用出院全结");
-            }
-            if (selectedChargeItemIds.isEmpty()) {
-                throw new BusinessException(
-                    InpatientSettleConstants.EX_IP_STL_001,
-                    "请选择待结算费用");
-            }
-            return InpatientSettleConstants.SETTLE_MODE_MID;
+            // Gate：本期产品无中途结算，显式传入亦拒绝。
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_112,
+                "本期不支持中途结算，请办理护士出院后全选待结算费用结算");
         }
-        if (EncounterStatus.PENDING.getCode().equals(encounterStatus)) {
-            // PENDING 态须全选待结算，否则只能中途结算。
-            if (!fullSelection) {
-                throw new BusinessException(
-                    InpatientSettleConstants.INS_IP_001,
-                    "请全选待结算费用或改为中途结算");
-            }
-            return InpatientSettleConstants.SETTLE_MODE_DISCHARGE_FULL;
+        if (EncounterStatus.ON_HOLD.getCode().equals(encounterStatus)) {
+            // Pre：待出院须先护士办理出院（BR-IP-STL-004）。
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_111,
+                "请先办理护士出院后再结算");
         }
-        // IN_PROGRESS/COMPLETED 等：全选须先护士出院；部分选为中途结算。
-        if (fullSelection) {
+        boolean fullSelection = selectedChargeItemIds.equals(allPendingChargeItemIds);
+        if (!EncounterStatus.PENDING.getCode().equals(encounterStatus)) {
+            // Pre：仅护士已办理出院（PENDING）允许出院全结。
             throw new BusinessException(
                 InpatientSettleConstants.EX_IP_STL_108,
-                "请先完成护士出院或改为中途结算");
+                "请先完成护士出院后再结算");
         }
-        return InpatientSettleConstants.SETTLE_MODE_MID;
+        if (!fullSelection) {
+            // Pre：出院全结须全选待结算（无中途子集）。
+            throw new BusinessException(
+                InpatientSettleConstants.EX_IP_STL_107,
+                "请全选待结算费用");
+        }
+        return InpatientSettleConstants.SETTLE_MODE_DISCHARGE_FULL;
+    }
+
+    /**
+     * 出院全结 Pre：复用办理出院临床门禁（ATD-05 与 FIN-003 共用 {@link InpatientDischargeClinicalGate}）。
+     *
+     * @param encounterId 就诊主键
+     * @param settleMode    本次结算模式
+     * @throws BusinessException EX-IP-ATD-301/302/303/307
+     */
+    private void assertDischargeClinicalGateForDischargeFullSettle(Long encounterId, String settleMode) {
+        if (!InpatientSettleConstants.SETTLE_MODE_DISCHARGE_FULL.equals(settleMode)) {
+            return;
+        }
+        inpatientDischargeClinicalGate.assertDischargeClinicalGatePassed(encounterId);
     }
 
     /**
@@ -1373,7 +1401,7 @@ public class InpatientSettleAppService {
                 InpatientSettleConstants.EX_IP_STL_001,
                 "医保预结算须先读卡获取人员编号");
         }
-        InpatientChargePreSettleCommand command = new InpatientChargePreSettleCommand();
+        InpatientChargePreSettleExtensionIn command = new InpatientChargePreSettleExtensionIn();
         command.setEncounterId(request.getEncounterId());
         command.setChargeItemIds(request.getChargeItemIds());
         command.setContractId(insuranceContractId);
@@ -1387,7 +1415,7 @@ public class InpatientSettleAppService {
         command.setAcctUsedFlag(request.getAcctUsedFlag());
         command.setPsnSetlway(request.getPsnSetlway());
         // Cmd：调用医保 2303 预结算，获取基金/个账/现金分摊。
-        InpatientChargePreSettleResult ybResult = inpatientChargeInsuranceExtension.preSettle(command);
+        InpatientChargePreSettleExtensionOut ybResult = inpatientChargeInsuranceExtension.preSettle(command);
         response.setInsurancePreSettled(Boolean.TRUE);
         response.setSettlementComposition("INSURANCE_ONLY");
         response.setYbPreSettleId(ybResult.getPreSettleId());
@@ -1595,6 +1623,13 @@ public class InpatientSettleAppService {
         return null;
     }
 
+    /**
+     * 解析住院结算主记账账户：优先收费项 accountId，回落医保账户再自费账户。
+     *
+     * @param encounterId 就诊主键
+     * @param chargeItems   待结算收费明细
+     * @return 主记账账户 ID
+     */
     private Long resolvePrimaryBillingAccountId(Long encounterId, List<ChargeItem> chargeItems) {
         for (ChargeItem item : chargeItems) {
             if (item != null && item.getAccountId() != null) {
@@ -1608,6 +1643,12 @@ public class InpatientSettleAppService {
         return accountQueryService.getSelfPayAccount(encounterId);
     }
 
+    /**
+     * 按合同主键读业务号 busNo；缺失或空白时返回 null。
+     *
+     * @param contractId 合同主键
+     * @return 合同 busNo（trim 后）；不存在时为 null
+     */
     private String resolveContractBusNoById(Long contractId) {
         if (contractId == null) {
             return null;
@@ -1680,35 +1721,41 @@ public class InpatientSettleAppService {
      * @param request 确认结算请求
      * @return 医保 setlId；非医保路径为 null
      */
-    private InpatientChargeConfirmResult runInsuranceConfirmIfNeeded(ConfirmInpatientSettleRequest request) {
+    private InpatientChargeConfirmExtensionOut runInsuranceConfirmIfNeeded(ConfirmInpatientSettleRequest request) {
         if (!inpatientChargeInsuranceExtension.isEnabled()) {
             return null;
         }
-        List<InpatientChargePreSettleResult> active =
+        List<InpatientChargePreSettleExtensionOut> active =
             inpatientChargeInsuranceExtension.listActivePreSettlesByPaymentDraft(request.getPaymentDraftId());
         if (active.isEmpty()) {
             return null;
         }
-        InpatientChargePreSettleResult target = active.get(active.size() - 1);
+        InpatientChargePreSettleExtensionOut target = active.get(active.size() - 1);
         if (request.getYbPreSettleId() != null) {
-            for (InpatientChargePreSettleResult row : active) {
+            for (InpatientChargePreSettleExtensionOut row : active) {
                 if (request.getYbPreSettleId().equals(row.getPreSettleId())) {
                     target = row;
                     break;
                 }
             }
         }
-        InpatientChargeConfirmCommand command = new InpatientChargeConfirmCommand();
+        InpatientChargeConfirmExtensionIn command = new InpatientChargeConfirmExtensionIn();
         command.setPaymentDraftId(request.getPaymentDraftId());
         command.setPreSettleId(target.getPreSettleId());
         command.setEncounterId(request.getEncounterId());
         // Cmd：Extension → 2304 正式结算，先于本地 payment 落账
-        InpatientChargeConfirmResult ybResult = inpatientChargeInsuranceExtension.confirmBeforeLocalSettle(command);
+        InpatientChargeConfirmExtensionOut ybResult = inpatientChargeInsuranceExtension.confirmBeforeLocalSettle(command);
         return ybResult;
     }
 
+    /**
+     * 住院医保 confirm 后组装本地支付单关联的医保结算明细（单条 CONFIRMED）。
+     *
+     * @param ybResult 医保 Extension confirm 出参
+     * @return 结算明细命令列表；无 setlId 时空列表
+     */
     private List<PaymentYbSettlementItemCommand> buildInpatientYbSettlementItems(
-        InpatientChargeConfirmResult ybResult) {
+        InpatientChargeConfirmExtensionOut ybResult) {
         if (ybResult == null || StringUtils.isBlank(ybResult.getSettlementId())) {
             return List.of();
         }
@@ -1736,13 +1783,13 @@ public class InpatientSettleAppService {
         if (!inpatientChargeInsuranceExtension.isEnabled() || paymentDraftId == null) {
             return null;
         }
-        List<InpatientChargePreSettleResult> active =
+        List<InpatientChargePreSettleExtensionOut> active =
             inpatientChargeInsuranceExtension.listActivePreSettlesByPaymentDraft(paymentDraftId);
         if (active.isEmpty()) {
             return null;
         }
         if (ybPreSettleId != null) {
-            for (InpatientChargePreSettleResult row : active) {
+            for (InpatientChargePreSettleExtensionOut row : active) {
                 if (ybPreSettleId.equals(row.getPreSettleId())) {
                     return row.getSettleMode();
                 }
@@ -1774,12 +1821,12 @@ public class InpatientSettleAppService {
             operatorId);
         if (InvoiceStatus.DRAFT.sameAs(invoice.getStatusEnum())) {
             invoiceDomainService.voidDraftInvoice(cancelCommand);
-            bossElectronicInvoiceIntegrationSupport.afterInvoiceCancelled(invoice.getId(), cancelCommand.getReason());
+            bossElectronicInvoiceAfterCommitOrchestration.afterInvoiceCancelled(invoice.getId(), cancelCommand.getReason());
             return;
         }
         if (InvoiceStatus.ISSUED.sameAs(invoice.getStatusEnum())) {
             invoiceDomainService.writeoffInvoiceAndCreateRedRecord(cancelCommand);
-            bossElectronicInvoiceIntegrationSupport.afterInvoiceCancelled(invoice.getId(), cancelCommand.getReason());
+            bossElectronicInvoiceAfterCommitOrchestration.afterInvoiceCancelled(invoice.getId(), cancelCommand.getReason());
         }
     }
 
@@ -1806,7 +1853,7 @@ public class InpatientSettleAppService {
             request.getEncounterId());
         BigDecimal accountBalance = BigDecimal.ZERO;
         if (account != null) {
-            accountBalance = InpatientDisplayAccountBalanceAssembler.resolveAccountBalance(account);
+            accountBalance = InpatientAccountBalanceDisplayAssembler.resolveAccountBalance(account);
         }
         return this.calculateSettleSupplementAmount(
             accountBalance,
@@ -1866,7 +1913,7 @@ public class InpatientSettleAppService {
         PreSettleInpatientChargesResponse response) {
         BigDecimal accountBalance = BigDecimal.ZERO;
         if (account != null) {
-            accountBalance = InpatientDisplayAccountBalanceAssembler.resolveAccountBalance(account);
+            accountBalance = InpatientAccountBalanceDisplayAssembler.resolveAccountBalance(account);
         }
         BigDecimal channelPayable = this.calculateSettleSupplementAmount(
             accountBalance,
@@ -1912,7 +1959,7 @@ public class InpatientSettleAppService {
             request.getPaymentDetails(),
             operatorId);
         Long collectPaymentId = paymentReconciliationDomainService.collectAdvanceDeposit(collectCommand);
-        thirdPartyPaymentSettleSupport.applyScanBeforeSettle(
+        thirdPartyPaymentSettleOrchestrator.applyScanBeforeSettle(
             collectPaymentId,
             collectCommand.getPaymentDetails(),
             clientScanResult,
@@ -1927,7 +1974,7 @@ public class InpatientSettleAppService {
         if (billDate != null) {
             collectSettleCommand.setBillDate(billDate);
         }
-        paymentReconciliationDomainService.settleInpatientPayment(collectSettleCommand);
+        paymentReconciliationSettleOrchestration.settleInpatientPayment(collectSettleCommand);
         AdjustAdvanceDepositBalanceCommand balanceCmd = inpatientPrepayMapper.toCollectBalanceAdjustCommand(
             request.getPatientId(),
             request.getEncounterId(),
@@ -1959,5 +2006,72 @@ public class InpatientSettleAppService {
             paymentDraftId,
             receivableTotal,
             draftLines);
+    }
+
+    /**
+     * 已结算队列按住院号去重（保留最近结算时间较新的一行）。
+     *
+     * @param rows 当前页队列行
+     * @return 去重后列表（顺序保留首次出现位置）
+     */
+    private List<InpatientSettleQueueItemDto> dedupeSettledQueueItemsByEncounterBusNo(
+        List<InpatientSettleQueueItemDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return rows;
+        }
+        LinkedHashMap<String, InpatientSettleQueueItemDto> byBusNo = new LinkedHashMap<>();
+        for (InpatientSettleQueueItemDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String key = this.resolveSettledQueueBusNoKey(row);
+            InpatientSettleQueueItemDto existing = byBusNo.get(key);
+            if (existing == null || this.shouldPreferSettledQueueRow(row, existing)) {
+                byBusNo.put(key, row);
+            }
+        }
+        return new ArrayList<>(byBusNo.values());
+    }
+
+    /**
+     * 已结算队列去重键：优先住院号，缺省时回退就诊主键。
+     */
+    private String resolveSettledQueueBusNoKey(InpatientSettleQueueItemDto row) {
+        if (row == null) {
+            return "";
+        }
+        if (StringUtils.isNotBlank(row.getEncounterBusNo())) {
+            return row.getEncounterBusNo().trim();
+        }
+        if (row.getEncounterId() != null) {
+            return "id:" + row.getEncounterId();
+        }
+        return "";
+    }
+
+    /**
+     * 同住院号多行时，保留最近结算时间较新者；时间相同则保留就诊 ID 较大者。
+     */
+    private boolean shouldPreferSettledQueueRow(
+        InpatientSettleQueueItemDto candidate,
+        InpatientSettleQueueItemDto incumbent) {
+        LocalDateTime candidateTime = candidate.getLastSettleTime();
+        LocalDateTime incumbentTime = incumbent.getLastSettleTime();
+        if (candidateTime != null && incumbentTime != null) {
+            int compared = candidateTime.compareTo(incumbentTime);
+            if (compared != 0) {
+                return compared > 0;
+            }
+        } else if (candidateTime != null) {
+            return true;
+        } else if (incumbentTime != null) {
+            return false;
+        }
+        Long candidateId = candidate.getEncounterId();
+        Long incumbentId = incumbent.getEncounterId();
+        if (candidateId != null && incumbentId != null) {
+            return candidateId.compareTo(incumbentId) > 0;
+        }
+        return candidateId != null;
     }
 }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.activityexecutionlocation.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -25,7 +12,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -97,7 +84,7 @@ public class ActivityExecutionLocation extends BaseAuditedEntity {
      * 断言新增/更新必填字段。
      */
     public void assertRequiredFields() {
-        if (StringUtils.isBlank(this.activityCategoryCode)) {
+        if (StringUtils.isEmpty(this.activityCategoryCode)) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "活动类别编码不能为空");
         }
         if (this.executionOrgId == null) {
@@ -112,7 +99,7 @@ public class ActivityExecutionLocation extends BaseAuditedEntity {
      * 断言规则锚点有效：诊疗大类必填；诊疗项目可选，为空时表示该大类下的默认规则。
      */
     public void assertAnchorPresent() {
-        if (StringUtils.isBlank(this.activityCategoryCode)) {
+        if (StringUtils.isEmpty(this.activityCategoryCode)) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "活动类别编码不能为空");
         }
     }

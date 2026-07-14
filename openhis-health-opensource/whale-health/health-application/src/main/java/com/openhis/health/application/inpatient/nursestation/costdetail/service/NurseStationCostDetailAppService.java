@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.costdetail.service;
 
-import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
-import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
+import com.openhis.health.application.shared.validator.CurrentManagedWardLocationIdsResolver;
+import com.openhis.health.application.shared.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.application.inpatient.nursestation.costdetail.assembler.NurseStationCostDetailAssembler;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationCostDetailLineDto;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationCostDetailTotalsDto;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationCostDetailLineDto;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationCostDetailTotalsDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostSummaryLineDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.mapper.NurseStationCostDetailMapper;
 import com.openhis.health.application.inpatient.nursestation.costdetail.request.LoadNurseStationCostDetailPageInitRequest;
@@ -31,20 +18,20 @@ import com.openhis.health.application.inpatient.nursestation.costdetail.response
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.query.InpatientNurseStationCostDetailChargeRow;
-import com.openhis.health.module.querysupport.nursestation.InpatientNurseStationCostDetailLoader;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.support.InpatientNurseStationCostDetailLoader;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -69,35 +56,44 @@ public class NurseStationCostDetailAppService {
 
     private final CurrentManagedWardLocationIdsResolver managedWardLocationIdsResolver;
     private final EncounterQueryService encounterQueryService;
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
     private final ChargeItemQueryService chargeItemQueryService;
     private final InpatientNurseStationCostDetailLoader inpatientNurseStationCostDetailLoader;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final NurseStationCostDetailMapper nurseStationCostDetailMapper;
     private final NurseStationCostDetailAssembler nurseStationCostDetailAssembler;
     private final PatientEncounterConsistencyGate patientEncounterConsistencyGate;
 
     /**
+     * 费用明细页初始化：默认当日日期区间与明细/汇总展示选项。
      *
      * @param request 可空；无业务字段
+     * @return 页初始化响应（含默认日期与展示模式选项）
      */
     public LoadNurseStationCostDetailPageInitResponse loadNurseStationCostDetailPageInit(
         LoadNurseStationCostDetailPageInitRequest request) {
-        // 服务端以本地日历日作为默认闭区间（BR-IP-CDT-002）
+        // Gate：只读页初始化，不写库
+        // Pre：以本地日历日作为默认闭区间（BR-IP-CDT-002）
         LocalDate today = LocalDate.now();
+        // Asm：映射页初始化响应
         return nurseStationCostDetailMapper.buildPageInitResponse(today);
     }
 
     /**
+     * 按就诊与日期区间查询住院费用明细或汇总。
      *
+     * @param request 就诊、患者、日期区间与展示模式
      * @return 明细行或汇总行 + 合计块
      * @throws BusinessException EX-IP-CDT-101～203
      */
     public QueryNurseStationInpatientCostDetailResponse queryNurseStationInpatientCostDetail(
         QueryNurseStationInpatientCostDetailRequest request) {
         try {
+            // Gate：查询参数、日期区间与展示模式合法
             this.validateQueryRequest(request);
+            // Gate：单就诊须在护士站可见范围且 patientId 一致（BR-IP-CDT-001）
             this.requireVisibleEncounter(request.getEncounterId(), request.getPatientId());
+            // Pre：批量拉取收费行与父行、产品目录
             ChargeItemQueryCommand chargeQuery = nurseStationCostDetailMapper.toChargeItemQueryCommand(request);
             List<InpatientNurseStationCostDetailChargeRow> chargeRows =
                 this.inpatientNurseStationCostDetailLoader.listInpatientNurseStationCostDetailChargeRows(chargeQuery);
@@ -105,7 +101,7 @@ public class NurseStationCostDetailAppService {
             List<ProductDefinitionBatchLookup> productLookups =
                 nurseStationCostDetailMapper.toProductBatchLookups(chargeRows, parentChargeById);
             Map<String, ProductDefinitionDisplayDto> productByKey =
-                productDefinitionBatchLoader.loadAsMap(productLookups);
+                productDefinitionDisplayTerminologyAssembler.loadAsMap(productLookups);
             nurseStationCostDetailAssembler.validateChargeRowsForAssembly(
                 chargeRows, productByKey, parentChargeById);
             NurseStationCostDetailTotalsDto totals =
@@ -113,6 +109,7 @@ public class NurseStationCostDetailAppService {
             List<NurseStationCostDetailLineDto> detailLines = new ArrayList<>();
             List<NurseStationCostSummaryLineDto> summaryLines = new ArrayList<>();
             String presentationMode = request.getPresentationMode().trim();
+            // Branch：按展示模式装配明细行或汇总行
             if (InpatientNurseStationConstants.COST_DETAIL_PRESENTATION_MODE_DETAIL.equals(presentationMode)) {
                 detailLines = nurseStationCostDetailAssembler.buildDetailLines(
                     chargeRows, productByKey, parentChargeById);
@@ -120,6 +117,7 @@ public class NurseStationCostDetailAppService {
                 summaryLines = nurseStationCostDetailAssembler.buildSummaryLines(
                     chargeRows, productByKey, parentChargeById);
             }
+            // Asm：映射查询响应
             return nurseStationCostDetailMapper.toQueryResponse(
                 presentationMode, detailLines, summaryLines, totals);
         } catch (IllegalArgumentException illegalArgumentException) {
@@ -161,7 +159,7 @@ public class NurseStationCostDetailAppService {
                 InpatientNurseStationConstants.EX_IP_CDT_202,
                 "请选择有效的查询日期");
         }
-        if (StringUtils.isBlank(request.getPresentationMode())) {
+        if (StringUtils.isEmpty(request.getPresentationMode())) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_CDT_201,
                 "查询参数错误，请刷新页面");
@@ -169,6 +167,18 @@ public class NurseStationCostDetailAppService {
         String mode = request.getPresentationMode().trim();
         if (!InpatientNurseStationConstants.COST_DETAIL_PRESENTATION_MODE_DETAIL.equals(mode)
             && !InpatientNurseStationConstants.COST_DETAIL_PRESENTATION_MODE_SUMMARY.equals(mode)) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_CDT_201,
+                "查询参数错误，请刷新页面");
+        }
+        if (StringUtils.isEmpty(request.getStatusEnum())) {
+            throw new BusinessException(
+                InpatientNurseStationConstants.EX_IP_CDT_201,
+                "查询参数错误，请刷新页面");
+        }
+        String statusEnum = request.getStatusEnum().trim();
+        if (!InpatientNurseStationConstants.COST_DETAIL_STATUS_FILTER_PENDING_SETTLEMENT.equals(statusEnum)
+            && !InpatientNurseStationConstants.COST_DETAIL_STATUS_FILTER_SETTLED.equals(statusEnum)) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_CDT_201,
                 "查询参数错误，请刷新页面");
@@ -186,7 +196,7 @@ public class NurseStationCostDetailAppService {
         InpatientEncounterPageQuery query = nurseStationCostDetailMapper.toInpatientEncounterPageQuery(
             Collections.singletonList(encounterId), wardIds);
         List<InpatientEncounterContextQueryModel> visibleRows =
-            encounterContextFacade.listInpatientEncounterContexts(query);
+            EncounterContextReader.listInpatientEncounterContexts(query);
         InpatientEncounterContextQueryModel encounterSnapshot = null;
         for (InpatientEncounterContextQueryModel row : visibleRows) {
             if (row != null && encounterId.equals(row.getEncounterId())) {

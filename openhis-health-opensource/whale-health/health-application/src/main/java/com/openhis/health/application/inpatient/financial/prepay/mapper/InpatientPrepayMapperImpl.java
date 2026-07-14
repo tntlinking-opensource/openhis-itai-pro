@@ -1,28 +1,15 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.financial.prepay.mapper;
 
 import static com.openhis.whale.core.application.util.StringUtils.firstNonBlank;
 
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayPaymentDetailDto;
-import com.openhis.health.module.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
-import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayAssembler;
+import com.openhis.health.application.shared.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayPaymentRecordDto;
 import com.openhis.health.application.inpatient.financial.prepay.dto.PrepayQueueItemDto;
 import com.openhis.health.application.inpatient.financial.prepay.request.CollectPrepayAdvanceDepositRequest;
@@ -58,7 +45,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * {@link InpatientPrepayMapper} 的 Spring 实现：字段映射；展示余额经 {@link InpatientDisplayAccountBalanceAssembler} 装配。
+ * {@link InpatientPrepayMapper} 的 Spring 实现：字段映射；展示余额经 {@link InpatientAccountBalanceDisplayAssembler} 装配。
  */
 @Component
 public class InpatientPrepayMapperImpl implements InpatientPrepayMapper {
@@ -91,6 +78,8 @@ public class InpatientPrepayMapperImpl implements InpatientPrepayMapper {
         InpatientEncounterPageQuery query = new InpatientEncounterPageQuery();
         query.setAdmissionDate(request.getAdmissionDate());
         query.setPrepayEligibleOnly(Boolean.TRUE);
+        // 预交金卡片不展示诊断，与 pagePrepayQueue 一致跳过 diagnosisJson enrich
+        query.setIncludeDiagnosisSnapshot(Boolean.FALSE);
         return query;
     }
 

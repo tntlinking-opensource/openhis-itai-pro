@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.outpatient.doctorstation.chinesemedicine.service;
 
@@ -8,14 +9,14 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 import com.openhis.health.application.outpatient.doctorstation.advice.assembler.DoctorStationAdviceCatalogAssembler;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceCatalogRowDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.mapper.DoctorStationAdviceMapper;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.outpatient.doctorstation.advice.request.PageDoctorStationAdviceCatalogRequest;
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.assembler.*;
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.dto.*;
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.mapper.DoctorStationTcmMapper;
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.request.*;
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.response.*;
-import com.openhis.health.module.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
+import com.openhis.health.application.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemDomainService;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
@@ -44,23 +45,23 @@ import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
-import com.openhis.health.module.orchestration.advice.OutpatientMedicationSignChargeSupport;
-import com.openhis.health.module.orchestration.financial.OutpatientPaymentDraftLifecycleSupport;
-import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
-import com.openhis.health.module.common.validator.PageWindowGate;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.module.querysupport.order.OrderRequestFifoSignContextLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionCatalogPageLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.outpatient.doctorstation.advice.support.OutpatientMedicationSignChargeOrchestrator;
+import com.openhis.health.application.outpatient.financial.charge.support.OutpatientPaymentDraftLifecycleOrchestrator;
+import com.openhis.health.application.shared.option.FrequencyOptionLoader;
+import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
+import com.openhis.health.application.shared.validator.PageWindowGate;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.outpatient.doctorstation.advice.support.OrderRequestFifoSignContextLoader;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogPageLoader;
+import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -81,7 +82,7 @@ public class DoctorStationTcmAppService {
     /** 写路径操作人解析。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
     /** 门诊就诊读模型门控。 */
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
     /** 中医 Tab 字段映射。 */
     private final DoctorStationTcmMapper tcmMapper;
     /** 病证组聚合。 */
@@ -125,11 +126,11 @@ public class DoctorStationTcmAppService {
     /** FIFO 上下文。 */
     private final OrderRequestFifoSignContextLoader orderRequestFifoSignContextLoader;
     /** 定价解析（暂存挂费）。 */
-    private final ClinicalCatalogPriceResolveSupport clinicalCatalogPriceResolveSupport;
+    private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
     /** 门诊药品签发 FIFO 分段挂费（与 IF-DOR-15 共用）。 */
-    private final OutpatientMedicationSignChargeSupport outpatientMedicationSignChargeSupport;
+    private final OutpatientMedicationSignChargeOrchestrator outpatientMedicationSignChargeOrchestrator;
     /** 产品定义读模型批量加载（暂存挂费与 IF-DOR-14 西药口径一致）。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     /** 分页窗口门控。 */
     private final PageWindowGate pageWindowGate;
     /** 术语码表读（中药用法 tcm_method_code）。 */
@@ -137,7 +138,7 @@ public class DoctorStationTcmAppService {
     /** 用药频次下拉（与医嘱 Tab 同源）。 */
     private final FrequencyOptionLoader frequencyOptionLoader;
     /** 签退后作废陈旧预结算草稿（GAP-STALE-001）。 */
-    private final OutpatientPaymentDraftLifecycleSupport outpatientPaymentDraftLifecycleSupport;
+    private final OutpatientPaymentDraftLifecycleOrchestrator outpatientPaymentDraftLifecycleOrchestrator;
 
     /**
      * 中医 Tab 页初始化：下发中药用法与用药频次下拉。
@@ -148,7 +149,7 @@ public class DoctorStationTcmAppService {
     public InitDoctorStationTcmResponse initDoctorStationTcm(InitDoctorStationTcmRequest request) {
         // Gate：门诊快照加载并校验患者与就诊绑定一致，防止跨就诊误初始化下拉
         OutpatientEncounterContextQueryModel snapshot =
-            encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+            EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         InitDoctorStationTcmResponse resp = new InitDoctorStationTcmResponse();
         // Pre：中药用法走 tcm_method_code 术语，不含西医 method_code
@@ -156,6 +157,9 @@ public class DoctorStationTcmAppService {
             codeSystemQueryService.getOptionListByCodeSystemName(TerminologyCodeSystemNameConstants.TCM_METHOD_CODE));
         // Asm：用药频次与医嘱 Tab IF-DOR-18 同源（cus_frequency 主数据）
         resp.setMedicationRateOptions(frequencyOptionLoader.loadActiveRateOptions());
+        // Pre：单味特殊煎法走 dosage_instruction 术语，与 med_medication_request.dosage_instruction 同源
+        resp.setDosageInstructionOptions(
+            codeSystemQueryService.getOptionListByCodeSystemName(TerminologyCodeSystemNameConstants.DOSAGE_INSTRUCTION));
         return resp;
     }
 
@@ -168,7 +172,7 @@ public class DoctorStationTcmAppService {
     public ListTcmDiagnosisGroupsResponse listTcmDiagnosisGroups(ListTcmDiagnosisGroupsRequest request) {
         // Pre：门诊就诊快照
         OutpatientEncounterContextQueryModel snapshot =
-            encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+            EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // Gate：患者与就诊须同属一次接诊
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         String diagnosisJson = encounterDiagnosisSnapshotAssembler.buildSnapshot(request.getEncounterId()).diagnosisJson();
@@ -222,7 +226,7 @@ public class DoctorStationTcmAppService {
     public SaveTcmDiagnosisGroupsBatchResponse saveTcmDiagnosisGroupsBatch(SaveTcmDiagnosisGroupsBatchRequest request) {
         // Pre：门诊就诊快照
         OutpatientEncounterContextQueryModel snapshot =
-            encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+            EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // Gate：患者就诊一致
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请先登录后再操作");
@@ -255,7 +259,7 @@ public class DoctorStationTcmAppService {
     public DeleteTcmDiagnosisGroupResponse deleteTcmDiagnosisGroup(DeleteTcmDiagnosisGroupRequest request) {
         // Pre：门诊就诊快照
         OutpatientEncounterContextQueryModel snapshot =
-            encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+            EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // Gate：患者就诊一致
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请先登录后再操作");
@@ -275,7 +279,7 @@ public class DoctorStationTcmAppService {
     public ListTcmRxResponse listTcmHerbalPrescriptions(ListTcmRxRequest request) {
         // Pre：门诊就诊快照
         OutpatientEncounterContextQueryModel snapshot =
-            encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+            EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // Gate：患者就诊一致
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         // Pre：领域层按 prescription_no / prescriptionGroupKey 聚合
@@ -298,7 +302,7 @@ public class DoctorStationTcmAppService {
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "分页参数非法");
         // Pre：就诊上下文用于库存预减与定价
         OutpatientEncounterContextQueryModel snapshot =
-            encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+            EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // Gate：患者就诊一致
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         PageDoctorStationAdviceCatalogRequest catalogRequest = tcmMapper.toPageDoctorStationAdviceCatalogRequest(request);
@@ -322,7 +326,7 @@ public class DoctorStationTcmAppService {
         SaveTcmRxDraftBatchRequest request) {
         // Pre：门诊就诊快照
         OutpatientEncounterContextQueryModel snapshot =
-            encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+            EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // Gate：患者就诊一致
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
@@ -341,7 +345,7 @@ public class DoctorStationTcmAppService {
             }
             String contentJson = tcmMapper.buildHerbalContentJson(header);
             for (TcmRxDraftLineRequest line : header.getLines()) {
-                String op = StringUtils.upperCase(trimToEmpty(line.getLineOp()));
+                String op = trimToEmpty(line.getLineOp()).toUpperCase(java.util.Locale.ROOT);
                 // 请求数量 = 单剂用量 × 付数（BR-TCM-RX-005）
                 BigDecimal quantity = line.getDose().multiply(header.getChineseHerbsDoseQuantity());
                 // Cmd：按 lineOp 三选一执行 CREATE / UPDATE / DELETE
@@ -382,7 +386,7 @@ public class DoctorStationTcmAppService {
     public SignTcmRxBatchResponse signTcmHerbalPrescriptionBatch(SignTcmRxBatchRequest request) {
         // Pre：门诊就诊快照与自费账户
         OutpatientEncounterContextQueryModel snapshot =
-            encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+            EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // Gate：患者就诊一致
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
@@ -429,7 +433,7 @@ public class DoctorStationTcmAppService {
             MedicationRequestFifoSignContext fifoCtx =
                 orderRequestFifoSignContextLoader.loadMedicationFifoSignContextOrThrow(target.getMedicationRequestId());
             // Cmd：FIFO 发放 + 分段挂费 + PLANNED（与 IF-DOR-15 药线共用 Support）
-            outpatientMedicationSignChargeSupport.replaceFifoDispenseAndPlanChargesAfterMedicationSigned(
+            outpatientMedicationSignChargeOrchestrator.replaceFifoDispenseAndPlanChargesAfterMedicationSigned(
                 request.getEncounterId(), request.getPatientId(), accountId, orgId, operatorId,
                 target.getMedicationRequestId(), fifoCtx);
         }
@@ -461,7 +465,7 @@ public class DoctorStationTcmAppService {
         WithdrawOrDeleteTcmRxRequest request) {
         // Pre：门诊就诊快照
         OutpatientEncounterContextQueryModel snapshot =
-            encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+            EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // Gate：患者就诊一致
         tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
@@ -502,15 +506,15 @@ public class DoctorStationTcmAppService {
         // Cmd：整方撤回时同步清理同处方号代煎 companion SR 与费用
         if (DoctorStationTcmConstants.ACTION_WITHDRAW.equals(request.getAction())
             && DoctorStationTcmConstants.SCOPE_PRESCRIPTION.equals(request.getScope())
-            && StringUtils.isNotBlank(request.getPrescriptionGroupKey())) {
+            && StringUtils.isNotEmpty(request.getPrescriptionGroupKey())) {
             MedicationRequestListQueryModel row = medicationRequestQueryService.getListModelById(request.getMedicationRequestIds().get(0));
-            if (row != null && StringUtils.isNotBlank(row.getPrescriptionNo())) {
+            if (row != null && StringUtils.isNotEmpty(row.getPrescriptionNo())) {
                 decoctionFeeAssembler.voidDecoctionChargeByPrescriptionNo(
                     request.getEncounterId(), row.getPrescriptionNo(), operatorId);
             }
         }
         if (DoctorStationTcmConstants.ACTION_WITHDRAW.equals(request.getAction())) {
-            this.outpatientPaymentDraftLifecycleSupport.cancelDraftsWithNonPlannedBoundCharges(request.getEncounterId());
+            this.outpatientPaymentDraftLifecycleOrchestrator.cancelDraftsWithNonPlannedBoundCharges(request.getEncounterId());
         }
         return tcmMapper.toWithdrawOrDeleteTcmRxResponse(Boolean.TRUE);
     }
@@ -531,6 +535,12 @@ public class DoctorStationTcmAppService {
         return tcmMapper.toListPatientTcmRxHistoryResponse(rows);
     }
 
+    /**
+     * 批量保存中医病证组前置校验：每组须有病名与证候，且主诊组至多一个。
+     *
+     * @param request 批量保存请求
+     * @throws BusinessException 组项不完整或主诊超过一个
+     */
     private void validateTcmDiagnosisBatch(SaveTcmDiagnosisGroupsBatchRequest request) {
         int primaryCount = 0;
         for (TcmDiagnosisGroupItemRequest group : request.getGroups()) {
@@ -547,11 +557,17 @@ public class DoctorStationTcmAppService {
         }
     }
 
+    /**
+     * 为批量保存的病证组分配稳定 tcm_syndrome_group 键：保留已有键，新组按日序取号。
+     *
+     * @param request 批量保存请求（组项会被回填 group 键）
+     * @return 病名:证候 → group 键映射
+     */
     private Map<String, String> assignTcmGroupKeys(SaveTcmDiagnosisGroupsBatchRequest request) {
         Map<String, String> map = new LinkedHashMap<>();
         int newCount = 0;
         for (TcmDiagnosisGroupItemRequest group : request.getGroups()) {
-            if (StringUtils.isBlank(group.getTcmSyndromeGroup())) {
+            if (StringUtils.isEmpty(group.getTcmSyndromeGroup())) {
                 newCount++;
             }
         }
@@ -564,7 +580,7 @@ public class DoctorStationTcmAppService {
         for (TcmDiagnosisGroupItemRequest group : request.getGroups()) {
             String stableKey = String.valueOf(group.getDiseaseDefinitionId()) + ":" + String.valueOf(group.getSyndromeDefinitionId());
             String key;
-            if (StringUtils.isNotBlank(group.getTcmSyndromeGroup())) {
+            if (StringUtils.isNotEmpty(group.getTcmSyndromeGroup())) {
                 key = group.getTcmSyndromeGroup().trim();
             } else {
                 key = newKeys.get(idx++);
@@ -575,6 +591,15 @@ public class DoctorStationTcmAppService {
         return map;
     }
 
+    /**
+     * 删除单个中医病证组：校验无医嘱引用后移除就诊关联并软删 condition。
+     *
+     * @param encounterId 就诊 ID
+     * @param groupKey      病证组键
+     * @param existing      当前病证组列表
+     * @param operatorId    操作人
+     * @throws BusinessException 组不存在或仍有处方引用
+     */
     private void deleteTcmGroupInternal(
         Long encounterId, String groupKey, List<TcmDiagnosisGroupRowDto> existing, Long operatorId) {
         TcmDiagnosisGroupRowDto target = null;
@@ -617,6 +642,13 @@ public class DoctorStationTcmAppService {
         }
     }
 
+    /**
+     * 加载就诊下当前有效中医病证组键集合（保存处方草稿时校验 group 合法）。
+     *
+     * @param encounterId 就诊 ID
+     * @param patientId   患者 ID
+     * @return 病证组键集合
+     */
     private Set<String> loadValidTcmGroupKeys(Long encounterId, Long patientId) {
         ListTcmDiagnosisGroupsRequest req = new ListTcmDiagnosisGroupsRequest().setEncounterId(encounterId).setPatientId(patientId);
         ListTcmDiagnosisGroupsResponse resp = listTcmDiagnosisGroups(req);
@@ -629,6 +661,19 @@ public class DoctorStationTcmAppService {
         return keys;
     }
 
+    /**
+     * 中药饮片行挂费草稿：解析目录定价并创建未计费 ChargeItem（锚定 med_medication_request）。
+     *
+     * @param request    批量保存请求（就诊上下文）
+     * @param accountId  账户 ID
+     * @param orgId      机构 ID
+     * @param operatorId 操作人
+     * @param medReqId   药品请求 ID
+     * @param header     方头（用法参与定价）
+     * @param line       饮片行
+     * @param quantity   挂费数量
+     * @throws BusinessException 未配置符合开立规则的收费定价
+     */
     private void createHerbalCharge(
         SaveTcmRxDraftBatchRequest request,
         Long accountId,
@@ -641,7 +686,7 @@ public class DoctorStationTcmAppService {
         // Pre：加载产品读模型，供定价解析与挂费单位换算（与 IF-DOR-14 西药路径一致）
         ProductDefinitionDisplayDto productRow = loadSingleProduct(
             TableNameConstants.MED_MEDICATION_DEFINITION, line.getMedicationDefinitionId());
-        ChargeItemDefinition priceLine = clinicalCatalogPriceResolveSupport.resolveDraftChargePriceLine(
+        ChargeItemDefinition priceLine = clinicalCatalogPriceResolver.resolveDraftChargePriceLine(
             TableNameConstants.MED_MEDICATION_DEFINITION,
             line.getMedicationDefinitionId(),
             productRow,
@@ -668,7 +713,7 @@ public class DoctorStationTcmAppService {
         ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
         lookup.setProductTableName(table);
         lookup.setProductDefinitionId(id);
-        Map<String, ProductDefinitionDisplayDto> map = productDefinitionBatchLoader.loadAsMap(List.of(lookup));
+        Map<String, ProductDefinitionDisplayDto> map = productDefinitionDisplayTerminologyAssembler.loadAsMap(List.of(lookup));
         String key = ProductDefinitionKeyUtil.buildCompositeKey(table, id);
         ProductDefinitionDisplayDto row = map.get(key);
         if (row == null) {

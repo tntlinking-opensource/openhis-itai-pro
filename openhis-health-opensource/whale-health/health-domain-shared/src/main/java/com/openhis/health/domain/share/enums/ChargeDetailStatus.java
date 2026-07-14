@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
@@ -31,13 +18,13 @@ public enum ChargeDetailStatus implements EnumInterface {
     /** 可计费（已执行激活）。 */
     BILLABLE(0L, "20", "可计费", "", 20L),
 
-    /** 已结算。 */
+/** 已结算（ChargeDetailStatus，持久化编码 {@code 30}）。 */
     SETTLED(0L, "30", "已结算", "", 30L),
 
-    /** 退费申请中。 */
+/** 退费申请中（ChargeDetailStatus，持久化编码 {@code 40}）。 */
     REFUND_PENDING(0L, "40", "退费申请中", "", 40L),
 
-    /** 退费完成。 */
+/** 退费完成（ChargeDetailStatus，持久化编码 {@code 50}）。 */
     REFUNDED(0L, "50", "退费完成", "", 50L),
 
     /** 已取消（执行撤销）。 */

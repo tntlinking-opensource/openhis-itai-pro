@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.financial.contract.service;
 
 import com.openhis.health.domain.financial.contract.command.*;
@@ -144,14 +131,14 @@ public class ContractDomainService {
      * @throws BusinessException 当业务编码与现有记录冲突时
      */
     private void assertBusNoUnique(String busNo, Long id) {
-        // 业务分支处理：新建场景，仅校验全局唯一性
+        // 新建场景仅校验全局唯一性。
         if (id == null) {
             if (contractRepository.findByBusNo(busNo).isPresent()) {
                 throw new BusinessException(ErrorCodeConstants.CONTRACT_BUS_NO_CONFLICT, "费用性质编码冲突");
             }
             return;
         }
-        // 业务分支处理：更新场景，排除自身后校验唯一性
+        // 更新场景排除自身后校验唯一性。
         if (contractRepository.findByBusNoAndIdNot(busNo, id).isPresent()) {
             throw new BusinessException(ErrorCodeConstants.CONTRACT_BUS_NO_CONFLICT, "费用性质编码冲突");
         }
@@ -164,7 +151,7 @@ public class ContractDomainService {
      * @param terminalConfig 终端配置命令，可能为 null
      */
     private void applyTerminalConfig(Contract contract, ContractTerminalConfigCommand terminalConfig) {
-        // 业务分支处理：终端配置为空时直接返回，保持既有值不变
+        // 终端配置为空时直接返回，保持既有值不变。
         if (terminalConfig == null) {
             return;
         }

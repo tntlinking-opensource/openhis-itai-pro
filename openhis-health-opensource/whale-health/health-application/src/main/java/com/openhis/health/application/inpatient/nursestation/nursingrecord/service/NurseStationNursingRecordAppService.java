@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.nursingrecord.service;
 
 import com.openhis.health.application.inpatient.nursestation.nursingrecord.assembler.NursingRecordRowAssembler;
@@ -21,7 +21,7 @@ import com.openhis.health.application.inpatient.nursestation.nursingrecord.respo
 import com.openhis.health.application.inpatient.nursestation.nursingrecord.response.SaveNurseStationNursingRecordsBatchResponse;
 import com.openhis.health.domain.share.utils.BloodPressureParser;
 import com.openhis.health.domain.share.utils.BloodPressureParser.BloodPressureParseResult;
-import com.openhis.health.module.querysupport.nursestation.NurseStationEncounterVisibilitySupport;
+import com.openhis.health.application.inpatient.nursestation.nursingrecord.support.NurseStationEncounterVisibilityResolver;
 import com.openhis.health.domain.administration.encounter.entity.EncounterLocation;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
@@ -41,14 +41,14 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.VitalSignConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -87,7 +87,7 @@ public class NurseStationNursingRecordAppService {
     private final NursingRecordRowAssembler nursingRecordRowAssembler;
 
     /** 护士站就诊可见性 Gate。 */
-    private final NurseStationEncounterVisibilitySupport nurseStationEncounterVisibilitySupport;
+    private final NurseStationEncounterVisibilityResolver nurseStationEncounterVisibilityResolver;
 
     /** 生命体征读侧。 */
     private final VitalSignQueryService vitalSignQueryService;
@@ -139,7 +139,7 @@ public class NurseStationNursingRecordAppService {
         ListNurseStationNursingRecordsRequest request) {
         // Gate：就诊须在护士站可见范围（BR-IP-NRC-001）
         InpatientEncounterContextQueryModel encounterSnapshot =
-            nurseStationEncounterVisibilitySupport.assertVisible(
+            nurseStationEncounterVisibilityResolver.assertVisible(
                 request.getEncounterId(),
                 request.getPatientId(),
                 InpatientNurseStationConstants.EX_IP_NRC_102,
@@ -184,7 +184,7 @@ public class NurseStationNursingRecordAppService {
     public SaveNurseStationNursingRecordsBatchResponse saveNurseStationNursingRecordsBatch(
         SaveNurseStationNursingRecordsBatchRequest request) {
         // Gate：批量写前一次性校验就诊可见（BR-IP-NRC-001；循环内不再重复 Gate，对齐 SDD §3.4）
-        nurseStationEncounterVisibilitySupport.assertVisible(
+        nurseStationEncounterVisibilityResolver.assertVisible(
             request.getEncounterId(),
             request.getPatientId(),
             InpatientNurseStationConstants.EX_IP_NRC_102,
@@ -231,7 +231,7 @@ public class NurseStationNursingRecordAppService {
      */
     public void deleteNurseStationNursingRecord(DeleteNurseStationNursingRecordRequest request) {
         // Gate：可见性（BR-IP-NRC-001）
-        nurseStationEncounterVisibilitySupport.assertVisible(
+        nurseStationEncounterVisibilityResolver.assertVisible(
             request.getEncounterId(),
             request.getPatientId(),
             InpatientNurseStationConstants.EX_IP_NRC_102,
@@ -294,7 +294,7 @@ public class NurseStationNursingRecordAppService {
         GetNurseStationNursingRecordPrintDataRequest request) {
         // Gate：打印不改库，但仍须可见性 Gate
         InpatientEncounterContextQueryModel encounterSnapshot =
-            nurseStationEncounterVisibilitySupport.assertVisible(
+            nurseStationEncounterVisibilityResolver.assertVisible(
                 request.getEncounterId(),
                 request.getPatientId(),
                 InpatientNurseStationConstants.EX_IP_NRC_102,
@@ -331,7 +331,7 @@ public class NurseStationNursingRecordAppService {
         boolean skipVisibilityGate) {
         // Gate：单条保存须校验可见性；批量循环内跳过（SDD §3.4）
         if (!skipVisibilityGate) {
-            nurseStationEncounterVisibilitySupport.assertVisible(
+            nurseStationEncounterVisibilityResolver.assertVisible(
                 request.getEncounterId(),
                 request.getPatientId(),
                 InpatientNurseStationConstants.EX_IP_NRC_102,
@@ -529,7 +529,7 @@ public class NurseStationNursingRecordAppService {
         if (ErrorCodeConstants.VITAL_SIGN_INVALID_ARGUMENT.equals(ex.getErrorCode())) {
             String message = ex.getMessage();
             // 业务分支：含「有效」文案时映射为无有效内容
-            if (StringUtils.isNotBlank(message) && message.contains("有效")) {
+            if (StringUtils.isNotEmpty(message) && message.contains("有效")) {
                 return new BusinessException(
                     InpatientNurseStationConstants.EX_IP_NRC_202,
                     "请至少填写一项观察内容");
@@ -593,6 +593,12 @@ public class NurseStationNursingRecordAppService {
         return result;
     }
 
+    /**
+     * 过滤护理记录保存行：剔除 skeleton 行与无任何业务字段的空行。
+     *
+     * @param records 请求明细
+     * @return 可落库行列表
+     */
     private List<SaveNursingRecordItemRequest> rejectSkeletonAndEmptyNursingRecordRows(
         List<SaveNursingRecordItemRequest> records
     ) {
@@ -616,6 +622,12 @@ public class NurseStationNursingRecordAppService {
         return result;
     }
 
+    /**
+     * 护理记录行是否至少填写一项体征/护理措施/出入量等业务字段。
+     *
+     * @param record 保存行
+     * @return 有业务值为 true
+     */
     private boolean hasAnyNursingRecordBusinessValue(SaveNursingRecordItemRequest record) {
         if (record == null) {
             return false;

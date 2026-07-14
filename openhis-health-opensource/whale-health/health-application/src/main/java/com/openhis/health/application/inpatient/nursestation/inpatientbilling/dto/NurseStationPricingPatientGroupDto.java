@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -33,19 +20,19 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 护士划价按就诊分组。 */
 @Schema(description = "护士划价按就诊分组")
 public class NurseStationPricingPatientGroupDto {
 
     @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 就诊主键。 */
     private Long encounterId;
 
-    /** 补费父医嘱行（IF-IP-PRC-03）。 */
+    /** 补费父医嘱行。 */
     @Schema(description = "补费父医嘱行")
     private List<NurseStationSupplementParentOrderRowDto> orders = new ArrayList<>();
 
-    /** 已划价行（IF-IP-PRC-05）。 */
+    /** 已划价行。 */
     @Schema(description = "已划价行")
     private List<NurseStationPricedOrderRowDto> pricedOrders = new ArrayList<>();
 }

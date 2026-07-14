@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.supplyrequest.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -225,7 +212,7 @@ public class SupplyRequest extends BaseAuditedEntity {
             throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "unitCode 不能为空");
         }
 
-        // 白名单校验：typeEnum 必须在 SupplyType 1~28 范围内。
+        // 白名单校验：typeEnum 必须在 SupplyType 枚举白名单内。
         boolean allowed = false;
         for (SupplyType supplyType : SupplyType.values()) {
             if (supplyType.getCode().equals(this.typeEnum)) {
@@ -247,10 +234,43 @@ public class SupplyRequest extends BaseAuditedEntity {
         if (this.statusEnum == null) {
             throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "statusEnum 不能为空");
         }
-        if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(this.statusEnum)
-            && !SupplyStatus.WITHDRAW.getCode().equals(this.statusEnum)) {
-            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/已撤回状态允许提交审批");
+        // 业务含义：待审核、已撤回、驳回均可再次提交；驳回后改单重提，否则驳回无业务闭环。
+        if (SupplyStatus.PENDING_APPROVAL.getCode().equals(this.statusEnum)) {
+            return;
         }
+        if (SupplyStatus.WITHDRAW.getCode().equals(this.statusEnum)) {
+            return;
+        }
+        if (SupplyStatus.REJECT.getCode().equals(this.statusEnum)) {
+            return;
+        }
+        throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/已撤回/驳回状态允许提交审批");
+    }
+
+    /**
+     * 同号全量修订是否允许的状态（BR-SR-003）：待审核、驳回、已撤回。
+     *
+     * <p>驳回/撤回后须可改明细再保存（重插后回落 {@link SupplyStatus#PENDING_APPROVAL}）或再提交，否则该态无业务闭环。
+     * {@link SupplyStatus#AGREE} 等动账/审批通过终态仍禁止修订。</p>
+     *
+     * @param statusEnum 行上 {@code status_enum} 持久化 code
+     * @return 允许修订时为 {@code true}
+     */
+    public static boolean isRevisableSupplyStatusCode(String statusEnum) {
+        if (statusEnum == null || statusEnum.isBlank()) {
+            return false;
+        }
+        String code = statusEnum.trim();
+        if (SupplyStatus.PENDING_APPROVAL.getCode().equals(code)) {
+            return true;
+        }
+        if (SupplyStatus.REJECT.getCode().equals(code)) {
+            return true;
+        }
+        if (SupplyStatus.WITHDRAW.getCode().equals(code)) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -358,7 +378,7 @@ public class SupplyRequest extends BaseAuditedEntity {
      * <p>服务层不内联状态比较，统一经本方法委托。</p>
      *
      * @param lines 同一 {@code bus_no} 下已存在的未删除行
-     * @throws BusinessException 非药库订货单或存在非待审核行
+     * @throws BusinessException 非药库订货单或存在不可修订状态行（非待审核/驳回/已撤回）
      */
     public static void assertPurchaseOrderLinesRevisable(List<SupplyRequest> lines) {
         if (lines == null || lines.isEmpty()) {
@@ -371,8 +391,8 @@ public class SupplyRequest extends BaseAuditedEntity {
             if (!SupplyType.CABINET_PURCHASE_ORDER.getCode().equals(row.getTypeEnum())) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药库订货单不可按同号全量修订");
             }
-            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
-                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订订货明细");
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/驳回/已撤回状态允许修订订货明细");
             }
         }
     }
@@ -384,7 +404,7 @@ public class SupplyRequest extends BaseAuditedEntity {
      * {@link com.openhis.health.domain.share.enums.SupplyStatus#getCode()} 持久化字符串（B.10.8.1），禁止排序号或数字串中转。</p>
      *
      * @param lines 同一 {@code bus_no} 下已存在的未删除行
-     * @throws BusinessException 非药库进货单或存在非待审核行
+     * @throws BusinessException 非药库进货单或存在不可修订状态行（非待审核/驳回/已撤回）
      */
     public static void assertInboundReceiptLinesRevisable(List<SupplyRequest> lines) {
         if (lines == null || lines.isEmpty()) {
@@ -397,8 +417,8 @@ public class SupplyRequest extends BaseAuditedEntity {
             if (!SupplyType.CABINET_INBOUND_RECEIPT.getCode().equals(row.getTypeEnum())) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药库进货单不可按同号全量修订");
             }
-            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
-                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订进货明细");
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/驳回/已撤回状态允许修订进货明细");
             }
         }
     }
@@ -419,8 +439,8 @@ public class SupplyRequest extends BaseAuditedEntity {
             if (!SupplyType.CABINET_RETURN_TO_SUPPLIER.getCode().equals(row.getTypeEnum())) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药库退货单不可按同号全量修订");
             }
-            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
-                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订退货明细");
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/驳回/已撤回状态允许修订退货明细");
             }
         }
     }
@@ -441,8 +461,8 @@ public class SupplyRequest extends BaseAuditedEntity {
             if (!SupplyType.PHARMACY_REQUISITION.getCode().equals(row.getTypeEnum())) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药房请领单不可按同号全量修订");
             }
-            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
-                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订请领明细");
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/驳回/已撤回状态允许修订请领明细");
             }
         }
     }
@@ -461,8 +481,8 @@ public class SupplyRequest extends BaseAuditedEntity {
             if (!SupplyType.PHARMACY_STOCK_IN.getCode().equals(row.getTypeEnum())) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药房入库单不可按同号全量修订");
             }
-            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
-                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订药房入库明细");
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/驳回/已撤回状态允许修订药房入库明细");
             }
         }
     }
@@ -470,7 +490,7 @@ public class SupplyRequest extends BaseAuditedEntity {
     /**
      * 门控：药房退库单（退回药库，type 14）同号全量修订。
      */
-    public static void assertPharmacyReturnUpstreamLinesRevisable(List<SupplyRequest> lines) {
+    public static void assertPharmacyReturnToWarehouseLinesRevisable(List<SupplyRequest> lines) {
         if (lines == null || lines.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "药房退库单不存在，无法修订");
         }
@@ -478,11 +498,11 @@ public class SupplyRequest extends BaseAuditedEntity {
             if (row == null) {
                 continue;
             }
-            if (!SupplyType.PHARMACY_RETURN_TO_UPSTREAM.getCode().equals(row.getTypeEnum())) {
+            if (!SupplyType.PHARMACY_RETURN_TO_WAREHOUSE.getCode().equals(row.getTypeEnum())) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药房退库单不可按同号全量修订");
             }
-            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
-                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订药房退库明细");
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/驳回/已撤回状态允许修订药房退库明细");
             }
         }
     }
@@ -490,10 +510,10 @@ public class SupplyRequest extends BaseAuditedEntity {
     /**
      * 门控：盘点执行单（药库/药房/科室盘点类 {@link SupplyType#isStocktakeTypeCode(String)}）同号全量修订。
      *
-     * <p>与药库出库、订货修订一致：仅待审核态允许软删旧行后按命令全量重插；禁止混用非盘点类型单号。</p>
+     * <p>与药库出库、订货修订一致：待审核/驳回/已撤回允许软删旧行后按命令全量重插；禁止混用非盘点类型单号。</p>
      *
      * @param lines 同一 {@code bus_no} 下已存在的未删除行
-     * @throws BusinessException 单号不存在、非盘点类型或存在非待审核行
+     * @throws BusinessException 单号不存在、非盘点类型或存在不可修订状态行
      */
     public static void assertStocktakeLinesRevisable(List<SupplyRequest> lines) {
         if (lines == null || lines.isEmpty()) {
@@ -507,9 +527,90 @@ public class SupplyRequest extends BaseAuditedEntity {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
                     "非盘点单不可按同号全量修订");
             }
-            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
-                    "仅待审核状态允许修订盘点明细");
+                    "仅待审核/驳回/已撤回状态允许修订盘点明细");
+            }
+        }
+    }
+
+    /**
+     * 门控：损益执行单（药库/药房/科室损益类 {@link SupplyType#isGainLossTypeCode(String)}）同号全量修订。
+     *
+     * <p>与盘点修订一致：待审核/驳回/已撤回允许软删旧行后按命令全量重插。</p>
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     * @throws BusinessException 单号不存在、非损益类型或存在不可修订状态行
+     */
+    public static void assertGainLossLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "损益单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.isGainLossTypeCode(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "非损益单不可按同号全量修订");
+            }
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "仅待审核/驳回/已撤回状态允许修订损益明细");
+            }
+        }
+    }
+
+    /**
+     * 门控：科室领用执行单（{@link com.openhis.health.domain.share.enums.SupplyType#DEPT_ISSUE}）同号全量修订。
+     *
+     * <p>与损益修订一致：待审核/驳回/已撤回允许软删旧行后按命令全量重插。</p>
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     * @throws BusinessException 单号不存在、非领用类型或存在不可修订状态行
+     */
+    public static void assertDeptIssueLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "科室领用单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.isDeptIssueTypeCode(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "非科室领用单不可按同号全量修订");
+            }
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "仅待审核/驳回/已撤回状态允许修订科室领用明细");
+            }
+        }
+    }
+
+    /**
+     * 门控：科室退领执行单（{@link com.openhis.health.domain.share.enums.SupplyType#DEPT_ISSUE_RETURN}）同号全量修订。
+     *
+     * <p>与领用修订一致：待审核/驳回/已撤回允许软删旧行后按命令全量重插。</p>
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
+     * @throws BusinessException 单号不存在、非退领类型或存在不可修订状态行
+     */
+    public static void assertDeptIssueReturnLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "科室退领单不存在，无法修订");
+        }
+        for (SupplyRequest row : lines) {
+            if (row == null) {
+                continue;
+            }
+            if (!SupplyType.isDeptIssueReturnTypeCode(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "非科室退领单不可按同号全量修订");
+            }
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+                    "仅待审核/驳回/已撤回状态允许修订科室退领明细");
             }
         }
     }
@@ -530,41 +631,66 @@ public class SupplyRequest extends BaseAuditedEntity {
             if (!SupplyType.CABINET_STOCK_OUT.getCode().equals(row.getTypeEnum())) {
                 throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药库出库单不可按同号全量修订");
             }
-            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
-                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订出库明细");
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/驳回/已撤回状态允许修订出库明细");
             }
         }
     }
 
     /**
-     * 门控：药库退库单（下游退回，type 5）同号全量修订。
+     * 门控：药库调出单（{@link com.openhis.health.domain.share.enums.SupplyType#CABINET_TRANSFER_OUT}）同号全量修订。
+     *
+     * @param lines 同一 {@code bus_no} 下已存在的未删除行
      */
-    public static void assertCabinetReturnFromDownstreamLinesRevisable(List<SupplyRequest> lines) {
+    public static void assertCabinetTransferOutLinesRevisable(List<SupplyRequest> lines) {
         if (lines == null || lines.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "药库退库单不存在，无法修订");
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "药库调出单不存在，无法修订");
         }
         for (SupplyRequest row : lines) {
             if (row == null) {
                 continue;
             }
-            if (!SupplyType.CABINET_RETURN_FROM_DOWNSTREAM.getCode().equals(row.getTypeEnum())) {
-                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药库退库单不可按同号全量修订");
+            if (!SupplyType.CABINET_TRANSFER_OUT.getCode().equals(row.getTypeEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "非药库调出单不可按同号全量修订");
             }
-            if (!SupplyStatus.PENDING_APPROVAL.getCode().equals(row.getStatusEnum())) {
-                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核状态允许修订药库退库明细");
+            if (!SupplyRequest.isRevisableSupplyStatusCode(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT, "仅待审核/驳回/已撤回状态允许修订药库调出明细");
             }
         }
     }
 
     /**
-     * 审批驳回：迁至已驳回，并记录审批人与审批时间。
+     * 门控：退库入库单（type 5）为系统壳单，禁止同号全量修订。
+     */
+    public static void assertCabinetReturnStockInLinesRevisable(List<SupplyRequest> lines) {
+        if (lines == null || lines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_NOT_FOUND, "退库入库单不存在，无法修订");
+        }
+        throw new BusinessException(ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT,
+            "退库入库单由药房/科室退库同意后系统自动生成，不支持修订");
+    }
+
+    /**
+     * 审批驳回：迁至已驳回，并记录审批人、审批时间与驳回原因（落 {@code reason}）。
      *
      * @param approverId 审批人主键
      * @param approvalTime 审批时间
+     * @param rejectReason 驳回原因文案；可空（空则不清空既有行原因，由调用方决定是否覆盖）
      */
-    public void approvalToReject(Long approverId, LocalDateTime approvalTime) {
+    public void approvalToReject(Long approverId, LocalDateTime approvalTime, String rejectReason) {
         this.statusEnum = SupplyStatus.REJECT.getCode();
         this.approverId = approverId;
         this.approvalTime = approvalTime;
+        // 业务含义：驳回原因须落同号各行 reason，供列表/详情展示；无文案时仍写空串避免残留旧申请备注误判为驳回原因。
+        if (rejectReason == null) {
+            this.reason = null;
+        } else {
+            String trimmed = rejectReason.trim();
+            if (trimmed.isEmpty()) {
+                this.reason = null;
+            } else {
+                this.reason = trimmed;
+            }
+        }
     }
 }

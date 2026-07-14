@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.ordertemplate.service;
 
 import com.openhis.health.application.basic.ordertemplate.dto.OrderTemplateLineRowDto;
@@ -43,14 +30,14 @@ import com.openhis.health.application.basic.ordertemplate.response.PreviewOrderT
 import com.openhis.health.application.basic.ordertemplate.response.SaveMaintainedOrderTemplateHeaderResponse;
 import com.openhis.health.application.basic.ordertemplate.response.SaveMaintainedOrderTemplateLinesResponse;
 import com.openhis.health.application.basic.ordertemplate.response.SaveOrderTemplateFromAdviceResponse;
-import com.openhis.health.module.querysupport.ordertemplate.OrderTemplateLineCatalogEnrichAssembler;
-import com.openhis.health.module.querysupport.ordertemplate.dto.OrderTemplateLineEnrichRow;
-import com.openhis.health.module.common.validator.ordertemplate.OrderTemplateScopeResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.validator.PageWindowGate;
-import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
-import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.application.basic.ordertemplate.support.OrderTemplateLineCatalogEnrichAssembler;
+import com.openhis.health.application.basic.ordertemplate.support.dto.OrderTemplateLineEnrichRow;
+import com.openhis.health.application.basic.ordertemplate.support.OrderTemplateScopeResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.PageWindowGate;
+import com.openhis.health.application.shared.validator.PatientEncounterConsistencyGate;
+import com.openhis.health.application.shared.option.FrequencyOptionLoader;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
@@ -85,7 +72,7 @@ import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -134,7 +121,7 @@ public class OrderTemplateAppService {
     private final PageWindowGate pageWindowGate;
 
     /** 就诊上下文读侧（IF-07/08/10）。 */
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
 
     /** 患者与就诊一致性门控。 */
     private final PatientEncounterConsistencyGate patientEncounterConsistencyGate;
@@ -337,7 +324,7 @@ public class OrderTemplateAppService {
      */
     public ChangeOrderTemplateLifecycleResponse changeOrderTemplateLifecycle(ChangeOrderTemplateLifecycleRequest request) {
         String action = request.getLifecycleActionCode();
-        if (StringUtils.isBlank(action)) {
+        if (StringUtils.isEmpty(action)) {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_STATUS, "当前状态不允许该操作");
         }
         String normalizedAction = action.trim().toUpperCase();
@@ -572,7 +559,7 @@ public class OrderTemplateAppService {
      * @param request 保存头请求
      */
     private void validateSaveHeaderRequest(SaveMaintainedOrderTemplateHeaderRequest request) {
-        if (StringUtils.isBlank(request.getName())) {
+        if (StringUtils.isEmpty(request.getName())) {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT, "请检查组套基本信息后重试");
         }
         // BR-OTL-001：绑定类型须合法
@@ -625,10 +612,10 @@ public class OrderTemplateAppService {
      * @return trim 后关键字，均无则 null
      */
     private String resolvePageKeyword(PageMaintainedOrderTemplateRequest request) {
-        if (StringUtils.isNotBlank(request.getKeyword())) {
+        if (StringUtils.isNotEmpty(request.getKeyword())) {
             return request.getKeyword().trim();
         }
-        if (StringUtils.isNotBlank(request.getSearchKey())) {
+        if (StringUtils.isNotEmpty(request.getSearchKey())) {
             return request.getSearchKey().trim();
         }
         return null;
@@ -658,7 +645,7 @@ public class OrderTemplateAppService {
      * @return trim 后 code 或 null
      */
     private String normalizeOptionalCode(String code) {
-        if (StringUtils.isBlank(code)) {
+        if (StringUtils.isEmpty(code)) {
             return null;
         }
         return code.trim();
@@ -671,7 +658,7 @@ public class OrderTemplateAppService {
      * @return trim 后 code，空白时 DEPARTMENT
      */
     private String resolveSaveFromAdviceBindingEnum(String bindingEnum) {
-        if (StringUtils.isBlank(bindingEnum)) {
+        if (StringUtils.isEmpty(bindingEnum)) {
             return OrderTemplateBinding.DEPARTMENT.getCode();
         }
         return bindingEnum.trim();
@@ -716,7 +703,7 @@ public class OrderTemplateAppService {
      */
     private EncounterSceneContext resolveDoctorStationEncounterContext(Long encounterId, Long patientId) {
         Optional<InpatientEncounterContextQueryModel> inpatient =
-            encounterContextFacade.getInpatientContextByEncounterId(encounterId);
+            EncounterContextReader.getInpatientContextByEncounterId(encounterId);
         if (inpatient.isPresent()) {
             patientEncounterConsistencyGate.requireRequestPatientMatchesEncounter(
                 patientId,
@@ -729,7 +716,7 @@ public class OrderTemplateAppService {
             return context;
         }
         Optional<OutpatientEncounterContextQueryModel> outpatient =
-            encounterContextFacade.getOutpatientContextByEncounterId(encounterId);
+            EncounterContextReader.getOutpatientContextByEncounterId(encounterId);
         if (outpatient.isPresent()) {
             patientEncounterConsistencyGate.requireRequestPatientMatchesEncounter(
                 patientId,
@@ -752,13 +739,13 @@ public class OrderTemplateAppService {
         Long patientId,
         String workstationKindCode
     ) {
-        if (StringUtils.isBlank(workstationKindCode)) {
+        if (StringUtils.isEmpty(workstationKindCode)) {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT, "工作站类型不能为空");
         }
         String normalizedWorkstation = workstationKindCode.trim().toUpperCase();
         if (OrderTemplateConstants.WorkstationKind.INPATIENT.equals(normalizedWorkstation)) {
             InpatientEncounterContextQueryModel inpatient =
-                encounterContextFacade.mustGetInpatientContextByEncounterId(encounterId);
+                EncounterContextReader.mustGetInpatientContextByEncounterId(encounterId);
             patientEncounterConsistencyGate.requireRequestPatientMatchesEncounter(
                 patientId,
                 inpatient.getPatientId(),
@@ -771,7 +758,7 @@ public class OrderTemplateAppService {
         }
         if (OrderTemplateConstants.WorkstationKind.OUTPATIENT.equals(normalizedWorkstation)) {
             OutpatientEncounterContextQueryModel outpatient =
-                encounterContextFacade.mustGetOutpatientContextByEncounterId(encounterId);
+                EncounterContextReader.mustGetOutpatientContextByEncounterId(encounterId);
             patientEncounterConsistencyGate.requireRequestPatientMatchesEncounter(
                 patientId,
                 outpatient.getPatientId(),
@@ -928,13 +915,13 @@ public class OrderTemplateAppService {
         if (medication == null) {
             return null;
         }
-        if (StringUtils.isNotBlank(medication.getDosageInstruction())) {
+        if (StringUtils.isNotEmpty(medication.getDosageInstruction())) {
             return medication.getDosageInstruction().trim();
         }
         // 门诊草稿常只写 dose/doseUnitCode，套用侧依赖 dosageText 解析 singleDose
         if (medication.getDose() != null && medication.getDose().compareTo(BigDecimal.ZERO) > 0) {
             String doseText = medication.getDose().stripTrailingZeros().toPlainString();
-            if (StringUtils.isNotBlank(medication.getDoseUnitCode())) {
+            if (StringUtils.isNotEmpty(medication.getDoseUnitCode())) {
                 return doseText + medication.getDoseUnitCode().trim();
             }
             return doseText;
@@ -946,7 +933,7 @@ public class OrderTemplateAppService {
      * rateCode → frequencyId（IF-10 另存模板）。
      */
     private Long resolveFrequencyIdByRateCode(String rateCode) {
-        if (StringUtils.isBlank(rateCode)) {
+        if (StringUtils.isEmpty(rateCode)) {
             return null;
         }
         for (Frequency frequency : frequencyQueryService.listActiveFrequencies()) {
@@ -974,12 +961,17 @@ public class OrderTemplateAppService {
      * applyContextCode 归一。
      */
     private String normalizeApplyContextCode(String applyContextCode) {
-        if (StringUtils.isBlank(applyContextCode)) {
+        if (StringUtils.isEmpty(applyContextCode)) {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT, "套用上下文不能为空");
         }
         return applyContextCode.trim().toUpperCase();
     }
 
+    /**
+     * 组套模板详情行：经 querysupport enrich 回填目录/术语/科室展示列。
+     *
+     * @param lines 详情行 DTO
+     */
     private void enrichOrderTemplateDetailLines(List<OrderTemplateLineRowDto> lines) {
         if (lines == null || lines.isEmpty()) {
             return;

@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.gainloss.mapper;
 
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inventory.warehouse.gainloss.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.gainloss.dto.GainLossDetailLineDto;
 import com.openhis.health.application.inventory.warehouse.gainloss.dto.GainLossLineDto;
@@ -28,6 +15,7 @@ import com.openhis.health.application.inventory.warehouse.gainloss.request.Creat
 import com.openhis.health.application.inventory.warehouse.gainloss.request.RejectGainLossRequest;
 import com.openhis.health.application.inventory.warehouse.gainloss.request.RemoveGainLossRequest;
 import com.openhis.health.application.inventory.warehouse.gainloss.request.SubmitGainLossApprovalRequest;
+import com.openhis.health.application.inventory.warehouse.gainloss.request.UpdateGainLossRequest;
 import com.openhis.health.application.inventory.warehouse.gainloss.request.WithdrawGainLossApprovalRequest;
 import com.openhis.health.application.inventory.warehouse.gainloss.response.AgreeGainLossResponse;
 import com.openhis.health.application.inventory.warehouse.gainloss.response.CreateGainLossResponse;
@@ -38,11 +26,12 @@ import com.openhis.health.application.inventory.warehouse.gainloss.response.Page
 import com.openhis.health.application.inventory.warehouse.gainloss.response.RejectGainLossResponse;
 import com.openhis.health.application.inventory.warehouse.gainloss.response.RemoveGainLossResponse;
 import com.openhis.health.application.inventory.warehouse.gainloss.response.SubmitGainLossApprovalResponse;
+import com.openhis.health.application.inventory.warehouse.gainloss.response.UpdateGainLossResponse;
 import com.openhis.health.application.inventory.warehouse.gainloss.response.WithdrawGainLossApprovalResponse;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.SupplyCategory;
@@ -62,7 +51,8 @@ import com.openhis.health.domain.workflow.supplyrequest.command.WithdrawApproval
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -76,22 +66,24 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 药库盘库单装配实现：{@link InventoryWarehouseGainLossMapper}。
+ * 药库损益单装配实现：{@link InventoryWarehouseGainLossMapper}。
  *
  * <p>仅做字段搬运与枚举 code 归一；业务流程判断在 {@link InventoryWarehouseGainLossAppService}。
  * 各 {@code @Override} 方法 JavaDoc 与接口契约一致（B.1，禁止单独 {@code @inheritDoc} 占位）。</p>
  */
 @Component
+@RequiredArgsConstructor
 public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseGainLossMapper {
 
     /** 位置读服务：按库位推导 {@code purposeTypeEnum}（请求不传类型枚举）。 */
     private final LocationQueryService locationQueryService;
 
-    public InventoryWarehouseGainLossMapperImpl(LocationQueryService locationQueryService) {
-        this.locationQueryService = locationQueryService;
-    }
-
-    /** 将启用位置列表映射为下拉选项（id/编码/展示名） */
+    /**
+     * 将启用药库位置列表映射为下拉选项。
+     *
+     * @param locations 启用库位列表
+     * @return 药库下拉选项
+     */
     @Override
     public List<OptionDto> toOptionDtoListFromLocations(List<Location> locations) {
         List<OptionDto> list = new ArrayList<>();
@@ -104,7 +96,7 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
             }
             Long id = location.getId();
             String label = location.getName();
-            if (StringUtils.isBlank(label)) {
+            if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
             list.add(new OptionDto(id, String.valueOf(id), label));
@@ -112,7 +104,12 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return list;
     }
 
-    /** 将医务人员列表映射为下拉选项 */
+    /**
+     * 将启用人员列表映射为下拉选项。
+     *
+     * @param practitioners 人员列表
+     * @return 人员下拉选项
+     */
     @Override
     public List<OptionDto> toOptionDtoListFromPractitioners(List<Practitioner> practitioners) {
         List<OptionDto> list = new ArrayList<>();
@@ -125,7 +122,7 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
             }
             Long id = p.getId();
             String label = p.getName();
-            if (StringUtils.isBlank(label)) {
+            if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
             list.add(new OptionDto(id, String.valueOf(id), label));
@@ -133,7 +130,11 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return list;
     }
 
-    /** 装配供应请求状态枚举选项（持久化 code） */
+    /**
+     * 装配供应单据状态下拉选项。
+     *
+     * @return 单据状态选项
+     */
     @Override
     public List<OptionDto> toOptionDtoListSupplyStatuses() {
         List<SupplyStatus> ordered = new ArrayList<>();
@@ -148,7 +149,11 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return list;
     }
 
-    /** 装配物品来源表（药品/耗材）选项 */
+    /**
+     * 装配入库项目类型两档固定下拉选项。
+     *
+     * @return 药品/耗材类型选项
+     */
     @Override
     public List<OptionDto> toOptionDtoListInboundItemTableTypes() {
         List<OptionDto> list = new ArrayList<>();
@@ -157,7 +162,16 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return list;
     }
 
-    /** 装配页初始化响应（选项集合写入各字段）。 */
+    /**
+     * 装配损益页初始化响应。
+     *
+     * @param warehouseOpts  药库选项
+     * @param inboundTypes   入库项目类型选项
+     * @param statusOpts     状态选项
+     * @param pharmacistOpts 药师选项
+     * @param keeperOpts     库管选项
+     * @return 页初始化响应
+     */
     @Override
     public LoadGainLossFormInitResponse toLoadGainLossFormInitResponse(
         List<OptionDto> warehouseOpts,
@@ -174,7 +188,13 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return res;
     }
 
-    /** 按 busNo 顺序聚合供应请求明细为列表行 DTO。 */
+    /**
+     * 将分页单号顺序与同页明细行聚合为损益列表行。
+     *
+     * @param busNoPageOrder 当前页单号顺序
+     * @param detailRows     当前页涉及的全部明细行
+     * @return 聚合后的列表行
+     */
     @Override
     public List<GainLossListRowDto> toGainLossListAggregated(List<String> busNoPageOrder, List<SupplyRequestModel> detailRows) {
         List<GainLossListRowDto> out = new ArrayList<>();
@@ -186,14 +206,14 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         }
         LinkedHashMap<String, List<SupplyRequestModel>> byBusNo = new LinkedHashMap<>();
         for (SupplyRequestModel row : detailRows) {
-            if (row == null || StringUtils.isBlank(row.getBusNo())) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
                 continue;
             }
             String bn = row.getBusNo().trim();
             byBusNo.computeIfAbsent(bn, k -> new ArrayList<>()).add(row);
         }
         for (String busNoRaw : busNoPageOrder) {
-            if (StringUtils.isBlank(busNoRaw)) {
+            if (StringUtils.isEmpty(busNoRaw)) {
                 continue;
             }
             String busNo = busNoRaw.trim();
@@ -210,11 +230,11 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
                 }
                 if (!Objects.equals(head.getStatusEnum(), line.getStatusEnum())) {
                     throw new BusinessException(
-                        ErrorCodeConstants.WHS_GL_102, "同号盘库单状态头字段不一致: " + busNo);
+                        ErrorCodeConstants.WHS_GL_102, "同号损益单状态头字段不一致: " + busNo);
                 }
                 if (!Objects.equals(head.getPurposeLocationId(), line.getPurposeLocationId())) {
                     throw new BusinessException(
-                        ErrorCodeConstants.WHS_GL_102, "同号盘库单盘点库房头字段不一致: " + busNo);
+                        ErrorCodeConstants.WHS_GL_102, "同号损益单库房头字段不一致: " + busNo);
                 }
             }
             LocalDateTime maxApply = null;
@@ -256,6 +276,10 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
             GainLossListRowDto dto = new GainLossListRowDto();
             dto.setBusNo(busNo);
             dto.setStatusEnum(head.getStatusEnum());
+            // 驳回态：把供应行 reason 带到列表 rejectReason，供侧栏卡片展示
+            if (SupplyStatus.REJECT.getCode().equals(head.getStatusEnum())) {
+                dto.setRejectReason(head.getReason());
+            }
             dto.setPurposeLocationId(head.getPurposeLocationId());
             dto.setApplicantId(head.getApplicantId());
             dto.setApproverId(head.getApproverId());
@@ -270,7 +294,15 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return out;
     }
 
-    /** 用聚合列表行构建分页响应。 */
+    /**
+     * 装配损益列表分页响应（pageNo 为 1-based）。
+     *
+     * @param mergedTotal 去重后的总单数
+     * @param pageNo      页码（1-based）
+     * @param pageSize    页大小
+     * @param records     当前页聚合行
+     * @return 分页响应
+     */
     @Override
     public PageGainLosssResponse toPageGainLosssAggregatedResponse(
         long mergedTotal, int pageNo, int pageSize, List<GainLossListRowDto> records) {
@@ -281,7 +313,13 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return PagedResultBuilder.build(new PageGainLosssResponse(), content, mergedTotal, pageNo, pageSize);
     }
 
-    /** 将供应请求行列表映射为详情响应（含明细增强字段）。 */
+    /**
+     * 将同号供应请求明细与产品目录提示装配为损益详情响应。
+     *
+     * @param lines        供应请求明细行
+     * @param productHints 行 id 到目录编辑提示的映射
+     * @return 详情响应
+     */
     @Override
     public GetGainLossDetailResponse toGetGainLossDetailResponse(
         List<SupplyRequestModel> lines,
@@ -325,7 +363,12 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return res;
     }
 
-    /** 单条供应请求行映射为详情明细 DTO。 */
+    /**
+     * 将单行供应请求明细装配为损益详情行 DTO。
+     *
+     * @param line 供应请求明细行
+     * @return 详情行 DTO
+     */
     @Override
     public GainLossDetailLineDto toGainLossDetailLineDto(SupplyRequestModel line) {
         if (line == null) {
@@ -336,20 +379,34 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         dto.setItemTable(line.getItemTable());
         dto.setItemId(line.getItemId());
         dto.setLotNumber(line.getLotNumber());
+        dto.setTraceNo(line.getTraceNo());
         dto.setExpirationDate(line.getEndTime());
         dto.setUnitCode(line.getUnitCode());
         dto.setGainLossQuantity(line.getItemQuantity());
+        dto.setActualQuantity(line.getTotalQuantity());
+        dto.setActualAmount(line.getTotalPrice());
+        dto.setGainLossAmount(line.getProfitLossPrice());
         dto.setPrice(line.getPrice());
-        if (line.getRemake() != null) {
-            dto.setRemake(line.getRemake());
-        } else {
-            dto.setRemake(line.getReason());
-        }
+        dto.setReason(line.getReason());
+        dto.setRemake(line.getRemake());
         dto.setOccurrenceTime(line.getOccurrenceTime());
+        dto.setProductName(null);
+        dto.setSpecification(null);
+        dto.setManufacturer(null);
+        dto.setBookQuantity(null);
+        dto.setProductCatalog(null);
         return dto;
     }
 
-    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 */
+    /**
+     * 将新建损益请求装配为领域 CreateGainLossCommand。
+     *
+     * @param request     新建请求
+     * @param operatorId  操作人
+     * @param applicantId 制单人员
+     * @param busNo       预分配业务单号
+     * @return 领域写命令
+     */
     @Override
     public CreateGainLossCommand toCreateGainLossCommand(
         CreateGainLossRequest request,
@@ -374,13 +431,20 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
                 item.setItemTable(line.getItemTable());
                 item.setItemId(line.getItemId());
                 item.setItemQuantity(line.getGainLossQuantity());
+                item.setTotalQuantity(line.getActualQuantity());
                 item.setUnitCode(line.getUnitCode());
                 item.setCategoryEnum(categoryCode);
                 item.setPurposeTypeEnum(purposeTypeCode);
                 item.setPurposeLocationId(request.getPurposeLocationId());
                 item.setOccurrenceTime(line.getOccurrenceTime());
-                item.setLotNumber(line.getLotNumber());
+                item.setPractitionerId(request.getPractitionerId());
                 item.setReason(line.getReason());
+                item.setRemake(line.getRemake());
+                item.setLotNumber(line.getLotNumber());
+                item.setTraceNo(line.getTraceNo());
+                item.setPrice(line.getPrice());
+                item.setTotalPrice(line.getActualAmount());
+                item.setProfitLossPrice(line.getGainLossAmount());
                 item.setApplicantId(applicantId);
                 item.setApplyTime(null);
                 items.add(item);
@@ -390,7 +454,12 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return command;
     }
 
-    /** 装配创建成功响应（写入 busNo 等）。 */
+    /**
+     * 装配新建损益成功响应。
+     *
+     * @param busNo 新建业务单号
+     * @return 新建响应
+     */
     @Override
     public CreateGainLossResponse toCreateGainLossResponse(String busNo) {
         CreateGainLossResponse res = new CreateGainLossResponse();
@@ -398,7 +467,58 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return res;
     }
 
-    /** 将提交审批请求映射为 SubmitApprovalCommand。 */
+    /**
+     * 将修订损益请求装配为领域 CreateGainLossCommand（同号全量对齐）。
+     *
+     * @param request     修订请求
+     * @param operatorId  操作人
+     * @param applicantId 制单人员
+     * @return 领域写命令
+     */
+    @Override
+    public CreateGainLossCommand toCreateGainLossCommand(
+        UpdateGainLossRequest request,
+        Long operatorId,
+        Long applicantId) {
+        if (request == null) {
+            throw new IllegalArgumentException("request 不能为空");
+        }
+        CreateGainLossRequest synthetic = new CreateGainLossRequest();
+        synthetic.setPurposeLocationId(request.getPurposeLocationId());
+        synthetic.setPractitionerId(request.getPractitionerId());
+        synthetic.setCategoryEnum(request.getCategoryEnum());
+        synthetic.setLines(request.getLines());
+        String busNo = null;
+        if (request.getBusNo() != null) {
+            busNo = request.getBusNo().trim();
+        }
+        if (busNo != null && busNo.isEmpty()) {
+            busNo = null;
+        }
+        return this.toCreateGainLossCommand(synthetic, operatorId, applicantId, busNo);
+    }
+
+    /**
+     * 装配修订损益成功响应。
+     *
+     * @param busNo 业务单号
+     * @return 修订响应
+     */
+    @Override
+    public UpdateGainLossResponse toUpdateGainLossResponse(String busNo) {
+        UpdateGainLossResponse res = new UpdateGainLossResponse();
+        res.setBusNo(busNo);
+        return res;
+    }
+
+    /**
+     * 将提交审批请求装配为领域 SubmitApprovalCommand。
+     *
+     * @param request     提交请求
+     * @param operatorId  操作人
+     * @param applicantId 制单人员
+     * @return 领域写命令
+     */
     @Override
     public SubmitApprovalCommand toSubmitApprovalCommand(
         SubmitGainLossApprovalRequest request, Long operatorId, Long applicantId) {
@@ -411,7 +531,12 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return command;
     }
 
-    /** 装配提交审批响应。 */
+    /**
+     * 装配提交审批成功响应（含提交后展示状态）。
+     *
+     * @param statusAfter 提交后供应状态
+     * @return 提交响应
+     */
     @Override
     public SubmitGainLossApprovalResponse toSubmitGainLossApprovalResponse(SupplyStatus statusAfter) {
         SubmitGainLossApprovalResponse res = new SubmitGainLossApprovalResponse();
@@ -422,7 +547,13 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return res;
     }
 
-    /** 将撤回审批请求映射为 WithdrawApprovalCommand。 */
+    /**
+     * 将撤回审批请求装配为领域 WithdrawApprovalCommand。
+     *
+     * @param request    撤回请求
+     * @param operatorId 操作人
+     * @return 领域写命令
+     */
     @Override
     public WithdrawApprovalCommand toWithdrawApprovalCommand(WithdrawGainLossApprovalRequest request, Long operatorId) {
         WithdrawApprovalCommand command = new WithdrawApprovalCommand();
@@ -433,7 +564,12 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return command;
     }
 
-    /** 装配撤回审批响应。 */
+    /**
+     * 装配撤回审批成功响应（含撤回后展示状态）。
+     *
+     * @param statusAfter 撤回后供应状态
+     * @return 撤回响应
+     */
     @Override
     public WithdrawGainLossApprovalResponse toWithdrawGainLossApprovalResponse(SupplyStatus statusAfter) {
         WithdrawGainLossApprovalResponse res = new WithdrawGainLossApprovalResponse();
@@ -444,7 +580,13 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return res;
     }
 
-    /** 将同意请求映射为领域 AgreeRequestCommand。 */
+    /**
+     * 将同意请求装配为领域 AgreeRequestCommand。
+     *
+     * @param request    同意请求
+     * @param operatorId 操作人
+     * @return 领域写命令
+     */
     @Override
     public AgreeRequestCommand toAgreeRequestCommand(AgreeGainLossRequest request, Long operatorId) {
         AgreeRequestCommand command = new AgreeRequestCommand();
@@ -456,7 +598,13 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return command;
     }
 
-    /** 将写请求映射为领域 Create 命令（含操作人与申请人）。 将已同意供应请求行装配为发放命令。 */
+    /**
+     * 将已同意明细行装配为损益发放命令。
+     *
+     * @param lines      已同意的供应请求明细行
+     * @param operatorId 操作人
+     * @return 发放命令
+     */
     @Override
     public CreateSupplyDeliveryCommand toCreateSupplyDeliveryCommand(
         List<SupplyRequestModel> lines, Long operatorId) {
@@ -489,7 +637,14 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return cmd;
     }
 
-    /** 装配库存加量命令（库存行 id、拆零量、操作人）。 */
+    /**
+     * 装配报溢增库存命令。
+     *
+     * @param inventoryItemId 库存项主键
+     * @param increaseQty     增加数量
+     * @param operatorId      操作人
+     * @return 增库存命令
+     */
     @Override
     public IncreaseQuantityCommand toIncreaseQuantityCommand(Long inventoryItemId, BigDecimal increaseQty, Long operatorId) {
         IncreaseQuantityCommand command = new IncreaseQuantityCommand();
@@ -501,7 +656,15 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return command;
     }
 
-    /** 装配库存减量命令（库存行 id、拆零量、操作人）。 */
+    /**
+     * 装配报损减库存命令。
+     *
+     * @param inventoryItemId 库存项主键
+     * @param decreaseQty     减少数量
+     * @param allowNegative   是否允许负库存
+     * @param operatorId      操作人
+     * @return 减库存命令
+     */
     @Override
     public DecreaseQuantityCommand toDecreaseQuantityCommand(
         Long inventoryItemId, BigDecimal decreaseQty, boolean allowNegative, Long operatorId) {
@@ -515,7 +678,13 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return command;
     }
 
-    /** 装配同意成功响应。 */
+    /**
+     * 装配同意损益成功响应。
+     *
+     * @param busNo      业务单号
+     * @param statusEnum 同意后状态 code
+     * @return 同意响应
+     */
     @Override
     public AgreeGainLossResponse toAgreeGainLossResponse(String busNo, String statusEnum) {
         AgreeGainLossResponse res = new AgreeGainLossResponse();
@@ -524,7 +693,13 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return res;
     }
 
-    /** 将驳回请求映射为 RejectRequestCommand。 */
+    /**
+     * 将驳回请求装配为领域 RejectRequestCommand。
+     *
+     * @param request    驳回请求
+     * @param operatorId 操作人
+     * @return 领域写命令
+     */
     @Override
     public RejectRequestCommand toRejectRequestCommand(RejectGainLossRequest request, Long operatorId) {
         RejectRequestCommand command = new RejectRequestCommand();
@@ -534,7 +709,7 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         item.setApproverId(operatorId);
         item.setApprovalClock(null);
         String mergedReason = request.getChangeReasonCode();
-        if (StringUtils.isNotBlank(request.getChangeReason())) {
+        if (StringUtils.isNotEmpty(request.getChangeReason())) {
             mergedReason = request.getChangeReason().trim();
         }
         item.setChangeReasonCode(mergedReason);
@@ -542,7 +717,12 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return command;
     }
 
-    /** 装配驳回响应。 */
+    /**
+     * 装配驳回损益成功响应。
+     *
+     * @param ok 是否驳回成功
+     * @return 驳回响应
+     */
     @Override
     public RejectGainLossResponse toRejectGainLossResponse(boolean ok) {
         RejectGainLossResponse res = new RejectGainLossResponse();
@@ -550,7 +730,13 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return res;
     }
 
-    /** 将删除请求映射为 RemoveByBusNoCommand。 */
+    /**
+     * 将删除请求装配为领域 RemoveByBusNoCommand。
+     *
+     * @param request    删除请求
+     * @param operatorId 操作人
+     * @return 领域写命令
+     */
     @Override
     public RemoveByBusNoCommand toRemoveByBusNoCommand(RemoveGainLossRequest request, Long operatorId) {
         RemoveByBusNoCommand command = new RemoveByBusNoCommand();
@@ -561,7 +747,12 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return command;
     }
 
-    /** 装配删除响应。 */
+    /**
+     * 装配删除损益成功响应。
+     *
+     * @param ok 是否删除成功
+     * @return 删除响应
+     */
     @Override
     public RemoveGainLossResponse toRemoveGainLossResponse(boolean ok) {
         RemoveGainLossResponse res = new RemoveGainLossResponse();
@@ -569,7 +760,12 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return res;
     }
 
-    /** 将产品/库存分页映射为选品分页响应。 */
+    /**
+     * 将现库库存分页装配为损益选品分页响应。
+     *
+     * @param page 库存读模型分页
+     * @return 选品分页响应
+     */
     @Override
     public PageProductsForGainLossResponse toPageProductsForGainLossResponse(Page<InventoryItemModel> page) {
         List<ProductDefinitionItemDto> content = new ArrayList<>();
@@ -582,7 +778,13 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return PagedResultBuilder.build(new PageProductsForGainLossResponse(), content, page);
     }
 
-    /** 产品读模型映射为选品行 DTO。 */
+    /**
+     * 将库存行与产品读模型装配为选品行 DTO。
+     *
+     * @param inv 库存行
+     * @param pr  产品读模型，可为 null
+     * @return 选品行 DTO
+     */
     @Override
     public ProductDefinitionItemDto toProductDefinitionItemDtoFromInventory(
         InventoryItemModel inv, ProductDefinitionDisplayDto pr) {
@@ -608,8 +810,14 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return dto;
     }
 
+    /**
+     * 供应类目 code 规范化：空则回落库存供应；非法枚举抛 {@link IllegalArgumentException}。
+     *
+     * @param categoryEnumCode 持久化 category_enum 或请求入参
+     * @return {@link SupplyCategory#getCode()} 字符串
+     */
     private String resolveSupplyCategoryCode(String categoryEnumCode) {
-        if (StringUtils.isBlank(categoryEnumCode)) {
+        if (StringUtils.isEmpty(categoryEnumCode)) {
             return SupplyCategory.STOCK_SUPPLY.getCode();
         }
         SupplyCategory cat = EnumUtil.fromCode(SupplyCategory.class, categoryEnumCode.trim());
@@ -619,6 +827,13 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return cat.getCode();
     }
 
+    /**
+     * 供应请求排序：申请时间降序，null 排后；同刻按 id 升序 tie-break。
+     *
+     * @param a 左比较行
+     * @param b 右比较行
+     * @return Comparator 约定负/零/正
+     */
     private int compareSupplyModelApplyTimeDescNullsLast(SupplyRequestModel a, SupplyRequestModel b) {
         if (a == null && b == null) {
             return 0;
@@ -647,6 +862,13 @@ public class InventoryWarehouseGainLossMapperImpl implements InventoryWarehouseG
         return this.compareSupplyModelIdAscNullsLast(a, b);
     }
 
+    /**
+     * 供应请求 id 升序比较器；null 行或 null 主键排后（侧栏队列稳定次序）。
+     *
+     * @param a 左比较行
+     * @param b 右比较行
+     * @return Comparator 约定负/零/正
+     */
     private int compareSupplyModelIdAscNullsLast(SupplyRequestModel a, SupplyRequestModel b) {
         if (a == null && b == null) {
             return 0;

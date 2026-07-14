@@ -1,23 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.refund.mapper;
 
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.domain.share.constants.OutpatientRefundQueueTab;
 import com.openhis.health.application.outpatient.financial.refund.dto.OutpatientRefundLineItemDto;
 import com.openhis.health.application.outpatient.financial.refund.dto.OutpatientRefundPaymentGroupDto;
@@ -33,7 +20,6 @@ import com.openhis.health.application.outpatient.financial.refund.response.Verif
 import com.openhis.health.domain.administration.chargeitem.command.BatchChargeItemIdsCommand;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CompleteOutpatientRefundCommand;
-import com.openhis.health.domain.financial.paymentreconciliation.command.FinalizeOriginalOutpatientPaymentCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.PaymentDetailItemCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.RequestOutpatientRefundCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
@@ -194,33 +180,14 @@ public class OutpatientRefundMapperImpl implements OutpatientRefundMapper {
         command.setRelationId(originalPayment.getId());
         command.setEncounterId(request.getEncounterId());
         command.setPatientId(originalPayment.getPatientId());
-        command.setEntererId(operatorId);
+        // 逆向 UN_PAY 经办人继承原收费员 enterer_id，保证 BR-OP-DCL-011 同一 cashier 日结窗内正负流水成对抵净（BR-REF-022）
+        command.setEntererId(originalPayment.getEntererId());
         command.setKindEnum(originalPayment.getKindEnum());
         command.setPaymentEnum(PaymentType.UN_PAY.getCode());
         command.setDisplayAmount(refundAmount);
         command.setTenderedAmount(refundAmount);
         command.setChargeItemIds(chargeItemIdsJoined);
         command.setPaymentDetails(paymentDetails);
-        return command;
-    }
-
-    /**
-     * 装配原单静默收口命令。
-     *
-     * @param originalPaymentId 原支付主键
-     * @param outcomeEnum 结果码
-     * @param billDate 账单日
-     * @return 命令
-     */
-    @Override
-    public FinalizeOriginalOutpatientPaymentCommand toFinalizeOriginalOutpatientPaymentCommand(
-        Long originalPaymentId,
-        String outcomeEnum,
-        LocalDateTime billDate) {
-        FinalizeOriginalOutpatientPaymentCommand command = new FinalizeOriginalOutpatientPaymentCommand();
-        command.setOriginalPaymentId(originalPaymentId);
-        command.setOutcomeEnum(outcomeEnum);
-        command.setBillDate(billDate);
         return command;
     }
 

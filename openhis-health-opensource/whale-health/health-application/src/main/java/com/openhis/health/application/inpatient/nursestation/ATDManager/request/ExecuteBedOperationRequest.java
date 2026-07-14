@@ -1,25 +1,12 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.ATDManager.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.module.common.dto.nursestation.AdmissionVitalSignSubmitDto;
+import com.openhis.health.application.shared.inpatient.AdmissionVitalSignSubmitDto;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.ParticipantSubmitDto;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -35,7 +22,6 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 分床换床互换请求。 */
 @Schema(description = "分床换床互换请求", requiredProperties = {"operationType", "encounterId"})
 public class ExecuteBedOperationRequest {
 
@@ -46,38 +32,39 @@ public class ExecuteBedOperationRequest {
      */
     @NotBlank(message = "操作类型不能为空")
     @Schema(description = "操作类型：ASSIGN/TRANSFER/SWAP", required = true)
+    /** 操作类型：ASSIGN/TRANSFER/SWAP。 */
     private String operationType;
 
-    /** 当前选中患者就诊主键（发起方）。 */
+    /** 发起方就诊主键。 */
     @NotNull(message = "就诊标识不能为空")
     @Schema(description = "发起方就诊主键", required = true)
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterId;
 
-    /** 目标病房位置主键（ASSIGN/TRANSFER 必填）。 */
+    /** 目标病房位置主键。 */
     @Schema(description = "目标病房位置主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long houseLocationId;
 
-    /** 目标床位位置主键（ASSIGN/TRANSFER 必填）。 */
+    /** 目标床位位置主键。 */
     @Schema(description = "目标床位位置主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long bedLocationId;
 
-    /** 互换对手就诊主键（SWAP 必填）。 */
+    /** 互换对手就诊主键。 */
     @Schema(description = "互换对手就诊主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long encounterIdB;
 
-    /** 病情优先级 code（ASSIGN 可选，写入就诊主档）。 */
+    /** 病情优先级编码。 */
     @Schema(description = "病情优先级编码")
     private String priorityEnum;
 
-    /** 责任医护（ASSIGN 建议必填，全量收口后 INSERT）。 */
+    /** 责任医护提交行。 */
     @Schema(description = "责任医护提交行")
     private List<ParticipantSubmitDto> participants;
 
-    /** 入院体征（仅 ASSIGN 可选；分床成功后同事务写入）。 */
+    /** 入院体征提交块。 */
     @Schema(description = "入院体征提交块")
     private AdmissionVitalSignSubmitDto admissionVitalSigns;
 }

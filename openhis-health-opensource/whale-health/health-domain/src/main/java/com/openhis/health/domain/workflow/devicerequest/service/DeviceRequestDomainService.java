@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.devicerequest.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -51,12 +38,13 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -64,9 +52,11 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 耗材请求写侧领域服务。
+ * 耗材请求（{@code wkf_device_request}）聚合写侧领域服务。
  *
- * <p>边界：库存/发放/收费等跨域一致性由应用服务编排；本服务只写本聚合并发布领域事件。</p>
+ * <p>职责：耗材医嘱草稿、签发/签退、执行回写、护士划价来源建单及门诊发放确认。</p>
+ * <p>不变量：状态迁移门禁；持久化先于耗材请求领域事件（B.14）。</p>
+ * <p>仅注入本聚合 {@link DeviceRequestRepository}；库存/发放/收费由应用层编排。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -82,7 +72,7 @@ public class DeviceRequestDomainService {
      */
     public Long createDeviceOrderDraft(CreateDeviceOrderDraftCommand command) {
         List<CreateDeviceOrderDraftCommand.CreateDeviceOrderDraftItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "创建耗材草稿一次仅允许提交一条记录");
         }
@@ -133,13 +123,13 @@ public class DeviceRequestDomainService {
      */
     public void changeDeviceOrderDraft(ChangeDeviceOrderDraftCommand command) {
         List<ChangeDeviceOrderDraftCommand.ChangeDeviceOrderDraftItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "修改耗材草稿一次仅允许提交一条记录");
         }
 
         ChangeDeviceOrderDraftCommand.ChangeDeviceOrderDraftItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "修改耗材草稿时 id 不能为空");
         }
@@ -156,81 +146,81 @@ public class DeviceRequestDomainService {
             }
             request.setQuantity(item.getQuantity());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getUnitCode() != null) {
             if (!item.getUnitCode().equals(request.getUnitCode())) {
                 changedFields.add(FieldNameConstants.UNIT_CODE);
             }
             request.setUnitCode(item.getUnitCode());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getPerformLocation() != null) {
             if (!item.getPerformLocation().equals(request.getPerformLocation())) {
                 changedFields.add(FieldNameConstants.PERFORM_LOCATION);
             }
             request.setPerformLocation(item.getPerformLocation());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getLotNumber() != null) {
             if (!item.getLotNumber().equals(request.getLotNumber())) {
                 changedFields.add(FieldNameConstants.LOT_NUMBER);
             }
             request.setLotNumber(item.getLotNumber());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getTraceNo() != null) {
             if (!item.getTraceNo().equals(request.getTraceNo())) {
                 changedFields.add(FieldNameConstants.TRACE_NO);
             }
             request.setTraceNo(item.getTraceNo());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getRemark() != null) {
             if (!item.getRemark().equals(request.getRemark())) {
                 changedFields.add(FieldNameConstants.REMARK);
             }
             request.setRemark(item.getRemark());
         }
-        // 业务分支处理。
+        // 业务条件分支：见相邻判断的业务后果
         if (item.getSortNumber() != null && !Objects.equals(item.getSortNumber(), request.getSortNumber())) {
             changedFields.add(FieldNameConstants.SORT_NUMBER);
             request.setSortNumber(item.getSortNumber());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getUseTime() != null) {
             if (!item.getUseTime().equals(request.getUseTime())) {
                 changedFields.add(FieldNameConstants.USE_TIME);
             }
             request.setUseTime(item.getUseTime());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getUseStartTime() != null) {
             if (!item.getUseStartTime().equals(request.getUseStartTime())) {
                 changedFields.add(FieldNameConstants.USE_START_TIME);
             }
             request.setUseStartTime(item.getUseStartTime());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getUseEndTime() != null) {
             if (!item.getUseEndTime().equals(request.getUseEndTime())) {
                 changedFields.add(FieldNameConstants.USE_END_TIME);
             }
             request.setUseEndTime(item.getUseEndTime());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getUseTiming() != null) {
             if (!item.getUseTiming().equals(request.getUseTiming())) {
                 changedFields.add(FieldNameConstants.USE_TIMING);
             }
             request.setUseTiming(item.getUseTiming());
         }
-        // 业务分支处理：诊断定义绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
+        // 诊断定义绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
         if (item.getConditionDefinitionId() != null
             && !Objects.equals(item.getConditionDefinitionId(), request.getConditionDefinitionId())) {
             request.setConditionDefinitionId(item.getConditionDefinitionId());
             changedFields.add(FieldNameConstants.CONDITION_DEFINITION_ID);
         }
-        // 业务分支处理：就诊诊断绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
+        // 就诊诊断绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
         if (item.getEncounterDiagnosisId() != null
             && !Objects.equals(item.getEncounterDiagnosisId(), request.getEncounterDiagnosisId())) {
             request.setEncounterDiagnosisId(item.getEncounterDiagnosisId());
@@ -249,13 +239,13 @@ public class DeviceRequestDomainService {
      */
     public void removeDeviceOrderDraft(RemoveDeviceOrderDraftCommand command) {
         List<RemoveDeviceOrderDraftCommand.RemoveDeviceOrderDraftItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "删除耗材草稿一次仅允许提交一条记录");
         }
 
         RemoveDeviceOrderDraftCommand.RemoveDeviceOrderDraftItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "删除耗材草稿时 id 不能为空");
         }
@@ -275,13 +265,13 @@ public class DeviceRequestDomainService {
      */
     public void signDeviceOrder(SignDeviceOrderCommand command) {
         List<SignDeviceOrderCommand.SignDeviceOrderItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "签发耗材请求一次仅允许提交一条记录");
         }
 
         SignDeviceOrderCommand.SignDeviceOrderItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "签发耗材请求时 id 不能为空");
         }
@@ -303,13 +293,13 @@ public class DeviceRequestDomainService {
      */
     public void signOffDeviceOrder(SignOffDeviceOrderCommand command) {
         List<SignOffDeviceOrderCommand.SignOffDeviceOrderItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "签退耗材请求一次仅允许提交一条记录");
         }
 
         SignOffDeviceOrderCommand.SignOffDeviceOrderItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "签退耗材请求时 id 不能为空");
         }
@@ -325,9 +315,6 @@ public class DeviceRequestDomainService {
     }
 
     /**
-     * 执行确认。
-     */
-    /**
      * 门诊收费完成：已发送耗材请求推进为已完成，并发布门诊发放确认事件（执行机构可空）。
      *
      * @param deviceRequestId 耗材请求主键
@@ -335,34 +322,45 @@ public class DeviceRequestDomainService {
      */
     public void completeDeviceRequestAfterOutpatientCharge(Long deviceRequestId, Long operatorId) {
         DeviceRequest request = this.requireDeviceRequest(deviceRequestId);
+        // 已完成则幂等跳过，避免重复收费回调
         if (RequestStatus.COMPLETED.getCode().equals(request.getStatusEnum())) {
             return;
         }
+        // Cmd：校验收费后可完成态并推进
         request.assertCompletableAfterOutpatientCharge();
         request.toCompleted();
+        // 持久化先于事件发布
         deviceRequestRepository.save(request);
         domainEventPublisher.publish(new OutpatientDeviceDispenseConfirmedEvent(deviceRequestId, operatorId, null));
     }
 
+    /**
+     * 护士/执行站执行确认：已发送耗材请求推进为已完成并发布门诊发放确认事件。
+     *
+     * @param command 执行确认命令；一次仅允许一条明细
+     */
     public void executeDeviceOrder(ExecuteDeviceOrderCommand command) {
         List<ExecuteDeviceOrderCommand.ExecuteDeviceOrderItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "执行确认一次仅允许提交一条记录");
         }
 
         ExecuteDeviceOrderCommand.ExecuteDeviceOrderItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "执行确认时 id 不能为空");
         }
 
+        // Pre：加载请求并校验可执行态
         DeviceRequest request = this.requireDeviceRequest(item.getId());
         request.assertExecutable();
 
+        // Cmd：写入执行人与执行科室并推进为已完成
         request.setPerformerId(item.getPerformerId());
         request.setPerformOrgId(item.getPerformOrgId());
         request.toCompleted();
+        // 持久化先于事件发布
         deviceRequestRepository.save(request);
         domainEventPublisher.publish(new OutpatientDeviceDispenseConfirmedEvent(
             request.getId(), request.getPerformerId(), request.getPerformOrgId()));
@@ -373,13 +371,13 @@ public class DeviceRequestDomainService {
      */
     public void revokeDeviceOrderExecution(RevokeDeviceOrderExecutionCommand command) {
         List<RevokeDeviceOrderExecutionCommand.RevokeDeviceOrderExecutionItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "撤销执行一次仅允许提交一条记录");
         }
 
         RevokeDeviceOrderExecutionCommand.RevokeDeviceOrderExecutionItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "撤销执行时 id 不能为空");
         }
@@ -397,30 +395,33 @@ public class DeviceRequestDomainService {
      */
     public Long createDeviceOrderRefund(CreateDeviceOrderRefundCommand command) {
         List<CreateDeviceOrderRefundCommand.CreateDeviceOrderRefundItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "申请退耗材一次仅允许提交一条记录");
         }
 
         CreateDeviceOrderRefundCommand.CreateDeviceOrderRefundItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 必填入参缺失时拒绝继续，避免写脏数据
         if (item.getSourceRequestId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "申请退耗材时 sourceRequestId 不能为空");
         }
-        // 业务分支处理。
+        // 必填入参缺失时拒绝继续，避免写脏数据
         if (item.getRefundQuantity() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "申请退耗材时 refundQuantity 不能为空");
         }
-        // 业务分支处理。
+        // 业务条件分支：见相邻判断的业务后果
         if (item.getRefundQuantity().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_INVALID_ARGUMENT, "申请退耗材时 refundQuantity 必须大于 0");
         }
 
         DeviceRequest source = this.requireDeviceRequest(item.getSourceRequestId());
 
+        // Pre：同一原单仅允许一条未完成负向退耗申请（BR-DR-008 幂等）。
+        this.assertNoOpenRefundDeviceOrder(source.getId());
+
         // 冲销校验（BR-DR-011）：严格使用 refundDeviceId + quantity<0 汇总口径。
         BigDecimal remaining = this.offsetVerification(source.getId(), item.getRefundQuantity());
-        // 业务分支处理。
+        // 业务条件分支：见相邻判断的业务后果
         if (remaining.compareTo(BigDecimal.ZERO) < 0) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_RULE_CONFLICT, "退耗材冲销数量超额");
         }
@@ -444,9 +445,9 @@ public class DeviceRequestDomainService {
     }
 
     /**
-     * 门诊药房退药闭环：将负向耗材申请推进为已完成。
+     * 退耗发放确认后收口负向耗材申请：CANCELLED → COMPLETED（对称药嘱 completeMedicationRequestAfterRefund）。
      *
-     * @param requestId 负向耗材申请主键
+     * @param requestId 负向耗材申请主键（须含 refund_device_id）
      */
     public void completeDeviceRequestAfterRefund(Long requestId) {
         DeviceRequest request = this.requireDeviceRequest(requestId);
@@ -475,7 +476,7 @@ public class DeviceRequestDomainService {
         List<DeviceRequest> toSave = new ArrayList<>();
         LocalDateTime authoredTime = LocalDateTime.now();
         for (CreateExecutedDeviceOrderCommand.CreateExecutedDeviceOrderItemCommand item : items) {
-            boolean hasBasedOnTable = StringUtils.isNotBlank(item.getBasedOnTable());
+            boolean hasBasedOnTable = StringUtils.isNotEmpty(item.getBasedOnTable());
             boolean hasBasedOnId = item.getBasedOnId() != null;
             // 父锚点表名与主键须成对出现。
             if (hasBasedOnTable != hasBasedOnId) {
@@ -735,5 +736,23 @@ public class DeviceRequestDomainService {
             offsetQuantity = offsetQuantity.add(row.getQuantity().abs());
         }
         return source.getQuantity().subtract(offsetQuantity).subtract(preOffsetQuantity);
+    }
+
+    /**
+     * 断言原耗材申请不存在未完结的负向退耗单（BR-DR-008 幂等）。
+     *
+     * @param originRequestId 原耗材申请主键
+     */
+    private void assertNoOpenRefundDeviceOrder(Long originRequestId) {
+        List<DeviceRequest> existing = this.deviceRequestRepository.findByRefundDeviceIdIn(
+            Collections.singletonList(originRequestId));
+        for (DeviceRequest row : existing) {
+            if (Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            if (!RequestStatus.COMPLETED.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.DEVICE_REQUEST_RULE_CONFLICT, "已申请退耗材，请勿重复申请");
+            }
+        }
     }
 }

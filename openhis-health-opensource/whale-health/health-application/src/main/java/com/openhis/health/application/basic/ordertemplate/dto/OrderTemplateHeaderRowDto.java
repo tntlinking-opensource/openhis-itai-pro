@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.ordertemplate.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -35,6 +22,7 @@ public class OrderTemplateHeaderRowDto {
 
     @Schema(description = "组套模板头 id")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 模板名称。 */
     private Long orderTemplateId;
 
     @Schema(description = "模板名称")
@@ -84,7 +72,7 @@ public class OrderTemplateHeaderRowDto {
     @Schema(description = "模板状态展示名")
     private String statusEnumText;
 
-    /** 列表排序权重。 */
+    /** 排序权重。 */
     @Schema(description = "排序权重")
     private Integer sortWeight;
 
@@ -92,7 +80,7 @@ public class OrderTemplateHeaderRowDto {
     @Schema(description = "TCM 默认付数")
     private BigDecimal defaultChineseHerbsDoseQuantity;
 
-    /** TCM 默认代煎标志。 */
+    /** TCM 默认代煎。 */
     @Schema(description = "TCM 默认代煎")
     private Boolean defaultSufferingFlag;
 

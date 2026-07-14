@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.pharmacy.returnmedicine.assembler;
 
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
@@ -23,7 +10,6 @@ import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -81,6 +67,12 @@ public class OutpatientReturnMedicinePatientQueueAssembler {
         return rows;
     }
 
+    /**
+     * 退药队列：性别枚举 code → 展示文案；未知码回落原值。
+     *
+     * @param genderEnum 持久化性别码
+     * @return 展示文案；null 输入返回空串
+     */
     private String toGenderDisplay(String genderEnum) {
         AdministrativeGender g = EnumUtil.fromCode(AdministrativeGender.class, genderEnum);
         if (g == null) {
@@ -92,6 +84,12 @@ public class OutpatientReturnMedicinePatientQueueAssembler {
         return g.getDisplay();
     }
 
+    /**
+     * 退药队列：聚合退药状态码 → 发放状态展示文案；未知码回落原值。
+     *
+     * @param code 聚合后的 refundEnum
+     * @return 展示文案；null 输入返回空串
+     */
     private String toRefundStatusText(String code) {
         DispenseStatus st = EnumUtil.fromCode(DispenseStatus.class, code);
         if (st == null) {

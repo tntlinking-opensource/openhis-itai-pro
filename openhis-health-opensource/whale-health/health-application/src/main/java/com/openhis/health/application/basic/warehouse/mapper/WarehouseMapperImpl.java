@@ -1,22 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.warehouse.mapper;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openhis.health.application.basic.warehouse.dto.WarehouseDto;
 import com.openhis.health.application.basic.warehouse.request.CreateWarehouseRequest;
 import com.openhis.health.application.basic.warehouse.request.UpdateWarehouseRequest;
@@ -26,42 +14,29 @@ import com.openhis.health.domain.administration.location.command.DeactivateLocat
 import com.openhis.health.domain.administration.location.command.EditLocationInfoCommand;
 import com.openhis.health.domain.administration.location.command.RegisterLocationCommand;
 import com.openhis.health.domain.administration.location.entity.Location;
+import com.openhis.health.domain.share.constants.BasicWarehouseConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationMode;
 import com.openhis.health.domain.share.enums.LocationOperational;
 import com.openhis.health.domain.share.enums.LocationStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.health.domain.share.utils.LocationTypeJsonUtil;
+import com.openhis.whale.core.application.exception.ValidationException;
+import lombok.RequiredArgsConstructor;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.Collections;
-import java.util.Map;
-import java.util.HashMap;
 import java.util.List;
 
 /**
- * 库房映射实现：前端 16/17 与领域 {@link LocationForm} 编码互认，DTO 侧补齐枚举展示文案。
+ * 库房/药房映射：请求与响应使用 {@link LocationForm} 枚举 {@code code} 字符串，经 {@link EnumUtil} 校验后写入领域命令。
  */
 @Component
+@RequiredArgsConstructor
 public class WarehouseMapperImpl implements WarehouseMapper {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
-    private static final TypeReference<Map<String, Object>> TYPE_EXTENSIONS_REF = new TypeReference<>() {};
-    private static final String FORM_CODE_PHARMACY = "16";
-    private static final String FORM_CODE_WAREHOUSE = "17";
-    private static final String REASON_DEACTIVATE_BY_APP = "应用层停用";
-    private static final Map<String, String> FORM_CODE_MAPPING = new HashMap<>();
-
-    /** 初始化形态别名到领域枚举 code 的映射表。 */
-    static {
-        FORM_CODE_MAPPING.put(FORM_CODE_PHARMACY, LocationForm.PHARMACY.getCode());
-        FORM_CODE_MAPPING.put(LocationForm.PHARMACY.getCode(), LocationForm.PHARMACY.getCode());
-        FORM_CODE_MAPPING.put(FORM_CODE_WAREHOUSE, LocationForm.WAREHOUSE.getCode());
-        FORM_CODE_MAPPING.put(LocationForm.WAREHOUSE.getCode(), LocationForm.WAREHOUSE.getCode());
-    }
+    private final ObjectMapper objectMapper;
 
     /**
      * 将位置实体映射为库房 DTO，并填充状态、运营、模式、形态的展示文本。
@@ -81,7 +56,7 @@ public class WarehouseMapperImpl implements WarehouseMapper {
         dto.setStatusEnum(entity.getStatusEnum());
         dto.setOperationalEnum(entity.getOperationalEnum());
         dto.setModeEnum(entity.getModeEnum());
-        dto.setTypeExtensions(parseTypeExtensions(entity.getTypeJson()));
+        dto.setTypeExtensions(LocationTypeJsonUtil.parseToMap(this.objectMapper, entity.getTypeJson()));
         dto.setPyStr(entity.getPyStr());
         dto.setWbStr(entity.getWbStr());
         dto.setFormEnum(entity.getFormEnum());
@@ -116,7 +91,7 @@ public class WarehouseMapperImpl implements WarehouseMapper {
     }
 
     /**
-     * 装配注册命令：根节点、实例模式、空 typeJson、指定机构与展示顺序 0。
+     * 装配注册命令：扁平根节点、实例模式、空 typeJson、指定机构与展示顺序 0。
      *
      * @param request        创建请求
      * @param organizationId 机构主键
@@ -128,12 +103,12 @@ public class WarehouseMapperImpl implements WarehouseMapper {
         RegisterLocationCommand.RegisterLocationItemCommand item = new RegisterLocationCommand.RegisterLocationItemCommand();
         item.setName(request.getName());
         item.setParentId(null);
-        item.setFormEnum(resolveFormCode(request.getFormEnum()));
+        item.setFormEnum(this.requireWarehouseFormCode(request.getFormEnum()));
         item.setModeEnum(LocationMode.INSTANCE.getCode());
-        item.setTypeJson("{}");
+        item.setTypeJson(BasicWarehouseConstants.EMPTY_LOCATION_TYPE_JSON);
         item.setOrganizationId(organizationId);
         item.setDisplayOrder(0);
-        // 库房/药房为扁平主数据，登记即启用，无草稿态与层级子节点。
+        // 库房/药房为扁平主数据，登记即启用，无草稿态与层级子节点
         item.setRegisterAsActive(Boolean.TRUE);
         command.setItems(Collections.singletonList(item));
         return command;
@@ -142,20 +117,22 @@ public class WarehouseMapperImpl implements WarehouseMapper {
     /**
      * 装配编辑命令，并声明变更字段集合供领域增量应用。
      *
-     * @param request 更新请求
+     * @param request        更新请求
+     * @param organizationId 挂靠机构主键
      * @return 编辑命令
      */
     @Override
-    public EditLocationInfoCommand toUpdateCommand(UpdateWarehouseRequest request) {
+    public EditLocationInfoCommand toUpdateCommand(UpdateWarehouseRequest request, Long organizationId) {
         EditLocationInfoCommand command = new EditLocationInfoCommand();
         EditLocationInfoCommand.EditLocationInfoItemCommand item = new EditLocationInfoCommand.EditLocationInfoItemCommand();
         item.setLocationId(request.getId());
         item.setName(request.getName());
-        item.setFormEnum(resolveFormCode(request.getFormEnum()));
+        item.setFormEnum(this.requireWarehouseFormCode(request.getFormEnum()));
         item.setModeEnum(LocationMode.INSTANCE.getCode());
-        item.setTypeJson("{}");
+        item.setTypeJson(BasicWarehouseConstants.EMPTY_LOCATION_TYPE_JSON);
         item.setDisplayOrder(0);
-        item.setChangedFields(List.of("name", "formEnum", "modeEnum", "typeJson", "displayOrder"));
+        item.setOrganizationId(organizationId);
+        item.setChangedFields(List.of("name", "formEnum", "modeEnum", "typeJson", "displayOrder", "organizationId"));
         command.setItems(Collections.singletonList(item));
         return command;
     }
@@ -176,7 +153,7 @@ public class WarehouseMapperImpl implements WarehouseMapper {
     }
 
     /**
-     * 单条位置停用命令（附带应用层停用原因常量）。
+     * 单条位置停用命令（附带应用层停用原因）。
      *
      * @param locationId 位置主键
      * @return 停用命令
@@ -186,7 +163,7 @@ public class WarehouseMapperImpl implements WarehouseMapper {
         DeactivateLocationCommand command = new DeactivateLocationCommand();
         DeactivateLocationCommand.DeactivateLocationItemCommand item = new DeactivateLocationCommand.DeactivateLocationItemCommand();
         item.setLocationId(locationId);
-        item.setReason(REASON_DEACTIVATE_BY_APP);
+        item.setReason(BasicWarehouseConstants.REASON_DEACTIVATE_BY_APP);
         command.setItems(Collections.singletonList(item));
         return command;
     }
@@ -207,33 +184,35 @@ public class WarehouseMapperImpl implements WarehouseMapper {
     }
 
     /**
-     * 将前端形态（16/17 或领域 code）规范为 {@link LocationForm} 的 code；空则默认仓库。
+     * 校验请求形态为库房维护页支持的 {@link LocationForm}，并返回领域 code。
      *
-     * @param formEnum 原始形态
+     * @param formCode 请求中的形态 code
      * @return 领域形态 code
+     * @throws ValidationException 形态为空、无法解析或不在药库/药房/科室药房范围时
      */
-    private String resolveFormCode(String formEnum) {
-        if (formEnum == null || formEnum.isBlank()) {
-            return LocationForm.WAREHOUSE.getCode();
+    private String requireWarehouseFormCode(String formCode) {
+        if (StringUtils.isEmpty(formCode)) {
+            throw new ValidationException("物理形式不能为空");
         }
-        return FORM_CODE_MAPPING.getOrDefault(formEnum, formEnum);
+        LocationForm form = EnumUtil.fromCode(LocationForm.class, formCode.trim());
+        if (form == null) {
+            throw new ValidationException("物理形式不合法");
+        }
+        if (!this.isWarehouseMaintenanceForm(form.getCode())) {
+            throw new ValidationException("物理形式不适用于库房维护");
+        }
+        return form.getCode();
     }
 
     /**
-     * 将库表 {@code type_json} 解析为库房类型扩展键值（B.6.2 出参 {@code typeExtensions}）。
+     * 判断形态是否属于库房维护页（药库、药房、科室药房）。
      *
-     * @param typeJson 位置扩展 JSON 原文
-     * @return 解析成功的 Map；空串或解析失败时返回空 Map（不抛错，避免列表整页失败）
+     * @param formCode 领域形态 code
+     * @return 是否库房维护形态
      */
-    private static Map<String, Object> parseTypeExtensions(String typeJson) {
-        if (StringUtils.isBlank(typeJson)) {
-            return Collections.emptyMap();
-        }
-        try {
-            return OBJECT_MAPPER.readValue(typeJson, TYPE_EXTENSIONS_REF);
-        } catch (Exception ignored) {
-            // 历史脏 JSON：降级为空扩展，由前端按无扩展展示
-            return Collections.emptyMap();
-        }
+    private boolean isWarehouseMaintenanceForm(String formCode) {
+        return LocationForm.WAREHOUSE.getCode().equals(formCode)
+            || LocationForm.PHARMACY.getCode().equals(formCode)
+            || LocationForm.DEPARTMENT_PHARMACY.getCode().equals(formCode);
     }
 }

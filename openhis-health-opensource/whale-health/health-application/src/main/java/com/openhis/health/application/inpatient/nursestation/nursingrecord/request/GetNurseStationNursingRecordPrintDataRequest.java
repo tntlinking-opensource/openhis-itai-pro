@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.nursingrecord.request;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -23,29 +23,29 @@ import java.time.LocalDate;
 @Schema(description = "护理记录打印数据请求", requiredProperties = {"encounterId", "patientId"})
 public class GetNurseStationNursingRecordPrintDataRequest {
 
-    /** 当前选中就诊。 */
+    /** 就诊标识。 */
     @NotNull(message = "就诊标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long encounterId;
 
-    /** 左侧卡片患者 id。 */
+    /** 患者标识。 */
     @NotNull(message = "患者标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
-    /** 记录日期下界（含）。 */
+    /** 记录日期下界。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     @Schema(description = "记录日期下界")
     private LocalDate recordedAtFrom;
 
-    /** 记录日期上界（含）。 */
+    /** 记录日期上界。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     @Schema(description = "记录日期上界")
     private LocalDate recordedAtTo;
 
-    /** 纸质打印默认升序（BR-IP-NRC-010）。 */
+    /** 是否升序排序。 */
     @Schema(description = "是否升序排序")
     private Boolean sortAsc;
 }

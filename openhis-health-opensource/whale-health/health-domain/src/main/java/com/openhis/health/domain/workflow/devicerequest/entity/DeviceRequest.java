@@ -1,26 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.devicerequest.entity;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
@@ -401,10 +388,9 @@ public class DeviceRequest extends BaseAuditedEntity {
      * @param sourcePrescriptionNo 原单处方号
      */
     public void markAsRefundFromPrescription(String sourcePrescriptionNo) {
-        if (StringUtils.isBlank(sourcePrescriptionNo)) {
+        if (StringUtils.isEmpty(sourcePrescriptionNo)) {
             return;
         }
         this.prescriptionNo = "T" + sourcePrescriptionNo;
     }
 }
-

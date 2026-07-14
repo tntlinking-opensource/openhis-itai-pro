@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.dispensesummary.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -30,12 +17,12 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
-/** 汇总单合并明细行。 */
 @Schema(description = "汇总单合并明细行")
 public class NurseStationDispenseSummarySlipLineDto {
 
     @Schema(description = "供应请求行主键")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 供应请求行主键。 */
     private Long supplyRequestId;
 
     /** 药品定义主键。 */
@@ -63,7 +50,7 @@ public class NurseStationDispenseSummarySlipLineDto {
     @Schema(description = "拆零单位展示")
     private String unitCodeText;
 
-    /** 界面展示数量文案（满包整数 + 不足一包拆零余量，如 1盒1片）。 */
+    /** 界面展示数量文案。 */
     @Schema(description = "界面展示数量文案")
     private String displayQuantityText;
 

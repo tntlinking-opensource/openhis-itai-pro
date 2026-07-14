@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.print.printtemplate.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -32,12 +19,12 @@ import lombok.experimental.Accessors;
 @Schema(description = "保存画布打印模板草稿请求")
 public class SaveDraftRequest {
 
-  /** 已有草稿主键；与 busNo 至少提供一个。 */
+  /** 已有草稿主键。 */
   @Schema(description = "已有草稿主键", example = "1234567890123456789")
   @JsonSerialize(using = ToStringSerializer.class)
   private Long id;
 
-  /** 模板业务键；新建草稿时使用。 */
+  /** 模板业务键。 */
   @Schema(description = "模板业务键", example = "PT20260101001")
   private String busNo;
 
@@ -49,12 +36,12 @@ public class SaveDraftRequest {
   @Schema(description = "模板展示名称", example = "门诊处方 A5")
   private String name;
 
-  /** hiprint 版式 JSON 对象或字符串。 */
+  /** hiprint 版式 JSON。 */
   @Schema(description = "hiprint 版式 JSON")
   @JsonProperty("PrintJson")
   private Object printJson;
 
-  /** 示例打印数据 JSON 对象或字符串。 */
+  /** 示例打印数据 JSON。 */
   @Schema(description = "示例打印数据 JSON")
   private Object samplePrintData;
 }

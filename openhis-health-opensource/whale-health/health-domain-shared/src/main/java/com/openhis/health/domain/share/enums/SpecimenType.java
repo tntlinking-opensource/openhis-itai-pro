@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 import lombok.Getter;
@@ -24,33 +11,33 @@ import lombok.Getter;
  */
 @Getter
 public enum SpecimenType implements EnumInterface {
-    /** 血液样本。 */
+/** 血液样本（SpecimenType）。 */
     BLOOD(0L, "BLOOD", "血液样本", "", 1L),
-    /** 尿液样本。 */
+/** 尿液样本（SpecimenType）。 */
     URINE(0L, "URINE", "尿液样本", "", 2L),
-    /** 唾液样本。 */
+/** 唾液样本（SpecimenType）。 */
     SALIVA(0L, "SALIVA", "唾液样本", "", 3L),
-    /** 组织样本。 */
+/** 组织样本（SpecimenType）。 */
     TISSUE(0L, "TISSUE", "组织样本", "", 4L),
-    /** 脑脊液样本。 */
+/** 脑脊液样本（SpecimenType）。 */
     CSF(0L, "CSF", "脑脊液样本", "", 5L),
-    /** 痰液样本。 */
+/** 痰液样本（SpecimenType）。 */
     SPUTUM(0L, "SPUTUM", "痰液样本", "", 6L),
-    /** 粪便样本。 */
+/** 粪便样本（SpecimenType）。 */
     FECES(0L, "FECES", "粪便样本", "", 7L),
-    /** 拭子样本。 */
+/** 拭子样本（SpecimenType）。 */
     SWAB(0L, "SWAB", "拭子样本", "", 8L),
-    /** 骨髓样本。 */
+/** 骨髓样本（SpecimenType）。 */
     BONE_MARROW(0L, "BONE_MARROW", "骨髓样本", "", 9L),
-    /** 精液样本。 */
+/** 精液样本（SpecimenType）。 */
     SEMEN(0L, "SEMEN", "精液样本", "", 10L),
-    /** 羊水样本。 */
+/** 羊水样本（SpecimenType）。 */
     AMNIOTIC_FLUID(0L, "AMNIOTIC_FLUID", "羊水样本", "", 11L),
-    /** 毛发样本。 */
+/** 毛发样本（SpecimenType）。 */
     HAIR(0L, "HAIR", "毛发样本", "", 12L),
-    /** 指甲样本。 */
+/** 指甲样本（SpecimenType）。 */
     NAIL(0L, "NAIL", "指甲样本", "", 13L),
-    /** 其他。 */
+/** 其他（SpecimenType）。 */
     OTHER(0L, "OTHER", "其他", "", 14L);
 
     private final Long codeSystemId;

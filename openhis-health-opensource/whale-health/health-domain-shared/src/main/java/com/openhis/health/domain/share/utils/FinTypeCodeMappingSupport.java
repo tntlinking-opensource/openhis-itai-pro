@@ -1,11 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.utils;
 
 import com.openhis.health.domain.share.constants.DailySettlementSharedConstants;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 /**
  * 财务类别 {@code fin_type_code} 与目录短码之间的归一化（药品 {@code medication_category_code} 等）。
@@ -27,7 +27,7 @@ public final class FinTypeCodeMappingSupport {
      * @return fin_type_code；空白时返回 {@code null}
      */
     public static String normalizeCategoryCodeToFinType(String categoryCode) {
-        if (StringUtils.isBlank(categoryCode)) {
+        if (StringUtils.isEmpty(categoryCode)) {
             return null;
         }
         String normalized = categoryCode.trim();

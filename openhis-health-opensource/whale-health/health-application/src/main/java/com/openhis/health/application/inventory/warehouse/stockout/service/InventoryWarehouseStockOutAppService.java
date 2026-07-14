@@ -1,30 +1,17 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.stockout.service;
 
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogEditorHintsAssembler;
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogEditorHintsAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
-import com.openhis.health.integration.support.insurance.inventory.InventoryMedicareUploadSupport;
+import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.WarehouseDocumentDetailRowDto;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.mapper.InventoryWarehouseInboundReceiptMapper;
 import com.openhis.health.application.inventory.warehouse.stockout.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.stockout.dto.StockOutDetailLineDto;
@@ -33,29 +20,28 @@ import com.openhis.health.application.inventory.warehouse.stockout.dto.StockOutL
 import com.openhis.health.application.inventory.warehouse.stockout.mapper.InventoryWarehouseStockOutMapper;
 import com.openhis.health.application.inventory.warehouse.stockout.request.*;
 import com.openhis.health.application.inventory.warehouse.stockout.response.*;
-import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.domain.custom.tracenumberrecord.command.AppendTraceRecordsCommand;
-import com.openhis.health.domain.custom.tracenumberrecord.service.TraceNumberRecordDomainService;
+import com.openhis.health.application.shared.tracenumber.TraceNumberSupplyAgreeTraceOrchestrator;
+import com.openhis.health.application.shared.tracenumber.RecordTraceTransferPairSpec;
+import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryCatalogAvailabilityRowModel;
-import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionSelectionTerminologySupport;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionSelectionTerminologyMaps;
+import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionSelectionTerminologyMaps;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.domain.workflow.supplyrequest.queries.WarehouseDocumentDetailPageQuery;
-import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.InventoryWarehouseConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
@@ -63,8 +49,6 @@ import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.SupplyRequestType;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
-import com.openhis.health.domain.share.enums.TraceDirection;
-import com.openhis.health.domain.share.enums.TraceNumberRecordOperationType;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.workflow.inventoryitem.command.CreateInventoryItemCommand;
 import com.openhis.health.domain.workflow.inventoryitem.command.IncreaseQuantityCommand;
@@ -77,20 +61,19 @@ import com.openhis.health.domain.workflow.inventoryitem.valueobject.InventoryMat
 import com.openhis.health.domain.workflow.supplydelivery.service.SupplyDeliveryDomainService;
 import com.openhis.health.domain.workflow.supplydelivery.service.SupplyDeliveryQueryService;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByBusNoQuery;
+import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyByOriginalBusNoQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDocumentListQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.VerifyAbleEditQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestValidationModel;
 import com.openhis.health.domain.workflow.supplyrequest.support.SupplyPersistedSplitQuantity;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
+import com.openhis.health.application.inventory.support.SupplyRequestPricedWriteOrchestrator;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
-import com.openhis.health.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
-import com.openhis.health.integration.insurance.inventory.command.InventoryUploadAfterTransferCommand;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -123,14 +106,11 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class InventoryWarehouseStockOutAppService {
 
-    private static final String INV_CHG_TYPE_TRANSFER_OUT = "102";
-
-    private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
-
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     private final CurrentPractitionerResolver currentPractitionerResolver;
     private final PageWindowGate pageWindowGate;
     private final SupplyRequestDomainService supplyRequestDomainService;
+    private final SupplyRequestPricedWriteOrchestrator supplyRequestPricedWriteOrchestrator;
     private final SupplyRequestQueryService supplyRequestQueryService;
     private final SupplyDeliveryDomainService supplyDeliveryDomainService;
     private final SupplyDeliveryQueryService supplyDeliveryQueryService;
@@ -140,22 +120,19 @@ public class InventoryWarehouseStockOutAppService {
     private final PractitionerQueryService practitionerQueryService;
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
-    private final ProductDefinitionSelectionTerminologySupport productDefinitionSelectionTerminologySupport;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final InventoryWarehouseStockOutMapper stockOutMapper;
     private final InventoryWarehouseInboundReceiptMapper inboundReceiptMapper;
-    private final TraceNumberRecordDomainService traceNumberRecordDomainService;
+    private final TraceNumberSupplyAgreeTraceOrchestrator traceNumberSupplyAgreeTraceOrchestrator;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
 
     /**
      * 加载库房单据页主数据（管辖药库、枚举选项、制单人员等）。
-
      *
-
      * @param request 页初始化请求；机构上下文由服务端解析
-
      * @return 下拉选项与字典项
-
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_101} 机构上下文缺失；
+     *                            {@link ErrorCodeConstants#WHS_SO_102} 主数据加载失败
      */
     public LoadStockOutFormInitResponse loadStockOutFormInit(LoadStockOutFormInitRequest request) {
         Long resolvedOrg = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
@@ -188,13 +165,12 @@ public class InventoryWarehouseStockOutAppService {
 
     /**
      * 分页查询库房单据列表（按 busNo 聚合展示）。
-
      *
-
      * @param request 含分页窗口、库房与状态筛选
-
      * @return 聚合后的列表行与分页元数据
-
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_001} 分页/位置参数非法；
+     *                            {@link ErrorCodeConstants#WHS_SO_101} 机构上下文缺失；
+     *                            {@link ErrorCodeConstants#WHS_SO_102} 列表查询失败
      */
     public PageStockOutsResponse pageStockOuts(PageStockOutsRequest request) {
         // Gate：请求体、分页窗口与机构上下文
@@ -226,7 +202,7 @@ public class InventoryWarehouseStockOutAppService {
         if (request.getPurposeLocationId() != null) {
             listQuery.setPurposeLocationId(request.getPurposeLocationId());
         }
-        if (StringUtils.isNotBlank(request.getStatusEnum())) {
+        if (StringUtils.isNotEmpty(request.getStatusEnum())) {
             SupplyStatus st = EnumUtil.fromCode(SupplyStatus.class, request.getStatusEnum().trim());
             if (st == null) {
                 throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "statusEnum 非法");
@@ -246,6 +222,7 @@ public class InventoryWarehouseStockOutAppService {
         }
         listQuery.setEndDate(rangeEnd);
         try {
+            // Cmd：领域分页查询供应请求
             // —— 聚合路径：先按 bus_no 去重计数与分页取号，再批量拉行交给 Mapper 聚合成列表头。——
             long mergedTotal = this.supplyRequestQueryService.countDistinctBusNo(listQuery);
             List<String> busNos = this.supplyRequestQueryService.listDistinctBusNoPage(listQuery);
@@ -267,22 +244,18 @@ public class InventoryWarehouseStockOutAppService {
 
     /**
      * 按 busNo 回读单据详情（含明细行与展示增强）。
-
      *
-
      * @param request 含业务单号 busNo
-
      * @return 单头与明细
-
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_001} busNo 缺失；
+     *                            {@link ErrorCodeConstants#WHS_SO_103} 单据不存在或类型非药库出库单
      */
     public GetStockOutDetailResponse getStockOutDetail(GetStockOutDetailRequest request) {
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
-            // Gate：busNo 非空
-            // Pre：按 busNo 回读供应请求行
-            // Pre：批量装载产品读模型
-            // Asm：Mapper 映射详情并增强展示字段
+        // Gate：busNo 非空
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "busNo 不能为空");
         }
+        // Pre：按 busNo 回读供应请求行
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
         q.setBusNo(request.getBusNo().trim());
         List<SupplyRequestModel> lines = supplyRequestQueryService.getSupplyByBusNo(q);
@@ -290,10 +263,11 @@ public class InventoryWarehouseStockOutAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_103, "出库单不存在");
         }
         this.assertCabinetStockOut(lines);
+        // Pre：批量装载产品读模型
         // —— 批量加载产品读模型，装配各明细行 catalog hints（查询失败时降级为空映射，仍返回写模型字段）。——
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         for (SupplyRequestModel line : lines) {
-            if (line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
                 continue;
             }
             ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
@@ -303,13 +277,13 @@ public class InventoryWarehouseStockOutAppService {
         }
         Map<String, ProductDefinitionDisplayDto> products;
         try {
-            products = productDefinitionBatchLoader.loadAsMap(lookups);
+            products = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
         } catch (RuntimeException ex) {
             log.warn("batchGetProductByIds degraded for stock out detail", ex);
             products = new HashMap<>();
         }
         ProductDefinitionSelectionTerminologyMaps terminologyMaps =
-            this.productDefinitionSelectionTerminologySupport.loadSelectionTerminologyMaps();
+            this.productDefinitionDisplayTerminologyAssembler.loadSelectionTerminologyMaps();
         Map<Long, ProductDefinitionCatalogEditorHintsDto> hints = new HashMap<>();
         for (SupplyRequestModel line : lines) {
             if (line == null || line.getId() == null) {
@@ -326,18 +300,17 @@ public class InventoryWarehouseStockOutAppService {
         GetStockOutDetailResponse res = stockOutMapper.toGetStockOutDetailResponse(lines, hints);
         this.enrichStockOutDetailProductDisplay(res.getLines(), products, terminologyMaps);
         this.enrichStockOutDetailLines(res.getLines());
+        // Asm：Mapper 映射详情并增强展示字段
         return res;
     }
 
     /**
      * 新建库房单据草稿并落库供应请求。
-
      *
-
      * @param request 单头、明细与库房门禁字段
-
      * @return 新建后的 busNo
-
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_001} 参数/可用量非法；{@link ErrorCodeConstants#WHS_SO_002} 来源请领不可引用；
+     *                            {@link ErrorCodeConstants#WHS_SO_101} 未登录
      */
     public CreateStockOutResponse createStockOut(CreateStockOutRequest request) {
         // Gate：请求体、明细与库房/供应商门禁
@@ -355,8 +328,9 @@ public class InventoryWarehouseStockOutAppService {
         this.assertStockOutTraceNosWithinWideLimit(request.getLines(), ErrorCodeConstants.WHS_SO_001);
         // —— 源库可用量与草稿行拆零量汇总比较。——
         this.assertStockOutDraftLinesWithinSourceAvailableInventory(request.getSourceLocationId(), request.getLines());
-        if (StringUtils.isNotBlank(request.getOriginalBusNo())) {
-            this.validateOriginalPharmacyRequisitionForStockOut(request.getOriginalBusNo().trim(), request.getSourceLocationId());
+        if (StringUtils.isNotEmpty(request.getOriginalBusNo())) {
+            this.validateOriginalRequisitionForStockOut(
+                request.getOriginalBusNo().trim(), request.getSourceLocationId(), null);
         }
         if (request.getPractitionerId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "经手人不能为空");
@@ -370,8 +344,9 @@ public class InventoryWarehouseStockOutAppService {
         // —— 领域 createStockOut 落供应写模型（head + 明细行，类型 CABINET_STOCK_OUT）。——
         try {
             // Cmd：组装 Create 命令并调用领域写服务
-            String busNo = supplyRequestDomainService.createStockOut(
+            String busNo = supplyRequestPricedWriteOrchestrator.createStockOut(
                 stockOutMapper.toCreateStockOutCommand(request, operatorId, applicantId, null));
+            // Asm：返回 busNo
             return stockOutMapper.toCreateStockOutResponse(busNo);
         } catch (IllegalArgumentException ex) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "出库参数不合法：" + ex.getMessage());
@@ -379,6 +354,7 @@ public class InventoryWarehouseStockOutAppService {
     }
 
     /**
+     * 更新可编辑态出库单（全量明细覆盖）。
      *
      * @param request 修订请求；须含 {@code busNo}、非空明细及位置字段
      * @return 修订后单号（与请求同号）
@@ -387,7 +363,7 @@ public class InventoryWarehouseStockOutAppService {
      */
     public UpdateStockOutResponse updateStockOut(UpdateStockOutRequest request) {
         // Gate：busNo、明细与可编辑态校验
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "busNo 不能为空");
         }
         if (request.getLines() == null || request.getLines().isEmpty()) {
@@ -414,8 +390,9 @@ public class InventoryWarehouseStockOutAppService {
         this.assertStockOutTraceNosWithinWideLimit(request.getLines(), ErrorCodeConstants.WHS_SO_001);
         // —— 修订草稿同样须满足源库可用量校验（与新建同构）。——
         this.assertStockOutDraftLinesWithinSourceAvailableInventory(request.getSourceLocationId(), request.getLines());
-        if (StringUtils.isNotBlank(request.getOriginalBusNo())) {
-            this.validateOriginalPharmacyRequisitionForStockOut(request.getOriginalBusNo().trim(), request.getSourceLocationId());
+        if (StringUtils.isNotEmpty(request.getOriginalBusNo())) {
+            this.validateOriginalRequisitionForStockOut(
+                request.getOriginalBusNo().trim(), request.getSourceLocationId(), request.getBusNo().trim());
         }
         if (request.getPractitionerId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "经手人不能为空");
@@ -429,8 +406,9 @@ public class InventoryWarehouseStockOutAppService {
         // —— 领域 createStockOut 同号修订（子行全量对齐与软删语义由域层约束）。——
         try {
             // Cmd：组装 Create 命令并调用领域写服务
-            String busNo = supplyRequestDomainService.createStockOut(
+            String busNo = supplyRequestPricedWriteOrchestrator.createStockOut(
                 stockOutMapper.toCreateStockOutCommand(request, operatorId, applicantId));
+            // Asm：返回 busNo
             return stockOutMapper.toUpdateStockOutResponse(busNo);
         } catch (IllegalArgumentException ex) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "出库参数不合法：" + ex.getMessage());
@@ -439,13 +417,9 @@ public class InventoryWarehouseStockOutAppService {
 
     /**
      * 提交单据进入待审批态。
-
      *
-
      * @param request 含业务单号 busNo
-
      * @return 提交后的展示状态
-
      */
     public SubmitStockOutApprovalResponse submitStockOutApproval(SubmitStockOutApprovalRequest request) {
         // Gate：busNo 与制单人员档案
@@ -474,13 +448,9 @@ public class InventoryWarehouseStockOutAppService {
 
     /**
      * 撤回审批（回到可编辑草稿态）。
-
      *
-
      * @param request 含业务单号 busNo
-
      * @return 撤回后的展示状态
-
      */
     public WithdrawStockOutApprovalResponse withdrawStockOutApproval(WithdrawStockOutApprovalRequest request) {
         // Gate：busNo 与操作人
@@ -501,17 +471,24 @@ public class InventoryWarehouseStockOutAppService {
         return stockOutMapper.toWithdrawStockOutApprovalResponse(st);
     }
 
-    /** 同意：供应请求已同意 → 发放 → 源库扣减/目的库增加 → 追溯；含防重复同意与完成态发放门禁。 */
+    /**
+     * 药库出库单同意编排：领域落已同意态 → 出库发放 → 源库扣减/目的库增加 → 追溯 → 药房入库壳单 → 可选医保上报。
+     *
+     * @param request 含 busNo；须未重复同意
+     * @return 同意后 busNo、状态 code 及生成的药房入库壳单号
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_001} 参数非法；{@link ErrorCodeConstants#WHS_SO_103} 单据不存在；
+     *                            {@link ErrorCodeConstants#WHS_SO_104} 重复同意或库存/发放编排失败；{@link ErrorCodeConstants#WHS_SO_101} 未登录
+     */
     public AgreeStockOutResponse agreeStockOut(AgreeStockOutRequest request) {
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        // Gate：busNo 与操作人
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "busNo 不能为空");
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录");
 
-        // —— 同意出库单 ——
+        // Pre：同意前读校验——单据须存在、类型须为药库出库；读侧防重复同意（双保险，避免双扣账）
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
         q.setBusNo(request.getBusNo().trim());
-        // —— 加载同意前快照，校验类型并防重复同意（与 supplyRequestValidation 配合）。——
         List<SupplyRequestModel> beforeLines = supplyRequestQueryService.getSupplyByBusNo(q);
         if (beforeLines.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_103, "出库单不存在");
@@ -522,7 +499,7 @@ public class InventoryWarehouseStockOutAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_104, "出库单已同意，禁止重复同意");
         }
 
-        // —— 领域状态机同意出库；失败映射为业务码（含「已同意」类短路）。——
+        // Cmd：领域状态机同意出库单（save 先于事件，B.14）
         try {
             supplyRequestDomainService.agreeRequest(stockOutMapper.toAgreeRequestCommand(request, operatorId));
         } catch (BusinessException ex) {
@@ -531,7 +508,7 @@ public class InventoryWarehouseStockOutAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_105, "出库单已被并发修改，请刷新后重试", ex);
         }
 
-        // —— 强制读回：与进货同意链一致，保证后续发放/库存读到已落库的 AGREE 行。——
+        // Pre：强制读回 AGREE 行，保证发放/库存编排输入合法
         this.supplyRequestDomainService.flushPendingChanges();
 
         List<SupplyRequestModel> agreedLines = supplyRequestQueryService.getSupplyByBusNo(q);
@@ -565,7 +542,7 @@ public class InventoryWarehouseStockOutAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_104, "供应请求行已存在完成态发放，禁止重复同意出库");
         }
 
-        // —— 发放主数据落库（类型固定药库出库）。——
+        // Cmd：出库发放落库
         try {
             supplyDeliveryDomainService.createSupplyDelivery(
                 stockOutMapper.toCreateSupplyDeliveryCommandForStockOut(agreedLines, operatorId));
@@ -576,7 +553,7 @@ public class InventoryWarehouseStockOutAppService {
         // —— 批量产品读模型（拆零换算、展示名；单点异常记日志，缺键在后续换算处显式失败）。——
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         for (SupplyRequestModel line : agreedLines) {
-            if (line == null || line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+            if (line == null || line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
                 continue;
             }
             ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
@@ -587,7 +564,7 @@ public class InventoryWarehouseStockOutAppService {
         Map<String, ProductDefinitionDisplayDto> productByKey = new HashMap<>();
         if (!lookups.isEmpty()) {
             try {
-                productByKey = productDefinitionBatchLoader.loadAsMap(lookups);
+                productByKey = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
             } catch (RuntimeException ex) {
                 log.warn("batchGetProductByIds failed during stock out inventory assemble", ex);
             }
@@ -596,8 +573,15 @@ public class InventoryWarehouseStockOutAppService {
         // —— 内存编排：解析拆零量、源库存匹配键、合并扣减表、目的侧入账计划与追溯项（空白 trace 不入列）。——
         SupplyRequestModel head = agreedLines.get(0);
         String busNoTrim = request.getBusNo().trim();
-        String traceOperationType = TraceNumberRecordOperationType.supplyTypeCode(SupplyType.CABINET_STOCK_OUT);
-        List<AppendTraceRecordsCommand.AppendTraceRecordItemCommand> traceItems = new ArrayList<>();
+        RecordTraceTransferPairSpec transferPairCmd = new RecordTraceTransferPairSpec();
+        transferPairCmd.setOperatorId(operatorId);
+        transferPairCmd.setSupplyTypeCode(SupplyType.CABINET_STOCK_OUT.getCode());
+        transferPairCmd.setBusNo(busNoTrim);
+        transferPairCmd.setOutLocationId(head.getSourceLocationId());
+        transferPairCmd.setOutLocationTypeEnum(this.resolveSourceLocationTypeCode(head, head));
+        transferPairCmd.setInLocationId(head.getPurposeLocationId());
+        transferPairCmd.setInLocationTypeEnum(this.resolvePurposeLocationTypeCode(head, head));
+        List<RecordTraceTransferPairSpec.TransferLine> transferLines = new ArrayList<>();
         Map<Long, BigDecimal> decreaseMerged = new HashMap<>();
         List<StockOutDestIncr> destIncrs = new ArrayList<>();
         for (SupplyRequestModel line : agreedLines) {
@@ -611,7 +595,7 @@ public class InventoryWarehouseStockOutAppService {
             ProductDefinitionDisplayDto product = productByKey.get(key);
             BigDecimal splitQty = SupplyPersistedSplitQuantity.requireSupplyLineItemQuantityAsPersistedSplitUnit(
                 line, ErrorCodeConstants.WHS_SO_104, "供应请求行 item_quantity 须为拆零正数量");
-            if (product == null || StringUtils.isBlank(product.getSplitUnitCode())) {
+            if (product == null || StringUtils.isEmpty(product.getSplitUnitCode())) {
                 throw new BusinessException(ErrorCodeConstants.WHS_SO_104, "产品定义缺失或缺少拆零单位编码");
             }
             String splitUnitCode = product.getSplitUnitCode().trim();
@@ -647,39 +631,27 @@ public class InventoryWarehouseStockOutAppService {
             }
             destIncrs.add(op);
 
-            if (StringUtils.isNotBlank(line.getTraceNo())) {
-                String lt = this.resolveSourceLocationTypeCode(line, head);
-                for (String part : line.getTraceNo().split(GeneralSharedConstants.COMMA)) {
-                    String traceNo = part.trim();
-                    if (traceNo.isEmpty()) {
-                        continue;
-                    }
-                    AppendTraceRecordsCommand.AppendTraceRecordItemCommand it =
-                        new AppendTraceRecordsCommand.AppendTraceRecordItemCommand();
-                    it.setItemTable(line.getItemTable().trim());
-                    it.setItemId(line.getItemId());
-                    it.setLocationTypeEnum(lt);
-                    it.setLocationId(sourceLocationId);
-                    it.setLocationStoreId(null);
-                    it.setLotNumber(resolvedLot);
-                    it.setTraceNo(traceNo);
-                    it.setStatusEnum(TraceDirection.OUT.getCode());
-                    it.setUnitCode(splitUnitCode);
-                    it.setOperationType(traceOperationType);
-                    it.setBusNo(busNoTrim);
-                    traceItems.add(it);
-                }
+            if (StringUtils.isNotEmpty(line.getTraceNo())) {
+                transferLines.addAll(traceNumberSupplyAgreeTraceOrchestrator.buildTransferLinesFromTraceNoString(
+                    line.getTraceNo(),
+                    line.getItemTable().trim(),
+                    line.getItemId(),
+                    resolvedLot,
+                    splitQty,
+                    splitUnitCode,
+                    ProductDefinitionDisplaySupport.toUnitConversionSource(product)));
             }
         }
 
         // —— 源库按库存行 id 合并扣减（先扣后加，避免先加后扣窗口）。——
         try {
+            // Cmd：源库合并扣减
             inventoryItemDomainService.decreaseQuantitiesMerged(operatorId, decreaseMerged);
         } catch (BusinessException ex) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_104, "源库库存扣减失败：" + ex.getMessage());
         }
 
-        // —— 目的库逐行入账；命中既有行则加量，否则按四元组新建新库存项（与进货 Mapper 命令同构）。——
+        // Cmd：目的库逐行入账
         for (StockOutDestIncr op : destIncrs) {
             SupplyRequestModel line = op.line;
             InventoryMatchKey dstKey = new InventoryMatchKey();
@@ -725,85 +697,56 @@ public class InventoryWarehouseStockOutAppService {
             }
         }
 
-        // —— 对侧药房入库壳单须先于追溯落库，失败则整单回滚。——
+        // —— 对侧入库壳单须先于追溯落库，失败则整单回滚；壳单类型随目的库位形态（药房/科室药房）。——
         // 壳单制单人优先沿用出库头行已落库的申请人（医务人员主键）；历史脏数据缺省时回落当前会话医务人员，禁止用用户主键冒充。
         Long shellApplicantId = head.getApplicantId();
         if (shellApplicantId == null) {
             shellApplicantId = this.requireWarehousePreparerPractitionerId(
                 ErrorCodeConstants.WHS_SO_101,
                 "用户未登录",
-                "当前用户未绑定医务人员档案，无法生成药房入库壳单制单人");
+                "当前用户未绑定医务人员档案，无法生成入库壳单制单人");
         }
+        String shellInboundTypeCode = this.resolveShellInboundTypeForStockOutPurpose(head.getPurposeLocationId());
         String generatedInBusNo;
         try {
-            CreateRequisitionCommand shellCmd = stockOutMapper.toCreateRequisitionCommandForShellPharmacyStockIn(
-                agreedLines, busNoTrim, operatorId, shellApplicantId);
-            generatedInBusNo = supplyRequestDomainService.createRequisition(shellCmd);
+            // Cmd：同步生成对侧入库壳单（药房入库或科室入库）
+            CreateRequisitionCommand shellCmd = stockOutMapper.toCreateRequisitionCommandForShellInboundStockIn(
+                agreedLines, busNoTrim, operatorId, shellApplicantId, shellInboundTypeCode);
+            generatedInBusNo = supplyRequestPricedWriteOrchestrator.createRequisition(shellCmd);
         } catch (BusinessException ex) {
-            throw new BusinessException(ErrorCodeConstants.WHS_SO_104, "同步生成药房入库壳单失败：" + ex.getMessage());
+            throw new BusinessException(ErrorCodeConstants.WHS_SO_104, "同步生成入库壳单失败：" + ex.getMessage());
         }
 
-        // —— 壳单成功后写入追溯出库明细；空白 trace 已在组装阶段跳过。——
-        if (!traceItems.isEmpty()) {
+        transferPairCmd.setLines(transferLines);
+        if (transferLines != null && !transferLines.isEmpty()) {
             try {
-                AppendTraceRecordsCommand traceCmd = new AppendTraceRecordsCommand();
-                traceCmd.setOperatorId(operatorId);
-                traceCmd.setItems(traceItems);
-                traceNumberRecordDomainService.appendTraceRecords(traceCmd);
+                traceNumberSupplyAgreeTraceOrchestrator.recordTransferPair(transferPairCmd);
             } catch (BusinessException ex) {
                 throw new BusinessException(ErrorCodeConstants.WHS_SO_104, "追溯码出库记录失败：" + ex.getMessage());
             }
         }
-        tryUploadMedicareInventoryAfterTransferAgree(request, agreedLines);
+        // Asm：映射同意响应（含壳单号）
         return stockOutMapper.toAgreeStockOutResponse(
             busNoTrim, SupplyStatus.AGREE.getCode(), generatedInBusNo);
     }
 
-    private void tryUploadMedicareInventoryAfterTransferAgree(
-        AgreeStockOutRequest request,
-        List<SupplyRequestModel> agreedLines
-    ) {
-        List<Long> lineIds = new ArrayList<>();
-        for (SupplyRequestModel line : agreedLines) {
-            if (line != null && line.getId() != null) {
-                lineIds.add(line.getId());
-            }
-        }
-        if (lineIds.isEmpty()) {
-            return;
-        }
-        InventoryMedicareUploadSupport.uploadIfEnabled(inventoryUploadExtension, () -> {
-            InventoryUploadAfterTransferCommand command = new InventoryUploadAfterTransferCommand()
-                .setTransferBusNo(request.getBusNo())
-                .setSupplyRequestLineIds(lineIds)
-                .setSupplyTypeCode(SupplyType.CABINET_STOCK_OUT.getCode())
-                .setInvChgType(INV_CHG_TYPE_TRANSFER_OUT)
-                .setContractBusNo(request.getContractBusNo());
-            inventoryUploadExtension.uploadAfterTransferAgree(command);
-        });
-    }
-
     /**
      * 驳回单据并记录原因。
-
      *
-
      * @param request 含 busNo 与驳回原因
-
      * @return 是否驳回成功
-
      */
     public RejectStockOutResponse rejectStockOut(RejectStockOutRequest request) {
         // Gate：busNo、驳回原因与操作人
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "busNo 不能为空");
         }
-        if (StringUtils.isBlank(request.getChangeReason()) && StringUtils.isBlank(request.getChangeReasonCode())) {
+        if (StringUtils.isEmpty(request.getChangeReason()) && StringUtils.isEmpty(request.getChangeReasonCode())) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "驳回原因不能为空");
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_SO_101, "用户未登录");
-        // —— 领域驳回请求。——
         try {
+            // Cmd：领域驳回请求
             supplyRequestDomainService.rejectRequest(stockOutMapper.toRejectRequestCommand(request, operatorId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.WHS_SO_003);
@@ -814,13 +757,9 @@ public class InventoryWarehouseStockOutAppService {
 
     /**
      * 删除单据（仅允许草稿/可删态）。
-
      *
-
      * @param request 含业务单号 busNo
-
      * @return 是否删除成功
-
      */
     public RemoveStockOutResponse removeStockOut(RemoveStockOutRequest request) {
         // Gate：busNo 与操作人
@@ -840,40 +779,40 @@ public class InventoryWarehouseStockOutAppService {
     }
 
     /**
-     * 分页查询单据选品（库存目录可用量）。
-
+     * 分页查询出库选品（源库库存目录可用量）。
      *
-
-     * @param request 含库房、物品表与分页参数
-
+     * @param request 含源库房、物品表与分页参数
      * @return 选品行与分页元数据
-
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_001} 分页或门禁参数非法；
+     *                            {@link ErrorCodeConstants#WHS_SO_101} 机构上下文缺失；
+     *                            {@link ErrorCodeConstants#WHS_SO_102} 选品查询失败
      */
     public PageProductsForStockOutResponse pageProductsForStockOut(PageProductsForStockOutRequest request) {
+        // Gate：分页窗口、机构与库房门禁
         pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.WHS_SO_001, "分页参数不能为空");
         if (request.getSourceLocationId() == null) {
-            // Gate：分页窗口、机构与库房门禁
-            // Pre：组装库存目录分页查询
-            // Cmd：查询可用库存行
-            // Asm：映射选品分页并增强价格
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "sourceLocationId 不能为空");
         }
         this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_SO_101, "机构上下文缺失");
         Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForWarehouseGate();
         this.assertWarehouseLocationAllowed(request.getSourceLocationId(), allowed);
         this.assertProductTableNameWhitelistForStockOutSelection(request.getProductTableName());
+        // Pre：组装库存目录分页查询
         // —— 查询：源库库存分页（物品表白名单），再批量拼产品定义、批号维进价 LOT_NUMBER_COST 与目录槽。——
         InventoryItemPageQuery invQuery = new InventoryItemPageQuery();
         invQuery.setLocationId(request.getSourceLocationId());
         invQuery.setItemTable(request.getProductTableName().trim());
+        // —— 仅展示账面量大于零的批号行，与请领选品 / 库存明细「有库存」列表口径一致。——
+        invQuery.setPositiveQuantityOnly(true);
         PageQueryBinder.bind(request, invQuery);
         Pageable pageable = PageRequest.of(
             request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
         try {
+            // Cmd：查询可用库存行
             Page<InventoryItemModel> page = inventoryItemQueryService.queryInventoryItemsByPage(invQuery, pageable);
             List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
             for (InventoryItemModel inv : page.getContent()) {
-                if (inv == null || inv.getItemId() == null || StringUtils.isBlank(inv.getItemTable())) {
+                if (inv == null || inv.getItemId() == null || StringUtils.isEmpty(inv.getItemTable())) {
                     continue;
                 }
                 ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
@@ -884,39 +823,36 @@ public class InventoryWarehouseStockOutAppService {
             Map<String, ProductDefinitionDisplayDto> products = new HashMap<>();
             if (!lookups.isEmpty()) {
                 try {
-                    products = productDefinitionBatchLoader.loadAsMap(lookups);
+                    products = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
                 } catch (RuntimeException ex) {
                     log.warn("batchGetProductByIds failed for stock out selection", ex);
                 }
             }
             String itemTable = request.getProductTableName().trim();
-            List<Long> pageItemIds = new ArrayList<>();
+            LinkedHashSet<Long> pageItemIds = new LinkedHashSet<>();
             for (InventoryItemModel inv : page.getContent()) {
                 if (inv != null && inv.getItemId() != null) {
                     pageItemIds.add(inv.getItemId());
                 }
             }
-            // —— 选品展示可用量须与保存前可用量校验同口径（可用状态、未过期、未锁定），避免账面 quantity 误导。——
-            Map<Long, Map<String, BigDecimal>> availableQtyByItemIdAndNormLot = new HashMap<>();
+            // —— 选品为批号行级展开（inventoryItemId 锚点）：可用量按 wkf_inventory_item.id 回填，与 assert 行级键一致；禁止 itemId+批号聚合。——
+            Map<Long, BigDecimal> availableQtyByInventoryItemId = new HashMap<>();
             if (!pageItemIds.isEmpty()) {
                 List<InventoryCatalogAvailabilityRowModel> availRows =
                     this.inventoryItemQueryService.findAvailableCatalogRowsForOrder(
-                        itemTable, pageItemIds, List.of(request.getSourceLocationId()));
+                        itemTable, new ArrayList<>(pageItemIds), List.of(request.getSourceLocationId()));
                 for (InventoryCatalogAvailabilityRowModel ar : availRows) {
-                    if (ar == null || ar.getItemId() == null || ar.getQuantity() == null) {
+                    if (ar == null || ar.getId() == null || ar.getQuantity() == null) {
                         continue;
                     }
                     if (!Objects.equals(ar.getLocationId(), request.getSourceLocationId())) {
                         continue;
                     }
-                    String normLot = InventoryItemQueryService.normalizeLotNumberForAvailabilityMatch(ar.getLotNumber());
-                    availableQtyByItemIdAndNormLot
-                        .computeIfAbsent(ar.getItemId(), k -> new HashMap<>())
-                        .merge(normLot, ar.getQuantity(), BigDecimal::add);
+                    availableQtyByInventoryItemId.put(ar.getId(), ar.getQuantity());
                 }
             }
             ProductDefinitionSelectionTerminologyMaps terminologyMaps =
-                this.productDefinitionSelectionTerminologySupport.loadSelectionTerminologyMaps();
+                this.productDefinitionDisplayTerminologyAssembler.loadSelectionTerminologyMaps();
             List<ProductDefinitionItemDto> records = new ArrayList<>();
             for (InventoryItemModel inv : page.getContent()) {
                 if (inv == null) {
@@ -925,23 +861,20 @@ public class InventoryWarehouseStockOutAppService {
                 String key = ProductDefinitionKeyUtil.buildCompositeKey(inv.getItemTable(), inv.getItemId());
                 ProductDefinitionDisplayDto pr = products.get(key);
                 ProductDefinitionItemDto dto = stockOutMapper.toProductDefinitionItemDtoFromInventory(inv, pr);
-                if (inv.getItemId() != null) {
-                    // —— 可用量：与 assert 阶段同一归一化批号键聚合，避免分页 quantity 与可用口径不一致。——
-                    String normLot = InventoryItemQueryService.normalizeLotNumberForAvailabilityMatch(inv.getLotNumber());
-                    Map<String, BigDecimal> byLot = availableQtyByItemIdAndNormLot.get(inv.getItemId());
-                    BigDecimal avail = BigDecimal.ZERO;
-                    if (byLot != null) {
-                        BigDecimal v = byLot.get(normLot);
-                        if (v != null) {
-                            avail = v;
-                        }
+                if (inv.getId() != null) {
+                    // —— 可用量：与 assert 阶段同一 inventoryItemId 行级键，避免账面 quantity 与可用口径不一致。——
+                    BigDecimal avail = availableQtyByInventoryItemId.get(inv.getId());
+                    // 无可用量行时展示 0，避免 null 误导前端可出库
+                    if (avail == null) {
+                        avail = BigDecimal.ZERO;
                     }
                     dto.setAvailableQuantity(avail);
                 } else {
+                    // 缺库存行主键时不可回填可用量，统一展示 0
                     dto.setAvailableQuantity(BigDecimal.ZERO);
                 }
                 BigDecimal lotCostUnit = null;
-                if (StringUtils.isNotBlank(inv.getLotNumber())) {
+                if (StringUtils.isNotEmpty(inv.getLotNumber())) {
                     lotCostUnit = this.chargeItemDefinitionQueryService.resolveFirstLotNumberCostPriceValue(
                         inv.getItemTable(), inv.getItemId(), inv.getLotNumber().trim());
                 }
@@ -952,7 +885,7 @@ public class InventoryWarehouseStockOutAppService {
                     List<ProductDefinitionCatalogUnitBandDto> bands = hints.getUnitBands();
                     dto.setUnitBands(bands);
                     BigDecimal packageAnchor = lotCostUnit;
-                    if (packageAnchor == null && StringUtils.isNotBlank(inv.getItemTable()) && inv.getItemId() != null) {
+                    if (packageAnchor == null && StringUtils.isNotEmpty(inv.getItemTable()) && inv.getItemId() != null) {
                         packageAnchor = this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
                             inv.getItemTable().trim(), inv.getItemId());
                     }
@@ -961,6 +894,7 @@ public class InventoryWarehouseStockOutAppService {
                 }
                 records.add(dto);
             }
+            // Asm：映射选品分页并增强价格
             // —— B.10.11：行已映射为 DTO，分页元数据仍取自同一 Spring Page（禁止手写 getNumber()+1）。——
             return PagedResultBuilder.build(new PageProductsForStockOutResponse(), records, page);
         } catch (RuntimeException ex) {
@@ -970,43 +904,171 @@ public class InventoryWarehouseStockOutAppService {
     }
 
     /**
-     * 分页查询可关联来源单据（已同意态供引用）。
-
+     * 分页查询可关联来源单据（已同意药房/科室请领单，IF-WHS-SO-12）。
      *
-
-     * @param request 含来源位置与分页参数
-
-     * @return 可关联单据行
-
+     * <p>按 {@code bus_no} 聚合一行一单（对偶 {@code pageLinkablePurchaseOrders}）；
+     * {@code totalAmount} 为同号各行 {@code totalPrice} 之和；排除已被未删除出库单引用的请领。</p>
+     *
+     * @param request 含来源位置、可选请领类型与分页参数
+     * @return 可关联请领聚合行（一单一行）
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_001} 参数非法；
+     *                            {@link ErrorCodeConstants#WHS_SO_101} 机构上下文缺失；
+     *                            {@link ErrorCodeConstants#WHS_SO_102} 查询失败
      */
     public PageLinkableRequisitionsResponse pageLinkableRequisitions(PageLinkableRequisitionsRequest request) {
+        // Gate：来源位置与分页窗口
         if (request == null || request.getSourceLocationId() == null) {
-            // Gate：来源位置与分页窗口
-            // Pre：组装可关联来源单查询
-            // Cmd：分页查询已同意来源单
-            // Asm：映射分页响应
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "sourceLocationId 不能为空");
         }
         pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.WHS_SO_001, "分页参数不能为空");
         this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_SO_101, "机构上下文缺失");
         Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForWarehouseGate();
-        this.assertWarehouseLocationAllowed(request.getSourceLocationId(), allowed);
-        // —— 读模型：请领行锚定「目的药库 = 当前出库源药库」，由投影器维护与供应事件一致。——
-        WarehouseDocumentDetailPageQuery query = new WarehouseDocumentDetailPageQuery();
-        query.setTypeEnum(SupplyType.PHARMACY_REQUISITION.getCode());
-        query.setPurposeLocationId(request.getSourceLocationId());
-        PageQueryBinder.bind(request, query);
-        query.setApplyTimeStart(request.getStartDate());
-        query.setApplyTimeEnd(request.getEndDate());
+
+        // Pre：组装可关联请领查询（按 busNo 聚合，一行一单；勿用明细分页冒充选单）
+        SupplyRequestDocumentListQuery listQuery = new SupplyRequestDocumentListQuery();
+        if (StringUtils.isNotEmpty(request.getRequisitionTypeEnum())) {
+            SupplyType declared = EnumUtil.fromCode(SupplyType.class, request.getRequisitionTypeEnum().trim());
+            if (declared == null) {
+                throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "requisitionTypeEnum 非法");
+            }
+            // 仅允许药房/科室请领，其它 SupplyType 拒绝以免误关联
+            if (declared != SupplyType.PHARMACY_REQUISITION && declared != SupplyType.DEPT_REQUISITION) {
+                throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "requisitionTypeEnum 须为药房或科室请领类型");
+            }
+            listQuery.setTypeEnum(declared.getCode());
+        } else {
+            List<String> linkableTypes = new ArrayList<>();
+            linkableTypes.add(SupplyType.PHARMACY_REQUISITION.getCode());
+            linkableTypes.add(SupplyType.DEPT_REQUISITION.getCode());
+            listQuery.setTypeEnums(linkableTypes);
+        }
+        listQuery.setStatusEnum(SupplyStatus.AGREE.getCode());
+        // sourceLocationId=0 表示当前用户可见的全部药库；否则单库且须在管辖门控内
+        if (Long.valueOf(InventoryWarehouseConstants.ALL_WAREHOUSES_LIST_FILTER_LOCATION_ID)
+            .equals(request.getSourceLocationId())) {
+            if (allowed.isEmpty()) {
+                listQuery.setSourceLocationIds(
+                    List.of(InventoryWarehouseConstants.LIST_FILTER_NO_VISIBLE_WAREHOUSE_PLACEHOLDER_ID));
+            } else {
+                listQuery.setSourceLocationIds(new ArrayList<>(allowed));
+            }
+        } else {
+            this.assertWarehouseLocationAllowed(request.getSourceLocationId(), allowed);
+            listQuery.setSourceLocationId(request.getSourceLocationId());
+        }
+        PageQueryBinder.bind(request, listQuery);
         try {
-            Page<WarehouseDocumentDetailQueryModel> page = supplyRequestQueryService.pageWarehouseDocumentDetail(query);
-            return stockOutMapper.toPageLinkableRequisitionsResponse(page);
+            // Cmd：按 busNo 去重分页查询已同意请领单
+            long mergedTotal = this.supplyRequestQueryService.countDistinctBusNo(listQuery);
+            List<String> busNos = this.supplyRequestQueryService.listDistinctBusNoPage(listQuery);
+            List<SupplyRequestModel> lines = this.supplyRequestQueryService.listByBusNosWithFilter(listQuery, busNos);
+            List<WarehouseDocumentDetailRowDto> records =
+                this.stockOutMapper.toLinkableRequisitionRows(busNos, lines);
+            this.enrichLinkableRequisitionsDisplayNames(records);
+            int pageNo = request.getPageNo().intValue();
+            int pageSize = listQuery.getBoundedPageSize();
+            // Asm：映射可关联请领分页响应（一行一单）
+            PageLinkableRequisitionsResponse response =
+                this.stockOutMapper.toPageLinkableRequisitionsAggregatedResponse(
+                    mergedTotal, pageNo, pageSize, records);
+            // —— 排除已被未删除出库单引用的请领（BR-PHA-QL-011 / BR-DEP-QL-011，当前页内存过滤）。——
+            this.filterAlreadyReferencedRequisitionsFromLinkablePage(response);
+            return response;
         } catch (RuntimeException ex) {
             log.warn("pageLinkableRequisitions failed", ex);
             throw new BusinessException(ErrorCodeConstants.WHS_SO_102, "可关联请领单查询失败");
         }
     }
 
+    /**
+     * 按请领单号拉取出库草稿预填数据（IF-WHS-SO-13，对偶 IF-WHS-IN-13）。
+     *
+     * @param request 须含 {@code busNo}；可选 {@code sourceLocationId} 与请领来源药库一致；改单时可传 {@code excludeStockOutBusNo}
+     * @return 出库新建表单预填（含 {@code originalBusNo} 与明细行拷贝）
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_001} 参数非法；
+     *                            {@link ErrorCodeConstants#WHS_SO_002} 请领单不可引用
+     */
+    public GetLinkablePharmacyRequisitionDetailResponse getLinkablePharmacyRequisitionDetail(
+        GetLinkablePharmacyRequisitionDetailRequest request) {
+        // Gate：busNo 与机构/库房门禁
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
+            throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "busNo 不能为空");
+        }
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_SO_101, "机构上下文缺失");
+        Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForWarehouseGate();
+        String busNoTrim = request.getBusNo().trim();
+        String excludeStockOutBusNo = null;
+        if (StringUtils.isNotEmpty(request.getExcludeStockOutBusNo())) {
+            excludeStockOutBusNo = request.getExcludeStockOutBusNo().trim();
+        }
+        Long gateSourceLocationId = request.getSourceLocationId();
+        this.validateOriginalRequisitionForStockOut(busNoTrim, gateSourceLocationId, excludeStockOutBusNo);
+
+        SupplyByBusNoQuery q = new SupplyByBusNoQuery();
+        q.setBusNo(busNoTrim);
+        List<SupplyRequestModel> reqLines = supplyRequestQueryService.getSupplyByBusNo(q);
+        if (reqLines.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.WHS_SO_002, "来源请领单不存在");
+        }
+        SupplyRequestModel head = reqLines.get(0);
+        Long requisitionSourceLocationId = head.getSourceLocationId();
+        if (requisitionSourceLocationId == null) {
+            throw new BusinessException(ErrorCodeConstants.WHS_SO_002, "请领单缺少来源药库，无法生成出库预填");
+        }
+        this.assertWarehouseLocationAllowed(requisitionSourceLocationId, allowed);
+        if (gateSourceLocationId != null) {
+            if (!gateSourceLocationId.equals(requisitionSourceLocationId)) {
+                throw new BusinessException(ErrorCodeConstants.WHS_SO_002, "请领单来源药库与请求不一致");
+            }
+            this.assertWarehouseLocationAllowed(gateSourceLocationId, allowed);
+        }
+        // Pre：批量装载产品读模型与目录单位带，供出库预填网格展示
+        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
+        for (SupplyRequestModel line : reqLines) {
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
+                continue;
+            }
+            ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+            lookup.setProductDefinitionId(line.getItemId());
+            lookup.setProductTableName(line.getItemTable());
+            lookups.add(lookup);
+        }
+        Map<String, ProductDefinitionDisplayDto> products;
+        try {
+            products = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+        } catch (RuntimeException ex) {
+            log.warn("batchGetProductByIds degraded for linkable pharmacy requisition detail", ex);
+            products = new HashMap<>();
+        }
+        ProductDefinitionSelectionTerminologyMaps terminologyMaps =
+            this.productDefinitionDisplayTerminologyAssembler.loadSelectionTerminologyMaps();
+        Map<Long, ProductDefinitionCatalogEditorHintsDto> hints = new HashMap<>();
+        for (SupplyRequestModel line : reqLines) {
+            if (line == null || line.getId() == null) {
+                continue;
+            }
+            String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
+            ProductDefinitionDisplayDto pr = products.get(key);
+            ProductDefinitionCatalogEditorHintsDto hint =
+                ProductDefinitionCatalogEditorHintsAssembler.fromDisplayDto(pr, terminologyMaps);
+            if (hint != null) {
+                hints.put(line.getId(), hint);
+            }
+        }
+        GetLinkablePharmacyRequisitionDetailResponse res =
+            stockOutMapper.toGetLinkablePharmacyRequisitionDetailResponse(reqLines, hints);
+        this.enrichStockOutDetailProductDisplay(res.getLines(), products, terminologyMaps);
+        this.enrichStockOutDetailLines(res.getLines());
+        // Asm：映射出库预填响应（行价保留请领落库价）
+        return res;
+    }
+
+    /**
+     * 出库列表行 enrich：批量解析制单人/审批人姓名。
+     *
+     * @param rows         列表行
+     * @param detailLines  同页明细（用于收集 practitioner id）
+     */
     private void enrichStockOutListDisplayNames(List<StockOutListRowDto> rows, List<SupplyRequestModel> detailLines) {
         if (rows == null || rows.isEmpty()) {
             return;
@@ -1032,7 +1094,7 @@ public class InventoryWarehouseStockOutAppService {
                 continue;
             }
             Practitioner pr = this.practitionerQueryService.findById(pid);
-            if (pr != null && StringUtils.isNotBlank(pr.getName())) {
+            if (pr != null && StringUtils.isNotEmpty(pr.getName())) {
                 practitionerNameById.put(pid, pr.getName().trim());
             }
         }
@@ -1055,6 +1117,13 @@ public class InventoryWarehouseStockOutAppService {
         }
     }
 
+    /**
+     * 出库详情行 enrich：回填品名、规格、厂家与单位展示文案。
+     *
+     * @param lines             详情行
+     * @param products          产品复合键 → 展示 DTO
+     * @param terminologyMaps   术语映射（单位 label）
+     */
     private void enrichStockOutDetailProductDisplay(
         List<StockOutDetailLineDto> lines,
         Map<String, ProductDefinitionDisplayDto> products,
@@ -1071,7 +1140,7 @@ public class InventoryWarehouseStockOutAppService {
             unitLabelByCode = terminologyMaps.getUnitLabelByCode();
         }
         for (StockOutDetailLineDto dto : lines) {
-            if (dto == null || StringUtils.isBlank(dto.getItemTable()) || dto.getItemId() == null) {
+            if (dto == null || StringUtils.isEmpty(dto.getItemTable()) || dto.getItemId() == null) {
                 continue;
             }
             String key = ProductDefinitionKeyUtil.buildCompositeKey(
@@ -1087,12 +1156,17 @@ public class InventoryWarehouseStockOutAppService {
                 unitLabelByCode, dto.getUnitCode(), pr));
             ProductDefinitionCatalogEditorHintsDto catalog = dto.getProductCatalog();
             if (catalog != null && catalog.getUnitBands() != null && !catalog.getUnitBands().isEmpty()) {
-                this.productDefinitionSelectionTerminologySupport.applyInboundUnitBandDisplayNames(
+                this.productDefinitionDisplayTerminologyAssembler.applyInboundUnitBandDisplayNames(
                     catalog.getUnitBands(), pr, terminologyMaps);
             }
         }
     }
 
+    /**
+     * 出库列表行 enrich：批量回填目的药房/科室名称。
+     *
+     * @param rows 列表行
+     */
     private void enrichStockOutListPurposeLocationNames(List<StockOutListRowDto> rows) {
         if (rows == null || rows.isEmpty()) {
             return;
@@ -1111,7 +1185,7 @@ public class InventoryWarehouseStockOutAppService {
                 continue;
             }
             Location loc = locOpt.get();
-            if (StringUtils.isNotBlank(loc.getName())) {
+            if (StringUtils.isNotEmpty(loc.getName())) {
                 nameById.put(pid, loc.getName().trim());
             }
         }
@@ -1124,12 +1198,17 @@ public class InventoryWarehouseStockOutAppService {
         }
     }
 
+    /**
+     * 出库列表行 enrich：供应状态 code → 展示文案。
+     *
+     * @param rows 列表行
+     */
     private void enrichStockOutListStatusEnumText(List<StockOutListRowDto> rows) {
         if (rows == null || rows.isEmpty()) {
             return;
         }
         for (StockOutListRowDto row : rows) {
-            if (row == null || StringUtils.isBlank(row.getStatusEnum())) {
+            if (row == null || StringUtils.isEmpty(row.getStatusEnum())) {
                 continue;
             }
             // —— 列表行 statusEnum 为持久化 code：解析失败则展示文案留空。——
@@ -1140,6 +1219,11 @@ public class InventoryWarehouseStockOutAppService {
         }
     }
 
+    /**
+     * 出库详情行 enrich：历史单据槽价锚定供应行持久化价（BR-PRICE-SRC-001）。
+     *
+     * @param lines 详情行
+     */
     private void enrichStockOutDetailLines(List<StockOutDetailLineDto> lines) {
         if (lines == null || lines.isEmpty()) {
             return;
@@ -1159,22 +1243,37 @@ public class InventoryWarehouseStockOutAppService {
     }
 
     /**
-     * 新建/编辑入口位置门控：源须为岗位可见且启用中的药库，目的须为岗位可见且启用中的药房。
+     * 新建/编辑入口位置门控：源须为岗位可见且启用中的药库，目的须为岗位可见且启用中的药房或科室药房。
      *
      * @param sourceLocationId  源药库主键
-     * @param purposeLocationId 目的药房主键
+     * @param purposeLocationId 目的药房/科室药房主键
      * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_001} 位置越权或形态非法
      */
     private void assertStockOutLocationGate(Long sourceLocationId, Long purposeLocationId) {
         Set<Long> warehouses = this.resolveGatedWarehouseLocationIdsForWarehouseGate();
         this.assertWarehouseLocationAllowed(sourceLocationId, warehouses);
-        Set<Long> pharmacies = this.resolveGatedPharmacyLocationIdsForPharmacyGate();
-        this.assertPharmacyLocationAllowed(purposeLocationId, pharmacies);
+        Set<Long> pharmacyParty = this.resolveGatedPharmacyPartyLocationIdsForStockOutGate();
+        this.assertPharmacyPartyLocationAllowed(purposeLocationId, pharmacyParty);
     }
 
+    /**
+     * 解析当前用户门控下的启用中药库 id 集合（出库源库 Gate）。
+     *
+     * @return 药库位置主键集合，可能为空
+     */
     private Set<Long> resolveGatedWarehouseLocationIdsForWarehouseGate() {
         return this.managedLocationIdsResolver.gatedLocationIdsFromActive(
             this.locationQueryService.listAllActiveWarehouses());
+    }
+
+    /**
+     * 解析当前用户可见的启用中药房与科室药房 id 集合（出库目的门控）。
+     *
+     * @return 药房形态位置主键集合，可能为空
+     */
+    private Set<Long> resolveGatedPharmacyPartyLocationIdsForStockOutGate() {
+        return this.managedLocationIdsResolver.gatedLocationIdsFromActive(
+            this.locationQueryService.listAllActivePharmacies());
     }
 
     /**
@@ -1183,8 +1282,7 @@ public class InventoryWarehouseStockOutAppService {
      * @return 药房位置主键集合，可能为空
      */
     private Set<Long> resolveGatedPharmacyLocationIdsForPharmacyGate() {
-        return this.managedLocationIdsResolver.gatedLocationIdsFromActive(
-            this.locationQueryService.listAllActivePharmacies());
+        return this.resolveGatedPharmacyPartyLocationIdsForStockOutGate();
     }
 
     /**
@@ -1209,24 +1307,54 @@ public class InventoryWarehouseStockOutAppService {
     }
 
     /**
-     * 断言给定药房主键落在门控集合且为启用中药房形态。
+     * 断言给定药房/科室药房主键落在门控集合且为启用中形态。
      *
      * @param locationId 待校验库位
      * @param allowed    门控白名单
      * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_001} 越权或形态非法
      */
-    private void assertPharmacyLocationAllowed(Long locationId, Set<Long> allowed) {
+    private void assertPharmacyPartyLocationAllowed(Long locationId, Set<Long> allowed) {
         this.managedLocationIdsResolver.assertLocationInManagedGate(
-            locationId, allowed, ErrorCodeConstants.WHS_SO_001, "目的药房不在当前用户可选药房范围");
+            locationId, allowed, ErrorCodeConstants.WHS_SO_001, "目的药房/科室药房不在当前用户可选范围");
         if (locationId == null) {
-            throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "目的药房不在当前用户可选药房范围");
+            throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "目的药房/科室药房不在当前用户可选范围");
         }
         Optional<Location> locOpt = locationQueryService.findOptionalById(locationId);
-        if (locOpt.isEmpty()
-            || !LocationForm.PHARMACY.getCode().equals(locOpt.get().getFormEnum())
-            || !LocationStatus.ACTIVE.getCode().equals(locOpt.get().getStatusEnum())) {
-            throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "目的位置须为启用中的药房");
+        if (locOpt.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "目的药房/科室药房不存在");
         }
+        String formCode = locOpt.get().getFormEnum();
+        boolean pharmacyParty = LocationForm.PHARMACY.getCode().equals(formCode)
+            || LocationForm.DEPARTMENT_PHARMACY.getCode().equals(formCode);
+        if (!pharmacyParty
+            || !LocationStatus.ACTIVE.getCode().equals(locOpt.get().getStatusEnum())) {
+            throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "目的位置须为启用中的药房或科室药房");
+        }
+    }
+
+    /**
+     * 按出库目的库位形态解析同意后排程的对侧入库壳单类型。
+     *
+     * @param purposeLocationId 出库目的库位主键
+     * @return {@link SupplyType#PHARMACY_STOCK_IN} 或 {@link SupplyType#DEPT_STOCK_IN} 持久化码
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_104} 目的库位形态无法映射壳单类型
+     */
+    private String resolveShellInboundTypeForStockOutPurpose(Long purposeLocationId) {
+        if (purposeLocationId == null) {
+            throw new BusinessException(ErrorCodeConstants.WHS_SO_104, "出库单缺少目的库位，无法生成入库壳单");
+        }
+        Optional<Location> locOpt = locationQueryService.findOptionalById(purposeLocationId);
+        if (locOpt.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.WHS_SO_104, "出库目的库位不存在，无法生成入库壳单");
+        }
+        String formCode = locOpt.get().getFormEnum();
+        if (LocationForm.PHARMACY.getCode().equals(formCode)) {
+            return SupplyType.PHARMACY_STOCK_IN.getCode();
+        }
+        if (LocationForm.DEPARTMENT_PHARMACY.getCode().equals(formCode)) {
+            return SupplyType.DEPT_STOCK_IN.getCode();
+        }
+        throw new BusinessException(ErrorCodeConstants.WHS_SO_104, "出库目的库位形态不支持生成入库壳单");
     }
 
     /**
@@ -1270,7 +1398,7 @@ public class InventoryWarehouseStockOutAppService {
      * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_001} 空白
      */
     private void gateBusNo(String busNo) {
-        if (StringUtils.isBlank(busNo)) {
+        if (StringUtils.isEmpty(busNo)) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "busNo 不能为空");
         }
     }
@@ -1315,7 +1443,7 @@ public class InventoryWarehouseStockOutAppService {
      * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_001} 非法类型
      */
     private void validateOptionalStockOutTypeEnum(String typeEnumCode) {
-        if (StringUtils.isBlank(typeEnumCode)) {
+        if (StringUtils.isEmpty(typeEnumCode)) {
             return;
         }
         SupplyType declared = EnumUtil.fromCode(SupplyType.class, typeEnumCode.trim());
@@ -1328,37 +1456,167 @@ public class InventoryWarehouseStockOutAppService {
     }
 
     /**
-     * 校验 {@code originalBusNo} 对应的药房请领单存在、已同意，且至少一行目的药库与当前出库源药库一致。
+     * 校验 {@code originalBusNo} 对应的药房/科室请领单存在、已同意，且来源药库与当前出库源药库一致；并满足 BR-PHA-QL-011 / BR-DEP-QL-011。
      *
-     * @param originalBusNo    请领业务单号，须非空白
-     * @param sourceWarehouseId 当前出库源药库主键
+     * @param originalBusNo       请领业务单号，须非空白
+     * @param sourceWarehouseId   当前出库源药库主键，非空时须与请领 {@code source_location_id} 一致
+     * @param excludeStockOutBusNo 改单时排除本出库单号，避免自引用误判
      * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_002} 引用不合法
      */
-    private void validateOriginalPharmacyRequisitionForStockOut(String originalBusNo, Long sourceWarehouseId) {
+    private void validateOriginalRequisitionForStockOut(
+        String originalBusNo,
+        Long sourceWarehouseId,
+        String excludeStockOutBusNo) {
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
         q.setBusNo(originalBusNo);
         List<SupplyRequestModel> reqLines = supplyRequestQueryService.getSupplyByBusNo(q);
         if (reqLines.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_002, "来源请领单不存在");
         }
-        boolean matchedPurpose = false;
+        boolean matchedSource = false;
         for (SupplyRequestModel line : reqLines) {
             if (line == null) {
                 continue;
             }
-            if (!SupplyType.PHARMACY_REQUISITION.getCode().equals(line.getTypeEnum())) {
-                throw new BusinessException(ErrorCodeConstants.WHS_SO_002, "来源单据类型非药房请领单");
+            String typeCode = line.getTypeEnum();
+            boolean pharmacyRequisition = SupplyType.PHARMACY_REQUISITION.getCode().equals(typeCode);
+            boolean deptRequisition = SupplyType.DEPT_REQUISITION.getCode().equals(typeCode);
+            if (!pharmacyRequisition && !deptRequisition) {
+                throw new BusinessException(ErrorCodeConstants.WHS_SO_002, "来源单据类型非请领单");
             }
             if (!SupplyStatus.AGREE.getCode().equals(line.getStatusEnum())) {
                 throw new BusinessException(ErrorCodeConstants.WHS_SO_002, "来源请领单未同意，不可引用");
             }
-            if (Objects.equals(sourceWarehouseId, line.getPurposeLocationId())) {
-                matchedPurpose = true;
+            if (sourceWarehouseId != null && Objects.equals(sourceWarehouseId, line.getSourceLocationId())) {
+                matchedSource = true;
             }
         }
-        if (!matchedPurpose) {
+        if (sourceWarehouseId != null && !matchedSource) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_002, "来源请领单与当前源药库不匹配");
         }
+        if (this.isRequisitionReferencedByUndeletedStockOut(originalBusNo, excludeStockOutBusNo)) {
+            throw new BusinessException(ErrorCodeConstants.WHS_SO_002, "该请领单已被其他出库单引用");
+        }
+    }
+
+    /**
+     * 可关联请领选单 enrich：批量解析制单人姓名与目的库位展示名。
+     *
+     * @param rows 当前页聚合行（一行一单）
+     */
+    private void enrichLinkableRequisitionsDisplayNames(List<WarehouseDocumentDetailRowDto> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        Set<Long> applicantIds = new HashSet<>();
+        Set<Long> purposeLocationIds = new HashSet<>();
+        for (WarehouseDocumentDetailRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getApplicantId() != null) {
+                applicantIds.add(row.getApplicantId());
+            }
+            if (row.getPurposeLocationId() != null) {
+                purposeLocationIds.add(row.getPurposeLocationId());
+            }
+        }
+        Map<Long, String> practitionerNameById = new HashMap<>();
+        for (Long applicantId : applicantIds) {
+            if (applicantId == null) {
+                continue;
+            }
+            Practitioner pr = this.practitionerQueryService.findById(applicantId);
+            if (pr != null && StringUtils.isNotEmpty(pr.getName())) {
+                practitionerNameById.put(applicantId, pr.getName().trim());
+            }
+        }
+        Map<Long, String> locationNameById = new HashMap<>();
+        for (Long locationId : purposeLocationIds) {
+            if (locationId == null) {
+                continue;
+            }
+            Optional<Location> locOpt = this.locationQueryService.findOptionalById(locationId);
+            if (locOpt.isEmpty()) {
+                continue;
+            }
+            Location loc = locOpt.get();
+            if (StringUtils.isNotEmpty(loc.getName())) {
+                locationNameById.put(locationId, loc.getName().trim());
+            }
+        }
+        for (WarehouseDocumentDetailRowDto row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (row.getApplicantId() != null) {
+                String name = practitionerNameById.get(row.getApplicantId());
+                if (name != null) {
+                    row.setCreatorName(name);
+                }
+            }
+            if (row.getPurposeLocationId() != null) {
+                row.setPurposeLocationName(locationNameById.get(row.getPurposeLocationId()));
+            }
+        }
+    }
+
+    /**
+     * 可关联请领列表：剔除已被未删除药库出库单引用的请领单号（BR-PHA-QL-011 / BR-DEP-QL-011，当前页内存过滤）。
+     *
+     * <p>输入已为按 {@code bus_no} 聚合的一行一单；本方法仅做占用剔除，不再承担去重。</p>
+     *
+     * @param response 分页响应，就地改写 {@code content}
+     */
+    private void filterAlreadyReferencedRequisitionsFromLinkablePage(PageLinkableRequisitionsResponse response) {
+        if (response == null || response.getContent() == null || response.getContent().isEmpty()) {
+            return;
+        }
+        List<WarehouseDocumentDetailRowDto> kept = new ArrayList<>();
+        for (WarehouseDocumentDetailRowDto row : response.getContent()) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
+                continue;
+            }
+            String busNo = row.getBusNo().trim();
+            // 已被未删除出库单占用的请领不出现在选单
+            if (this.isRequisitionReferencedByUndeletedStockOut(busNo, null)) {
+                continue;
+            }
+            kept.add(row);
+        }
+        response.setContent(kept);
+    }
+
+    /**
+     * 判断请领单是否已被未删除的 {@link SupplyType#CABINET_STOCK_OUT} 以 {@code original_bus_no} 引用。
+     *
+     * @param requisitionBusNo     请领业务单号
+     * @param excludeStockOutBusNo 改单时排除的本出库单号，可 blank
+     * @return 已被其它出库单引用时 {@code true}
+     */
+    private boolean isRequisitionReferencedByUndeletedStockOut(
+        String requisitionBusNo,
+        String excludeStockOutBusNo) {
+        if (StringUtils.isEmpty(requisitionBusNo)) {
+            return false;
+        }
+        SupplyByOriginalBusNoQuery q = new SupplyByOriginalBusNoQuery();
+        q.setOriginalBusNo(requisitionBusNo.trim());
+        List<SupplyRequestModel> downstream = supplyRequestQueryService.getSupplyByOriginalBusNo(q);
+        for (SupplyRequestModel line : downstream) {
+            if (line == null) {
+                continue;
+            }
+            if (!SupplyType.CABINET_STOCK_OUT.getCode().equals(line.getTypeEnum())) {
+                continue;
+            }
+            if (StringUtils.isNotEmpty(excludeStockOutBusNo)
+                && excludeStockOutBusNo.trim().equals(line.getBusNo())) {
+                continue;
+            }
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -1391,10 +1649,10 @@ public class InventoryWarehouseStockOutAppService {
             if (line.getInventoryItemId() == null) {
                 continue;
             }
-            if (line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
                 throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "出库明细须包含有效物品表与主键");
             }
-            if (StringUtils.isBlank(line.getUnitCode())) {
+            if (StringUtils.isEmpty(line.getUnitCode())) {
                 throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "出库明细单位不能为空");
             }
             String table = line.getItemTable().trim();
@@ -1471,10 +1729,10 @@ public class InventoryWarehouseStockOutAppService {
             if (line.getInventoryItemId() != null) {
                 continue;
             }
-            if (line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
                 throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "出库明细须包含有效物品表与主键");
             }
-            if (StringUtils.isBlank(line.getUnitCode())) {
+            if (StringUtils.isEmpty(line.getUnitCode())) {
                 throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "出库明细单位不能为空");
             }
             String table = line.getItemTable().trim();
@@ -1570,7 +1828,7 @@ public class InventoryWarehouseStockOutAppService {
             return null;
         }
         String statusCode = lines.get(0).getStatusEnum();
-        if (StringUtils.isBlank(statusCode)) {
+        if (StringUtils.isEmpty(statusCode)) {
             return null;
         }
         return EnumUtil.fromCode(SupplyStatus.class, statusCode.trim());
@@ -1589,7 +1847,7 @@ public class InventoryWarehouseStockOutAppService {
         }
         int maxLen = GeneralSharedConstants.TRACE_NO_WIDE_MAX_LENGTH;
         for (StockOutLineDto line : lines) {
-            if (line == null || StringUtils.isBlank(line.getTraceNo())) {
+            if (line == null || StringUtils.isEmpty(line.getTraceNo())) {
                 continue;
             }
             String raw = line.getTraceNo();
@@ -1615,7 +1873,7 @@ public class InventoryWarehouseStockOutAppService {
      * @return trim 后字符串；空白则为空串
      */
     private String resolveLotNumberForStockOutInventory(String lotNumber) {
-        if (StringUtils.isBlank(lotNumber)) {
+        if (StringUtils.isEmpty(lotNumber)) {
             return GeneralSharedConstants.EMPTY_STRING;
         }
         return lotNumber.trim();
@@ -1630,12 +1888,12 @@ public class InventoryWarehouseStockOutAppService {
      * @throws BusinessException {@link ErrorCodeConstants#WHS_SO_104} 产品定义缺失
      */
     private String resolveProductName(SupplyRequestModel line, Map<String, ProductDefinitionDisplayDto> productByKey) {
-        if (line == null || StringUtils.isBlank(line.getItemTable()) || line.getItemId() == null) {
+        if (line == null || StringUtils.isEmpty(line.getItemTable()) || line.getItemId() == null) {
             return GeneralSharedConstants.EMPTY_STRING;
         }
         String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
         ProductDefinitionDisplayDto pr = productByKey.get(key);
-        if (pr == null || StringUtils.isBlank(pr.getProductName())) {
+        if (pr == null || StringUtils.isEmpty(pr.getProductName())) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_104, "产品定义缺失，无法解析展示名称");
         }
         return pr.getProductName().trim();
@@ -1649,17 +1907,49 @@ public class InventoryWarehouseStockOutAppService {
      * @return 位置类型 code，永不为 null
      */
     private String resolveSourceLocationTypeCode(SupplyRequestModel line, SupplyRequestModel head) {
-        if (line != null && StringUtils.isNotBlank(line.getSourceTypeEnum())) {
+        if (line != null && StringUtils.isNotEmpty(line.getSourceTypeEnum())) {
             return line.getSourceTypeEnum().trim();
         }
-        if (head != null && StringUtils.isNotBlank(head.getSourceTypeEnum())) {
+        if (head != null && StringUtils.isNotEmpty(head.getSourceTypeEnum())) {
             return head.getSourceTypeEnum().trim();
         }
         return SupplyRequestType.CABINET.getCode();
     }
 
+    /**
+     * 解析目的库位供应请求类型 code（行/头回落，再按库位查类型，默认药房）。
+     *
+     * @param line 明细行，可 null
+     * @param head 同号头行，可 null
+     * @return 位置类型 code，永不为 null
+     */
+    private String resolvePurposeLocationTypeCode(SupplyRequestModel line, SupplyRequestModel head) {
+        if (line != null && StringUtils.isNotEmpty(line.getPurposeTypeEnum())) {
+            return line.getPurposeTypeEnum().trim();
+        }
+        if (head != null && StringUtils.isNotEmpty(head.getPurposeTypeEnum())) {
+            return head.getPurposeTypeEnum().trim();
+        }
+        Long purposeLocationId = null;
+        if (line != null && line.getPurposeLocationId() != null) {
+            purposeLocationId = line.getPurposeLocationId();
+        } else if (head != null && head.getPurposeLocationId() != null) {
+            purposeLocationId = head.getPurposeLocationId();
+        }
+        if (purposeLocationId != null) {
+            return this.locationQueryService.requireSupplyRequestTypeForLocationId(purposeLocationId).getCode();
+        }
+        return SupplyRequestType.PHARMACY.getCode();
+    }
+
+    /**
+     * 出库选品物品表白名单 Gate：仅药品定义与耗材定义。
+     *
+     * @param raw 请求体 productTableName
+     * @throws BusinessException 为空或不在白名单时
+     */
     private void assertProductTableNameWhitelistForStockOutSelection(String raw) {
-        if (StringUtils.isBlank(raw)) {
+        if (StringUtils.isEmpty(raw)) {
             throw new BusinessException(ErrorCodeConstants.WHS_SO_001, "productTableName 不能为空");
         }
         String table = raw.trim();

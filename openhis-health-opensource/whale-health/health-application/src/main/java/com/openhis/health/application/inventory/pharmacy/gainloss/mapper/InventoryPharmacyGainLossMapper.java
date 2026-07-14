@@ -1,23 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.pharmacy.gainloss.mapper;
 
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
 import com.openhis.health.application.inventory.pharmacy.gainloss.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.pharmacy.gainloss.dto.PharmacyGainLossDetailLineDto;
 import com.openhis.health.application.inventory.pharmacy.gainloss.dto.PharmacyGainLossListRowDto;
@@ -25,7 +12,7 @@ import com.openhis.health.application.inventory.pharmacy.gainloss.request.*;
 import com.openhis.health.application.inventory.pharmacy.gainloss.response.*;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.workflow.inventoryitem.command.DecreaseQuantityCommand;
 import com.openhis.health.domain.workflow.inventoryitem.command.IncreaseQuantityCommand;
@@ -85,7 +72,7 @@ public interface InventoryPharmacyGainLossMapper {
     /**
      * 装配药房损溢页初始化响应。
      *
-     * @param pharmacyOpts  药库选项
+     * @param pharmacyOpts  药房选项
      * @param inboundTypes   入库项目类型选项
      * @param statusOpts     状态选项
      * @param pharmacistOpts 药师选项
@@ -163,6 +150,27 @@ public interface InventoryPharmacyGainLossMapper {
     CreatePharmacyGainLossResponse toCreatePharmacyGainLossResponse(String busNo);
 
     /**
+     * 将修订药房损益请求装配为领域 CreateGainLossCommand（同号全量对齐）。
+     *
+     * @param request     修订请求
+     * @param operatorId  操作人
+     * @param applicantId 制单人员
+     * @return 领域写命令
+     */
+    CreateGainLossCommand toCreateGainLossCommand(
+        UpdatePharmacyGainLossRequest request,
+        Long operatorId,
+        Long applicantId);
+
+    /**
+     * 装配修订药房损益成功响应。
+     *
+     * @param busNo 业务单号
+     * @return 修订响应
+     */
+    UpdatePharmacyGainLossResponse toUpdatePharmacyGainLossResponse(String busNo);
+
+    /**
      * 将提交审批请求装配为领域 SubmitApprovalCommand。
      *
      * @param request     提交请求
@@ -216,7 +224,7 @@ public interface InventoryPharmacyGainLossMapper {
     CreateSupplyDeliveryCommand toCreateSupplyDeliveryCommand(List<SupplyRequestModel> lines, Long operatorId);
 
     /**
-     * 装配盘盈增库存命令。
+     * 装配报溢增库存命令。
      *
      * @param inventoryItemId 库存项主键
      * @param increaseQty     增加数量
@@ -226,7 +234,7 @@ public interface InventoryPharmacyGainLossMapper {
     IncreaseQuantityCommand toIncreaseQuantityCommand(Long inventoryItemId, BigDecimal increaseQty, Long operatorId);
 
     /**
-     * 装配盘亏减库存命令。
+     * 装配报损减库存命令。
      *
      * @param inventoryItemId 库存项主键
      * @param decreaseQty     减少数量

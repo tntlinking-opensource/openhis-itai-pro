@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.diagnosis.vitalsign.service;
 
 import com.openhis.health.domain.diagnosis.vitalsign.command.DeleteVitalSignByIdCommand;
@@ -39,7 +26,7 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -53,7 +40,11 @@ import java.util.Set;
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 /**
- * 生命体征写侧领域服务（DM-DIA-002 v2.1 §6.1）。
+ * 生命体征（{@code dia_vital_sign} + 明细子表）聚合写侧领域服务（DM-DIA-002 v2.1 §6.1）。
+ *
+ * <p>职责：主表 upsert、明细覆盖写、软删及 bus_no 唯一校验。</p>
+ * <p>不变量：患者/就诊绑定（BR-VS-001）；字典项须启用（BR-VS-003）；持久化先于 {@link VitalSignSavedEvent}。</p>
+ * <p>跨聚合读术语字典经 {@link CodeSystemQueryService}（B.6.4）。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -76,7 +67,7 @@ public class VitalSignDomainService {
         if (cmd == null || cmd.getEncounterId() == null || cmd.getPatientId() == null || cmd.getRecordedAt() == null) {
             throw new BusinessException(ErrorCodeConstants.VITAL_SIGN_INVALID_ARGUMENT, "就诊、患者与记录时点不能为空");
         }
-        if (StringUtils.isBlank(cmd.getTypeEnum())) {
+        if (StringUtils.isEmpty(cmd.getTypeEnum())) {
             throw new BusinessException(ErrorCodeConstants.VITAL_SIGN_INVALID_ARGUMENT, "单据类型不能为空");
         }
         VitalSign.assertPatientEncounterBound(cmd.getPatientId(), cmd.getEncounterId());
@@ -297,7 +288,7 @@ public class VitalSignDomainService {
     private void assertActiveDetailCodes(List<SaveVitalSignDetailItemCommand> items) {
         Map<String, Set<String>> activeCodesBySystem = new HashMap<>();
         for (SaveVitalSignDetailItemCommand item : items) {
-            if (item == null || StringUtils.isBlank(item.getItemCode())) {
+            if (item == null || StringUtils.isEmpty(item.getItemCode())) {
                 throw new BusinessException(ErrorCodeConstants.VITAL_SIGN_INVALID_ARGUMENT, "字典项编码不能为空");
             }
             String termCode = VitalSignDetailSupport.normalizeTermCode(item.getTermCode());
@@ -317,6 +308,7 @@ public class VitalSignDomainService {
      * @return 启用 code 集合
      */
     private Set<String> loadActiveCodesForTerm(String termCode) {
+        // 加载候选：经 CodeSystemQueryService 取启用字典项（B.6.4）
         List<OptionDto> options = codeSystemQueryService.getOptionListByCodeSystemName(termCode);
         Set<String> activeCodes = new HashSet<>();
         for (OptionDto option : options) {
@@ -348,10 +340,11 @@ public class VitalSignDomainService {
      * @return code → 默认单位
      */
     private Map<String, String> loadDefaultUnitsByCode(String termCode) {
+        // 加载候选：经 CodeSystemQueryService 取概念默认单位（B.6.4）
         List<Concept> concepts = codeSystemQueryService.findConceptsByCodeSystemName(termCode);
         Map<String, String> result = new HashMap<>();
         for (Concept concept : concepts) {
-            if (concept.getCode() != null && StringUtils.isNotBlank(concept.getDefinition())) {
+            if (concept.getCode() != null && StringUtils.isNotEmpty(concept.getDefinition())) {
                 result.put(concept.getCode(), concept.getDefinition());
             }
         }
@@ -368,7 +361,7 @@ public class VitalSignDomainService {
     private static String resolveUnits(
         SaveVitalSignDetailItemCommand item,
         Map<String, String> defaultUnitsByCode) {
-        if (StringUtils.isNotBlank(item.getUnits())) {
+        if (StringUtils.isNotEmpty(item.getUnits())) {
             return item.getUnits();
         }
         return defaultUnitsByCode.get(item.getItemCode());

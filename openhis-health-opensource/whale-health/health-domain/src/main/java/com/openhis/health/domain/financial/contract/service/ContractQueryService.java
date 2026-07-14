@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.financial.contract.service;
 
 
@@ -29,7 +16,7 @@ import org.springframework.data.domain.Sort;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -44,6 +31,7 @@ import java.util.Optional;
  * 费用性质（合同/结算口径）主数据读侧查询服务。
  *
  * <p>职责：为收费、医保与报表提供费用性质详情与列表；只读不写库。</p>
+ * <p>聚合边界：仅本聚合 {@link ContractRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -53,9 +41,12 @@ public class ContractQueryService {
 
     /**
      * 按业务号加载费用性质实体（bridge/编排读路径）；不存在或已软删时 empty。
+     *
+     * @param busNo 费用性质业务号
+     * @return 费用性质实体；无效入参或不存在时 empty
      */
     public Optional<Contract> findOptionalContractEntityByBusNo(String busNo) {
-        if (StringUtils.isBlank(busNo)) {
+        if (StringUtils.isEmpty(busNo)) {
             return Optional.empty();
         }
         return contractRepository.findByBusNo(busNo.trim())
@@ -64,6 +55,9 @@ public class ContractQueryService {
 
     /**
      * 按主键加载费用性质实体（bridge/编排读路径）；不存在或已软删时 empty。
+     *
+     * @param id 费用性质主键
+     * @return 费用性质实体；主键为空或不存在时 empty
      */
     public Optional<Contract> findOptionalContractEntityById(Long id) {
         if (id == null) {
@@ -75,6 +69,9 @@ public class ContractQueryService {
 
     /**
      * 按主键取费用性质详情；不存在返回 null，由调用方决定是否报错。
+     *
+     * @param id 费用性质主键
+     * @return 详情读模型；不存在时 {@code null}
      */
     public ContractDetailQueryModel findContractById(Long id) {
         Contract contract = contractRepository.findById(id).orElse(null);
@@ -180,7 +177,7 @@ public class ContractQueryService {
         LinkedHashSet<String> unique = new LinkedHashSet<>();
         // Loop：遍历入参集合，提取有效业务号
         for (String busNo : busNos) {
-            if (StringUtils.isNotBlank(busNo)) {
+            if (StringUtils.isNotEmpty(busNo)) {
                 unique.add(busNo.trim());
             }
         }
@@ -211,7 +208,7 @@ public class ContractQueryService {
         }
         LinkedHashSet<String> unique = new LinkedHashSet<>();
         for (String busNo : busNos) {
-            if (StringUtils.isNotBlank(busNo)) {
+            if (StringUtils.isNotEmpty(busNo)) {
                 unique.add(busNo.trim());
             }
         }
@@ -241,7 +238,7 @@ public class ContractQueryService {
         }
         LinkedHashSet<String> unique = new LinkedHashSet<>();
         for (String busNo : busNos) {
-            if (StringUtils.isNotBlank(busNo)) {
+            if (StringUtils.isNotEmpty(busNo)) {
                 unique.add(busNo.trim());
             }
         }

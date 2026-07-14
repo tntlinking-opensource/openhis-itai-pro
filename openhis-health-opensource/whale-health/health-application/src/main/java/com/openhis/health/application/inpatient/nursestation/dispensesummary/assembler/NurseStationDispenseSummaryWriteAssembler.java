@@ -1,37 +1,23 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler;
 
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionDisplaySupport;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.domain.share.enums.SupplyCategory;
 import com.openhis.health.domain.workflow.inventoryitem.support.MedicationProductQuantityToSplitUnitConverter;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -138,7 +124,7 @@ public class NurseStationDispenseSummaryWriteAssembler {
                 InpatientNurseStationConstants.EX_IP_SUM_202,
                 "药品单位槽不完整，或发放行单位无法换算为拆零数量，请联系管理员");
         }
-        if (StringUtils.isBlank(product.getSplitUnitCode())) {
+        if (StringUtils.isEmpty(product.getSplitUnitCode())) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_SUM_202,
                 "药品单位槽不完整，或发放行单位无法换算为拆零数量，请联系管理员");

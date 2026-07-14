@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.mrms.borrowrequest.entity;
 
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -196,12 +196,23 @@ public class BorrowRequest extends BaseAuditedEntity {
         touch(operatorId);
     }
 
+    /**
+     * 借阅状态 Gate：当前 statusCode 须等于期望状态。
+     *
+     * @param expected 允许的状态
+     * @throws BusinessException {@link MrmsErrorCodes#BORROW_INVALID_STATUS}
+     */
     private void assertStatus(BorrowRequestStatus expected) {
         if (!expected.getCode().equals(statusCode)) {
             throw new BusinessException(MrmsErrorCodes.BORROW_INVALID_STATUS, "借阅申请状态不允许当前操作");
         }
     }
 
+    /**
+     * 更新审计字段：updatedAt=now、updatedBy=operatorId。
+     *
+     * @param operatorId 操作人
+     */
     private void touch(Long operatorId) {
         this.setUpdatedAt(LocalDateTime.now());
         this.setUpdatedBy(operatorId);

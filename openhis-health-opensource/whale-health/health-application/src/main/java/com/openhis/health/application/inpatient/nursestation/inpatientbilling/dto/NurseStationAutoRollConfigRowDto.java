@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -33,7 +20,7 @@ import java.math.BigDecimal;
 @Schema(description = "自动计费配置行")
 public class NurseStationAutoRollConfigRowDto {
 
-    /** 规则主键（表 id）。 */
+    /** 规则主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "规则主键")
     private Long ruleId;
@@ -42,7 +29,7 @@ public class NurseStationAutoRollConfigRowDto {
     @Schema(description = "规则名称")
     private String ruleName;
 
-    /** 状态持久化码（ACTIVE/INACTIVE）。 */
+    /** 状态码。 */
     @Schema(description = "状态码")
     private String statusEnum;
 
@@ -55,33 +42,37 @@ public class NurseStationAutoRollConfigRowDto {
     @Schema(description = "住院就诊主键")
     private Long encounterId;
 
-    /** 触发来源表名。 */
+    /** 触发来源表。 */
     @Schema(description = "触发来源表")
     private String triggerSourceTable;
 
-    /** 床位服务 activityId。 */
+    /** 床位服务活动定义主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "床位服务活动定义主键")
     private Long triggerSourceId;
 
-    /** 床位服务展示名。 */
+    /** 床位服务名称。 */
     @Schema(description = "床位服务名称")
     private String activityName;
 
-    /** 目标收费项定价主键。 */
+    /** 收费项定价主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "收费项定价主键")
     private Long chargeDefinitionId;
 
-    /** 定价展示名。 */
+    /** 定价名称。 */
     @Schema(description = "定价名称")
     private String chargeDefinitionName;
+
+    /** 解析单价（展示参考；滚费落账以写路径重算为准）。 */
+    @Schema(description = "解析单价")
+    private BigDecimal unitPrice;
 
     /** 生成数量。 */
     @Schema(description = "生成数量")
     private BigDecimal quantityValue;
 
-    /** 执行科室；空=全院。 */
+    /** 执行科室主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "执行科室主键")
     private Long performingOrgId;

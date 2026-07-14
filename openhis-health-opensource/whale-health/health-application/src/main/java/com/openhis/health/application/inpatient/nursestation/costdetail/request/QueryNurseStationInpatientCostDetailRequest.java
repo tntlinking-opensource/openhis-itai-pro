@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.costdetail.request;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -33,9 +20,8 @@ import java.time.LocalDate;
  */
 @Data
 @Accessors(chain = true)
-/** 住院护士站费用明细查询请求。 */
 @Schema(description = "住院护士站费用明细查询请求", requiredProperties = {
-    "encounterId", "patientId", "dateFrom", "dateTo", "presentationMode"
+    "encounterId", "patientId", "dateFrom", "dateTo", "presentationMode", "statusEnum"
 })
 public class QueryNurseStationInpatientCostDetailRequest {
 
@@ -72,4 +58,10 @@ public class QueryNurseStationInpatientCostDetailRequest {
     /** 展示模式：DETAIL 或 SUMMARY。 */
     @Schema(description = "展示模式：DETAIL 或 SUMMARY", requiredMode = Schema.RequiredMode.REQUIRED)
     private String presentationMode;
+
+    /** 费用状态筛选：PENDING_SETTLEMENT 待结算 / SETTLED 已结算（默认待结算）。 */
+    @NotNull(message = "费用状态筛选不能为空")
+    /** 费用状态筛选 code。 */
+    @Schema(description = "费用状态筛选：PENDING_SETTLEMENT 或 SETTLED", requiredMode = Schema.RequiredMode.REQUIRED)
+    private String statusEnum;
 }

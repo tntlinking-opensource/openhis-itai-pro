@@ -1,33 +1,22 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.servicecatalog.service;
 
-import com.openhis.health.module.common.assembler.pricing.ChargePricingCommandAssembler;
+import com.openhis.health.application.shared.pricing.ChargePricingCommandAssembler;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.RemovePricingByInstanceCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.SaveAllChargeItemDefinitionsCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.query.ChargeItemDefinitionQueryCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionDomainService;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
+import com.openhis.health.domain.share.constants.CatalogEditabilityConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.PriceType;
+import com.openhis.health.application.basic.catalog.support.CatalogEditWriteGate;
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogChildDto;
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogDetailDto;
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogDto;
@@ -50,8 +39,12 @@ import com.openhis.health.domain.workflow.activitydefinition.command.DeleteActiv
 import com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionBaseQueryModel;
 import com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionChildQueryModel;
 import com.openhis.health.domain.workflow.activitydefinition.queries.model.ActivityDefinitionDetailQueryModel;
+import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionDomainService;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.basic.catalog.support.CatalogEditabilityQueryModel;
+import com.openhis.health.application.basic.catalog.support.CatalogEditabilityResolver;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.ValidationException;
@@ -98,6 +91,10 @@ public class ServiceCatalogAppService {
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     /** 收费定价行写侧：新建/编辑后按实例维度删旧建新。 */
     private final ChargeItemDefinitionDomainService chargeItemDefinitionDomainService;
+    /** 目录编辑业务码读侧编排。 */
+    private final CatalogEditabilityResolver catalogEditabilityResolver;
+    /** 目录写侧 immutable 字段门禁。 */
+    private final CatalogEditWriteGate catalogEditWriteGate;
 
     /**
      * 返回诊疗目录维护页全部初始化选项：状态、类型、执行科室树、诊疗大类、财务/医保/单位等术语下拉。
@@ -105,7 +102,9 @@ public class ServiceCatalogAppService {
      * @return 初始化 DTO
      */
     public ServiceCatalogInitDto getDiseaseTreatmentInit() {
+        // Gate：只读页初始化，无写侧操作人
         ServiceCatalogInitDto dto = serviceCatalogMapper.getInit();
+        // Pre：合并枚举、组织树与术语下拉
         List<OptionDto> statusOptions = Stream.of(PublicationStatus.values())
             .map(item -> new OptionDto(item.getSortOrder(), item.getCode(), item.getDisplay()))
             .collect(Collectors.toList());
@@ -122,22 +121,29 @@ public class ServiceCatalogAppService {
             codeSystemQueryService.getOptionListByCodeSystemName(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE));
         dto.setMedChrgitmTypeOptions(
             codeSystemQueryService.getOptionListByCodeSystemName(TerminologyCodeSystemNameConstants.MED_CHRGITM_TYPE));
+        dto.setMrSettlementTypeCodeOptions(
+            codeSystemQueryService.getOptionListByCodeSystemName(
+                TerminologyCodeSystemNameConstants.MR_SETTLEMENT_TYPE_CODE));
         dto.setUnitCodeOptions(
             codeSystemQueryService.getOptionListByCodeSystemName(TerminologyCodeSystemNameConstants.UNIT_CODE));
+        // Asm：映射维护页初始化 DTO
         return dto;
     }
 
     /**
-     * 分页查询诊疗目录列表，按创建时间倒序；关键字与分类条件下推到领域分页查询。
+     * 分页查询诊疗目录列表，按业务号倒序；关键字与分类条件下推到领域分页查询。
      *
      * @param query 分页与筛选条件（须已由前端或网关填充页码与页大小）
      * @return 分页 DTO，当前实现内联从领域分页模型映射 id/busNo/name/categoryCode
      */
     public PagedResult<ServiceCatalogDto> pageServiceCatalog(QueryServiceCatalogRequest query) {
+        // Gate：分页窗口由 request 提供
+        // Pre：组装领域分页 Query
         ActivityDefinitionPageQuery pageQuery = new ActivityDefinitionPageQuery();
         pageQuery.setCategoryCode(query.getCategoryCode());
         pageQuery.setKeyword(query.getKeyword());
-        Sort sort = Sort.by(Sort.Direction.DESC, FieldNameConstants.CREATED_AT);
+        // 默认按业务号倒序，避免按创建/更新时间排序导致编辑后行位跳动
+        Sort sort = Sort.by(Sort.Direction.DESC, FieldNameConstants.BUS_NO);
         Page<?> page = activityDefinitionQueryService.pageServiceCatalog(
             pageQuery, PageRequest.of(query.springPageIndex(), query.getBoundedPageSize(), sort));
         List<ServiceCatalogDto> content = page.getContent().stream()
@@ -157,7 +163,8 @@ public class ServiceCatalogAppService {
             })
             .collect(Collectors.toList());
         this.enrichServiceCatalogPageFields(content);
-        return PagedResult.of(content, page.getTotalElements(), page.getNumber() + 1, page.getSize());
+        // Asm：映射分页 DTO
+        return PagedResultBuilder.build(new PagedResult<>(), content, page);
     }
 
     /**
@@ -183,9 +190,12 @@ public class ServiceCatalogAppService {
             .map(ServiceCatalogDto::getId)
             .filter(Objects::nonNull)
             .toList();
-        Map<Long, List<ChargeItemDefinition>> priceMap = ids.isEmpty()
-            ? Collections.emptyMap()
-            : this.loadServicePriceMap(ids);
+        Map<Long, List<ChargeItemDefinition>> priceMap;
+        if (ids.isEmpty()) {
+            priceMap = Collections.emptyMap();
+        } else {
+            priceMap = this.loadServicePriceMap(ids);
+        }
         for (ServiceCatalogDto dto : rows) {
             if (dto == null) {
                 continue;
@@ -248,6 +258,7 @@ public class ServiceCatalogAppService {
      * @return 详情 DTO
      */
     public ServiceCatalogDetailDto getServiceCatalog(Long id) {
+        // Pre：读侧加载诊疗目录详情聚合
         ActivityDefinitionDetailQueryModel model = activityDefinitionQueryService.getServiceCatalog(id);
         ActivityDefinitionBaseQueryModel baseInfo = model.getBaseInfo();
         ServiceCatalogDetailDto dto = new ServiceCatalogDetailDto();
@@ -267,7 +278,7 @@ public class ServiceCatalogAppService {
         dto.setMerchandiseWbStr(baseInfo.getMerchandiseWbStr());
         dto.setDefEncounterUnitCode(baseInfo.getDefEncounterUnitCode());
         dto.setDefInhospitalUnitCode(baseInfo.getDefInhospitalUnitCode());
-        dto.setTypeEnum(parseInteger(baseInfo.getTypeEnum()));
+        dto.setTypeEnum(EnumUtil.toDisplayIntegerFromCodeOrNumber(ActivityType.class, baseInfo.getTypeEnum()));
         dto.setDescriptionText(baseInfo.getDescriptionText());
         dto.setBodySiteCode(baseInfo.getBodySiteCode());
         dto.setSpecimenCode(baseInfo.getSpecimenCode());
@@ -280,6 +291,7 @@ public class ServiceCatalogAppService {
         }
         dto.setYbNo(baseInfo.getYbNo());
         dto.setChrgitmLv(baseInfo.getChrgitmLv());
+        dto.setMrSettlementTypeCode(baseInfo.getMrSettlementTypeCode());
         dto.setYbFlag(this.toWhetherInteger(baseInfo.getYbFlag()));
         dto.setPricingFlag(this.toWhetherInteger(baseInfo.getPricingFlag()));
         dto.setYbMatchFlag(this.toWhetherInteger(baseInfo.getYbMatchFlag()));
@@ -287,7 +299,26 @@ public class ServiceCatalogAppService {
         dto.setChildren(this.toServiceCatalogChildDtos(model.getChildren()));
         // 定价行从收费定义表加载，与药品/耗材目录维护页口径一致。
         this.enrichPriceFields(dto, this.loadPriceLines(id));
+        CatalogEditabilityQueryModel editability = catalogEditabilityResolver.resolveActivityEditability(id);
+        dto.setEditabilityCode(editability.getEditabilityCode());
+        dto.setEditabilityMessage(editability.getEditabilityMessage());
+        // Asm：映射详情 DTO
         return dto;
+    }
+
+    /**
+     * 编辑前校验：返回业务码及说明。
+     *
+     * @param id 活动定义主键
+     * @return 可编辑性模型
+     */
+    public CatalogEditabilityQueryModel validateServiceCatalogEdit(Long id) {
+        // Gate：主键非空
+        if (id == null) {
+            throw new ValidationException("校验诊疗目录编辑失败：id 不能为空");
+        }
+        // Pre/Asm：读侧解析可编辑性
+        return catalogEditabilityResolver.resolveActivityEditability(id);
     }
 
     /**
@@ -297,9 +328,11 @@ public class ServiceCatalogAppService {
      * @throws ValidationException ids 为空时
      */
     public void deleteServiceCatalog(List<Long> ids) {
+        // Gate：批量主键非空
         if (ids == null || ids.isEmpty()) {
             throw new ValidationException("删除诊疗目录失败：ids 不能为空");
         }
+        // Cmd：领域批量逻辑删除
         DeleteActivityDefinitionsCommand command = new DeleteActivityDefinitionsCommand();
         DeleteActivityDefinitionsCommand.DeleteActivityDefinitionsItemCommand item =
             new DeleteActivityDefinitionsCommand.DeleteActivityDefinitionsItemCommand();
@@ -315,9 +348,11 @@ public class ServiceCatalogAppService {
      * @throws ValidationException ids 为空时
      */
     public void stopServiceCatalog(List<Long> ids) {
+        // Gate：批量主键非空
         if (ids == null || ids.isEmpty()) {
             throw new ValidationException("停用诊疗目录失败：ids 不能为空");
         }
+        // Cmd：领域批量停用
         RetireActivityDefinitionsCommand command = new RetireActivityDefinitionsCommand();
         RetireActivityDefinitionsCommand.RetireActivityDefinitionsItemCommand item =
             new RetireActivityDefinitionsCommand.RetireActivityDefinitionsItemCommand();
@@ -333,9 +368,11 @@ public class ServiceCatalogAppService {
      * @throws ValidationException ids 为空时
      */
     public void startServiceCatalog(List<Long> ids) {
+        // Gate：批量主键非空
         if (ids == null || ids.isEmpty()) {
             throw new ValidationException("启用诊疗目录失败：ids 不能为空");
         }
+        // Cmd：领域批量启用
         ActivateActivityDefinitionsCommand command = new ActivateActivityDefinitionsCommand();
         ActivateActivityDefinitionsCommand.ActivateActivityDefinitionsItemCommand item =
             new ActivateActivityDefinitionsCommand.ActivateActivityDefinitionsItemCommand();
@@ -350,15 +387,17 @@ public class ServiceCatalogAppService {
      * @param request 创建请求
      */
     public void createServiceCatalog(CreateServiceCatalogRequest request) {
+        // Gate：有价格时须携带 fin_type
         this.assertItemTypeCodeWhenPricingPresent(
             request.getItemTypeCode(),
             request.getRetailPrice(),
             request.getPurchasePrice(),
             "新建诊疗目录失败");
-        // 先落诊疗项目主数据，再写入实例维度定价行（含零售价 SALE）。
+        // Cmd：领域创建活动定义
         Long createdId = activityDefinitionDomainService.createActivityDefinition(
             serviceCatalogMapper.converterToCreateParam(request));
         if (createdId != null) {
+            // Cmd 续：实例维度定价行替换
             this.replacePriceLines(
                 createdId,
                 request.getItemTypeCode(),
@@ -366,7 +405,7 @@ public class ServiceCatalogAppService {
                 request.getPurchasePrice(),
                 request.getRetailPrice(),
                 request.getMaximumRetailPrice());
-            // 领域创建默认草稿；保存维护页后立即发布，避免医生站目录（仅 ACTIVE）查不到新建项。
+            // Cmd 续：创建后立即发布，供医生站 ACTIVE 目录可见
             this.startServiceCatalog(List.of(createdId));
         }
     }
@@ -377,15 +416,29 @@ public class ServiceCatalogAppService {
      * @param request 更新请求
      */
     public void editServiceCatalog(UpdateServiceCatalogRequest request) {
+        // Gate：有价格时须携带 fin_type 与主键
         this.assertItemTypeCodeWhenPricingPresent(
             request.getItemTypeCode(),
             request.getRetailPrice(),
             request.getPurchasePrice(),
             "更新诊疗目录失败");
-        // 步骤一：更新诊疗项目主数据（含子项与医保属性）
+        if (request.getId() == null) {
+            throw new ValidationException("更新诊疗目录失败：id 不能为空");
+        }
+        // Pre：加载现有实体、定价行与可编辑性
+        ActivityDefinition existing = activityDefinitionQueryService.findOptionalActivityDefinitionEntityById(request.getId())
+            .orElseThrow(() -> new ValidationException("更新诊疗目录失败：记录不存在或已删除"));
+        CatalogEditabilityQueryModel editability =
+            catalogEditabilityResolver.resolveActivityEditability(request.getId());
+        catalogEditWriteGate.assertServiceCatalogUpdateAllowed(
+            existing,
+            this.loadPriceLines(request.getId()),
+            request,
+            editability.getEditabilityCode());
+        // Cmd：领域更新主数据
         activityDefinitionDomainService.updateActivityDefinition(serviceCatalogMapper.converterToUpdateParam(request));
-        // 步骤二：主键存在时同步刷新实例维度定价行
-        if (request.getId() != null) {
+        // 业务分支：非锁定态才维护定价行
+        if (!CatalogEditabilityConstants.isLocked(editability.getEditabilityCode())) {
             this.replacePriceLines(
                 request.getId(),
                 request.getItemTypeCode(),
@@ -397,29 +450,28 @@ public class ServiceCatalogAppService {
     }
 
     /**
-     * 将领域侧字符串型枚举值解析为整型；空白或非法格式返回 {@code null}，与 Mapper 行为一致。
+     * 布尔是否标记转为目录 DTO 用 0/1 整型；null 保持 null。
      *
-     * @param value 数字字符串
-     * @return 整型或 {@code null}
+     * @param value 源布尔
+     * @return 1=是、0=否；null 时 null
      */
-    private Integer parseInteger(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        try {
-            return Integer.valueOf(value);
-        } catch (NumberFormatException ex) {
-            return null;
-        }
-    }
-
     private Integer toWhetherInteger(Boolean value) {
         if (value == null) {
             return null;
         }
-        return Boolean.TRUE.equals(value) ? 1 : 0;
+        if (Boolean.TRUE.equals(value)) {
+            return 1;
+        }
+        return 0;
     }
 
+    /**
+     * 将发布状态码回填到 DTO 的枚举序与展示文案 setter。
+     *
+     * @param statusCode        发布状态码
+     * @param statusEnumSetter  枚举序回填（可 null）
+     * @param statusTextSetter  展示文案回填（可 null）
+     */
     private void applyPublicationStatus(
         String statusCode,
         java.util.function.Consumer<Integer> statusEnumSetter,
@@ -436,6 +488,12 @@ public class ServiceCatalogAppService {
         }
     }
 
+    /**
+     * 诊疗子项读模型列表映射为服务目录子项 DTO。
+     *
+     * @param children 活动定义子项查询结果
+     * @return 子项 DTO 列表；空输入时空列表
+     */
     private List<ServiceCatalogChildDto> toServiceCatalogChildDtos(List<ActivityDefinitionChildQueryModel> children) {
         if (children == null || children.isEmpty()) {
             return Collections.emptyList();

@@ -1,30 +1,17 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.devicecatalog.service;
 
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
-import com.openhis.health.domain.share.constants.DeviceCatalogUiConstants;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.PriceType;
-import com.openhis.health.module.common.assembler.pricing.ChargePricingCommandAssembler;
-import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.pricing.ChargePricingCommandAssembler;
+import com.openhis.health.application.shared.option.OptionDtoAssembler;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.basic.catalog.support.CatalogEditWriteGate;
 import com.openhis.health.application.basic.devicecatalog.dto.DeviceCatalogDto;
 import com.openhis.health.application.basic.devicecatalog.dto.DeviceCatalogInitDto;
 import com.openhis.health.application.basic.devicecatalog.dto.PageDeviceCatalogResponse;
@@ -46,12 +33,14 @@ import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQ
 import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.share.utils.OptionDtoLegacyRowUtil;
 import com.openhis.health.domain.share.utils.GatewayIdParseUtil;
+import com.openhis.health.application.basic.catalog.support.CatalogEditabilityQueryModel;
+import com.openhis.health.application.basic.catalog.support.CatalogEditabilityResolver;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -93,18 +82,23 @@ public class DeviceCatalogAppService {
     private final TerminologyOptionLoader terminologyOptionLoader;
     /** 供应商主数据列表 → 生产厂家/供应商下拉（与药品目录初始化一致）。 */
     private final SupplierQueryService supplierQueryService;
+    /** 目录编辑业务码读侧编排。 */
+    private final CatalogEditabilityResolver catalogEditabilityResolver;
+    /** 目录写侧 immutable 字段门禁。 */
+    private final CatalogEditWriteGate catalogEditWriteGate;
 
     /**
-     * 耗材维护页初始化：单位类下拉、供应商列表、耗材分类（{@code device_category_code}）、耗材种类（{@code device_type_code}）、财务类型（{@code fin_type_code}）等。
+     * 耗材维护页初始化：单位类下拉、供应商列表、耗材分类（{@code device_category_code}）、耗材种类（{@code device_type_code}）、财务类型（{@code fin_type_code}）、医保类别/等级等。
      *
      * <p>返回结构中部分列表为 {@link OptionDtoLegacyRowUtil} 映射的 label/value 行，兼容旧前端表格数据源。</p>
      *
      * @return 各计量维度下拉数据聚合（若术语缺失则对应列为空列表）
      */
     public DeviceCatalogInitDto init() {
+        // Gate：只读页初始化，无写侧操作人
         DeviceCatalogInitDto dto = DeviceCatalogInitDto.empty();
 
-        // 五类计量单位与药品目录一致：统一术语 unit_code，避免采购/拆零/剂量各用不同码表导致 ug、片 等错码。
+        // Pre：加载计量单位、供应商与耗材分类/种类/财务类型下拉
         List<Map<String, Object>> unitOptions =
             terminologyOptionLoader.loadLegacyRows(TerminologyCodeSystemNameConstants.UNIT_CODE);
         dto.setUnitCodeOptions(unitOptions);
@@ -121,7 +115,14 @@ public class DeviceCatalogAppService {
             terminologyOptionLoader.loadLegacyRows(TerminologyCodeSystemNameConstants.DEVICE_TYPE_CODE));
         dto.setFinancialTypes(
             terminologyOptionLoader.loadLegacyRows(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE));
+        dto.setYbCategories(
+            terminologyOptionLoader.loadLegacyRows(TerminologyCodeSystemNameConstants.MED_CHRGITM_TYPE));
+        dto.setYbGrades(
+            terminologyOptionLoader.loadLegacyRows(TerminologyCodeSystemNameConstants.CHRGITM_LV));
+        dto.setMrSettlementTypeCodeOptions(
+            terminologyOptionLoader.loadLegacyRows(TerminologyCodeSystemNameConstants.MR_SETTLEMENT_TYPE_CODE));
 
+        // Asm：映射维护页初始化 DTO
         return dto;
     }
 
@@ -149,6 +150,7 @@ public class DeviceCatalogAppService {
      * @return 当前页内容与总条数、总页数
      */
     public PageDeviceCatalogResponse pageDeviceCatalog(PageDeviceCatalogRequest request) {
+        // Gate：分页参数归一（非法值回落默认）
         int pageNo = 1;
         if (request != null && request.getPageNo() != null) {
             pageNo = request.getPageNo();
@@ -164,7 +166,6 @@ public class DeviceCatalogAppService {
         if (pageSize < 1) {
             pageSize = 50;
         }
-        // 读侧分页：领域返回 Spring Page，应用层再补齐列表行的定价与字典文本。
         String keyword = null;
         String categoryCode = null;
         String typeCode = null;
@@ -173,6 +174,7 @@ public class DeviceCatalogAppService {
             categoryCode = request.getCategoryCode();
             typeCode = request.getTypeCode();
         }
+        // Pre：读侧分页并 enrich 定价与字典文案
         Page<DeviceDefinition> page = deviceDefinitionQueryService.pageDeviceDefinition(
             pageNo - 1, pageSize, keyword, categoryCode, typeCode);
         List<DeviceCatalogDto> content = page.getContent().stream()
@@ -181,7 +183,7 @@ public class DeviceCatalogAppService {
             .collect(Collectors.toList());
         this.enrichPageFields(content);
 
-        // —— B.10.11：使用 PagedResultBuilder 构建分页响应（传入处理后的 content）。——
+        // Asm：PagedResultBuilder 构建分页响应
         return PagedResultBuilder.build(
             new PageDeviceCatalogResponse(),
             content,
@@ -200,15 +202,34 @@ public class DeviceCatalogAppService {
      * @throws EntityNotFoundException 设备不存在或已删除
      */
     public DeviceCatalogDto getDeviceCatalog(String id) {
+        // Gate：网关 id 可解析为 long
         long deviceId = GatewayIdParseUtil.parseRequiredLong(id, "查询耗材详情失败：id 不能为空");
+        // Pre：加载实体、定价行与可编辑性
         DeviceDefinition entity = deviceDefinitionQueryService.getDeviceDefinition(Long.valueOf(deviceId));
         if (entity == null) {
             throw new EntityNotFoundException("耗材不存在或已删除");
         }
         DeviceCatalogDto dto = deviceCatalogMapper.toDto(entity);
         this.enrichPageFields(List.of(dto));
-        dto.setEditabilityCode(DeviceCatalogUiConstants.EDITABILITY_OK);
+        CatalogEditabilityQueryModel editability =
+            catalogEditabilityResolver.resolveDeviceEditability(deviceId);
+        dto.setEditabilityCode(editability.getEditabilityCode());
+        dto.setEditabilityMessage(editability.getEditabilityMessage());
+        // Asm：映射详情 DTO
         return dto;
+    }
+
+    /**
+     * 编辑前校验：返回业务码及说明。
+     *
+     * @param id 设备定义主键字符串
+     * @return 可编辑性模型
+     */
+    public CatalogEditabilityQueryModel validateDeviceCatalogEdit(String id) {
+        // Gate：网关 id 可解析
+        long deviceId = GatewayIdParseUtil.parseRequiredLong(id, "校验耗材目录编辑失败：id 不能为空");
+        // Pre/Asm：读侧解析可编辑性
+        return catalogEditabilityResolver.resolveDeviceEditability(deviceId);
     }
 
     /**
@@ -218,8 +239,9 @@ public class DeviceCatalogAppService {
      * @return 新建设备的详情（含定价行）
      * @throws ValidationException 请求或必填字段不合法
      */
-    
+
     public DeviceCatalogDto createDeviceCatalog(CreateDeviceCatalogRequest request) {
+        // Gate：创建入参校验（名称、单位、价格、财务类型等）
         if (request == null) {
             throw new ValidationException("创建耗材失败：请求体不能为空");
         }
@@ -250,14 +272,15 @@ public class DeviceCatalogAppService {
         if (request.getRetailPrice() == null) {
             throw new ValidationException("创建耗材失败：零售价不能为空");
         }
-        if (StringUtils.isBlank(request.getItemTypeCode())) {
+        if (StringUtils.isEmpty(request.getItemTypeCode())) {
             throw new ValidationException("创建耗材失败：财务类型不能为空");
         }
 
         this.normalizeManufacturerSupplyForWrite(request);
-        // 先落主数据，再原子替换实例维度下的收费定价行（与药品目录模式一致）。
+        // Cmd：领域创建耗材主数据
         CreateDeviceDefinitionCommand cmd = deviceCatalogMapper.toCreateCommand(request);
         Long createdId = deviceDefinitionDomainService.createDeviceDefinition(cmd);
+        // Cmd 续：实例维度定价行替换
         this.replacePriceLines(
             createdId,
             request.getItemTypeCode(),
@@ -265,18 +288,24 @@ public class DeviceCatalogAppService {
             request.getPurchasePrice(),
             request.getRetailPrice(),
             request.getMaximumRetailPrice());
+        // Asm：回读新建详情
         return this.getDeviceCatalog(String.valueOf(createdId));
     }
 
     /**
-     * 编辑耗材目录。
+     * 编辑耗材目录（编辑路径不维护定价行）。
+     *
+     * <p>定价仅在 {@link #createDeviceCatalog} 写入维护态 {@code PURCHASE}/{@code SALE}/{@code LIMIT}；
+     * 编辑若调用 {@link #replacePriceLines} 会误删进货入库写入的 {@code LOT_NUMBER_PRICE}，导致医生站无价。
+     * 批号售价须经入库同意或调价流程维护，不在目录编辑页改价。</p>
      *
      * @param request 更新请求（须含字符串 {@code id} 及名称等）
      * @return 最新详情（含定价行）
      * @throws ValidationException 参数不合法
      */
-    
+
     public DeviceCatalogDto editDeviceCatalog(UpdateDeviceCatalogRequest request) {
+        // Gate：更新入参校验
         if (request == null || request.getId() == null || request.getId().trim().isEmpty()) {
             throw new ValidationException("更新耗材失败：id 不能为空");
         }
@@ -301,32 +330,28 @@ public class DeviceCatalogAppService {
             throw new ValidationException("更新耗材失败：库存单位不能为空");
         }
         this.assertDeviceUnitRatiosPositive(request, "更新耗材失败");
-        if (request.getPurchasePrice() == null) {
-            throw new ValidationException("更新耗材失败：购入价不能为空");
-        }
-        if (request.getRetailPrice() == null) {
-            throw new ValidationException("更新耗材失败：零售价不能为空");
-        }
         if (request.getEditabilityCode() == null || request.getEditabilityCode().trim().isEmpty()) {
             throw new ValidationException("更新耗材失败：editabilityCode 不能为空");
         }
-        if (StringUtils.isBlank(request.getItemTypeCode())) {
-            throw new ValidationException("更新耗材失败：财务类型不能为空");
-        }
         long id = GatewayIdParseUtil.parseRequiredLong(request.getId(), "更新耗材失败：id 不能为空");
+
+        // Pre：加载现有实体、定价行与可编辑性
+        DeviceDefinition existing = deviceDefinitionQueryService.getDeviceDefinition(id);
+        if (existing == null) {
+            throw new EntityNotFoundException("耗材不存在或已删除");
+        }
+        CatalogEditabilityQueryModel editability = catalogEditabilityResolver.resolveDeviceEditability(id);
+        catalogEditWriteGate.assertDeviceCatalogUpdateAllowed(
+            existing,
+            this.loadPriceLines(id),
+            request,
+            editability.getEditabilityCode());
 
         this.normalizeManufacturerSupplyForWrite(request);
         UpdateDeviceDefinitionCommand cmd = deviceCatalogMapper.toUpdateCommand(request);
-        cmd.getItems().get(0).setEditabilityCode(request.getEditabilityCode().trim());
-        // 主数据更新与定价行替换分属两个聚合职责，顺序为先领域更新设备再刷新定价。
+        cmd.getItems().get(0).setEditabilityCode(editability.getEditabilityCode());
         deviceDefinitionDomainService.updateDeviceDefinition(cmd);
-        this.replacePriceLines(
-            id,
-            request.getItemTypeCode(),
-            request.getYbType(),
-            request.getPurchasePrice(),
-            request.getRetailPrice(),
-            request.getMaximumRetailPrice());
+        // Asm：回读最新详情（编辑路径不维护定价行）
         return this.getDeviceCatalog(String.valueOf(id));
     }
 
@@ -337,9 +362,11 @@ public class DeviceCatalogAppService {
      * @throws ValidationException {@code ids} 为空或存在非法项
      */
     public void startDeviceCatalog(List<String> ids) {
+        // Gate：批量 id 非空且可解析
         GatewayIdParseUtil.requireNonEmptyParsableLongStrings(ids,
             "启用耗材目录失败：ids 不能为空",
             "启用耗材目录失败：ids 存在非法值");
+        // Cmd：领域批量启用
         ActivateDeviceDefinitionsCommand cmd = new ActivateDeviceDefinitionsCommand();
         cmd.setItems(deviceCatalogMapper.toActivateItems(ids));
         deviceDefinitionDomainService.activateDeviceDefinitions(cmd);
@@ -352,9 +379,11 @@ public class DeviceCatalogAppService {
      * @throws ValidationException {@code ids} 为空或存在非法项
      */
     public void stopDeviceCatalog(List<String> ids) {
+        // Gate：批量 id 非空且可解析
         GatewayIdParseUtil.requireNonEmptyParsableLongStrings(ids,
             "停用耗材目录失败：ids 不能为空",
             "停用耗材目录失败：ids 存在非法值");
+        // Cmd：领域批量停用
         RetireDeviceDefinitionsCommand cmd = new RetireDeviceDefinitionsCommand();
         cmd.setItems(deviceCatalogMapper.toRetireItems(ids));
         deviceDefinitionDomainService.retireDeviceDefinitions(cmd);
@@ -367,9 +396,11 @@ public class DeviceCatalogAppService {
      * @throws ValidationException {@code ids} 为空或存在非法项
      */
     public void deleteDeviceCatalog(List<String> ids) {
+        // Gate：批量 id 非空且可解析
         GatewayIdParseUtil.requireNonEmptyParsableLongStrings(ids,
             "删除耗材目录失败：ids 不能为空",
             "删除耗材目录失败：ids 存在非法值");
+        // Cmd：领域批量逻辑删除
         DeleteDeviceDefinitionsCommand cmd = new DeleteDeviceDefinitionsCommand();
         cmd.setItems(deviceCatalogMapper.toDeleteItems(ids));
         deviceDefinitionDomainService.deleteDeviceDefinitions(cmd);

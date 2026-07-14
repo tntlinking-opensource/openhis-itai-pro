@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.financial.paymentreconciliation.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -31,7 +18,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -189,7 +176,7 @@ public class PaymentReconciliation extends BaseAuditedEntity {
         if (this.kindEnum == null) {
             throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "支付单支付大类不能为空");
         }
-        if (StringUtils.isBlank(this.paymentEnum)) {
+        if (StringUtils.isEmpty(this.paymentEnum)) {
             throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "支付单支付渠道枚举不能为空");
         }
         if (this.tenderedAmount == null) {
@@ -198,7 +185,7 @@ public class PaymentReconciliation extends BaseAuditedEntity {
         if (this.displayAmount == null) {
             throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "支付单展示金额不能为空");
         }
-        if (StringUtils.isBlank(this.paymentNo)) {
+        if (StringUtils.isEmpty(this.paymentNo)) {
             throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "支付单业务编号不能为空");
         }
         if (this.chargeItemIds == null) {

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 /**
@@ -42,7 +29,7 @@ public interface OrderTemplateConstants {
      */
     interface ApplyContext {
 
-        /** 医生站开嘱套用。 */
+/** OrderTemplate 共享常量：DOCTOR，值 {@code DOCTOR}。 */
         String DOCTOR = "DOCTOR";
 
         /** 护士站划价组套套用。 */
@@ -54,10 +41,10 @@ public interface OrderTemplateConstants {
      */
     interface WorkstationKind {
 
-        /** 门诊医生站。 */
+/** OrderTemplate 共享常量：OUTPATIENT，值 {@code OUTPATIENT}。 */
         String OUTPATIENT = "OUTPATIENT";
 
-        /** 住院医生站。 */
+/** OrderTemplate 共享常量：INPATIENT，值 {@code INPATIENT}。 */
         String INPATIENT = "INPATIENT";
     }
 }

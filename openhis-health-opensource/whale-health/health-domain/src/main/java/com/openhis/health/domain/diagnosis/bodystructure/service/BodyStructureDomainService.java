@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.diagnosis.bodystructure.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -71,20 +58,20 @@ public class BodyStructureDomainService {
         // Loop：遍历命令项，逐条处理新增或编辑逻辑
         for (AddOrEditBodyStructureCommand.AddOrEditBodyStructureItemCommand item : items) {
             BodyStructure bodyStructure;
-            // 业务分支处理：无 id 视为新增，分配业务编码并初始化启用状态
+            // 无 id 视为新增，分配业务编码并初始化启用状态。
             if (item.getId() == null) {
                 bodyStructure = new BodyStructure();
                 bodyStructure.setBusNo(businessSequenceService.getSeq(AggregateTypeConstants.BODY_STRUCTURE, BusinessSequenceConstants.MASTER_DATA_2_PREFIX_SEQ_LENGTH));
                 bodyStructure.setStatusEnum(PublicationStatus.ACTIVE.getCode());
                 created.add(bodyStructure);
             } else {
-                // 业务分支处理：有 id 视为编辑，按主键加载现有实体
+                // 有 id 视为编辑，按主键加载现有实体。
                 bodyStructure = this.loadBodyStructure(item.getId());
                 updated.add(bodyStructure);
             }
             bodyStructure.setName(item.getName());
             bodyStructure.setParentId(item.getParentId());
-            // 业务分支处理：命令显式传入状态时覆盖，否则保持既有状态
+            // 命令显式传入状态时覆盖，否则保持既有状态。
             if (item.getStatusEnum() != null) {
                 bodyStructure.setStatusEnum(item.getStatusEnum());
             }
@@ -206,14 +193,14 @@ public class BodyStructureDomainService {
      * @throws BusinessException 当业务编码与现有记录冲突时
      */
     private void assertBusNoNotConflict(BodyStructure bodyStructure) {
-        // 业务分支处理：新建场景，仅校验全局唯一性
+        // 新建场景仅校验全局唯一性。
         if (bodyStructure.getId() == null) {
             if (repository.existsByBusNo(bodyStructure.getBusNo())) {
                 throw new BusinessException(ErrorCodeConstants.BODY_STRUCTURE_BUS_NO_CONFLICT, "身体部位业务编码冲突");
             }
             return;
         }
-        // 业务分支处理：更新场景，排除自身后校验唯一性
+        // 更新场景排除自身后校验唯一性。
         if (repository.existsByBusNoAndIdNot(bodyStructure.getBusNo(), bodyStructure.getId())) {
             throw new BusinessException(ErrorCodeConstants.BODY_STRUCTURE_BUS_NO_CONFLICT, "身体部位业务编码冲突");
         }

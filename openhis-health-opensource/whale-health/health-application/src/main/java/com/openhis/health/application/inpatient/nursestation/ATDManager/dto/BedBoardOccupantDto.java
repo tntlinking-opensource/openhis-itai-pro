@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.ATDManager.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -33,12 +20,12 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
-/** 占床患者块。 */
 @Schema(description = "占床患者块")
 public class BedBoardOccupantDto {
 
     @Schema(description = "就诊主键")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 就诊主键。 */
     private Long encounterId;
 
     /** 患者主键。 */
@@ -53,6 +40,10 @@ public class BedBoardOccupantDto {
     /** 性别 code。 */
     @Schema(description = "性别 code")
     private String genderEnum;
+
+    /** 性别展示文案。 */
+    @Schema(description = "性别展示文案")
+    private String genderEnumText;
 
     /** 年龄文本。 */
     @Schema(description = "年龄文本")
@@ -73,6 +64,10 @@ public class BedBoardOccupantDto {
     /** 病情 code。 */
     @Schema(description = "病情 code")
     private String priorityEnum;
+
+    /** 护理级别展示名。 */
+    @Schema(description = "护理级别展示名")
+    private String nursingLevelName;
 
     /** 入科时间。 */
     @Schema(description = "入科时间")

@@ -1,16 +1,18 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.dispensesummary.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+/**
+ * 汇总领药单列表行（护士站已提交汇总单卡片；含申请/核发时间与行数摘要）。
+ */
 @Data
 @Accessors(chain = true)
-/** 汇总领药单。 */
 @Schema(description = "汇总领药单")
 public class NurseStationDispenseSummarySheetDto {
 

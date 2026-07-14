@@ -1,8 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.mapper;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 import com.alibaba.fastjson2.JSONObject;
@@ -16,20 +18,18 @@ import com.openhis.health.domain.clinical.condition.command.SaveDoctorDiagnosisT
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;
 import com.openhis.health.domain.medication.medicationrequest.command.*;
 import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
-import com.openhis.health.domain.share.constants.DoctorStationTcmConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientDoctorStationTcmConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.IptPatientDiseaseDiagType;
-import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.share.utils.EnumUtil;
-import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
+import com.openhis.health.application.shared.validator.PatientEncounterConsistencyGate;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -37,7 +37,6 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -77,10 +76,13 @@ public class InpatientDoctorStationTcmMapperImpl implements InpatientDoctorStati
      */
     @Override
     public InitInpatientDoctorStationTcmResponse toInitInpatientDoctorStationTcmResponse(
-        List<OptionDto> tcmMethodOptions, List<OptionDto> rateOptions) {
+        List<OptionDto> tcmMethodOptions,
+        List<OptionDto> rateOptions,
+        List<OptionDto> dosageInstructionOptions) {
         InitInpatientDoctorStationTcmResponse response = new InitInpatientDoctorStationTcmResponse();
         response.setTcmMethodCodeOptions(tcmMethodOptions);
         response.setMedicationRateOptions(rateOptions);
+        response.setDosageInstructionOptions(dosageInstructionOptions);
         response.setTherapyTypeFilterDefault(InpatientDoctorStationTcmConstants.THERAPY_FILTER_DEFAULT);
         return response;
     }
@@ -260,7 +262,7 @@ public class InpatientDoctorStationTcmMapperImpl implements InpatientDoctorStati
     public List<String> diffRemovedTcmGroups(List<TcmDiagnosisGroupRowDto> existing, SaveTcmDiagnosisGroupsBatchRequest request) {
         Set<String> incoming = new HashSet<>();
         for (TcmDiagnosisGroupItemRequest group : request.getGroups()) {
-            if (StringUtils.isNotBlank(group.getTcmSyndromeGroup())) {
+            if (StringUtils.isNotEmpty(group.getTcmSyndromeGroup())) {
                 incoming.add(group.getTcmSyndromeGroup().trim());
             }
         }
@@ -378,6 +380,7 @@ public class InpatientDoctorStationTcmMapperImpl implements InpatientDoctorStati
         cmd.setPerformLocation(line.getDispenseLocationId());
         cmd.setRecorderId(operatorId);
         cmd.setSortNumber(line.getSortNumber());
+        cmd.setDosageInstruction(trimToNull(line.getDosageInstructionCode()));
         cmd.setGenerateSourceEnum(GenerateSource.DOCTOR_PRESCRIPTION.getCode());
         return cmd;
     }
@@ -422,6 +425,9 @@ public class InpatientDoctorStationTcmMapperImpl implements InpatientDoctorStati
         cmd.setPerformLocation(line.getDispenseLocationId());
         cmd.setPrescriptionNo(prescriptionNo);
         cmd.setRxTypeCode(rxTypeCode);
+        if (line.getDosageInstructionCode() != null) {
+            cmd.setDosageInstruction(trimToEmpty(line.getDosageInstructionCode()));
+        }
         return cmd;
     }
 

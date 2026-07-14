@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.account.service;
 
 import com.openhis.health.domain.share.enums.AccountTypeCode;
@@ -38,6 +25,7 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>边界：只读；默认账户以 {@code defaultFlag=true} 与类型码联合定位；解析默认账户时仅命中
  * {@link PublicationStatus#ACTIVE} 主状态（禁止历史数字串 {@code "1"}）。</p>
+ * <p>聚合边界：仅本聚合 {@link AccountRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -118,6 +106,27 @@ public class AccountQueryService {
      */
     public Account getSelfAccount(Long encounterId) {
         return getAccountByEncounterFlag(encounterId, AccountTypeCode.PERSONAL_CASH_ACCOUNT.getCode());
+    }
+
+    /**
+     * 判断就诊是否同时开立默认自费与默认医保账户（医保挂号双账户场景，可互转记账）。
+     *
+     * <p>纯自费挂号仅存在 {@link AccountTypeCode#PERSONAL_CASH_ACCOUNT} 时返回 {@code false}，
+     * 门诊收费 IF-OPC-04/05 须拒绝切换。</p>
+     *
+     * @param encounterId 就诊标识
+     * @return 自费与医保默认账户均存在且有效时为 {@code true}
+     */
+    public boolean hasDualChargeAccounts(Long encounterId) {
+        if (encounterId == null) {
+            return false;
+        }
+        Long selfPayAccountId = this.getSelfPayAccount(encounterId);
+        if (selfPayAccountId == null) {
+            return false;
+        }
+        Long medicalInsuranceAccountId = this.getMedicalInsuranceAccount(encounterId);
+        return medicalInsuranceAccountId != null;
     }
 
     /**

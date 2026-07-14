@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.pharmacy.summarydispense.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -30,15 +17,16 @@ import lombok.experimental.Accessors;
 @Getter
 @Setter
 @Accessors(chain = true)
-/** 汇总核发追溯码提交行。 */
 @Schema(description = "汇总核发追溯码提交行")
 public class SummaryDispenseTraceLineSubmitDto {
 
-    @Schema(description = "发放行主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 汇总 Supply 行主键 {@code wkf_supply_request.id}，与 IF-IPS-02 合并行一一对应。 */
+    /** 汇总 Supply 行主键；追溯码核发后写入对应 {@code wkf_supply_delivery.trace_no}。 */
+    @Schema(description = "供应请求行主键", requiredMode = Schema.RequiredMode.REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
-    private Long dispenseId;
+    private Long supplyRequestId;
 
-    /** 追溯码串（逗号分隔）。 */
+    /** 追溯码串（逗号分隔；落 {@code wkf_supply_delivery.trace_no}，不关联患者发放行）。 */
     @Schema(description = "追溯码串，逗号分隔")
     private String traceNo;
 }

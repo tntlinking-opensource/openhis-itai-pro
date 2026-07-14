@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.account.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -25,7 +12,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.math.BigDecimal;
 
@@ -92,12 +79,11 @@ public class Account extends BaseAuditedEntity {
         if (this.encounterId == null) {
             throw new BusinessException(ErrorCodeConstants.ACCOUNT_INVALID_ARGUMENT, "开立账户时就诊标识不能为空");
         }
-        if (StringUtils.isBlank(this.typeCode)) {
+        if (StringUtils.isEmpty(this.typeCode)) {
             throw new BusinessException(ErrorCodeConstants.ACCOUNT_INVALID_ARGUMENT, "开立账户时账户类型编码不能为空");
         }
-        if (StringUtils.isBlank(this.busNo)) {
+        if (StringUtils.isEmpty(this.busNo)) {
             throw new BusinessException(ErrorCodeConstants.ACCOUNT_INVALID_ARGUMENT, "开立账户时业务流水号不能为空");
         }
     }
 }
-

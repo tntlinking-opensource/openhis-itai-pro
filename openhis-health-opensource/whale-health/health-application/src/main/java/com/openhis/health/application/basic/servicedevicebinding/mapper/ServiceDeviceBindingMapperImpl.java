@@ -1,25 +1,12 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.servicedevicebinding.mapper;
 
 import com.openhis.health.application.basic.servicedevicebinding.dto.ServiceDeviceBindingDto;
 import com.openhis.health.application.basic.servicedevicebinding.request.SaveServiceDeviceBindingRequest;
-import com.openhis.health.module.common.converter.TextValueConverter;
+import com.openhis.health.application.shared.converter.TextValueConverter;
 import com.openhis.health.domain.custom.servicedevicetemplate.command.CreateBindingCommand;
 import com.openhis.health.domain.custom.servicedevicetemplate.command.EditBindingCommand;
 import com.openhis.health.domain.custom.servicedevicetemplate.queries.model.ServiceDeviceTemplateQueryModel;
@@ -29,7 +16,7 @@ import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.enums.ServiceDeviceTemplateTypeCode;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.exception.BusinessException;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 /**
@@ -129,7 +116,7 @@ public class ServiceDeviceBindingMapperImpl implements ServiceDeviceBindingMappe
      * @return 领域类型码
      */
     private String resolveTypeCode(String bindType) {
-        if (StringUtils.isBlank(bindType)) {
+        if (StringUtils.isEmpty(bindType)) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "保存失败：绑定类型不能为空");
         }
@@ -148,7 +135,7 @@ public class ServiceDeviceBindingMapperImpl implements ServiceDeviceBindingMappe
      * @return 领域状态码
      */
     private String resolveStatusCode(String statusEnum) {
-        if (StringUtils.isBlank(statusEnum)) {
+        if (StringUtils.isEmpty(statusEnum)) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "保存失败：状态不能为空");
         }

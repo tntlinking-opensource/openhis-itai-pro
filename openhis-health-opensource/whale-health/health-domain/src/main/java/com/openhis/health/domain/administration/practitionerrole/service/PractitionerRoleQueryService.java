@@ -1,12 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.practitionerrole.service;
 
 import com.openhis.health.domain.administration.practitionerrole.entity.PractitionerRole;
@@ -32,6 +27,8 @@ import java.util.Set;
 
 /**
  * 岗位分配读侧查询服务（{@code adm_pr_assign}）。
+ *
+ * <p>聚合边界：仅本聚合 {@link PractitionerRoleRepository}、{@link PractitionerRoleServiceItemRepository}、{@link PractitionerRoleScheduleItemRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -41,9 +38,16 @@ public class PractitionerRoleQueryService {
     private final PractitionerRoleServiceItemRepository serviceItemRepository;
     private final PractitionerRoleScheduleItemRepository scheduleItemRepository;
 
+    /**
+     * 按医务人员加载全部激活岗位分配及关联号源主键。
+     *
+     * @param practitionerId 医务人员主键
+     * @return 岗位分配读模型列表；无岗位时空列表
+     */
     public List<PractitionerRoleAssignmentQueryModel> listAssignmentsByPractitioner(Long practitionerId) {
         List<PractitionerRole> roles = repository.findAllByPractitionerIdAndActiveFlagTrue(practitionerId);
         if (roles.isEmpty()) {
+            // 无激活岗位：直接返回空，避免无谓子表查询
             return new ArrayList<>();
         }
 
@@ -81,6 +85,7 @@ public class PractitionerRoleQueryService {
      *
      * @param roleId 平台角色主键
      * @param orgId  科室主键；{@code null} 时不按 {@code org_id} 收窄
+     * @return 医务人员主键集合
      */
     public Set<Long> listPractitionerIdsWithActiveRoleId(Long roleId, Long orgId) {
         if (roleId == null) {
@@ -88,8 +93,10 @@ public class PractitionerRoleQueryService {
         }
         List<PractitionerRole> rows;
         if (orgId != null) {
+            // 指定科室：按 org_id 收窄岗位
             rows = repository.findAllByRoleIdAndOrgIdAndActiveFlagTrue(roleId, orgId);
         } else {
+            // 未指定科室：全院范围内匹配角色
             rows = repository.findAllByRoleIdAndActiveFlagTrue(roleId);
         }
         return this.extractActivePractitionerIds(rows);
@@ -165,6 +172,13 @@ public class PractitionerRoleQueryService {
         return this.extractActivePractitionerIds(rows);
     }
 
+    /**
+     * 判断医务人员是否拥有指定平台角色的激活岗位。
+     *
+     * @param practitionerId 医务人员主键
+     * @param roleId         平台角色主键
+     * @return 存在激活岗位时为 {@code true}
+     */
     public boolean hasActiveAssignmentForRole(Long practitionerId, Long roleId) {
         if (practitionerId == null || roleId == null) {
             return false;
@@ -172,6 +186,12 @@ public class PractitionerRoleQueryService {
         return repository.countByPractitionerIdAndRoleIdAndActiveFlagTrueAndIsDeletedFalse(practitionerId, roleId) > 0;
     }
 
+    /**
+     * 按岗位主键解析平台角色主键。
+     *
+     * @param assignmentId 岗位主键
+     * @return 平台角色主键；不存在时 {@code null}
+     */
     public Long findRoleIdByAssignmentId(Long assignmentId) {
         if (assignmentId == null) {
             return null;
@@ -179,6 +199,12 @@ public class PractitionerRoleQueryService {
         return repository.findById(assignmentId).map(PractitionerRole::getRoleId).orElse(null);
     }
 
+    /**
+     * 按医务人员汇总其激活岗位关联的机构主键（去重）。
+     *
+     * @param practitionerId 医务人员主键
+     * @return 机构主键读模型列表
+     */
     public List<PractitionerOrgIdQueryModel> listOrganizationIdsByPractitioner(Long practitionerId) {
         Set<Long> ids = new LinkedHashSet<>();
         for (PractitionerRoleAssignmentQueryModel row : this.listAssignmentsByPractitioner(practitionerId)) {
@@ -196,11 +222,19 @@ public class PractitionerRoleQueryService {
         return result;
     }
 
+    /**
+     * 按医务人员与机构加载可接诊号源主键列表。
+     *
+     * @param practitionerId 医务人员主键
+     * @param orgId          机构主键
+     * @return 号源主键读模型列表；无岗位时空列表
+     */
     public List<PractitionerHealthcareServiceQueryModel> listHealthcareServiceIdsByPractitionerAndOrg(
         Long practitionerId,
         Long orgId) {
         List<PractitionerRole> roles = repository.findAllByPractitionerIdAndOrgIdAndActiveFlagTrue(practitionerId, orgId);
         if (roles.isEmpty()) {
+            // 该机构下无激活岗位：跳过号源子表查询
             return new ArrayList<>();
         }
 
@@ -221,6 +255,42 @@ public class PractitionerRoleQueryService {
         return result;
     }
 
+    /**
+     * 加载医师在全院各岗位下配置的可接诊号源类型主键（去重，与科室无关）。
+     *
+     * @param practitionerId 医师主键
+     * @return 号源主键列表；未配置任何号源时为空列表
+     */
+    public List<Long> listHealthcareServiceIdsByPractitioner(Long practitionerId) {
+        if (practitionerId == null) {
+            return new ArrayList<>();
+        }
+        List<PractitionerRoleAssignmentQueryModel> assignments = this.listAssignmentsByPractitioner(practitionerId);
+        List<Long> assignmentIds = new ArrayList<>();
+        for (PractitionerRoleAssignmentQueryModel assignment : assignments) {
+            if (assignment != null && assignment.getAssignmentId() != null) {
+                assignmentIds.add(assignment.getAssignmentId());
+            }
+        }
+        if (assignmentIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<PractitionerRoleServiceItem> serviceItems = serviceItemRepository.findAllByAssignmentIdIn(assignmentIds);
+        LinkedHashSet<Long> serviceIds = new LinkedHashSet<>();
+        for (PractitionerRoleServiceItem row : serviceItems) {
+            if (row != null && row.getHealthcareServiceId() != null) {
+                serviceIds.add(row.getHealthcareServiceId());
+            }
+        }
+        return new ArrayList<>(serviceIds);
+    }
+
+    /**
+     * 按医务人员加载全部岗位记录（含非激活）。
+     *
+     * @param practitionerId 医务人员主键
+     * @return 岗位实体列表；主键为空时空列表
+     */
     public List<PractitionerRole> listAllRolesByPractitioner(Long practitionerId) {
         if (practitionerId == null) {
             return Collections.emptyList();
@@ -230,6 +300,9 @@ public class PractitionerRoleQueryService {
 
     /**
      * 收集登录可选科室主键（仅 org_id，不含 location 形态分类）。
+     *
+     * @param practitionerId 医务人员主键
+     * @return 去重后的机构主键列表
      */
     public List<Long> collectLoginOrganizationUnitIds(Long practitionerId) {
         LinkedHashSet<Long> orgIds = new LinkedHashSet<>();
@@ -241,6 +314,12 @@ public class PractitionerRoleQueryService {
         return new ArrayList<>(orgIds);
     }
 
+    /**
+     * 按岗位主键解析医务人员主键。
+     *
+     * @param assignmentId 岗位主键
+     * @return 医务人员主键；不存在时 {@code null}
+     */
     public Long findPractitionerIdByAssignmentId(Long assignmentId) {
         if (assignmentId == null) {
             return null;
@@ -250,6 +329,12 @@ public class PractitionerRoleQueryService {
             .orElse(null);
     }
 
+    /**
+     * 岗位行 → 未删记录的 practitionerId 集合（LinkedHashSet 保序）。
+     *
+     * @param rows 岗位列表
+     * @return 医务人员 id 集合
+     */
     private Set<Long> extractActivePractitionerIds(List<PractitionerRole> rows) {
         if (rows == null || rows.isEmpty()) {
             return Collections.emptySet();
@@ -268,6 +353,9 @@ public class PractitionerRoleQueryService {
 
     /**
      * 按岗位主键批量加载出诊模板行（booking Port 读路径）。
+     *
+     * @param assignmentIds 岗位主键集合
+     * @return 出诊模板行列表；入参为空时空列表
      */
     public List<PractitionerRoleScheduleItem> listScheduleItemsByAssignmentIds(Collection<Long> assignmentIds) {
         if (assignmentIds == null || assignmentIds.isEmpty()) {

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.conditiontemplate.repository;
 
 import com.openhis.health.domain.custom.conditiontemplate.entity.ConditionTemplate;
@@ -31,6 +18,12 @@ import java.util.Optional;
  */
 public interface ConditionTemplateRepository extends JpaRepository<ConditionTemplate, Long> {
 
+    /**
+     * 按主键加载模板行（含已软删，供框架默认对齐）。
+     *
+     * @param id 模板主键
+     * @return 模板实体
+     */
     Optional<ConditionTemplate> findById(Long id);
 
     /**
@@ -51,9 +44,29 @@ public interface ConditionTemplateRepository extends JpaRepository<ConditionTemp
      */
     boolean existsByObjectIdAndDefinitionIdAndBindingEnum(Long objectId, Long definitionId, String bindingEnum);
 
+    /**
+     * 按归属对象与绑定类型列出模板行（维护页排序展示）。
+     *
+     * @param objectId 归属对象标识
+     * @param bindingEnum 绑定类型枚举值
+     * @return 模板行列表
+     */
     List<ConditionTemplate> findAllByObjectIdAndBindingEnumOrderBySortWeightAscIdAsc(Long objectId, String bindingEnum);
 
+    /**
+     * 按主键集合批量加载（应用层 enrich 用；调用方须过滤软删）。
+     *
+     * @param ids 主键集合
+     * @return 模板行列表
+     */
     List<ConditionTemplate> findAllByIdIn(Collection<Long> ids);
 
+    /**
+     * 按绑定类型分页列出模板（管理端）。
+     *
+     * @param bindingEnum 绑定类型
+     * @param pageable 分页参数
+     * @return 分页结果
+     */
     Page<ConditionTemplate> findAllByBindingEnum(String bindingEnum, Pageable pageable);
 }

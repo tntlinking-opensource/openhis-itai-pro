@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.nursestation.treatment.response;
 
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -19,5 +19,6 @@ import java.util.List;
 public class ListManagedSupplyRoomOptionsResponse {
 
     @Schema(description = "耗材房下拉（登录者管辖药房）")
+    /** 耗材房下拉（登录者管辖药房）。 */
     private List<OptionDto> supplyRoomOptions;
 }

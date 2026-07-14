@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.utils;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -22,14 +9,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.PrintConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
-import java.util.Iterator;
 import java.util.Locale;
-import java.util.Map;
 
 /**
- * PrintJson 版式校验工具（DM-PRT-001 §3.2 · BR-PRT-003/008/009）。
+ * PrintJson 版式校验工具（DM-PRT-001 §3.2 · BR-PRT-003）。
  *
- * <p>纯函数：调用方传入 {@link ObjectMapper}；供领域写路径与应用层 Pre 共用同一校验口径。</p>
+ * <p>纯函数：调用方传入 {@link ObjectMapper}；供领域写路径与应用层 Pre 共用同一校验口径。
+ * 元素 type / formatter 等 hiprint 扩展字段不做白名单或禁止键校验。</p>
  */
 public final class PrintJsonValidationUtil {
 
@@ -66,8 +52,6 @@ public final class PrintJsonValidationUtil {
         if (engine == null || !PrintConstants.PRINT_JSON_ENGINE.equals(engine.asText())) {
             throw new BusinessException(ErrorCodeConstants.PRT_INVALID, "模板格式不合法：engine 须为 Print");
         }
-        // Pre：禁止脚本键（BR-PRT-008）。
-        assertNoForbiddenKeys(root);
         JsonNode panels = root.get("panels");
         if (panels == null || !panels.isArray() || panels.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.PRT_INVALID, "模板格式不合法：panels 须为非空数组");
@@ -97,32 +81,12 @@ public final class PrintJsonValidationUtil {
         return 1;
     }
 
-    private static void assertNoForbiddenKeys(JsonNode node) {
-        // BR-PRT-008：递归扫描 JSON 树，命中禁止键即拒收整份版式。
-        if (node == null || node.isNull()) {
-            return;
-        }
-        if (node.isObject()) {
-            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
-            while (fields.hasNext()) {
-                Map.Entry<String, JsonNode> entry = fields.next();
-                String key = entry.getKey();
-                if (PrintConstants.isForbiddenPrintJsonKey(key)) {
-                    throw new BusinessException(
-                        ErrorCodeConstants.PRT_INVALID,
-                        "模板格式不合法：禁止键 " + key);
-                }
-                assertNoForbiddenKeys(entry.getValue());
-            }
-            return;
-        }
-        if (node.isArray()) {
-            for (JsonNode child : node) {
-                assertNoForbiddenKeys(child);
-            }
-        }
-    }
-
+    /**
+     * 校验单个 panel：对象结构、数字宽高、printElements 数组及 paperMode。
+     *
+     * @param panel hiprint panel 节点
+     * @throws BusinessException {@link ErrorCodeConstants#PRT_INVALID}
+     */
     private static void validatePanel(JsonNode panel) {
         if (!panel.isObject()) {
             throw new BusinessException(ErrorCodeConstants.PRT_INVALID, "模板格式不合法：panel 须为对象");
@@ -136,12 +100,15 @@ public final class PrintJsonValidationUtil {
         if (printElements == null || !printElements.isArray()) {
             throw new BusinessException(ErrorCodeConstants.PRT_INVALID, "模板格式不合法：printElements 须为数组");
         }
-        for (JsonNode element : printElements) {
-            validatePrintElement(element);
-        }
         validatePaperMode(panel);
     }
 
+    /**
+     * 校验 panel.paperMode（fixed/continuous）与 paperType 合法组合。
+     *
+     * @param panel hiprint panel 节点
+     * @throws BusinessException {@link ErrorCodeConstants#PRT_INVALID}
+     */
     private static void validatePaperMode(JsonNode panel) {
         JsonNode paperModeNode = panel.get("paperMode");
         if (paperModeNode != null && !paperModeNode.isNull()) {
@@ -178,22 +145,4 @@ public final class PrintJsonValidationUtil {
         }
     }
 
-    private static void validatePrintElement(JsonNode element) {
-        if (!element.isObject()) {
-            throw new BusinessException(ErrorCodeConstants.PRT_INVALID, "模板格式不合法：元素须为对象");
-        }
-        JsonNode printElementType = element.get("printElementType");
-        if (printElementType == null || !printElementType.isObject()) {
-            throw new BusinessException(ErrorCodeConstants.PRT_INVALID, "模板格式不合法：缺少 printElementType");
-        }
-        JsonNode typeNode = printElementType.get("type");
-        if (typeNode == null || typeNode.asText().trim().isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.PRT_INVALID, "模板格式不合法：元素 type 不能为空");
-        }
-        String type = typeNode.asText().trim();
-        if (!PrintConstants.isAllowedPrintElementType(type)) {
-            throw new BusinessException(
-                ErrorCodeConstants.PRT_INVALID, "模板格式不合法：不支持的元素 type：" + type);
-        }
-    }
 }

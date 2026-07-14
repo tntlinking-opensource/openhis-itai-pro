@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.devicedefinition.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
@@ -31,10 +18,11 @@ import com.openhis.health.domain.administration.devicedefinition.repository.Devi
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
@@ -50,6 +38,8 @@ import lombok.RequiredArgsConstructor;
  * <p>职责：提供器材定义的只读查询能力，包括分页浏览、关键词检索、详情加载等。</p>
  *
  * <p>边界：只读，不写库；联查与报表走读模型，不在本类展开复杂联表。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link DeviceDefinitionRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -94,17 +84,19 @@ public class DeviceDefinitionQueryService {
      * @param searchKey    综合关键字，空白则不作为条件
      * @param categoryCode 分类编码，空白则不作为条件
      * @param typeCode     耗材种类编码（{@code device_type_code}），空白则不作为条件
-     * @return 分页结果
+     * @return 分页结果（固定按业务号倒序，避免无排序时编辑后行位跳动）
      */
     public Page<DeviceDefinition> pageDeviceDefinition(
         int pageNum, int pageSize, String searchKey, String categoryCode, String typeCode) {
         String sk = trimToEmpty(searchKey);
         String cc = trimToEmpty(categoryCode);
         String tc = trimToEmpty(typeCode);
+        // 目录列表固定按 busNo 倒序，与药品/诊疗目录维护页一致
+        Pageable pageable = PageRequest.of(pageNum, pageSize, Sort.by(Sort.Direction.DESC, FieldNameConstants.BUS_NO));
         if (sk.isEmpty() && cc.isEmpty() && tc.isEmpty()) {
             Specification<DeviceDefinition> catalogPage = (root, query, cb) ->
                 DeviceDefinitionQueryService.notDeletedPredicate(root, cb);
-            return repository.findAll(catalogPage, PageRequest.of(pageNum, pageSize));
+            return repository.findAll(catalogPage, pageable);
         }
         Specification<DeviceDefinition> spec = (root, query, cb) -> {
             List<Predicate> ands = new ArrayList<>();
@@ -128,7 +120,7 @@ public class DeviceDefinitionQueryService {
             }
             return cb.and(ands.toArray(Predicate[]::new));
         };
-        return repository.findAll(spec, PageRequest.of(pageNum, pageSize));
+        return repository.findAll(spec, pageable);
     }
 
     /**
@@ -281,12 +273,18 @@ public class DeviceDefinitionQueryService {
         return repository.findAll(spec);
     }
 
+    /**
+     * 器材采购/选品分页谓词：未删除、分类、启用、供应商、关键字与预选 OR 组合。
+     *
+     * @param query 采购分页查询
+     * @return JPA Specification
+     */
     private Specification<DeviceDefinition> buildPurchasePageSpecification(ProductDefinitionPurchasePageQuery query) {
         return (root, cq, cb) -> {
             List<Predicate> ands = new ArrayList<>();
             ands.add(DeviceDefinitionQueryService.notDeletedPredicate(root, cb));
             if (query != null) {
-                if (StringUtils.isNotBlank(query.getCategoryCode())) {
+                if (StringUtils.isNotEmpty(query.getCategoryCode())) {
                     ands.add(cb.equal(root.get(FieldNameConstants.CATEGORY_CODE), query.getCategoryCode().trim()));
                 }
                 if (query.getActiveFlag() != null) {
@@ -295,7 +293,7 @@ public class DeviceDefinitionQueryService {
                 if (query.getSupplierId() != null) {
                     ands.add(cb.equal(root.get(FieldNameConstants.SUPPLY_ID), query.getSupplierId()));
                 }
-                if (StringUtils.isNotBlank(query.getManufacturer())) {
+                if (StringUtils.isNotEmpty(query.getManufacturer())) {
                     ands.add(cb.equal(root.get(FieldNameConstants.MANUFACTURER_TEXT), query.getManufacturer().trim()));
                 }
                 Predicate keywordPred = this.buildPurchaseKeywordPredicate(root, cb, query.getKeyword());
@@ -306,8 +304,16 @@ public class DeviceDefinitionQueryService {
         };
     }
 
+    /**
+     * 采购关键字 OR 谓词：名称、商品名、拼音五笔、业务号不区分大小写模糊匹配。
+     *
+     * @param root    器材定义根
+     * @param cb      CriteriaBuilder
+     * @param keyword 用户关键字；空时返回 null
+     * @return 关键字谓词或 null
+     */
     private Predicate buildPurchaseKeywordPredicate(Root<DeviceDefinition> root, CriteriaBuilder cb, String keyword) {
-        if (StringUtils.isBlank(keyword)) {
+        if (StringUtils.isEmpty(keyword)) {
             return null;
         }
         String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keyword.trim());
@@ -322,6 +328,14 @@ public class DeviceDefinitionQueryService {
         );
     }
 
+    /**
+     * 预选器材主键 OR 谓词：仅匹配 {@code adm_device_definition} 表行的 productDefinitionId。
+     *
+     * @param root 器材定义根
+     * @param cb   CriteriaBuilder
+     * @param keys 批量查找键；空时返回 null
+     * @return 预选 OR 谓词或 null
+     */
     private Predicate buildDevicePrepickedPredicate(
         Root<DeviceDefinition> root,
         CriteriaBuilder cb,
@@ -335,7 +349,7 @@ public class DeviceDefinitionQueryService {
             if (lookup == null || lookup.getProductDefinitionId() == null) {
                 continue;
             }
-            if (StringUtils.isNotBlank(lookup.getProductTableName())
+            if (StringUtils.isNotEmpty(lookup.getProductTableName())
                 && !TableNameConstants.ADM_DEVICE_DEFINITION.equals(lookup.getProductTableName().trim())) {
                 continue;
             }
@@ -347,6 +361,14 @@ public class DeviceDefinitionQueryService {
         return cb.or(parts.toArray(Predicate[]::new));
     }
 
+    /**
+     * 将关键字谓词与预选谓词合并进 AND 列表：二者皆有则 OR，否则追加非空者。
+     *
+     * @param predicates   累积 AND 谓词列表
+     * @param cb           CriteriaBuilder
+     * @param keywordPred  关键字谓词
+     * @param prepPred     预选谓词
+     */
     private void appendKeywordOrPrepicked(
         List<Predicate> predicates,
         CriteriaBuilder cb,
@@ -366,6 +388,13 @@ public class DeviceDefinitionQueryService {
         }
     }
 
+    /**
+     * 器材定义未逻辑删除谓词（复用导出、分页等多处 Specification）。
+     *
+     * @param root 器材定义根
+     * @param cb   CriteriaBuilder
+     * @return is_deleted = false 谓词
+     */
     private static Predicate notDeletedPredicate(Root<DeviceDefinition> root, CriteriaBuilder cb) {
         return cb.isFalse(root.get(FieldNameConstants.IS_DELETED));
     }
@@ -432,7 +461,7 @@ public class DeviceDefinitionQueryService {
      * @return 未删除且命中关键字的耗材定义主键列表
      */
     public List<Long> listIdsByInventoryDetailKeyword(String keyword) {
-        if (StringUtils.isBlank(keyword)) {
+        if (StringUtils.isEmpty(keyword)) {
             return Collections.emptyList();
         }
         Specification<DeviceDefinition> specification = (root, criteriaQuery, cb) -> {

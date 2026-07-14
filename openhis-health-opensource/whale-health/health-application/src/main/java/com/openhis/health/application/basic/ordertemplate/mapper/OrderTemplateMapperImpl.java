@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.ordertemplate.mapper;
 
 import com.openhis.health.application.basic.ordertemplate.dto.OrderTemplateBindingGroupDto;
@@ -30,7 +17,7 @@ import com.openhis.health.application.basic.ordertemplate.response.PreviewOrderT
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.OrderTemplateConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.domain.custom.ordertemplate.command.AddOrderTemplateLineCommand;
 import com.openhis.health.domain.custom.ordertemplate.command.CreateOrderTemplateCommand;
 import com.openhis.health.domain.custom.ordertemplate.command.RemoveOrderTemplateLineCommand;
@@ -49,7 +36,7 @@ import com.openhis.health.domain.share.enums.OrderTemplateScene;
 import com.openhis.health.domain.share.enums.OrderTemplateSource;
 import com.openhis.health.domain.share.enums.OrderTemplateStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -524,7 +511,7 @@ public class OrderTemplateMapperImpl implements OrderTemplateMapper {
         OrderTemplateScene encounterScene,
         String workstationKindCode
     ) {
-        if (StringUtils.isBlank(workstationKindCode)) {
+        if (StringUtils.isEmpty(workstationKindCode)) {
             throw new BusinessException(ErrorCodeConstants.ORDER_TEMPLATE_INVALID_ARGUMENT, "请检查组套套用参数后重试");
         }
         String normalizedWorkstation = workstationKindCode.trim().toUpperCase();
@@ -590,7 +577,7 @@ public class OrderTemplateMapperImpl implements OrderTemplateMapper {
      * 套用上下文 code 归一。
      */
     private String normalizeApplyContext(String applyContextCode) {
-        if (StringUtils.isBlank(applyContextCode)) {
+        if (StringUtils.isEmpty(applyContextCode)) {
             return null;
         }
         return applyContextCode.trim().toUpperCase();
@@ -600,7 +587,7 @@ public class OrderTemplateMapperImpl implements OrderTemplateMapper {
      * searchKey trim；空白 → null。
      */
     private String normalizeSearchKey(String searchKey) {
-        if (StringUtils.isBlank(searchKey)) {
+        if (StringUtils.isEmpty(searchKey)) {
             return null;
         }
         return searchKey.trim();
@@ -709,7 +696,7 @@ public class OrderTemplateMapperImpl implements OrderTemplateMapper {
         if (rows == null || rows.isEmpty()) {
             return rows;
         }
-        if (StringUtils.isBlank(keyword)) {
+        if (StringUtils.isEmpty(keyword)) {
             return rows;
         }
         String trimmedKeyword = keyword.trim();
@@ -735,7 +722,7 @@ public class OrderTemplateMapperImpl implements OrderTemplateMapper {
      * @return 是否匹配
      */
     private boolean matchesCaseInsensitiveLike(String fieldValue, String trimmedKeyword) {
-        if (fieldValue == null || StringUtils.isBlank(trimmedKeyword)) {
+        if (fieldValue == null || StringUtils.isEmpty(trimmedKeyword)) {
             return false;
         }
         String likePattern = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmedKeyword);

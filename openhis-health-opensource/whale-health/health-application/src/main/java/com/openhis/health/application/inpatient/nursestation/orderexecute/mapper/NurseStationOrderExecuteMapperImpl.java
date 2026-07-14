@@ -1,33 +1,20 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.orderexecute.mapper;
 
-import com.openhis.health.module.common.assembler.advice.ProductDefinitionOrderChargePricingSupport;
+import com.openhis.health.application.shared.advice.OrderChargePricingAssembler;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.request.ListNurseStationOrderExecuteRequest;
-import com.openhis.health.module.querysupport.nursestation.NurseStationOrderExecuteListQuery;
-import com.openhis.health.module.querysupport.nursestation.NurseStationOrderExecuteListReadAssembler;
-import com.openhis.health.module.querysupport.nursestation.NurseStationOrderExecuteListResult;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderExecuteRowDto;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.support.NurseStationOrderExecuteListQuery;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.support.NurseStationOrderExecuteListReadAssembler;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.support.NurseStationOrderExecuteListResult;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteRowDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.dto.NurseStationOrderExecuteWriteSlotDto;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ExecuteNurseStationOrdersResponse;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.ListNurseStationOrderExecuteResponse;
 import com.openhis.health.application.inpatient.nursestation.orderexecute.response.SkipNurseStationOrderSlotsResponse;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
@@ -40,7 +27,7 @@ import com.openhis.health.domain.clinical.procedure.command.SkipProcedureRecordC
 import com.openhis.health.domain.clinical.procedure.command.StartProcedureExecutionCommand;
 import com.openhis.health.domain.medication.medicationdispense.command.GenerateDispenseFromExecutionCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
-import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
 import com.openhis.health.domain.share.constants.ChargeItemDmConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
@@ -49,7 +36,7 @@ import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.workflow.devicedispense.command.GenerateDeviceDispenseFromTemporaryPathCommand;
 import com.openhis.health.domain.workflow.devicerequest.command.CreateExecutedDeviceOrderCommand;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -301,7 +288,7 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
                 item.setDiscountAmount(template.getDiscountAmount());
                 item.setSurchargeAmount(template.getSurchargeAmount());
             }
-            if (StringUtils.isNotBlank(template.getProductTable())) {
+            if (StringUtils.isNotEmpty(template.getProductTable())) {
                 item.setProductTable(template.getProductTable());
             }
             if (template.getProductId() != null) {
@@ -313,7 +300,7 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
             if (template.getRequestingOrgId() != null) {
                 item.setRequestingOrgId(template.getRequestingOrgId());
             }
-            if (StringUtils.isNotBlank(template.getContextEnum())) {
+            if (StringUtils.isNotEmpty(template.getContextEnum())) {
                 item.setContextEnum(template.getContextEnum());
             }
         }
@@ -327,7 +314,7 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
         BigDecimal qty = quantity;
         if (productPricedCharge) {
             // 药/诊：quantity/unit 与请求行一致，单价按目录单位槽对定价行比例换算
-            ProductDefinitionOrderChargePricingSupport.applyOrderChargePricing(
+            OrderChargePricingAssembler.applyOrderChargePricing(
                 item, medicationProduct, priceLine, qty, quantityUnitCode);
         } else {
             if (qty == null) {
@@ -405,7 +392,7 @@ public class NurseStationOrderExecuteMapperImpl implements NurseStationOrderExec
         item.setAccountId(accountId);
         item.setOrgId(orgId);
         item.setRequestingOrgId(orgId);
-        ProductDefinitionOrderChargePricingSupport.applyOrderChargePricing(
+        OrderChargePricingAssembler.applyOrderChargePricing(
             item, productRow, priceLine, quantity, quantityUnitCode);
         if (planTime != null) {
             item.setOccurrenceTime(planTime);

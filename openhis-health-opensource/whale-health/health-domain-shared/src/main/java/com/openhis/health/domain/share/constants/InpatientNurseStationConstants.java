@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 import java.math.BigDecimal;
@@ -69,6 +56,9 @@ public interface InpatientNurseStationConstants {
     /** 出院门禁：长期医嘱未停（IF-IP-NUR-ATD-05）。 */
     String EX_IP_ATD_301 = "EX-IP-ATD-301";
 
+    /** 出院门禁：长期已停嘱仍有待执行时点（IF-IP-NUR-ATD-05）。 */
+    String EX_IP_ATD_307 = "EX-IP-ATD-307";
+
     /** 出院门禁：临时医嘱未执行完（IF-IP-NUR-ATD-05）。 */
     String EX_IP_ATD_302 = "EX-IP-ATD-302";
 
@@ -117,6 +107,9 @@ public interface InpatientNurseStationConstants {
     /** 出院待办：长期医嘱未停嘱阻塞原因（IF-IP-NUR-ATD-03）。 */
     String DISCHARGE_BLOCKING_LONG_NOT_STOPPED = "LONG_NOT_STOPPED";
 
+    /** 出院待办：长期已停嘱仍有待执行时点阻塞原因（IF-IP-NUR-ATD-03）。 */
+    String DISCHARGE_BLOCKING_LONG_PENDING_SLOTS = "LONG_PENDING_SLOTS";
+
     /** 出院待办：临时医嘱未执行完阻塞原因（IF-IP-NUR-ATD-03）。 */
     String DISCHARGE_BLOCKING_TEMP_NOT_COMPLETED = "TEMP_NOT_COMPLETED";
 
@@ -144,7 +137,7 @@ public interface InpatientNurseStationConstants {
     /** 医嘱校对 Tab：已作废（CANCELLED）。 */
     String AUDIT_TAB_SUSPENDED = "suspended";
 
-    /** 长临筛选：全部。 */
+/** InpatientNurseStation 共享常量：filter all，值 {@code all}。 */
     String THERAPY_FILTER_ALL = "all";
 
     /** 长临筛选：长期医嘱。 */
@@ -162,6 +155,21 @@ public interface InpatientNurseStationConstants {
     /** 诊疗类目：出院（DM-WKF-004 §4.3）。 */
     String SERVICE_CATEGORY_DISCHARGE = "34";
 
+    /** 护士站医嘱列表类型列：药品。 */
+    String ORDER_KIND_DISPLAY_MEDICATION = "药品";
+
+    /** 护士站医嘱列表类型列：诊疗。 */
+    String ORDER_KIND_DISPLAY_SERVICE = "诊疗";
+
+    /** 护士站医嘱列表类型列：出院医嘱（category_enum=34）。 */
+    String ORDER_KIND_DISPLAY_DISCHARGE = "出院";
+
+    /** 护士站医嘱列表类型列：转科医嘱（category_enum=32）。 */
+    String ORDER_KIND_DISPLAY_TRANSFER = "转科";
+
+    /** 护士站医嘱列表类型列：护理医嘱（category_enum=26）。 */
+    String ORDER_KIND_DISPLAY_NURSING = "护理";
+
     /** 医嘱校对列表查询失败（IF-IP-AUD-01）。 */
     String EX_IP_AUD_101 = "EX-IP-AUD-101";
 
@@ -177,11 +185,15 @@ public interface InpatientNurseStationConstants {
     /** 校对：转科/出院就诊联动失败（IF-IP-AUD-02）。 */
     String EX_IP_AUD_203 = "EX-IP-AUD-203";
 
-    /** 退回：状态非 ACTIVE（IF-IP-AUD-03）。 */
+    /** 退回：状态/来源/派生/门控未满足（IF-IP-AUD-03 / BR-IP-AUD-013）。 */
     String EX_IP_AUD_301 = "EX-IP-AUD-301";
 
     /** 退回：就诊不可见（IF-IP-AUD-03）。 */
     String EX_IP_AUD_302 = "EX-IP-AUD-302";
+
+    /** 退回写路径 Gate 用户提示（BR-IP-AUD-013；与 {@link #EX_IP_AUD_301} 成对）。 */
+    String MSG_IP_AUD_REJECT_BLOCKED =
+        "该医嘱仍存在执行记录、待发/待退药或不可回退费用，无法退回";
 
     /** 医嘱执行 Tab：待执行。 */
     String EXECUTE_TAB_PENDING = "pending";
@@ -231,8 +243,29 @@ public interface InpatientNurseStationConstants {
     /** 不执行域写失败（IF-IP-EXE-04）。 */
     String EX_IP_EXE_403 = "EX-IP-EXE-403";
 
+    /** 护理级别医嘱禁止护士站执行/不执行（IF-IP-EXE-02/04 · BR-IP-EXE-027）。 */
+    String EX_IP_EXE_306 = "EX-IP-EXE-306";
+
+    /** 就诊待结算禁止执行/不执行（IF-IP-EXE-02/04）。 */
+    String EX_IP_EXE_307 = "EX-IP-EXE-307";
+
+    /** 护理级别医嘱仅允许校对，不允许护士站执行或不执行登记。 */
+    String MSG_NURSING_LEVEL_NOT_EXECUTABLE = "护理级别医嘱仅允许校对，不允许护士站执行";
+
+    /** 就诊已出院/待结算/已结算（PENDING/COMPLETED/DISCHARGED）禁止医嘱及费用变更（非 ChargeItem 账单态）。 */
+    String MSG_ENCOUNTER_PENDING_SETTLEMENT_ORDER_FORBIDDEN = "患者已办理出院或已结算，不可变更医嘱及费用";
+
+    /** 划价/取消划价：就诊已出院或已结算不可写（IF-IP-PRC-02/04/06）。 */
+    String EX_IP_PRC_406 = "EX-IP-PRC-406";
+
     /** 住院护士站医嘱执行完成结果摘要（Procedure complete 门禁占位）。 */
     String INPATIENT_NURSE_EXECUTE_PROCEDURE_RESULT_TEXT = "住院护士站医嘱执行完成";
+
+    /** 住院护士站划价诊疗完成结果摘要（Procedure complete 占位，BR-RPT-NWL-020）。 */
+    String INPATIENT_NURSE_PRICING_PROCEDURE_RESULT_TEXT = "住院护士站划价完成";
+
+    /** 取消划价时 Procedure CANCEL 行状态原因（IF-IP-PRC-06 对称还原）。 */
+    String INPATIENT_NURSE_PRICING_CANCEL_PROCEDURE_REASON = "护士划价取消";
 
     /** 护士划价/补费写路径单批上限（AS-IP-NUR-005 §7 NFR）。 */
     int PRICING_WRITE_BATCH_MAX = 50;
@@ -320,6 +353,18 @@ public interface InpatientNurseStationConstants {
 
     /** 费用明细展示模式文案：汇总（IF-IP-CDT-01 初始化下发）。 */
     String COST_DETAIL_PRESENTATION_MODE_SUMMARY_DISPLAY = "汇总";
+
+    /** 费用明细状态筛选：待结算（IF-IP-CDT-02 默认）。 */
+    String COST_DETAIL_STATUS_FILTER_PENDING_SETTLEMENT = "PENDING_SETTLEMENT";
+
+    /** 费用明细状态筛选：已结算（IF-IP-CDT-02）。 */
+    String COST_DETAIL_STATUS_FILTER_SETTLED = "SETTLED";
+
+    /** 费用明细状态筛选文案：待结算（IF-IP-CDT-01 初始化下发）。 */
+    String COST_DETAIL_STATUS_FILTER_PENDING_SETTLEMENT_DISPLAY = "待结算";
+
+    /** 费用明细状态筛选文案：已结算（IF-IP-CDT-01 初始化下发）。 */
+    String COST_DETAIL_STATUS_FILTER_SETTLED_DISPLAY = "已结算";
 
     /** 费用大类块：药品（BR-IP-CDT-008）。 */
     String COST_DETAIL_EXPENSE_BLOCK_MEDICATION = "MEDICATION";
@@ -453,6 +498,9 @@ public interface InpatientNurseStationConstants {
     /** 皮试删除：删除失败（IF-IP-STK-04）。 */
     String EX_IP_STK_303 = "EX-IP-STK-303";
 
+    /** 皮试保存：就诊已出院或已结算不可划价（IF-IP-STK-03）。 */
+    String EX_IP_STK_208 = "EX-IP-STK-208";
+
     /** 批量取消执行单批上限（AS-IP-NUR-012 §7 NFR）。 */
     int ORDER_CANCEL_EXECUTE_BATCH_MAX = 50;
 
@@ -470,6 +518,9 @@ public interface InpatientNurseStationConstants {
 
     /** 取消执行：域写失败（IF-IP-CXL-01）。 */
     String EX_IP_CXL_205 = "EX-IP-CXL-205";
+
+    /** 取消执行：就诊待结算（IF-IP-CXL-01）。 */
+    String EX_IP_CXL_206 = "EX-IP-CXL-206";
 
     /** 取消执行成功默认提示（IF-IP-CXL-01）。 */
     String ORDER_CANCEL_EXECUTE_SUCCESS_MESSAGE = "取消执行成功";
@@ -560,4 +611,67 @@ public interface InpatientNurseStationConstants {
 
     /** 护理记录删除：写失败（IF-IP-NRC-05）。 */
     String EX_IP_NRC_302 = "EX-IP-NRC-302";
+
+    /** 追溯码分配：未选患者或无权（IF-IP-TRC-01～04 · BR-IP-TRC-001）。 */
+    String EX_IP_TRC_101 = "EX-IP-TRC-101";
+
+    /** 追溯码分配：列表查询失败（IF-IP-TRC-01）。 */
+    String EX_IP_TRC_102 = "EX-IP-TRC-102";
+
+    /** 追溯码分配：码不在汇总码池（IF-IP-TRC-03/04 · BR-IP-TRC-005）。 */
+    String EX_IP_TRC_201 = "EX-IP-TRC-201";
+
+    /** 追溯码分配：追溯码格式非法（IF-IP-TRC-03/04 · BR-IP-TRC-014）。 */
+    String EX_IP_TRC_202 = "EX-IP-TRC-202";
+
+    /** 追溯码分配：批号缺失（IF-IP-TRC-04）。 */
+    String EX_IP_TRC_203 = "EX-IP-TRC-203";
+
+    /** 追溯码分配：药房未录入汇总追溯码（IF-IP-TRC-04 · BR-IP-TRC-013）。 */
+    String EX_IP_TRC_204 = "EX-IP-TRC-204";
+
+    /** 追溯码分配：部分追溯码无法匹配（IF-IP-TRC-03）。 */
+    String EX_IP_TRC_205 = "EX-IP-TRC-205";
+
+    /** 追溯码分配：跨汇总单混用码（IF-IP-TRC-03）。 */
+    String EX_IP_TRC_206 = "EX-IP-TRC-206";
+
+    /** 追溯码分配：发放行状态不允许（IF-IP-TRC-04 · BR-IP-TRC-002）。 */
+    String EX_IP_TRC_207 = "EX-IP-TRC-207";
+
+    /** 追溯码分配：追溯码数量超限（IF-IP-TRC-03/04 · BR-IP-TRC-008）。 */
+    String EX_IP_TRC_208 = "EX-IP-TRC-208";
+
+    /** 追溯码分配组状态：待分配（IF-IP-TRC-02）。 */
+    String TRACE_ASSIGNMENT_STATUS_PENDING = "PENDING";
+
+    /** 追溯码分配组状态：已分配（IF-IP-TRC-02）。 */
+    String TRACE_ASSIGNMENT_STATUS_ASSIGNED = "ASSIGNED";
+
+    /** 追溯码有效长度（与门诊前端 TRACE_CODE_LENGTH 同族 · BR-IP-TRC-014）。 */
+    int TRACE_CODE_LENGTH = 20;
+
+    /** 单次批量解析追溯码上限（AS-IP-NUR-015 §7 性能）。 */
+    int TRACE_CODE_BATCH_RESOLVE_MAX = 50;
+
+    /** 追溯码解析失败原因：格式非法。 */
+    String TRACE_CODE_FAIL_REASON_INVALID = "INVALID";
+
+    /** 追溯码解析失败原因：不在码池。 */
+    String TRACE_CODE_FAIL_REASON_NOT_IN_POOL = "NOT_IN_POOL";
+
+    /** 追溯码解析失败原因：无法匹配药批组。 */
+    String TRACE_CODE_FAIL_REASON_NOT_MATCHED = "NOT_MATCHED";
+
+    /** 追溯码解析失败原因：码数超限。 */
+    String TRACE_CODE_FAIL_REASON_OVER_LIMIT = "OVER_LIMIT";
+
+    /** 追溯码分配组状态展示：待分配（IF-IP-TRC-02）。 */
+    String TRACE_ASSIGNMENT_STATUS_PENDING_DISPLAY = "待分配";
+
+    /** 追溯码分配组状态展示：已分配（IF-IP-TRC-02）。 */
+    String TRACE_ASSIGNMENT_STATUS_ASSIGNED_DISPLAY = "已分配";
+
+    /** 码池摘要最大展示长度（IF-IP-TRC-02 脱敏截断）。 */
+    int TRACE_POOL_PREVIEW_MAX_LENGTH = 120;
 }

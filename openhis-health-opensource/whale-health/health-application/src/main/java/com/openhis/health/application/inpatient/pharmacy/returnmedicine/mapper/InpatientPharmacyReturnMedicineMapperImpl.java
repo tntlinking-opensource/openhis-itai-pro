@@ -1,23 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.pharmacy.returnmedicine.mapper;
 
-import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.inpatient.pharmacy.returnmedicine.dto.InpatientReturnMedicineDetailRowDto;
 import com.openhis.health.application.inpatient.pharmacy.returnmedicine.dto.InpatientReturnPatientRowDto;
 import com.openhis.health.application.inpatient.pharmacy.returnmedicine.request.GetInpatientReturnMedicineDetailRequest;
@@ -32,7 +19,7 @@ import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.utils.AdministrativeGenderDisplayUtil;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;

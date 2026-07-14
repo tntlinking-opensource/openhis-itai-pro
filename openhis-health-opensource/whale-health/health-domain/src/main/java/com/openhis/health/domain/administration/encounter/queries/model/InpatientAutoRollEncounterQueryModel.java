@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.encounter.queries.model;
 
 import lombok.Getter;
@@ -43,12 +30,18 @@ public class InpatientAutoRollEncounterQueryModel {
     /** 默认个人现金账户主键；未开立时不含值。 */
     private Long accountId;
 
-    /** 入院时刻（BR-IP-ARG-007 入院日跨午夜判定）。 */
+    /** 就诊 start_time（首次分床 {@code transitToInProgress} 锚点；转床不更新；BR-IP-ARG-007 滚费 Gate 主锚）。 */
     private LocalDateTime startTime;
+
+    /** 首次分床时刻（全部 BED 轨迹最早 {@code start_time}；转床仅新增轨迹，不替换本字段）。 */
+    private LocalDateTime bedAssignedAt;
 
     /** 就诊状态持久化码（IN_PROGRESS / ON_HOLD / COMPLETED）。 */
     private String statusEnum;
 
     /** 当前激活床位 location 主键。 */
     private Long bedLocationId;
+
+    /** 责任护士主键（滚费主执行人；BR-IP-ARG-019）。 */
+    private Long primaryNurseId;
 }

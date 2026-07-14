@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationrequest.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -27,7 +14,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -257,6 +244,14 @@ public class MedicationRequest extends BaseAuditedEntity {
     }
 
     /**
+     * 初始化退药负向申请单：待退态（与耗材/诊疗负向单 {@link RequestStatus#CANCELLED} 口径一致）。
+     */
+    public void initAsRefundNegativeOrder() {
+        this.statusEnum = RequestStatus.CANCELLED.getCode();
+        this.statusChangedTime = LocalDateTime.now();
+    }
+
+    /**
      * 校验剂量语义。
      */
     public void validateDosageSemantics() {
@@ -468,7 +463,7 @@ public class MedicationRequest extends BaseAuditedEntity {
      * @param sourcePrescriptionNo 原正向药嘱处方号
      */
     public void markAsRefundFromPrescription(String sourcePrescriptionNo) {
-        if (StringUtils.isBlank(sourcePrescriptionNo)) {
+        if (StringUtils.isEmpty(sourcePrescriptionNo)) {
             return;
         }
         this.prescriptionNo = "T" + sourcePrescriptionNo.trim();

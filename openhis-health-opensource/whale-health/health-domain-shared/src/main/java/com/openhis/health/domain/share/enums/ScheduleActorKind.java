@@ -1,60 +1,29 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 /**
  * 号源日程参与者类型（DM-WKF-009 §4.1）。
  */
 public enum ScheduleActorKind implements EnumInterface {
-    /**
-     * PRACTITIONER。
-     */
+    /** 医务人员（ScheduleActorKind，编码 {@code PRACTITIONER}）。 */
     PRACTITIONER(0L, "PRACTITIONER", "Practitioner", "", 10L),
-    /**
-     * PRACTITIONER_ROLE。
-     */
+    /** 医务人员角色（ScheduleActorKind，编码 {@code PRACTITIONER_ROLE}）。 */
     PRACTITIONER_ROLE(0L, "PRACTITIONER_ROLE", "PractitionerRole", "", 11L),
-    /**
-     * LOCATION。
-     */
+    /** 地点/科室（ScheduleActorKind，编码 {@code LOCATION}）。 */
     LOCATION(0L, "LOCATION", "Location", "", 20L),
-    /**
-     * HEALTHCARE_SERVICE。
-     */
+    /** 医疗服务（ScheduleActorKind，编码 {@code HEALTHCARE_SERVICE}）。 */
     HEALTHCARE_SERVICE(0L, "HEALTHCARE_SERVICE", "HealthcareService", "", 30L),
-    /**
-     * DEVICE。
-     */
+    /** 设备（ScheduleActorKind，编码 {@code DEVICE}）。 */
     DEVICE(0L, "DEVICE", "Device", "", 40L),
-    /**
-     * PATIENT。
-     */
+    /** 患者（ScheduleActorKind，编码 {@code PATIENT}）。 */
     PATIENT(0L, "PATIENT", "Patient", "", 50L),
-    /**
-     * RELATED_PERSON。
-     */
+    /** 关联人员/联系人（ScheduleActorKind，编码 {@code RELATED_PERSON}）。 */
     RELATED_PERSON(0L, "RELATED_PERSON", "RelatedPerson", "", 60L),
-    /**
-     * CARE_TEAM。
-     */
+    /** 照护团队（ScheduleActorKind，编码 {@code CARE_TEAM}）。 */
     CARE_TEAM(0L, "CARE_TEAM", "CareTeam", "", 70L),
-    /**
-     * ORGANIZATION。
-     */
+    /** 组织机构（ScheduleActorKind，编码 {@code ORGANIZATION}）。 */
     ORGANIZATION(0L, "ORGANIZATION", "Organization", "", 80L);
 
     private final Long codeSystemId;
@@ -64,7 +33,7 @@ public enum ScheduleActorKind implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * ScheduleActorKind。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     ScheduleActorKind(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

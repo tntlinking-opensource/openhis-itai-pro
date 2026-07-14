@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationrequest.service;
 
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
@@ -34,7 +21,7 @@ import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -53,6 +40,7 @@ import java.util.Map;
  * 药品医嘱/申请读侧查询服务。
  *
  * <p>职责：按就诊与患者维度查询申请列表与历史，并提供删除、签退等动作前的状态门控；只读不写库。</p>
+ * <p>聚合边界：仅本聚合 {@link MedicationRequestRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -230,7 +218,7 @@ public class MedicationRequestQueryService {
             if (row == null || row.getId() == null || Boolean.TRUE.equals(row.getIsDeleted())) {
                 continue;
             }
-            if (StringUtils.isBlank(row.getContentJson())) {
+            if (StringUtils.isEmpty(row.getContentJson())) {
                 continue;
             }
             map.put(row.getId(), row.getContentJson());
@@ -313,7 +301,11 @@ public class MedicationRequestQueryService {
             if (!Boolean.TRUE.equals(request.getTcmFlag())) {
                 continue;
             }
-            if (StringUtils.isNotBlank(therapyEnum) && !therapyEnum.equals(request.getTherapyEnum())) {
+            if (StringUtils.isNotEmpty(therapyEnum) && !therapyEnum.equals(request.getTherapyEnum())) {
+                continue;
+            }
+            // 读侧排除退药逆向复制行，避免中药 Tab 一收一退双行展示（BR-ORD-030 / BR-TCM-RX）
+            if (request.getRefundMedicineId() != null) {
                 continue;
             }
             tcmLines.add(this.toListModel(request));
@@ -349,7 +341,11 @@ public class MedicationRequestQueryService {
             if (!GenerateSource.DOCTOR_PRESCRIPTION.getCode().equals(request.getGenerateSourceEnum())) {
                 continue;
             }
-            if (StringUtils.isBlank(request.getPrescriptionNo())) {
+            if (StringUtils.isEmpty(request.getPrescriptionNo())) {
+                continue;
+            }
+            // 读侧排除退药逆向复制行，历史方计数与展示不含 T 前缀负向复制行（BR-ORD-030）
+            if (request.getRefundMedicineId() != null) {
                 continue;
             }
             String groupKey = request.getEncounterId() + "|" + request.getPrescriptionNo().trim();
@@ -568,13 +564,19 @@ public class MedicationRequestQueryService {
         return ids;
     }
 
+    /**
+     * 状态 in 条件归一：trim 非空 code，空集合返回空列表。
+     *
+     * @param statusEnumsIn 原始状态 code 集合
+     * @return trim 后的状态列表
+     */
     private List<String> normalizeStatusEnumIn(Collection<String> statusEnumsIn) {
         List<String> statuses = new ArrayList<>();
         if (statusEnumsIn == null) {
             return statuses;
         }
         for (String raw : statusEnumsIn) {
-            if (StringUtils.isNotBlank(raw)) {
+            if (StringUtils.isNotEmpty(raw)) {
                 statuses.add(raw.trim());
             }
         }
@@ -754,7 +756,7 @@ public class MedicationRequestQueryService {
         if (idSet.isEmpty()) {
             return Collections.emptyList();
         }
-        if (StringUtils.isBlank(statusEnum)) {
+        if (StringUtils.isEmpty(statusEnum)) {
             throw new BusinessException(
                 ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
                 "按就诊批量查询时 statusEnum 不能为空");
@@ -837,6 +839,15 @@ public class MedicationRequestQueryService {
         return this.toListModel(request);
     }
 
+    /**
+     * 住院医生开立药嘱查询：固定 generate_source=DOCTOR_PRESCRIPTION，可按单就诊/多就诊与状态、therapy 过滤。
+     *
+     * @param singleEncounterId 单就诊收窄（非空时忽略 encounterIds 列表语义）
+     * @param encounterIds      多就诊 in 条件
+     * @param statusEnumIn      状态 in；可 null 表示不限
+     * @param therapyEnum       长临嘱 code；可空
+     * @return 实体列表（按 created_at 降序）
+     */
     private List<MedicationRequest> findInpatientDoctorPrescriptionOrders(
         Long singleEncounterId,
         List<Long> encounterIds,
@@ -856,7 +867,7 @@ public class MedicationRequestQueryService {
             if (statusEnumIn != null && !statusEnumIn.isEmpty()) {
                 predicates.add(root.get(FieldNameConstants.STATUS_ENUM).in(statusEnumIn));
             }
-            if (StringUtils.isNotBlank(therapyEnum)) {
+            if (StringUtils.isNotEmpty(therapyEnum)) {
                 predicates.add(cb.equal(root.get(FieldNameConstants.THERAPY_ENUM), therapyEnum));
             }
             return cb.and(predicates.toArray(new Predicate[0]));
@@ -865,6 +876,12 @@ public class MedicationRequestQueryService {
         return medicationRequestRepository.findAll(specification, sort);
     }
 
+    /**
+     * 药品申请实体批量投影为列表 QueryModel。
+     *
+     * @param requests 实体列表
+     * @return 列表模型
+     */
     private List<MedicationRequestListQueryModel> mapListModels(List<MedicationRequest> requests) {
         List<MedicationRequestListQueryModel> result = new ArrayList<>();
         for (MedicationRequest request : requests) {
@@ -873,6 +890,14 @@ public class MedicationRequestQueryService {
         return result;
     }
 
+    /**
+     * 住院护士站等多就诊查询前置：encounterIds 与 statusEnumIn 均不可空。
+     *
+     * @param encounterIds  就诊主键列表
+     * @param statusEnumIn  状态 in 列表
+     * @param sceneLabel    场景标签（拼入异常文案）
+     * @throws BusinessException MEDICATION_REQUEST_INVALID_ARGUMENT
+     */
     private void validateEncounterIdsAndStatusIn(
         List<Long> encounterIds, List<String> statusEnumIn, String sceneLabel) {
         if (encounterIds == null || encounterIds.isEmpty()) {
@@ -993,11 +1018,11 @@ public class MedicationRequestQueryService {
      * 解析单行所属处方分组键：已签发优先 prescription_no，草稿用 content_json 中的 prescriptionGroupKey。
      */
     private String resolveTcmPrescriptionGroupKey(MedicationRequestListQueryModel line) {
-        if (StringUtils.isNotBlank(line.getPrescriptionNo())) {
+        if (StringUtils.isNotEmpty(line.getPrescriptionNo())) {
             return "RX:" + line.getPrescriptionNo().trim();
         }
         String prescriptionGroupKey = this.readTcmContentJsonTextField(line.getContentJson(), "prescriptionGroupKey");
-        if (StringUtils.isNotBlank(prescriptionGroupKey)) {
+        if (StringUtils.isNotEmpty(prescriptionGroupKey)) {
             return "KEY:" + prescriptionGroupKey.trim();
         }
         return "ROW:" + line.getId();
@@ -1007,10 +1032,10 @@ public class MedicationRequestQueryService {
      * 合并方内多行状态：ACTIVE 优先于 DRAFT，COMPLETED 优先于 ACTIVE。
      */
     private String mergeTcmPrescriptionStatusEnum(String current, String incoming) {
-        if (StringUtils.isBlank(current)) {
+        if (StringUtils.isEmpty(current)) {
             return incoming;
         }
-        if (StringUtils.isBlank(incoming)) {
+        if (StringUtils.isEmpty(incoming)) {
             return current;
         }
         if (RequestStatus.COMPLETED.getCode().equals(current) || RequestStatus.COMPLETED.getCode().equals(incoming)) {
@@ -1030,7 +1055,7 @@ public class MedicationRequestQueryService {
      * @return 非空文本；解析失败或未命中时返回 null
      */
     private String readTcmContentJsonTextField(String contentJson, String fieldName) {
-        if (StringUtils.isBlank(contentJson) || StringUtils.isBlank(fieldName)) {
+        if (StringUtils.isEmpty(contentJson) || StringUtils.isEmpty(fieldName)) {
             return null;
         }
         try {
@@ -1040,7 +1065,7 @@ public class MedicationRequestQueryService {
                 return null;
             }
             String text = node.asText(null);
-            if (StringUtils.isBlank(text)) {
+            if (StringUtils.isEmpty(text)) {
                 return null;
             }
             return text.trim();

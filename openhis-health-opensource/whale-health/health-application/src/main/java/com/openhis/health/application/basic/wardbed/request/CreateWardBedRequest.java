@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.wardbed.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -34,37 +21,38 @@ import lombok.Data;
 public class CreateWardBedRequest {
 
     @Schema(description = "业务编号（选填，一般由领域按父 busNo 级联生成）", example = "LO0010.LO0026")
+    /** 业务编号（选填，一般由领域按父 busNo 级联生成）。 */
     private String busNo;
 
     @Schema(description = "位置名称", requiredMode = Schema.RequiredMode.REQUIRED, example = "内科一楼病房")
     @NotBlank(message = "位置名称不能为空")
     private String name;
 
-    /** 状态 code。 */
+    /** 状态 code（选填；登记即启用时由领域写入 ACTIVE）。 */
     @Schema(description = "状态 code（选填；登记即启用时由领域写入 ACTIVE）", example = "ACTIVE")
     private String statusEnum;
 
-    /** 运营状态 code。 */
+    /** 运营状态 code（选填；领域登记默认 NOT_IN_USE）。 */
     @Schema(description = "运营状态 code（选填；领域登记默认 NOT_IN_USE）", example = "NOT_IN_USE")
     private String operationalEnum;
 
-    /** 模式 code。 */
+    /** 模式 code（选填，默认 INSTANCE）。 */
     @Schema(description = "模式 code（选填，默认 INSTANCE）", example = "INSTANCE")
     private String modeEnum;
 
-    /** 类型编码。 */
+    /** 类型编码（选填）。 */
     @Schema(description = "类型编码（选填）", example = "WARD-001")
     private String typeCode;
 
-    /** 类型扩展 JSON。 */
+    /** 类型扩展 JSON（选填，默认 {}）。 */
     @Schema(description = "类型扩展 JSON（选填，默认 {}）", example = "{}")
     private String typeJson;
 
-    /** 拼音简码。 */
+    /** 拼音简码（选填）。 */
     @Schema(description = "拼音简码（选填）", example = "NKYLF")
     private String pyStr;
 
-    /** 五笔简码。 */
+    /** 五笔简码（选填）。 */
     @Schema(description = "五笔简码（选填）", example = "MGSY")
     private String wbStr;
 
@@ -79,11 +67,11 @@ public class CreateWardBedRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long organizationId;
 
-    /** 显示顺序。 */
+    /** 显示顺序（选填）。 */
     @Schema(description = "显示顺序（选填）", example = "10")
     private Integer displayOrder;
 
-    /** 父级位置 ID。 */
+    /** 父级位置 ID（选填；0 表示顶级）。 */
     @Schema(description = "父级位置 ID（选填；0 表示顶级）", example = "0")
     private Long parentId;
 }

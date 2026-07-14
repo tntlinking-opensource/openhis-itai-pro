@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.encountermanage.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -28,19 +15,19 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
-/** 病房树节点。 */
 @Schema(description = "病房树节点")
 public class NurseStationHouseTreeNodeDto {
 
     @Schema(description = "病房位置主键")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 病房位置主键。 */
     private Long locationId;
 
     /** 病房名称。 */
     @Schema(description = "病房名称")
     private String name;
 
-    /** 位置编码 bus_no。 */
+    /** 位置编码。 */
     @Schema(description = "位置编码")
     private String busNo;
 

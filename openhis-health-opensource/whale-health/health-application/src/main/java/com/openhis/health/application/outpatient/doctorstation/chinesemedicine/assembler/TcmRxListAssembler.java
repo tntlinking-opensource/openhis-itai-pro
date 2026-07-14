@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.chinesemedicine.assembler;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
@@ -23,21 +23,21 @@ import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.module.common.assembler.advice.AdviceChargeDisplayStatusSupport;
-import com.openhis.health.module.common.assembler.advice.TcmMethodCodeDisplaySupport;
-import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.common.assembler.order.OrderCatalogDisplayAssembler;
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogUnitPriceCommand;
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.advice.AdviceChargeDisplayStatusAssembler;
+import com.openhis.health.application.shared.advice.TcmMethodCodeDisplayAssembler;
+import com.openhis.health.application.shared.option.FrequencyOptionLoader;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
+import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
+import com.openhis.health.application.shared.product.ClinicalCatalogUnitPriceQuery;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -61,8 +61,8 @@ public class TcmRxListAssembler {
     private final ChargeItemQueryService chargeItemQueryService;
     private final TerminologyOptionLoader terminologyOptionLoader;
     private final FrequencyOptionLoader frequencyOptionLoader;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
-    private final ClinicalCatalogPriceResolveSupport clinicalCatalogPriceResolveSupport;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
+    private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
 
     /**
      * 将领域按方聚合读模型 enrich 为方头+行 DTO。
@@ -108,6 +108,8 @@ public class TcmRxListAssembler {
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.METHOD_CODE);
         // Pre：批量预取频次标签，供方头 rateName 展示（与 IF-DOR-18 下拉同源）
         Map<String, String> rateLabelByCode = frequencyOptionLoader.buildRateLabelMap();
+        Map<String, String> dosageInstructionLabelByCode =
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DOSAGE_INSTRUCTION);
         // Pre：单位展示名预热，供行级 doseUnitName/unitName（BR-ORD-022 / BR-TCM-RX-012）
         Map<String, String> unitLabelByCode =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE);
@@ -116,7 +118,7 @@ public class TcmRxListAssembler {
         // Pre：批量加载饮片目录投影与定价行，供零售价回落（无 ChargeItem 时走 DOSE 槽）
         Map<String, ProductDefinitionDisplayDto> productByKey = this.loadMedicationProducts(medicationIds);
         Map<String, List<ChargeItemDefinition>> priceByKey =
-            clinicalCatalogPriceResolveSupport.loadPriceLinesGrouped(new ArrayList<>(productByKey.values()));
+            clinicalCatalogPriceResolver.loadPriceLinesGrouped(new ArrayList<>(productByKey.values()));
         for (TcmHerbalPrescriptionGroupQueryModel group : groups) {
             TcmRxHeaderDto header = new TcmRxHeaderDto();
             header.setPrescriptionGroupKey(group.getPrescriptionGroupKey());
@@ -125,7 +127,7 @@ public class TcmRxListAssembler {
             header.setChineseHerbsDoseQuantity(group.getChineseHerbsDoseQuantity());
             header.setSufferingFlag(group.getSufferingFlag());
             header.setMethodCode(group.getMethodCode());
-            header.setMethodName(TcmMethodCodeDisplaySupport.resolveMethodDisplayName(
+            header.setMethodName(TcmMethodCodeDisplayAssembler.resolveMethodDisplayName(
                 tcmMethodLabelByCode, westernMethodLabelByCode, Boolean.TRUE, group.getMethodCode()));
             // Asm：方头用药频次编码与展示名，取领域聚合首行 rate_code
             header.setRateCode(group.getRateCode());
@@ -134,10 +136,12 @@ public class TcmRxListAssembler {
             header.setDays(group.getDispensePerDuration());
             header.setRemark(group.getRemark());
             header.setStatusEnum(group.getStatusEnum());
-            MedicationRequestListQueryModel firstLine =
-                group.getLines() == null || group.getLines().isEmpty() ? null : group.getLines().get(0);
+            MedicationRequestListQueryModel firstLine = null;
+            if (group.getLines() != null && !group.getLines().isEmpty()) {
+                firstLine = group.getLines().get(0);
+            }
             if (firstLine != null) {
-                header.setDecoctionMethodCode(TcmMethodCodeDisplaySupport.readContentJsonTextField(
+                header.setDecoctionMethodCode(TcmMethodCodeDisplayAssembler.readContentJsonTextField(
                     firstLine.getContentJson(), "decoctionMethodCode"));
             }
             List<TcmRxLineDto> lineDtos = new ArrayList<>();
@@ -163,6 +167,9 @@ public class TcmRxListAssembler {
                     lineDto.setSortNumber(line.getSortNumber());
                     lineDto.setLineStatusEnum(line.getStatusEnum());
                     lineDto.setChargeStatusText(chargeEnrich.statusTextByRequestId().get(line.getId()));
+                    lineDto.setDosageInstructionCode(line.getDosageInstruction());
+                    lineDto.setDosageInstructionText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
+                        dosageInstructionLabelByCode, line.getDosageInstruction()));
                     lineDtos.add(lineDto);
                 }
             }
@@ -200,11 +207,11 @@ public class TcmRxListAssembler {
             List<String> medicationNames = new ArrayList<>();
             for (Long medicationId : group.getMedicationIds()) {
                 String name = medicationNameById.get(medicationId);
-                if (StringUtils.isNotBlank(name)) {
+                if (StringUtils.isNotEmpty(name)) {
                     medicationNames.add(name);
                 }
             }
-            if (StringUtils.isNotBlank(keywordTrimmed)) {
+            if (StringUtils.isNotEmpty(keywordTrimmed)) {
                 boolean matched = false;
                 if (group.getPrescriptionNo() != null
                     && group.getPrescriptionNo().toLowerCase().contains(keywordTrimmed)) {
@@ -255,9 +262,15 @@ public class TcmRxListAssembler {
             lookup.setProductDefinitionId(medicationId);
             lookups.add(lookup);
         }
-        return productDefinitionBatchLoader.loadAsMap(lookups);
+        return productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
     }
 
+    /**
+     * 批量加载饮片定义 id → 名称（列表缺品名时的回落展示）。
+     *
+     * @param medicationIds 饮片定义主键集合
+     * @return id → 名称；无 id 时空 Map
+     */
     private Map<Long, String> loadMedicationNames(Set<Long> medicationIds) {
         Map<Long, String> result = new HashMap<>();
         if (medicationIds == null || medicationIds.isEmpty()) {
@@ -303,7 +316,7 @@ public class TcmRxListAssembler {
         String compositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
             TableNameConstants.MED_MEDICATION_DEFINITION, line.getMedicationId());
         List<ChargeItemDefinition> priceLines = priceByKey.getOrDefault(compositeKey, List.of());
-        ClinicalCatalogUnitPriceCommand priceCmd = ClinicalCatalogUnitPriceCommand.builder()
+        ClinicalCatalogUnitPriceQuery priceCmd = ClinicalCatalogUnitPriceQuery.builder()
             .productTableName(medProduct.getProductTableName())
             .productDefinitionId(medProduct.getProductDefinitionId())
             .categoryCode(medProduct.getCategoryCode())
@@ -314,7 +327,7 @@ public class TcmRxListAssembler {
             .priceLines(priceLines)
             .productRowForOccupancy(medProduct)
             .build();
-        ChargeItemDefinition selected = clinicalCatalogPriceResolveSupport.resolveCatalogUnitPrice(priceCmd);
+        ChargeItemDefinition selected = clinicalCatalogPriceResolver.resolveCatalogUnitPrice(priceCmd);
         if (selected == null || selected.getPriceValue() == null) {
             return null;
         }
@@ -349,13 +362,13 @@ public class TcmRxListAssembler {
                 return band.getUnitPrice();
             }
         }
-        if (StringUtils.isBlank(doseUnitCode)) {
+        if (StringUtils.isEmpty(doseUnitCode)) {
             return null;
         }
         String normalized = doseUnitCode.trim();
         // 回落：按行上 doseUnitCode 与槽位 unitCode 精确匹配
         for (ProductDefinitionCatalogUnitBandDto band : bands) {
-            if (band == null || band.getUnitPrice() == null || StringUtils.isBlank(band.getUnitCode())) {
+            if (band == null || band.getUnitPrice() == null || StringUtils.isEmpty(band.getUnitCode())) {
                 continue;
             }
             if (normalized.equals(band.getUnitCode().trim())) {
@@ -395,11 +408,13 @@ public class TcmRxListAssembler {
             }
             Long requestId = chargeItem.getServiceId();
             String current = rollupStatusByRequestId.get(requestId);
-            rollupStatusByRequestId.put(requestId, AdviceChargeDisplayStatusSupport.mergeChargeStatusForRollup(
+            rollupStatusByRequestId.put(requestId, AdviceChargeDisplayStatusAssembler.mergeChargeStatusForRollup(
                 current, chargeItem.getStatusEnum()));
             TcmChargePrimaryRow primary = primaryByRequestId.get(requestId);
             if (primary == null) {
-                primaryByRequestId.put(requestId, TcmChargePrimaryRow.from(chargeItem));
+                TcmChargePrimaryRow created = new TcmChargePrimaryRow();
+                created.consider(chargeItem);
+                primaryByRequestId.put(requestId, created);
             } else {
                 // 同一请求多条费用时取 occurrence_time 最新（同秒取 id 较大）的 unit_price
                 primary.consider(chargeItem);
@@ -408,7 +423,7 @@ public class TcmRxListAssembler {
         for (Map.Entry<Long, String> entry : rollupStatusByRequestId.entrySet()) {
             chargeStatusEnumByRequestId.put(entry.getKey(), entry.getValue());
             statusTextByRequestId.put(entry.getKey(),
-                AdviceChargeDisplayStatusSupport.resolveChargeStatusDisplayTextForAdviceList(entry.getValue()));
+                AdviceChargeDisplayStatusAssembler.resolveChargeStatusDisplayTextForAdviceList(entry.getValue()));
         }
         for (Map.Entry<Long, TcmChargePrimaryRow> entry : primaryByRequestId.entrySet()) {
             if (entry.getValue().unitPrice != null) {
@@ -454,7 +469,7 @@ public class TcmRxListAssembler {
             if (!Boolean.TRUE.equals(group.getSufferingFlag())) {
                 continue;
             }
-            if (StringUtils.isBlank(group.getPrescriptionNo())) {
+            if (StringUtils.isEmpty(group.getPrescriptionNo())) {
                 continue;
             }
             prescriptionNos.add(group.getPrescriptionNo().trim());
@@ -472,7 +487,7 @@ public class TcmRxListAssembler {
             if (!TableNameConstants.WKF_SERVICE_REQUEST.equals(chargeItem.getServiceTable())) {
                 continue;
             }
-            if (StringUtils.isBlank(chargeItem.getPrescriptionNo())) {
+            if (StringUtils.isEmpty(chargeItem.getPrescriptionNo())) {
                 continue;
             }
             String prescriptionNo = chargeItem.getPrescriptionNo().trim();
@@ -480,7 +495,7 @@ public class TcmRxListAssembler {
                 continue;
             }
             String current = result.get(prescriptionNo);
-            result.put(prescriptionNo, AdviceChargeDisplayStatusSupport.mergeChargeStatusForRollup(
+            result.put(prescriptionNo, AdviceChargeDisplayStatusAssembler.mergeChargeStatusForRollup(
                 current, chargeItem.getStatusEnum()));
         }
         return result;
@@ -501,29 +516,28 @@ public class TcmRxListAssembler {
                 if (line == null || line.getId() == null) {
                     continue;
                 }
-                headerChargeStatus = AdviceChargeDisplayStatusSupport.mergeChargeStatusForRollup(
+                headerChargeStatus = AdviceChargeDisplayStatusAssembler.mergeChargeStatusForRollup(
                     headerChargeStatus, chargeEnrich.chargeStatusEnumByRequestId().get(line.getId()));
             }
         }
-        if (Boolean.TRUE.equals(group.getSufferingFlag()) && StringUtils.isNotBlank(group.getPrescriptionNo())) {
+        if (Boolean.TRUE.equals(group.getSufferingFlag()) && StringUtils.isNotEmpty(group.getPrescriptionNo())) {
             String decoctionCharge = decoctionChargeByPrescriptionNo.get(group.getPrescriptionNo().trim());
-            headerChargeStatus = AdviceChargeDisplayStatusSupport.mergeChargeStatusForRollup(
+            headerChargeStatus = AdviceChargeDisplayStatusAssembler.mergeChargeStatusForRollup(
                 headerChargeStatus, decoctionCharge);
         }
         String requestStatus = StringUtils.defaultIfBlank(header.getStatusEnum(), "");
-        AdviceChargeDisplayStatusSupport.ListDisplayStatus display =
-            AdviceChargeDisplayStatusSupport.resolveAdviceListDisplayStatus(
-                requestStatus, resolveRequestStatusDisplay(requestStatus), headerChargeStatus);
+        RequestStatus parsedRequestStatus = EnumUtil.fromCode(RequestStatus.class, requestStatus);
+        String requestStatusDisplay;
+        if (parsedRequestStatus != null) {
+            requestStatusDisplay = parsedRequestStatus.getDisplay();
+        } else {
+            requestStatusDisplay = StringUtils.defaultIfBlank(requestStatus, "");
+        }
+        AdviceChargeDisplayStatusAssembler.ListDisplayStatus display =
+            AdviceChargeDisplayStatusAssembler.resolveAdviceListDisplayStatus(
+                requestStatus, requestStatusDisplay, headerChargeStatus);
         header.setDisplayStatusEnum(display.displayStatusEnum());
         header.setDisplayStatusEnumText(display.displayStatusEnumText());
-    }
-
-    private static String resolveRequestStatusDisplay(String statusEnum) {
-        RequestStatus parsed = EnumUtil.fromCode(RequestStatus.class, statusEnum);
-        if (parsed != null) {
-            return parsed.getDisplay();
-        }
-        return StringUtils.defaultIfBlank(statusEnum, "");
     }
 
     /** 中药行费用 enrich 中间态：展示文案 + 收费态码 + 已落库单价。 */
@@ -540,12 +554,11 @@ public class TcmRxListAssembler {
         private LocalDateTime occurrenceTime;
         private BigDecimal unitPrice;
 
-        private static TcmChargePrimaryRow from(ChargeItem item) {
-            TcmChargePrimaryRow row = new TcmChargePrimaryRow();
-            row.consider(item);
-            return row;
-        }
-
+        /**
+         * 择优合并同一请求下的 ChargeItem：发生时间较新优先，同秒取 id 较大者的单价。
+         *
+         * @param item 待合并费用行
+         */
         private void consider(ChargeItem item) {
             LocalDateTime occ = item.getOccurrenceTime();
             if (occ == null) {

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.refund.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -30,20 +17,17 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
-/** 退费渠道实退明细。 */
 @Schema(description = "退费渠道实退明细")
 public class RefundPaymentDetailSubmitDto {
 
     /** 退款渠道编码。 */
     @NotBlank(message = "payChannelCode 不能为空")
     @Schema(description = "退款渠道编码", requiredMode = Schema.RequiredMode.REQUIRED)
-    /** 退款渠道编码（业务字段）。 */
     private String payChannelCode;
 
     /** 本渠道实退金额。 */
     @NotNull(message = "amount 不能为空")
     /** 本渠道实退金额。 */
     @Schema(description = "本渠道实退金额", requiredMode = Schema.RequiredMode.REQUIRED)
-    /** 本渠道实退金额（业务字段）。 */
     private BigDecimal amount;
 }

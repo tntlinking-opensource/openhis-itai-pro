@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.mrms.homepage.service;
 
 import com.openhis.health.application.mrms.homepage.dto.CaseRecordDetailDto;
@@ -27,7 +27,7 @@ import com.openhis.health.domain.mrms.caserecord.service.CaseRecordDomainService
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordHomepageDomainService;
 import com.openhis.health.domain.share.enums.CaseRecordTransitionAction;
 import com.openhis.health.domain.share.enums.WorkflowRole;
-import com.openhis.health.module.common.validator.MrmsOperatorResolver;
+import com.openhis.health.application.mrms.support.MrmsOperatorResolver;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

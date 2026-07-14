@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.advice.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -33,7 +20,7 @@ import lombok.experimental.Accessors;
 @Schema(description = "服务申请明细摘要")
 public class ServiceRequestDetailSummaryDto {
 
-    /** 目标表名（部位或样本定义表）。 */
+    /** 目标表名。 */
     @Schema(description = "目标表名")
     private String targetTable;
 
@@ -42,7 +29,7 @@ public class ServiceRequestDetailSummaryDto {
     @Schema(description = "目标主键")
     private Long targetId;
 
-    /** 目标主数据展示名。 */
+    /** 目标展示名。 */
     @Schema(description = "目标展示名")
     private String targetDisplayName;
 

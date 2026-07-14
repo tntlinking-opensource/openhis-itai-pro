@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.finance.priceadjustment.mapper;
 
 import com.openhis.health.application.finance.priceadjustment.dto.AdjustableItemRowDto;
@@ -65,15 +52,15 @@ import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.inventoryitem.command.LockInventoryCommand;
 import com.openhis.health.domain.workflow.inventoryitem.command.UnlockByBusNoCommand;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
-import com.openhis.health.module.querysupport.priceadjustment.dto.LogisticsDetailSnapshotRowDto;
-import com.openhis.health.module.querysupport.priceadjustment.dto.PriceAdjustmentInTransitCheckDto;
-import com.openhis.health.module.querysupport.priceadjustment.dto.PriceAdjustmentLockPreviewRowDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.finance.priceadjustment.support.dto.LogisticsDetailSnapshotRowDto;
+import com.openhis.health.application.finance.priceadjustment.support.dto.PriceAdjustmentInTransitCheckDto;
+import com.openhis.health.application.finance.priceadjustment.support.dto.PriceAdjustmentLockPreviewRowDto;
+import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.dto.OptionDto;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -82,7 +69,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -127,7 +113,7 @@ public class PriceAdjustmentMapperImpl implements PriceAdjustmentMapper {
         Long orgId) {
         PriceAdjustmentDocumentListQuery query = new PriceAdjustmentDocumentListQuery();
         query.setOrgId(orgId);
-        if (StringUtils.isNotBlank(request.getStatusEnum())) {
+        if (StringUtils.isNotEmpty(request.getStatusEnum())) {
             query.setStatusEnum(request.getStatusEnum().trim());
         }
         PageQueryBinder.bind(request, query);
@@ -164,13 +150,13 @@ public class PriceAdjustmentMapperImpl implements PriceAdjustmentMapper {
         Map<String, PriceAdjustmentDocumentQueryModel> documentByBusNo = new HashMap<>();
         if (documents != null) {
             for (PriceAdjustmentDocumentQueryModel document : documents) {
-                if (document != null && StringUtils.isNotBlank(document.getBusNo())) {
+                if (document != null && StringUtils.isNotEmpty(document.getBusNo())) {
                     documentByBusNo.put(document.getBusNo().trim(), document);
                 }
             }
         }
         for (String busNoRaw : busNoPageOrder) {
-            if (StringUtils.isBlank(busNoRaw)) {
+            if (StringUtils.isEmpty(busNoRaw)) {
                 continue;
             }
             String busNo = busNoRaw.trim();
@@ -506,7 +492,6 @@ public class PriceAdjustmentMapperImpl implements PriceAdjustmentMapper {
                 line.setItemId(lineRequest.getItemId());
                 line.setNewPurchaseAmount(lineRequest.getNewPurchaseAmount());
                 line.setNewSellingAmount(lineRequest.getNewSellingAmount());
-                line.setOldSellingAmount(lineRequest.getOldSellingAmount());
                 List<SavePriceAdjustmentDraftCommand.DetailLine> details = new ArrayList<>();
                 if (lineRequest.getDetails() != null) {
                     for (SavePriceAdjustmentDraftDetailLineRequest detailRequest : lineRequest.getDetails()) {
@@ -516,8 +501,6 @@ public class PriceAdjustmentMapperImpl implements PriceAdjustmentMapper {
                         SavePriceAdjustmentDraftCommand.DetailLine detail = new SavePriceAdjustmentDraftCommand.DetailLine();
                         detail.setLotNumber(detailRequest.getLotNumber());
                         detail.setQuantity(detailRequest.getQuantity());
-                        detail.setOldPurchaseAmount(detailRequest.getOldPurchaseAmount());
-                        detail.setOldSellingAmount(detailRequest.getOldSellingAmount());
                         details.add(detail);
                     }
                 }
@@ -857,7 +840,7 @@ public class PriceAdjustmentMapperImpl implements PriceAdjustmentMapper {
             row.setUnitName(display.getPackageUnitCodeDictText());
         } else {
             String unitName = display.getDefEncounterUnitCodeDictText();
-            if (StringUtils.isBlank(unitName)) {
+            if (StringUtils.isEmpty(unitName)) {
                 unitName = display.getPackageUnitCodeDictText();
             }
             row.setUnitName(unitName);
@@ -893,7 +876,7 @@ public class PriceAdjustmentMapperImpl implements PriceAdjustmentMapper {
      * @return 展示名；未知时 null
      */
     private String resolveStatusText(String statusEnum) {
-        if (StringUtils.isBlank(statusEnum)) {
+        if (StringUtils.isEmpty(statusEnum)) {
             return null;
         }
         PriceAdjustmentStatus status = EnumUtil.fromCode(PriceAdjustmentStatus.class, statusEnum.trim());
@@ -910,7 +893,7 @@ public class PriceAdjustmentMapperImpl implements PriceAdjustmentMapper {
      * @return 展示名；未知时 null
      */
     private String resolveAdjustmentReasonText(String adjustmentReason) {
-        if (StringUtils.isBlank(adjustmentReason)) {
+        if (StringUtils.isEmpty(adjustmentReason)) {
             return null;
         }
         AdjustmentReason reason = EnumUtil.fromCode(AdjustmentReason.class, adjustmentReason.trim());

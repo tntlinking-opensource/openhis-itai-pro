@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.stockout.mapper;
 
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.WarehouseDocumentDetailRowDto;
@@ -25,8 +12,8 @@ import com.openhis.health.application.inventory.warehouse.stockout.request.*;
 import com.openhis.health.application.inventory.warehouse.stockout.response.*;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.supplydelivery.command.CreateSupplyDeliveryCommand;
@@ -129,7 +116,7 @@ public interface InventoryWarehouseStockOutMapper {
      */
     GetStockOutDetailResponse toGetStockOutDetailResponse(
         List<SupplyRequestModel> lines,
-        Map<Long, com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto> productHints);
+        Map<Long, com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto> productHints);
 
     /**
      * 将单行供应请求明细装配为出库详情行 DTO。
@@ -238,6 +225,24 @@ public interface InventoryWarehouseStockOutMapper {
     CreateSupplyDeliveryCommand toCreateSupplyDeliveryCommandForStockOut(List<SupplyRequestModel> lines, Long operatorId);
 
     /**
+     * 将已同意出库行装配为对侧入库壳单 CreateRequisition 命令（药房入库或科室入库）。
+     *
+     * @param agreedOutLines      已同意的出库明细行
+     * @param outboundBusNo       出库业务单号（写入 original_bus_no）
+     * @param operatorId          操作人主键
+     * @param applicantId         申请人主键
+     * @param inboundTypeEnumCode 壳单类型：{@link com.openhis.health.domain.share.enums.SupplyType#PHARMACY_STOCK_IN}
+     *                            或 {@link com.openhis.health.domain.share.enums.SupplyType#DEPT_STOCK_IN}
+     * @return 壳单创建命令（引导态 AGREE）
+     */
+    CreateRequisitionCommand toCreateRequisitionCommandForShellInboundStockIn(
+        List<SupplyRequestModel> agreedOutLines,
+        String outboundBusNo,
+        Long operatorId,
+        Long applicantId,
+        String inboundTypeEnumCode);
+
+    /**
      * 将已同意出库行装配为壳药房入库请领命令（跨库联动）。
      *
      * @param agreedOutLines 已同意的出库明细行
@@ -307,20 +312,40 @@ public interface InventoryWarehouseStockOutMapper {
     PageProductsForStockOutResponse toPageProductsForStockOutResponse(Page<InventoryItemModel> page);
 
     /**
-     * 将可关联请领单读模型分页装配为选单响应。
+     * 将分页单号顺序与同页请领明细聚合为可关联请领选单行（一行一单，{@code totalAmount}=各行 {@code totalPrice} 之和）。
      *
-     * @param page 可关联请领单分页
-     * @return 可关联单据分页响应
+     * @param busNoPageOrder 当前页单号顺序（与 {@code listDistinctBusNoPage} 一致）
+     * @param detailRows     当前页涉及的全部请领明细行
+     * @return 聚合后的选单行；同号头字段不一致时抛业务异常
      */
-    PageLinkableRequisitionsResponse toPageLinkableRequisitionsResponse(Page<WarehouseDocumentDetailQueryModel> page);
+    List<WarehouseDocumentDetailRowDto> toLinkableRequisitionRows(
+        List<String> busNoPageOrder,
+        List<SupplyRequestModel> detailRows);
 
     /**
-     * 将库房单据读模型行装配为通用单据明细行 DTO。
+     * 用按 {@code busNo} 去重后的聚合行构建可关联请领分页响应（B.10.11）。
      *
-     * @param rm 库房单据读模型行
-     * @return 单据明细行 DTO
+     * @param mergedTotal 不重复 busNo 总数
+     * @param pageNo      1-based 页码
+     * @param pageSize    页大小
+     * @param records     当前页聚合行
+     * @return 可关联请领分页响应
      */
-    WarehouseDocumentDetailRowDto toWarehouseDocumentDetailRowDto(WarehouseDocumentDetailQueryModel rm);
+    PageLinkableRequisitionsResponse toPageLinkableRequisitionsAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<WarehouseDocumentDetailRowDto> records);
+
+    /**
+     * 将已同意请领单供应请求行装配为出库草稿预填响应（IF-WHS-SO-13）。
+     *
+     * @param requisitionLines 请领单供应请求行，非空
+     * @return 出库表单预填 DTO
+     */
+    GetLinkablePharmacyRequisitionDetailResponse toGetLinkablePharmacyRequisitionDetailResponse(
+        List<SupplyRequestModel> requisitionLines,
+        Map<Long, ProductDefinitionCatalogEditorHintsDto> productHints);
 
     /**
      * 将库存行与产品读模型装配为选品行 DTO。

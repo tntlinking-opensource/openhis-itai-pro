@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.print.printjob.mapper;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 import com.openhis.health.application.print.printjob.dto.PreparePrintResultDto;
 import com.openhis.health.application.print.printjob.request.ConfirmPrintRequest;
-import com.openhis.health.application.print.printtemplate.support.PrintJsonSupport;
+import com.openhis.health.application.print.printtemplate.support.PrintJsonHelper;
 import com.openhis.health.domain.print.printlog.command.AppendPrintLogCommand;
 import com.openhis.health.domain.print.printtemplate.entity.PrtTemplate;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +22,7 @@ import org.springframework.stereotype.Component;
 public class PrintJobMapperImpl implements PrintJobMapper {
 
   /** PrintJson 序列化/反序列化。 */
-  private final PrintJsonSupport printJsonSupport;
+  private final PrintJsonHelper printJsonHelper;
 
   /**
    * 打印确认请求转追加日志命令。
@@ -98,8 +85,8 @@ public class PrintJobMapperImpl implements PrintJobMapper {
     dto.setBusNo(published.getBusNo());
     dto.setScenarioCode(scenarioCode);
     dto.setTemplateVersion(published.getVersion());
-    dto.setPrintJson(printJsonSupport.parseJsonOrNull(published.getPrintJson()));
-    dto.setSamplePrintData(printJsonSupport.parseJsonOrNull(published.getSamplePrintData()));
+    dto.setPrintJson(printJsonHelper.parseJsonOrNull(published.getPrintJson()));
+    dto.setSamplePrintData(printJsonHelper.parseJsonOrNull(published.getSamplePrintData()));
     return dto;
   }
 }

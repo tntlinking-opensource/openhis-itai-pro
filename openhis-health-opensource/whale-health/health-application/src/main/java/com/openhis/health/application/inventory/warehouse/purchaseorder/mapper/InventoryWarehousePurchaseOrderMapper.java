@@ -1,24 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.purchaseorder.mapper;
 
-import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.SupplierOptionDto;
-import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.WarehouseOptionDto;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderListRowDto;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.AgreePurchaseOrderRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.CreatePurchaseOrderRequest;
 import com.openhis.health.application.inventory.warehouse.purchaseorder.request.RejectPurchaseOrderRequest;
@@ -39,14 +25,18 @@ import com.openhis.health.application.inventory.warehouse.purchaseorder.response
 import com.openhis.health.application.inventory.warehouse.purchaseorder.response.WithdrawPurchaseOrderApprovalResponse;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.workflow.supplyrequest.command.AgreeRequestCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.CreatePurchaseOrderCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.RejectRequestCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.RemoveByBusNoCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.SubmitApprovalCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.WithdrawApprovalCommand;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.request.PageProductsForPurchaseRequest;
+import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
+import com.openhis.health.domain.share.enums.SupplyStatus;
+import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import org.springframework.data.domain.Page;
 
@@ -54,52 +44,104 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 药库订货单应用层装配。
+ * 药库订货单应用层装配（AS-INV-WHS-001；与进货 {@code InventoryWarehouseInboundReceiptMapper} 同构）。
+ *
+ * <p>负责 Request/Response/DTO 与领域 Command/QueryModel 之间的转换；不在此注入业务 QueryService。</p>
  */
 public interface InventoryWarehousePurchaseOrderMapper {
 
     /**
-     * 将启用药库位置列表映射为下拉选项 DTO。
+     * 将启用位置列表映射为 {@link OptionDto} 下拉（B.10.5）。
      *
      * @param locations 启用库位列表
-     * @return 药库下拉选项
+     * @return 下拉选项
      */
-    List<WarehouseOptionDto> toWarehouseOptionDtoList(List<Location> locations);
+    List<OptionDto> toOptionDtoListFromLocations(List<Location> locations);
 
     /**
-     * 将启用供应商列表映射为下拉选项 DTO。
+     * 将供应商列表映射为 {@link OptionDto} 下拉。
      *
      * @param suppliers 供应商列表项
-     * @return 供应商下拉选项
+     * @return 下拉选项
      */
-    List<SupplierOptionDto> toSupplierOptionDtoList(List<SupplierListItemQueryModel> suppliers);
+    List<OptionDto> toOptionDtoListFromSuppliers(List<SupplierListItemQueryModel> suppliers);
 
     /**
      * 装配订货页初始化响应。
      *
-     * @param warehouseOptions 药库选项
-     * @param supplierOptions  供应商选项
+     * @param warehouseLocationOptions     药库选项（含「全部」由 AppService 前置）
+     * @param supplierOptions              供应商选项
+     * @param warehouseKeeperOptions       库管员选项
+     * @param statusOptions                单据状态选项
+     * @param purchaseItemTableTypeOptions 物品来源表选项
      * @return 页初始化响应
      */
     LoadPurchaseOrderFormInitResponse toLoadPurchaseOrderFormInitResponse(
-        List<WarehouseOptionDto> warehouseOptions,
-        List<SupplierOptionDto> supplierOptions);
+        List<OptionDto> warehouseLocationOptions,
+        List<OptionDto> supplierOptions,
+        List<OptionDto> warehouseKeeperOptions,
+        List<OptionDto> statusOptions,
+        List<OptionDto> purchaseItemTableTypeOptions);
 
     /**
-     * 将库房单据读模型分页装配为订货单列表响应。
+     * 将医务人员列表映射为下拉选项。
      *
-     * <p>返回 {@link PagePurchaseOrdersResponse}，继承统一分页契约（B.10.11）。</p>
-     *
-     * @param page 库房单据读模型分页
-     * @return 订货单列表分页响应
+     * @param practitioners 医务人员列表
+     * @return 下拉选项
      */
-    PagePurchaseOrdersResponse toPagePurchaseOrdersResponse(Page<WarehouseDocumentDetailQueryModel> page);
+    List<OptionDto> toOptionDtoListFromPractitioners(List<Practitioner> practitioners);
+
+    /**
+     * 装配供应请求状态枚举选项（持久化 code）。
+     *
+     * @return 状态下拉
+     */
+    List<OptionDto> toOptionDtoListSupplyStatuses();
+
+    /**
+     * 装配物品来源表（药品/耗材）选项。
+     *
+     * @return 物品表下拉
+     */
+    List<OptionDto> toOptionDtoListPurchaseItemTableTypes();
+
+    /**
+     * 将选品分页请求转为产品定义读模型查询。
+     *
+     * @param request 选品分页请求
+     * @return 读模型查询对象
+     */
+    ProductDefinitionPageQuery toProductDefinitionPageQuery(PageProductsForPurchaseRequest request);
+
+    /**
+     * 按 busNo 顺序聚合供应请求明细为订货列表行。
+     *
+     * @param busNoPageOrder 分页单号顺序
+     * @param detailRows         同页明细行
+     * @return 聚合列表行
+     */
+    List<PurchaseOrderListRowDto> toPurchaseOrderListAggregated(List<String> busNoPageOrder, List<SupplyRequestModel> detailRows);
+
+    /**
+     * 用聚合列表行构建分页响应（B.10.11）。
+     *
+     * @param mergedTotal 不重复 busNo 总数
+     * @param pageNo      1-based 页码
+     * @param pageSize    页大小
+     * @param records     当前页聚合行
+     * @return 分页响应
+     */
+    PagePurchaseOrdersResponse toPagePurchaseOrdersAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<PurchaseOrderListRowDto> records);
 
     /**
      * 将同号供应请求明细与产品读模型装配为订货单详情响应。
      *
-     * @param lines         供应请求明细行
-     * @param productByKey  产品定义读模型映射
+     * @param lines        供应请求明细行
+     * @param productByKey 产品定义读模型映射
      * @return 详情响应
      */
     GetPurchaseOrderDetailResponse toGetPurchaseOrderDetailResponse(
@@ -126,6 +168,7 @@ public interface InventoryWarehousePurchaseOrderMapper {
      * @param operatorId  操作人
      * @param applicantId 制单人员
      * @return 领域写命令
+     * @throws IllegalArgumentException {@code rowVersion} 超出整型范围
      */
     CreatePurchaseOrderCommand toCreatePurchaseOrderCommandForUpdate(
         UpdatePurchaseOrderRequest request,
@@ -135,25 +178,25 @@ public interface InventoryWarehousePurchaseOrderMapper {
     /**
      * 装配新建订货成功响应。
      *
-     * @param busNo 新建业务单号
-     * @return 新建响应
+     * @param busNo 领域返回的业务单号
+     * @return 含 {@code busNo} 与待审批 {@code statusEnum} code
      */
     CreatePurchaseOrderResponse toCreatePurchaseOrderResponse(String busNo);
 
     /**
      * 装配修订订货成功响应。
      *
-     * @param busNo 业务单号
-     * @return 修订响应
+     * @param busNo 同号修订后的业务单号
+     * @return 含 {@code busNo} 与待审批 {@code statusEnum} code
      */
     UpdatePurchaseOrderResponse toUpdatePurchaseOrderResponse(String busNo);
 
     /**
-     * 将提交审批请求装配为领域 SubmitApprovalCommand。
+     * 将提交审批请求装配为领域 {@link SubmitApprovalCommand}。
      *
      * @param request     提交请求
      * @param operatorId  操作人
-     * @param applicantId 制单人员
+     * @param applicantId 制单人员（申请人）
      * @return 领域写命令
      */
     SubmitApprovalCommand toSubmitApprovalCommand(SubmitPurchaseOrderApprovalRequest request, Long operatorId, Long applicantId);
@@ -161,12 +204,13 @@ public interface InventoryWarehousePurchaseOrderMapper {
     /**
      * 装配提交审批成功响应。
      *
+     * @param status 提交后头行状态，可为 null
      * @return 提交响应
      */
-    SubmitPurchaseOrderApprovalResponse toSubmitPurchaseOrderApprovalResponse();
+    SubmitPurchaseOrderApprovalResponse toSubmitPurchaseOrderApprovalResponse(SupplyStatus status);
 
     /**
-     * 将撤回审批请求装配为领域 WithdrawApprovalCommand。
+     * 将撤回审批请求装配为领域 {@link WithdrawApprovalCommand}。
      *
      * @param request    撤回请求
      * @param operatorId 操作人
@@ -177,15 +221,16 @@ public interface InventoryWarehousePurchaseOrderMapper {
     /**
      * 装配撤回审批成功响应。
      *
+     * @param status 撤回后头行状态，可为 null
      * @return 撤回响应
      */
-    WithdrawPurchaseOrderApprovalResponse toWithdrawPurchaseOrderApprovalResponse();
+    WithdrawPurchaseOrderApprovalResponse toWithdrawPurchaseOrderApprovalResponse(SupplyStatus status);
 
     /**
-     * 将同意请求装配为领域 AgreeRequestCommand。
+     * 将同意请求装配为领域 {@link AgreeRequestCommand}（订货同意不含发放链）。
      *
      * @param request    同意请求
-     * @param operatorId 操作人
+     * @param operatorId 审批人/操作人
      * @return 领域写命令
      */
     AgreeRequestCommand toAgreeRequestCommand(AgreePurchaseOrderRequest request, Long operatorId);
@@ -198,10 +243,10 @@ public interface InventoryWarehousePurchaseOrderMapper {
     AgreePurchaseOrderResponse toAgreePurchaseOrderResponse();
 
     /**
-     * 将驳回请求装配为领域 RejectRequestCommand。
+     * 将驳回请求装配为领域 {@link RejectRequestCommand}。
      *
      * @param request    驳回请求
-     * @param operatorId 操作人
+     * @param operatorId 审批人/操作人
      * @return 领域写命令
      */
     RejectRequestCommand toRejectRequestCommand(RejectPurchaseOrderRequest request, Long operatorId);
@@ -214,7 +259,7 @@ public interface InventoryWarehousePurchaseOrderMapper {
     RejectPurchaseOrderResponse toRejectPurchaseOrderResponse();
 
     /**
-     * 将删除请求装配为领域 RemoveByBusNoCommand。
+     * 将删除请求装配为领域 {@link RemoveByBusNoCommand}。
      *
      * @param request    删除请求
      * @param operatorId 操作人
@@ -230,12 +275,10 @@ public interface InventoryWarehousePurchaseOrderMapper {
     RemovePurchaseOrderResponse toRemovePurchaseOrderResponse();
 
     /**
-     * 将产品定义读模型分页装配为订货选品分页响应。
-     *
-     * <p>返回 {@link PageProductsForPurchaseResponse}，继承统一分页契约（B.10.11）。</p>
+     * 将产品定义读模型分页装配为订货选品分页响应（B.10.11）。
      *
      * @param page 产品定义读模型分页
-     * @return 选品分页响应
+     * @return 选品分页响应；进价/unitBands 由 AppService enrich
      */
     PageProductsForPurchaseResponse toPageProductsForPurchaseResponse(Page<ProductDefinitionDisplayDto> page);
 }

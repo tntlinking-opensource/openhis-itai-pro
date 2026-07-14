@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationrequest.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -38,9 +25,9 @@ import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -48,7 +35,11 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 药品申请写侧领域服务。
+ * 药品申请（{@code med_medication_request}）聚合写侧领域服务。
+ *
+ * <p>职责：西药/中成药/中药医嘱草稿维护、签发/签退、执行回写与护士划价来源建单。</p>
+ * <p>不变量：状态迁移门禁、处方拆分与数量语义；持久化先于 {@code MedicationRequest} 领域事件（B.14）。</p>
+ * <p>仅注入本聚合 {@link MedicationRequestRepository}；库存/发放/收费编排由应用层完成。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -423,12 +414,17 @@ public class MedicationRequestDomainService {
      */
     public Long createRefundMedicationOrder(CreateRefundMedicationOrderCommand command) {
         MedicationRequest origin = this.mustGet(command.getOriginRequestId());
+        // Pre：同一原单仅允许一条未完成负向退药申请（BR-MRQ-013 幂等）。
+        this.assertNoOpenRefundMedicationOrder(origin.getId());
         MedicationRequest refund = new MedicationRequest();
         refund.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.MEDICATION_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         refund.setRefundMedicineId(origin.getId());
         this.copyRefundMedicationOrderFieldsFromOrigin(refund, origin);
         refund.markAsRefundFromPrescription(origin.getPrescriptionNo());
-        refund.initDraft();
+        if (refund.getQuantity() != null) {
+            refund.setQuantity(refund.getQuantity().negate());
+        }
+        refund.initAsRefundNegativeOrder();
         MedicationRequest saved = medicationRequestRepository.save(refund);
         domainEventPublisher.publish(new MedicationOrderRefundRequestedEvent(saved.getId(), origin.getId(), command.getOperatorId()));
         return saved.getId();
@@ -499,6 +495,24 @@ public class MedicationRequestDomainService {
         refund.setSortNumber(origin.getSortNumber());
         refund.setGenerateSourceEnum(origin.getGenerateSourceEnum());
         refund.setRemark(origin.getRemark());
+    }
+
+    /**
+     * 断言原药品申请不存在未完结的负向退药单（BR-MRQ-013 幂等）。
+     *
+     * @param originRequestId 原药品申请主键
+     */
+    private void assertNoOpenRefundMedicationOrder(Long originRequestId) {
+        List<MedicationRequest> existing = this.medicationRequestRepository.findByRefundMedicineIdIn(
+            Collections.singletonList(originRequestId));
+        for (MedicationRequest row : existing) {
+            if (Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            if (!RequestStatus.COMPLETED.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_RULE_CONFLICT, "已申请退药，请勿重复申请");
+            }
+        }
     }
 
     /**

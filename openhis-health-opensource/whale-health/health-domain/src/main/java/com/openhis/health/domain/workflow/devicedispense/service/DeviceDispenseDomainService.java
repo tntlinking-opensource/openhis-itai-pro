@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.devicedispense.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -103,12 +90,12 @@ public class DeviceDispenseDomainService {
      */
     public void prepareDeviceDispense(PrepareDeviceDispenseCommand command) {
         List<PrepareDeviceDispenseCommand.PrepareDeviceDispenseItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // Gate：拣配命令批次须恰好一条，防止多行混批误拣配。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "拣配一次仅允许操作一条发放记录");
         }
         PrepareDeviceDispenseCommand.PrepareDeviceDispenseItemCommand item = items.get(0);
-        // 业务分支处理。
+        // Gate：发放主键缺失则无法定位拣配目标行。
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "id 不能为空");
         }
@@ -131,16 +118,16 @@ public class DeviceDispenseDomainService {
      */
     public void dispenseDevice(DispenseDeviceCommand command) {
         List<DispenseDeviceCommand.DispenseDeviceItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // Gate：核对发放一次仅允许单条，避免批量核对接错数量。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "核对发放一次仅允许操作一条发放记录");
         }
         DispenseDeviceCommand.DispenseDeviceItemCommand item = items.get(0);
-        // 业务分支处理。
+        // Gate：无发放主键则无法推进完成态。
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "id 不能为空");
         }
-        // 业务分支处理。
+        // Gate：发放数量须大于 0，防止空发或负向核销。
         if (item.getDispenseQuantity() == null || item.getDispenseQuantity().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "dispenseQuantity 必须大于 0");
         }
@@ -164,16 +151,16 @@ public class DeviceDispenseDomainService {
      */
     public void cancelUndispensedDeviceDispense(CancelUndispensedDeviceDispenseCommand command) {
         List<CancelUndispensedDeviceDispenseCommand.CancelUndispensedDeviceDispenseItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // Gate：作废命令批次须恰好一条。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "作废一次仅允许操作一条发放记录");
         }
         CancelUndispensedDeviceDispenseCommand.CancelUndispensedDeviceDispenseItemCommand item = items.get(0);
-        // 业务分支处理。
+        // Gate：作废须携带发放主键。
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "id 不能为空");
         }
-        // 业务分支处理。
+        // Gate：作废须写明未执行原因码，供统计与追溯。
         if (item.getNotPerformedReasonEnum() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "notPerformedReasonEnum 不能为空");
         }
@@ -248,37 +235,37 @@ public class DeviceDispenseDomainService {
      */
     public Long generateDeviceDispenseFromTemporaryPath(GenerateDeviceDispenseFromTemporaryPathCommand command) {
         List<GenerateDeviceDispenseFromTemporaryPathCommand.GenerateDeviceDispenseFromTemporaryPathItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // Gate：临时路径生成草稿一次仅允许单条。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "生成草稿一次仅允许生成一条发放记录");
         }
         GenerateDeviceDispenseFromTemporaryPathCommand.GenerateDeviceDispenseFromTemporaryPathItemCommand item = items.get(0);
-        // 业务分支处理。
+        // Gate：耗材请求主键缺失则无法关联医嘱上下文。
         if (item.getDeviceReqId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "deviceReqId 不能为空");
         }
-        // 业务分支处理。
+        // Gate：设备定义主键缺失则无法确定发放品类。
         if (item.getDeviceDefId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "deviceDefId 不能为空");
         }
-        // 业务分支处理。
+        // Gate：就诊主键缺失则费用与病历无法归属。
         if (item.getEncounterId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "encounterId 不能为空");
         }
-        // 业务分支处理。
+        // Gate：患者主键缺失则无法核对身份与计费主体。
         if (item.getPatientId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "patientId 不能为空");
         }
-        // 业务分支处理。
+        // Gate：发放数量须大于 0，草稿预留才有业务意义。
         if (item.getQuantity() == null || item.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "quantity 必须大于 0");
         }
-        // 业务分支处理。
+        // Gate：计量单位缺失则下游拣配与计费无法对齐。
         if (item.getUnitCode() == null || item.getUnitCode().trim().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "unitCode 不能为空");
         }
 
-        // 业务分支处理。
+        // Gate：同耗材请求仅允许一条草稿，防止重复预留库存。
         if (deviceDispenseRepository.countByDeviceReqIdAndStatusEnum(item.getDeviceReqId(), DispenseStatus.DRAFT.getCode()) > 0) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_RULE_CONFLICT, "同请求已存在草稿发放单");
         }
@@ -291,11 +278,11 @@ public class DeviceDispenseDomainService {
         dispense.setPatientId(item.getPatientId());
         dispense.setQuantity(item.getQuantity());
         dispense.setUnitCode(item.getUnitCode());
-        dispense.setLimitTime(item.getLimitTime());
         dispense.assertTemporaryGenerateAllowed();
         dispense.initDraft();
 
         DeviceDispense saved = deviceDispenseRepository.save(dispense);
+        deviceDispenseRepository.flush();
         domainEventPublisher.publish(new DeviceDispenseCreatedEvent(saved.getId(), saved.getBusNo(), saved.getDeviceReqId(), saved.getStatusEnum(), command.getOperatorId()));
         return saved.getId();
     }
@@ -328,22 +315,26 @@ public class DeviceDispenseDomainService {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "FIFO 分段不能为空");
         }
         List<DeviceDispense> siblings = deviceDispenseRepository.findByDeviceReqIdIn(List.of(command.getDeviceReqId()));
-        List<DeviceDispense> toDelete = new ArrayList<>();
+        List<DeviceDispense> released = new ArrayList<>();
         for (DeviceDispense row : siblings) {
-            // 已拣配/已发等非草稿链路不允许医生站签发相位重写。
-            if (!dispenseStatusEquals(row, DispenseStatus.DRAFT) && !dispenseStatusEquals(row, DispenseStatus.PREPARATION)) {
+            // Pre：已逻辑删除的历史行不参与签发重置门控。
+            if (Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            // Gate：已拣配/已发等非草稿链路不允许医生站签发相位重写。
+            if (!row.isDraftOrPreparation()) {
                 throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_RULE_CONFLICT, "耗材医嘱已存在执行中的发放记录，禁止签发重置");
             }
-            if (dispenseStatusEquals(row, DispenseStatus.DRAFT) || dispenseStatusEquals(row, DispenseStatus.PREPARATION)) {
-                toDelete.add(row);
+            // Cmd：草稿/待发行逻辑删除，与药品 replaceFifo 对称。
+            if (row.isDraftOrPreparation()) {
+                row.markDeleted(command.getOperatorId());
+                released.add(row);
             }
         }
-        Long anchorForReleaseEvent = null;
-        if (!toDelete.isEmpty()) {
-            anchorForReleaseEvent = toDelete.get(0).getId();
-            deviceDispenseRepository.deleteAll(toDelete);
+        if (!released.isEmpty()) {
+            deviceDispenseRepository.saveAll(released);
             domainEventPublisher.publish(new DeviceDispenseReserveReleasedEvent(
-                anchorForReleaseEvent, String.valueOf(command.getDeviceReqId()), command.getOperatorId()));
+                released.get(0).getId(), String.valueOf(command.getDeviceReqId()), command.getOperatorId()));
         }
         List<String> busSeqList = businessSequenceService.getSeqByDay(
             AggregateTypeConstants.DEVICE_DISPENSE, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH, segments.size());
@@ -401,13 +392,13 @@ public class DeviceDispenseDomainService {
      * @throws BusinessException id 缺失或部分记录不存在时
      */
     public void promoteDeviceDispenseToPreparation(PromoteDeviceDispenseToPreparationCommand command) {
-        // 业务分支处理。
+        // Gate：批量推进须给出非空 id 列表。
         if (command.getIdList() == null || command.getIdList().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "idList 不能为空");
         }
         Set<Long> distinct = new LinkedHashSet<>(command.getIdList());
         List<DeviceDispense> rows = deviceDispenseRepository.findByIdIn(new ArrayList<>(distinct));
-        // 业务分支处理。
+        // Gate：部分 id 不存在则整批拒绝，避免半批升位造成发放事实缺失。
         if (rows.size() != distinct.size()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "部分发放记录不存在");
         }
@@ -456,12 +447,12 @@ public class DeviceDispenseDomainService {
      */
     public Long generateDeviceDispenseFromExecution(GenerateDeviceDispenseFromExecutionCommand command) {
         List<GenerateDeviceDispenseFromExecutionCommand.GenerateDeviceDispenseFromExecutionItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // Gate：执行侧生成待发一次仅允许单条。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "一次仅允许生成一条发放记录");
         }
         GenerateDeviceDispenseFromExecutionCommand.GenerateDeviceDispenseFromExecutionItemCommand item = items.get(0);
-        // 业务分支处理。
+        // Gate：deviceReqId 缺失则无法复制同请求模板上下文。
         if (item.getDeviceReqId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "deviceReqId 不能为空");
         }
@@ -489,12 +480,12 @@ public class DeviceDispenseDomainService {
      */
     public Long generateIssuedDeviceDispenseFromExecution(GenerateIssuedDeviceDispenseFromExecutionCommand command) {
         List<GenerateIssuedDeviceDispenseFromExecutionCommand.GenerateIssuedDeviceDispenseFromExecutionItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // Gate：直发路径一次仅允许单条发放记录。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "一次仅允许直发一条发放记录");
         }
         GenerateIssuedDeviceDispenseFromExecutionCommand.GenerateIssuedDeviceDispenseFromExecutionItemCommand item = items.get(0);
-        // 业务分支处理。
+        // Gate：deviceReqId 与有效发放数量为直发必填项。
         if (item.getDeviceReqId() == null || item.getDispenseQuantity() == null || item.getDispenseQuantity().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "deviceReqId 与 dispenseQuantity 必填且数量大于 0");
         }
@@ -524,12 +515,12 @@ public class DeviceDispenseDomainService {
      */
     public Long createPendingRefundDeviceDispense(CreatePendingRefundDeviceDispenseCommand command) {
         List<CreatePendingRefundDeviceDispenseCommand.CreatePendingRefundDeviceDispenseItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // Gate：创建待退一次仅允许单条，保证源单关联清晰。
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "一次仅允许创建一条待退记录");
         }
         CreatePendingRefundDeviceDispenseCommand.CreatePendingRefundDeviceDispenseItemCommand item = items.get(0);
-        // 业务分支处理。
+        // Gate：待退须锚定源发放主键以校验可退数量。
         if (item.getSourceDispenseId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "sourceDispenseId 不能为空");
         }
@@ -540,6 +531,10 @@ public class DeviceDispenseDomainService {
         line.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.DEVICE_DISPENSE, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         line.setBasedOnTable("wkf_device_dispense");
         line.setBasedOnId(source.getId());
+        // Pre：门诊退费负向耗单路径须将待退发放锚定负向 device_req_id（对称药嘱 refundRequestId）。
+        if (item.getRefundDeviceRequestId() != null) {
+            line.setDeviceReqId(item.getRefundDeviceRequestId());
+        }
         line.toPendingRefund(item.getRefundQuantity());
 
         DeviceDispense saved = deviceDispenseRepository.save(line);
@@ -549,31 +544,33 @@ public class DeviceDispenseDomainService {
     }
 
     /**
-     * 释放预留：按灵活键解析多条发放记录，将仍处于可释放态的行停发并发布预留释放事件。
+     * 释放预留：按灵活键解析多条发放记录，将仍处于草稿/待发态的行逻辑删除并发布预留释放事件。
      *
      * <p>与 {@link com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseDomainService#releaseDispenseReserve}
-     * 对称：未命中或已全部释放时幂等静默返回，避免门诊签退重复调用报错。</p>
+     * 对称：门诊 IF-DOR-16 签退路径逻辑删除未发发放行；未命中或均已释放时幂等静默返回。</p>
      *
      * @param command 须含 idListOrRequestKey（逗号分隔发放 id、单 id 或 deviceReqId/supportInfo）
      * @throws BusinessException 定位键为空时
      */
     public void releaseDeviceDispenseReserve(ReleaseDeviceDispenseReserveCommand command) {
         List<DeviceDispense> rows = this.resolveFlexibleKey(command.getIdListOrRequestKey());
-        // 业务分支处理：未命中任何发放行时幂等返回（签退路径可能已无待发事实）。
+        // 未命中任何发放行时幂等静默返回：签退路径可能已无待发事实。
         if (rows.isEmpty()) {
             return;
         }
         List<DeviceDispense> released = new ArrayList<>();
         for (DeviceDispense dispense : rows) {
-            // 仅草稿/待发/已准备态释放预占；已停发、已发放等行跳过。
-            if (dispenseStatusEquals(dispense, DispenseStatus.DRAFT)
-                || dispenseStatusEquals(dispense, DispenseStatus.PREPARATION)
-                || dispenseStatusEquals(dispense, DispenseStatus.PREPARED)) {
-                dispense.toStoppedOrDeleted(null);
+            // Pre：已逻辑删除行跳过，避免签退重复调用。
+            if (Boolean.TRUE.equals(dispense.getIsDeleted())) {
+                continue;
+            }
+            // Cmd：仅草稿/待发逻辑删除释占；已发放等行跳过（与药品 releaseDispenseReserve 同口径）。
+            if (dispense.isDraftOrPreparation()) {
+                dispense.markDeleted(command.getOperatorId());
                 released.add(dispense);
             }
         }
-        // 业务分支处理：无可释放行时静默返回。
+        // 无可释放行时静默返回：全部行已删除或已发放。
         if (released.isEmpty()) {
             return;
         }
@@ -590,7 +587,7 @@ public class DeviceDispenseDomainService {
      */
     public void matchDispenseLotNumber(MatchDispenseLotNumberCommand command) {
         List<DeviceDispense> rows = this.resolveFlexibleKey(command.getIdListOrRequestKey());
-        // 业务分支处理。
+        // Gate：批号匹配须命中至少一条发放记录。
         if (rows.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "未命中发放记录");
         }
@@ -607,7 +604,7 @@ public class DeviceDispenseDomainService {
      */
     public void updateDispenseStatusSummarized(UpdateDispenseStatusSummarizedCommand command) {
         List<DeviceDispense> rows = this.resolveSummarizedTargets(command.getIdListOrSummaryKey());
-        // 业务分支处理。
+        // Gate：汇总推进须命中目标发放行。
         if (rows.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "未命中发放记录");
         }
@@ -629,7 +626,7 @@ public class DeviceDispenseDomainService {
     public void updateDispenseStatusCompletedFromSummary(UpdateDispenseStatusCompletedFromSummaryCommand command) {
         SummaryCompletedParse parsed = this.parseSummaryCompleted(command.getSummaryKeyOrIdList());
         List<DeviceDispense> rows = deviceDispenseRepository.findByIdIn(parsed.idList());
-        // 业务分支处理。
+        // Gate：汇总完成时部分 id 不存在则整批拒绝。
         if (rows.size() != parsed.idList().size()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "部分发放记录不存在");
         }
@@ -655,12 +652,12 @@ public class DeviceDispenseDomainService {
      * @throws BusinessException 批次不存在或不可取消时
      */
     public void cancelDeviceDispenseSummary(CancelDeviceDispenseSummaryCommand command) {
-        // 业务分支处理。
+        // Gate：取消汇总须携带非空批次键。
         if (command.getSummaryKey() == null || command.getSummaryKey().isBlank()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "summaryKey 不能为空");
         }
         List<DeviceDispense> rows = deviceDispenseRepository.findBySupportInfo(command.getSummaryKey().trim());
-        // 业务分支处理。
+        // Gate：summaryKey 未命中任何汇总批次则拒绝。
         if (rows.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "未找到汇总批次");
         }
@@ -679,12 +676,12 @@ public class DeviceDispenseDomainService {
      * @throws BusinessException 部分 id 不存在时
      */
     public void rollbackUndispensedDeviceDispense(RollbackUndispensedDeviceDispenseCommand command) {
-        // 业务分支处理。
+        // Gate：批量回退须给出非空 id 列表。
         if (command.getIdList() == null || command.getIdList().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "idList 不能为空");
         }
         List<DeviceDispense> rows = deviceDispenseRepository.findByIdIn(command.getIdList());
-        // 业务分支处理。
+        // Gate：部分 id 不存在则整批拒绝，避免半批回退。
         if (rows.size() != command.getIdList().size()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "部分发放记录不存在");
         }
@@ -702,7 +699,7 @@ public class DeviceDispenseDomainService {
      */
     public void removeUndispensedDeviceDispense(RemoveUndispensedDeviceDispenseCommand command) {
         List<DeviceDispense> rows = this.resolveFlexibleKey(command.getIdListOrRequestKey());
-        // 业务分支处理。
+        // Gate：逻辑删除须命中至少一条目标发放行。
         if (rows.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "未命中发放记录");
         }
@@ -720,16 +717,16 @@ public class DeviceDispenseDomainService {
      * @throws BusinessException 参数非法或记录缺失时
      */
     public void stopUndispensedDeviceDispense(StopUndispensedDeviceDispenseCommand command) {
-        // 业务分支处理。
+        // Gate：批量停止须给出非空 id 列表。
         if (command.getIdList() == null || command.getIdList().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "idList 不能为空");
         }
-        // 业务分支处理。
+        // Gate：停止须携带未执行原因码。
         if (command.getNotPerformedReasonEnum() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "notPerformedReasonEnum 不能为空");
         }
         List<DeviceDispense> rows = deviceDispenseRepository.findByIdIn(command.getIdList());
-        // 业务分支处理。
+        // Gate：部分 id 不存在则整批拒绝。
         if (rows.size() != command.getIdList().size()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "部分发放记录不存在");
         }
@@ -750,12 +747,12 @@ public class DeviceDispenseDomainService {
      * @throws BusinessException 部分记录不存在时
      */
     public void holdDeviceDispense(HoldDeviceDispenseCommand command) {
-        // 业务分支处理。
+        // Gate：挂起须给出非空 id 列表。
         if (command.getIdList() == null || command.getIdList().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "idList 不能为空");
         }
         List<DeviceDispense> rows = deviceDispenseRepository.findByIdIn(command.getIdList());
-        // 业务分支处理。
+        // Gate：部分 id 不存在则整批拒绝。
         if (rows.size() != command.getIdList().size()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "部分发放记录不存在");
         }
@@ -772,7 +769,7 @@ public class DeviceDispenseDomainService {
      * @throws BusinessException 参数非法或状态不允许时
      */
     public void recallDispensedDeviceDispense(RecallDispensedDeviceDispenseCommand command) {
-        // 业务分支处理。
+        // Gate：撤回已发放须携带发放主键。
         if (command.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "id 不能为空");
         }
@@ -789,12 +786,12 @@ public class DeviceDispenseDomainService {
      * @throws BusinessException 部分 id 不存在时
      */
     public void revertCompletedBatchToPreparation(RevertCompletedBatchToPreparationCommand command) {
-        // 业务分支处理。
+        // Gate：批量纠错回退须给出非空 id 列表。
         if (command.getIdList() == null || command.getIdList().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "idList 不能为空");
         }
         List<DeviceDispense> rows = deviceDispenseRepository.findByIdIn(command.getIdList());
-        // 业务分支处理。
+        // Gate：部分 id 不存在则整批拒绝。
         if (rows.size() != command.getIdList().size()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_NOT_FOUND, "部分发放记录不存在");
         }
@@ -908,7 +905,7 @@ public class DeviceDispenseDomainService {
         // Loop：遍历各段，忽略空段并解析为 Long。
         for (String p : parts) {
             String s = p.trim();
-            // 业务分支处理：空段跳过。
+            // 逗号分隔解析时空段跳过，避免 Long.parseLong 异常。
             if (s.isEmpty()) {
                 continue;
             }
@@ -936,20 +933,20 @@ public class DeviceDispenseDomainService {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "定位键不能为空");
         }
         String t = key.trim();
-        // 业务分支处理：逗号分隔 ID 列表 → 按主键查询。
+        // 定位键为逗号分隔 ID 列表时按主键批量查询。
         if (COMMA_LONG_IDS.matcher(t).matches()) {
             List<Long> ids = this.parseCommaLongIds(t);
-            // 业务分支处理：解析结果为空时返回空列表。
+            // 解析结果为空时返回空列表，由调用方按幂等语义处理。
             if (ids.isEmpty()) {
                 return List.of();
             }
             return deviceDispenseRepository.findByIdIn(ids);
         }
-        // 业务分支处理：单个数字 → 先按主键查，未命中再按 deviceReqId 查。
+        // 定位键为单个数字时先按主键查，未命中再按 deviceReqId 查。
         if (SINGLE_LONG.matcher(t).matches()) {
             long n = Long.parseLong(t);
             Optional<DeviceDispense> byId = deviceDispenseRepository.findById(n);
-            // 业务分支处理：主键命中则返回，否则尝试 deviceReqId。
+            // 主键命中则直接返回单条，否则回退 deviceReqId 路径。
             if (byId.isPresent()) {
                 return List.of(byId.get());
             }
@@ -971,7 +968,7 @@ public class DeviceDispenseDomainService {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DISPENSE_INVALID_ARGUMENT, "idListOrSummaryKey 不能为空");
         }
         String t = raw.trim();
-        // 业务分支处理：逗号分隔 ID 列表 → 按主键批量查询。
+        // 汇总目标为逗号分隔 ID 列表时按主键批量查询。
         if (COMMA_LONG_IDS.matcher(t).matches()) {
             List<Long> ids = this.parseCommaLongIds(t);
             return deviceDispenseRepository.findByIdIn(ids);
@@ -1001,7 +998,7 @@ public class DeviceDispenseDomainService {
         int pipe = t.indexOf('|');
         String batchKey;
         String idPart;
-        // 业务分支处理：存在分隔符时解析批次键和 ID 段。
+        // 输入含管道符时拆分批次键与 ID 段。
         if (pipe >= 0) {
             batchKey = t.substring(0, pipe).trim();
             idPart = t.substring(pipe + 1).trim();
@@ -1019,6 +1016,7 @@ public class DeviceDispenseDomainService {
         return new SummaryCompletedParse(batchKey, ids);
     }
 
+    /** 汇总核发完成解析结果：batchKey 与 dispense id 列表。 */
     private record SummaryCompletedParse(String batchKey, List<Long> idList) {
     }
 }

@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.pharmacy.dispenserecord.mapper;
 
 import com.openhis.health.application.outpatient.pharmacy.dispenserecord.dto.PharmacyDispenseRecordExportRowDto;
@@ -15,19 +15,16 @@ import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseRecordPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
-import com.openhis.health.domain.share.constants.OutpatientPharmacyDispenseRecordConstants;
 import com.openhis.health.domain.share.constants.PharmacyDispenseRecordConstants;
 import com.openhis.health.domain.share.constants.PharmacyDispenseRecordExportConstants;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
-import com.openhis.health.module.querysupport.pharmacy.dto.PharmacyDispenseRecordQueryRowDto;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.outpatient.pharmacy.dispenserecord.dto.PharmacyDispenseRecordQueryRowDto;
 import com.openhis.whale.core.application.dto.OptionDto;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -237,6 +234,7 @@ public class OutpatientPharmacyDispenseRecordMapperImpl implements OutpatientPha
         row.setOrderingDepartmentId(source.getOrderingDepartmentId());
         row.setOrderingDepartmentName(source.getOrderingDepartmentName());
         row.setUsageText(source.getUsageText());
+        row.setManufacturerText(source.getManufacturerText());
         row.setSummaryNo(source.getSummaryNo());
         row.setMedReqId(source.getMedReqId());
         return row;
@@ -265,6 +263,16 @@ public class OutpatientPharmacyDispenseRecordMapperImpl implements OutpatientPha
         return response;
     }
 
+    /**
+     * 门诊发药记录分页：解析展示日期、记录类型与库房/发药人筛选。
+     *
+     * @param query                    待填充 query
+     * @param dispenseDateFrom         起始 yyyy-MM-dd
+     * @param dispenseDateTo           截止 yyyy-MM-dd
+     * @param recordTypeCode           记录类型码
+     * @param pharmacyLocationId       药房 id
+     * @param dispenserPractitionerId  发药人 id
+     */
     private void applyFilterFields(
         MedicationDispenseRecordPageQuery query,
         String dispenseDateFrom,

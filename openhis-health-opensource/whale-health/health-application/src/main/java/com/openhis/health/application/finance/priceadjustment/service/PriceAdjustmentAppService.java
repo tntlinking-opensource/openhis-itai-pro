@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.finance.priceadjustment.service;
 
 import com.openhis.health.application.finance.priceadjustment.dto.AdjustableItemRowDto;
@@ -22,6 +9,7 @@ import com.openhis.health.application.finance.priceadjustment.dto.InTransitCheck
 import com.openhis.health.application.finance.priceadjustment.dto.LockPreviewRowDto;
 import com.openhis.health.application.finance.priceadjustment.dto.PriceAdjustmentDocumentListRowDto;
 import com.openhis.health.application.finance.priceadjustment.mapper.PriceAdjustmentMapper;
+import com.openhis.health.application.finance.priceadjustment.support.PriceAdjustmentDraftPricingAssembler;
 import com.openhis.health.application.finance.priceadjustment.request.ApprovePriceAdjustmentRequest;
 import com.openhis.health.application.finance.priceadjustment.request.CheckInTransitForSubmitRequest;
 import com.openhis.health.application.finance.priceadjustment.request.ExistsPendingByItemRequest;
@@ -78,25 +66,25 @@ import com.openhis.health.domain.workflow.inventoryitem.command.LockInventoryCom
 import com.openhis.health.domain.workflow.inventoryitem.command.UnlockByBusNoCommand;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
-import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.validator.FinanceApprovalRoleGate;
-import com.openhis.health.module.common.validator.PageWindowGate;
-import com.openhis.health.module.querysupport.priceadjustment.PriceAdjustmentApprovePricingOrchestration;
-import com.openhis.health.module.querysupport.priceadjustment.PriceAdjustmentInTransitChecker;
-import com.openhis.health.module.querysupport.priceadjustment.PriceAdjustmentLockPreviewLoader;
-import com.openhis.health.module.querysupport.priceadjustment.PriceAdjustmentLogisticsSnapshotAssembler;
-import com.openhis.health.module.querysupport.priceadjustment.dto.LogisticsDetailSnapshotRowDto;
-import com.openhis.health.module.querysupport.priceadjustment.dto.PriceAdjustmentInTransitCheckDto;
-import com.openhis.health.module.querysupport.priceadjustment.dto.PriceAdjustmentLockPreviewRowDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionCatalogPageLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.infrastructure.platform.authorization.FinanceApprovalRoleGate;
+import com.openhis.health.application.shared.validator.PageWindowGate;
+import com.openhis.health.application.finance.priceadjustment.support.PriceAdjustmentApprovePricingOrchestration;
+import com.openhis.health.application.finance.priceadjustment.support.PriceAdjustmentInTransitChecker;
+import com.openhis.health.application.finance.priceadjustment.support.PriceAdjustmentLockPreviewLoader;
+import com.openhis.health.application.finance.priceadjustment.support.PriceAdjustmentLogisticsSnapshotAssembler;
+import com.openhis.health.application.finance.priceadjustment.support.dto.LogisticsDetailSnapshotRowDto;
+import com.openhis.health.application.finance.priceadjustment.support.dto.PriceAdjustmentInTransitCheckDto;
+import com.openhis.health.application.finance.priceadjustment.support.dto.PriceAdjustmentLockPreviewRowDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogPageLoader;
+import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -160,7 +148,7 @@ public class PriceAdjustmentAppService {
     private final ProductDefinitionCatalogPageLoader productDefinitionCatalogPageLoader;
 
     /** 产品定义批量加载（详情/列表 enrich）。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /** 物流批号快照组装。 */
     private final PriceAdjustmentLogisticsSnapshotAssembler logisticsSnapshotAssembler;
@@ -176,6 +164,9 @@ public class PriceAdjustmentAppService {
 
     /** Request/Response 与 Command 映射。 */
     private final PriceAdjustmentMapper priceAdjustmentMapper;
+
+    /** 草稿落库前调前价权威回填。 */
+    private final PriceAdjustmentDraftPricingAssembler draftPricingSupport;
 
     /**
      * 价格调整页初始化（IF-PRC-01）。
@@ -226,7 +217,7 @@ public class PriceAdjustmentAppService {
             this.priceAdjustmentQueryService.listDocumentsByBusNos(busNos, lines);
         Map<String, PriceAdjustmentImpactSummaryQueryModel> impactByBusNo = new HashMap<>();
         for (String busNo : busNos) {
-            if (StringUtils.isBlank(busNo)) {
+            if (StringUtils.isEmpty(busNo)) {
                 continue;
             }
             // Pre：当前页逐单汇总盈亏（列表展示列）
@@ -257,7 +248,7 @@ public class PriceAdjustmentAppService {
      */
     public PriceAdjustmentDocumentResponse getDocument(GetPriceAdjustmentDocumentRequest request) {
         // Gate：单号非空
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "调价单号不能为空");
         }
         String busNo = request.getBusNo().trim();
@@ -281,7 +272,7 @@ public class PriceAdjustmentAppService {
      */
     public SearchAdjustableItemsResponse searchAdjustableItems(SearchAdjustableItemRequest request) {
         // Gate：请求体、项目表与分页
-        if (request == null || StringUtils.isBlank(request.getItemTable())) {
+        if (request == null || StringUtils.isEmpty(request.getItemTable())) {
             throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "项目表不能为空");
         }
         this.pageWindowGate.requirePositivePageWindow(
@@ -321,7 +312,7 @@ public class PriceAdjustmentAppService {
     public LoadLogisticsAdjustmentSnapshotResponse loadLogisticsSnapshot(
         LoadLogisticsAdjustmentSnapshotRequest request) {
         // Gate：物流表与项目列表
-        if (request == null || StringUtils.isBlank(request.getItemTable())) {
+        if (request == null || StringUtils.isEmpty(request.getItemTable())) {
             throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "项目表不能为空");
         }
         if (request.getItemIds() == null || request.getItemIds().isEmpty()) {
@@ -347,7 +338,7 @@ public class PriceAdjustmentAppService {
      */
     public LoadClinicalOldPriceResponse loadClinicalOldPrice(LoadClinicalOldPriceRequest request) {
         // Gate：诊疗表与项目主键
-        if (request == null || StringUtils.isBlank(request.getItemTable()) || request.getItemId() == null) {
+        if (request == null || StringUtils.isEmpty(request.getItemTable()) || request.getItemId() == null) {
             throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "项目参数不能为空");
         }
         String itemTable = request.getItemTable().trim();
@@ -370,7 +361,7 @@ public class PriceAdjustmentAppService {
      */
     public PreviewSubmitLocksResponse previewSubmitLocks(PreviewSubmitLocksRequest request) {
         // Gate：单号非空
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "调价单号不能为空");
         }
         // Pre：querysupport 加载锁预览行
@@ -390,7 +381,7 @@ public class PriceAdjustmentAppService {
      */
     public CheckInTransitForSubmitResponse checkInTransitForSubmit(CheckInTransitForSubmitRequest request) {
         // Gate：单号非空
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "调价单号不能为空");
         }
         // Pre：querysupport 在途互斥检查
@@ -424,6 +415,8 @@ public class PriceAdjustmentAppService {
         );
         SavePriceAdjustmentDraftCommand command =
             this.priceAdjustmentMapper.toSavePriceAdjustmentDraftCommand(request, operatorId, orgId);
+        // Pre：调前价由读侧定价回填，目标价仅刻度（禁止信任请求体 old*）
+        this.draftPricingSupport.applyAuthoritativeDraftPricing(command);
         // Cmd：领域保存草稿（整单覆盖主从表，不加锁）
         String busNo = this.priceAdjustmentDomainService.savePriceAdjustmentDraft(command);
         // Asm：返回单号与 draft 状态
@@ -442,7 +435,7 @@ public class PriceAdjustmentAppService {
      */
     public SubmitPriceAdjustmentResponse submitForApproval(SubmitPriceAdjustmentRequest request) {
         // Gate：单号非空
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "调价单号不能为空");
         }
         String busNo = request.getBusNo().trim();
@@ -461,7 +454,7 @@ public class PriceAdjustmentAppService {
             PriceAdjustmentInTransitCheckDto inTransit = this.inTransitChecker.checkByBusNo(busNo);
             if (inTransit.isBlocked()) {
                 String message = inTransit.getReasonMessage();
-                if (StringUtils.isBlank(message)) {
+                if (StringUtils.isEmpty(message)) {
                     message = "存在在途医嘱/发药，无法提交调价";
                 }
                 throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_ITEM_IN_TRANSIT, message);
@@ -495,7 +488,7 @@ public class PriceAdjustmentAppService {
      */
     public WithdrawPriceAdjustmentDraftResponse withdrawDraft(WithdrawPriceAdjustmentDraftRequest request) {
         // Gate：单号非空
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "调价单号不能为空");
         }
         String busNo = request.getBusNo().trim();
@@ -522,7 +515,7 @@ public class PriceAdjustmentAppService {
      */
     public ExistsPendingByItemResponse existsPendingByItem(ExistsPendingByItemRequest request) {
         // Gate：参数非法时按领域口径返回 false，供外部入口降级为不阻断
-        if (request == null || StringUtils.isBlank(request.getItemTable()) || request.getItemId() == null) {
+        if (request == null || StringUtils.isEmpty(request.getItemTable()) || request.getItemId() == null) {
             return this.priceAdjustmentMapper.toExistsPendingByItemResponse(Boolean.FALSE);
         }
         // Pre：调用调价读侧 pending 互斥查询
@@ -545,7 +538,7 @@ public class PriceAdjustmentAppService {
         // Gate：调价审批须财务审批岗位
         this.financeApprovalRoleGate.assertFinanceApprovalRole();
         // Gate：单号非空
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "调价单号不能为空");
         }
         String busNo = request.getBusNo().trim();
@@ -585,10 +578,10 @@ public class PriceAdjustmentAppService {
         // Gate：调价驳回须财务审批岗位
         this.financeApprovalRoleGate.assertFinanceApprovalRole();
         // Gate：单号与驳回原因
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "调价单号不能为空");
         }
-        if (StringUtils.isBlank(request.getApproveComment())) {
+        if (StringUtils.isEmpty(request.getApproveComment())) {
             throw new BusinessException(ErrorCodeConstants.PRICE_ADJUSTMENT_INVALID_ARGUMENT, "驳回须填写原因");
         }
         String busNo = request.getBusNo().trim();
@@ -637,7 +630,7 @@ public class PriceAdjustmentAppService {
             if (service.getOfferedOrgId() == null || !orgId.equals(service.getOfferedOrgId())) {
                 continue;
             }
-            if (StringUtils.isNotBlank(keyword)) {
+            if (StringUtils.isNotEmpty(keyword)) {
                 if (service.getName() == null || !service.getName().contains(keyword.trim())) {
                     continue;
                 }
@@ -701,7 +694,7 @@ public class PriceAdjustmentAppService {
                 );
             }
             String lockedBusNo = previewRow.getLockedBusNo();
-            if (StringUtils.isNotBlank(lockedBusNo) && busNo.equals(lockedBusNo.trim())) {
+            if (StringUtils.isNotEmpty(lockedBusNo) && busNo.equals(lockedBusNo.trim())) {
                 continue;
             }
             LockInventoryCommand lockCommand =
@@ -723,7 +716,7 @@ public class PriceAdjustmentAppService {
             return false;
         }
         PriceAdjustmentLineQueryModel anchor = document.getLines().get(0);
-        if (anchor == null || StringUtils.isBlank(anchor.getItemTable())) {
+        if (anchor == null || StringUtils.isEmpty(anchor.getItemTable())) {
             return false;
         }
         return PriceAdjustmentItemTableSupport.isLogisticsItemTable(anchor.getItemTable());
@@ -768,7 +761,7 @@ public class PriceAdjustmentAppService {
         }
         boolean logistics = PriceAdjustmentItemTableSupport.isLogisticsItemTable(itemTable);
         for (AdjustableItemRowDto row : rows) {
-            if (row == null || row.getItemId() == null || StringUtils.isBlank(row.getItemTable())) {
+            if (row == null || row.getItemId() == null || StringUtils.isEmpty(row.getItemTable())) {
                 continue;
             }
             String table = row.getItemTable().trim();
@@ -836,7 +829,7 @@ public class PriceAdjustmentAppService {
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         Set<String> dedupe = new HashSet<>();
         for (PriceAdjustmentLineQueryModel line : document.getLines()) {
-            if (line == null || line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+            if (line == null || line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
                 continue;
             }
             String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
@@ -853,7 +846,7 @@ public class PriceAdjustmentAppService {
             return empty;
         }
         try {
-            return this.productDefinitionBatchLoader.loadAsMap(lookups);
+            return this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
         } catch (RuntimeException ex) {
             log.warn("loadProductDisplayMap degraded for price adjustment document", ex);
             return empty;

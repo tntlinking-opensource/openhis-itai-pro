@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.clinical.procedure.service;
 
 import com.openhis.health.domain.clinical.procedure.entity.Procedure;
@@ -32,7 +19,7 @@ import com.openhis.health.domain.clinical.procedure.repository.ProcedureReposito
 import com.openhis.health.domain.share.enums.EventStatus;
 import com.alibaba.fastjson2.JSON;
 import org.springframework.data.domain.Page;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -40,13 +27,21 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import com.openhis.health.domain.clinical.procedure.queries.NurseWorkloadPageQuery;
+import com.openhis.health.domain.clinical.procedure.queries.model.NurseExecutionCategorySummaryQueryModel;
+import com.openhis.health.domain.clinical.procedure.queries.model.NurseExecutionWorkloadDetailQueryModel;
+import com.openhis.health.domain.clinical.procedure.support.ProcedureNetExecutionFilterSupport;
 import com.openhis.health.domain.share.constants.ClinicalProcedureConstants;
+import com.openhis.health.domain.share.constants.NurseWorkloadConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 
 import jakarta.persistence.criteria.Predicate;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -63,13 +58,21 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>职责：按来源请求加载执行记录、分页投影、详情（含执行人轨迹）及可完成性校验。</p>
  *
- * <p>边界：只读；部分方法对缺失主键返回 {@code null} 或失败原因模型，而非统一抛异常。</p>
+ * <p>边界：只读；仅依赖本聚合 {@link ProcedureRepository} / {@link ProcedurePerformerRepository}。
+ * 护士工作量（AS-RPT-002）{@code category_enum} 由
+ * {@link com.openhis.health.application.report.nurseworkload.support.NurseWorkloadLoader} 预解析写入 query（B.6.4），
+ * 见 DM-CLN-004 §6.2.10～6.2.11。</p>
+ *
+ * <p>部分方法对缺失主键返回 {@code null} 或失败原因模型，而非统一抛异常。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link ProcedureRepository}、{@link ProcedurePerformerRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
 public class ProcedureQueryService {
     private final ProcedureRepository procedureRepository;
     private final ProcedurePerformerRepository performerRepository;
+    private final ProcedureNetExecutionFilterSupport procedureNetExecutionFilterSupport;
 
     /**
      * 按来源请求查询执行记录。
@@ -193,7 +196,7 @@ public class ProcedureQueryService {
         Long requestId,
         String requestTable) {
         List<Procedure> entities;
-        if (requestId != null && StringUtils.isNotBlank(requestTable)) {
+        if (requestId != null && StringUtils.isNotEmpty(requestTable)) {
             entities = this.procedureRepository.findByEncounterIdAndRequestIdAndRequestTable(
                 encounterId, requestId, requestTable);
         } else {
@@ -421,6 +424,184 @@ public class ProcedureQueryService {
     }
 
     /**
+     * 护士诊疗执行工作量按 {@code ServiceRequest.category_enum} 汇总（DM-CLN-004 §6.2.10；AS-RPT-002 IF-RPT-NWL-02）。
+     *
+     * @param query 须经 {@link com.openhis.health.application.report.nurseworkload.support.NurseWorkloadLoader} 预解析 scope
+     * @return 汇总行；无命中时返回空列表
+     */
+    public List<NurseExecutionCategorySummaryQueryModel> summarizeNurseExecutionWorkloadByCategory(
+        NurseWorkloadPageQuery query) {
+        // Pre：同窗内净 COMPLETED 候选（仅 wkf_service_request；BR-RPT-NWL-003/004）
+        List<Procedure> netRows = this.listNurseExecutionNetCompletedProcedures(query);
+        // Asm：按 Support 预解析的 SR.category_enum 分桶计数
+        Map<String, NurseExecutionCategorySummaryQueryModel> bucketByCategory = new LinkedHashMap<>();
+        Map<Long, String> categoryByServiceRequestId = this.resolveCategoryEnumByServiceRequestId(query);
+        for (Procedure entity : netRows) {
+            if (entity == null || entity.getRequestId() == null) {
+                continue;
+            }
+            String categoryEnum = categoryByServiceRequestId.get(entity.getRequestId());
+            String bucketKey = "";
+            if (categoryEnum != null) {
+                bucketKey = categoryEnum;
+            }
+            NurseExecutionCategorySummaryQueryModel summary = bucketByCategory.get(bucketKey);
+            if (summary == null) {
+                summary = new NurseExecutionCategorySummaryQueryModel();
+                summary.setCategoryEnum(categoryEnum);
+                summary.setExecutionCount(0L);
+                bucketByCategory.put(bucketKey, summary);
+            }
+            summary.setExecutionCount(summary.getExecutionCount() + 1L);
+        }
+        return new ArrayList<>(bucketByCategory.values());
+    }
+
+    /**
+     * 护士诊疗执行工作量明细分页（DM-CLN-004 §6.2.11；AS-RPT-002 IF-RPT-NWL-03）。
+     *
+     * @param query 预解析 scope + 分页键
+     * @return 净 COMPLETED 行分页；按 {@code recorded_time} 倒序
+     */
+    public Page<NurseExecutionWorkloadDetailQueryModel> pageNurseExecutionWorkloadDetail(
+        NurseWorkloadPageQuery query) {
+        // Pre：净 COMPLETED 全集；内存分页（默认 20 条/页，上限 1000）
+        List<Procedure> netRows = this.listNurseExecutionNetCompletedProcedures(query);
+        netRows.sort(Comparator.comparing(Procedure::getRecordedTime, Comparator.nullsLast(Comparator.reverseOrder())));
+        int pageSize = this.resolveNurseWorkloadPageSize(query);
+        int springIndex = 0;
+        if (query != null) {
+            springIndex = query.springPageIndex();
+        }
+        int fromIndex = springIndex * pageSize;
+        if (fromIndex >= netRows.size()) {
+            Pageable pageable = PageRequest.of(springIndex, pageSize);
+            return new PageImpl<>(Collections.emptyList(), pageable, netRows.size());
+        }
+        int toIndex = Math.min(fromIndex + pageSize, netRows.size());
+        List<Procedure> pageSlice = netRows.subList(fromIndex, toIndex);
+        List<Long> procedureIds = new ArrayList<>();
+        for (Procedure entity : pageSlice) {
+            if (entity != null && entity.getId() != null) {
+                procedureIds.add(entity.getId());
+            }
+        }
+        Map<Long, Long> practitionerIdByProcedureId = this.mapPrimaryPractitionerIdByProcedureIds(procedureIds);
+        Map<Long, String> categoryByServiceRequestId = this.resolveCategoryEnumByServiceRequestId(query);
+        List<NurseExecutionWorkloadDetailQueryModel> models = new ArrayList<>();
+        for (Procedure entity : pageSlice) {
+            NurseExecutionWorkloadDetailQueryModel model = new NurseExecutionWorkloadDetailQueryModel();
+            model.setProcedureId(entity.getId());
+            model.setServiceRequestId(entity.getRequestId());
+            model.setEncounterId(entity.getEncounterId());
+            model.setPatientId(entity.getPatientId());
+            model.setRecordedTime(entity.getRecordedTime());
+            model.setPractitionerId(practitionerIdByProcedureId.get(entity.getId()));
+            if (entity.getRequestId() != null) {
+                model.setCategoryEnum(categoryByServiceRequestId.get(entity.getRequestId()));
+            }
+            models.add(model);
+        }
+        Pageable pageable = PageRequest.of(springIndex, pageSize);
+        return new PageImpl<>(models, pageable, netRows.size());
+    }
+
+    /**
+     * 加载护士诊疗执行净 COMPLETED 候选集（BR-RPT-NWL-003～006；仅 {@code wkf_service_request}）。
+     *
+     * <p>对冲规则与 §6.2.6 一致：{@code CANCEL}+{@code refund_id} 抵消对应 COMPLETED。</p>
+     *
+     * @param query 预解析查询（含 resolvedEncounterScope；可选 practitionerId 收窄主执行人）
+     * @return 净执行记录
+     */
+    private List<Procedure> listNurseExecutionNetCompletedProcedures(NurseWorkloadPageQuery query) {
+        // Gate：Support 未写入 scope 或日期无效时直接空集
+        if (query == null
+            || query.getDateFrom() == null
+            || query.getDateTo() == null
+            || query.getResolvedEncounterScope() == null
+            || query.getResolvedEncounterScope().isEmpty()) {
+            return Collections.emptyList();
+        }
+        LocalDateTime recordedFrom = query.getDateFrom().atStartOfDay();
+        LocalDateTime recordedTo = LocalDateTime.of(query.getDateTo(), LocalTime.of(23, 59, 59, 999_999_999));
+        // Pre：按就诊 + recorded_time 闭区间加载 SR 锚点执行行
+        List<Procedure> candidates = this.procedureRepository
+            .findByEncounterIdInAndRequestTableAndRecordedTimeBetweenAndIsDeletedFalse(
+                query.getResolvedEncounterScope(),
+                TableNameConstants.WKF_SERVICE_REQUEST,
+                recordedFrom,
+                recordedTo);
+        if (candidates.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashSet<Long> completedIds = new LinkedHashSet<>();
+        for (Procedure entity : candidates) {
+            if (entity != null
+                && entity.getId() != null
+                && EventStatus.COMPLETED.getCode().equals(entity.getStatusEnum())) {
+                completedIds.add(entity.getId());
+            }
+        }
+        // Pre：加载可能对冲同窗 COMPLETED 的 CANCEL 行（可含窗外 refund 指向）
+        List<Procedure> cancelRows = Collections.emptyList();
+        if (!completedIds.isEmpty()) {
+            cancelRows = this.procedureRepository.findByRefundIdInAndRequestTableAndIsDeletedFalse(
+                completedIds,
+                TableNameConstants.WKF_SERVICE_REQUEST);
+        }
+        List<Procedure> netRows = this.procedureNetExecutionFilterSupport.filterNetCompletedServiceRequestProcedures(
+            candidates,
+            cancelRows);
+        // 未选护士：全院单块合计，不按执行人分桶
+        if (query.getPractitionerId() == null) {
+            return netRows;
+        }
+        // 已选护士：仅保留 PRIMARY 执行人匹配的行
+        List<Long> procedureIds = new ArrayList<>();
+        for (Procedure entity : netRows) {
+            if (entity != null && entity.getId() != null) {
+                procedureIds.add(entity.getId());
+            }
+        }
+        Map<Long, Long> practitionerIdByProcedureId = this.mapPrimaryPractitionerIdByProcedureIds(procedureIds);
+        List<Procedure> filtered = new ArrayList<>();
+        for (Procedure entity : netRows) {
+            Long performerId = practitionerIdByProcedureId.get(entity.getId());
+            if (query.getPractitionerId().equals(performerId)) {
+                filtered.add(entity);
+            }
+        }
+        return filtered;
+    }
+
+    /**
+     * 读取 Support 预解析的 SR 类目 map（B.6.4 跨聚合 enrich 结果）。
+     *
+     * @param query 护士工作量查询
+     * @return serviceRequestId → categoryEnum
+     */
+    private Map<Long, String> resolveCategoryEnumByServiceRequestId(NurseWorkloadPageQuery query) {
+        if (query == null || query.getCategoryEnumByServiceRequestId() == null) {
+            return Collections.emptyMap();
+        }
+        return query.getCategoryEnumByServiceRequestId();
+    }
+
+    /**
+     * 解析明细分页条数（AS-RPT-002 默认 20，硬上限 1000）。
+     *
+     * @param query 护士工作量查询
+     * @return 每页条数
+     */
+    private int resolveNurseWorkloadPageSize(NurseWorkloadPageQuery query) {
+        if (query == null || query.getPageSize() == null || query.getPageSize() < 1) {
+            return NurseWorkloadConstants.DEFAULT_PAGE_SIZE;
+        }
+        return Math.min(query.getPageSize(), 1000);
+    }
+
+    /**
      * 将执行记录实体映射为列表/详情共用的基础行模型。
      *
      * @param entity 执行记录实体
@@ -450,7 +631,7 @@ public class ProcedureQueryService {
      * @return 是否为诊疗或药品请求表
      */
     private boolean isNurseStationProcedureRequestTable(String requestTable) {
-        if (StringUtils.isBlank(requestTable)) {
+        if (StringUtils.isEmpty(requestTable)) {
             return false;
         }
         if (TableNameConstants.WKF_SERVICE_REQUEST.equals(requestTable)) {

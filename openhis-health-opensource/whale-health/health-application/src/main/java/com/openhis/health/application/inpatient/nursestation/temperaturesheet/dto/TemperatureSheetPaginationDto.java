@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -28,12 +28,12 @@ public class TemperatureSheetPaginationDto {
     @Schema(description = "总页数")
     private Integer totalPages;
 
-    /** 当前页日期下界（闭区间）。 */
+    /** 日期下界。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     @Schema(description = "日期下界")
     private LocalDate dateFrom;
 
-    /** 当前页日期上界（闭区间）。 */
+    /** 日期上界。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     @Schema(description = "日期上界")
     private LocalDate dateTo;

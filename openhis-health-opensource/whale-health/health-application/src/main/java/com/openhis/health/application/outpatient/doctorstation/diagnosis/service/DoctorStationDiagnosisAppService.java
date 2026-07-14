@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.diagnosis.service;
 
-import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.CommonDiagnosisRowDto;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.dto.EncounterDiagnosisRowDto;
 import com.openhis.health.application.outpatient.doctorstation.diagnosis.mapper.DoctorStationDiagnosisMapper;
@@ -36,10 +23,10 @@ import com.openhis.health.domain.custom.conditiontemplate.queries.model.Conditio
 import com.openhis.health.domain.custom.conditiontemplate.service.ConditionTemplateQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.module.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
-import com.openhis.health.module.shared.diagnosis.PatientHistoryCommonDiagnosisAssembler;
-import com.openhis.health.module.shared.diagnosis.PatientHistoryCommonDiagnosisRow;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.support.PatientHistoryCommonDiagnosisAssembler;
+import com.openhis.health.application.outpatient.doctorstation.diagnosis.support.PatientHistoryCommonDiagnosisRow;
 import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
@@ -51,7 +38,7 @@ import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -66,7 +53,7 @@ import java.util.*;
 public class DoctorStationDiagnosisAppService {
 
     private final EncounterQueryService encounterQueryService;
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
     private final EncounterDiagnosisSnapshotAssembler encounterDiagnosisSnapshotAssembler;
     private final PatientHistoryCommonDiagnosisAssembler patientHistoryCommonDiagnosisAssembler;
     private final ConditionDefinitionQueryService conditionDefinitionQueryService;
@@ -91,7 +78,7 @@ public class DoctorStationDiagnosisAppService {
     public EncounterDiagnosisResponse getEncounterDiagnosis(GetEncounterDiagnosisRequest request) {
         // 强依赖门诊信息读模型，缺失即视为未选择有效就诊（医生站统一口径 EX-DOD-104）。
         OutpatientEncounterContextQueryModel snapshot =
-            this.encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+            this.EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // 校验患者上下文与读模型一致，避免串患者卡片展示诊断。
         this.doctorStationDiagnosisMapper.validateEncounterPatientGate(snapshot, request.getPatientId());
         // 医生站诊断页仅服务门诊类别读模型行，防止住院行误入。
@@ -156,7 +143,7 @@ public class DoctorStationDiagnosisAppService {
      */
     public ConditionDefinitionPageResponse getConditionDefinitionMetadata(PageConditionDefinitionRequest request) {
         // 门控：诊断中西医维度筛选只允许 1/2/空，避免构造无法下推到 SQL 的非法 source 集合。
-        if (StringUtils.isNotBlank(request.getDiagnosisKindCode())) {
+        if (StringUtils.isNotEmpty(request.getDiagnosisKindCode())) {
             String code = request.getDiagnosisKindCode().trim();
             if (!DoctorStationDiagnosisConstants.DIAGNOSIS_KIND_FILTER_WESTERN.equals(code)
                 && !DoctorStationDiagnosisConstants.DIAGNOSIS_KIND_FILTER_TCM.equals(code)) {
@@ -195,7 +182,7 @@ public class DoctorStationDiagnosisAppService {
         this.doctorStationDiagnosisMapper.validateSaveEncounterDiagnosisRequest(request);
         // 加载读模型快照并校验患者上下文，避免写入错误就诊下的诊断事实。
         OutpatientEncounterContextQueryModel snapshot =
-            this.encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+            this.EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         this.doctorStationDiagnosisMapper.validateEncounterPatientGate(snapshot, request.getPatientId());
         // 就诊类别门禁：仅允许门诊就诊保存诊断
         if (!EncounterClass.AMB.getCode().equals(snapshot.getClassEnum())) {
@@ -235,7 +222,7 @@ public class DoctorStationDiagnosisAppService {
         this.doctorStationDiagnosisMapper.validateDeleteEncounterDiagnosisRequest(request.getConditionId(), request.getEncounterId());
         // 读模型门控，避免未选择就诊即删除。
         OutpatientEncounterContextQueryModel snapshot =
-            this.encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+            this.EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
         // 就诊类别门禁：仅允许门诊就诊删除诊断
         if (!EncounterClass.AMB.getCode().equals(snapshot.getClassEnum())) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "当前就诊类别不允许在此删除门诊诊断");

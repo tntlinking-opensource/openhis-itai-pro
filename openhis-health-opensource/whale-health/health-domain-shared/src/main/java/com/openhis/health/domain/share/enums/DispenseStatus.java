@@ -1,39 +1,41 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 /**
  * 耗材发放状态枚举（对齐 DM-WKF-007 §2.3）。
  */
 public enum DispenseStatus implements EnumInterface {
+/** 草稿（DispenseStatus，编码 {@code DRAFT}）。 */
     DRAFT(0L, "DRAFT", "草稿", "", 0L),
+/** 待配药（DispenseStatus，编码 {@code PREPARATION}）。 */
     PREPARATION(0L, "PREPARATION", "待配药", "", 1L),
+/** 已配药（DispenseStatus，编码 {@code PREPARED}）。 */
     PREPARED(0L, "PREPARED", "已配药", "", 2L),
+/** 待发药（DispenseStatus，编码 {@code IN_PROGRESS}）。 */
     IN_PROGRESS(0L, "IN_PROGRESS", "待发药", "", 3L),
+/** 已发药（DispenseStatus，编码 {@code COMPLETED}）。 */
     COMPLETED(0L, "COMPLETED", "已发药", "", 4L),
+/** 已汇总（DispenseStatus，编码 {@code SUMMARIZED}）。 */
     SUMMARIZED(0L, "SUMMARIZED", "已汇总", "", 5L),
+/** 部分发药（DispenseStatus，编码 {@code PART_COMPLETED}）。 */
     PART_COMPLETED(0L, "PART_COMPLETED", "部分发药", "", 6L),
+/** 暂停发药（DispenseStatus，编码 {@code ON_HOLD}）。 */
     ON_HOLD(0L, "ON_HOLD", "暂停发药", "", 7L),
+/** 停止发药（DispenseStatus，编码 {@code STOPPED}）。 */
     STOPPED(0L, "STOPPED", "停止发药", "", 8L),
+/** 拒绝发药（DispenseStatus，编码 {@code DECLINED}）。 */
     DECLINED(0L, "DECLINED", "拒绝发药", "", 9L),
+/** 待退药（DispenseStatus，编码 {@code PENDING_REFUND}）。 */
     PENDING_REFUND(0L, "PENDING_REFUND", "待退药", "", 10L),
+/** 部分退药（DispenseStatus，编码 {@code PART_REFUND}）。 */
     PART_REFUND(0L, "PART_REFUND", "部分退药", "", 11L),
+/** 已退药（DispenseStatus，编码 {@code REFUNDED}）。 */
     REFUNDED(0L, "REFUNDED", "已退药", "", 12L),
+/** 已取消（DispenseStatus，编码 {@code CANCELLED}）。 */
     CANCELLED(0L, "CANCELLED", "已取消", "", 13L),
+/** 未知（DispenseStatus，编码 {@code UNKNOWN}）。 */
     UNKNOWN(0L, "UNKNOWN", "未知", "", 99L);
 
     private final Long codeSystemId;

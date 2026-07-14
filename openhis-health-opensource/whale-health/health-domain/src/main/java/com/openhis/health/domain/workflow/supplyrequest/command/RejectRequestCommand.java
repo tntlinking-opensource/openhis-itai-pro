@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.supplyrequest.command;
 
 import com.openhis.health.domain.share.command.BatchCommand;
@@ -47,7 +34,9 @@ public class RejectRequestCommand extends BatchCommand<RejectRequestCommand.Reje
         private Long approverId;
         /** 审批业务时钟；可空时由领域默认。 */
         private LocalDateTime approvalClock;
-        /** 驳回/变更原因编码或短文本（领域落 {@code reason} 或与 DM 约定列对齐）。 */
+        /**
+         * 驳回原因（人读文案或原因码）；{@code rejectRequest} 全行写入实体 {@code reason}，列表以 {@code rejectReason} 回显。
+         */
         private String changeReasonCode;
     }
 }

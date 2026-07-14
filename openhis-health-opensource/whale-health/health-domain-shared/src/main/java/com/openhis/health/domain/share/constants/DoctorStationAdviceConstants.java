@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 /**
@@ -99,7 +86,7 @@ public interface DoctorStationAdviceConstants {
     /** 请求校验：患者标识缺失。 */
     String MSG_PATIENT_ID_REQUIRED = "患者标识不能为空";
 
-    /** 操作人解析失败。 */
+/** DoctorStationAdvice 共享常量：operator not resolved，值 {@code 未获取到当前操作人}。 */
     String MSG_OPERATOR_NOT_RESOLVED = "未获取到当前操作人";
 
     /** 暂存：就诊未绑定自费账户，无法生成费用草稿。 */
@@ -293,7 +280,18 @@ public interface DoctorStationAdviceConstants {
     /** EX-IP-ORD-103 用户提示：已发生执行/发药/费用事实时禁止签退。 */
     String MSG_INPATIENT_WITHDRAW_BLOCKED = "已执行、已发药或费用不可回退，无法签退";
 
+    /** EX-IP-ORD-106：护理级别医嘱长临/并发门控（IF-IP-DOR-14/15 · BR-IP-ORD-026）。 */
+    String EX_IP_ORD_106 = "EX-IP-ORD-106";
+
+    /** EX-IP-ORD-107：就诊待结算禁止开立/变更医嘱（IF-IP-DOR-03 可写 Gate）。 */
+    String EX_IP_ORD_107 = "EX-IP-ORD-107";
+
+    /** 护理级别（category 26）仅允许开立长期医嘱。 */
+    String MSG_NURSING_LEVEL_LONG_TERM_ONLY = "护理级别医嘱仅允许开立长期医嘱";
+
+    /** 同就诊已存在有效护理级别医嘱，须先停嘱再开新级别。 */
+    String MSG_NURSING_LEVEL_STOP_BEFORE_NEW = "已存在有效护理级别医嘱，请先停嘱后再开立新的护理级别";
+
     /** Bean Validation：产品定义主键必填（目录预选键）。 */
     String VALIDATION_PRODUCT_DEFINITION_ID_REQUIRED = "产品定义主键不能为空";
 }
-

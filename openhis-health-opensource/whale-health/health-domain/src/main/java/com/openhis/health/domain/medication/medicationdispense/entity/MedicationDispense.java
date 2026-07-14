@@ -1,22 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationdispense.entity;
 
+import com.openhis.health.domain.share.constants.DoctorStationOrderCatalogConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.MedicationDispenseType;
@@ -30,7 +18,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -207,19 +195,23 @@ public class MedicationDispense extends BaseAuditedEntity {
     }
 
     /**
-     * 初始化草稿。
+     * 初始化草稿；预减窗口 {@link DoctorStationOrderCatalogConstants#DISPENSE_RESERVE_DRAFT_LIMIT_HOURS} 小时。
      */
     public void initDraft() {
+        LocalDateTime now = LocalDateTime.now();
         this.statusEnum = DispenseStatus.DRAFT;
-        this.statusChangedTime = LocalDateTime.now();
+        this.statusChangedTime = now;
+        this.limitTime = now.plusHours(DoctorStationOrderCatalogConstants.DISPENSE_RESERVE_DRAFT_LIMIT_HOURS);
     }
 
     /**
-     * 初始化待配药。
+     * 初始化待配药；预减窗口 {@link DoctorStationOrderCatalogConstants#DISPENSE_RESERVE_PREPARATION_LIMIT_HOURS} 小时。
      */
     public void initPreparation() {
+        LocalDateTime now = LocalDateTime.now();
         this.statusEnum = DispenseStatus.PREPARATION;
-        this.statusChangedTime = LocalDateTime.now();
+        this.statusChangedTime = now;
+        this.limitTime = now.plusHours(DoctorStationOrderCatalogConstants.DISPENSE_RESERVE_PREPARATION_LIMIT_HOURS);
     }
 
     /**
@@ -272,7 +264,7 @@ public class MedicationDispense extends BaseAuditedEntity {
      * 校验库存五元组。
      */
     public void validateInventoryTuple() {
-        if (this.medicationId == null || this.locationId == null || this.quantity == null || StringUtils.isBlank(this.unitCode)) {
+        if (this.medicationId == null || this.locationId == null || this.quantity == null || StringUtils.isEmpty(this.unitCode)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "库存扣减五元组不完整");
         }
     }
@@ -281,9 +273,39 @@ public class MedicationDispense extends BaseAuditedEntity {
      * 校验追溯码。
      */
     public void validateTraceCode() {
-        if (StringUtils.isBlank(this.traceNo)) {
+        if (StringUtils.isEmpty(this.traceNo)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_RULE_CONFLICT, "发药必须记录追溯码");
         }
+    }
+
+    /**
+     * 断言汇总核发后的发放行可接受护士站追溯码分配（**AS-IP-NUR-015 · BR-IP-TRC-002/009**）。
+     *
+     * <p>须 {@link DispenseStatus#COMPLETED} 且 {@code summary_no} 非空；不校验 trace 是否已填（允许覆盖）。</p>
+     */
+    public void ensureTraceAssignableOnCompleted() {
+        if (!DispenseStatus.COMPLETED.equals(this.statusEnum)) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_STATUS,
+                "仅已核发发放行可分配追溯码");
+        }
+        if (StringUtils.isEmpty(this.summaryNo)) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_DISPENSE_RULE_CONFLICT,
+                "非汇总路径发放行不可在本场景分配追溯码");
+        }
+    }
+
+    /**
+     * 仅回写追溯码，不迁移发放状态、不触发发药/追溯 OUT 事件（**AS-IP-NUR-015 · BR-IP-TRC-009**）。
+     *
+     * @param traceNo 逗号分隔追溯码串；空白则跳过
+     */
+    public void applyTraceNoOnly(String traceNo) {
+        if (StringUtils.isEmpty(traceNo)) {
+            return;
+        }
+        this.traceNo = traceNo.trim();
     }
 
     /**
@@ -307,6 +329,50 @@ public class MedicationDispense extends BaseAuditedEntity {
         this.dispenseTime = LocalDateTime.now();
         this.statusEnum = DispenseStatus.COMPLETED;
         this.statusChangedTime = this.dispenseTime;
+    }
+
+    /**
+     * 汇总核发闭环：在 {@link DispenseStatus#SUMMARIZED} 中间态下一并写入配药/发药人与时刻，推进为终态 {@link DispenseStatus#COMPLETED}。
+     *
+     * <p>是否汇总路径以 {@code summary_no} 非空识别；{@code SUMMARIZED} 仅表达待发核发，**不是**业务终态（终态以本表 {@code COMPLETED} 为准）。</p>
+     *
+     * @param dispenserId     发药药师主键
+     * @param preparerId      调配药师主键
+     * @param actualQuantity  实发数量；空则回退 {@link #quantity}
+     * @param completedTime   配药/发药完成时刻（同刻写入 prepareTime 与 dispenseTime）
+     */
+    public void completeSummaryDispenseFacts(
+        Long dispenserId,
+        Long preparerId,
+        BigDecimal actualQuantity,
+        LocalDateTime completedTime) {
+        this.ensureStatusForDispense();
+        // 汇总路径必须以 summary_no 识别，防止按患者发药行误入本方法
+        if (StringUtils.isEmpty(this.summaryNo)) {
+            throw new BusinessException(
+                ErrorCodeConstants.MEDICATION_DISPENSE_RULE_CONFLICT,
+                "非汇总路径发放行不可执行汇总核发");
+        }
+        if (preparerId == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "调配药师不能为空");
+        }
+        if (dispenserId == null) {
+            throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "发药人不能为空");
+        }
+        if (completedTime == null) {
+            completedTime = LocalDateTime.now();
+        }
+        BigDecimal resolvedQuantity = actualQuantity;
+        if (resolvedQuantity == null) {
+            resolvedQuantity = this.quantity;
+        }
+        this.preparerId = preparerId;
+        this.prepareTime = completedTime;
+        this.practitionerId = dispenserId;
+        this.dispenseQuantity = resolvedQuantity;
+        this.dispenseTime = completedTime;
+        this.statusEnum = DispenseStatus.COMPLETED;
+        this.statusChangedTime = completedTime;
     }
 
     /**
@@ -444,4 +510,3 @@ public class MedicationDispense extends BaseAuditedEntity {
         }
     }
 }
-

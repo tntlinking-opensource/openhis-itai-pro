@@ -1,94 +1,89 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.dto;
 
+import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- *
- * <p>与领域 {@code wkf_supply_request} 行字段对齐；{@code unitCode} 等为字典或计量持久化码（B.10.8.1）。
- * {@link #traceNo} 可含多个片段（逗号分隔），同意路径下受追溯宽限校验（WHS-IN-SDD-R-008 / {@code WHS_IN_001}/{@code WHS_IN_004}）。</p>
+ * 药库入库单写模型明细行（IF-WHS-IN-04/05）。
  */
 @Getter
 @Setter
+@Accessors(chain = true)
+@Schema(description = "药库入库单明细行（写）")
 public class InboundReceiptLineDto {
 
-    /**
-     * 物品来源物理表名，与供应请求 {@code item_table} 及选品 {@code productTableName} 白名单一致。
-     */
+    /** 物品来源表名。 */
+    @Schema(description = "物品来源表名")
     private String itemTable;
 
-    /**
-     * 物品定义主键，与 {@code item_id} 一致。
-     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    /** 物品定义主键。 */
+    @Schema(description = "物品定义主键")
     private Long itemId;
 
     /**
-     * 进货数量（业务口径正数；拆零入账由同意路径结合产品定义另行换算）。
+     * 来源药库中已选定的 {@code wkf_inventory_item.id}。
+     * <p>前端从选品带回时，草稿校验走「行级可用量」路径，与药库出库一致。</p>
+     * <p>可空：未绑定时后端按「物品 + 归一化批号」在内存聚合后与可用目录行比对。</p>
      */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "来源药库库存行主键；有值时按行校验可用量，无值时按品+批号聚合")
+    /** 来源药库库存行主键；有值时按行校验可用量，无值时按品+批号聚合。 */
+    private Long inventoryItemId;
+
+    /** 数量。 */
+    @Schema(description = "数量")
     private BigDecimal itemQuantity;
 
-    /**
-     * 计量单位编码（字典/持久化码），与行数量同一语义维度。
-     */
+    /** 计量单位编码。 */
+    @Schema(description = "计量单位编码")
     private String unitCode;
 
-    /**
-     * 批号；同意入库前须非空（应用层 {@code resolveLotNumberForInventory}）；新建/编辑请求可暂空由业务另行约束。
-     */
+    /** 批号。 */
+    @Schema(description = "批号")
     private String lotNumber;
 
-    /**
-     * 追溯码；可空。非空时可为逗号分隔多码，须满足宽限长度（应用层校验）。
-     */
+    /** 追溯码。 */
+    @Schema(description = "追溯码")
     private String traceNo;
 
-    /**
-     * 含税或约定口径下的单价；可与 {@link #totalPrice}、数量做交叉校验（规则以领域为准）。
-     */
+    /** 单价。 */
+    @Schema(description = "单价")
     private BigDecimal price;
 
-    /**
-     * 行总价。
-     */
+    /** 行总价。 */
+    @Schema(description = "行总价")
     private BigDecimal totalPrice;
 
-    /**
-     * 期望到货或业务发生时刻。
-     */
-    private LocalDateTime occurrenceTime;
+    /** 行备注。 */
+    @Schema(description = "行备注")
+    private String remake;
 
-    /**
-     * 效期区间起点（落库 {@code wkf_supply_request.start_time}）；可空。
-     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    /** 效期起点 startTime。 */
+    @Schema(description = "效期起点 startTime")
     private LocalDateTime startTime;
 
-    /**
-     * 效期区间止点（落库 {@code wkf_supply_request.end_time}）；可空。
-     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    /** 效期止点 endTime。 */
+    @Schema(description = "效期止点 endTime")
     private LocalDateTime endTime;
 
-    /**
-     * 行级备注。
-     */
-    private String remake;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    /** 业务发生时间。 */
+    @Schema(description = "业务发生时间")
+    private LocalDateTime occurrenceTime;
 }

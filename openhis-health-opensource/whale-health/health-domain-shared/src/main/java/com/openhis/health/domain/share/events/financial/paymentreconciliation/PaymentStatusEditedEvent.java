@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.events.financial.paymentreconciliation;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -17,8 +17,11 @@ import java.util.List;
 @Setter
 public class PaymentStatusEditedEvent extends DomainEvent {
 
+    /** before状态编码（PaymentStatusEditedEvent）。 */
     private PaymentStatus beforeStatusEnum;
+    /** after状态编码（PaymentStatusEditedEvent）。 */
     private PaymentStatus afterStatusEnum;
+    /** ybSettlements（PaymentStatusEditedEvent）。 */
     private List<PaymentYbSettlementEventItem> ybSettlements;
 
     public PaymentStatusEditedEvent() {

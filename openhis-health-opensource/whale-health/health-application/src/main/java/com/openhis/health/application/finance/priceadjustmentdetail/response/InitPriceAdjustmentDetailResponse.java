@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.finance.priceadjustmentdetail.response;
 
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -32,19 +19,19 @@ import java.util.List;
 @Schema(description = "调价明细页初始化响应")
 public class InitPriceAdjustmentDetailResponse {
 
-    /** 默认生效时间下限（当日 00:00:00）。 */
+    /** 默认生效时间下限。 */
     @Schema(description = "默认生效时间下限")
     private String defaultApproveTimeFrom;
 
-    /** 默认生效时间上限（当日 23:59:59）。 */
+    /** 默认生效时间上限。 */
     @Schema(description = "默认生效时间上限")
     private String defaultApproveTimeTo;
 
-    /** 四档 item_table Tab 选项。 */
+    /** 项目类型 Tab 选项。 */
     @Schema(description = "项目类型 Tab 选项")
     private List<OptionDto> itemTableTabOptions;
 
-    /** 调价原因枚举选项。 */
+    /** 调价原因选项。 */
     @Schema(description = "调价原因选项")
     private List<OptionDto> adjustmentReasonOptions;
 

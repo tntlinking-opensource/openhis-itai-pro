@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.mrms.volume.service;
 
 import com.openhis.health.application.mrms.volume.dto.VolumeCatalogDto;
@@ -14,9 +14,10 @@ import com.openhis.health.domain.mrms.caserecord.entity.CaseRecord;
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordDomainService;
 import com.openhis.health.domain.share.constants.MrmsErrorCodes;
 import com.openhis.health.domain.share.enums.CaseRecordStatus;
-import com.openhis.health.integration.emr.EmrDocumentExtension;
-import com.openhis.health.integration.emr.dto.EmrDocumentSnapshot;
-import com.openhis.health.module.common.validator.MrmsOperatorResolver;
+import com.openhis.health.infrastructure.integration.emr.EmrDocumentExtension;
+import com.openhis.health.infrastructure.integration.emr.ExtensionIn.EmrDocumentListExtensionIn;
+import com.openhis.health.application.mrms.support.MrmsOperatorResolver;
+import com.openhis.health.infrastructure.integration.emr.ExtensionOut.EmrDocumentQueryExtensionOut;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
@@ -52,10 +53,13 @@ public class MrmsCaseRecordVolumeAppService {
         CaseRecord record = caseRecordDomainService.requireById(caseRecordId);
         assertVolumeAccessible(record);
         // Pre：EMR 启用时加载就诊文书快照
-        List<EmrDocumentSnapshot> documents = List.of();
+        List<EmrDocumentQueryExtensionOut> documents = List.of();
         // EMR 未启用时目录仅含首页虚拟项
         if (emrDocumentExtension.isEnabled()) {
-            documents = emrDocumentExtension.listByEncounter(record.getPatientId(), record.getEncounterId());
+            documents = emrDocumentExtension.listByEncounter(
+                new EmrDocumentListExtensionIn()
+                    .setPatientId(record.getPatientId())
+                    .setEncounterId(record.getEncounterId()));
         }
         // Asm：映射目录 DTO
         return volumeMapper.toCatalog(record, documents);

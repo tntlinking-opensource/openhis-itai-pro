@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.temperaturesheet.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -22,28 +22,28 @@ import lombok.experimental.Accessors;
 })
 public class GetNurseStationTemperatureSheetPrintDataRequest {
 
-    /** 当前选中就诊。 */
+    /** 就诊标识。 */
     @NotNull(message = "就诊标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long encounterId;
 
-    /** 左侧卡片患者 id。 */
+    /** 患者标识。 */
     @NotNull(message = "患者标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
-    /** 窗口天数 code（打印当前页时使用）。 */
+    /** 窗口范围：3d/7d/14d。 */
     @NotBlank(message = "窗口范围不能为空")
     @Schema(description = "窗口范围：3d/7d/14d", requiredMode = Schema.RequiredMode.REQUIRED)
     private String windowRange;
 
-    /** 页码（0-based；printScope=CURRENT_PAGE 时使用）。 */
+    /** 页码（0-based）。 */
     @Schema(description = "页码（0-based）")
     private Integer pageIndex;
 
-    /** 打印范围：CURRENT_PAGE / ALL。 */
+    /** 打印范围：CURRENT_PAGE 或 ALL。 */
     @NotBlank(message = "打印范围不能为空")
     @Schema(description = "打印范围：CURRENT_PAGE 或 ALL", requiredMode = Schema.RequiredMode.REQUIRED)
     private String printScope;

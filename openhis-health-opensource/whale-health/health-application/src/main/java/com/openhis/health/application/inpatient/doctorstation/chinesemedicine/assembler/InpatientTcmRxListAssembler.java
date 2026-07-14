@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.assembler;
 
@@ -20,18 +21,18 @@ import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.module.common.assembler.advice.TcmMethodCodeDisplaySupport;
-import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.common.assembler.order.OrderCatalogDisplayAssembler;
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogUnitPriceCommand;
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.advice.TcmMethodCodeDisplayAssembler;
+import com.openhis.health.application.shared.option.FrequencyOptionLoader;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
+import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
+import com.openhis.health.application.shared.product.ClinicalCatalogUnitPriceQuery;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
@@ -60,8 +61,8 @@ public class InpatientTcmRxListAssembler {
     private final ChargeItemQueryService chargeItemQueryService;
     private final TerminologyOptionLoader terminologyOptionLoader;
     private final FrequencyOptionLoader frequencyOptionLoader;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
-    private final ClinicalCatalogPriceResolveSupport clinicalCatalogPriceResolveSupport;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
+    private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
 
     /**
      * 将领域按方聚合读模型 enrich 为方头+行 DTO。
@@ -97,13 +98,15 @@ public class InpatientTcmRxListAssembler {
         Map<String, String> westernMethodLabelByCode =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.METHOD_CODE);
         Map<String, String> rateLabelByCode = frequencyOptionLoader.buildRateLabelMap();
+        Map<String, String> dosageInstructionLabelByCode =
+            terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DOSAGE_INSTRUCTION);
         Map<String, String> unitLabelByCode =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE);
         Map<String, String> doseUnitLabelByCode =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DOSE_UNIT);
         Map<String, ProductDefinitionDisplayDto> productByKey = loadMedicationProducts(medicationIds);
         Map<String, List<ChargeItemDefinition>> priceByKey =
-            clinicalCatalogPriceResolveSupport.loadPriceLinesGrouped(new ArrayList<>(productByKey.values()));
+            clinicalCatalogPriceResolver.loadPriceLinesGrouped(new ArrayList<>(productByKey.values()));
         for (TcmHerbalPrescriptionGroupQueryModel group : groups) {
             TcmRxHeaderDto header = new TcmRxHeaderDto();
             header.setPrescriptionGroupKey(group.getPrescriptionGroupKey());
@@ -113,7 +116,7 @@ public class InpatientTcmRxListAssembler {
             header.setChineseHerbsDoseQuantity(group.getChineseHerbsDoseQuantity());
             header.setSufferingFlag(group.getSufferingFlag());
             header.setMethodCode(group.getMethodCode());
-            header.setMethodName(TcmMethodCodeDisplaySupport.resolveMethodDisplayName(
+            header.setMethodName(TcmMethodCodeDisplayAssembler.resolveMethodDisplayName(
                 tcmMethodLabelByCode, westernMethodLabelByCode, Boolean.TRUE, group.getMethodCode()));
             header.setRateCode(group.getRateCode());
             header.setRateName(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
@@ -126,7 +129,7 @@ public class InpatientTcmRxListAssembler {
                 firstLine = group.getLines().get(0);
             }
             if (firstLine != null) {
-                header.setDecoctionMethodCode(TcmMethodCodeDisplaySupport.readContentJsonTextField(
+                header.setDecoctionMethodCode(TcmMethodCodeDisplayAssembler.readContentJsonTextField(
                     firstLine.getContentJson(), "decoctionMethodCode"));
             }
             List<TcmRxLineDto> lineDtos = new ArrayList<>();
@@ -151,6 +154,9 @@ public class InpatientTcmRxListAssembler {
                         line, group, medProduct, chargeEnrich, priceByKey));
                     lineDto.setSortNumber(line.getSortNumber());
                     lineDto.setLineStatusEnum(line.getStatusEnum());
+                    lineDto.setDosageInstructionCode(line.getDosageInstruction());
+                    lineDto.setDosageInstructionText(OrderCatalogDisplayAssembler.resolveCategoryDisplay(
+                        dosageInstructionLabelByCode, line.getDosageInstruction()));
                     lineDtos.add(lineDto);
                 }
             }
@@ -187,11 +193,11 @@ public class InpatientTcmRxListAssembler {
             List<String> medicationNames = new ArrayList<>();
             for (Long medicationId : group.getMedicationIds()) {
                 String name = medicationNameById.get(medicationId);
-                if (StringUtils.isNotBlank(name)) {
+                if (StringUtils.isNotEmpty(name)) {
                     medicationNames.add(name);
                 }
             }
-            if (StringUtils.isNotBlank(keywordTrimmed)) {
+            if (StringUtils.isNotEmpty(keywordTrimmed)) {
                 boolean matched = false;
                 if (group.getPrescriptionNo() != null
                     && group.getPrescriptionNo().toLowerCase().contains(keywordTrimmed)) {
@@ -224,6 +230,12 @@ public class InpatientTcmRxListAssembler {
         return result;
     }
 
+    /**
+     * 批量加载中药饮片产品目录投影（处方列表药名/规格 enrich）。
+     *
+     * @param medicationIds 药品定义 ID 集合
+     * @return 复合键 → 产品展示 DTO
+     */
     private Map<String, ProductDefinitionDisplayDto> loadMedicationProducts(Set<Long> medicationIds) {
         if (medicationIds == null || medicationIds.isEmpty()) {
             return new HashMap<>();
@@ -235,9 +247,15 @@ public class InpatientTcmRxListAssembler {
             lookup.setProductDefinitionId(medicationId);
             lookups.add(lookup);
         }
-        return productDefinitionBatchLoader.loadAsMap(lookups);
+        return productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
     }
 
+    /**
+     * 批量加载药品定义名称（按主键索引，读药品主表 name）。
+     *
+     * @param medicationIds 药品定义 ID 集合
+     * @return 药品 ID → 名称
+     */
     private Map<Long, String> loadMedicationNames(Set<Long> medicationIds) {
         Map<Long, String> result = new HashMap<>();
         if (medicationIds == null || medicationIds.isEmpty()) {
@@ -282,7 +300,7 @@ public class InpatientTcmRxListAssembler {
         String compositeKey = ProductDefinitionKeyUtil.buildCompositeKey(
             TableNameConstants.MED_MEDICATION_DEFINITION, line.getMedicationId());
         List<ChargeItemDefinition> priceLines = priceByKey.getOrDefault(compositeKey, List.of());
-        ClinicalCatalogUnitPriceCommand priceCmd = ClinicalCatalogUnitPriceCommand.builder()
+        ClinicalCatalogUnitPriceQuery priceCmd = ClinicalCatalogUnitPriceQuery.builder()
             .productTableName(medProduct.getProductTableName())
             .productDefinitionId(medProduct.getProductDefinitionId())
             .categoryCode(medProduct.getCategoryCode())
@@ -293,7 +311,7 @@ public class InpatientTcmRxListAssembler {
             .priceLines(priceLines)
             .productRowForOccupancy(medProduct)
             .build();
-        ChargeItemDefinition selected = clinicalCatalogPriceResolveSupport.resolveCatalogUnitPrice(priceCmd);
+        ChargeItemDefinition selected = clinicalCatalogPriceResolver.resolveCatalogUnitPrice(priceCmd);
         if (selected == null || selected.getPriceValue() == null) {
             return null;
         }
@@ -304,6 +322,13 @@ public class InpatientTcmRxListAssembler {
         return resolveDoseUnitPriceFromBands(bands, line.getDoseUnitCode());
     }
 
+    /**
+     * 从目录单位带解析饮片剂量单位零售价：优先 DOSE 槽，再按 doseUnitCode 匹配。
+     *
+     * @param bands        单位带列表
+     * @param doseUnitCode 行上剂量单位 code
+     * @return 元/剂量单位；无法解析时 null
+     */
     private static BigDecimal resolveDoseUnitPriceFromBands(
         List<ProductDefinitionCatalogUnitBandDto> bands,
         String doseUnitCode
@@ -320,12 +345,12 @@ public class InpatientTcmRxListAssembler {
                 return band.getUnitPrice();
             }
         }
-        if (StringUtils.isBlank(doseUnitCode)) {
+        if (StringUtils.isEmpty(doseUnitCode)) {
             return null;
         }
         String normalized = doseUnitCode.trim();
         for (ProductDefinitionCatalogUnitBandDto band : bands) {
-            if (band == null || band.getUnitPrice() == null || StringUtils.isBlank(band.getUnitCode())) {
+            if (band == null || band.getUnitPrice() == null || StringUtils.isEmpty(band.getUnitCode())) {
                 continue;
             }
             if (normalized.equals(band.getUnitCode().trim())) {
@@ -348,6 +373,7 @@ public class InpatientTcmRxListAssembler {
         }
         ChargeItemQueryCommand cmd = new ChargeItemQueryCommand();
         cmd.setServiceIds(new ArrayList<>(requestIds));
+        cmd.setExcludeSupersededSettledLines(true);
         List<ChargeItem> chargeItems = chargeItemQueryService.listChargeItemsByServiceIds(cmd);
         Map<Long, TcmChargePrimaryRow> primaryByRequestId = new HashMap<>();
         for (ChargeItem chargeItem : chargeItems) {
@@ -386,12 +412,23 @@ public class InpatientTcmRxListAssembler {
         private LocalDateTime occurrenceTime;
         private BigDecimal unitPrice;
 
+        /**
+         * 由单条 ChargeItem 初始化代表行。
+         *
+         * @param item 账单单价来源行
+         * @return 代表行中间态
+         */
         private static TcmChargePrimaryRow from(ChargeItem item) {
             TcmChargePrimaryRow row = new TcmChargePrimaryRow();
             row.consider(item);
             return row;
         }
 
+        /**
+         * 择优合并同一药品请求下多条 ChargeItem：发生时间最新，同时间取主键较大者。
+         *
+         * @param item 候选账单行
+         */
         private void consider(ChargeItem item) {
             LocalDateTime occ = item.getOccurrenceTime();
             if (occ == null) {

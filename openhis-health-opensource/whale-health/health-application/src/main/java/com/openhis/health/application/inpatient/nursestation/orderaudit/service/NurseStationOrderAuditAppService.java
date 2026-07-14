@@ -1,28 +1,16 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.orderaudit.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 
-import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.CurrentManagedWardLocationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.advice.InpatientAdviceRevokeGate;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.assembler.NurseStationOrderAuditListAssembler;
-import com.openhis.health.application.inpatient.support.InpatientTransferDischargeHoldOrchestrationSupport;
+import com.openhis.health.application.shared.inpatient.InpatientTransferDischargeHoldOrchestrator;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditPatientGroupDto;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditWriteItemDto;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.mapper.NurseStationOrderAuditMapper;
@@ -35,20 +23,22 @@ import com.openhis.health.application.inpatient.nursestation.orderaudit.response
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.nursestation.InpatientNurseStationTcmSupport;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.support.InpatientNurseStationTcmOrchestrator;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.domain.custom.encounterhistory.queries.model.EncounterHistoryMilestoneQueryModel;
 import com.openhis.health.domain.custom.encounterhistory.service.EncounterHistoryQueryService;
 import com.openhis.health.domain.medication.medicationrequest.command.RejectMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.VerifyMedicationOrderCommand;
+import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestDomainService;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
-import com.openhis.health.module.common.assembler.order.InpatientOrderListMergeAssembler;
-import com.openhis.health.module.querysupport.order.InpatientOrderLookupLoader;
+import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
+import com.openhis.health.application.shared.advice.InpatientOrderListMergeAssembler;
+import com.openhis.health.application.shared.advice.InpatientOrderLookupLoader;
+import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.CustomConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
@@ -56,6 +46,7 @@ import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.GenerateSource;
+import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.workflow.servicerequest.command.RejectServiceRequestToDraftCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.VerifyServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
@@ -65,11 +56,12 @@ import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQ
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -79,11 +71,12 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 住院护士站医嘱校对应用编排。
+ * 住院护士站医嘱校对应用编排（AS-IP-NUR-003：IF-IP-AUD-01～03）。
  *
  * <p>待校列表：管理病区内多选患者的待审/已审医嘱，按 Tab 与长临筛选。</p>
- * <p>校对：药品/诊疗审核通过；转科/出院类医嘱联动就诊状态。</p>
- * <p>退回：未校对（ACTIVE）医嘱退回草稿；若该诊疗曾为转科/出院里程碑且就诊处于 {@code ON_HOLD}，同步撤销过渡编排（GAP-ATD-008）。</p>
+ * <p>校对（IF-IP-AUD-02）：药品/诊疗审核通过；转科/出院类医嘱联动就诊状态。</p>
+ * <p>退回（IF-IP-AUD-03）：{@code ACTIVE}/{@code VERIFIED} 均可退回草稿；须 **BR-IP-AUD-013**
+ *（医生开立、非派生行、无净执行/在途发药/不可回退费用）；转科/出院里程碑同步撤销 {@code ON_HOLD}（GAP-ATD-008）。</p>
  */
 @Slf4j
 @Service
@@ -97,7 +90,7 @@ public class NurseStationOrderAuditAppService {
     private final MedicationRequestQueryService medicationRequestQueryService;
     private final ServiceRequestQueryService serviceRequestQueryService;
     private final EncounterQueryService encounterQueryService;
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
     private final EncounterHistoryQueryService encounterHistoryQueryService;
     private final MedicationRequestDomainService medicationRequestDomainService;
     private final ServiceRequestDomainService serviceRequestDomainService;
@@ -105,10 +98,13 @@ public class NurseStationOrderAuditAppService {
     private final NurseStationOrderAuditMapper nurseStationOrderAuditMapper;
     private final NurseStationOrderAuditListAssembler nurseStationOrderAuditListAssembler;
 
-    private final InpatientTransferDischargeHoldOrchestrationSupport transferDischargeHoldOrchestrationSupport;
+    private final InpatientTransferDischargeHoldOrchestrator transferDischargeHoldOrchestrationSupport;
+
+    /** 签退/校对退回门控（BR-IP-AUD-013；落点 module.common.validator）。 */
+    private final InpatientAdviceRevokeGate adviceRevokeGate;
 
     /** 中药 Tab 筛选与整方扩行。 */
-    private final InpatientNurseStationTcmSupport inpatientNurseStationTcmSupport;
+    private final InpatientNurseStationTcmOrchestrator inpatientNurseStationTcmOrchestrator;
 
     /**
      * IF-IP-AUD-01：待校/已校医嘱列表，按管理病区与 Tab、长临筛选后按就诊分组返回。
@@ -125,7 +121,7 @@ public class NurseStationOrderAuditAppService {
             InpatientEncounterPageQuery visibilityQuery =
                 nurseStationOrderAuditMapper.toInpatientEncounterPageQueryForAudit(requestedEncounterIds, managedWardIds);
             List<InpatientEncounterContextQueryModel> visibleRows =
-                encounterContextFacade.listInpatientEncounterContexts(visibilityQuery);
+                EncounterContextReader.listInpatientEncounterContexts(visibilityQuery);
             List<Long> visibleEncounterIds = this.extractEncounterIds(visibleRows);
             if (visibleEncounterIds.isEmpty()) {
                 throw new BusinessException(
@@ -138,7 +134,7 @@ public class NurseStationOrderAuditAppService {
                 visibleEncounterIds, statusEnumIn, therapyEnum);
             List<InpatientOrderListSkeleton> filtered =
                 nurseStationOrderAuditMapper.filterAuditQueueRows(skeleton);
-            String medicineCategoryTab = inpatientNurseStationTcmSupport.resolveMedicineCategoryTabOrDefault(
+            String medicineCategoryTab = inpatientNurseStationTcmOrchestrator.resolveMedicineCategoryTabOrDefault(
                 request.getMedicineCategoryTab());
             String doctorSource = GenerateSource.DOCTOR_PRESCRIPTION.getCode();
             Map<Long, List<MedicationRequestListQueryModel>> medByEncounter = new HashMap<>();
@@ -148,9 +144,9 @@ public class NurseStationOrderAuditAppService {
                     medicationRequestQueryService.listMedicationRequestsByEncounterForDoctorStation(
                         encounterId, doctorSource);
                 // Pre：按中西药 Tab 收窄药品明细
-                medRows = inpatientNurseStationTcmSupport.filterMedRowsByMedicineCategory(medRows, medicineCategoryTab);
+                medRows = inpatientNurseStationTcmOrchestrator.filterMedRowsByMedicineCategory(medRows, medicineCategoryTab);
                 medByEncounter.put(encounterId, medRows);
-                if (inpatientNurseStationTcmSupport.includeServiceRequestOnTab(medicineCategoryTab)) {
+                if (inpatientNurseStationTcmOrchestrator.includeServiceRequestOnTab(medicineCategoryTab)) {
                     List<ServiceRequestListModel> svcRows =
                         serviceRequestQueryService.listServiceRequestsByGenerateSource(encounterId, doctorSource);
                     svcByEncounter.put(encounterId, svcRows);
@@ -159,9 +155,9 @@ public class NurseStationOrderAuditAppService {
                 }
             }
             Map<Long, MedicationRequestListQueryModel> medDetailById =
-                inpatientNurseStationTcmSupport.indexMedDetailById(medByEncounter);
+                inpatientNurseStationTcmOrchestrator.indexMedDetailById(medByEncounter);
             // Gate：骨架行按中西药 Tab 与 tcmFlag 对齐
-            filtered = inpatientNurseStationTcmSupport.filterSkeletonByMedicineCategory(
+            filtered = inpatientNurseStationTcmOrchestrator.filterSkeletonByMedicineCategory(
                 filtered, medDetailById, medicineCategoryTab);
             List<NurseStationOrderAuditPatientGroupDto> groups =
                 nurseStationOrderAuditListAssembler.assemblePatientGroups(
@@ -248,19 +244,21 @@ public class NurseStationOrderAuditAppService {
     }
 
     /**
-     * IF-IP-AUD-03：批量退回草稿；转科/出院类同步撤销相关就诊编排。
+     * IF-IP-AUD-03：批量退回草稿；须 **BR-IP-AUD-013** 门控后写库；转科/出院类同步撤销相关就诊编排。
      *
      * @param request 待退回项与统一原因
      * @return 处理结果
-     * @throws BusinessException EX-IP-AUD-301/302/203
+     * @throws BusinessException EX-IP-AUD-301（状态/门控/来源）、EX-IP-AUD-302（不可见）、EX-IP-AUD-203（逆向编排）
      */
     public RejectNurseStationOrdersResponse rejectNurseStationOrders(RejectNurseStationOrdersRequest request) {
+        // Gate：请求体与批量条数上限
         if (request == null) {
             throw new BusinessException(
                 ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
                 "请求不能为空");
         }
         this.assertWriteItemsGate(request.getItems());
+        // Gate：操作人须为当前 Practitioner
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             InpatientNurseStationConstants.EX_IP_AUD_301,
             "未登录或登录已失效，无法退回医嘱");
@@ -268,15 +266,18 @@ public class NurseStationOrderAuditAppService {
         LocalDateTime checkTime = LocalDateTime.now();
         String reason = request.getReason();
         List<NurseStationOrderAuditWriteItemDto> items = request.getItems();
+        // Pre：写项所属就诊须在护士站可见范围
         Set<Long> visibleEncounterIds = this.resolveVisibleEncounterIdsForWrite(items, false);
         Map<Long, List<MedicationRequestListQueryModel>> medByEncounter = this.loadMedByEncounterForWrite(visibleEncounterIds);
         // Pre·中药整方扩行：退回须覆盖方内全部味药行
         List<NurseStationOrderAuditWriteItemDto> expandedItems =
             this.expandAuditWriteItemsByTcmPrescription(items, medByEncounter);
+        // Pre：状态/来源/下游事实门禁（ACTIVE/VERIFIED 均须过签退门控，防直调 API 恶意退回）
         for (NurseStationOrderAuditWriteItemDto item : expandedItems) {
-            this.assertWriteItemActiveAndVisible(item, visibleEncounterIds, false);
+            this.assertWriteItemRejectableAndVisible(item, visibleEncounterIds);
         }
         int processed = 0;
+        // Cmd：药品申请退回草稿并写校对人追溯
         for (NurseStationOrderAuditWriteItemDto item : expandedItems) {
             if (!ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
                 continue;
@@ -287,6 +288,7 @@ public class NurseStationOrderAuditAppService {
             processed = processed + 1;
         }
         List<Long> rejectedServiceRequestIds = new ArrayList<>();
+        // Cmd：诊疗申请退回草稿
         for (NurseStationOrderAuditWriteItemDto item : items) {
             if (!ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(item.getOrderType())) {
                 continue;
@@ -298,6 +300,7 @@ public class NurseStationOrderAuditAppService {
             rejectedServiceRequestIds.add(item.getRequestId());
             processed = processed + 1;
         }
+        // Cmd：转科/出院类诊疗同步撤销 ON_HOLD 过渡态（GAP-ATD-008）
         for (Long serviceRequestId : rejectedServiceRequestIds) {
             transferDischargeHoldOrchestrationSupport.tryRevertHoldAfterServiceRequestReverted(
                 serviceRequestId,
@@ -305,6 +308,7 @@ public class NurseStationOrderAuditAppService {
                 checkTime,
                 InpatientNurseStationConstants.EX_IP_AUD_203);
         }
+        // Asm：映射处理条数
         return nurseStationOrderAuditMapper.toRejectNurseStationOrdersResponse(processed);
     }
 
@@ -360,7 +364,7 @@ public class NurseStationOrderAuditAppService {
             if (encounterId != null) {
                 encounterMeds = medByEncounter.get(encounterId);
             }
-            List<Long> requestIds = inpatientNurseStationTcmSupport.expandMedRequestIdsByPrescriptionNo(
+            List<Long> requestIds = inpatientNurseStationTcmOrchestrator.expandMedRequestIdsByPrescriptionNo(
                 encounterId, item.getRequestId(), encounterMeds);
             for (Long requestId : requestIds) {
                 String dedupeKey = item.getOrderType() + ":" + requestId;
@@ -395,7 +399,7 @@ public class NurseStationOrderAuditAppService {
                 "校对 Tab 不合法");
         }
         String therapy = request.getTherapyType();
-        if (StringUtils.isBlank(therapy)) {
+        if (StringUtils.isEmpty(therapy)) {
             return;
         }
         if (!this.isAllowedTherapyFilter(trimToEmpty(therapy))) {
@@ -403,7 +407,7 @@ public class NurseStationOrderAuditAppService {
                 ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
                 "长临筛选不合法");
         }
-        inpatientNurseStationTcmSupport.resolveMedicineCategoryTabOrDefault(request.getMedicineCategoryTab());
+        inpatientNurseStationTcmOrchestrator.resolveMedicineCategoryTabOrDefault(request.getMedicineCategoryTab());
     }
 
     /**
@@ -423,7 +427,7 @@ public class NurseStationOrderAuditAppService {
                 "单次最多处理50条医嘱");
         }
         for (NurseStationOrderAuditWriteItemDto item : items) {
-            if (item == null || item.getRequestId() == null || StringUtils.isBlank(item.getOrderType())) {
+            if (item == null || item.getRequestId() == null || StringUtils.isEmpty(item.getOrderType())) {
                 throw new BusinessException(
                     ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
                     "医嘱锚点不完整");
@@ -468,7 +472,7 @@ public class NurseStationOrderAuditAppService {
         InpatientEncounterPageQuery query = nurseStationOrderAuditMapper.toInpatientEncounterPageQueryForAudit(
             new ArrayList<>(encounterIdsFromItems), managedWardIds);
         List<InpatientEncounterContextQueryModel> visible =
-            encounterContextFacade.listInpatientEncounterContexts(query);
+            EncounterContextReader.listInpatientEncounterContexts(query);
         return new HashSet<>(this.extractEncounterIds(visible));
     }
 
@@ -506,7 +510,130 @@ public class NurseStationOrderAuditAppService {
             throw new BusinessException(notActiveCode, "不支持的医嘱类型");
         }
         if (!active) {
-            throw new BusinessException(notActiveCode, "仅已发送医嘱允许校对或退回");
+            throw new BusinessException(notActiveCode, "仅已发送医嘱允许校对");
+        }
+    }
+
+    /**
+     * 单条退回写项：须 ACTIVE/VERIFIED、医生开立来源、无下游阻塞事实（BR-IP-AUD-013）。
+     *
+     * @param item              写项
+     * @param visibleEncounters 可见就诊集合
+     */
+    private void assertWriteItemRejectableAndVisible(
+        NurseStationOrderAuditWriteItemDto item,
+        Set<Long> visibleEncounters) {
+        String notActiveCode = InpatientNurseStationConstants.EX_IP_AUD_301;
+        String notVisibleCode = InpatientNurseStationConstants.EX_IP_AUD_302;
+        Long encounterId = this.resolveEncounterIdForWriteItem(item);
+        if (encounterId == null || !visibleEncounters.contains(encounterId)) {
+            throw new BusinessException(notVisibleCode, "就诊不在护士站可见范围");
+        }
+        if (ReadModelOrderTypeConstants.MED_REQUEST.equals(item.getOrderType())) {
+            // 药品：状态白名单 + 来源/派生 + 签退门控
+            this.assertMedicationRequestRejectable(item.getRequestId(), encounterId, notActiveCode);
+            return;
+        }
+        if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(item.getOrderType())) {
+            // 诊疗：同上（无发药 Gate，仅执行/费用）
+            this.assertServiceRequestRejectable(item.getRequestId(), encounterId, notActiveCode);
+            return;
+        }
+        throw new BusinessException(notActiveCode, "不支持的医嘱类型");
+    }
+
+    /**
+     * 药品申请退回门禁：白名单状态 + 医生开立 + 签退门控（未校对/已校对均校验下游事实）。
+     *
+     * @param requestId   药品申请主键
+     * @param encounterId 就诊主键
+     * @param errorCode   业务语义码
+     */
+    private void assertMedicationRequestRejectable(Long requestId, Long encounterId, String errorCode) {
+        MedicationRequest request = medicationRequestQueryService.findById(requestId);
+        if (request == null) {
+            throw new BusinessException(errorCode, "药品申请不存在");
+        }
+        String status = request.getStatusEnum();
+        if (!RequestStatus.ACTIVE.getCode().equals(status)
+            && !RequestStatus.VERIFIED.getCode().equals(status)) {
+            // 停嘱/作废等态禁止退回，防伪造 requestId 直调 API
+            throw new BusinessException(errorCode, "仅未校对或已校对且执行/发药/费用已处理完毕的医嘱可退回");
+        }
+        this.assertDoctorPrescriptionMedicationRejectable(request, errorCode);
+        // 加载下游事实：经 Procedure/MedDispense/ChargeItem QS（B.6.4，与医生站签退同口径）
+        adviceRevokeGate.assertMedicationWithdrawAllowed(
+            encounterId,
+            List.of(requestId),
+            errorCode,
+            InpatientNurseStationConstants.MSG_IP_AUD_REJECT_BLOCKED);
+    }
+
+    /**
+     * 诊疗申请退回门禁：白名单状态 + 医生开立 + 签退门控（未校对/已校对均校验下游事实）。
+     *
+     * @param requestId   诊疗申请主键
+     * @param encounterId 就诊主键
+     * @param errorCode   业务语义码
+     */
+    private void assertServiceRequestRejectable(Long requestId, Long encounterId, String errorCode) {
+        ServiceRequestListModel detail = serviceRequestQueryService.getListModelById(requestId);
+        if (detail == null) {
+            throw new BusinessException(errorCode, "诊疗申请不存在");
+        }
+        String status = detail.getStatusEnum();
+        if (!RequestStatus.ACTIVE.getCode().equals(status)
+            && !RequestStatus.VERIFIED.getCode().equals(status)) {
+            throw new BusinessException(errorCode, "仅未校对或已校对且执行/费用已处理完毕的医嘱可退回");
+        }
+        this.assertDoctorPrescriptionServiceRejectable(detail, errorCode);
+        // 加载下游事实：净执行 + 不可回退费用（B.6.4）
+        adviceRevokeGate.assertServiceRequestWithdrawAllowed(
+            encounterId,
+            List.of(requestId),
+            errorCode,
+            InpatientNurseStationConstants.MSG_IP_AUD_REJECT_BLOCKED);
+    }
+
+    /**
+     * 药品须为医生开立且非退药/派生行（对齐 BR-IP-AUD-002，防伪造锚点退回）。
+     *
+     * @param request   药品申请
+     * @param errorCode 业务语义码
+     */
+    private void assertDoctorPrescriptionMedicationRejectable(MedicationRequest request, String errorCode) {
+        if (!GenerateSource.DOCTOR_PRESCRIPTION.getCode().equals(request.getGenerateSourceEnum())) {
+            throw new BusinessException(errorCode, "仅医生开立医嘱允许校对退回");
+        }
+        if (request.getRefundMedicineId() != null) {
+            throw new BusinessException(errorCode, "退药关联行不允许校对退回");
+        }
+        if (request.getBasedOnId() != null && StringUtils.isNotEmpty(request.getBasedOnTable())) {
+            String table = request.getBasedOnTable().trim();
+            // 退药/退诊疗派生行须从列表排除，写路径再次拦截（BR-IP-AUD-002）
+            if (TableNameConstants.MED_MEDICATION_REQUEST.equalsIgnoreCase(table)
+                || TableNameConstants.WKF_SERVICE_REQUEST.equalsIgnoreCase(table)) {
+                throw new BusinessException(errorCode, "退药/派生关联行不允许校对退回");
+            }
+        }
+    }
+
+    /**
+     * 诊疗须为医生开立且非退诊疗/负向行（对齐 BR-IP-AUD-002，防伪造锚点退回）。
+     *
+     * @param detail    诊疗列表行
+     * @param errorCode 业务语义码
+     */
+    private void assertDoctorPrescriptionServiceRejectable(ServiceRequestListModel detail, String errorCode) {
+        if (!GenerateSource.DOCTOR_PRESCRIPTION.getCode().equals(detail.getGenerateSourceEnum())) {
+            throw new BusinessException(errorCode, "仅医生开立医嘱允许校对退回");
+        }
+        if (detail.getRefundServiceId() != null) {
+            throw new BusinessException(errorCode, "退诊疗关联行不允许校对退回");
+        }
+        BigDecimal quantity = detail.getQuantity();
+        if (quantity != null && quantity.signum() < 0) {
+            throw new BusinessException(errorCode, "负向诊疗行不允许校对退回");
         }
     }
 
@@ -611,7 +738,7 @@ public class NurseStationOrderAuditAppService {
             return;
         }
         String outWayCode = this.resolveDischargeOutWayCode(encounterId, serviceRequestId);
-        if (StringUtils.isBlank(outWayCode)) {
+        if (StringUtils.isEmpty(outWayCode)) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_AUD_203,
                 "出院方式未配置");
@@ -625,7 +752,7 @@ public class NurseStationOrderAuditAppService {
                 dischargedAt = detail.getReqAuthoredTime();
             }
             summary = detail.getRemark();
-            if (StringUtils.isBlank(summary)) {
+            if (StringUtils.isEmpty(summary)) {
                 summary = detail.getEntrustContent();
             }
         }
@@ -642,9 +769,12 @@ public class NurseStationOrderAuditAppService {
      * @return 发起申请主键；未命中时为 null
      */
     private Long resolveOnHoldInitiatingServiceRequestId(Long encounterId, boolean transfer) {
-        String milestoneName = transfer
-            ? CustomConstants.EncounterHistoryMilestoneName.TRANSFER
-            : CustomConstants.EncounterHistoryMilestoneName.DISCHARGE;
+        String milestoneName;
+        if (transfer) {
+            milestoneName = CustomConstants.EncounterHistoryMilestoneName.TRANSFER;
+        } else {
+            milestoneName = CustomConstants.EncounterHistoryMilestoneName.DISCHARGE;
+        }
         List<EncounterHistoryMilestoneQueryModel> milestones =
             encounterHistoryQueryService.listMilestonesByEncounter(encounterId);
         for (EncounterHistoryMilestoneQueryModel milestone : milestones) {
@@ -728,6 +858,12 @@ public class NurseStationOrderAuditAppService {
         return null;
     }
 
+    /**
+     * 就诊 id 去重（LinkedHashSet 保序）；跳过 null。
+     *
+     * @param encounterIds 原始列表
+     * @return 去重列表
+     */
     private List<Long> distinctEncounterIds(List<Long> encounterIds) {
         LinkedHashSet<Long> set = new LinkedHashSet<>();
         if (encounterIds != null) {

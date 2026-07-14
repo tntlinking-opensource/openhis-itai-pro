@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.encounter.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -29,7 +16,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.time.LocalDateTime;
 
@@ -175,7 +162,7 @@ public class Encounter extends BaseAuditedEntity {
         if (this.serviceTypeId == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "号源类型标识不能为空");
         }
-        if (StringUtils.isBlank(this.busNo)) {
+        if (StringUtils.isEmpty(this.busNo)) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "就诊业务号不能为空");
         }
     }
@@ -353,6 +340,32 @@ public class Encounter extends BaseAuditedEntity {
     }
 
     /**
+     * 门诊暂离后恢复接诊：{@code ON_HOLD} → {@code IN_PROGRESS}。
+     */
+    public void resumeOutpatientFromOnHold() {
+        this.assertClass(EncounterClass.AMB.getCode());
+        if (!EncounterStatus.ON_HOLD.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "仅暂离状态允许恢复接诊");
+        }
+        this.statusEnum = EncounterStatus.IN_PROGRESS.getCode();
+    }
+
+    /**
+     * 门诊诊毕后重新接诊（豁免 BR-ENC-003）：{@code DISCHARGED} → {@code IN_PROGRESS}。
+     *
+     * @param receptionAt 本次重新接诊时间
+     */
+    public void resumeOutpatientReceptionFromDischarged(LocalDateTime receptionAt) {
+        this.assertClass(EncounterClass.AMB.getCode());
+        if (!EncounterStatus.DISCHARGED.getCode().equals(this.statusEnum)) {
+            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_STATUS, "仅诊毕状态允许重新接诊");
+        }
+        this.statusEnum = EncounterStatus.IN_PROGRESS.getCode();
+        this.receptionTime = receptionAt;
+        this.endTime = null;
+    }
+
+    /**
      * 迁移到暂离状态（住院：出院医嘱开立等）。
      */
     public void transitToOnHold() {
@@ -494,4 +507,3 @@ public class Encounter extends BaseAuditedEntity {
         }
     }
 }
-

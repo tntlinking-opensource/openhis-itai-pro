@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.supplydelivery.service;
 
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -139,7 +126,7 @@ public class SupplyDeliveryDomainService {
         List<CreateStocktakingDeliveryCommand.CreateStocktakingDeliveryItemCommand> items = cmd.resolveItems();
         List<SupplyDelivery> toSave = new ArrayList<>();
         for (CreateStocktakingDeliveryCommand.CreateStocktakingDeliveryItemCommand item : items) {
-            // 业务分支处理。
+            // 无差异明细行时跳过，零差异盘点不落发放事实。
             if (item.getDifferenceLines() == null || item.getDifferenceLines().isEmpty()) {
                 continue;
             }
@@ -192,6 +179,7 @@ public class SupplyDeliveryDomainService {
             delivery.setUnitCode(item.getUnitCode());
             delivery.setLotNumber(item.getLotNumber());
             delivery.setReceiverId(item.getReceiverId());
+            delivery.setTraceNo(item.getTraceNo());
             // BR-SDL-005：发放 type 与来源 SupplyRequest（type 27）一致。
             delivery.setTypeEnum(SupplyType.MEDICATION_SUMMARY_ORDER.getCode());
             // 汇总路径首态 PREPARATION（BR-SDL-004；对齐 AS-IP-NUR-010 BR-IP-SUM-011 待发药）。
@@ -216,7 +204,7 @@ public class SupplyDeliveryDomainService {
     public void updateCompletedStatusBatch(UpdateCompletedStatusBatchCommand cmd) {
         List<UpdateCompletedStatusBatchCommand.UpdateCompletedStatusBatchItemCommand> items = cmd.resolveItems();
         for (UpdateCompletedStatusBatchCommand.UpdateCompletedStatusBatchItemCommand item : items) {
-            // 业务分支处理。
+            // 发放 id 列表为空时跳过本批，避免无意义查询。
             if (item.getSupplyDeliveryIdList() == null || item.getSupplyDeliveryIdList().isEmpty()) {
                 continue;
             }
@@ -245,12 +233,12 @@ public class SupplyDeliveryDomainService {
     public void deleteSupplyDeliveryByReqId(DeleteSupplyDeliveryByReqIdCommand cmd) {
         List<DeleteSupplyDeliveryByReqIdCommand.DeleteSupplyDeliveryByReqIdItemCommand> items = cmd.resolveItems();
         for (DeleteSupplyDeliveryByReqIdCommand.DeleteSupplyDeliveryByReqIdItemCommand item : items) {
-            // 业务分支处理。
+            // 请求 id 列表为空时跳过本批删除。
             if (item.getRequestIdList() == null || item.getRequestIdList().isEmpty()) {
                 continue;
             }
             List<SupplyDelivery> deliveries = repository.findByRequestIdIn(item.getRequestIdList());
-            // 业务分支处理。
+            // 未命中任何发放行时静默跳过，审批回退可能已无待发事实。
             if (deliveries.isEmpty()) {
                 continue;
             }

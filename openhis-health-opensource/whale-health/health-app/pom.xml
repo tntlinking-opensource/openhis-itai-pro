@@ -8,7 +8,7 @@
     <parent>
         <groupId>com.openhis</groupId>
         <artifactId>whale-health</artifactId>
-        <version>2.0.2-SNAPSHOT</version>
+        <version>2.0.3-SNAPSHOT</version>
     </parent>
     
     <artifactId>health-app</artifactId>
@@ -16,129 +16,18 @@
     
     <name>Health App</name>
     <description>健康应用启动模块</description>
-
-    <properties>
-        <skip.license.bundle>false</skip.license.bundle>
-    </properties>
     
     <dependencies>
-        <!-- Health Application -->
+        <!-- 运行时聚合（plain jar）；扩展模块仍由下方 Profile 挂载 -->
         <dependency>
             <groupId>com.openhis</groupId>
-            <artifactId>health-application</artifactId>
+            <artifactId>health-starter</artifactId>
             <version>${project.version}</version>
-        </dependency>
-
-        <!-- health-module-support（EncounterContextFacade 等；扩展 Module adapter 共用，需显式引入确保 IDE/Maven 运行时 classpath） -->
-        <dependency>
-            <groupId>com.openhis</groupId>
-            <artifactId>health-module-support</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        
-        <!-- Health Infrastructure -->
-        <dependency>
-            <groupId>com.openhis</groupId>
-            <artifactId>health-infrastructure</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-
-        <!-- Whale Framework 核心模块 -->
-        <dependency>
-            <groupId>com.openhis</groupId>
-            <artifactId>whale-core</artifactId>
-            <version>${whale.framework.version}</version>
-        </dependency>
-        
-        <dependency>
-            <groupId>com.openhis</groupId>
-            <artifactId>whale-identity</artifactId>
-            <version>${whale.framework.version}</version>
-        </dependency>
-        
-        <!-- Whale Audit (审计日志，实现 IAuditingStore) -->
-        <dependency>
-            <groupId>com.openhis</groupId>
-            <artifactId>whale-audit</artifactId>
-            <version>${whale.framework.version}</version>
-        </dependency>
-
-        <!-- Whale Runtime (框架运行时同步) -->
-        <dependency>
-            <groupId>com.openhis</groupId>
-            <artifactId>whale-runtime</artifactId>
-            <version>${whale.framework.version}</version>
-        </dependency>
-        
-        <!-- Whale Web (包含框架核心功能) -->
-        <dependency>
-            <groupId>com.openhis</groupId>
-            <artifactId>whale-web</artifactId>
-            <version>${whale.framework.version}</version>
-        </dependency>
-
-        <!-- Spring Boot Starter -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter</artifactId>
-        </dependency>
-        
-        <!-- Spring Boot Starter Web -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        
-        <!-- Spring Boot Starter Security -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-security</artifactId>
-        </dependency>
-        
-        <!-- Spring Boot Starter Actuator -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-actuator</artifactId>
-        </dependency>
-
-        <!-- Spring Boot DevTools (开发工具，支持热重载) -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-devtools</artifactId>
-            <scope>runtime</scope>
-            <optional>true</optional>
-        </dependency>
-        
-        <!-- Flyway Database Migration -->
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-database-postgresql</artifactId>
-        </dependency>
-        
-        <!-- PostgreSQL Driver -->
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-        </dependency>
-
-        <!-- Fastjson2 (health-domain 的 FrequencyManager 等依赖，需显式引入确保运行时可用) -->
-        <dependency>
-            <groupId>com.alibaba.fastjson2</groupId>
-            <artifactId>fastjson2</artifactId>
-            <version>2.0.58</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
         </dependency>
     </dependencies>
+
     <profiles>
+        <!-- health-app 默认仅挂载 EMR + Booking；院点需其他扩展时用 -Pwith-chs 等追加 -->
         <profile>
             <id>with-emr</id>
             <activation>
@@ -147,7 +36,55 @@
             <dependencies>
                 <dependency>
                     <groupId>com.openhis</groupId>
-                    <artifactId>emr-starter</artifactId>
+                    <artifactId>module-emr-starter</artifactId>
+                </dependency>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>module-emr-domain</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>module-emr-bridge</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-chs</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>module-chs-jilin-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-chs-remote</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>module-chs-jilin-host</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-elep</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>module-elep-jilin-starter</artifactId>
+                </dependency>
+                <!-- 显式引入 module-elep-jilin-domain (v3 merged contracts)，确保 IDE classpath 含 ElepUploadCommand 等 DTO -->
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>module-elep-jilin-domain</artifactId>
+                    <version>${project.version}</version>
+                </dependency>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>health-infrastructure</artifactId>
+                    <version>${project.version}</version>
                 </dependency>
             </dependencies>
         </profile>
@@ -159,55 +96,52 @@
             <dependencies>
                 <dependency>
                     <groupId>com.openhis</groupId>
-                    <artifactId>booking-starter</artifactId>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>with-chs</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.openhis</groupId>
-                    <artifactId>chs-jilin-starter</artifactId>
-                </dependency>
-            </dependencies>
-        </profile>
-        <profile>
-            <id>with-elep</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <dependencies>
-                <dependency>
-                    <groupId>com.openhis</groupId>
-                    <artifactId>elep-jilin-starter</artifactId>
+                    <artifactId>module-booking-starter</artifactId>
                 </dependency>
             </dependencies>
         </profile>
         <profile>
             <id>with-einvoice-boss</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.openhis</groupId>
-                    <artifactId>einvoice-boss-starter</artifactId>
+                    <artifactId>module-einv-boss-starter</artifactId>
                 </dependency>
             </dependencies>
         </profile>
         <profile>
             <id>with-unionpay-bpc</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
             <dependencies>
                 <dependency>
                     <groupId>com.openhis</groupId>
-                    <artifactId>unionpay-bpc-starter</artifactId>
+                    <artifactId>module-bpc-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-crb</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>module-crb-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-work-injury</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>module-wi-jilin-starter</artifactId>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>with-elep-remote</id>
+            <dependencies>
+                <dependency>
+                    <groupId>com.openhis</groupId>
+                    <artifactId>module-elep-jilin-host</artifactId>
                 </dependency>
             </dependencies>
         </profile>
@@ -215,34 +149,6 @@
     
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>bundle-runtime-resource</id>
-                        <phase>process-resources</phase>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                        <configuration>
-                            <skip>${skip.license.bundle}</skip>
-                            <target>
-                                <property name="openhis.lic.source"
-                                          value="${project.basedir}/../../local-secrets/license/openhis.lic"/>
-                                <available file="${openhis.lic.source}" property="openhis.lic.present"/>
-                                <fail unless="openhis.lic.present"
-                                      message="打包须存在运行时授权文件"/>
-                                <mkdir dir="${project.build.outputDirectory}/license"/>
-                                <copy file="${openhis.lic.source}"
-                                      tofile="${project.build.outputDirectory}/license/openhis.lic"
-                                      overwrite="true"
-                                      failonerror="true"/>
-                            </target>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

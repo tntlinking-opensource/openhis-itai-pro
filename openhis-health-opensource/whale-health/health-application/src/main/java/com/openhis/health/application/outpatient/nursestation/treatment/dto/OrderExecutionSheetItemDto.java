@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.nursestation.treatment.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -32,7 +19,6 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
-/** 医嘱执行单抽屉行。 */
 @Schema(description = "医嘱执行单抽屉行")
 public class OrderExecutionSheetItemDto {
 
@@ -41,6 +27,7 @@ public class OrderExecutionSheetItemDto {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "执行记录主键")
+    /** 执行记录主键。 */
     private Long procedureId;
 
     /**
@@ -48,6 +35,7 @@ public class OrderExecutionSheetItemDto {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "来源请求主键")
+    /** 来源请求主键。 */
     private Long requestId;
 
     /**
@@ -79,6 +67,7 @@ public class OrderExecutionSheetItemDto {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "患者主键")
+    /** 患者主键。 */
     private Long patientId;
 
     /**
@@ -86,6 +75,7 @@ public class OrderExecutionSheetItemDto {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊主键")
+    /** 就诊主键。 */
     private Long encounterId;
 
     /**
@@ -93,6 +83,7 @@ public class OrderExecutionSheetItemDto {
      */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "发生时间")
+    /** 发生时间。 */
     private LocalDateTime occurrenceTime;
 
     /**
@@ -100,6 +91,7 @@ public class OrderExecutionSheetItemDto {
      */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "记录时间")
+    /** 记录时间。 */
     private LocalDateTime recordedTime;
 
     /**
@@ -107,6 +99,7 @@ public class OrderExecutionSheetItemDto {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "记录人主键")
+    /** 记录人主键。 */
     private Long recorderId;
 
     /**

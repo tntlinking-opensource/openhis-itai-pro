@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.nursestation.skintest.response;
 
 import lombok.Getter;
@@ -14,5 +14,6 @@ import lombok.Setter;
 @Setter
 public class DeleteOutpatientSkinTestRecordResponse {
 
+    /** 删除是否成功。 */
     private Boolean success;
 }

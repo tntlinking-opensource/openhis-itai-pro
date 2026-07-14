@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 import java.util.List;
@@ -57,9 +44,7 @@ public interface DoctorStationDiagnosisConstants {
      */
     int MAIN_DIAGNOSIS_FLAG_YES = 1;
 
-    /**
-     * 主诊标记：否。
-     */
+/** DoctorStationDiagnosis 共享常量：diagnosis flag no，值 {@code 0}。 */
     int MAIN_DIAGNOSIS_FLAG_NO = 0;
 
     /**
@@ -81,7 +66,7 @@ public interface DoctorStationDiagnosisConstants {
     /** 术语：按病种目录。 */
     String SOURCE_DISEASE_PKG = "disease_pkg";
 
-    /** 术语：付费诊断。 */
+/** DoctorStationDiagnosis 共享常量：paid dx，值 {@code paid_dx}。 */
     String SOURCE_PAID_DX = "paid_dx";
 
     /** 术语：日间手术治疗病种。 */
@@ -156,11 +141,17 @@ public interface DoctorStationDiagnosisConstants {
      * FHIR Condition.verificationStatus 持久化码（与域命令/库列一致）。
      */
     interface ConditionVerificationStatusCode {
+/** DoctorStationDiagnosisConstants：UNCONFIRMED，值 {@code UNCONFIRMED}。 */
         String UNCONFIRMED = "UNCONFIRMED";
+/** DoctorStationDiagnosisConstants：PROVISIONAL，值 {@code PROVISIONAL}。 */
         String PROVISIONAL = "PROVISIONAL";
+/** DoctorStationDiagnosisConstants：DIFFERENTIAL，值 {@code DIFFERENTIAL}。 */
         String DIFFERENTIAL = "DIFFERENTIAL";
+/** DoctorStationDiagnosisConstants：CONFIRMED，值 {@code CONFIRMED}。 */
         String CONFIRMED = "CONFIRMED";
+/** DoctorStationDiagnosisConstants：REFUTED，值 {@code REFUTED}。 */
         String REFUTED = "REFUTED";
+/** DoctorStationDiagnosisConstants：ENTERED_IN_ERROR，值 {@code ENTERED_IN_ERROR}。 */
         String ENTERED_IN_ERROR = "ENTERED_IN_ERROR";
     }
 
@@ -168,11 +159,17 @@ public interface DoctorStationDiagnosisConstants {
      * 医生站 UI 层验证状态整数码（与前端表格/快照 JSON 一致）。
      */
     interface VerificationUiCode {
+/** DoctorStationDiagnosisConstants：UNCONFIRMED，值 {@code 1}。 */
         int UNCONFIRMED = 1;
+/** DoctorStationDiagnosisConstants：PROVISIONAL，值 {@code 2}。 */
         int PROVISIONAL = 2;
+/** DoctorStationDiagnosisConstants：DIFFERENTIAL，值 {@code 3}。 */
         int DIFFERENTIAL = 3;
+/** DoctorStationDiagnosisConstants：CONFIRMED，值 {@code 4}。 */
         int CONFIRMED = 4;
+/** DoctorStationDiagnosisConstants：REFUTED，值 {@code 5}。 */
         int REFUTED = 5;
+/** DoctorStationDiagnosisConstants：ENTERED_IN_ERROR，值 {@code 6}。 */
         int ENTERED_IN_ERROR = 6;
     }
 }

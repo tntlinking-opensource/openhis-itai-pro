@@ -1,10 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.temperaturesheet.service;
 
-import com.openhis.health.module.querysupport.nursestation.NurseStationEncounterVisibilitySupport;
+import com.openhis.health.application.inpatient.nursestation.nursingrecord.support.NurseStationEncounterVisibilityResolver;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.assembler.TemperatureSheetGridAssembler;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto.TemperatureSheetFillSlotDto;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto.TemperatureSheetGridAssemblyResult;
@@ -18,8 +18,8 @@ import com.openhis.health.application.inpatient.nursestation.temperaturesheet.re
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.response.GetNurseStationTemperatureSheetDataResponse;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.response.LoadNurseStationTemperatureSheetInitResponse;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.response.SaveNurseStationTemperatureSheetAtRecordedTimeResponse;
-import com.openhis.health.module.common.assembler.nursestation.TemperatureSheetDetailItemSupport;
-import com.openhis.health.module.common.assembler.nursestation.TemperatureSheetRecordedAtSupport;
+import com.openhis.health.application.inpatient.nursestation.temperaturesheet.support.TemperatureSheetDetailItemHelper;
+import com.openhis.health.application.inpatient.nursestation.temperaturesheet.support.TemperatureSheetRecordedAtResolver;
 import com.openhis.health.domain.administration.encounter.entity.EncounterLocation;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
@@ -37,14 +37,14 @@ import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -80,10 +80,10 @@ public class NurseStationTemperatureSheetAppService {
     private final TemperatureSheetGridAssembler temperatureSheetGridAssembler;
 
     /** 记录时点与窗口辅助。 */
-    private final TemperatureSheetRecordedAtSupport temperatureSheetRecordedAtSupport;
+    private final TemperatureSheetRecordedAtResolver temperatureSheetRecordedAtResolver;
 
     /** 护士站就诊可见性 Gate。 */
-    private final NurseStationEncounterVisibilitySupport nurseStationEncounterVisibilitySupport;
+    private final NurseStationEncounterVisibilityResolver nurseStationEncounterVisibilityResolver;
 
     /** 生命体征读侧。 */
     private final VitalSignQueryService vitalSignQueryService;
@@ -134,7 +134,7 @@ public class NurseStationTemperatureSheetAppService {
         GetNurseStationTemperatureSheetDataRequest request) {
         // Gate：就诊须在护士站可见范围（BR-IP-TMP-001）
         InpatientEncounterContextQueryModel encounterSnapshot =
-            nurseStationEncounterVisibilitySupport.assertVisible(
+            nurseStationEncounterVisibilityResolver.assertVisible(
                 request.getEncounterId(),
                 request.getPatientId(),
                 InpatientNurseStationConstants.EX_IP_TMP_102,
@@ -159,7 +159,7 @@ public class NurseStationTemperatureSheetAppService {
         GetNurseStationTemperatureSheetPrintDataRequest request) {
         // Gate：打印不改库，但仍须可见性 Gate（BR-IP-TMP-001）
         InpatientEncounterContextQueryModel encounterSnapshot =
-            nurseStationEncounterVisibilitySupport.assertVisible(
+            nurseStationEncounterVisibilityResolver.assertVisible(
                 request.getEncounterId(),
                 request.getPatientId(),
                 InpatientNurseStationConstants.EX_IP_TMP_102,
@@ -202,7 +202,7 @@ public class NurseStationTemperatureSheetAppService {
     public SaveNurseStationTemperatureSheetAtRecordedTimeResponse saveNurseStationTemperatureSheetAtRecordedTime(
         SaveNurseStationTemperatureSheetAtRecordedTimeRequest request) {
         // Gate：可见性 + 登录 Practitioner（BR-IP-TMP-001、010）
-        nurseStationEncounterVisibilitySupport.assertVisible(
+        nurseStationEncounterVisibilityResolver.assertVisible(
             request.getEncounterId(),
             request.getPatientId(),
             InpatientNurseStationConstants.EX_IP_TMP_102,
@@ -212,7 +212,7 @@ public class NurseStationTemperatureSheetAppService {
             "请重新登录后再保存");
         Long recorderId = operatorId;
         // Pre：组装合法记录时点（BR-IP-TMP-003）
-        LocalDateTime recordedAt = temperatureSheetRecordedAtSupport.toRecordedAt(
+        LocalDateTime recordedAt = temperatureSheetRecordedAtResolver.toRecordedAt(
             request.getRecordDate(), request.getTimeSlot());
         // Pre：至少一项有效测量（BR-IP-TMP-004 / BR-VS-008）
         validateHasBusinessContent(request);
@@ -245,7 +245,7 @@ public class NurseStationTemperatureSheetAppService {
                 "保存失败，请稍后重试");
         }
         // Asm：返回下一槽供前端聚焦
-        String nextTimeSlot = temperatureSheetRecordedAtSupport.resolveNextTimeSlot(request.getTimeSlot());
+        String nextTimeSlot = temperatureSheetRecordedAtResolver.resolveNextTimeSlot(request.getTimeSlot());
         return temperatureSheetMapper.toSaveResponse(savedId, busNo, nextTimeSlot);
     }
 
@@ -410,7 +410,7 @@ public class NurseStationTemperatureSheetAppService {
         if (pageIndex != null) {
             page = pageIndex;
         }
-        int windowDays = temperatureSheetRecordedAtSupport.resolveWindowDays(windowRange);
+        int windowDays = temperatureSheetRecordedAtResolver.resolveWindowDays(windowRange);
         LocalDate admissionDate = resolveAdmissionDate(encounterSnapshot);
         LocalDate endAnchor = LocalDate.now();
         long totalDays = ChronoUnit.DAYS.between(admissionDate, endAnchor) + 1;
@@ -443,7 +443,7 @@ public class NurseStationTemperatureSheetAppService {
     private WindowPage resolveAllPagesWindow(
         InpatientEncounterContextQueryModel encounterSnapshot,
         String windowRange) {
-        temperatureSheetRecordedAtSupport.resolveWindowDays(windowRange);
+        temperatureSheetRecordedAtResolver.resolveWindowDays(windowRange);
         LocalDate admissionDate = resolveAdmissionDate(encounterSnapshot);
         LocalDate endAnchor = LocalDate.now();
         WindowPage windowPage = new WindowPage();
@@ -492,7 +492,7 @@ public class NurseStationTemperatureSheetAppService {
      * @param request 保存请求
      */
     private void validateHasBusinessContent(SaveNurseStationTemperatureSheetAtRecordedTimeRequest request) {
-        if (TemperatureSheetDetailItemSupport.hasAnyDetailContent(request.getDetailItems())) {
+        if (TemperatureSheetDetailItemHelper.hasAnyDetailContent(request.getDetailItems())) {
             return;
         }
         throw new BusinessException(
@@ -593,7 +593,7 @@ public class NurseStationTemperatureSheetAppService {
         // 业务分支：领域参数类错误再细分为日期非法或内容为空
         if (ErrorCodeConstants.VITAL_SIGN_INVALID_ARGUMENT.equals(ex.getErrorCode())) {
             String message = ex.getMessage();
-            if (StringUtils.isNotBlank(message) && message.contains("有效")) {
+            if (StringUtils.isNotEmpty(message) && message.contains("有效")) {
                 return new BusinessException(
                     InpatientNurseStationConstants.EX_IP_TMP_202,
                     "请至少填写一项生命体征");

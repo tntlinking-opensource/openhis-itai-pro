@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.ordercancelexecute.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -39,7 +26,7 @@ import java.util.List;
     requiredProperties = {"encounterIds", "procedureIds", "statusReasonText"})
 public class CancelNurseStationOrderExecutionsRequest {
 
-    /** AS-IP-NUR-001 已选就诊主键列表，用于可见性 Gate（BR-IP-CXL-001）。 */
+    /** 已选就诊主键列表。 */
     @NotEmpty(message = "请先选择患者")
     @Schema(description = "已选就诊主键列表", required = true)
     @JsonSerialize(contentUsing = ToStringSerializer.class)

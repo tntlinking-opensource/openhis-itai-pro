@@ -1,51 +1,99 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.purchaseorder.request;
 
+
+
 import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderLineDto;
+
 import lombok.Getter;
+
 import lombok.Setter;
+
+
 
 import java.util.List;
 
+
+
 /**
- * 新建订货单请求。
+
  *
- * <p>源/目的位置类型（{@code source_type_enum}/{@code purpose_type_enum}）由后端根据 {@code purposeLocationId} 等位置主键与
- * {@code adm_location.form_enum} 推导并落库，请求体不传（B.10.8.1）。</p>
+
+ * <p>新建订货单（IF-WHS-PO-04）：领域批量取号生成 {@code busNo}，明细全量写入 {@code wkf_supply_request}。
+
+ * 源/目的位置类型（{@code source_type_enum}/{@code purpose_type_enum}）由后端根据 {@code purposeLocationId}
+
+ * 与 {@code adm_location.form_enum} 推导并落库，请求体不传（B.10.8.1）。
+
+ * {@code typeEnum} 固定为 {@link com.openhis.health.domain.share.enums.SupplyType#CABINET_PURCHASE_ORDER}，由后端写入。</p>
+
+ *
+
+ * <p>应用入口：
+
+ * {@link com.openhis.health.application.inventory.warehouse.purchaseorder.service.InventoryWarehousePurchaseOrderAppService#createPurchaseOrder(CreatePurchaseOrderRequest)}。</p>
+
  */
+
 @Getter
+
 @Setter
+
 public class CreatePurchaseOrderRequest {
 
-    /** 入库目的药库（必填）。 */
-    private Long purposeLocationId;
+
+
     /**
-     * 供应类别：{@link com.openhis.health.domain.share.enums.SupplyCategory#getCode()}；可 blank，缺省按库存供应
-     * （{@link com.openhis.health.domain.share.enums.SupplyCategory#STOCK_SUPPLY}）。
+
+     * 入库目的药库主键（{@code purpose_location_id}）：须在用户管辖药库门禁内；必填。
+
      */
+
+    private Long purposeLocationId;
+
+
+
+    /**
+
+     * 供应类别：{@link com.openhis.health.domain.share.enums.SupplyCategory#getCode()} 持久化码；
+
+     * 可 blank，缺省按 {@link com.openhis.health.domain.share.enums.SupplyCategory#STOCK_SUPPLY}。
+
+     */
+
     private String categoryEnum;
-    /** 供应商。 */
+
+
+
+    /**
+
+     * 供应商主键（{@code supplier_id}）：可选；传入时须为启用供应商。
+
+     */
+
     private Long supplierId;
-    /** 经手人医务人员主键（前端下拉选择）。 */
+
+
+
+    /**
+
+     * 经手人医务人员主键（{@code practitioner_id}）：前端库管员下拉，必填。
+
+     */
+
     private Long practitionerId;
-    /** 明细行。 */
+
+
+
+    /**
+
+     * 明细行全量列表：每行须含 {@link PurchaseOrderLineDto#getOccurrenceTime()}；修订时同结构见 {@link UpdatePurchaseOrderRequest}。
+
+     */
+
     private List<PurchaseOrderLineDto> lines;
-    /** 单据类型：固定 1（历史占位，与前端 WHS_PO_TYPE_ENUM 一致）。 */
-    private Integer typeEnum;
+
 }

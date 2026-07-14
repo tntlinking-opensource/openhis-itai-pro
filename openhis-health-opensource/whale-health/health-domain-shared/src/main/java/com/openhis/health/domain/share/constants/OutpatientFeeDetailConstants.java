@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 /**
@@ -40,16 +27,16 @@ public interface OutpatientFeeDetailConstants {
     /** 收退 Tab「退费」展示文案。 */
     String TRADE_DIRECTION_REFUND_LABEL = "退费";
 
-    /** 费用大类：药品。 */
+/** OutpatientFeeDetail 共享常量：category medication，值 {@code MEDICATION}。 */
     String FEE_CATEGORY_MEDICATION = "MEDICATION";
 
-    /** 费用大类：诊疗。 */
+/** OutpatientFeeDetail 共享常量：category activity，值 {@code ACTIVITY}。 */
     String FEE_CATEGORY_ACTIVITY = "ACTIVITY";
 
-    /** 费用大类：耗材。 */
+/** OutpatientFeeDetail 共享常量：category device，值 {@code DEVICE}。 */
     String FEE_CATEGORY_DEVICE = "DEVICE";
 
-    /** 费用大类：挂号。 */
+/** OutpatientFeeDetail 共享常量：category register，值 {@code REGISTER}。 */
     String FEE_CATEGORY_REGISTER = "REGISTER";
 
     /** 费用大类「药品」展示文案。 */
@@ -87,7 +74,7 @@ public interface OutpatientFeeDetailConstants {
     /** 导出 xlsx MIME 类型。 */
     String EXPORT_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-    /** 导出工作表名称。 */
+/** OutpatientFeeDetail 共享常量：sheet name，值 {@code 门诊费用明细}。 */
     String EXPORT_SHEET_NAME = "门诊费用明细";
 
     /** 未登录或主数据加载失败（IF-OP-FDT-01～03）。 */

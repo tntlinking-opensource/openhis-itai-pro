@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.refundapplication.mapper;
 
 import com.openhis.health.application.outpatient.doctorstation.refundapplication.dto.OutpatientRefundApplicationPaymentSummaryDto;
@@ -34,7 +21,7 @@ import com.openhis.health.domain.medication.medicationrequest.command.ReopenMedi
 import com.openhis.health.domain.workflow.devicedispense.command.CancelUndispensedDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.devicedispense.command.CreatePendingRefundDeviceDispenseCommand;
 import com.openhis.health.domain.workflow.devicerequest.command.CreateDeviceOrderRefundCommand;
-import com.openhis.health.domain.workflow.servicerequest.command.CancelServiceRequestCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.CreateServiceOrderRefundCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.StopServiceRequestCommand;
 
 import java.math.BigDecimal;
@@ -161,15 +148,17 @@ public interface DoctorStationRefundApplicationMapper {
     /**
      * IF-DRA-03（Asm）：装配待退耗材发放命令（单条）。
      *
-     * @param sourceDispenseId 原发放单主键
-     * @param refundQuantity   拟退数量
-     * @param operatorId       操作人主键
+     * @param sourceDispenseId      原发放单主键
+     * @param refundQuantity        拟退数量
+     * @param operatorId            操作人主键
+     * @param refundDeviceRequestId 负向耗材申请主键（门诊退费路径必传）
      * @return 领域命令
      */
     CreatePendingRefundDeviceDispenseCommand toCreatePendingRefundDeviceDispenseCommand(
         Long sourceDispenseId,
         BigDecimal refundQuantity,
-        Long operatorId
+        Long operatorId,
+        Long refundDeviceRequestId
     );
 
     /**
@@ -187,13 +176,13 @@ public interface DoctorStationRefundApplicationMapper {
     );
 
     /**
-     * IF-DRA-03（Asm）：装配取消诊疗服务申请命令（单条）。
+     * IF-DRA-03（Asm）：装配退诊疗负向申请命令（单条，数量取收费行计价数量）。
      *
-     * @param serviceRequestId 服务申请主键
-     * @param operatorId       操作人主键
+     * @param chargeItem 拟退诊疗收费行
+     * @param operatorId 操作人主键
      * @return 领域命令
      */
-    CancelServiceRequestCommand toCancelServiceRequestCommand(Long serviceRequestId, Long operatorId);
+    CreateServiceOrderRefundCommand toCreateServiceOrderRefundCommand(ChargeItem chargeItem, Long operatorId);
 
     /**
      * IF-DRA-03（Asm）：装配停止诊疗服务申请命令（单条）。

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.refund.mapper;
 
 import com.openhis.health.application.outpatient.financial.refund.dto.OutpatientRefundLineItemDto;
@@ -31,7 +18,6 @@ import com.openhis.health.application.outpatient.financial.refund.response.Verif
 import com.openhis.health.domain.administration.chargeitem.command.BatchChargeItemIdsCommand;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CompleteOutpatientRefundCommand;
-import com.openhis.health.domain.financial.paymentreconciliation.command.FinalizeOriginalOutpatientPaymentCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.PaymentDetailItemCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.RequestOutpatientRefundCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
@@ -122,19 +108,6 @@ public interface OutpatientRefundMapper {
         String chargeItemIdsJoined,
         BigDecimal refundAmount,
         List<PaymentDetailItemCommand> paymentDetails);
-
-    /**
-     * 装配原单静默收口命令。
-     *
-     * @param originalPaymentId 原支付主键
-     * @param outcomeEnum 结果码
-     * @param billDate 账单日
-     * @return 命令
-     */
-    FinalizeOriginalOutpatientPaymentCommand toFinalizeOriginalOutpatientPaymentCommand(
-        Long originalPaymentId,
-        String outcomeEnum,
-        LocalDateTime billDate);
 
     /**
      * 装配逆向单完成退费命令。

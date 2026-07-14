@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.util;
 
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -37,10 +24,15 @@ public class PasswordHashGenerator {
         String hash = encoder.encode(password);
         System.out.println("密码: " + password);
         System.out.println("BCrypt哈希: " + hash);
-        
-        // 验证
+
+        // Asm：打印 BCrypt 哈希供种子脚本引用，并校验 encode/matches 往返一致
         boolean matches = encoder.matches(password, hash);
-        System.out.println("验证结果: " + (matches ? "✓ 匹配" : "✗ 不匹配"));
+        String verifyResult;
+        if (matches) {
+            verifyResult = "✓ 匹配";
+        } else {
+            verifyResult = "✗ 不匹配";
+        }
+        System.out.println("验证结果: " + verifyResult);
     }
 }
-

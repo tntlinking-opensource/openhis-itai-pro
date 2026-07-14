@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.skintest.assembler;
 
 import com.openhis.health.application.inpatient.nursestation.skintest.dto.NurseStationSkinTestListAssemblyInput;
@@ -16,7 +16,7 @@ import com.openhis.health.domain.share.enums.ClinicalStatus;
 import com.openhis.health.domain.share.enums.EnumInterface;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -143,7 +143,7 @@ public class NurseStationSkinTestListAssembler {
      * @return 展示文案或 null
      */
     private <E extends Enum<E> & EnumInterface> String resolveEnumDisplay(Class<E> enumClass, String code) {
-        if (StringUtils.isBlank(code)) {
+        if (StringUtils.isEmpty(code)) {
             return null;
         }
         E enumValue = EnumUtil.fromCode(enumClass, code);

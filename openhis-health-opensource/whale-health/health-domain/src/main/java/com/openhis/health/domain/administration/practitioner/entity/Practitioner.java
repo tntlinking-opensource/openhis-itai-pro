@@ -1,12 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.practitioner.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -18,7 +13,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -151,10 +146,10 @@ public class Practitioner extends BaseAuditedEntity {
         if (this.userId == null) {
             throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "用户标识不能为空");
         }
-        if (StringUtils.isBlank(this.name)) {
+        if (StringUtils.isEmpty(this.name)) {
             throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "人员姓名不能为空");
         }
-        if (StringUtils.isBlank(this.genderEnum)) {
+        if (StringUtils.isEmpty(this.genderEnum)) {
             throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "人员性别不能为空");
         }
     }
@@ -246,6 +241,12 @@ public class Practitioner extends BaseAuditedEntity {
         this.setDeletedAt(LocalDateTime.now());
     }
 
+    /**
+     * 医务人员是否已废弃/删除态（DISCARDED 或历史 DELETED 码）。
+     *
+     * @param statusEnum 持久化状态码
+     * @return true 表示不可再用
+     */
     private static boolean isDiscardedStatus(String statusEnum) {
         return PublicationStatus.DISCARDED.getCode().equals(statusEnum)
             || "DELETED".equals(statusEnum);

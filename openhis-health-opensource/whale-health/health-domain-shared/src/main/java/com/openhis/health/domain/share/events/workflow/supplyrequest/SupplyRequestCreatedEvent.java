@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.events.workflow.supplyrequest;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -61,38 +48,55 @@ public class SupplyRequestCreatedEvent extends DomainEvent {
     /** 供应类别编码。 */
     private String categoryEnum;
 
+    /** 来源类型编码（SupplyRequestCreatedEvent）。 */
     private String sourceTypeEnum;
 
+    /** 来源库位主键（SupplyRequestCreatedEvent）。 */
     private Long sourceLocationId;
 
+    /** 目的类型编码（SupplyRequestCreatedEvent）。 */
     private String purposeTypeEnum;
 
+    /** 目的库位主键（SupplyRequestCreatedEvent）。 */
     private Long purposeLocationId;
 
+    /** 明细项表名（SupplyRequestCreatedEvent）。 */
     private String itemTable;
 
+    /** 明细项主键（SupplyRequestCreatedEvent）。 */
     private Long itemId;
 
+    /** 明细项数量（SupplyRequestCreatedEvent）。 */
     private BigDecimal itemQuantity;
 
+    /** 单位编码（SupplyRequestCreatedEvent）。 */
     private String unitCode;
 
+    /** 药品/物资批号。 */
     private String lotNumber;
 
+    /** 单价（SupplyRequestCreatedEvent）。 */
     private BigDecimal price;
 
+    /** 合计单价（SupplyRequestCreatedEvent）。 */
     private BigDecimal totalPrice;
 
+    /** 供应商主键（SupplyRequestCreatedEvent）。 */
     private Long supplierId;
 
+    /** 申请人主键（SupplyRequestCreatedEvent）。 */
     private Long applicantId;
 
+    /** 申请时间（SupplyRequestCreatedEvent）。 */
     private LocalDateTime applyTime;
 
+    /** 原因（SupplyRequestCreatedEvent）。 */
     private String reason;
 
+    /** 备注（SupplyRequestCreatedEvent）。 */
     private String remake;
 
+    /** 发生时间（SupplyRequestCreatedEvent）。 */
     private LocalDateTime occurrenceTime;
 
     /** 效期区间起点（与 {@code wkf_supply_request.start_time} 对齐）。 */
@@ -101,13 +105,14 @@ public class SupplyRequestCreatedEvent extends DomainEvent {
     /** 效期区间止点（与 {@code wkf_supply_request.end_time} 对齐）。 */
     private LocalDateTime endTime;
 
+    /** 医务人员主键（SupplyRequestCreatedEvent）。 */
     private Long practitionerId;
 
+    /** 追溯码字符串（可选）。 */
     private String traceNo;
 
     /**
-     * 处理逻辑。
-     * @return 返回结果
+     * 无参构造（反序列化/框架实例化用）。
      */
     public SupplyRequestCreatedEvent() {
         super();

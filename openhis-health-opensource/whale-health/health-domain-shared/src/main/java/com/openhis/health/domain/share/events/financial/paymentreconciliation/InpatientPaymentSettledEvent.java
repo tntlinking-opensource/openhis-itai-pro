@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.events.financial.paymentreconciliation;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -18,11 +18,17 @@ import java.util.List;
 @Setter
 public class InpatientPaymentSettledEvent extends DomainEvent {
 
+    /** 就诊主键（InpatientPaymentSettledEvent）。 */
     private Long encounterId;
+    /** charge明细项Ids（InpatientPaymentSettledEvent）。 */
     private String chargeItemIds;
+    /** displayAmount（InpatientPaymentSettledEvent）。 */
     private BigDecimal displayAmount;
+    /** ybSettlements（InpatientPaymentSettledEvent）。 */
     private List<PaymentYbSettlementEventItem> ybSettlements;
+    /** enterer主键（InpatientPaymentSettledEvent）。 */
     private Long entererId;
+    /** billDate（InpatientPaymentSettledEvent）。 */
     private LocalDateTime billDate;
 
     public InpatientPaymentSettledEvent() {

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.organization.service;
 
 import com.openhis.health.domain.administration.organization.entity.Organization;
@@ -25,7 +12,7 @@ import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.whale.core.infrastructure.multitenancy.TenantUtils;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -33,9 +20,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Comparator;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -44,6 +29,7 @@ import java.util.Set;
  * <p>职责：按业务场景（门诊挂号、入院、药房、仓储等）筛选启用机构，并提供主键加载、业务单号解析与废弃前置校验。</p>
  *
  * <p>边界：只读；树形展示当前多为平铺启用列表由前端组装；废弃校验仅检查是否存在启用子节点。</p>
+ * <p>聚合边界：仅本聚合 {@link OrganizationRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -88,7 +74,10 @@ public class OrganizationQueryService {
      */
     public Organization loadOrganizationByIdForDisplay(Long organizationId) {
         Organization organization = organizationRepository.findById(organizationId).orElse(null);
-        return belongsToCurrentTenant(organization) ? organization : null;
+        if (belongsToCurrentTenant(organization)) {
+            return organization;
+        }
+        return null;
     }
 
     /**
@@ -189,7 +178,12 @@ public class OrganizationQueryService {
                     PublicationStatus.DRAFT.getCode(),
                     PublicationStatus.ACTIVE.getCode(),
                     PublicationStatus.INACTIVE.getCode())));
-        OrganizationManagementListQuery effective = query == null ? new OrganizationManagementListQuery() : query;
+        OrganizationManagementListQuery effective;
+        if (query == null) {
+            effective = new OrganizationManagementListQuery();
+        } else {
+            effective = query;
+        }
         if (!effective.hasAnyFilter()) {
             return allManagement;
         }
@@ -213,7 +207,11 @@ public class OrganizationQueryService {
                     break;
                 }
                 Organization current = byId.get(currentId);
-                currentId = current == null ? null : current.getParentId();
+                if (current == null) {
+                    currentId = null;
+                } else {
+                    currentId = current.getParentId();
+                }
             }
         }
 
@@ -291,9 +289,18 @@ public class OrganizationQueryService {
      */
     public Organization findFirstByBusNo(String busNo) {
         Organization organization = organizationRepository.findFirstByBusNo(busNo).orElse(null);
-        return belongsToCurrentTenant(organization) ? organization : null;
+        if (belongsToCurrentTenant(organization)) {
+            return organization;
+        }
+        return null;
     }
 
+    /**
+     * 租户隔离：组织须属于当前租户；无租户上下文时不拦截。
+     *
+     * @param organization 待判定组织
+     * @return true 表示可见
+     */
     private boolean belongsToCurrentTenant(Organization organization) {
         if (organization == null) {
             return false;
@@ -305,10 +312,19 @@ public class OrganizationQueryService {
         return tenantId.equals(organization.getTenantId());
     }
 
+    /**
+     * 批量组织结果按当前租户过滤；无租户上下文时原样返回。
+     *
+     * @param organizations 原始列表
+     * @return 租户内组织列表
+     */
     private List<Organization> scopeToCurrentTenant(List<Organization> organizations) {
         Long tenantId = TenantUtils.getCurrentTenantId();
         if (tenantId == null || organizations == null || organizations.isEmpty()) {
-            return organizations == null ? List.of() : organizations;
+            if (organizations == null) {
+                return List.of();
+            }
+            return organizations;
         }
         List<Organization> scoped = new ArrayList<>(organizations.size());
         for (Organization organization : organizations) {
@@ -330,7 +346,7 @@ public class OrganizationQueryService {
         if (organization == null || query == null) {
             return false;
         }
-        if (StringUtils.isNotBlank(query.getStatusEnum())
+        if (StringUtils.isNotEmpty(query.getStatusEnum())
             && !query.getStatusEnum().trim().equals(organization.getStatusEnum())) {
             return false;
         }
@@ -342,7 +358,7 @@ public class OrganizationQueryService {
         if (classFilter != null && organization.getClassEnum() != classFilter) {
             return false;
         }
-        if (StringUtils.isBlank(query.getKeyword())) {
+        if (StringUtils.isEmpty(query.getKeyword())) {
             return true;
         }
         return matchesKeyword(organization, query.getKeyword().trim());
@@ -380,7 +396,7 @@ public class OrganizationQueryService {
      * @return 包含时为 true
      */
     private boolean containsIgnoreCase(String source, String keywordCore) {
-        if (StringUtils.isBlank(source)) {
+        if (StringUtils.isEmpty(source)) {
             return false;
         }
         return source.toLowerCase().contains(keywordCore);
@@ -393,7 +409,7 @@ public class OrganizationQueryService {
      * @return 分类枚举；无法解析时返回 null
      */
     private OrganizationClassification resolveOrganizationClassification(String classEnumRaw) {
-        if (StringUtils.isBlank(classEnumRaw)) {
+        if (StringUtils.isEmpty(classEnumRaw)) {
             return null;
         }
         String normalized = classEnumRaw.trim();

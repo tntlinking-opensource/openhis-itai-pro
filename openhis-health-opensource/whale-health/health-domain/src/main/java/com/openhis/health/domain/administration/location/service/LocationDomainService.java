@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.location.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -187,7 +174,7 @@ public class LocationDomainService {
         List<Location> toSave = new ArrayList<>();
         for (EditLocationInfoCommand.EditLocationInfoItemCommand item : items) {
             Location location = this.requireLocation(map, item.getLocationId());
-            // 业务分支处理。
+            // 名称变更时校验同父级下不重名。
             if (!Objects.equals(location.getName(), item.getName())) {
                 this.assertNameNotDuplicated(location.getParentId(), item.getName());
             }
@@ -198,6 +185,10 @@ public class LocationDomainService {
             location.setDisplayOrder(item.getDisplayOrder());
             location.setPyStr(item.getPyStr());
             location.setWbStr(item.getWbStr());
+            // 科室药房等场景允许维护页变更挂靠科室
+            if (item.getOrganizationId() != null) {
+                location.setOrganizationId(item.getOrganizationId());
+            }
             toSave.add(location);
         }
         locationRepository.saveAll(toSave);
@@ -448,7 +439,8 @@ public class LocationDomainService {
      */
     private boolean isWarehouseOrPharmacyForm(String formCode) {
         return LocationForm.WAREHOUSE.getCode().equals(formCode)
-            || LocationForm.PHARMACY.getCode().equals(formCode);
+            || LocationForm.PHARMACY.getCode().equals(formCode)
+            || LocationForm.DEPARTMENT_PHARMACY.getCode().equals(formCode);
     }
 
     /**
@@ -458,7 +450,7 @@ public class LocationDomainService {
      * @param name     位置名称
      */
     private void assertNameNotDuplicated(Long parentId, String name) {
-        // 业务分支处理。
+        // 同父级下名称已存在则拒绝保存，防止树节点歧义。
         if (locationRepository.existsByParentIdAndName(parentId, name)) {
             throw new BusinessException(ErrorCodeConstants.LOCATION_NAME_CONFLICT, "同父级下位置名称不可重复");
         }
@@ -471,7 +463,7 @@ public class LocationDomainService {
      */
     private void assertNoActiveChildren(Long parentId) {
         List<String> status = Arrays.asList(LocationStatus.ACTIVE.getCode(), LocationStatus.SUSPENDED.getCode());
-        // 业务分支处理。
+        // 仍存在启用或暂停子节点时禁止父级停用。
         if (!locationRepository.findAllByParentIdAndStatusEnumIn(parentId, status).isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.LOCATION_RULE_CONFLICT, "存在启用/暂停子节点时父级不可停用");
         }
@@ -577,7 +569,7 @@ public class LocationDomainService {
         List<Location> locations = locationRepository.findAllById(ids);
         Map<Long, Location> map = new HashMap<>();
         for (Location location : locations) {
-            // 业务分支处理。
+            // 已软删位置不进入写操作映射。
             if (!Boolean.TRUE.equals(location.getIsDeleted())) {
                 map.put(location.getId(), location);
             }
@@ -594,11 +586,10 @@ public class LocationDomainService {
      */
     private Location requireLocation(Map<Long, Location> map, Long locationId) {
         Location location = map.get(locationId);
-        // 业务分支处理。
+        // 预加载映射未命中则位置不存在或已软删。
         if (location == null) {
             throw new BusinessException(ErrorCodeConstants.LOCATION_NOT_FOUND, "位置不存在");
         }
         return location;
     }
 }
-

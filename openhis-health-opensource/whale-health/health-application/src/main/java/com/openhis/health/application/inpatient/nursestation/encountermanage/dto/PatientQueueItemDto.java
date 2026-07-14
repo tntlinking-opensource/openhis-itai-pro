@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.encountermanage.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayDtoApplier;
+import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayDtoApplier;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -35,15 +22,15 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 在院患者列表行。 */
 @Schema(description = "在院患者列表行")
 public class PatientQueueItemDto implements InpatientAccountBalanceDisplayDtoApplier.AccountBalanceDisplayTarget {
 
     @Schema(description = "就诊主键")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 就诊主键。 */
     private Long encounterId;
 
-    /** 就诊默认个人现金账户主键（执行/费用锚点，与 IF-IP-EXE-02 回传一致）。 */
+    /** 就诊默认自费账户主键。 */
     @Schema(description = "就诊默认自费账户主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long accountId;
@@ -143,15 +130,15 @@ public class PatientQueueItemDto implements InpatientAccountBalanceDisplayDtoApp
     @Schema(description = "欠费金额")
     private BigDecimal arrearsAmount;
 
-    /** 展示用账户余额（与可用余额一致，兼容旧字段）。 */
+    /** 展示用账户余额（与可用余额一致）。 */
     @Schema(description = "展示用账户余额（与可用余额一致）")
     private BigDecimal accountBalance;
 
-    /** 账户余额展示模式：NORMAL / REVERSED_PENDING_RESETTLE。 */
+    /** 账户余额展示模式。 */
     @Schema(description = "账户余额展示模式")
     private String accountBalanceDisplayMode;
 
-    /** 预交金净值（个人现金户）。 */
+    /** 预交金净值。 */
     @Schema(description = "预交金净值")
     private BigDecimal prepayNetBalance;
 
@@ -159,7 +146,7 @@ public class PatientQueueItemDto implements InpatientAccountBalanceDisplayDtoApp
     @Schema(description = "待结算费用合计")
     private BigDecimal pendingSettlementTotal;
 
-    /** 可用余额：预交金净值 − 费用占用。 */
+    /** 可用余额。 */
     @Schema(description = "可用余额")
     private BigDecimal availableBalance;
 
@@ -191,11 +178,11 @@ public class PatientQueueItemDto implements InpatientAccountBalanceDisplayDtoApp
     @Schema(description = "责任护士姓名摘要")
     private String primaryNurseName;
 
-    /** 诊断一行摘要。 */
+    /** 诊断一行摘要（多条以分号拼接）。 */
     @Schema(description = "诊断一行摘要（多条以分号拼接）")
     private String diagnosisSummary;
 
-    /** 诊断展示列表。 */
+    /** 诊断展示列表（由读模型快照解析，非 JSON）。 */
     @Schema(description = "诊断展示列表（由读模型快照解析，非 JSON）")
     private List<String> diagnosisList;
 
@@ -213,5 +200,24 @@ public class PatientQueueItemDto implements InpatientAccountBalanceDisplayDtoApp
      * <p>仅 {@code status_enum = DISCHARGED}（已清床离院）时为 {@code true}；未清床 {@code COMPLETED} 须收银台反结。</p>
      */
     @Schema(description = "是否可出院召回")
+    /** 是否可出院召回。 */
     private Boolean recallEnabled;
+
+    /** 护理级别医嘱主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "护理级别医嘱主键")
+    private Long nursingLevelServiceRequestId;
+
+    /** 护理级别 activityId。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "护理级别 activityId")
+    private Long nursingLevelActivityId;
+
+    /** 护理级别展示名。 */
+    @Schema(description = "护理级别展示名")
+    private String nursingLevelName;
+
+    /** 护理级别医嘱状态 code。 */
+    @Schema(description = "护理级别医嘱状态 code")
+    private String nursingLevelStatusEnum;
 }

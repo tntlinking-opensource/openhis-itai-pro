@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.patient.mapper;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -127,7 +114,7 @@ public class PatientStudentMapper {
             dto.setAge(AgeCalculatorUtil.calculateAge(birthDate));
         }
 
-        // 业务分支处理：无学籍记录时，仅回传主档派生字段，便于前端回显“未维护学籍”的空态。
+        // 无学籍记录时仅回传主档派生字段，便于前端回显「未维护学籍」空态。
         if (detail.getStudents() == null || detail.getStudents().isEmpty() || detail.getStudents().get(0) == null) {
             return dto;
         }
@@ -158,7 +145,7 @@ public class PatientStudentMapper {
      * @return input 为空返回 null；格式非法抛 {@link ValidationException}
      */
     private LocalDateTime parseDateTimeOrNull(String input, String fieldName) {
-        // 业务分支处理：允许不传时间字段。
+        // 允许不传时间字段，由业务默认或空值回显。
         if (input == null || input.trim().isEmpty()) {
             return null;
         }
@@ -176,11 +163,10 @@ public class PatientStudentMapper {
      * @return time 为空返回 null
      */
     private String formatDateTimeOrNull(LocalDateTime time) {
-        // 业务分支处理：允许为空。
+        // 允许为空，未维护字段不回填默认值。
         if (time == null) {
             return null;
         }
         return GeneralSharedConstants.DATE_TIME_FORMATTER.format(time);
     }
 }
-

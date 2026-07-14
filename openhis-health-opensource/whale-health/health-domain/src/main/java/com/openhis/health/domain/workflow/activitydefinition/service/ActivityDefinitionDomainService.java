@@ -1,22 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.activitydefinition.service;
 
+import java.util.Objects;
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
@@ -43,7 +31,9 @@ import com.openhis.health.domain.workflow.activitydefinition.repository.Activity
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
+
+import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -109,6 +99,7 @@ public class ActivityDefinitionDomainService {
             definition.setYbNo(item.getYbNo());
             definition.setYbMatchFlag(item.getYbMatchFlag());
             definition.setChrgitmLv(item.getChrgitmLv());
+            definition.setMrSettlementTypeCode(item.getMrSettlementTypeCode());
             definition.setChildrenJson(item.getChildrenJson());
 
             // 前置校验：必填与业务编码存在性。
@@ -133,7 +124,7 @@ public class ActivityDefinitionDomainService {
             List<ActivityDefinitionChild> builtChildren = this.buildChildren(definition, childItems);
             childrenToSave.addAll(builtChildren);
         }
-        // 业务分支处理。
+        // 存在待保存子项时才批量落库，避免空 saveAll。
         if (!childrenToSave.isEmpty()) {
             activityDefinitionChildRepository.saveAll(childrenToSave);
         }
@@ -169,7 +160,7 @@ public class ActivityDefinitionDomainService {
         Map<Long, String> priceReasonCodeById = new HashMap<>();
 
         for (UpdateActivityDefinitionCommand.UpdateActivityDefinitionItemCommand item : items) {
-            // 业务分支处理。
+            // 维护命令必须携带主键，否则无法定位要更新的诊疗项目。
             if (item.getId() == null) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "维护诊疗项目时 id 不能为空");
             }
@@ -179,8 +170,8 @@ public class ActivityDefinitionDomainService {
 
             // 逐字段更新：命令字段为空时不覆盖历史值（与“可编辑字段集合”语义一致）。
             if (item.getName() != null) {
-                // 业务分支处理。
-                if (!StringUtils.equals(definition.getName(), item.getName())) {
+                // 项目名称变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
+                if (!Objects.equals(definition.getName(), item.getName())) {
                     changedFields.add(FieldNameConstants.NAME);
                 }
                 definition.setName(item.getName());
@@ -188,30 +179,30 @@ public class ActivityDefinitionDomainService {
                 changedFields.add(FieldNameConstants.PY_STR);
                 changedFields.add(FieldNameConstants.WB_STR);
             }
-            // 业务分支处理。
+            // 命令携带分类编码时才更新，空值表示不覆盖历史值。
             if (item.getCategoryCode() != null) {
-                // 业务分支处理。
-                if (!StringUtils.equals(definition.getCategoryCode(), item.getCategoryCode())) {
+                // 分类编码变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
+                if (!Objects.equals(definition.getCategoryCode(), item.getCategoryCode())) {
                     changedFields.add(FieldNameConstants.CATEGORY_CODE);
                 }
                 definition.setCategoryCode(item.getCategoryCode());
             }
-            // 业务分支处理。
+            // 命令携带包装单位时才更新，空值表示不覆盖历史值。
             if (item.getPackageUnitCode() != null) {
-                // 业务分支处理。
-                if (!StringUtils.equals(definition.getPackageUnitCode(), item.getPackageUnitCode())) {
+                // 包装单位变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
+                if (!Objects.equals(definition.getPackageUnitCode(), item.getPackageUnitCode())) {
                     changedFields.add(FieldNameConstants.PACKAGE_UNIT_CODE);
                 }
                 definition.setPackageUnitCode(item.getPackageUnitCode());
             }
             if (item.getActivityVersion() != null) {
-                if (!StringUtils.equals(definition.getActivityVersion(), item.getActivityVersion())) {
+                if (!Objects.equals(definition.getActivityVersion(), item.getActivityVersion())) {
                     changedFields.add(FieldNameConstants.ACTIVITY_VERSION);
                 }
                 definition.setActivityVersion(item.getActivityVersion());
             }
             if (item.getMerchandiseName() != null) {
-                if (!StringUtils.equals(definition.getMerchandiseName(), item.getMerchandiseName())) {
+                if (!Objects.equals(definition.getMerchandiseName(), item.getMerchandiseName())) {
                     changedFields.add(FieldNameConstants.MERCHANDISE_NAME);
                     changedFields.add(FieldNameConstants.MERCHANDISE_PY_STR);
                     changedFields.add(FieldNameConstants.MERCHANDISE_WB_STR);
@@ -220,117 +211,124 @@ public class ActivityDefinitionDomainService {
                 }
             }
             if (item.getDefEncounterUnitCode() != null) {
-                if (!StringUtils.equals(definition.getDefEncounterUnitCode(), item.getDefEncounterUnitCode())) {
+                if (!Objects.equals(definition.getDefEncounterUnitCode(), item.getDefEncounterUnitCode())) {
                     changedFields.add(FieldNameConstants.DEF_ENCOUNTER_UNIT_CODE);
                 }
                 definition.setDefEncounterUnitCode(item.getDefEncounterUnitCode());
             }
             if (item.getDefInhospitalUnitCode() != null) {
-                if (!StringUtils.equals(definition.getDefInhospitalUnitCode(), item.getDefInhospitalUnitCode())) {
+                if (!Objects.equals(definition.getDefInhospitalUnitCode(), item.getDefInhospitalUnitCode())) {
                     changedFields.add(FieldNameConstants.DEF_INHOSPITAL_UNIT_CODE);
                 }
                 definition.setDefInhospitalUnitCode(item.getDefInhospitalUnitCode());
             }
-            // 业务分支处理。
+            // 命令携带项目类型时才更新，空值表示不覆盖历史值。
             if (item.getTypeEnum() != null) {
-                // 业务分支处理。
+                // 项目类型变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
                 if (definition.getTypeEnum() == null || !definition.getTypeEnum().equals(item.getTypeEnum())) {
                     changedFields.add(FieldNameConstants.TYPE_ENUM);
                 }
                 definition.setTypeEnum(item.getTypeEnum());
             }
-            // 业务分支处理。
+            // 命令携带说明文本时才更新，空值表示不覆盖历史值。
             if (item.getDescriptionText() != null) {
-                // 业务分支处理。
-                if (!StringUtils.equals(definition.getDescriptionText(), item.getDescriptionText())) {
+                // 说明文本变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
+                if (!Objects.equals(definition.getDescriptionText(), item.getDescriptionText())) {
                     changedFields.add(FieldNameConstants.DESCRIPTION_TEXT);
                 }
                 definition.setDescriptionText(item.getDescriptionText());
             }
-            // 业务分支处理。
+            // 命令携带部位编码时才更新，空值表示不覆盖历史值。
             if (item.getBodySiteCode() != null) {
-                // 业务分支处理。
-                if (!StringUtils.equals(definition.getBodySiteCode(), item.getBodySiteCode())) {
+                // 部位编码变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
+                if (!Objects.equals(definition.getBodySiteCode(), item.getBodySiteCode())) {
                     changedFields.add(FieldNameConstants.BODY_SITE_CODE);
                 }
                 definition.setBodySiteCode(item.getBodySiteCode());
             }
-            // 业务分支处理。
+            // 命令携带标本编码时才更新，空值表示不覆盖历史值。
             if (item.getSpecimenCode() != null) {
-                // 业务分支处理。
-                if (!StringUtils.equals(definition.getSpecimenCode(), item.getSpecimenCode())) {
+                // 标本编码变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
+                if (!Objects.equals(definition.getSpecimenCode(), item.getSpecimenCode())) {
                     changedFields.add(FieldNameConstants.SPECIMEN_CODE);
                 }
                 definition.setSpecimenCode(item.getSpecimenCode());
             }
-            // 业务分支处理。
+            // 命令携带归属机构时才更新，空值表示不覆盖历史值。
             if (item.getOrgId() != null) {
-                // 业务分支处理。
+                // 归属机构变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
                 if (definition.getOrgId() == null || !definition.getOrgId().equals(item.getOrgId())) {
                     changedFields.add(FieldNameConstants.ORG_ID);
                 }
                 definition.setOrgId(item.getOrgId());
             }
-            // 业务分支处理。
+            // 命令携带执行地点时才更新，空值表示不覆盖历史值。
             if (item.getLocationId() != null) {
-                // 业务分支处理。
+                // 执行地点变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
                 if (definition.getLocationId() == null || !definition.getLocationId().equals(item.getLocationId())) {
                     changedFields.add(FieldNameConstants.LOCATION_ID);
                 }
                 definition.setLocationId(item.getLocationId());
             }
-            // 业务分支处理。
+            // 命令携带计费规则时才更新，空值表示不覆盖历史值。
             if (item.getRuleId() != null) {
-                // 业务分支处理。
+                // 计费规则变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
                 if (definition.getRuleId() == null || !definition.getRuleId().equals(item.getRuleId())) {
                     changedFields.add(FieldNameConstants.RULE_ID);
                 }
                 definition.setRuleId(item.getRuleId());
             }
-            // 业务分支处理。
+            // 命令携带计价标志时才更新，空值表示不覆盖历史值。
             if (item.getPricingFlag() != null) {
-                // 业务分支处理。
+                // 计价标志变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
                 if (definition.getPricingFlag() == null || !definition.getPricingFlag().equals(item.getPricingFlag())) {
                     changedFields.add(FieldNameConstants.PRICING_FLAG);
                 }
                 definition.setPricingFlag(item.getPricingFlag());
             }
-            // 业务分支处理。
+            // 命令携带医保标志时才更新，空值表示不覆盖历史值。
             if (item.getYbFlag() != null) {
-                // 业务分支处理。
+                // 医保标志变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
                 if (definition.getYbFlag() == null || !definition.getYbFlag().equals(item.getYbFlag())) {
                     changedFields.add(FieldNameConstants.YB_FLAG);
                 }
                 definition.setYbFlag(item.getYbFlag());
             }
-            // 业务分支处理。
+            // 命令携带医保编码时才更新，空值表示不覆盖历史值。
             if (item.getYbNo() != null) {
-                // 业务分支处理。
-                if (!StringUtils.equals(definition.getYbNo(), item.getYbNo())) {
+                // 医保编码变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
+                if (!Objects.equals(definition.getYbNo(), item.getYbNo())) {
                     changedFields.add(FieldNameConstants.YB_NO);
                 }
                 definition.setYbNo(item.getYbNo());
             }
-            // 业务分支处理。
+            // 命令携带医保对码标志时才更新，空值表示不覆盖历史值。
             if (item.getYbMatchFlag() != null) {
-                // 业务分支处理。
+                // 医保对码标志变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
                 if (definition.getYbMatchFlag() == null || !definition.getYbMatchFlag().equals(item.getYbMatchFlag())) {
                     changedFields.add(FieldNameConstants.YB_MATCH_FLAG);
                 }
                 definition.setYbMatchFlag(item.getYbMatchFlag());
             }
-            // 业务分支处理。
+            // 命令携带收费项目等级时才更新，空值表示不覆盖历史值。
             if (item.getChrgitmLv() != null) {
-                // 业务分支处理。
+                // 收费项目等级变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
                 if (definition.getChrgitmLv() == null || !definition.getChrgitmLv().equals(item.getChrgitmLv())) {
                     changedFields.add(FieldNameConstants.CHRGITM_LV);
                 }
                 definition.setChrgitmLv(item.getChrgitmLv());
             }
-            // 业务分支处理。
+            // 命令携带病案结算类型时才更新，空值表示不覆盖历史值。
+            if (item.getMrSettlementTypeCode() != null) {
+                if (!Objects.equals(definition.getMrSettlementTypeCode(), item.getMrSettlementTypeCode())) {
+                    changedFields.add(FieldNameConstants.MR_SETTLEMENT_TYPE_CODE);
+                }
+                definition.setMrSettlementTypeCode(item.getMrSettlementTypeCode());
+            }
+            // 命令携带子项 JSON 时才更新，空值表示不覆盖历史值。
             if (item.getChildrenJson() != null) {
-                // 业务分支处理。
-                if (!StringUtils.equals(definition.getChildrenJson(), item.getChildrenJson())) {
+                // 子项 JSON 变更时记入 changedFields，供 UpdatedEvent 增量同步读模型。
+                if (!Objects.equals(definition.getChildrenJson(), item.getChildrenJson())) {
                     changedFields.add(FieldNameConstants.CHILDREN_JSON);
                 }
                 definition.setChildrenJson(item.getChildrenJson());
@@ -347,7 +345,7 @@ public class ActivityDefinitionDomainService {
 
                 List<ActivityDefinitionChild> finalChildren = this.snapshotNotDeletedChildren(existed, builtChildren, deleted);
                 boolean changed = definition.syncChildrenFlag(finalChildren);
-                // 业务分支处理。
+                // 子项集合变更导致 childrenFlag 变化时，记入 changedFields 通知下游。
                 if (changed) {
                     changedFields.add(FieldNameConstants.CHILDREN_FLAG);
                 }
@@ -365,11 +363,11 @@ public class ActivityDefinitionDomainService {
 
         // 先落主表，再落子表，最后发布事件。
         activityDefinitionRepository.saveAll(toSave);
-        // 业务分支处理。
+        // 存在待保存子项时才批量落库，避免空 saveAll。
         if (!childrenToSave.isEmpty()) {
             activityDefinitionChildRepository.saveAll(childrenToSave);
         }
-        // 业务分支处理。
+        // 存在待逻辑删除子项时才批量落库，完成全量对齐。
         if (!childrenToDelete.isEmpty()) {
             activityDefinitionChildRepository.saveAll(childrenToDelete);
         }
@@ -378,7 +376,7 @@ public class ActivityDefinitionDomainService {
 
         for (ActivityDefinition definition : toSave) {
             List<String> changedFields = changedFieldsById.get(definition.getId());
-            // 业务分支处理。
+            // 无字段差分时仍发布 UpdatedEvent，changedFields 用空列表兜底。
             if (changedFields == null) {
                 changedFields = new ArrayList<>();
             }
@@ -404,7 +402,7 @@ public class ActivityDefinitionDomainService {
 
         List<Long> ids = this.collectIdList(items, "批量停用诊疗项目时 idList 不能为空");
         List<ActivityDefinition> definitions = activityDefinitionRepository.findByIdIn(ids);
-        // 业务分支处理。
+        // 批量停用须全部主键有效，任一缺失则拒绝整批操作。
         if (definitions.size() != ids.size()) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_NOT_FOUND, "批量停用诊疗项目时存在无效主键");
         }
@@ -459,7 +457,7 @@ public class ActivityDefinitionDomainService {
 
         List<Long> ids = this.collectIdList(items, "批量启用诊疗项目时 idList 不能为空");
         List<ActivityDefinition> definitions = activityDefinitionRepository.findByIdIn(ids);
-        // 业务分支处理。
+        // 批量启用须全部主键有效，任一缺失则拒绝整批操作。
         if (definitions.size() != ids.size()) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_NOT_FOUND, "批量启用诊疗项目时存在无效主键");
         }
@@ -503,14 +501,14 @@ public class ActivityDefinitionDomainService {
      */
     public ImportActivityCatalogResult importActivityCatalog(ImportActivityCatalogCommand command) {
         List<ImportActivityCatalogCommand.ImportActivityCatalogItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 目录导入按单次动作约束，一次仅允许一组 rows。
         if (items.size() != 1) {
             // DOC-CONFLICT: SDD 约定 import 为单次导入动作，但 BatchCommand 默认允许批量；此处按单次导入约束收敛。
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "批量导入诊疗目录一次仅允许提交一组导入 rows");
         }
 
         ImportActivityCatalogCommand.ImportActivityCatalogItemCommand batch = items.get(0);
-        // 业务分支处理。
+        // 导入 rows 为空则无有效数据，直接拒绝。
         if (batch.getRows() == null || batch.getRows().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "导入诊疗目录 rows 不能为空");
         }
@@ -519,13 +517,13 @@ public class ActivityDefinitionDomainService {
         Map<String, Integer> seenBusNo = new HashMap<>();
         List<String> busNos = new ArrayList<>();
         for (ImportActivityCatalogCommand.ActivityCatalogRowCommand row : batch.getRows()) {
-            // 业务分支处理。
-            if (StringUtils.isBlank(row.getBusNo())) {
+            // busNo 为目录唯一键，导入行缺失则无法 upsert。
+            if (StringUtils.isEmpty(row.getBusNo())) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "导入诊疗目录时 busNo 不能为空");
             }
             String normalized = row.getBusNo().trim();
             Integer existedLine = seenBusNo.get(normalized);
-            // 业务分支处理。
+            // 同一导入批次内 busNo 重复会导致覆盖歧义，按首次行号报错。
             if (existedLine != null) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT,
                     "导入诊疗目录时 busNo 重复，重复值=" + normalized + "，首次行=" + existedLine);
@@ -556,7 +554,7 @@ public class ActivityDefinitionDomainService {
                 String busNo = row.getBusNo().trim();
                 ActivityDefinition target = existedByBusNo.get(busNo);
 
-                // 业务分支处理。
+                // busNo 未命中存量记录时走新建路径，由领域层生成业务编码。
                 if (target == null) {
                     ActivityDefinition created = new ActivityDefinition();
                     created.setBusNo(this.generateBusNo());
@@ -601,7 +599,7 @@ public class ActivityDefinitionDomainService {
                     updated.setDefInhospitalUnitCode(row.getDefInhospitalUnitCode());
                     updated.rebuildMerchandiseSearchCodes();
                     updated.setTypeEnum(row.getTypeEnum());
-                    // 业务分支处理。
+                    // 导入行显式携带状态时才覆盖，否则保留存量发布状态。
                     if (row.getStatusEnum() != null) {
                         updated.setStatusEnum(row.getStatusEnum());
                     }
@@ -639,21 +637,21 @@ public class ActivityDefinitionDomainService {
         // 为新增记录补齐子项（需要主键）。
         for (ActivityDefinition definition : saved) {
             ActivityDefinition existedEntity = existedByBusNo.get(definition.getBusNo());
-            // 业务分支处理。
+            // 新建主表记录需补齐子项，仅对本次导入新增的行构建子项。
             if (existedEntity == null) {
                 ImportActivityCatalogCommand.ActivityCatalogRowCommand row = this.findRowByBusNo(batch.getRows(), definition.getBusNo());
-                // 业务分支处理。
+                // 匹配到导入行则按行内子项清单构建并待落库。
                 if (row != null) {
                     childrenToSave.addAll(this.buildChildrenFromImportRow(definition, row.getChildren()));
                 }
             }
         }
 
-        // 业务分支处理。
+        // 存在待保存子项时才批量落库，避免空 saveAll。
         if (!childrenToSave.isEmpty()) {
             activityDefinitionChildRepository.saveAll(childrenToSave);
         }
-        // 业务分支处理。
+        // 存在待逻辑删除子项时才批量落库，完成全量对齐。
         if (!childrenToDelete.isEmpty()) {
             activityDefinitionChildRepository.saveAll(childrenToDelete);
         }
@@ -661,7 +659,7 @@ public class ActivityDefinitionDomainService {
         // 发布事件：先确保主表主键可用，再逐行发布。
         for (ActivityDefinition definition : saved) {
             ActivityDefinition existedEntity = existedByBusNo.get(definition.getBusNo());
-            // 业务分支处理。
+            // 新建记录发布 CreatedEvent，供目录读模型增量接入。
             if (existedEntity == null) {
                 domainEventPublisher.publish(new ActivityDefinitionCreatedEvent(definition.getId(), definition.getBusNo(), definition.getName()));
             } else {
@@ -687,24 +685,24 @@ public class ActivityDefinitionDomainService {
         List<SyncActivityYbMappingCommand.SyncActivityYbMappingItemCommand> items = command.resolveItems();
 
         List<Long> ids = CommandBatchUtil.extractIds(items, SyncActivityYbMappingCommand.SyncActivityYbMappingItemCommand::getActivityId);
-        // 业务分支处理。
+        // 医保对码回写至少须一条 activityId，空列表无法定位目标。
         if (ids.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "同步医保对码回写时 activityId 不能为空");
         }
 
         List<ActivityDefinition> definitions = activityDefinitionRepository.findByIdIn(ids);
-        // 业务分支处理。
+        // 医保对码回写须全部 activityId 有效，任一缺失则拒绝同步。
         if (definitions.size() != ids.size()) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_NOT_FOUND, "同步医保对码回写时存在无效主键");
         }
 
         Map<Long, SyncActivityYbMappingCommand.SyncActivityYbMappingItemCommand> byId = new HashMap<>();
         for (SyncActivityYbMappingCommand.SyncActivityYbMappingItemCommand item : items) {
-            // 业务分支处理。
+            // 每条对码回写须携带 activityId，否则无法写入对应诊疗项目。
             if (item.getActivityId() == null) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "同步医保对码回写时 activityId 不能为空");
             }
-            // 业务分支处理。
+            // 同一 activityId 重复提交会导致后写覆盖前写，整批拒绝。
             if (byId.containsKey(item.getActivityId())) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "同步医保对码回写时 activityId 重复");
             }
@@ -713,7 +711,7 @@ public class ActivityDefinitionDomainService {
 
         for (ActivityDefinition definition : definitions) {
             SyncActivityYbMappingCommand.SyncActivityYbMappingItemCommand item = byId.get(definition.getId());
-            // 业务分支处理。
+            // 命令项与已加载聚合无法匹配，说明入参 id 与 items 不一致。
             if (item == null) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "同步医保对码回写时存在无法匹配的 activityId");
             }
@@ -742,11 +740,11 @@ public class ActivityDefinitionDomainService {
      * 私有方法：assertBusNoUnique。
      */
     private void assertBusNoUnique(String busNo) {
-        // 业务分支处理。
-        if (StringUtils.isBlank(busNo)) {
+        // 业务编码为空无法保证目录唯一性，拒绝保存。
+        if (StringUtils.isEmpty(busNo)) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "诊疗项目业务编码不能为空");
         }
-        // 业务分支处理。
+        // busNo 已存在则违反目录唯一约束，拒绝重复建档。
         if (activityDefinitionRepository.existsByBusNo(busNo)) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "诊疗项目业务编码已存在，busNo=" + busNo);
         }
@@ -773,7 +771,7 @@ public class ActivityDefinitionDomainService {
      * @return 最终使用的状态码
      */
     private String resolveInitStatus(String statusEnum) {
-        if (StringUtils.isBlank(statusEnum)) {
+        if (StringUtils.isEmpty(statusEnum)) {
             return PublicationStatus.DRAFT.getCode();
         }
         return statusEnum;
@@ -798,7 +796,7 @@ public class ActivityDefinitionDomainService {
         ActivityDefinition definition,
         List<CreateActivityDefinitionCommand.ActivityDefinitionChildItemCommand> children) {
         List<ActivityDefinitionChild> built = new ArrayList<>();
-        // 业务分支处理：子项列表为空时，标记父项无子项并返回空列表。
+        // 子项列表为空时标记父项无子项并返回空列表。
         if (children == null || children.isEmpty()) {
             definition.setChildrenFlag(Boolean.FALSE);
             return built;
@@ -807,11 +805,11 @@ public class ActivityDefinitionDomainService {
         // 同一父项下 childrenId 不重复（BR-ACTDEF-007）。
         Set<Long> seenChildrenId = new HashSet<>();
         for (CreateActivityDefinitionCommand.ActivityDefinitionChildItemCommand item : children) {
-            // 业务分支处理。
+            // 子项 childrenId 为空则无法关联子项目，拒绝落库。
             if (item.getChildrenId() == null) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "子项 childrenId 不能为空");
             }
-            // 业务分支处理。
+            // 同一父项下 childrenId 重复会导致数量歧义，拒绝。
             if (seenChildrenId.contains(item.getChildrenId())) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "同一父项下子项 childrenId 不允许重复");
             }
@@ -845,7 +843,7 @@ public class ActivityDefinitionDomainService {
         ActivityDefinition definition,
         List<ImportActivityCatalogCommand.ActivityDefinitionChildItemCommand> children) {
         List<ActivityDefinitionChild> built = new ArrayList<>();
-        // 业务分支处理：导入子项为空时，标记父项无子项并返回空列表。
+        // 导入子项为空时标记父项无子项并返回空列表。
         if (children == null || children.isEmpty()) {
             definition.setChildrenFlag(Boolean.FALSE);
             return built;
@@ -853,11 +851,11 @@ public class ActivityDefinitionDomainService {
 
         Set<Long> seenChildrenId = new HashSet<>();
         for (ImportActivityCatalogCommand.ActivityDefinitionChildItemCommand item : children) {
-            // 业务分支处理。
+            // 导入子项缺少 childrenId 无法关联子项目，拒绝落库。
             if (item.getChildrenId() == null) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "导入子项 childrenId 不能为空");
             }
-            // 业务分支处理。
+            // 同一父项下 childrenId 重复会导致数量歧义，拒绝。
             if (seenChildrenId.contains(item.getChildrenId())) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "导入子项 childrenId 重复");
             }
@@ -909,18 +907,18 @@ public class ActivityDefinitionDomainService {
 
         Set<Long> seenChildrenId = new HashSet<>();
         for (UpdateActivityDefinitionCommand.ActivityDefinitionChildItemCommand item : inputChildren) {
-            // 业务分支处理。
+            // 子项 childrenId 为空则无法关联子项目，拒绝落库。
             if (item.getChildrenId() == null) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "子项 childrenId 不能为空");
             }
-            // 业务分支处理。
+            // 同一父项下 childrenId 重复会导致数量歧义，拒绝。
             if (seenChildrenId.contains(item.getChildrenId())) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "同一父项下子项 childrenId 不允许重复");
             }
             seenChildrenId.add(item.getChildrenId());
 
             ActivityDefinitionChild target = existedByChildrenId.get(item.getChildrenId());
-            // 业务分支处理。
+            // 子项 childrenId 未命中存量行则新建关联行。
             if (target == null) {
                 target = new ActivityDefinitionChild();
                 target.setActivityId(definition.getId());
@@ -961,7 +959,7 @@ public class ActivityDefinitionDomainService {
         // Pre：收集所有需要保留的 childrenId。
         Set<Long> keepChildrenId = new HashSet<>();
         for (UpdateActivityDefinitionCommand.ActivityDefinitionChildItemCommand item : inputChildren) {
-            // 业务分支处理：仅收集非空的 childrenId。
+            // 仅收集非空 childrenId 作为全量对齐保留集。
             if (item.getChildrenId() != null) {
                 keepChildrenId.add(item.getChildrenId());
             }
@@ -969,11 +967,11 @@ public class ActivityDefinitionDomainService {
 
         List<ActivityDefinitionChild> toDelete = new ArrayList<>();
         for (ActivityDefinitionChild child : existed) {
-            // 业务分支处理：childrenId 为空的跳过处理。
+            // 存量子项 childrenId 为空的数据异常行跳过，不参与对齐。
             if (child.getChildrenId() == null) {
                 continue;
             }
-            // 业务分支处理：不在保留列表中的子项标记为删除。
+            // 输入未包含的存量子项视为删除，标记软删。
             if (!keepChildrenId.contains(child.getChildrenId())) {
                 child.markDeleted(operatorId);
                 toDelete.add(child);
@@ -1000,7 +998,7 @@ public class ActivityDefinitionDomainService {
         Long operatorId) {
         List<ActivityDefinitionChild> toSave = new ArrayList<>();
 
-        // 业务分支处理：输入为空时直接返回空列表。
+        // 导入对齐时未传子项则无需处理，返回空列表。
         if (inputChildren == null) {
             return toSave;
         }
@@ -1013,18 +1011,18 @@ public class ActivityDefinitionDomainService {
 
         Set<Long> seenChildrenId = new HashSet<>();
         for (ImportActivityCatalogCommand.ActivityDefinitionChildItemCommand item : inputChildren) {
-            // 业务分支处理。
+            // 导入子项缺少 childrenId 无法关联子项目，拒绝落库。
             if (item.getChildrenId() == null) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "导入子项 childrenId 不能为空");
             }
-            // 业务分支处理。
+            // 同一父项下导入子项 childrenId 重复会导致数量歧义，拒绝。
             if (seenChildrenId.contains(item.getChildrenId())) {
                 throw new BusinessException(ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT, "导入子项 childrenId 重复");
             }
             seenChildrenId.add(item.getChildrenId());
 
             ActivityDefinitionChild target = existedByChildrenId.get(item.getChildrenId());
-            // 业务分支处理。
+            // 子项 childrenId 未命中存量行则新建关联行。
             if (target == null) {
                 target = new ActivityDefinitionChild();
                 target.setActivityId(definition.getId());
@@ -1059,7 +1057,7 @@ public class ActivityDefinitionDomainService {
         List<ImportActivityCatalogCommand.ActivityDefinitionChildItemCommand> inputChildren,
         Long operatorId) {
         List<ActivityDefinitionChild> toDelete = new ArrayList<>();
-        // 业务分支处理：输入为空时无需删除，直接返回。
+        // 未传子项列表时不做删除对齐，直接返回。
         if (inputChildren == null) {
             return toDelete;
         }
@@ -1067,18 +1065,18 @@ public class ActivityDefinitionDomainService {
         // Pre：收集所有需要保留的 childrenId。
         Set<Long> keepChildrenId = new HashSet<>();
         for (ImportActivityCatalogCommand.ActivityDefinitionChildItemCommand item : inputChildren) {
-            // 业务分支处理：仅收集非空的 childrenId。
+            // 仅收集非空 childrenId 作为全量对齐保留集。
             if (item.getChildrenId() != null) {
                 keepChildrenId.add(item.getChildrenId());
             }
         }
 
         for (ActivityDefinitionChild child : existed) {
-            // 业务分支处理：childrenId 为空的跳过处理。
+            // 存量子项 childrenId 为空的数据异常行跳过，不参与对齐。
             if (child.getChildrenId() == null) {
                 continue;
             }
-            // 业务分支处理：不在保留列表中的子项标记为删除。
+            // 输入未包含的存量子项视为删除，标记软删。
             if (!keepChildrenId.contains(child.getChildrenId())) {
                 child.markDeleted(operatorId);
                 toDelete.add(child);
@@ -1109,7 +1107,7 @@ public class ActivityDefinitionDomainService {
         // Loop：遍历命令项，提取所有 ID。
         for (T item : items) {
             List<Long> idList;
-            // 业务分支处理：根据命令类型提取 idList。
+            // 按命令类型提取批量 idList（停用/启用路径结构不同）。
             if (item instanceof RetireActivityDefinitionsCommand.RetireActivityDefinitionsItemCommand) {
                 idList = ((RetireActivityDefinitionsCommand.RetireActivityDefinitionsItemCommand) item).getIdList();
             } else if (item instanceof ActivateActivityDefinitionsCommand.ActivateActivityDefinitionsItemCommand) {
@@ -1117,17 +1115,17 @@ public class ActivityDefinitionDomainService {
             } else {
                 idList = null;
             }
-            // 业务分支处理：idList 为空时跳过当前项。
+            // 当前命令项未携带 idList 时跳过，继续合并其它项。
             if (idList == null || idList.isEmpty()) {
                 continue;
             }
             // Loop：遍历当前项的 ID 列表，去重合并。
             for (Long id : idList) {
-                // 业务分支处理：ID 为空的跳过。
+                // 空 id 跳过，避免无效主键进入批量操作。
                 if (id == null) {
                     continue;
                 }
-                // 业务分支处理：未出现过才加入结果列表。
+                // 跨命令项 id 去重，同一主键只处理一次。
                 if (!seen.contains(id)) {
                     seen.add(id);
                     ids.add(id);
@@ -1191,7 +1189,7 @@ public class ActivityDefinitionDomainService {
         // Asm：过滤掉已软删的子项，构建最终快照。
         List<ActivityDefinitionChild> snapshot = new ArrayList<>();
         for (ActivityDefinitionChild child : byChildrenId.values()) {
-            // 业务分支处理：跳过已软删的子项。
+            // 快照排除已软删子项，childrenFlag 仅反映有效子项。
             if (child.getIsDeleted() != null && child.getIsDeleted()) {
                 continue;
             }
@@ -1212,19 +1210,19 @@ public class ActivityDefinitionDomainService {
     private ImportActivityCatalogCommand.ActivityCatalogRowCommand findRowByBusNo(
         List<ImportActivityCatalogCommand.ActivityCatalogRowCommand> rows,
         String busNo) {
-        // 业务分支处理：空列表直接返回 null。
+        // 导入行列表为空时无法匹配 busNo，返回 null。
         if (rows == null || rows.isEmpty()) {
             return null;
         }
 
         // Loop：遍历列表查找匹配的业务编码。
         for (ImportActivityCatalogCommand.ActivityCatalogRowCommand row : rows) {
-            // 业务分支处理：空行跳过。
+            // 空行跳过，继续查找匹配 busNo。
             if (row == null) {
                 continue;
             }
-            // 业务分支处理：业务编码匹配则返回当前行。
-            if (StringUtils.equals(StringUtils.trim(row.getBusNo()), busNo)) {
+            // busNo 匹配则返回对应导入行，供新建后补子项。
+            if (Objects.equals(trimToNull(row.getBusNo()), busNo)) {
                 return row;
             }
         }

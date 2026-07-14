@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.temperaturesheet.response;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -18,7 +18,7 @@ import lombok.experimental.Accessors;
 @Schema(description = "保存体温单单槽响应")
 public class SaveNurseStationTemperatureSheetAtRecordedTimeResponse {
 
-    /** 持久化后主表 id。 */
+    /** 主表 id。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "主表 id")
     private Long vitalSignId;
@@ -27,7 +27,7 @@ public class SaveNurseStationTemperatureSheetAtRecordedTimeResponse {
     @Schema(description = "业务单号")
     private String busNo;
 
-    /** 前端聚焦的下一时点槽；末槽为 null。 */
+    /** 下一时点槽。 */
     @Schema(description = "下一时点槽")
     private String nextTimeSlot;
 }

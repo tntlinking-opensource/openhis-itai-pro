@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.encountermanage.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -36,11 +23,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 医生站-门诊信息列表行。 */
 @Schema(description = "医生站-门诊信息列表行")
 public class OutpatientInfoItemDto {
 
-    /** 就诊主键。 */
+    /** 就诊主键（列表锚点）。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊主键（列表锚点）")
     private Long encounterId;
@@ -49,15 +35,15 @@ public class OutpatientInfoItemDto {
     @Schema(description = "就诊业务号")
     private String encounterBusNo;
 
-    /** 就诊类别（与 EncounterClass.sortOrder 对齐的整型展示）。 */
+    /** 就诊类别整型展示（来源 class_enum 映射）。 */
     @Schema(description = "就诊类别整型展示（来源 class_enum 映射）")
     private Integer classEnum;
 
-    /** 就诊状态编码。 */
+    /** 就诊状态 code。 */
     @Schema(description = "就诊状态 code")
     private String statusEnum;
 
-    /** 状态展示文本。 */
+    /** 就诊状态展示文本。 */
     @Schema(description = "就诊状态展示文本")
     private String statusEnumText;
 
@@ -71,11 +57,11 @@ public class OutpatientInfoItemDto {
     @Schema(description = "患者姓名")
     private String patientName;
 
-    /** 性别编码（与 {@link com.openhis.health.domain.share.enums.AdministrativeGender#getCode()} 一致，直接透传读模型）。 */
+    /** 性别编码（AdministrativeGender：MALE/FEMALE/UNKNOWN）。 */
     @Schema(description = "性别编码（AdministrativeGender：MALE/FEMALE/UNKNOWN）")
     private String genderEnum;
 
-    /** 性别展示文案（由编码解析 AdministrativeGender.display）。 */
+    /** 性别展示文本。 */
     @Schema(description = "性别展示文本")
     private String genderEnumText;
 
@@ -85,7 +71,7 @@ public class OutpatientInfoItemDto {
     @Schema(description = "出生日期")
     private LocalDateTime birthDate;
 
-    /** 年龄文本。 */
+    /** 年龄展示文本。 */
     @Schema(description = "年龄展示文本")
     private String ageText;
 
@@ -93,7 +79,7 @@ public class OutpatientInfoItemDto {
     @Schema(description = "证件号")
     private String idCard;
 
-    /** 电话。 */
+    /** 联系电话。 */
     @Schema(description = "联系电话")
     private String phone;
 
@@ -129,7 +115,7 @@ public class OutpatientInfoItemDto {
 
     /** 就诊开始时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
-    /** 就诊开始时间。 */
+    /** 就诊开始时间（挂号/预约）。 */
     @Schema(description = "就诊开始时间（挂号/预约）")
     private LocalDateTime startTime;
 
@@ -145,15 +131,15 @@ public class OutpatientInfoItemDto {
     @Schema(description = "就诊结束时间")
     private LocalDateTime endTime;
 
-    /** 当日序号。 */
+    /** 当日展示序号。 */
     @Schema(description = "当日展示序号")
     private Integer displayOrder;
 
-    /** 初复诊文本。 */
+    /** 初诊/复诊展示文本。 */
     @Schema(description = "初诊/复诊展示文本")
     private String firstEnumText;
 
-    /** 费用总额。 */
+    /** 门诊费用总额。 */
     @Schema(description = "门诊费用总额")
     private BigDecimal totalAmount;
 
@@ -165,11 +151,11 @@ public class OutpatientInfoItemDto {
     @Schema(description = "已退款金额")
     private BigDecimal refundAmount;
 
-    /** 诊断快照（由读模型 JSON 列解析，禁止对外透出原始 JSON 串）。 */
+    /** 诊断列表。 */
     @Schema(description = "诊断列表")
     private List<EncounterDiagnosisRowDto> diagnoses;
 
-    /** 分诊级别整型展示。 */
+    /** 分诊级别（可能由字符串码映射为整数展示）。 */
     @Schema(description = "分诊级别（可能由字符串码映射为整数展示）")
     private Integer triageLevelEnum;
 
@@ -178,4 +164,24 @@ public class OutpatientInfoItemDto {
     /** 分诊时间。 */
     @Schema(description = "分诊时间")
     private LocalDateTime triageTime;
+
+    /** 是否工伤就诊。 */
+    @Schema(description = "是否工伤就诊")
+    private Boolean workInjuryEncounter;
+
+    /** 工伤审批态摘要。 */
+    @Schema(description = "工伤审批态摘要")
+    private String workInjuryApprovalStatusLabel;
+
+    /** 工伤契约 id。 */
+    @Schema(description = "工伤契约 id")
+    private Long workInjuryContractId;
+
+    /** 工伤审批是否有效。 */
+    @Schema(description = "工伤审批是否有效")
+    private Boolean workInjuryQualificationValid;
+
+    /** 是否建议医生站发起 2301。 */
+    @Schema(description = "是否建议医生站发起 2301")
+    private Boolean workInjuryNeeds2301Upload;
 }

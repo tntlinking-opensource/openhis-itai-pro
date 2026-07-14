@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -16,11 +16,11 @@ import lombok.experimental.Accessors;
 @Schema(description = "三测时点槽选项")
 public class TemperatureSheetTimeSlotOptionDto {
 
-    /** 槽 code（02～22）。 */
+    /** 槽 code。 */
     @Schema(description = "槽 code")
     private String code;
 
-    /** 展示文案（如 02:00）。 */
+    /** 展示文案。 */
     @Schema(description = "展示文案")
     private String displayText;
 }

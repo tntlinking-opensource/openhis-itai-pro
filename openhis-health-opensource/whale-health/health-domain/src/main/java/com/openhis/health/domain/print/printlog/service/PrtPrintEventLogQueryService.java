@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.print.printlog.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
@@ -38,6 +25,8 @@ import org.springframework.stereotype.Service;
  * <p>仅注入本聚合 {@link PrtPrintEventLogRepository}；跨聚合读不在此类扩展（B.6.4）。</p>
  * <p>读侧由本 QueryService 收口；条件下推 DB，禁止 App 直注 Repository。</p>
  * <p>DOC-CONFLICT：SDD §5.2 写 App 直用 Specification；health 规范 B.6.4 收口至 QueryService。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link PrtPrintEventLogRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor

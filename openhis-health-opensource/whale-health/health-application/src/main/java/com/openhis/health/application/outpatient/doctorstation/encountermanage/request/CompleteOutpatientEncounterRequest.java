@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.encountermanage.request;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -33,11 +20,10 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
-/** 医生站-门诊完诊请求。 */
 @Schema(description = "医生站-门诊完诊请求")
 public class CompleteOutpatientEncounterRequest {
 
-    /** 门诊就诊主键。 */
+    /** 门诊就诊标识。 */
     @NotNull(message = "就诊标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "门诊就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -45,11 +31,11 @@ public class CompleteOutpatientEncounterRequest {
 
     /** 完诊时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
-    /** 完诊时间。 */
+    /** 完诊时间，空则取当前时间。 */
     @Schema(description = "完诊时间，空则取当前时间")
     private LocalDateTime completedAt;
 
-    /** 小结摘要。 */
+    /** 就诊小结或摘要。 */
     @Schema(description = "就诊小结或摘要")
     private String summary;
 

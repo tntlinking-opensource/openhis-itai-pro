@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.servicelocationtemplate.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -35,7 +22,7 @@ import java.time.LocalTime;
 })
 public class SaveServiceLocationTemplateConfigItemRequest {
 
-    /** 物品表名（{@code med_medication_definition} 或 {@code adm_device_definition}）。 */
+    /** 物品表名。 */
     @NotBlank(message = "物品表名不能为空")
     @Schema(description = "物品表名", requiredMode = Schema.RequiredMode.REQUIRED)
     private String itemTable;
@@ -53,20 +40,20 @@ public class SaveServiceLocationTemplateConfigItemRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long defLocationId;
 
-    /** 具体物品定义标识；空表示通配。 */
+    /** 具体物品定义标识。 */
     @Schema(description = "具体物品定义标识")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long itemDefinitionId;
 
-    /** 用法编码；空表示不限用法。 */
+    /** 用法编码。 */
     @Schema(description = "用法编码")
     private String methodCode;
 
-    /** 生效开始时间；空表示全天。 */
+    /** 生效开始时间。 */
     @Schema(description = "生效开始时间")
     private LocalTime startTime;
 
-    /** 生效结束时间；空表示全天。 */
+    /** 生效结束时间。 */
     @Schema(description = "生效结束时间")
     private LocalTime endTime;
 

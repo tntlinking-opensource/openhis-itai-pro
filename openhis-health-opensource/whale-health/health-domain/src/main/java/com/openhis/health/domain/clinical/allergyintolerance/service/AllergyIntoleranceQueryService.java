@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.clinical.allergyintolerance.service;
 
 import com.openhis.health.domain.clinical.allergyintolerance.entity.AllergyIntolerance;
@@ -35,6 +22,8 @@ import java.util.List;
  * <p>职责：按就诊加载过敏记录列表，以及按患者+就诊派生「是否有过敏史」类标记。</p>
  *
  * <p>边界：只读；{@code encounterId}/{@code patientId} 缺失时返回空结果或 false 标记，不抛业务异常（读侧闭包）。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link AllergyIntoleranceRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -82,6 +71,12 @@ public class AllergyIntoleranceQueryService {
         return this.toRecordModel(entity);
     }
 
+    /**
+     * 过敏实体 → 记录读模型（字段一一对齐）。
+     *
+     * @param entity 聚合根
+     * @return 读模型
+     */
     private AllergyIntoleranceRecordQueryModel toRecordModel(AllergyIntolerance entity) {
         AllergyIntoleranceRecordQueryModel model = new AllergyIntoleranceRecordQueryModel();
         model.setId(entity.getId());

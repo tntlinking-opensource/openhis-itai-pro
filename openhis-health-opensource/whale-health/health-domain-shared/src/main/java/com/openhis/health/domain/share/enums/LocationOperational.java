@@ -1,37 +1,18 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 位置运营状态枚举。
  */
 public enum LocationOperational implements EnumInterface {
-    /**
-     * IN_USE。
-     */
+    /** 使用中（LocationOperational，编码 {@code IN_USE}）。 */
     IN_USE(0L, "IN_USE", "使用中", "", 1L),
-    /**
-     * NOT_IN_USE。
-     */
+    /** 未使用（LocationOperational，编码 {@code NOT_IN_USE}）。 */
     NOT_IN_USE(0L, "NOT_IN_USE", "未使用", "", 2L),
-    /**
-     * RESERVED（床位预约预留，GAP-ATD-007）。
-     */
+    /** 预留：床位预约预留（LocationOperational，编码 {@code RESERVED}）。 */
     RESERVED(0L, "RESERVED", "预留", "", 3L);
 
     private final Long codeSystemId;
@@ -40,9 +21,7 @@ public enum LocationOperational implements EnumInterface {
     private final String definition;
     private final Long sortOrder;
 
-    /**
-     * LocationOperational。
-     */
+    /** 枚举构造：绑定编码系统、持久化 code、展示名与排序。 */
     LocationOperational(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;
         this.code = code;

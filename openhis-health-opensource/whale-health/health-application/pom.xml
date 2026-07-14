@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
@@ -8,7 +8,7 @@
     <parent>
         <groupId>com.openhis</groupId>
         <artifactId>whale-health</artifactId>
-        <version>2.0.2-SNAPSHOT</version>
+        <version>2.0.3-SNAPSHOT</version>
     </parent>
     
     <artifactId>health-application</artifactId>
@@ -25,12 +25,6 @@
             <version>${project.version}</version>
         </dependency>
 
-        <dependency>
-            <groupId>com.openhis</groupId>
-            <artifactId>health-module-support</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        
         <!-- Health Domain Shared (for CodeSystemStatus enum) -->
         <dependency>
             <groupId>com.openhis</groupId>
@@ -62,34 +56,11 @@
             <artifactId>whale-identity</artifactId>
         </dependency>
 
-        <!-- 中性集成契约（第三方结算 / 预约衔接 Extension；实现由 Module adapter 可选装配） -->
-        <dependency>
-            <groupId>com.openhis</groupId>
-            <artifactId>health-integration-contracts</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-
         <!-- MRMS 首页 PDF -->
         <dependency>
             <groupId>com.github.librepdf</groupId>
             <artifactId>openpdf</artifactId>
             <version>1.3.30</version>
-        </dependency>
-
-        <!-- MRMS EMR 入院病情（optional，仅 support/emr） -->
-        <dependency>
-            <groupId>com.openhis</groupId>
-            <artifactId>emr-domain</artifactId>
-            <version>${project.version}</version>
-            <optional>true</optional>
-        </dependency>
-
-        <!-- MRMS 卷宗 PDF 导出（optional，with-emr 时启用 OpenPdfRenderer） -->
-        <dependency>
-            <groupId>com.openhis</groupId>
-            <artifactId>emr-application</artifactId>
-            <version>${project.version}</version>
-            <optional>true</optional>
         </dependency>
 
         
@@ -103,12 +74,6 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
-        <!-- MapStruct -->
-        <dependency>
-            <groupId>org.mapstruct</groupId>
-            <artifactId>mapstruct</artifactId>
-        </dependency>
-        
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -122,56 +87,16 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>1.3.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     
     <build>
         <plugins>
-            <!-- Maven Compiler Plugin - 显式配置以确保 MapStruct 注解处理器正确执行 -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
-                    <encoding>${project.build.sourceEncoding}</encoding>
-                    <!-- 关键：注解处理器路径配置，顺序很重要 -->
-                    <annotationProcessorPaths>
-                        <!-- Lombok -->
-                        <path>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                            <version>${lombok.version}</version>
-                        </path>
-                        <!-- MapStruct 已移除：TerminologyMapper 改用手动实现，避免 IDE 编译兼容性问题 -->
-                    </annotationProcessorPaths>
-                    <!-- 关键：禁用增量编译，确保所有类都在同一轮编译中 -->
-                    <useIncrementalCompilation>false</useIncrementalCompilation>
-                    <!-- 关键：确保生成的源代码目录被正确识别 -->
-                    <generatedSourcesDirectory>${project.build.directory}/generated-sources/annotations</generatedSourcesDirectory>
-                    <!-- 使用独立进程编译，避免与 IDE/DevTools 的类加载器冲突 -->
-                    <fork>true</fork>
-                </configuration>
-            </plugin>
-            
-            <!-- Build Helper Maven Plugin - 确保生成的源代码目录被添加到编译路径 -->
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>build-helper-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>add-sources</id>
-                        <phase>generate-sources</phase>
-                        <goals>
-                            <goal>add-source</goal>
-                        </goals>
-                        <configuration>
-                            <sources>
-                                <source>${project.build.directory}/generated-sources/annotations</source>
-                            </sources>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
@@ -185,11 +110,12 @@
                         <configuration>
                             <rules>
                                 <bannedDependencies>
-                                    <message>health-application 不得依赖扩展 Module contracts，请改用 health-integration-contracts Extension</message>
+                                    <message>health-application 不得依赖扩展 Module contracts，请改用 health-infrastructure/integration Extension SPI</message>
                                     <excludes>
-                                        <exclude>com.openhis:chs-jilin-*</exclude>
-                                        <exclude>com.openhis:booking-contracts</exclude>
-                                        <exclude>com.openhis:unionpay-bpc-*</exclude>
+                                        <exclude>com.openhis:module-chs-jilin-*</exclude>
+                                        <exclude>com.openhis:module-bpc-*</exclude>
+                                        <exclude>com.openhis:module-*-bridge</exclude>
+                                        <exclude>com.openhis:health-module-support</exclude>
                                     </excludes>
                                 </bannedDependencies>
                             </rules>

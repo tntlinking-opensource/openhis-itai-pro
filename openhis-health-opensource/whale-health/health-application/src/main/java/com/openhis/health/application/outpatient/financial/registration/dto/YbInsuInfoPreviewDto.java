@@ -1,15 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.registration.dto;
 
 import lombok.Data;
 import lombok.experimental.Accessors;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
 
 /** 1101 参保信息行（挂号待遇确认展示）。 */
 @Data

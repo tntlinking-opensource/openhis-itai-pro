@@ -1,43 +1,24 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.response;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.experimental.Accessors;
 
 /**
- *
- * <p>修订成功后领域将同号单据置回待审批/待审核等状态（以领域为准）；本响应携带业务单号与
- * {@link com.openhis.health.domain.share.enums.SupplyStatus#getCode()} 持久化字符串（B.10.8.1）。
- * 客户端应使用 {@link com.openhis.health.application.inventory.warehouse.inboundreceipt.request.GetInboundReceiptDetailRequest}
- * 回读最新 {@code rowVersion} 后再发起后续提交或再次编辑。</p>
+ * 编辑药库入库单响应（IF-WHS-IN-05）。
  */
 @Getter
 @Setter
+@Accessors(chain = true)
+@Schema(description = "编辑药库入库单 IF-WHS-IN-05")
 public class UpdateInboundReceiptResponse {
 
-    /**
-     * 业务单号（与请求 {@code busNo} 一致，修订不改号）。
-     */
+    /** 业务单号。 */
+    @Schema(description = "业务单号")
     private String busNo;
-
-    /**
-     * 修订完成后的单据状态持久化码（{@link com.openhis.health.domain.share.enums.SupplyStatus#getCode()}）。
-     */
-    private String statusEnum;
 }

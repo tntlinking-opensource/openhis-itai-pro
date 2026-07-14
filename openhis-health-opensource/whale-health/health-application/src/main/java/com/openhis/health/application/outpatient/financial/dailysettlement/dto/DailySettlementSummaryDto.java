@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.dailysettlement.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -52,8 +52,8 @@ public class DailySettlementSummaryDto {
     @Schema(description = "现金小计")
     private String cashAmount;
 
-    /** 自费现金总额。 */
-    @Schema(description = "自费现金总额")
+    /** 现金（原自费现金总额）。 */
+    @Schema(description = "现金")
     private String selfPayCashTotal;
 
     /** 自费 payment 条数。 */
@@ -108,10 +108,9 @@ public class DailySettlementSummaryDto {
     @Schema(description = "市医保总额")
     private String municipalInsuranceTotal;
 
-    /** 现金收入总额（各合同现金之和）。 */
-    @Schema(description = "现金收入总额")
+    /** 自费总额（接口字段名 totalCashIncome，对齐老日结单展示项；含微信/现金等全渠道净额）。 */
+    @Schema(description = "自费总额")
     private String totalCashIncome;
-
     /** 体检人次。 */
     @Schema(description = "体检人次")
     private Integer physicalExamCount;

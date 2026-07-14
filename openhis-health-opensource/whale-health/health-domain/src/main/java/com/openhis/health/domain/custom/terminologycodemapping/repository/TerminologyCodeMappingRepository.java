@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.terminologycodemapping.repository;
 
 import com.openhis.health.domain.custom.terminologycodemapping.entity.TerminologyCodeMapping;
@@ -30,6 +17,12 @@ import java.util.Optional;
  */
 public interface TerminologyCodeMappingRepository extends JpaRepository<TerminologyCodeMapping, Long> {
 
+    /**
+     * 按主键加载映射行（含已软删，供框架默认对齐）。
+     *
+     * @param id 映射主键
+     * @return 映射实体
+     */
     Optional<TerminologyCodeMapping> findById(Long id);
 
     /**
@@ -55,20 +48,41 @@ public interface TerminologyCodeMappingRepository extends JpaRepository<Terminol
         String targetItemNo
     );
 
+    /**
+     * 按源术语查全部有效映射（正向对照列表）。
+     *
+     * @param sourceItemTable 源术语表名
+     * @param sourceItemNo 源术语编码
+     * @return 映射列表
+     */
     List<TerminologyCodeMapping> findAllBySourceItemTableAndSourceItemNoAndActiveFlagTrue(
         String sourceItemTable,
         String sourceItemNo
     );
 
+    /**
+     * 按目标术语反查有效映射（反向对照）。
+     *
+     * @param sourceItemTable 源术语表名（限定域）
+     * @param targetItemNo 目标术语编码
+     * @return 映射列表
+     */
     List<TerminologyCodeMapping> findAllBySourceItemTableAndTargetItemNoAndActiveFlagTrue(
         String sourceItemTable,
         String targetItemNo
     );
 
+    /**
+     * 源编码模糊分页查询（维护页检索）。
+     *
+     * @param sourceItemTable 源术语表名
+     * @param sourceItemNo 源编码关键字
+     * @param pageable 分页参数
+     * @return 分页结果
+     */
     Page<TerminologyCodeMapping> findAllBySourceItemTableAndSourceItemNoContaining(
         String sourceItemTable,
         String sourceItemNo,
         Pageable pageable
     );
 }
-

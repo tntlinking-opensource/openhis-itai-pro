@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationdispense.queries.model;
 
 import lombok.Getter;
@@ -31,21 +18,38 @@ import java.math.BigDecimal;
 @Setter
 public class ReturnMedicineDetailReadRow {
 
+    /** 退药关联发药行主键 {@code med_medication_dispense.id}。 */
     private Long dispenseId;
+    /** 退药申请/药嘱主键 {@code med_medication_request.id}。 */
     private Long requestId;
+    /** 原正向药嘱主键（{@code service_id}，应退金额汇总锚点）。 */
     private Long refundOriginRequestId;
+    /** 药品定义主键。 */
     private Long itemId;
+    /** 药品名称。 */
     private String itemName;
+    /** 批号。 */
     private String lotNumber;
+    /** 退药数量（拆零）。 */
     private BigDecimal quantity;
+    /** 计量单位编码。 */
     private String unitCode;
+    /** 计量单位展示文案。 */
     private String unitCodeText;
+    /** 应退/已退金额。 */
     private BigDecimal totalPrice;
+    /** 开单医生姓名。 */
     private String doctorName;
+    /** 退药状态持久化码。 */
     private String refundEnum;
+    /** 退药状态展示文案。 */
     private String refundEnumText;
+    /** 药嘱状态持久化码。 */
     private String reqStatus;
+    /** 药嘱状态展示文案。 */
     private String reqStatusText;
+    /** 关联服务表名（药品/组套等）。 */
     private String serviceTable;
+    /** 追溯码。 */
     private String traceNo;
 }

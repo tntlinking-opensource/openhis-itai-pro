@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.servicedevicebinding.service;
 
 import com.openhis.health.application.basic.servicedevicebinding.assembler.ServiceDeviceBindingDisplayAssembler;
@@ -26,10 +13,10 @@ import com.openhis.health.application.basic.servicedevicebinding.request.ListDev
 import com.openhis.health.application.basic.servicedevicebinding.request.PageServiceDeviceBindingRequest;
 import com.openhis.health.application.basic.servicedevicebinding.request.SaveServiceDeviceBindingRequest;
 import com.openhis.health.application.basic.servicedevicebinding.request.ServiceDeviceBindingUnitOptionsByTargetRequest;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.common.converter.TextValueConverter;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.converter.TextValueConverter;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
 import com.openhis.health.domain.administration.devicedefinition.service.DeviceDefinitionQueryService;
 import com.openhis.health.domain.custom.servicedevicetemplate.command.DeleteBindingCommand;
@@ -50,7 +37,7 @@ import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -102,6 +89,9 @@ public class ServiceDeviceBindingAppService {
      * @return 初始化 DTO
      */
     public ServiceDeviceBindingInitDto init() {
+        // Gate：只读页初始化，不写库
+        // Pre：装配状态、范围、绑定类型、单位与来源/目标下拉
+        // Asm：映射页初始化响应
         ServiceDeviceBindingInitDto dto = new ServiceDeviceBindingInitDto();
         List<OptionDto> statusOptions = new ArrayList<>();
         statusOptions.add(new OptionDto(
@@ -136,10 +126,12 @@ public class ServiceDeviceBindingAppService {
      * @return 耗材定义下拉项
      */
     public List<OptionDto> listDeviceDefOptions(ListDeviceDefOptionsRequest request) {
+        // Pre：解析可选关键字
         String keyword = null;
         if (request != null) {
             keyword = request.getKeyword();
         }
+        // Asm：实时读库返回耗材下拉
         return serviceDeviceBindingDisplayAssembler.buildDeviceDefOptions(keyword);
     }
 
@@ -155,9 +147,9 @@ public class ServiceDeviceBindingAppService {
         if (query == null) {
             query = new PageServiceDeviceBindingRequest();
         }
-        // 绑定类型为必选项：须先选用法/诊疗 Tab 再查右侧绑定行
+        // Gate：绑定类型为必选项
         String typeCode = null;
-        if (StringUtils.isNotBlank(query.getBindType())) {
+        if (StringUtils.isNotEmpty(query.getBindType())) {
             ServiceDeviceTemplateTypeCode type =
                 EnumUtil.fromCode(ServiceDeviceTemplateTypeCode.class, query.getBindType().trim());
             if (type != null) {
@@ -169,13 +161,13 @@ public class ServiceDeviceBindingAppService {
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "绑定类型不能为空");
         }
         String rangeCode = ServiceDeviceTemplateRangeCode.HOSPITAL.getCode();
-        if (StringUtils.isNotBlank(query.getRangeCode())) {
+        if (StringUtils.isNotEmpty(query.getRangeCode())) {
             rangeCode = query.getRangeCode().trim();
         }
         int pageIndex = query.springPageIndex();
         int pageSize = query.getBoundedPageSize();
         String statusCode = null;
-        if (StringUtils.isNotBlank(query.getStatusEnum())) {
+        if (StringUtils.isNotEmpty(query.getStatusEnum())) {
             PublicationStatus status =
                 EnumUtil.fromCode(PublicationStatus.class, query.getStatusEnum().trim());
             if (status != null) {
@@ -187,8 +179,8 @@ public class ServiceDeviceBindingAppService {
             }
         }
         Page<ServiceDeviceTemplateQueryModel> page;
-        // 带来源 id 时按来源维度分页；否则按范围+类型浏览该类型下全部绑定
-        if (StringUtils.isNotBlank(query.getSourceId())) {
+        // Branch：带来源 id 时按来源维度分页；否则按范围+类型浏览
+        if (StringUtils.isNotEmpty(query.getSourceId())) {
             String itemTable = null;
             if (ServiceDeviceTemplateTypeCode.USAGE.getCode().equals(typeCode)) {
                 itemTable = TableNameConstants.TER_CONCEPT;
@@ -221,6 +213,7 @@ public class ServiceDeviceBindingAppService {
             content.add(serviceDeviceBindingMapper.toDto(model));
         }
         serviceDeviceBindingDisplayAssembler.enrichRows(content);
+        // Asm：映射分页响应
         PagedResult<ServiceDeviceBindingDto> result = new PagedResult<>();
         return PagedResultBuilder.build(result, content, page);
     }
@@ -233,10 +226,12 @@ public class ServiceDeviceBindingAppService {
      * @throws BusinessException 入参校验失败时
      */
     public Long saveBinding(SaveServiceDeviceBindingRequest request) {
+        // Gate：保存前业务校验与写路径操作人
         this.validateSaveRequest(request);
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT,
             "请先登录后再保存诊疗耗材绑定");
+        // Branch：无主键走创建，有主键走更新
         if (request.getId() == null) {
             return serviceDeviceTemplateDomainService.createBinding(
                 serviceDeviceBindingMapper.toCreateCommand(request, operatorId));
@@ -252,6 +247,7 @@ public class ServiceDeviceBindingAppService {
      * @throws BusinessException id 为空时
      */
     public void deleteBinding(Long id) {
+        // Gate：主键非空且须已登录操作人
         if (id == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "删除失败：绑定ID不能为空");
         }
@@ -261,6 +257,7 @@ public class ServiceDeviceBindingAppService {
         DeleteBindingCommand command = new DeleteBindingCommand();
         command.setBindingId(id);
         command.setOperatorId(operatorId);
+        // Cmd：逻辑删除绑定
         serviceDeviceTemplateDomainService.deleteBinding(command);
     }
 
@@ -272,7 +269,8 @@ public class ServiceDeviceBindingAppService {
      * @throws BusinessException 目标表或目标 id 不合法时
      */
     public ServiceDeviceBindingUnitOptionsDto unitOptionsByTarget(ServiceDeviceBindingUnitOptionsByTargetRequest request) {
-        if (request == null || StringUtils.isBlank(request.getTargetTable())) {
+        // Gate：目标表与目标 id 合法
+        if (request == null || StringUtils.isEmpty(request.getTargetTable())) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "目标表不能为空");
         }
@@ -285,37 +283,37 @@ public class ServiceDeviceBindingAppService {
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE);
 
         if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(table)) {
-            // 诊疗目标：取包装单位作为默认单位
+            // Branch：诊疗目标取包装单位作为默认单位
             List<ActivityDefinition> definitions = activityDefinitionQueryService.findAllByIds(List.of(targetId));
             if (!definitions.isEmpty() && definitions.get(0) != null) {
                 preferredUnitCode = definitions.get(0).getPackageUnitCode();
-                if (StringUtils.isNotBlank(preferredUnitCode)) {
+                if (StringUtils.isNotEmpty(preferredUnitCode)) {
                     String label = unitLabels.getOrDefault(preferredUnitCode.trim(), preferredUnitCode.trim());
                     options.add(new OptionDto(0L, preferredUnitCode.trim(), label));
                 }
             }
         } else if (TableNameConstants.ADM_DEVICE_DEFINITION.equals(table)) {
-            // 耗材目标：汇总各计量单位码并去重
+            // Branch：耗材目标汇总各计量单位码并去重
             DeviceDefinition device = deviceDefinitionQueryService.getDeviceDefinition(targetId);
             if (device != null) {
                 Set<String> unitCodes = new LinkedHashSet<>();
-                if (StringUtils.isNotBlank(device.getPurchaseUnitCode())) {
+                if (StringUtils.isNotEmpty(device.getPurchaseUnitCode())) {
                     unitCodes.add(device.getPurchaseUnitCode().trim());
                 }
-                if (StringUtils.isNotBlank(device.getStockUnitCode())) {
+                if (StringUtils.isNotEmpty(device.getStockUnitCode())) {
                     unitCodes.add(device.getStockUnitCode().trim());
                 }
-                if (StringUtils.isNotBlank(device.getPackageUnitCode())) {
+                if (StringUtils.isNotEmpty(device.getPackageUnitCode())) {
                     unitCodes.add(device.getPackageUnitCode().trim());
                 }
-                if (StringUtils.isNotBlank(device.getDoseUnitCode())) {
+                if (StringUtils.isNotEmpty(device.getDoseUnitCode())) {
                     unitCodes.add(device.getDoseUnitCode().trim());
                 }
-                if (StringUtils.isNotBlank(device.getSplitUnitCode())) {
+                if (StringUtils.isNotEmpty(device.getSplitUnitCode())) {
                     unitCodes.add(device.getSplitUnitCode().trim());
                 }
                 for (String unitCode : unitCodes) {
-                    if (StringUtils.isBlank(preferredUnitCode)) {
+                    if (StringUtils.isEmpty(preferredUnitCode)) {
                         preferredUnitCode = unitCode;
                     }
                     options.add(new OptionDto(0L, unitCode, unitLabels.getOrDefault(unitCode, unitCode)));
@@ -325,6 +323,7 @@ public class ServiceDeviceBindingAppService {
 
         dto.setUnitCode(preferredUnitCode);
         dto.setUnitOptions(options);
+        // Asm：返回默认单位与选项列表
         return dto;
     }
 
@@ -339,7 +338,7 @@ public class ServiceDeviceBindingAppService {
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "保存失败：请求体不能为空");
         }
         String typeCode = null;
-        if (StringUtils.isNotBlank(request.getBindType())) {
+        if (StringUtils.isNotEmpty(request.getBindType())) {
             ServiceDeviceTemplateTypeCode type =
                 EnumUtil.fromCode(ServiceDeviceTemplateTypeCode.class, request.getBindType().trim());
             if (type != null) {
@@ -350,15 +349,15 @@ public class ServiceDeviceBindingAppService {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "保存失败：绑定类型不能为空");
         }
-        if (StringUtils.isBlank(request.getSourceId())) {
+        if (StringUtils.isEmpty(request.getSourceId())) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "保存失败：来源项不能为空");
         }
-        if (StringUtils.isBlank(request.getTargetTable())) {
+        if (StringUtils.isEmpty(request.getTargetTable())) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "保存失败：目标表不能为空");
         }
-        if (StringUtils.isBlank(request.getTargetId())) {
+        if (StringUtils.isEmpty(request.getTargetId())) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "保存失败：目标ID不能为空");
         }
@@ -366,11 +365,11 @@ public class ServiceDeviceBindingAppService {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "保存失败：数量必须大于0");
         }
-        if (StringUtils.isBlank(request.getUnitCode())) {
+        if (StringUtils.isEmpty(request.getUnitCode())) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "保存失败：单位不能为空");
         }
-        if (StringUtils.isBlank(request.getStatusEnum())) {
+        if (StringUtils.isEmpty(request.getStatusEnum())) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_DEVICE_TEMPLATE_INVALID_ARGUMENT, "保存失败：状态不能为空");
         }

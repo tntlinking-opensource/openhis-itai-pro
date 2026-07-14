@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.costdetail.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -30,11 +17,10 @@ import java.math.BigDecimal;
  */
 @Data
 @Accessors(chain = true)
-/** 住院护士站费用汇总行。 */
 @Schema(description = "住院护士站费用汇总行")
 public class NurseStationCostSummaryLineDto {
 
-    /** 分组键：父项 product id。 */
+    /** 产品 id（分组键）。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "产品 id（分组键）")
     private Long productId;
@@ -59,19 +45,19 @@ public class NurseStationCostSummaryLineDto {
     @Schema(description = "分类展示名")
     private String categoryDisplay;
 
-    /** 组内任一条 unit_price（BR-IP-CDT-012）。 */
+    /** 展示单价。 */
     @Schema(description = "展示单价")
     private BigDecimal unitPrice;
 
-    /** 组内 total_price 净额合计。 */
+    /** 行合计净额。 */
     @Schema(description = "行合计净额")
     private BigDecimal lineTotalAmount;
 
-    /** 满包装整数数量（BR-IP-CDT-011）。 */
+    /** 满包装整数数量。 */
     @Schema(description = "满包装整数数量")
     private Integer packageQuantity;
 
-    /** 不足一包时小单位数量；满包可为 null。 */
+    /** 拆零余量。 */
     @Schema(description = "拆零余量")
     private BigDecimal splitUnitQuantity;
 
@@ -83,11 +69,11 @@ public class NurseStationCostSummaryLineDto {
     @Schema(description = "包装单位展示名")
     private String packageUnitDisplay;
 
-    /** 拆零/小单位 code。 */
+    /** 拆零单位 code。 */
     @Schema(description = "拆零单位 code")
     private String splitUnitCode;
 
-    /** 拆零/小单位展示名。 */
+    /** 拆零单位展示名。 */
     @Schema(description = "拆零单位展示名")
     private String splitUnitDisplay;
 

@@ -1,25 +1,12 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.costdetail.mapper;
 
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationCostDetailLineDto;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationCostDetailLineDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostDetailPresentationOptionDto;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationCostDetailTotalsDto;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationCostDetailTotalsDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostSummaryLineDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.request.QueryNurseStationInpatientCostDetailRequest;
 import com.openhis.health.application.inpatient.nursestation.costdetail.response.LoadNurseStationCostDetailPageInitResponse;
@@ -27,7 +14,7 @@ import com.openhis.health.application.inpatient.nursestation.costdetail.response
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.query.InpatientNurseStationCostDetailChargeRow;
-import com.openhis.health.module.querysupport.nursestation.NurseStationCostDetailReadAssembler;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.support.NurseStationCostDetailReadAssembler;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
@@ -75,6 +62,17 @@ public class NurseStationCostDetailMapperImpl implements NurseStationCostDetailM
         blockOrder.add(InpatientNurseStationConstants.COST_DETAIL_EXPENSE_BLOCK_SERVICE);
         blockOrder.add(InpatientNurseStationConstants.COST_DETAIL_EXPENSE_BLOCK_DEVICE);
         response.setExpenseBlockOrder(blockOrder);
+        response.setDefaultStatusEnum(InpatientNurseStationConstants.COST_DETAIL_STATUS_FILTER_PENDING_SETTLEMENT);
+        List<NurseStationCostDetailPresentationOptionDto> statusOptions = new ArrayList<>();
+        NurseStationCostDetailPresentationOptionDto pendingOption = new NurseStationCostDetailPresentationOptionDto();
+        pendingOption.setCode(InpatientNurseStationConstants.COST_DETAIL_STATUS_FILTER_PENDING_SETTLEMENT);
+        pendingOption.setDisplay(InpatientNurseStationConstants.COST_DETAIL_STATUS_FILTER_PENDING_SETTLEMENT_DISPLAY);
+        statusOptions.add(pendingOption);
+        NurseStationCostDetailPresentationOptionDto settledOption = new NurseStationCostDetailPresentationOptionDto();
+        settledOption.setCode(InpatientNurseStationConstants.COST_DETAIL_STATUS_FILTER_SETTLED);
+        settledOption.setDisplay(InpatientNurseStationConstants.COST_DETAIL_STATUS_FILTER_SETTLED_DISPLAY);
+        statusOptions.add(settledOption);
+        response.setStatusFilterOptions(statusOptions);
         return response;
     }
 
@@ -90,6 +88,9 @@ public class NurseStationCostDetailMapperImpl implements NurseStationCostDetailM
         command.setEncounterId(request.getEncounterId());
         command.setBusinessDateFrom(request.getDateFrom());
         command.setBusinessDateTo(request.getDateTo());
+        List<String> statusEnumIn = new ArrayList<>();
+        statusEnumIn.add(request.getStatusEnum().trim());
+        command.setStatusEnumIn(statusEnumIn);
         return command;
     }
 

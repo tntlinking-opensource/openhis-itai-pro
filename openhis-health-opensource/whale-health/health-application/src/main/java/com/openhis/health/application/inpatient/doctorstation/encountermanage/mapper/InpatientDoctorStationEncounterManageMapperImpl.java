@@ -1,26 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.encountermanage.mapper;
 
 import static com.openhis.whale.core.application.util.StringUtils.firstNonBlank;
 
-import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.dto.DoctorStationPatientQueueItemDto;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.dto.DoctorStationQueueDisplayEnrichment;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.request.PagePatientQueueRequest;
@@ -30,11 +17,10 @@ import com.openhis.health.domain.administration.encounter.queries.model.Inpatien
 import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.InpatientEncounterStatusDisplayUtil;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -62,12 +48,12 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
      * {@code doctorStationQueue} 固定 true 以激活读侧医生站专用过滤。</p>
      *
      * @param request HTTP 分页请求，允许为 null（仅装配默认队列条件）
-     * @return 住院就诊上下文分页查询，永不为 null；科室收窄由 {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver} 从会话解析
+     * @return 住院就诊上下文分页查询，永不为 null；科室收窄由 {@link com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver} 从会话解析
      */
     @Override
     public InpatientEncounterPageQuery toInpatientEncounterPageQuery(PagePatientQueueRequest request) {
         InpatientEncounterPageQuery query = new InpatientEncounterPageQuery();
-        if (request != null && StringUtils.isNotBlank(request.getKeyword())) {
+        if (request != null && StringUtils.isNotEmpty(request.getKeyword())) {
             // 姓名/住院号等模糊检索：去首尾空白，避免全空格触发无效 LIKE。
             query.setKeyword(request.getKeyword().trim());
         }
@@ -110,6 +96,7 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
         String overlayWardName = null;
         String overlayBedName = null;
         String overlayStatusText = null;
+        String overlayContract = null;
         if (displayOverlay != null) {
             // 展示覆盖：读模型列缺失时由 Assembler 从主档/位置补全。
             overlayBusNo = displayOverlay.getEncounterBusNo();
@@ -118,6 +105,7 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
             overlayWardName = displayOverlay.getWardName();
             overlayBedName = displayOverlay.getBedName();
             overlayStatusText = displayOverlay.getStatusEnumText();
+            overlayContract = displayOverlay.getContractDisplay();
         }
         String enrichmentHouseName = null;
         String enrichmentPinyin = null;
@@ -133,7 +121,7 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
         dto.setStatusEnum(row.getStatusEnum());
         // BR-IP-DOR-008：IMP 状态展示须走 InpatientEncounterStatusDisplayUtil，读模型/overlay 缺省时回落。
         String statusEnumText = firstNonBlank(row.getStatusEnumText(), overlayStatusText);
-        if (StringUtils.isBlank(statusEnumText)) {
+        if (StringUtils.isEmpty(statusEnumText)) {
             statusEnumText = InpatientEncounterStatusDisplayUtil.resolveDisplayTextForReadModel(
                 row.getStatusEnum(),
                 row.getTransferOrgId(),
@@ -168,6 +156,7 @@ public class InpatientDoctorStationEncounterManageMapperImpl implements Inpatien
         dto.setDiagnosisSummary(diagnosisSummary);
         dto.setPinyinCode(enrichmentPinyin);
         dto.setWubiCode(enrichmentWubi);
+        dto.setContractDisplay(overlayContract);
         return dto;
     }
 

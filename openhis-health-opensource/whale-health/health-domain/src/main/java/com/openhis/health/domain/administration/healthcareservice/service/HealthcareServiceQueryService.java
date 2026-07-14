@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.healthcareservice.service;
 
 import com.openhis.health.domain.administration.healthcareservice.entity.HealthcareService;
@@ -35,6 +22,7 @@ import lombok.RequiredArgsConstructor;
  * <p>职责：为挂号、排班等场景提供启用中的医疗服务列表及按主键加载详情。</p>
  *
  * <p>边界：只读；列表过滤条件为 {@link HealthcareServiceStatus#ACTIVE} 语义码。</p>
+ * <p>聚合边界：仅本聚合 {@link HealthcareServiceRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor

@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.mrms.volume.support;
 
 import com.openhis.health.application.mrms.homepage.dto.HomepageDto;
@@ -14,8 +14,9 @@ import com.openhis.health.domain.mrms.caserecord.entity.CaseRecord;
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecordHomepage;
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordDomainService;
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordHomepageDomainService;
-import com.openhis.health.integration.emr.EmrDocumentExtension;
-import com.openhis.health.integration.emr.dto.EmrDocumentSnapshot;
+import com.openhis.health.infrastructure.integration.emr.EmrDocumentExtension;
+import com.openhis.health.infrastructure.integration.emr.ExtensionIn.EmrDocumentListExtensionIn;
+import com.openhis.health.infrastructure.integration.emr.ExtensionOut.EmrDocumentQueryExtensionOut;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -30,7 +31,7 @@ import java.util.Set;
 /**
  * 卷宗 PDF 编排（volume IF {@code support}）：首页 OpenPDF + EMR 文书导出合并。
  *
- * <p>读病案/首页经 DomainService（B.6.4）；EMR 导出经 {@link EmrDocumentExtension} Integration Port。</p>
+ * <p>读病案/首页经 DomainService（B.6.4）；EMR 导出经 {@link EmrDocumentExtension} Extension。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -115,8 +116,10 @@ public class VolumePdfComposer {
         }
         List<Long> ids = new ArrayList<>();
         Set<Long> seen = new HashSet<>();
-        for (EmrDocumentSnapshot item : emrDocumentExtension.listByEncounter(
-                record.getPatientId(), record.getEncounterId())) {
+        for (EmrDocumentQueryExtensionOut item : emrDocumentExtension.listByEncounter(
+                new EmrDocumentListExtensionIn()
+                    .setPatientId(record.getPatientId())
+                    .setEncounterId(record.getEncounterId()))) {
             // 不可打印或无 id 的文书不纳入默认列表
             if (!item.isPrintable() || item.getDocumentId() == null) {
                 continue;

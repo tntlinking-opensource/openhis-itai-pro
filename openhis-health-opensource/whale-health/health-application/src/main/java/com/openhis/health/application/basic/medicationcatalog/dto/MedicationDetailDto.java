@@ -1,21 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
-/* (C)2026 */
 package com.openhis.health.application.basic.medicationcatalog.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -112,6 +98,7 @@ public class MedicationDetailDto extends MedicationDto {
     private String doseUnitCode;
 
     @Schema(description = "剂量单位编码对应的文本值", example = "克")
+    /** 剂量单位编码对应的文本值。 */
     private String doseUnitCode_dictText;
 
     /**
@@ -200,6 +187,7 @@ public class MedicationDetailDto extends MedicationDto {
     private String purchaseUnitCode;
 
     @Schema(description = "采购单位编码对应的文本值", example = "盒")
+    /** 采购单位编码对应的文本值。 */
     private String purchaseUnitCode_dictText;
 
     /**
@@ -240,6 +228,7 @@ public class MedicationDetailDto extends MedicationDto {
     private Integer doseFrom;
 
     @Schema(description = "剂量形式对应的文本值", example = "胶囊")
+    /** 剂量形式对应的文本值。 */
     private String doseFrom_dictText;
 
     /**
@@ -329,6 +318,7 @@ public class MedicationDetailDto extends MedicationDto {
     private String typeCode;
 
     @Schema(description = "财务类别编码对应的文本值", example = "西药")
+    /** 财务类别编码对应的文本值。 */
     private String typeCode_dictText;
 
     /**
@@ -386,6 +376,7 @@ public class MedicationDetailDto extends MedicationDto {
     private String antibioticCode;
 
     @Schema(description = "抗生素分类编码对应的文本值", example = "青霉素类")
+    /** 抗生素分类编码对应的文本值。 */
     private String antibioticCode_dictText;
 
     /**
@@ -443,6 +434,10 @@ public class MedicationDetailDto extends MedicationDto {
     @Schema(description = "医保等级 1-甲类 2-乙类 3-丙类", example = "2", allowableValues = {"1", "2", "3"})
     private Integer chrgitmLv;
 
+    /** 病案结算类型编码（术语 mr_settlement_type_code）。 */
+    @Schema(description = "病案结算类型编码", example = "16")
+    private String mrSettlementTypeCode;
+
     /**
      * 用药说明
      */
@@ -450,33 +445,42 @@ public class MedicationDetailDto extends MedicationDto {
     private String dosageInstruction;
 
     @Schema(description = "是否为基本药物 1-是 0-否", example = "1", allowableValues = {"0", "1"})
+    /** 是否为基本药物 1-是 0-否。 */
     private Boolean basicFlag;
 
 
     @Schema(description = "是否需要皮试 1-是 0-否", example = "0", allowableValues = {"0", "1"})
     private Boolean skinTestFlag;
 
-    /** 是否为注射药物 */
+    /** 是否为注射类药物 1-是 0-否。 */
     @Schema(description = "是否为注射类药物 1-是 0-否", example = "0", allowableValues = {"0", "1"})
     private Boolean injectFlag;
 
-    /** 儿童用药标志 */
+    /** 儿童用药标志 1-适用 0-不适用。 */
     @Schema(description = "儿童用药标志 1-适用 0-不适用", example = "1", allowableValues = {"0", "1"})
     private Boolean childrenFlag;
 
-    /** 是否自制 */
+    /** 是否为自制药品 1-是 0-否。 */
     @Schema(description = "是否为自制药品 1-是 0-否", example = "0", allowableValues = {"0", "1"})
     private Boolean selfFlag;
 
-    /** 是否为活性（与父类目录启用 activeFlag 无关） */
+    /** 是否为活性状态。 */
     @Schema(description = "是否为活性状态", example = "true")
     private Boolean potencyFlag;
 
-    /** 是否限制使用 */
+    /** 是否限制使用 1-是 0-否。 */
     @Schema(description = "是否限制使用 1-是 0-否", example = "0", allowableValues = {"0", "1"})
     private Boolean restrictedFlag;
 
-    /** 是否抗生素 */
+    /** 是否为抗生素 1-是 0-否。 */
     @Schema(description = "是否为抗生素 1-是 0-否", example = "1", allowableValues = {"0", "1"})
     private Boolean antibioticFlag;
+
+    /** 编辑业务码。 */
+    @Schema(description = "编辑业务码")
+    private String editabilityCode;
+
+    /** 编辑业务码说明。 */
+    @Schema(description = "编辑业务码说明")
+    private String editabilityMessage;
 }

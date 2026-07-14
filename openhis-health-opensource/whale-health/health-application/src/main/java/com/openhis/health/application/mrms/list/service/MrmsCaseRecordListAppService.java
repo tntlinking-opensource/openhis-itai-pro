@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.mrms.list.service;
 
 import com.openhis.health.application.mrms.list.dto.CaseRecordListItemDto;
@@ -11,8 +11,8 @@ import com.openhis.health.domain.mrms.caserecord.queries.CaseRecordPageQuery;
 import com.openhis.health.domain.mrms.caserecord.queries.model.CaseRecordListItemQueryModel;
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordQueryService;
 import com.openhis.health.domain.share.constants.MrmsErrorCodes;
-import com.openhis.health.module.common.validator.MrmsOperatorResolver;
-import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.application.mrms.support.MrmsOperatorResolver;
+import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;

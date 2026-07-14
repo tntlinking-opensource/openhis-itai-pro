@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.mrms.qc.support;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -24,7 +24,7 @@ import com.openhis.health.domain.share.constants.MrmsQcRuleCodes;
 import com.openhis.health.domain.share.enums.CaseRecordStatus;
 import com.openhis.health.domain.share.enums.QcDefectSeverity;
 import com.openhis.health.domain.share.enums.QcTrigger;
-import com.openhis.health.integration.emr.EmrDocumentExtension;
+import com.openhis.health.infrastructure.integration.emr.EmrDocumentExtension;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,7 +40,7 @@ import java.util.Set;
  * 质控规则执行器默认实现（qc IF {@code support}，实现 {@link QcRuleExecutor}）。
  *
  * <p>读：病案/首页经 DomainService，规则/必写文书经 {@link QcRuleQueryService}，就诊经
- * {@link EncounterQueryService}（B.6.4），EMR 经 Integration Port。
+ * {@link EncounterQueryService}（B.6.4），EMR 经 Extension。
  * 写：缺陷 upsert/关闭与 {@code qc_run} 经 {@link QcDefectDomainService}。</p>
  */
 @Slf4j

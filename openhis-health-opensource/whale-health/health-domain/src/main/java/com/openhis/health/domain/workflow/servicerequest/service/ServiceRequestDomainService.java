@@ -1,29 +1,19 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.servicerequest.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
+import com.openhis.health.domain.share.constants.InpatientAutoRollConstants;
+import com.openhis.health.domain.share.constants.ChargeItemDmConstants;
 import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.events.workflow.servicerequest.AutoRollServiceRequestCreatedEvent;
 import com.openhis.health.domain.share.events.workflow.servicerequest.DischargeRequestCreatedEvent;
@@ -31,6 +21,7 @@ import com.openhis.health.domain.share.events.workflow.servicerequest.NursePrici
 import com.openhis.health.domain.share.events.workflow.servicerequest.NursePricingServiceRequestRemovedEvent;
 import com.openhis.health.domain.share.events.workflow.servicerequest.NursingOrderUpsertedEvent;
 import com.openhis.health.domain.share.events.workflow.servicerequest.OutpatientRegistrationServiceRequestCreatedEvent;
+import com.openhis.health.domain.share.events.workflow.servicerequest.ServiceOrderRefundRequestedEvent;
 import com.openhis.health.domain.share.events.workflow.servicerequest.ServiceRequestCancelledEvent;
 import com.openhis.health.domain.share.events.workflow.servicerequest.ServiceRequestDraftCreatedEvent;
 import com.openhis.health.domain.share.events.workflow.servicerequest.ServiceRequestDraftEditedEvent;
@@ -48,9 +39,10 @@ import com.openhis.health.domain.workflow.servicerequest.command.CancelServiceRe
 import com.openhis.health.domain.workflow.servicerequest.command.CloneServiceRequestForPreservedChargeRegenerationCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateDischargeRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateExecutedServiceRequestCommand;
-import com.openhis.health.domain.workflow.servicerequest.command.CreateFromAutoRollCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.EnsureAutoRollBedLongTermServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateFromNursePricingCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateFromOutpatientRegistrationCommand;
+import com.openhis.health.domain.workflow.servicerequest.command.CreateServiceOrderRefundCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateServiceRequestDraftCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateTransferDepartmentRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.IncreasePrintCountCommand;
@@ -72,23 +64,27 @@ import com.openhis.health.domain.workflow.servicerequest.repository.ServiceReque
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
- * 服务申请写侧领域服务（非药品医嘱）。
+ * 服务申请（{@code wkf_service_request}）聚合写侧领域服务（非药品医嘱）。
  *
- * <p>覆盖草稿维护、签发/校对/停嘱/取消、住院转科与出院申请、护理医嘱、执行回写建单及门诊挂号/护士划价来源建单等。</p>
+ * <p>职责：草稿维护、签发/校对/停嘱/取消、住院转科与出院申请、护理医嘱、执行回写及挂号/护士划价来源建单。</p>
+ * <p>不变量：状态迁移门禁、子表明细与头记录一致；持久化先于服务申请领域事件（B.14）。</p>
+ * <p>仅注入本聚合 {@link ServiceRequestRepository} 与 {@link ServiceRequestDetailRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -109,7 +105,7 @@ public class ServiceRequestDomainService {
      */
     public Long createServiceRequestDraft(CreateServiceRequestDraftCommand command) {
         List<CreateServiceRequestDraftCommand.CreateServiceRequestDraftItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "创建服务申请草稿一次仅允许提交一条记录");
         }
@@ -158,23 +154,25 @@ public class ServiceRequestDomainService {
         if (item.getContractId() != null) {
             request.setContractId(item.getContractId());
         }
-        if (StringUtils.isNotBlank(item.getPrescriptionNo())) {
+        if (StringUtils.isNotEmpty(item.getPrescriptionNo())) {
             request.setPrescriptionNo(item.getPrescriptionNo().trim());
         }
         // Pre：皮试 companion 等派生场景须落库 based_on，供护士皮试 Tab 反查皮试药。
-        if (StringUtils.isNotBlank(item.getBasedOnTable()) && item.getBasedOnId() != null) {
+        if (StringUtils.isNotEmpty(item.getBasedOnTable()) && item.getBasedOnId() != null) {
             request.setBasedOnTable(item.getBasedOnTable().trim());
             request.setBasedOnId(item.getBasedOnId());
         }
         request.initDraft();
         request.setIsDeleted(Boolean.FALSE);
         request.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.SERVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
+        // 前置：护理级别须长期且同就诊唯一有效（BR-SRQ-020；医生站 BR-IP-ORD-026）
+        this.assertNursingLevelOrderRules(request, null, true);
         request.assertDraftCreatable();
 
         ServiceRequest saved = serviceRequestRepository.save(request);
 
         List<ServiceRequestDetail> details = this.buildDetails(saved.getId(), item.getDetailItems());
-        // 业务分支处理。
+        // 持久化：明细子表非空时先落库再发事件
         if (!details.isEmpty()) {
             serviceRequestDetailRepository.saveAll(details);
         }
@@ -192,13 +190,13 @@ public class ServiceRequestDomainService {
      */
     public void modifyServiceRequestDraft(ModifyServiceRequestDraftCommand command) {
         List<ModifyServiceRequestDraftCommand.ModifyServiceRequestDraftItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "修改服务申请草稿一次仅允许提交一条记录");
         }
 
         ModifyServiceRequestDraftCommand.ModifyServiceRequestDraftItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "修改服务申请草稿时 id 不能为空");
         }
@@ -208,35 +206,35 @@ public class ServiceRequestDomainService {
 
         List<String> changedFields = new ArrayList<>();
 
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getQuantity() != null) {
             if (request.getQuantity() == null || !item.getQuantity().equals(request.getQuantity())) {
                 changedFields.add(FieldNameConstants.QUANTITY);
             }
             request.setQuantity(item.getQuantity());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getUnitCode() != null) {
             if (!item.getUnitCode().equals(request.getUnitCode())) {
                 changedFields.add(FieldNameConstants.UNIT_CODE);
             }
             request.setUnitCode(item.getUnitCode());
         }
-        // 业务分支处理：临嘱可更新计划执行次数；长嘱传空不覆盖。
+        // 临嘱可更新计划执行次数；长嘱传空不覆盖。
         if (item.getExecutionCount() != null) {
             if (!item.getExecutionCount().equals(request.getExecutionCount())) {
                 changedFields.add(FieldNameConstants.EXECUTION_COUNT);
             }
             request.setExecutionCount(item.getExecutionCount());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getCategoryEnum() != null) {
             if (!item.getCategoryEnum().equals(request.getCategoryEnum())) {
                 changedFields.add(FieldNameConstants.CATEGORY_ENUM);
             }
             request.setCategoryEnum(item.getCategoryEnum());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getTherapyEnum() != null) {
             if (!item.getTherapyEnum().equals(request.getTherapyEnum())) {
                 changedFields.add(FieldNameConstants.THERAPY_ENUM);
@@ -244,110 +242,117 @@ public class ServiceRequestDomainService {
             request.setTherapyEnum(item.getTherapyEnum());
         }
         if (item.getRateCode() != null) {
-            String therapyForRate = item.getTherapyEnum() != null ? item.getTherapyEnum() : request.getTherapyEnum();
+            String therapyForRate;
+            if (item.getTherapyEnum() != null) {
+                therapyForRate = item.getTherapyEnum();
+            } else {
+                therapyForRate = request.getTherapyEnum();
+            }
             String normalizedRate = this.resolveRateCodeForTherapy(therapyForRate, item.getRateCode());
             if (!Objects.equals(normalizedRate, request.getRateCode())) {
                 changedFields.add(FieldNameConstants.RATE_CODE);
             }
             request.setRateCode(normalizedRate);
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getRequesterId() != null) {
             if (!item.getRequesterId().equals(request.getRequesterId())) {
                 changedFields.add(FieldNameConstants.REQUESTER_ID);
             }
             request.setRequesterId(item.getRequesterId());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getReasonText() != null) {
             if (!item.getReasonText().equals(request.getReasonText())) {
                 changedFields.add(FieldNameConstants.REASON_TEXT);
             }
             request.setReasonText(item.getReasonText());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getPerformerId() != null) {
             if (!item.getPerformerId().equals(request.getPerformerId())) {
                 changedFields.add(FieldNameConstants.PERFORMER_ID);
             }
             request.setPerformerId(item.getPerformerId());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getLocationId() != null) {
             if (!item.getLocationId().equals(request.getLocationId())) {
                 changedFields.add(FieldNameConstants.LOCATION_ID);
             }
             request.setLocationId(item.getLocationId());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getOrgId() != null) {
             if (!item.getOrgId().equals(request.getOrgId())) {
                 changedFields.add(FieldNameConstants.ORG_ID);
             }
             request.setOrgId(item.getOrgId());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getRemark() != null) {
             if (!item.getRemark().equals(request.getRemark())) {
                 changedFields.add(FieldNameConstants.REMARK);
             }
             request.setRemark(item.getRemark());
         }
-        // 业务分支处理。
+        // 排序号变更时记入变更摘要，供草稿编辑事件投影
         if (item.getSortNumber() != null && !Objects.equals(item.getSortNumber(), request.getSortNumber())) {
             changedFields.add(FieldNameConstants.SORT_NUMBER);
             request.setSortNumber(item.getSortNumber());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getEntrustContent() != null) {
             if (!item.getEntrustContent().equals(request.getEntrustContent())) {
                 changedFields.add(FieldNameConstants.ENTRUST_CONTENT);
             }
             request.setEntrustContent(item.getEntrustContent());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getOccurrenceStartTime() != null) {
             if (!item.getOccurrenceStartTime().equals(request.getOccurrenceStartTime())) {
                 changedFields.add(FieldNameConstants.OCCURRENCE_START_TIME);
             }
             request.setOccurrenceStartTime(item.getOccurrenceStartTime());
         }
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getOccurrenceEndTime() != null) {
             if (!item.getOccurrenceEndTime().equals(request.getOccurrenceEndTime())) {
                 changedFields.add(FieldNameConstants.OCCURRENCE_END_TIME);
             }
             request.setOccurrenceEndTime(item.getOccurrenceEndTime());
         }
-        // 业务分支处理：诊断定义绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
+        // 诊断定义绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
         if (item.getConditionDefinitionId() != null
             && !Objects.equals(item.getConditionDefinitionId(), request.getConditionDefinitionId())) {
             request.setConditionDefinitionId(item.getConditionDefinitionId());
             changedFields.add(FieldNameConstants.CONDITION_DEFINITION_ID);
         }
-        // 业务分支处理：就诊诊断绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
+        // 就诊诊断绑定与药品医嘱一致，仅当命令显式传入且值变化时落库并记入变更摘要。
         if (item.getEncounterDiagnosisId() != null
             && !Objects.equals(item.getEncounterDiagnosisId(), request.getEncounterDiagnosisId())) {
             request.setEncounterDiagnosisId(item.getEncounterDiagnosisId());
             changedFields.add(FieldNameConstants.ENCOUNTER_DIAGNOSIS_ID);
         }
 
+        // 前置：护理级别须长期（修改自身时不重复校验并发）
+        this.assertNursingLevelOrderRules(request, request.getId(), false);
         request.assertDraftCreatable();
 
         serviceRequestRepository.save(request);
 
-        // 业务分支处理。
+        // 全量明细对齐：命令携带子表时替换既有明细行
         if (item.getDetailItems() != null) {
             List<ServiceRequestDetail> existed = serviceRequestDetailRepository.findByServiceReqId(request.getId());
             for (ServiceRequestDetail detail : existed) {
                 detail.setIsDeleted(Boolean.TRUE);
             }
-            // 业务分支处理。
+            // 先软删既有明细，再按命令整批重插
             if (!existed.isEmpty()) {
                 serviceRequestDetailRepository.saveAll(existed);
             }
             List<ServiceRequestDetail> details = this.buildDetails(request.getId(), item.getDetailItems());
-            // 业务分支处理。
+            // 持久化：子表/集合非空时须先落库再发事件
             if (!details.isEmpty()) {
                 serviceRequestDetailRepository.saveAll(details);
             }
@@ -365,12 +370,12 @@ public class ServiceRequestDomainService {
      */
     public void removeServiceRequestDraft(RemoveServiceRequestDraftCommand command) {
         List<RemoveServiceRequestDraftCommand.RemoveServiceRequestDraftItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "删除服务申请草稿一次仅允许提交一条记录");
         }
         RemoveServiceRequestDraftCommand.RemoveServiceRequestDraftItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "删除服务申请草稿时 id 不能为空");
         }
@@ -386,7 +391,7 @@ public class ServiceRequestDomainService {
         }
 
         serviceRequestRepository.save(request);
-        // 业务分支处理。
+        // 持久化：明细子表非空时先落库再发事件
         if (!details.isEmpty()) {
             serviceRequestDetailRepository.saveAll(details);
         }
@@ -402,22 +407,24 @@ public class ServiceRequestDomainService {
      */
     public void signServiceRequest(SignServiceRequestCommand command) {
         List<SignServiceRequestCommand.SignServiceRequestItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "签发服务申请一次仅允许提交一条记录");
         }
 
         SignServiceRequestCommand.SignServiceRequestItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "签发服务申请时 id 不能为空");
         }
-        // 业务分支处理。
+        // 必填入参缺失时拒绝继续，避免写脏数据
         if (item.getSignerId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "签发服务申请时 signerId 不能为空");
         }
 
         ServiceRequest request = this.requireServiceRequest(item.getId());
+        // 前置：签发护理级别时同就诊不得存在其它有效护理级别医嘱
+        this.assertNursingLevelOrderRules(request, request.getId(), true);
         request.assertSignable();
 
         // 签发时间未传则默认为当前系统时间。
@@ -443,12 +450,12 @@ public class ServiceRequestDomainService {
      */
     public void withdrawSignedServiceRequest(WithdrawSignedServiceRequestCommand command) {
         List<WithdrawSignedServiceRequestCommand.WithdrawSignedServiceRequestItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "签退服务申请一次仅允许提交一条记录");
         }
         WithdrawSignedServiceRequestCommand.WithdrawSignedServiceRequestItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "签退服务申请时 id 不能为空");
         }
@@ -469,16 +476,16 @@ public class ServiceRequestDomainService {
      */
     public void verifyServiceRequest(VerifyServiceRequestCommand command) {
         List<VerifyServiceRequestCommand.VerifyServiceRequestItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "校对服务申请一次仅允许提交一条记录");
         }
         VerifyServiceRequestCommand.VerifyServiceRequestItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "校对服务申请时 id 不能为空");
         }
-        // 业务分支处理。
+        // 必填入参缺失时拒绝继续，避免写脏数据
         if (item.getPerformerCheckId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "校对服务申请时 performerCheckId 不能为空");
         }
@@ -527,12 +534,12 @@ public class ServiceRequestDomainService {
      */
     public void rejectServiceRequestToDraft(RejectServiceRequestToDraftCommand command) {
         List<RejectServiceRequestToDraftCommand.RejectServiceRequestToDraftItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "退回草稿一次仅允许提交一条记录");
         }
         RejectServiceRequestToDraftCommand.RejectServiceRequestToDraftItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "退回草稿时 id 不能为空");
         }
@@ -560,12 +567,12 @@ public class ServiceRequestDomainService {
      */
     public void stopServiceRequest(StopServiceRequestCommand command) {
         List<StopServiceRequestCommand.StopServiceRequestItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "停嘱一次仅允许提交一条记录");
         }
         StopServiceRequestCommand.StopServiceRequestItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "停嘱时 id 不能为空");
         }
@@ -615,12 +622,12 @@ public class ServiceRequestDomainService {
      */
     public void cancelServiceRequest(CancelServiceRequestCommand command) {
         List<CancelServiceRequestCommand.CancelServiceRequestItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "取消一次仅允许提交一条记录");
         }
         CancelServiceRequestCommand.CancelServiceRequestItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "取消时 id 不能为空");
         }
@@ -634,6 +641,58 @@ public class ServiceRequestDomainService {
     }
 
     /**
+     * 申请退诊疗（创建负向服务申请单，对齐 openhis 与药/耗负向单口径）。
+     *
+     * @param command 退诊疗创建命令
+     * @return 新建负向单标识
+     */
+    public Long createServiceOrderRefund(CreateServiceOrderRefundCommand command) {
+        List<CreateServiceOrderRefundCommand.CreateServiceOrderRefundItemCommand> items = command.resolveItems();
+        // Pre：写命令一次仅处理一条，防止批量误写。
+        if (items.size() != 1) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "申请退诊疗一次仅允许提交一条记录");
+        }
+        CreateServiceOrderRefundCommand.CreateServiceOrderRefundItemCommand item = items.get(0);
+        if (item.getSourceRequestId() == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "申请退诊疗时 sourceRequestId 不能为空");
+        }
+        if (item.getRefundQuantity() == null) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "申请退诊疗时 refundQuantity 不能为空");
+        }
+        if (item.getRefundQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "申请退诊疗时 refundQuantity 必须大于 0");
+        }
+        ServiceRequest source = this.requireServiceRequest(item.getSourceRequestId());
+        this.assertServiceRequestRefundableForNegativeOrder(source);
+        // Pre：同一原单仅允许一条未完成负向退诊疗申请。
+        this.assertNoOpenRefundServiceOrder(source.getId());
+        ServiceRequest refund = this.buildRefundServiceRequestFromSource(source, item.getRefundQuantity(), item.getReason());
+        refund.setBusNo(businessSequenceService.getSeqByDay(
+            AggregateTypeConstants.SERVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
+        ServiceRequest saved = serviceRequestRepository.save(refund);
+        List<ServiceRequestDetail> sourceDetails = serviceRequestDetailRepository.findByServiceReqId(source.getId());
+        List<ServiceRequestDetail> newDetails = new ArrayList<>();
+        for (ServiceRequestDetail row : sourceDetails) {
+            if (Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            ServiceRequestDetail copy = new ServiceRequestDetail();
+            copy.setServiceReqId(saved.getId());
+            copy.setTargetTable(row.getTargetTable());
+            copy.setTargetId(row.getTargetId());
+            copy.setRemark(row.getRemark());
+            copy.setIsDeleted(Boolean.FALSE);
+            copy.assertPersistable();
+            newDetails.add(copy);
+        }
+        if (!newDetails.isEmpty()) {
+            serviceRequestDetailRepository.saveAll(newDetails);
+        }
+        domainEventPublisher.publish(new ServiceOrderRefundRequestedEvent(saved.getId(), source.getId()));
+        return saved.getId();
+    }
+
+    /**
      * 开立住院转科申请草稿：校验同就诊无未完成转科/出院申请，分配 busNo 并发布创建事件。
      *
      * @param command 批次内一条，须含 encounterId、原因等
@@ -642,16 +701,16 @@ public class ServiceRequestDomainService {
      */
     public Long createTransferDepartmentRequest(CreateTransferDepartmentRequestCommand command) {
         List<CreateTransferDepartmentRequestCommand.CreateTransferDepartmentRequestItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "开立转科申请一次仅允许提交一条记录");
         }
         CreateTransferDepartmentRequestCommand.CreateTransferDepartmentRequestItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 必填入参缺失时拒绝继续，避免写脏数据
         if (item.getEncounterId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "开立转科申请时 encounterId 不能为空");
         }
-        // 业务分支处理。
+        // 业务条件分支：见相邻判断的业务后果
         if (this.checkDuplicateTransferOrDischargeRequest(item.getEncounterId())) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "同一就诊存在未完成的转科/出院申请，禁止重复开立");
         }
@@ -666,7 +725,7 @@ public class ServiceRequestDomainService {
         request.setIsDeleted(Boolean.FALSE);
         request.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.SERVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         request.setQuantity(BigDecimal.ONE);
-        request.setUnitCode("EA");
+        request.setUnitCode(ChargeItemDmConstants.DEFAULT_QUANTITY_UNIT);
         request.setActivityId(0L);
         if (item.getPatientId() != null) {
             request.setPatientId(item.getPatientId());
@@ -689,16 +748,16 @@ public class ServiceRequestDomainService {
      */
     public Long createDischargeRequest(CreateDischargeRequestCommand command) {
         List<CreateDischargeRequestCommand.CreateDischargeRequestItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "开立出院申请一次仅允许提交一条记录");
         }
         CreateDischargeRequestCommand.CreateDischargeRequestItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 必填入参缺失时拒绝继续，避免写脏数据
         if (item.getEncounterId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "开立出院申请时 encounterId 不能为空");
         }
-        // 业务分支处理。
+        // 业务条件分支：见相邻判断的业务后果
         if (this.checkDuplicateTransferOrDischargeRequest(item.getEncounterId())) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "同一就诊存在未完成的转科/出院申请，禁止重复开立");
         }
@@ -714,7 +773,7 @@ public class ServiceRequestDomainService {
         request.setIsDeleted(Boolean.FALSE);
         request.setBusNo(businessSequenceService.getSeqByDay(AggregateTypeConstants.SERVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         request.setQuantity(BigDecimal.ONE);
-        request.setUnitCode("EA");
+        request.setUnitCode(ChargeItemDmConstants.DEFAULT_QUANTITY_UNIT);
         request.setActivityId(0L);
         if (item.getPatientId() != null) {
             request.setPatientId(item.getPatientId());
@@ -737,12 +796,12 @@ public class ServiceRequestDomainService {
      */
     public Long upsertNursingOrder(UpsertNursingOrderCommand command) {
         List<UpsertNursingOrderCommand.UpsertNursingOrderItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "维护护理医嘱一次仅允许提交一条记录");
         }
         UpsertNursingOrderCommand.UpsertNursingOrderItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 必填入参缺失时拒绝继续，避免写脏数据
         if (item.getEncounterId() == null || item.getCategoryEnum() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "维护护理医嘱时 encounterId/categoryEnum 不能为空");
         }
@@ -750,12 +809,12 @@ public class ServiceRequestDomainService {
         List<ServiceRequest> existed = serviceRequestRepository.findByEncounterIdAndCategoryEnumIn(
             item.getEncounterId(), List.of(String.valueOf(item.getCategoryEnum())));
         for (ServiceRequest request : existed) {
-            // 业务分支处理。
+            // 业务条件分支：见相邻判断的业务后果
             if (request.getStatusEnum() != null && !RequestStatus.STOPPED.getCode().equals(request.getStatusEnum())) {
                 request.toStopped();
             }
         }
-        // 业务分支处理。
+        // 持久化：子表/集合非空时须先落库再发事件
         if (!existed.isEmpty()) {
             serviceRequestRepository.saveAll(existed);
         }
@@ -788,13 +847,13 @@ public class ServiceRequestDomainService {
      */
     public Long createExecutedServiceRequest(CreateExecutedServiceRequestCommand command) {
         List<CreateExecutedServiceRequestCommand.CreateExecutedServiceRequestItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "创建执行完成申请一次仅允许提交一条记录");
         }
         CreateExecutedServiceRequestCommand.CreateExecutedServiceRequestItemCommand item = items.get(0);
-        // 业务分支处理。
-        if (StringUtils.isBlank(item.getBasedOnTable()) || item.getBasedOnId() == null) {
+        // 必填入参缺失时拒绝继续，避免写脏数据
+        if (StringUtils.isEmpty(item.getBasedOnTable()) || item.getBasedOnId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "创建执行完成申请时 basedOnTable/basedOnId 不能为空");
         }
         ServiceRequest request = new ServiceRequest();
@@ -863,7 +922,7 @@ public class ServiceRequestDomainService {
                 throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_NOT_FOUND, "服务申请不存在");
             }
             request.assertExecutionDerivedRemovable();
-            // 业务分支处理：主档与明细同事务软删，与 removeServiceRequestDraft 口径一致。
+            // 主档与明细同事务软删，与 removeServiceRequestDraft 口径一致。
             request.setIsDeleted(Boolean.TRUE);
             toSaveRequests.add(request);
             List<ServiceRequestDetail> details = serviceRequestDetailRepository.findByServiceReqId(request.getId());
@@ -901,7 +960,7 @@ public class ServiceRequestDomainService {
         }
         List<ServiceRequest> toSave = new ArrayList<>();
         for (CreateFromNursePricingCommand.CreateFromNursePricingItemCommand item : items) {
-            boolean hasBasedOnTable = StringUtils.isNotBlank(item.getBasedOnTable());
+            boolean hasBasedOnTable = StringUtils.isNotEmpty(item.getBasedOnTable());
             boolean hasBasedOnId = item.getBasedOnId() != null;
             // 父锚点表名与主键须成对出现，避免半填导致追溯歧义。
             if (hasBasedOnTable != hasBasedOnId) {
@@ -952,86 +1011,92 @@ public class ServiceRequestDomainService {
     }
 
     /**
-     * 住院滚费来源建单：批量置为已校对并分配 busNo，发布滚费建单事件（AS-IP-NUR-013 IF-IP-ARG-08；DM-WKF-004 §6.1.20）。
+     * 床位自动计费配置 ensure 长期 VERIFIED 床位诊疗申请（AS-IP-NUR-013 BR-IP-ARG-019；DM-WKF-004 §6.1.20）。
      *
-     * <p>与 {@link #createFromNursePricing} 同构，但 {@code generate_source_enum=auto-roll-fees}，且须携带诊疗类目与费用发生时刻。</p>
+     * <p>按 {@code based_on=cus_charge_item_auto_gen.id} 幂等；滚费任务对该 SR 走 IF-IP-EXE-02 执行，不再按日落临时 SR。</p>
      *
-     * @param command 批次内多条滚费落账项
-     * @return 新申请主键列表（顺序与入参一致）
+     * @param command 配置锚点与数量等
+     * @return 长期床位诊疗申请主键
      * @throws BusinessException 不变式失败时
      */
-    public List<Long> createFromAutoRoll(CreateFromAutoRollCommand command) {
-        List<CreateFromAutoRollCommand.CreateFromAutoRollItemCommand> items = command.resolveItems();
-        // Pre：滚费批次须至少一行，由应用层整批事务收口。
-        if (items.isEmpty()) {
+    public Long ensureAutoRollBedLongTermServiceRequest(EnsureAutoRollBedLongTermServiceRequestCommand command) {
+        if (command == null || command.getRuleId() == null) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
-                "住院滚费建单至少须提交一条记录");
+                "床位滚费 ensure 时 ruleId 不能为空");
         }
-        List<ServiceRequest> toSave = new ArrayList<>();
-        // Loop：逐条校验滚费落账必填项并组装 VERIFIED 诊疗申请。
-        for (CreateFromAutoRollCommand.CreateFromAutoRollItemCommand item : items) {
-            if (item.getEncounterId() == null) {
-                throw new BusinessException(
-                    ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
-                    "住院滚费建单时 encounterId 不能为空");
-            }
-            if (item.getPatientId() == null) {
-                throw new BusinessException(
-                    ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
-                    "住院滚费建单时 patientId 不能为空");
-            }
-            if (item.getActivityId() == null) {
-                throw new BusinessException(
-                    ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
-                    "住院滚费建单时 activityId 不能为空");
-            }
-            if (StringUtils.isBlank(item.getCategoryEnum())) {
-                throw new BusinessException(
-                    ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
-                    "住院滚费建单时 categoryEnum 不能为空");
-            }
-            if (item.getOccurrenceTime() == null) {
-                throw new BusinessException(
-                    ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
-                    "住院滚费建单时 occurrenceTime 不能为空");
-            }
-            ServiceRequest request = new ServiceRequest();
-            request.setEncounterId(item.getEncounterId());
-            request.setPatientId(item.getPatientId());
-            request.setActivityId(item.getActivityId());
-            request.setQuantity(item.getQuantity());
-            request.setUnitCode(item.getUnitCode());
-            request.setRequesterId(item.getRequesterId());
-            request.setGenerateSourceEnum(GenerateSource.AUTO_ROLL_FEES.getCode());
-            request.setCategoryEnum(item.getCategoryEnum());
-            request.setTherapyEnum(TherapyType.TEMPORARY.getCode());
-            request.setIsDeleted(Boolean.FALSE);
-            request.setBusNo(businessSequenceService.getSeqByDay(
-                AggregateTypeConstants.SERVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
-            // 滚费不经校对 Tab，创建即 VERIFIED，与护士划价同构（BR-IP-ARG-015）。
-            request.initVerified();
-            request.setPerformerCheckId(command.getOperatorId());
-            request.setCheckTime(item.getOccurrenceTime());
-            request.assertDraftCreatable();
-            toSave.add(request);
+        // Pre：同配置规则已存在未删 auto-roll 长期医嘱则直接复用
+        Optional<ServiceRequest> existing = serviceRequestRepository.findFirstByBasedOnTableAndBasedOnIdAndGenerateSourceEnumAndIsDeletedFalse(
+            TableNameConstants.CUS_CHARGE_ITEM_AUTO_GEN,
+            command.getRuleId(),
+            GenerateSource.AUTO_ROLL_FEES.getCode());
+        if (existing.isPresent()) {
+            return existing.get().getId();
         }
-        List<ServiceRequest> saved = serviceRequestRepository.saveAll(toSave);
-        List<Long> ids = new ArrayList<>();
-        // Event：save 完成后逐条发布滚费建单事件，供费用读侧区分 auto-roll-fees 来源。
-        for (ServiceRequest row : saved) {
-            ids.add(row.getId());
-            domainEventPublisher.publish(new AutoRollServiceRequestCreatedEvent(
-                row.getId(),
-                row.getEncounterId(),
-                row.getPatientId(),
-                row.getActivityId(),
-                row.getQuantity(),
-                row.getUnitCode(),
-                row.getCategoryEnum(),
-                row.getStatusEnum()));
+        if (command.getEncounterId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "床位滚费 ensure 时 encounterId 不能为空");
         }
-        return ids;
+        if (command.getPatientId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "床位滚费 ensure 时 patientId 不能为空");
+        }
+        if (command.getActivityId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "床位滚费 ensure 时 activityId 不能为空");
+        }
+        if (command.getRequesterId() == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "床位滚费 ensure 时 requesterId 不能为空");
+        }
+        BigDecimal quantity = command.getQuantity();
+        if (quantity == null || quantity.compareTo(BigDecimal.ZERO) <= 0) {
+            quantity = BigDecimal.ONE;
+        }
+        String unitCode = command.getUnitCode();
+        if (StringUtils.isEmpty(unitCode)) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "床位滚费 ensure 时 unitCode 不能为空（须为诊疗活动 packageUnitCode 持久化码）");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        ServiceRequest request = new ServiceRequest();
+        request.setEncounterId(command.getEncounterId());
+        request.setPatientId(command.getPatientId());
+        request.setActivityId(command.getActivityId());
+        request.setQuantity(quantity);
+        request.setUnitCode(unitCode);
+        request.setRequesterId(command.getRequesterId());
+        request.setGenerateSourceEnum(GenerateSource.AUTO_ROLL_FEES.getCode());
+        request.setCategoryEnum(ServiceRequestCategoryConstants.SERVICE_CATEGORY_BED_SERVICE);
+        request.setTherapyEnum(TherapyType.LONG_TERM.getCode());
+        request.setRateCode(InpatientAutoRollConstants.AUTO_ROLL_LONG_TERM_DAILY_RATE_CODE);
+        request.setBasedOnTable(TableNameConstants.CUS_CHARGE_ITEM_AUTO_GEN);
+        request.setBasedOnId(command.getRuleId());
+        request.setIsDeleted(Boolean.FALSE);
+        request.setBusNo(businessSequenceService.getSeqByDay(
+            AggregateTypeConstants.SERVICE_REQUEST, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
+        // 配置保存即 VERIFIED，不经护士校对 Tab；禁止护士站手动执行（BR-IP-ARG-019）
+        request.initVerified();
+        request.setPerformerCheckId(command.getOperatorId());
+        request.setCheckTime(now);
+        request.assertDraftCreatable();
+        ServiceRequest saved = serviceRequestRepository.save(request);
+        // Event：供费用读侧区分 auto-roll-fees 配置医嘱
+        domainEventPublisher.publish(new AutoRollServiceRequestCreatedEvent(
+            saved.getId(),
+            saved.getEncounterId(),
+            saved.getPatientId(),
+            saved.getActivityId(),
+            saved.getQuantity(),
+            saved.getUnitCode(),
+            saved.getCategoryEnum(),
+            saved.getStatusEnum()));
+        return saved.getId();
     }
 
     /**
@@ -1104,7 +1169,7 @@ public class ServiceRequestDomainService {
      */
     public Long createFromOutpatientRegistration(CreateFromOutpatientRegistrationCommand command) {
         List<CreateFromOutpatientRegistrationCommand.CreateFromOutpatientRegistrationItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "挂号登记建单一次仅允许提交一条记录");
         }
@@ -1147,12 +1212,12 @@ public class ServiceRequestDomainService {
      */
     public void increasePrintCount(IncreasePrintCountCommand command) {
         List<IncreasePrintCountCommand.IncreasePrintCountItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "增加打印次数一次仅允许提交一条记录");
         }
         IncreasePrintCountCommand.IncreasePrintCountItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 命令显式传入该字段时才覆盖写，null 表示本条不变更
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "增加打印次数时 id 不能为空");
         }
@@ -1317,7 +1382,7 @@ public class ServiceRequestDomainService {
      */
     private List<ServiceRequestDetail> buildDetails(Long serviceRequestId, List<?> detailItems) {
         List<ServiceRequestDetail> details = new ArrayList<>();
-        // 业务分支处理：空列表直接返回。
+        // 空列表直接返回，批量操作无目标行时幂等。
         if (detailItems == null || detailItems.isEmpty()) {
             return details;
         }
@@ -1357,7 +1422,7 @@ public class ServiceRequestDomainService {
      */
     private String resolveRateCodeForTherapy(String therapyEnum, String rateCode) {
         if (TherapyType.LONG_TERM.getCode().equals(therapyEnum)) {
-            if (StringUtils.isBlank(rateCode)) {
+            if (StringUtils.isEmpty(rateCode)) {
                 throw new BusinessException(
                     ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
                     "长期诊疗医嘱须指定频次");
@@ -1365,6 +1430,60 @@ public class ServiceRequestDomainService {
             return rateCode.trim();
         }
         return null;
+    }
+
+    /**
+     * 护理级别（category 26）开立/修改/签发不变量（BR-SRQ-020；AS-IP-DOR-003 BR-IP-ORD-026）。
+     *
+     * @param request            待持久化服务申请
+     * @param excludeRequestId   并发校验排除的主键（修改/签发自身）
+     * @param checkConcurrency   是否校验同就诊唯一有效护理级别
+     */
+    private void assertNursingLevelOrderRules(ServiceRequest request, Long excludeRequestId, boolean checkConcurrency) {
+        if (request == null) {
+            return;
+        }
+        if (!ServiceRequestCategoryConstants.SERVICE_CATEGORY_NURSING.equals(request.getCategoryEnum())) {
+            return;
+        }
+        // 护理级别仅允许长期，禁止临时开立
+        if (!TherapyType.LONG_TERM.getCode().equals(request.getTherapyEnum())) {
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "护理级别医嘱仅允许开立长期医嘱");
+        }
+        if (!checkConcurrency) {
+            return;
+        }
+        if (request.getEncounterId() == null) {
+            return;
+        }
+        List<ServiceRequest> rows = serviceRequestRepository.findByEncounterIdAndCategoryEnumIn(
+            request.getEncounterId(), List.of(ServiceRequestCategoryConstants.SERVICE_CATEGORY_NURSING));
+        for (ServiceRequest row : rows) {
+            if (row == null) {
+                continue;
+            }
+            if (excludeRequestId != null && excludeRequestId.equals(row.getId())) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            if (!GenerateSource.DOCTOR_PRESCRIPTION.getCode().equals(row.getGenerateSourceEnum())) {
+                continue;
+            }
+            if (RequestStatus.STOPPED.getCode().equals(row.getStatusEnum())) {
+                continue;
+            }
+            if (RequestStatus.CANCELLED.getCode().equals(row.getStatusEnum())) {
+                continue;
+            }
+            // 换级须先停旧再开新，禁止并发两条有效护理级别
+            throw new BusinessException(
+                ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
+                "已存在有效护理级别医嘱，请先停嘱后再开立新的护理级别");
+        }
     }
 
     /**
@@ -1388,5 +1507,90 @@ public class ServiceRequestDomainService {
             }
         }
         return false;
+    }
+
+    /**
+     * 断言原服务申请允许生成负向退诊疗单（须已完成态）。
+     *
+     * @param source 原服务申请
+     */
+    private void assertServiceRequestRefundableForNegativeOrder(ServiceRequest source) {
+        if (Boolean.TRUE.equals(source.getIsDeleted())) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "已删除服务申请不允许申请退诊疗");
+        }
+        if (!RequestStatus.COMPLETED.getCode().equals(source.getStatusEnum())) {
+            throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "仅已完成诊疗申请允许生成负向退诊疗单");
+        }
+    }
+
+    /**
+     * 断言原服务申请不存在未完结的负向退诊疗单。
+     *
+     * @param originRequestId 原服务申请主键
+     */
+    private void assertNoOpenRefundServiceOrder(Long originRequestId) {
+        List<ServiceRequest> existing = this.serviceRequestRepository.findByRefundServiceIdIn(
+            Collections.singletonList(originRequestId));
+        for (ServiceRequest row : existing) {
+            if (Boolean.TRUE.equals(row.getIsDeleted())) {
+                continue;
+            }
+            if (!RequestStatus.COMPLETED.getCode().equals(row.getStatusEnum())) {
+                throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "已申请退费，请勿重复申请");
+            }
+        }
+    }
+
+    /**
+     * 由源已完成诊疗申请组装负向退诊疗头表行。
+     *
+     * @param source         源头表
+     * @param refundQuantity 拟退数量（正数，落库取反）
+     * @param reason         退诊疗原因
+     * @return 未持久化的新实体
+     */
+    private ServiceRequest buildRefundServiceRequestFromSource(
+        ServiceRequest source,
+        BigDecimal refundQuantity,
+        String reason
+    ) {
+        ServiceRequest refund = new ServiceRequest();
+        refund.setEncounterId(source.getEncounterId());
+        refund.setPatientId(source.getPatientId());
+        refund.setActivityId(source.getActivityId());
+        refund.setQuantity(refundQuantity.negate());
+        refund.setUnitCode(source.getUnitCode());
+        refund.setExecutionCount(source.getExecutionCount());
+        refund.setCategoryEnum(source.getCategoryEnum());
+        refund.setTherapyEnum(source.getTherapyEnum());
+        refund.setIntentEnum(source.getIntentEnum());
+        refund.setGroupId(source.getGroupId());
+        refund.setPriorityEnum(source.getPriorityEnum());
+        refund.setPerformFlag(source.getPerformFlag());
+        refund.setPerformerTypeCode(source.getPerformerTypeCode());
+        refund.setPerformerId(source.getPerformerId());
+        refund.setLocationId(source.getLocationId());
+        refund.setOrgId(source.getOrgId());
+        refund.setContractId(source.getContractId());
+        refund.setOccurrenceStartTime(source.getOccurrenceStartTime());
+        refund.setOccurrenceEndTime(source.getOccurrenceEndTime());
+        refund.setRelevantHistoryId(source.getRelevantHistoryId());
+        refund.setContentJson(source.getContentJson());
+        refund.setYbClassEnum(source.getYbClassEnum());
+        refund.setConditionDefinitionId(source.getConditionDefinitionId());
+        refund.setEncounterDiagnosisId(source.getEncounterDiagnosisId());
+        refund.setRateCode(source.getRateCode());
+        refund.setGenerateSourceEnum(source.getGenerateSourceEnum());
+        refund.setSortNumber(source.getSortNumber());
+        refund.setRemark(source.getRemark());
+        refund.setEntrustContent(source.getEntrustContent());
+        refund.setRequesterId(source.getRequesterId());
+        refund.setAuthoredTime(LocalDateTime.now());
+        refund.setRefundServiceId(source.getId());
+        refund.setReasonText(reason);
+        refund.setIsDeleted(Boolean.FALSE);
+        refund.markAsRefundFromPrescription(source.getPrescriptionNo());
+        refund.initAsRefundNegativeOrder();
+        return refund;
     }
 }

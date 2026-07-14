@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.nursingrecord.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -32,7 +32,7 @@ public class NursingRecordRowDto {
     @Schema(description = "记录日期")
     private LocalDate recordDate;
 
-    /** 记录时间（HH:mm 或 HH:mm:ss）。 */
+    /** 记录时间。 */
     @Schema(description = "记录时间")
     private String recordTime;
 
@@ -56,7 +56,7 @@ public class NursingRecordRowDto {
     @Schema(description = "呼吸")
     private String respiratory;
 
-    /** 血压（SBP/DBP 合并展示）。 */
+    /** 血压。 */
     @Schema(description = "血压")
     private String bloodPressure;
 
@@ -116,11 +116,11 @@ public class NursingRecordRowDto {
     @Schema(description = "管路护理")
     private String tubeCare;
 
-    /** 病情观察及护理（主表 remark）。 */
+    /** 病情观察及护理。 */
     @Schema(description = "病情观察及护理")
     private String conditionMeasure;
 
-    /** 护士签名展示名（由 recorderId 解析）。 */
+    /** 护士签名。 */
     @Schema(description = "护士签名")
     private String nurseSignature;
 }

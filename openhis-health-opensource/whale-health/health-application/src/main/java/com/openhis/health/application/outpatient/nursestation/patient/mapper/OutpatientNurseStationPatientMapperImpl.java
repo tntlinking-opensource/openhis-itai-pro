@@ -1,11 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.nursestation.patient.mapper;
 
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.outpatient.nursestation.patient.dto.NurseStationPatientQueueItemDto;
 import com.openhis.health.application.outpatient.nursestation.patient.request.PageNurseStationPatientQueueRequest;
 import com.openhis.health.application.outpatient.nursestation.patient.response.PageNurseStationPatientQueueResponse;
@@ -45,6 +45,12 @@ public class OutpatientNurseStationPatientMapperImpl implements OutpatientNurseS
         return PagedResultBuilder.build(new PageNurseStationPatientQueueResponse(), content, page);
     }
 
+    /**
+     * 门诊护士站就诊上下文 → 患者队列项 DTO（含性别展示）。
+     *
+     * @param row 上下文行
+     * @return 队列项；null 输入返回 null
+     */
     private NurseStationPatientQueueItemDto toNurseStationPatientQueueItemDto(OutpatientEncounterContextQueryModel row) {
         if (row == null) {
             return null;

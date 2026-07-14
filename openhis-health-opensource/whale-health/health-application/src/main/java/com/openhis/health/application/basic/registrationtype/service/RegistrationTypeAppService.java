@@ -1,23 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.registrationtype.service;
 
-import com.openhis.health.module.common.assembler.pricing.ChargePricingCommandAssembler;
+import com.openhis.health.application.shared.pricing.ChargePricingCommandAssembler;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.PriceType;
 import com.openhis.health.application.basic.registrationtype.dto.RegistrationTypeDto;
@@ -39,7 +26,7 @@ import com.openhis.health.domain.administration.healthcareservice.service.Health
 import com.openhis.health.domain.administration.healthcareservice.service.HealthcareServiceQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.DailySettlementSharedConstants;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
@@ -81,8 +68,11 @@ public class RegistrationTypeAppService {
      * @return DTO 列表
      */
     public List<RegistrationTypeDto> getRegistrationTypeList() {
+        // Gate：只读列表，不写库
+        // Pre：拉取全部挂号类型医疗服务并批量解析销售价
         List<HealthcareService> all = healthcareServiceQueryService.listServicesForRegistration();
         Map<Long, BigDecimal> saleAmountByServiceId = loadSaleAmountMap(all);
+        // Asm：投影为 DTO 列表
         List<RegistrationTypeDto> result = new ArrayList<>();
         for (HealthcareService entity : all) {
             if (entity == null) {
@@ -106,15 +96,18 @@ public class RegistrationTypeAppService {
      * @throws EntityNotFoundException 记录不存在时
      */
     public RegistrationTypeDto getRegistrationType(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("挂号类型ID不能为空");
         }
+        // Pre：加载医疗服务并填充销售价
         HealthcareService entity = healthcareServiceQueryService.loadHealthcareServiceById(id);
         if (entity == null) {
             throw new EntityNotFoundException("挂号类型", id);
         }
         RegistrationTypeDto dto = registrationTypeMapper.toDto(entity);
         fillAmountByServiceId(id, dto);
+        // Asm：返回含金额的 DTO
         return dto;
     }
 
@@ -126,6 +119,7 @@ public class RegistrationTypeAppService {
      * @throws ValidationException 请求体为空或金额缺失时
      */
     public RegistrationTypeDto createRegistrationType(CreateRegistrationTypeRequest request) {
+        // Gate：请求体与金额必填
         if (request == null) {
             throw new ValidationException("挂号类型请求不能为空");
         }
@@ -134,6 +128,7 @@ public class RegistrationTypeAppService {
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT, "请先登录后再新增挂号类型");
+        // Cmd：创建医疗服务并发布为 ACTIVE
         Long serviceId = healthcareServiceDomainService.createService(
             registrationTypeMapper.toCreateCommand(request, operatorId));
         PublishHealthcareServiceCommand publishCommand = new PublishHealthcareServiceCommand();
@@ -146,7 +141,7 @@ public class RegistrationTypeAppService {
         if (entity == null) {
             throw new EntityNotFoundException("挂号类型", serviceId);
         }
-        // 新建号源须落库诊察费定价行（fin_type 1012），否则日结/费用明细无法汇总。
+        // Cmd：同步写入诊察费 SALE 定价行（fin_type 1012）
         syncSalePricingForHealthcareService(
             entity.getId(),
             DailySettlementSharedConstants.CONSULTATION_FEE_FIN_TYPE_CODE,
@@ -156,6 +151,7 @@ public class RegistrationTypeAppService {
             operatorId);
         RegistrationTypeDto dto = registrationTypeMapper.toDto(entity);
         fillAmountByServiceId(serviceId, dto);
+        // Asm：返回含金额的 DTO
         return dto;
     }
 
@@ -167,6 +163,7 @@ public class RegistrationTypeAppService {
      * @throws ValidationException 请求或 id 不合法时
      */
     public RegistrationTypeDto updateRegistrationType(UpdateRegistrationTypeRequest request) {
+        // Gate：请求体与主键合法
         if (request == null) {
             throw new ValidationException("挂号类型请求不能为空");
         }
@@ -175,13 +172,14 @@ public class RegistrationTypeAppService {
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT, "请先登录后再更新挂号类型");
+        // Cmd：修改医疗服务基础信息
         healthcareServiceDomainService.modifyService(
             registrationTypeMapper.toUpdateCommand(request, operatorId));
         HealthcareService entity = healthcareServiceQueryService.loadHealthcareServiceById(request.getId());
         if (entity == null) {
             throw new EntityNotFoundException("挂号类型", request.getId());
         }
-        // 编辑时按请求金额重建实例定价；type_code 固定诊察费 1012。
+        // Cmd：按请求金额重建实例定价
         syncSalePricingForHealthcareService(
             entity.getId(),
             DailySettlementSharedConstants.CONSULTATION_FEE_FIN_TYPE_CODE,
@@ -191,6 +189,7 @@ public class RegistrationTypeAppService {
             operatorId);
         RegistrationTypeDto dto = registrationTypeMapper.toDto(entity);
         fillAmountByServiceId(request.getId(), dto);
+        // Asm：返回含金额的 DTO
         return dto;
     }
 
@@ -202,6 +201,7 @@ public class RegistrationTypeAppService {
      * @throws EntityNotFoundException 记录不存在时
      */
     public void deleteRegistrationType(Long id) {
+        // Gate：主键非空且记录须存在
         if (id == null) {
             throw new ValidationException("挂号类型ID不能为空");
         }
@@ -211,6 +211,7 @@ public class RegistrationTypeAppService {
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT, "请先登录后再删除挂号类型");
+        // Cmd：作废医疗服务
         AbolishHealthcareServiceCommand command = new AbolishHealthcareServiceCommand();
         command.setOperatorId(operatorId);
         AbolishHealthcareServiceCommand.Item item = new AbolishHealthcareServiceCommand.Item();
@@ -218,7 +219,7 @@ public class RegistrationTypeAppService {
         item.setReason(REASON_DELETE_BY_APP);
         command.setItem(item);
         healthcareServiceDomainService.abolishService(command);
-        // 作废号源时同步清空实例定价行。
+        // Cmd：同步清空实例定价行
         syncSalePricingForHealthcareService(id, null, null, null, null, operatorId);
     }
 
@@ -230,17 +231,20 @@ public class RegistrationTypeAppService {
      * @throws ValidationException id 为空时
      */
     public RegistrationTypeDto activateRegistrationType(Long id) {
+        // Gate：主键非空且须已登录操作人
         if (id == null) {
             throw new ValidationException("挂号类型ID不能为空");
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT, "请先登录后再启用挂号类型");
+        // Cmd：重新启用医疗服务
         ReactivateHealthcareServiceCommand command = new ReactivateHealthcareServiceCommand();
         command.setOperatorId(operatorId);
         ReactivateHealthcareServiceCommand.Item item = new ReactivateHealthcareServiceCommand.Item();
         item.setServiceId(id);
         command.setItem(item);
         healthcareServiceDomainService.reactivateService(command);
+        // Asm：回读最新详情 DTO
         return getRegistrationType(id);
     }
 
@@ -252,11 +256,13 @@ public class RegistrationTypeAppService {
      * @throws ValidationException id 为空时
      */
     public RegistrationTypeDto deactivateRegistrationType(Long id) {
+        // Gate：主键非空且须已登录操作人
         if (id == null) {
             throw new ValidationException("挂号类型ID不能为空");
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.HEALTHCARE_SERVICE_INVALID_ARGUMENT, "请先登录后再停用挂号类型");
+        // Cmd：停用医疗服务
         RetireHealthcareServiceCommand command = new RetireHealthcareServiceCommand();
         command.setOperatorId(operatorId);
         RetireHealthcareServiceCommand.Item item = new RetireHealthcareServiceCommand.Item();
@@ -264,6 +270,7 @@ public class RegistrationTypeAppService {
         item.setReason(REASON_DEACTIVATE_BY_APP);
         command.setItem(item);
         healthcareServiceDomainService.retireService(command);
+        // Asm：回读最新详情 DTO
         return getRegistrationType(id);
     }
 

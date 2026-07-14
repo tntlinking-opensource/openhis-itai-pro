@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.finance.priceadjustment.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -48,7 +35,7 @@ public class PriceAdjustmentDocumentListRowDto {
     @Schema(description = "审批状态展示名")
     private String statusEnumText;
 
-    /** 项目物理表（同单一致）。 */
+    /** 项目物理表。 */
     @Schema(description = "项目物理表")
     private String itemTable;
 
@@ -88,17 +75,17 @@ public class PriceAdjustmentDocumentListRowDto {
     @Schema(description = "审批人展示名")
     private String approverName;
 
-    /** 制单时间 {@code adjustment_time}。 */
+    /** 制单时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "制单时间")
     private Date adjustmentTime;
 
-    /** 申请时间 {@code submit_time}。 */
+    /** 申请时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "申请时间")
     private Date submitTime;
 
-    /** 审批时间 {@code approve_time}。 */
+    /** 审批时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "审批时间")
     private Date approveTime;

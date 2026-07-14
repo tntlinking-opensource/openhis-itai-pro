@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.advice.assembler;
 
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceApplyFormDetailItemRequest;
@@ -22,20 +9,20 @@ import com.openhis.health.application.outpatient.doctorstation.advice.dto.Servic
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceApplyFormLineDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceApplyFormLineRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceRequestDetailSummaryDto;
-import com.openhis.health.module.common.assembler.advice.model.ServiceApplyFormDetailItemSpec;
-import com.openhis.health.module.common.assembler.advice.model.ServiceApplyFormHeaderModel;
-import com.openhis.health.module.common.assembler.advice.model.ServiceApplyFormLineModel;
-import com.openhis.health.module.common.assembler.advice.model.ServiceApplyFormLineSpec;
-import com.openhis.health.module.common.assembler.advice.model.ServiceRequestDetailSummaryModel;
+import com.openhis.health.application.outpatient.doctorstation.advice.support.ServiceApplyFormDetailItemSpec;
+import com.openhis.health.application.outpatient.doctorstation.advice.support.ServiceApplyFormHeaderModel;
+import com.openhis.health.application.outpatient.doctorstation.advice.support.ServiceApplyFormLineModel;
+import com.openhis.health.application.outpatient.doctorstation.advice.support.ServiceApplyFormLineSpec;
+import com.openhis.health.application.outpatient.doctorstation.advice.support.ServiceRequestDetailSummaryModel;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 申请单 HTTP DTO 与 module-support 编排 Spec/Model 互转（IF-DOR-21/22、IF-IP-DOR-23/24）。
+ * 申请单 HTTP DTO 与 module-supClient 编排 Spec/Model 互转（IF-DOR-21/22、IF-IP-DOR-23/24）。
  *
- * <p>职责边界：仅做应用层 DTO 与 {@code ServiceApplyFormOrchestrationSupport} 入参/出参模型之间的字段拷贝；
+ * <p>职责边界：仅做应用层 DTO 与 {@code ServiceApplyFormOrchestrator} 入参/出参模型之间的字段拷贝；
  * 不含领域写库与查询编排（后者在 support 与 AppService）。</p>
  */
 @Component
@@ -71,7 +58,7 @@ public class ServiceApplyFormAssembler {
     /**
      * 编排 Model 头 → 列表响应 DTO。
      *
-     * @param models support 层分组结果
+     * @param models supcontracts 层分组结果
      * @return HTTP 申请单头列表
      */
     public List<ServiceApplyFormHeaderDto> toHeaderDtos(List<ServiceApplyFormHeaderModel> models) {
@@ -123,6 +110,12 @@ public class ServiceApplyFormAssembler {
         return dtos;
     }
 
+    /**
+     * 申请单明细行 Model → DTO，嵌套转换子项摘要。
+     *
+     * @param models 领域行列表
+     * @return 空输入返回不可变空列表
+     */
     private List<ServiceApplyFormLineDto> toLineDtos(List<ServiceApplyFormLineModel> models) {
         if (models == null || models.isEmpty()) {
             return List.of();
@@ -146,6 +139,12 @@ public class ServiceApplyFormAssembler {
         return dtos;
     }
 
+    /**
+     * 写路径申请单子项 Request → 领域 Spec。
+     *
+     * @param items 前端提交子项
+     * @return 空输入返回不可变空列表
+     */
     private List<ServiceApplyFormDetailItemSpec> toDetailItemSpecs(List<ServiceApplyFormDetailItemRequest> items) {
         if (items == null || items.isEmpty()) {
             return List.of();

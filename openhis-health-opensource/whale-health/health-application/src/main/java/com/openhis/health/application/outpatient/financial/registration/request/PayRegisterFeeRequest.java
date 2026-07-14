@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.registration.request;
 
 import com.openhis.health.application.outpatient.financial.registration.dto.PaymentDetailDto;
-import com.openhis.health.integration.payment.dto.ClientScanResultDto;
+import com.openhis.health.infrastructure.integration.payment.dto.ClientScanResultDto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -31,22 +18,19 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 挂号支付请求。 */
 @Schema(description = "挂号支付请求")
 public class PayRegisterFeeRequest {
 
-    @Schema(description = "支付草稿ID")
     /** 支付草稿ID（业务字段）。 */
+    @Schema(description = "支付草稿ID")
     private Long paymentDraftId;
 
     /** 支付明细列表。 */
     @Schema(description = "支付明细")
-    /** 支付明细（业务字段）。 */
     private List<PaymentDetailDto> paymentDetails;
 
     /** 关联预约主键（缴费成功后回填 encounter）。 */
     @Schema(description = "预约ID")
-    /** 预约ID（业务字段）。 */
     private Long appointmentId;
 
     /** 银联被扫 Win 回传（扫码 settle 时必填）。 */

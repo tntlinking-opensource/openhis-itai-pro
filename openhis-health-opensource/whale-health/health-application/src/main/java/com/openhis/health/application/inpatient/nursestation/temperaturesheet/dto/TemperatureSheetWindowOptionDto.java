@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -16,7 +16,7 @@ import lombok.experimental.Accessors;
 @Schema(description = "体温单窗口选项")
 public class TemperatureSheetWindowOptionDto {
 
-    /** 窗口 code（3d/7d/14d）。 */
+    /** 窗口 code。 */
     @Schema(description = "窗口 code")
     private String code;
 
@@ -24,7 +24,7 @@ public class TemperatureSheetWindowOptionDto {
     @Schema(description = "展示文案")
     private String displayText;
 
-    /** 是否默认选中。 */
+    /** 是否默认。 */
     @Schema(description = "是否默认")
     private Boolean defaultSelected;
 }

@@ -1,39 +1,24 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.print.printtemplate.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
- * PrintJson 版式校验器（BR-PRT-003、008、009）。
+ * PrintJson 版式校验器（BR-PRT-003）。
  */
 @Component
+@RequiredArgsConstructor
 public class PrintJsonValidator {
 
   private final ObjectMapper objectMapper;
-
-  public PrintJsonValidator(ObjectMapper objectMapper) {
-    this.objectMapper = objectMapper;
-  }
 
   /**
    * 校验 PrintJson 文档；失败抛 {@link BusinessException} PRT-422。
@@ -63,6 +48,12 @@ public class PrintJsonValidator {
     }
   }
 
+  /**
+   * 校验单个 panel：对象结构、数字宽高、printElements 数组及 paperMode。
+   *
+   * @param panel hiprint panel 节点
+   * @throws BusinessException {@link ErrorCodeConstants#PRT_INVALID}
+   */
   private void validatePanel(JsonNode panel) {
     if (!panel.isObject()) {
       throw new BusinessException(ErrorCodeConstants.PRT_INVALID, "模板格式不合法：panel 须为对象");
@@ -76,12 +67,15 @@ public class PrintJsonValidator {
     if (printElements == null || !printElements.isArray()) {
       throw new BusinessException(ErrorCodeConstants.PRT_INVALID, "模板格式不合法：printElements 须为数组");
     }
-    for (JsonNode element : printElements) {
-      this.validatePrintElement(element);
-    }
     this.validatePaperMode(panel);
   }
 
+  /**
+   * 校验 panel.paperMode（fixed/continuous）与 paperType 合法组合。
+   *
+   * @param panel hiprint panel 节点
+   * @throws BusinessException {@link ErrorCodeConstants#PRT_INVALID}
+   */
   private void validatePaperMode(JsonNode panel) {
     JsonNode paperModeNode = panel.get("paperMode");
     if (paperModeNode != null && !paperModeNode.isNull()) {
@@ -94,7 +88,12 @@ public class PrintJsonValidator {
       }
     }
     JsonNode paperTypeNode = panel.get("paperType");
-    String paperType = paperTypeNode == null ? "" : paperTypeNode.asText("").trim();
+    String paperType;
+    if (paperTypeNode == null) {
+      paperType = "";
+    } else {
+      paperType = paperTypeNode.asText("").trim();
+    }
     boolean rollType =
         paperType.equalsIgnoreCase("roll") || paperType.toLowerCase().startsWith("roll-");
     if (paperModeNode != null && !paperModeNode.isNull()) {
@@ -109,21 +108,6 @@ public class PrintJsonValidator {
             ErrorCodeConstants.PRT_INVALID,
             "模板格式不合法：paperMode=continuous 时 paperType 须为 roll 或 roll-*");
       }
-    }
-  }
-
-  private void validatePrintElement(JsonNode element) {
-    if (!element.isObject()) {
-      throw new BusinessException(ErrorCodeConstants.PRT_INVALID, "模板格式不合法：元素须为对象");
-    }
-  // Pre：元素须声明 printElementType.type。
-    JsonNode printElementType = element.get("printElementType");
-    if (printElementType == null || !printElementType.isObject()) {
-      throw new BusinessException(ErrorCodeConstants.PRT_INVALID, "模板格式不合法：缺少 printElementType");
-    }
-    JsonNode typeNode = printElementType.get("type");
-    if (typeNode == null || typeNode.asText().trim().isEmpty()) {
-      throw new BusinessException(ErrorCodeConstants.PRT_INVALID, "模板格式不合法：元素 type 不能为空");
     }
   }
 

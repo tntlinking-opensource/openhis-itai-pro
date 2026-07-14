@@ -1,45 +1,22 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 活动类型枚举（迁移自旧模型 ActivityType）。
  */
 public enum ActivityType implements EnumInterface {
-    /**
-     * PROOF。
-     */
+    /** 检验（ActivityType，编码 {@code 1}）。 */
     PROOF(0L, "1", "检验", "", 1L),
-    /**
-     * TEST。
-     */
+    /** 检查（ActivityType，编码 {@code 2}）。 */
     TEST(0L, "2", "检查", "", 2L),
-    /**
-     * CARE。
-     */
+    /** 护理（ActivityType，编码 {@code 3}）。 */
     CARE(0L, "3", "护理", "", 3L),
-    /**
-     * OPERATION。
-     */
+    /** 手术（ActivityType，编码 {@code 4}）。 */
     OPERATION(0L, "4", "手术", "", 4L),
-    /**
-     * OTHER。
-     */
+    /** 其他（ActivityType，编码 {@code 5}）。 */
     OTHER(0L, "5", "其他", "", 5L);
 
     private final Long codeSystemId;
@@ -48,9 +25,7 @@ public enum ActivityType implements EnumInterface {
     private final String definition;
     private final Long sortOrder;
 
-    /**
-     * ActivityType。
-     */
+    /** 枚举构造：绑定编码系统、持久化 code、展示名与排序。 */
     ActivityType(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;
         this.code = code;

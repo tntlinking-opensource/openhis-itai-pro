@@ -1,37 +1,18 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 学生体检结果枚举。
  */
 public enum PhysicalExamResult implements EnumInterface {
-    /**
-     * NOT_EXAMINED。
-     */
+    /** 未体检（PhysicalExamResult，编码 {@code NOT_EXAMINED}）。 */
     NOT_EXAMINED(0L, "NOT_EXAMINED", "未体检", "", 0L),
-    /**
-     * FAILED。
-     */
+    /** 体检不合格（PhysicalExamResult，编码 {@code FAILED}）。 */
     FAILED(0L, "FAILED", "体检不合格", "", 1L),
-    /**
-     * PASSED。
-     */
+    /** 体检合格（PhysicalExamResult，编码 {@code PASSED}）。 */
     PASSED(0L, "PASSED", "体检合格", "", 2L);
 
     private final Long codeSystemId;
@@ -41,7 +22,7 @@ public enum PhysicalExamResult implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * PhysicalExamResult。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     PhysicalExamResult(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

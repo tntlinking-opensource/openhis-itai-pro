@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.stockout.request;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -23,41 +10,38 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
- *
- * <p>触发同意链：领域同意、发放、源库扣减、目的入账、药房入库壳单与追溯写入由应用服务编排，单事务边界见 AS-SDD。</p>
+ * 同意药库出库单请求（IF-WHS-SO-08）。
  */
 @Getter
 @Setter
 @Accessors(chain = true)
 public class AgreeStockOutRequest {
 
+    /** 出库业务单号。 */
     @Schema(description = "出库业务单号", requiredMode = Schema.RequiredMode.REQUIRED)
     private String busNo;
 
-    /**
-     * 已废弃：领域 {@code agreeRequest} 内以服务端当前时间写入 {@code approval_time}（WHS-IN-SDD-R-013 / WHS-SO-SDD-R-009），请求体若仍带此字段则忽略。
-     */
+    /** 已废弃：审批时间由服务端写入。 */
+    @Deprecated
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
-    @Schema(description = "已废弃：审批时间由服务端写入，可忽略", deprecated = true)
+    @Schema(description = "已废弃：审批时间由服务端写入", deprecated = true)
     private LocalDateTime approvalTime;
 
-    /**
-     * 已废弃：Mapper 固定以当前操作人 {@code operatorId} 写入 {@code approver_id}，请求体若仍带此字段则忽略。
-     */
-    @Schema(description = "已废弃：审批人取当前登录用户，可忽略", deprecated = true)
+    /** 已废弃：审批人取当前登录用户。 */
+    @Deprecated
+    @Schema(description = "已废弃：审批人取当前登录用户", deprecated = true)
     private Long approverId;
 
-    /** @deprecated CHS 模块启用即上传，此开关不再生效。 */
+    /** 医保上报 medicareUploadEnabled。 */
     @Deprecated
-    @Schema(description = "同意后是否上传医保进销存")
+    @Schema(description = "医保上报 medicareUploadEnabled")
     private Boolean medicareUploadEnabled;
 
+    /** 医保契约 busNo。 */
     @Schema(description = "医保契约 busNo")
     private String contractBusNo;
 }

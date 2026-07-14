@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.nursingrecord.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -24,19 +24,19 @@ import java.util.List;
 })
 public class SaveNurseStationNursingRecordsBatchRequest {
 
-    /** 当前选中就诊。 */
+    /** 就诊标识。 */
     @NotNull(message = "就诊标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long encounterId;
 
-    /** 左侧卡片患者 id。 */
+    /** 患者标识。 */
     @NotNull(message = "患者标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
-    /** 待保存行（含 rowType）。 */
+    /** 待保存行列表。 */
     @NotEmpty(message = "待保存记录不能为空")
     @Schema(description = "待保存行列表", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<SaveNursingRecordItemRequest> records;

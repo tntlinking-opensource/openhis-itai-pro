@@ -1,97 +1,62 @@
-<?xml version="1.0" encoding="utf-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0           http://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
-  <parent>
-    <groupId>com.openhis</groupId>
-    <artifactId>whale</artifactId>
-    <version>2.0.2-SNAPSHOT</version>
-    <relativePath>../pom.xml</relativePath>
-  </parent>
-  <artifactId>whale-health</artifactId>
-  <packaging>pom</packaging>
-  <name>Whale Health</name>
-  <description>基于Whale框架开发的健康领域服务应用</description>
-  <properties>
-    <!-- BouncyCastle（国密SM2/SM3算法支持） -->
-    <bouncycastle.version>1.80</bouncycastle.version>
-    <spotless.version>2.43.0</spotless.version>
-  </properties>
-  <modules>
-    <module>health-domain-shared</module>
-    <module>health-integration-contracts</module>
-    <module>health-module-support</module>
-    <module>health-domain</module>
-    <module>health-application</module>
-    <module>health-infrastructure</module>
-    <module>health-app</module>
-  </modules>
-  <dependencyManagement>
-    <dependencies>
-      <!-- WY 扩展（equipment + caauth，尚未纳入 whale-dependencies BOM） -->
-    </dependencies>
-  </dependencyManagement>
-  <build>
-    <pluginManagement>
-      <plugins>
-        <plugin>
-          <groupId>org.springframework.boot</groupId>
-          <artifactId>spring-boot-maven-plugin</artifactId>
-        </plugin>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-compiler-plugin</artifactId>
-          <version>3.11.0</version>
-          <configuration>
-            <source>${java.version}</source>
-            <target>${java.version}</target>
-            <encoding>${project.build.sourceEncoding}</encoding>
-            <annotationProcessorPaths>
-              <path>
-                <groupId>org.projectlombok</groupId>
-                <artifactId>lombok</artifactId>
-                <version>${lombok.version}</version>
-              </path>
-              <path>
-                <groupId>org.mapstruct</groupId>
-                <artifactId>mapstruct-processor</artifactId>
-                <version>${mapstruct.version}</version>
-              </path>
-              <path>
-                <groupId>org.projectlombok</groupId>
-                <artifactId>lombok-mapstruct-binding</artifactId>
-                <version>0.2.0</version>
-              </path>
-            </annotationProcessorPaths>
-          </configuration>
-        </plugin>
-</plugins>
-    </pluginManagement>
-</build>
-  <profiles>
-    <!--
-          开源仓无 whale-framework 源码时使用：从 ../dist/framework-maven-repo 解析预编译 Framework JAR
-          mvn -Pbinary-framework ...
-        -->
-    <profile>
-      <id>binary-framework</id>
-      <properties>
-        <openhis.framework.maven.repo>
-                    file://${maven.multiModuleProjectDirectory}/dist/framework-maven-repo
-                </openhis.framework.maven.repo>
-      </properties>
-      <repositories>
-        <repository>
-          <id>openhis-framework-binary</id>
-          <name>OpenHIS Framework (prebuilt binaries)</name>
-          <url>${openhis.framework.maven.repo}</url>
-          <releases>
-            <enabled>true</enabled>
-          </releases>
-          <snapshots>
-            <enabled>true</enabled>
-          </snapshots>
-        </repository>
-      </repositories>
-    </profile>
-  </profiles>
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    
+    <parent>
+        <groupId>com.openhis</groupId>
+        <artifactId>whale</artifactId>
+        <version>2.0.3-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>whale-health</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Whale Health</name>
+    <description>基于Whale框架开发的健康领域服务应用</description>
+
+    <properties>
+        <!-- BouncyCastle（国密SM2/SM3算法支持） -->
+        <bouncycastle.version>1.80</bouncycastle.version>
+    </properties>
+    
+    <modules>
+        <module>health-domain-shared</module>
+        <module>health-domain</module>
+        <module>health-infrastructure</module>
+        <module>health-application</module>
+        <module>health-starter</module>
+        <module>health-app</module>
+    </modules>
+    
+    <dependencyManagement>
+        <dependencies>
+            <!-- WY 扩展（equipment + caauth，尚未纳入 whale-dependencies BOM） -->
+            <dependency>
+                <groupId>com.openhis</groupId>
+                <artifactId>wy-domain</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.openhis</groupId>
+                <artifactId>wy-application</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+    
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
 </project>
+

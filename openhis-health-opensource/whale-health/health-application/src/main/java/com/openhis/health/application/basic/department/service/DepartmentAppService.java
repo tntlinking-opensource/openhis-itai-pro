@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.department.service;
 
 import com.openhis.health.application.basic.department.dto.DepartmentDetailDto;
@@ -24,8 +11,8 @@ import com.openhis.health.application.basic.department.mapper.DepartmentMapper;
 import com.openhis.health.application.basic.department.request.CreateDepartmentRequest;
 import com.openhis.health.application.basic.department.request.QueryDepartmentListRequest;
 import com.openhis.health.application.basic.department.request.UpdateDepartmentRequest;
-import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
-import com.openhis.health.module.shared.organization.OrganizationUnitLinkCode;
+import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.infrastructure.platform.organization.OrganizationUnitLinkCode;
 import com.openhis.health.domain.administration.organization.command.AbolishOrganizationCommand;
 import com.openhis.health.domain.administration.organization.command.RelocateOrganizationCommand;
 import com.openhis.health.domain.administration.organization.command.ReactivateOrganizationCommand;
@@ -38,7 +25,7 @@ import com.openhis.health.domain.administration.practitioner.entity.Practitioner
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.share.enums.OrganizationClassification;
 import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
@@ -49,7 +36,7 @@ import com.openhis.whale.identity.application.OrganizationUnitAppService;
 import com.openhis.whale.identity.domain.OrganizationUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -97,6 +84,9 @@ public class DepartmentAppService {
      * @return 根节点列表
      */
     public List<DepartmentDto> getTree() {
+        // Gate：只读树查询，无写侧操作人
+        // Pre：读侧加载启用机构树
+        // Asm：平铺列表组树并映射 DTO
         return toDtoList(organizationQueryService.getOrganizationTree());
     }
 
@@ -106,6 +96,9 @@ public class DepartmentAppService {
      * @return 根节点列表
      */
     public List<DepartmentDto> getTreeForResponsibilityDept() {
+        // Gate：只读责任科室树，无写侧操作人
+        // Pre：读侧加载责任科室场景组织树
+        // Asm：平铺列表组树并映射 DTO
         return toDtoList(organizationQueryService.getOrganizationTreeForResponsibilityDept());
     }
 
@@ -116,11 +109,14 @@ public class DepartmentAppService {
      * @return 科室节点
      */
     public DepartmentDto getDepartment(Long id) {
+        // Gate：主键非空
         validateId(id);
+        // Pre：按 id 加载组织展示快照
         Organization organization = organizationQueryService.loadOrganizationByIdForDisplay(id);
         if (organization == null) {
             throw new ValidationException("科室不存在");
         }
+        // Asm：映射科室 DTO
         return departmentMapper.toDto(organization);
     }
 
@@ -131,6 +127,7 @@ public class DepartmentAppService {
      * @return 科室节点
      */
     public DepartmentDto getDepartmentById(Long id) {
+        // Gate/Pre/Asm：与 getDepartment 等价，供控制器路径别名
         return getDepartment(id);
     }
 
@@ -140,11 +137,14 @@ public class DepartmentAppService {
      * @return 初始化 DTO
      */
     public DepartmentInitDto init() {
+        // Gate：只读页初始化，无写侧操作人
         DepartmentInitDto initDto = new DepartmentInitDto();
+        // Pre：加载分类、类型、上级树与默认医师下拉
         initDto.setDepartmentClassOptions(codeSystemQueryService.getOptionListByEnum(OrganizationClassification.class));
         initDto.setDepartmentTypeOptions(codeSystemQueryService.getOptionListByEnum(OrganizationType.class));
         initDto.setDepartmentOptions(this.loadDepartmentOptions());
         initDto.setPractitionerOptions(this.loadPractitionerOptions());
+        // Asm：映射维护页初始化 DTO
         return initDto;
     }
 
@@ -155,16 +155,20 @@ public class DepartmentAppService {
      * @return 详情 DTO
      */
     public DepartmentDetailDto getDepartmentDetail(Long deptId) {
+        // Gate：主键非空
         validateId(deptId);
+        // Pre：加载科室及上级科室快照
         Organization organization = organizationQueryService.loadOrganizationByIdForDisplay(deptId);
         if (organization == null) {
             throw new ValidationException("科室不存在");
         }
         DepartmentDetailDto detailDto = departmentMapper.toDetailDto(organization);
+        // 业务分支：存在上级时嵌套父科室对象
         if (organization.getParentId() != null) {
             Organization parent = organizationQueryService.loadOrganizationByIdForDisplay(organization.getParentId());
             detailDto.setParentDepartment(departmentMapper.toDetailDto(parent));
         }
+        // Asm：映射详情 DTO
         return detailDto;
     }
 
@@ -175,7 +179,10 @@ public class DepartmentAppService {
      * @return 根节点列表
      */
     public List<DepartmentDto> getDepartmentList(QueryDepartmentListRequest request) {
+        // Gate：只读列表，筛选字段均可空
+        // Pre：请求转领域管理列表 Query 并查询
         OrganizationManagementListQuery query = toManagementListQuery(request);
+        // Asm：平铺列表组树并映射 DTO
         return toDtoList(organizationQueryService.listOrganizationsForManagement(query));
     }
 
@@ -186,18 +193,22 @@ public class DepartmentAppService {
      * @return 新建后的科室 DTO
      */
     public DepartmentDto createDepartment(CreateDepartmentRequest request) {
+        // Gate：请求体非空与组织层级合法
         if (request == null) {
             throw new ValidationException("创建科室失败：请求不能为空");
         }
         validateOrganizationHierarchy(request.getTypeEnum(), request.getParentId(), null);
+        // Gate：写路径操作人（B.6.5）
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再新建科室");
-        // 步骤一：领域落库组织主档
+        // Cmd：领域创建组织主档
         Long createdId = organizationDomainService.createOrganization(
             departmentMapper.toCreateCommand(request, operatorId));
+        // Pre：回读新建组织快照
         Organization organization = organizationQueryService.loadOrganizationByIdForDisplay(createdId);
-        // 步骤二：同步 identity 侧 OrganizationUnit，避免权限树与 HIS 科室脱节
+        // Cmd 续：同步 identity 侧 OrganizationUnit，避免权限树与 HIS 科室脱节
         syncCreateOu(organization);
+        // Asm：映射新建后科室 DTO
         return getDepartment(createdId);
     }
 
@@ -208,28 +219,32 @@ public class DepartmentAppService {
      * @return 更新后 DTO
      */
     public DepartmentDto editDepartment(UpdateDepartmentRequest request) {
+        // Gate：请求体与主键非空
         if (request == null || request.getId() == null) {
             throw new ValidationException("编辑科室失败：科室ID不能为空");
         }
+        // Pre：加载当前组织快照并校验层级
         Organization current = organizationQueryService.loadOrganizationByIdForDisplay(request.getId());
         if (current == null) {
             throw new ValidationException("科室不存在");
         }
         validateOrganizationHierarchy(request.getTypeEnum(), request.getParentId(), current);
-        // 仅在前端显式声明“上级已变更”时才执行 relocate；
-        // 支持 newParentId=null 表示“提升为根节点”。
+        // Gate：写路径操作人
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再编辑科室");
+        // 业务分支：前端显式声明上级变更时才 relocate（含提升为根）
         if (Boolean.TRUE.equals(request.getParentIdChanged())
             && !isSameParent(current.getParentId(), request.getParentId())) {
             relocateDepartment(request.getId(), request.getParentId(), operatorId);
         }
-        // 步骤二：更新组织属性（名称、分类、医保信息等）
+        // Cmd：更新组织属性
         organizationDomainService.modifyOrganization(
             departmentMapper.toModifyCommand(request, operatorId));
+        // Pre：回读变更后组织快照
         Organization organization = organizationQueryService.loadOrganizationByIdForDisplay(request.getId());
-        // 步骤三：按 code 回写 identity 组织单元（含 busNo 变更时的关联键迁移）
+        // Cmd 续：按 code 回写 identity 组织单元
         syncUpdateOu(organization, current);
+        // Asm：映射更新后 DTO
         return getDepartment(request.getId());
     }
 
@@ -239,13 +254,16 @@ public class DepartmentAppService {
      * @param id 科室主键
      */
     public void deleteDepartment(Long id) {
+        // Gate：主键非空且科室存在
         validateId(id);
         Organization organization = organizationQueryService.loadOrganizationByIdForDisplay(id);
         if (organization == null) {
             throw new ValidationException("科室不存在");
         }
+        // Gate：写路径操作人
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再删除科室");
+        // Pre：组装作废命令
         AbolishOrganizationCommand command = new AbolishOrganizationCommand();
         command.setOperatorId(operatorId);
         AbolishOrganizationCommand.AbolishOrganizationItemCommand item =
@@ -253,7 +271,9 @@ public class DepartmentAppService {
         item.setOrganizationId(id);
         item.setAbolishReason("应用层删除科室");
         command.setItem(item);
+        // Cmd：领域作废组织
         organizationDomainService.abolishOrganization(command);
+        // Cmd 续：同步软删 identity 组织单元
         syncDeleteOu(organization);
     }
 
@@ -264,12 +284,15 @@ public class DepartmentAppService {
      * @return 是否执行过领域调用（无有效 id 时为 false）
      */
     public boolean activeDepartment(List<Long> deptIds) {
+        // Gate：有效主键列表非空
         List<Long> validDeptIds = collectValidDeptIds(deptIds);
         if (validDeptIds.isEmpty()) {
             return false;
         }
+        // Gate：写路径操作人
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再启用科室");
+        // Pre：组装批量启用命令
         ReactivateOrganizationCommand command = new ReactivateOrganizationCommand();
         command.setOperatorId(operatorId);
         List<ReactivateOrganizationCommand.ReactivateOrganizationItemCommand> items = new ArrayList<>();
@@ -281,8 +304,9 @@ public class DepartmentAppService {
             items.add(item);
         }
         command.setItems(items);
+        // Cmd：领域批量启用
         organizationDomainService.reactivateOrganization(command);
-        // 启用领域组织后，同步启用 identity 侧组织单元。
+        // Cmd 续：同步启用 identity 组织单元
         syncOrganizationOuEnabled(validDeptIds, true);
         return true;
     }
@@ -294,12 +318,15 @@ public class DepartmentAppService {
      * @return 是否执行过领域调用
      */
     public boolean inactiveDepartment(List<Long> deptIds) {
+        // Gate：有效主键列表非空
         List<Long> validDeptIds = collectValidDeptIds(deptIds);
         if (validDeptIds.isEmpty()) {
             return false;
         }
+        // Gate：写路径操作人
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "请先登录后再停用科室");
+        // Pre：组装批量停用命令
         RetireOrganizationCommand command = new RetireOrganizationCommand();
         command.setOperatorId(operatorId);
         List<RetireOrganizationCommand.RetireOrganizationItemCommand> items = new ArrayList<>();
@@ -311,8 +338,9 @@ public class DepartmentAppService {
             items.add(item);
         }
         command.setItems(items);
+        // Cmd：领域批量停用
         organizationDomainService.retireOrganization(command);
-        // 停用领域组织后，同步停用 identity 侧组织单元。
+        // Cmd 续：同步停用 identity 组织单元
         syncOrganizationOuEnabled(validDeptIds, false);
         return true;
     }
@@ -328,16 +356,16 @@ public class DepartmentAppService {
         if (request == null) {
             return query;
         }
-        if (StringUtils.isNotBlank(request.getKeyword())) {
+        if (StringUtils.isNotEmpty(request.getKeyword())) {
             query.setKeyword(request.getKeyword().trim());
         }
-        if (StringUtils.isNotBlank(request.getTypeEnum())) {
+        if (StringUtils.isNotEmpty(request.getTypeEnum())) {
             query.setTypeEnum(request.getTypeEnum().trim());
         }
-        if (StringUtils.isNotBlank(request.getClassEnum())) {
+        if (StringUtils.isNotEmpty(request.getClassEnum())) {
             query.setClassEnum(request.getClassEnum().trim());
         }
-        if (StringUtils.isNotBlank(request.getStatusEnum())) {
+        if (StringUtils.isNotEmpty(request.getStatusEnum())) {
             query.setStatusEnum(request.getStatusEnum().trim());
         }
         return query;

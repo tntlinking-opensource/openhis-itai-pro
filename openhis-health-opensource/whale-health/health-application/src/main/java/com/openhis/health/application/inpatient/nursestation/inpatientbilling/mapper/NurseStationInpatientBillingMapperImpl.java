@@ -1,25 +1,12 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.mapper;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 
-import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.PrepickedProductKeyDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingCancelItemDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingParentRequestAnchorDto;
@@ -29,8 +16,13 @@ import com.openhis.health.application.inpatient.nursestation.inpatientbilling.re
 import com.openhis.health.domain.administration.chargeitem.command.CreateChargeItemCommand;
 import com.openhis.health.domain.administration.chargeitem.command.VoidNursePricingChargeItemsByServiceAnchorsCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
-import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
-import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.domain.clinical.procedure.command.CancelProcedureRecordCommand;
+import com.openhis.health.domain.clinical.procedure.command.CompleteProcedureRecordCommand;
+import com.openhis.health.domain.clinical.procedure.command.CreateProcedureRecordCommand;
+import com.openhis.health.domain.clinical.procedure.command.StartProcedureExecutionCommand;
+import com.openhis.health.domain.clinical.procedure.queries.model.ProcedureRecordQueryModel;
+import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
+import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.constants.ChargeItemDmConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
@@ -46,7 +38,7 @@ import com.openhis.health.domain.workflow.servicerequest.command.CreateFromNurse
 import com.openhis.health.domain.workflow.servicerequest.command.RemoveFromNursePricingCommand;
 import com.openhis.health.domain.workflow.inventoryitem.command.IncreaseQuantityCommand;
 import com.openhis.whale.core.application.exception.BusinessException;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -100,7 +92,7 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
         query.setPricingFlag(1);
         query.setActiveFlag(Boolean.TRUE);
         query.setProductTableNames(this.resolvePricingProductTableNames(request.getProductTableNames()));
-        if (StringUtils.isNotBlank(request.getCategoryCode())) {
+        if (StringUtils.isNotEmpty(request.getCategoryCode())) {
             query.setCategoryCode(request.getCategoryCode().trim());
         }
         if (request.getPrepickedProductKeys() != null && !request.getPrepickedProductKeys().isEmpty()) {
@@ -108,7 +100,7 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
             List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
             for (PrepickedProductKeyDto key : request.getPrepickedProductKeys()) {
                 if (key == null || key.getProductDefinitionId() == null
-                    || StringUtils.isBlank(key.getProductTableName())) {
+                    || StringUtils.isEmpty(key.getProductTableName())) {
                     continue;
                 }
                 ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
@@ -134,7 +126,7 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
         if (requestTables != null && !requestTables.isEmpty()) {
             List<String> tables = new ArrayList<>();
             for (String table : requestTables) {
-                if (StringUtils.isBlank(table)) {
+                if (StringUtils.isEmpty(table)) {
                     continue;
                 }
                 String trimmed = table.trim();
@@ -161,7 +153,7 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
      */
     @Override
     public String resolveTherapyEnum(String therapyType) {
-        if (StringUtils.isBlank(therapyType)) {
+        if (StringUtils.isEmpty(therapyType)) {
             return null;
         }
         String normalized = therapyType.trim().toLowerCase();
@@ -214,7 +206,7 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
                 continue;
             }
             NurseStationPricingParentRequestAnchorDto anchor = row.getParentRequestAnchor();
-            if (anchor == null || anchor.getRequestId() == null || StringUtils.isBlank(anchor.getOrderType())) {
+            if (anchor == null || anchor.getRequestId() == null || StringUtils.isEmpty(anchor.getOrderType())) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_PRC_301,
                     "关联医嘱无效，请刷新医嘱列表后重试");
@@ -342,6 +334,7 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
      * @param serviceId     服务 id
      * @param dispenseTable 发放表；可空
      * @param dispenseId    发放 id；可空
+     * @param procedureId   执行记录 id；诊疗划价必填
      * @param operatorId    操作人
      * @param orgId         机构
      * @return 收费命令
@@ -353,6 +346,7 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
         Long serviceId,
         String dispenseTable,
         Long dispenseId,
+        Long procedureId,
         Long operatorId,
         Long orgId) {
         CreateChargeItemCommand command = new CreateChargeItemCommand();
@@ -383,7 +377,8 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
         item.setDiscountAmount(row.getTotalPrice());
         item.setSurchargeAmount(BigDecimal.ZERO);
         item.setOccurrenceTime(LocalDateTime.now());
-        // 耗材轨关联发放 id，诊疗轨 dispense 为空
+        // 诊疗划价挂接 Procedure；耗材轨 dispense 锚点、procedure 为空
+        item.setProcedureId(procedureId);
         item.setDispenseTable(dispenseTable);
         item.setDispenseId(dispenseId);
         item.setOrgId(orgId);
@@ -446,7 +441,7 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
             if (orgId != null && row.getEncounterId() != null) {
                 // 科室筛选在 App 层按 OrderInfo.orgId 已下推；此处仅关键字
             }
-            if (StringUtils.isNotBlank(kw)) {
+            if (StringUtils.isNotEmpty(kw)) {
                 String name = StringUtils.defaultString(row.getAdviceDisplayName()).toLowerCase();
                 if (!name.contains(kw)) {
                     continue;
@@ -501,7 +496,7 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
         for (NurseStationPricingCancelItemDto row : items) {
             // 每行三要素必填，否则无法定位取消锚点
             if (row == null || row.getRequestId() == null || row.getEncounterId() == null
-                || StringUtils.isBlank(row.getOrderType())) {
+                || StringUtils.isEmpty(row.getOrderType())) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_PRC_401,
                     "请选择要取消的划价行");
@@ -676,6 +671,125 @@ public class NurseStationInpatientBillingMapperImpl implements NurseStationInpat
             }
         }
         command.setItems(items);
+        return command;
+    }
+
+    /**
+     * 护士划价诊疗 → 创建 Procedure 命令。
+     *
+     * @param serviceRequestId 诊疗请求主键
+     * @param encounterId      就诊主键
+     * @param patientId        患者主键
+     * @param practitionerId   登录医务人员（{@code adm_practitioner.id}）
+     * @param occurrenceTime   执行发生时刻
+     * @return 创建命令
+     */
+    @Override
+    public CreateProcedureRecordCommand toCreateNursePricingProcedureRecordCommand(
+        Long serviceRequestId,
+        Long encounterId,
+        Long patientId,
+        Long practitionerId,
+        LocalDateTime occurrenceTime) {
+        CreateProcedureRecordCommand command = new CreateProcedureRecordCommand();
+        command.setOperatorId(practitionerId);
+        command.setRequestId(serviceRequestId);
+        command.setRequestTable(TableNameConstants.WKF_SERVICE_REQUEST);
+        command.setEncounterId(encounterId);
+        command.setPatientId(patientId);
+        // 护士划价新建请求一律临时（BR-IP-PRC-006）
+        command.setCategoryEnum(TherapyType.TEMPORARY.getCode());
+        command.setOccurrenceTime(occurrenceTime);
+        return command;
+    }
+
+    /**
+     * 取消划价 CANCEL 对冲 → 创建 Procedure 命令。
+     *
+     * @param completedRow 被对冲 COMPLETED 行
+     * @param operatorId   操作人
+     * @param now          当前时刻
+     * @return 创建命令
+     */
+    @Override
+    public CreateProcedureRecordCommand toCreateProcedureCancelOffsetCommand(
+        ProcedureRecordQueryModel completedRow,
+        Long operatorId,
+        LocalDateTime now) {
+        CreateProcedureRecordCommand command = new CreateProcedureRecordCommand();
+        command.setOperatorId(operatorId);
+        command.setSkipDuplicateRequestAnchorCheck(Boolean.TRUE);
+        if (completedRow == null) {
+            return command;
+        }
+        command.setRequestId(completedRow.getRequestId());
+        command.setRequestTable(completedRow.getRequestTable());
+        command.setEncounterId(completedRow.getEncounterId());
+        command.setPatientId(completedRow.getPatientId());
+        command.setCategoryEnum(completedRow.getCategoryEnum());
+        LocalDateTime occurrenceTime = completedRow.getOccurrenceTime();
+        // 继承原 COMPLETED 计划点；缺失时回落当前时刻
+        if (occurrenceTime == null) {
+            occurrenceTime = now;
+        }
+        command.setOccurrenceTime(occurrenceTime);
+        return command;
+    }
+
+    /**
+     * 启动 Procedure 执行。
+     *
+     * @param procedureId 执行记录主键
+     * @param operatorId  操作人
+     * @return 启动命令
+     */
+    @Override
+    public StartProcedureExecutionCommand toStartProcedureExecutionCommand(Long procedureId, Long operatorId) {
+        StartProcedureExecutionCommand command = new StartProcedureExecutionCommand();
+        command.setProcedureId(procedureId);
+        command.setOperatorId(operatorId);
+        return command;
+    }
+
+    /**
+     * 护士划价诊疗完成 Procedure。
+     *
+     * @param procedureId 执行记录主键
+     * @param operatorId  操作人
+     * @return 完成命令
+     */
+    @Override
+    public CompleteProcedureRecordCommand toCompleteNursePricingProcedureRecordCommand(
+        Long procedureId,
+        Long operatorId) {
+        CompleteProcedureRecordCommand command = new CompleteProcedureRecordCommand();
+        command.setProcedureId(procedureId);
+        command.setOperatorId(operatorId);
+        command.setResultText(InpatientNurseStationConstants.INPATIENT_NURSE_PRICING_PROCEDURE_RESULT_TEXT);
+        command.setReportJson(null);
+        return command;
+    }
+
+    /**
+     * 取消划价 CANCEL 对冲 Procedure。
+     *
+     * @param newProcedureId             新 CANCEL 行主键
+     * @param statusReasonText           取消原因
+     * @param offsetCompletedProcedureId 被对冲 COMPLETED 行主键
+     * @param operatorId                 操作人
+     * @return 取消命令
+     */
+    @Override
+    public CancelProcedureRecordCommand toCancelNursePricingProcedureRecordCommand(
+        Long newProcedureId,
+        String statusReasonText,
+        Long offsetCompletedProcedureId,
+        Long operatorId) {
+        CancelProcedureRecordCommand command = new CancelProcedureRecordCommand();
+        command.setProcedureId(newProcedureId);
+        command.setStatusReasonText(statusReasonText);
+        command.setRefundId(offsetCompletedProcedureId);
+        command.setOperatorId(operatorId);
         return command;
     }
 }

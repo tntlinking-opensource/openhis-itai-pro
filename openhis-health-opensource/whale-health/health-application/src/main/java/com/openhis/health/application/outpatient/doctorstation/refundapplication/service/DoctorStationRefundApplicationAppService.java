@@ -1,6 +1,10 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
 package com.openhis.health.application.outpatient.doctorstation.refundapplication.service;
 
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.share.constants.DoctorStationRefundApplicationConstants;
 import com.openhis.health.application.outpatient.doctorstation.refundapplication.dto.OutpatientRefundApplicationPaymentSummaryDto;
 import com.openhis.health.application.outpatient.doctorstation.refundapplication.dto.RefundableChargeLineItemDto;
@@ -20,8 +24,8 @@ import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQue
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.OutpatientChargeConstants;
@@ -52,7 +56,7 @@ import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQ
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -100,7 +104,7 @@ public class DoctorStationRefundApplicationAppService {
     /** 收费定价定义只读查询（可退列表项目名称回落）。 */
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     /** 产品定义读模型查询（可退列表项目名称优先口径）。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     /** 耗材发放只读查询（IF-DRA-02 / IF-DRA-03 发放态判断）。 */
     private final DeviceDispenseQueryService deviceDispenseQueryService;
     /** 药品发放只读查询（IF-DRA-03 发放态判断）。 */
@@ -410,6 +414,8 @@ public class DoctorStationRefundApplicationAppService {
                 }
             }
         }
+        // Gate：同一原支付须一次申请退清，禁止分次申请（BR-DRA-022）。
+        this.assertNoSplitRefundOnPayment(encounterId, request);
         // Cmd：先处理保留行账单重生成（BR-DRA-004），再进入拟退药/耗/诊编排，避免新行锚点与旧事实冲突。
         this.regeneratePreservedChargeLines(operatorId, request, chargeById);
         List<Long> refundingIds = new ArrayList<>();
@@ -601,6 +607,51 @@ public class DoctorStationRefundApplicationAppService {
             }
         }
         return null;
+    }
+
+    /**
+     * IF-DRA-03 Gate：同一原支付须一次申请退清，禁止分次申请（半退=一次收退两次）。
+     *
+     * <p>本支付快照下全部 {@code SETTLED} 行均须出现在提交体中（拟退或保留均可）；
+     * 不得只提交部分行留待后续再申请。</p>
+     *
+     * @param encounterId 就诊主键
+     * @param request     提交体
+     * @throws BusinessException 同一支付未覆盖全部已结算行时抛出 EX-DRA-304
+     */
+    private void assertNoSplitRefundOnPayment(Long encounterId, SubmitOutpatientRefundApplicationRequest request) {
+        Map<Long, LinkedHashSet<Long>> submittedChargeIdsByPayment = new LinkedHashMap<>();
+        for (RefundApplicationLineItemDto line : request.getLines()) {
+            LinkedHashSet<Long> bucket =
+                submittedChargeIdsByPayment.computeIfAbsent(line.getPaymentId(), k -> new LinkedHashSet<>());
+            bucket.add(line.getChargeItemId());
+        }
+        for (Map.Entry<Long, LinkedHashSet<Long>> entry : submittedChargeIdsByPayment.entrySet()) {
+            Long paymentId = entry.getKey();
+            LinkedHashSet<Long> submittedChargeIds = entry.getValue();
+            List<ChargeItemIdsCollectionQueryModel> collections =
+                this.paymentReconciliationQueryService.getChargeItemIdsByPayments(Collections.singletonList(paymentId));
+            if (collections.isEmpty() || collections.get(0).getChargeItemIds() == null) {
+                continue;
+            }
+            ChargeItemQueryCommand snapshotLoad = new ChargeItemQueryCommand();
+            snapshotLoad.setIds(collections.get(0).getChargeItemIds());
+            List<ChargeItem> snapshotRows = this.chargeItemQueryService.loadChargeItemsByIds(snapshotLoad);
+            snapshotRows = this.chargeItemQueryService.filterOutSupersededSettledLines(encounterId, snapshotRows);
+            LinkedHashSet<Long> settledInSnapshot = new LinkedHashSet<>();
+            for (ChargeItem row : snapshotRows) {
+                if (ChargeItemStatus.SETTLED.getCode().equals(row.getStatusEnum())) {
+                    settledInSnapshot.add(row.getId());
+                }
+            }
+            // Gate：须覆盖该支付下全部已结算行，避免「先退一部分、再退另一部分」分次申请。
+            if (!submittedChargeIds.containsAll(settledInSnapshot)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.CHARGE_ITEM_RULE_CONFLICT,
+                    DoctorStationRefundApplicationConstants.MESSAGE_CODE_HALF_REFUND_NOT_SUPPORTED
+                        + ": 同一笔支付须一次申请退清，不支持分次退费");
+            }
+        }
     }
 
     /**
@@ -950,13 +1001,15 @@ public class DoctorStationRefundApplicationAppService {
      */
     private void executeDeviceRefundBranch(ChargeItem chargeItem, Long operatorId) {
         // Cmd：先创建退耗材负向请求（写库点 3a）。
-        this.deviceRequestDomainService.createDeviceOrderRefund(
+        Long refundRequestId = this.deviceRequestDomainService.createDeviceOrderRefund(
             this.doctorStationRefundApplicationMapper.toCreateDeviceOrderRefundCommand(chargeItem, operatorId)
         );
         List<DeviceDispenseListModel> models =
             this.deviceDispenseQueryService.selectByRequestIdList(Collections.singletonList(chargeItem.getServiceId()));
         DeviceDispenseListModel picked = this.pickLatestDeviceDispense(models);
         if (picked == null) {
+            // 无发放事实：负向耗单直接收口，放行 IF-REF-04 资金退费（对称未发作废路径）。
+            this.deviceRequestDomainService.completeDeviceRequestAfterRefund(refundRequestId);
             return;
         }
         boolean executed = DispenseStatus.COMPLETED.getCode().equals(picked.getStatusEnum())
@@ -966,9 +1019,11 @@ public class DoctorStationRefundApplicationAppService {
             refundQty = BigDecimal.ZERO;
         }
         if (executed) {
-            // Cmd：已执行/部分执行：创建待退发放（写库点 3b 分支 A）。
+            // Cmd：已执行/部分执行：创建待退发放并锚定负向耗单（写库点 3b 分支 A）。
             this.deviceDispenseDomainService.createPendingRefundDeviceDispense(
-                this.doctorStationRefundApplicationMapper.toCreatePendingRefundDeviceDispenseCommand(picked.getId(), refundQty, operatorId)
+                this.doctorStationRefundApplicationMapper.toCreatePendingRefundDeviceDispenseCommand(
+                    picked.getId(), refundQty, operatorId, refundRequestId
+                )
             );
             return;
         }
@@ -980,6 +1035,8 @@ public class DoctorStationRefundApplicationAppService {
                 operatorId
             )
         );
+        // 未发作废后无实物退库，负向耗单须收口为 COMPLETED，否则 IF-REF-04 误拦 EX-REF-202。
+        this.deviceRequestDomainService.completeDeviceRequestAfterRefund(refundRequestId);
     }
 
     /**
@@ -1009,17 +1066,17 @@ public class DoctorStationRefundApplicationAppService {
     }
 
     /**
-     * 诊疗拟退分支（IF-DRA-03 步骤 18）。
+     * 诊疗拟退分支（IF-DRA-03 步骤 18）：已完成建负向 ServiceRequest；未完成 stop 原单。
      *
      * @param chargeItem 拟退收费行
      * @param operatorId 操作人主键
      */
     private void executeServiceRefundBranch(ChargeItem chargeItem, Long operatorId) {
         ServiceRequestQueryModel sr = this.serviceRequestQueryService.mustGetServiceRequest(chargeItem.getServiceId());
-        // Cmd：已完成诊疗走取消申请；未完成走停止申请（BR-DRA-007）。
+        // Cmd：已完成诊疗走负向复制行（CANCELLED 待退）；未完成走停止原单（BR-DRA-007）。
         if (RequestStatus.COMPLETED.getCode().equals(sr.getStatusEnum())) {
-            this.serviceRequestDomainService.cancelServiceRequest(
-                this.doctorStationRefundApplicationMapper.toCancelServiceRequestCommand(sr.getId(), operatorId)
+            this.serviceRequestDomainService.createServiceOrderRefund(
+                this.doctorStationRefundApplicationMapper.toCreateServiceOrderRefundCommand(chargeItem, operatorId)
             );
             return;
         }
@@ -1083,7 +1140,7 @@ public class DoctorStationRefundApplicationAppService {
         if (lookups.isEmpty()) {
             return Collections.emptyMap();
         }
-        return this.productDefinitionBatchLoader.loadAsMap(lookups);
+        return this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
     }
 
     /**
@@ -1094,13 +1151,13 @@ public class DoctorStationRefundApplicationAppService {
      * @return 有效键或 {@code null}
      */
     private ProductDefinitionBatchLookup resolveCatalogLookupForChargeItem(ChargeItem row, ChargeItemDefinition definition) {
-        if (row.getProductId() != null && StringUtils.isNotBlank(row.getProductTable())) {
+        if (row.getProductId() != null && StringUtils.isNotEmpty(row.getProductTable())) {
             ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
             lookup.setProductDefinitionId(row.getProductId());
             lookup.setProductTableName(row.getProductTable().trim());
             return lookup;
         }
-        if (definition != null && definition.getInstanceId() != null && StringUtils.isNotBlank(definition.getInstanceTable())) {
+        if (definition != null && definition.getInstanceId() != null && StringUtils.isNotEmpty(definition.getInstanceTable())) {
             ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
             lookup.setProductDefinitionId(definition.getInstanceId());
             lookup.setProductTableName(definition.getInstanceTable().trim());
@@ -1156,10 +1213,10 @@ public class DoctorStationRefundApplicationAppService {
             definitionRow = definitionMap.get(row.getDefinitionId());
         }
         ProductDefinitionDisplayDto product = this.resolveProductForChargeItem(row, productMap, definitionRow);
-        if (product != null && StringUtils.isNotBlank(product.getProductName())) {
+        if (product != null && StringUtils.isNotEmpty(product.getProductName())) {
             return product.getProductName();
         }
-        if (definitionRow != null && StringUtils.isNotBlank(definitionRow.getChargeName())) {
+        if (definitionRow != null && StringUtils.isNotEmpty(definitionRow.getChargeName())) {
             return definitionRow.getChargeName();
         }
         return OutpatientChargeConstants.PENDING_CHARGE_ITEM_DISPLAY_FALLBACK;

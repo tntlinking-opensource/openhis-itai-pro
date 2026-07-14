@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.pharmacy.gainloss.mapper;
 
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inventory.pharmacy.gainloss.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.pharmacy.gainloss.dto.PharmacyGainLossDetailLineDto;
 import com.openhis.health.application.inventory.pharmacy.gainloss.dto.PharmacyGainLossLineDto;
@@ -28,6 +15,7 @@ import com.openhis.health.application.inventory.pharmacy.gainloss.request.Create
 import com.openhis.health.application.inventory.pharmacy.gainloss.request.RejectPharmacyGainLossRequest;
 import com.openhis.health.application.inventory.pharmacy.gainloss.request.RemovePharmacyGainLossRequest;
 import com.openhis.health.application.inventory.pharmacy.gainloss.request.SubmitPharmacyGainLossApprovalRequest;
+import com.openhis.health.application.inventory.pharmacy.gainloss.request.UpdatePharmacyGainLossRequest;
 import com.openhis.health.application.inventory.pharmacy.gainloss.request.WithdrawPharmacyGainLossApprovalRequest;
 import com.openhis.health.application.inventory.pharmacy.gainloss.response.AgreePharmacyGainLossResponse;
 import com.openhis.health.application.inventory.pharmacy.gainloss.response.CreatePharmacyGainLossResponse;
@@ -38,11 +26,12 @@ import com.openhis.health.application.inventory.pharmacy.gainloss.response.PageP
 import com.openhis.health.application.inventory.pharmacy.gainloss.response.RejectPharmacyGainLossResponse;
 import com.openhis.health.application.inventory.pharmacy.gainloss.response.RemovePharmacyGainLossResponse;
 import com.openhis.health.application.inventory.pharmacy.gainloss.response.SubmitPharmacyGainLossApprovalResponse;
+import com.openhis.health.application.inventory.pharmacy.gainloss.response.UpdatePharmacyGainLossResponse;
 import com.openhis.health.application.inventory.pharmacy.gainloss.response.WithdrawPharmacyGainLossApprovalResponse;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.SupplyCategory;
@@ -62,7 +51,8 @@ import com.openhis.health.domain.workflow.supplyrequest.command.WithdrawApproval
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -76,20 +66,20 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 药房盘点单装配实现（AS-INV-PHA-006-SDD）。
+ * 药房损益单装配实现：{@link InventoryPharmacyGainLossMapper}。
+ *
+ * <p>仅做字段搬运与枚举 code 归一；业务流程判断在 {@link InventoryPharmacyGainLossAppService}。
+ * 各 {@code @Override} 方法 JavaDoc 与接口契约一致（B.1，禁止单独 {@code @inheritDoc} 占位）。</p>
  */
 @Component
+@RequiredArgsConstructor
 public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGainLossMapper {
 
     /** 位置读服务：推导 {@code purposeTypeEnum} 与药房门控。 */
     private final LocationQueryService locationQueryService;
 
-    public InventoryPharmacyGainLossMapperImpl(LocationQueryService locationQueryService) {
-        this.locationQueryService = locationQueryService;
-    }
-
     /**
-     * 将位置实体列表装配为盘点页药房下拉（IF-PHA-ST-01）。
+     * 将位置实体列表装配为损益页药房下拉。
      *
      * @param locations 位置实体列表，可为 null
      * @return 下拉项列表，永不为 null
@@ -106,7 +96,7 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
             }
             Long id = location.getId();
             String label = location.getName();
-            if (StringUtils.isBlank(label)) {
+            if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
             list.add(new OptionDto(id, String.valueOf(id), label));
@@ -114,7 +104,12 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return list;
     }
 
-    /** 领域实体转下拉选项。 */
+    /**
+     * 将医务人员列表映射为下拉选项。
+     *
+     * @param practitioners 人员列表，可为 null
+     * @return 人员下拉选项，永不为 null
+     */
     @Override
     public List<OptionDto> toOptionDtoListFromPractitioners(List<Practitioner> practitioners) {
         List<OptionDto> list = new ArrayList<>();
@@ -127,7 +122,7 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
             }
             Long id = p.getId();
             String label = p.getName();
-            if (StringUtils.isBlank(label)) {
+            if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
             list.add(new OptionDto(id, String.valueOf(id), label));
@@ -135,7 +130,11 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return list;
     }
 
-    /** 领域实体转下拉选项。 */
+    /**
+     * 装配供应请求状态枚举选项（持久化 code，按 sortOrder 排序）。
+     *
+     * @return 单据状态下拉选项
+     */
     @Override
     public List<OptionDto> toOptionDtoListSupplyStatuses() {
         List<SupplyStatus> ordered = new ArrayList<>();
@@ -150,7 +149,11 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return list;
     }
 
-    /** 领域实体转下拉选项。 */
+    /**
+     * 装配物品来源表（药品/耗材）固定两档选项。
+     *
+     * @return 物品表下拉选项
+     */
     @Override
     public List<OptionDto> toOptionDtoListInboundItemTableTypes() {
         List<OptionDto> list = new ArrayList<>();
@@ -159,7 +162,16 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return list;
     }
 
-    /** 装配页主数据初始化 Response。 */
+    /**
+     * 装配损益页初始化响应（选项集合写入各字段）。
+     *
+     * @param pharmacyOpts   药房下拉
+     * @param inboundTypes   物品表类型下拉
+     * @param statusOpts     状态下拉
+     * @param pharmacistOpts 药师下拉
+     * @param keeperOpts     库管下拉
+     * @return 页初始化响应
+     */
     @Override
     public LoadPharmacyGainLossFormInitResponse toLoadPharmacyGainLossFormInitResponse(
         List<OptionDto> pharmacyOpts,
@@ -176,7 +188,15 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return res;
     }
 
-    /** toPharmacyGainLossListAggregated 映射装配。 */
+    /**
+     * 按 busNo 顺序聚合供应请求明细为列表行 DTO。
+     *
+     * <p>同号各行状态/药房须一致；汇总盈亏量、实盘金额与最新申请时间。</p>
+     *
+     * @param busNoPageOrder 当前页单号顺序
+     * @param detailRows     当前页涉及的全部明细行
+     * @return 聚合后的列表行
+     */
     @Override
     public List<PharmacyGainLossListRowDto> toPharmacyGainLossListAggregated(List<String> busNoPageOrder, List<SupplyRequestModel> detailRows) {
         List<PharmacyGainLossListRowDto> out = new ArrayList<>();
@@ -186,16 +206,17 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         if (detailRows == null || detailRows.isEmpty()) {
             return out;
         }
+        // 按 busNo 分组明细行
         LinkedHashMap<String, List<SupplyRequestModel>> byBusNo = new LinkedHashMap<>();
         for (SupplyRequestModel row : detailRows) {
-            if (row == null || StringUtils.isBlank(row.getBusNo())) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
                 continue;
             }
             String bn = row.getBusNo().trim();
             byBusNo.computeIfAbsent(bn, k -> new ArrayList<>()).add(row);
         }
         for (String busNoRaw : busNoPageOrder) {
-            if (StringUtils.isBlank(busNoRaw)) {
+            if (StringUtils.isEmpty(busNoRaw)) {
                 continue;
             }
             String busNo = busNoRaw.trim();
@@ -206,17 +227,18 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
             List<SupplyRequestModel> sortedByApply = new ArrayList<>(lines);
             sortedByApply.sort(this::compareSupplyModelApplyTimeDescNullsLast);
             SupplyRequestModel head = sortedByApply.get(0);
+            // 同号头字段一致性校验，防止列表聚合脏数据
             for (SupplyRequestModel line : lines) {
                 if (line == null) {
                     continue;
                 }
                 if (!Objects.equals(head.getStatusEnum(), line.getStatusEnum())) {
                     throw new BusinessException(
-                        ErrorCodeConstants.PHA_GL_102, "同号盘点单状态头字段不一致: " + busNo);
+                        ErrorCodeConstants.PHA_GL_102, "同号损益单状态头字段不一致: " + busNo);
                 }
                 if (!Objects.equals(head.getPurposeLocationId(), line.getPurposeLocationId())) {
                     throw new BusinessException(
-                        ErrorCodeConstants.PHA_GL_102, "同号盘点单盘点药房头字段不一致: " + busNo);
+                        ErrorCodeConstants.PHA_GL_102, "同号损益单药房头字段不一致: " + busNo);
                 }
             }
             LocalDateTime maxApply = null;
@@ -258,6 +280,10 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
             PharmacyGainLossListRowDto dto = new PharmacyGainLossListRowDto();
             dto.setBusNo(busNo);
             dto.setStatusEnum(head.getStatusEnum());
+            // 驳回态：把供应行 reason 带到列表 rejectReason，供侧栏卡片展示
+            if (SupplyStatus.REJECT.getCode().equals(head.getStatusEnum())) {
+                dto.setRejectReason(head.getReason());
+            }
             dto.setPurposeLocationId(head.getPurposeLocationId());
             dto.setApplicantId(head.getApplicantId());
             dto.setApproverId(head.getApproverId());
@@ -272,7 +298,15 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return out;
     }
 
-    /** 装配分页查询 Response。 */
+    /**
+     * 用聚合列表行构建分页响应。
+     *
+     * @param mergedTotal 去重后的总单数
+     * @param pageNo      页码（1-based）
+     * @param pageSize    页大小
+     * @param records     当前页聚合行
+     * @return 分页响应
+     */
     @Override
     public PagePharmacyGainLosssResponse toPagePharmacyGainLosssAggregatedResponse(
         long mergedTotal, int pageNo, int pageSize, List<PharmacyGainLossListRowDto> records) {
@@ -283,7 +317,13 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return PagedResultBuilder.build(new PagePharmacyGainLosssResponse(), content, mergedTotal, pageNo, pageSize);
     }
 
-    /** 装配单据详情 Response。 */
+    /**
+     * 将供应请求行列表映射为详情响应（含明细与目录提示）。
+     *
+     * @param lines        供应请求明细行
+     * @param productHints 行 id 到目录编辑提示的映射
+     * @return 详情响应
+     */
     @Override
     public GetPharmacyGainLossDetailResponse toGetPharmacyGainLossDetailResponse(
         List<SupplyRequestModel> lines,
@@ -327,7 +367,12 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return res;
     }
 
-    /** 供应行转详情明细 DTO。 */
+    /**
+     * 单条供应请求行映射为详情明细 DTO。
+     *
+     * @param line 供应请求明细行
+     * @return 详情行 DTO；line 为 null 时返回 null
+     */
     @Override
     public PharmacyGainLossDetailLineDto toPharmacyGainLossDetailLineDto(SupplyRequestModel line) {
         if (line == null) {
@@ -338,6 +383,7 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         dto.setItemTable(line.getItemTable());
         dto.setItemId(line.getItemId());
         dto.setLotNumber(line.getLotNumber());
+        dto.setTraceNo(line.getTraceNo());
         dto.setExpirationDate(line.getEndTime());
         dto.setUnitCode(line.getUnitCode());
         dto.setGainLossQuantity(line.getItemQuantity());
@@ -345,6 +391,7 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         dto.setActualAmount(line.getTotalPrice());
         dto.setGainLossAmount(line.getProfitLossPrice());
         dto.setPrice(line.getPrice());
+        dto.setReason(line.getReason());
         dto.setRemake(line.getRemake());
         dto.setOccurrenceTime(line.getOccurrenceTime());
         dto.setProductName(null);
@@ -355,7 +402,15 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return dto;
     }
 
-    /** 装配新建成功 Response。 */
+    /**
+     * 将新建药房损益请求装配为领域 CreateGainLossCommand。
+     *
+     * @param request     新建请求
+     * @param operatorId  操作人
+     * @param applicantId 制单人员
+     * @param busNo       预分配业务单号；新建时为 null
+     * @return 领域写命令
+     */
     @Override
     public CreateGainLossCommand toCreateGainLossCommand(
         CreatePharmacyGainLossRequest request,
@@ -370,6 +425,7 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
                 this.locationQueryService.requireSupplyRequestTypeForLocationId(request.getPurposeLocationId()).getCode();
             String categoryCode = this.resolveSupplyCategoryCode(request.getCategoryEnum());
             String typeCode = SupplyType.PHARMACY_GAIN_LOSS.getCode();
+            // 逐行映射损益明细为领域 item 命令
             for (PharmacyGainLossLineDto line : request.getLines()) {
                 if (line == null) {
                     continue;
@@ -380,13 +436,20 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
                 item.setItemTable(line.getItemTable());
                 item.setItemId(line.getItemId());
                 item.setItemQuantity(line.getGainLossQuantity());
+                item.setTotalQuantity(line.getActualQuantity());
                 item.setUnitCode(line.getUnitCode());
                 item.setCategoryEnum(categoryCode);
                 item.setPurposeTypeEnum(purposeTypeCode);
                 item.setPurposeLocationId(request.getPurposeLocationId());
                 item.setOccurrenceTime(line.getOccurrenceTime());
+                item.setPractitionerId(request.getPractitionerId());
+                item.setReason(line.getReason());
+                item.setRemake(line.getRemake());
                 item.setLotNumber(line.getLotNumber());
-                item.setReason(line.getRemake());
+                item.setTraceNo(line.getTraceNo());
+                item.setPrice(line.getPrice());
+                item.setTotalPrice(line.getActualAmount());
+                item.setProfitLossPrice(line.getGainLossAmount());
                 item.setApplicantId(applicantId);
                 item.setApplyTime(null);
                 items.add(item);
@@ -394,12 +457,74 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         }
         command.setItems(items);
         return command;
-    }@Override
+    }
+
+    /**
+     * 将修订药房损益请求装配为领域 CreateGainLossCommand（同号全量对齐）。
+     *
+     * @param request     修订请求
+     * @param operatorId  操作人
+     * @param applicantId 制单人员
+     * @return 领域写命令
+     */
+    @Override
+    public CreateGainLossCommand toCreateGainLossCommand(
+        UpdatePharmacyGainLossRequest request,
+        Long operatorId,
+        Long applicantId) {
+        if (request == null) {
+            throw new IllegalArgumentException("request 不能为空");
+        }
+        CreatePharmacyGainLossRequest synthetic = new CreatePharmacyGainLossRequest();
+        synthetic.setPurposeLocationId(request.getPurposeLocationId());
+        synthetic.setPractitionerId(request.getPractitionerId());
+        synthetic.setCategoryEnum(request.getCategoryEnum());
+        synthetic.setLines(request.getLines());
+        String busNo = null;
+        if (request.getBusNo() != null) {
+            busNo = request.getBusNo().trim();
+        }
+        if (busNo != null && busNo.isEmpty()) {
+            busNo = null;
+        }
+        return this.toCreateGainLossCommand(synthetic, operatorId, applicantId, busNo);
+    }
+
+    /**
+     * 装配新建药房损益成功响应。
+     *
+     * @param busNo 新建业务单号
+     * @return 新建响应
+     */
+    @Override
     public CreatePharmacyGainLossResponse toCreatePharmacyGainLossResponse(String busNo) {
         CreatePharmacyGainLossResponse res = new CreatePharmacyGainLossResponse();
         res.setBusNo(busNo);
         return res;
-    }@Override
+    }
+
+    /**
+     * 装配修订药房损益成功响应。
+     *
+     * @param busNo 业务单号
+     * @return 修订响应
+     */
+    @Override
+    public UpdatePharmacyGainLossResponse toUpdatePharmacyGainLossResponse(String busNo) {
+        UpdatePharmacyGainLossResponse res = new UpdatePharmacyGainLossResponse();
+        res.setBusNo(busNo);
+        return res;
+    }
+
+    /**
+     * 将提交审批请求装配为领域 SubmitApprovalCommand。
+     *
+     * @param request     提交请求
+     * @param operatorId  操作人
+     * @param applicantId 制单人员
+     * @return 领域写命令
+     */
+    @Override
     public SubmitApprovalCommand toSubmitApprovalCommand(
         SubmitPharmacyGainLossApprovalRequest request, Long operatorId, Long applicantId) {
         SubmitApprovalCommand command = new SubmitApprovalCommand();
@@ -411,7 +536,12 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return command;
     }
 
-    /** 装配提交审批 Response。 */
+    /**
+     * 装配提交审批成功响应（含提交后展示状态）。
+     *
+     * @param statusAfter 提交后供应状态
+     * @return 提交响应
+     */
     @Override
     public SubmitPharmacyGainLossApprovalResponse toSubmitPharmacyGainLossApprovalResponse(SupplyStatus statusAfter) {
         SubmitPharmacyGainLossApprovalResponse res = new SubmitPharmacyGainLossApprovalResponse();
@@ -422,7 +552,13 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return res;
     }
 
-    /** 装配撤回审批 Response。 */
+    /**
+     * 将撤回审批请求装配为领域 WithdrawApprovalCommand。
+     *
+     * @param request    撤回请求
+     * @param operatorId 操作人
+     * @return 领域写命令
+     */
     @Override
     public WithdrawApprovalCommand toWithdrawApprovalCommand(WithdrawPharmacyGainLossApprovalRequest request, Long operatorId) {
         WithdrawApprovalCommand command = new WithdrawApprovalCommand();
@@ -433,7 +569,12 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return command;
     }
 
-    /** 装配撤回审批 Response。 */
+    /**
+     * 装配撤回审批成功响应（含撤回后展示状态）。
+     *
+     * @param statusAfter 撤回后供应状态
+     * @return 撤回响应
+     */
     @Override
     public WithdrawPharmacyGainLossApprovalResponse toWithdrawPharmacyGainLossApprovalResponse(SupplyStatus statusAfter) {
         WithdrawPharmacyGainLossApprovalResponse res = new WithdrawPharmacyGainLossApprovalResponse();
@@ -444,7 +585,13 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return res;
     }
 
-    /** 装配同意成功 Response。 */
+    /**
+     * 将同意请求装配为领域 AgreeRequestCommand。
+     *
+     * @param request    同意请求
+     * @param operatorId 操作人（同时作为 approverId）
+     * @return 领域写命令
+     */
     @Override
     public AgreeRequestCommand toAgreeRequestCommand(AgreePharmacyGainLossRequest request, Long operatorId) {
         AgreeRequestCommand command = new AgreeRequestCommand();
@@ -456,7 +603,13 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return command;
     }
 
-    /** 装配新建成功 Response。 */
+    /**
+     * 将已同意明细行装配为损益发放命令（跳过盈亏量为零的行）。
+     *
+     * @param lines      已同意的供应请求明细行
+     * @param operatorId 操作人
+     * @return 发放命令
+     */
     @Override
     public CreateSupplyDeliveryCommand toCreateSupplyDeliveryCommand(
         List<SupplyRequestModel> lines, Long operatorId) {
@@ -469,6 +622,7 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
                     continue;
                 }
                 BigDecimal profitLossQty = line.getItemQuantity();
+                // 零盈亏行不参与发放
                 if (profitLossQty == null || profitLossQty.compareTo(BigDecimal.ZERO) == 0) {
                     continue;
                 }
@@ -489,7 +643,14 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return cmd;
     }
 
-    /** 装配领域写命令。 */
+    /**
+     * 装配报溢增库存命令。
+     *
+     * @param inventoryItemId 库存项主键
+     * @param increaseQty     增加数量（拆零）
+     * @param operatorId      操作人
+     * @return 增库存命令
+     */
     @Override
     public IncreaseQuantityCommand toIncreaseQuantityCommand(Long inventoryItemId, BigDecimal increaseQty, Long operatorId) {
         IncreaseQuantityCommand command = new IncreaseQuantityCommand();
@@ -501,7 +662,15 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return command;
     }
 
-    /** 装配领域写命令。 */
+    /**
+     * 装配报损减库存命令。
+     *
+     * @param inventoryItemId 库存项主键
+     * @param decreaseQty     减少数量（拆零，正数）
+     * @param allowNegative   是否允许负库存（报损为 true）
+     * @param operatorId      操作人
+     * @return 减库存命令
+     */
     @Override
     public DecreaseQuantityCommand toDecreaseQuantityCommand(
         Long inventoryItemId, BigDecimal decreaseQty, boolean allowNegative, Long operatorId) {
@@ -515,7 +684,13 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return command;
     }
 
-    /** 装配同意成功 Response。 */
+    /**
+     * 装配同意药房损益成功响应。
+     *
+     * @param busNo      业务单号
+     * @param statusEnum 同意后状态 code
+     * @return 同意响应
+     */
     @Override
     public AgreePharmacyGainLossResponse toAgreePharmacyGainLossResponse(String busNo, String statusEnum) {
         AgreePharmacyGainLossResponse res = new AgreePharmacyGainLossResponse();
@@ -524,7 +699,13 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return res;
     }
 
-    /** 装配驳回成功 Response。 */
+    /**
+     * 将驳回请求装配为领域 RejectRequestCommand。
+     *
+     * @param request    驳回请求
+     * @param operatorId 操作人（同时作为 approverId）
+     * @return 领域写命令
+     */
     @Override
     public RejectRequestCommand toRejectRequestCommand(RejectPharmacyGainLossRequest request, Long operatorId) {
         RejectRequestCommand command = new RejectRequestCommand();
@@ -534,7 +715,8 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         item.setApproverId(operatorId);
         item.setApprovalClock(null);
         String mergedReason;
-        if (StringUtils.isBlank(request.getChangeReason())) {
+        // 优先取文本原因，否则回落原因码
+        if (StringUtils.isEmpty(request.getChangeReason())) {
             mergedReason = request.getChangeReasonCode();
         } else {
             mergedReason = request.getChangeReason();
@@ -544,7 +726,12 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return command;
     }
 
-    /** 装配驳回成功 Response。 */
+    /**
+     * 装配驳回药房损益成功响应。
+     *
+     * @param ok 是否驳回成功
+     * @return 驳回响应
+     */
     @Override
     public RejectPharmacyGainLossResponse toRejectPharmacyGainLossResponse(boolean ok) {
         RejectPharmacyGainLossResponse res = new RejectPharmacyGainLossResponse();
@@ -552,7 +739,13 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return res;
     }
 
-    /** 装配删除成功 Response。 */
+    /**
+     * 将删除请求装配为领域 RemoveByBusNoCommand。
+     *
+     * @param request    删除请求
+     * @param operatorId 操作人
+     * @return 领域写命令
+     */
     @Override
     public RemoveByBusNoCommand toRemoveByBusNoCommand(RemovePharmacyGainLossRequest request, Long operatorId) {
         RemoveByBusNoCommand command = new RemoveByBusNoCommand();
@@ -563,7 +756,12 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return command;
     }
 
-    /** 装配删除成功 Response。 */
+    /**
+     * 装配删除药房损益成功响应。
+     *
+     * @param ok 是否删除成功
+     * @return 删除响应
+     */
     @Override
     public RemovePharmacyGainLossResponse toRemovePharmacyGainLossResponse(boolean ok) {
         RemovePharmacyGainLossResponse res = new RemovePharmacyGainLossResponse();
@@ -571,7 +769,12 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return res;
     }
 
-    /** 装配分页查询 Response。 */
+    /**
+     * 将现库库存分页装配为药房损益选品分页响应（不含价带 enrich，由 AppService 补全）。
+     *
+     * @param page 库存读模型分页
+     * @return 选品分页响应
+     */
     @Override
     public PageProductsForPharmacyGainLossResponse toPageProductsForPharmacyGainLossResponse(Page<InventoryItemModel> page) {
         List<ProductDefinitionItemDto> content = new ArrayList<>();
@@ -584,7 +787,13 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return PagedResultBuilder.build(new PageProductsForPharmacyGainLossResponse(), content, page);
     }
 
-    /** toProductDefinitionItemDtoFromInventory 映射装配。 */
+    /**
+     * 将库存行与产品读模型装配为选品行 DTO。
+     *
+     * @param inv 库存行
+     * @param pr  产品读模型，可为 null
+     * @return 选品行 DTO
+     */
     @Override
     public ProductDefinitionItemDto toProductDefinitionItemDtoFromInventory(
         InventoryItemModel inv, ProductDefinitionDisplayDto pr) {
@@ -610,8 +819,14 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return dto;
     }
 
+    /**
+     * 供应类目 code 规范化：空则回落库存供应；非法枚举抛 {@link IllegalArgumentException}。
+     *
+     * @param categoryEnumCode 持久化 category_enum 或请求入参
+     * @return {@link SupplyCategory#getCode()} 字符串
+     */
     private String resolveSupplyCategoryCode(String categoryEnumCode) {
-        if (StringUtils.isBlank(categoryEnumCode)) {
+        if (StringUtils.isEmpty(categoryEnumCode)) {
             return SupplyCategory.STOCK_SUPPLY.getCode();
         }
         SupplyCategory cat = EnumUtil.fromCode(SupplyCategory.class, categoryEnumCode.trim());
@@ -621,6 +836,13 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return cat.getCode();
     }
 
+    /**
+     * 供应请求排序：申请时间降序，null 排后；同刻按 id 升序 tie-break。
+     *
+     * @param a 左比较行
+     * @param b 右比较行
+     * @return Comparator 约定负/零/正
+     */
     private int compareSupplyModelApplyTimeDescNullsLast(SupplyRequestModel a, SupplyRequestModel b) {
         if (a == null && b == null) {
             return 0;
@@ -649,6 +871,13 @@ public class InventoryPharmacyGainLossMapperImpl implements InventoryPharmacyGai
         return this.compareSupplyModelIdAscNullsLast(a, b);
     }
 
+    /**
+     * 供应请求 id 升序比较器；null 行或 null 主键排后（侧栏队列稳定次序）。
+     *
+     * @param a 左比较行
+     * @param b 右比较行
+     * @return Comparator 约定负/零/正
+     */
     private int compareSupplyModelIdAscNullsLast(SupplyRequestModel a, SupplyRequestModel b) {
         if (a == null && b == null) {
             return 0;

@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.pharmacy.dispenserecord.mapper;
 
 import com.openhis.health.application.outpatient.pharmacy.dispenserecord.dto.PharmacyDispenseRecordExportRowDto;
@@ -14,7 +14,7 @@ import com.openhis.health.application.outpatient.pharmacy.dispenserecord.respons
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.medication.medicationdispense.query.MedicationDispenseRecordPageQuery;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
-import com.openhis.health.module.querysupport.pharmacy.dto.PharmacyDispenseRecordQueryRowDto;
+import com.openhis.health.application.outpatient.pharmacy.dispenserecord.dto.PharmacyDispenseRecordQueryRowDto;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
 

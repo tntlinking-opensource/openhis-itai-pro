@@ -1,31 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationdispense.repository;
 
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
-
-import java.time.LocalDateTime;
 
 import java.util.Collection;
 import java.util.List;
@@ -67,6 +49,22 @@ public interface MedicationDispenseRepository extends JpaRepository<MedicationDi
      * @return 发放记录集合
      */
     List<MedicationDispense> findBySummaryNo(String summaryNo);
+
+    /**
+     * 按汇总号集合批量查询未删除发放记录（汇总发药门控读侧批量加载）。
+     *
+     * @param summaryNos 汇总号集合
+     * @return 发放记录集合
+     */
+    List<MedicationDispense> findBySummaryNoIn(Collection<String> summaryNos);
+
+    /**
+     * 按业务单号集合批量查询未删除发放记录（追溯报表患者 enrich · AS-CUS-TRC-002）。
+     *
+     * @param busNos 业务单号集合
+     * @return 发放记录集合
+     */
+    List<MedicationDispense> findByBusNoInAndIsDeletedFalse(Collection<String> busNos);
 
     /**
      * 按医嘱集合查询未删除发放记录。
@@ -119,50 +117,24 @@ public interface MedicationDispenseRepository extends JpaRepository<MedicationDi
     List<MedicationDispense> findByProcedureIdIn(Collection<Long> procedureIds);
 
     /**
-     * 汇总领药：仅当源态为 {@code PREPARATION} 且无汇总号时批量写入汇总号并迁移至 {@code SUMMARIZED}（GAP-INV-003 / GAP-STALE-006）。
+     * 按主键集合、源态与软删标记批量加载（汇总领药前置筛选，GAP-INV-003）。
      *
-     * @return 实际更新行数
+     * @param ids        主键集合
+     * @param statusEnum 源态 {@code PREPARATION}
+     * @return 未软删且状态匹配的发放记录
      */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-        UPDATE MedicationDispense d
-           SET d.summaryNo = :summaryNo,
-               d.statusEnum = :targetStatus,
-               d.statusChangedTime = :statusChangedTime
-         WHERE d.id IN :ids
-           AND d.statusEnum = :sourceStatus
-           AND (d.summaryNo IS NULL OR d.summaryNo = '')
-           AND d.isDeleted = false
-        """)
-    int summarizeIfPreparationWhereIdIn(
-        @Param("ids") Collection<Long> ids,
-        @Param("summaryNo") String summaryNo,
-        @Param("targetStatus") DispenseStatus targetStatus,
-        @Param("sourceStatus") DispenseStatus sourceStatus,
-        @Param("statusChangedTime") LocalDateTime statusChangedTime);
+    List<MedicationDispense> findByIdInAndStatusEnumAndIsDeletedFalse(
+        Collection<Long> ids,
+        DispenseStatus statusEnum);
 
     /**
-     * 汇总核发：仅当源态为 {@code SUMMARIZED} 时批量完成发放（GAP-INV-004 / GAP-STALE-002）。
+     * 按汇总号、源态与软删标记批量加载（汇总核发前置筛选，GAP-INV-004）。
      *
-     * @return 实际更新行数
+     * @param summaryNo  汇总号
+     * @param statusEnum 源态 {@code SUMMARIZED}
+     * @return 未软删且状态匹配的发放记录
      */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-        UPDATE MedicationDispense d
-           SET d.statusEnum = :targetStatus,
-               d.practitionerId = :practitionerId,
-               d.dispenseQuantity = d.quantity,
-               d.dispenseTime = :dispenseTime,
-               d.statusChangedTime = :dispenseTime
-         WHERE d.summaryNo = :summaryNo
-           AND d.statusEnum = :sourceStatus
-           AND d.isDeleted = false
-        """)
-    int completeSummaryDispenseWhereSummaryNoAndSourceStatus(
-        @Param("summaryNo") String summaryNo,
-        @Param("targetStatus") DispenseStatus targetStatus,
-        @Param("sourceStatus") DispenseStatus sourceStatus,
-        @Param("practitionerId") Long practitionerId,
-        @Param("dispenseTime") LocalDateTime dispenseTime);
+    List<MedicationDispense> findBySummaryNoAndStatusEnumAndIsDeletedFalse(
+        String summaryNo,
+        DispenseStatus statusEnum);
 }
-

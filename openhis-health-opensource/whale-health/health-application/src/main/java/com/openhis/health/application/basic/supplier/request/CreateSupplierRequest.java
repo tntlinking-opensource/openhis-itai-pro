@@ -1,21 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
-/* (C)2026 */
 package com.openhis.health.application.basic.supplier.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -49,10 +35,7 @@ public class CreateSupplierRequest {
     /**
      * 供应商类型
      */
-    @Schema(
-            description = "供应商类型",
-            example = "1",
-            allowableValues = {"1", "2", "3"})
+    @Schema(description = "供应商类型", example = "1", allowableValues = {"1", "2", "3"})
     private String typeEnum;
 
     /**
@@ -86,9 +69,15 @@ public class CreateSupplierRequest {
     @Schema(description = "电子邮箱", example = "contact@bjhealthtech.com")
     private String email;
 
+    /**
+     * 开户银行
+     */
     @Schema(description = "开户银行", example = "中国工商银行")
     private String bankName;
 
+    /**
+     * 银行账号
+     */
     @Schema(description = "银行账号", example = "622202xxxxxxxxxxxx")
     private String bankAccount;
 
@@ -99,6 +88,9 @@ public class CreateSupplierRequest {
     @Schema(description = "所属机构ID", example = "10001")
     private Long orgId;
 
+    /**
+     * 备注
+     */
     @Schema(description = "备注", example = "长期合作")
     private String note;
 }

@@ -1,12 +1,16 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
 package com.openhis.health.application.outpatient.financial.refund.service;
 
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.assembler.financial.PaymentChannelOptionProvider;
-import com.openhis.health.module.common.validator.PaymentChannelGate;
-import com.openhis.health.module.common.support.PaymentChannelRefundSupport;
-import com.openhis.health.module.common.support.ThirdPartyPaymentRefundSupport;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.financial.PaymentChannelOptionProvider;
+import com.openhis.health.application.shared.validator.PaymentChannelGate;
+import com.openhis.health.application.outpatient.financial.refund.support.PaymentChannelRefundOrchestrator;
+import com.openhis.health.application.shared.payment.ThirdPartyPaymentRefundOrchestrator;
 import com.openhis.health.application.outpatient.financial.charge.dto.PaymentDetailSubmitDto;
 import com.openhis.health.application.outpatient.financial.charge.request.ConfirmOutpatientChargeSettlementRequest;
 import com.openhis.health.application.outpatient.financial.charge.request.PreSettleOutpatientChargesRequest;
@@ -44,9 +48,8 @@ import com.openhis.health.domain.administration.chargeitemdefinition.entity.Char
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.module.querysupport.financial.OutpatientChargeEncounterQueueLoader;
-import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.outpatient.financial.charge.support.OutpatientChargeEncounterQueueLoader;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CompleteOutpatientRefundCommand;
@@ -60,11 +63,11 @@ import com.openhis.health.domain.financial.paymentreconciliation.service.Payment
 import com.openhis.health.domain.medication.medicationrequest.entity.MedicationRequest;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.domain.share.constants.ChargeItemAmountScaleConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientChargeConstants;
@@ -78,19 +81,19 @@ import com.openhis.health.domain.workflow.devicerequest.entity.DeviceRequest;
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestQueryService;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.health.integration.insurance.outpatient.OutpatientChargeInsuranceExtension;
-import com.openhis.health.integration.insurance.outpatient.command.OutpatientChargeRevokeSettleCommand;
-import com.openhis.health.integration.insurance.outpatient.result.OutpatientChargeSettlementRecordResult;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientChargeInsuranceExtension;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeRevokeSettleExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargeSettlementRecordExtensionOut;
+import com.openhis.health.infrastructure.integration.workinjury.WorkInjuryOutpatientSettlementExtension;
+import com.openhis.health.infrastructure.integration.workinjury.ExtensionOut.WorkInjurySettlementRecordExtensionOut;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -127,17 +130,17 @@ public class OutpatientRefundAppService {
     /** 收银支付渠道下拉（477 ∩ Gate）。 */
     private final PaymentChannelOptionProvider paymentChannelOptionProvider;
 
-    private final ThirdPartyPaymentRefundSupport thirdPartyPaymentRefundSupport;
+    private final ThirdPartyPaymentRefundOrchestrator thirdPartyPaymentRefundOrchestrator;
 
     /** 原支付渠道读侧（退费前是否可能银联原路退）。 */
-    private final PaymentChannelRefundSupport paymentChannelRefundSupport;
+    private final PaymentChannelRefundOrchestrator paymentChannelRefundOrchestrator;
 
     /** 术语/枚举下拉。 */
     private final CodeSystemQueryService codeSystemQueryService;
 
     /** 就诊存在性门禁。 */
     private final EncounterQueryService encounterQueryService;
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
 
     /** 收费明细读侧。 */
     private final ChargeItemQueryService chargeItemQueryService;
@@ -165,7 +168,7 @@ public class OutpatientRefundAppService {
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
 
     /** 产品定义名称回落。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /** 原支付收款人（enterer_id）姓名回落。 */
     private final PractitionerQueryService practitionerQueryService;
@@ -175,6 +178,9 @@ public class OutpatientRefundAppService {
 
     /** 门诊第三方结算扩展（未装 Module 时为 NoOp）。 */
     private final OutpatientChargeInsuranceExtension chargeInsuranceExtension;
+
+    /** 工伤门诊结算扩展（2208 退费 invoke）。 */
+    private final WorkInjuryOutpatientSettlementExtension workInjurySettleExtension;
 
     /** Request/Response 与 Command 装配。 */
     private final OutpatientRefundMapper outpatientRefundMapper;
@@ -223,7 +229,7 @@ public class OutpatientRefundAppService {
                 this.outpatientChargeEncounterQueueLoader.pageEncounterIdsForOutpatientRefundQueue(
                     queueEncounterQuery, request.getQueueTabCode());
             List<OutpatientEncounterContextQueryModel> infos =
-                encounterContextFacade.listOutpatientContextsByEncounterIdsOrdered(encounterPage.getContent());
+                EncounterContextReader.listOutpatientContextsByEncounterIdsOrdered(encounterPage.getContent());
             Page<OutpatientEncounterContextQueryModel> pageShell =
                 new PageImpl<>(infos, encounterPage.getPageable(), encounterPage.getTotalElements());
             Map<Long, String> flags = this.resolveQueueFlags(infos);
@@ -322,7 +328,7 @@ public class OutpatientRefundAppService {
         if (request == null || request.getPaymentId() == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "paymentId 不能为空");
         }
-        return paymentChannelRefundSupport.listDistinctPayChannelCodes(request.getPaymentId());
+        return paymentChannelRefundOrchestrator.listDistinctPayChannelCodes(request.getPaymentId());
     }
 
     /**
@@ -353,6 +359,11 @@ public class OutpatientRefundAppService {
         loadCmd.setIds(request.getRefundingChargeItemIds());
         List<ChargeItem> refundingRows = chargeItemQueryService.loadChargeItemsByIds(loadCmd);
         this.assertRefundingChargeItems(refundingRows, request.getRefundingChargeItemIds(), request.getEncounterId());
+        // Gate：同一原支付须一次执行退清，禁止分次退费（BR-REF-021）。
+        this.assertNoSplitRefundOnPaymentExecute(
+            request.getEncounterId(),
+            request.getOriginalPaymentId(),
+            request.getRefundingChargeItemIds());
         // Gate：退药/退耗门禁与实退金额须等于应退合计。
         String gateReject = this.runRefundableGate(refundingRows);
         if (gateReject != null) {
@@ -361,14 +372,29 @@ public class OutpatientRefundAppService {
             }
             throw new BusinessException(ErrorCodeConstants.CHARGE_ITEM_RULE_CONFLICT, this.buildMessage(gateReject, "请先完成退耗材后再退费"));
         }
-        BigDecimal expectedRefund = this.sumChargeItemAmount(refundingRows);
-        BigDecimal actualRefund = this.sumRefundPaymentDetails(request.getRefundPaymentDetails());
-        if (expectedRefund.compareTo(actualRefund) != 0) {
+        List<PaymentRecDetailQueryModel> originalPaymentDetails =
+            paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(request.getOriginalPaymentId());
+        boolean halfRefundOnPayment = request.getPreservedNewChargeItemIds() != null
+            && !request.getPreservedNewChargeItemIds().isEmpty();
+        BigDecimal expectedRefund;
+        List<RefundPaymentDetailSubmitDto> effectiveRefundPaymentDetails;
+        if (halfRefundOnPayment) {
+            // 产品半退：资金侧对该 paymentId 整单冲退（AS-OP-FIN-003 §1.3），UN_PAY 须为原支付全额而非拟退行合计。
+            expectedRefund = this.resolveOriginalPaymentTenderedAmount(originalPayment);
+            effectiveRefundPaymentDetails = this.buildFullOriginalRefundPaymentDetails(originalPaymentDetails);
+        } else {
+            expectedRefund = this.sumChargeItemAmount(refundingRows);
+            effectiveRefundPaymentDetails = request.getRefundPaymentDetails();
+        }
+        BigDecimal actualRefund = this.sumRefundPaymentDetails(effectiveRefundPaymentDetails);
+        // Gate：应退与渠道实退须在结算刻度一致（BR-MON-001）
+        if (!MonetaryAmountSupport.equalsAtSettleScale(expectedRefund, actualRefund)) {
             throw new BusinessException(
                 ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
                 this.buildMessage(OutpatientRefundConstants.MESSAGE_CODE_REFUND_AMOUNT_MISMATCH, "实退合计与应退不符"));
         }
-        // Pre：医保撤销须在本地逆向落账之前完成。
+        // Pre：工伤/医保撤销须在本地逆向落账之前完成。
+        this.runWorkInjuryRevokeBeforeRefund(request.getOriginalPaymentId());
         this.runInsuranceRevokeBeforeRefund(
             request.getOriginalPaymentId(),
             originalPayment,
@@ -378,14 +404,14 @@ public class OutpatientRefundAppService {
         String outcomeEnum = this.resolvePaymentOutcomeEnum(originalPayment);
         List<Long> paymentIdList = new ArrayList<>();
         paymentIdList.add(request.getOriginalPaymentId());
-        thirdPartyPaymentRefundSupport.applyRefundBeforeLocalRefund(
+        thirdPartyPaymentRefundOrchestrator.applyRefundBeforeLocalRefund(
             request.getOriginalPaymentId(),
             request.getClientRefundResult(),
             operatorId);
         List<PaymentDetailItemCommand> refundPaymentDetailCommands =
-            outpatientRefundMapper.toPaymentDetailItemCommands(request.getRefundPaymentDetails());
-        List<PaymentRecDetailQueryModel> originalPaymentDetails =
-            paymentReconciliationQueryService.listPaymentRecDetailsByPaymentId(request.getOriginalPaymentId());
+            outpatientRefundMapper.toPaymentDetailItemCommands(effectiveRefundPaymentDetails);
+        // Gate：退费渠道拆分须与原支付明细一致（原路返回，BR-REF-011）。
+        this.assertRefundPaymentDetailsMatchOriginalPayment(effectiveRefundPaymentDetails, originalPaymentDetails);
         // Pre：前端仅提交渠道与实退额；落库前须写回 accountId，避免领域明细自检「支付明细账户标识不能为空」。
         this.attachOriginalPaymentAccountsToRefundPaymentDetails(
             refundPaymentDetailCommands, originalPaymentDetails, request.getEncounterId(), refundingRows);
@@ -421,7 +447,7 @@ public class OutpatientRefundAppService {
                             "原支付结果码缺失，无法半退再结算"));
                 }
                 // Cmd：半退保留行当场预结算并正式结算（委托收费域 IF-OPC-06/07）。
-                this.preSettleAndConfirmPreservedLines(request, billDate, outcomeEnum);
+                this.preSettleAndConfirmPreservedLines(request, billDate, outcomeEnum, originalPaymentDetails);
             }
             log.info(
                 "outpatient refund executed encounterId={} originalPaymentId={} reversePaymentId={} refundingCount={}",
@@ -454,6 +480,30 @@ public class OutpatientRefundAppService {
     }
 
     /**
+     * 退费前校验工伤 2208 已完成（invoke 链由前端 Win 执行）。
+     */
+    private void runWorkInjuryRevokeBeforeRefund(Long originalPaymentId) {
+        if (originalPaymentId == null) {
+            return;
+        }
+        List<WorkInjurySettlementRecordExtensionOut> records =
+                workInjurySettleExtension.listSettlementsByPayment(originalPaymentId);
+        if (records.isEmpty()) {
+            return;
+        }
+        for (WorkInjurySettlementRecordExtensionOut record : records) {
+            if (record == null) {
+                continue;
+            }
+            if (!"REVOKED".equals(record.getStatus())) {
+                throw new BusinessException(
+                        "WI-008",
+                        "工伤结算尚未撤销（2208），请先完成 Win invoke 撤销后再退费");
+            }
+        }
+    }
+
+    /**
      * 退费前撤销医保正式结算（2208）；混合结算按回执逐条撤销。
      */
     private void runInsuranceRevokeBeforeRefund(
@@ -464,13 +514,13 @@ public class OutpatientRefundAppService {
         if (!chargeInsuranceExtension.isEnabled() || originalPaymentId == null) {
             return;
         }
-        List<OutpatientChargeSettlementRecordResult> records =
+        List<OutpatientChargeSettlementRecordExtensionOut> records =
             chargeInsuranceExtension.listSettlementsByPayment(originalPaymentId);
         if (records.isEmpty()) {
             return;
         }
-        for (OutpatientChargeSettlementRecordResult record : records) {
-            OutpatientChargeRevokeSettleCommand command = new OutpatientChargeRevokeSettleCommand();
+        for (OutpatientChargeSettlementRecordExtensionOut record : records) {
+            OutpatientChargeRevokeSettleExtensionIn command = new OutpatientChargeRevokeSettleExtensionIn();
             command.setSettlementRecordId(record.getSettlementRecordId());
             command.setPaymentId(originalPaymentId);
             command.setPreSettleId(record.getPreSettleId());
@@ -521,6 +571,14 @@ public class OutpatientRefundAppService {
         // Gate：就诊须存在。
         this.validateEncounterId(encounterId);
         encounterQueryService.mustGetEncounter(encounterId);
+        // Gate：须双账户并存；纯自费挂号不可在半退场景互转记账
+        if (!accountQueryService.hasDualChargeAccounts(encounterId)) {
+            throw new BusinessException(
+                ErrorCodeConstants.ACCOUNT_NOT_FOUND,
+                this.buildMessage(
+                    OutpatientRefundConstants.MESSAGE_CODE_DUAL_ACCOUNT_REQUIRED,
+                    "当前就诊为自费挂号，不支持转医保/转自费"));
+        }
         // Pre：列举半退保留 PLANNED 行。
         List<ChargeItem> preservedRows = this.listPreservedPlannedChargeItems(encounterId);
         if (preservedRows.isEmpty()) {
@@ -565,7 +623,7 @@ public class OutpatientRefundAppService {
      * @return {@link OutpatientRefundQueueTab} 字面量
      */
     private String resolveRefundDetailViewCode(String raw) {
-        if (StringUtils.isBlank(raw)) {
+        if (StringUtils.isEmpty(raw)) {
             return OutpatientRefundQueueTab.PENDING;
         }
         String trimmed = raw.trim().toUpperCase();
@@ -659,9 +717,8 @@ public class OutpatientRefundAppService {
             if (this.isOutpatientRefundReversePayment(payment)) {
                 continue;
             }
-            // 待执行退费：原支付须仍为成功或部分退款（尚未全额 REFUNDED）。
-            if (PaymentStatus.SUCCESS.equals(payment.getStatusEnum())
-                || PaymentStatus.PARTIAL_REFUNDED.equals(payment.getStatusEnum())) {
+            // 待执行退费：原支付须仍为成功态；PARTIAL_REFUNDED 表示已分次退过，禁止再次受理（BR-REF-021）。
+            if (PaymentStatus.SUCCESS.equals(payment.getStatusEnum())) {
                 refundablePayments.add(payment);
             }
         }
@@ -789,8 +846,10 @@ public class OutpatientRefundAppService {
             if (this.isOutpatientRefundReversePayment(payment)) {
                 continue;
             }
-            // 已退费查询：原支付已全额退或部分退后进入终态/部分退展示。
-            if (PaymentStatus.REFUNDED.equals(payment.getStatusEnum())
+            // 已退费查询：门诊账单退费完成后原单保持 SUCCESS（DM-FIN-002），以快照内 REFUNDED 收费行判定；
+            // 兼容历史/退号等原单 status 已为 REFUNDED 或 PARTIAL_REFUNDED 的场景。
+            if (PaymentStatus.SUCCESS.equals(payment.getStatusEnum())
+                || PaymentStatus.REFUNDED.equals(payment.getStatusEnum())
                 || PaymentStatus.PARTIAL_REFUNDED.equals(payment.getStatusEnum())) {
                 completedPayments.add(payment);
             }
@@ -889,7 +948,7 @@ public class OutpatientRefundAppService {
             return;
         }
         Map<Long, List<String>> codesByPaymentId =
-            paymentChannelRefundSupport.mapDistinctPayChannelCodesByPaymentIds(paymentIds);
+            paymentChannelRefundOrchestrator.mapDistinctPayChannelCodesByPaymentIds(paymentIds);
         for (OutpatientRefundPaymentGroupDto group : groups) {
             if (group.getPaymentId() == null) {
                 continue;
@@ -942,11 +1001,13 @@ public class OutpatientRefundAppService {
      * @param request 退费执行请求
      * @param billDate 账单日
      * @param outcomeEnum 支付结果码
+     * @param originalPaymentDetails 原支付自付明细（再结算渠道分桶对齐原路）
      */
     private void preSettleAndConfirmPreservedLines(
         ExecuteOutpatientBillRefundByPaymentRequest request,
         LocalDateTime billDate,
-        String outcomeEnum) {
+        String outcomeEnum,
+        List<PaymentRecDetailQueryModel> originalPaymentDetails) {
         // 半退：保留行再结算委托收费域 IF-OPC-06/07，避免本服务重复支付编排。
         PreSettleOutpatientChargesRequest preRequest = new PreSettleOutpatientChargesRequest();
         preRequest.setEncounterId(request.getEncounterId());
@@ -958,15 +1019,120 @@ public class OutpatientRefundAppService {
         confirmRequest.setChargeItemIds(request.getPreservedNewChargeItemIds());
         confirmRequest.setBillDate(billDate);
         confirmRequest.setOutcomeEnum(outcomeEnum);
-        List<PaymentDetailSubmitDto> paymentDetails = new ArrayList<>();
-        for (RefundPaymentDetailSubmitDto refundDetail : request.getRefundPaymentDetails()) {
-            PaymentDetailSubmitDto detail = new PaymentDetailSubmitDto();
-            detail.setPayChannelCode(refundDetail.getPayChannelCode());
-            detail.setAmount(refundDetail.getAmount());
-            paymentDetails.add(detail);
-        }
+        // 再结算实付须对齐预结算应付，并按原支付渠道比例分桶（BR-REF-007 / BR-REF-011）。
+        List<PaymentDetailSubmitDto> paymentDetails =
+            this.buildPreservedResettlePaymentDetails(preResponse.getDisplayAmount(), originalPaymentDetails);
         confirmRequest.setPaymentDetails(paymentDetails);
         outpatientChargeAppService.confirmOutpatientChargeSettlement(confirmRequest);
+    }
+
+    /**
+     * 解析原支付主单冲退金额（整单冲退口径）。
+     *
+     * @param originalPayment 原支付读模型
+     * @return 原支付 tendered_amount；缺失时回落 display_amount
+     */
+    private BigDecimal resolveOriginalPaymentTenderedAmount(PaymentReconciliationQueryModel originalPayment) {
+        BigDecimal amount = null;
+        if (originalPayment != null) {
+            amount = originalPayment.getTenderedAmount();
+            if (amount == null) {
+                amount = originalPayment.getDisplayAmount();
+            }
+        }
+        if (amount == null) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                this.buildMessage(OutpatientRefundConstants.MESSAGE_CODE_PAYMENT_NOT_REFUNDABLE, "原支付金额缺失，无法整单冲退"));
+        }
+        return amount;
+    }
+
+    /**
+     * 按原支付明细装配整单冲退渠道实退（产品半退 UN_PAY 须全额原路返回）。
+     *
+     * @param originalPaymentDetails 原支付自付明细
+     * @return 各渠道实退额
+     */
+    private List<RefundPaymentDetailSubmitDto> buildFullOriginalRefundPaymentDetails(
+        List<PaymentRecDetailQueryModel> originalPaymentDetails) {
+        Map<String, BigDecimal> originalByChannel = this.aggregatePaymentAmountByChannel(originalPaymentDetails);
+        if (originalByChannel.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                this.buildMessage(
+                    OutpatientRefundConstants.MESSAGE_CODE_REFUND_CHANNEL_MUST_ORIGINAL,
+                    "原支付无渠道明细，无法整单冲退"));
+        }
+        List<RefundPaymentDetailSubmitDto> refundDetails = new ArrayList<>();
+        for (Map.Entry<String, BigDecimal> entry : originalByChannel.entrySet()) {
+            RefundPaymentDetailSubmitDto detail = new RefundPaymentDetailSubmitDto();
+            detail.setPayChannelCode(entry.getKey());
+            detail.setAmount(entry.getValue());
+            refundDetails.add(detail);
+        }
+        return refundDetails;
+    }
+
+    /**
+     * 半退保留行再结算：按原支付渠道比例将预结算应付拆分为正式结算渠道实付。
+     *
+     * @param payableAmount 预结算现金应付
+     * @param originalPaymentDetails 原支付自付明细
+     * @return 正式结算渠道实付
+     */
+    private List<PaymentDetailSubmitDto> buildPreservedResettlePaymentDetails(
+        BigDecimal payableAmount,
+        List<PaymentRecDetailQueryModel> originalPaymentDetails) {
+        Map<String, BigDecimal> originalByChannel = this.aggregatePaymentAmountByChannel(originalPaymentDetails);
+        if (originalByChannel.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                this.buildMessage(
+                    OutpatientRefundConstants.MESSAGE_CODE_REFUND_CHANNEL_MUST_ORIGINAL,
+                    "原支付无渠道明细，无法半退再结算"));
+        }
+        LinkedHashSet<String> channelOrder = new LinkedHashSet<>();
+        if (originalPaymentDetails != null) {
+            for (PaymentRecDetailQueryModel row : originalPaymentDetails) {
+                if (row == null || StringUtils.isEmpty(row.getPayEnum()) || row.getAmount() == null) {
+                    continue;
+                }
+                String channelCode = paymentChannelGate.requirePersistablePayChannelCode(
+                    row.getPayEnum(),
+                    ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                    "原支付渠道不合法");
+                channelOrder.add(channelCode);
+            }
+        }
+        List<String> channels = new ArrayList<>(channelOrder);
+        List<BigDecimal> originalAmounts = new ArrayList<>();
+        for (String channel : channels) {
+            originalAmounts.add(originalByChannel.get(channel));
+        }
+        BigDecimal originalTotal = MonetaryAmountSupport.sumThenSettle(originalAmounts);
+        BigDecimal payable = MonetaryAmountSupport.scaleSettle(payableAmount);
+        List<PaymentDetailSubmitDto> paymentDetails = new ArrayList<>();
+        BigDecimal allocatedSum = BigDecimal.ZERO;
+        for (int index = 0; index < channels.size(); index++) {
+            String channel = channels.get(index);
+            BigDecimal scaledAmount;
+            if (index == channels.size() - 1) {
+                scaledAmount = MonetaryAmountSupport.scaleSettle(payable.subtract(allocatedSum));
+            } else {
+                BigDecimal proportion = MonetaryAmountSupport.proportionAtCalcScale(
+                    originalByChannel.get(channel),
+                    payable,
+                    originalTotal);
+                scaledAmount = MonetaryAmountSupport.scaleSettle(proportion);
+                allocatedSum = allocatedSum.add(scaledAmount);
+            }
+            PaymentDetailSubmitDto detail = new PaymentDetailSubmitDto();
+            detail.setPayChannelCode(channel);
+            detail.setAmount(scaledAmount);
+            paymentDetails.add(detail);
+        }
+        return paymentDetails;
     }
 
     /**
@@ -990,8 +1156,8 @@ public class OutpatientRefundAppService {
         if (!medicineIds.isEmpty()) {
             List<MedicationRequest> refundMedicineRequests = medicationRequestQueryService.listByRefundMedicineIdIn(medicineIds);
             for (MedicationRequest refundRequest : refundMedicineRequests) {
-                // 退药申请未达终态则阻塞资金退费，避免药账与款账不一致。
-                if (this.isOpenServiceRequest(refundRequest.getStatusEnum())) {
+                // 退药负向单未达 COMPLETED 则阻塞资金退费（CANCELLED=待退，对齐 openhis）。
+                if (this.isPendingRefundNegativeRequest(refundRequest.getStatusEnum())) {
                     return OutpatientRefundConstants.MESSAGE_CODE_MEDICATION_RETURN_PENDING;
                 }
             }
@@ -999,8 +1165,8 @@ public class OutpatientRefundAppService {
         if (!deviceIds.isEmpty()) {
             List<DeviceRequest> refundDeviceRequests = deviceRequestQueryService.listByRefundDeviceIdIn(deviceIds);
             for (DeviceRequest refundRequest : refundDeviceRequests) {
-                // 退耗申请未达终态则阻塞资金退费。
-                if (this.isOpenServiceRequest(refundRequest.getStatusEnum())) {
+                // 退耗负向单未达 COMPLETED 则阻塞资金退费。
+                if (this.isPendingRefundNegativeRequest(refundRequest.getStatusEnum())) {
                     return OutpatientRefundConstants.MESSAGE_CODE_DEVICE_RETURN_PENDING;
                 }
             }
@@ -1009,22 +1175,16 @@ public class OutpatientRefundAppService {
     }
 
     /**
-     * 判断服务申请是否仍处于未完成终态（退药/退耗流程未结束）。
+     * 判断负向退药/退耗申请是否仍处于待完结态（仅 COMPLETED 放行资金退费）。
      *
-     * @param statusCode 持久化状态 code
+     * @param statusCode 负向申请持久化状态 code
      * @return true=仍阻塞资金退费
      */
-    private boolean isOpenServiceRequest(String statusCode) {
+    private boolean isPendingRefundNegativeRequest(String statusCode) {
         if (statusCode == null) {
-            return false;
+            return true;
         }
         if (RequestStatus.COMPLETED.getCode().equals(statusCode)) {
-            return false;
-        }
-        if (RequestStatus.CANCELLED.getCode().equals(statusCode)) {
-            return false;
-        }
-        if (RequestStatus.STOPPED.getCode().equals(statusCode)) {
             return false;
         }
         return true;
@@ -1069,6 +1229,155 @@ public class OutpatientRefundAppService {
     }
 
     /**
+     * IF-REF-05 Gate：同一原支付须一次执行退清，禁止分次退费（半退=一次收退两次，BR-REF-021）。
+     *
+     * @param encounterId            就诊主键
+     * @param paymentId              原支付主键
+     * @param refundingChargeItemIds 本次拟退收费明细主键
+     * @throws BusinessException 未覆盖该支付下全部 {@code REFUNDING} 行时抛出 EX-REF-305
+     */
+    private void assertNoSplitRefundOnPaymentExecute(
+        Long encounterId,
+        Long paymentId,
+        List<Long> refundingChargeItemIds) {
+        List<Long> snapshotIds = this.resolvePaymentSnapshotChargeItemIds(paymentId);
+        if (snapshotIds.isEmpty()) {
+            return;
+        }
+        ChargeItemQueryCommand loadCmd = new ChargeItemQueryCommand();
+        loadCmd.setIds(snapshotIds);
+        List<ChargeItem> snapshotRows = chargeItemQueryService.loadChargeItemsByIds(loadCmd);
+        snapshotRows = chargeItemQueryService.filterOutSupersededSettledLines(encounterId, snapshotRows);
+        LinkedHashSet<Long> refundingOnPayment = new LinkedHashSet<>();
+        for (ChargeItem row : snapshotRows) {
+            if (ChargeItemStatus.REFUNDING.getCode().equals(row.getStatusEnum())) {
+                refundingOnPayment.add(row.getId());
+            }
+        }
+        if (refundingOnPayment.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Long> submittedRefundingIds = new LinkedHashSet<>();
+        if (refundingChargeItemIds != null) {
+            for (Long id : refundingChargeItemIds) {
+                if (id != null) {
+                    submittedRefundingIds.add(id);
+                }
+            }
+        }
+        // Gate：该支付下所有 REFUNDING 行须在同一次 IF-REF-05 中执行，不得分两次退。
+        if (!submittedRefundingIds.equals(refundingOnPayment)) {
+            throw new BusinessException(
+                ErrorCodeConstants.CHARGE_ITEM_RULE_CONFLICT,
+                this.buildMessage(
+                    OutpatientRefundConstants.MESSAGE_CODE_HALF_REFUND_NOT_SUPPORTED,
+                    "同一笔支付须一次执行退清，不支持分次退费"));
+        }
+    }
+
+    /**
+     * IF-REF-05 Gate：退费渠道拆分须与原支付明细一致（原路返回，BR-REF-011）。
+     *
+     * @param refundDetails    请求体渠道实退明细
+     * @param originalDetails  原支付明细读模型
+     * @throws BusinessException 渠道集合或分桶金额不一致时抛出 EX-REF-306
+     */
+    private void assertRefundPaymentDetailsMatchOriginalPayment(
+        List<RefundPaymentDetailSubmitDto> refundDetails,
+        List<PaymentRecDetailQueryModel> originalDetails) {
+        Map<String, BigDecimal> originalByChannel = this.aggregatePaymentAmountByChannel(originalDetails);
+        Map<String, BigDecimal> refundByChannel = this.aggregateRefundAmountByChannel(refundDetails);
+        if (originalByChannel.isEmpty()) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                this.buildMessage(
+                    OutpatientRefundConstants.MESSAGE_CODE_REFUND_CHANNEL_MUST_ORIGINAL,
+                    "原支付无渠道明细，无法原路退"));
+        }
+        if (!originalByChannel.keySet().equals(refundByChannel.keySet())) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                this.buildMessage(
+                    OutpatientRefundConstants.MESSAGE_CODE_REFUND_CHANNEL_MUST_ORIGINAL,
+                    "退费渠道须与原支付一致"));
+        }
+        for (Map.Entry<String, BigDecimal> entry : originalByChannel.entrySet()) {
+            BigDecimal refundAmount = refundByChannel.get(entry.getKey());
+            if (!MonetaryAmountSupport.equalsAtSettleScale(entry.getValue(), refundAmount)) {
+                throw new BusinessException(
+                    ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                    this.buildMessage(
+                        OutpatientRefundConstants.MESSAGE_CODE_REFUND_CHANNEL_MUST_ORIGINAL,
+                        "各渠道实退额须与原支付分桶一致"));
+            }
+        }
+    }
+
+    /**
+     * 按渠道码汇总原支付明细发生额（结算刻度）。
+     *
+     * @param originalDetails 原支付明细
+     * @return 渠道码 → 金额
+     */
+    private Map<String, BigDecimal> aggregatePaymentAmountByChannel(List<PaymentRecDetailQueryModel> originalDetails) {
+        Map<String, BigDecimal> buckets = new HashMap<>();
+        if (originalDetails == null) {
+            return buckets;
+        }
+        for (PaymentRecDetailQueryModel row : originalDetails) {
+            if (row == null || StringUtils.isEmpty(row.getPayEnum()) || row.getAmount() == null) {
+                continue;
+            }
+            String channelCode = paymentChannelGate.requirePersistablePayChannelCode(
+                row.getPayEnum(),
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "原支付渠道不合法");
+            BigDecimal existing = buckets.get(channelCode);
+            if (existing == null) {
+                buckets.put(channelCode, row.getAmount());
+            } else {
+                List<BigDecimal> pair = new ArrayList<>(2);
+                pair.add(existing);
+                pair.add(row.getAmount());
+                buckets.put(channelCode, MonetaryAmountSupport.sumThenSettle(pair));
+            }
+        }
+        return buckets;
+    }
+
+    /**
+     * 按渠道码汇总退费请求体实退额（结算刻度）。
+     *
+     * @param refundDetails 退费渠道明细
+     * @return 渠道码 → 金额
+     */
+    private Map<String, BigDecimal> aggregateRefundAmountByChannel(List<RefundPaymentDetailSubmitDto> refundDetails) {
+        Map<String, BigDecimal> buckets = new HashMap<>();
+        if (refundDetails == null) {
+            return buckets;
+        }
+        for (RefundPaymentDetailSubmitDto row : refundDetails) {
+            if (row == null || StringUtils.isEmpty(row.getPayChannelCode()) || row.getAmount() == null) {
+                continue;
+            }
+            String channelCode = paymentChannelGate.requirePersistablePayChannelCode(
+                row.getPayChannelCode(),
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT,
+                "退款支付渠道不合法");
+            BigDecimal existing = buckets.get(channelCode);
+            if (existing == null) {
+                buckets.put(channelCode, row.getAmount());
+            } else {
+                List<BigDecimal> pair = new ArrayList<>(2);
+                pair.add(existing);
+                pair.add(row.getAmount());
+                buckets.put(channelCode, MonetaryAmountSupport.sumThenSettle(pair));
+            }
+        }
+        return buckets;
+    }
+
+    /**
      * 校验原支付可受理退费。
      *
      * @param payment 原支付读模型
@@ -1084,8 +1393,15 @@ public class OutpatientRefundAppService {
                 ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
                 this.buildMessage(OutpatientRefundConstants.MESSAGE_CODE_PAYMENT_NOT_REFUNDABLE, "支付已退款"));
         }
-        if (!PaymentStatus.SUCCESS.equals(payment.getStatusEnum())
-            && !PaymentStatus.PARTIAL_REFUNDED.equals(payment.getStatusEnum())) {
+        // Gate：已部分退费的原支付禁止再次受理（分次退 / PARTIAL_REFUNDED 语义，BR-REF-021）。
+        if (PaymentStatus.PARTIAL_REFUNDED.equals(payment.getStatusEnum())) {
+            throw new BusinessException(
+                ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
+                this.buildMessage(
+                    OutpatientRefundConstants.MESSAGE_CODE_HALF_REFUND_NOT_SUPPORTED,
+                    "该笔支付已部分退费，不支持再次退费"));
+        }
+        if (!PaymentStatus.SUCCESS.equals(payment.getStatusEnum())) {
             throw new BusinessException(
                 ErrorCodeConstants.PAYMENT_RECONCILIATION_RULE_CONFLICT,
                 this.buildMessage(OutpatientRefundConstants.MESSAGE_CODE_PAYMENT_NOT_REFUNDABLE, "支付状态不可退"));
@@ -1229,7 +1545,7 @@ public class OutpatientRefundAppService {
         if (lookups.isEmpty()) {
             return Collections.emptyMap();
         }
-        return productDefinitionBatchLoader.loadAsMap(lookups);
+        return productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
     }
 
     /**
@@ -1240,13 +1556,13 @@ public class OutpatientRefundAppService {
      * @return 查询键或 null
      */
     private ProductDefinitionBatchLookup resolveCatalogLookupForChargeItem(ChargeItem row, ChargeItemDefinition definition) {
-        if (row.getProductId() != null && StringUtils.isNotBlank(row.getProductTable())) {
+        if (row.getProductId() != null && StringUtils.isNotEmpty(row.getProductTable())) {
             ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
             lookup.setProductDefinitionId(row.getProductId());
             lookup.setProductTableName(row.getProductTable().trim());
             return lookup;
         }
-        if (definition != null && definition.getInstanceId() != null && StringUtils.isNotBlank(definition.getInstanceTable())) {
+        if (definition != null && definition.getInstanceId() != null && StringUtils.isNotEmpty(definition.getInstanceTable())) {
             ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
             lookup.setProductDefinitionId(definition.getInstanceId());
             lookup.setProductTableName(definition.getInstanceTable().trim());
@@ -1300,32 +1616,34 @@ public class OutpatientRefundAppService {
             definition = definitionMap.get(row.getDefinitionId());
         }
         ProductDefinitionDisplayDto product = this.resolveProductForChargeItem(row, productMap, definition);
-        if (product != null && StringUtils.isNotBlank(product.getProductName())) {
+        if (product != null && StringUtils.isNotEmpty(product.getProductName())) {
             return product.getProductName();
         }
-        if (definition != null && StringUtils.isNotBlank(definition.getChargeName())) {
+        if (definition != null && StringUtils.isNotEmpty(definition.getChargeName())) {
             return definition.getChargeName();
         }
-        if (StringUtils.isNotBlank(row.getBusNo())) {
+        if (StringUtils.isNotEmpty(row.getBusNo())) {
             return row.getBusNo();
         }
         return OutpatientChargeConstants.PENDING_CHARGE_ITEM_DISPLAY_FALLBACK;
     }
 
     /**
-     * 汇总收费行金额。
+     * 汇总拟退/已退收费行金额（先 6 位加总再 settle，供应退展示与支付校验）。
      *
      * @param rows 收费行
-     * @return 合计
+     * @return 结算刻度合计
      */
     private BigDecimal sumChargeItemAmount(List<ChargeItem> rows) {
-        BigDecimal total = BigDecimal.ZERO;
-        for (ChargeItem row : rows) {
-            if (row.getTotalPrice() != null) {
-                total = total.add(row.getTotalPrice());
+        List<BigDecimal> amounts = new ArrayList<>();
+        if (rows != null) {
+            for (ChargeItem row : rows) {
+                if (row != null && row.getTotalPrice() != null) {
+                    amounts.add(row.getTotalPrice());
+                }
             }
         }
-        return total.setScale(ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE, RoundingMode.HALF_UP);
+        return MonetaryAmountSupport.sumThenSettle(amounts);
     }
 
     /**
@@ -1370,7 +1688,7 @@ public class OutpatientRefundAppService {
             // 多账户原支付：按渠道码对齐原单分桶，保证医保/自费逆向明细记账口径一致。
             Map<String, PaymentRecDetailQueryModel> originalByPayEnum = new HashMap<>();
             for (PaymentRecDetailQueryModel originalRow : originalDetails) {
-                if (originalRow != null && StringUtils.isNotBlank(originalRow.getPayEnum())) {
+                if (originalRow != null && StringUtils.isNotEmpty(originalRow.getPayEnum())) {
                     originalByPayEnum.put(originalRow.getPayEnum(), originalRow);
                 }
             }
@@ -1476,22 +1794,21 @@ public class OutpatientRefundAppService {
     }
 
     /**
-     * 汇总渠道实退金额。
+     * 汇总渠道实退金额（结算刻度 2 位，**BR-MON-001**）。
      *
      * @param details 渠道明细
-     * @return 合计
+     * @return 结算刻度合计
      */
     private BigDecimal sumRefundPaymentDetails(List<RefundPaymentDetailSubmitDto> details) {
-        BigDecimal total = BigDecimal.ZERO;
-        if (details == null) {
-            return total;
-        }
-        for (RefundPaymentDetailSubmitDto detail : details) {
-            if (detail.getAmount() != null) {
-                total = total.add(detail.getAmount());
+        List<BigDecimal> amounts = new ArrayList<>();
+        if (details != null) {
+            for (RefundPaymentDetailSubmitDto detail : details) {
+                if (detail != null && detail.getAmount() != null) {
+                    amounts.add(detail.getAmount());
+                }
             }
         }
-        return total.setScale(ChargeItemAmountScaleConstants.CHARGE_MONETARY_SCALE, RoundingMode.HALF_UP);
+        return MonetaryAmountSupport.sumThenSettle(amounts);
     }
 
     /**

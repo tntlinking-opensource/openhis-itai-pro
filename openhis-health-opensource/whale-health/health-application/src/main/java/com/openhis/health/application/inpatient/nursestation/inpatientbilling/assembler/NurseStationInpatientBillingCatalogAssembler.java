@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler;
 
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogDispenseLocationResolveSupport;
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogPriceResolveSupport;
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogUnitPriceCommand;
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ClinicalCatalogDispenseLocationResolver;
+import com.openhis.health.application.shared.product.ClinicalCatalogPriceResolver;
+import com.openhis.health.application.shared.product.ClinicalCatalogUnitPriceQuery;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingCatalogRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingPackageChildDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingWriteItemDto;
@@ -35,12 +22,11 @@ import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -48,7 +34,8 @@ import java.util.Map;
 /**
  * IF-IP-PRC-01：护士划价选品目录装配（BR-IP-PRC-017；不做库存 Gate）。
  *
- * <p>耗材行读侧解析默认发放库房 + FIFO 批号售价；写侧子项定价由 {@link #applyChildActivityPricing} 复用。</p>
+ * <p>耗材行读侧解析默认发放库房 + FIFO 批号售价；套餐子项仅读侧 {@code packageChildren} 展示（**BR-IP-PRC-011 不写路径展开**）。
+ * 皮试等场景按子诊疗 id 择价复用 {@link #applyChildActivityPricing}。</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -56,8 +43,8 @@ public class NurseStationInpatientBillingCatalogAssembler {
 
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
-    private final ClinicalCatalogPriceResolveSupport clinicalCatalogPriceResolveSupport;
-    private final ClinicalCatalogDispenseLocationResolveSupport clinicalCatalogDispenseLocationResolveSupport;
+    private final ClinicalCatalogPriceResolver clinicalCatalogPriceResolver;
+    private final ClinicalCatalogDispenseLocationResolver clinicalCatalogDispenseLocationResolver;
 
     /**
      * 装配划价选品当前页行。
@@ -79,7 +66,7 @@ public class NurseStationInpatientBillingCatalogAssembler {
         Long organizationId = request.getOrganizationUnitId();
         // Pre：当前页产品批量取价目行、诊疗套餐子项（避免行内 N+1）
         Map<String, List<ChargeItemDefinition>> priceByKey =
-            clinicalCatalogPriceResolveSupport.loadPriceLinesGrouped(content);
+            clinicalCatalogPriceResolver.loadPriceLinesGrouped(content);
         Map<Long, List<ActivityDefinitionChildQueryModel>> childrenByActivityId =
             this.loadPackageChildrenForPage(content);
         List<NurseStationPricingCatalogRowDto> rows = new ArrayList<>();
@@ -96,7 +83,7 @@ public class NurseStationInpatientBillingCatalogAssembler {
                 dto.setDefaultDispenseLocationId(clientResolvedDispenseLocationId);
             }
             // FIFO 批号售价：透传已解析库位，与 IF-DOR-11 读侧同构
-            ClinicalCatalogUnitPriceCommand priceCmd = ClinicalCatalogUnitPriceCommand.builder()
+            ClinicalCatalogUnitPriceQuery priceCmd = ClinicalCatalogUnitPriceQuery.builder()
                 .productTableName(productRow.getProductTableName())
                 .productDefinitionId(productRow.getProductDefinitionId())
                 .categoryCode(productRow.getCategoryCode())
@@ -106,7 +93,7 @@ public class NurseStationInpatientBillingCatalogAssembler {
                 .priceLines(lines)
                 .productRowForOccupancy(productRow)
                 .build();
-            ChargeItemDefinition selected = clinicalCatalogPriceResolveSupport.resolveCatalogUnitPrice(priceCmd);
+            ChargeItemDefinition selected = clinicalCatalogPriceResolver.resolveCatalogUnitPrice(priceCmd);
             if (selected != null) {
                 dto.setChargeItemDefinitionId(selected.getId());
                 dto.setUnitPrice(selected.getPriceValue());
@@ -167,7 +154,7 @@ public class NurseStationInpatientBillingCatalogAssembler {
         if (organizationId == null) {
             return null;
         }
-        return clinicalCatalogDispenseLocationResolveSupport.matchDefaultDispenseLocationId(
+        return clinicalCatalogDispenseLocationResolver.matchDefaultDispenseLocationId(
             organizationId, productRow);
     }
 
@@ -193,9 +180,9 @@ public class NurseStationInpatientBillingCatalogAssembler {
     }
 
     /**
-     * 套餐子项展开前：按子诊疗 id 解析 SALE 定价并回填写行（BR-IP-PRC-011）。
+     * 按子诊疗 id 解析 SALE 定价并回填写行（皮试划价等；**非**套餐写路径子项展开）。
      *
-     * @param childRow        待写入的子项行（父就诊/账户/数量等已由调用方填充）
+     * @param childRow        待写入行（父就诊/账户/数量等已由调用方填充）
      * @param childActivityId 子诊疗活动定义 id
      */
     public void applyChildActivityPricing(
@@ -204,16 +191,18 @@ public class NurseStationInpatientBillingCatalogAssembler {
         if (childRow == null || childActivityId == null) {
             return;
         }
+        // Pre：子诊疗当前 ACTIVE 价目（BR-CHGDEF-QRY-004）
         ChargeItemDefinitionQueryCommand cmd = new ChargeItemDefinitionQueryCommand();
         cmd.setInstanceTable(TableNameConstants.WKF_ACTIVITY_DEFINITION);
         cmd.setInstanceIds(List.of(childActivityId));
         List<ChargeItemDefinition> lines = chargeItemDefinitionQueryService.findPriceLinesByProjects(cmd);
-        ClinicalCatalogUnitPriceCommand priceCmd = ClinicalCatalogUnitPriceCommand.builder()
+        ClinicalCatalogUnitPriceQuery priceCmd = ClinicalCatalogUnitPriceQuery.builder()
             .productTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION)
             .productDefinitionId(childActivityId)
             .priceLines(lines)
             .build();
-        ChargeItemDefinition selected = clinicalCatalogPriceResolveSupport.resolveCatalogUnitPrice(priceCmd);
+        ChargeItemDefinition selected = clinicalCatalogPriceResolver.resolveCatalogUnitPrice(priceCmd);
+        // 命中价目时覆盖单价与 chargeItemDefinitionId，供后续 priceByNurseStation
         if (selected != null) {
             childRow.setChargeItemDefinitionId(selected.getId());
             childRow.setUnitPrice(selected.getPriceValue());

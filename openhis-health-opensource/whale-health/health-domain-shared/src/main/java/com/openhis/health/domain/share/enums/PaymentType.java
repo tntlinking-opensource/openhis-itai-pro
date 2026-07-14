@@ -1,33 +1,16 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 付款类别枚举。
  */
 public enum PaymentType implements EnumInterface {
-    /**
-     * PAY。
-     */
+    /** 付费（正向收款）（PaymentType，编码 {@code PAY}）。 */
     PAY(0L, "PAY", "付费（正向收款）", "门诊收费、住院收费、预交金收取等正向收款场景。", 0L),
-    /**
-     * UN_PAY。
-     */
+    /** 退费（逆向退款）（PaymentType，编码 {@code UN_PAY}）。 */
     UN_PAY(0L, "UN_PAY", "退费（逆向退款）", "门诊退费、住院取消结算等逆向退款场景。", 1L);
 
     private final Long codeSystemId;
@@ -37,7 +20,7 @@ public enum PaymentType implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * PaymentType。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     PaymentType(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

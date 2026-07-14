@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.practitioner.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -28,14 +15,16 @@ import com.openhis.health.domain.share.utils.CommandBatchUtil;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 医务人员写侧领域服务。
+ * 医务人员（{@code adm_practitioner}）写侧领域服务（DM-ADM-005）。
+ *
+ * <p>不变量：一用户至多一条有效医务人员；工号由领域层采番不可外部注入；注销/恢复须发领域事件。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -63,12 +52,12 @@ public class PractitionerDomainService {
             if (item.getUserId() == null) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "用户标识不能为空");
             }
-            // 业务分支处理（含软删记录，避免误判为可新建）。
+            // 同一 userId 已存在有效绑定则拒绝新建，含软删记录亦视为占用（避免重复建档）
             if (practitionerRepository.findFirstByUserIdOrderByIdAsc(item.getUserId()).isPresent()) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_RULE_CONFLICT, "用户已绑定医务人员");
             }
             String busNo = allocatedBusNos.get(index);
-            // 业务分支处理：序列碰撞时拒绝落库，避免静默覆盖既有工号。
+            // 采番工号与库内已有 busNo 冲突时拒绝落库，避免静默覆盖
             if (practitionerRepository.existsByBusNo(busNo)) {
                 throw new BusinessException(ErrorCodeConstants.PRACTITIONER_BUS_NO_CONFLICT, "工号已存在");
             }
@@ -106,7 +95,7 @@ public class PractitionerDomainService {
             p.assertEditable();
             p.setName(item.getName());
             if (item.getGenderEnum() != null) {
-                if (StringUtils.isBlank(item.getGenderEnum())) {
+                if (StringUtils.isEmpty(item.getGenderEnum())) {
                     throw new BusinessException(ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT, "人员性别不能为空");
                 }
                 p.setGenderEnum(item.getGenderEnum().trim());
@@ -135,7 +124,7 @@ public class PractitionerDomainService {
         Practitioner p = practitionerRepository.findById(practitionerId)
             .orElseThrow(() -> new BusinessException(ErrorCodeConstants.PRACTITIONER_NOT_FOUND, "医务人员不存在"));
         p.assertEditable();
-        if (StringUtils.isBlank(signatureBase64)) {
+        if (StringUtils.isEmpty(signatureBase64)) {
             // 空串视为清除签名，不写占位 Base64。
             p.setSignature(null);
         } else {
@@ -229,13 +218,55 @@ public class PractitionerDomainService {
     }
 
     /**
+     * 系统用户软删联动：注销所有仍绑定该用户的未删医务人员。
+     *
+     * @param userId     平台用户主键
+     * @param operatorId 操作人主键
+     * @param reason     注销原因
+     */
+    public void retirePractitionerByBoundUserId(Long userId, Long operatorId, String reason) {
+        // userId 缺失时无绑定关系可注销，静默返回
+        if (userId == null) {
+            return;
+        }
+        // Pre：按绑定 user_id 加载仍未逻辑删除的医务人员
+        List<Practitioner> practitioners =
+            practitionerRepository.findAllByUserIdInAndIsDeletedFalse(Collections.singleton(userId));
+        // 无绑定 practitioner 时无需联动注销
+        if (practitioners.isEmpty()) {
+            return;
+        }
+        RetirePractitionerCommand command = new RetirePractitionerCommand();
+        command.setOperatorId(operatorId);
+        List<RetirePractitionerCommand.RetirePractitionerItemCommand> items = new ArrayList<>();
+        for (Practitioner practitioner : practitioners) {
+            // 脏数据跳过，避免空 id 进入 retire 命令
+            if (practitioner == null || practitioner.getId() == null) {
+                continue;
+            }
+            RetirePractitionerCommand.RetirePractitionerItemCommand item =
+                new RetirePractitionerCommand.RetirePractitionerItemCommand();
+            item.setPractitionerId(practitioner.getId());
+            item.setReason(reason);
+            items.add(item);
+        }
+        if (items.isEmpty()) {
+            // 有效项均被过滤时不再调用 retire，避免空命令
+            return;
+        }
+        command.setItems(items);
+        // Cmd：复用 retirePractitioner 统一状态迁移与 PractitionerRetiredEvent
+        this.retirePractitioner(command);
+    }
+
+    /**
      * 按主键批量加载医务人员并过滤软删记录。
      */
     private Map<Long, Practitioner> loadMap(List<Long> ids) {
         List<Practitioner> list = practitionerRepository.findAllById(ids);
         Map<Long, Practitioner> map = new HashMap<>();
         for (Practitioner item : list) {
-            // 业务分支处理。
+            // 软删记录不参与后续编辑/注销，与 require 口径一致
             if (!Boolean.TRUE.equals(item.getIsDeleted())) {
                 map.put(item.getId(), item);
             }
@@ -248,11 +279,10 @@ public class PractitionerDomainService {
      */
     private Practitioner require(Map<Long, Practitioner> map, Long id) {
         Practitioner p = map.get(id);
-        // 业务分支处理。
+        // 主键不在有效映射中视为不存在或已软删，拒绝继续写路径
         if (p == null) {
             throw new BusinessException(ErrorCodeConstants.PRACTITIONER_NOT_FOUND, "医务人员不存在");
         }
         return p;
     }
 }
-

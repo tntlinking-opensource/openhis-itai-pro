@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.episodeofcare.service;
 
 import com.openhis.health.domain.administration.episodeofcare.command.ActivateEpisodeOfCareCommand;
@@ -43,7 +30,11 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * 治疗周期（Episode of Care）聚合写侧领域服务：创建与激活、照护资料维护、就诊纳入及暂停/恢复/完成/取消/误录等状态流转。
+ * 治疗周期（{@code adm_episode_of_care}）聚合写侧领域服务。
+ *
+ * <p>职责：创建与激活、照护资料维护、就诊纳入及暂停/恢复/完成/取消/误录等状态流转。</p>
+ * <p>不变量：状态迁移与 {@code active_flag} 须一致；持久化先于 {@link EpisodeOfCareDomainEvents} 发布。</p>
+ * <p>仅注入本聚合 {@link EpisodeOfCareRepository}、子表 {@link EpisodeOfCareEncounterRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -61,6 +52,7 @@ public class EpisodeOfCareDomainService {
      * @return 新建聚合主键
      */
     public Long createEpisodeOfCare(CreateEpisodeOfCareCommand cmd) {
+        // 加载/组装：初始化计划中且未激活的聚合根
         EpisodeOfCare row = new EpisodeOfCare();
         row.setPatientId(cmd.getPatientId());
         row.setOrganizationId(cmd.getOrganizationId());
@@ -69,7 +61,9 @@ public class EpisodeOfCareDomainService {
             AggregateTypeConstants.EPISODE_OF_CARE, BusinessSequenceConstants.BUS_NO_SEQ_LENGTH));
         row.setStatusEnum(EpisodeOfCareStatus.PLANNED.getCode());
         row.setActiveFlag(Boolean.FALSE);
+        // 持久化
         row = repository.save(row);
+        // 发布事件：治疗周期已创建
         domainEventPublisher.publish(new EpisodeOfCareCreatedEvent(
             row.getId(), row.getPatientId(), row.getBusNo(), row.getOrganizationId(), row.getStatusEnum()));
         return row.getId();
@@ -81,12 +75,14 @@ public class EpisodeOfCareDomainService {
      * @param cmd 激活命令（治疗周期主键、激活时间）
      */
     public void activateEpisodeOfCare(ActivateEpisodeOfCareCommand cmd) {
+        // 加载/组装：迁移至进行中
         EpisodeOfCare row = this.requireById(cmd.getEpisodeOfCareId());
         row.setStatusEnum(EpisodeOfCareStatus.ACTIVE.getCode());
         row.setActiveFlag(Boolean.TRUE);
         row.setStartTime(cmd.getActivatedAt());
+        // 持久化
         repository.save(row);
-        // 携带启动时间（DM-ADM-013 §5.1）。
+        // 发布事件：携带启动时间（DM-ADM-013 §5.1）
         domainEventPublisher.publish(new EpisodeOfCareDomainEvents.EpisodeOfCareActivatedEvent(row.getId(), cmd.getActivatedAt()));
     }
 
@@ -115,12 +111,15 @@ public class EpisodeOfCareDomainService {
      * @param cmd 纳入命令（治疗周期主键、就诊主键）
      */
     public void addEncounterToEpisode(AddEncounterToEpisodeCommand cmd) {
+        // 加载/组装：校验治疗周期存在并写入关联行
         EpisodeOfCare row = this.requireById(cmd.getEpisodeOfCareId());
         EpisodeOfCareEncounter relation = new EpisodeOfCareEncounter();
         relation.setEpisodeOfCareId(row.getId());
         relation.setEncounterId(cmd.getEncounterId());
         relation.setJoinTime(LocalDateTime.now());
+        // 持久化
         encounterRepository.save(relation);
+        // 发布事件：就诊已纳入治疗周期
         domainEventPublisher.publish(new EpisodeOfCareDomainEvents.EncounterAddedToEpisodeEvent(row.getId(), cmd.getEncounterId()));
     }
     /**
@@ -200,4 +199,3 @@ public class EpisodeOfCareDomainService {
             .orElseThrow(() -> new BusinessException(ErrorCodeConstants.EPISODE_OF_CARE_NOT_FOUND, "治疗周期不存在"));
     }
 }
-

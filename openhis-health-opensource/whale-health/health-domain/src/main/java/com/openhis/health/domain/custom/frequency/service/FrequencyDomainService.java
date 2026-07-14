@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.frequency.service;
 
 import com.openhis.health.domain.share.constants.CustomConstants;
@@ -33,7 +20,11 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 频次写侧领域服务。
+ * 用药频次（{@code cus_frequency}）聚合写侧领域服务。
+ *
+ * <p>职责：频次主数据增改、启停与软删；日时点串格式校验（BR-FRQ）。</p>
+ * <p>不变量：{@code rate_code} 租户内唯一；持久化先于频次领域事件发布。</p>
+ * <p>仅注入本聚合 {@link FrequencyRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -50,6 +41,7 @@ public class FrequencyDomainService {
      * @throws BusinessException 编码冲突或格式校验失败时
      */
     public Long createFrequency(CreateFrequencyCommand command) {
+        // 前置校验：编码冲突与日时点格式
         if (command.getRateCode() != null && repository.existsByRateCode(command.getRateCode())) {
             throw new BusinessException(ErrorCodeConstants.FREQUENCY_RATE_CODE_CONFLICT, "频次编码已存在");
         }
@@ -72,9 +64,10 @@ public class FrequencyDomainService {
         frequency.assertRequiredFields();
         this.assertDayTimesFormat(frequency.getDayTimes());
 
+        // 持久化
         Frequency saved = repository.save(frequency);
 
-        // Event：发布频次创建事件。
+        // 发布事件：频次已创建
         domainEventPublisher.publish(new FrequencyCreatedEvent(
             saved.getId(),
             saved.getRateCode(),
@@ -94,51 +87,51 @@ public class FrequencyDomainService {
         // Pre：加载目标频次，当前聚合未维护并发戳字段，暂不执行 concurrencyStamp 比对。
         Frequency frequency = this.requireFrequency(command.getId());
 
-        // 业务分支处理：频次名称变更。
+        // 命令传入频次名称时覆盖展示名称。
         if (command.getName() != null) {
             frequency.setName(command.getName());
         }
-        // 业务分支处理：周期类型变更。
+        // 命令传入周期类型时覆盖周期算法。
         if (command.getCycleType() != null) {
             frequency.setCycleType(command.getCycleType());
         }
-        // 业务分支处理：天数变更。
+        // 命令传入天数时覆盖周期天数。
         if (command.getDayCount() != null) {
             frequency.setDayCount(command.getDayCount());
         }
-        // 业务分支处理：天间隔变更。
+        // 命令传入天间隔时覆盖间隔参数。
         if (command.getDayInterval() != null) {
             frequency.setDayInterval(command.getDayInterval());
         }
-        // 业务分支处理：日时点串变更。
+        // 命令传入日时点串时覆盖执行时刻配置。
         if (command.getDayTimes() != null) {
             frequency.setDayTimes(command.getDayTimes());
         }
-        // 业务分支处理：周循环标志变更。
+        // 命令传入周循环标志时覆盖周模式。
         if (command.getWeekCycleFlag() != null) {
             frequency.setWeekCycleFlag(command.getWeekCycleFlag());
         }
-        // 业务分支处理：总执行次数变更。
+        // 命令传入总执行次数时覆盖疗程次数上限。
         if (command.getTotalExecutionCount() != null) {
             frequency.setTotalExecutionCount(command.getTotalExecutionCount());
         }
-        // 业务分支处理：执行周期变更。
+        // 命令传入执行周期时覆盖周期长度。
         if (command.getExecutionPeriod() != null) {
             frequency.setExecutionPeriod(command.getExecutionPeriod());
         }
-        // 业务分支处理：执行周期单位变更。
+        // 命令传入执行周期单位时覆盖周期计量单位。
         if (command.getExecutionPeriodUnit() != null) {
             frequency.setExecutionPeriodUnit(command.getExecutionPeriodUnit());
         }
-        // 业务分支处理：适用场景变更。
+        // 命令传入适用场景时覆盖使用范围。
         if (command.getApplicableScenes() != null) {
             frequency.setApplicableScenes(command.getApplicableScenes());
         }
-        // 业务分支处理：允许跨天标志变更。
+        // 命令传入允许跨天标志时覆盖跨日执行策略。
         if (command.getAllowCrossDay() != null) {
             frequency.setAllowCrossDay(command.getAllowCrossDay());
         }
-        // 业务分支处理：排序号变更。
+        // 命令传入排序号时覆盖列表展示顺序。
         if (command.getSortNo() != null) {
             frequency.setSortNo(command.getSortNo());
         }
@@ -146,9 +139,10 @@ public class FrequencyDomainService {
         frequency.assertRequiredFields();
         this.assertDayTimesFormat(frequency.getDayTimes());
 
+        // 持久化
         repository.save(frequency);
 
-        // Event：发布频次修改事件。
+        // 发布事件：频次已修改
         domainEventPublisher.publish(new FrequencyModifiedEvent(
             frequency.getId(),
             CustomConstants.ChangedField.DEFAULT_CHANGED_FIELDS
@@ -214,7 +208,7 @@ public class FrequencyDomainService {
      * @param dayTimes 日时点串
      */
     private void assertDayTimesFormat(String dayTimes) {
-        // 业务分支处理。
+        // 日时点串为空时跳过格式校验（由必填校验在其他路径兜底）。
         if (dayTimes == null || dayTimes.isEmpty()) {
             return;
         }
@@ -222,13 +216,13 @@ public class FrequencyDomainService {
         List<String> normalized = new ArrayList<>();
         for (String segment : segments) {
             String value = segment.trim();
-            // 业务分支处理。
+            // 单段须符合 HH:mm 时点格式，否则拒绝保存。
             if (!CustomConstants.DAY_TIME_PATTERN.matcher(value).matches()) {
                 throw new BusinessException(ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "日执行时点格式不合法");
             }
             normalized.add(value);
         }
-        // 业务分支处理。
+        // 拆分后无有效时点则拒绝，防止空串绕过校验。
         if (normalized.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "日执行时点不能为空串");
         }

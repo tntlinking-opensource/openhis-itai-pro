@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.patient.entity;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -31,7 +18,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -217,7 +204,7 @@ public class Patient extends BaseAuditedEntity {
      * 校验建档最小必填信息。
      */
     public void assertRegisterRequiredFields() {
-        if (StringUtils.isBlank(this.name)) {
+        if (StringUtils.isEmpty(this.name)) {
             throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "患者姓名不能为空");
         }
         if (this.genderEnum == null) {
@@ -274,7 +261,7 @@ public class Patient extends BaseAuditedEntity {
      * @param inputPhone 待校验手机号
      */
     public void assertPhoneFormatValid(String inputPhone) {
-        if (StringUtils.isBlank(inputPhone)) {
+        if (StringUtils.isEmpty(inputPhone)) {
             throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "手机号不能为空");
         }
         if (!GeneralSharedConstants.PHONE_PATTERN.matcher(inputPhone).matches()) {
@@ -451,7 +438,7 @@ public class Patient extends BaseAuditedEntity {
         if (!PatientStatus.ACTIVE.getCode().equals(this.statusEnum)) {
             throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_STATUS, "仅活跃患者允许维护学生资质");
         }
-        if (StringUtils.isNotBlank(studentIdCard) && StringUtils.isNotBlank(this.idCard)
+        if (StringUtils.isNotEmpty(studentIdCard) && StringUtils.isNotEmpty(this.idCard)
             && !studentIdCard.equals(this.idCard)) {
             throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "学生身份证号必须与主档一致");
         }

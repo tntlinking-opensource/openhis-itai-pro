@@ -1,26 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.registration.mapper;
 
 import static com.openhis.whale.core.application.util.StringUtils.firstNonBlank;
 
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.outpatient.financial.registration.dto.*;
 import com.openhis.health.application.outpatient.financial.registration.request.*;
 import com.openhis.health.application.outpatient.financial.registration.response.*;
@@ -39,7 +26,7 @@ import java.util.stream.Collectors;
 
 import com.openhis.health.domain.share.utils.AgeCalculatorUtil;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -193,7 +180,7 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
      */
     @Override
     public LoadAppointmentForRegisterResponse toLoadAppointmentForRegisterResponse(
-        com.openhis.health.integration.booking.result.OutpatientBookingSnapshot snapshot) {
+        com.openhis.health.infrastructure.integration.booking.ExtensionOut.OutpatientBookingQueryExtensionOut snapshot) {
         if (snapshot == null) {
             return null;
         }
@@ -220,11 +207,11 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
      */
     @Override
     public ListBookableSlotHintsResponse toListBookableSlotHintsResponse(
-        java.util.List<com.openhis.health.integration.booking.result.BookableSlotHintSnapshot> hints) {
+        java.util.List<com.openhis.health.infrastructure.integration.booking.ExtensionOut.BookableSlotHintQueryExtensionOut> hints) {
         ListBookableSlotHintsResponse response = new ListBookableSlotHintsResponse();
         java.util.List<BookableSlotHintDto> rows = new java.util.ArrayList<>();
         if (hints != null) {
-            for (com.openhis.health.integration.booking.result.BookableSlotHintSnapshot hint : hints) {
+            for (com.openhis.health.infrastructure.integration.booking.ExtensionOut.BookableSlotHintQueryExtensionOut hint : hints) {
                 if (hint == null) {
                     continue;
                 }
@@ -656,7 +643,7 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
         item.setPatientId(request.getPatientId());
         item.setDefaultFlag(Boolean.TRUE);
         item.setTypeCode(AccountTypeCode.PERSONAL_CASH_ACCOUNT.getCode());
-        if (StringUtils.isNotBlank(contractBusNo)) {
+        if (StringUtils.isNotEmpty(contractBusNo)) {
             item.setContractNo(contractBusNo.trim());
         }
         command.setItem(item);
@@ -719,18 +706,18 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
             pyStr = patientCore.getPyStr();
             wbStr = patientCore.getWbStr();
         }
-        if (StringUtils.isBlank(pyStr)) {
+        if (StringUtils.isEmpty(pyStr)) {
             String generatedPy = SearchCodeUtil.toPyStr(StringUtils.defaultString(item.getPatientName()));
-            if (StringUtils.isBlank(generatedPy)) {
+            if (StringUtils.isEmpty(generatedPy)) {
                 pyStr = null;
             } else {
                 // 由患者姓名生成拼音检索码，供队列关键字匹配。
                 pyStr = generatedPy;
             }
         }
-        if (StringUtils.isBlank(wbStr)) {
+        if (StringUtils.isEmpty(wbStr)) {
             String generatedWb = SearchCodeUtil.toWbStr(StringUtils.defaultString(item.getPatientName()));
-            if (StringUtils.isBlank(generatedWb)) {
+            if (StringUtils.isEmpty(generatedWb)) {
                 wbStr = null;
             } else {
                 wbStr = generatedWb;
@@ -845,7 +832,7 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
         // 门诊挂号收费属于门诊收费大类，避免 kind_enum 为空触发约束异常。
         command.setKindEnum(PaymentKind.OUTPATIENT_CLINIC);
         command.setPaymentDetails(details);
-        if (StringUtils.isNotBlank(contractBusNo)) {
+        if (StringUtils.isNotEmpty(contractBusNo)) {
             command.setContractNo(contractBusNo.trim());
         }
         return command;
@@ -865,7 +852,7 @@ public class OutpatientRegistrationMapperImpl implements OutpatientRegistrationM
         item.setPatientId(paymentDraft.getPatientId());
         item.setDefaultFlag(Boolean.TRUE);
         item.setTypeCode(AccountTypeCode.PERSONAL_CASH_ACCOUNT.getCode());
-        if (StringUtils.isNotBlank(paymentDraft.getContractNo())) {
+        if (StringUtils.isNotEmpty(paymentDraft.getContractNo())) {
             item.setContractNo(paymentDraft.getContractNo().trim());
         }
         command.setItem(item);

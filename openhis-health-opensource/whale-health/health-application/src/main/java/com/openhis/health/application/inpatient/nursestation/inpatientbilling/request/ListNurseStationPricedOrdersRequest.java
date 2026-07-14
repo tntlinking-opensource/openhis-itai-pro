@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.request;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -36,11 +23,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 已划价列表请求。 */
 @Schema(description = "已划价列表请求")
 public class ListNurseStationPricedOrdersRequest {
 
-    /** 左侧多选就诊；服务端收窄为管理病区可见集合。 */
+    /** 多选就诊主键。 */
     @NotEmpty(message = "就诊列表不能为空")
     @Schema(description = "多选就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<Long> encounterIds;
@@ -59,7 +45,7 @@ public class ListNurseStationPricedOrdersRequest {
 
     /** 父医嘱 requestId；仅返回 based_on 指向该父的补费划价行。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    /** 父医嘱 id 过滤。 */
+    /** 父医嘱 id 过滤（补费子行）。 */
     @Schema(description = "父医嘱 id 过滤（补费子行）")
     private Long parentRequestId;
 }

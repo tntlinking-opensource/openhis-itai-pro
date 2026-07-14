@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.advice.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -29,11 +16,10 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
-/** 医生站医嘱暂存批次行。 */
 @Schema(description = "医生站医嘱暂存批次行")
 public class DoctorStationAdviceDraftLineRequest {
 
-    /** 行级操作码，取值见 {@link com.openhis.health.domain.share.constants.DoctorStationAdviceConstants#LINE_OP_CREATE} 等。 */
+    /** 行操作：CREATE / UPDATE / DELETE。 */
     @NotBlank(message = "行操作不能为空")
     @Schema(description = "行操作：CREATE / UPDATE / DELETE", requiredMode = Schema.RequiredMode.REQUIRED)
     private String lineOp;
@@ -52,20 +38,19 @@ public class DoctorStationAdviceDraftLineRequest {
     @Schema(description = "请求主键；UPDATE/DELETE 必填")
     private Long requestId;
 
-    /** 医生站列表展示排序号；暂存时写入，查询列表回显，供前端排序。 */
-    /** 医生站统一列表内展示顺序，数值小靠前。 */
+    /** 医生站列表展示排序号（可选，小靠前）。 */
     @Schema(description = "医生站列表展示排序号（可选，小靠前）")
     private Integer sortNumber;
 
-    /** 当 {@link #productTableName} 为药品定义表时必填。 */
+    /** 药品载荷。 */
     @Schema(description = "药品载荷")
     private SaveMedicationAdviceDraftLinePayload medicationPayload;
 
-    /** 当 {@link #productTableName} 为诊疗活动定义表时必填。 */
+    /** 诊疗载荷。 */
     @Schema(description = "诊疗载荷")
     private SaveServiceAdviceDraftLinePayload servicePayload;
 
-    /** 当 {@link #productTableName} 为耗材定义表时必填。 */
+    /** 耗材载荷。 */
     @Schema(description = "耗材载荷")
     private SaveDeviceAdviceDraftLinePayload devicePayload;
 }

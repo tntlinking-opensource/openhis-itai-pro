@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.ordertemplate.service;
 
 import com.openhis.health.domain.custom.ordertemplate.entity.OrderTemplate;
@@ -46,6 +33,7 @@ import java.util.List;
  * <p>职责：加载组套模板头行结构、按绑定/场景/状态分页检索、按拥有者与场景列出可用模板（含公共模板并集）。</p>
  *
  * <p>边界：只读；{@link #getOrderTemplateWithLines(Long)} 在模板不存在时抛 {@link BusinessException}。</p>
+ * <p>聚合边界：仅本聚合 {@link OrderTemplateRepository} / {@link OrderTemplateLineRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -209,6 +197,12 @@ public class OrderTemplateQueryService {
         return result;
     }
 
+    /**
+     * 列表筛选值归一：空白 → null，否则 trim。
+     *
+     * @param value 原始筛选值
+     * @return 归一结果
+     */
     private String normalizeFilter(String value) {
         if (value == null || value.trim().isEmpty()) {
             return null;

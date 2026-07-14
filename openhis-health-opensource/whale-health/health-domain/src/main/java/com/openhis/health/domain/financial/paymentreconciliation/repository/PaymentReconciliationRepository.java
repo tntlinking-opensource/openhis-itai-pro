@@ -1,29 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.financial.paymentreconciliation.repository;
 
 import com.openhis.health.domain.financial.paymentreconciliation.entity.PaymentReconciliation;
 import com.openhis.health.domain.share.enums.PaymentStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -104,24 +88,10 @@ public interface PaymentReconciliationRepository extends JpaRepository<PaymentRe
     List<PaymentReconciliation> findByEncounterIdInAndStatusEnum(Collection<Long> encounterIds, PaymentStatus statusEnum);
 
     /**
-     * 正式结算：仅当源态为 {@code DRAFT} 时推进为 {@code SUCCESS} 并回写 outcome/billDate（GAP-FIN-001 / GAP-STALE-002）。
+     * 按就诊主键集合批量加载支付流水（反结待重结展示态等读侧批量判定，避免 N+1）。
      *
-     * @return 实际更新行数（期望 1）
+     * @param encounterIds 就诊主键集合
+     * @return 命中流水列表
      */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-        UPDATE PaymentReconciliation p
-           SET p.statusEnum = :targetStatus,
-               p.outcomeEnum = :outcomeEnum,
-               p.billDate = :billDate
-         WHERE p.id = :id
-           AND p.statusEnum = :sourceStatus
-        """)
-    int updateSettleFieldsWhereIdAndSourceStatus(
-        @Param("id") Long id,
-        @Param("targetStatus") PaymentStatus targetStatus,
-        @Param("sourceStatus") PaymentStatus sourceStatus,
-        @Param("outcomeEnum") String outcomeEnum,
-        @Param("billDate") LocalDateTime billDate);
+    List<PaymentReconciliation> findByEncounterIdIn(Collection<Long> encounterIds);
 }
-

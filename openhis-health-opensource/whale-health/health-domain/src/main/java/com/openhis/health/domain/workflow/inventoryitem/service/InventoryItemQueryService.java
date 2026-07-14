@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.inventoryitem.service;
 
 import java.math.BigDecimal;
@@ -25,7 +12,8 @@ import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.health.domain.share.product.MedicationProductUnitConversionSource;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -33,7 +21,11 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.TypedQuery;
 import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -41,13 +33,14 @@ import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
-import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.entity.InventoryItem;
 import com.openhis.health.domain.workflow.inventoryitem.entity.InventoryLock;
 import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryItemPageQuery;
 import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryItemQuery;
+import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryProductAggregateKey;
 import com.openhis.health.domain.workflow.inventoryitem.queries.WarehouseInventoryDetailPageQuery;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.AvailableInventoryModel;
+import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryProductQuantityAggregateModel;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryAvailSumModel;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryCatalogAvailabilityRowModel;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
@@ -86,6 +79,13 @@ import lombok.RequiredArgsConstructor;
  * <p>
  * 与 {@code AS-OP-DOR-003} IF-DOR-11 对齐：提供目录页「多物品 × 多候选库位」批量可用行加载，避免在应用层循环逐条打库存。
  * </p>
+ *
+ * <p>
+ * <strong>跨聚合</strong>：仅注入本聚合 {@link InventoryItemRepository} / {@link InventoryLockRepository}；
+ * {@link EntityManager} 仅用于本表 {@code GROUP BY} 汇总（库存预警），禁止 JOIN 他聚合表（B.6.4）。
+ * </p>
+ *
+ * <p>聚合边界：仅本聚合 {@link InventoryItemRepository}、{@link InventoryLockRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -93,7 +93,7 @@ public class InventoryItemQueryService {
 
     private final InventoryItemRepository inventoryItemRepository;
     private final InventoryLockRepository inventoryLockRepository;
-    private final MedicationDispenseQueryService medicationDispenseQueryService;
+    private final EntityManager entityManager;
 
     /**
      * 按主键读取库存项读模型；不存在返回 null。
@@ -114,7 +114,7 @@ public class InventoryItemQueryService {
      */
     public List<InventoryItem> listInventoryItemEntitiesByLotLocationItem(
         String lotNumber, Long locationId, String itemTable, Long itemId) {
-        if (locationId == null || itemId == null || StringUtils.isBlank(itemTable) || StringUtils.isBlank(lotNumber)) {
+        if (locationId == null || itemId == null || StringUtils.isEmpty(itemTable) || StringUtils.isEmpty(lotNumber)) {
             return new ArrayList<>();
         }
         List<InventoryItem> rows = inventoryItemRepository.findByLotNumberAndLocationIdAndItemTableAndItemIdOrderByIdAsc(
@@ -188,7 +188,7 @@ public class InventoryItemQueryService {
         String itemTable,
         Collection<Long> itemIds
     ) {
-        if (StringUtils.isBlank(itemTable) || itemIds == null || itemIds.isEmpty()) {
+        if (StringUtils.isEmpty(itemTable) || itemIds == null || itemIds.isEmpty()) {
             return new ArrayList<>();
         }
         LocalDateTime now = LocalDateTime.now();
@@ -253,7 +253,7 @@ public class InventoryItemQueryService {
      */
     public Map<Long, BigDecimal> sumTotalAvailableInventoryByItemIds(String itemTable, Collection<Long> itemIds) {
         Map<Long, BigDecimal> quantityByItemId = new HashMap<>();
-        if (StringUtils.isBlank(itemTable) || itemIds == null || itemIds.isEmpty()) {
+        if (StringUtils.isEmpty(itemTable) || itemIds == null || itemIds.isEmpty()) {
             return quantityByItemId;
         }
         LocalDateTime now = LocalDateTime.now();
@@ -297,7 +297,7 @@ public class InventoryItemQueryService {
     public List<InventoryAvailSumModel> sumAvailableInventory(
         String itemTable, Collection<Long> locationIds, Collection<Long> itemIds) {
         List<InventoryAvailSumModel> results = new ArrayList<>();
-        if (StringUtils.isBlank(itemTable) || locationIds == null || locationIds.isEmpty()
+        if (StringUtils.isEmpty(itemTable) || locationIds == null || locationIds.isEmpty()
             || itemIds == null || itemIds.isEmpty()) {
             return results;
         }
@@ -340,7 +340,7 @@ public class InventoryItemQueryService {
     public List<InventoryCatalogAvailabilityRowModel> findAvailableCatalogRowsForOrder(String itemTable,
         List<Long> itemIds, List<Long> locationIds) {
         List<InventoryCatalogAvailabilityRowModel> result = new ArrayList<>();
-        if (StringUtils.isBlank(itemTable) || itemIds == null || itemIds.isEmpty()) {
+        if (StringUtils.isEmpty(itemTable) || itemIds == null || itemIds.isEmpty()) {
             return result;
         }
         if (locationIds == null || locationIds.isEmpty()) {
@@ -503,7 +503,7 @@ public class InventoryItemQueryService {
      * @return 归一化后字符串；输入空白时为 {@link GeneralSharedConstants#EMPTY_STRING}
      */
     public static String normalizeLotNumberForAvailabilityMatch(String raw) {
-        if (StringUtils.isBlank(raw)) {
+        if (StringUtils.isEmpty(raw)) {
             return GeneralSharedConstants.EMPTY_STRING;
         }
         String trimmed = raw.trim();
@@ -521,7 +521,7 @@ public class InventoryItemQueryService {
         if (key == null) {
             return null;
         }
-        if (key.getLocationId() == null || key.getItemId() == null || StringUtils.isBlank(key.getItemTable())) {
+        if (key.getLocationId() == null || key.getItemId() == null || StringUtils.isEmpty(key.getItemTable())) {
             return null;
         }
         String lot;
@@ -556,13 +556,13 @@ public class InventoryItemQueryService {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             if (query != null) {
-                if (StringUtils.isNotBlank(query.getItemTable())) {
+                if (StringUtils.isNotEmpty(query.getItemTable())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), query.getItemTable().trim()));
                 }
                 if (query.getItemId() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_ID), query.getItemId()));
                 }
-                if (StringUtils.isNotBlank(query.getLotNumber())) {
+                if (StringUtils.isNotEmpty(query.getLotNumber())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.LOT_NUMBER), query.getLotNumber().trim()));
                 }
                 if (query.getLocationId() != null) {
@@ -597,7 +597,7 @@ public class InventoryItemQueryService {
             if (warehouseId != null) {
                 predicates.add(cb.equal(root.get(FieldNameConstants.LOCATION_ID), warehouseId));
             }
-            if (StringUtils.isNotBlank(itemTable)) {
+            if (StringUtils.isNotEmpty(itemTable)) {
                 predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), itemTable.trim()));
             }
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
@@ -609,6 +609,29 @@ public class InventoryItemQueryService {
             result.add(this.toItemModel(row));
         }
         return result;
+    }
+
+    /**
+     * 列出库位下现库 DISTINCT {@code item_table}（日结按库位解析药/耗）。
+     *
+     * @param locationId 库位主键
+     * @return 表名列表；库位为空时返回空列表
+     */
+    public List<String> listDistinctItemTablesByLocationId(Long locationId) {
+        if (locationId == null) {
+            return new ArrayList<>();
+        }
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<String> cq = cb.createQuery(String.class);
+        Root<InventoryItem> root = cq.from(InventoryItem.class);
+        cq.select(root.get(FieldNameConstants.ITEM_TABLE));
+        cq.distinct(true);
+        cq.where(
+            cb.equal(root.get(FieldNameConstants.LOCATION_ID), locationId),
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED))
+        );
+        cq.orderBy(cb.asc(root.get(FieldNameConstants.ITEM_TABLE)));
+        return this.entityManager.createQuery(cq).getResultList();
     }
 
     /**
@@ -672,7 +695,7 @@ public class InventoryItemQueryService {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             if (query != null) {
-                if (StringUtils.isNotBlank(query.getItemTable())) {
+                if (StringUtils.isNotEmpty(query.getItemTable())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), query.getItemTable().trim()));
                 }
                 if (query.getItemId() != null) {
@@ -685,7 +708,11 @@ public class InventoryItemQueryService {
                     predicates.add(
                         cb.equal(root.get(FieldNameConstants.INVENTORY_STATUS_ENUM), query.getInventoryStatusEnum()));
                 }
-                if (StringUtils.isNotBlank(query.getKeyword())) {
+                if (Boolean.TRUE.equals(query.getPositiveQuantityOnly())) {
+                    // —— 选品分页仅展示账面量大于零的批号行，与库存明细「有库存」列表口径一致。——
+                    predicates.add(cb.greaterThan(root.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
+                }
+                if (StringUtils.isNotEmpty(query.getKeyword())) {
                     String trimmed = query.getKeyword().trim();
                     String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
                     predicates.add(cb.or(cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
@@ -783,8 +810,8 @@ public class InventoryItemQueryService {
      *
      * <p>
      * 机构与库房数据范围由应用层在调用前通过 {@code LocationQueryService} 与
-     * {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver}、
-     * {@link com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver} 解析为
+     * {@link com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver}、
+     * {@link com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver} 解析为
      * {@link com.openhis.health.domain.workflow.inventoryitem.queries.WarehouseInventoryDetailPageQuery#getEffectiveWarehouseIds()}，
      * 本方法不在此重复拼接 {@code organization_id}（与 B.10.11 职责划分一致）。
      * </p>
@@ -798,8 +825,8 @@ public class InventoryItemQueryService {
      *
      * <p>
      * 机构与库房数据范围由应用层在调用前通过 {@code LocationQueryService} 与
-     * {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver}、
-     * {@link com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver} 解析为
+     * {@link com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver}、
+     * {@link com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver} 解析为
      * {@link com.openhis.health.domain.workflow.inventoryitem.queries.WarehouseInventoryDetailPageQuery#getEffectiveWarehouseIds()}，
      * 本方法不在此重复拼接 {@code organization_id}（与 B.10.11 职责划分一致）。
      * </p>
@@ -879,7 +906,7 @@ public class InventoryItemQueryService {
                 predicates.add(cb.isNotNull(root.get(FieldNameConstants.EXPIRATION_DATE)));
                 predicates.add(cb.lessThanOrEqualTo(root.get(FieldNameConstants.EXPIRATION_DATE), deadline));
             }
-            if (StringUtils.isNotBlank(query.getKeyword())) {
+            if (StringUtils.isNotEmpty(query.getKeyword())) {
                 String trimmed = query.getKeyword().trim();
                 String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
                 List<jakarta.persistence.criteria.Predicate> keywordOr = new ArrayList<>();
@@ -913,8 +940,100 @@ public class InventoryItemQueryService {
                 chrgitmOr.add(this.deviceDefinitionItemPredicate(root, cb, query.getResolvedDeviceDefinitionIds()));
                 predicates.add(cb.or(chrgitmOr.toArray(new jakarta.persistence.criteria.Predicate[0])));
             }
+            this.appendLowStockAggregateKeyPredicates(root, cb, predicates, query.getLowStockWarningAggregateKeys());
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
+    }
+
+    /**
+     * 库存预警：按全院品种聚合拆零数量（各库房合计，仅 quantity &gt; 0 的未删行）。
+     *
+     * @return 聚合行列表
+     */
+    public List<InventoryProductQuantityAggregateModel> listHospitalWideProductQuantityAggregates() {
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<Object[]> cq = cb.createQuery(Object[].class);
+        Root<InventoryItem> root = cq.from(InventoryItem.class);
+        List<Predicate> predicates = new ArrayList<>();
+        predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+        predicates.add(cb.greaterThan(root.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
+        cq.multiselect(
+            root.get(FieldNameConstants.ITEM_TABLE),
+            root.get(FieldNameConstants.ITEM_ID),
+            cb.sum(root.get(FieldNameConstants.QUANTITY)));
+        cq.where(predicates.toArray(new Predicate[0]));
+        cq.groupBy(
+            root.get(FieldNameConstants.ITEM_TABLE),
+            root.get(FieldNameConstants.ITEM_ID));
+        TypedQuery<Object[]> typedQuery = this.entityManager.createQuery(cq);
+        List<Object[]> rows = typedQuery.getResultList();
+        List<InventoryProductQuantityAggregateModel> result = new ArrayList<>();
+        for (Object[] row : rows) {
+            if (row == null || row.length < 3) {
+                continue;
+            }
+            InventoryProductQuantityAggregateModel model = new InventoryProductQuantityAggregateModel();
+            model.setItemTable((String) row[0]);
+            model.setItemId((Long) row[1]);
+            BigDecimal total = (BigDecimal) row[2];
+            if (total == null) {
+                model.setTotalSplitQuantity(BigDecimal.ZERO);
+            } else {
+                model.setTotalSplitQuantity(total);
+            }
+            result.add(model);
+        }
+        return result;
+    }
+
+    /**
+     * 效期预警批号行计数：与库存明细近效期筛选同口径。
+     *
+     * @param query 须含 {@code effectiveWarehouseIds} 与 {@code expireWithinDays}
+     * @return 命中行数
+     */
+    public long countExpireWarningInventoryRows(WarehouseInventoryDetailPageQuery query) {
+        Specification<InventoryItem> specification = this.buildWarehouseInventoryDetailSpecification(query);
+        return this.inventoryItemRepository.count(specification);
+    }
+
+    /**
+     * 低库存聚合键 OR 谓词：无键或键无效时构造恒 false（id=-1）。
+     *
+     * @param root       InventoryItem 根
+     * @param cb         CriteriaBuilder
+     * @param predicates 待追加谓词列表
+     * @param keys       品种聚合键
+     */
+    private void appendLowStockAggregateKeyPredicates(
+        Root<InventoryItem> root,
+        CriteriaBuilder cb,
+        List<jakarta.persistence.criteria.Predicate> predicates,
+        List<InventoryProductAggregateKey> keys) {
+        if (keys == null) {
+            return;
+        }
+        // 无命中键时强制空结果，避免误返回全表
+        if (keys.isEmpty()) {
+            predicates.add(cb.equal(root.get(FieldNameConstants.ID), -1L));
+            return;
+        }
+        List<jakarta.persistence.criteria.Predicate> keyOr = new ArrayList<>();
+        for (InventoryProductAggregateKey key : keys) {
+            if (key == null || key.getItemId() == null || StringUtils.isEmpty(key.getItemTable())) {
+                continue;
+            }
+            // 全院品种命中：展示该品种在各库房的全部批号行（列表仍受 BR-016 库房 Gate 约束）
+            keyOr.add(cb.and(
+                cb.equal(root.get(FieldNameConstants.ITEM_TABLE), key.getItemTable().trim()),
+                cb.equal(root.get(FieldNameConstants.ITEM_ID), key.getItemId())));
+        }
+        if (keyOr.isEmpty()) {
+            // 有效键均被过滤时等同无命中
+            predicates.add(cb.equal(root.get(FieldNameConstants.ID), -1L));
+            return;
+        }
+        predicates.add(cb.or(keyOr.toArray(new jakarta.persistence.criteria.Predicate[0])));
     }
 
     private jakarta.persistence.criteria.Predicate medicationDefinitionItemPredicate(
@@ -961,7 +1080,7 @@ public class InventoryItemQueryService {
      */
     private List<InventoryItem> findAvailableEntities(String itemTable, Long itemId, Long locationId,
         LocalDateTime now) {
-        if (StringUtils.isBlank(itemTable) || itemId == null) {
+        if (StringUtils.isEmpty(itemTable) || itemId == null) {
             return new ArrayList<>();
         }
         Specification<InventoryItem> specification = (root, cq, cb) -> {
@@ -1058,7 +1177,7 @@ public class InventoryItemQueryService {
      */
     private Optional<Long> findFirstActiveUnlockedIdByQuadruple(Long locationId, String itemTable, Long itemId,
         String lotNumber) {
-        if (locationId == null || itemId == null || StringUtils.isBlank(itemTable)) {
+        if (locationId == null || itemId == null || StringUtils.isEmpty(itemTable)) {
             return Optional.empty();
         }
         String lot;
@@ -1116,14 +1235,14 @@ public class InventoryItemQueryService {
      */
     public void assertSufficientForMedicationDispense(String itemTableName, Long medicationId, Long pharmacyLocationId,
         String lotNumber, BigDecimal requiredQuantityInBusinessUnit, String businessUnitCode,
-        com.openhis.health.domain.share.product.MedicationProductUnitConversionSource productDefinition) {
+        MedicationProductUnitConversionSource productDefinition) {
         if (medicationId == null || pharmacyLocationId == null) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "库存断言缺少药品或库房标识");
         }
         if (requiredQuantityInBusinessUnit == null || requiredQuantityInBusinessUnit.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "库存断言需求数量必须大于 0");
         }
-        if (StringUtils.isBlank(itemTableName)) {
+        if (StringUtils.isEmpty(itemTableName)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "库存断言缺少物品主表名");
         }
         BigDecimal requiredInSplitUnit = MedicationProductQuantityToSplitUnitConverter
@@ -1135,7 +1254,7 @@ public class InventoryItemQueryService {
             if (row.getQuantity() == null) {
                 continue;
             }
-            if (StringUtils.isNotBlank(lotNumber)) {
+            if (StringUtils.isNotEmpty(lotNumber)) {
                 String rowLot = row.getLotNumber();
                 if (rowLot == null) {
                     continue;
@@ -1152,27 +1271,31 @@ public class InventoryItemQueryService {
     }
 
     /**
-     * 发药前库存充足断言（物理库存 − 全局待发预占，GAP-EXE-003）。
+     * 发药前库存充足断言（物理库存 − 已汇总的待发预占，GAP-EXE-003）。
      *
-     * @param excludeDispenseId 当前发放行主键；计入预占统计时排除自身
+     * @param reserveInSplitUnit 待发预占量（最小单位）；由 querysupport 经 MedicationDispense QS 汇总后传入
      */
-    public void assertSufficientForMedicationDispenseWithReserve(
+    public void assertSufficientForMedicationDispenseGivenReserve(
         String itemTableName,
         Long medicationId,
         Long pharmacyLocationId,
         String lotNumber,
         BigDecimal requiredQuantityInBusinessUnit,
         String businessUnitCode,
-        com.openhis.health.domain.share.product.MedicationProductUnitConversionSource productDefinition,
-        Long excludeDispenseId) {
+        MedicationProductUnitConversionSource productDefinition,
+        BigDecimal reserveInSplitUnit) {
         if (medicationId == null || pharmacyLocationId == null) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "库存断言缺少药品或库房标识");
         }
         if (requiredQuantityInBusinessUnit == null || requiredQuantityInBusinessUnit.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "库存断言需求数量必须大于 0");
         }
-        if (StringUtils.isBlank(itemTableName)) {
+        if (StringUtils.isEmpty(itemTableName)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "库存断言缺少物品主表名");
+        }
+        BigDecimal safeReserve = reserveInSplitUnit;
+        if (safeReserve == null) {
+            safeReserve = BigDecimal.ZERO;
         }
         BigDecimal requiredInSplitUnit = MedicationProductQuantityToSplitUnitConverter
             .medicationQuantityToSplitUnit(productDefinition, businessUnitCode, requiredQuantityInBusinessUnit);
@@ -1183,7 +1306,7 @@ public class InventoryItemQueryService {
             if (row.getQuantity() == null) {
                 continue;
             }
-            if (StringUtils.isNotBlank(lotNumber)) {
+            if (StringUtils.isNotEmpty(lotNumber)) {
                 String rowLot = row.getLotNumber();
                 if (rowLot == null) {
                     continue;
@@ -1194,9 +1317,7 @@ public class InventoryItemQueryService {
             }
             physicalSum = physicalSum.add(row.getQuantity());
         }
-        BigDecimal reserveInSplitUnit = medicationDispenseQueryService.sumDispenseExeReserveQuantityInSplitUnit(
-            pharmacyLocationId, medicationId, productDefinition, excludeDispenseId);
-        BigDecimal netAvailable = physicalSum.subtract(reserveInSplitUnit);
+        BigDecimal netAvailable = physicalSum.subtract(safeReserve);
         if (netAvailable.compareTo(requiredInSplitUnit) < 0) {
             throw new BusinessException(ErrorCodeConstants.EX_OPP_205_STOCK_OR_LOCATION_INVALID, "可用库存不足以覆盖待发数量");
         }
@@ -1257,13 +1378,13 @@ public class InventoryItemQueryService {
      */
     private InventoryItem resolveSingleActiveMedicationInventoryBatchEntity(String itemTableName, Long medicationId,
         Long pharmacyLocationId, String lotNumber) {
-        if (StringUtils.isBlank(itemTableName)) {
+        if (StringUtils.isEmpty(itemTableName)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "定位库存项缺少物品主表名");
         }
         if (medicationId == null || pharmacyLocationId == null) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT, "定位库存项缺少药品或库房标识");
         }
-        if (StringUtils.isBlank(lotNumber)) {
+        if (StringUtils.isEmpty(lotNumber)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_DISPENSE_INVALID_ARGUMENT,
                 "发放批号为空时无法在账面锁定单一库存批次，请先执行保存配药并选定批号");
         }
@@ -1313,15 +1434,25 @@ public class InventoryItemQueryService {
         return hit.getId();
     }
 
+    /**
+     * 按批号+库房+耗材定义定位唯一未删库存批次；0 或多条均抛业务异常。
+     *
+     * @param itemTableName       物品表名
+     * @param deviceDefinitionId  耗材定义 id
+     * @param locationId          库房 id
+     * @param lotNumber           批号
+     * @return 唯一库存行
+     * @throws BusinessException 参数缺失、无批次或多批次
+     */
     private InventoryItem resolveSingleActiveDeviceInventoryBatchEntity(String itemTableName, Long deviceDefinitionId,
         Long locationId, String lotNumber) {
-        if (StringUtils.isBlank(itemTableName)) {
+        if (StringUtils.isEmpty(itemTableName)) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "定位耗材库存项缺少物品主表名");
         }
         if (deviceDefinitionId == null || locationId == null) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "定位耗材库存项缺少耗材定义或库房标识");
         }
-        if (StringUtils.isBlank(lotNumber)) {
+        if (StringUtils.isEmpty(lotNumber)) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "发放批号为空时无法在账面锁定单一库存批次");
         }
         List<InventoryItem> rows =
@@ -1358,7 +1489,7 @@ public class InventoryItemQueryService {
      * @return 库存实体列表；参数非法时返回空列表
      */
     public List<InventoryItem> listHospitalWideActiveInventoryRows(String itemTable, Long itemId) {
-        if (StringUtils.isBlank(itemTable) || itemId == null) {
+        if (StringUtils.isEmpty(itemTable) || itemId == null) {
             return new ArrayList<>();
         }
         LocalDateTime now = LocalDateTime.now();

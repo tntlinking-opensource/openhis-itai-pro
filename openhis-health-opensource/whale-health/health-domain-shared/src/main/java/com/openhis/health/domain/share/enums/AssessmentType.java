@@ -1,45 +1,22 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 分诊评估类型枚举。
  */
 public enum AssessmentType implements EnumInterface {
-    /**
-     * PAIN_NRS。
-     */
+    /** NRS 疼痛评分（AssessmentType，编码 {@code PAIN_NRS}）。 */
     PAIN_NRS(0L, "PAIN_NRS", "", "", 1L),
-    /**
-     * TRAUMA_RTS。
-     */
+    /** RTS 创伤评分（AssessmentType，编码 {@code TRAUMA_RTS}）。 */
     TRAUMA_RTS(0L, "TRAUMA_RTS", "", "", 2L),
-    /**
-     * CONSCIOUSNESS_GCS。
-     */
+    /** GCS 意识评分（AssessmentType，编码 {@code CONSCIOUSNESS_GCS}）。 */
     CONSCIOUSNESS_GCS(0L, "CONSCIOUSNESS_GCS", "", "", 3L),
-    /**
-     * EARLY_WARNING_MEWS。
-     */
+    /** MEWS 早期预警评分（AssessmentType，编码 {@code EARLY_WARNING_MEWS}）。 */
     EARLY_WARNING_MEWS(0L, "EARLY_WARNING_MEWS", "", "", 4L),
-    /**
-     * OTHER。
-     */
+    /** 其他（AssessmentType，编码 {@code OTHER}）。 */
     OTHER(0L, "OTHER", "", "", 9L);
 
     private final Long codeSystemId;
@@ -49,7 +26,7 @@ public enum AssessmentType implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * AssessmentType。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     AssessmentType(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

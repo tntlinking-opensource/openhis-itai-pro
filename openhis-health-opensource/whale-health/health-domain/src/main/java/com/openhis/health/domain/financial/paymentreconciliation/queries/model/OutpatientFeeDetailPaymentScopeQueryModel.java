@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.financial.paymentreconciliation.queries.model;
 
 import lombok.Getter;
@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
  *
  * <p>由 {@link com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService}
  * 在 bill_date 筛选后写入 {@link com.openhis.health.domain.administration.chargeitem.query.OutpatientFeeDetailPageQuery}，
- * 供 {@link com.openhis.health.module.querysupport.feedetail.OutpatientFeeDetailQuerySupport} 补全
+ * 供 {@link com.openhis.health.application.outpatient.financial.feedetail.support.OutpatientFeeDetailLoader} 补全
  * {@code charge_item_ids}  varchar 截断漏挂的已结行。</p>
  */
 @Getter

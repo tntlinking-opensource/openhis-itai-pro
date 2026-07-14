@@ -1,28 +1,15 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.devicecatalog.mapper;
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.application.basic.devicecatalog.dto.DeviceCatalogDto;
 import com.openhis.health.application.basic.devicecatalog.request.CreateDeviceCatalogRequest;
 import com.openhis.health.application.basic.devicecatalog.request.UpdateDeviceCatalogRequest;
-import com.openhis.health.module.common.assembler.command.BatchCommandItemAssembler;
-import com.openhis.health.module.common.converter.TextValueConverter;
+import com.openhis.health.application.basic.catalog.support.BatchCommandItemAssembler;
+import com.openhis.health.application.shared.converter.TextValueConverter;
 import com.openhis.health.domain.administration.devicedefinition.command.*;
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
 import com.openhis.health.domain.share.enums.PublicationStatus;
@@ -87,6 +74,8 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
 
         dto.setHvcmFlag(entity.getHvcmFlag());
         dto.setHvcmFlag_enumText(DeviceCatalogMapperImpl.hvcmCatalogText(entity.getHvcmFlag()));
+        dto.setChargeableFlag(entity.getChargeableFlag());
+        dto.setMrSettlementTypeCode(entity.getMrSettlementTypeCode());
 
         dto.setApprovalNumber(entity.getApprovalNumber());
         dto.setYbFlag(entity.getYbFlag());
@@ -159,6 +148,8 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             item.setLocationId(request.getLocationId());
             item.setModelNumber(request.getModelNumber());
             item.setHvcmFlag(DeviceCatalogMapperImpl.persistBoolAsInt(request.getHvcmFlag()));
+            item.setChargeableFlag(DeviceCatalogMapperImpl.persistBoolAsInt(request.getChargeableFlag()));
+            item.setMrSettlementTypeCode(request.getMrSettlementTypeCode());
             item.setApprovalNumber(request.getApprovalNumber());
             item.setYbFlag(DeviceCatalogMapperImpl.persistBoolAsInt(request.getYbFlag()));
             item.setYbNo(request.getYbNo());
@@ -224,6 +215,8 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             item.setDoseUnitCode(request.getDoseUnitCode());
             item.setModelNumber(request.getModelNumber());
             item.setHvcmFlag(DeviceCatalogMapperImpl.persistBoolAsInt(request.getHvcmFlag()));
+            item.setChargeableFlag(DeviceCatalogMapperImpl.persistBoolAsInt(request.getChargeableFlag()));
+            item.setMrSettlementTypeCode(request.getMrSettlementTypeCode());
             item.setApprovalNumber(request.getApprovalNumber());
             item.setOrgId(request.getOrgId());
             item.setLocationId(request.getLocationId());
@@ -302,6 +295,12 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
             }
             if (request.getHvcmFlag() != null) {
                 changed.add(FieldNameConstants.HVCM_FLAG);
+            }
+            if (request.getChargeableFlag() != null) {
+                changed.add(FieldNameConstants.CHARGEABLE_FLAG);
+            }
+            if (request.getMrSettlementTypeCode() != null) {
+                changed.add(FieldNameConstants.MR_SETTLEMENT_TYPE_CODE);
             }
             if (request.getApprovalNumber() != null) {
                 changed.add("approvalNumber");
@@ -447,4 +446,3 @@ public class DeviceCatalogMapperImpl implements DeviceCatalogMapper {
     }
 
 }
-

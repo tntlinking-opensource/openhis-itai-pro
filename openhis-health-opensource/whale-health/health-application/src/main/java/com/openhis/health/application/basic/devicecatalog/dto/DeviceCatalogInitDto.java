@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.devicecatalog.dto;
 
 import lombok.Data;
@@ -56,12 +43,14 @@ public class DeviceCatalogInitDto {
     private List<Map<String, Object>> exeOrganizations;
     /** 供应商下拉（label/value 行，value 为供应商 id 字符串）。 */
     private List<Map<String, Object>> supplierListOptions;
-    /** 医保分类字典占位。 */
+    /** 医保类别（术语体系 {@code med_chrgitm_type}，与药品/诊疗目录一致）。 */
     private List<Map<String, Object>> ybCategories;
     /** 财务类型（术语体系 {@code fin_type_code}，与药品目录初始化一致）。 */
     private List<Map<String, Object>> financialTypes;
-    /** 医保等级字典占位。 */
+    /** 医保等级（术语体系 {@code chrgitm_lv}，与药品/诊疗目录一致）。 */
     private List<Map<String, Object>> ybGrades;
+    /** 病案结算类型（术语体系 {@code mr_settlement_type_code}）。 */
+    private List<Map<String, Object>> mrSettlementTypeCodeOptions;
     /** 库房/存放点位占位。 */
     private List<Map<String, Object>> locations;
 
@@ -85,6 +74,7 @@ public class DeviceCatalogInitDto {
         dto.setYbCategories(Collections.emptyList());
         dto.setFinancialTypes(Collections.emptyList());
         dto.setYbGrades(Collections.emptyList());
+        dto.setMrSettlementTypeCodeOptions(Collections.emptyList());
         dto.setLocations(Collections.emptyList());
         return dto;
     }

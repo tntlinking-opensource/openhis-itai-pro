@@ -1,33 +1,20 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.pharmacy.gainloss.service;
 
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogEditorHintsAssembler;
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
-import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.validator.PageWindowGate;
-import com.openhis.health.integration.support.insurance.inventory.InventoryMedicareUploadSupport;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogEditorHintsAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.PageWindowGate;
+import com.openhis.health.application.shared.tracenumber.TraceNumberStocktakeGainLossTraceOrchestrator;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.mapper.InventoryWarehouseInboundReceiptMapper;
 import com.openhis.health.application.inventory.pharmacy.gainloss.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.pharmacy.gainloss.dto.PharmacyGainLossDetailLineDto;
@@ -41,16 +28,16 @@ import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionSelectionTerminologySupport;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionSelectionTerminologyMaps;
+import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionSelectionTerminologyMaps;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.constants.InventoryPharmacyConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationStatus;
@@ -75,14 +62,14 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.VerifyAbleEditQu
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestValidationModel;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
+import com.openhis.health.application.inventory.support.SupplyRequestPricedWriteOrchestrator;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.health.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
-import com.openhis.health.integration.insurance.inventory.command.InventoryUploadAfterGainLossCommand;
+import com.openhis.health.infrastructure.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterGainLossExtensionIn;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -103,9 +90,13 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * 药房盘点单（{@link SupplyType#PHARMACY_GAIN_LOSS}）应用编排。
+ * 药房损益单（{@link SupplyType#PHARMACY_GAIN_LOSS}，DM-WKF-006 type=7）应用编排。
  *
- * <p>同意后按差异发放并在盘点药房做盈亏加减；盘盈建库存行复用 {@link InventoryWarehouseInboundReceiptMapper}。</p>
+ * <p>编排口径与 {@link com.openhis.health.application.inventory.pharmacy.stocktake.service.InventoryPharmacyStocktakeAppService}
+ * 同构：建单/改单 → 提交 → 财务岗位 agree → {@code createSupplyDelivery} + 库存报溢/报损。
+ * 与盘点的差异：损益须 {@link SupplyType#requiresFinanceApproval(String)} 岗位同意；发放走通用供应发放。</p>
+ *
+ * <p>母版对照：药房盘点 PHA-006；HTTP 前缀 {@code inventoryPharmacyGainLoss}。</p>
  */
 @Slf4j
 @Service
@@ -114,13 +105,11 @@ public class InventoryPharmacyGainLossAppService {
 
     private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
-    /** 列表筛选「全部药房」时 purposeLocationId 占位（0 非库位主键）。 */
-    private static final long ALL_PHARMACIES_LIST_FILTER_LOCATION_ID = 0L;
-
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     private final CurrentPractitionerResolver currentPractitionerResolver;
     private final PageWindowGate pageWindowGate;
     private final SupplyRequestDomainService supplyRequestDomainService;
+    private final SupplyRequestPricedWriteOrchestrator supplyRequestPricedWriteOrchestrator;
     private final SupplyRequestQueryService supplyRequestQueryService;
     private final SupplyDeliveryDomainService supplyDeliveryDomainService;
     private final SupplyDeliveryQueryService supplyDeliveryQueryService;
@@ -130,11 +119,12 @@ public class InventoryPharmacyGainLossAppService {
     private final PractitionerQueryService practitionerQueryService;
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
-    private final ProductDefinitionSelectionTerminologySupport productDefinitionSelectionTerminologySupport;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final InventoryPharmacyGainLossMapper gainLossMapper;
     private final InventoryWarehouseInboundReceiptMapper inboundReceiptMapper;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
+    /** IF-TRC-14 盘点/损益剩余码差分写追溯。 */
+    private final TraceNumberStocktakeGainLossTraceOrchestrator traceNumberStocktakeGainLossTraceOrchestrator;
 
     /**
      * 加载页主数据（库位、人员、状态等下拉）。
@@ -154,6 +144,7 @@ public class InventoryPharmacyGainLossAppService {
                 WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
             List<Practitioner> warehouseKeepers = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
                 WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
+            // Asm：下拉选项写入初始化响应
             return gainLossMapper.toLoadPharmacyGainLossFormInitResponse(
                 gainLossMapper.toOptionDtoListFromLocations(gatedPharmacies),
                 gainLossMapper.toOptionDtoListInboundItemTableTypes(),
@@ -162,7 +153,7 @@ public class InventoryPharmacyGainLossAppService {
                 gainLossMapper.toOptionDtoListFromPractitioners(warehouseKeepers));
         } catch (RuntimeException ex) {
             log.warn("loadPharmacyGainLossFormInit failed", ex);
-            throw new BusinessException(ErrorCodeConstants.PHA_GL_101, "盘点页主数据加载失败");
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_101, "损益页主数据加载失败");
         }
     }
 
@@ -184,21 +175,25 @@ public class InventoryPharmacyGainLossAppService {
         SupplyRequestDocumentListQuery listQuery = new SupplyRequestDocumentListQuery();
         listQuery.setTypeEnum(SupplyType.PHARMACY_GAIN_LOSS.getCode());
         if (request.getPurposeLocationId() != null) {
-            if (Long.valueOf(ALL_PHARMACIES_LIST_FILTER_LOCATION_ID).equals(request.getPurposeLocationId())) {
+            if (Long.valueOf(InventoryPharmacyConstants.ALL_PHARMACIES_LIST_FILTER_LOCATION_ID)
+                .equals(request.getPurposeLocationId())) {
                 if (allowedPharmacies.isEmpty()) {
-                    // 无可见药房时用占位 id，避免误查全表。
-                    listQuery.setPurposeLocationIds(List.of(-1L));
+                    // 无可见药房时用占位 id，避免误查全表
+                    listQuery.setPurposeLocationIds(
+                        List.of(InventoryPharmacyConstants.LIST_FILTER_NO_VISIBLE_PHARMACY_PLACEHOLDER_ID));
                 } else {
                     listQuery.setPurposeLocationIds(new ArrayList<>(allowedPharmacies));
                 }
             } else {
+                // 指定单一药房时须通过管辖 Gate，防止越权查单
                 this.assertPharmacyLocationAllowed(request.getPurposeLocationId(), allowedPharmacies);
                 listQuery.setPurposeLocationId(request.getPurposeLocationId());
             }
         }
-        if (StringUtils.isNotBlank(request.getStatusEnum())) {
+        if (StringUtils.isNotEmpty(request.getStatusEnum())) {
             SupplyStatus st = EnumUtil.fromCode(SupplyStatus.class, request.getStatusEnum().trim());
             if (st == null) {
+                // 非法状态 code 拒绝查询，与 AS 参数校验一致
                 throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "statusEnum 非法");
             }
             listQuery.setStatusEnum(st.getCode());
@@ -215,19 +210,21 @@ public class InventoryPharmacyGainLossAppService {
         }
         listQuery.setEndDate(rangeEnd);
         try {
+            // Cmd：按 busNo 去重分页查询供应请求行
             long mergedTotal = this.supplyRequestQueryService.countDistinctBusNo(listQuery);
             List<String> busNos = this.supplyRequestQueryService.listDistinctBusNoPage(listQuery);
             List<SupplyRequestModel> lines = this.supplyRequestQueryService.listByBusNosWithFilter(listQuery, busNos);
             List<PharmacyGainLossListRowDto> records = this.gainLossMapper.toPharmacyGainLossListAggregated(busNos, lines);
-            this.enrichPharmacyStocktakeListDisplayNames(records, lines);
-            this.enrichPharmacyStocktakeListPurposeLocationNames(records);
-            this.enrichPharmacyStocktakeListStatusEnumText(records);
+            this.enrichPharmacyGainLossListDisplayNames(records, lines);
+            this.enrichPharmacyGainLossListPurposeLocationNames(records);
+            this.enrichPharmacyGainLossListStatusEnumText(records);
             int pageNo = request.getPageNo().intValue();
             int pageSize = listQuery.getBoundedPageSize();
+            // Asm：聚合行映射为分页响应
             return this.gainLossMapper.toPagePharmacyGainLosssAggregatedResponse(mergedTotal, pageNo, pageSize, records);
         } catch (RuntimeException ex) {
             log.warn("pagePharmacyGainLosss failed", ex);
-            throw new BusinessException(ErrorCodeConstants.PHA_GL_102, "盘点单列表查询失败");
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_102, "损益单列表查询失败");
         }
     }
 
@@ -240,19 +237,21 @@ public class InventoryPharmacyGainLossAppService {
     public GetPharmacyGainLossDetailResponse getPharmacyGainLossDetail(GetPharmacyGainLossDetailRequest request) {
         // Gate：busNo 不可为空
         // Pre：按单号回读供应请求行并批量预取产品展示信息
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "busNo 不能为空");
         }
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
         q.setBusNo(request.getBusNo().trim());
         List<SupplyRequestModel> lines = supplyRequestQueryService.getSupplyByBusNo(q);
         if (lines.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.PHA_GL_103, "盘点单不存在");
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_103, "损益单不存在");
         }
+        // Gate：类型须为药房损益，防止按 busNo 误读其他供应单
         this.assertPharmacyGainLoss(lines);
+        // Pre：批量收集产品定义主键，避免详情 enrich N+1
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         for (SupplyRequestModel line : lines) {
-            if (line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
                 continue;
             }
             ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
@@ -262,13 +261,13 @@ public class InventoryPharmacyGainLossAppService {
         }
         Map<String, ProductDefinitionDisplayDto> products;
         try {
-            products = productDefinitionBatchLoader.loadAsMap(lookups);
+            products = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
         } catch (RuntimeException ex) {
-            log.warn("batchGetProductByIds degraded for stocktake detail", ex);
+            log.warn("batchGetProductByIds degraded for gainloss detail", ex);
             products = new HashMap<>();
         }
         ProductDefinitionSelectionTerminologyMaps terminologyMaps =
-            this.productDefinitionSelectionTerminologySupport.loadSelectionTerminologyMaps();
+            this.productDefinitionDisplayTerminologyAssembler.loadSelectionTerminologyMaps();
         Map<Long, ProductDefinitionCatalogEditorHintsDto> hints = new HashMap<>();
         for (SupplyRequestModel line : lines) {
             if (line == null || line.getId() == null) {
@@ -286,12 +285,13 @@ public class InventoryPharmacyGainLossAppService {
         SupplyRequestModel head = lines.get(0);
         if (head.getPurposeLocationId() != null) {
             Optional<Location> locOpt = locationQueryService.findOptionalById(head.getPurposeLocationId());
-            if (locOpt.isPresent() && StringUtils.isNotBlank(locOpt.get().getName())) {
+            if (locOpt.isPresent() && StringUtils.isNotEmpty(locOpt.get().getName())) {
                 res.setPurposeLocationName(locOpt.get().getName().trim());
             }
         }
-        this.enrichPharmacyStocktakeDetailLines(res.getLines(), lines, products);
-        this.enrichPharmacyStocktakeDetailLinesCatalogPricing(res.getLines());
+        this.enrichPharmacyGainLossDetailLines(res.getLines(), lines, products);
+        // Asm：槽价按落库行价 enrich（BR-PRICE-SRC-001 历史业务，禁止覆盖为当前目录价）
+        this.enrichPharmacyGainLossDetailLinesCatalogPricing(res.getLines());
         return res;
     }
 
@@ -308,7 +308,7 @@ public class InventoryPharmacyGainLossAppService {
             throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "请求不能为空");
         }
         if (request.getLines() == null || request.getLines().isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "盘点明细不能为空");
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "损益明细不能为空");
         }
         if (request.getPurposeLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "purposeLocationId 不能为空");
@@ -320,21 +320,82 @@ public class InventoryPharmacyGainLossAppService {
         }
         this.assertPharmacyGainLossLinesFields(request.getLines());
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_GL_101, "用户未登录");
-        Long applicantId = this.requirePharmacyGainLossApplicantPractitionerId(
-            ErrorCodeConstants.PHA_GL_101,
-            "用户未登录",
-            "当前用户未绑定医务人员档案，无法制单");
+        Long applicantId = this.currentPractitionerResolver.requirePractitionerId(
+            ErrorCodeConstants.PHA_GL_101, "当前用户未绑定医务人员档案，无法制单");
         try {
-            String busNo = supplyRequestDomainService.createGainLoss(
+            // Cmd：领域建单并分配 busNo
+            String busNo = supplyRequestPricedWriteOrchestrator.createGainLoss(
                 gainLossMapper.toCreateGainLossCommand(request, operatorId, applicantId, null));
+            // Asm：返回新建 busNo
             return gainLossMapper.toCreatePharmacyGainLossResponse(busNo);
         } catch (IllegalArgumentException ex) {
-            throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "盘点参数不合法：" + ex.getMessage());
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "损益参数不合法：" + ex.getMessage());
         } catch (BusinessException ex) {
-            throw this.mapPharmacyStocktakeLocationException(ex);
+            throw this.mapPharmacyGainLossLocationException(ex);
         }
     }
 
+    /**
+     * 更新可编辑态药房损益单（全量明细覆盖，同号软删重插）。
+     *
+     * <p>仅 {@link SupplyStatus#PENDING_APPROVAL} 待审核态允许；领域修订见
+     * {@link SupplyRequestDomainService#createGainLoss} 首行带 busNo 分支。</p>
+     *
+     * @param request 含 busNo、明细与库位
+     * @return 更新后的 busNo（与请求相同）
+     */
+    public UpdatePharmacyGainLossResponse updatePharmacyGainLoss(UpdatePharmacyGainLossRequest request) {
+        // Gate：busNo、明细与库位不可为空
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "busNo 不能为空");
+        }
+        if (request.getLines() == null || request.getLines().isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "损益明细不能为空");
+        }
+        if (request.getPurposeLocationId() == null) {
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "purposeLocationId 不能为空");
+        }
+        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.PHA_GL_101, "机构上下文缺失");
+        this.assertPharmacyGainLossPurposeLocationGate(request.getPurposeLocationId());
+        // Pre：回读存量并校验工作流可编辑态
+        VerifyAbleEditQuery editQuery = new VerifyAbleEditQuery();
+        editQuery.setBusNo(request.getBusNo().trim());
+        SupplyByBusNoQuery q = new SupplyByBusNoQuery();
+        q.setBusNo(request.getBusNo().trim());
+        List<SupplyRequestModel> existing = supplyRequestQueryService.getSupplyByBusNo(q);
+        if (existing.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_103, "损益单不存在");
+        }
+        // Gate：类型须为药房损益，防止误改其他供应单
+        this.assertPharmacyGainLoss(existing);
+        SupplyRequestModel head = existing.get(0);
+        editQuery.setItemId(head.getItemId());
+        Boolean editable = supplyRequestQueryService.verifyAbleEdit(editQuery);
+        if (Boolean.FALSE.equals(editable)) {
+            // 非可编辑态禁止改单，与 AS PHA_GL_004 一致
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_004, "当前状态不允许编辑损益单");
+        }
+        if (request.getPractitionerId() == null) {
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "经手人不能为空");
+        }
+        this.assertPharmacyGainLossLinesFields(request.getLines());
+        Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_GL_101, "用户未登录");
+        Long applicantId = this.currentPractitionerResolver.requirePractitionerId(
+            ErrorCodeConstants.PHA_GL_101, "当前用户未绑定医务人员档案，无法制单");
+        try {
+            // Cmd：同号全量对齐改单（领域软删重插）
+            String busNo = supplyRequestPricedWriteOrchestrator.createGainLoss(
+                gainLossMapper.toCreateGainLossCommand(request, operatorId, applicantId));
+            // Asm：返回 busNo
+            return gainLossMapper.toUpdatePharmacyGainLossResponse(busNo);
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "损益参数不合法：" + ex.getMessage());
+        } catch (OptimisticLockingFailureException ex) {
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_105, "损益单已被并发修改，请刷新后重试", ex);
+        } catch (BusinessException ex) {
+            throw this.mapPharmacyGainLossLocationException(ex);
+        }
+    }
 
     /**
      * 提交单据审批。
@@ -348,11 +409,10 @@ public class InventoryPharmacyGainLossAppService {
             throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "请求不能为空");
         }
         this.gateBusNo(request.getBusNo());
-        Long applicantId = this.requirePharmacyGainLossApplicantPractitionerId(
-            ErrorCodeConstants.PHA_GL_101,
-            "用户未登录",
-            "当前用户未绑定医务人员档案，无法提交审批");
+        Long applicantId = this.currentPractitionerResolver.requirePractitionerId(
+            ErrorCodeConstants.PHA_GL_101, "当前用户未绑定医务人员档案，无法提交审批");
         try {
+            // Cmd：领域提交审批，状态迁移至待审核
             supplyRequestDomainService.submitApproval(
                 gainLossMapper.toSubmitApprovalCommand(request,
                     currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_GL_101, "用户未登录"),
@@ -360,6 +420,7 @@ public class InventoryPharmacyGainLossAppService {
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.PHA_GL_003);
         }
+        // Asm：回读提交后状态写入响应
         SupplyStatus st = this.loadHeadSupplyStatus(request.getBusNo().trim());
         return gainLossMapper.toSubmitPharmacyGainLossApprovalResponse(st);
     }
@@ -377,47 +438,57 @@ public class InventoryPharmacyGainLossAppService {
         }
         this.gateBusNo(request.getBusNo());
         try {
+            // Cmd：领域撤回审批，单据回到可编辑态
             supplyRequestDomainService.withdrawApproval(
                 gainLossMapper.toWithdrawApprovalCommand(request,
                     currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_GL_101, "用户未登录")));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.PHA_GL_003);
         }
+        // Asm：回读撤回后状态写入响应
         SupplyStatus st = this.loadHeadSupplyStatus(request.getBusNo().trim());
         return gainLossMapper.toWithdrawPharmacyGainLossApprovalResponse(st);
     }
 
     /**
-     * 药房损益单同意编排：领域落已同意态 → 盘点发放 → 药房库存盈亏入账（盘盈可新建库存行）。
+     * 药房损益单同意编排：领域落已同意态 → 损益发放 → 按盈亏行增/减库存 → 可选医保进销存上报。
      *
-     * @param request 须含 busNo
-     * @return 同意成功标志
+     * <p>须财务审批岗位；发放命令为 {@code createSupplyDelivery}（非盘点 {@code createStocktakingDelivery}）。
+     * 重复 agree、发放已完成、库存不足等场景抛 {@link ErrorCodeConstants#PHA_GL_104}。</p>
+     *
+     * @param request 含 busNo；须未重复同意
+     * @return 同意后 busNo 与状态 code
      */
     public AgreePharmacyGainLossResponse agreePharmacyGainLoss(AgreePharmacyGainLossRequest request) {
-        // Gate：busNo 与操作人不可为空
-        // Pre：回读单据并校验未重复同意
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        // Gate：busNo 与操作人
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "busNo 不能为空");
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_GL_101, "用户未登录");
+
+        // Pre：回读损益单并校验未重复同意
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
         q.setBusNo(request.getBusNo().trim());
         List<SupplyRequestModel> beforeLines = supplyRequestQueryService.getSupplyByBusNo(q);
         if (beforeLines.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.PHA_GL_103, "盘点单不存在");
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_103, "损益单不存在");
         }
         this.assertPharmacyGainLoss(beforeLines);
         SupplyRequestValidationModel validation = supplyRequestQueryService.supplyRequestValidation(request.getBusNo().trim());
         if (Boolean.TRUE.equals(validation.getHasAgreed())) {
-            throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "盘点单已同意，禁止重复同意");
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "损益单已同意，禁止重复同意");
         }
+
+        // Cmd：领域状态机同意损益单
         try {
             supplyRequestDomainService.agreeRequest(gainLossMapper.toAgreeRequestCommand(request, operatorId));
         } catch (BusinessException ex) {
             throw this.mapAgreeException(ex);
         } catch (OptimisticLockingFailureException ex) {
-            throw new BusinessException(ErrorCodeConstants.PHA_GL_105, "盘点单已被并发修改，请刷新后重试", ex);
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_105, "损益单已被并发修改，请刷新后重试", ex);
         }
+
+        // Pre：强制读回 AGREE 行，保证发放/库存编排输入合法
         this.supplyRequestDomainService.flushPendingChanges();
         List<SupplyRequestModel> agreedLines = supplyRequestQueryService.getSupplyByBusNo(q);
         this.assertPharmacyGainLoss(agreedLines);
@@ -425,11 +496,12 @@ public class InventoryPharmacyGainLossAppService {
             if (row == null) {
                 continue;
             }
+            // 同意后每行须为 AGREE 且已持久化，否则中止动账编排
             if (!SupplyStatus.AGREE.getCode().equals(row.getStatusEnum())) {
-                throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "同意后回读状态异常，中止盘点编排");
+                throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "同意后回读状态异常，中止损益编排");
             }
             if (row.getId() == null) {
-                throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "盘点明细缺少持久化主键，无法完成编排");
+                throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "损益明细缺少持久化主键，无法完成编排");
             }
         }
         List<Long> requestIdsForDeliveryGate = new ArrayList<>();
@@ -441,17 +513,21 @@ public class InventoryPharmacyGainLossAppService {
         Set<Long> duplicateCompletedRequestIds =
             supplyDeliveryQueryService.findRequestIdsHavingCompletedDelivery(requestIdsForDeliveryGate);
         if (!duplicateCompletedRequestIds.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "供应请求行已存在完成态发放，禁止重复同意盘点");
+            // 幂等：已有完成态发放则禁止二次同意动账
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "供应请求行已存在完成态发放，禁止重复同意损益");
         }
+        // Cmd：损益发放落库
         try {
             supplyDeliveryDomainService.createSupplyDelivery(
                 gainLossMapper.toCreateSupplyDeliveryCommand(agreedLines, operatorId));
         } catch (BusinessException ex) {
-            throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "盘点发放落库失败：" + ex.getMessage());
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "损益发放落库失败：" + ex.getMessage());
         }
+
+        // Pre：批量产品读模型，供拆零量与报溢建库存行使用
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         for (SupplyRequestModel line : agreedLines) {
-            if (line == null || line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+            if (line == null || line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
                 continue;
             }
             ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
@@ -462,9 +538,9 @@ public class InventoryPharmacyGainLossAppService {
         Map<String, ProductDefinitionDisplayDto> productByKey = new HashMap<>();
         if (!lookups.isEmpty()) {
             try {
-                productByKey = productDefinitionBatchLoader.loadAsMap(lookups);
+                productByKey = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
             } catch (RuntimeException ex) {
-                log.warn("batchGetProductByIds failed during stocktake inventory assemble", ex);
+                log.warn("batchGetProductByIds failed during gainloss inventory assemble", ex);
             }
         }
         for (SupplyRequestModel line : agreedLines) {
@@ -472,12 +548,12 @@ public class InventoryPharmacyGainLossAppService {
                 continue;
             }
             BigDecimal profitLossQty = line.getItemQuantity();
-            // 零盈亏行跳过库存与发放。
+            // 仅非零盈亏行调整库存；零盈亏行在发放命令中已跳过。
             if (profitLossQty == null || profitLossQty.compareTo(BigDecimal.ZERO) == 0) {
                 continue;
             }
             Long purposeLocationId = line.getPurposeLocationId();
-            String resolvedLot = this.resolveLotNumberForPharmacyStocktakeInventory(line.getLotNumber());
+            String resolvedLot = this.resolveLotNumberForPharmacyGainLossInventory(line.getLotNumber());
             InventoryMatchKey matchKey = new InventoryMatchKey();
             matchKey.setLotNumber(resolvedLot);
             matchKey.setLocationId(purposeLocationId);
@@ -485,13 +561,16 @@ public class InventoryPharmacyGainLossAppService {
             matchKey.setItemId(line.getItemId());
             Long inventoryId = inventoryItemQueryService.findFirstIdByInventoryMatchKey(matchKey).orElse(null);
             int sign = profitLossQty.compareTo(BigDecimal.ZERO);
+            // 报溢：命中既有库存行则加量，否则新建库存项
             if (sign > 0) {
                 try {
                     if (inventoryId != null) {
+                        // 已有库存行：直接加量
                         IncreaseQuantityCommand incCmd =
                             gainLossMapper.toIncreaseQuantityCommand(inventoryId, profitLossQty, operatorId);
                         inventoryItemDomainService.increaseQuantity(incCmd);
                     } else {
+                        // 无库存行：报溢首次入库，复用进货侧建项命令
                         String productName = this.resolveProductName(line, productByKey);
                         String key = ProductDefinitionKeyUtil.buildCompositeKey(
                             line.getItemTable(), line.getItemId());
@@ -510,28 +589,38 @@ public class InventoryPharmacyGainLossAppService {
                         inventoryItemDomainService.createInventoryItem(createCmd);
                     }
                 } catch (BusinessException ex) {
-                    throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "盘盈库存增加失败：" + ex.getMessage());
+                    throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "报溢库存增加失败：" + ex.getMessage());
                 }
             } else {
                 BigDecimal absQty = profitLossQty.abs();
                 if (inventoryId == null) {
-                    throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "盘点药房未找到匹配库存行，无法盘亏扣减");
+                    throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "损益药房未找到匹配库存行，无法报损扣减");
                 }
                 try {
                     DecreaseQuantityCommand decCmd =
                         gainLossMapper.toDecreaseQuantityCommand(inventoryId, absQty, true, operatorId);
                     inventoryItemDomainService.decreaseQuantity(decCmd);
                 } catch (BusinessException ex) {
-                    throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "盘亏库存扣减失败：" + ex.getMessage());
+                    throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "报损库存扣减失败：" + ex.getMessage());
                 }
             }
         }
-        tryUploadMedicareInventoryAfterStocktakeAgree(request, agreedLines);
+        // Cmd：IF-TRC-14 剩余码与本库账差分写追溯主子表（库存入账成功后、同事务）
+        traceNumberStocktakeGainLossTraceOrchestrator.recordFromAgreedLines(
+            agreedLines, operatorId, productByKey, ErrorCodeConstants.PHA_GL_104);
+        // Asm：可选医保进销存上报
+        tryUploadMedicareInventoryAfterGainLossAgree(request, agreedLines);
         return gainLossMapper.toAgreePharmacyGainLossResponse(
             request.getBusNo().trim(), SupplyStatus.AGREE.getCode());
     }
 
-    private void tryUploadMedicareInventoryAfterStocktakeAgree(
+    /**
+     * CHS 进销存模块启用时，同意后异步上报损益动账明细。
+     *
+     * @param request      同意请求（含 busNo、合同号等）
+     * @param agreedLines  已同意供应请求行
+     */
+    private void tryUploadMedicareInventoryAfterGainLossAgree(
         AgreePharmacyGainLossRequest request,
         List<SupplyRequestModel> agreedLines
     ) {
@@ -544,8 +633,8 @@ public class InventoryPharmacyGainLossAppService {
         if (lineIds.isEmpty()) {
             return;
         }
-        InventoryMedicareUploadSupport.uploadIfEnabled(inventoryUploadExtension, () -> {
-            InventoryUploadAfterGainLossCommand command = new InventoryUploadAfterGainLossCommand()
+        inventoryUploadExtension.runUploadIfEnabled(() -> {
+            InventoryUploadAfterGainLossExtensionIn command = new InventoryUploadAfterGainLossExtensionIn()
                 .setGainLossBusNo(request.getBusNo())
                 .setSupplyRequestLineIds(lineIds)
                 .setSupplyTypeCode(SupplyType.PHARMACY_GAIN_LOSS.getCode())
@@ -562,18 +651,21 @@ public class InventoryPharmacyGainLossAppService {
      */
     public RejectPharmacyGainLossResponse rejectPharmacyGainLoss(RejectPharmacyGainLossRequest request) {
         // Gate：busNo 与驳回原因不可为空
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "busNo 不能为空");
         }
-        if (StringUtils.isBlank(request.getChangeReason()) && StringUtils.isBlank(request.getChangeReasonCode())) {
+        if (StringUtils.isEmpty(request.getChangeReason()) && StringUtils.isEmpty(request.getChangeReasonCode())) {
+            // 驳回须留痕，文本与原因码至少一项
             throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "驳回原因不能为空");
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_GL_101, "用户未登录");
         try {
+            // Cmd：领域驳回，须携带驳回原因
             supplyRequestDomainService.rejectRequest(gainLossMapper.toRejectRequestCommand(request, operatorId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.PHA_GL_003);
         }
+        // Asm：返回驳回成功标志
         return gainLossMapper.toRejectPharmacyGainLossResponse(true);
     }
 
@@ -591,10 +683,12 @@ public class InventoryPharmacyGainLossAppService {
         this.gateBusNo(request.getBusNo());
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_GL_101, "用户未登录");
         try {
+            // Cmd：领域按 busNo 软删（仅可删态）
             supplyRequestDomainService.removeByBusNo(gainLossMapper.toRemoveByBusNoCommand(request, operatorId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.PHA_GL_005);
         }
+        // Asm：返回删除成功标志
         return gainLossMapper.toRemovePharmacyGainLossResponse(true);
     }
 
@@ -605,8 +699,7 @@ public class InventoryPharmacyGainLossAppService {
      * @return 产品定义展示行分页
      */
     public PageProductsForPharmacyGainLossResponse pageProductsForPharmacyGainLoss(PageProductsForPharmacyGainLossRequest request) {
-        // Gate：分页窗口与机构上下文
-        // Pre：组装产品定义分页查询
+        // Gate：分页窗口、机构与药房门禁
         pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.PHA_GL_001, "分页参数不能为空");
         if (request.getPurposeLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "purposeLocationId 不能为空");
@@ -614,7 +707,8 @@ public class InventoryPharmacyGainLossAppService {
         this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.PHA_GL_101, "机构上下文缺失");
         Set<Long> allowed = this.resolveGatedPharmacyLocationIdsForPharmacyGate();
         this.assertPharmacyLocationAllowed(request.getPurposeLocationId(), allowed);
-        this.assertProductTableNameWhitelistForPharmacyStocktakeSelection(request.getProductTableName());
+        this.assertProductTableNameWhitelistForPharmacyGainLossSelection(request.getProductTableName());
+        // Pre：组装库存目录分页查询
         InventoryItemPageQuery invQuery = new InventoryItemPageQuery();
         invQuery.setLocationId(request.getPurposeLocationId());
         invQuery.setItemTable(request.getProductTableName().trim());
@@ -622,10 +716,11 @@ public class InventoryPharmacyGainLossAppService {
         Pageable pageable = PageRequest.of(
             request.springPageIndex(), request.getBoundedPageSize(), Sort.by(Sort.Direction.ASC, FieldNameConstants.ID));
         try {
+            // Cmd：分页查询现库库存行
             Page<InventoryItemModel> page = inventoryItemQueryService.queryInventoryItemsByPage(invQuery, pageable);
             List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
             for (InventoryItemModel inv : page.getContent()) {
-                if (inv == null || inv.getItemId() == null || StringUtils.isBlank(inv.getItemTable())) {
+                if (inv == null || inv.getItemId() == null || StringUtils.isEmpty(inv.getItemTable())) {
                     continue;
                 }
                 ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
@@ -636,9 +731,9 @@ public class InventoryPharmacyGainLossAppService {
             Map<String, ProductDefinitionDisplayDto> products = new HashMap<>();
             if (!lookups.isEmpty()) {
                 try {
-                    products = productDefinitionBatchLoader.loadAsMap(lookups);
+                    products = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
                 } catch (RuntimeException ex) {
-                    log.warn("batchGetProductByIds failed for stocktake selection", ex);
+                    log.warn("batchGetProductByIds failed for gainloss selection", ex);
                 }
             }
             String itemTable = request.getProductTableName().trim();
@@ -667,7 +762,7 @@ public class InventoryPharmacyGainLossAppService {
                 }
             }
             ProductDefinitionSelectionTerminologyMaps terminologyMaps =
-                this.productDefinitionSelectionTerminologySupport.loadSelectionTerminologyMaps();
+                this.productDefinitionDisplayTerminologyAssembler.loadSelectionTerminologyMaps();
             List<ProductDefinitionItemDto> records = new ArrayList<>();
             for (InventoryItemModel inv : page.getContent()) {
                 if (inv == null) {
@@ -691,7 +786,8 @@ public class InventoryPharmacyGainLossAppService {
                     dto.setAvailableQuantity(BigDecimal.ZERO);
                 }
                 BigDecimal lotCostUnit = null;
-                if (StringUtils.isNotBlank(inv.getLotNumber())) {
+                if (StringUtils.isNotEmpty(inv.getLotNumber())) {
+                    // 选品场景读批号维当前进价，仅作新建行计价辅助（非历史单据槽价）
                     lotCostUnit = this.chargeItemDefinitionQueryService.resolveFirstLotNumberCostPriceValue(
                         inv.getItemTable(), inv.getItemId(), inv.getLotNumber().trim());
                 }
@@ -702,7 +798,7 @@ public class InventoryPharmacyGainLossAppService {
                     List<ProductDefinitionCatalogUnitBandDto> bands = hints.getUnitBands();
                     dto.setUnitBands(bands);
                     BigDecimal packageAnchor = lotCostUnit;
-                    if (packageAnchor == null && StringUtils.isNotBlank(inv.getItemTable()) && inv.getItemId() != null) {
+                    if (packageAnchor == null && StringUtils.isNotEmpty(inv.getItemTable()) && inv.getItemId() != null) {
                         packageAnchor = this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
                             inv.getItemTable().trim(), inv.getItemId());
                     }
@@ -711,14 +807,16 @@ public class InventoryPharmacyGainLossAppService {
                 }
                 records.add(dto);
             }
+            // Asm：映射选品分页并增强可用量与价带
             return PagedResultBuilder.build(new PageProductsForPharmacyGainLossResponse(), records, page);
         } catch (RuntimeException ex) {
             log.warn("pageProductsForPharmacyGainLoss failed", ex);
-            throw new BusinessException(ErrorCodeConstants.PHA_GL_102, "盘点选品查询失败");
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_102, "损益选品查询失败");
         }
     }
 
-    private void enrichPharmacyStocktakeListPurposeLocationNames(List<PharmacyGainLossListRowDto> rows) {
+    /** 列表行回填损益药房展示名。 */
+    private void enrichPharmacyGainLossListPurposeLocationNames(List<PharmacyGainLossListRowDto> rows) {
         if (rows == null || rows.isEmpty()) {
             return;
         }
@@ -729,13 +827,14 @@ public class InventoryPharmacyGainLossAppService {
             }
         }
         Map<Long, String> nameById = new HashMap<>();
+        // 批量解析药房名称，避免列表行 N+1
         for (Long pid : purposeIds) {
             Optional<Location> locOpt = this.locationQueryService.findOptionalById(pid);
             if (locOpt.isEmpty()) {
                 continue;
             }
             Location loc = locOpt.get();
-            if (StringUtils.isNotBlank(loc.getName())) {
+            if (StringUtils.isNotEmpty(loc.getName())) {
                 nameById.put(pid, loc.getName().trim());
             }
         }
@@ -747,30 +846,34 @@ public class InventoryPharmacyGainLossAppService {
         }
     }
 
-    private void enrichPharmacyStocktakeListStatusEnumText(List<PharmacyGainLossListRowDto> rows) {
+    /** 列表行回填供应状态中文展示。 */
+    private void enrichPharmacyGainLossListStatusEnumText(List<PharmacyGainLossListRowDto> rows) {
         if (rows == null || rows.isEmpty()) {
             return;
         }
         for (PharmacyGainLossListRowDto row : rows) {
-            if (row == null || StringUtils.isBlank(row.getStatusEnum())) {
+            if (row == null || StringUtils.isEmpty(row.getStatusEnum())) {
                 continue;
             }
             SupplyStatus st = EnumUtil.fromCode(SupplyStatus.class, row.getStatusEnum().trim());
             if (st != null) {
+                // 枚举展示名供前端直接渲染
                 row.setStatusEnumText(st.getDisplay());
             }
         }
     }
 
-    private void enrichPharmacyStocktakeListDisplayNames(List<PharmacyGainLossListRowDto> rows, List<SupplyRequestModel> detailLines) {
+    /** 列表行回填申请人、审批人姓名（按 busNo 取最新申请行作表头）。 */
+    private void enrichPharmacyGainLossListDisplayNames(List<PharmacyGainLossListRowDto> rows, List<SupplyRequestModel> detailLines) {
         if (rows == null || rows.isEmpty() || detailLines == null || detailLines.isEmpty()) {
             return;
         }
         Map<String, Long> busNoToApplicantId = new HashMap<>();
         Map<String, Long> busNoToApproverId = new HashMap<>();
         Map<String, SupplyRequestModel> headByBusNo = new LinkedHashMap<>();
+        // 同 busNo 取 applyTime 最新行作表头，对齐列表聚合口径
         for (SupplyRequestModel line : detailLines) {
-            if (line == null || StringUtils.isBlank(line.getBusNo())) {
+            if (line == null || StringUtils.isEmpty(line.getBusNo())) {
                 continue;
             }
             String bn = line.getBusNo().trim();
@@ -809,12 +912,12 @@ public class InventoryPharmacyGainLossAppService {
                 continue;
             }
             Practitioner pr = this.practitionerQueryService.findById(pid);
-            if (pr != null && StringUtils.isNotBlank(pr.getName())) {
+            if (pr != null && StringUtils.isNotEmpty(pr.getName())) {
                 practitionerNameById.put(pid, pr.getName());
             }
         }
         for (PharmacyGainLossListRowDto row : rows) {
-            if (row == null || StringUtils.isBlank(row.getBusNo())) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
                 continue;
             }
             String bn = row.getBusNo().trim();
@@ -835,7 +938,8 @@ public class InventoryPharmacyGainLossAppService {
         }
     }
 
-    private void enrichPharmacyStocktakeDetailLines(
+    /** 详情明细回填产品名、规格、账面量（同批号同库位汇总）。 */
+    private void enrichPharmacyGainLossDetailLines(
         List<PharmacyGainLossDetailLineDto> detailLines,
         List<SupplyRequestModel> supplyLines,
         Map<String, ProductDefinitionDisplayDto> products) {
@@ -871,7 +975,8 @@ public class InventoryPharmacyGainLossAppService {
                 dto.setSpecification(pr.getTotalVolume());
                 dto.setManufacturer(pr.getManufacturer());
             }
-            if (purposeLocationId == null || StringUtils.isBlank(src.getItemTable()) || src.getItemId() == null) {
+            if (purposeLocationId == null || StringUtils.isEmpty(src.getItemTable()) || src.getItemId() == null) {
+                // 缺库位或物品键时账面量无法计算，展示零
                 dto.setBookQuantity(BigDecimal.ZERO);
                 continue;
             }
@@ -901,7 +1006,8 @@ public class InventoryPharmacyGainLossAppService {
         }
     }
 
-    private void enrichPharmacyStocktakeDetailLinesCatalogPricing(List<PharmacyGainLossDetailLineDto> lines) {
+    /** 详情明细目录价带与持久化行价对齐（BR-PRICE-SRC-001：仅用 supplyLine.price）。 */
+    private void enrichPharmacyGainLossDetailLinesCatalogPricing(List<PharmacyGainLossDetailLineDto> lines) {
         if (lines == null || lines.isEmpty()) {
             return;
         }
@@ -918,16 +1024,19 @@ public class InventoryPharmacyGainLossAppService {
         }
     }
 
+    /** 校验损益药房在管辖 Gate 内且为启用中药房形态。 */
     private void assertPharmacyGainLossPurposeLocationGate(Long purposeLocationId) {
         Set<Long> allowedPharmacies = this.resolveGatedPharmacyLocationIdsForPharmacyGate();
         this.assertPharmacyLocationAllowed(purposeLocationId, allowedPharmacies);
     }
 
+    /** 当前用户可见的启用中药房位置 id 集合。 */
     private Set<Long> resolveGatedPharmacyLocationIdsForPharmacyGate() {
         return this.managedLocationIdsResolver.gatedLocationIdsFromActive(
             this.locationQueryService.listAllActivePharmacies());
     }
 
+    /** 断言库位在允许集合内且形态/状态为启用中药房。 */
     private void assertPharmacyLocationAllowed(Long locationId, Set<Long> allowed) {
         this.managedLocationIdsResolver.assertLocationInManagedGate(
             locationId, allowed, ErrorCodeConstants.PHA_GL_002, "药房位置不在当前用户可选药房范围");
@@ -938,17 +1047,12 @@ public class InventoryPharmacyGainLossAppService {
         if (locOpt.isEmpty()
             || !LocationForm.PHARMACY.getCode().equals(locOpt.get().getFormEnum())
             || !LocationStatus.ACTIVE.getCode().equals(locOpt.get().getStatusEnum())) {
-            throw new BusinessException(ErrorCodeConstants.PHA_GL_002, "盘点位置须为启用中的药房");
+            // 非启用中药房禁止作为损益位置
+            throw new BusinessException(ErrorCodeConstants.PHA_GL_002, "损益位置须为启用中的药房");
         }
     }
 
-    private Long requirePharmacyGainLossApplicantPractitionerId(
-        String notLoggedInErrorCode,
-        String notLoggedInMessage,
-        String noPractitionerMessage) {
-        return this.currentPractitionerResolver.requirePractitionerId(notLoggedInErrorCode, noPractitionerMessage);
-    }
-
+    /** 校验损益明细必填字段与物品表白名单。 */
     private void assertPharmacyGainLossLinesFields(List<PharmacyGainLossLineDto> lines) {
         if (lines == null) {
             return;
@@ -957,11 +1061,11 @@ public class InventoryPharmacyGainLossAppService {
             if (line == null) {
                 continue;
             }
-            if (line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
-                throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "盘点明细须包含有效物品表与主键");
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
+                throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "损益明细须包含有效物品表与主键");
             }
-            if (StringUtils.isBlank(line.getUnitCode())) {
-                throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "盘点明细单位不能为空");
+            if (StringUtils.isEmpty(line.getUnitCode())) {
+                throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "损益明细单位不能为空");
             }
             if (line.getGainLossQuantity() == null) {
                 throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "盈亏数量不能为空");
@@ -970,7 +1074,7 @@ public class InventoryPharmacyGainLossAppService {
                 throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "实盘数量不能为负");
             }
             if (line.getOccurrenceTime() == null) {
-                throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "盘点明细制单时间不能为空");
+                throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "损益明细制单时间不能为空");
             }
             String table = line.getItemTable().trim();
             if (!TableNameConstants.MED_MEDICATION_DEFINITION.equals(table)
@@ -980,33 +1084,27 @@ public class InventoryPharmacyGainLossAppService {
         }
     }
 
+    /** busNo 非空门禁。 */
     private void gateBusNo(String busNo) {
-        if (StringUtils.isBlank(busNo)) {
+        if (StringUtils.isEmpty(busNo)) {
             throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "busNo 不能为空");
         }
     }
 
-    private void preAssertPharmacyGainLoss(String busNo) {
-        SupplyByBusNoQuery q = new SupplyByBusNoQuery();
-        q.setBusNo(busNo.trim());
-        List<SupplyRequestModel> lines = supplyRequestQueryService.getSupplyByBusNo(q);
-        if (lines.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.PHA_GL_103, "盘点单不存在");
-        }
-        this.assertPharmacyGainLoss(lines);
-    }
-
+    /** 断言供应请求行均为药房损益类型。 */
     private void assertPharmacyGainLoss(List<SupplyRequestModel> lines) {
         for (SupplyRequestModel line : lines) {
             if (line == null) {
                 continue;
             }
             if (!SupplyType.PHARMACY_GAIN_LOSS.getCode().equals(line.getTypeEnum())) {
-                throw new BusinessException(ErrorCodeConstants.PHA_GL_103, "单据类型非药房盘点单");
+                // 类型不匹配时拒绝继续编排，防止串单
+                throw new BusinessException(ErrorCodeConstants.PHA_GL_103, "单据类型非药房损益单");
             }
         }
     }
 
+    /** 读取表头供应状态枚举；单号不存在时返回 null。 */
     private SupplyStatus loadHeadSupplyStatus(String busNo) {
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
         q.setBusNo(busNo);
@@ -1015,14 +1113,15 @@ public class InventoryPharmacyGainLossAppService {
             return null;
         }
         String statusCode = lines.get(0).getStatusEnum();
-        if (StringUtils.isBlank(statusCode)) {
+        if (StringUtils.isEmpty(statusCode)) {
             return null;
         }
         return EnumUtil.fromCode(SupplyStatus.class, statusCode.trim());
     }
 
-    private void assertProductTableNameWhitelistForPharmacyStocktakeSelection(String raw) {
-        if (StringUtils.isBlank(raw)) {
+    /** 选品物品表须为药品或器械定义表。 */
+    private void assertProductTableNameWhitelistForPharmacyGainLossSelection(String raw) {
+        if (StringUtils.isEmpty(raw)) {
             throw new BusinessException(ErrorCodeConstants.PHA_GL_001, "productTableName 不能为空");
         }
         String table = raw.trim();
@@ -1032,35 +1131,39 @@ public class InventoryPharmacyGainLossAppService {
         }
     }
 
-    private String resolveLotNumberForPharmacyStocktakeInventory(String lotNumber) {
-        if (StringUtils.isBlank(lotNumber)) {
+    /** 库存匹配用批号规范化（空批号统一为空串）。 */
+    private String resolveLotNumberForPharmacyGainLossInventory(String lotNumber) {
+        if (StringUtils.isEmpty(lotNumber)) {
             return GeneralSharedConstants.EMPTY_STRING;
         }
         return lotNumber.trim();
     }
 
+    /** 从批量产品读模型解析行展示名称。 */
     private String resolveProductName(SupplyRequestModel line, Map<String, ProductDefinitionDisplayDto> productByKey) {
-        if (line == null || StringUtils.isBlank(line.getItemTable()) || line.getItemId() == null) {
+        if (line == null || StringUtils.isEmpty(line.getItemTable()) || line.getItemId() == null) {
             return GeneralSharedConstants.EMPTY_STRING;
         }
         String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
         ProductDefinitionDisplayDto pr = productByKey.get(key);
-        if (pr == null || StringUtils.isBlank(pr.getProductName())) {
+        if (pr == null || StringUtils.isEmpty(pr.getProductName())) {
             throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "产品定义缺失，无法解析展示名称");
         }
         return pr.getProductName().trim();
     }
 
+    /** 库存动账拆零单位：优先行单位，否则取产品定义拆零单位。 */
     private String resolveSplitUnitCode(SupplyRequestModel line, ProductDefinitionDisplayDto product) {
-        if (product == null || StringUtils.isBlank(product.getSplitUnitCode())) {
+        if (product == null || StringUtils.isEmpty(product.getSplitUnitCode())) {
             throw new BusinessException(ErrorCodeConstants.PHA_GL_104, "产品定义缺失或缺少拆零单位编码");
         }
-        if (line != null && StringUtils.isNotBlank(line.getUnitCode())) {
+        if (line != null && StringUtils.isNotEmpty(line.getUnitCode())) {
             return line.getUnitCode().trim();
         }
         return product.getSplitUnitCode().trim();
     }
 
+    /** 将领域 SUPPLY_REQUEST_INVALID_ARGUMENT 映射为药房损益业务错误码。 */
     private BusinessException mapSupplyWorkflowException(BusinessException ex, String defaultCode) {
         if (ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT.equals(ex.getErrorCode())) {
             return new BusinessException(defaultCode, ex.getMessage());
@@ -1068,6 +1171,7 @@ public class InventoryPharmacyGainLossAppService {
         return ex;
     }
 
+    /** 同意编排异常映射：重复同意 → PHA_GL_104，其余参数类 → PHA_GL_003。 */
     private BusinessException mapAgreeException(BusinessException ex) {
         if (ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT.equals(ex.getErrorCode())) {
             String msg = ex.getMessage();
@@ -1079,7 +1183,8 @@ public class InventoryPharmacyGainLossAppService {
         return ex;
     }
 
-    private BusinessException mapPharmacyStocktakeLocationException(BusinessException ex) {
+    /** 建单/改单库位类领域异常映射为 PHA_GL_002 或 PHA_GL_001。 */
+    private BusinessException mapPharmacyGainLossLocationException(BusinessException ex) {
         if (ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT.equals(ex.getErrorCode())) {
             String msg = ex.getMessage();
             if (msg != null && (msg.contains("库房") || msg.contains("位置") || msg.contains("药房"))) {

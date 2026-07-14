@@ -1,26 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.advice.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceRequestDetailSummaryDto;
-import com.openhis.health.module.querysupport.advice.dto.AdvicePackageChildItemDto;
+import com.openhis.health.application.shared.advice.AdviceExtensionJsonParser.AdvicePackageChildItemDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -38,7 +25,6 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 医生站医嘱统一列表行。 */
 @Schema(description = "医生站医嘱统一列表行")
 public class InpatientDoctorStationAdviceRowDto {
 
@@ -49,7 +35,7 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "稳定行键：requestId + SOH(U+0001) + productTableName")
     private String listRowKey;
 
-    /** 药品申请或诊疗服务申请主键（与 productTableName 成对标识资源类型）。 */
+    /** 医嘱请求主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "医嘱请求主键")
     private Long requestId;
@@ -68,7 +54,7 @@ public class InpatientDoctorStationAdviceRowDto {
 
     /** 与 IF-IP-DOR-11 对齐的目录定义主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
-    /** 产品定义主键。 */
+    /** 产品定义主键（与 productTableName 成对）。 */
     @Schema(description = "产品定义主键（与 productTableName 成对）")
     private Long productDefinitionId;
 
@@ -80,59 +66,61 @@ public class InpatientDoctorStationAdviceRowDto {
     private String productTableName;
 
     @Schema(description = "医嘱展示名")
+    /** 规格或大小展示。 */
     private String adviceDisplayName;
 
     @Schema(description = "规格或大小展示")
     private String specificationText;
 
     @Schema(description = "请求数量")
+    /** 请求数量。 */
     private BigDecimal quantity;
 
-    /** 开立单位术语 code（与目录/请求 unit_code 对齐）。 */
+    /** 请求单位编码。 */
     @Schema(description = "请求单位编码")
     private String unitCode;
 
-    /** 开立单位中文展示（术语字典批量解析）。 */
+    /** 请求单位展示名。 */
     @Schema(description = "请求单位展示名")
     private String unitName;
 
-    /** 计划执行次数（诊疗临嘱；护士站拆解上限；长嘱按频次可为空）。 */
+    /** 计划执行次数（诊疗临嘱）。 */
     @Schema(description = "计划执行次数（诊疗临嘱）")
     private Integer executionCount;
 
-    /** 单次剂量数值（药品行；诊疗行通常为 null）。 */
+    /** 单次剂量（药品）。 */
     @Schema(description = "单次剂量（药品）")
     private BigDecimal dose;
 
-    /** 剂量单位术语 code。 */
+    /** 剂量单位编码。 */
     @Schema(description = "剂量单位编码")
     private String doseUnitCode;
 
-    /** 剂量单位中文展示。 */
+    /** 剂量单位展示名。 */
     @Schema(description = "剂量单位展示名")
     private String doseUnitName;
 
-    /** 给药途径/用法术语 code（药品）。 */
+    /** 给药途径/用法编码。 */
     @Schema(description = "给药途径/用法编码")
     private String methodCode;
 
-    /** 给药途径中文展示。 */
+    /** 用法展示名。 */
     @Schema(description = "用法展示名")
     private String methodName;
 
-    /** 用药频次术语 code。 */
+    /** 用药频次编码。 */
     @Schema(description = "用药频次编码")
     private String rateCode;
 
-    /** 用药频次中文展示。 */
+    /** 频次展示名。 */
     @Schema(description = "频次展示名")
     private String rateName;
 
-    /** 产品批号（药品临时医嘱、与收费批号售价对齐时展示）。 */
+    /** 产品批号。 */
     @Schema(description = "产品批号")
     private String lotNumber;
 
-    /** 用药天数或疗程天数（药品 dispense_per_duration）。 */
+    /** 用药天数。 */
     @Schema(description = "用药天数")
     private Integer dispensePerDuration;
 
@@ -142,7 +130,7 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "拆零比")
     private BigDecimal partPercent;
 
-    /** 执行科室或发药库位主键（药品 perform_location / OrderInfo location）。 */
+    /** 执行或发药位置 id。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "执行或发药位置 id")
     private Long performLocationId;
@@ -158,6 +146,7 @@ public class InpatientDoctorStationAdviceRowDto {
     private Long fifoDispenseLocationId;
 
     @Schema(description = "护士执行后发药库位名称")
+    /** 诊断定义名称。 */
     private String fifoDispenseLocationName;
 
     @Schema(description = "诊断定义名称")
@@ -175,31 +164,31 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "就诊诊断主键")
     private Long encounterDiagnosisId;
 
-    /** 是否需皮试（药品 skin_test_flag；未投影时为 null）。 */
+    /** 是否皮试。 */
     @Schema(description = "是否皮试")
     private Boolean skinTestFlag;
 
-    /** 皮试标志中文「是/否」展示。 */
+    /** 皮试标志展示文案。 */
     @Schema(description = "皮试标志展示文案")
     private String skinTestFlagText;
 
-    /** 是否注射/输液医嘱（药品 infusion_flag）。 */
+    /** 是否注射或输液相关。 */
     @Schema(description = "是否注射或输液相关")
     private Boolean injectionFlag;
 
-    /** 注射标志中文展示。 */
+    /** 注射标志展示文案。 */
     @Schema(description = "注射标志展示文案")
     private String injectionFlagText;
 
-    /** 皮试结果术语 code（执行后回填；未做皮试时为 null）。 */
+    /** 皮试结果编码。 */
     @Schema(description = "皮试结果编码")
     private String skinTestOutcomeCode;
 
-    /** 皮试结果中文展示。 */
+    /** 皮试结果展示文案。 */
     @Schema(description = "皮试结果展示文案")
     private String skinTestOutcomeText;
 
-    /** 药品处方号（签发后按日序列生成，同一处方号可对应多行药品）。 */
+    /** 处方号。 */
     @Schema(description = "处方号")
     private String prescriptionNo;
 
@@ -209,27 +198,27 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "药品成组号")
     private Long groupId;
 
-    /** 中药付数（TCM 标志为真时由 chinese_herbs_dose_quantity 取整）。 */
+    /** 中药付数。 */
     @Schema(description = "中药付数")
     private Integer chineseHerbsDoseQuantity;
 
-    /** 是否代煎（中药 suffering_flag）。 */
+    /** 是否代煎。 */
     @Schema(description = "是否代煎")
     private Boolean decoctionDelegatedFlag;
 
-    /** 用药说明术语 code（dosage_instruction）。 */
+    /** 用药说明编码。 */
     @Schema(description = "用药说明编码")
     private String dosageInstructionCode;
 
-    /** 用药说明中文展示。 */
+    /** 用药说明展示名。 */
     @Schema(description = "用药说明展示名")
     private String dosageInstructionText;
 
-    /** 滴速术语 code（输液医嘱）。 */
+    /** 滴速编码。 */
     @Schema(description = "滴速编码")
     private String speedCode;
 
-    /** 滴速中文展示。 */
+    /** 滴速展示名。 */
     @Schema(description = "滴速展示名")
     private String speedName;
 
@@ -239,15 +228,15 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "前置服务申请主键")
     private Long basedOnServiceRequestId;
 
-    /** 医嘱备注（请求表 remark）。 */
+    /** 备注。 */
     @Schema(description = "备注")
     private String remark;
 
-    /** 诊疗嘱托正文（service_request.entrust_content）。 */
+    /** 嘱托内容。 */
     @Schema(description = "嘱托内容")
     private String entrustContent;
 
-    /** 诊疗套餐子项（子表事实，禁止对外透出 children_json 串）。 */
+    /** 诊疗套餐子项列表。 */
     @Schema(description = "诊疗套餐子项列表")
     private List<AdvicePackageChildItemDto> packageChildren;
 
@@ -257,15 +246,15 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "主展示用收费明细 id")
     private Long primaryChargeItemId;
 
-    /** 关联收费明细 id 列表。 */
+    /** 同一请求关联的全部收费明细 id。 */
     @Schema(description = "同一请求关联的全部收费明细 id")
     private List<Long> chargeItemIds;
 
-    /** 行级展示单价（adm_charge_item.unit_price，decimal 元；接口输出固定 6 位小数）。 */
+    /** 行级展示单价（元，6 位小数；主展示收费行）。 */
     @Schema(description = "行级展示单价（元，6 位小数；主展示收费行）")
     private BigDecimal lineDisplayUnitPrice;
 
-    /** 行级展示总价。 */
+    /** 行级展示总价（元，6 位小数；同请求 total_price 汇总）。 */
     @Schema(description = "行级展示总价（元，6 位小数；同请求 total_price 汇总）")
     private BigDecimal lineDisplayTotalPrice;
 
@@ -284,19 +273,21 @@ public class InpatientDoctorStationAdviceRowDto {
     private String chargeStatusEnum;
 
     @Schema(description = "行级收费汇总态展示文案")
+    /** 请求状态 code。 */
     private String chargeStatusEnumText;
 
     @Schema(description = "请求状态 code")
     private String statusEnum;
 
     @Schema(description = "请求状态展示文案")
+    /** 请求状态展示文案。 */
     private String statusEnumText;
 
-    /** 列表「状态」列展示码（退费优先于请求态）。 */
+    /** 列表状态列展示码（退费优先于请求态）。 */
     @Schema(description = "列表状态列展示码（退费优先于请求态）")
     private String displayStatusEnum;
 
-    /** 列表「状态」列展示文案（退费为待退费/已退费）。 */
+    /** 列表状态列展示文案（退费优先于请求态）。 */
     @Schema(description = "列表状态列展示文案（退费优先于请求态）")
     private String displayStatusEnumText;
 
@@ -306,19 +297,19 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "开立者主键")
     private Long authoredById;
 
-    /** 开立医师姓名（practitioner 批量解析）。 */
+    /** 开立者姓名。 */
     @Schema(description = "开立者姓名")
     private String authoredByName;
 
-    /** 是否当前登录用户开立（用于「我的医嘱」筛选扩展）。 */
+    /** 是否当前登录医师开立。 */
     @Schema(description = "是否当前登录医师开立")
     private Boolean isAuthoredByCurrentUser;
 
-    /** 开立时间（ISO-8601 local，无偏移；来自 req_authored_time）。 */
+    /** 开立时间 ISO-8601 local。 */
     @Schema(description = "开立时间 ISO-8601 local")
     private String authoredAt;
 
-    /** 停嘱或疗程结束时间（长期药品 effective_dose_end / 诊疗 occurrence_end_time）。 */
+    /** 停嘱或结束时间 ISO-8601 local。 */
     @Schema(description = "停嘱或结束时间 ISO-8601 local")
     private String endTime;
 
@@ -328,7 +319,7 @@ public class InpatientDoctorStationAdviceRowDto {
     @Schema(description = "签署人主键")
     private Long signedById;
 
-    /** 签署时间 ISO-8601 local（已签发时）。 */
+    /** 签署时间 ISO-8601 local。 */
     @Schema(description = "签署时间 ISO-8601 local")
     private String signedAt;
 
@@ -340,23 +331,25 @@ public class InpatientDoctorStationAdviceRowDto {
     private String therapyTypeCode;
 
     @Schema(description = "长临医嘱类型展示名")
+    /** 医生站主表展示排序号。 */
     private String therapyTypeText;
 
     @Schema(description = "医生站主表展示排序号")
     private Integer sortNumber;
 
     @Schema(description = "窄列摘要（不得作为唯一医嘱内容来源）")
+    /** 窄列摘要（不得作为唯一医嘱内容来源）。 */
     private String contentSummary;
 
-    /** 产品目录分类编码（药/诊疗/耗材定义上的 category_code）。 */
+    /** 目录分类编码（定义主数据 category_code）。 */
     @Schema(description = "目录分类编码（定义主数据 category_code）")
     private String catalogCategoryCode;
 
-    /** 产品目录分类展示名。 */
+    /** 目录分类展示名。 */
     @Schema(description = "目录分类展示名")
     private String catalogCategoryName;
 
-    /** 诊疗活动类型编码（仅诊疗行：wkf_activity_definition.type_enum）。 */
+    /** 诊疗活动类型编码（检验/检查/…，仅 productTableName=wkf_activity_definition 时有值）。 */
     @Schema(description = "诊疗活动类型编码（检验/检查/…，仅 productTableName=wkf_activity_definition 时有值）")
     private String activityTypeCode;
 
@@ -371,19 +364,21 @@ public class InpatientDoctorStationAdviceRowDto {
     private String serviceCategoryEnum;
 
     @Schema(description = "出院方式 code")
+    /** 出院方式展示名。 */
     private String outWayCode;
 
     @Schema(description = "出院方式展示名")
     private String outWayName;
 
     @Schema(description = "出院原因")
+    /** 出院原因。 */
     private String reasonText;
 
-    /** 计划出院时间 ISO-8601 local（持久化 occurrence_start_time）。 */
+    /** 计划出院时间 ISO-8601 local。 */
     @Schema(description = "计划出院时间 ISO-8601 local")
     private String plannedDischargeTime;
 
-    /** 申请单行部位/样本明细摘要（prescriptionNo 为 AR 前缀时有值）。 */
+    /** 服务申请明细摘要（申请单行）。 */
     @Schema(description = "服务申请明细摘要（申请单行）")
     private List<ServiceRequestDetailSummaryDto> serviceRequestDetails;
 }

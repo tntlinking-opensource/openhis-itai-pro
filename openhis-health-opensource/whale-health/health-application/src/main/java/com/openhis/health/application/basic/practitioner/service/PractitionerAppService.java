@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.practitioner.service;
 
 import com.openhis.health.application.basic.practitioner.dto.PractitionerProfileDto;
@@ -22,11 +9,11 @@ import com.openhis.health.application.basic.practitioner.request.SavePractitione
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerDomainService;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 /**
@@ -57,13 +44,17 @@ public class PractitionerAppService {
      * @throws ValidationException 主键为空或记录不存在时
      */
     public PractitionerProfileDto getProfile(Long practitionerId) {
+        // Gate：主键非空
         if (practitionerId == null) {
             throw new ValidationException("医务人员标识不能为空");
         }
+        // Pre：加载医务人员主档
         Practitioner p = practitionerQueryService.findById(practitionerId);
+        // Branch：记录不存在时阻断
         if (p == null) {
             throw new ValidationException("医务人员不存在");
         }
+        // Asm：映射档案 DTO（含签名存在标志）
         PractitionerProfileDto dto = new PractitionerProfileDto();
         dto.setPractitionerId(p.getId());
         dto.setName(p.getName());
@@ -71,7 +62,7 @@ public class PractitionerAppService {
         dto.setStatusEnum(p.getStatusEnum());
         String sig = p.getSignature();
         // 前端据此决定是否展示「已有签名」占位与编辑区
-        dto.setHasSignature(StringUtils.isNotBlank(sig));
+        dto.setHasSignature(StringUtils.isNotEmpty(sig));
         dto.setSignatureImage(sig);
         return dto;
     }
@@ -83,14 +74,16 @@ public class PractitionerAppService {
      * @throws ValidationException 主键为空、图片过大或未登录时
      */
     public void saveSignature(SavePractitionerSignatureRequest request) {
+        // Gate：医务人员标识非空
         if (request == null || request.getPractitionerId() == null) {
             throw new ValidationException("医务人员标识不能为空");
         }
         String payload = request.getSignatureImage();
-        // 非空签名须控制体积，避免超大 Base64 拖垮库表与接口
-        if (StringUtils.isNotBlank(payload) && payload.length() > SIGNATURE_MAX_LENGTH) {
+        // Gate：非空签名须控制体积，避免超大 Base64 拖垮库表
+        if (StringUtils.isNotEmpty(payload) && payload.length() > SIGNATURE_MAX_LENGTH) {
             throw new ValidationException("签名图片过大，请压缩后重试（建议宽不超过 400px）");
         }
+        // Cmd：更新签名图（空载荷表示清除）
         practitionerDomainService.updateSignature(
             request.getPractitionerId(),
             payload,

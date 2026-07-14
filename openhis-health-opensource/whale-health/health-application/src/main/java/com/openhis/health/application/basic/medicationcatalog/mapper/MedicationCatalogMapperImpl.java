@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.medicationcatalog.mapper;
 
 import com.openhis.health.application.basic.medicationcatalog.dto.MedicationDetailDto;
@@ -22,7 +9,7 @@ import com.openhis.health.application.basic.medicationcatalog.dto.MedicationDto;
 import com.openhis.health.application.basic.medicationcatalog.dto.MedicationManageInitDto;
 import com.openhis.health.application.basic.medicationcatalog.request.CreateMedicationCatalogRequest;
 import com.openhis.health.application.basic.medicationcatalog.request.UpdateMedicationCatalogRequest;
-import com.openhis.health.module.common.assembler.command.BatchCommandItemAssembler;
+import com.openhis.health.application.basic.catalog.support.BatchCommandItemAssembler;
 import com.openhis.health.domain.medication.medicationdefinition.command.ActivateMedicationDefinitionsCommand;
 import com.openhis.health.domain.medication.medicationdefinition.command.CreateMedicationDefinitionCommand;
 import com.openhis.health.domain.medication.medicationdefinition.command.DiscardMedicationDefinitionCommand;
@@ -83,6 +70,7 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         item.setYbNo(request.getYbNo());
         item.setYbMatchFlag(request.getYbMatchFlag());
         item.setChrgitmLv(request.getChrgitmLv());
+        item.setMrSettlementTypeCode(request.getMrSettlementTypeCode());
         item.setPharmacologyCategoryCode(request.getPharmacologyCategoryCode());
         item.setManufacturerId(request.getManufacturerId());
         item.setManufacturerText(request.getManufacturerText());
@@ -157,6 +145,7 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         item.setYbNo(request.getYbNo());
         item.setYbMatchFlag(request.getYbMatchFlag());
         item.setChrgitmLv(request.getChrgitmLv());
+        item.setMrSettlementTypeCode(request.getMrSettlementTypeCode());
         item.setPharmacologyCategoryCode(request.getPharmacologyCategoryCode());
         item.setManufacturerId(request.getManufacturerId());
         item.setManufacturerText(request.getManufacturerText());
@@ -268,6 +257,7 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         dto.setPartAttributeEnumOptions(model.getPartAttributeOptions());
         dto.setTempOrderSplitPropertyEnumOptions(model.getTempOrderSplitPropertyOptions());
         dto.setChrgitmLvOptions(model.getChrgitmLvOptions());
+        dto.setMrSettlementTypeCodeOptions(model.getMrSettlementTypeCodeOptions());
         dto.setSystemCategoriesOptions(model.getSystemCategoryOptions());
         dto.setMedicinePropertiesOptions(model.getMedicinePropertyOptions());
         dto.setDoseFormCodeOptions(model.getDoseFormOptions());
@@ -411,6 +401,7 @@ public class MedicationCatalogMapperImpl implements MedicationCatalogMapper {
         dto.setThoPartAttributeEnum(model.getThoPartAttributeEnum());
         dto.setRestrictedEnum(model.getRestrictedEnum());
         dto.setChrgitmLv(model.getChrgitmLv());
+        dto.setMrSettlementTypeCode(model.getMrSettlementTypeCode());
         dto.setVersion(model.getVersion());
         dto.setRestrictedFlag(Boolean.TRUE.equals(model.getRestrictedFlag()));
         dto.setRestrictedScope(model.getRestrictedScope());

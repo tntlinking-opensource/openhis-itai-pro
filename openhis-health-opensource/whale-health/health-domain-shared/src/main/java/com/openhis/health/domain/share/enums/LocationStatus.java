@@ -1,41 +1,20 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 位置状态枚举。
  */
 public enum LocationStatus implements EnumInterface {
-    /**
-     * DRAFT。
-     */
+    /** 草稿（LocationStatus，编码 {@code DRAFT}）。 */
     DRAFT(0L, "DRAFT", "草稿", "", 0L),
-    /**
-     * ACTIVE。
-     */
+    /** 启用（LocationStatus，编码 {@code ACTIVE}）。 */
     ACTIVE(0L, "ACTIVE", "启用", "", 1L),
-    /**
-     * INACTIVE。
-     */
+    /** 停用（LocationStatus，编码 {@code INACTIVE}）。 */
     INACTIVE(0L, "INACTIVE", "停用", "", 2L),
-    /**
-     * SUSPENDED。
-     */
+    /** 暂停（LocationStatus，编码 {@code SUSPENDED}）。 */
     SUSPENDED(0L, "SUSPENDED", "暂停", "", 3L);
 
     private final Long codeSystemId;
@@ -44,9 +23,7 @@ public enum LocationStatus implements EnumInterface {
     private final String definition;
     private final Long sortOrder;
 
-    /**
-     * LocationStatus。
-     */
+    /** 枚举构造：绑定编码系统、持久化 code、展示名与排序。 */
     LocationStatus(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;
         this.code = code;

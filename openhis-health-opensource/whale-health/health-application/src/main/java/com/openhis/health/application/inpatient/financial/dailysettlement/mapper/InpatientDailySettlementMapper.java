@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.financial.dailysettlement.mapper;
 
 import com.openhis.health.application.inpatient.financial.dailysettlement.request.PreviewInpatientDailySettlementRequest;
@@ -10,9 +10,11 @@ import com.openhis.health.application.inpatient.financial.dailysettlement.respon
 import com.openhis.health.application.inpatient.financial.dailysettlement.response.PreviewInpatientDailySettlementResponse;
 import com.openhis.health.application.inpatient.financial.dailysettlement.response.SubmitInpatientDailySettlementResponse;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.financial.cashiersettlement.command.SubmitCashierSettlementCommand;
 import com.openhis.health.domain.financial.cashiersettlement.queries.PreviewCashierSettlementQuery;
 import com.openhis.health.domain.financial.cashiersettlement.queries.model.PreviewCashierSettlementQueryModel;
+import com.openhis.health.domain.financial.cashiersettlement.queries.model.UnsettledPaymentPreviewItemQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentRecDetailQueryModel;
 import com.openhis.health.domain.financial.paymentreconciliation.queries.model.PaymentReconciliationQueryModel;
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -59,9 +61,11 @@ public interface InpatientDailySettlementMapper {
     /**
      * 预览结果与 enrichment 装配查询响应。
      *
-     * @param previewModel          候选 payment 预览
-     * @param paymentModels         payment 读模型
+     * @param previewModel          未交账候选 payment 预览（paymentCount / items）
+     * @param summaryPreviewItems   日结展示口径 payment 行（含已交账，供 rows/summary）
+     * @param paymentModels         展示口径 payment 读模型
      * @param recDetailsByPaymentId 子明细
+     * @param chargeItemsByPaymentId paymentId → 收费项（items enrichment）
      * @param encounterByEncounterId  就诊上下文
      * @param expenseProperty       费用性质展示过滤
      * @param insuranceByContractBusNo 合同 bus_no → 是否医保
@@ -70,8 +74,10 @@ public interface InpatientDailySettlementMapper {
      */
     PreviewInpatientDailySettlementResponse toPreviewInpatientDailySettlementResponse(
         PreviewCashierSettlementQueryModel previewModel,
+        List<UnsettledPaymentPreviewItemQueryModel> summaryPreviewItems,
         List<PaymentReconciliationQueryModel> paymentModels,
         Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId,
+        Map<Long, List<ChargeItem>> chargeItemsByPaymentId,
         Map<Long, InpatientEncounterContextQueryModel> encounterByEncounterId,
         String expenseProperty,
         Map<String, Boolean> insuranceByContractBusNo,
@@ -80,17 +86,19 @@ public interface InpatientDailySettlementMapper {
     /**
      * 提交请求转领域命令。
      *
-     * @param request    HTTP 请求
-     * @param typeEnum   交账类型
-     * @param cashierId  经办人
-     * @param operatorId 操作员
+     * @param request              HTTP 请求
+     * @param typeEnum             交账类型
+     * @param cashierId            经办人
+     * @param operatorId           操作员
+     * @param selectedPaymentIds   勾选挂载 payment 主键
      * @return 提交命令
      */
     SubmitCashierSettlementCommand toSubmitCashierSettlementCommand(
         SubmitInpatientDailySettlementRequest request,
         String typeEnum,
         Long cashierId,
-        Long operatorId);
+        Long operatorId,
+        List<Long> selectedPaymentIds);
 
     /**
      * 提交结果装配响应。

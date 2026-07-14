@@ -1,44 +1,46 @@
-/*
- * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
- */
-
-package com.openhis.health.domain.custom.frequency.queries.model;
-
-import lombok.Getter;
-import lombok.Setter;
-
-/**
- * 频次分页项查询模型。
- */
-@Getter
-@Setter
-public class FrequencyPageItemQueryModel {
-    private Long id;
-    private String rateCode;
-    private String name;
-    private String cycleType;
-    private Integer dayCount;
-    private Integer dayInterval;
-    private String dayTimes;
-    private Boolean weekCycleFlag;
-    private Integer totalExecutionCount;
-    private Integer executionPeriod;
-    private String executionPeriodUnit;
-    private String applicableScenes;
-    private String allowCrossDay;
-    private Boolean activeFlag;
-    private Integer sortNo;
-}
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
+package com.openhis.health.domain.custom.frequency.queries.model;
+
+import lombok.Getter;
+import lombok.Setter;
+
+/**
+ * 频次分页项查询模型。
+ */
+@Getter
+@Setter
+public class FrequencyPageItemQueryModel {
+    /** 频次主键 {@code cus_frequency.id}。 */
+    private Long id;
+    /** 频次编码（业务唯一键）。 */
+    private String rateCode;
+    /** 频次展示名称。 */
+    private String name;
+    /** 周期类型（日/周等字典码）。 */
+    private String cycleType;
+    /** 周期内天数。 */
+    private Integer dayCount;
+    /** 周期间隔（每隔 N 天/周）。 */
+    private Integer dayInterval;
+    /** 周期内执行时点（如 8-12-18）。 */
+    private String dayTimes;
+    /** 是否按周循环。 */
+    private Boolean weekCycleFlag;
+    /** 总执行次数（疗程总次数，可空）。 */
+    private Integer totalExecutionCount;
+    /** 执行周期长度。 */
+    private Integer executionPeriod;
+    /** 执行周期单位编码。 */
+    private String executionPeriodUnit;
+    /** 适用场景（门诊/住院等，多值序列化）。 */
+    private String applicableScenes;
+    /** 是否允许跨日执行。 */
+    private String allowCrossDay;
+    /** 是否启用。 */
+    private Boolean activeFlag;
+    /** 排序号。 */
+    private Integer sortNo;
+}

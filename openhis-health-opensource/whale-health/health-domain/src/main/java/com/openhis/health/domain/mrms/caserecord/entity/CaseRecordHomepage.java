@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.mrms.caserecord.entity;
 
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -184,7 +184,7 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
         this.setTenantId(tenantId);
         this.versionNo = 1;
         this.frozen = false;
-        this.iptMedcasHmpgSn = generateHmpgSn();
+        this.iptMedcasHmpgSn = "HMPG" + UUID.randomUUID().toString().replace("-", "").substring(0, 20);
         this.setCreatedAt(LocalDateTime.now());
         this.setCreatedBy(operatorId);
         this.setIsDeleted(false);
@@ -272,6 +272,14 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
         markManualField(command.getIptDrName(), "ipt_dr_name", sources, v -> this.iptDrName = v);
     }
 
+    /**
+     * 手工录入字段：非 null 值写入实体并标记 {@link FieldFillSource#MANUAL} 来源。
+     *
+     * @param value      入参值；null 时跳过
+     * @param sourceKey  字段来源 map 键
+     * @param sources    字段来源追踪表
+     * @param setter     实体字段写入器
+     */
     private void markManualField(
             String value,
             String sourceKey,
@@ -342,6 +350,12 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
         return errors;
     }
 
+    /**
+     * 出院主诊断校验：须存在编码非空的 DISCHARGE_MAIN，且 maindiag_flag=1 至多一条。
+     *
+     * @param errors    错误收集列表
+     * @param diagnoses 当前有效诊断行
+     */
     private void validateDischargeMainDiagnosis(List<String> errors, List<HomepageDiagnosis> diagnoses) {
         if (diagnoses == null || diagnoses.isEmpty()) {
             errors.add("出院主诊断编码不能为空");
@@ -369,13 +383,16 @@ public class CaseRecordHomepage extends BaseAuditedEntity {
         }
     }
 
+    /**
+     * 4401 必填标量非空校验：trim 后为空则追加「{label}不能为空」。
+     *
+     * @param errors 错误收集列表
+     * @param label  字段中文名
+     * @param value  待校验值
+     */
     private void validateRequired(List<String> errors, String label, String value) {
         if (trimToNull(value) == null) {
             errors.add(label + "不能为空");
         }
-    }
-
-    private static String generateHmpgSn() {
-        return "HMPG" + UUID.randomUUID().toString().replace("-", "").substring(0, 20);
     }
 }

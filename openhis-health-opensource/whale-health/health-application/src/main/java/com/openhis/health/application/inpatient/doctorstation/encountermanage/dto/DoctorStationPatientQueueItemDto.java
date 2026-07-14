@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.encountermanage.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
-import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayDtoApplier;
+import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayDtoApplier;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -38,7 +25,6 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 住院医生站在院患者列表行。 */
 @Schema(description = "住院医生站在院患者列表行")
 public class DoctorStationPatientQueueItemDto implements InpatientAccountBalanceDisplayDtoApplier.AccountBalanceDisplayTarget {
 
@@ -252,4 +238,28 @@ public class DoctorStationPatientQueueItemDto implements InpatientAccountBalance
      */
     @Schema(description = "五笔码")
     private String wubiCode;
+
+    /** 护理级别医嘱主键。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "护理级别医嘱主键")
+    private Long nursingLevelServiceRequestId;
+
+    /** 护理级别 activityId。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "护理级别 activityId")
+    private Long nursingLevelActivityId;
+
+    /** 护理级别展示名。 */
+    @Schema(description = "护理级别展示名")
+    private String nursingLevelName;
+
+    /** 护理级别医嘱状态 code。 */
+    @Schema(description = "护理级别医嘱状态 code")
+    private String nursingLevelStatusEnum;
+
+    /**
+     * 费用性质/医保类型展示：由登记账户 contractNo 解析合同名称，与预交金队列 contractDisplay 对齐。
+     */
+    @Schema(description = "费用性质/医保类型展示")
+    private String contractDisplay;
 }

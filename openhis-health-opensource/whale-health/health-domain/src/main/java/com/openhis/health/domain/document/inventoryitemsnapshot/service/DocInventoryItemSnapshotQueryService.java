@@ -1,29 +1,17 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.document.inventoryitemsnapshot.service;
 
 import com.openhis.health.domain.document.inventoryitemsnapshot.entity.DocInventoryItemSnapshotEntity;
 import com.openhis.health.domain.document.inventoryitemsnapshot.queries.DocInventoryItemSnapshotPageQuery;
+import com.openhis.health.domain.document.inventoryitemsnapshot.queries.model.DocInventoryItemSnapshotBusNoOptionQueryModel;
 import com.openhis.health.domain.document.inventoryitemsnapshot.queries.model.DocInventoryItemSnapshotRowQueryModel;
 import com.openhis.health.domain.document.inventoryitemsnapshot.repository.DocInventoryItemSnapshotRepository;
-import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
+import com.openhis.health.domain.share.utils.InventoryDetailSnapshotBusNoSupport;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -32,7 +20,7 @@ import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -42,7 +30,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -75,8 +63,7 @@ public class DocInventoryItemSnapshotQueryService {
             // 参数不完整时视为「无成功批次」，由应用层 Gate 保证入参
             return false;
         }
-        String dateSegment = localDate.format(DateTimeFormatter.BASIC_ISO_DATE);
-        String prefix = AggregateTypeConstants.INVENTORY_DETAIL_SNAPSHOT_BACKUP + dateSegment;
+        String prefix = InventoryDetailSnapshotBusNoSupport.formatDayPrefix(localDate);
         return repository.existsByTenantIdAndBusNoStartingWithAndIsDeletedFalse(tenantId, prefix);
     }
 
@@ -101,6 +88,80 @@ public class DocInventoryItemSnapshotQueryService {
             cb.isFalse(root.get(FieldNameConstants.IS_DELETED))
         );
         cq.orderBy(cb.desc(root.get(FieldNameConstants.BUS_NO)));
+        return this.entityManager.createQuery(cq).getResultList();
+    }
+
+    /**
+     * 租户历史备份批次下拉（单号 + 抓拍时刻，IF-11 / 库房日结 IF-01）。
+     *
+     * @param tenantId 租户
+     * @return 按 {@code bus_no} 降序；租户为空时空列表
+     */
+    public List<DocInventoryItemSnapshotBusNoOptionQueryModel> findDistinctBusNoOptionsByTenant(Long tenantId) {
+        if (tenantId == null) {
+            return Collections.emptyList();
+        }
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<Object[]> cq = cb.createQuery(Object[].class);
+        Root<DocInventoryItemSnapshotEntity> root = cq.from(DocInventoryItemSnapshotEntity.class);
+        cq.multiselect(
+            root.get(FieldNameConstants.BUS_NO),
+            root.get(FieldNameConstants.SNAPSHOT_TIME)
+        );
+        cq.distinct(true);
+        cq.where(
+            cb.equal(root.get(FieldNameConstants.TENANT_ID), tenantId),
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED))
+        );
+        cq.orderBy(cb.desc(root.get(FieldNameConstants.BUS_NO)));
+        List<Object[]> rows = this.entityManager.createQuery(cq).getResultList();
+        List<DocInventoryItemSnapshotBusNoOptionQueryModel> models = new ArrayList<>();
+        for (Object[] row : rows) {
+            if (row == null || row.length < 2) {
+                continue;
+            }
+            String busNo = row[0] != null ? row[0].toString() : null;
+            if (StringUtils.isEmpty(busNo)) {
+                continue;
+            }
+            DocInventoryItemSnapshotBusNoOptionQueryModel model = new DocInventoryItemSnapshotBusNoOptionQueryModel();
+            model.setBusNo(busNo.trim());
+            if (row[1] instanceof LocalDateTime snapshotTime) {
+                model.setSnapshotTime(snapshotTime);
+            }
+            models.add(model);
+        }
+        return models;
+    }
+
+    /**
+     * 期初/期末快照：按租户、备份单号、库位 DISTINCT {@code item_table}（日结药/耗解析回落）。
+     *
+     * @param tenantId    租户
+     * @param busNo       备份单号
+     * @param warehouseId 库位
+     * @return 表名列表
+     */
+    public List<String> findDistinctItemTablesByTenantBusNoAndWarehouse(
+        Long tenantId,
+        String busNo,
+        Long warehouseId
+    ) {
+        if (tenantId == null || warehouseId == null || StringUtils.isEmpty(busNo)) {
+            return Collections.emptyList();
+        }
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<String> cq = cb.createQuery(String.class);
+        Root<DocInventoryItemSnapshotEntity> root = cq.from(DocInventoryItemSnapshotEntity.class);
+        cq.select(root.get(FieldNameConstants.ITEM_TABLE));
+        cq.distinct(true);
+        cq.where(
+            cb.equal(root.get(FieldNameConstants.TENANT_ID), tenantId),
+            cb.equal(root.get(FieldNameConstants.BUS_NO), busNo.trim()),
+            cb.equal(root.get(FieldNameConstants.WAREHOUSE_ID), warehouseId),
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED))
+        );
+        cq.orderBy(cb.asc(root.get(FieldNameConstants.ITEM_TABLE)));
         return this.entityManager.createQuery(cq).getResultList();
     }
 
@@ -202,7 +263,7 @@ public class DocInventoryItemSnapshotQueryService {
                 predicates.add(cb.equal(root.get(FieldNameConstants.TENANT_ID), query.getTenantId()));
             }
             String busNo = query.getBusNo();
-            if (StringUtils.isNotBlank(busNo)) {
+            if (StringUtils.isNotEmpty(busNo)) {
                 predicates.add(cb.equal(root.get(FieldNameConstants.BUS_NO), busNo.trim()));
             }
             if (query.getWarehouseIds() != null && !query.getWarehouseIds().isEmpty()) {
@@ -230,7 +291,7 @@ public class DocInventoryItemSnapshotQueryService {
                     cb.lessThanOrEqualTo(root.get(FieldNameConstants.REMAINING_DAYS), query.getRemainingDaysLe())
                 );
             }
-            if (StringUtils.isNotBlank(query.getItemTable())) {
+            if (StringUtils.isNotEmpty(query.getItemTable())) {
                 predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_TABLE), query.getItemTable().trim()));
             }
             if (query.getMedicationCategoryCodes() != null && !query.getMedicationCategoryCodes().isEmpty()) {
@@ -246,7 +307,7 @@ public class DocInventoryItemSnapshotQueryService {
             if (query.getChrgitmLvs() != null && !query.getChrgitmLvs().isEmpty()) {
                 predicates.add(root.get(FieldNameConstants.CHRGITM_LV).in(query.getChrgitmLvs()));
             }
-            if (StringUtils.isNotBlank(query.getKeyword())) {
+            if (StringUtils.isNotEmpty(query.getKeyword())) {
                 String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
                 List<Predicate> keywordOr = new ArrayList<>();
                 // 备份关键字：名称/拼音/五笔/编码/商品名；不含批号（BR-INV-DTL-010）

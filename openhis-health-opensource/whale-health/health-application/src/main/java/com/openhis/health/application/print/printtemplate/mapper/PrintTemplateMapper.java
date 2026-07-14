@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.print.printtemplate.mapper;
 
 import com.openhis.health.application.print.printtemplate.dto.PrtTemplateDto;
@@ -26,7 +13,7 @@ import com.openhis.health.domain.print.printtemplate.entity.PrtTemplate;
 /**
  * 画布打印模板应用层装配：Request/实体 → Command/DTO。
  *
- * <p>禁止承载业务流程判断；PrintJson 结构化出参经 {@link com.openhis.health.application.print.printtemplate.support.PrintJsonSupport}。</p>
+ * <p>禁止承载业务流程判断；PrintJson 结构化出参经 {@link com.openhis.health.application.print.printtemplate.support.PrintJsonHelper}。</p>
  */
 public interface PrintTemplateMapper {
 

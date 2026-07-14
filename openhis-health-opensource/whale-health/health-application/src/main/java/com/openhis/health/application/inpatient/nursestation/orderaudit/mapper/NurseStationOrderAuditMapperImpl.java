@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.orderaudit.mapper;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
@@ -29,7 +16,7 @@ import com.openhis.health.domain.administration.encounter.command.InitiateDepart
 import com.openhis.health.domain.medication.medicationrequest.command.RejectMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.VerifyMedicationOrderCommand;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
-import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -37,7 +24,7 @@ import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.workflow.servicerequest.command.RejectServiceRequestToDraftCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.VerifyServiceRequestCommand;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -112,7 +99,7 @@ public class NurseStationOrderAuditMapperImpl implements NurseStationOrderAuditM
     @Override
     public String resolveTherapyEnum(String therapyType) {
         String normalized = trimToEmpty(therapyType);
-        if (StringUtils.isBlank(normalized)
+        if (StringUtils.isEmpty(normalized)
             || InpatientNurseStationConstants.THERAPY_FILTER_ALL.equals(normalized)) {
             return null;
         }
@@ -393,7 +380,7 @@ public class NurseStationOrderAuditMapperImpl implements NurseStationOrderAuditM
      * @return true 为应排除的关联行
      */
     private boolean isRefundOrDerivativeRow(InpatientOrderListSkeleton row) {
-        if (row.getBasedOnId() != null && StringUtils.isNotBlank(row.getBasedOnTable())) {
+        if (row.getBasedOnId() != null && StringUtils.isNotEmpty(row.getBasedOnTable())) {
             String table = row.getBasedOnTable().trim();
             if (TableNameConstants.MED_MEDICATION_REQUEST.equalsIgnoreCase(table)
                 || TableNameConstants.WKF_SERVICE_REQUEST.equalsIgnoreCase(table)) {

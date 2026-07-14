@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.priceadjustment.service;
 
 import com.openhis.health.domain.custom.priceadjustment.entity.PriceAdjustment;
@@ -42,7 +29,7 @@ import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -122,7 +109,7 @@ public class PriceAdjustmentQueryService {
      * @return 存在 pending 调价单时为 true；参数非法时 false
      */
     public Boolean existsPendingByItem(String itemTable, Long itemId) {
-        if (StringUtils.isBlank(itemTable) || itemId == null) {
+        if (StringUtils.isEmpty(itemTable) || itemId == null) {
             return false;
         }
         return repository.existsByItemTableAndItemIdAndStatusEnumAndIsDeletedFalse(
@@ -270,7 +257,7 @@ public class PriceAdjustmentQueryService {
      * @return 主行读模型列表（含子表）；参数非法时空列表
      */
     public List<PriceAdjustmentLineQueryModel> findApprovedHistoryByItem(String itemTable, Long itemId) {
-        if (StringUtils.isBlank(itemTable) || itemId == null) {
+        if (StringUtils.isEmpty(itemTable) || itemId == null) {
             return List.of();
         }
         List<PriceAdjustment> rows = repository.findByItemTableAndItemIdAndStatusEnumAndIsDeletedFalseOrderByApproveTimeDesc(

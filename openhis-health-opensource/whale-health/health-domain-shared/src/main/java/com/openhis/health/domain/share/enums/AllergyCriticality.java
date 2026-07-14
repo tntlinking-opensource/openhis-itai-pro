@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 import lombok.Getter;
@@ -25,11 +12,11 @@ import lombok.Getter;
 @Getter
 public enum AllergyCriticality implements EnumInterface {
 
-    /** 低。 */
+/** 低（AllergyCriticality，持久化编码 {@code low}）。 */
     LOW(0L, "low", "低", "危险程度低", 1L),
-    /** 高。 */
+/** 高（AllergyCriticality，持久化编码 {@code high}）。 */
     HIGH(0L, "high", "高", "危险程度高", 2L),
-    /** 无法评估。 */
+/** 无法评估（AllergyCriticality，持久化编码 {@code unassessable}）。 */
     UNASSESSABLE(0L, "unassessable", "无法评估", "暂无法评估危险程度", 3L);
 
     private final Long codeSystemId;

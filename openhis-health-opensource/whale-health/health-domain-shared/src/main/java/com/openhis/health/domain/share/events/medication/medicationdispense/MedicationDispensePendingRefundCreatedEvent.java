@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.events.medication.medicationdispense;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -26,10 +13,16 @@ import java.math.BigDecimal;
 
 @Getter
 @Setter
+
+/**
+ * MedicationDispensePendingRefundCreatedEvent：health-domain-shared 跨领域共享模型。
+ */
 public class MedicationDispensePendingRefundCreatedEvent extends DomainEvent {
+    /** origin发药主键（MedicationDispensePendingRefundCreated 业务上下文）。 */
     private Long originDispenseId;
     private BigDecimal refundQuantity;
 
+    /** 操作人主键（MedicationDispensePendingRefundCreatedEvent）。 */
     private Long operatorId;
 
     /** 执行记录标识（住院取消执行挂接新 CANCEL 行；门诊退药申请可为空）。 */

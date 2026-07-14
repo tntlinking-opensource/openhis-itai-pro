@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.terminologycodemapping.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
@@ -27,7 +14,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.events.custom.terminologycodemapping.*;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -40,9 +27,11 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 术语编码映射写侧领域服务（源术语 → 目标术语对照）。
+ * 术语编码映射（{@code cus_terminology_code_mapping}）聚合写侧领域服务。
  *
- * <p>支持单条增改、启停、软删及批量导入；激活态下源表+源编码+目标编码三元组唯一。</p>
+ * <p>职责：源术语表+源编码与目标编码的对照维护；支持单条增改、启停、软删及批量导入。</p>
+ * <p>不变量：激活态下源表+源编码+目标编码三元组唯一；持久化先于映射领域事件发布。</p>
+ * <p>仅注入本聚合 {@link TerminologyCodeMappingRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -59,7 +48,9 @@ public class TerminologyCodeMappingDomainService {
      * @throws BusinessException 身份键已存在或必填字段不满足时
      */
     public Long createMapping(CreateMappingCommand command) {
+        // 前置校验：激活态身份键不冲突
         this.assertActiveIdentityNotExists(command.getSourceItemTable(), command.getSourceItemNo(), command.getTargetItemNo());
+        // 加载/组装：装配映射实体并初始化启用
         TerminologyCodeMapping mapping = new TerminologyCodeMapping();
         mapping.setSourceItemTable(command.getSourceItemTable());
         mapping.setSourceItemNo(command.getSourceItemNo());
@@ -67,7 +58,9 @@ public class TerminologyCodeMappingDomainService {
         mapping.setTargetName(command.getTargetName());
         mapping.initActive();
         mapping.assertRequiredFields();
+        // 持久化
         TerminologyCodeMapping saved = repository.save(mapping);
+        // 发布事件：映射已创建
         domainEventPublisher.publish(new TerminologyMappingCreatedEvent(
             saved.getId(),
             saved.getSourceItemTable(),
@@ -84,9 +77,12 @@ public class TerminologyCodeMappingDomainService {
      * @throws BusinessException 记录不存在时
      */
     public void modifyMapping(ModifyMappingCommand command) {
+        // 加载/组装：加载目标映射
         TerminologyCodeMapping mapping = this.requireMapping(command.getId());
         mapping.setTargetName(command.getTargetName());
+        // 持久化
         repository.save(mapping);
+        // 发布事件：映射名称已修改
         domainEventPublisher.publish(new TerminologyMappingModifiedEvent(
             mapping.getId(),
             CustomConstants.ChangedField.DEFAULT_CHANGED_FIELDS
@@ -143,8 +139,10 @@ public class TerminologyCodeMappingDomainService {
      * 批量导入：按源术语聚合，已存在且目标编码相同则按需更新名称；否则新建。统计创建/更新/失败条数后发布批量导入事件。
      *
      * @param command 批量行与操作人（非法行计入 failed 不中断整批）
+     * @throws BusinessException 单条身份键冲突时（非 import 路径）
      */
     public void importMappingBatch(ImportMappingBatchCommand command) {
+        // 加载/组装：逐行解析导入项并 upsert
         List<ImportMappingBatchCommand.ImportMappingItemCommand> items = command.resolveItems();
         int created = 0;
         int updated = 0;
@@ -154,21 +152,21 @@ public class TerminologyCodeMappingDomainService {
         Set<String> dedupIdentityKeys = new HashSet<>();
 
         for (ImportMappingBatchCommand.ImportMappingItemCommand item : items) {
-            // 业务分支处理。
+            // 空行计入失败数并跳过，不中断整批导入。
             if (item == null) {
                 failed++;
                 continue;
             }
-            // 业务分支处理。
-            if (StringUtils.isBlank(item.getSourceItemTable())
-                || StringUtils.isBlank(item.getSourceItemNo())
-                || StringUtils.isBlank(item.getTargetItemNo())) {
+            // 源表/源编码/目标编码任一缺失则该行无效。
+            if (StringUtils.isEmpty(item.getSourceItemTable())
+                || StringUtils.isEmpty(item.getSourceItemNo())
+                || StringUtils.isEmpty(item.getTargetItemNo())) {
                 failed++;
                 continue;
             }
 
             String identityKey = item.getSourceItemTable().trim() + "\u0001" + item.getSourceItemNo().trim() + "\u0001" + item.getTargetItemNo().trim();
-            // 业务分支处理。
+            // 同一身份键在入参内重复时跳过后续写库。
             if (dedupIdentityKeys.contains(identityKey)) {
                 // 入参去重：避免同一身份键重复写库或重复计数。
                 continue;
@@ -177,7 +175,7 @@ public class TerminologyCodeMappingDomainService {
 
             SourceKey sourceKey = new SourceKey(item.getSourceItemTable().trim(), item.getSourceItemNo().trim());
             Map<String, TerminologyCodeMapping> targetNoMap = existedByTargetNo.get(sourceKey);
-            // 业务分支处理。
+            // 首次遇到该源术语键时批量预取存量映射，避免 N+1。
             if (targetNoMap == null) {
                 List<TerminologyCodeMapping> existed = repository.findAllBySourceItemTableAndSourceItemNoAndActiveFlagTrue(
                     sourceKey.getSourceItemTable(),
@@ -185,7 +183,7 @@ public class TerminologyCodeMappingDomainService {
                 );
                 targetNoMap = new HashMap<>();
                 for (TerminologyCodeMapping row : existed) {
-                    // 业务分支处理。
+                    // 仅索引有目标编码的存量行。
                     if (row.getTargetItemNo() != null) {
                         targetNoMap.put(row.getTargetItemNo(), row);
                     }
@@ -194,7 +192,7 @@ public class TerminologyCodeMappingDomainService {
             }
 
             TerminologyCodeMapping existed = targetNoMap.get(item.getTargetItemNo().trim());
-            // 业务分支处理。
+            // 目标编码已存在时走更新路径，仅名称变化才落库。
             if (existed != null) {
                 // 更新：仅当名称变化时才计数与落库。
                 if (!Objects.equals(trimToNull(item.getTargetName()), trimToNull(existed.getTargetName()))) {
@@ -218,11 +216,12 @@ public class TerminologyCodeMappingDomainService {
 
         List<TerminologyCodeMapping> saved = repository.saveAll(toSave);
         Long aggregateId = 0L;
-        // 业务分支处理。
+        // 有落库行时取首条 ID 作为批量事件代表锚点。
         if (!saved.isEmpty()) {
             aggregateId = saved.get(0).getId();
         }
         String sourceItemTable = this.resolveSingleSourceTable(items);
+        // 发布事件：批量导入汇总
         domainEventPublisher.publish(new TerminologyMappingBatchImportedEvent(
             aggregateId,
             sourceItemTable,
@@ -241,17 +240,17 @@ public class TerminologyCodeMappingDomainService {
     private String resolveSingleSourceTable(List<ImportMappingBatchCommand.ImportMappingItemCommand> items) {
         String result = null;
         for (ImportMappingBatchCommand.ImportMappingItemCommand item : items) {
-            // 业务分支处理。
-            if (item == null || StringUtils.isBlank(item.getSourceItemTable())) {
+            // 空行或缺源表时跳过，不参与单表判定。
+            if (item == null || StringUtils.isEmpty(item.getSourceItemTable())) {
                 continue;
             }
             String current = item.getSourceItemTable().trim();
-            // 业务分支处理。
+            // 首条有效源表作为候选。
             if (result == null) {
                 result = current;
                 continue;
             }
-            // 业务分支处理。
+            // 出现不同源表则返回 null，表示批量混合导入。
             if (!result.equals(current)) {
                 return null;
             }
@@ -259,7 +258,11 @@ public class TerminologyCodeMappingDomainService {
         return result;
     }
 
-    /** 按主键加载映射，不存在则抛出业务异常。 */
+    /** 按主键加载映射，不存在则抛出业务异常。
+     *
+     * @param id 映射主键
+     * @return 术语映射实体
+     */
     private TerminologyCodeMapping requireMapping(Long id) {
         return repository.findById(id)
             .orElseThrow(() -> new BusinessException(ErrorCodeConstants.TERMINOLOGY_MAPPING_NOT_FOUND, "术语映射不存在"));
@@ -267,7 +270,7 @@ public class TerminologyCodeMappingDomainService {
 
     /** 校验同一源表+源编码+目标编码在激活态下尚不存在。 */
     private void assertActiveIdentityNotExists(String sourceItemTable, String sourceItemNo, String targetItemNo) {
-        // 业务分支处理。
+        // 激活态下同源+目标编码映射已存在则拒绝新建。
         if (repository.existsBySourceItemTableAndSourceItemNoAndTargetItemNoAndActiveFlagTrue(
             sourceItemTable,
             sourceItemNo,
@@ -289,21 +292,23 @@ public class TerminologyCodeMappingDomainService {
             this.sourceItemNo = sourceItemNo;
         }
 
+        /** SourceKey 复合键：源术语项表名。 */
         private String getSourceItemTable() {
             return sourceItemTable;
         }
 
+        /** SourceKey 复合键：源术语项业务编码。 */
         private String getSourceItemNo() {
             return sourceItemNo;
         }
 
         @Override
         public boolean equals(Object o) {
-            // 业务分支处理。
+            // 同一引用直接判定相等。
             if (this == o) {
                 return true;
             }
-            // 业务分支处理。
+            // 类型不匹配则源术语键不等。
             if (o == null || this.getClass() != o.getClass()) {
                 return false;
             }

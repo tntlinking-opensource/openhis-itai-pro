@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.response;
 
@@ -22,7 +23,7 @@ public class SignTcmHerbalPrescriptionBatchResponse {
     @Schema(description = "是否成功")
     private Boolean success;
 
-    /** 方标识 → 处方号。 */
+    /** 方标识到处方号映射。 */
     @Schema(description = "方标识到处方号映射")
     private Map<String, String> prescriptionNoByGroupKey = new LinkedHashMap<>();
 }

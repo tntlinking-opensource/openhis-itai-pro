@@ -1,12 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.organization.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -22,7 +17,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.time.LocalDateTime;
 
@@ -133,15 +128,15 @@ public class Organization extends BaseAuditedEntity {
      * 校验创建前置条件。
      */
     public void assertCreateAllowed() {
-        if (StringUtils.isBlank(this.name)) {
+        if (StringUtils.isEmpty(this.name)) {
             throw new BusinessException(ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "机构名称不能为空");
         }
         if (this.typeEnum == null) {
             throw new BusinessException(ErrorCodeConstants.ORGANIZATION_INVALID_ARGUMENT, "机构类型不能为空");
         }
         if (OrganizationType.DEPARTMENT.getCode().equals(this.typeEnum)
-            && StringUtils.isNotBlank(this.medinsId)
-            && StringUtils.isBlank(this.medinsLv)) {
+            && StringUtils.isNotEmpty(this.medinsId)
+            && StringUtils.isEmpty(this.medinsLv)) {
             throw new BusinessException(ErrorCodeConstants.ORGANIZATION_RULE_CONFLICT, "医保机构等级不能为空");
         }
     }
@@ -242,6 +237,12 @@ public class Organization extends BaseAuditedEntity {
         this.setDeletedAt(LocalDateTime.now());
     }
 
+    /**
+     * 组织是否已废弃/删除态（DISCARDED 或历史 DELETED 码）。
+     *
+     * @param statusEnum 持久化状态码
+     * @return true 表示不可再用
+     */
     private static boolean isDiscardedStatus(String statusEnum) {
         return PublicationStatus.DISCARDED.getCode().equals(statusEnum)
             || "DELETED".equals(statusEnum);

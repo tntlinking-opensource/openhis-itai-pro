@@ -1,34 +1,21 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.costdetail.assembler;
 
-import com.openhis.health.module.querysupport.nursestation.NurseStationCostDetailReadAssembler;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationCostCategoryTotalDto;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationCostDetailLineDto;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationCostDetailTotalsDto;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.support.NurseStationCostDetailReadAssembler;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationCostCategoryTotalDto;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationCostDetailLineDto;
+import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationCostDetailTotalsDto;
 import com.openhis.health.application.inpatient.nursestation.costdetail.dto.NurseStationCostSummaryLineDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.InpatientNurseStationCostDetailChargeRow;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -76,7 +63,7 @@ public class NurseStationCostDetailAssembler {
             // 每条 ChargeItem 须可解析展示 product（BR-IP-CDT-007）
             Long displayProductId = this.resolveDisplayProductId(charge, parentChargeById);
             String displayProductTable = this.resolveDisplayProductTable(charge, parentChargeById);
-            if (displayProductId == null || StringUtils.isBlank(displayProductTable)) {
+            if (displayProductId == null || StringUtils.isEmpty(displayProductTable)) {
                 throw new IllegalArgumentException("charge missing display product, chargeItemId=" + charge.getId());
             }
             if (charge.getParentId() != null && parentChargeById != null
@@ -90,7 +77,7 @@ public class NurseStationCostDetailAssembler {
                 throw new IllegalArgumentException("product definition missing, productKey=" + productKey);
             }
             // category_code 须可解析（BR-IP-CDT-009）
-            if (StringUtils.isBlank(product.getCategoryCode())) {
+            if (StringUtils.isEmpty(product.getCategoryCode())) {
                 throw new IllegalArgumentException("product category missing, productKey=" + productKey);
             }
             // service_table 须能映射费用大类，未知表名整单失败
@@ -243,7 +230,7 @@ public class NurseStationCostDetailAssembler {
             String productKey =
                 ProductDefinitionKeyUtil.buildCompositeKey(displayProductTable, displayProductId);
             ProductDefinitionDisplayDto product = productByKey.get(productKey);
-            if (product == null || StringUtils.isBlank(product.getCategoryCode())) {
+            if (product == null || StringUtils.isEmpty(product.getCategoryCode())) {
                 continue;
             }
             String categoryCode = product.getCategoryCode().trim();

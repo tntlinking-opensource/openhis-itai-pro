@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.diagnosiscatalog.mapper;
 
 import com.openhis.health.application.basic.diagnosiscatalog.service.DiagnosisCatalogAppService;
@@ -31,12 +18,14 @@ import com.openhis.health.domain.clinical.conditiondefinition.queries.model.Dise
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.whale.core.application.exception.ValidationException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
  * {@link DiagnosisCatalogMapper} 默认实现：列表/详情装配及写命令转换，展示字段依赖术语服务解析。
  */
 @Component
+@RequiredArgsConstructor
 public class DiagnosisCatalogMapperImpl implements DiagnosisCatalogMapper {
 
     /** 疾病来源术语集名，与 {@link DiagnosisCatalogAppService} 一致。 */
@@ -45,10 +34,6 @@ public class DiagnosisCatalogMapperImpl implements DiagnosisCatalogMapper {
     private static final String DIAG_TYPE_CODE_SYSTEM = TerminologyCodeSystemNameConstants.DIAG_TYPE;
 
     private final CodeSystemQueryService codeSystemQueryService;
-
-    public DiagnosisCatalogMapperImpl(CodeSystemQueryService codeSystemQueryService) {
-        this.codeSystemQueryService = codeSystemQueryService;
-    }
 
     /**
      * 将条件定义实体投影为疾病目录列表项 DTO，并补齐分类/状态/诊断类型等展示文案。
@@ -101,6 +86,8 @@ public class DiagnosisCatalogMapperImpl implements DiagnosisCatalogMapper {
         dto.setStatusEnum(model.getStatusEnum());
         dto.setStatusEnum_enumText(codeSystemQueryService.getDisplayByCode(PublicationStatus.class, model.getStatusEnum()));
         dto.setYbFlag(toIntFlag(model.getYbFlag()));
+        dto.setYbNo(model.getYbNo());
+        dto.setDescription(model.getDescription());
         return dto;
     }
 

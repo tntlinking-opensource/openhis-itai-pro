@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.financial.dailysettlement.service;
 
 import com.openhis.health.application.inpatient.financial.dailysettlement.mapper.InpatientDailySettlementMapper;
@@ -11,6 +11,8 @@ import com.openhis.health.application.inpatient.financial.dailysettlement.reques
 import com.openhis.health.application.inpatient.financial.dailysettlement.response.LoadInpatientDailySettlementPageInitResponse;
 import com.openhis.health.application.inpatient.financial.dailysettlement.response.PreviewInpatientDailySettlementResponse;
 import com.openhis.health.application.inpatient.financial.dailysettlement.response.SubmitInpatientDailySettlementResponse;
+import com.openhis.health.application.outpatient.financial.dailysettlement.support.DailySettlementPaymentDetailLoader;
+import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
@@ -28,11 +30,11 @@ import com.openhis.health.domain.share.constants.InpatientDailySettlementConstan
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.CashierSettlementType;
-import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.module.common.assembler.financial.ContractExpenseNatureAssembler;
-import com.openhis.health.module.common.assembler.financial.PaymentEntererMatchSupport;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
+import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.shared.financial.ContractExpenseNatureAssembler;
+import com.openhis.health.application.shared.financial.PaymentEntererMatchResolver;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
@@ -43,7 +45,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -83,7 +84,7 @@ public class InpatientDailySettlementAppService {
     private final CashierSettlementDomainService cashierSettlementDomainService;
 
     /** 住院就诊上下文读侧（病区名）。 */
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
 
     /** 经办人主数据读侧。 */
     private final PractitionerQueryService practitionerQueryService;
@@ -98,10 +99,13 @@ public class InpatientDailySettlementAppService {
     private final ContractExpenseNatureAssembler contractExpenseNatureAssembler;
 
     /** payment enterer_id 匹配（Practitioner + 用户主键存量兼容）。 */
-    private final PaymentEntererMatchSupport paymentEntererMatchSupport;
+    private final PaymentEntererMatchResolver paymentEntererMatchResolver;
 
     /** fin_type_code 字典读侧。 */
     private final TerminologyOptionLoader terminologyOptionLoader;
+
+    /** payment 项目行与支付方式 enrichment。 */
+    private final DailySettlementPaymentDetailLoader dailySettlementPaymentDetailLoader;
 
     /**
      * IF-IP-DCL-01：住院日结页初始化。
@@ -162,31 +166,38 @@ public class InpatientDailySettlementAppService {
             this.applyEntererMatchToPreviewQuery(previewQuery);
             PreviewCashierSettlementQueryModel previewModel =
                 this.paymentReconciliationQueryService.previewUnsettledPaymentsForCashierSettlement(previewQuery);
-            Set<Long> candidatePaymentIds = this.collectPaymentIds(previewModel);
-            LocalDateTime windowStart = request.getDateFrom().atStartOfDay();
-            LocalDateTime windowEnd = request.getDateTo().atTime(23, 59, 59);
-            List<PaymentReconciliationQueryModel> paymentModels =
-                this.paymentReconciliationQueryService.findPaymentByBillDateRange(windowStart, windowEnd);
-            List<PaymentReconciliationQueryModel> filteredPayments =
-                this.filterPaymentsByCandidateIds(paymentModels, candidatePaymentIds);
+            // Pre：展示汇总须含已交账流水，仅 paymentCount/items 保持未交账口径
+            List<UnsettledPaymentPreviewItemQueryModel> summaryPreviewItems =
+                this.paymentReconciliationQueryService.previewPaymentsForCashierSettlementSummary(previewQuery);
+            Set<Long> displayPaymentIds = this.collectPaymentIdsFromPreviewItems(summaryPreviewItems);
+            List<PaymentReconciliationQueryModel> displayPaymentModels =
+                this.paymentReconciliationQueryService.findPaymentQueryModelsForCashierSettlementSummary(previewQuery);
             Map<Long, List<PaymentRecDetailQueryModel>> recDetailsByPaymentId =
-                this.loadRecDetailsByPaymentIds(candidatePaymentIds);
-            List<Long> encounterIdsOrdered = this.collectEncounterIdsOrdered(filteredPayments);
+                this.loadRecDetailsByPaymentIds(displayPaymentIds);
+            List<Long> encounterIdsOrdered = this.collectEncounterIdsOrdered(displayPaymentModels);
             List<InpatientEncounterContextQueryModel> encounterContexts =
-                this.encounterContextFacade.listInpatientContextsByEncounterIdsOrdered(encounterIdsOrdered);
+                this.EncounterContextReader.listInpatientContextsByEncounterIdsOrdered(encounterIdsOrdered);
             Map<Long, InpatientEncounterContextQueryModel> encounterByEncounterId =
                 this.buildEncounterIndex(encounterContexts);
             Map<String, Boolean> insuranceByContractBusNo =
                 this.contractExpenseNatureAssembler.mapInsuranceFlagByContractBusNoIn(
-                    this.collectContractBusNos(previewModel));
+                    this.collectContractBusNosFromPreviewItems(summaryPreviewItems));
             List<OptionDto> finTypeOptions =
                 this.terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.FIN_TYPE_CODE);
+            // Pre：未交账候选 payment 加载 charge_item（弹窗项目行 enrichment）
+            Set<Long> unsettledPaymentIds = this.collectPaymentIdsFromPreviewItems(previewModel.getItems());
+            List<PaymentReconciliationQueryModel> unsettledPaymentModels =
+                this.filterPaymentModelsByIds(displayPaymentModels, unsettledPaymentIds);
+            Map<Long, List<ChargeItem>> chargeItemsByPaymentId =
+                this.dailySettlementPaymentDetailLoader.loadChargeItemsByPaymentModels(unsettledPaymentModels);
             // Asm：费用性质仅过滤展示，paymentCount 保持全量（按 fin_contract 判定）
             PreviewInpatientDailySettlementResponse response =
                 this.inpatientDailySettlementMapper.toPreviewInpatientDailySettlementResponse(
                     previewModel,
-                    filteredPayments,
+                    summaryPreviewItems,
+                    displayPaymentModels,
                     recDetailsByPaymentId,
+                    chargeItemsByPaymentId,
                     encounterByEncounterId,
                     request.getExpenseProperty(),
                     insuranceByContractBusNo,
@@ -233,20 +244,23 @@ public class InpatientDailySettlementAppService {
             CashierSettlementType.INPATIENT.getCode(),
             cashierId);
         this.applyEntererMatchToPreviewQuery(previewQuery);
-        // Pre：提交前重新锁定候选集
+        // Pre：提交前重新锁定候选集，paymentIds 须 ⊆ 未交账候选（BR-IP-DCL-018）
         PreviewCashierSettlementQueryModel locked =
             this.paymentReconciliationQueryService.previewUnsettledPaymentsForCashierSettlement(previewQuery);
-        Integer paymentCount = locked.getPaymentCount();
-        if (paymentCount == null) {
-            // 领域未返回条数时按 0 装配
-            paymentCount = 0;
-        }
+        List<Long> selectedPaymentIds = request.getPaymentIds();
+        this.assertPaymentIdsSubsetOfCandidates(
+            selectedPaymentIds,
+            locked,
+            InpatientDailySettlementConstants.EX_IP_DCL_105,
+            InpatientDailySettlementConstants.EX_IP_DCL_201);
+        Integer paymentCount = selectedPaymentIds.size();
         // Pre：请求转领域命令
         SubmitCashierSettlementCommand command = this.inpatientDailySettlementMapper.toSubmitCashierSettlementCommand(
             request,
             CashierSettlementType.INPATIENT.getCode(),
             cashierId,
-            operatorId);
+            operatorId,
+            selectedPaymentIds);
         command.setEntererMatchIds(previewQuery.getEntererMatchIds());
         // Cmd：单事务写交账头并挂载 payment（预交金与结算同批）
         Long settlementId = this.cashierSettlementDomainService.submitCashierSettlement(command);
@@ -258,6 +272,12 @@ public class InpatientDailySettlementAppService {
             paymentCount);
     }
 
+    /**
+     * 当前经办人是否具备财务代交账权限（会计或管理员岗位）。
+     *
+     * @param currentCashierId 当前收费员 Practitioner id
+     * @return 可代交账为 true
+     */
     private boolean isFinancialDelegateEnabled(Long currentCashierId) {
         Set<Long> accountantIds = this.practitionerRoleScopeLoader.resolvePractitionerIdsForActivePlatformRole(
             WhalePlatformRoleCodeConstants.ROLE_ACCOUNTANT,
@@ -273,6 +293,11 @@ public class InpatientDailySettlementAppService {
         return adminIds.contains(currentCashierId);
     }
 
+    /**
+     * 费用性质筛选项：自费 / 医保。
+     *
+     * @return 下拉选项
+     */
     private List<OptionDto> buildExpensePropertyOptions() {
         List<OptionDto> options = new ArrayList<>();
         OptionDto selfPay = new OptionDto();
@@ -286,6 +311,13 @@ public class InpatientDailySettlementAppService {
         return options;
     }
 
+    /**
+     * 经办人下拉：代交账权限时加载在岗人员，否则仅本人。
+     *
+     * @param financialDelegateEnabled 是否可代交账
+     * @param currentPractitioner      当前操作员
+     * @return 经办人选项
+     */
     private List<OptionDto> buildCashierOptions(boolean financialDelegateEnabled, Practitioner currentPractitioner) {
         List<OptionDto> options = new ArrayList<>();
         // 财务代交账：加载在岗经办人；否则仅本人
@@ -314,6 +346,14 @@ public class InpatientDailySettlementAppService {
         return options;
     }
 
+    /**
+     * 解析日结经办人：缺省本人；指定他人须代交账权限。
+     *
+     * @param requestedCashierId 请求指定经办人
+     * @param operatorId         登录用户 id
+     * @return 有效 cashierId
+     * @throws BusinessException 无法解析或越权
+     */
     private Long resolveCashierId(Long requestedCashierId, Long operatorId) {
         Practitioner currentPractitioner = this.practitionerQueryService.findByUserId(operatorId);
         if (currentPractitioner == null || currentPractitioner.getId() == null) {
@@ -340,6 +380,13 @@ public class InpatientDailySettlementAppService {
         return requestedCashierId;
     }
 
+    /**
+     * 结账日起止必填且止日不早于起日。
+     *
+     * @param dateFrom 起日
+     * @param dateTo   止日
+     * @throws BusinessException 参数非法
+     */
     private void assertDateRangeValid(LocalDate dateFrom, LocalDate dateTo) {
         // Gate：结账日起止均须填写
         if (dateFrom == null || dateTo == null) {
@@ -355,13 +402,18 @@ public class InpatientDailySettlementAppService {
         }
     }
 
-    private Set<Long> collectPaymentIds(PreviewCashierSettlementQueryModel previewModel) {
+    /**
+     * 从未交账预览行收集 paymentId（保序去重）。
+     *
+     * @param previewItems 预览行
+     * @return paymentId 集合
+     */
+    private Set<Long> collectPaymentIdsFromPreviewItems(List<UnsettledPaymentPreviewItemQueryModel> previewItems) {
         Set<Long> paymentIds = new LinkedHashSet<>();
-        // 无候选时返回空集
-        if (previewModel == null || previewModel.getItems() == null) {
+        if (previewItems == null) {
             return paymentIds;
         }
-        for (UnsettledPaymentPreviewItemQueryModel item : previewModel.getItems()) {
+        for (UnsettledPaymentPreviewItemQueryModel item : previewItems) {
             if (item != null && item.getPaymentId() != null) {
                 paymentIds.add(item.getPaymentId());
             }
@@ -369,12 +421,18 @@ public class InpatientDailySettlementAppService {
         return paymentIds;
     }
 
-    private Set<String> collectContractBusNos(PreviewCashierSettlementQueryModel previewModel) {
+    /**
+     * 从预览行收集 fin_contract busNo（trim 后非空）。
+     *
+     * @param previewItems 预览行
+     * @return 合同 busNo 集合
+     */
+    private Set<String> collectContractBusNosFromPreviewItems(List<UnsettledPaymentPreviewItemQueryModel> previewItems) {
         Set<String> contractBusNos = new LinkedHashSet<>();
-        if (previewModel == null || previewModel.getItems() == null) {
+        if (previewItems == null) {
             return contractBusNos;
         }
-        for (UnsettledPaymentPreviewItemQueryModel item : previewModel.getItems()) {
+        for (UnsettledPaymentPreviewItemQueryModel item : previewItems) {
             if (item == null || item.getContractNo() == null) {
                 continue;
             }
@@ -386,25 +444,12 @@ public class InpatientDailySettlementAppService {
         return contractBusNos;
     }
 
-    private List<PaymentReconciliationQueryModel> filterPaymentsByCandidateIds(
-        List<PaymentReconciliationQueryModel> paymentModels,
-        Set<Long> candidatePaymentIds) {
-        List<PaymentReconciliationQueryModel> filtered = new ArrayList<>();
-        // 无候选 payment 时跳过 enrichment
-        if (paymentModels == null || candidatePaymentIds.isEmpty()) {
-            return filtered;
-        }
-        for (PaymentReconciliationQueryModel paymentModel : paymentModels) {
-            if (paymentModel == null || paymentModel.getId() == null) {
-                continue;
-            }
-            if (candidatePaymentIds.contains(paymentModel.getId())) {
-                filtered.add(paymentModel);
-            }
-        }
-        return filtered;
-    }
-
+    /**
+     * 逐 payment 加载渠道明细子表。
+     *
+     * @param paymentIds payment 主键集合
+     * @return paymentId → 明细列表
+     */
     private Map<Long, List<PaymentRecDetailQueryModel>> loadRecDetailsByPaymentIds(Set<Long> paymentIds) {
         Map<Long, List<PaymentRecDetailQueryModel>> result = new LinkedHashMap<>();
         for (Long paymentId : paymentIds) {
@@ -415,6 +460,12 @@ public class InpatientDailySettlementAppService {
         return result;
     }
 
+    /**
+     * 从 payment 读模型按出现顺序收集 encounterId（去重）。
+     *
+     * @param paymentModels payment 列表
+     * @return 有序 encounterId
+     */
     private List<Long> collectEncounterIdsOrdered(List<PaymentReconciliationQueryModel> paymentModels) {
         List<Long> encounterIds = new ArrayList<>();
         Set<Long> seen = new LinkedHashSet<>();
@@ -433,6 +484,12 @@ public class InpatientDailySettlementAppService {
         return encounterIds;
     }
 
+    /**
+     * 住院就诊上下文列表 → encounterId 索引。
+     *
+     * @param encounterContexts 就诊快照
+     * @return encounterId → 上下文
+     */
     private Map<Long, InpatientEncounterContextQueryModel> buildEncounterIndex(
         List<InpatientEncounterContextQueryModel> encounterContexts) {
         Map<Long, InpatientEncounterContextQueryModel> index = new LinkedHashMap<>();
@@ -447,6 +504,64 @@ public class InpatientDailySettlementAppService {
         return index;
     }
 
+    /**
+     * 校验勾选 payment 主键均属于当前未交账候选集。
+     *
+     * @param paymentIds       请求勾选列表
+     * @param lockedPreview    提交前锁定的未交账预览
+     * @param invalidExCode    越权 ID 异常码
+     * @param emptyExCode      空列表异常码
+     */
+    private void assertPaymentIdsSubsetOfCandidates(
+        List<Long> paymentIds,
+        PreviewCashierSettlementQueryModel lockedPreview,
+        String invalidExCode,
+        String emptyExCode) {
+        if (paymentIds == null || paymentIds.isEmpty()) {
+            throw new BusinessException(emptyExCode, "请至少选择一笔待交账流水");
+        }
+        Set<Long> candidateIds = this.collectPaymentIdsFromPreviewItems(
+            lockedPreview == null ? null : lockedPreview.getItems());
+        for (Long paymentId : paymentIds) {
+            if (paymentId == null || !candidateIds.contains(paymentId)) {
+                throw new BusinessException(
+                    invalidExCode,
+                    "所选流水不在待交账范围内或已变更，请刷新后重试");
+            }
+        }
+    }
+
+    /**
+     * 按 payment 主键过滤读模型（保序）。
+     *
+     * @param paymentModels 展示窗 payment 读模型
+     * @param paymentIds    目标主键集合
+     * @return 命中子集
+     */
+    private List<PaymentReconciliationQueryModel> filterPaymentModelsByIds(
+        List<PaymentReconciliationQueryModel> paymentModels,
+        Set<Long> paymentIds) {
+        List<PaymentReconciliationQueryModel> result = new ArrayList<>();
+        if (paymentModels == null || paymentIds == null || paymentIds.isEmpty()) {
+            return result;
+        }
+        for (PaymentReconciliationQueryModel paymentModel : paymentModels) {
+            if (paymentModel != null
+                && paymentModel.getId() != null
+                && paymentIds.contains(paymentModel.getId())) {
+                result.add(paymentModel);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 将请求日期窗写入预览 summary.dateRange 展示串。
+     *
+     * @param response 预览响应
+     * @param dateFrom 起日
+     * @param dateTo   止日
+     */
     private void applyDateRangeToSummary(
         PreviewInpatientDailySettlementResponse response,
         LocalDate dateFrom,
@@ -470,6 +585,6 @@ public class InpatientDailySettlementAppService {
             return;
         }
         previewQuery.setEntererMatchIds(
-            this.paymentEntererMatchSupport.resolveEntererMatchIds(previewQuery.getCashierId()));
+            this.paymentEntererMatchResolver.resolveEntererMatchIds(previewQuery.getCashierId()));
     }
 }

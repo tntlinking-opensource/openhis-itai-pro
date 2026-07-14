@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.orderexecute.request;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -38,11 +25,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 医嘱执行列表查询请求。 */
 @Schema(description = "医嘱执行列表查询请求", requiredProperties = {"encounterIds", "executeTab", "executionDeadline"})
 public class ListNurseStationOrderExecuteRequest {
 
-    /** 左侧多选就诊主键（BR-IP-EXE-001）。 */
+    /** 左侧多选就诊主键。 */
     @NotEmpty(message = "请选择至少一名患者")
     @Schema(description = "左侧多选就诊主键", required = true)
     @JsonSerialize(contentUsing = ToStringSerializer.class)

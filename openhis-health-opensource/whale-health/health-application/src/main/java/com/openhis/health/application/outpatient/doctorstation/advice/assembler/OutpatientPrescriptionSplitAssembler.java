@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.advice.assembler;
 
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
@@ -36,12 +23,12 @@ import com.openhis.health.domain.share.enums.RequestStatus;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.module.common.assembler.product.DoctorStationAdviceFifoAllocationAssembler;
-import com.openhis.health.module.common.validator.OutpatientPrescriptionAmountLimitSettingSupport;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.DoctorStationAdviceFifoAllocationAssembler;
+import com.openhis.health.application.outpatient.doctorstation.advice.support.OutpatientPrescriptionAmountLimitSettingResolver;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -69,9 +56,9 @@ public class OutpatientPrescriptionSplitAssembler {
     private final ChargeItemQueryService chargeItemQueryService;
     private final MedicationDispenseQueryService medicationDispenseQueryService;
     private final EncounterQueryService encounterQueryService;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final DoctorStationAdviceFifoAllocationAssembler doctorStationAdviceFifoAllocationAssembler;
-    private final OutpatientPrescriptionAmountLimitSettingSupport outpatientPrescriptionAmountLimitSettingSupport;
+    private final OutpatientPrescriptionAmountLimitSettingResolver outpatientPrescriptionAmountLimitSettingResolver;
 
     /**
      * 对当前就诊下全部未收费药品医嘱执行分方，并返回申请主键到处方号的映射。
@@ -91,7 +78,7 @@ public class OutpatientPrescriptionSplitAssembler {
         command.setEncounterId(encounterId);
         command.setOperatorId(operatorId);
         command.setLines(lines);
-        command.setAmountLimitYuan(outpatientPrescriptionAmountLimitSettingSupport.resolveAmountLimitYuan());
+        command.setAmountLimitYuan(outpatientPrescriptionAmountLimitSettingResolver.resolveAmountLimitYuan());
         // Cmd：领域装箱并持久化 prescription_no / rx_type_code
         SplitPrescriptionResult result = medicationRequestDomainService.splitPrescription(command);
         return result.getPrescriptionNoByRequestId();
@@ -153,7 +140,7 @@ public class OutpatientPrescriptionSplitAssembler {
             lookup.setProductDefinitionId(medicationDefId);
             productLookups.add(lookup);
         }
-        Map<String, ProductDefinitionDisplayDto> productByKey = productDefinitionBatchLoader.loadAsMap(productLookups);
+        Map<String, ProductDefinitionDisplayDto> productByKey = productDefinitionDisplayTerminologyAssembler.loadAsMap(productLookups);
         // 同一药品+单位+数量+分类的 FIFO 首段库位相同，缓存避免重复库存试算
         Map<String, Long> fifoLocationByCacheKey = new HashMap<>();
 
@@ -162,11 +149,16 @@ public class OutpatientPrescriptionSplitAssembler {
             PrescriptionSplitLineContext ctx = new PrescriptionSplitLineContext();
             ctx.setRequestId(row.getId());
             ctx.setMedicationId(row.getMedicationId());
+            ctx.setMethodCode(row.getMethodCode());
+            ctx.setRateCode(row.getRateCode());
+            ctx.setDosageInstruction(row.getDosageInstruction());
+            ctx.setDose(row.getDose());
+            ctx.setDoseUnitCode(row.getDoseUnitCode());
             ctx.setGroupId(row.getGroupId());
             ctx.setTcmFlag(row.getTcmFlag());
             Long diagnosisId = row.getEncounterDiagnosisId();
             String medType = medTypeByDiagnosisId.get(diagnosisId);
-            if (StringUtils.isBlank(medType)) {
+            if (StringUtils.isEmpty(medType)) {
                 medType = YbMedType.GENERAL_OUTPATIENT.getCode();
             }
             ctx.setMedType(medType);

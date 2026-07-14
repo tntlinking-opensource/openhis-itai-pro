@@ -1,39 +1,26 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.advice.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 
-import com.openhis.health.module.common.assembler.product.ProductTableNameSupport;
-import com.openhis.health.module.orchestration.advice.ServiceApplyFormOrchestrationSupport;
-import com.openhis.health.module.common.assembler.option.ContractFeeNatureOptionLoader;
-import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.application.inpatient.support.InpatientTransferDischargeHoldOrchestrationSupport;
+import com.openhis.health.application.shared.product.ProductTableNameHelper;
+import com.openhis.health.application.outpatient.doctorstation.advice.support.ServiceApplyFormOrchestrator;
+import com.openhis.health.application.shared.option.ContractFeeNatureOptionLoader;
+import com.openhis.health.application.shared.option.FrequencyOptionLoader;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.inpatient.InpatientTransferDischargeHoldOrchestrator;
 import com.openhis.health.application.inpatient.doctorstation.advice.assembler.InpatientDoctorStationAdviceCatalogAssembler;
 import com.openhis.health.application.inpatient.doctorstation.advice.assembler.InpatientDoctorStationAdviceListAssembler;
-import com.openhis.health.module.common.assembler.advice.model.AdviceSignTargetSpec;
-import com.openhis.health.module.common.assembler.advice.model.SkinTestMedicationDraftSpec;
-import com.openhis.health.integration.support.IntegrationAfterCommitSupport;
+import com.openhis.health.application.shared.advice.AdviceSignTargetSpec;
+import com.openhis.health.application.shared.advice.SkinTestMedicationDraftSpec;
+import com.openhis.health.infrastructure.integration.noop.IntegrationAfterCommitSupport;
 import com.openhis.health.domain.mrms.caserecord.service.CaseRecordDomainService;
-import com.openhis.health.module.orchestration.advice.DoctorStationSkinTestSyncOrchestrationSupport;
-import com.openhis.health.module.orchestration.advice.DoctorStationSkinTestSyncOrchestrationSupport.ChargePolicy;
+import com.openhis.health.application.shared.advice.DoctorStationSkinTestSyncOrchestrator;
+import com.openhis.health.application.shared.advice.DoctorStationSkinTestSyncOrchestrator.ChargePolicy;
 import com.openhis.health.application.outpatient.doctorstation.advice.assembler.ServiceApplyFormAssembler;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.InpatientDoctorStationAdviceCatalogRowDto;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.CancelStopLongTermAdviceLineRequest;
@@ -44,13 +31,14 @@ import com.openhis.health.application.inpatient.doctorstation.advice.dto.Inpatie
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.StopLongTermAdviceLineRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.ServiceRequestDetailSummaryDto;
 import com.openhis.health.application.inpatient.doctorstation.advice.mapper.InpatientDoctorStationAdviceMapper;
-import com.openhis.health.application.inpatient.doctorstation.advice.support.InpatientAdviceRevokeGateSupport;
-import com.openhis.health.integration.lis.LisAdviceApplyExtension;
-import com.openhis.health.integration.lis.command.LisAdviceApplyCommand;
-import com.openhis.health.integration.lis.dto.LisAdviceApplyDetailLine;
-import com.openhis.health.integration.pacs.PacsAdviceApplyExtension;
-import com.openhis.health.integration.pacs.command.PacsAdviceApplyCommand;
-import com.openhis.health.integration.pacs.dto.PacsAdviceApplyDetailLine;
+import com.openhis.health.application.shared.advice.InpatientAdviceRevokeGate;
+import com.openhis.health.application.shared.advice.InpatientNursingOrderGate;
+import com.openhis.health.infrastructure.integration.lis.LisAdviceApplyExtension;
+import com.openhis.health.infrastructure.integration.lis.ExtensionIn.LisAdviceApplyExtensionIn;
+import com.openhis.health.infrastructure.integration.lis.dto.LisAdviceApplyDetailLine;
+import com.openhis.health.infrastructure.integration.pacs.PacsAdviceApplyExtension;
+import com.openhis.health.infrastructure.integration.pacs.ExtensionIn.PacsAdviceApplyExtensionIn;
+import com.openhis.health.infrastructure.integration.pacs.dto.PacsAdviceApplyDetailLine;
 import com.openhis.health.application.inpatient.doctorstation.advice.query.InpatientDoctorStationAdviceOrderBindQueryService;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.CancelStopLongTermInpatientDoctorStationAdviceRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.request.CreateDischargeInpatientDoctorStationAdviceRequest;
@@ -81,8 +69,8 @@ import com.openhis.health.domain.administration.specimendefinition.queries.Searc
 import com.openhis.health.domain.administration.specimendefinition.queries.model.SpecimenDefinitionSearchItemQueryModel;
 import com.openhis.health.domain.administration.specimendefinition.service.SpecimenDefinitionQueryService;
 import com.openhis.health.domain.diagnosis.bodystructure.service.BodyStructureQueryService;
-import com.openhis.health.module.common.assembler.option.BodyStructureOptionAssembler;
-import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
+import com.openhis.health.application.shared.option.BodyStructureOptionAssembler;
+import com.openhis.health.application.shared.option.OptionDtoAssembler;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestDetailListModel;
 import com.openhis.health.application.inpatient.doctorstation.advice.response.ListInpatientDoctorStationAdviceResponse;
@@ -101,15 +89,15 @@ import com.openhis.health.domain.medication.medicationrequest.queries.model.Medi
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestDomainService;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.module.common.assembler.order.InpatientOrderListMergeAssembler;
-import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionCatalogPageLoader;
+import com.openhis.health.application.shared.advice.InpatientOrderListMergeAssembler;
+import com.openhis.health.application.inpatient.doctorstation.encountermanage.support.InpatientDoctorStationEncounterVisibilityResolver;
+import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogPageLoader;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
-import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
 import com.openhis.health.domain.share.constants.BusinessSequenceConstants;
@@ -125,12 +113,12 @@ import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRe
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
+import com.openhis.health.application.shared.advice.ServiceRequestDetailListAssembler;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -156,17 +144,18 @@ public class InpatientDoctorStationAdviceAppService {
 
     private final CurrentPractitionerResolver currentPractitionerResolver;
     private final EncounterQueryService encounterQueryService;
-    private final EncounterContextFacade encounterContextFacade;
+    /** 医生站可见性 Gate（BR-IP-DOR-010）。 */
+    private final InpatientDoctorStationEncounterVisibilityResolver inpatientDoctorStationEncounterVisibilityResolver;
     private final InpatientOrderListMergeAssembler inpatientOrderListMergeAssembler;
     private final InpatientDoctorStationAdviceMapper inpatientDoctorStationAdviceMapper;
     private final InpatientDoctorStationAdviceListAssembler inpatientDoctorStationAdviceListAssembler;
     private final InpatientDoctorStationAdviceCatalogAssembler inpatientDoctorStationAdviceCatalogAssembler;
     private final InpatientDoctorStationAdviceOrderBindQueryService inpatientDoctorStationAdviceOrderBindQueryService;
     private final ProductDefinitionCatalogPageLoader productDefinitionCatalogPageLoader;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final MedicationRequestDomainService medicationRequestDomainService;
     private final ServiceRequestDomainService serviceRequestDomainService;
-    private final InpatientTransferDischargeHoldOrchestrationSupport transferDischargeHoldOrchestrationSupport;
+    private final InpatientTransferDischargeHoldOrchestrator transferDischargeHoldOrchestrationSupport;
     private final BusinessSequenceService businessSequenceService;
     private final LisAdviceApplyExtension lisAdviceApplyExtension;
     private final PacsAdviceApplyExtension pacsAdviceApplyExtension;
@@ -177,18 +166,21 @@ public class InpatientDoctorStationAdviceAppService {
     private final ContractFeeNatureOptionLoader contractFeeNatureOptionLoader;
     private final MedicationRequestQueryService medicationRequestQueryService;
     private final ServiceRequestQueryService serviceRequestQueryService;
+    private final ServiceRequestDetailListAssembler serviceRequestDetailListAssembler;
     private final ActivityExecutionLocationQueryService activityExecutionLocationQueryService;
     private final LocationQueryService locationQueryService;
     private final OrganizationQueryService organizationQueryService;
     private final EncounterHistoryDomainService encounterHistoryDomainService;
-    private final ServiceApplyFormOrchestrationSupport serviceApplyFormOrchestrationSupport;
+    private final ServiceApplyFormOrchestrator serviceApplyFormOrchestrator;
     private final ServiceApplyFormAssembler serviceApplyFormAssembler;
     private final BodyStructureQueryService bodyStructureQueryService;
     private final SpecimenDefinitionQueryService specimenDefinitionQueryService;
     /** BR-IP-ORD-024：皮试药联动 doctor-prescription 皮试检查 SR（住院不挂费）。 */
-    private final DoctorStationSkinTestSyncOrchestrationSupport doctorStationSkinTestSyncOrchestrationSupport;
+    private final DoctorStationSkinTestSyncOrchestrator doctorStationSkinTestSyncOrchestrator;
     /** IF-IP-DOR-16：签退前执行/发药/费用门控（EX-IP-ORD-103）。 */
-    private final InpatientAdviceRevokeGateSupport adviceRevokeGateSupport;
+    private final InpatientAdviceRevokeGate adviceRevokeGate;
+    /** BR-IP-ORD-026：护理级别仅长期、同就诊唯一有效。 */
+    private final InpatientNursingOrderGate inpatientNursingOrderGate;
     private final CaseRecordDomainService caseRecordDomainService;
     /**
      * IF-IP-DOR-22：分页查询患者住院医嘱（单接口分 Tab：当前医嘱 / 历史医嘱；全类型统一列表）。
@@ -267,7 +259,9 @@ public class InpatientDoctorStationAdviceAppService {
         resp.setMedicationRouteOptions(codeSystemQueryService.getOptionListByCodeSystemName(TerminologyCodeSystemNameConstants.METHOD_CODE));
         resp.setFeeNatureOptions(
             contractFeeNatureOptionLoader.loadOptionsForEncounter(request.getPatientId(), request.getEncounterId()));
-        resp.setBodyStructureOptions(loadBodyStructureOptions());
+        // Pre：读侧树模型按 busNo 已排序，再过滤为启用态供新申请引用
+        resp.setBodyStructureOptions(
+            BodyStructureOptionAssembler.toActiveOptionTree(bodyStructureQueryService.getBodyStructureTree()));
         resp.setSpecimenDefinitionOptions(loadSpecimenDefinitionOptions());
         return resp;
     }
@@ -384,7 +378,7 @@ public class InpatientDoctorStationAdviceAppService {
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "未获取到当前操作人");
         // Cmd：共享编排 saveApplyForm；住院不在暂存相位挂费用。
-        ServiceApplyFormOrchestrationSupport.SaveApplyFormResult saved = serviceApplyFormOrchestrationSupport.saveApplyForm(
+        ServiceApplyFormOrchestrator.SaveApplyFormResult saved = serviceApplyFormOrchestrator.saveApplyForm(
             request.getEncounterId(),
             request.getPatientId(),
             request.getCategoryEnum(),
@@ -417,7 +411,7 @@ public class InpatientDoctorStationAdviceAppService {
         // Pre + Asm：按 AR 前缀与 category 过滤后分组装配。
         ListInpatientDoctorStationServiceApplyFormsResponse resp = new ListInpatientDoctorStationServiceApplyFormsResponse();
         resp.setForms(serviceApplyFormAssembler.toHeaderDtos(
-            serviceApplyFormOrchestrationSupport.listApplyForms(
+            serviceApplyFormOrchestrator.listApplyForms(
                 request.getEncounterId(), request.getCategoryEnum())));
         return resp;
     }
@@ -462,7 +456,7 @@ public class InpatientDoctorStationAdviceAppService {
         List<Long> newMedIds = new ArrayList<>();
         // Cmd：按行 CREATE/UPDATE/DELETE 分轨，长临均仅维护 Request
         for (InpatientDoctorStationAdviceDraftLineRequest line : request.getLines()) {
-            String op = StringUtils.upperCase(trimToEmpty(line.getLineOp()));
+            String op = trimToEmpty(line.getLineOp()).toUpperCase(java.util.Locale.ROOT);
             if (DoctorStationAdviceConstants.LINE_OP_CREATE.equals(op)) {
                 handleCreateLine(request, line, operatorId, orgId, newMedIds);
             } else if (DoctorStationAdviceConstants.LINE_OP_UPDATE.equals(op)) {
@@ -500,14 +494,14 @@ public class InpatientDoctorStationAdviceAppService {
         Map<Long, String> rxMap = new HashMap<>();
         // Pre（BR-IP-ORD-024）：签发皮试药时自动扩 companion 皮试检查 SR 至待签发集合。
         List<InpatientDoctorStationAdviceResourceKeyDto> signTargets =
-            this.fromSignTargetSpecs(doctorStationSkinTestSyncOrchestrationSupport
+            this.fromSignTargetSpecs(doctorStationSkinTestSyncOrchestrator
                 .expandSignTargetsWithLinkedSkinTestServiceRequests(this.toSignTargetSpecs(request.getSignTargets())));
         // Cmd：长临均 sign 请求，不在签发相位建发放/费用
         for (InpatientDoctorStationAdviceResourceKeyDto target : signTargets) {
-            String pt = ProductTableNameSupport.normalize(target.getProductTableName());
-            if (ProductTableNameSupport.isMedication(pt)) {
+            String pt = ProductTableNameHelper.normalize(target.getProductTableName());
+            if (ProductTableNameHelper.isMedication(pt)) {
                 signMedicationTarget(request, target, operatorId, rxMap);
-            } else if (ProductTableNameSupport.isActivity(pt)) {
+            } else if (ProductTableNameHelper.isActivity(pt)) {
                 signServiceTarget(request, target, operatorId);
             } else {
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_UNSUPPORTED_PRODUCT_TABLE_PREFIX + target.getProductTableName());
@@ -539,22 +533,22 @@ public class InpatientDoctorStationAdviceAppService {
         List<Long> medicationRequestIds = new ArrayList<>();
         List<Long> serviceRequestIds = new ArrayList<>();
         for (InpatientDoctorStationAdviceResourceKeyDto target : request.getTargets()) {
-            String pt = ProductTableNameSupport.normalize(target.getProductTableName());
-            if (ProductTableNameSupport.isMedication(pt)) {
+            String pt = ProductTableNameHelper.normalize(target.getProductTableName());
+            if (ProductTableNameHelper.isMedication(pt)) {
                 medicationRequestIds.add(target.getRequestId());
-            } else if (ProductTableNameSupport.isActivity(pt)) {
+            } else if (ProductTableNameHelper.isActivity(pt)) {
                 serviceRequestIds.add(target.getRequestId());
             } else {
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_UNSUPPORTED_PRODUCT_TABLE_PREFIX + target.getProductTableName());
             }
         }
         // Pre：签退门控（EX-IP-ORD-103）
-        adviceRevokeGateSupport.assertMedicationWithdrawAllowed(
+        adviceRevokeGate.assertMedicationWithdrawAllowed(
             request.getEncounterId(),
             medicationRequestIds,
             DoctorStationAdviceConstants.EX_IP_ORD_103,
             DoctorStationAdviceConstants.MSG_INPATIENT_WITHDRAW_BLOCKED);
-        adviceRevokeGateSupport.assertServiceRequestWithdrawAllowed(
+        adviceRevokeGate.assertServiceRequestWithdrawAllowed(
             request.getEncounterId(),
             serviceRequestIds,
             DoctorStationAdviceConstants.EX_IP_ORD_103,
@@ -562,15 +556,15 @@ public class InpatientDoctorStationAdviceAppService {
         // Cmd：长临药品 signOff；诊疗 withdrawSigned
         LocalDateTime revertedAt = LocalDateTime.now();
         for (InpatientDoctorStationAdviceResourceKeyDto target : request.getTargets()) {
-            String pt = ProductTableNameSupport.normalize(target.getProductTableName());
-            if (ProductTableNameSupport.isMedication(pt)) {
+            String pt = ProductTableNameHelper.normalize(target.getProductTableName());
+            if (ProductTableNameHelper.isMedication(pt)) {
                 // 住院长临药品签退：仅 signOff 请求（不在签发相位建发放/费用）。
                 medicationRequestDomainService.signOffMedicationOrder(
                     inpatientDoctorStationAdviceMapper.toSignOffMedicationOrderCommand(target.getRequestId(), operatorId));
                 // Cmd（BR-IP-ORD-024）：签退皮试药时对称处理 companion 皮试检查 SR。
-                doctorStationSkinTestSyncOrchestrationSupport.withdrawLinkedSkinTestServiceRequestIfPresent(
+                doctorStationSkinTestSyncOrchestrator.withdrawLinkedSkinTestServiceRequestIfPresent(
                     ChargePolicy.INPATIENT, request.getEncounterId(), target.getRequestId(), operatorId);
-            } else if (ProductTableNameSupport.isActivity(pt)) {
+            } else if (ProductTableNameHelper.isActivity(pt)) {
                 serviceRequestDomainService.withdrawSignedServiceRequest(
                     inpatientDoctorStationAdviceMapper.toWithdrawServiceRequestCommand(target.getRequestId(), operatorId));
                 transferDischargeHoldOrchestrationSupport.tryRevertHoldAfterServiceRequestReverted(
@@ -635,12 +629,12 @@ public class InpatientDoctorStationAdviceAppService {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_STOP_LONG_TERM_LINES_REQUIRED);
         }
         for (StopLongTermAdviceLineRequest line : request.getLines()) {
-            String pt = ProductTableNameSupport.normalize(line.getProductTableName());
-            if (ProductTableNameSupport.isMedication(pt)) {
+            String pt = ProductTableNameHelper.normalize(line.getProductTableName());
+            if (ProductTableNameHelper.isMedication(pt)) {
                 assertLongTermMedication(line.getRequestId());
                 medicationRequestDomainService.stopLongTermMedicationOrder(
                     inpatientDoctorStationAdviceMapper.toStopLongTermMedicationOrderCommand(line, operatorId));
-            } else if (ProductTableNameSupport.isActivity(pt)) {
+            } else if (ProductTableNameHelper.isActivity(pt)) {
                 assertLongTermService(request.getEncounterId(), line.getRequestId());
                 serviceRequestDomainService.stopServiceRequest(
                     inpatientDoctorStationAdviceMapper.toStopServiceRequestCommand(line, operatorId));
@@ -684,14 +678,14 @@ public class InpatientDoctorStationAdviceAppService {
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_OPERATOR_NOT_RESOLVED);
         // Cmd：逐行分轨取消停嘱，药/诊各自调用域写服务。
         for (CancelStopLongTermAdviceLineRequest line : request.getLines()) {
-            String pt = ProductTableNameSupport.normalize(line.getProductTableName());
-            if (ProductTableNameSupport.isMedication(pt)) {
+            String pt = ProductTableNameHelper.normalize(line.getProductTableName());
+            if (ProductTableNameHelper.isMedication(pt)) {
                 // Pre：药品须为长期且已停嘱。
                 assertStoppedLongTermMedication(line.getRequestId());
                 // Cmd：调用药品取消停嘱域写。
                 medicationRequestDomainService.cancelStopLongTermMedicationOrder(
                     inpatientDoctorStationAdviceMapper.toCancelStopLongTermMedicationOrderCommand(line, operatorId));
-            } else if (ProductTableNameSupport.isActivity(pt)) {
+            } else if (ProductTableNameHelper.isActivity(pt)) {
                 // Pre：诊疗须为长期且已停嘱。
                 assertStoppedLongTermService(request.getEncounterId(), line.getRequestId());
                 // Cmd：调用诊疗取消停嘱域写。
@@ -754,8 +748,7 @@ public class InpatientDoctorStationAdviceAppService {
      */
     private InpatientEncounterContextQueryModel requireInpatientSnapshot(Long encounterId, Long patientId, boolean writable) {
         InpatientEncounterContextQueryModel snapshot =
-            encounterContextFacade.mustGetInpatientContextByEncounterId(encounterId);
-        inpatientDoctorStationAdviceMapper.validateInpatientEncounterPatientGate(snapshot, patientId);
+            this.inpatientDoctorStationEncounterVisibilityResolver.assertVisible(encounterId, patientId);
         inpatientDoctorStationAdviceMapper.validateInpatientEncounterClassImp(snapshot);
         if (writable) {
             inpatientDoctorStationAdviceMapper.validateInpatientEncounterWritableGate(snapshot);
@@ -773,8 +766,8 @@ public class InpatientDoctorStationAdviceAppService {
         Long orgId,
         List<Long> newMedIds
     ) {
-        String pt = ProductTableNameSupport.normalize(line.getProductTableName());
-        if (ProductTableNameSupport.isMedication(pt)) {
+        String pt = ProductTableNameHelper.normalize(line.getProductTableName());
+        if (ProductTableNameHelper.isMedication(pt)) {
             Long newId = medicationRequestDomainService.createMedicationOrderDraft(
                 inpatientDoctorStationAdviceMapper.toCreateMedicationOrderDraftCommand(request, line, operatorId, orgId));
             if (line.getMedicationPayload() != null && line.getMedicationPayload().getGroupId() != null) {
@@ -784,17 +777,28 @@ public class InpatientDoctorStationAdviceAppService {
             }
             // Cmd（BR-IP-ORD-024）：皮试药联动 companion 皮试检查 SR（住院不挂费）。
             if (line.getMedicationPayload() != null) {
-                doctorStationSkinTestSyncOrchestrationSupport.syncAfterMedicationDraftLine(
+                doctorStationSkinTestSyncOrchestrator.syncAfterMedicationDraftLine(
                     ChargePolicy.INPATIENT, request.getEncounterId(), request.getPatientId(), null, orgId, operatorId,
                     newId, line.getTherapyTypeCode(), this.toSkinTestSpec(line.getMedicationPayload()));
             }
             newMedIds.add(newId);
-        } else if (ProductTableNameSupport.isActivity(pt)) {
+        } else if (ProductTableNameHelper.isActivity(pt)) {
             if (line.getServicePayload() == null || line.getServicePayload().getActivityDefinitionId() == null) {
                 throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_SERVICE_PAYLOAD_OR_ACTIVITY_ID_REQUIRED);
             }
             ProductDefinitionDisplayDto product = loadSingleProduct(
                 TableNameConstants.WKF_ACTIVITY_DEFINITION, line.getServicePayload().getActivityDefinitionId());
+            // Gate（BR-IP-ORD-026）：护理级别须长期且同就诊无其它有效护理级别
+            inpatientNursingOrderGate.assertNursingLevelLongTermOnly(
+                product.getCategoryCode(),
+                line.getTherapyTypeCode(),
+                DoctorStationAdviceConstants.EX_IP_ORD_106,
+                DoctorStationAdviceConstants.MSG_NURSING_LEVEL_LONG_TERM_ONLY);
+            inpatientNursingOrderGate.assertNoConcurrentNursingLevelOrder(
+                request.getEncounterId(),
+                null,
+                DoctorStationAdviceConstants.EX_IP_ORD_106,
+                DoctorStationAdviceConstants.MSG_NURSING_LEVEL_STOP_BEFORE_NEW);
             serviceRequestDomainService.createServiceRequestDraft(
                 inpatientDoctorStationAdviceMapper.toCreateServiceRequestDraftCommand(request, line, product, operatorId));
         } else {
@@ -811,20 +815,33 @@ public class InpatientDoctorStationAdviceAppService {
         Long operatorId,
         Long orgId
     ) {
-        String pt = ProductTableNameSupport.normalize(line.getProductTableName());
+        String pt = ProductTableNameHelper.normalize(line.getProductTableName());
         if (line.getRequestId() == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_UPDATE_LINE_REQUEST_ID_REQUIRED);
         }
-        if (ProductTableNameSupport.isMedication(pt)) {
+        if (ProductTableNameHelper.isMedication(pt)) {
             medicationRequestDomainService.changeMedicationOrderDraft(
                 inpatientDoctorStationAdviceMapper.toChangeMedicationOrderDraftCommand(line, operatorId));
             // Cmd（BR-IP-ORD-024）：皮试标志变更时同步 companion 皮试检查 SR。
             if (line.getMedicationPayload() != null) {
-                doctorStationSkinTestSyncOrchestrationSupport.syncAfterMedicationDraftLine(
+                doctorStationSkinTestSyncOrchestrator.syncAfterMedicationDraftLine(
                     ChargePolicy.INPATIENT, request.getEncounterId(), request.getPatientId(), null, orgId, operatorId,
                     line.getRequestId(), line.getTherapyTypeCode(), this.toSkinTestSpec(line.getMedicationPayload()));
             }
-        } else if (ProductTableNameSupport.isActivity(pt)) {
+        } else if (ProductTableNameHelper.isActivity(pt)) {
+            ServiceRequestListModel existingRow = resolveServiceRequestRow(request.getEncounterId(), line.getRequestId());
+            String nursingCategoryEnum = existingRow.getCategoryEnum();
+            if (line.getServicePayload() != null && line.getServicePayload().getActivityDefinitionId() != null) {
+                ProductDefinitionDisplayDto product = loadSingleProduct(
+                    TableNameConstants.WKF_ACTIVITY_DEFINITION, line.getServicePayload().getActivityDefinitionId());
+                nursingCategoryEnum = product.getCategoryCode();
+            }
+            // Gate（BR-IP-ORD-026）：护理级别修改后仍须为长期
+            inpatientNursingOrderGate.assertNursingLevelLongTermOnly(
+                nursingCategoryEnum,
+                line.getTherapyTypeCode(),
+                DoctorStationAdviceConstants.EX_IP_ORD_106,
+                DoctorStationAdviceConstants.MSG_NURSING_LEVEL_LONG_TERM_ONLY);
             serviceRequestDomainService.modifyServiceRequestDraft(
                 inpatientDoctorStationAdviceMapper.toModifyServiceRequestDraftCommand(line, operatorId));
         } else {
@@ -840,17 +857,17 @@ public class InpatientDoctorStationAdviceAppService {
         InpatientDoctorStationAdviceDraftLineRequest line,
         Long operatorId
     ) {
-        String pt = ProductTableNameSupport.normalize(line.getProductTableName());
+        String pt = ProductTableNameHelper.normalize(line.getProductTableName());
         if (line.getRequestId() == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_DELETE_LINE_REQUEST_ID_REQUIRED);
         }
-        if (ProductTableNameSupport.isMedication(pt)) {
+        if (ProductTableNameHelper.isMedication(pt)) {
             // Cmd（BR-IP-ORD-024）：删皮试药前先清理草稿态 companion 皮试检查 SR。
-            doctorStationSkinTestSyncOrchestrationSupport.removeDraftCompanionSkinTestServiceRequest(
+            doctorStationSkinTestSyncOrchestrator.removeDraftCompanionSkinTestServiceRequest(
                 ChargePolicy.INPATIENT, request.getEncounterId(), line.getRequestId(), operatorId);
             medicationRequestDomainService.removeMedicationOrderDraft(
                 inpatientDoctorStationAdviceMapper.toRemoveMedicationOrderDraftCommand(line.getRequestId(), operatorId));
-        } else if (ProductTableNameSupport.isActivity(pt)) {
+        } else if (ProductTableNameHelper.isActivity(pt)) {
             serviceRequestDomainService.removeServiceRequestDraft(
                 inpatientDoctorStationAdviceMapper.toRemoveServiceRequestDraftCommand(line.getRequestId(), operatorId));
         } else {
@@ -883,6 +900,18 @@ public class InpatientDoctorStationAdviceAppService {
         InpatientDoctorStationAdviceResourceKeyDto target,
         Long operatorId
     ) {
+        ServiceRequestListModel serviceRow = resolveServiceRequestRow(request.getEncounterId(), target.getRequestId());
+        // Gate（BR-IP-ORD-026）：签发护理级别前校验长临与并发
+        inpatientNursingOrderGate.assertNursingLevelLongTermOnly(
+            serviceRow.getCategoryEnum(),
+            serviceRow.getTherapyEnum(),
+            DoctorStationAdviceConstants.EX_IP_ORD_106,
+            DoctorStationAdviceConstants.MSG_NURSING_LEVEL_LONG_TERM_ONLY);
+        inpatientNursingOrderGate.assertNoConcurrentNursingLevelOrder(
+            request.getEncounterId(),
+            target.getRequestId(),
+            DoctorStationAdviceConstants.EX_IP_ORD_106,
+            DoctorStationAdviceConstants.MSG_NURSING_LEVEL_STOP_BEFORE_NEW);
         serviceRequestDomainService.signServiceRequest(
             inpatientDoctorStationAdviceMapper.toSignServiceRequestCommand(target.getRequestId(), operatorId));
         dispatchLabOrImagingAdvice(request.getEncounterId(), request.getPatientId(), target.getRequestId());
@@ -1019,7 +1048,7 @@ public class InpatientDoctorStationAdviceAppService {
         ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
         lookup.setProductTableName(table);
         lookup.setProductDefinitionId(id);
-        Map<String, ProductDefinitionDisplayDto> map = productDefinitionBatchLoader.loadAsMap(List.of(lookup));
+        Map<String, ProductDefinitionDisplayDto> map = productDefinitionDisplayTerminologyAssembler.loadAsMap(List.of(lookup));
         String key = ProductDefinitionKeyUtil.buildCompositeKey(table, id);
         ProductDefinitionDisplayDto row = map.get(key);
         if (row == null) {
@@ -1038,7 +1067,7 @@ public class InpatientDoctorStationAdviceAppService {
      */
     private static String normalizeTherapyTypeCode(String code) {
         String trimmed = trimToEmpty(code);
-        if (StringUtils.isBlank(trimmed)) {
+        if (StringUtils.isEmpty(trimmed)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT,
                 DoctorStationAdviceConstants.MSG_THERAPY_TYPE_REQUIRED);
         }
@@ -1049,11 +1078,11 @@ public class InpatientDoctorStationAdviceAppService {
             DoctorStationAdviceConstants.MSG_INVALID_THERAPY_TYPE_PREFIX + trimmed);
     }
 
-    private List<OptionDto> loadBodyStructureOptions() {
-        // Pre：读侧树模型按 busNo 已排序，再过滤为启用态供新申请引用
-        return BodyStructureOptionAssembler.toActiveOptionTree(bodyStructureQueryService.getBodyStructureTree());
-    }
-
+    /**
+     * 新申请页标本定义下拉：关键字检索启用项并按 sort 排序。
+     *
+     * @return OptionDto 列表（上限 500）
+     */
     private List<OptionDto> loadSpecimenDefinitionOptions() {
         SearchSpecimenDefinitionQuery query = new SearchSpecimenDefinitionQuery();
         query.setLimit(500);
@@ -1067,16 +1096,26 @@ public class InpatientDoctorStationAdviceAppService {
                 0L));
     }
 
+    /**
+     * 签署检验/检查医嘱后按类别分流提交 LIS/PACS 外发申请（扩展点 no-op 安全）。
+     *
+     * @param encounterId 就诊
+     * @param patientId   患者
+     * @param requestId   服务申请主键
+     */
     private void dispatchLabOrImagingAdvice(Long encounterId, Long patientId, Long requestId) {
-        List<ServiceRequestDetailSummaryDto> summaries = loadAdviceApplyDetailSummaries(requestId);
-        LisAdviceApplyCommand lisCmd = new LisAdviceApplyCommand();
+        Map<Long, List<ServiceRequestDetailListModel>> detailMap =
+            serviceRequestDetailListAssembler.mapDetailListModelsByServiceRequestIds(List.of(requestId));
+        List<ServiceRequestDetailSummaryDto> summaries = serviceApplyFormAssembler.toDetailSummaryDtos(
+            ServiceApplyFormOrchestrator.toDetailSummaryModels(detailMap.get(requestId)));
+        LisAdviceApplyExtensionIn lisCmd = new LisAdviceApplyExtensionIn();
         lisCmd.setEncounterId(encounterId);
         lisCmd.setPatientId(patientId);
         lisCmd.setRequestId(requestId);
         lisCmd.setDetails(toLisAdviceApplyDetailLines(summaries));
         lisAdviceApplyExtension.submitIfLab(lisCmd);
 
-        PacsAdviceApplyCommand pacsCmd = new PacsAdviceApplyCommand();
+        PacsAdviceApplyExtensionIn pacsCmd = new PacsAdviceApplyExtensionIn();
         pacsCmd.setEncounterId(encounterId);
         pacsCmd.setPatientId(patientId);
         pacsCmd.setRequestId(requestId);
@@ -1084,13 +1123,12 @@ public class InpatientDoctorStationAdviceAppService {
         pacsAdviceApplyExtension.submitIfImaging(pacsCmd);
     }
 
-    private List<ServiceRequestDetailSummaryDto> loadAdviceApplyDetailSummaries(Long requestId) {
-        Map<Long, List<ServiceRequestDetailListModel>> detailMap =
-            serviceRequestQueryService.mapDetailListModelsByServiceRequestIds(List.of(requestId));
-        return serviceApplyFormAssembler.toDetailSummaryDtos(
-            ServiceApplyFormOrchestrationSupport.toDetailSummaryModels(detailMap.get(requestId)));
-    }
-
+    /**
+     * 将申请明细摘要映射为 LIS 外发行（targetTable/targetId/展示名/remark）。
+     *
+     * @param summaries 服务申请明细摘要
+     * @return LIS 明细行；空输入返回不可变空列表
+     */
     private List<LisAdviceApplyDetailLine> toLisAdviceApplyDetailLines(List<ServiceRequestDetailSummaryDto> summaries) {
         if (summaries == null || summaries.isEmpty()) {
             return List.of();
@@ -1110,6 +1148,12 @@ public class InpatientDoctorStationAdviceAppService {
         return lines;
     }
 
+    /**
+     * 将申请明细摘要映射为 PACS 外发行（targetTable/targetId/展示名/remark）。
+     *
+     * @param summaries 服务申请明细摘要
+     * @return PACS 明细行；空输入返回不可变空列表
+     */
     private List<PacsAdviceApplyDetailLine> toPacsAdviceApplyDetailLines(List<ServiceRequestDetailSummaryDto> summaries) {
         if (summaries == null || summaries.isEmpty()) {
             return List.of();

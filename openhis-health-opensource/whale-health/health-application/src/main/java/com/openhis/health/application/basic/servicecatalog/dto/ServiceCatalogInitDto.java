@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.servicecatalog.dto;
 
 import com.openhis.whale.core.application.dto.OptionDto;
@@ -48,6 +35,8 @@ public class ServiceCatalogInitDto {
     private List<OptionDto> locationOptions;
     /** 收费项目医保等级（chrgitm_lv 术语）。 */
     private List<OptionDto> chrgitmLvOptions;
+    /** 病案结算类型（mr_settlement_type_code 术语）。 */
+    private List<OptionDto> mrSettlementTypeCodeOptions;
     /** 财务分类（fin_type_code 术语）。 */
     private List<OptionDto> finTypeCodeOptions;
     /** 医保收费项目类别（med_chrgitm_type 术语）。 */

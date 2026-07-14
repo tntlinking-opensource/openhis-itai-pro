@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -28,25 +15,15 @@ import lombok.Getter;
  */
 @Getter
 public enum EventStatus implements EnumInterface {
-    /**
-     * 待执行。
-     */
+    /** 待执行（EventStatus，编码 {@code PREPARATION}）。 */
     PREPARATION(0L, "PREPARATION", "待执行", "", 1L),
-    /**
-     * 执行中。
-     */
+    /** 执行中（EventStatus，编码 {@code IN_PROGRESS}）。 */
     IN_PROGRESS(0L, "IN_PROGRESS", "执行中", "", 2L),
-    /**
-     * 已完成。
-     */
+    /** 已完成（EventStatus，编码 {@code COMPLETED}）。 */
     COMPLETED(0L, "COMPLETED", "已完成", "", 3L),
-    /**
-     * 已停止（执行中止，非取消执行）；域命令暂未使用，保留与 DM 一致。
-     */
+    /** 已停止（EventStatus，编码 {@code STOPPED}）；执行中止，非取消执行，域命令暂未使用。 */
     STOPPED(0L, "STOPPED", "已停止", "", 4L),
-    /**
-     * 取消执行（{@code cancelProcedureRecord} 终态；护士站净次数「完成 − 取消」扣减口径）。
-     */
+    /** 取消执行（EventStatus，编码 {@code CANCEL}）；{@code cancelProcedureRecord} 终态，护士站净次数「完成 − 取消」扣减口径。 */
     CANCEL(0L, "CANCEL", "取消执行", "", 5L);
 
     private final Long codeSystemId;
@@ -56,7 +33,7 @@ public enum EventStatus implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * EventStatus。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     EventStatus(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

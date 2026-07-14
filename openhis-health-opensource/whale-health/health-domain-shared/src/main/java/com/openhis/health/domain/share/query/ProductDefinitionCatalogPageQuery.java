@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.query;
 
 import lombok.Getter;
@@ -31,17 +18,24 @@ public class ProductDefinitionCatalogPageQuery extends AbstractPageQuery {
 
     private static final long serialVersionUID = 1L;
 
+    /** product表名Name（ProductDefinitionCatalogPageQuery）。 */
     private String productTableName;
+    /** product表名Names（ProductDefinitionCatalogPageQuery）。 */
     private List<String> productTableNames;
+    /** 类别编码（ProductDefinitionCatalogPageQuery）。 */
     private String categoryCode;
     /** 排除药品 medication_category_code（开立西药医嘱排除中草药等）。 */
     private List<String> excludeMedicationCategoryCodes;
     private Boolean activeFlag;
+    /** 供应商主键（ProductDefinitionCatalogPageQuery）。 */
     private Long supplierId;
+    /** manufacturer（ProductDefinitionCatalogPageQuery）。 */
     private String manufacturer;
     /** 划价目录：{@code 1} 时排除药品表（与 RM 口径一致）。 */
     private Integer pricingFlag;
     private List<ProductDefinitionBatchLookup> prepickedProductKeys;
+    /** sortField（ProductDefinitionCatalogPageQuery）。 */
     private String sortField;
+    /** sortOrder（ProductDefinitionCatalogPageQuery）。 */
     private String sortOrder;
 }

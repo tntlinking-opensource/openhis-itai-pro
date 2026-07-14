@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.pharmacy.summarydispense.mapper;
 
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.assembler.InpatientPharmacySummaryDispenseAssembler;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.dto.InpatientPharmacySummaryDispenseItemDto;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.dto.InpatientPharmacySummarySlipHeaderDto;
@@ -31,17 +18,12 @@ import com.openhis.health.application.inpatient.pharmacy.summarydispense.respons
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.domain.custom.tracenumberrecord.command.AppendTraceRecordsCommand;
+import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.command.CancelMedicationDispenseSummaryCommand;
 import com.openhis.health.domain.medication.medicationdispense.command.CompleteSummaryDispenseCommand;
-import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
-import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.InpatientPharmacySummaryDispenseConstants;
-import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
-import com.openhis.health.domain.share.enums.TraceDirection;
-import com.openhis.health.domain.share.enums.TraceNumberRecordOperationType;
 import com.openhis.health.domain.workflow.supplydelivery.command.CreateSummarySupplyDeliveryCommand;
 import com.openhis.health.domain.workflow.supplydelivery.command.UpdateCompletedStatusBatchCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.AgreeRequestCommand;
@@ -50,7 +32,6 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDoc
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.MedicationSummarySlipQueryModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -74,7 +55,7 @@ public class InpatientPharmacySummaryDispenseMapperImpl implements InpatientPhar
     private final PractitionerQueryService practitionerQueryService;
 
     /**
-     * IF-IPS-01：装配供应单据列表查询（固定 type 27 + 审批态，缺省 APPROVAL）。
+     * IF-IPS-01：装配供应单据列表查询（固定 type 27；待发写死 Supply APPROVAL，已发药不设 Supply 态）。
      *
      * @param request            HTTP 请求
      * @param purposeLocationIds  可操作药房 id 集合
@@ -87,8 +68,13 @@ public class InpatientPharmacySummaryDispenseMapperImpl implements InpatientPhar
         SupplyRequestDocumentListQuery query = new SupplyRequestDocumentListQuery();
         PageQueryBinder.bind(request, query);
         query.setTypeEnum(SupplyType.MEDICATION_SUMMARY_ORDER.getCode());
-        // 列表态：缺省待核发 APPROVAL；已核发列表传 AGREE（BR-IPS-013）
-        query.setStatusEnum(this.resolveListSupplyStatusEnum(request));
+        // 已发药 Tab：发放表已收窄 busNoIn，不再拼 Supply 审批态
+        if (request != null && Boolean.TRUE.equals(request.getSummaryDispenseCompletedOnly())) {
+            query.setStatusEnum(null);
+        } else {
+            // 待发 Tab：服务端写死 APPROVAL，不接受客户端审批态入参
+            query.setStatusEnum(SupplyStatus.APPROVAL.getCode());
+        }
         if (request != null) {
             query.setStartDate(request.getStartDate());
             query.setEndDate(request.getEndDate());
@@ -100,30 +86,6 @@ public class InpatientPharmacySummaryDispenseMapperImpl implements InpatientPhar
             }
         }
         return query;
-    }
-
-    /**
-     * 解析 IF-IPS-01 列表供应审批态：取请求中首个合法 APPROVAL/AGREE，缺省 APPROVAL。
-     *
-     * @param request HTTP 请求
-     * @return 持久化 status_enum
-     */
-    private String resolveListSupplyStatusEnum(PagePendingMedicationSummarySlipsRequest request) {
-        if (request == null || request.getSupplyStatusEnumIn() == null || request.getSupplyStatusEnumIn().isEmpty()) {
-            return SupplyStatus.APPROVAL.getCode();
-        }
-        String approvalCode = SupplyStatus.APPROVAL.getCode();
-        String agreeCode = SupplyStatus.AGREE.getCode();
-        for (String raw : request.getSupplyStatusEnumIn()) {
-            if (StringUtils.isBlank(raw)) {
-                continue;
-            }
-            String code = raw.trim();
-            if (approvalCode.equals(code) || agreeCode.equals(code)) {
-                return code;
-            }
-        }
-        return approvalCode;
     }
 
     /**
@@ -241,17 +203,20 @@ public class InpatientPharmacySummaryDispenseMapperImpl implements InpatientPhar
      * @param summaryNo      汇总单号
      * @param operatorId     操作人
      * @param practitionerId 发药药师
+     * @param preparerId     调配药师
      * @return 领域命令
      */
     @Override
     public CompleteSummaryDispenseCommand toCompleteSummaryDispenseCommand(
         String summaryNo,
         Long operatorId,
-        Long practitionerId) {
+        Long practitionerId,
+        Long preparerId) {
         CompleteSummaryDispenseCommand command = new CompleteSummaryDispenseCommand();
         command.setSummaryNo(summaryNo);
         command.setOperatorId(operatorId);
         command.setPractitionerId(practitionerId);
+        command.setPreparerId(preparerId);
         return command;
     }
 
@@ -267,7 +232,8 @@ public class InpatientPharmacySummaryDispenseMapperImpl implements InpatientPhar
     public CreateSummarySupplyDeliveryCommand toCreateSummarySupplyDeliveryCommand(
         Long receiverId,
         Long operatorId,
-        List<SupplyRequestModel> supplyLines) {
+        List<SupplyRequestModel> supplyLines,
+        Map<Long, String> traceBySupplyRequestId) {
         CreateSummarySupplyDeliveryCommand command = new CreateSummarySupplyDeliveryCommand();
         command.setOperatorId(operatorId);
         List<CreateSummarySupplyDeliveryCommand.CreateSummarySupplyDeliveryItemCommand> items = new ArrayList<>();
@@ -286,6 +252,9 @@ public class InpatientPharmacySummaryDispenseMapperImpl implements InpatientPhar
                 item.setUnitCode(line.getUnitCode());
                 item.setLotNumber(null);
                 item.setReceiverId(receiverId);
+                if (traceBySupplyRequestId != null && line.getId() != null) {
+                    item.setTraceNo(traceBySupplyRequestId.get(line.getId()));
+                }
                 items.add(item);
             }
         }
@@ -335,55 +304,6 @@ public class InpatientPharmacySummaryDispenseMapperImpl implements InpatientPhar
         item.setBusNo(busNo);
         item.setApproverId(approverId);
         command.setItems(List.of(item));
-        return command;
-    }
-
-    /**
-     * IF-IPS-03：追溯出库命令。
-     *
-     * @param dispenses  已完成汇总发放行（追溯码已合并）
-     * @param summaryNo  汇总单号
-     * @param operatorId 操作人
-     * @return 领域命令；无追溯码时 items 可为空
-     */
-    @Override
-    public AppendTraceRecordsCommand toAppendTraceRecordsCommand(
-        List<MedicationDispense> dispenses,
-        String summaryNo,
-        Long operatorId) {
-        AppendTraceRecordsCommand command = new AppendTraceRecordsCommand();
-        command.setOperatorId(operatorId);
-        List<AppendTraceRecordsCommand.AppendTraceRecordItemCommand> items = new ArrayList<>();
-        String traceOperationType = TraceNumberRecordOperationType.MEDICATION_DISPENSE_OUT.getCode();
-        if (dispenses != null) {
-            for (MedicationDispense dispense : dispenses) {
-                if (dispense == null || StringUtils.isBlank(dispense.getTraceNo())) {
-                    continue;
-                }
-                String locationTypeCode = locationQueryService.requireSupplyRequestTypeForLocationId(
-                    dispense.getLocationId()).getCode();
-                for (String part : dispense.getTraceNo().split(GeneralSharedConstants.COMMA)) {
-                    String traceNo = part.trim();
-                    if (traceNo.isEmpty()) {
-                        continue;
-                    }
-                    AppendTraceRecordsCommand.AppendTraceRecordItemCommand item =
-                        new AppendTraceRecordsCommand.AppendTraceRecordItemCommand();
-                    item.setItemTable(TableNameConstants.MED_MEDICATION_DEFINITION);
-                    item.setItemId(dispense.getMedicationId());
-                    item.setLocationTypeEnum(locationTypeCode);
-                    item.setLocationId(dispense.getLocationId());
-                    item.setLotNumber(dispense.getLotNumber());
-                    item.setTraceNo(traceNo);
-                    item.setStatusEnum(TraceDirection.OUT.getCode());
-                    item.setUnitCode(dispense.getUnitCode());
-                    item.setOperationType(traceOperationType);
-                    item.setBusNo(summaryNo);
-                    items.add(item);
-                }
-            }
-        }
-        command.setItems(items);
         return command;
     }
 

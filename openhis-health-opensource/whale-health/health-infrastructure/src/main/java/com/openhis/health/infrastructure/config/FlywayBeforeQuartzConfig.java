@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.infrastructure.config;
 
 import org.springframework.beans.BeansException;
@@ -36,19 +23,30 @@ public class FlywayBeforeQuartzConfig implements BeanDefinitionRegistryPostProce
     private static final String ENTITY_MANAGER_FACTORY_BEAN = "entityManagerFactory";
     private static final String QUARTZ_SCHEDULER_BEAN = "quartzScheduler";
 
+    /**
+     * 在 Bean 定义注册阶段为 JPA 与 Quartz 注入对 flywayInitializer 的 depends-on。
+     *
+     * @param registry Spring Bean 定义注册表
+     */
     @Override
     public void postProcessBeanDefinitionRegistry(@NonNull BeanDefinitionRegistry registry) throws BeansException {
+        // 未启用模块化 Flyway 时无需调整依赖顺序
         if (!registry.containsBeanDefinition(FLYWAY_INITIALIZER_BEAN)) {
             return;
         }
+        // JPA 须在 schema 迁移完成后初始化，避免实体映射到未建表
         if (registry.containsBeanDefinition(ENTITY_MANAGER_FACTORY_BEAN)) {
             prependDependsOn(registry, ENTITY_MANAGER_FACTORY_BEAN, FLYWAY_INITIALIZER_BEAN);
         }
+        // Quartz 任务可能依赖已迁移表，须晚于 Flyway
         if (registry.containsBeanDefinition(QUARTZ_SCHEDULER_BEAN)) {
             prependDependsOn(registry, QUARTZ_SCHEDULER_BEAN, FLYWAY_INITIALIZER_BEAN);
         }
     }
 
+    /**
+     * 将 dependsOnBean 前置到 targetBean 的 depends-on 链，避免重复声明。
+     */
     private static void prependDependsOn(
             BeanDefinitionRegistry registry, String targetBean, String dependsOnBean) {
         BeanDefinition bd = registry.getBeanDefinition(targetBean);

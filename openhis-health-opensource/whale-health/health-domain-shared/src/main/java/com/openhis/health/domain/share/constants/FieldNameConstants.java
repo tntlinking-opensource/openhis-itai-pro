@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 /**
@@ -27,101 +14,63 @@ public interface FieldNameConstants {
      * 在院或有效活跃标识。
      */
     String ACTIVE_FLAG = "activeFlag";
-    /**
-     * 联系地址。
-     */
+/** FieldName 共享常量：ADDRESS，值 {@code address}。 */
     String ADDRESS = "address";
-    /**
-     * 入院时刻。
-     */
+/** FieldName 共享常量：time，值 {@code admissionTime}。 */
     String ADMISSION_TIME = "admissionTime";
-    /**
-     * 变动后数量。
-     */
+/** FieldName 共享常量：quantity，值 {@code afterQuantity}。 */
     String AFTER_QUANTITY = "afterQuantity";
-    /**
-     * 金额。
-     */
+/** FieldName 共享常量：AMOUNT，值 {@code amount}。 */
     String AMOUNT = "amount";
     /**
      * 抗生素分级/管理相关标识。
      */
     String ANTIBIOTIC_FLAG = "antibioticFlag";
-    /**
-     * 申请人标识。
-     */
+/** FieldName 共享常量：id，值 {@code applicantId}。 */
     String APPLICANT_ID = "applicantId";
-    /**
-     * 申请时间。
-     */
+/** FieldName 共享常量：time，值 {@code applyTime}。 */
     String APPLY_TIME = "applyTime";
-    /**
-     * 审批通过时间。
-     */
+/** FieldName 共享常量：time，值 {@code approvalTime}。 */
     String APPROVAL_TIME = "approvalTime";
-    /**
-     * 审批人标识。
-     */
+/** FieldName 共享常量：id，值 {@code approverId}。 */
     String APPROVER_ID = "approverId";
     /**
      * 基本目录/基本药物标识。
      */
     String BASIC_FLAG = "basicFlag";
-    /**
-     * 床位标识。
-     */
+/** FieldName 共享常量：id，值 {@code bedId}。 */
     String BED_ID = "bedId";
-    /**
-     * 床位名称。
-     */
+/** FieldName 共享常量：name，值 {@code bedName}。 */
     String BED_NAME = "bedName";
-    /**
-     * 变动前数量。
-     */
+/** FieldName 共享常量：quantity，值 {@code beforeQuantity}。 */
     String BEFORE_QUANTITY = "beforeQuantity";
-    /**
-     * 账单或计费日期。
-     */
+/** FieldName 共享常量：date，值 {@code billDate}。 */
     String BILL_DATE = "billDate";
     /**
      * 收费员交账头标识（payment 挂载列）。
      */
     String CASHIER_SETTLEMENT_ID = "cashierSettlementId";
-    /**
-     * 出生日期。
-     */
+/** FieldName 共享常量：date，值 {@code birthDate}。 */
     String BIRTH_DATE = "birthDate";
-    /**
-     * 身体部位编码。
-     */
+/** FieldName 共享常量：site code，值 {@code bodySiteCode}。 */
     String BODY_SITE_CODE = "bodySiteCode";
-    /**
-     * 业务流水号。
-     */
+/** FieldName 共享常量：no，值 {@code busNo}。 */
     String BUS_NO = "busNo";
-    /**
-     * 取消时刻。
-     */
+/** FieldName 共享常量：at，值 {@code cancelledAt}。 */
     String CANCELLED_AT = "cancelledAt";
     /**
      * 取消时刻（与 {@link #CANCELLED_AT} 同义异键）。
      */
     String CANCELLED_TIME = "cancelledTime";
-    /**
-     * 分类编码。
-     */
+/** FieldName 共享常量：code，值 {@code categoryCode}。 */
     String CATEGORY_CODE = "categoryCode";
     /**
      * 分类字典展示文案。
      */
     String CATEGORY_CODE_DICT_TEXT = "categoryCodeDictText";
-    /**
-     * 分类枚举码。
-     */
+/** FieldName 共享常量：enum，值 {@code categoryEnum}。 */
     String CATEGORY_ENUM = "categoryEnum";
-    /**
-     * 变动数量。
-     */
+/** FieldName 共享常量：quantity，值 {@code changeQuantity}。 */
     String CHANGE_QUANTITY = "changeQuantity";
     /**
      * 含子项/组合项标识。
@@ -136,8 +85,14 @@ public interface FieldNameConstants {
      */
     String CHRGITM_LV = "chrgitmLv";
     /**
-     * 报账/理赔状态。
+     * 是否为收费耗材标记。
      */
+    String CHARGEABLE_FLAG = "chargeableFlag";
+    /**
+     * 病案结算类型编码。
+     */
+    String MR_SETTLEMENT_TYPE_CODE = "mrSettlementTypeCode";
+/** FieldName 共享常量：state enum，值 {@code claimStateEnum}。 */
     String CLAIM_STATE_ENUM = "claimStateEnum";
     /**
      * 就诊类别或班次等枚举。
@@ -151,9 +106,7 @@ public interface FieldNameConstants {
      * 终末消毒关联病区。
      */
     String CLEANED_WARD_ID = "cleanedWardId";
-    /**
-     * 诊断或病情编码。
-     */
+/** FieldName 共享常量：code，值 {@code conditionCode}。 */
     String CONDITION_CODE = "conditionCode";
     /**
      * 诊断事实主键（医生站快照 JSON、就诊诊断关联）。
@@ -167,53 +120,37 @@ public interface FieldNameConstants {
      * 诊断定义标准名称（医生站快照 JSON 中与 {@link #CONDITION_DEFINITION_ID} 成对；就诊诊断关联事件主诊断摘要等同名载荷）。
      */
     String CONDITION_DEFINITION_NAME = "conditionDefinitionName";
-    /**
-     * 业务上下文枚举。
-     */
+/** FieldName 共享常量：enum，值 {@code contextEnum}。 */
     String CONTEXT_ENUM = "contextEnum";
-    /**
-     * 合同编号。
-     */
+/** FieldName 共享常量：no，值 {@code contractNo}。 */
     String CONTRACT_NO = "contractNo";
     /**
      * 费用性质/合同主键（{@code contract_id}）。
      */
     String CONTRACT_ID = "contractId";
-    /**
-     * 创建时间。
-     */
+/** FieldName 共享常量：at，值 {@code createdAt}。 */
     String CREATED_AT = "createdAt";
     /**
      * 创建时间（部分读模型或接口使用该字段名）。
      */
     String CREATE_TIME = "createTime";
-    /**
-     * 配送单标识。
-     */
+/** FieldName 共享常量：id，值 {@code deliveryId}。 */
     String DELIVERY_ID = "deliveryId";
-    /**
-     * 配送批号。
-     */
+/** FieldName 共享常量：lot number，值 {@code deliveryLotNumber}。 */
     String DELIVERY_LOT_NUMBER = "deliveryLotNumber";
     /**
      * 发放状态枚举（库房单据明细读模型等）。
      */
     String DELIVERY_STATUS_ENUM = "deliveryStatusEnum";
-    /**
-     * 说明或描述正文。
-     */
+/** FieldName 共享常量：text，值 {@code descriptionText}。 */
     String DESCRIPTION_TEXT = "descriptionText";
     /**
      * 描述/诊断描述等泛用文本（如 {@code adm_encounter_diagnosis.description}）。
      */
     String DESCRIPTION = "description";
-    /**
-     * 目标位置标识。
-     */
+/** FieldName 共享常量：location id，值 {@code destinationLocationId}。 */
     String DESTINATION_LOCATION_ID = "destinationLocationId";
-    /**
-     * 目标位置名称。
-     */
+/** FieldName 共享常量：location name，值 {@code destinationLocationName}。 */
     String DESTINATION_LOCATION_NAME = "destinationLocationName";
     /**
      * 诊断明细 JSON。
@@ -263,41 +200,23 @@ public interface FieldNameConstants {
      * 医生站诊断快照：验证状态展示文案（可选冗余列）。
      */
     String VERIFICATION_STATUS_ENUM_TEXT = "verificationStatusEnumText";
-    /**
-     * 出院或离院时刻。
-     */
+/** FieldName 共享常量：time，值 {@code dischargeTime}。 */
     String DISCHARGE_TIME = "dischargeTime";
-    /**
-     * 离院方式枚举。
-     */
+/** FieldName 共享常量：type enum，值 {@code dischargeTypeEnum}。 */
     String DISCHARGE_TYPE_ENUM = "dischargeTypeEnum";
-    /**
-     * 列表展示排序号。
-     */
+/** FieldName 共享常量：order，值 {@code displayOrder}。 */
     String DISPLAY_ORDER = "displayOrder";
-    /**
-     * 医师标识。
-     */
+/** FieldName 共享常量：id，值 {@code doctorId}。 */
     String DOCTOR_ID = "doctorId";
-    /**
-     * 医师姓名。
-     */
+/** FieldName 共享常量：name，值 {@code doctorName}。 */
     String DOCTOR_NAME = "doctorName";
-    /**
-     * 用药说明条目。
-     */
+/** FieldName 共享常量：instruction，值 {@code dosageInstruction}。 */
     String DOSAGE_INSTRUCTION = "dosageInstruction";
-    /**
-     * 剂量来源口径。
-     */
+/** FieldName 共享常量：from，值 {@code doseFrom}。 */
     String DOSE_FROM = "doseFrom";
-    /**
-     * 剂量单位编码。
-     */
+/** FieldName 共享常量：unit code，值 {@code doseUnitCode}。 */
     String DOSE_UNIT_CODE = "doseUnitCode";
-    /**
-     * 剂量单位换算比。
-     */
+/** FieldName 共享常量：unit ratio，值 {@code doseUnitRatio}。 */
     String DOSE_UNIT_RATIO = "doseUnitRatio";
     /**
      * 剂型编码（药品定义 {@code dose_form_code} 等）。
@@ -322,121 +241,79 @@ public interface FieldNameConstants {
      * 药品成组号（药品申请 {@code groupId}）。
      */
     String GROUP_ID = "groupId";
-    /**
-     * 就诊业务流水号。
-     */
+/** FieldName 共享常量：bus no，值 {@code encounterBusNo}。 */
     String ENCOUNTER_BUS_NO = "encounterBusNo";
-    /**
-     * 就诊标识。
-     */
+/** FieldName 共享常量：id，值 {@code encounterId}。 */
     String ENCOUNTER_ID = "encounterId";
-    /**
-     * 结束时刻。
-     */
+/** FieldName 共享常量：time，值 {@code endTime}。 */
     String END_TIME = "endTime";
-    /**
-     * 录入人标识。
-     */
+/** FieldName 共享常量：id，值 {@code entererId}。 */
     String ENTERER_ID = "entererId";
-    /**
-     * 嘱托或委托内容。
-     */
+/** FieldName 共享常量：content，值 {@code entrustContent}。 */
     String ENTRUST_CONTENT = "entrustContent";
-    /**
-     * 效期或到期日。
-     */
+/** FieldName 共享常量：date，值 {@code expirationDate}。 */
     String EXPIRATION_DATE = "expirationDate";
-    /**
-     * 首次剂量。
-     */
+/** FieldName 共享常量：dose，值 {@code firstDose}。 */
     String FIRST_DOSE = "firstDose";
     /**
      * 首次剂量单位编码。
      */
     String FIRST_DOSE_UNIT_CODE = "firstDoseUnitCode";
-    /**
-     * 性别编码。
-     */
+/** FieldName 共享常量：enum，值 {@code genderEnum}。 */
     String GENDER_ENUM = "genderEnum";
-    /**
-     * 性别展示文案。
-     */
+/** FieldName 共享常量：enum text，值 {@code genderEnumText}。 */
     String GENDER_ENUM_TEXT = "genderEnumText";
     /**
      * 基本药物目录（HVCM）标识。
      */
     String HVCM_FLAG = "hvcmFlag";
-    /**
-     * 主键标识。
-     */
+/** FieldName 共享常量：ID，值 {@code id}。 */
     String ID = "id";
-    /**
-     * 身份证件号。
-     */
+/** FieldName 共享常量：card，值 {@code idCard}。 */
     String ID_CARD = "idCard";
     /**
      * 是否纳入库存统计。
      */
     String INCLUDE_INVENTORY = "includeInventory";
-    /**
-     * 期初余额。
-     */
+/** FieldName 共享常量：balance，值 {@code initialBalance}。 */
     String INITIAL_BALANCE = "initialBalance";
-    /**
-     * 注射给药标识。
-     */
+/** FieldName 共享常量：flag，值 {@code injectFlag}。 */
     String INJECT_FLAG = "injectFlag";
-    /**
-     * 业务实例标识。
-     */
+/** FieldName 共享常量：id，值 {@code instanceId}。 */
     String INSTANCE_ID = "instanceId";
     /**
      * 定价行上游业务表名（收费项定义 {@code adm_charge_item_definition.instance_table}）。
      */
     String INSTANCE_TABLE = "instanceTable";
-    /**
-     * 库存状态枚举。
-     */
+/** FieldName 共享常量：status enum，值 {@code inventoryStatusEnum}。 */
     String INVENTORY_STATUS_ENUM = "inventoryStatusEnum";
     /**
      * 源库存项主键（快照静表 {@code inventory_item_id}）。
      */
     String INVENTORY_ITEM_ID = "inventoryItemId";
-    /**
-     * 发票业务流水号。
-     */
+/** FieldName 共享常量：bus no，值 {@code invoiceBusNo}。 */
     String INVOICE_BUS_NO = "invoiceBusNo";
-    /**
-     * 发票标识。
-     */
+/** FieldName 共享常量：id，值 {@code invoiceId}。 */
     String INVOICE_ID = "invoiceId";
     /**
      * 入区/入径方式编码。
      */
     String IN_WAY_CODE = "inWayCode";
-    /**
-     * 逻辑删除标记。
-     */
+/** FieldName 共享常量：deleted，值 {@code isDeleted}。 */
     String IS_DELETED = "isDeleted";
-    /**
-     * 明细行标识。
-     */
+/** FieldName 共享常量：id，值 {@code itemId}。 */
     String ITEM_ID = "itemId";
-    /**
-     * 明细数量。
-     */
+/** FieldName 共享常量：quantity，值 {@code itemQuantity}。 */
     String ITEM_QUANTITY = "itemQuantity";
     /**
-     * 明细来源表名。
+     * 实盘量或合计拆零量（盘点/损益等场景）。
      */
+    String TOTAL_QUANTITY = "totalQuantity";
+/** FieldName 共享常量：table，值 {@code itemTable}。 */
     String ITEM_TABLE = "itemTable";
-    /**
-     * 种类或性质枚举。
-     */
+/** FieldName 共享常量：enum，值 {@code kindEnum}。 */
     String KIND_ENUM = "kindEnum";
-    /**
-     * 限价。
-     */
+/** FieldName 共享常量：price，值 {@code limitPrice}。 */
     String LIMIT_PRICE = "limitPrice";
     /**
      * 进价行总额（快照静表 {@code line_cost_total}）。
@@ -446,13 +323,11 @@ public interface FieldNameConstants {
      * 售价行总额（快照静表 {@code line_price_total}）。
      */
     String LINE_PRICE_TOTAL = "linePriceTotal";
-    /**
-     * 位置标识。
-     */
+/** FieldName 共享常量：id，值 {@code locationId}。 */
     String LOCATION_ID = "locationId";
-    /**
-     * 生产或库存批号。
-     */
+/** FieldName 共享常量：number，值 {@code lotNumber}。 */
+    String LIMIT_TIME = "limitTime";
+
     String LOT_NUMBER = "lotNumber";
     /**
      * 批号进价（快照静表 {@code lot_number_cost_amount}）。
@@ -466,17 +341,11 @@ public interface FieldNameConstants {
      * 收费项定价行批次号（{@code adm_charge_item_definition.lot_no}，JPA 属性 {@code lotNo}）。
      */
     String LOT_NO = "lotNo";
-    /**
-     * 生产厂家编码。
-     */
+/** FieldName 共享常量：MANUFACTURER，值 {@code manufacturer}。 */
     String MANUFACTURER = "manufacturer";
-    /**
-     * 生产厂家展示名。
-     */
+/** FieldName 共享常量：text，值 {@code manufacturerText}。 */
     String MANUFACTURER_TEXT = "manufacturerText";
-    /**
-     * 药品标识。
-     */
+/** FieldName 共享常量：id，值 {@code medicationId}。 */
     String MEDICATION_ID = "medicationId";
     /**
      * 药品分类字典 code（快照静表 {@code medication_category_code} 等）。
@@ -498,9 +367,7 @@ public interface FieldNameConstants {
      * 耗材分类字典 code（快照静表 {@code device_category_code} 等）。
      */
     String DEVICE_CATEGORY_CODE = "deviceCategoryCode";
-    /**
-     * 商品名称。
-     */
+/** FieldName 共享常量：name，值 {@code merchandiseName}。 */
     String MERCHANDISE_NAME = "merchandiseName";
     /**
      * 商品名拼音检索码。
@@ -534,17 +401,11 @@ public interface FieldNameConstants {
      * 名称（泛用；如位置名、通用名称等）。
      */
     String NAME = "name";
-    /**
-     * 变更后床位标识。
-     */
+/** FieldName 共享常量：bed id，值 {@code newBedId}。 */
     String NEW_BED_ID = "newBedId";
-    /**
-     * 变更后床位名称。
-     */
+/** FieldName 共享常量：bed name，值 {@code newBedName}。 */
     String NEW_BED_NAME = "newBedName";
-    /**
-     * 变更后展示序。
-     */
+/** FieldName 共享常量：display order，值 {@code newDisplayOrder}。 */
     String NEW_DISPLAY_ORDER = "newDisplayOrder";
     /**
      * 变更后医护人员标识。
@@ -554,21 +415,13 @@ public interface FieldNameConstants {
      * 变更后医护人员姓名。
      */
     String NEW_PRACTITIONER_NAME = "newPractitionerName";
-    /**
-     * 变更后病区标识。
-     */
+/** FieldName 共享常量：ward id，值 {@code newWardId}。 */
     String NEW_WARD_ID = "newWardId";
-    /**
-     * 变更后病区名称。
-     */
+/** FieldName 共享常量：ward name，值 {@code newWardName}。 */
     String NEW_WARD_NAME = "newWardName";
-    /**
-     * 爽约或未到原因。
-     */
+/** FieldName 共享常量：show reason，值 {@code noShowReason}。 */
     String NO_SHOW_REASON = "noShowReason";
-    /**
-     * 业务发生时刻。
-     */
+/** FieldName 共享常量：at，值 {@code occurredAt}。 */
     String OCCURRED_AT = "occurredAt";
     /**
      * 业务发生时刻（与 {@link #OCCURRED_AT} 可能并存于不同载荷）。
@@ -586,29 +439,17 @@ public interface FieldNameConstants {
      * 发生时刻（通用）。
      */
     String OCCURRENCE_TIME = "occurrenceTime";
-    /**
-     * 床位等运营状态。
-     */
+/** FieldName 共享常量：status，值 {@code operationalStatus}。 */
     String OPERATIONAL_STATUS = "operationalStatus";
-    /**
-     * 操作人标识。
-     */
+/** FieldName 共享常量：id，值 {@code operatorId}。 */
     String OPERATOR_ID = "operatorId";
-    /**
-     * 机构标识。
-     */
+/** FieldName 共享常量：id，值 {@code organizationId}。 */
     String ORGANIZATION_ID = "organizationId";
-    /**
-     * 机构名称。
-     */
+/** FieldName 共享常量：name，值 {@code organizationName}。 */
     String ORGANIZATION_NAME = "organizationName";
-    /**
-     * 组织单元标识。
-     */
+/** FieldName 共享常量：id，值 {@code orgId}。 */
     String ORG_ID = "orgId";
-    /**
-     * 原业务单号。
-     */
+/** FieldName 共享常量：bus no，值 {@code originalBusNo}。 */
     String ORIGINAL_BUS_NO = "originalBusNo";
     /**
      * 出区/出径方式编码。
@@ -630,57 +471,31 @@ public interface FieldNameConstants {
      * 患者年龄展示文案。
      */
     String PATIENT_AGE_TEXT = "patientAgeText";
-    /**
-     * 患者业务流水号。
-     */
+/** FieldName 共享常量：bus no，值 {@code patientBusNo}。 */
     String PATIENT_BUS_NO = "patientBusNo";
-    /**
-     * 患者标识。
-     */
+/** FieldName 共享常量：id，值 {@code patientId}。 */
     String PATIENT_ID = "patientId";
-    /**
-     * 患者姓名。
-     */
+/** FieldName 共享常量：name，值 {@code patientName}。 */
     String PATIENT_NAME = "patientName";
-    /**
-     * 执行人标识。
-     */
+/** FieldName 共享常量：id，值 {@code performerId}。 */
     String PERFORMER_ID = "performerId";
-    /**
-     * 执行机构标识。
-     */
+/** FieldName 共享常量：org id，值 {@code performingOrgId}。 */
     String PERFORMING_ORG_ID = "performingOrgId";
-    /**
-     * 执行地点描述。
-     */
+/** FieldName 共享常量：location，值 {@code performLocation}。 */
     String PERFORM_LOCATION = "performLocation";
-    /**
-     * 药理分类编码。
-     */
+/** FieldName 共享常量：category code，值 {@code pharmacologyCategoryCode}。 */
     String PHARMACOLOGY_CATEGORY_CODE = "pharmacologyCategoryCode";
-    /**
-     * 联系电话。
-     */
+/** FieldName 共享常量：PHONE，值 {@code phone}。 */
     String PHONE = "phone";
-    /**
-     * 计划区间结束。
-     */
+/** FieldName 共享常量：horizon end，值 {@code planningHorizonEnd}。 */
     String PLANNING_HORIZON_END = "planningHorizonEnd";
-    /**
-     * 计划区间开始。
-     */
+/** FieldName 共享常量：horizon start，值 {@code planningHorizonStart}。 */
     String PLANNING_HORIZON_START = "planningHorizonStart";
-    /**
-     * 医护人员标识。
-     */
+/** FieldName 共享常量：id，值 {@code practitionerId}。 */
     String PRACTITIONER_ID = "practitionerId";
-    /**
-     * 医护人员姓名。
-     */
+/** FieldName 共享常量：name，值 {@code practitionerName}。 */
     String PRACTITIONER_NAME = "practitionerName";
-    /**
-     * 预收治机构标识。
-     */
+/** FieldName 共享常量：admission org id，值 {@code preAdmissionOrgId}。 */
     String PRE_ADMISSION_ORG_ID = "preAdmissionOrgId";
     /**
      * 预收治或预入院时刻。
@@ -694,93 +509,55 @@ public interface FieldNameConstants {
      * 收费项定价行价格数值（{@code adm_charge_item_definition.price_value}）。
      */
     String PRICE_VALUE = "priceValue";
-    /**
-     * 单价或价格。
-     */
+/** FieldName 共享常量：PRICE，值 {@code price}。 */
     String PRICE = "price";
     /**
      * 是否参与计价标识。
      */
     String PRICING_FLAG = "pricingFlag";
-    /**
-     * 优先级枚举。
-     */
+/** FieldName 共享常量：enum，值 {@code priorityEnum}。 */
     String PRIORITY_ENUM = "priorityEnum";
-    /**
-     * 操作/手术标识。
-     */
+/** FieldName 共享常量：id，值 {@code procedureId}。 */
     String PROCEDURE_ID = "procedureId";
-    /**
-     * 产品业务流水号。
-     */
+/** FieldName 共享常量：bus no，值 {@code productBusNo}。 */
     String PRODUCT_BUS_NO = "productBusNo";
     /**
      * 产品定义主键（读模型 {@code hisrm_product_definition.product_definition_id}，JPA 属性 {@code productDefinitionId}）。
      */
     String PRODUCT_DEFINITION_ID = "productDefinitionId";
-    /**
-     * 产品名称。
-     */
+/** FieldName 共享常量：name，值 {@code productName}。 */
     String PRODUCT_NAME = "productName";
     /**
      * 产品来源物理表名。
      */
     String PRODUCT_TABLE_NAME = "productTableName";
-    /**
-     * 采购单位编码。
-     */
+/** FieldName 共享常量：unit code，值 {@code purchaseUnitCode}。 */
     String PURCHASE_UNIT_CODE = "purchaseUnitCode";
-    /**
-     * 采购单位换算比。
-     */
+/** FieldName 共享常量：unit ratio，值 {@code purchaseUnitRatio}。 */
     String PURCHASE_UNIT_RATIO = "purchaseUnitRatio";
-    /**
-     * 用途地点标识。
-     */
+/** FieldName 共享常量：location id，值 {@code purposeLocationId}。 */
     String PURPOSE_LOCATION_ID = "purposeLocationId";
-    /**
-     * 用途类型枚举。
-     */
+/** FieldName 共享常量：type enum，值 {@code purposeTypeEnum}。 */
     String PURPOSE_TYPE_ENUM = "purposeTypeEnum";
-    /**
-     * 拼音检索串。
-     */
+/** FieldName 共享常量：str，值 {@code pyStr}。 */
     String PY_STR = "pyStr";
-    /**
-     * 数量。
-     */
+/** FieldName 共享常量：QUANTITY，值 {@code quantity}。 */
     String QUANTITY = "quantity";
-    /**
-     * 频次或费率编码。
-     */
+/** FieldName 共享常量：code，值 {@code rateCode}。 */
     String RATE_CODE = "rateCode";
-    /**
-     * 原因简述。
-     */
+/** FieldName 共享常量：REASON，值 {@code reason}。 */
     String REASON = "reason";
-    /**
-     * 原因正文。
-     */
+/** FieldName 共享常量：text，值 {@code reasonText}。 */
     String REASON_TEXT = "reasonText";
-    /**
-     * 单据完结标识。
-     */
+/** FieldName 共享常量：finalized flag，值 {@code receiptFinalizedFlag}。 */
     String RECEIPT_FINALIZED_FLAG = "receiptFinalizedFlag";
-    /**
-     * 接收人标识。
-     */
+/** FieldName 共享常量：id，值 {@code receiverId}。 */
     String RECEIVER_ID = "receiverId";
-    /**
-     * 接收时刻。
-     */
+/** FieldName 共享常量：time，值 {@code receiveTime}。 */
     String RECEIVE_TIME = "receiveTime";
-    /**
-     * 接诊开始时刻。
-     */
+/** FieldName 共享常量：time，值 {@code receptionTime}。 */
     String RECEPTION_TIME = "receptionTime";
-    /**
-     * 退费单标识。
-     */
+/** FieldName 共享常量：id，值 {@code refundId}。 */
     String REFUND_ID = "refundId";
     /**
      * 原耗材申请主键（退耗材医嘱 {@code wkf_device_request.refund_device_id}）。
@@ -802,13 +579,9 @@ public interface FieldNameConstants {
      * 就诊参与者角色编码（{@code adm_encounter_participant.role_code}）。
      */
     String ROLE_CODE = "roleCode";
-    /**
-     * 挂号员标识。
-     */
+/** FieldName 共享常量：id，值 {@code registrarId}。 */
     String REGISTRAR_ID = "registrarId";
-    /**
-     * 挂号员姓名。
-     */
+/** FieldName 共享常量：name，值 {@code registrarName}。 */
     String REGISTRAR_NAME = "registrarName";
     /**
      * 剩余过期天数（快照写入时刻冻结，{@code remaining_days}）。
@@ -826,25 +599,15 @@ public interface FieldNameConstants {
      * 关联单据明细标识。
      */
     String RELATED_DOC_DETAIL_ID = "relatedDocDetailId";
-    /**
-     * 关联单据标识。
-     */
+/** FieldName 共享常量：doc id，值 {@code relatedDocId}。 */
     String RELATED_DOC_ID = "relatedDocId";
-    /**
-     * 关联单据类型。
-     */
+/** FieldName 共享常量：doc type，值 {@code relatedDocType}。 */
     String RELATED_DOC_TYPE = "relatedDocType";
-    /**
-     * 补打或重制标记。
-     */
+/** FieldName 共享常量：REMAKE，值 {@code remake}。 */
     String REMAKE = "remake";
-    /**
-     * 备注。
-     */
+/** FieldName 共享常量：REMARK，值 {@code remark}。 */
     String REMARK = "remark";
-    /**
-     * 限制用药标志。
-     */
+/** FieldName 共享常量：flag，值 {@code restrictedFlag}。 */
     String RESTRICTED_FLAG = "restrictedFlag";
     /**
      * 限制用药范围说明正文。
@@ -854,25 +617,15 @@ public interface FieldNameConstants {
      * 限制用药等级或权限枚举编码。
      */
     String RESTRICTED_ENUM = "restrictedEnum";
-    /**
-     * 申请开立人标识。
-     */
+/** FieldName 共享常量：id，值 {@code requesterId}。 */
     String REQUESTER_ID = "requesterId";
-    /**
-     * 申请单标识。
-     */
+/** FieldName 共享常量：id，值 {@code requestId}。 */
     String REQUEST_ID = "requestId";
-    /**
-     * 规则标识。
-     */
+/** FieldName 共享常量：id，值 {@code ruleId}。 */
     String RULE_ID = "ruleId";
-    /**
-     * 规则名称。
-     */
+/** FieldName 共享常量：name，值 {@code ruleName}。 */
     String RULE_NAME = "ruleName";
-    /**
-     * 处方药标识。
-     */
+/** FieldName 共享常量：flag，值 {@code rxFlag}。 */
     String RX_FLAG = "rxFlag";
     /**
      * 包装单位编码（领域/持久化/对外 JSON 主键名；与 {@link #PACKAGE_UNIT_CODE_LEGACY_EVENT_KEY} 互链）。
@@ -894,33 +647,25 @@ public interface FieldNameConstants {
      * @see #PACKAGE_UNIT_RATIO
      */
     String PACKAGE_UNIT_RATIO_LEGACY_EVENT_KEY = "salesUnitRatio";
-    /**
-     * 服务类型标识。
-     */
+/** FieldName 共享常量：type id，值 {@code serviceTypeId}。 */
     String SERVICE_TYPE_ID = "serviceTypeId";
     /**
      * 上游业务表锚点（收费明细 {@code adm_charge_item.service_table}）。
      */
     String SERVICE_TABLE = "serviceTable";
     /**
-     * 服务类型名称。
+     * 上游业务主键锚点（收费明细 {@code adm_charge_item.service_id}）。
      */
+    String SERVICE_ID = "serviceId";
+/** FieldName 共享常量：type name，值 {@code serviceTypeName}。 */
     String SERVICE_TYPE_NAME = "serviceTypeName";
-    /**
-     * 结算日期。
-     */
+/** FieldName 共享常量：date，值 {@code settleDate}。 */
     String SETTLE_DATE = "settleDate";
-    /**
-     * 规格量或尺寸。
-     */
+/** FieldName 共享常量：SIZE，值 {@code size}。 */
     String SIZE = "size";
-    /**
-     * 皮试要求标识。
-     */
+/** FieldName 共享常量：test flag，值 {@code skinTestFlag}。 */
     String SKIN_TEST_FLAG = "skinTestFlag";
-    /**
-     * 单据号。
-     */
+/** FieldName 共享常量：no，值 {@code slipNo}。 */
     String SLIP_NO = "slipNo";
     /**
      * 排序字段名（动态排序）。
@@ -930,33 +675,19 @@ public interface FieldNameConstants {
      * 排序方向（动态排序）。
      */
     String SORT_ORDER = "sortOrder";
-    /**
-     * 来源位置标识。
-     */
+/** FieldName 共享常量：location id，值 {@code sourceLocationId}。 */
     String SOURCE_LOCATION_ID = "sourceLocationId";
-    /**
-     * 来源类型枚举。
-     */
+/** FieldName 共享常量：type enum，值 {@code sourceTypeEnum}。 */
     String SOURCE_TYPE_ENUM = "sourceTypeEnum";
-    /**
-     * 专科编码。
-     */
+/** FieldName 共享常量：code，值 {@code specialtyCode}。 */
     String SPECIALTY_CODE = "specialtyCode";
-    /**
-     * 标本类型编码。
-     */
+/** FieldName 共享常量：code，值 {@code specimenCode}。 */
     String SPECIMEN_CODE = "specimenCode";
-    /**
-     * 拆零单位编码。
-     */
+/** FieldName 共享常量：unit code，值 {@code splitUnitCode}。 */
     String SPLIT_UNIT_CODE = "splitUnitCode";
-    /**
-     * 标准价或目录价。
-     */
+/** FieldName 共享常量：price，值 {@code standardPrice}。 */
     String STANDARD_PRICE = "standardPrice";
-    /**
-     * 开始时刻。
-     */
+/** FieldName 共享常量：time，值 {@code startTime}。 */
     String START_TIME = "startTime";
     /**
      * 提交审批时刻（调价单 {@code submit_time}）。
@@ -974,9 +705,7 @@ public interface FieldNameConstants {
      * 状态码（prt_template.status / prt_print_event_log.status 等通用列名）。
      */
     String STATUS = "status";
-    /**
-     * 状态枚举码。
-     */
+/** FieldName 共享常量：enum，值 {@code statusEnum}。 */
     String STATUS_ENUM = "statusEnum";
     /**
      * 位置形态枚举（就诊位置 {@code adm_encounter_location.form_enum}）。
@@ -986,33 +715,21 @@ public interface FieldNameConstants {
      * 业务状态最近变更时刻（发药单读模型 {@code status_changed_time}）。
      */
     String STATUS_CHANGED_TIME = "statusChangedTime";
-    /**
-     * 状态展示文案。
-     */
+/** FieldName 共享常量：enum text，值 {@code statusEnumText}。 */
     String STATUS_ENUM_TEXT = "statusEnumText";
-    /**
-     * 库存单位编码。
-     */
+/** FieldName 共享常量：unit code，值 {@code stockUnitCode}。 */
     String STOCK_UNIT_CODE = "stockUnitCode";
-    /**
-     * 库存单位换算比。
-     */
+/** FieldName 共享常量：unit ratio，值 {@code stockUnitRatio}。 */
     String STOCK_UNIT_RATIO = "stockUnitRatio";
-    /**
-     * 汇总主表标识。
-     */
+/** FieldName 共享常量：id，值 {@code summaryId}。 */
     String SUMMARY_ID = "summaryId";
     /**
      * 快照批次完成时刻（静表 {@code snapshot_time}）。
      */
     String SNAPSHOT_TIME = "snapshotTime";
-    /**
-     * 汇总单号。
-     */
+/** FieldName 共享常量：no，值 {@code summaryNo}。 */
     String SUMMARY_NO = "summaryNo";
-    /**
-     * 供应商标识。
-     */
+/** FieldName 共享常量：id，值 {@code supplierId}。 */
     String SUPPLIER_ID = "supplierId";
     /**
      * 供应或申领单标识。
@@ -1034,9 +751,7 @@ public interface FieldNameConstants {
      * 临时建档或临时状态标识。
      */
     String TEMP_FLAG = "tempFlag";
-    /**
-     * 治疗类型枚举。
-     */
+/** FieldName 共享常量：enum，值 {@code therapyEnum}。 */
     String THERAPY_ENUM = "therapyEnum";
     /**
      * 是否中药标记（OrderInfo / MedicationRequest 投影列）。
@@ -1074,113 +789,91 @@ public interface FieldNameConstants {
      * 第三方部件属性枚举。
      */
     String THO_PART_ATTRIBUTE_ENUM = "thoPartAttributeEnum";
-    /**
-     * 总价或合计金额。
-     */
+/** FieldName 共享常量：price，值 {@code totalPrice}。 */
     String TOTAL_PRICE = "totalPrice";
     /**
      * 规格量或制剂总量描述（药品 {@code total_volume} 等）。
      */
     String TOTAL_VOLUME = "totalVolume";
-    /**
-     * 追溯码。
-     */
+/** FieldName 共享常量：no，值 {@code traceNo}。 */
     String TRACE_NO = "traceNo";
     /**
-     * 分诊结束时刻。
+     * 追溯码主档外键（子表 {@code trace_number_id}）。
      */
+    String TRACE_NUMBER_ID = "traceNumberId";
+    /**
+     * 追溯记录类别枚举列（{@code record_category_enum}）。
+     */
+    String RECORD_CATEGORY_ENUM = "recordCategoryEnum";
+    /**
+     * 追溯轨迹方向枚举列（{@code record_direction_enum}）。
+     */
+    String RECORD_DIRECTION_ENUM = "recordDirectionEnum";
+    /**
+     * 追溯码主档在院状态枚举列。
+     */
+    String IN_HOSPITAL_STATUS_ENUM = "inHospitalStatusEnum";
+    /**
+     * 追溯记录操作类型列。
+     */
+    String OPERATION_TYPE = "operationType";
+    /**
+     * 追溯记录拆零数量列（写侧换算后落库）。
+     */
+    String SPLIT_QUANTITY = "splitQuantity";
+/** FieldName 共享常量：end time，值 {@code triageEndTime}。 */
     String TRIAGE_END_TIME = "triageEndTime";
-    /**
-     * 分诊记录标识。
-     */
+/** FieldName 共享常量：id，值 {@code triageId}。 */
     String TRIAGE_ID = "triageId";
-    /**
-     * 分诊级别枚举。
-     */
+/** FieldName 共享常量：level enum，值 {@code triageLevelEnum}。 */
     String TRIAGE_LEVEL_ENUM = "triageLevelEnum";
-    /**
-     * 分诊护士标识。
-     */
+/** FieldName 共享常量：nurse id，值 {@code triageNurseId}。 */
     String TRIAGE_NURSE_ID = "triageNurseId";
-    /**
-     * 分诊开始时刻。
-     */
+/** FieldName 共享常量：start time，值 {@code triageStartTime}。 */
     String TRIAGE_START_TIME = "triageStartTime";
-    /**
-     * 分诊时刻。
-     */
+/** FieldName 共享常量：time，值 {@code triageTime}。 */
     String TRIAGE_TIME = "triageTime";
-    /**
-     * 触发来源主键。
-     */
+/** FieldName 共享常量：source id，值 {@code triggerSourceId}。 */
     String TRIGGER_SOURCE_ID = "triggerSourceId";
-    /**
-     * 触发来源表名。
-     */
+/** FieldName 共享常量：source table，值 {@code triggerSourceTable}。 */
     String TRIGGER_SOURCE_TABLE = "triggerSourceTable";
-    /**
-     * 类型编码。
-     */
+/** FieldName 共享常量：code，值 {@code typeCode}。 */
     String TYPE_CODE = "typeCode";
-    /**
-     * 类型枚举码。
-     */
+/** FieldName 共享常量：enum，值 {@code typeEnum}。 */
     String TYPE_ENUM = "typeEnum";
     /**
      * 诊疗套餐子项覆盖 JSON 中的执行次数键（前端草稿 {@code childOverridesJson} 约定）。
      */
     String EXECUTION_COUNT = "executionCount";
-    /**
-     * 计量单位编码。
-     */
+/** FieldName 共享常量：code，值 {@code unitCode}。 */
     String UNIT_CODE = "unitCode";
-    /**
-     * 使用结束时刻。
-     */
+/** FieldName 共享常量：end time，值 {@code useEndTime}。 */
     String USE_END_TIME = "useEndTime";
-    /**
-     * 使用开始时刻。
-     */
+/** FieldName 共享常量：start time，值 {@code useStartTime}。 */
     String USE_START_TIME = "useStartTime";
-    /**
-     * 使用时刻。
-     */
+/** FieldName 共享常量：time，值 {@code useTime}。 */
     String USE_TIME = "useTime";
-    /**
-     * 用药时机说明。
-     */
+/** FieldName 共享常量：timing，值 {@code useTiming}。 */
     String USE_TIMING = "useTiming";
-    /**
-     * 病区标识。
-     */
+/** FieldName 共享常量：id，值 {@code wardId}。 */
     String WARD_ID = "wardId";
     /**
      * 库房主键（快照静表 {@code warehouse_id}，不含货位）。
      */
     String WAREHOUSE_ID = "warehouseId";
-    /**
-     * 病区名称。
-     */
+/** FieldName 共享常量：name，值 {@code wardName}。 */
     String WARD_NAME = "wardName";
-    /**
-     * 五笔检索串。
-     */
+/** FieldName 共享常量：str，值 {@code wbStr}。 */
     String WB_STR = "wbStr";
-    /**
-     * 医保相关标识。
-     */
+/** FieldName 共享常量：flag，值 {@code ybFlag}。 */
     String YB_FLAG = "ybFlag";
     /**
      * 医保对码匹配标识。
      */
     String YB_MATCH_FLAG = "ybMatchFlag";
-    /**
-     * 医保目录编码。
-     */
+/** FieldName 共享常量：no，值 {@code ybNo}。 */
     String YB_NO = "ybNo";
-    /**
-     * 医保机构编号。
-     */
+/** FieldName 共享常量：org no，值 {@code ybOrgNo}。 */
     String YB_ORG_NO = "ybOrgNo";
     /**
      * 目录或事实的来源分类枚举码（如诊断定义 {@code sourceEnum}）。
@@ -1231,9 +924,7 @@ public interface FieldNameConstants {
      */
     String ITEM_CODE = "itemCode";
 
-    /**
-     * 字典项值。
-     */
+/** FieldName 共享常量：value，值 {@code itemValue}。 */
     String ITEM_VALUE = "itemValue";
 
     /**
@@ -1241,8 +932,6 @@ public interface FieldNameConstants {
      */
     String VITAL_SIGN_ID = "vitalSignId";
 
-    /**
-     * 婴儿序号。
-     */
+/** FieldName 共享常量：no，值 {@code babyNo}。 */
     String BABY_NO = "babyNo";
 }

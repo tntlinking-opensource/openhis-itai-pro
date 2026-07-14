@@ -1,37 +1,22 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
+
+/**
+ * MedicationCommonConstants：health-domain-shared 跨领域共享常量。
+ */
 public interface MedicationCommonConstants {
 
-    /**
-     * 发放单号前缀。
-     */
+/** MedicationCommon 共享常量：bus no prefix，值 {@code DISP-}。 */
     String DISPENSE_BUS_NO_PREFIX = "DISP-";
 
-    /**
-     * 申请单号前缀。
-     */
+/** MedicationCommon 共享常量：bus no prefix，值 {@code REQ-}。 */
     String REQUEST_BUS_NO_PREFIX = "REQ-";
 
-    /**
-     * 汇总单号前缀。
-     */
+/** MedicationCommon 共享常量：no prefix，值 {@code SUM-}。 */
     String SUMMARY_NO_PREFIX = "SUM-";
 
     /**
@@ -39,9 +24,7 @@ public interface MedicationCommonConstants {
      */
     String HERBAL_UNIT_CODE = "PAY";
 
-    /**
-     * 草药给药途径码。
-     */
+/** MedicationCommon 共享常量：method code，值 {@code HERBAL}。 */
     String HERBAL_METHOD_CODE = "HERBAL";
 
     /**

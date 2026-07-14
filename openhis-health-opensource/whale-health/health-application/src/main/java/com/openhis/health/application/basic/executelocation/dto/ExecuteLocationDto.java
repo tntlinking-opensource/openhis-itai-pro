@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.executelocation.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -33,6 +20,7 @@ public class ExecuteLocationDto {
 
     @Schema(description = "规则主键")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 规则主键。 */
     private Long id;
 
     @Schema(description = "诊疗活动定义主键；为空表示该诊疗大类下的默认规则")
@@ -43,7 +31,7 @@ public class ExecuteLocationDto {
     @Schema(description = "诊疗活动定义名称")
     private String activityDefinitionName;
 
-    /** 诊疗大类业务码。 */
+    /** 诊疗大类编码。 */
     @Schema(description = "诊疗大类编码")
     private String activityCategoryCode;
 
@@ -51,7 +39,7 @@ public class ExecuteLocationDto {
     @Schema(description = "诊疗大类展示名")
     private String activityCategoryCode_dictText;
 
-    /** 执行科室主键。 */
+    /** 执行科室标识。 */
     @Schema(description = "执行科室标识")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long executionOrgId;
@@ -60,7 +48,7 @@ public class ExecuteLocationDto {
     @Schema(description = "执行科室名称")
     private String executionOrgName;
 
-    /** 实际执行地点主键。 */
+    /** 执行地点标识。 */
     @Schema(description = "执行地点标识")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long executionLocationId;
@@ -69,19 +57,19 @@ public class ExecuteLocationDto {
     @Schema(description = "执行地点名称")
     private String executionLocationName;
 
-    /** 当日有效开始时刻（含）。 */
+    /** 生效开始时刻。 */
     @Schema(description = "生效开始时刻")
     private LocalTime startTime;
 
-    /** 当日有效结束时刻（含）。 */
+    /** 生效结束时刻。 */
     @Schema(description = "生效结束时刻")
     private LocalTime endTime;
 
-    /** 优先级（1 最优先，数值越小越优先）。 */
+    /** 优先级。 */
     @Schema(description = "优先级")
     private Integer priority;
 
-    /** 同科室内展示排序。 */
+    /** 展示顺序。 */
     @Schema(description = "展示顺序")
     private Integer displayOrder;
 

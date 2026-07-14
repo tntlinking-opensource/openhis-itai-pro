@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.finance.priceadjustment.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -38,7 +25,7 @@ public class PriceAdjustmentDetailDto {
     @Schema(description = "子表主键")
     private Long id;
 
-    /** 批号；诊疗占位为 {@code -}。 */
+    /** 批号。 */
     @Schema(description = "批号")
     private String lotNumber;
 
@@ -54,11 +41,11 @@ public class PriceAdjustmentDetailDto {
     @Schema(description = "调前售价")
     private BigDecimal oldSellingAmount;
 
-    /** 进价盈亏（提交后固化）。 */
+    /** 进价盈亏。 */
     @Schema(description = "进价盈亏")
     private BigDecimal purchaseImpact;
 
-    /** 售价盈亏（提交后固化）。 */
+    /** 售价盈亏。 */
     @Schema(description = "售价盈亏")
     private BigDecimal sellingImpact;
 }

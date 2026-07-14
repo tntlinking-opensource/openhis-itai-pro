@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
@@ -22,22 +9,22 @@ package com.openhis.health.domain.share.enums;
  */
 public enum BedOperationalStatus implements EnumInterface {
 
-    /** 空床（未占用）。 */
+/** 空床（BedOperationalStatus）。 */
     UNOCCUPIED(0L, "UNOCCUPIED", "空床", "", 1L),
 
-    /** 已占用。 */
+/** 已占用（BedOperationalStatus）。 */
     OCCUPIED(0L, "OCCUPIED", "已占用", "", 2L),
 
     /** 预留（已预留给特定患者）。 */
     RESERVED(0L, "RESERVED", "预留", "", 3L),
 
-    /** 暂停使用。 */
+/** 暂停使用（BedOperationalStatus）。 */
     SUSPENDED(0L, "SUSPENDED", "暂停使用", "", 4L),
 
-    /** 已关闭。 */
+/** 已关闭（BedOperationalStatus）。 */
     CLOSED(0L, "CLOSED", "已关闭", "", 5L),
 
-    /** 已废止。 */
+/** 已废止（BedOperationalStatus）。 */
     ABOLISHED(0L, "ABOLISHED", "已废止", "", 6L);
 
     private final Long codeSystemId;

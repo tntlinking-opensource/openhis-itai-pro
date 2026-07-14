@@ -1,22 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
+
+/**
+ * TerminologyCodeSystemNameConstants：health-domain-shared 跨领域共享常量。
+ */
 public interface TerminologyCodeSystemNameConstants {
 
     /** 药品分类编码体系。 */
@@ -25,23 +16,25 @@ public interface TerminologyCodeSystemNameConstants {
     String ACTIVITY_CATEGORY_CODE = "activity_category_code";
     /** 发布状态（启用/停用等）。 */
     String PUBLICATION_STATUS = "publication_status";
-    /** 药品领域维度。 */
+/** TerminologyCodeSystemName 共享常量：domain，值 {@code medication_domain}。 */
     String MEDICATION_DOMAIN = "medication_domain";
     /** 是否类标记（与前端 yes/no 维度对齐）。 */
     String YES_NO_FLAG = "yes_no_flag";
-    /** 限制使用枚举。 */
+/** TerminologyCodeSystemName 共享常量：enum，值 {@code restricted_enum}。 */
     String RESTRICTED_ENUM = "restricted_enum";
-    /** 部位属性枚举。 */
+/** TerminologyCodeSystemName 共享常量：attribute enum，值 {@code part_attribute_enum}。 */
     String PART_ATTRIBUTE_ENUM = "part_attribute_enum";
     /** 临时医嘱拆分属性枚举。 */
     String THO_PART_ATTRIBUTE_ENUM = "tho_part_attribute_enum";
     /** 医保等级（收费项等级）。 */
     String CHRGITM_LV = "chrgitm_lv";
+    /** 病案结算类型（三大目录共用，术语 {@code mr_settlement_type_code}）。 */
+    String MR_SETTLEMENT_TYPE_CODE = "mr_settlement_type_code";
     /** 体系类别（药理/管理等）。 */
     String SYSTEM_CATEGORIES = "system_categories";
     /** 药品性质（术语字典）。 */
     String MEDICINE_PROPERTIES = "medicine_properties";
-    /** 剂型编码体系。 */
+/** TerminologyCodeSystemName 共享常量：form code，值 {@code dose_form_code}。 */
     String DOSE_FORM_CODE = "dose_form_code";
     /** 医保类别（药品侧 chrgitm 口径）。 */
     String MED_CHRGITM_TYPE = "med_chrgitm_type";
@@ -57,7 +50,7 @@ public interface TerminologyCodeSystemNameConstants {
     String DDD_CODE = "ddd_code";
     /** 剂量来源口径（录入维度）。 */
     String DOSE_FROM_CODE = "dose_from_code";
-    /** 处方标志术语。 */
+/** TerminologyCodeSystemName 共享常量：flag，值 {@code rx_flag}。 */
     String RX_FLAG = "rx_flag";
     /** 用药说明条目术语。 */
     String DOSAGE_INSTRUCTION = "dosage_instruction";
@@ -72,18 +65,18 @@ public interface TerminologyCodeSystemNameConstants {
      * {@code tcm_dx}→中医诊断；{@code tcm_syndrome}→中医证候目录；{@code tumor_morph}→肿瘤形态学目录。</p>
      */
     String CONDITION_DEFINITION_SOURCE = "condition_definition_source";
-    /** 诊断类型编码。 */
+/** TerminologyCodeSystemName 共享常量：type，值 {@code diag_type}。 */
     String DIAG_TYPE = "diag_type";
     /** 住院患者疾病诊断类型代码（与 {@code adm_encounter_diagnosis.diag_type_code} 展示口径一致）。 */
     String IPT_DISE_TYPE_CODE = "ipt_dise_type_code";
 
     /** 采购计量单位编码体系（耗材包装）。 */
     String PURCHASE_UNIT = "purchase_unit";
-    /** 销售单位术语。 */
+/** TerminologyCodeSystemName 共享常量：unit，值 {@code sales_unit}。 */
     String SALES_UNIT = "sales_unit";
     /** 拆零/最小单位术语。 */
     String SPLIT_UNIT = "split_unit";
-    /** 库存单位术语。 */
+/** TerminologyCodeSystemName 共享常量：unit，值 {@code stock_unit}。 */
     String STOCK_UNIT = "stock_unit";
     /** 剂量单位术语（耗材侧可与药品共用码表）。 */
     String DOSE_UNIT = "dose_unit";
@@ -95,6 +88,8 @@ public interface TerminologyCodeSystemNameConstants {
     String IN_WAY_CODE = "in_way_code";
     /** 入院类型（与 {@code adm_encounter.admit_source_code} 对齐）。 */
     String ADMIT_SOURCE_CODE = "admit_source_code";
+    /** 入院时情况/患者病情（与 {@code adm_encounter.priority_enum} 展示口径一致，术语 adm_cond_code）。 */
+    String ADM_COND_CODE = "adm_cond_code";
     /** 生命体征项编码体系（护士站/体温单体征下拉）。 */
     String VITAL_SIGNS_CODE = "vital_signs_code";
     /** 收银支付渠道（477 pay_enum，ADR-PAY-001）。 */

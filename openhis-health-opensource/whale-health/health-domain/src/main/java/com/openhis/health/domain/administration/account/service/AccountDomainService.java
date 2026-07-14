@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.account.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -35,7 +22,7 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -44,10 +31,13 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 就诊账户写侧领域服务：开立账户、按挂号落库、余额与默认标志更新。
+ * 就诊账户（{@code adm_account}）聚合写侧领域服务。
  *
+ * <p>职责：开立账户、按挂号落库、余额与默认标志更新。</p>
  * <p>新建路径在装配 {@link Account} 后调用实体 {@link Account#assertPersistableNewRow()}，
  * 将患者/就诊/类型/业务号非空约束收口在聚合根。</p>
+ * <p>不变量：同就诊同类型账户幂等开立；余额变更须发布事件；持久化先于账户领域事件（B.14）。</p>
+ * <p>仅注入本聚合 {@link AccountRepository}；跨聚合费用性质编码由应用层传入。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -141,7 +131,7 @@ public class AccountDomainService {
      * @param contractNo 费用性质业务编码（{@code fin_contract.bus_no}）
      */
     public void backfillContractNoIfMissing(Long accountId, String contractNo) {
-        if (accountId == null || StringUtils.isBlank(contractNo)) {
+        if (accountId == null || StringUtils.isEmpty(contractNo)) {
             return;
         }
         Optional<Account> optional = repository.findById(accountId);
@@ -149,7 +139,7 @@ public class AccountDomainService {
             return;
         }
         Account row = optional.get();
-        if (StringUtils.isNotBlank(row.getContractNo())) {
+        if (StringUtils.isNotEmpty(row.getContractNo())) {
             return;
         }
         row.setContractNo(contractNo.trim());
@@ -165,7 +155,7 @@ public class AccountDomainService {
      * @param operatorId 操作人
      */
     public void openInpatientRegAccount(Long patientId, Long encounterId, String contractNo, Long operatorId) {
-        if (StringUtils.isBlank(contractNo)) {
+        if (StringUtils.isEmpty(contractNo)) {
             throw new BusinessException(ErrorCodeConstants.ACCOUNT_INVALID_ARGUMENT, "费用性质编码不能为空");
         }
         SaveAccountByRegisterCommand cmd = new SaveAccountByRegisterCommand();
@@ -187,7 +177,7 @@ public class AccountDomainService {
         // Pre：按患者、就诊与账户类型查询是否已存在账户。
         Optional<Account> exists = repository.findFirstByPatientIdAndEncounterIdAndTypeCode(
             cmd.getPatientId(), cmd.getEncounterId(), cmd.getTypeCode());
-        // 业务分支处理：存在则更新，不存在则新建。
+        // 患者账户已存在则更新余额，不存在则新建。
         if (exists.isPresent()) {
             Account row = exists.get();
             // Pre：记录旧余额，用于后续判断是否需要发布余额变更事件。
@@ -195,7 +185,7 @@ public class AccountDomainService {
             row.setBalance(cmd.getBalance());
             row.setDefaultFlag(cmd.getDefaultFlag());
             repository.save(row);
-            // 业务分支处理：余额发生变更时发布余额编辑事件。
+            // 余额发生变更时发布余额编辑事件，供读侧同步账户摘要。
             if (oldBalance == null || !oldBalance.equals(cmd.getBalance())) {
                 AccountDomainEvents.AccountBalanceEditedEvent event =
                     new AccountDomainEvents.AccountBalanceEditedEvent(row.getId(), oldBalance, cmd.getBalance());
@@ -204,7 +194,7 @@ public class AccountDomainService {
             }
             return;
         }
-        // 业务分支处理：不存在则新建账户。
+        // 账户不存在时新建聚合并初始化余额。
         Account row = new Account();
         // 基础关联信息：患者、就诊与账户类型。
         row.setPatientId(cmd.getPatientId());
@@ -291,6 +281,12 @@ public class AccountDomainService {
         return account;
     }
 
+    /**
+     * 账户是否有效激活（statusEnum=ACTIVE）。
+     *
+     * @param row 账户行
+     * @return true 表示可用
+     */
     private boolean isEffectiveActiveAccount(Account row) {
         if (row == null) {
             return false;

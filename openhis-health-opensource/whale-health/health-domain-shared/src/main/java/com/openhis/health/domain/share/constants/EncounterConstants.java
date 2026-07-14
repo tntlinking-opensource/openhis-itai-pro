@@ -1,22 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
+
+/**
+ * EncounterConstants：health-domain-shared 跨领域共享常量。
+ */
 public interface EncounterConstants {
 
     /**
@@ -28,4 +19,10 @@ public interface EncounterConstants {
      * 分诊护士角色编码。
      */
     String ROLE_TRIAGE_NURSE = "TRIAGE_NURSE";
+
+    /**
+     * 门诊同日同科室防重失败提示（读/写侧与 IF-REG-06 {@code REG-BIZ-409} 对齐）。
+     */
+    String OUTPATIENT_DUPLICATE_REGISTRATION_MESSAGE =
+        "本科室当日已有门诊挂号记录（含待支付/诊毕），须撤销待挂号或退号后方可再挂";
 }

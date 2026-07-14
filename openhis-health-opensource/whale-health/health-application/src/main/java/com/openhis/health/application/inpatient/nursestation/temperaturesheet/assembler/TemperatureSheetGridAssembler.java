@@ -1,30 +1,17 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.temperaturesheet.assembler;
 
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto.TemperatureSheetDerivedMetaDto;
-import com.openhis.health.module.common.dto.nursestation.TemperatureSheetDetailItemDto;
+import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto.TemperatureSheetDetailItemDto;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto.TemperatureSheetFillSlotDto;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto.TemperatureSheetGridAssemblyResult;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto.TemperatureSheetGridRowDto;
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto.TemperatureSheetGridSlotCellDto;
-import com.openhis.health.module.common.assembler.nursestation.TemperatureSheetDetailItemSupport;
-import com.openhis.health.module.common.assembler.nursestation.TemperatureSheetRecordedAtSupport;
+import com.openhis.health.application.inpatient.nursestation.temperaturesheet.support.TemperatureSheetDetailItemHelper;
+import com.openhis.health.application.inpatient.nursestation.temperaturesheet.support.TemperatureSheetRecordedAtResolver;
 import com.openhis.health.domain.diagnosis.vitalsign.queries.model.VitalSignDetailRowQueryModel;
 import com.openhis.health.domain.diagnosis.vitalsign.queries.model.VitalSignHeaderQueryModel;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -88,13 +75,13 @@ public class TemperatureSheetGridAssembler {
         }
         Map<LocalDateTime, VitalSignHeaderQueryModel> headerByRecordedAt = indexHeadersByRecordedAt(headers);
         Map<Long, List<VitalSignDetailRowQueryModel>> detailsByHeaderId =
-            TemperatureSheetDetailItemSupport.indexDetailsByHeaderId(details);
+            TemperatureSheetDetailItemHelper.indexDetailsByHeaderId(details);
         LocalDate cursor = dateFrom;
         while (!cursor.isAfter(dateTo)) {
             TemperatureSheetGridRowDto row = new TemperatureSheetGridRowDto();
             row.setRecordDate(cursor);
             List<TemperatureSheetGridSlotCellDto> slotCells = new ArrayList<>();
-            for (String timeSlot : TemperatureSheetRecordedAtSupport.TIME_SLOTS) {
+            for (String timeSlot : TemperatureSheetRecordedAtResolver.TIME_SLOTS) {
                 LocalDateTime recordedAt = cursor.atTime(Integer.parseInt(timeSlot), 0);
                 slotCells.add(buildSlotCell(
                     timeSlot,
@@ -163,15 +150,15 @@ public class TemperatureSheetGridAssembler {
         }
         Map<LocalDateTime, VitalSignHeaderQueryModel> headerByRecordedAt = indexHeadersByRecordedAt(headers);
         Map<Long, List<VitalSignDetailRowQueryModel>> detailsByHeaderId =
-            TemperatureSheetDetailItemSupport.indexDetailsByHeaderId(details);
-        for (String timeSlot : TemperatureSheetRecordedAtSupport.TIME_SLOTS) {
+            TemperatureSheetDetailItemHelper.indexDetailsByHeaderId(details);
+        for (String timeSlot : TemperatureSheetRecordedAtResolver.TIME_SLOTS) {
             LocalDateTime recordedAt = focusRecordDate.atTime(Integer.parseInt(timeSlot), 0);
             VitalSignHeaderQueryModel header = headerByRecordedAt.get(recordedAt);
             TemperatureSheetFillSlotDto slot = new TemperatureSheetFillSlotDto();
             slot.setTimeSlot(timeSlot);
             if (header != null) {
                 slot.setVitalSignId(header.getId());
-                List<TemperatureSheetDetailItemDto> itemDtos = TemperatureSheetDetailItemSupport.toItemDtos(
+                List<TemperatureSheetDetailItemDto> itemDtos = TemperatureSheetDetailItemHelper.toItemDtos(
                     detailsByHeaderId.get(header.getId()),
                     header.getRemark());
                 slot.setDetailItems(itemDtos);
@@ -181,6 +168,12 @@ public class TemperatureSheetGridAssembler {
         return fillSlots;
     }
 
+    /**
+     * 生命体征头按记录时刻建索引（同一时刻保留首条）。
+     *
+     * @param headers 体征头读模型列表
+     * @return recordedAt → 体征头
+     */
     private Map<LocalDateTime, VitalSignHeaderQueryModel> indexHeadersByRecordedAt(
         List<VitalSignHeaderQueryModel> headers) {
         Map<LocalDateTime, VitalSignHeaderQueryModel> result = new HashMap<>();
@@ -198,6 +191,14 @@ public class TemperatureSheetGridAssembler {
         return result;
     }
 
+    /**
+     * 构建体温单网格单时段单元格：关联体征头与明细项。
+     *
+     * @param timeSlot           时段标签
+     * @param header             该时段体征头（可 null）
+     * @param detailsByHeaderId  headerId → 明细行
+     * @return 网格单元格 DTO
+     */
     private TemperatureSheetGridSlotCellDto buildSlotCell(
         String timeSlot,
         VitalSignHeaderQueryModel header,
@@ -208,12 +209,19 @@ public class TemperatureSheetGridAssembler {
             return cell;
         }
         cell.setVitalSignId(header.getId());
-        cell.setDetailItems(TemperatureSheetDetailItemSupport.toItemDtos(
+        cell.setDetailItems(TemperatureSheetDetailItemHelper.toItemDtos(
             detailsByHeaderId.get(header.getId()),
             header.getRemark()));
         return cell;
     }
 
+    /**
+     * 计算记录日相对最近一次手术日的术后天数（含手术当日为 0）。
+     *
+     * @param recordDate    网格记录日期
+     * @param surgeryDates  历次手术日期
+     * @return 术后天数；无有效手术前手术时为 null
+     */
     private Integer resolvePostoperativeDay(LocalDate recordDate, List<LocalDate> surgeryDates) {
         if (recordDate == null || surgeryDates == null || surgeryDates.isEmpty()) {
             return null;

@@ -1,24 +1,12 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.inpatientadmission.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import com.openhis.health.application.shared.inpatient.AdmissionDiagnosisSubmitGate;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -29,11 +17,11 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
-/** 门诊医生站-住院申请-入院诊断提交行。 */
 @Schema(description = "门诊医生站-住院申请-入院诊断提交行")
-public class AdmissionDiagnosisSubmitDto {
+public class AdmissionDiagnosisSubmitDto
+    implements AdmissionDiagnosisSubmitGate.AdmissionDiagnosisRowView {
 
-    /** 引用已有病情事实主键（可与门诊同 ICD，仍须为住院线新建关联）。 */
+    /** 已有病情事实主键；新开诊断时可空。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "已有病情事实主键；新开诊断时可空")
     private Long conditionId;
@@ -53,4 +41,14 @@ public class AdmissionDiagnosisSubmitDto {
     /** 诊断说明。 */
     @Schema(description = "诊断说明")
     private String description;
+
+    /** 是否中医诊断。 */
+    @Schema(description = "是否中医诊断；中医一病一症时两条均为 true")
+    /** 是否中医诊断；中医一病一症时两条均为 true。 */
+    private Boolean tcmFlag;
+
+    /** 中医病证组号。 */
+    @Schema(description = "中医病证组号（同组病+证共用；可空由后端分配）")
+    /** 中医病证组号（同组病+证共用；可空由后端分配）。 */
+    private String tcmSyndromeGroup;
 }

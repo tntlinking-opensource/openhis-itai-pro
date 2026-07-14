@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.financial.dailysettlement.response;
 
 import com.openhis.health.application.inpatient.financial.dailysettlement.dto.InpatientDailySettlementChannelRowDto;
@@ -36,4 +36,12 @@ public class PreviewInpatientDailySettlementResponse {
     /** 收入汇总。 */
     @Schema(description = "收入汇总")
     private InpatientDailySettlementSummaryDto summary;
+
+    /** 本次待交账合计上半区（仅未交账；BR-IP-DCL-017）。 */
+    @Schema(description = "本次待交账合计上半区")
+    private List<InpatientDailySettlementChannelRowDto> handoverRows;
+
+    /** 本次待交账合计下半区（仅未交账；BR-IP-DCL-017）。 */
+    @Schema(description = "本次待交账合计下半区")
+    private InpatientDailySettlementSummaryDto handoverSummary;
 }

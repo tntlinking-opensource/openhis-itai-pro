@@ -1,30 +1,16 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.transferout.service;
 
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogEditorHintsAssembler;
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogEditorHintsAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.domain.administration.chargeitemdefinition.service.ChargeItemDefinitionQueryService;
-import com.openhis.health.integration.support.insurance.inventory.InventoryMedicareUploadSupport;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.mapper.InventoryWarehouseInboundReceiptMapper;
 import com.openhis.health.application.inventory.warehouse.transferout.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.transferout.dto.TransferOutDetailLineDto;
@@ -33,28 +19,26 @@ import com.openhis.health.application.inventory.warehouse.transferout.dto.Transf
 import com.openhis.health.application.inventory.warehouse.transferout.mapper.InventoryWarehouseTransferOutMapper;
 import com.openhis.health.application.inventory.warehouse.transferout.request.*;
 import com.openhis.health.application.inventory.warehouse.transferout.response.*;
-import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.domain.custom.tracenumberrecord.command.AppendTraceRecordsCommand;
-import com.openhis.health.domain.custom.tracenumberrecord.service.TraceNumberRecordDomainService;
+import com.openhis.health.application.shared.tracenumber.TraceNumberSupplyAgreeTraceOrchestrator;
+import com.openhis.health.application.shared.tracenumber.RecordTraceTransferPairSpec;
+import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryCatalogAvailabilityRowModel;
-import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionSelectionTerminologySupport;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionSelectionTerminologyMaps;
+import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionSelectionTerminologyMaps;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.domain.workflow.supplyrequest.queries.WarehouseDocumentDetailPageQuery;
-import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
-import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.LocationForm;
@@ -63,12 +47,10 @@ import com.openhis.health.domain.share.constants.WhalePlatformRoleCodeConstants;
 import com.openhis.health.domain.share.enums.SupplyRequestType;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.share.enums.SupplyType;
-import com.openhis.health.domain.share.enums.TraceDirection;
-import com.openhis.health.domain.share.enums.TraceNumberRecordOperationType;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.workflow.inventoryitem.command.CreateInventoryItemCommand;
 import com.openhis.health.domain.workflow.inventoryitem.command.IncreaseQuantityCommand;
-import com.openhis.health.domain.workflow.supplyrequest.command.CreateRequisitionCommand;
+import com.openhis.health.domain.workflow.supplyrequest.command.CreateTransferCommand;
 import com.openhis.health.domain.workflow.inventoryitem.queries.InventoryItemPageQuery;
 import com.openhis.health.domain.workflow.inventoryitem.queries.model.InventoryItemModel;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
@@ -83,14 +65,12 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequ
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestValidationModel;
 import com.openhis.health.domain.workflow.supplyrequest.support.SupplyPersistedSplitQuantity;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
+import com.openhis.health.application.inventory.support.SupplyRequestPricedWriteOrchestrator;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
-import com.openhis.health.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
-import com.openhis.health.integration.insurance.inventory.command.InventoryUploadAfterTransferCommand;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -113,24 +93,22 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * 药库出库单（{@link SupplyType#CABINET_TRANSFER_OUT}）应用编排。
+ * 药库调出单（{@link SupplyType#CABINET_TRANSFER_OUT}）应用编排（AS-INV-WHS-009 · DM §6.1.8）。
  *
- * <p>审批链维护供应请求；<strong>同意</strong>后依次：领域落已同意态 → 出库发放 → 源库扣减 / 目的库（常为药房）增加 → 追溯码，
- * 并可生成对侧药房入库壳单。列表/门禁同时约束源库 {@code source_location_id} 与目的库 {@code purpose_location_id}。</p>
+ * <p>主动制单侧：维护供应请求草稿与审批链；<strong>同意</strong>后依次：领域落已同意态 → 调拨发放 → 源库扣减 / 目的库增加 → 追溯码，
+ * 并生成对侧调入壳单（{@code AGREE} 只读台账，库存不再二次落账）。调拨为<strong>平级调拨</strong>：本包源/目的均须为
+ * 药库（{@link LocationForm#WAREHOUSE}），禁止跨药房/科室药房形态互转（药房、科室药房各有独立调出包）。</p>
  */
 @Slf4j
-@Service
+@Service("inventoryWarehouseTransferOut")
 @RequiredArgsConstructor
 public class InventoryWarehouseTransferOutAppService {
-
-    private static final String INV_CHG_TYPE_TRANSFER_OUT = "102";
-
-    private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     private final CurrentPractitionerResolver currentPractitionerResolver;
     private final PageWindowGate pageWindowGate;
     private final SupplyRequestDomainService supplyRequestDomainService;
+    private final SupplyRequestPricedWriteOrchestrator supplyRequestPricedWriteOrchestrator;
     private final SupplyRequestQueryService supplyRequestQueryService;
     private final SupplyDeliveryDomainService supplyDeliveryDomainService;
     private final SupplyDeliveryQueryService supplyDeliveryQueryService;
@@ -140,11 +118,10 @@ public class InventoryWarehouseTransferOutAppService {
     private final PractitionerQueryService practitionerQueryService;
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
-    private final ProductDefinitionSelectionTerminologySupport productDefinitionSelectionTerminologySupport;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final InventoryWarehouseTransferOutMapper transferOutMapper;
     private final InventoryWarehouseInboundReceiptMapper inboundReceiptMapper;
-    private final TraceNumberRecordDomainService traceNumberRecordDomainService;
+    private final TraceNumberSupplyAgreeTraceOrchestrator traceNumberSupplyAgreeTraceOrchestrator;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
 
     /**
@@ -160,10 +137,8 @@ public class InventoryWarehouseTransferOutAppService {
             // Gate：机构会话上下文
             // Pre：装载管辖范围内启用位置与角色人员
             // Asm：Mapper 映射页初始化响应
-            // —— 门控：管辖库位非空时与启用位置求交；管辖 empty 时不拼 location_id 谓词。——
-            List<Location> pharmacies = locationQueryService.listAllActivePharmacies();
+            // —— 平级调拨：源/目的下拉均为管辖范围内启用中药库。——
             List<Location> warehouses = locationQueryService.listAllActiveWarehouses();
-            List<Location> gatedPharmacies = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(pharmacies);
             List<Location> gatedWarehouses = this.managedLocationIdsResolver.narrowActiveLocationsByManaged(warehouses);
             List<Practitioner> pharmacists = this.practitionerRoleScopeLoader.listActivePractitionersForPlatformRoleInOrganization(
                 WhalePlatformRoleCodeConstants.ROLE_PHARMACIST, resolvedOrg);
@@ -171,14 +146,14 @@ public class InventoryWarehouseTransferOutAppService {
                 WhalePlatformRoleCodeConstants.ROLE_WAREHOUSE, resolvedOrg);
             return transferOutMapper.toLoadTransferOutFormInitResponse(
                 transferOutMapper.toOptionDtoListFromLocations(gatedWarehouses),
-                transferOutMapper.toOptionDtoListFromLocations(gatedPharmacies),
+                transferOutMapper.toOptionDtoListFromLocations(gatedWarehouses),
                 transferOutMapper.toOptionDtoListInboundItemTableTypes(),
                 transferOutMapper.toOptionDtoListSupplyStatuses(),
                 transferOutMapper.toOptionDtoListFromPractitioners(pharmacists),
                 transferOutMapper.toOptionDtoListFromPractitioners(warehouseKeepers));
         } catch (RuntimeException ex) {
             log.warn("loadTransferOutFormInit failed", ex);
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_102, "出库页主数据加载失败");
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_102, "调出页主数据加载失败");
         }
     }
 
@@ -218,7 +193,7 @@ public class InventoryWarehouseTransferOutAppService {
         if (request.getPurposeLocationId() != null) {
             listQuery.setPurposeLocationId(request.getPurposeLocationId());
         }
-        if (StringUtils.isNotBlank(request.getStatusEnum())) {
+        if (StringUtils.isNotEmpty(request.getStatusEnum())) {
             SupplyStatus st = EnumUtil.fromCode(SupplyStatus.class, request.getStatusEnum().trim());
             if (st == null) {
                 throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "statusEnum 非法");
@@ -253,7 +228,7 @@ public class InventoryWarehouseTransferOutAppService {
             return this.transferOutMapper.toPageTransferOutsAggregatedResponse(mergedTotal, pageNo, pageSize, records);
         } catch (RuntimeException ex) {
             log.warn("pageTransferOuts failed (wkf_supply_request aggregate path)", ex);
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_102, "出库单列表查询失败");
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_102, "调出单列表查询失败");
         }
     }
 
@@ -264,7 +239,7 @@ public class InventoryWarehouseTransferOutAppService {
      * @return 单头与明细
      */
     public GetTransferOutDetailResponse getTransferOutDetail(GetTransferOutDetailRequest request) {
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             // Gate：busNo 非空
             // Pre：按 busNo 回读供应请求行
             // Pre：批量装载产品读模型
@@ -275,13 +250,13 @@ public class InventoryWarehouseTransferOutAppService {
         q.setBusNo(request.getBusNo().trim());
         List<SupplyRequestModel> lines = supplyRequestQueryService.getSupplyByBusNo(q);
         if (lines.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_103, "出库单不存在");
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_103, "调出单不存在");
         }
         this.assertCabinetTransferOut(lines);
         // —— 批量加载产品读模型，装配各明细行 catalog hints（查询失败时降级为空映射，仍返回写模型字段）。——
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         for (SupplyRequestModel line : lines) {
-            if (line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
                 continue;
             }
             ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
@@ -291,13 +266,13 @@ public class InventoryWarehouseTransferOutAppService {
         }
         Map<String, ProductDefinitionDisplayDto> products;
         try {
-            products = productDefinitionBatchLoader.loadAsMap(lookups);
+            products = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
         } catch (RuntimeException ex) {
             log.warn("batchGetProductByIds degraded for stock out detail", ex);
             products = new HashMap<>();
         }
         ProductDefinitionSelectionTerminologyMaps terminologyMaps =
-            this.productDefinitionSelectionTerminologySupport.loadSelectionTerminologyMaps();
+            this.productDefinitionDisplayTerminologyAssembler.loadSelectionTerminologyMaps();
         Map<Long, ProductDefinitionCatalogEditorHintsDto> hints = new HashMap<>();
         for (SupplyRequestModel line : lines) {
             if (line == null || line.getId() == null) {
@@ -329,7 +304,7 @@ public class InventoryWarehouseTransferOutAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "请求不能为空");
         }
         if (request.getLines() == null || request.getLines().isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "出库明细不能为空");
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "调出明细不能为空");
         }
         if (request.getSourceLocationId() == null || request.getPurposeLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "源位置与目标位置不能为空");
@@ -339,9 +314,7 @@ public class InventoryWarehouseTransferOutAppService {
         this.assertTransferOutTraceNosWithinWideLimit(request.getLines(), ErrorCodeConstants.WHS_TR_001);
         // —— 源库可用量与草稿行拆零量汇总比较。——
         this.assertTransferOutDraftLinesWithinSourceAvailableInventory(request.getSourceLocationId(), request.getLines());
-        if (StringUtils.isNotBlank(request.getOriginalBusNo())) {
-            this.validateOriginalPharmacyRequisitionForTransferOut(request.getOriginalBusNo().trim(), request.getSourceLocationId());
-        }
+        this.assertTransferOutDoesNotReferencePharmacyRequisition(request.getOriginalBusNo());
         if (request.getPractitionerId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "经手人不能为空");
         }
@@ -354,11 +327,11 @@ public class InventoryWarehouseTransferOutAppService {
         // —— 领域 createTransfer 落供应写模型（head + 明细行，类型 CABINET_TRANSFER_OUT）。——
         try {
             // Cmd：组装 Create 命令并调用领域写服务
-            String busNo = supplyRequestDomainService.createTransfer(
+            String busNo = supplyRequestPricedWriteOrchestrator.createTransfer(
                 transferOutMapper.toCreateTransferOutCommand(request, operatorId, applicantId, null));
             return transferOutMapper.toCreateTransferOutResponse(busNo);
         } catch (IllegalArgumentException ex) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "出库参数不合法：" + ex.getMessage());
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "调出参数不合法：" + ex.getMessage());
         }
     }
 
@@ -366,16 +339,16 @@ public class InventoryWarehouseTransferOutAppService {
      *
      * @param request 修订请求；须含 {@code busNo}、非空明细及位置字段
      * @return 修订后单号（与请求同号）
-     * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_001} 参数/可用量非法；{@link ErrorCodeConstants#WHS_TR_002} 来源请领不可引用；{@link ErrorCodeConstants#WHS_TR_004} 不可编辑；
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_001} 参数/可用量非法；{@link ErrorCodeConstants#WHS_TR_002} 不支持关联请领上游；{@link ErrorCodeConstants#WHS_TR_004} 不可编辑；
      *                            {@link ErrorCodeConstants#WHS_TR_101} 未登录
      */
     public UpdateTransferOutResponse updateTransferOut(UpdateTransferOutRequest request) {
         // Gate：busNo、明细与可编辑态校验
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "busNo 不能为空");
         }
         if (request.getLines() == null || request.getLines().isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "出库明细不能为空");
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "调出明细不能为空");
         }
         if (request.getSourceLocationId() == null || request.getPurposeLocationId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "源位置与目标位置不能为空");
@@ -393,14 +366,12 @@ public class InventoryWarehouseTransferOutAppService {
         editQuery.setItemId(head.getItemId());
         Boolean editable = supplyRequestQueryService.verifyAbleEdit(editQuery);
         if (Boolean.FALSE.equals(editable)) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_004, "当前状态不允许编辑出库单");
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_004, "当前状态不允许编辑调出单");
         }
         this.assertTransferOutTraceNosWithinWideLimit(request.getLines(), ErrorCodeConstants.WHS_TR_001);
         // —— 修订草稿同样须满足源库可用量校验（与新建同构）。——
         this.assertTransferOutDraftLinesWithinSourceAvailableInventory(request.getSourceLocationId(), request.getLines());
-        if (StringUtils.isNotBlank(request.getOriginalBusNo())) {
-            this.validateOriginalPharmacyRequisitionForTransferOut(request.getOriginalBusNo().trim(), request.getSourceLocationId());
-        }
+        this.assertTransferOutDoesNotReferencePharmacyRequisition(request.getOriginalBusNo());
         if (request.getPractitionerId() == null) {
             throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "经手人不能为空");
         }
@@ -413,11 +384,11 @@ public class InventoryWarehouseTransferOutAppService {
         // —— 领域 createTransfer 同号修订（子行全量对齐与软删语义由域层约束）。——
         try {
             // Cmd：组装 Create 命令并调用领域写服务
-            String busNo = supplyRequestDomainService.createTransfer(
+            String busNo = supplyRequestPricedWriteOrchestrator.createTransfer(
                 transferOutMapper.toCreateTransferOutCommand(request, operatorId, applicantId));
             return transferOutMapper.toUpdateTransferOutResponse(busNo);
         } catch (IllegalArgumentException ex) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "出库参数不合法：" + ex.getMessage());
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "调出参数不合法：" + ex.getMessage());
         }
     }
 
@@ -477,34 +448,41 @@ public class InventoryWarehouseTransferOutAppService {
         return transferOutMapper.toWithdrawTransferOutApprovalResponse(st);
     }
 
-    /** 同意：供应请求已同意 → 发放 → 源库扣减/目的库增加 → 追溯；含防重复同意与完成态发放门禁。 */
+    /**
+     * 药库调出单同意编排：领域落已同意态 → 发放 → 源库扣减/目的库增加 → 对侧调入壳单 → 追溯 → 可选医保上报。
+     *
+     * <p>重复 agree、发放已完成等场景抛 {@link ErrorCodeConstants#WHS_TR_104}。</p>
+     *
+     * @param request 含 busNo；须未重复同意
+     * @return 同意后 busNo、状态与对侧调入壳单号
+     */
     public AgreeTransferOutResponse agreeTransferOut(AgreeTransferOutRequest request) {
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        // Gate：busNo 与操作人
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "busNo 不能为空");
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_TR_101, "用户未登录");
 
-        // —— 同意出库单 ——
+        // Pre：同意前读校验——单据须存在、类型须为药库调出；读侧防重复同意
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
         q.setBusNo(request.getBusNo().trim());
-        // —— 加载同意前快照，校验类型并防重复同意（与 supplyRequestValidation 配合）。——
         List<SupplyRequestModel> beforeLines = supplyRequestQueryService.getSupplyByBusNo(q);
         if (beforeLines.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_103, "出库单不存在");
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_103, "调出单不存在");
         }
         this.assertCabinetTransferOut(beforeLines);
         SupplyRequestValidationModel validation = supplyRequestQueryService.supplyRequestValidation(request.getBusNo().trim());
         if (Boolean.TRUE.equals(validation.getHasAgreed())) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "出库单已同意，禁止重复同意");
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "调出单已同意，禁止重复同意");
         }
 
-        // —— 领域状态机同意出库；失败映射为业务码（含「已同意」类短路）。——
+        // Cmd：领域状态机同意调出单
         try {
             supplyRequestDomainService.agreeRequest(transferOutMapper.toAgreeRequestCommand(request, operatorId));
         } catch (BusinessException ex) {
             throw this.mapAgreeException(ex);
         } catch (OptimisticLockingFailureException ex) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_105, "出库单已被并发修改，请刷新后重试", ex);
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_105, "调出单已被并发修改，请刷新后重试", ex);
         }
 
         // —— 强制读回：与进货同意链一致，保证后续发放/库存读到已落库的 AGREE 行。——
@@ -518,13 +496,13 @@ public class InventoryWarehouseTransferOutAppService {
                 continue;
             }
             if (!SupplyStatus.AGREE.getCode().equals(row.getStatusEnum())) {
-                throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "同意后回读状态异常，中止出库编排");
+                throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "同意后回读状态异常，中止调出编排");
             }
             if (row.getId() == null) {
-                throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "出库明细缺少持久化主键，无法完成编排");
+                throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "调出明细缺少持久化主键，无法完成编排");
             }
             if (row.getItemQuantity() == null || row.getItemQuantity().compareTo(BigDecimal.ZERO) <= 0) {
-                throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "出库明细数量无效，无法完成编排");
+                throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "调出明细数量无效，无法完成编排");
             }
         }
 
@@ -538,21 +516,21 @@ public class InventoryWarehouseTransferOutAppService {
         Set<Long> duplicateCompletedRequestIds =
             supplyDeliveryQueryService.findRequestIdsHavingCompletedDelivery(requestIdsForDeliveryGate);
         if (!duplicateCompletedRequestIds.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "供应请求行已存在完成态发放，禁止重复同意出库");
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "供应请求行已存在完成态发放，禁止重复同意调出");
         }
 
-        // —— 发放主数据落库（类型固定药库出库）。——
+        // —— 发放主数据落库（类型固定药库调出）。——
         try {
             supplyDeliveryDomainService.createTransferDelivery(
                 transferOutMapper.toCreateTransferDeliveryCommand(agreedLines, operatorId));
         } catch (BusinessException ex) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "出库发放落库失败：" + ex.getMessage());
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "调拨发放落库失败：" + ex.getMessage());
         }
 
         // —— 批量产品读模型（拆零换算、展示名；单点异常记日志，缺键在后续换算处显式失败）。——
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         for (SupplyRequestModel line : agreedLines) {
-            if (line == null || line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+            if (line == null || line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
                 continue;
             }
             ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
@@ -563,7 +541,7 @@ public class InventoryWarehouseTransferOutAppService {
         Map<String, ProductDefinitionDisplayDto> productByKey = new HashMap<>();
         if (!lookups.isEmpty()) {
             try {
-                productByKey = productDefinitionBatchLoader.loadAsMap(lookups);
+                productByKey = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
             } catch (RuntimeException ex) {
                 log.warn("batchGetProductByIds failed during stock out inventory assemble", ex);
             }
@@ -572,8 +550,15 @@ public class InventoryWarehouseTransferOutAppService {
         // —— 内存编排：解析拆零量、源库存匹配键、合并扣减表、目的侧入账计划与追溯项（空白 trace 不入列）。——
         SupplyRequestModel head = agreedLines.get(0);
         String busNoTrim = request.getBusNo().trim();
-        String traceOperationType = TraceNumberRecordOperationType.supplyTypeCode(SupplyType.CABINET_TRANSFER_OUT);
-        List<AppendTraceRecordsCommand.AppendTraceRecordItemCommand> traceItems = new ArrayList<>();
+        RecordTraceTransferPairSpec transferPairCmd = new RecordTraceTransferPairSpec();
+        transferPairCmd.setOperatorId(operatorId);
+        transferPairCmd.setSupplyTypeCode(SupplyType.CABINET_TRANSFER_OUT.getCode());
+        transferPairCmd.setBusNo(busNoTrim);
+        transferPairCmd.setOutLocationId(head.getSourceLocationId());
+        transferPairCmd.setOutLocationTypeEnum(this.resolveSourceLocationTypeCode(head, head));
+        transferPairCmd.setInLocationId(head.getPurposeLocationId());
+        transferPairCmd.setInLocationTypeEnum(this.resolvePurposeLocationTypeCode(head, head));
+        List<RecordTraceTransferPairSpec.TransferLine> transferLines = new ArrayList<>();
         Map<Long, BigDecimal> decreaseMerged = new HashMap<>();
         List<TransferOutDestIncr> destIncrs = new ArrayList<>();
         for (SupplyRequestModel line : agreedLines) {
@@ -587,7 +572,7 @@ public class InventoryWarehouseTransferOutAppService {
             ProductDefinitionDisplayDto product = productByKey.get(key);
             BigDecimal splitQty = SupplyPersistedSplitQuantity.requireSupplyLineItemQuantityAsPersistedSplitUnit(
                 line, ErrorCodeConstants.WHS_TR_104, "供应请求行 item_quantity 须为拆零正数量");
-            if (product == null || StringUtils.isBlank(product.getSplitUnitCode())) {
+            if (product == null || StringUtils.isEmpty(product.getSplitUnitCode())) {
                 throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "产品定义缺失或缺少拆零单位编码");
             }
             String splitUnitCode = product.getSplitUnitCode().trim();
@@ -623,28 +608,15 @@ public class InventoryWarehouseTransferOutAppService {
             }
             destIncrs.add(op);
 
-            if (StringUtils.isNotBlank(line.getTraceNo())) {
-                String lt = this.resolveSourceLocationTypeCode(line, head);
-                for (String part : line.getTraceNo().split(GeneralSharedConstants.COMMA)) {
-                    String traceNo = part.trim();
-                    if (traceNo.isEmpty()) {
-                        continue;
-                    }
-                    AppendTraceRecordsCommand.AppendTraceRecordItemCommand it =
-                        new AppendTraceRecordsCommand.AppendTraceRecordItemCommand();
-                    it.setItemTable(line.getItemTable().trim());
-                    it.setItemId(line.getItemId());
-                    it.setLocationTypeEnum(lt);
-                    it.setLocationId(sourceLocationId);
-                    it.setLocationStoreId(null);
-                    it.setLotNumber(resolvedLot);
-                    it.setTraceNo(traceNo);
-                    it.setStatusEnum(TraceDirection.OUT.getCode());
-                    it.setUnitCode(splitUnitCode);
-                    it.setOperationType(traceOperationType);
-                    it.setBusNo(busNoTrim);
-                    traceItems.add(it);
-                }
+            if (StringUtils.isNotEmpty(line.getTraceNo())) {
+                transferLines.addAll(traceNumberSupplyAgreeTraceOrchestrator.buildTransferLinesFromTraceNoString(
+                    line.getTraceNo(),
+                    line.getItemTable().trim(),
+                    line.getItemId(),
+                    resolvedLot,
+                    splitQty,
+                    splitUnitCode,
+                    ProductDefinitionDisplaySupport.toUnitConversionSource(product)));
             }
         }
 
@@ -683,7 +655,7 @@ public class InventoryWarehouseTransferOutAppService {
                         operatorId,
                         op.productDefinition,
                         op.sourceInventorySupplierId);
-                    // —— 供应行未带效期时承袭源库库存生产日期/效期（出库行常不落 start_time/end_time）。——
+                    // —— 供应行未带效期时承袭源库库存生产日期/效期（调出行常不落 start_time/end_time）。——
                     if (createCmd.getItem() != null) {
                         if (createCmd.getItem().getProductionDate() == null
                             && op.sourceInventoryProductionDate != null) {
@@ -701,62 +673,35 @@ public class InventoryWarehouseTransferOutAppService {
             }
         }
 
-        // —— 对侧药房入库壳单须先于追溯落库，失败则整单回滚。——
-        // 壳单制单人优先沿用出库头行已落库的申请人（医务人员主键）；历史脏数据缺省时回落当前会话医务人员，禁止用用户主键冒充。
+        // —— 对侧调入壳单须先于追溯落库，失败则整单回滚（库存已在上方源减/目增完成）。——
         Long shellApplicantId = head.getApplicantId();
         if (shellApplicantId == null) {
             shellApplicantId = this.requireWarehousePreparerPractitionerId(
                 ErrorCodeConstants.WHS_TR_101,
                 "用户未登录",
-                "当前用户未绑定医务人员档案，无法生成药房入库壳单制单人");
+                "当前用户未绑定医务人员档案，无法生成调入壳单制单人");
         }
+        String counterpartyTransferInType = this.resolveCounterpartyTransferInType(head);
         String generatedInBusNo;
         try {
-            CreateRequisitionCommand shellCmd = transferOutMapper.toCreateRequisitionCommandForShellPharmacyStockIn(
-                agreedLines, busNoTrim, operatorId, shellApplicantId);
-            generatedInBusNo = supplyRequestDomainService.createRequisition(shellCmd);
+            CreateTransferCommand shellCmd = transferOutMapper.toCreateTransferCommandForShellCounterpartyTransferIn(
+                agreedLines, busNoTrim, counterpartyTransferInType, operatorId, shellApplicantId);
+            generatedInBusNo = supplyRequestPricedWriteOrchestrator.createTransfer(shellCmd);
         } catch (BusinessException ex) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "同步生成药房入库壳单失败：" + ex.getMessage());
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "同步生成对侧调入壳单失败：" + ex.getMessage());
         }
 
-        // —— 壳单成功后写入追溯出库明细；空白 trace 已在组装阶段跳过。——
-        if (!traceItems.isEmpty()) {
+        transferPairCmd.setLines(transferLines);
+        if (transferLines != null && !transferLines.isEmpty()) {
             try {
-                AppendTraceRecordsCommand traceCmd = new AppendTraceRecordsCommand();
-                traceCmd.setOperatorId(operatorId);
-                traceCmd.setItems(traceItems);
-                traceNumberRecordDomainService.appendTraceRecords(traceCmd);
+                traceNumberSupplyAgreeTraceOrchestrator.recordTransferPair(transferPairCmd);
             } catch (BusinessException ex) {
-                throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "追溯码出库记录失败：" + ex.getMessage());
+                throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "追溯码调出记录失败：" + ex.getMessage());
             }
         }
-        tryUploadMedicareInventoryAfterTransferAgree(request, agreedLines);
+        // Asm：映射同意响应（含对侧调入壳单 busNo）
         return transferOutMapper.toAgreeTransferOutResponse(
             busNoTrim, SupplyStatus.AGREE.getCode(), generatedInBusNo);
-    }
-
-    private void tryUploadMedicareInventoryAfterTransferAgree(
-        AgreeTransferOutRequest request,
-        List<SupplyRequestModel> agreedLines
-    ) {
-        List<Long> lineIds = new ArrayList<>();
-        for (SupplyRequestModel line : agreedLines) {
-            if (line != null && line.getId() != null) {
-                lineIds.add(line.getId());
-            }
-        }
-        if (lineIds.isEmpty()) {
-            return;
-        }
-        InventoryMedicareUploadSupport.uploadIfEnabled(inventoryUploadExtension, () -> {
-            InventoryUploadAfterTransferCommand command = new InventoryUploadAfterTransferCommand()
-                .setTransferBusNo(request.getBusNo())
-                .setSupplyRequestLineIds(lineIds)
-                .setSupplyTypeCode(SupplyType.CABINET_TRANSFER_OUT.getCode())
-                .setInvChgType(INV_CHG_TYPE_TRANSFER_OUT)
-                .setContractBusNo(request.getContractBusNo());
-            inventoryUploadExtension.uploadAfterTransferAgree(command);
-        });
     }
 
     /**
@@ -767,10 +712,10 @@ public class InventoryWarehouseTransferOutAppService {
      */
     public RejectTransferOutResponse rejectTransferOut(RejectTransferOutRequest request) {
         // Gate：busNo、驳回原因与操作人
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "busNo 不能为空");
         }
-        if (StringUtils.isBlank(request.getChangeReason()) && StringUtils.isBlank(request.getChangeReasonCode())) {
+        if (StringUtils.isEmpty(request.getChangeReason()) && StringUtils.isEmpty(request.getChangeReasonCode())) {
             throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "驳回原因不能为空");
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.WHS_TR_101, "用户未登录");
@@ -837,7 +782,7 @@ public class InventoryWarehouseTransferOutAppService {
             Page<InventoryItemModel> page = inventoryItemQueryService.queryInventoryItemsByPage(invQuery, pageable);
             List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
             for (InventoryItemModel inv : page.getContent()) {
-                if (inv == null || inv.getItemId() == null || StringUtils.isBlank(inv.getItemTable())) {
+                if (inv == null || inv.getItemId() == null || StringUtils.isEmpty(inv.getItemTable())) {
                     continue;
                 }
                 ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
@@ -848,7 +793,7 @@ public class InventoryWarehouseTransferOutAppService {
             Map<String, ProductDefinitionDisplayDto> products = new HashMap<>();
             if (!lookups.isEmpty()) {
                 try {
-                    products = productDefinitionBatchLoader.loadAsMap(lookups);
+                    products = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
                 } catch (RuntimeException ex) {
                     log.warn("batchGetProductByIds failed for stock out selection", ex);
                 }
@@ -880,7 +825,7 @@ public class InventoryWarehouseTransferOutAppService {
                 }
             }
             ProductDefinitionSelectionTerminologyMaps terminologyMaps =
-                this.productDefinitionSelectionTerminologySupport.loadSelectionTerminologyMaps();
+                this.productDefinitionDisplayTerminologyAssembler.loadSelectionTerminologyMaps();
             List<ProductDefinitionItemDto> records = new ArrayList<>();
             for (InventoryItemModel inv : page.getContent()) {
                 if (inv == null) {
@@ -905,7 +850,7 @@ public class InventoryWarehouseTransferOutAppService {
                     dto.setAvailableQuantity(BigDecimal.ZERO);
                 }
                 BigDecimal lotCostUnit = null;
-                if (StringUtils.isNotBlank(inv.getLotNumber())) {
+                if (StringUtils.isNotEmpty(inv.getLotNumber())) {
                     lotCostUnit = this.chargeItemDefinitionQueryService.resolveFirstLotNumberCostPriceValue(
                         inv.getItemTable(), inv.getItemId(), inv.getLotNumber().trim());
                 }
@@ -916,7 +861,7 @@ public class InventoryWarehouseTransferOutAppService {
                     List<ProductDefinitionCatalogUnitBandDto> bands = hints.getUnitBands();
                     dto.setUnitBands(bands);
                     BigDecimal packageAnchor = lotCostUnit;
-                    if (packageAnchor == null && StringUtils.isNotBlank(inv.getItemTable()) && inv.getItemId() != null) {
+                    if (packageAnchor == null && StringUtils.isNotEmpty(inv.getItemTable()) && inv.getItemId() != null) {
                         packageAnchor = this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
                             inv.getItemTable().trim(), inv.getItemId());
                     }
@@ -929,44 +874,16 @@ public class InventoryWarehouseTransferOutAppService {
             return PagedResultBuilder.build(new PageProductsForTransferOutResponse(), records, page);
         } catch (RuntimeException ex) {
             log.warn("pageProductsForTransferOut failed", ex);
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_102, "出库选品查询失败");
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_102, "调出选品查询失败");
         }
     }
 
     /**
-     * 分页查询可关联来源单据（已同意态供引用）。
+     * 列表行回填申请人、审批人姓名。
      *
-     * @param request 含来源位置与分页参数
-     * @return 可关联单据行
+     * @param rows        列表 DTO
+     * @param detailLines 当前页全部供应请求明细
      */
-    public PageLinkableRequisitionsResponse pageLinkableRequisitions(PageLinkableRequisitionsRequest request) {
-        if (request == null || request.getSourceLocationId() == null) {
-            // Gate：来源位置与分页窗口
-            // Pre：组装可关联来源单查询
-            // Cmd：分页查询已同意来源单
-            // Asm：映射分页响应
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "sourceLocationId 不能为空");
-        }
-        pageWindowGate.requireNonNullPageWindow(request, ErrorCodeConstants.WHS_TR_001, "分页参数不能为空");
-        this.managedOrganizationIdsResolver.requireSessionOrganizationUnitId(ErrorCodeConstants.WHS_TR_101, "机构上下文缺失");
-        Set<Long> allowed = this.resolveGatedWarehouseLocationIdsForWarehouseGate();
-        this.assertWarehouseLocationAllowed(request.getSourceLocationId(), allowed);
-        // —— 读模型：请领行锚定「目的药库 = 当前出库源药库」，由投影器维护与供应事件一致。——
-        WarehouseDocumentDetailPageQuery query = new WarehouseDocumentDetailPageQuery();
-        query.setTypeEnum(SupplyType.PHARMACY_REQUISITION.getCode());
-        query.setPurposeLocationId(request.getSourceLocationId());
-        PageQueryBinder.bind(request, query);
-        query.setApplyTimeStart(request.getStartDate());
-        query.setApplyTimeEnd(request.getEndDate());
-        try {
-            Page<WarehouseDocumentDetailQueryModel> page = supplyRequestQueryService.pageWarehouseDocumentDetail(query);
-            return transferOutMapper.toPageLinkableRequisitionsResponse(page);
-        } catch (RuntimeException ex) {
-            log.warn("pageLinkableRequisitions failed", ex);
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_102, "可关联请领单查询失败");
-        }
-    }
-
     private void enrichTransferOutListDisplayNames(List<TransferOutListRowDto> rows, List<SupplyRequestModel> detailLines) {
         if (rows == null || rows.isEmpty()) {
             return;
@@ -992,7 +909,7 @@ public class InventoryWarehouseTransferOutAppService {
                 continue;
             }
             Practitioner pr = this.practitionerQueryService.findById(pid);
-            if (pr != null && StringUtils.isNotBlank(pr.getName())) {
+            if (pr != null && StringUtils.isNotEmpty(pr.getName())) {
                 practitionerNameById.put(pid, pr.getName().trim());
             }
         }
@@ -1015,6 +932,13 @@ public class InventoryWarehouseTransferOutAppService {
         }
     }
 
+    /**
+     * 详情明细补齐产品展示名、规格与单位槽展示（B.10.8.1）。
+     *
+     * @param lines           详情明细行
+     * @param products        批量产品读模型
+     * @param terminologyMaps 单位/术语映射
+     */
     private void enrichTransferOutDetailProductDisplay(
         List<TransferOutDetailLineDto> lines,
         Map<String, ProductDefinitionDisplayDto> products,
@@ -1031,7 +955,7 @@ public class InventoryWarehouseTransferOutAppService {
             unitLabelByCode = terminologyMaps.getUnitLabelByCode();
         }
         for (TransferOutDetailLineDto dto : lines) {
-            if (dto == null || StringUtils.isBlank(dto.getItemTable()) || dto.getItemId() == null) {
+            if (dto == null || StringUtils.isEmpty(dto.getItemTable()) || dto.getItemId() == null) {
                 continue;
             }
             String key = ProductDefinitionKeyUtil.buildCompositeKey(
@@ -1047,12 +971,17 @@ public class InventoryWarehouseTransferOutAppService {
                 unitLabelByCode, dto.getUnitCode(), pr));
             ProductDefinitionCatalogEditorHintsDto catalog = dto.getProductCatalog();
             if (catalog != null && catalog.getUnitBands() != null && !catalog.getUnitBands().isEmpty()) {
-                this.productDefinitionSelectionTerminologySupport.applyInboundUnitBandDisplayNames(
+                this.productDefinitionDisplayTerminologyAssembler.applyInboundUnitBandDisplayNames(
                     catalog.getUnitBands(), pr, terminologyMaps);
             }
         }
     }
 
+    /**
+     * 列表行回填目的药房展示名。
+     *
+     * @param rows 列表 DTO
+     */
     private void enrichTransferOutListPurposeLocationNames(List<TransferOutListRowDto> rows) {
         if (rows == null || rows.isEmpty()) {
             return;
@@ -1071,7 +1000,7 @@ public class InventoryWarehouseTransferOutAppService {
                 continue;
             }
             Location loc = locOpt.get();
-            if (StringUtils.isNotBlank(loc.getName())) {
+            if (StringUtils.isNotEmpty(loc.getName())) {
                 nameById.put(pid, loc.getName().trim());
             }
         }
@@ -1084,12 +1013,17 @@ public class InventoryWarehouseTransferOutAppService {
         }
     }
 
+    /**
+     * 列表行回填供应状态中文展示。
+     *
+     * @param rows 列表 DTO
+     */
     private void enrichTransferOutListStatusEnumText(List<TransferOutListRowDto> rows) {
         if (rows == null || rows.isEmpty()) {
             return;
         }
         for (TransferOutListRowDto row : rows) {
-            if (row == null || StringUtils.isBlank(row.getStatusEnum())) {
+            if (row == null || StringUtils.isEmpty(row.getStatusEnum())) {
                 continue;
             }
             // —— 列表行 statusEnum 为持久化 code：解析失败则展示文案留空。——
@@ -1100,6 +1034,11 @@ public class InventoryWarehouseTransferOutAppService {
         }
     }
 
+    /**
+     * 详情明细槽价与持久化行价对齐（BR-PRICE-SRC-001）。
+     *
+     * @param lines 详情明细行
+     */
     private void enrichTransferOutDetailLines(List<TransferOutDetailLineDto> lines) {
         if (lines == null || lines.isEmpty()) {
             return;
@@ -1119,32 +1058,29 @@ public class InventoryWarehouseTransferOutAppService {
     }
 
     /**
-     * 新建/编辑入口位置门控：源须为岗位可见且启用中的药库，目的须为岗位可见且启用中的药房。
+     * 新建/编辑入口位置门控：源/目的均须为岗位可见且启用中的药库（平级调拨），且源≠目的。
      *
      * @param sourceLocationId  源药库主键
-     * @param purposeLocationId 目的药房主键
+     * @param purposeLocationId 目的药库主键
      * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_001} 位置越权或形态非法
      */
     private void assertTransferOutLocationGate(Long sourceLocationId, Long purposeLocationId) {
+        if (sourceLocationId != null && sourceLocationId.equals(purposeLocationId)) {
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "调出源与目的库位不能相同");
+        }
         Set<Long> warehouses = this.resolveGatedWarehouseLocationIdsForWarehouseGate();
         this.assertWarehouseLocationAllowed(sourceLocationId, warehouses);
-        Set<Long> pharmacies = this.resolveGatedPharmacyLocationIdsForPharmacyGate();
-        this.assertPharmacyLocationAllowed(purposeLocationId, pharmacies);
-    }
-
-    private Set<Long> resolveGatedWarehouseLocationIdsForWarehouseGate() {
-        return this.managedLocationIdsResolver.gatedLocationIdsFromActive(
-            this.locationQueryService.listAllActiveWarehouses());
+        this.assertWarehouseLocationAllowed(purposeLocationId, warehouses);
     }
 
     /**
-     * 解析当前用户可见的启用中药房 id 集合（策略同源 {@link #resolveGatedWarehouseLocationIdsForWarehouseGate}）。
+     * 当前用户可见的启用中药库位置 id 集合（源库门禁）。
      *
-     * @return 药房位置主键集合，可能为空
+     * @return 药库 locationId 集合
      */
-    private Set<Long> resolveGatedPharmacyLocationIdsForPharmacyGate() {
+    private Set<Long> resolveGatedWarehouseLocationIdsForWarehouseGate() {
         return this.managedLocationIdsResolver.gatedLocationIdsFromActive(
-            this.locationQueryService.listAllActivePharmacies());
+            this.locationQueryService.listAllActiveWarehouses());
     }
 
     /**
@@ -1169,28 +1105,7 @@ public class InventoryWarehouseTransferOutAppService {
     }
 
     /**
-     * 断言给定药房主键落在门控集合且为启用中药房形态。
-     *
-     * @param locationId 待校验库位
-     * @param allowed    门控白名单
-     * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_001} 越权或形态非法
-     */
-    private void assertPharmacyLocationAllowed(Long locationId, Set<Long> allowed) {
-        this.managedLocationIdsResolver.assertLocationInManagedGate(
-            locationId, allowed, ErrorCodeConstants.WHS_TR_001, "目的药房不在当前用户可选药房范围");
-        if (locationId == null) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "目的药房不在当前用户可选药房范围");
-        }
-        Optional<Location> locOpt = locationQueryService.findOptionalById(locationId);
-        if (locOpt.isEmpty()
-            || !LocationForm.PHARMACY.getCode().equals(locOpt.get().getFormEnum())
-            || !LocationStatus.ACTIVE.getCode().equals(locOpt.get().getStatusEnum())) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "目的位置须为启用中的药房");
-        }
-    }
-
-    /**
-     * 库房出库单制单人（{@code wkf_supply_request.applicant_id}）：取当前登录用户绑定医务人员主键；
+     * 库房调出单制单人（{@code wkf_supply_request.applicant_id}）：取当前登录用户绑定医务人员主键；
      * 与命令 {@code operatorId}（用户主键、库存与审计侧操作人）区分，不经请求体代传。
      *
      * @param notLoggedInErrorCode   未登录或缺用户主键时错误码
@@ -1207,7 +1122,7 @@ public class InventoryWarehouseTransferOutAppService {
     }
 
     /**
-     * 出库明细行须携带制单时间 {@code occurrence_time}（由前端传入）；草稿阶段不写申请时间。
+     * 调出明细行须携带制单时间 {@code occurrence_time}（由前端传入）；草稿阶段不写申请时间。
      */
     private void assertTransferOutLinesOccurrencePresent(List<TransferOutLineDto> lines) {
         if (lines == null) {
@@ -1218,7 +1133,7 @@ public class InventoryWarehouseTransferOutAppService {
                 continue;
             }
             if (line.getOccurrenceTime() == null) {
-                throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "出库明细制单时间不能为空");
+                throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "调出明细制单时间不能为空");
             }
         }
     }
@@ -1230,32 +1145,32 @@ public class InventoryWarehouseTransferOutAppService {
      * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_001} 空白
      */
     private void gateBusNo(String busNo) {
-        if (StringUtils.isBlank(busNo)) {
+        if (StringUtils.isEmpty(busNo)) {
             throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "busNo 不能为空");
         }
     }
 
     /**
-     * 写路径前置：按单号加载供应行；无数据视为出库单不存在，再断言类型为药库出库。
+     * 写路径前置：按单号加载供应行；无数据视为调出单不存在，再断言类型为药库调出。
      *
      * @param busNo 业务单号，须已由 {@link #gateBusNo(String)} 校验非空
-     * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_103} 不存在或类型非出库
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_103} 不存在或类型非调出
      */
     private void preAssertCabinetTransferOut(String busNo) {
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
         q.setBusNo(busNo.trim());
         List<SupplyRequestModel> lines = supplyRequestQueryService.getSupplyByBusNo(q);
         if (lines.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_103, "出库单不存在");
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_103, "调出单不存在");
         }
         this.assertCabinetTransferOut(lines);
     }
 
     /**
-     * 断言供应请求行集合均为药库出库类型（读模型/写模型混用路径的公共守卫）。
+     * 断言供应请求行集合均为药库调出类型（读模型/写模型混用路径的公共守卫）。
      *
      * @param lines 行集合，可为 null
-     * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_103} 存在非出库类型行
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_103} 存在非调出类型行
      */
     private void assertCabinetTransferOut(List<SupplyRequestModel> lines) {
         for (SupplyRequestModel line : lines) {
@@ -1263,7 +1178,7 @@ public class InventoryWarehouseTransferOutAppService {
                 continue;
             }
             if (!SupplyType.CABINET_TRANSFER_OUT.getCode().equals(line.getTypeEnum())) {
-                throw new BusinessException(ErrorCodeConstants.WHS_TR_103, "单据类型非药库出库单");
+                throw new BusinessException(ErrorCodeConstants.WHS_TR_103, "单据类型非药库调出单");
             }
         }
     }
@@ -1275,7 +1190,7 @@ public class InventoryWarehouseTransferOutAppService {
      * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_001} 非法类型
      */
     private void validateOptionalTransferOutTypeEnum(String typeEnumCode) {
-        if (StringUtils.isBlank(typeEnumCode)) {
+        if (StringUtils.isEmpty(typeEnumCode)) {
             return;
         }
         SupplyType declared = EnumUtil.fromCode(SupplyType.class, typeEnumCode.trim());
@@ -1283,41 +1198,21 @@ public class InventoryWarehouseTransferOutAppService {
             throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "typeEnum 非法");
         }
         if (declared != SupplyType.CABINET_TRANSFER_OUT) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "typeEnum 必须为药库出库单类型");
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "typeEnum 必须为药库调出单类型");
         }
     }
 
     /**
-     * 校验 {@code originalBusNo} 对应的药房请领单存在、已同意，且至少一行目的药库与当前出库源药库一致。
+     * 调出单不得关联药房请领上游；请领执行由药库出库（AS-INV-WHS-003）承接。
      *
-     * @param originalBusNo    请领业务单号，须非空白
-     * @param sourceWarehouseId 当前出库源药库主键
-     * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_002} 引用不合法
+     * @param originalBusNo 请求中的上游单号，非空白即拒绝
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_002}
      */
-    private void validateOriginalPharmacyRequisitionForTransferOut(String originalBusNo, Long sourceWarehouseId) {
-        SupplyByBusNoQuery q = new SupplyByBusNoQuery();
-        q.setBusNo(originalBusNo);
-        List<SupplyRequestModel> reqLines = supplyRequestQueryService.getSupplyByBusNo(q);
-        if (reqLines.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_002, "来源请领单不存在");
-        }
-        boolean matchedPurpose = false;
-        for (SupplyRequestModel line : reqLines) {
-            if (line == null) {
-                continue;
-            }
-            if (!SupplyType.PHARMACY_REQUISITION.getCode().equals(line.getTypeEnum())) {
-                throw new BusinessException(ErrorCodeConstants.WHS_TR_002, "来源单据类型非药房请领单");
-            }
-            if (!SupplyStatus.AGREE.getCode().equals(line.getStatusEnum())) {
-                throw new BusinessException(ErrorCodeConstants.WHS_TR_002, "来源请领单未同意，不可引用");
-            }
-            if (Objects.equals(sourceWarehouseId, line.getPurposeLocationId())) {
-                matchedPurpose = true;
-            }
-        }
-        if (!matchedPurpose) {
-            throw new BusinessException(ErrorCodeConstants.WHS_TR_002, "来源请领单与当前源药库不匹配");
+    private void assertTransferOutDoesNotReferencePharmacyRequisition(String originalBusNo) {
+        if (StringUtils.isNotEmpty(originalBusNo)) {
+            throw new BusinessException(
+                ErrorCodeConstants.WHS_TR_002,
+                "药库调出单不支持关联药房请领单，请使用药库出库单");
         }
     }
 
@@ -1332,7 +1227,7 @@ public class InventoryWarehouseTransferOutAppService {
      *   <li><strong>阶段 B</strong>：未携带库存主键时，在内存按「物品 + 归一化批号」聚合同品同批请求；无批号键时与该品在源库全部可用批之和比较。</li>
      * </ul>
      *
-     * @param sourceLocationId 出库来源药库
+     * @param sourceLocationId 调出来源药库
      * @param lines            草稿明细
      * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_001} 字段缺失或可用量不足
      */
@@ -1351,17 +1246,17 @@ public class InventoryWarehouseTransferOutAppService {
             if (line.getInventoryItemId() == null) {
                 continue;
             }
-            if (line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
-                throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "出库明细须包含有效物品表与主键");
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
+                throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "调出明细须包含有效物品表与主键");
             }
-            if (StringUtils.isBlank(line.getUnitCode())) {
-                throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "出库明细单位不能为空");
+            if (StringUtils.isEmpty(line.getUnitCode())) {
+                throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "调出明细单位不能为空");
             }
             String table = line.getItemTable().trim();
             BigDecimal splitQty = SupplyPersistedSplitQuantity.requireMedicationOrDeviceTableAndPositiveSplitQuantity(
-                table, line.getItemQuantity(), ErrorCodeConstants.WHS_TR_001, "出库明细数量须为正数");
+                table, line.getItemQuantity(), ErrorCodeConstants.WHS_TR_001, "调出明细数量须为正数");
             Long invId = line.getInventoryItemId();
-            // —— 同一库存行多明细：出库拆零数量先累加再与该行可用量比（与入库阶段 A 对称）。——
+            // —— 同一库存行多明细：调出拆零数量先累加再与该行可用量比（与调入阶段 A 对称）。——
             requestedByInventoryItemId.merge(invId, splitQty, BigDecimal::add);
             if (!sampleLineByInventoryItemId.containsKey(invId)) {
                 sampleLineByInventoryItemId.put(invId, line);
@@ -1404,7 +1299,7 @@ public class InventoryWarehouseTransferOutAppService {
                 }
                 String lineLotKey = InventoryItemQueryService.normalizeLotNumberForAvailabilityMatch(sample.getLotNumber());
                 if (!lineLotKey.isEmpty()) {
-                    // —— 明细声明批号则必须与库存行归一化批号一致，防止串批出库。——
+                    // —— 明细声明批号则必须与库存行归一化批号一致，防止串批调出。——
                     String rowLotKey = InventoryItemQueryService.normalizeLotNumberForAvailabilityMatch(row.getLotNumber());
                     if (!lineLotKey.equals(rowLotKey)) {
                         throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "明细批号与所选库存行批号不一致");
@@ -1417,7 +1312,7 @@ public class InventoryWarehouseTransferOutAppService {
                 if (requested.compareTo(available) > 0) {
                     throw new BusinessException(
                         ErrorCodeConstants.WHS_TR_001,
-                        "源库该库存行可用量不足，请减少出库数量或刷新库存后再试");
+                        "源库该库存行可用量不足，请减少调出数量或刷新库存后再试");
                 }
             }
         }
@@ -1431,24 +1326,24 @@ public class InventoryWarehouseTransferOutAppService {
             if (line.getInventoryItemId() != null) {
                 continue;
             }
-            if (line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
-                throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "出库明细须包含有效物品表与主键");
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
+                throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "调出明细须包含有效物品表与主键");
             }
-            if (StringUtils.isBlank(line.getUnitCode())) {
-                throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "出库明细单位不能为空");
+            if (StringUtils.isEmpty(line.getUnitCode())) {
+                throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "调出明细单位不能为空");
             }
             String table = line.getItemTable().trim();
             Long itemId = line.getItemId();
             BigDecimal splitQty = SupplyPersistedSplitQuantity.requireMedicationOrDeviceTableAndPositiveSplitQuantity(
-                table, line.getItemQuantity(), ErrorCodeConstants.WHS_TR_001, "出库明细数量须为正数");
+                table, line.getItemQuantity(), ErrorCodeConstants.WHS_TR_001, "调出明细数量须为正数");
             String lotKeyPart = InventoryItemQueryService.normalizeLotNumberForAvailabilityMatch(line.getLotNumber());
             if (lotKeyPart.isEmpty()) {
-                // 出库行未约束到具体批号：用该物品在来源库全部可用批之和做上限（与入库阶段 B「无批号」语义一致）。
+                // 调出行未约束到具体批号：用该物品在来源库全部可用批之和做上限（与调入阶段 B「无批号」语义一致）。
                 Map<Long, BigDecimal> perItem =
                     requestedWithoutLotByTable.computeIfAbsent(table, t -> new HashMap<>());
                 perItem.merge(itemId, splitQty, BigDecimal::add);
             } else {
-                // 出库行约束到批号：在固定库位 + 表名下按物品 id 与归一化批号累加请求量。
+                // 调出行约束到批号：在固定库位 + 表名下按物品 id 与归一化批号累加请求量。
                 requestedByLotByTable
                     .computeIfAbsent(table, t -> new HashMap<>())
                     .computeIfAbsent(itemId, i -> new HashMap<>())
@@ -1499,7 +1394,7 @@ public class InventoryWarehouseTransferOutAppService {
                     if (requested.compareTo(available) > 0) {
                         throw new BusinessException(
                             ErrorCodeConstants.WHS_TR_001,
-                            "源库该批号可用量不足，请减少出库数量或刷新库存后再试");
+                            "源库该批号可用量不足，请减少调出数量或刷新库存后再试");
                     }
                 }
             }
@@ -1510,14 +1405,14 @@ public class InventoryWarehouseTransferOutAppService {
                 if (requested.compareTo(available) > 0) {
                     throw new BusinessException(
                         ErrorCodeConstants.WHS_TR_001,
-                        "源库可用量不足，请减少出库数量或刷新库存后再试");
+                        "源库可用量不足，请减少调出数量或刷新库存后再试");
                 }
             }
         }
     }
 
     /**
-     * 读取同号出库单首行状态枚举（提交/撤回后用于响应装配；无行或状态码空白时返回 null）。
+     * 读取同号调出单首行状态枚举（提交/撤回后用于响应装配；无行或状态码空白时返回 null）。
      *
      * @param busNo 业务单号
      * @return 首行状态枚举；无法解析时返回 null
@@ -1530,7 +1425,7 @@ public class InventoryWarehouseTransferOutAppService {
             return null;
         }
         String statusCode = lines.get(0).getStatusEnum();
-        if (StringUtils.isBlank(statusCode)) {
+        if (StringUtils.isEmpty(statusCode)) {
             return null;
         }
         return EnumUtil.fromCode(SupplyStatus.class, statusCode.trim());
@@ -1539,7 +1434,7 @@ public class InventoryWarehouseTransferOutAppService {
     /**
      * 新建/编辑草稿：追溯码总串与逗号分段长度宽限校验（与进货同源常量 {@link GeneralSharedConstants#TRACE_NO_WIDE_MAX_LENGTH}）。
      *
-     * @param lines     出库明细，可 null
+     * @param lines     调出明细，可 null
      * @param errorCode 失败时业务错误码（新建与修订可区分）
      * @throws BusinessException 超长
      */
@@ -1549,7 +1444,7 @@ public class InventoryWarehouseTransferOutAppService {
         }
         int maxLen = GeneralSharedConstants.TRACE_NO_WIDE_MAX_LENGTH;
         for (TransferOutLineDto line : lines) {
-            if (line == null || StringUtils.isBlank(line.getTraceNo())) {
+            if (line == null || StringUtils.isEmpty(line.getTraceNo())) {
                 continue;
             }
             String raw = line.getTraceNo();
@@ -1575,7 +1470,7 @@ public class InventoryWarehouseTransferOutAppService {
      * @return trim 后字符串；空白则为空串
      */
     private String resolveLotNumberForTransferOutInventory(String lotNumber) {
-        if (StringUtils.isBlank(lotNumber)) {
+        if (StringUtils.isEmpty(lotNumber)) {
             return GeneralSharedConstants.EMPTY_STRING;
         }
         return lotNumber.trim();
@@ -1590,12 +1485,12 @@ public class InventoryWarehouseTransferOutAppService {
      * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_104} 产品定义缺失
      */
     private String resolveProductName(SupplyRequestModel line, Map<String, ProductDefinitionDisplayDto> productByKey) {
-        if (line == null || StringUtils.isBlank(line.getItemTable()) || line.getItemId() == null) {
+        if (line == null || StringUtils.isEmpty(line.getItemTable()) || line.getItemId() == null) {
             return GeneralSharedConstants.EMPTY_STRING;
         }
         String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
         ProductDefinitionDisplayDto pr = productByKey.get(key);
-        if (pr == null || StringUtils.isBlank(pr.getProductName())) {
+        if (pr == null || StringUtils.isEmpty(pr.getProductName())) {
             throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "产品定义缺失，无法解析展示名称");
         }
         return pr.getProductName().trim();
@@ -1609,17 +1504,48 @@ public class InventoryWarehouseTransferOutAppService {
      * @return 位置类型 code，永不为 null
      */
     private String resolveSourceLocationTypeCode(SupplyRequestModel line, SupplyRequestModel head) {
-        if (line != null && StringUtils.isNotBlank(line.getSourceTypeEnum())) {
+        if (line != null && StringUtils.isNotEmpty(line.getSourceTypeEnum())) {
             return line.getSourceTypeEnum().trim();
         }
-        if (head != null && StringUtils.isNotBlank(head.getSourceTypeEnum())) {
+        if (head != null && StringUtils.isNotEmpty(head.getSourceTypeEnum())) {
             return head.getSourceTypeEnum().trim();
         }
         return SupplyRequestType.CABINET.getCode();
     }
 
+    /**
+     * 药库出库目的库位类型码：行/头 purposeTypeEnum 优先，否则按 purposeLocationId 解析。
+     *
+     * @param line 明细行
+     * @param head 单头行
+     * @return 目的类型码
+     */
+    private String resolvePurposeLocationTypeCode(SupplyRequestModel line, SupplyRequestModel head) {
+        if (line != null && StringUtils.isNotEmpty(line.getPurposeTypeEnum())) {
+            return line.getPurposeTypeEnum().trim();
+        }
+        if (head != null && StringUtils.isNotEmpty(head.getPurposeTypeEnum())) {
+            return head.getPurposeTypeEnum().trim();
+        }
+        Long purposeLocationId = null;
+        if (line != null && line.getPurposeLocationId() != null) {
+            purposeLocationId = line.getPurposeLocationId();
+        } else if (head != null && head.getPurposeLocationId() != null) {
+            purposeLocationId = head.getPurposeLocationId();
+        }
+        if (purposeLocationId != null) {
+            return this.locationQueryService.requireSupplyRequestTypeForLocationId(purposeLocationId).getCode();
+        }
+        return SupplyRequestType.CABINET.getCode();
+    }
+
+    /**
+     * 选品物品表须为药品或器械定义表。
+     *
+     * @param raw 请求中的 productTableName
+     */
     private void assertProductTableNameWhitelistForTransferOutSelection(String raw) {
-        if (StringUtils.isBlank(raw)) {
+        if (StringUtils.isEmpty(raw)) {
             throw new BusinessException(ErrorCodeConstants.WHS_TR_001, "productTableName 不能为空");
         }
         String table = raw.trim();
@@ -1630,7 +1556,7 @@ public class InventoryWarehouseTransferOutAppService {
     }
 
     /**
-     * 供应工作流领域异常到出库接口错误码的归一映射（非法参数类错误回落到接口默认码）。
+     * 供应工作流领域异常到调出接口错误码的归一映射（非法参数类错误回落到接口默认码）。
      *
      * @param ex          领域抛出的业务异常
      * @param defaultCode 当 {@code ex} 为 {@link ErrorCodeConstants#SUPPLY_REQUEST_INVALID_ARGUMENT} 时包装为该码；否则原样返回 {@code ex}
@@ -1661,7 +1587,34 @@ public class InventoryWarehouseTransferOutAppService {
     }
 
     /**
-     * 同意出库编排内部结构：承载目的侧入账所需字段（在源库合并扣减之后逐条消费）。
+     * 按调出单目的位置类型解析对侧调入壳单的 {@code type_enum}。
+     *
+     * @param head 已同意调出头行
+     * @return 对侧调入 type 持久化码
+     * @throws BusinessException {@link ErrorCodeConstants#WHS_TR_104} 目的位置类型无法映射
+     */
+    private String resolveCounterpartyTransferInType(SupplyRequestModel head) {
+        if (head == null) {
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "调出头行缺失，无法解析对侧调入类型");
+        }
+        Long purposeLocationId = head.getPurposeLocationId();
+        if (purposeLocationId == null) {
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "调出头行缺少目的库位，无法生成调入壳单");
+        }
+        Optional<Location> locOpt = locationQueryService.findOptionalById(purposeLocationId);
+        if (locOpt.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "目的库位不存在，无法生成调入壳单");
+        }
+        String formCode = locOpt.get().getFormEnum();
+        // 平级调拨：药库调出目的须同为药库，对侧壳单恒为 CABINET_TRANSFER_IN
+        if (!LocationForm.WAREHOUSE.getCode().equals(formCode)) {
+            throw new BusinessException(ErrorCodeConstants.WHS_TR_104, "药库调出目的须为药库（平级调拨）");
+        }
+        return SupplyType.CABINET_TRANSFER_IN.getCode();
+    }
+
+    /**
+     * 同意调出编排内部结构：承载目的侧入账所需字段（在源库合并扣减之后逐条消费）。
      */
     private static final class TransferOutDestIncr {
         private SupplyRequestModel line;

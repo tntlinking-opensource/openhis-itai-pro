@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationdefinition.command;
 
 import com.openhis.health.domain.share.command.BatchCommand;
@@ -90,6 +77,8 @@ public class EditMedicationDefinitionCommand
         private Boolean ybMatchFlag;
         /** 医保等级。 */
         private Integer chrgitmLv;
+        /** 病案结算类型编码。 */
+        private String mrSettlementTypeCode;
         /** 药理分类。 */
         private String pharmacologyCategoryCode;
         /** 生产厂家ID。 */
@@ -120,15 +109,23 @@ public class EditMedicationDefinitionCommand
         private java.math.BigDecimal itemMinQuantity;
         /** 最大库存。 */
         private java.math.BigDecimal itemMaxQuantity;
-        /** 业务标识。 */
+        /** 业务标识：是否基药。 */
         private Boolean basicFlag;
+        /** 业务标识：是否需皮试。 */
         private Boolean skinTestFlag;
+        /** 业务标识：是否注射剂。 */
         private Boolean injectFlag;
+        /** 业务标识：是否儿童专用。 */
         private Boolean childrenFlag;
+        /** 业务标识：是否自备药。 */
         private Boolean selfFlag;
+        /** 业务标识：是否启用。 */
         private Boolean activeFlag;
+        /** 业务标识：是否限制使用。 */
         private Boolean restrictedFlag;
+        /** 业务标识：是否抗生素。 */
         private Boolean antibioticFlag;
+        /** 业务标识：是否处方药。 */
         private Boolean rxFlag;
         /** 药品69码。 */
         private String drug69Code;

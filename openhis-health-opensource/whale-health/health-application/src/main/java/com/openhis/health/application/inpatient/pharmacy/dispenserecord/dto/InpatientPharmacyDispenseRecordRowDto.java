@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.pharmacy.dispenserecord.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -142,6 +142,10 @@ public class InpatientPharmacyDispenseRecordRowDto {
     /** 用法用量摘要。 */
     @Schema(description = "用法用量")
     private String usageText;
+
+    /** 生产厂家展示。 */
+    @Schema(description = "厂家")
+    private String manufacturerText;
 
     /** 汇总单号。 */
     @Schema(description = "汇总单号")

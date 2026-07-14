@@ -1,25 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.frequency.service;
 
+import com.openhis.health.application.basic.frequency.dto.ComputeFrequencyExecutionTimePointsResponse;
 import com.openhis.health.application.basic.frequency.dto.FrequencyDto;
 import com.openhis.health.application.basic.frequency.dto.FrequencyInitDto;
 import com.openhis.health.application.basic.frequency.mapper.FrequencyMapper;
+import com.openhis.health.application.basic.frequency.request.ComputeFrequencyExecutionTimePointsRequest;
 import com.openhis.health.application.basic.frequency.request.CreateFrequencyRequest;
 import com.openhis.health.application.basic.frequency.request.QueryFrequencyRequest;
 import com.openhis.health.application.basic.frequency.request.UpdateFrequencyRequest;
@@ -27,6 +16,7 @@ import com.openhis.health.domain.custom.frequency.command.ActivateFrequencyComma
 import com.openhis.health.domain.custom.frequency.command.DeactivateFrequencyCommand;
 import com.openhis.health.domain.custom.frequency.command.DeleteFrequencyCommand;
 import com.openhis.health.domain.custom.frequency.entity.Frequency;
+import com.openhis.health.domain.custom.frequency.queries.model.FrequencyExecutionTimePointQueryModel;
 import com.openhis.health.domain.custom.frequency.queries.model.FrequencyPageItemQueryModel;
 import com.openhis.health.domain.share.enums.FrequencyAllowCrossDay;
 import com.openhis.health.domain.share.enums.FrequencyCycleType;
@@ -35,14 +25,17 @@ import com.openhis.health.domain.custom.frequency.service.FrequencyQueryService;
 import com.openhis.health.domain.share.constants.CustomConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -70,6 +63,9 @@ public class FrequencyAppService {
      * @return 初始化 DTO，各选项列表非 {@code null}
      */
     public FrequencyInitDto init() {
+        // Gate：只读页初始化，不写库
+        // Pre：装配状态、周期、场景、跨天与周期单位下拉
+        // Asm：映射页初始化响应
         FrequencyInitDto dto = new FrequencyInitDto();
         dto.setStatusOptions(List.of(
             new OptionDto(1L, "1", "启用"),
@@ -110,8 +106,9 @@ public class FrequencyAppService {
      * @return 分页 DTO 结果
      */
     public PagedResult<FrequencyDto> page(QueryFrequencyRequest request) {
+        // Gate：归一分页请求，避免 NPE
         QueryFrequencyRequest query = ensureQueryRequest(request);
-        // Spring Data 页下标 0-based：AbstractPageQuery#springPageIndex()
+        // Pre：归一关键字并下推分页查询
         int pageIndex = query.springPageIndex();
         int pageSize;
         if (query.getPageSize() == null || query.getPageSize() <= 0) {
@@ -123,7 +120,43 @@ public class FrequencyAppService {
 
         Page<FrequencyPageItemQueryModel> page = frequencyQueryService.pageFrequencies(keyword, pageIndex, pageSize)
             .map(this::enrichPageItemFields);
+        // Asm：映射分页 DTO
         return PagedResult.fromPage(page.map(frequencyMapper::toDto));
+    }
+
+    /**
+     * 计算频次在给定时间窗内的计划执行次数与时点（纯读侧，不写库）。
+     *
+     * @param request 频次编码与时间窗
+     * @return 执行次数与升序时点列表
+     */
+    public ComputeFrequencyExecutionTimePointsResponse computeExecutionTimePoints(
+        ComputeFrequencyExecutionTimePointsRequest request) {
+        // Gate：频次编码与时间窗必填
+        if (request == null || StringUtils.isEmpty(request.getRateCode())) {
+            throw new ValidationException("计算执行次数失败：频次编码不能为空");
+        }
+        LocalDateTime startTime = request.getStartTime();
+        LocalDateTime endTime = request.getEndTime();
+        if (startTime == null || endTime == null) {
+            throw new ValidationException("计算执行次数失败：开始/结束时间不能为空");
+        }
+        // Pre：纯读侧计算计划执行时点
+        List<FrequencyExecutionTimePointQueryModel> points = frequencyQueryService.computeExecutionTimePoints(
+            request.getRateCode().trim(),
+            startTime,
+            endTime);
+        ComputeFrequencyExecutionTimePointsResponse response = new ComputeFrequencyExecutionTimePointsResponse();
+        response.setExecutionCount(points.size());
+        List<String> executionAtList = new ArrayList<>();
+        for (FrequencyExecutionTimePointQueryModel point : points) {
+            if (point.getExecutionAt() != null) {
+                executionAtList.add(point.getExecutionAt().toString());
+            }
+        }
+        response.setExecutionAtList(executionAtList);
+        // Asm：映射计算结果响应
+        return response;
     }
 
     /**
@@ -134,12 +167,16 @@ public class FrequencyAppService {
      * @throws ValidationException 参数不合法时
      */
     public FrequencyDto create(CreateFrequencyRequest request) {
+        // Gate：创建请求校验与写路径操作人
         validateCreateRequest(request);
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "请先登录后再新增频次");
+        // Cmd：创建频次
         Long id = frequencyDomainService.createFrequency(
             frequencyMapper.toCreateCommand(request, operatorId));
+        // Pre：回读新建实体
         Frequency created = frequencyQueryService.findById(id);
+        // Asm：映射展示 DTO
         return frequencyMapper.toDto(enrichFrequencyFields(created));
     }
 
@@ -151,12 +188,16 @@ public class FrequencyAppService {
      * @throws ValidationException 参数不合法时
      */
     public FrequencyDto update(UpdateFrequencyRequest request) {
+        // Gate：更新请求校验与写路径操作人
         validateUpdateRequest(request);
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "请先登录后再更新频次");
+        // Cmd：修改频次
         frequencyDomainService.modifyFrequency(
             frequencyMapper.toModifyCommand(request, operatorId));
+        // Pre：回读更新后实体
         Frequency updated = frequencyQueryService.findById(request.getId());
+        // Asm：映射展示 DTO
         return frequencyMapper.toDto(enrichFrequencyFields(updated));
     }
 
@@ -167,6 +208,7 @@ public class FrequencyAppService {
      * @throws ValidationException id 为空时
      */
     public void delete(Long id) {
+        // Gate：主键非空且须已登录操作人
         if (id == null) {
             throw new ValidationException("删除频次失败：id 不能为空");
         }
@@ -175,6 +217,7 @@ public class FrequencyAppService {
         DeleteFrequencyCommand command = new DeleteFrequencyCommand();
         command.setId(id);
         command.setOperatorId(operatorId);
+        // Cmd：逻辑删除频次
         frequencyDomainService.deleteFrequency(command);
     }
 
@@ -185,6 +228,7 @@ public class FrequencyAppService {
      * @throws ValidationException id 为空时
      */
     public void enable(Long id) {
+        // Gate：主键非空且须已登录操作人
         if (id == null) {
             throw new ValidationException("启用频次失败：id 不能为空");
         }
@@ -193,6 +237,7 @@ public class FrequencyAppService {
         ActivateFrequencyCommand command = new ActivateFrequencyCommand();
         command.setId(id);
         command.setOperatorId(operatorId);
+        // Cmd：启用频次
         frequencyDomainService.activateFrequency(command);
     }
 
@@ -203,6 +248,7 @@ public class FrequencyAppService {
      * @throws ValidationException id 为空时
      */
     public void disable(Long id) {
+        // Gate：主键非空且须已登录操作人
         if (id == null) {
             throw new ValidationException("停用频次失败：id 不能为空");
         }
@@ -211,6 +257,7 @@ public class FrequencyAppService {
         DeactivateFrequencyCommand command = new DeactivateFrequencyCommand();
         command.setId(id);
         command.setOperatorId(operatorId);
+        // Cmd：停用频次
         frequencyDomainService.deactivateFrequency(command);
     }
 

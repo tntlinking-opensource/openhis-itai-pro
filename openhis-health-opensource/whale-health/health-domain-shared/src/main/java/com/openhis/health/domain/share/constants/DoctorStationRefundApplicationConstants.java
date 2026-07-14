@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 /**
@@ -38,6 +25,11 @@ public interface DoctorStationRefundApplicationConstants {
     String DEVICE_ORDER_REFUND_REASON_OUTPATIENT_REFUND_APP = "门诊医生站退费申请";
 
     /**
+     * 申请退诊疗命令中的原因文本：医生站门诊退费申请。
+     */
+    String SERVICE_ORDER_REFUND_REASON_OUTPATIENT_REFUND_APP = "门诊医生站退费申请";
+
+    /**
      * 取消诊疗服务申请时的原因文本：门诊退费申请。
      */
     String SERVICE_REQUEST_CANCEL_REASON_OUTPATIENT_REFUND_APP = "门诊退费申请";
@@ -51,4 +43,9 @@ public interface DoctorStationRefundApplicationConstants {
      * IF-DRA-02 拒绝语义码：耗材已执行（与 AS EX-DRA-201 对齐，供前端稳定分支）。
      */
     String REJECT_REASON_CODE_EX_DRA_201 = "EX-DRA-201";
+
+    /**
+     * IF-DRA-03 拒绝语义码：同一原支付禁止分次退费（与 AS EX-DRA-304 对齐）。
+     */
+    String MESSAGE_CODE_HALF_REFUND_NOT_SUPPORTED = "EX-DRA-304";
 }

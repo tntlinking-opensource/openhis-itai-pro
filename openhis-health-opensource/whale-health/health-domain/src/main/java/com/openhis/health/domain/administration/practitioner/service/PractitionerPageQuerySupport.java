@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.practitioner.service;
 
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
@@ -79,6 +66,14 @@ final class PractitionerPageQuerySupport {
         };
     }
 
+    /**
+     * 医务人员分页：追加角色解析后的 id 范围谓词；空集合时构造恒 false。
+     *
+     * @param predicates                    待追加谓词列表
+     * @param root                          Practitioner 根
+     * @param cb                            CriteriaBuilder
+     * @param resolvedPractitionerIdsForRole 角色过滤后的 id；null 表示不追加
+     */
     private static void applyResolvedPractitionerIdsPredicate(
         List<Predicate> predicates,
         Root<Practitioner> root,
@@ -94,6 +89,14 @@ final class PractitionerPageQuerySupport {
         predicates.add(root.get(FieldNameConstants.ID).in(resolvedPractitionerIdsForRole));
     }
 
+    /**
+     * 医务人员关键字 OR 谓词：姓名、工号、电话、地址、拼音、五笔、医保号。
+     *
+     * @param root          Practitioner 根
+     * @param cb            CriteriaBuilder
+     * @param searchPattern 已小写化的 LIKE 模式
+     * @return OR 组合谓词
+     */
     private static Predicate keywordPredicate(
         Root<Practitioner> root,
         jakarta.persistence.criteria.CriteriaBuilder cb,

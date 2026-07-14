@@ -1,35 +1,22 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler;
 
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricedOrderRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingPatientGroupDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationSupplementParentOrderRowDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.mapper.NurseStationInpatientBillingMapper;
-import com.openhis.health.module.querysupport.nursestation.NurseStationOrderViewListAssembler;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewDisplayContext;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewDisplayCore;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewListDetailIndex;
+import com.openhis.health.application.inpatient.nursestation.orderaudit.support.NurseStationOrderViewListAssembler;
+import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderViewDisplayContext;
+import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderViewDisplayCore;
+import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderViewListDetailIndex;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
-import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -46,7 +33,7 @@ import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRe
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -71,7 +58,7 @@ public class NurseStationInpatientBillingListAssembler {
 
     private final NurseStationOrderViewListAssembler orderViewListAssembler;
     private final NurseStationInpatientBillingMapper nurseStationInpatientBillingMapper;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final ServiceRequestQueryService serviceRequestQueryService;
     private final DeviceRequestQueryService deviceRequestQueryService;
 
@@ -130,12 +117,12 @@ public class NurseStationInpatientBillingListAssembler {
             if (row.getQuantity() != null) {
                 facts.setQuantity(row.getQuantity());
             }
-            if (StringUtils.isNotBlank(row.getUnitCode())) {
+            if (StringUtils.isNotEmpty(row.getUnitCode())) {
                 facts.setUnitCode(row.getUnitCode());
             }
             if (ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(row.getOrderType())) {
                 ServiceRequestListModel svc = serviceById.get(row.getOrderId());
-                if (StringUtils.isNotBlank(row.getBasedOnTable())) {
+                if (StringUtils.isNotEmpty(row.getBasedOnTable())) {
                     facts.setBasedOnTable(row.getBasedOnTable());
                 }
                 if (row.getBasedOnId() != null) {
@@ -148,10 +135,10 @@ public class NurseStationInpatientBillingListAssembler {
                     if (facts.getQuantity() == null) {
                         facts.setQuantity(svc.getQuantity());
                     }
-                    if (StringUtils.isBlank(facts.getUnitCode())) {
+                    if (StringUtils.isEmpty(facts.getUnitCode())) {
                         facts.setUnitCode(svc.getUnitCode());
                     }
-                    if (StringUtils.isBlank(facts.getBasedOnTable()) && StringUtils.isNotBlank(svc.getBasedOnTable())) {
+                    if (StringUtils.isEmpty(facts.getBasedOnTable()) && StringUtils.isNotEmpty(svc.getBasedOnTable())) {
                         facts.setBasedOnTable(svc.getBasedOnTable());
                     }
                     if (facts.getBasedOnId() == null && svc.getBasedOnId() != null) {
@@ -169,9 +156,9 @@ public class NurseStationInpatientBillingListAssembler {
                 }
             } else if (ReadModelOrderTypeConstants.DEVICE_REQUEST.equals(row.getOrderType())) {
                 DeviceRequestListModel dev = deviceById.get(row.getOrderId());
-                if (StringUtils.isNotBlank(row.getDevBasedOnTable())) {
+                if (StringUtils.isNotEmpty(row.getDevBasedOnTable())) {
                     facts.setBasedOnTable(row.getDevBasedOnTable());
-                } else if (StringUtils.isNotBlank(row.getBasedOnTable())) {
+                } else if (StringUtils.isNotEmpty(row.getBasedOnTable())) {
                     facts.setBasedOnTable(row.getBasedOnTable());
                 }
                 if (row.getDevBasedOnId() != null) {
@@ -186,10 +173,10 @@ public class NurseStationInpatientBillingListAssembler {
                     if (facts.getQuantity() == null) {
                         facts.setQuantity(dev.getQuantity());
                     }
-                    if (StringUtils.isBlank(facts.getUnitCode())) {
+                    if (StringUtils.isEmpty(facts.getUnitCode())) {
                         facts.setUnitCode(dev.getUnitCode());
                     }
-                    if (StringUtils.isBlank(facts.getBasedOnTable()) && StringUtils.isNotBlank(dev.getBasedOnTable())) {
+                    if (StringUtils.isEmpty(facts.getBasedOnTable()) && StringUtils.isNotEmpty(dev.getBasedOnTable())) {
                         facts.setBasedOnTable(dev.getBasedOnTable());
                     }
                     if (facts.getBasedOnId() == null && dev.getBasedOnId() != null) {
@@ -221,9 +208,12 @@ public class NurseStationInpatientBillingListAssembler {
             lookup.setProductDefinitionId(id);
             lookups.add(lookup);
         }
-        Map<String, ProductDefinitionDisplayDto> products = lookups.isEmpty()
-            ? Map.of()
-            : productDefinitionBatchLoader.loadAsMap(lookups);
+        Map<String, ProductDefinitionDisplayDto> products;
+        if (lookups.isEmpty()) {
+            products = Map.of();
+        } else {
+            products = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
+        }
         for (InpatientOrderListSkeleton row : skeleton) {
             if (row == null || row.getOrderId() == null) {
                 continue;
@@ -276,7 +266,7 @@ public class NurseStationInpatientBillingListAssembler {
      * @return 展示名；无匹配时返回 null
      */
     private String resolveUnitDisplay(ProductDefinitionDisplayDto product, String unitCode) {
-        if (product == null || StringUtils.isBlank(unitCode)) {
+        if (product == null || StringUtils.isEmpty(unitCode)) {
             return null;
         }
         if (unitCode.equals(product.getPackageUnitCode())) {
@@ -313,6 +303,10 @@ public class NurseStationInpatientBillingListAssembler {
         Map<Long, List<NurseStationSupplementParentOrderRowDto>> byEncounter = new LinkedHashMap<>();
         for (InpatientOrderListSkeleton order : skeleton) {
             if (order == null || order.getEncounterId() == null) {
+                continue;
+            }
+            // 转科/出院/护理类不经医嘱计费 Tab 补费（与执行/ATD 同源；护理费由自动滚费 BR-IP-ARG-009 驱动）
+            if (this.shouldExcludeSupplementParentOrder(order, index)) {
                 continue;
             }
             NurseStationSupplementParentOrderRowDto row = this.mapSupplementRow(order, index, ctx);
@@ -371,6 +365,25 @@ public class NurseStationInpatientBillingListAssembler {
             groups.add(group);
         }
         return groups;
+    }
+
+    /**
+     * 补费父医嘱是否排除（转科/出院/护理类与 IF-IP-EXE-01、ATD-03 同源）。
+     *
+     * @param order 列表骨架
+     * @param index 医嘱明细索引
+     * @return true 表示不进入 IF-IP-PRC-03 列表
+     */
+    private boolean shouldExcludeSupplementParentOrder(
+        InpatientOrderListSkeleton order,
+        NurseStationOrderViewListDetailIndex index) {
+        if (!ReadModelOrderTypeConstants.SERVICE_REQUEST.equals(order.getOrderType())) {
+            return false;
+        }
+        Long requestId = orderViewListAssembler.resolveRequestId(order);
+        ServiceRequestListModel svcDetail = index.getSvcDetailById().get(requestId);
+        String serviceCategory = orderViewListAssembler.resolveServiceCategoryEnum(order, svcDetail);
+        return orderViewListAssembler.isExcludedFromNurseStationExecuteList(serviceCategory);
     }
 
     /**
@@ -445,27 +458,25 @@ public class NurseStationInpatientBillingListAssembler {
         if (ReadModelOrderTypeConstants.DEVICE_REQUEST.equals(order.getOrderType())) {
             serviceId = order.getOrderId();
         }
-        // Charge 与 service_request / device_request 同 id 关联，取首条待结算费用
+        // Charge 与 service_request / device_request 同 id 关联；读侧已 excludeSupersededSettledLines，此处仅按状态择优
         List<ChargeItem> charges = chargeByServiceId.get(serviceId);
-        ChargeItem charge = null;
-        if (charges != null && !charges.isEmpty()) {
-            charge = charges.get(0);
-        }
+        ChargeItem charge = this.resolvePrimaryLinkedCharge(charges);
         NurseStationPricedOrderRowDto row = new NurseStationPricedOrderRowDto();
         row.setListRowKey(String.valueOf(order.getOrderId()) + GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR
             + order.getOrderType());
         row.setOrderId(order.getOrderId());
         row.setOrderType(order.getOrderType());
         row.setEncounterId(order.getEncounterId());
-        PricedOrderRowFacts facts = pricedRowFactsByOrderId != null
-            ? pricedRowFactsByOrderId.get(order.getOrderId())
-            : null;
+        PricedOrderRowFacts facts = null;
+        if (pricedRowFactsByOrderId != null) {
+            facts = pricedRowFactsByOrderId.get(order.getOrderId());
+        }
         if (facts != null && facts.getPatientId() != null) {
             row.setPatientId(facts.getPatientId());
         } else {
             row.setPatientId(order.getPatientId());
         }
-        if (facts != null && StringUtils.isNotBlank(facts.getProductDisplayName())) {
+        if (facts != null && StringUtils.isNotEmpty(facts.getProductDisplayName())) {
             row.setProductDisplayName(facts.getProductDisplayName());
         } else {
             row.setProductDisplayName(order.getOrderType());
@@ -475,12 +486,12 @@ public class NurseStationInpatientBillingListAssembler {
         } else {
             row.setQuantity(order.getQuantity());
         }
-        if (facts != null && StringUtils.isNotBlank(facts.getUnitCode())) {
+        if (facts != null && StringUtils.isNotEmpty(facts.getUnitCode())) {
             row.setUnitCode(facts.getUnitCode());
         } else {
             row.setUnitCode(order.getUnitCode());
         }
-        if (facts != null && StringUtils.isNotBlank(facts.getUnitDisplay())) {
+        if (facts != null && StringUtils.isNotEmpty(facts.getUnitDisplay())) {
             row.setUnitDisplay(facts.getUnitDisplay());
         }
         row.setPricedTime(this.resolvePricedTime(order, charge));
@@ -502,15 +513,15 @@ public class NurseStationInpatientBillingListAssembler {
             row.setPricingModeDisplay("医嘱补费");
             String basedOnTable = null;
             Long basedOnId = null;
-            if (facts != null && StringUtils.isNotBlank(facts.getBasedOnTable())) {
+            if (facts != null && StringUtils.isNotEmpty(facts.getBasedOnTable())) {
                 basedOnTable = facts.getBasedOnTable();
             }
             if (facts != null && facts.getBasedOnId() != null) {
                 basedOnId = facts.getBasedOnId();
             }
-            if (StringUtils.isBlank(basedOnTable)) {
+            if (StringUtils.isEmpty(basedOnTable)) {
                 if (ReadModelOrderTypeConstants.DEVICE_REQUEST.equals(order.getOrderType())
-                    && StringUtils.isNotBlank(order.getDevBasedOnTable())) {
+                    && StringUtils.isNotEmpty(order.getDevBasedOnTable())) {
                     basedOnTable = order.getDevBasedOnTable();
                 } else {
                     basedOnTable = order.getBasedOnTable();
@@ -545,6 +556,33 @@ public class NurseStationInpatientBillingListAssembler {
             }
         }
         return row;
+    }
+
+    /**
+     * 同锚点多条 Charge 取列表展示行：状态不同则优先 {@code PENDING_SETTLEMENT}（反结再生），不比 id。
+     *
+     * <p>正常路径下 AppService 已 {@code excludeSupersededSettledLines=true}，同锚点应只剩一条有效行；
+     * 若过滤未完全生效，仍按状态兜底避免绑定源 {@code SETTLED}。</p>
+     *
+     * @param charges 同 service_id 关联费用
+     * @return 展示用费用行；无有效行时 null
+     */
+    private ChargeItem resolvePrimaryLinkedCharge(List<ChargeItem> charges) {
+        if (charges == null || charges.isEmpty()) {
+            return null;
+        }
+        String pendingCode = ChargeItemStatus.PENDING_SETTLEMENT.getCode();
+        for (ChargeItem row : charges) {
+            if (row != null && pendingCode.equals(row.getStatusEnum())) {
+                return row;
+            }
+        }
+        for (ChargeItem row : charges) {
+            if (row != null) {
+                return row;
+            }
+        }
+        return null;
     }
 
     /**

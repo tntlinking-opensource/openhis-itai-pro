@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.encounter.queries.model;
 
 import lombok.Getter;
@@ -29,12 +16,19 @@ import java.math.BigDecimal;
 @Setter
 public class RegistrationSlipQueryModel {
 
+    /** 挂号单号/slip 业务号。 */
     private String slipNo;
+    /** 就诊主键 {@code adm_encounter.id}。 */
     private Long encounterId;
+    /** 患者姓名（快照）。 */
     private String patientName;
+    /** 挂号科室名称。 */
     private String organizationName;
+    /** 挂号医生姓名。 */
     private String doctorName;
+    /** 号别/服务类型名称。 */
     private String serviceTypeName;
+    /** 就诊状态展示文案。 */
     private String statusEnumText;
     /** 挂号费金额；由应用层按收费明细回填时可 null。 */
     private BigDecimal amount;

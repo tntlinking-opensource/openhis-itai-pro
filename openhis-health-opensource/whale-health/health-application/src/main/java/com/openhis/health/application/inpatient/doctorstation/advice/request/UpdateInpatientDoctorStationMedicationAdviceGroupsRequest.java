@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.advice.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -36,11 +23,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 医生站-医嘱开立-更新药品医嘱组号请求。 */
 @Schema(description = "医生站-医嘱开立-更新药品医嘱组号请求")
 public class UpdateInpatientDoctorStationMedicationAdviceGroupsRequest {
 
-    /** 当前就诊。 */
+    /** 就诊标识。 */
     @NotNull(message = DoctorStationAdviceConstants.MSG_ENCOUNTER_ID_REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -53,11 +39,11 @@ public class UpdateInpatientDoctorStationMedicationAdviceGroupsRequest {
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
-    /** 需先清空组号（拆组）的药品请求 id，与 {@link #assignGroup} 可组合使用。 */
+    /** 需要拆组的药品请求主键列表。 */
     @Schema(description = "需要拆组的药品请求主键列表")
     private List<Long> clearGroupIds;
 
-    /** 非空时执行并组：目标组号 + 请求 id 列表。 */
+    /** 并组写入载荷。 */
     @Schema(description = "并组写入载荷")
     private AssignMedicationGroupPayload assignGroup;
 }

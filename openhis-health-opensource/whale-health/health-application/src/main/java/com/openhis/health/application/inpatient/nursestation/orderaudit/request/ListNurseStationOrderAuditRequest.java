@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.orderaudit.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -32,11 +19,10 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 医嘱校对列表查询请求。 */
 @Schema(description = "医嘱校对列表查询请求", requiredProperties = {"encounterIds", "auditTab"})
 public class ListNurseStationOrderAuditRequest {
 
-    /** 左侧多选就诊主键列表（BR-IP-AUD-001）。 */
+    /** 左侧多选就诊主键列表。 */
     @NotEmpty(message = "就诊标识列表不能为空")
     @Schema(description = "左侧多选就诊主键列表", required = true)
     @JsonSerialize(contentUsing = ToStringSerializer.class)
@@ -48,11 +34,11 @@ public class ListNurseStationOrderAuditRequest {
     @Schema(description = "校对 Tab：pending / passed / stopped / suspended", required = true)
     private String auditTab;
 
-    /** 长临筛选：all / long / temp；默认 all（BR-IP-AUD-004）。 */
+    /** 长临筛选：all / long / temp；默认 all。 */
     @Schema(description = "长临筛选：all / long / temp；默认 all")
     private String therapyType;
 
-    /** 中西药 Tab：west / tcm；默认 west（BR-IP-TCM 下游）。 */
+    /** 中西药 Tab：west / tcm；默认 west。 */
     @Schema(description = "中西药 Tab：west / tcm；默认 west")
     private String medicineCategoryTab;
 }

@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.temperaturesheet.response;
 
 import com.openhis.health.application.inpatient.nursestation.temperaturesheet.dto.TemperatureSheetTimeSlotOptionDto;
@@ -22,19 +22,19 @@ import java.util.List;
 @Schema(description = "体温单页初始化响应")
 public class LoadNurseStationTemperatureSheetInitResponse {
 
-    /** 固定三测时点槽选项。 */
+    /** 三测时点槽选项。 */
     @Schema(description = "三测时点槽选项")
     private List<TemperatureSheetTimeSlotOptionDto> timeSlotOptions = new ArrayList<>();
 
-    /** 窗口天数选项（3/7/14 天）。 */
+    /** 窗口选项。 */
     @Schema(description = "窗口选项")
     private List<TemperatureSheetWindowOptionDto> windowOptions = new ArrayList<>();
 
-    /** 默认窗口 code（7d）。 */
+    /** 默认窗口 code。 */
     @Schema(description = "默认窗口 code")
     private String defaultWindowRange;
 
-    /** 特殊事件选项（术语 {@code special_event_code}）。 */
+    /** 特殊事件选项。 */
     @Schema(description = "特殊事件选项")
     private List<OptionDto> specialEventOptions = new ArrayList<>();
 }

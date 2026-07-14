@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.ordercancelexecute.mapper;
 
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler.NurseStationDispenseSummaryWriteAssembler.SummaryMergeGroup;
@@ -106,6 +93,8 @@ public class NurseStationOrderCancelExecuteMapperImpl implements NurseStationOrd
         command.setOccurrenceTime(occurrenceTime);
         command.setOperatorId(operatorId);
         command.setSkipDuplicateRequestAnchorCheck(Boolean.TRUE);
+        // CANCEL 对冲须继承 COMPLETED occurrence；被对冲行仍占槽，建单阶段跳过占用 Gate
+        command.setSkipOccurrenceSlotCheck(Boolean.TRUE);
         return command;
     }
 
@@ -290,9 +279,10 @@ public class NurseStationOrderCancelExecuteMapperImpl implements NurseStationOrd
     public SummarizeMedicationDispensesCommand toSummarizeMedicationDispensesCommand(
         Long locationId,
         List<Long> dispenseIds,
-        Long operatorId) {
+        Long operatorId,
+        String summaryNo) {
         return nurseStationDispenseSummaryMapper.toSummarizeMedicationDispensesCommand(
-            locationId, dispenseIds, operatorId);
+            locationId, dispenseIds, operatorId, summaryNo);
     }
 
     /**

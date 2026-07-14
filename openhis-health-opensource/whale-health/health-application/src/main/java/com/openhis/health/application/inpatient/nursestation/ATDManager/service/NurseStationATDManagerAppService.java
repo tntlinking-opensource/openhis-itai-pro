@@ -1,17 +1,23 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
 package com.openhis.health.application.inpatient.nursestation.ATDManager.service;
 
 import com.openhis.health.application.inpatient.nursestation.ATDManager.response.*;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
-import com.openhis.health.module.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
-import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
+import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayAssembler;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.application.shared.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.CurrentManagedWardLocationIdsResolver;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardItemDto;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardLocationBlockDto;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.BedBoardOccupantDto;
-import com.openhis.health.application.inpatient.nursestation.ATDManager.support.RecallReverseSettleSupport;
-import com.openhis.health.module.orchestration.nursestation.AdmissionVitalSignSaveContext;
-import com.openhis.health.module.orchestration.nursestation.AdmissionVitalSignSupport;
+import com.openhis.health.application.inpatient.nursestation.ATDManager.support.RecallReverseSettleOrchestrator;
+import com.openhis.health.application.shared.inpatient.AdmissionVitalSignSaveContext;
+import com.openhis.health.application.shared.inpatient.AdmissionVitalSignOrchestrator;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.mapper.NurseStationATDManagerMapper;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.DischargePendingExecutionItemDto;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.dto.DischargePendingMedicationItemDto;
@@ -23,9 +29,9 @@ import com.openhis.health.application.inpatient.nursestation.ATDManager.request.
 import com.openhis.health.application.inpatient.nursestation.ATDManager.request.ListDischargePendingMedicationsRequest;
 import com.openhis.health.application.inpatient.nursestation.ATDManager.request.RecallInpatientDischargeRequest;
 import com.openhis.health.domain.administration.account.entity.Account;
-import com.openhis.health.integration.booking.inpatient.InpatientBedBookingConsumeExtension;
-import com.openhis.health.integration.booking.inpatient.InpatientBedBookingQueryExtension;
-import com.openhis.health.integration.booking.result.InpatientBedReservationSnapshot;
+import com.openhis.health.infrastructure.integration.booking.inpatient.InpatientBedBookingConsumeExtension;
+import com.openhis.health.infrastructure.integration.booking.inpatient.InpatientBedBookingQueryExtension;
+import com.openhis.health.infrastructure.integration.booking.ExtensionIn.InpatientBedBookingByBedExtensionIn;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.command.AssignInpatientBedCommand;
@@ -37,38 +43,32 @@ import com.openhis.health.domain.administration.encounter.command.SwapInpatientB
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.inpatient.nursestation.ATDManager.support.InpatientDischargeClinicalGate;
 import com.openhis.health.domain.administration.location.command.OccupyBedCommand;
 import com.openhis.health.domain.administration.location.command.ReleaseBedCommand;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationDomainService;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
-import com.openhis.health.domain.clinical.procedure.entity.Procedure;
-import com.openhis.health.domain.clinical.procedure.service.ProcedureQueryService;
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseListQueryModel;
-import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
-import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestQueryService;
-import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
+import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.EncounterClass;
 import com.openhis.health.domain.share.enums.EncounterStatus;
-import com.openhis.health.domain.share.enums.EventStatus;
-import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.enums.LocationOperational;
-import com.openhis.health.domain.share.enums.RequestStatus;
-import com.openhis.health.domain.share.enums.TherapyType;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
+import com.openhis.health.infrastructure.integration.booking.ExtensionOut.InpatientBedReservationQueryExtensionOut;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -77,6 +77,7 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -125,7 +126,7 @@ public class NurseStationATDManagerAppService {
 
     /** 就诊读侧：IMP 门禁、活动床/病房解析与住院上下文。 */
     private final EncounterQueryService encounterQueryService;
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
 
     /** 就诊写侧：分床/转床/互换轨迹。 */
     private final EncounterDomainService encounterDomainService;
@@ -142,20 +143,14 @@ public class NurseStationATDManagerAppService {
     /** 占床患者展示回填（与 001 列表同源）。 */
     private final InpatientInfoQueueDisplayAssembler inpatientInfoQueueDisplayAssembler;
 
-    /** 药品请求读侧（出院前待办/门禁）。 */
-    private final MedicationRequestQueryService medicationRequestQueryService;
-
-    /** 诊疗请求读侧（出院前待办/门禁）。 */
+    /** 诊疗请求读侧（出院时刻解析）。 */
     private final ServiceRequestQueryService serviceRequestQueryService;
 
     /** 出院召回内嵌反结（ATD-07 步骤 6，护士站应用层独享）。 */
-    private final RecallReverseSettleSupport recallReverseSettleSupport;
+    private final RecallReverseSettleOrchestrator recallReverseSettleOrchestrator;
 
-    /** 药品发放读侧（待发退药/出院门禁）。 */
-    private final MedicationDispenseQueryService medicationDispenseQueryService;
-
-    /** 执行记录读侧（临时医嘱完结判定）。 */
-    private final ProcedureQueryService procedureQueryService;
+    /** 出院临床门禁（ATD-03/04/05 与 FIN-003 出院全结 Pre 共用）。 */
+    private final InpatientDischargeClinicalGate inpatientDischargeClinicalGate;
 
     /** 药品定义读侧（待办展示名）。 */
     private final MedicationDefinitionQueryService medicationDefinitionQueryService;
@@ -163,8 +158,11 @@ public class NurseStationATDManagerAppService {
     /** 诊疗定义读侧（待办展示名）。 */
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
 
+    /** 术语 code → 展示名（剂量/数量单位）。 */
+    private final TerminologyOptionLoader terminologyOptionLoader;
+
     /** 入科入院体征写编排（ASSIGN 成功后同事务写入）。 */
-    private final AdmissionVitalSignSupport admissionVitalSignSupport;
+    private final AdmissionVitalSignOrchestrator admissionVitalSignOrchestrator;
 
     /** 床位预约读 Extension（GAP-ATD-007）。 */
     private final InpatientBedBookingQueryExtension inpatientBedBookingQueryExtension;
@@ -276,10 +274,11 @@ public class NurseStationATDManagerAppService {
             }
             Map<Long, InpatientEncounterContextQueryModel> contextByEncounterId = new HashMap<>();
             if (!occupiedEncounterIds.isEmpty()) {
-                InpatientEncounterPageQuery inpatientQuery = new InpatientEncounterPageQuery();
-                inpatientQuery.setEncounterIdsIn(occupiedEncounterIds);
+                // Pre：按占床 encounterId 主键批量装载上下文；禁止 listInpatientEncounterContexts（会套用登记列表
+                // 默认 PLANNED/REGISTERED/IN_PROGRESS 过滤，漏掉 ON_HOLD 等待出院占床，致入科 Tab 仅显示「占床」空壳）。
                 List<InpatientEncounterContextQueryModel> contextRows =
-                    encounterContextFacade.listInpatientEncounterContexts(inpatientQuery);
+                    EncounterContextReader.listInpatientContextsByEncounterIdsOrdered(
+                        new ArrayList<>(occupiedEncounterIds));
                 for (InpatientEncounterContextQueryModel row : contextRows) {
                     if (row != null && row.getEncounterId() != null) {
                         contextByEncounterId.put(row.getEncounterId(), row);
@@ -326,7 +325,7 @@ public class NurseStationATDManagerAppService {
                                 pending = pendingTotal;
                             }
                             BigDecimal displayBalance =
-                                InpatientDisplayAccountBalanceAssembler.computeDisplayAccountBalance(
+                                InpatientAccountBalanceDisplayAssembler.computeDisplayAccountBalance(
                                     account, pending);
                             boolean lowBalance = false;
                             if (displayBalance != null
@@ -343,6 +342,12 @@ public class NurseStationATDManagerAppService {
                             if (!this.isOccupantVisibleForPanel(resolvedPanel, row)) {
                                 occupant = null;
                             }
+                        } else {
+                            // BR-IP-ATD-009：活动占床轨迹存在但上下文缺失时告警，仍返回位置块且 occupant 为空。
+                            log.warn(
+                                "床位 IN_USE 且存在活动 adm_encounter_location 但住院上下文未装载，bedId={} encounterId={}",
+                                bed.getId(),
+                                encounterId);
                         }
                     }
                 } else if (encounterId != null) {
@@ -492,7 +497,7 @@ public class NurseStationATDManagerAppService {
                 .setOperatorId(operatorId)
                 .setRecorderId(currentPractitionerResolver.findPractitionerIdOrNull())
                 .setSubmitDto(request.getAdmissionVitalSigns());
-            admissionVitalSignSupport.saveIfPresent(vitalContext);
+            admissionVitalSignOrchestrator.saveIfPresent(vitalContext);
         }
     }
 
@@ -653,8 +658,8 @@ public class NurseStationATDManagerAppService {
                     InpatientNurseStationConstants.EX_IP_ATD_201,
                     "目标床已预留，请另选空床");
             }
-            InpatientBedReservationSnapshot reservation = inpatientBedBookingQueryExtension
-                .findActiveByBed(bedLocationId)
+            InpatientBedReservationQueryExtensionOut reservation = inpatientBedBookingQueryExtension
+                .findActiveByBed(new InpatientBedBookingByBedExtensionIn().setBedLocationId(bedLocationId))
                 .orElseThrow(() -> new BusinessException(
                     InpatientNurseStationConstants.EX_IP_ATD_207,
                     "目标床预约信息不一致，请刷新后重试"));
@@ -676,6 +681,7 @@ public class NurseStationATDManagerAppService {
             "请选择空床或互换");
     }
 
+    /** 分床 Gate 结果：是否由预约占床及预约 id。 */
     private record BedAssignGate(boolean occupyFromReservation, Long reservationAppointmentId) {
     }
 
@@ -721,44 +727,51 @@ public class NurseStationATDManagerAppService {
                 encounterId,
                 InpatientNurseStationConstants.EX_IP_ATD_103,
                 "待执行医嘱加载失败");
-            List<MedicationRequestListQueryModel> medicationRequests =
-                medicationRequestQueryService.listMedicationRequestsByEncounter(encounterId);
-            List<ServiceRequestListModel> serviceRequests =
-                serviceRequestQueryService.listServiceRequestsByEncounter(encounterId);
-            List<Procedure> procedures =
-                procedureQueryService.listByEncounterIds(Collections.singleton(encounterId));
-            Map<String, List<Procedure>> proceduresByRequestKey =
-                this.buildProceduresByRequestKey(procedures);
+            InpatientDischargeClinicalGate.DischargePendingExecutionScan scan =
+                inpatientDischargeClinicalGate.loadDischargePendingExecutionScan(encounterId);
             Set<Long> medicationIds = new LinkedHashSet<>();
             Set<Long> activityIds = new LinkedHashSet<>();
-            for (MedicationRequestListQueryModel row : medicationRequests) {
+            for (MedicationRequestListQueryModel row : scan.getMedicationRequests()) {
                 if (row != null && row.getMedicationId() != null) {
                     medicationIds.add(row.getMedicationId());
                 }
             }
-            for (ServiceRequestListModel row : serviceRequests) {
+            for (ServiceRequestListModel row : scan.getServiceRequests()) {
                 if (row != null && row.getActivityId() != null) {
                     activityIds.add(row.getActivityId());
                 }
             }
             Map<Long, String> medicationNameById = this.mapMedicationNamesByIds(medicationIds);
             Map<Long, String> activityNameById = this.mapActivityNamesByIds(activityIds);
+            Map<String, String> doseUnitLabelByCode =
+                terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.DOSE_UNIT);
+            Map<String, String> unitLabelByCode =
+                terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.UNIT_CODE);
             List<DischargePendingExecutionItemDto> items = new ArrayList<>();
-            for (MedicationRequestListQueryModel row : medicationRequests) {
-                if (row == null || !this.isDischargePendingListCandidateMedication(row)) {
+            for (MedicationRequestListQueryModel row : scan.getMedicationRequests()) {
+                if (row == null || !inpatientDischargeClinicalGate.isDischargePendingListCandidateMedication(row)) {
                     continue;
                 }
-                String blockingReason = this.resolveDischargeListBlockingReason(
+                String blockingReason = inpatientDischargeClinicalGate.resolveDischargeListBlockingReason(
                     row.getTherapyEnum(),
                     row.getStatusEnum(),
                     TableNameConstants.MED_MEDICATION_REQUEST,
                     row.getId(),
-                    proceduresByRequestKey);
+                    scan.getProceduresByRequestKey(),
+                    row,
+                    null,
+                    scan.getExecutionDeadline());
                 if (blockingReason == null) {
                     continue;
                 }
                 String medicationName = medicationNameById.get(row.getMedicationId());
-                String doseText = this.formatDoseText(row.getDose(), row.getDoseUnitCode(), row.getQuantity(), row.getUnitCode());
+                String doseText = this.formatDoseText(
+                    row.getDose(),
+                    row.getDoseUnitCode(),
+                    row.getQuantity(),
+                    row.getUnitCode(),
+                    doseUnitLabelByCode,
+                    unitLabelByCode);
                 DischargePendingExecutionItemDto item =
                     nurseStationATDManagerMapper.toDischargePendingExecutionItemFromMedication(
                         row, medicationName, doseText, blockingReason);
@@ -766,21 +779,30 @@ public class NurseStationATDManagerAppService {
                     items.add(item);
                 }
             }
-            for (ServiceRequestListModel row : serviceRequests) {
-                if (row == null || !this.isDischargePendingListCandidateService(row)) {
+            for (ServiceRequestListModel row : scan.getServiceRequests()) {
+                if (row == null || !inpatientDischargeClinicalGate.isDischargePendingListCandidateService(row)) {
                     continue;
                 }
-                String blockingReason = this.resolveDischargeListBlockingReason(
+                String blockingReason = inpatientDischargeClinicalGate.resolveDischargeListBlockingReason(
                     row.getTherapyEnum(),
                     row.getStatusEnum(),
                     TableNameConstants.WKF_SERVICE_REQUEST,
                     row.getId(),
-                    proceduresByRequestKey);
+                    scan.getProceduresByRequestKey(),
+                    null,
+                    row,
+                    scan.getExecutionDeadline());
                 if (blockingReason == null) {
                     continue;
                 }
                 String activityName = activityNameById.get(row.getActivityId());
-                String doseText = this.formatDoseText(null, null, row.getQuantity(), row.getUnitCode());
+                String doseText = this.formatDoseText(
+                    null,
+                    null,
+                    row.getQuantity(),
+                    row.getUnitCode(),
+                    doseUnitLabelByCode,
+                    unitLabelByCode);
                 DischargePendingExecutionItemDto item =
                     nurseStationATDManagerMapper.toDischargePendingExecutionItemFromService(
                         row, activityName, doseText, blockingReason);
@@ -819,20 +841,11 @@ public class NurseStationATDManagerAppService {
                 encounterId,
                 InpatientNurseStationConstants.EX_IP_ATD_104,
                 "待发药品加载失败");
-            List<MedicationDispenseListQueryModel> dispenseRows =
-                medicationDispenseQueryService.listMedicationDispensesByEncounter(encounterId);
+            List<MedicationDispenseListQueryModel> pendingRows =
+                inpatientDischargeClinicalGate.listDischargePendingMedicationRows(encounterId);
             Set<Long> medicationIds = new LinkedHashSet<>();
             Set<Long> locationIds = new LinkedHashSet<>();
-            List<MedicationDispenseListQueryModel> pendingRows = new ArrayList<>();
-            for (MedicationDispenseListQueryModel row : dispenseRows) {
-                if (row == null || row.getStatusEnum() == null) {
-                    continue;
-                }
-                // Pre：仅保留 PREPARATION/SUMMARIZED/PENDING_REFUND（BR-IP-ATD-015）。
-                if (!this.isPendingDischargeDispenseStatus(row.getStatusEnum().getCode())) {
-                    continue;
-                }
-                pendingRows.add(row);
+            for (MedicationDispenseListQueryModel row : pendingRows) {
                 if (row.getMedicationId() != null) {
                     medicationIds.add(row.getMedicationId());
                 }
@@ -918,6 +931,7 @@ public class NurseStationATDManagerAppService {
             return nurseStationATDManagerMapper.toExecuteInpatientDischargeResponse(encounterId);
         } catch (BusinessException ex) {
             if (InpatientNurseStationConstants.EX_IP_ATD_301.equals(ex.getErrorCode())
+                || InpatientNurseStationConstants.EX_IP_ATD_307.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_302.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_303.equals(ex.getErrorCode())
                 || InpatientNurseStationConstants.EX_IP_ATD_304.equals(ex.getErrorCode())
@@ -979,7 +993,7 @@ public class NurseStationATDManagerAppService {
                 encounterId);
             BigDecimal pendingTotal =
                 chargeItemQueryService.sumPendingSettlementTotalPriceByEncounterId(encounterId);
-            BigDecimal displayBalance = InpatientDisplayAccountBalanceAssembler.computeDisplayAccountBalance(
+            BigDecimal displayBalance = InpatientAccountBalanceDisplayAssembler.computeDisplayAccountBalance(
                 account,
                 pendingTotal);
             if (displayBalance.compareTo(BigDecimal.ZERO) != 0) {
@@ -1080,8 +1094,8 @@ public class NurseStationATDManagerAppService {
                     "出院召回失败，请刷新后重试");
             }
             Long wardLocationId = lastWard.get();
-            // Cmd：内嵌反结（RecallReverseSettleSupport；对称 FIN-004），失败 EX-IP-ATD-502/503。
-            recallReverseSettleSupport.execute(
+            // Cmd：内嵌反结（RecallReverseSettleOrchestrator；对称 FIN-004），失败 EX-IP-ATD-502/503。
+            recallReverseSettleOrchestrator.execute(
                 encounterId,
                 encounter.getPatientId());
             // Cmd：DISCHARGED→REGISTERED + INSERT 活动 WARD（领域 §6.1.25）。
@@ -1196,10 +1210,14 @@ public class NurseStationATDManagerAppService {
             if (row.getTransferOrgId() != null) {
                 return false;
             }
-            if (StringUtils.isBlank(row.getDischargeTypeEnum())) {
-                return false;
+            if (StringUtils.isNotBlank(row.getDischargeTypeEnum())) {
+                return true;
             }
-            return true;
+            // Pre：校对出院后主档已写 out_way_code 仍占床，须在出 Tab 展示（BR-IP-ATD-010）。
+            if (StringUtils.isNotEmpty(row.getOutWayCode())) {
+                return true;
+            }
+            return false;
         }
         return false;
     }
@@ -1219,7 +1237,7 @@ public class NurseStationATDManagerAppService {
         String userMessage) {
         InpatientEncounterContextQueryModel row;
         try {
-            row = encounterContextFacade.mustGetInpatientContextByEncounterId(encounterId);
+            row = EncounterContextReader.mustGetInpatientContextByEncounterId(encounterId);
         } catch (BusinessException ex) {
             // 上下文缺失视为本场景加载失败，统一映射为 ATD 读接口错误码。
             throw new BusinessException(errorCode, userMessage);
@@ -1260,83 +1278,13 @@ public class NurseStationATDManagerAppService {
     }
 
     /**
-     * 出院门禁：长期未停嘱、临时未完结、待发退药（BR-IP-ATD-011①～③）。
+     * 出院门禁：与 ATD-03/04 待办列表同数据源——列表为空则医嘱/发药侧可通过。
      *
      * @param encounterId 就诊主键
-     * @throws BusinessException EX-IP-ATD-301/302/303
+     * @throws BusinessException EX-IP-ATD-301/302/303/307
      */
     private void assertDischargeGatePassed(Long encounterId) {
-        List<MedicationRequestListQueryModel> medicationRequests =
-            medicationRequestQueryService.listMedicationRequestsByEncounter(encounterId);
-        List<ServiceRequestListModel> serviceRequests =
-            serviceRequestQueryService.listServiceRequestsByEncounter(encounterId);
-        List<Procedure> procedures =
-            procedureQueryService.listByEncounterIds(Collections.singleton(encounterId));
-        Map<String, List<Procedure>> proceduresByRequestKey =
-            this.buildProceduresByRequestKey(procedures);
-        for (MedicationRequestListQueryModel row : medicationRequests) {
-            if (row == null || !this.isDischargeGateRequestCandidate(row.getStatusEnum())) {
-                continue;
-            }
-            // 退药关联行不参与出院门禁（与 ATD-03/004 同源）。
-            if (this.isRefundDerivativeMedication(row)) {
-                continue;
-            }
-            if (this.isLongTermNotStopped(row.getTherapyEnum(), row.getStatusEnum())) {
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_ATD_301,
-                    "长期医嘱需要先停嘱");
-            }
-            if (this.isTemporaryNotCompleted(
-                row.getTherapyEnum(),
-                TableNameConstants.MED_MEDICATION_REQUEST,
-                row.getId(),
-                proceduresByRequestKey)) {
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_ATD_302,
-                    "存在未执行或未完成的临时医嘱，请先执行");
-            }
-        }
-        for (ServiceRequestListModel row : serviceRequests) {
-            if (row == null || !this.isDischargeGateRequestCandidate(row.getStatusEnum())) {
-                continue;
-            }
-            if (this.isExcludedDischargeServiceCategory(row.getCategoryEnum())) {
-                continue;
-            }
-            if (row.getParentId() != null) {
-                continue;
-            }
-            if (this.isRefundDerivativeService(row)) {
-                continue;
-            }
-            if (this.isLongTermNotStopped(row.getTherapyEnum(), row.getStatusEnum())) {
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_ATD_301,
-                    "长期医嘱需要先停嘱");
-            }
-            if (this.isTemporaryNotCompleted(
-                row.getTherapyEnum(),
-                TableNameConstants.WKF_SERVICE_REQUEST,
-                row.getId(),
-                proceduresByRequestKey)) {
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_ATD_302,
-                    "存在未执行或未完成的临时医嘱，请先执行");
-            }
-        }
-        List<MedicationDispenseListQueryModel> dispenseRows =
-            medicationDispenseQueryService.listMedicationDispensesByEncounter(encounterId);
-        for (MedicationDispenseListQueryModel row : dispenseRows) {
-            if (row == null || row.getStatusEnum() == null) {
-                continue;
-            }
-            if (this.isPendingDischargeDispenseStatus(row.getStatusEnum().getCode())) {
-                throw new BusinessException(
-                    InpatientNurseStationConstants.EX_IP_ATD_303,
-                    "患者有待取的药品，请先取药");
-            }
-        }
+        inpatientDischargeClinicalGate.assertDischargeClinicalGatePassed(encounterId);
     }
 
     /**
@@ -1366,379 +1314,6 @@ public class NurseStationATDManagerAppService {
         }
         return dischargedAt;
     }
-
-    /**
-     * ATD-03 列表候选：已校对医生开立药品，排除退药关联。
-     *
-     * @param row 药品请求
-     * @return true 表示可参与待执行筛选
-     */
-    private boolean isDischargePendingListCandidateMedication(MedicationRequestListQueryModel row) {
-        if (!RequestStatus.VERIFIED.getCode().equals(row.getStatusEnum())) {
-            return false;
-        }
-        if (!GenerateSource.DOCTOR_PRESCRIPTION.getCode().equals(row.getGenerateSourceEnum())) {
-            return false;
-        }
-        if (this.isRefundDerivativeMedication(row)) {
-            return false;
-        }
-        return true;
-    }
-
-    /**
-     * ATD-03 列表候选：已校对医生开立诊疗，排除转科/出院/护理及子项、退药关联。
-     *
-     * @param row 诊疗请求
-     * @return true 表示可参与待执行筛选
-     */
-    private boolean isDischargePendingListCandidateService(ServiceRequestListModel row) {
-        if (!RequestStatus.VERIFIED.getCode().equals(row.getStatusEnum())) {
-            return false;
-        }
-        if (!GenerateSource.DOCTOR_PRESCRIPTION.getCode().equals(row.getGenerateSourceEnum())) {
-            return false;
-        }
-        if (this.isExcludedDischargeServiceCategory(row.getCategoryEnum())) {
-            return false;
-        }
-        if (row.getParentId() != null) {
-            return false;
-        }
-        if (this.isRefundDerivativeService(row)) {
-            return false;
-        }
-        return true;
-    }
-
-    /**
-     * 出院门禁请求候选：非 STOPPED 状态（不限于 VERIFIED）。
-     *
-     * @param statusEnum 请求状态 code
-     * @return true 表示须参与门禁扫描
-     */
-    private boolean isDischargeGateRequestCandidate(String statusEnum) {
-        if (StringUtils.isBlank(statusEnum)) {
-            return false;
-        }
-        if (RequestStatus.STOPPED.getCode().equals(statusEnum)) {
-            return false;
-        }
-        return true;
-    }
-
-    /**
-     * 待执行列表阻塞原因：长期未停嘱或临时未完结。
-     *
-     * @param therapyEnum 长临 code
-     * @param statusEnum  状态 code
-     * @param requestTable 来源表
-     * @param requestId   请求主键
-     * @param proceduresByRequestKey 按 requestTable+requestId 分组的执行记录
-     * @return 阻塞原因码；无须展示时 null
-     */
-    private String resolveDischargeListBlockingReason(
-        String therapyEnum,
-        String statusEnum,
-        String requestTable,
-        Long requestId,
-        Map<String, List<Procedure>> proceduresByRequestKey) {
-        if (this.isLongTermNotStopped(therapyEnum, statusEnum)) {
-            return InpatientNurseStationConstants.DISCHARGE_BLOCKING_LONG_NOT_STOPPED;
-        }
-        if (this.isTemporaryNotCompleted(therapyEnum, requestTable, requestId, proceduresByRequestKey)) {
-            return InpatientNurseStationConstants.DISCHARGE_BLOCKING_TEMP_NOT_COMPLETED;
-        }
-        return null;
-    }
-
-    /**
-     * 长期医嘱且尚未停嘱。
-     *
-     * @param therapyEnum 长临 code
-     * @param statusEnum  状态 code
-     * @return true 表示长期未停
-     */
-    private boolean isLongTermNotStopped(String therapyEnum, String statusEnum) {
-        if (!TherapyType.LONG_TERM.getCode().equals(therapyEnum)) {
-            return false;
-        }
-        if (RequestStatus.STOPPED.getCode().equals(statusEnum)) {
-            return false;
-        }
-        return true;
-    }
-
-    /**
-     * 临时医嘱净态未完结（与 AS-IP-NUR-004 BR-IP-EXE-006/008 同源）。
-     *
-     * <p>仅当整单净态仍为 pending（无 Procedure、或末态为 PREPARATION/IN_PROGRESS 等非终态）时返回 true；
-     * 净 COMPLETED、STOPPED（不执行）、CANCEL 或 COMPLETED 已被 CANCEL 对冲均视为已完结，不阻塞出院。</p>
-     *
-     * @param therapyEnum 长临 code
-     * @param requestTable 来源表
-     * @param requestId   请求主键
-     * @param proceduresByRequestKey 按 requestTable+requestId 分组的执行记录
-     * @return true 表示临时未完结
-     */
-    private boolean isTemporaryNotCompleted(
-        String therapyEnum,
-        String requestTable,
-        Long requestId,
-        Map<String, List<Procedure>> proceduresByRequestKey) {
-        if (!TherapyType.TEMPORARY.getCode().equals(therapyEnum)) {
-            return false;
-        }
-        if (requestId == null || StringUtils.isBlank(requestTable)) {
-            return true;
-        }
-        String key = this.buildRequestKey(requestTable, requestId);
-        List<Procedure> procedures = proceduresByRequestKey.get(key);
-        if (procedures == null || procedures.isEmpty()) {
-            // 临时嘱尚无执行记录 → 待执行，阻塞出院
-            return true;
-        }
-        return this.isTemporaryProcedureNetPending(procedures);
-    }
-
-    /**
-     * 临时嘱整单净态是否为 pending（BR-IP-EXE-006/008，与医嘱执行列表读侧同口径）。
-     *
-     * @param procedures 同一 request 下全部 Procedure
-     * @return true 表示净态仍为待执行
-     */
-    private boolean isTemporaryProcedureNetPending(List<Procedure> procedures) {
-        if (this.pickLastNetCompletedProcedure(procedures) != null) {
-            // 存在未被 CANCEL 对冲的净 COMPLETED → 已执行完毕
-            return false;
-        }
-        Procedure netFinal = this.pickNetFinalProcedureRecord(procedures);
-        if (netFinal == null) {
-            return true;
-        }
-        String status = netFinal.getStatusEnum();
-        if (EventStatus.STOPPED.getCode().equals(status)) {
-            // 不执行（STOPPED）视为终态
-            return false;
-        }
-        if (EventStatus.isCancelExecutionStatusCode(status)) {
-            // 取消执行（CANCEL）为终态，执行-发药-取消-退药全链路结束后不阻塞出院
-            return false;
-        }
-        if (EventStatus.COMPLETED.getCode().equals(status)) {
-            if (this.isProcedureOffsetByCancel(procedures, netFinal.getId())) {
-                // COMPLETED 已被 CANCEL 对冲 → 取消执行终态
-                return false;
-            }
-            return false;
-        }
-        // PREPARATION/IN_PROGRESS 等非终态 → 仍待执行
-        return true;
-    }
-
-    /**
-     * COMPLETED 是否已被 CANCEL 对冲（BR-IP-EXE-008，与 AS-IP-NUR-004 读侧同构）。
-     *
-     * @param procedures 同一 request 下全部 Procedure
-     * @param completedProcedureId 待判定的 COMPLETED 主键
-     * @return 若存在 CANCEL.refund_id 指向该 COMPLETED 则 true
-     */
-    private boolean isProcedureOffsetByCancel(List<Procedure> procedures, Long completedProcedureId) {
-        if (procedures == null || completedProcedureId == null) {
-            return false;
-        }
-        for (Procedure sibling : procedures) {
-            if (sibling == null) {
-                continue;
-            }
-            if (!EventStatus.isCancelExecutionStatusCode(sibling.getStatusEnum())) {
-                continue;
-            }
-            if (completedProcedureId.equals(sibling.getRefundId())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * 临时嘱：取 id 最大的一条 Procedure 作为整单末态（BR-IP-EXE-007 临时口径）。
-     *
-     * @param procedures 该 request 下全部 Procedure
-     * @return 末态记录；无记录时 null
-     */
-    private Procedure pickNetFinalProcedureRecord(List<Procedure> procedures) {
-        if (procedures == null || procedures.isEmpty()) {
-            return null;
-        }
-        Procedure netFinal = null;
-        for (Procedure row : procedures) {
-            if (row == null) {
-                continue;
-            }
-            if (netFinal == null) {
-                netFinal = row;
-                continue;
-            }
-            Long rowId = row.getId();
-            Long finalId = netFinal.getId();
-            if (rowId != null && (finalId == null || rowId.compareTo(finalId) > 0)) {
-                netFinal = row;
-            }
-        }
-        return netFinal;
-    }
-
-    /**
-     * 临时嘱：取最后一条未被 CANCEL 对冲的 COMPLETED 记录（净执行）。
-     *
-     * @param procedures 该 request 下全部 Procedure
-     * @return 净 COMPLETED；不存在时 null
-     */
-    private Procedure pickLastNetCompletedProcedure(List<Procedure> procedures) {
-        if (procedures == null || procedures.isEmpty()) {
-            return null;
-        }
-        Procedure lastNet = null;
-        for (Procedure row : procedures) {
-            if (row == null) {
-                continue;
-            }
-            if (!EventStatus.COMPLETED.getCode().equals(row.getStatusEnum())) {
-                continue;
-            }
-            if (this.isProcedureOffsetByCancel(procedures, row.getId())) {
-                continue;
-            }
-            if (lastNet == null) {
-                lastNet = row;
-                continue;
-            }
-            Long rowId = row.getId();
-            Long lastId = lastNet.getId();
-            if (rowId != null && (lastId == null || rowId.compareTo(lastId) > 0)) {
-                lastNet = row;
-            }
-        }
-        return lastNet;
-    }
-
-    /**
-     * 是否为出院门禁关注的待发/待退药状态。
-     *
-     * @param statusCode 发放状态 code
-     * @return true 表示阻塞出院
-     */
-    private boolean isPendingDischargeDispenseStatus(String statusCode) {
-        if (DispenseStatus.PREPARATION.getCode().equals(statusCode)) {
-            return true;
-        }
-        if (DispenseStatus.SUMMARIZED.getCode().equals(statusCode)) {
-            return true;
-        }
-        if (DispenseStatus.PENDING_REFUND.getCode().equals(statusCode)) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * 排除转科/出院/护理类诊疗类目。
-     *
-     * @param categoryEnum 诊疗类目 code
-     * @return true 表示应排除
-     */
-    private boolean isExcludedDischargeServiceCategory(String categoryEnum) {
-        if (InpatientNurseStationConstants.SERVICE_CATEGORY_TRANSFER.equals(categoryEnum)) {
-            return true;
-        }
-        if (InpatientNurseStationConstants.SERVICE_CATEGORY_DISCHARGE.equals(categoryEnum)) {
-            return true;
-        }
-        if (InpatientNurseStationConstants.SERVICE_CATEGORY_NURSING.equals(categoryEnum)) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * 药品退药关联行识别（与 004 同源）。
-     *
-     * @param row 药品请求
-     * @return true 表示退药派生行
-     */
-    private boolean isRefundDerivativeMedication(MedicationRequestListQueryModel row) {
-        if (row.getBasedOnId() == null || StringUtils.isBlank(row.getBasedOnTable())) {
-            return false;
-        }
-        String table = row.getBasedOnTable().trim();
-        if (TableNameConstants.MED_MEDICATION_REQUEST.equalsIgnoreCase(table)) {
-            return true;
-        }
-        if (TableNameConstants.WKF_SERVICE_REQUEST.equalsIgnoreCase(table)) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * 诊疗退药/退诊疗关联行识别。
-     *
-     * @param row 诊疗请求
-     * @return true 表示应排除
-     */
-    private boolean isRefundDerivativeService(ServiceRequestListModel row) {
-        if (row.getBasedOnId() != null && StringUtils.isNotBlank(row.getBasedOnTable())) {
-            String table = row.getBasedOnTable().trim();
-            if (TableNameConstants.MED_MEDICATION_REQUEST.equalsIgnoreCase(table)
-                || TableNameConstants.WKF_SERVICE_REQUEST.equalsIgnoreCase(table)) {
-                return true;
-            }
-        }
-        if (row.getQuantity() != null && row.getQuantity().signum() < 0) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * 按 requestTable+requestId 分组全部 Procedure（出院门禁净态判定用）。
-     *
-     * @param procedures 执行记录列表
-     * @return 请求键 → 该请求下全部 Procedure
-     */
-    private Map<String, List<Procedure>> buildProceduresByRequestKey(List<Procedure> procedures) {
-        Map<String, List<Procedure>> grouped = new HashMap<>();
-        if (procedures == null) {
-            return grouped;
-        }
-        for (Procedure procedure : procedures) {
-            if (procedure == null || procedure.getRequestId() == null
-                || StringUtils.isBlank(procedure.getRequestTable())) {
-                continue;
-            }
-            String key = this.buildRequestKey(procedure.getRequestTable(), procedure.getRequestId());
-            List<Procedure> bucket = grouped.get(key);
-            if (bucket == null) {
-                bucket = new ArrayList<>();
-                grouped.put(key, bucket);
-            }
-            bucket.add(procedure);
-        }
-        return grouped;
-    }
-
-    /**
-     * 请求自然键（requestTable + requestId）。
-     *
-     * @param requestTable 来源表
-     * @param requestId    主键
-     * @return 复合键
-     */
-    private String buildRequestKey(String requestTable, Long requestId) {
-        return requestTable.trim() + "\u0001" + requestId;
-    }
-
     /**
      * 批量解析药品展示名。
      *
@@ -1797,36 +1372,40 @@ public class NurseStationATDManagerAppService {
     }
 
     /**
-     * 剂量/数量展示文本组装。
+     * 剂量/数量展示文本组装（与 {@link com.openhis.health.application.inpatient.nursestation.orderaudit.support.NurseStationOrderViewListAssembler} 同源）。
      *
-     * @param dose         单次剂量
-     * @param doseUnitCode 剂量单位
-     * @param quantity     数量
-     * @param unitCode     单位
+     * @param dose                 单次剂量
+     * @param doseUnitCode         剂量单位 code
+     * @param quantity             数量
+     * @param unitCode             数量单位 code
+     * @param doseUnitLabelByCode  剂量单位术语映射
+     * @param unitLabelByCode      计量单位术语映射
      * @return 展示串；无内容时 null
      */
     private String formatDoseText(
         BigDecimal dose,
         String doseUnitCode,
         BigDecimal quantity,
-        String unitCode) {
+        String unitCode,
+        Map<String, String> doseUnitLabelByCode,
+        Map<String, String> unitLabelByCode) {
         if (dose != null) {
-            StringBuilder builder = new StringBuilder();
-            builder.append(dose.stripTrailingZeros().toPlainString());
-            if (StringUtils.isNotBlank(doseUnitCode)) {
-                builder.append(' ');
-                builder.append(doseUnitCode.trim());
+            String doseText = dose.setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+            String unit = ProductDefinitionCatalogUnitBandsAssembler.resolveDoseUnitDisplayName(
+                doseUnitLabelByCode, doseUnitCode, null);
+            if (StringUtils.isNotBlank(unit)) {
+                return doseText + unit.trim();
             }
-            return builder.toString();
+            return doseText;
         }
         if (quantity != null) {
-            StringBuilder builder = new StringBuilder();
-            builder.append(quantity.stripTrailingZeros().toPlainString());
-            if (StringUtils.isNotBlank(unitCode)) {
-                builder.append(' ');
-                builder.append(unitCode.trim());
+            String qtyText = quantity.setScale(4, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString();
+            String unit = ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
+                unitLabelByCode, unitCode, null);
+            if (StringUtils.isNotBlank(unit)) {
+                return qtyText + unit.trim();
             }
-            return builder.toString();
+            return qtyText;
         }
         return null;
     }

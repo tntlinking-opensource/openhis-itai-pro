@@ -1,30 +1,15 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.print.printtemplate.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 import com.openhis.health.domain.print.printtemplate.entity.PrtTemplate;
 import com.openhis.health.domain.print.printtemplate.repository.PrtTemplateRepository;
-import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.enums.PrintTemplateStatus;
-import com.openhis.whale.core.application.exception.BusinessException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -40,6 +25,8 @@ import org.springframework.stereotype.Service;
  * <p>仅注入本聚合 {@link PrtTemplateRepository}；跨聚合读不在此类扩展（B.6.4）。</p>
  * <p>读方法白名单见 DM §6.1；{@link #findDraftById}、{@link #findPublishedByScenarioCode} 为 Flyway
  * {@code scenario_code} 索引与 AS preparePrint 所需扩展（DOC-CONFLICT：未列入 DM §6.1）。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link PrtTemplateRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor

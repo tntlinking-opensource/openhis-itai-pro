@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.response;
 
 import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.dto.TcmDiagnosisGroupRowDto;

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.ATDManager.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -32,15 +19,15 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
-/** 出院前待执行医嘱行。 */
 @Schema(description = "出院前待执行医嘱行")
 public class DischargePendingExecutionItemDto {
 
     @Schema(description = "药品或诊疗请求主键")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 药品或诊疗请求主键。 */
     private Long requestId;
 
-    /** 来源表：{@code med_medication_request} / {@code wkf_service_request}。 */
+    /** 请求来源表名。 */
     @Schema(description = "请求来源表名")
     private String requestTable;
 
@@ -65,11 +52,11 @@ public class DischargePendingExecutionItemDto {
     @Schema(description = "频次 code")
     private String rateCode;
 
-    /** 剂量/数量展示。 */
+    /** 剂量或数量展示文本。 */
     @Schema(description = "剂量或数量展示文本")
     private String doseText;
 
-    /** 阻塞说明：{@code LONG_NOT_STOPPED} / {@code TEMP_NOT_COMPLETED}。 */
+    /** 阻塞出院原因码。 */
     @Schema(description = "阻塞出院原因码")
     private String blockingReason;
 }

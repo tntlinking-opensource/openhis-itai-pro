@@ -1,22 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.devicedispense.entity;
 
+import com.openhis.health.domain.share.constants.DoctorStationOrderCatalogConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -152,10 +140,21 @@ public class DeviceDispense extends BaseAuditedEntity {
     }
 
     /**
-     * 草稿初始化。
+     * 草稿初始化；预减窗口 {@link DoctorStationOrderCatalogConstants#DISPENSE_RESERVE_DRAFT_LIMIT_HOURS} 小时。
      */
     public void initDraft() {
+        LocalDateTime now = LocalDateTime.now();
         this.statusEnum = DispenseStatus.DRAFT.getCode();
+        this.limitTime = now.plusHours(DoctorStationOrderCatalogConstants.DISPENSE_RESERVE_DRAFT_LIMIT_HOURS);
+    }
+
+    /**
+     * 判断当前是否为草稿或待发状态（释放预减占用与 FIFO 签发替换时筛选可处理行，对齐 {@link com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense#isDraftOrPreparation()}）。
+     *
+     * @return {@code true} 表示当前为 DRAFT 或 PREPARATION
+     */
+    public boolean isDraftOrPreparation() {
+        return statusEquals(DispenseStatus.DRAFT) || statusEquals(DispenseStatus.PREPARATION);
     }
 
     /**
@@ -168,11 +167,11 @@ public class DeviceDispense extends BaseAuditedEntity {
     }
 
     /**
-     * 草稿 → 待发。
+     * 草稿 → 待发；刷新预减窗口为 {@link DoctorStationOrderCatalogConstants#DISPENSE_RESERVE_PREPARATION_LIMIT_HOURS} 小时。
      */
     public void draftToPreparation() {
         assertPromotable();
-        this.statusEnum = DispenseStatus.PREPARATION.getCode();
+        initPreparation();
     }
 
     /**
@@ -185,10 +184,12 @@ public class DeviceDispense extends BaseAuditedEntity {
     }
 
     /**
-     * 执行路径初始化（待发）。
+     * 执行路径初始化（待发）；预减窗口 {@link DoctorStationOrderCatalogConstants#DISPENSE_RESERVE_PREPARATION_LIMIT_HOURS} 小时。
      */
     public void initPreparation() {
+        LocalDateTime now = LocalDateTime.now();
         this.statusEnum = DispenseStatus.PREPARATION.getCode();
+        this.limitTime = now.plusHours(DoctorStationOrderCatalogConstants.DISPENSE_RESERVE_PREPARATION_LIMIT_HOURS);
     }
 
     /**
@@ -510,11 +511,22 @@ public class DeviceDispense extends BaseAuditedEntity {
     }
 
     /**
-     * 逻辑删除。
+     * 逻辑删除发放记录（签退释占、FIFO 签发替换与未发删除路径，对齐药品 {@code markDeleted}）。
+     *
+     * @param operatorId 操作人；可空
+     */
+    public void markDeleted(Long operatorId) {
+        assertRemovableUndispensed();
+        this.setIsDeleted(Boolean.TRUE);
+        this.setDeletedBy(operatorId);
+        this.setDeletedAt(LocalDateTime.now());
+    }
+
+    /**
+     * 逻辑删除（无操作人审计字段）。
      */
     public void logicalDelete() {
-        assertRemovableUndispensed();
-        this.setIsDeleted(true);
+        this.markDeleted(null);
     }
 
     /**
@@ -623,4 +635,3 @@ public class DeviceDispense extends BaseAuditedEntity {
         this.statusEnum = DispenseStatus.PREPARATION.getCode();
     }
 }
-

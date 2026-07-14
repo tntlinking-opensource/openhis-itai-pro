@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.pharmacy.dispense.mapper;
 
-import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.option.OptionDtoAssembler;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.pharmacy.dispense.dto.CancelMedicationDispenseLineSubmitDto;
 import com.openhis.health.application.inpatient.pharmacy.dispense.dto.EncounterMedicationDispenseSlipRowDto;
 import com.openhis.health.application.inpatient.pharmacy.dispense.dto.PendingDispenseInpatientEncounterQueueRowDto;
@@ -39,12 +26,12 @@ import com.openhis.health.domain.medication.medicationdispense.entity.Medication
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSlipQueryModel;
-import com.openhis.health.module.querysupport.pharmacy.EncounterMedicationDispenseSlipReadAssembler;
-import com.openhis.health.module.querysupport.pharmacy.dto.MedicationDispenseSlipPageResult;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.inpatient.pharmacy.dispense.support.EncounterMedicationDispenseSlipReadAssembler;
+import com.openhis.health.application.inpatient.pharmacy.dispense.dto.MedicationDispenseSlipPageResult;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.utils.InpatientEncounterStatusDisplayUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -77,6 +64,7 @@ public class InpatientPharmacyDispenseMapperImpl implements InpatientPharmacyDis
      * @param notPerformedReasonOptions 未发药原因下拉
      * @param wardOptions               病区下拉
      * @param preparerPage              药师分页实体页
+     * @param receiverPage              领药人（护士）分页实体页
      * @return 初始化响应
      */
     @Override
@@ -85,7 +73,8 @@ public class InpatientPharmacyDispenseMapperImpl implements InpatientPharmacyDis
         List<OptionDto> dispenseStatusOptions,
         List<OptionDto> notPerformedReasonOptions,
         List<OptionDto> wardOptions,
-        Page<Practitioner> preparerPage) {
+        Page<Practitioner> preparerPage,
+        Page<Practitioner> receiverPage) {
         LoadInpatientPharmacyDispensePageInitResponse response = new LoadInpatientPharmacyDispensePageInitResponse();
         if (pharmacies == null) {
             response.setPharmacyOrganizationOptions(new ArrayList<>());
@@ -108,12 +97,23 @@ public class InpatientPharmacyDispenseMapperImpl implements InpatientPharmacyDis
         } else {
             response.setWardOptions(wardOptions);
         }
-        if (preparerPage == null) {
-            response.setPreparerCandidatePage(Page.empty());
-            return response;
+        response.setPreparerCandidatePage(mapPractitionerOptionPage(preparerPage));
+        response.setReceiverCandidatePage(mapPractitionerOptionPage(receiverPage));
+        return response;
+    }
+
+    /**
+     * 将医务人员分页映射为发药页候选 DTO 分页。
+     *
+     * @param practitionerPage 源分页；可空
+     * @return DTO 分页；空入参时返回空分页
+     */
+    private Page<PractitionerOptionDto> mapPractitionerOptionPage(Page<Practitioner> practitionerPage) {
+        if (practitionerPage == null) {
+            return Page.empty();
         }
         List<PractitionerOptionDto> dtoRows = new ArrayList<>();
-        for (Practitioner practitioner : preparerPage.getContent()) {
+        for (Practitioner practitioner : practitionerPage.getContent()) {
             if (practitioner == null) {
                 continue;
             }
@@ -123,10 +123,7 @@ public class InpatientPharmacyDispenseMapperImpl implements InpatientPharmacyDis
             row.setOrgId(practitioner.getOrgId());
             dtoRows.add(row);
         }
-        Page<PractitionerOptionDto> mapped =
-            new PageImpl<>(dtoRows, preparerPage.getPageable(), preparerPage.getTotalElements());
-        response.setPreparerCandidatePage(mapped);
-        return response;
+        return new PageImpl<>(dtoRows, practitionerPage.getPageable(), practitionerPage.getTotalElements());
     }
 
     /**
@@ -171,7 +168,7 @@ public class InpatientPharmacyDispenseMapperImpl implements InpatientPharmacyDis
                     row.setAttendingDoctorName(info.getAttendingDoctorName());
                     row.setStatusEnum(info.getStatusEnum());
                     String statusText = info.getStatusEnumText();
-                    if (StringUtils.isBlank(statusText)) {
+                    if (StringUtils.isEmpty(statusText)) {
                         statusText = InpatientEncounterStatusDisplayUtil.resolveDisplayTextForReadModel(
                             info.getStatusEnum(), info.getTransferOrgId(), info.getDischargeTypeEnum());
                     }
@@ -249,7 +246,8 @@ public class InpatientPharmacyDispenseMapperImpl implements InpatientPharmacyDis
             doseUnitLabelMap,
             businessUnitLabelMap,
             rxFlagLabelMap,
-            partAttributeLabelMap);
+            partAttributeLabelMap,
+            Map.of());
         return toSlipPageResponse(result);
     }
 
@@ -261,7 +259,7 @@ public class InpatientPharmacyDispenseMapperImpl implements InpatientPharmacyDis
         }
         List<EncounterMedicationDispenseSlipRowDto> rows = new ArrayList<>();
         if (result.getContent() != null) {
-            for (com.openhis.health.module.querysupport.pharmacy.dto.EncounterMedicationDispenseSlipRowDto source
+            for (com.openhis.health.application.inpatient.pharmacy.dispense.dto.EncounterMedicationDispenseSlipRowDto source
                 : result.getContent()) {
                 if (source == null) {
                     continue;

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationdefinition.service;
 
 import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
@@ -34,7 +21,7 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -51,6 +38,8 @@ import java.util.Optional;
  * 药品定义主数据读侧查询服务。
  *
  * <p>职责：目录分页、详情、导入导出占位与可编辑性门控；查询条件下推至 {@link Specification} 与分页 API，不写库。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link MedicationDefinitionRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -109,6 +98,12 @@ public class MedicationDefinitionQueryService {
         return this.pageForPurchase(this.toPurchaseQuery(query), pageable);
     }
 
+    /**
+     * 医嘱开立目录分页查询 → 采购选品查询入参（字段一一对齐）。
+     *
+     * @param query 目录分页查询
+     * @return 采购分页查询（谓词与 {@link #pageForPurchase} 共用）
+     */
     private ProductDefinitionPurchasePageQuery toPurchaseQuery(ProductDefinitionCatalogPageQuery query) {
         ProductDefinitionPurchasePageQuery purchase = new ProductDefinitionPurchasePageQuery();
         if (query == null) {
@@ -255,15 +250,21 @@ public class MedicationDefinitionQueryService {
         return model;
     }
 
+    /**
+     * 药品目录维护分页谓词：未删除 + 分类 + 关键字（名称/助记码/业务号）。
+     *
+     * @param query 目录查询条件
+     * @return JPA Specification
+     */
     private Specification<MedicationDefinition> buildCatalogPageSpecification(MedicationDefinitionCatalogPageQuery query) {
         return (root, cq, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             if (query != null) {
-                if (StringUtils.isNotBlank(query.getCategoryCode())) {
+                if (StringUtils.isNotEmpty(query.getCategoryCode())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.CATEGORY_CODE), query.getCategoryCode().trim()));
                 }
-                if (StringUtils.isNotBlank(query.getKeyword())) {
+                if (StringUtils.isNotEmpty(query.getKeyword())) {
                     String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getKeyword().trim());
                     predicates.add(cb.or(
                         cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
@@ -280,18 +281,24 @@ public class MedicationDefinitionQueryService {
         };
     }
 
+    /**
+     * 采购/开立选品分页谓词：未删除、分类、启用、供应商、排除分类、关键字与预选 OR 组合。
+     *
+     * @param query 采购分页查询
+     * @return JPA Specification
+     */
     private Specification<MedicationDefinition> buildPurchasePageSpecification(ProductDefinitionPurchasePageQuery query) {
         return (root, cq, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             if (query != null) {
-                if (StringUtils.isNotBlank(query.getCategoryCode())) {
+                if (StringUtils.isNotEmpty(query.getCategoryCode())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.CATEGORY_CODE), query.getCategoryCode().trim()));
                 }
                 // 开立西药医嘱排除中草药等目录分类（IF-DOR-11 excludeMedicationCategoryCodes）
                 if (query.getExcludeMedicationCategoryCodes() != null && !query.getExcludeMedicationCategoryCodes().isEmpty()) {
                     List<String> excluded = query.getExcludeMedicationCategoryCodes().stream()
-                        .filter(StringUtils::isNotBlank)
+                        .filter(StringUtils::isNotEmpty)
                         .map(String::trim)
                         .distinct()
                         .toList();
@@ -305,7 +312,7 @@ public class MedicationDefinitionQueryService {
                 if (query.getSupplierId() != null) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.SUPPLY_ID), query.getSupplierId()));
                 }
-                if (StringUtils.isNotBlank(query.getManufacturer())) {
+                if (StringUtils.isNotEmpty(query.getManufacturer())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.MANUFACTURER_TEXT), query.getManufacturer().trim()));
                 }
                 Predicate keywordPred = this.buildPurchaseKeywordPredicate(root, cb, query.getKeyword());
@@ -316,8 +323,16 @@ public class MedicationDefinitionQueryService {
         };
     }
 
+    /**
+     * 采购关键字 OR 谓词：名称、商品名、拼音五笔、业务号不区分大小写模糊匹配。
+     *
+     * @param root    药品定义根
+     * @param cb      CriteriaBuilder
+     * @param keyword 用户关键字；空时返回 null
+     * @return 关键字谓词或 null
+     */
     private Predicate buildPurchaseKeywordPredicate(Root<MedicationDefinition> root, CriteriaBuilder cb, String keyword) {
-        if (StringUtils.isBlank(keyword)) {
+        if (StringUtils.isEmpty(keyword)) {
             return null;
         }
         String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keyword.trim());
@@ -332,6 +347,14 @@ public class MedicationDefinitionQueryService {
         );
     }
 
+    /**
+     * 预选药品主键 OR 谓词：仅匹配 {@code med_medication_definition} 表行的 productDefinitionId。
+     *
+     * @param root 药品定义根
+     * @param cb   CriteriaBuilder
+     * @param keys 批量查找键；空时返回 null
+     * @return 预选 OR 谓词或 null
+     */
     private Predicate buildMedicationPrepickedPredicate(
         Root<MedicationDefinition> root,
         CriteriaBuilder cb,
@@ -345,7 +368,7 @@ public class MedicationDefinitionQueryService {
             if (lookup == null || lookup.getProductDefinitionId() == null) {
                 continue;
             }
-            if (StringUtils.isNotBlank(lookup.getProductTableName())
+            if (StringUtils.isNotEmpty(lookup.getProductTableName())
                 && !TableNameConstants.MED_MEDICATION_DEFINITION.equals(lookup.getProductTableName().trim())) {
                 continue;
             }
@@ -357,6 +380,14 @@ public class MedicationDefinitionQueryService {
         return cb.or(parts.toArray(Predicate[]::new));
     }
 
+    /**
+     * 将关键字谓词与预选谓词合并进 AND 列表：二者皆有则 OR，否则追加非空者。
+     *
+     * @param predicates   累积 AND 谓词列表
+     * @param cb           CriteriaBuilder
+     * @param keywordPred  关键字谓词
+     * @param prepPred     预选谓词
+     */
     private void appendKeywordOrPrepicked(
         List<Predicate> predicates,
         CriteriaBuilder cb,
@@ -442,6 +473,7 @@ public class MedicationDefinitionQueryService {
         model.setThoPartAttributeEnum(definition.getThoPartAttributeEnum());
         model.setRestrictedEnum(definition.getRestrictedEnum());
         model.setChrgitmLv(definition.getChrgitmLv());
+        model.setMrSettlementTypeCode(definition.getMrSettlementTypeCode());
         model.setVersion(definition.getVersion());
         model.setRestrictedFlag(definition.getRestrictedFlag());
         model.setRestrictedScope(definition.getRestrictedScope());
@@ -531,7 +563,7 @@ public class MedicationDefinitionQueryService {
      * @return 未删除且命中关键字的药品定义主键列表
      */
     public List<Long> listIdsByInventoryDetailKeyword(String keyword) {
-        if (StringUtils.isBlank(keyword)) {
+        if (StringUtils.isEmpty(keyword)) {
             return Collections.emptyList();
         }
         Specification<MedicationDefinition> specification = (root, criteriaQuery, cb) -> {

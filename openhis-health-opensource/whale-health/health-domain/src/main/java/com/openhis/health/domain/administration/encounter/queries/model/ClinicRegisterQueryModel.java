@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.encounter.queries.model;
 
 import lombok.Getter;
@@ -29,18 +16,31 @@ import java.time.LocalDateTime;
 @Setter
 public class ClinicRegisterQueryModel {
 
+    /** 就诊主键 {@code adm_encounter.id}。 */
     private Long encounterId;
+    /** 就诊业务号/挂号流水号。 */
     private String encounterBusNo;
+    /** 患者姓名（快照）。 */
     private String patientName;
+    /** 患者性别字典码。 */
     private String patientGenderCode;
+    /** 患者性别展示文案（字典翻译，只读）。 */
     private String patientGenderText;
+    /** 联系电话（快照）。 */
     private String contactPhone;
+    /** 挂号科室名称。 */
     private String organizationName;
+    /** 挂号医生姓名。 */
     private String doctorName;
+    /** 就诊状态持久化码。 */
     private String statusEnum;
+    /** 就诊状态展示文案。 */
     private String statusEnumText;
+    /** 挂号/就诊开始时刻。 */
     private LocalDateTime startTime;
+    /** 号别/服务类型主键。 */
     private Long serviceTypeId;
+    /** 号别/服务类型名称。 */
     private String serviceTypeName;
     /** 打印次数；主表未持久化时为 null（降级）。 */
     private Integer printCount;

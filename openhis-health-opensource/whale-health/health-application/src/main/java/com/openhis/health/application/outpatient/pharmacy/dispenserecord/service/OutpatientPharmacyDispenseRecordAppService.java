@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.pharmacy.dispenserecord.service;
 
 import com.openhis.health.application.outpatient.pharmacy.dispenserecord.dto.PharmacyDispenseRecordExportRowDto;
@@ -29,33 +29,33 @@ import com.openhis.health.domain.medication.medicationrequest.service.Medication
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.OutpatientPharmacyDispenseRecordConstants;
 import com.openhis.health.domain.share.constants.PharmacyDispenseRecordConstants;
+import com.openhis.health.domain.share.utils.MonetaryAmountSupport;
 import com.openhis.health.domain.share.constants.PharmacyDispenseRecordExportConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.common.validator.PageWindowGate;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.module.querysupport.pharmacy.PharmacyDispenseRecordChargePricingSupport;
-import com.openhis.health.module.querysupport.pharmacy.PharmacyDispenseRecordQuerySupport;
-import com.openhis.health.module.querysupport.pharmacy.PharmacyDispenseRecordReadAssembler;
-import com.openhis.health.module.querysupport.pharmacy.dto.PharmacyDispenseRecordQueryRowDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.validator.PageWindowGate;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.outpatient.pharmacy.dispenserecord.support.PharmacyDispenseRecordChargePricingAssembler;
+import com.openhis.health.application.outpatient.pharmacy.dispenserecord.support.PharmacyDispenseRecordLoader;
+import com.openhis.health.application.outpatient.pharmacy.dispenserecord.support.PharmacyDispenseRecordReadAssembler;
+import com.openhis.health.application.outpatient.pharmacy.dispenserecord.dto.PharmacyDispenseRecordQueryRowDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
 import com.openhis.whale.core.application.util.AnnotatedExcelExporter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -100,7 +100,7 @@ public class OutpatientPharmacyDispenseRecordAppService {
     private final MedicationDispenseQueryService medicationDispenseQueryService;
 
     /** 记录筛选跨聚合预解析。 */
-    private final PharmacyDispenseRecordQuerySupport pharmacyDispenseRecordQuerySupport;
+    private final PharmacyDispenseRecordLoader pharmacyDispenseRecordLoader;
 
     /** 药嘱批量读侧。 */
     private final MedicationRequestQueryService medicationRequestQueryService;
@@ -109,19 +109,19 @@ public class OutpatientPharmacyDispenseRecordAppService {
     private final ChargeItemQueryService chargeItemQueryService;
 
     /** 门诊就诊上下文。 */
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
 
     /** 开单科室名称。 */
     private final OrganizationQueryService organizationQueryService;
 
     /** 药品展示批量加载。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /** 平铺行装配。 */
     private final PharmacyDispenseRecordReadAssembler pharmacyDispenseRecordReadAssembler;
 
     /** 退药行原单 charge 定价补充。 */
-    private final PharmacyDispenseRecordChargePricingSupport pharmacyDispenseRecordChargePricingSupport;
+    private final PharmacyDispenseRecordChargePricingAssembler pharmacyDispenseRecordChargePricingAssembler;
 
     /** Request/Response 映射。 */
     private final OutpatientPharmacyDispenseRecordMapper outpatientPharmacyDispenseRecordMapper;
@@ -201,7 +201,7 @@ public class OutpatientPharmacyDispenseRecordAppService {
             // Pre：映射领域查询并预解析筛选
             MedicationDispenseRecordPageQuery query =
                 this.outpatientPharmacyDispenseRecordMapper.toMedicationDispenseRecordPageQuery(request);
-            this.pharmacyDispenseRecordQuerySupport.enrichOutpatientRecordFilters(
+            this.pharmacyDispenseRecordLoader.enrichOutpatientRecordFilters(
                 query,
                 request.getMedicationCategoryCodes(),
                 request.getDrugKeyword(),
@@ -240,7 +240,7 @@ public class OutpatientPharmacyDispenseRecordAppService {
             // Pre：映射领域查询并预解析筛选（与列表同源）
             MedicationDispenseRecordPageQuery query =
                 this.outpatientPharmacyDispenseRecordMapper.toMedicationDispenseRecordPageQuery(request);
-            this.pharmacyDispenseRecordQuerySupport.enrichOutpatientRecordFilters(
+            this.pharmacyDispenseRecordLoader.enrichOutpatientRecordFilters(
                 query,
                 request.getMedicationCategoryCodes(),
                 request.getDrugKeyword(),
@@ -284,7 +284,7 @@ public class OutpatientPharmacyDispenseRecordAppService {
      * @param dispenseDateTo   发药日止（yyyy-MM-dd）
      */
     private void validateDispenseDateWindow(String dispenseDateFrom, String dispenseDateTo) {
-        if (StringUtils.isBlank(dispenseDateFrom) || StringUtils.isBlank(dispenseDateTo)) {
+        if (StringUtils.isEmpty(dispenseDateFrom) || StringUtils.isEmpty(dispenseDateTo)) {
             throw new BusinessException(
                 OutpatientPharmacyDispenseRecordConstants.EX_OPR_102,
                 "请选择有效的发药时间范围");
@@ -337,7 +337,7 @@ public class OutpatientPharmacyDispenseRecordAppService {
             this.loadProductByMedicationId(slipRows);
         Map<Long, OutpatientEncounterContextQueryModel> outpatientContextByEncounterId = new HashMap<>();
         for (OutpatientEncounterContextQueryModel context
-            : this.encounterContextFacade.listOutpatientContextsByEncounterIdsOrdered(
+            : this.EncounterContextReader.listOutpatientContextsByEncounterIdsOrdered(
                 new ArrayList<>(encounterIds))) {
             if (context != null && context.getEncounterId() != null) {
                 outpatientContextByEncounterId.put(context.getEncounterId(), context);
@@ -346,7 +346,7 @@ public class OutpatientPharmacyDispenseRecordAppService {
         Map<Long, BigDecimal> chargeUnitPriceByDispenseId = new HashMap<>();
         Map<Long, BigDecimal> chargeTotalPriceByDispenseId = new HashMap<>();
         this.mergeChargePricingByEncounterGroups(slipRows, chargeUnitPriceByDispenseId, chargeTotalPriceByDispenseId);
-        this.pharmacyDispenseRecordChargePricingSupport.supplementRefundPricingFromOriginMedicationRequests(
+        this.pharmacyDispenseRecordChargePricingAssembler.supplementRefundPricingFromOriginMedicationRequests(
             slipRows,
             medicationRequestByMedReqId,
             chargeUnitPriceByDispenseId,
@@ -395,7 +395,7 @@ public class OutpatientPharmacyDispenseRecordAppService {
             lookup.setProductDefinitionId(slip.getMedicationId());
             lookups.add(lookup);
         }
-        Map<String, ProductDefinitionDisplayDto> productByKey = this.productDefinitionBatchLoader.loadAsMap(lookups);
+        Map<String, ProductDefinitionDisplayDto> productByKey = this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
         Map<Long, ProductDefinitionDisplayDto> productByMedicationId = new HashMap<>();
         for (MedicationDispenseSlipQueryModel slip : slipRows) {
             if (slip == null || slip.getMedicationId() == null) {
@@ -479,7 +479,7 @@ public class OutpatientPharmacyDispenseRecordAppService {
             totalPriceOut.put(dispenseKey, totalVal);
             BigDecimal qtyVal = qtyByDispense.get(dispenseKey);
             if (qtyVal != null && qtyVal.compareTo(BigDecimal.ZERO) > 0) {
-                unitPriceOut.put(dispenseKey, totalVal.divide(qtyVal, 4, RoundingMode.HALF_UP));
+                unitPriceOut.put(dispenseKey, MonetaryAmountSupport.unitPriceFromLineTotal(totalVal, qtyVal));
             }
         }
     }

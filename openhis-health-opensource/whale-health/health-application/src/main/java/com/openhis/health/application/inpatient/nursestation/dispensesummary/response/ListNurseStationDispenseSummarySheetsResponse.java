@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.dispensesummary.response;
 
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummarySheetDto;
@@ -11,9 +11,11 @@ import lombok.experimental.Accessors;
 
 import java.util.List;
 
+/**
+ * 汇总领药单列表响应（护士站已提交汇总单分页/列表）。
+ */
 @Data
 @Accessors(chain = true)
-/** 汇总领药单列表响应。 */
 @Schema(description = "汇总领药单列表响应")
 public class ListNurseStationDispenseSummarySheetsResponse {
 

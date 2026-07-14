@@ -1,41 +1,20 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * Rh 血型枚举。
  */
 public enum BloodTypeRh implements EnumInterface {
-    /**
-     * NEGATIVE。
-     */
+    /** Rh 阴性（BloodTypeRh，编码 {@code NEGATIVE}）。 */
     NEGATIVE(0L, "NEGATIVE", "Rh 阴性", "", 1L),
-    /**
-     * POSITIVE。
-     */
+    /** Rh 阳性（BloodTypeRh，编码 {@code POSITIVE}）。 */
     POSITIVE(0L, "POSITIVE", "Rh 阳性", "", 2L),
-    /**
-     * UNKNOWN。
-     */
+    /** 不详（BloodTypeRh，编码 {@code UNKNOWN}）。 */
     UNKNOWN(0L, "UNKNOWN", "不详", "", 3L),
-    /**
-     * UNTESTED。
-     */
+    /** 未查（BloodTypeRh，编码 {@code UNTESTED}）。 */
     UNTESTED(0L, "UNTESTED", "未查", "", 4L);
 
     private final Long codeSystemId;
@@ -45,7 +24,7 @@ public enum BloodTypeRh implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * BloodTypeRh。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     BloodTypeRh(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

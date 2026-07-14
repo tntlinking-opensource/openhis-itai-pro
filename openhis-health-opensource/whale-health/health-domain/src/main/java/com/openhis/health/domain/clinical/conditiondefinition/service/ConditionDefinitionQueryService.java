@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.clinical.conditiondefinition.service;
 
 import com.openhis.health.domain.clinical.condition.queries.model.DiagnosisCandidateQueryModel;
@@ -34,7 +21,7 @@ import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.whale.core.application.exception.BusinessException;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -52,6 +39,8 @@ import java.util.List;
  *
  * <p>边界：只读；强依赖主键的方法在记录缺失时抛 {@link BusinessException}。
  * 医生站诊断录入分页与批量行装配（IF-DOR-07）由本服务收口，避免应用层直接拼 Specification。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link ConditionDefinitionRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -115,7 +104,7 @@ public class ConditionDefinitionQueryService {
      * @return 命中列表；关键字为空白时返回空集合
      */
     public List<ConditionDefinitionSearchItemQueryModel> getConditionDefinitionListBySearchKey(String keyword) {
-        if (StringUtils.isBlank(keyword)) {
+        if (StringUtils.isEmpty(keyword)) {
             return new ArrayList<>();
         }
         List<ConditionDefinition> entities = repository.findByNameContainingOrConditionCodeContaining(keyword, keyword, Pageable.unpaged()).getContent();
@@ -136,18 +125,46 @@ public class ConditionDefinitionQueryService {
     /**
      * 分页查询目录列表。
      *
-     * @param query 查询条件
+     * @param query 查询条件（关键字、来源分类等）
      * @param pageable 分页参数
      * @return 分页结果
      */
     public Page<DiseasePageItemQueryModel> getDiseaseList(DiseasePageQuery query, Pageable pageable) {
-        // 关键字缺省为空串，由仓储派生方法解释为「不限定名称/编码」（与既有语义一致）。
         String keyword = "";
-        if (query != null && StringUtils.isNotBlank(query.getKeyword())) {
+        if (query != null && StringUtils.isNotEmpty(query.getKeyword())) {
             keyword = query.getKeyword().trim();
         }
-        return repository.findByNameContainingOrConditionCodeContaining(keyword, keyword, pageable)
-            .map(this::toDiseasePageItem);
+        String sourceEnum = null;
+        if (query != null && StringUtils.isNotBlank(query.getSourceEnum())) {
+            sourceEnum = query.getSourceEnum().trim();
+        }
+        Specification<ConditionDefinition> specification = this.buildDiseasePageSpec(keyword, sourceEnum);
+        return repository.findAll(specification, pageable).map(this::toDiseasePageItem);
+    }
+
+    /**
+     * 构建疾病目录维护页分页查询条件（未软删 + 可选来源 + 可选名称/编码关键字）。
+     *
+     * @param keyword    名称或编码模糊匹配；空白时不追加 LIKE 谓词
+     * @param sourceEnum 目录来源分类编码；空白时不按来源过滤
+     * @return 分页 Specification
+     */
+    private Specification<ConditionDefinition> buildDiseasePageSpec(String keyword, String sourceEnum) {
+        return (root, cq, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
+            if (StringUtils.isNotBlank(sourceEnum)) {
+                predicates.add(cb.equal(root.get(FieldNameConstants.SOURCE_ENUM), sourceEnum.trim()));
+            }
+            if (StringUtils.isNotBlank(keyword)) {
+                String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keyword.trim());
+                predicates.add(cb.or(
+                    cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
+                    cb.like(cb.lower(root.get(FieldNameConstants.CONDITION_CODE)), likeIc)
+                ));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
     }
 
     /**
@@ -230,7 +247,7 @@ public class ConditionDefinitionQueryService {
                 // 中西医等目录来源收窄：与前端 tab 传入的 source 编码集合对齐。
                 predicates.add(root.get(FieldNameConstants.SOURCE_ENUM).in(sourceEnumIn));
             }
-            if (StringUtils.isNotBlank(keyword)) {
+            if (StringUtils.isNotEmpty(keyword)) {
                 String trimmed = keyword.trim();
                 String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
                 List<Predicate> ors = new ArrayList<>();
@@ -299,7 +316,7 @@ public class ConditionDefinitionQueryService {
      * @return 命中列表；keyword 为空白时返回空集合（不访问库）
      */
     public List<DiagnosisCandidateQueryModel> getDiagnosisList(String keyword) {
-        if (StringUtils.isBlank(keyword)) {
+        if (StringUtils.isEmpty(keyword)) {
             return new ArrayList<>();
         }
         Specification<ConditionDefinition> specification = (root, cq, cb) -> {
@@ -344,6 +361,8 @@ public class ConditionDefinitionQueryService {
         model.setSourceEnum(entity.getSourceEnum());
         model.setStatusEnum(entity.getStatusEnum());
         model.setYbFlag(entity.getYbFlag());
+        model.setYbNo(entity.getYbNo());
+        model.setDescription(entity.getDescription());
         return model;
     }
 }

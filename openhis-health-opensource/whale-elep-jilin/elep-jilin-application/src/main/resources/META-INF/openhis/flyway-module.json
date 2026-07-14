@@ -1,6 +1,0 @@
-{
-  "moduleId": "elep",
-  "enabledProperty": "openhis.modules.elep.enabled",
-  "locations": "classpath:db/migration/elep",
-  "historyTable": "flyway_schema_history_elep"
-}

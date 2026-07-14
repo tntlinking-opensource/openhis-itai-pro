@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.conditiontemplate.service;
 
 import com.openhis.health.domain.custom.conditiontemplate.entity.ConditionTemplate;
@@ -36,6 +23,8 @@ import java.util.Map;
  * <p>职责：按绑定维度分页/列表加载模板，并将个人、科室、院级模板合并为去重后的诊断快捷项列表。</p>
  *
  * <p>边界：只读；合并时以诊断定义 id 为键，先个人后科室再院级，先出现的条目保留（覆盖策略）。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link ConditionTemplateRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor

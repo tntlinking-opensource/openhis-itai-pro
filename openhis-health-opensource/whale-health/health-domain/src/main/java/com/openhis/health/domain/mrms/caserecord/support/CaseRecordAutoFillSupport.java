@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.mrms.caserecord.support;
 
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
@@ -133,6 +133,12 @@ public class CaseRecordAutoFillSupport {
         return snap;
     }
 
+    /**
+     * 写入就诊快照入院/出院科别：入院取就诊机构，出院取末次完成病区所属机构。
+     *
+     * @param snap      待填充就诊快照
+     * @param encounter 就诊实体
+     */
     private void applyDepartments(EncounterSnapshot snap, Encounter encounter) {
         // 入院科别：就诊所属机构
         if (encounter.getOrganizationId() != null) {
@@ -147,6 +153,13 @@ public class CaseRecordAutoFillSupport {
                         false));
     }
 
+    /**
+     * 将机构 busNo/名称写入快照入院或出院科别字段。
+     *
+     * @param snap       就诊快照
+     * @param organization 组织实体
+     * @param admission  true 写 admCaty*；false 写 dscgCaty*
+     */
     private void applyOrganization(EncounterSnapshot snap, Organization organization, boolean admission) {
         if (organization == null) {
             return;
@@ -172,6 +185,12 @@ public class CaseRecordAutoFillSupport {
         }
     }
 
+    /**
+     * 按参与者角色映射首页人员字段（主治/主任/住院医师/责任护士）。
+     *
+     * @param snap         就诊快照
+     * @param participants 有效参与者读模型
+     */
     private void applyParticipants(EncounterSnapshot snap, List<EncounterParticipantQueryModel> participants) {
         if (participants == null || participants.isEmpty()) {
             return;
@@ -272,6 +291,12 @@ public class CaseRecordAutoFillSupport {
         return lines;
     }
 
+    /**
+     * 里程碑名称是否为转科或入科（参与转科摘要）。
+     *
+     * @param name 里程碑 name
+     * @return 转科/入科为 true
+     */
     private boolean isTransferMilestone(String name) {
         if (name == null) {
             return false;
@@ -280,6 +305,13 @@ public class CaseRecordAutoFillSupport {
                 || CustomConstants.EncounterHistoryMilestoneName.ADMISSION_TO_DEPT.equals(name);
     }
 
+    /**
+     * 从预加载 org 名称 Map 解析科室展示名。
+     *
+     * @param orgNames       orgId → 名称
+     * @param organizationId 组织 id
+     * @return trim 后名称；缺失时 null
+     */
     private String resolveOrgName(Map<Long, String> orgNames, Long organizationId) {
         if (organizationId == null || orgNames == null) {
             return null;
@@ -381,6 +413,13 @@ public class CaseRecordAutoFillSupport {
         return result;
     }
 
+    /**
+     * 按出院/入院范围加载诊断快照行（含 condition 回落合成与 EMR 入院病情）。
+     *
+     * @param encounterId 就诊主键
+     * @param scope       诊断范围（出院/入院）
+     * @return 诊断行快照
+     */
     private List<DiagnosisLineSnapshot> listDiagnosesByScope(Long encounterId, DiagnosisScope scope) {
         if (encounterId == null) {
             return Collections.emptyList();
@@ -413,6 +452,12 @@ public class CaseRecordAutoFillSupport {
         return result;
     }
 
+    /**
+     * 加载就诊有效诊断关联；空时从 condition 事实表合成 rank/主诊断标记。
+     *
+     * @param encounterId 就诊主键
+     * @return 诊断关联列表
+     */
     private List<EncounterDiagnosisQueryModel> resolveActiveAssociations(Long encounterId) {
         List<EncounterDiagnosisQueryModel> active = new ArrayList<>(
                 encounterQueryService.listEncounterDiagnoses(encounterId));
@@ -443,12 +488,23 @@ public class CaseRecordAutoFillSupport {
         return synthesized;
     }
 
+    /**
+     * 诊断关联按 rank、diagnosisId 稳定排序。
+     *
+     * @param associations 待排序关联（原地排序）
+     */
     private void sortAssociations(List<EncounterDiagnosisQueryModel> associations) {
         associations.sort(Comparator
                 .comparing(EncounterDiagnosisQueryModel::getRank, Comparator.nullsLast(Comparator.naturalOrder()))
                 .thenComparing(EncounterDiagnosisQueryModel::getDiagnosisId, Comparator.nullsLast(Comparator.naturalOrder())));
     }
 
+    /**
+     * 关联列表中是否存在显式出院类型诊断（影响无类型码行的默认归属）。
+     *
+     * @param associations 诊断关联
+     * @return 含出院类型为 true
+     */
     private boolean hasTypedDischarge(List<EncounterDiagnosisQueryModel> associations) {
         for (EncounterDiagnosisQueryModel row : associations) {
             IptPatientDiseaseDiagType type = parseDiagType(row.getDiagTypeCode());
@@ -459,6 +515,14 @@ public class CaseRecordAutoFillSupport {
         return false;
     }
 
+    /**
+     * 诊断类型码是否匹配出院/入院范围（无类型码时出院范围默认归入）。
+     *
+     * @param diagTypeCode        诊断类型 code
+     * @param scope               目标范围
+     * @param hasTypedDischarge   是否存在显式出院诊断
+     * @return 匹配为 true
+     */
     private boolean matchesScope(String diagTypeCode, DiagnosisScope scope, boolean hasTypedDischarge) {
         IptPatientDiseaseDiagType type = parseDiagType(diagTypeCode);
         if (scope == DiagnosisScope.DISCHARGE) {
@@ -475,6 +539,12 @@ public class CaseRecordAutoFillSupport {
         return isAdmissionDiagType(type);
     }
 
+    /**
+     * 解析住院诊断类型枚举 code。
+     *
+     * @param diagTypeCode 类型 code 字符串
+     * @return 枚举；空或非法时 null
+     */
     private IptPatientDiseaseDiagType parseDiagType(String diagTypeCode) {
         String code = trimToNull(diagTypeCode);
         if (code == null) {
@@ -483,6 +553,12 @@ public class CaseRecordAutoFillSupport {
         return EnumUtil.fromCode(IptPatientDiseaseDiagType.class, code);
     }
 
+    /**
+     * 是否为出院侧诊断类型（含中医出院类）。
+     *
+     * @param type 诊断类型枚举
+     * @return 出院类型为 true
+     */
     private boolean isDischargeDiagType(IptPatientDiseaseDiagType type) {
         return type == IptPatientDiseaseDiagType.DISCHARGE
                 || type == IptPatientDiseaseDiagType.TCM_DISCHARGE_NAME
@@ -490,11 +566,23 @@ public class CaseRecordAutoFillSupport {
                 || type == IptPatientDiseaseDiagType.TCM_DISCHARGE_MAIN_PATTERN;
     }
 
+    /**
+     * 是否为入院侧诊断类型（入院/初步）。
+     *
+     * @param type 诊断类型枚举
+     * @return 入院类型为 true
+     */
     private boolean isAdmissionDiagType(IptPatientDiseaseDiagType type) {
         return type == IptPatientDiseaseDiagType.ADMISSION
                 || type == IptPatientDiseaseDiagType.ADMISSION_PRELIMINARY;
     }
 
+    /**
+     * 批量加载 condition 与 conditionDefinition 上下文（诊断编码/名称装配用）。
+     *
+     * @param scoped 范围内诊断关联
+     * @return condition 与 definition 索引上下文
+     */
     private DiagnosisContext loadDiagnosisContext(List<EncounterDiagnosisQueryModel> scoped) {
         List<Long> conditionIds = new ArrayList<>();
         for (EncounterDiagnosisQueryModel row : scoped) {
@@ -522,6 +610,13 @@ public class CaseRecordAutoFillSupport {
         return new DiagnosisContext(condById, defById);
     }
 
+    /**
+     * 单条诊断关联 → 首页诊断行快照（编码/名称/主诊断标记）。
+     *
+     * @param row 诊断关联
+     * @param ctx condition/definition 上下文
+     * @return 诊断行；编码名称均缺失时 null
+     */
     private DiagnosisLineSnapshot toDiagnosisSnapshot(EncounterDiagnosisQueryModel row, DiagnosisContext ctx) {
         ConditionBatchItemQueryModel condition = ctx.condById.get(row.getConditionId());
         // 条件实例缺失时无法组装诊断行
@@ -556,6 +651,12 @@ public class CaseRecordAutoFillSupport {
         return snap;
     }
 
+    /**
+     * 从 EMR 扩展解析入院病情 adm_cond 并按诊断编码回填（不覆盖已有值）。
+     *
+     * @param encounterId 就诊主键
+     * @param snapshots   待回填诊断行
+     */
     private void applyAdmissionConditions(Long encounterId, List<DiagnosisLineSnapshot> snapshots) {
         if (encounterId == null || snapshots == null || snapshots.isEmpty()) {
             return;
@@ -582,6 +683,12 @@ public class CaseRecordAutoFillSupport {
         }
     }
 
+    /**
+     * Procedure 实体列表 → id 索引 Map。
+     *
+     * @param procedures 手术实体列表
+     * @return procedureId → 实体
+     */
     private Map<Long, Procedure> indexProcedures(List<Procedure> procedures) {
         Map<Long, Procedure> map = new HashMap<>();
         if (procedures == null) {
@@ -595,6 +702,12 @@ public class CaseRecordAutoFillSupport {
         return map;
     }
 
+    /**
+     * 由 serviceRequest 引用的 activityId 批量加载 ActivityDefinition。
+     *
+     * @param serviceRequestById 诊疗请求索引
+     * @return activityId → 活动定义
+     */
     private Map<Long, ActivityDefinition> loadActivities(Map<Long, ServiceRequestListModel> serviceRequestById) {
         Set<Long> activityIds = new LinkedHashSet<>();
         for (ServiceRequestListModel row : serviceRequestById.values()) {
@@ -614,6 +727,14 @@ public class CaseRecordAutoFillSupport {
         return map;
     }
 
+    /**
+     * 已完成手术记录 → 首页手术行快照（编码优先 ybNo/ procedureCode/ busNo）。
+     *
+     * @param row       手术记录读模型
+     * @param activity  关联活动定义
+     * @param procedure 手术实体
+     * @return 手术行；编码名称均空时 null
+     */
     private ProcedureLineSnapshot toProcedureSnapshot(
             ProcedureRecordQueryModel row,
             ActivityDefinition activity,
@@ -647,6 +768,12 @@ public class CaseRecordAutoFillSupport {
         return snap;
     }
 
+    /**
+     * 诊断编码归一化为大写 Map 键（EMR 入院病情匹配用）。
+     *
+     * @param diagCode 原始诊断编码
+     * @return 大写 trim 键；空时 null
+     */
     private String normalizeDiagCodeKey(String diagCode) {
         String code = trimToNull(diagCode);
         if (code == null) {
@@ -655,15 +782,25 @@ public class CaseRecordAutoFillSupport {
         return code.toUpperCase(Locale.ROOT);
     }
 
+    /** 诊断回填范围：出院诊断 / 入院诊断。 */
     private enum DiagnosisScope {
+        /** 出院诊断。 */
         DISCHARGE,
+        /** 入院诊断。 */
         ADMISSION
     }
 
+    /** 诊断批量读模型上下文（condition + definition 索引）。 */
     private static final class DiagnosisContext {
+        /** conditionId → 批量 condition 行。 */
         private final Map<Long, ConditionBatchItemQueryModel> condById;
+        /** definitionId → 批量 definition 行。 */
         private final Map<Long, ConditionDefinitionBatchItemQueryModel> defById;
 
+        /**
+         * @param condById condition 索引
+         * @param defById  definition 索引
+         */
         private DiagnosisContext(
                 Map<Long, ConditionBatchItemQueryModel> condById,
                 Map<Long, ConditionDefinitionBatchItemQueryModel> defById) {

@@ -1,23 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.gainloss.mapper;
 
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
 import com.openhis.health.application.inventory.warehouse.gainloss.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.warehouse.gainloss.dto.GainLossDetailLineDto;
 import com.openhis.health.application.inventory.warehouse.gainloss.dto.GainLossListRowDto;
@@ -25,7 +12,7 @@ import com.openhis.health.application.inventory.warehouse.gainloss.request.*;
 import com.openhis.health.application.inventory.warehouse.gainloss.response.*;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.enums.SupplyStatus;
 import com.openhis.health.domain.workflow.inventoryitem.command.DecreaseQuantityCommand;
 import com.openhis.health.domain.workflow.inventoryitem.command.IncreaseQuantityCommand;
@@ -46,7 +33,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 药库损溢单应用层装配契约：HTTP 请求/响应与领域命令、读模型行之间的转换。
+ * 药库损益单应用层装配契约：HTTP 请求/响应与领域命令、读模型行之间的转换。
  *
  * <p>职责边界：仅做字段搬运与枚举 code 归一；不承载库存、审批状态机等业务流程判断。</p>
  */
@@ -83,7 +70,7 @@ public interface InventoryWarehouseGainLossMapper {
     List<OptionDto> toOptionDtoListSupplyStatuses();
 
     /**
-     * 装配损溢页初始化响应。
+     * 装配损益页初始化响应。
      *
      * @param warehouseOpts  药库选项
      * @param inboundTypes   入库项目类型选项
@@ -100,7 +87,7 @@ public interface InventoryWarehouseGainLossMapper {
         List<OptionDto> keeperOpts);
 
     /**
-     * 将分页单号顺序与同页明细行聚合为损溢列表行。
+     * 将分页单号顺序与同页明细行聚合为损益列表行。
      *
      * @param busNoPageOrder 当前页单号顺序
      * @param detailRows     当前页涉及的全部明细行
@@ -109,7 +96,7 @@ public interface InventoryWarehouseGainLossMapper {
     List<GainLossListRowDto> toGainLossListAggregated(List<String> busNoPageOrder, List<SupplyRequestModel> detailRows);
 
     /**
-     * 装配损溢列表分页响应（pageNo 为 1-based）。
+     * 装配损益列表分页响应（pageNo 为 1-based）。
      *
      * @param mergedTotal 去重后的总单数
      * @param pageNo      页码（1-based）
@@ -121,7 +108,7 @@ public interface InventoryWarehouseGainLossMapper {
         long mergedTotal, int pageNo, int pageSize, List<GainLossListRowDto> records);
 
     /**
-     * 将同号供应请求明细与产品目录提示装配为损溢详情响应。
+     * 将同号供应请求明细与产品目录提示装配为损益详情响应。
      *
      * @param lines        供应请求明细行
      * @param productHints 行 id 到目录编辑提示的映射
@@ -132,7 +119,7 @@ public interface InventoryWarehouseGainLossMapper {
         Map<Long, ProductDefinitionCatalogEditorHintsDto> productHints);
 
     /**
-     * 将单行供应请求明细装配为损溢详情行 DTO。
+     * 将单行供应请求明细装配为损益详情行 DTO。
      *
      * @param line 供应请求明细行
      * @return 详情行 DTO
@@ -140,7 +127,7 @@ public interface InventoryWarehouseGainLossMapper {
     GainLossDetailLineDto toGainLossDetailLineDto(SupplyRequestModel line);
 
     /**
-     * 将新建损溢请求装配为领域 CreateGainLossCommand。
+     * 将新建损益请求装配为领域 CreateGainLossCommand。
      *
      * @param request     新建请求
      * @param operatorId  操作人
@@ -155,12 +142,33 @@ public interface InventoryWarehouseGainLossMapper {
         String busNo);
 
     /**
-     * 装配新建损溢成功响应。
+     * 装配新建损益成功响应。
      *
      * @param busNo 新建业务单号
      * @return 新建响应
      */
     CreateGainLossResponse toCreateGainLossResponse(String busNo);
+
+    /**
+     * 将修订损益请求装配为领域 CreateGainLossCommand（同号全量对齐）。
+     *
+     * @param request     修订请求
+     * @param operatorId  操作人
+     * @param applicantId 制单人员
+     * @return 领域写命令
+     */
+    CreateGainLossCommand toCreateGainLossCommand(
+        UpdateGainLossRequest request,
+        Long operatorId,
+        Long applicantId);
+
+    /**
+     * 装配修订损益成功响应。
+     *
+     * @param busNo 业务单号
+     * @return 修订响应
+     */
+    UpdateGainLossResponse toUpdateGainLossResponse(String busNo);
 
     /**
      * 将提交审批请求装配为领域 SubmitApprovalCommand。
@@ -207,7 +215,7 @@ public interface InventoryWarehouseGainLossMapper {
     AgreeRequestCommand toAgreeRequestCommand(AgreeGainLossRequest request, Long operatorId);
 
     /**
-     * 将已同意明细行装配为损溢发放命令。
+     * 将已同意明细行装配为损益发放命令。
      *
      * @param lines      已同意的供应请求明细行
      * @param operatorId 操作人
@@ -216,7 +224,7 @@ public interface InventoryWarehouseGainLossMapper {
     CreateSupplyDeliveryCommand toCreateSupplyDeliveryCommand(List<SupplyRequestModel> lines, Long operatorId);
 
     /**
-     * 装配盘盈增库存命令。
+     * 装配报溢增库存命令。
      *
      * @param inventoryItemId 库存项主键
      * @param increaseQty     增加数量
@@ -226,7 +234,7 @@ public interface InventoryWarehouseGainLossMapper {
     IncreaseQuantityCommand toIncreaseQuantityCommand(Long inventoryItemId, BigDecimal increaseQty, Long operatorId);
 
     /**
-     * 装配盘亏减库存命令。
+     * 装配报损减库存命令。
      *
      * @param inventoryItemId 库存项主键
      * @param decreaseQty     减少数量
@@ -238,7 +246,7 @@ public interface InventoryWarehouseGainLossMapper {
         Long inventoryItemId, BigDecimal decreaseQty, boolean allowNegative, Long operatorId);
 
     /**
-     * 装配同意损溢成功响应。
+     * 装配同意损益成功响应。
      *
      * @param busNo      业务单号
      * @param statusEnum 同意后状态 code
@@ -256,7 +264,7 @@ public interface InventoryWarehouseGainLossMapper {
     RejectRequestCommand toRejectRequestCommand(RejectGainLossRequest request, Long operatorId);
 
     /**
-     * 装配驳回损溢成功响应。
+     * 装配驳回损益成功响应。
      *
      * @param ok 是否驳回成功
      * @return 驳回响应
@@ -273,7 +281,7 @@ public interface InventoryWarehouseGainLossMapper {
     RemoveByBusNoCommand toRemoveByBusNoCommand(RemoveGainLossRequest request, Long operatorId);
 
     /**
-     * 装配删除损溢成功响应。
+     * 装配删除损益成功响应。
      *
      * @param ok 是否删除成功
      * @return 删除响应
@@ -281,7 +289,7 @@ public interface InventoryWarehouseGainLossMapper {
     RemoveGainLossResponse toRemoveGainLossResponse(boolean ok);
 
     /**
-     * 将现库库存分页装配为损溢选品分页响应。
+     * 将现库库存分页装配为损益选品分页响应。
      *
      * @param page 库存读模型分页
      * @return 选品分页响应

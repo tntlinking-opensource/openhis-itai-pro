@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.request;
 
@@ -28,7 +29,7 @@ public class TcmRxDraftHeaderRequest {
     @Schema(description = "前端方标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private String prescriptionGroupKey;
 
-    /** 方头长临：LONG_TERM/TEMPORARY。 */
+    /** 方头长临。 */
     @NotBlank(message = "therapyEnum 不能为空")
     @Schema(description = "方头长临", requiredMode = Schema.RequiredMode.REQUIRED)
     private String therapyEnum;

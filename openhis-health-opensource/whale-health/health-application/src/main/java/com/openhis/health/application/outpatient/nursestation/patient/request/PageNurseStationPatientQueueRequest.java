@@ -1,23 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.nursestation.patient.request;
 
-import com.openhis.health.module.common.pagination.PageQueryBinder.AbstractHealthPageRequest;
+import com.openhis.health.application.shared.pagination.PageQueryBinder.AbstractHealthPageRequest;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -29,13 +16,12 @@ import lombok.experimental.Accessors;
  * <p>继承 {@link AbstractHealthPageRequest}，统一分页契约：
  * {@code pageNo} 为 1-based，{@code pageSize} 经边界防护，{@code keyword} 为可选检索关键字。</p>
  *
- * <p><strong>注意</strong>：机构收窄由应用层 {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver#resolveOrganizationUnitIdForQuery()}
+ * <p><strong>注意</strong>：机构收窄由应用层 {@link com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver#resolveOrganizationUnitIdForQuery()}
  * 解析后传入查询服务，请求中禁止承载 organizationId（B.10.11）。</p>
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
 @Accessors(chain = true)
-/** 分页查询门诊护士站患者队列请求。 */
 @Schema(description = "分页查询门诊护士站患者队列请求（B.10.11：机构由 CurrentManagedOrganizationIdsResolver 在应用层收窄）")
 public class PageNurseStationPatientQueueRequest extends AbstractHealthPageRequest {
 

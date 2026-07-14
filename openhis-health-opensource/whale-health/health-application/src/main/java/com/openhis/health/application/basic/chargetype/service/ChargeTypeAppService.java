@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.chargetype.service;
 
 import com.openhis.health.application.basic.chargetype.dto.ChargeTypeDto;
@@ -28,7 +15,7 @@ import com.openhis.health.domain.financial.contract.service.ContractDomainServic
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.ChargeTypeCategory;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.ValidationException;
@@ -65,6 +52,9 @@ public class ChargeTypeAppService {
      * @return 初始化 DTO，当前仅含分类 {@link com.openhis.whale.core.application.dto.OptionDto} 列表
      */
     public ChargeTypeInitDto init() {
+        // Gate：只读页初始化，不写库、不依赖写侧操作人
+        // Pre：按 ChargeTypeCategory 枚举序装配分类下拉
+        // Asm：映射页初始化响应
         ChargeTypeInitDto dto = new ChargeTypeInitDto();
         // 与 ChargeTypeCategory 枚举声明序及 sortOrder 一致，避免下拉与列表展示漂移（B.10.8）。
         List<OptionDto> options = new ArrayList<>();
@@ -81,12 +71,15 @@ public class ChargeTypeAppService {
      * @return 费用性质 DTO 列表；无数据时返回空列表（非 {@code null}）
      */
     public List<ChargeTypeDto> getChargeTypeList() {
+        // Gate：只读列表，不写库
+        // Pre：全量拉取合约读模型（当前主数据量可控）
+        // Asm：投影为费用性质 DTO 并补充分类展示文案
         List<ChargeTypeDto> result = new ArrayList<>();
         // 当前主数据量可控，直接走查询服务全量；若后续增长须在查询服务增加分页或条件过滤（B.2）
         List<ContractListItemQueryModel> items = contractQueryService.listAllContracts();
         for (ContractListItemQueryModel item : items) {
             ChargeTypeDto dto = chargeTypeMapper.toDto(item);
-            // 映射层对异常行可返回 null，此处跳过避免把空壳返回给前端
+            // Branch：映射层对异常行可返回 null，跳过避免把空壳返回给前端
             if (dto == null) {
                 continue;
             }
@@ -104,10 +97,12 @@ public class ChargeTypeAppService {
      * @throws ValidationException 参数不合法时
      */
     public ChargeTypeDto createChargeType(CreateChargeTypeRequest request) {
+        // Gate：创建请求体与必填字段校验
         validateCreateRequest(request);
-        // 领域返回技术主键，再统一走 getChargeType 装配展示字段，避免与编辑路径不一致
+        // Cmd：创建合约（费用性质写侧）
         Long id = contractDomainService.createContract(chargeTypeMapper.toCreateCommand(request));
         log.info("Created charge type (费用性质): {}", id);
+        // Asm：回读详情 DTO
         return getChargeType(id);
     }
 
@@ -119,9 +114,12 @@ public class ChargeTypeAppService {
      * @throws ValidationException 参数不合法时
      */
     public ChargeTypeDto updateChargeType(UpdateChargeTypeRequest request) {
+        // Gate：编辑请求体、主键与公共字段校验
         validateUpdateRequest(request);
+        // Cmd：下发编辑合约命令
         contractDomainService.editContract(chargeTypeMapper.toEditCommand(request));
         log.info("Updated charge type (费用性质): {}", request.getId());
+        // Asm：回读详情 DTO
         return getChargeType(request.getId());
     }
 
@@ -132,6 +130,7 @@ public class ChargeTypeAppService {
      * @throws ValidationException id 为空时
      */
     public void deleteChargeType(Long id) {
+        // Gate：主键非空且须已登录操作人（B.6.5）
         if (id == null) {
             throw new ValidationException("删除费用性质失败：id 不能为空");
         }
@@ -140,6 +139,7 @@ public class ChargeTypeAppService {
         DeleteContractCommand command = new DeleteContractCommand();
         command.setId(id);
         command.setOperatorId(operatorId);
+        // Cmd：逻辑删除合约
         contractDomainService.deleteContract(command);
         log.info("Deleted charge type (费用性质): {}", id);
     }
@@ -152,10 +152,13 @@ public class ChargeTypeAppService {
      * @throws ValidationException id 为空或记录不存在时
      */
     public ChargeTypeDto getChargeType(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("费用性质ID不能为空");
         }
+        // Pre：按 id 加载合约读模型
         ChargeTypeDto dto = chargeTypeMapper.toDto(contractQueryService.findContractById(id));
+        // Branch：记录不存在时阻断
         if (dto == null) {
             throw new ValidationException("费用性质不存在");
         }

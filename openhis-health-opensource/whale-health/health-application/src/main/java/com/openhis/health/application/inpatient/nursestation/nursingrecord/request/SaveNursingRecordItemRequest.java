@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.nursingrecord.request;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -22,11 +22,11 @@ import java.time.LocalDate;
 @Schema(description = "批量保存护理记录行")
 public class SaveNursingRecordItemRequest {
 
-    /** 纸质行类型：skeleton / extra（BR-IP-NRC-011）。 */
+    /** 行类型。 */
     @Schema(description = "行类型")
     private String rowType;
 
-    /** 更新时携带已有主表 id。 */
+    /** 已有主表 id（更新）。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "已有主表 id（更新）")
     private Long vitalSignId;

@@ -1,31 +1,19 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.orderexecute.assembler;
 
-import com.openhis.health.module.common.assembler.product.ClinicalCatalogDispenseLocationResolveSupport;
-import com.openhis.health.module.common.assembler.product.DoctorStationAdviceFifoAllocationResult;
-import com.openhis.health.module.common.assembler.product.DoctorStationAdviceFifoSegmentDraft;
-import com.openhis.health.module.common.assembler.product.DoctorStationAdviceInventoryUnitQuantityHelper;
+import java.util.Objects;
+import com.openhis.health.application.shared.product.ClinicalCatalogDispenseLocationResolver;
+import com.openhis.health.application.shared.product.DoctorStationAdviceInventoryUnitQuantityHelper.DoctorStationAdviceFifoAllocationResult;
+import com.openhis.health.application.shared.product.DoctorStationAdviceInventoryUnitQuantityHelper.DoctorStationAdviceFifoSegmentDraft;
+import com.openhis.health.application.shared.product.DoctorStationAdviceInventoryUnitQuantityHelper;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.DispenseExeReserveRowModel;
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionDisplaySupport;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -39,7 +27,7 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -47,7 +35,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -64,13 +51,13 @@ import java.util.Set;
 public class NurseStationExecutionInventoryAssembler {
 
     /** 候选药房顺位解析（categoryCode + calcScore）。 */
-    private final ClinicalCatalogDispenseLocationResolveSupport clinicalCatalogDispenseLocationResolveSupport;
+    private final ClinicalCatalogDispenseLocationResolver clinicalCatalogDispenseLocationResolver;
     /** 批次级可用库存装载。 */
     private final InventoryItemQueryService inventoryItemQueryService;
     /** 全局待发预占读侧。 */
     private final MedicationDispenseQueryService medicationDispenseQueryService;
     /** 拆零单位换算读模型。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /**
      * 单条库存 Gate 需求行（仅药嘱；绑定耗材库存由其他页面统一处理）。
@@ -297,7 +284,7 @@ public class NurseStationExecutionInventoryAssembler {
         if (!segment.getLocationId().equals(row.getLocationId())) {
             return false;
         }
-        return StringUtils.equals(StringUtils.defaultString(row.getLotNumber()), StringUtils.defaultString(segment.getLotNumber()));
+        return Objects.equals(StringUtils.defaultString(row.getLotNumber()), StringUtils.defaultString(segment.getLotNumber()));
     }
 
     /**
@@ -373,7 +360,7 @@ public class NurseStationExecutionInventoryAssembler {
             lookup.setProductDefinitionId(medId);
             lookups.add(lookup);
         }
-        Map<String, ProductDefinitionDisplayDto> byKey = productDefinitionBatchLoader.loadAsMap(lookups);
+        Map<String, ProductDefinitionDisplayDto> byKey = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
         for (Long medId : medIds) {
             String key = ProductDefinitionKeyUtil.buildCompositeKey(
                 TableNameConstants.MED_MEDICATION_DEFINITION, medId);
@@ -414,11 +401,15 @@ public class NurseStationExecutionInventoryAssembler {
                 continue;
             }
             ProductDefinitionDisplayDto product = productByMedicationId.get(line.getMedicationId());
+            String productCategoryCode = null;
+            if (product != null) {
+                productCategoryCode = product.getCategoryCode();
+            }
             String category = StringUtils.firstNonBlank(
                 line.getCategoryCode(),
-                product != null ? product.getCategoryCode() : null,
+                productCategoryCode,
                 MedicationCommonConstants.DEFAULT_SERVICE_LOCATION_DISTRIBUTION_CATEGORY_CODE);
-            List<Long> locs = clinicalCatalogDispenseLocationResolveSupport.listApplicableCandidateLocationIds(
+            List<Long> locs = clinicalCatalogDispenseLocationResolver.listApplicableCandidateLocationIds(
                 orgId,
                 TableNameConstants.MED_MEDICATION_DEFINITION,
                 category,

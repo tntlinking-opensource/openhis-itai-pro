@@ -1,263 +1,184 @@
-﻿# OpenHIS Health（源码使用说明）
+﻿# OpenHIS（Whale）
 
-> **文档**：架构/模块设计在 **[whale-doc](../whale-doc/)**（入口 [文档地图](../whale-doc/文档地图.md)）。
+基于 **Whale Framework** 的医院信息系统后端（[LGPL-3.0-or-later](LICENSE)）。本仓库为完整 Java 源码 monorepo：`whale-framework`、`whale-health` 与全部 `whale-module-*` 扩展包。
 
-本仓库为**业务源码**（`whale-health`、`whale-emr` 等扩展 Module）。**Whale Framework 不提供源码**，已以预编译 JAR 形式内置在 **`dist/framework-maven-repo/`**，clone 后无需额外下载。
+> **文档**：设计/架构类 Markdown 在 **[whale-doc](../whale-doc/)**；入口 **[文档地图](../whale-doc/文档地图.md)**。  
+> 扩展 Module：**[扩展模块架构统一约定](../whale-doc/01-架构/扩展模块架构统一约定.md)** · **[新扩展包开发指南](../whale-doc/01-架构/新扩展包开发指南.md)**
 
-## 简介
+当前版本：**2.0.3-SNAPSHOT**（根 `pom.xml`）。
 
-基于 **Whale Framework** 的医院信息系统后端：住院/门诊等业务与**内嵌病案（MRMS）**均在 `whale-health`；电子病历（`whale-emr`）等经 starter 同进程集成，由 `health-app` 统一启动。
+---
 
-### 技术栈
+## 技术栈
 
 | 项 | 说明 |
 |----|------|
 | Java | 17 |
-| Spring Boot | 3.5.7（见各模块 `pom.xml`） |
-| Whale Framework | 预编译 JAR（`dist/framework-maven-repo`，版本见 `whale.framework.version`） |
-| 数据库 | PostgreSQL 16 |
-| ORM | JPA / Hibernate |
-| 迁移 | Flyway |
+| Spring Boot | 3.5.7 |
+| 数据库 | PostgreSQL 16（建议） |
+| ORM / 迁移 | JPA · Hibernate / Flyway |
 | API 文档 | SpringDoc / Swagger UI |
 
 ---
 
 ## 项目结构
 
-### 仓库根目录
-
 ```text
-<仓库根>/
-├── pom.xml
-├── dist/framework-maven-repo/   # Framework 预编译 JAR（已随仓携带）
-├── whale-health/                # 医疗业务（含 MRMS 内嵌子域）
-├── whale-emr/                   # 电子病历
-└── whale-framework/             # 本仓库中不存在（仅二进制依赖）
-```
-
-### whale-health 模块
-
-```text
-whale-health/
-├── health-domain-shared/    # 枚举、常量等共享定义
-├── health-domain/           # 领域层（实体、领域服务；含 domain/mrms）
-├── health-application/      # 应用层（AppService；含 application/mrms）
-├── health-infrastructure/   # 基础设施（资源、迁移脚本等）
-└── health-app/              # 启动模块（HealthApplication、application.yml）
-```
-
-### whale-emr 模块
-
-```text
-whale-emr/
-├── emr-domain/              # 病历领域（文书、模板等）
-└── emr-application/         # 病历应用服务（由 health-app 依赖并同进程加载）
+whale-sever/
+├── whale-framework/       # 框架源码（whale-core、identity、web 等）
+├── whale-health/
+│   ├── health-domain-shared/
+│   ├── health-domain/         # 领域层（含内嵌病案 MRMS）
+│   ├── health-application/
+│   ├── health-infrastructure/
+│   └── health-app/            # Spring Boot 启动模块
+├── whale-module-emr/      # 电子病历（v3：bridge + starter）
+├── whale-module-*/        # 可选扩展（chs、booking、crb 等，Profile 启用）
+├── tools/copyright-prep/  # Spotless 版权头
+└── pom.xml
 ```
 
 ---
 
 ## 环境要求
 
-| 工具 | 版本 |
-|------|------|
-| JDK | 17+ |
-| Maven | 3.9+（建议 3.9+） |
-| PostgreSQL | 14+（建议 16+） |
+- JDK **17**
+- Maven **3.9+**
+- PostgreSQL **14+**（建议 16）
 
 ---
 
-## 1. 克隆与构建
+## 克隆与构建
 
-克隆本仓库后，确认 `dist/framework-maven-repo/com/openhis/whale-core/` 存在（正常 clone 即已包含）。
-
-在仓库根目录执行：
+在仓库根目录：
 
 ```bash
-mvn clean package -Pbinary-framework -pl whale-health/health-app -am -DskipTests
+mvn clean package -pl whale-health/health-app -am -DskipTests
 ```
 
-含 EMR 扩展时追加 `-Pwith-emr`。
+含 EMR 等扩展时追加 `-Pwith-emr`（其他扩展同理，如 `-Pwith-booking`）。
 
-| Maven Profile | 作用 |
-|---------------|------|
-| `binary-framework` | 从 `dist/framework-maven-repo` 解析 Framework JAR |
-
-**IntelliJ IDEA：**
-
-1. File → Open → 选择根目录 `pom.xml`。
-2. Settings → Build Tools → Maven：配置本机 Maven 与 JDK 17。
-3. 右侧 Maven → **Profiles** 勾选：`binary-framework`。
-4. 等待索引与依赖下载完成。
-5. Lifecycle → `package`（模块 `health-app` 或根项目均可，推荐上述命令行保证 profile 正确）。
-
-产物路径：
+产物：
 
 ```text
-whale-health/health-app/target/health-app-2.0.2-SNAPSHOT.jar
+whale-health/health-app/target/health-app-2.0.3-SNAPSHOT.jar
 ```
 
-### 仅修改业务代码时的快速编译
-
-已完成首次全量 `package` 后，若只改 `whale-health` / `whale-emr`：
+### 修改 Framework 后
 
 ```bash
-mvn clean compile -Pbinary-framework -pl whale-health/health-app -am -DskipTests
+mvn clean install -f whale-framework/pom.xml -DskipTests
+mvn compile -pl whale-health/health-app -am -DskipTests
 ```
 
-或在 IDEA 中直接 Run / Debug（见下文），由 IDE 增量编译。
+### 只改业务代码时的快速编译
+
+```bash
+mvn compile -pl whale-health/health-app -am -DskipTests
+```
 
 ---
 
-## 2. 本地启动（开发调试）
+## 本地启动
 
-### 2.1 数据库
+1. 创建 PostgreSQL 库，修改 `whale-health/health-app/src/main/resources/application.yml` 中的数据源（或用环境变量 `DB_USERNAME` / `DB_PASSWORD`）。
+2. 首次启动会执行 Flyway 迁移（`classpath:db/migration/health`；扩展模块各自 `db/migration/{module}`）。
 
-1. 创建 PostgreSQL 库（库名与连接串一致即可，例如 `whale` 或 `whale_health_db`）。
-2. 修改 `whale-health/health-app/src/main/resources/application.yml` 中的 `spring.datasource.url / username / password`，指向你的本机库。
-
-也可用环境变量（Windows 示例）：
-
-```bat
-set DB_USERNAME=postgres
-set DB_PASSWORD=你的密码
-set SPRING_PROFILES_ACTIVE=dev
-```
-
-首次启动会执行 **Flyway** 迁移，脚本来自（按 classpath 合并）：
-
-- `classpath:db/migration/health` — 框架 `whale_*` 与业务表（V1 起合并维护）
-- 扩展模块（booking / emr / report / mrms）各自 `db/migration/{module}`，独立 `flyway_schema_history_*` 表
-
-**表/列注释规范**：所有建表脚本须在同一版本内写 PostgreSQL `COMMENT ON TABLE/COLUMN`（含审计字段，简体中文）。工具与审计字段标准文案见 [`scripts/flyway-comment-gen/README.md`](scripts/flyway-comment-gen/README.md)；health 模块见 [`whale-health/.../db/migration/health/README.md`](whale-health/health-infrastructure/src/main/resources/db/migration/health/README.md)。
-
-### 2.2 访问地址（默认配置）
-
-`application.yml` 默认 **`server.port: 8081`**，启动成功后：
+默认 **`server.port: 8081`**：
 
 | 说明 | 地址 |
 |------|------|
-| 应用根路径 | http://localhost:8081/ |
+| 应用 | http://localhost:8081/ |
 | Swagger UI | http://localhost:8081/swagger-ui.html |
 | OpenAPI JSON | http://localhost:8081/v3/api-docs |
 
-生产环境请修改端口、关闭 Swagger 或增加访问控制。
+### IDEA
 
-### 2.3 IDEA 运行
+用 IDEA 打开仓库**根目录** `pom.xml`，等待 Maven 导入。仓库已提交共享配置：
 
-| 项 | 值 |
-|----|-----|
-| Main class | `com.openhis.health.HealthApplication` |
-| Module | `health-app` |
+| 已入库配置 | 作用 |
+|------------|------|
+| `.mvn/maven.config` | 扩展 with-* Profile 默认全关 |
+| `.run/HealthApplication.run.xml` | HIS 核心启动（无扩展模块） |
+| `.idea/compiler.xml` / `misc.xml` | 注解处理、JDK 17 对齐 |
 
-先完成第 1 节构建或至少 `compile`，再 **Run / Debug**。  
-确认已勾选 Maven Profile：`binary-framework`。
+运行主类：`com.openhis.health.HealthApplication`（模块 `health-app`）。
 
-### 2.4 命令行运行
+扩展模块 Profile（`with-emr` / `with-chs` 等）默认关闭，启用方式：Maven 工具窗口勾选 Profile，或命令行 `-Pwith-chs,with-emr`。
 
-```bash
-mvn spring-boot:run -Pbinary-framework -pl whale-health/health-app -DskipTests
-```
-
-打包后：
+### 命令行
 
 ```bash
-java -jar whale-health/health-app/target/health-app-2.0.2-SNAPSHOT.jar
+mvn spring-boot:run -pl whale-health/health-app -DskipTests
+# 或
+java -jar whale-health/health-app/target/health-app-2.0.3-SNAPSHOT.jar
 ```
 
-### 2.5 日志
-
-默认写文件：`logs/whale-health.log`（相对进程工作目录）。可在 `application.yml` 的 `logging` 段调整级别与路径。
+默认日志：`logs/whale-health.log`。
 
 ---
 
-## 3. 打包部署（服务器）
+## 服务器发版
 
-1. 在构建机执行第 1 节，得到 `health-app-2.0.2-SNAPSHOT.jar`。
-2. 将 JAR 与生产配置发到服务器，例如：
-
-```text
-/opt/openhis/health-app.jar
-/opt/openhis/config/application-prod.yml
-```
-
-3. 启动示例：
+1. `mvn clean install -f whale-framework/pom.xml -DskipTests`（未改 framework 且本地已有对应版本可跳过）
+2. `mvn clean package -pl whale-health/health-app -am -DskipTests`
+3. 部署 `health-app-2.0.3-SNAPSHOT.jar` 与生产配置
+4. 启动示例：
 
 ```bash
 java -Xms512m -Xmx2g -jar /opt/openhis/health-app.jar --spring.profiles.active=prod
 ```
 
-生产建议通过环境变量配置数据库与密钥，例如：
-
-```bash
-export DB_USERNAME=postgres
-export DB_PASSWORD=***
-export JWT_SECRET=你的32位以上密钥
-export SPRING_PROFILES_ACTIVE=prod
-```
-
-可按需配置 JVM、systemd、反向代理（Nginx 等），与常规 Spring Boot 部署相同。
+生产建议用环境变量配置 `DB_USERNAME`、`DB_PASSWORD`、`JWT_SECRET` 等。
 
 ---
 
-## 4. 业务开发说明
-
-### 4.1 新增功能（推荐分层）
+## 业务开发分层（推荐）
 
 1. `health-domain-shared` — 枚举、常量  
 2. `health-domain` — 实体、领域服务、仓储  
 3. `health-application` — AppService、DTO  
 4. `health-infrastructure` — 迁移脚本、外部适配  
-5. `health-app` — 仅启动与配置，一般不写业务代码  
+5. `health-app` — 仅启动与配置  
 
-### 4.2 Whale Framework 常用能力（业务代码中）
+Framework 常用能力：多租户 `IMultiTenant`、审计 `BaseAuditedEntity`、权限 `@RequirePermission`、分页 `PagedResult`。源码见 `whale-framework/`，文档见 [whale-doc/framework](../whale-doc/framework/)。
 
-- **多租户**：实体实现 `IMultiTenant`  
-- **审计**：实体继承 `BaseAuditedEntity`  
-- **权限**：`@RequirePermission`  
-- **分页**：`PagedResult`、`BaseQueryRequest`  
-- **动态查询**：JPA `Specification`  
-
-Framework 实现细节在预编译 JAR 中，本仓库不提供其源码。
-
-### 4.3 电子病历（EMR）
-
-`whale-emr` 提供文书、模板等能力，由 `health-app` 依赖 `emr-application` 同进程加载。扩展 EMR 请在 `whale-emr` 模块内按领域/应用分层修改。
+电子病历在 `whale-module-emr` 内按 domain / bridge / application 分层修改，经 `emr-starter`（`-Pwith-emr`）同进程加载。
 
 ---
 
-## 5. 版本对齐
+## 代码格式（Spotless）
 
-根 `pom.xml` 中请关注：
-
-| 属性 | 含义 |
+| 命令 | 用途 |
 |------|------|
-| `whale.framework.version` | 须与 `dist/framework-maven-repo` 内 JAR 版本一致 |
-| 各模块版本 | 一般为 `2.0.2-SNAPSHOT`，发版时以 tag 说明为准 |
+| `mvn spotless:apply` | 统一 Java 版权头、去未使用 import、行尾空格 |
+| `mvn spotless:check` | 校验格式（不改文件） |
+
+版权头模板：`tools/copyright-prep/java-copyright-header.txt`。
+
+其它工具脚本见 [whale-doc/project/tools.md](../whale-doc/project/tools.md)。
 
 ---
 
-## 6. 常见问题
+## 版本
 
-### 找不到 whale-core / whale-web
-
-- `dist/framework-maven-repo/` 是否完整（勿删改）？  
-- Maven Profile 是否勾选 `binary-framework`？  
-
-### 数据库 / Flyway 启动失败
-
-- 检查 PostgreSQL 是否可达、库是否已创建。  
-- 核对 `application.yml` 或环境变量中的连接信息。  
-- 开发环境若改过迁移脚本，需按 Flyway 规则处理校验（参见 Spring Boot `spring.flyway` 配置）。  
-
-### IDEA 未识别模块或依赖标红
-
-- Reimport Maven Project。  
-- 确认 `dist/framework-maven-repo` 存在且 Profile `binary-framework` 已勾选。  
-- File → Project Structure → Project SDK 选 JDK 17。  
+根 `pom.xml`（`artifactId: whale`）为全仓库 parent，当前 **`2.0.3-SNAPSHOT`**。发版时改根 POM `<version>`，各模块经 parent 链继承；`whale.framework.version` 等属性默认 `${project.version}`。
 
 ---
 
-## 7. 许可证
+## 常见问题
 
-业务源码许可以仓库根目录 **`LICENSE`** 为准。  
-Whale Framework 二进制仅用于构建与运行本应用，未经授权请勿单独再分发 Framework JAR。
+**找不到 whale-core / whale-web**  
+在根目录用 `-pl whale-health/health-app -am` 构建；改 framework 后先 `mvn install -f whale-framework/pom.xml`。
+
+**数据库 / Flyway 启动失败**  
+检查 PostgreSQL 是否可达、库是否已创建，核对 `application.yml` 或环境变量。
+
+**IDEA 模块未识别或依赖标红**  
+Reimport Maven Project；Project SDK 选 JDK 17。
+
+---
+
+## 许可证
+
+全部 Java 源码许可以仓库根目录 **[LICENSE](LICENSE)**（GNU LGPL v3 或更高版本）为准。

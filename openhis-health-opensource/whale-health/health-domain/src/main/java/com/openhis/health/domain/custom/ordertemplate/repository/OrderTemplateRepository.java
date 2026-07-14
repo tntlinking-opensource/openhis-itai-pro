@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.ordertemplate.repository;
 
 import com.openhis.health.domain.custom.ordertemplate.entity.OrderTemplate;
@@ -32,6 +19,12 @@ import java.util.Optional;
  */
 public interface OrderTemplateRepository extends JpaRepository<OrderTemplate, Long>, JpaSpecificationExecutor<OrderTemplate> {
 
+    /**
+     * 按主键加载组套模板（含已软删，供框架默认 findById 对齐）。
+     *
+     * @param id 组套模板主键
+     * @return 模板实体
+     */
     Optional<OrderTemplate> findById(Long id);
 
     /**
@@ -52,8 +45,26 @@ public interface OrderTemplateRepository extends JpaRepository<OrderTemplate, Lo
      */
     boolean existsByTemplateCodeAndObjectIdAndBindingEnum(String templateCode, Long objectId, String bindingEnum);
 
+    /**
+     * 编辑场景：除当前模板外是否仍存在相同编码（有效记录内唯一）。
+     *
+     * @param templateCode 模板编码
+     * @param objectId 归属对象标识
+     * @param bindingEnum 绑定类型枚举值
+     * @param id 当前模板主键
+     * @return {@code true} 表示编码冲突
+     */
     boolean existsByTemplateCodeAndObjectIdAndBindingEnumAndIdNot(String templateCode, Long objectId, String bindingEnum, Long id);
 
+    /**
+     * 按绑定类型、场景与状态分页列出模板（按 sort_weight、id 升序）。
+     *
+     * @param bindingEnum 绑定类型
+     * @param sceneEnum 场景枚举
+     * @param statusEnum 状态持久化码
+     * @param pageable 分页参数
+     * @return 模板分页结果
+     */
     Page<OrderTemplate> findAllByBindingEnumAndSceneEnumAndStatusEnumOrderBySortWeightAscIdAsc(
         String bindingEnum,
         com.openhis.health.domain.share.enums.OrderTemplateScene sceneEnum,
@@ -61,6 +72,16 @@ public interface OrderTemplateRepository extends JpaRepository<OrderTemplate, Lo
         Pageable pageable
     );
 
+    /**
+     * 按绑定类型、场景、状态与模板种类分页列出模板。
+     *
+     * @param bindingEnum 绑定类型
+     * @param sceneEnum 场景枚举
+     * @param statusEnum 状态持久化码
+     * @param templateKindEnum 模板种类持久化码
+     * @param pageable 分页参数
+     * @return 模板分页结果
+     */
     Page<OrderTemplate> findAllByBindingEnumAndSceneEnumAndStatusEnumAndTemplateKindEnumOrderBySortWeightAscIdAsc(
         String bindingEnum,
         com.openhis.health.domain.share.enums.OrderTemplateScene sceneEnum,
@@ -69,12 +90,29 @@ public interface OrderTemplateRepository extends JpaRepository<OrderTemplate, Lo
         Pageable pageable
     );
 
+    /**
+     * 按归属对象与绑定类型列出指定状态的模板（不分页，按 sort_weight 排序）。
+     *
+     * @param objectId 归属对象标识
+     * @param bindingEnum 绑定类型
+     * @param statusEnum 状态持久化码
+     * @return 模板列表
+     */
     List<OrderTemplate> findAllByObjectIdAndBindingEnumAndStatusEnumOrderBySortWeightAscIdAsc(
         Long objectId,
         String bindingEnum,
         String statusEnum
     );
 
+    /**
+     * 按归属对象、绑定类型、状态与场景集合列出模板。
+     *
+     * @param objectId 归属对象标识
+     * @param bindingEnum 绑定类型
+     * @param statusEnum 状态持久化码
+     * @param sceneEnums 场景枚举集合
+     * @return 模板列表
+     */
     List<OrderTemplate> findAllByObjectIdAndBindingEnumAndStatusEnumAndSceneEnumInOrderBySortWeightAscIdAsc(
         Long objectId,
         String bindingEnum,
@@ -82,6 +120,16 @@ public interface OrderTemplateRepository extends JpaRepository<OrderTemplate, Lo
         Collection<com.openhis.health.domain.share.enums.OrderTemplateScene> sceneEnums
     );
 
+    /**
+     * 按归属对象、绑定类型、状态、场景集合与模板种类列出模板。
+     *
+     * @param objectId 归属对象标识
+     * @param bindingEnum 绑定类型
+     * @param statusEnum 状态持久化码
+     * @param sceneEnums 场景枚举集合
+     * @param templateKindEnum 模板种类持久化码
+     * @return 模板列表
+     */
     List<OrderTemplate> findAllByObjectIdAndBindingEnumAndStatusEnumAndSceneEnumInAndTemplateKindEnumOrderBySortWeightAscIdAsc(
         Long objectId,
         String bindingEnum,
@@ -90,6 +138,16 @@ public interface OrderTemplateRepository extends JpaRepository<OrderTemplate, Lo
         String templateKindEnum
     );
 
+    /**
+     * 按绑定类型、场景、状态与模板来源分页列出模板。
+     *
+     * @param bindingEnum 绑定类型
+     * @param sceneEnum 场景枚举
+     * @param statusEnum 状态持久化码
+     * @param templateSourceEnum 模板来源持久化码
+     * @param pageable 分页参数
+     * @return 模板分页结果
+     */
     Page<OrderTemplate> findAllByBindingEnumAndSceneEnumAndStatusEnumAndTemplateSourceEnumOrderBySortWeightAscIdAsc(
         String bindingEnum,
         com.openhis.health.domain.share.enums.OrderTemplateScene sceneEnum,
@@ -98,6 +156,17 @@ public interface OrderTemplateRepository extends JpaRepository<OrderTemplate, Lo
         Pageable pageable
     );
 
+    /**
+     * 按绑定类型、场景、状态、模板种类与来源分页列出模板。
+     *
+     * @param bindingEnum 绑定类型
+     * @param sceneEnum 场景枚举
+     * @param statusEnum 状态持久化码
+     * @param templateKindEnum 模板种类持久化码
+     * @param templateSourceEnum 模板来源持久化码
+     * @param pageable 分页参数
+     * @return 模板分页结果
+     */
     Page<OrderTemplate> findAllByBindingEnumAndSceneEnumAndStatusEnumAndTemplateKindEnumAndTemplateSourceEnumOrderBySortWeightAscIdAsc(
         String bindingEnum,
         com.openhis.health.domain.share.enums.OrderTemplateScene sceneEnum,
@@ -107,6 +176,17 @@ public interface OrderTemplateRepository extends JpaRepository<OrderTemplate, Lo
         Pageable pageable
     );
 
+    /**
+     * 按归属对象、绑定类型、状态、场景集合、模板种类与来源列出模板（维护页下拉/复制源）。
+     *
+     * @param objectId 归属对象标识
+     * @param bindingEnum 绑定类型
+     * @param statusEnum 状态持久化码
+     * @param sceneEnums 场景枚举集合
+     * @param templateKindEnum 模板种类持久化码
+     * @param templateSourceEnum 模板来源持久化码
+     * @return 模板列表
+     */
     List<OrderTemplate> findAllByObjectIdAndBindingEnumAndStatusEnumAndSceneEnumInAndTemplateKindEnumAndTemplateSourceEnumOrderBySortWeightAscIdAsc(
         Long objectId,
         String bindingEnum,

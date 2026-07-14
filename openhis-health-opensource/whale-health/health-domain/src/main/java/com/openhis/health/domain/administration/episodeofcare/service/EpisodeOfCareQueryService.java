@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.episodeofcare.service;
 
 import com.openhis.health.domain.administration.episodeofcare.entity.EpisodeOfCare;
@@ -31,6 +18,8 @@ import lombok.RequiredArgsConstructor;
  * <p>职责：按主键、业务单号、患者、机构等维度加载就诊节主档，供病程串联与就诊列表使用。</p>
  *
  * <p>边界：只读；无记录时返回 {@code null} 或空列表，由调用方决定提示策略；活动状态过滤使用持久化状态码 {@code "2"}（与 EpisodeOfCare 状态枚举约定一致）。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link EpisodeOfCareRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor

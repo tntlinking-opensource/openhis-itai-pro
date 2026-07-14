@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 /**
@@ -30,6 +17,9 @@ public interface InpatientDailySettlementConstants {
 
     /** 日结查询失败（EX-IP-DCL-103）。 */
     String EX_IP_DCL_103 = "EX-IP-DCL-103";
+
+    /** 勾选 payment 非法（EX-IP-DCL-105）。 */
+    String EX_IP_DCL_105 = "EX-IP-DCL-105";
 
     /** 无可交账流水（EX-IP-DCL-201）。 */
     String EX_IP_DCL_201 = "EX-IP-DCL-201";
@@ -55,13 +45,19 @@ public interface InpatientDailySettlementConstants {
     /** 预交金分类展示标签（BR-IP-DCL-002）。 */
     String DEPOSIT_CATEGORY_LABEL = "预交金";
 
+    /** 历史预交金 payment kind 落库码（与 {@code HOSPITAL_DEPOSIT} 同义，交账查询须一并纳入）。 */
+    String LEGACY_HOSPITAL_DEPOSIT_KIND_CODE = "PRE_DEPOSIT";
+
+    /** 住院日结上半区排除的 fin_type_code：诊察费（门诊号源归并码 1012，住院不展示）。 */
+    String INPATIENT_EXCLUDED_CONSULTATION_FEE_FIN_TYPE_CODE = "1012";
+
     /** 病区名缺失时的展示降级（AS-SDD §7.4）。 */
     String WARD_NAME_FALLBACK = "—";
 
     /** 渠道汇总金额单位。 */
     String AMOUNT_UNIT_YUAN = "元";
 
-    /** 金额展示小数位。 */
+/** InpatientDailySettlement 共享常量：display scale，值 {@code 2}。 */
     int AMOUNT_DISPLAY_SCALE = 2;
 
     /** 财务代交账经办人下拉单次加载上限。 */

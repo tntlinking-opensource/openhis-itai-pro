@@ -1,41 +1,20 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 质控执行触发来源。
  */
 public enum QcTrigger implements EnumInterface {
-    /**
-     * 病案接收时触发。
-     */
+/** 接收时（QcTrigger，持久化编码 {@code on_receive}）。 */
     ON_RECEIVE(0L, "on_receive", "接收时", "", 0L),
-    /**
-     * 归档前触发。
-     */
+/** 归档前（QcTrigger，持久化编码 {@code before_archive}）。 */
     BEFORE_ARCHIVE(0L, "before_archive", "归档前", "", 1L),
-    /**
-     * 手动触发。
-     */
+/** 手动（QcTrigger，持久化编码 {@code manual}）。 */
     MANUAL(0L, "manual", "手动", "", 2L),
-    /**
-     * 定时任务触发。
-     */
+/** 定时（QcTrigger，持久化编码 {@code scheduled}）。 */
     SCHEDULED(0L, "scheduled", "定时", "", 3L);
 
     private final Long codeSystemId;

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.financial.registration.mapper;
 
 import com.openhis.health.application.inpatient.financial.registration.dto.RegistrationEncounterDto;
@@ -38,7 +25,7 @@ import com.openhis.health.domain.administration.patient.command.ModifyPatientPro
 import com.openhis.health.domain.administration.patient.command.RegisterPatientCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.CollectAdvanceDepositCommand;
 import com.openhis.health.domain.financial.paymentreconciliation.command.SettleInpatientPaymentCommand;
-import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.application.shared.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
@@ -96,6 +83,7 @@ public interface InpatientRegistrationMapper {
      * @param organizationOptions 入院科室下拉
      * @param inWayCodeOptions    入院方式下拉
      * @param admitSourceCodeOptions 入院类型下拉
+     * @param admCondCodeOptions  患者病情下拉
      * @param readOnly            是否只读查看
      * @return 上下文响应
      */
@@ -106,6 +94,7 @@ public interface InpatientRegistrationMapper {
         List<OptionDto> organizationOptions,
         List<OptionDto> inWayCodeOptions,
         List<OptionDto> admitSourceCodeOptions,
+        List<OptionDto> admCondCodeOptions,
         boolean readOnly);
 
     /**

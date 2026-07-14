@@ -1,30 +1,31 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.returntosupplier.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
-import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Setter;
-import io.swagger.v3.oas.annotations.media.Schema;
 
+
+/**
+ * 药库/库房下拉选项（页初始化 {@code warehouseOptions} 元素，IF-WHS-RT-01）。
+ */
 @Getter
 @Setter
+@Schema(description = "药库下拉选项")
 public class WarehouseOptionDto {
 
-    /** 库位主键。 */
+    /** 库位 locationId。 */
     @Schema(description = "库位 locationId")
     private Long locationId;
-    /** 展示名称。 */
+
+    /** 展示名 displayName。 */
     @Schema(description = "展示名 displayName")
     private String displayName;
-    /** 是否启用。 */
+
+    /** 启用 active。 */
     @Schema(description = "启用 active")
     private Boolean active;
 }

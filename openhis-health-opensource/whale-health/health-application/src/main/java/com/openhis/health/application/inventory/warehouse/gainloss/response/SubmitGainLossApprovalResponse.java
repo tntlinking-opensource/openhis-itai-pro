@@ -1,36 +1,28 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.gainloss.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
-@Data
+/**
+ * 提交药库损益审批响应（IF-WHS-GL-06）。
+ */
+@Getter
+@Setter
 @Accessors(chain = true)
+@Schema(description = "提交药库损益审批 IF-WHS-GL-06")
 public class SubmitGainLossApprovalResponse {
 
-    /** 是否成功。 */
+    /** 是否成功 success。 */
     @Schema(description = "是否成功 success")
     private Boolean success;
 
-    /** 提交后状态 code。 */
-    @Schema(description = "状态 statusEnum")
+    /** 提交后状态 SupplyStatus#getCode。 */
+    @Schema(description = "提交后状态 SupplyStatus#getCode")
     private String statusEnum;
 }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.supplyrequest.command;
 
 import com.openhis.health.domain.share.command.BatchCommand;
@@ -36,6 +23,11 @@ public class CreatePurchaseOrderCommand extends BatchCommand<CreatePurchaseOrder
 
     /** 操作人主键（事件与审计）。 */
     private Long operatorId;
+
+    /**
+     * 修订订货单时前端提交的期望 {@code version}，须与同号各行 JPA {@code @Version} 一致（对齐进货单修订语义）。
+     */
+    private Integer expectedRowVersionForRevision;
 
     /**
      * 订货单行：新建时 {@code busNo} 可空由领域生成；修订时首行须带既有单号。

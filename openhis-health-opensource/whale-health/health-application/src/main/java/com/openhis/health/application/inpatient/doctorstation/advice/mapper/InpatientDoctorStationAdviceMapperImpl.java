@@ -1,30 +1,18 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.advice.mapper;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 
-import com.openhis.health.module.common.assembler.advice.ServiceAdviceCommandAssembler;
-import com.openhis.health.module.common.assembler.advice.ServiceAdviceDraftCommandSupport;
-import com.openhis.health.module.orchestration.advice.ServiceApplyFormOrchestrationSupport;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.advice.ServiceAdviceCommandAssembler;
+import com.openhis.health.application.shared.advice.ServiceAdviceDraftCommandHelper;
+import com.openhis.health.application.outpatient.doctorstation.advice.support.ServiceApplyFormOrchestrator;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.domain.share.constants.DoctorStationAdviceConstants;
+import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
+import com.openhis.health.domain.share.constants.ServiceRequestCategoryConstants;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.CancelStopLongTermAdviceLineRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.InpatientDoctorStationAdviceDraftLineRequest;
 import com.openhis.health.application.inpatient.doctorstation.advice.dto.PrepickedProductKeyDto;
@@ -44,17 +32,17 @@ import com.openhis.health.domain.custom.encounterhistory.command.RecordDischarge
 import com.openhis.health.domain.medication.medicationrequest.command.CancelStopLongTermMedicationOrderCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.StopLongTermMedicationOrderCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.workflow.servicerequest.command.CancelStopServiceRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.CreateDischargeRequestCommand;
 import com.openhis.health.domain.workflow.servicerequest.command.StopServiceRequestCommand;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
-import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
-import org.springframework.beans.BeanUtils;
+import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.share.enums.GenerateSource;
-import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
+import com.openhis.health.application.shared.validator.InpatientPendingSettlementClinicalGate;
+import com.openhis.health.application.shared.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.TherapyType;
@@ -65,7 +53,7 @@ import com.openhis.health.domain.workflow.servicerequest.command.SignServiceRequ
 import com.openhis.health.domain.workflow.servicerequest.command.WithdrawSignedServiceRequestCommand;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -88,6 +76,7 @@ import java.util.List;
 public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorStationAdviceMapper {
 
     private final PatientEncounterConsistencyGate patientEncounterConsistencyGate;
+    private final InpatientPendingSettlementClinicalGate inpatientPendingSettlementClinicalGate;
 
     /**
      * Gate：校验请求患者与住院读模型快照患者一致（复用 {@link PatientEncounterConsistencyGate}）。
@@ -140,6 +129,11 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_NOT_FOUND, DoctorStationAdviceConstants.MSG_SELECT_PATIENT_FIRST);
         }
         String statusCode = snapshot.getStatusEnum();
+        // 待结算/已结算/已离院：禁止开立/签发/签退等医嘱变更（EX-IP-ORD-107）。
+        inpatientPendingSettlementClinicalGate.assertEncounterAllowsOrderClinicalMutation(
+            statusCode,
+            DoctorStationAdviceConstants.EX_IP_ORD_107,
+            InpatientNurseStationConstants.MSG_ENCOUNTER_PENDING_SETTLEMENT_ORDER_FORBIDDEN);
         // 在院进行中：允许开立/暂存/签发。
         if (EncounterStatus.IN_PROGRESS.getCode().equals(statusCode)) {
             return;
@@ -208,8 +202,14 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         if (request.getExcludeMedicationCategoryCodes() != null && !request.getExcludeMedicationCategoryCodes().isEmpty()) {
             q.setExcludeMedicationCategoryCodes(new ArrayList<>(request.getExcludeMedicationCategoryCodes()));
         }
-        if (StringUtils.isNotBlank(request.getCategoryEnum())) {
-            q.setCategoryCode(ServiceApplyFormOrchestrationSupport.resolveApplyFormCategoryCode(request.getCategoryEnum()));
+        if (StringUtils.isNotEmpty(request.getCategoryEnum())) {
+            String categoryRaw = request.getCategoryEnum().trim();
+            // IF-IP-DOR-11 护理级别（category 26）为 ActivityDef 类目，非申请单 21/22/23。
+            if (ServiceRequestCategoryConstants.SERVICE_CATEGORY_NURSING.equals(categoryRaw)) {
+                q.setCategoryCode(categoryRaw);
+            } else {
+                q.setCategoryCode(ServiceApplyFormOrchestrator.resolveApplyFormCategoryCode(request.getCategoryEnum()));
+            }
         }
         return q;
     }
@@ -347,13 +347,13 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
         item.setPatientId(parent.getPatientId());
         SaveInpatientServiceAdviceDraftLinePayload servicePayload = line.getServicePayload();
         item.setActivityId(servicePayload.getActivityDefinitionId());
-        item.setQuantity(ServiceAdviceDraftCommandSupport.requireQuantity(
+        item.setQuantity(ServiceAdviceDraftCommandHelper.requireQuantity(
             servicePayload.getQuantity(), servicePayload.getChildOverridesJson()));
-        item.setUnitCode(ServiceAdviceDraftCommandSupport.requireUnitCode(
+        item.setUnitCode(ServiceAdviceDraftCommandHelper.requireUnitCode(
             servicePayload.getUnitCode(), servicePayload.getChildOverridesJson(), productRm));
         String therapyEnum = this.resolveTherapyTypeCode(line);
         item.setTherapyEnum(therapyEnum);
-        item.setExecutionCount(ServiceAdviceDraftCommandSupport.requireExecutionCount(
+        item.setExecutionCount(ServiceAdviceDraftCommandHelper.requireExecutionCount(
             servicePayload.getExecutionCount(), servicePayload.getChildOverridesJson(), therapyEnum));
         item.setCategoryEnum(StringUtils.firstNonBlank(productRm.getCategoryCode(), "1"));
         item.setRateCode(this.resolveServiceRateCodeForTherapy(therapyEnum, servicePayload.getRateCode()));
@@ -395,17 +395,17 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
             item.setEncounterDiagnosisId(servicePayload.getEncounterDiagnosisId());
             item.setRateCode(this.resolveServiceRateCodeForTherapy(therapyEnum, servicePayload.getRateCode()));
             item.setOrgId(servicePayload.getPerformOrgId());
-            BigDecimal quantity = ServiceAdviceDraftCommandSupport.resolveQuantityForModify(
+            BigDecimal quantity = ServiceAdviceDraftCommandHelper.resolveQuantityForModify(
                 servicePayload.getQuantity(), servicePayload.getChildOverridesJson());
             if (quantity != null && quantity.compareTo(BigDecimal.ZERO) > 0) {
                 item.setQuantity(quantity);
             }
-            String unitCode = ServiceAdviceDraftCommandSupport.resolveUnitCodeForModify(
+            String unitCode = ServiceAdviceDraftCommandHelper.resolveUnitCodeForModify(
                 servicePayload.getUnitCode(), servicePayload.getChildOverridesJson());
             if (unitCode != null) {
                 item.setUnitCode(unitCode);
             }
-            Integer executionCount = ServiceAdviceDraftCommandSupport.resolveExecutionCountForModify(
+            Integer executionCount = ServiceAdviceDraftCommandHelper.resolveExecutionCountForModify(
                 servicePayload.getExecutionCount(), servicePayload.getChildOverridesJson());
             if (executionCount != null) {
                 item.setExecutionCount(executionCount);
@@ -421,7 +421,7 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
      */
     private String resolveServiceRateCodeForTherapy(String therapyEnum, String rateCode) {
         if (TherapyType.LONG_TERM.getCode().equals(therapyEnum)) {
-            if (StringUtils.isBlank(rateCode)) {
+            if (StringUtils.isEmpty(rateCode)) {
                 throw new BusinessException(
                     ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
                     DoctorStationAdviceConstants.MSG_LONG_TERM_SERVICE_RATE_CODE_REQUIRED);
@@ -689,7 +689,7 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
      */
     private String resolveTherapyTypeCode(InpatientDoctorStationAdviceDraftLineRequest line) {
         String code = trimToEmpty(line.getTherapyTypeCode());
-        if (StringUtils.isBlank(code)) {
+        if (StringUtils.isEmpty(code)) {
             throw new BusinessException(ErrorCodeConstants.MEDICATION_REQUEST_INVALID_ARGUMENT, DoctorStationAdviceConstants.MSG_THERAPY_TYPE_REQUIRED);
         }
         // 仅接受域枚举已注册的 LONG_TERM / TEMPORARY code，禁止前端自造字面量落库。
@@ -712,7 +712,7 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
     public String resolveOrderBindSourceItemKey(String bindType, String itemNo, Long itemId) {
         if (DoctorStationAdviceConstants.BIND_TYPE_USAGE.equals(bindType)) {
             // 用法绑定：模板 item_id 存 method_code，禁止再转 concept 主键
-            if (StringUtils.isNotBlank(itemNo)) {
+            if (StringUtils.isNotEmpty(itemNo)) {
                 return itemNo.trim();
             }
             throw new BusinessException(
@@ -723,13 +723,13 @@ public class InpatientDoctorStationAdviceMapperImpl implements InpatientDoctorSt
             if (itemId != null) {
                 return String.valueOf(itemId);
             }
-            if (StringUtils.isBlank(itemNo)) {
+            if (StringUtils.isEmpty(itemNo)) {
                 throw new BusinessException(
                     ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
                     DoctorStationAdviceConstants.MSG_BIND_SOURCE_ITEM_ID_REQUIRED);
             }
             String trimmed = itemNo.trim();
-            if (!StringUtils.isNumeric(trimmed)) {
+            if (StringUtils.isEmpty(trimmed) || !trimmed.chars().allMatch(Character::isDigit)) {
                 throw new BusinessException(
                     ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
                     DoctorStationAdviceConstants.MSG_BIND_SOURCE_ITEM_NO_NOT_NUMERIC);

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 /**
@@ -22,9 +9,9 @@ package com.openhis.health.domain.share.constants;
  */
 public interface InpatientSettleQueueTab {
 
-    /** 有待结算费用（存在 {@code PENDING_SETTLEMENT} 收费行）。 */
+    /** 待出院结算（就诊 {@code PENDING}，护士已办理出院）。 */
     String PENDING_SETTLE = "PENDING_SETTLE";
 
-    /** 已财务结算（就诊 {@code COMPLETED}）。 */
+    /** 已结算查阅（存在住院临床 SUCCESS/REFUNDED 结算流水；与当前在院/床位/召回态无关）。 */
     String SETTLED = "SETTLED";
 }

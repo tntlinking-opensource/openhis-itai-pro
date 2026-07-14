@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -37,38 +24,38 @@ import java.time.LocalDateTime;
 @Schema(description = "护理级别只读信息")
 public class NurseStationAutoRollNursingReadonlyDto {
 
-    /** 源护理级别医嘱主键。 */
+    /** 护理医嘱主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "护理医嘱主键")
     private Long serviceRequestId;
 
-    /** 护理级别 activityId。 */
+    /** 护理活动定义主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "护理活动定义主键")
     private Long activityId;
 
-    /** 护理级别展示名。 */
+    /** 护理级别名称。 */
     @Schema(description = "护理级别名称")
     private String activityName;
 
-    /** 医嘱数量。 */
+    /** 数量。 */
     @Schema(description = "数量")
     private BigDecimal quantity;
 
-    /** 数量单位 code。 */
+    /** 单位编码。 */
     @Schema(description = "单位编码")
     private String unitCode;
 
-    /** 单位展示名。 */
+    /** 单位名称。 */
     @Schema(description = "单位名称")
     private String unitName;
 
-    /** 护士校对时刻。 */
+    /** 校对时刻。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "校对时刻")
     private LocalDateTime checkTime;
 
-    /** 医嘱状态持久化码。 */
+    /** 医嘱状态码。 */
     @Schema(description = "医嘱状态码")
     private String statusEnum;
 
@@ -76,16 +63,20 @@ public class NurseStationAutoRollNursingReadonlyDto {
     @Schema(description = "医嘱状态展示名")
     private String statusDictText;
 
-    /** 解析出的默认定价 id。 */
+    /** 收费项定价主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "收费项定价主键")
     private Long chargeDefinitionId;
 
-    /** 定价展示名。 */
+    /** 定价名称。 */
     @Schema(description = "定价名称")
     private String chargeDefinitionName;
 
-    /** 本次解析使用的业务日。 */
+    /** 解析单价（展示参考；滚费落账以写路径重算为准）。 */
+    @Schema(description = "解析单价")
+    private BigDecimal unitPrice;
+
+    /** 业务日。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_DISPLAY_PATTERN)
     @Schema(description = "业务日")
     private LocalDate billDate;

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationdispense.queries.model;
 
 import com.openhis.health.domain.share.enums.DispenseStatus;
@@ -32,26 +19,47 @@ import java.time.LocalDateTime;
 @Setter
 public class MedicationDispenseSlipQueryModel {
 
+    /** 发药行主键 {@code med_medication_dispense.id}。 */
     private Long dispenseId;
+    /** 发药业务号。 */
     private String busNo;
+    /** 关联药品医嘱主键 {@code med_medication_request.id}。 */
     private Long medReqId;
+    /** 发放状态枚举。 */
     private DispenseStatus statusEnum;
+    /** 未执行原因持久化码（拒发/暂停等）。 */
     private String notPerformedReasonEnum;
+    /** 状态最近变更时刻。 */
     private LocalDateTime statusChangedTime;
+    /** 发药类型（门诊/住院/汇总等）。 */
     private MedicationDispenseType dispenseEnum;
+    /** 药品定义主键。 */
     private Long medicationId;
+    /** 患者主键。 */
     private Long patientId;
+    /** 就诊主键。 */
     private Long encounterId;
+    /** 发药窗口/药房位置主键。 */
     private Long locationId;
+    /** 医嘱开立数量（拆零）。 */
     private BigDecimal quantity;
+    /** 计量单位编码。 */
     private String unitCode;
+    /** 实际发放数量（拆零）。 */
     private BigDecimal dispenseQuantity;
+    /** 批号。 */
     private String lotNumber;
+    /** 追溯码（单行或汇总串）。 */
     private String traceNo;
+    /** 配药人 practitioner 主键。 */
     private Long preparerId;
+    /** 配药完成时刻。 */
     private LocalDateTime prepareTime;
+    /** 发药人 practitioner 主键。 */
     private Long dispenserId;
+    /** 发药完成时刻。 */
     private LocalDateTime dispenseTime;
+    /** 汇总发药单号（住院汇总场景）。 */
     private String summaryNo;
     /** 处方号（由药嘱 {@code prescription_no} 回填；查询未 join 时可为 null）。 */
     private String prescriptionNo;

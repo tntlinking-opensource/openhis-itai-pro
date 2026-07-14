@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.dispensesummary.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -32,18 +19,19 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
-/** 汇总单头。 */
 @Schema(description = "汇总单头")
 public class NurseStationDispenseSummarySlipHeaderDto {
 
     @Schema(description = "汇总单号")
+    /** 汇总单号。 */
     private String busNo;
 
     @Schema(description = "申请时间")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
+    /** 申请时间。 */
     private LocalDateTime applyTime;
 
-    /** 发药时间（药房核发后）。 */
+    /** 发药时间。 */
     @Schema(description = "发药时间")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime dispenseTime;
@@ -66,7 +54,7 @@ public class NurseStationDispenseSummarySlipHeaderDto {
     @Schema(description = "申请人姓名")
     private String applicantName;
 
-    /** 领药人主键（药房核发后写入 SupplyDelivery）。 */
+    /** 领药人主键。 */
     @Schema(description = "领药人主键")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long receiverId;
@@ -75,15 +63,15 @@ public class NurseStationDispenseSummarySlipHeaderDto {
     @Schema(description = "领药人姓名")
     private String receiverName;
 
-    /** 汇总单审批态 code（SupplyRequest.status_enum）。 */
+    /** 审批态 code。 */
     @Schema(description = "审批态 code")
     private String supplyStatusEnum;
 
-    /** 汇总单审批态展示。 */
+    /** 审批态展示。 */
     @Schema(description = "审批态展示")
     private String supplyStatusEnumText;
 
-    /** 发放态 code（药房核发后 SupplyDelivery.status_enum）。 */
+    /** 发放态 code。 */
     @Schema(description = "发放态 code")
     private String deliveryStatusEnum;
 

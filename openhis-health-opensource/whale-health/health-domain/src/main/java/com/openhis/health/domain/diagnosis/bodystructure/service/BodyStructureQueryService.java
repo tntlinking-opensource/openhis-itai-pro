@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.diagnosis.bodystructure.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
@@ -29,7 +16,6 @@ import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -49,6 +35,8 @@ import java.util.Set;
  * 身体部位（解剖部位）主数据读侧查询服务。
  *
  * <p>职责：提供树形检索、简项分页与单条详情，供诊断录入与编码辅助使用；只读不写库。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link BodyStructureRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.pharmacy.summarydispense.mapper;
 
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.dto.InpatientPharmacySummaryDispenseItemDto;
@@ -25,10 +12,9 @@ import com.openhis.health.application.inpatient.pharmacy.summarydispense.respons
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.response.GetMedicationSummaryDispenseDetailResponse;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.response.PagePendingMedicationSummarySlipsResponse;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.response.RejectSummaryDispenseResponse;
-import com.openhis.health.domain.custom.tracenumberrecord.command.AppendTraceRecordsCommand;
+import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.medication.medicationdispense.command.CancelMedicationDispenseSummaryCommand;
 import com.openhis.health.domain.medication.medicationdispense.command.CompleteSummaryDispenseCommand;
-import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
 import com.openhis.health.domain.workflow.supplydelivery.command.CreateSummarySupplyDeliveryCommand;
 import com.openhis.health.domain.workflow.supplydelivery.command.UpdateCompletedStatusBatchCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.AgreeRequestCommand;
@@ -40,6 +26,7 @@ import org.springframework.data.domain.Page;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 住院药房汇总发药 Request/Query/Command/Response 映射。
@@ -99,12 +86,14 @@ public interface InpatientPharmacySummaryDispenseMapper {
      * @param summaryNo      汇总单号
      * @param operatorId     操作人
      * @param practitionerId 发药药师
+     * @param preparerId     调配药师
      * @return 领域命令
      */
     CompleteSummaryDispenseCommand toCompleteSummaryDispenseCommand(
         String summaryNo,
         Long operatorId,
-        Long practitionerId);
+        Long practitionerId,
+        Long preparerId);
 
     /**
      * IF-IPS-03：创建汇总 SupplyDelivery 命令。
@@ -112,12 +101,14 @@ public interface InpatientPharmacySummaryDispenseMapper {
      * @param receiverId   领药人
      * @param operatorId   操作人
      * @param supplyLines  type 27 Supply 行
+     * @param traceBySupplyRequestId 供应行 id → 追溯码（汇总路径落 Delivery）
      * @return 领域命令
      */
     CreateSummarySupplyDeliveryCommand toCreateSummarySupplyDeliveryCommand(
         Long receiverId,
         Long operatorId,
-        List<SupplyRequestModel> supplyLines);
+        List<SupplyRequestModel> supplyLines,
+        Map<Long, String> traceBySupplyRequestId);
 
     /**
      * IF-IPS-03：批量推进 Delivery 完成态命令。
@@ -143,19 +134,6 @@ public interface InpatientPharmacySummaryDispenseMapper {
      * @return 领域命令
      */
     AgreeRequestCommand toAgreeRequestCommand(String busNo, Long approverId, Long operatorId);
-
-    /**
-     * IF-IPS-03：追溯出库命令。
-     *
-     * @param dispenses  已完成汇总发放行（追溯码已合并）
-     * @param summaryNo  汇总单号
-     * @param operatorId 操作人
-     * @return 领域命令；无追溯码时 items 可为空
-     */
-    AppendTraceRecordsCommand toAppendTraceRecordsCommand(
-        List<MedicationDispense> dispenses,
-        String summaryNo,
-        Long operatorId);
 
     /**
      * IF-IPS-03：核发成功响应。

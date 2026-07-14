@@ -1,22 +1,27 @@
+/*
+ * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
+ */
 package com.openhis.health.application.outpatient.financial.charge.service;
 
 import com.openhis.health.application.outpatient.financial.charge.dto.*;
 import com.openhis.health.application.outpatient.financial.charge.mapper.OutpatientChargeMapper;
 import com.openhis.health.application.outpatient.financial.charge.request.*;
 import com.openhis.health.application.outpatient.financial.charge.response.*;
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.validator.PageWindowGate;
-import com.openhis.health.module.common.assembler.financial.PaymentChannelOptionProvider;
-import com.openhis.health.module.common.validator.PaymentChannelGate;
-import com.openhis.health.module.common.support.ThirdPartyPaymentSettleSupport;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.PageWindowGate;
+import com.openhis.health.application.shared.financial.PaymentChannelOptionProvider;
+import com.openhis.health.application.shared.validator.PaymentChannelGate;
+import com.openhis.health.application.shared.payment.ThirdPartyPaymentSettleOrchestrator;
 import com.openhis.whale.core.application.dto.OptionDto;
+import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.health.application.outpatient.financial.charge.support.ChargeReceiptPrintAssembler;
-import com.openhis.health.module.orchestration.financial.OutpatientChargeSettlementGateSupport;
-import com.openhis.health.module.orchestration.financial.OutpatientPaymentDraftLifecycleSupport;
+import com.openhis.health.application.outpatient.financial.charge.support.OutpatientChargeSettlementGate;
+import com.openhis.health.application.outpatient.financial.charge.support.OutpatientPaymentDraftLifecycleOrchestrator;
 import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.command.BatchChargeItemIdsCommand;
@@ -32,8 +37,8 @@ import com.openhis.health.domain.administration.practitioner.entity.Practitioner
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.module.querysupport.financial.OutpatientChargeEncounterQueueLoader;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.outpatient.financial.charge.support.OutpatientChargeEncounterQueueLoader;
 import com.openhis.health.domain.administration.invoice.service.InvoiceDomainService;
 import com.openhis.health.domain.clinical.condition.service.ConditionQueryService;
 import com.openhis.health.domain.clinical.condition.queries.model.ConditionBatchItemQueryModel;
@@ -58,23 +63,31 @@ import com.openhis.health.domain.workflow.devicedispense.service.DeviceDispenseQ
 import com.openhis.health.domain.workflow.devicerequest.service.DeviceRequestDomainService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestDomainService;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.integration.support.insurance.outpatient.OutpatientInsuranceSettlementCompensation;
-import com.openhis.health.integration.insurance.outpatient.OutpatientChargeInsuranceExtension;
-import com.openhis.health.integration.support.einvoice.BossElectronicInvoiceIntegrationSupport;
-import com.openhis.health.integration.insurance.outpatient.command.OutpatientChargeConfirmCommand;
-import com.openhis.health.integration.insurance.outpatient.command.OutpatientChargePreSettleBatchCommand;
-import com.openhis.health.integration.insurance.outpatient.command.OutpatientChargePreSettleCommand;
-import com.openhis.health.integration.insurance.outpatient.result.OutpatientChargeConfirmResult;
-import com.openhis.health.integration.insurance.outpatient.result.OutpatientChargePreSettleBatchResult;
-import com.openhis.health.integration.insurance.outpatient.result.OutpatientChargePreSettleGroupResult;
-import com.openhis.health.integration.insurance.outpatient.result.OutpatientChargePreSettleResult;
-import com.openhis.health.integration.insurance.outpatient.result.OutpatientChargePreSettleSnapshot;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.orchestration.OutpatientChargeInsuranceCompensationOrchestration;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.OutpatientChargeInsuranceExtension;
+import com.openhis.health.infrastructure.integration.financial.orchestration.PaymentReconciliationSettleOrchestration;
+import com.openhis.health.infrastructure.integration.einvoice.orchestration.BossElectronicInvoiceAfterCommitOrchestration;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargeConfirmExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargePreSettleExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargePreSettleListExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionIn.OutpatientChargePreSettleBatchExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargePreSettleBatchExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargeConfirmExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargePreSettleGroupExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargePreSettleExtensionOut;
+import com.openhis.health.infrastructure.integration.insurance.outpatient.ExtensionOut.OutpatientChargePreSettleQueryExtensionOut;
+import com.openhis.health.infrastructure.integration.workinjury.WorkInjuryOutpatientSettlementExtension;
+import com.openhis.health.infrastructure.integration.workinjury.ExtensionIn.WorkInjuryConfirmSettleExtensionIn;
+import com.openhis.health.infrastructure.integration.workinjury.ExtensionIn.WorkInjuryPreSettleQueryExtensionIn;
+import com.openhis.health.infrastructure.integration.workinjury.ExtensionIn.WorkInjurySettleExtensionIn;
+import com.openhis.health.infrastructure.integration.workinjury.ExtensionOut.PrepareWorkInjuryInvokeExtensionOut;
+import com.openhis.health.infrastructure.integration.workinjury.ExtensionOut.WorkInjuryConfirmSettleExtensionOut;
+import com.openhis.health.infrastructure.integration.workinjury.ExtensionOut.WorkInjuryPreSettleQueryExtensionOut;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
-import com.openhis.health.domain.share.constants.OutpatientChargeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.OutpatientChargeQueueTab;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
@@ -84,12 +97,11 @@ import com.openhis.health.domain.share.enums.PaymentStatus;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
-import com.openhis.whale.core.application.exception.BusinessException;
+import com.openhis.health.domain.share.constants.OutpatientChargeConstants;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -127,7 +139,7 @@ public class OutpatientChargeAppService {
     private final PaymentChannelOptionProvider paymentChannelOptionProvider;
     private final CodeSystemQueryService codeSystemQueryService;
     private final EncounterQueryService encounterQueryService;
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
     private final AccountQueryService accountQueryService;
     private final ContractQueryService contractQueryService;
     private final ChargeItemDomainService chargeItemDomainService;
@@ -139,7 +151,7 @@ public class OutpatientChargeAppService {
     private final PaymentReconciliationQueryService paymentReconciliationQueryService;
     private final InvoiceDomainService invoiceDomainService;
     private final ConditionQueryService conditionQueryService;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final OutpatientChargeMapper outpatientChargeMapper;
     private final MedicationRequestDomainService medicationRequestDomainService;
     private final MedicationDispenseDomainService medicationDispenseDomainService;
@@ -150,15 +162,18 @@ public class OutpatientChargeAppService {
     private final ServiceRequestDomainService serviceRequestDomainService;
     private final OutpatientChargeInsuranceExtension chargeInsuranceExtension;
 
-    private final BossElectronicInvoiceIntegrationSupport bossElectronicInvoiceIntegrationSupport;
+    private final WorkInjuryOutpatientSettlementExtension workInjurySettleExtension;
 
-    private final OutpatientInsuranceSettlementCompensation outpatientInsuranceSettlementCompensation;
+    private final PaymentReconciliationSettleOrchestration paymentReconciliationSettleOrchestration;
+    private final BossElectronicInvoiceAfterCommitOrchestration bossElectronicInvoiceAfterCommitOrchestration;
 
-    private final ThirdPartyPaymentSettleSupport thirdPartyPaymentSettleSupport;
+    private final OutpatientChargeInsuranceCompensationOrchestration outpatientChargeInsuranceCompensationOrchestration;
+
+    private final ThirdPartyPaymentSettleOrchestrator thirdPartyPaymentSettleOrchestrator;
 
     private final ChargeReceiptPrintAssembler chargeReceiptPrintAssembler;
-    private final OutpatientChargeSettlementGateSupport outpatientChargeSettlementGateSupport;
-    private final OutpatientPaymentDraftLifecycleSupport outpatientPaymentDraftLifecycleSupport;
+    private final OutpatientChargeSettlementGate outpatientChargeSettlementGate;
+    private final OutpatientPaymentDraftLifecycleOrchestrator outpatientPaymentDraftLifecycleOrchestrator;
 
     /**
      * IF-OPC-01：加载收费页初始化数据。
@@ -199,7 +214,7 @@ public class OutpatientChargeAppService {
             Page<Long> encounterPage =
                 this.outpatientChargeEncounterQueueLoader.pageEncounterIdsForOutpatientCashierQueue(queueEncounterQuery);
             List<OutpatientEncounterContextQueryModel> infos =
-                encounterContextFacade.listOutpatientContextsByEncounterIdsOrdered(encounterPage.getContent());
+                EncounterContextReader.listOutpatientContextsByEncounterIdsOrdered(encounterPage.getContent());
             Page<OutpatientEncounterContextQueryModel> pageShell =
                 new PageImpl<>(infos, encounterPage.getPageable(), encounterPage.getTotalElements());
             List<ChargeQueueRowDto> records = outpatientChargeMapper.toChargeQueueRowDtoList(infos, null);
@@ -260,6 +275,8 @@ public class OutpatientChargeAppService {
             }
             LoadPendingChargeItemsResponse response = new LoadPendingChargeItemsResponse();
             response.setEncounterId(request.getEncounterId());
+            // Pre：双账户门禁标志供前端禁用转医保/转自费（纯自费挂号不可互转）。
+            response.setAccountSwitchEnabled(accountQueryService.hasDualChargeAccounts(request.getEncounterId()));
             // Asm：映射明细行并返回。
             response.setItems(this.toPendingRows(rows, Boolean.TRUE.equals(request.getIncludePriceExtension())));
             return response;
@@ -363,7 +380,7 @@ public class OutpatientChargeAppService {
         BatchChargeItemIdsCommand preSettleCommand =
             outpatientChargeMapper.toBatchChargeItemIdsCommand(request.getChargeItemIds(), operatorId);
         // 预结算前先作废同就诊遗留草稿，避免多次预结算残留 DRAFT 使 BR-OPC-012 误判为待收费。
-        this.outpatientPaymentDraftLifecycleSupport.cancelAllDraftsForEncounter(request.getEncounterId(), null);
+        this.outpatientPaymentDraftLifecycleOrchestrator.cancelAllDraftsForEncounter(request.getEncounterId(), null);
         // 先落收费项预结算快照，再创建支付草稿，保证“费用事实在前、支付草稿在后”的时序。
         chargeItemDomainService.preSettleChargeItems(preSettleCommand);
         BigDecimal totalAmount = this.sumChargeItemAmount(chargeItems);
@@ -485,7 +502,7 @@ public class OutpatientChargeAppService {
         // 校验收费项未结算：已结算或已退款的收费项不能再次结算
         this.assertNotSettledChargeItems(chargeItems);
         // Gate（GAP-STALE-001）：须 PLANNED 且锚点医嘱/发放仍可收费；须在支付落账前执行。
-        this.outpatientChargeSettlementGateSupport.assertChargeItemsSettleable(chargeItems);
+        this.outpatientChargeSettlementGate.assertChargeItemsSettleable(chargeItems);
         // 计算收费项总金额作为预期金额基准；医保预结算后以草稿 displayAmount 为准。
         BigDecimal expected = this.resolveExpectedPayableAmount(payment, chargeItems);
         // 支付草稿明细金额必须与当前应付口径一致，防止历史脏草稿在正式结算阶段穿透。
@@ -507,7 +524,8 @@ public class OutpatientChargeAppService {
                 request.getPaymentDraftId(),
                 contractBusNo);
         }
-        List<OutpatientChargeConfirmResult> ybConfirmResults = this.collectInsuranceConfirmResults(request);
+        List<OutpatientChargeConfirmExtensionOut> ybConfirmResults = this.collectThirdPartyConfirmResults(request, chargeItems);
+        boolean workInjurySettle = this.isWorkInjuryChargeSettlement(request, chargeItems);
         SettleOutpatientPaymentCommand settleCommand = outpatientChargeMapper.toSettleOutpatientPaymentCommand(request);
         settleCommand.setYbSettlements(this.buildYbSettlementItems(ybConfirmResults));
         this.mergeInsurancePaymentDetailsIntoSettleCommand(
@@ -517,23 +535,26 @@ public class OutpatientChargeAppService {
             request.getBillDate(),
             request.getOutcomeEnum());
         this.attachDraftAccountsToPayReceiptDetails(settleCommand.getPayReceiptDetails(), details);
-        thirdPartyPaymentSettleSupport.applyScanBeforeSettle(
+        thirdPartyPaymentSettleOrchestrator.applyScanBeforeSettle(
             request.getPaymentDraftId(),
             settleCommand.getPayReceiptDetails(),
             request.getClientScanResult(),
             operatorId,
             null);
-        Long paymentId = paymentReconciliationDomainService.settleOutpatientPayment(settleCommand);
+        Long paymentId = paymentReconciliationSettleOrchestration.settleOutpatientPayment(settleCommand);
+        if (workInjurySettle) {
+            this.bindWorkInjuryPaymentAfterLocalSettle(request, paymentId, ybConfirmResults);
+        }
         BatchChargeItemIdsCommand batchChargeItemIdsCommand =
             outpatientChargeMapper.toBatchChargeItemIdsCommand(request.getChargeItemIds(), operatorId);
         chargeItemDomainService.settleChargeItems(batchChargeItemIdsCommand);
         // 正式结算后清理同就诊其它草稿支付单，防止队列标签仍命中陈旧 DRAFT。
-        this.outpatientPaymentDraftLifecycleSupport.cancelAllDraftsForEncounter(request.getEncounterId(), null);
+        this.outpatientPaymentDraftLifecycleOrchestrator.cancelAllDraftsForEncounter(request.getEncounterId(), null);
         // 收费项已结算：按锚点推进关联医嘱/申请及发放草稿，患者方可进入发药/执行后续环节。
         this.syncAdviceStatesAfterChargeSettlement(chargeItems, operatorId);
         Long invoiceId = invoiceDomainService.createDraftInvoiceAfterPayment(
             outpatientChargeMapper.toCreateDraftInvoiceCommand(payment, paymentId, operatorId));
-        bossElectronicInvoiceIntegrationSupport.afterDraftCreated(invoiceId);
+        bossElectronicInvoiceAfterCommitOrchestration.afterDraftCreated(invoiceId);
         // Asm：装配正式结算成功响应（支付主键、票据主键）。
         return outpatientChargeMapper.toConfirmOutpatientChargeSettlementResponse(paymentId, invoiceId);
     }
@@ -574,18 +595,26 @@ public class OutpatientChargeAppService {
      * @return 切换响应（成功或失败语义码）
      */
     private SwitchEncounterChargeItemsAccountResponse switchAccount(Long encounterId, boolean insurance) {
+        // Gate：就诊主键须合法且就诊存在，防止跨就诊误切账户
         this.validateEncounterId(encounterId);
         encounterQueryService.mustGetEncounter(encounterId);
+        // Gate：须医保挂号双账户并存；纯自费挂号仅单一账户，禁止互转
+        if (!accountQueryService.hasDualChargeAccounts(encounterId)) {
+            return outpatientChargeMapper.toSwitchAccountResponse(
+                false, OutpatientChargeConstants.MESSAGE_CODE_SWITCH_DUAL_ACCOUNT_REQUIRED);
+        }
+        // Pre：加载与 IF-OPC-03 同口径的收费明细（PLANNED/SETTLED、排除挂号锚点）
         ChargeItemQueryCommand queryCommand = new ChargeItemQueryCommand();
         queryCommand.setEncounterId(encounterId);
         this.applyOutpatientCashierChargeItemQueryFilters(queryCommand);
         List<ChargeItem> rows = chargeItemQueryService.listChargeItemsByEncounterId(queryCommand);
         List<ChargeItem> switchableRows = this.filterSwitchableChargeItems(rows);
-        // 全部明细都已结算/已退款时不允许再切账户，避免篡改历史记账事实。
+        // 已结算/已退款行不可再切账户，无待切换行则拒绝
         if (switchableRows.isEmpty()) {
             return outpatientChargeMapper.toSwitchAccountResponse(false, OutpatientChargeConstants.MESSAGE_CODE_SWITCH_FAILED);
         }
         Long targetAccountId;
+        // Pre：解析目标记账账户（医保挂号双账户场景下取默认医保或自费账户）
         if (insurance) {
             targetAccountId = accountQueryService.getMedicalInsuranceAccount(encounterId);
         } else {
@@ -594,16 +623,18 @@ public class OutpatientChargeAppService {
         if (targetAccountId == null) {
             return outpatientChargeMapper.toSwitchAccountResponse(false, OutpatientChargeConstants.MESSAGE_CODE_SWITCH_ACCOUNT_NOT_FOUND);
         }
-        // 如果待切换行已全部指向目标账户，则视为幂等成功，避免重复写库和无意义事件。
-        if (this.allRowsAlreadyInTargetAccount(switchableRows, targetAccountId)) {
+        // Pre：仅保留 accountId 与目标不一致的行，已归属目标账户则幂等成功
+        List<ChargeItem> rowsToSwitch = this.collectRowsNeedingTargetAccount(switchableRows, targetAccountId);
+        if (rowsToSwitch.isEmpty()) {
             return outpatientChargeMapper.toSwitchAccountResponse(true, OutpatientChargeConstants.MESSAGE_CODE_SWITCH_SUCCESS);
         }
+        // Cmd：批量更新 adm_charge_item.account_id，使医保账单可改走自费账户结账
         SwitchChargeItemAccountCommand command = new SwitchChargeItemAccountCommand();
         command.setOperatorId(currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
             "当前会话操作人不能为空"));
         List<SwitchChargeItemAccountCommand.Item> items = new ArrayList<>();
-        for (ChargeItem row : switchableRows) {
+        for (ChargeItem row : rowsToSwitch) {
             SwitchChargeItemAccountCommand.Item item = new SwitchChargeItemAccountCommand.Item();
             item.setChargeItemId(row.getId());
             item.setAccountId(targetAccountId);
@@ -611,6 +642,7 @@ public class OutpatientChargeAppService {
         }
         command.setItems(items);
         chargeItemDomainService.switchChargeItemAccount(command);
+        // Asm：返回成功语义码，前端刷新明细后费用性质列应展示为自费/医保
         return outpatientChargeMapper.toSwitchAccountResponse(true, OutpatientChargeConstants.MESSAGE_CODE_SWITCH_SUCCESS);
     }
 
@@ -963,7 +995,7 @@ public class OutpatientChargeAppService {
         if (lookups.isEmpty()) {
             return Collections.emptyMap();
         }
-        return productDefinitionBatchLoader.loadAsMap(lookups);
+        return productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
     }
 
     /**
@@ -993,7 +1025,7 @@ public class OutpatientChargeAppService {
      * 从批量目录映射中解析单条收费明细对应的产品读模型行。
      *
      * @param row        收费明细
-     * @param productMap {@link ProductDefinitionBatchLoader#loadAsMap} 的结果
+     * @param productMap {@link ProductDefinitionDisplayTerminologyAssembler#loadAsMap} 的结果
      * @param definition 该行定价定义，用于产品锚点缺失时的目录键回落
      * @return 命中则非空；锚点缺失或未命中时 {@code null}
      */
@@ -1575,19 +1607,21 @@ public class OutpatientChargeAppService {
     }
 
     /**
-     * 判断待切换收费项是否已经全部归属到目标账户。
+     * 收集仍需切换至目标账户的收费项（accountId 与目标不一致）。
      *
-     * @param chargeItems 可切换收费项列表
+     * @param chargeItems 可切账户收费项列表
      * @param targetAccountId 目标账户主键
-     * @return true=全部已归属目标账户；false=仍存在需切换行
+     * @return 待写库切换的行；已全部归属目标账户时为空列表
      */
-    private boolean allRowsAlreadyInTargetAccount(List<ChargeItem> chargeItems, Long targetAccountId) {
+    private List<ChargeItem> collectRowsNeedingTargetAccount(List<ChargeItem> chargeItems, Long targetAccountId) {
+        List<ChargeItem> result = new ArrayList<>();
         for (ChargeItem chargeItem : chargeItems) {
-            if (!targetAccountId.equals(chargeItem.getAccountId())) {
-                return false;
+            if (targetAccountId.equals(chargeItem.getAccountId())) {
+                continue;
             }
+            result.add(chargeItem);
         }
-        return true;
+        return result;
     }
 
     /**
@@ -1979,11 +2013,25 @@ public class OutpatientChargeAppService {
         }
     }
 
+    /**
+     * 预结算分流：工伤 invoke / 单账户医保 2206 / 多账户 preSettleBatch；Extension 未启用则纯自费。
+     *
+     * @param request         预结算请求
+     * @param paymentDraftId  支付草稿 id
+     * @param response        预结算响应
+     * @param chargeItems     待结算 chargeItem
+     * @throws BusinessException 医保预结算缺 psnNo
+     */
     private void applyInsurancePreSettleIfNeeded(
         PreSettleOutpatientChargesRequest request,
         Long paymentDraftId,
         PreSettleOutpatientChargesResponse response,
         List<ChargeItem> chargeItems) {
+        Long workInjuryContractId = this.resolveWorkInjuryContractId(request, chargeItems, request.getEncounterId());
+        if (workInjuryContractId != null) {
+            this.applyWorkInjuryPreSettle(request, paymentDraftId, response, chargeItems, workInjuryContractId);
+            return;
+        }
         // Gate：Extension 未启用 → 纯自费口径
         if (!chargeInsuranceExtension.isEnabled()) {
             response.setSettlementComposition("SELF_PAY_ONLY");
@@ -2013,6 +2061,31 @@ public class OutpatientChargeAppService {
         this.applyMixedInsurancePreSettle(request, paymentDraftId, response, chargeItems, insuranceContractId);
     }
 
+    /** 工伤预结算：qualification 校验 + 启动 OP_SETTLE invoke 会话（2201→2206 由前端 Win 循环）。 */
+    private void applyWorkInjuryPreSettle(
+        PreSettleOutpatientChargesRequest request,
+        Long paymentDraftId,
+        PreSettleOutpatientChargesResponse response,
+        List<ChargeItem> chargeItems,
+        Long workInjuryContractId) {
+        workInjurySettleExtension.assertQualificationBeforePreSettle(request.getEncounterId());
+        Long operatorId = currentPractitionerResolver.requireOperatorId(
+            ErrorCodeConstants.PRACTITIONER_INVALID_ARGUMENT,
+            "当前会话操作人不能为空");
+        WorkInjurySettleExtensionIn command = new WorkInjurySettleExtensionIn()
+            .setEncounterId(request.getEncounterId())
+            .setContractId(workInjuryContractId)
+            .setPaymentDraftId(paymentDraftId)
+            .setOperatorId(operatorId)
+            .setChargeItemIds(request.getChargeItemIds());
+        PrepareWorkInjuryInvokeExtensionOut invokeStep = workInjurySettleExtension.startSettleSession(command);
+        response.setSettlementComposition("WORK_INJURY_INVOKE");
+        response.setWorkInjuryInvokeStep(invokeStep);
+        paymentReconciliationDomainService.backfillPaymentContractNoIfBlank(
+            paymentDraftId,
+            this.resolveContractBusNoById(workInjuryContractId));
+    }
+
     /** 单账户预结算：Extension → 2203→2204→2206。 */
     private void applySingleInsurancePreSettle(
         PreSettleOutpatientChargesRequest request,
@@ -2020,7 +2093,7 @@ public class OutpatientChargeAppService {
         PreSettleOutpatientChargesResponse response,
         List<ChargeItem> chargeItems,
         Long insuranceContractId) {
-        OutpatientChargePreSettleCommand command = new OutpatientChargePreSettleCommand();
+        OutpatientChargePreSettleExtensionIn command = new OutpatientChargePreSettleExtensionIn();
         command.setEncounterId(request.getEncounterId());
         command.setChargeItemIds(request.getChargeItemIds());
         command.setContractId(insuranceContractId);
@@ -2032,7 +2105,7 @@ public class OutpatientChargeAppService {
         command.setInsutype(request.getInsutype());
         command.setMedType(request.getMedType());
         // Cmd：Extension 单组预结算（2206）
-        OutpatientChargePreSettleResult ybResult = chargeInsuranceExtension.preSettle(command);
+        OutpatientChargePreSettleExtensionOut ybResult = chargeInsuranceExtension.preSettle(command);
         response.setInsurancePreSettled(Boolean.TRUE);
         response.setSettlementComposition("INSURANCE_ONLY");
         response.setYbChrgBchno(ybResult.getChargeBatchNo());
@@ -2043,8 +2116,8 @@ public class OutpatientChargeAppService {
         if (ybResult.getPsnCashPay() != null) {
             response.setDisplayAmount(ybResult.getPsnCashPay());
         }
-        OutpatientChargePreSettleBatchResult syntheticBatch = new OutpatientChargePreSettleBatchResult();
-        OutpatientChargePreSettleGroupResult group = new OutpatientChargePreSettleGroupResult();
+        OutpatientChargePreSettleBatchExtensionOut syntheticBatch = new OutpatientChargePreSettleBatchExtensionOut();
+        OutpatientChargePreSettleGroupExtensionOut group = new OutpatientChargePreSettleGroupExtensionOut();
         group.setAccountId(this.resolvePrimaryAccountId(request.getEncounterId(), chargeItems));
         group.setPsnCashPay(ybResult.getPsnCashPay());
         syntheticBatch.setGroups(List.of(group));
@@ -2069,7 +2142,7 @@ public class OutpatientChargeAppService {
         PreSettleOutpatientChargesResponse response,
         List<ChargeItem> chargeItems,
         Long insuranceContractId) {
-        OutpatientChargePreSettleBatchCommand batchCommand = new OutpatientChargePreSettleBatchCommand();
+        OutpatientChargePreSettleBatchExtensionIn batchCommand = new OutpatientChargePreSettleBatchExtensionIn();
         batchCommand.setEncounterId(request.getEncounterId());
         batchCommand.setChargeItemIds(request.getChargeItemIds());
         batchCommand.setContractId(insuranceContractId);
@@ -2080,7 +2153,7 @@ public class OutpatientChargeAppService {
         batchCommand.setInsuplcAdmdvs(request.getInsuplcAdmdvs());
         batchCommand.setInsutype(request.getInsutype());
 
-        OutpatientChargePreSettleBatchResult batchResult = chargeInsuranceExtension.preSettleBatch(batchCommand);
+        OutpatientChargePreSettleBatchExtensionOut batchResult = chargeInsuranceExtension.preSettleBatch(batchCommand);
         OpSelfPayRollupDto selfPayRollup = null;
         if (batchResult.getSelfPayRollup() != null) {
             selfPayRollup = new OpSelfPayRollupDto();
@@ -2100,7 +2173,7 @@ public class OutpatientChargeAppService {
         BigDecimal totalPsnCash = BigDecimal.ZERO;
         BigDecimal totalMedfee = BigDecimal.ZERO;
         List<String> chrgBchnos = new ArrayList<>();
-        for (OutpatientChargePreSettleGroupResult group : batchResult.getGroups()) {
+        for (OutpatientChargePreSettleGroupExtensionOut group : batchResult.getGroups()) {
             OpInsurancePreSettleGroupDto dto = this.toInsuranceGroupDto(group, insuranceContractId);
             groupDtos.add(dto);
             if (group.getChargeBatchNo() != null) {
@@ -2141,6 +2214,13 @@ public class OutpatientChargeAppService {
         }
     }
 
+    /**
+     * 本次结算 chargeItem 是否涉及多个 account（混合结算判定）。
+     *
+     * @param encounterId  就诊 id
+     * @param chargeItems  待结算行
+     * @return 账户数 &gt; 1 为 true
+     */
     private boolean hasMultipleSettlementAccounts(Long encounterId, List<ChargeItem> chargeItems) {
         Long defaultSelfPayAccountId = accountQueryService.getSelfPayAccount(encounterId);
         LinkedHashSet<Long> accountIds = new LinkedHashSet<>();
@@ -2156,6 +2236,13 @@ public class OutpatientChargeAppService {
         return accountIds.size() > 1;
     }
 
+    /**
+     * 解析主结算 accountId：优先 chargeItem 自带，否则就诊自费账户。
+     *
+     * @param encounterId  就诊 id
+     * @param chargeItems  待结算行
+     * @return 主 accountId；可能 null
+     */
     private Long resolvePrimaryAccountId(Long encounterId, List<ChargeItem> chargeItems) {
         Long defaultSelfPayAccountId = accountQueryService.getSelfPayAccount(encounterId);
         for (ChargeItem item : chargeItems) {
@@ -2224,6 +2311,12 @@ public class OutpatientChargeAppService {
         return null;
     }
 
+    /**
+     * 合同 id → fin_contract.bus_no（trim）。
+     *
+     * @param contractId 合同主键
+     * @return bus_no；不存在时 null
+     */
     private String resolveContractBusNoById(Long contractId) {
         if (contractId == null) {
             return null;
@@ -2235,6 +2328,14 @@ public class OutpatientChargeAppService {
         return contract.getBusNo().trim();
     }
 
+    /**
+     * 解析医保预结算 contractId：请求显式优先，否则从 chargeItem 账户聚合第三方医保合同。
+     *
+     * @param request     预结算请求
+     * @param chargeItems 待结算行
+     * @param encounterId 就诊 id
+     * @return 医保 contractId；无则 null
+     */
     private Long resolveInsuranceContractId(
         PreSettleOutpatientChargesRequest request,
         List<ChargeItem> chargeItems,
@@ -2267,20 +2368,178 @@ public class OutpatientChargeAppService {
             if (contract == null) {
                 continue;
             }
-            if (chargeInsuranceExtension.supportsThirdPartyContract(contract.getId())) {
+            if (chargeInsuranceExtension.supportsThirdPartyContract(contract.getId())
+                && !workInjurySettleExtension.supportsWorkInjuryAccount(contract.getId())) {
                 return contract.getId();
             }
         }
         return null;
     }
 
+    /**
+     * 解析工伤预结算 contractId：请求或 chargeItem 账户须支持工伤 Extension。
+     *
+     * @param request     预结算请求
+     * @param chargeItems 待结算行
+     * @param encounterId 就诊 id
+     * @return 工伤 contractId；无则 null
+     */
+    private Long resolveWorkInjuryContractId(
+        PreSettleOutpatientChargesRequest request,
+        List<ChargeItem> chargeItems,
+        Long encounterId) {
+        if (request.getContractId() != null
+            && workInjurySettleExtension.supportsWorkInjuryAccount(request.getContractId())) {
+            return request.getContractId();
+        }
+        LinkedHashSet<Long> accountIds = new LinkedHashSet<>();
+        for (ChargeItem item : chargeItems) {
+            if (item.getAccountId() != null) {
+                accountIds.add(item.getAccountId());
+            }
+        }
+        Long defaultSelfPayAccountId = accountQueryService.getSelfPayAccount(encounterId);
+        if (defaultSelfPayAccountId != null) {
+            accountIds.add(defaultSelfPayAccountId);
+        }
+        Map<Long, Account> accountById = accountQueryService.mapAccountsByIds(accountIds);
+        for (ChargeItem item : chargeItems) {
+            Long accountId = item.getAccountId();
+            if (accountId == null) {
+                accountId = defaultSelfPayAccountId;
+            }
+            Account account = accountById.get(accountId);
+            if (account == null || StringUtils.isBlank(account.getContractNo())) {
+                continue;
+            }
+            Contract contract = contractQueryService.findOptionalContractEntityByBusNo(account.getContractNo().trim())
+                .orElse(null);
+            if (contract == null) {
+                continue;
+            }
+            if (workInjurySettleExtension.supportsWorkInjuryAccount(contract.getId())) {
+                return contract.getId();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 正式结算是否为工伤路径（由 chargeItems 账户/请求 contract 判定）。
+     *
+     * @param request     结算请求
+     * @param chargeItems 待结算行
+     * @return 工伤结算为 true
+     */
+    private boolean isWorkInjuryChargeSettlement(
+        ConfirmOutpatientChargeSettlementRequest request,
+        List<ChargeItem> chargeItems) {
+        PreSettleOutpatientChargesRequest synthetic = new PreSettleOutpatientChargesRequest()
+            .setEncounterId(request.getEncounterId())
+            .setChargeItemIds(request.getChargeItemIds());
+        return this.resolveWorkInjuryContractId(synthetic, chargeItems, request.getEncounterId()) != null;
+    }
+
+    /**
+     * 正式结算前查询工伤 2207 落账回执（不再调平台 2207）；须先完成 invoke 至 2207。
+     */
+    private List<OutpatientChargeConfirmExtensionOut> collectWorkInjuryConfirmResults(
+        ConfirmOutpatientChargeSettlementRequest request,
+        List<ChargeItem> chargeItems) {
+        String chrgBchno = this.resolveWorkInjuryChrgBchno(request);
+        WorkInjuryConfirmSettleExtensionIn command = new WorkInjuryConfirmSettleExtensionIn()
+            .setPaymentDraftId(request.getPaymentDraftId())
+            .setEncounterId(request.getEncounterId())
+            .setChrgBchno(chrgBchno);
+        WorkInjuryConfirmSettleExtensionOut wiResult = workInjurySettleExtension.confirmSettle(command);
+        Long accountId = wiResult.getAccountId();
+        if (accountId == null) {
+            accountId = this.resolvePrimaryAccountId(request.getEncounterId(), chargeItems);
+        }
+        OutpatientChargeConfirmExtensionOut mapped = new OutpatientChargeConfirmExtensionOut()
+            .setSettlementId(wiResult.getSetlId())
+            .setChargeBatchNo(wiResult.getChrgBchno())
+            .setSettlementRecordId(wiResult.getSettlementRecordId())
+            .setMdtrtId(wiResult.getMdtrtId())
+            .setAccountId(accountId)
+            .setMedfeeSumamt(wiResult.getMedfeeSumamt())
+            .setFundPaySumamt(wiResult.getFundPaySumamt())
+            .setAcctPay(wiResult.getAcctPay())
+            .setPsnCashPay(wiResult.getPsnCashPay());
+        return List.of(mapped);
+    }
+
+    /**
+     * 本地结算成功后绑定工伤 paymentId 与 2207 chrg_bchno（Extension confirmSettle）。
+     *
+     * @param request        结算请求
+     * @param paymentId      正式 payment id
+     * @param confirmResults 2207 结果
+     */
+    private void bindWorkInjuryPaymentAfterLocalSettle(
+        ConfirmOutpatientChargeSettlementRequest request,
+        Long paymentId,
+        List<OutpatientChargeConfirmExtensionOut> confirmResults) {
+        if (paymentId == null || confirmResults == null || confirmResults.isEmpty()) {
+            return;
+        }
+        String chrgBchno = confirmResults.get(0).getChargeBatchNo();
+        workInjurySettleExtension.confirmSettle(new WorkInjuryConfirmSettleExtensionIn()
+            .setPaymentDraftId(request.getPaymentDraftId())
+            .setPaymentId(paymentId)
+            .setEncounterId(request.getEncounterId())
+            .setChrgBchno(chrgBchno));
+    }
+
+    /**
+     * 正式结算前收集第三方确认结果：工伤 2207 或医保 Extension 2207 列表。
+     *
+     * @param request     结算请求
+     * @param chargeItems 待结算行
+     * @return 确认结果列表
+     */
+    private List<OutpatientChargeConfirmExtensionOut> collectThirdPartyConfirmResults(
+        ConfirmOutpatientChargeSettlementRequest request,
+        List<ChargeItem> chargeItems) {
+        if (this.isWorkInjuryChargeSettlement(request, chargeItems)) {
+            return this.collectWorkInjuryConfirmResults(request, chargeItems);
+        }
+        return this.collectInsuranceConfirmResults(request);
+    }
+
+    /**
+     * 解析工伤结算 chrg_bchno：请求字段优先，否则 ACTIVE 预结算快照。
+     *
+     * @param request 结算请求
+     * @return chrg_bchno；无则 null
+     */
+    private String resolveWorkInjuryChrgBchno(ConfirmOutpatientChargeSettlementRequest request) {
+        if (StringUtils.isNotBlank(request.getYbChrgBchno())) {
+            return request.getYbChrgBchno().trim();
+        }
+        if (request.getYbChrgBchnos() != null && !request.getYbChrgBchnos().isEmpty()) {
+            return request.getYbChrgBchnos().get(0).trim();
+        }
+        return workInjurySettleExtension.findActivePreSettleByPaymentDraft(
+                new WorkInjuryPreSettleQueryExtensionIn().setPaymentDraftId(request.getPaymentDraftId()))
+            .map(WorkInjuryPreSettleQueryExtensionOut::getChrgBchno)
+            .map(String::trim)
+            .orElse(null);
+    }
+
+    /**
+     * 2207 确认结果 → fin_payment_yb_settlement 写入项。
+     *
+     * @param results 2207 结果列表
+     * @return 医保结算项命令
+     */
     private List<PaymentYbSettlementItemCommand> buildYbSettlementItems(
-        List<OutpatientChargeConfirmResult> results) {
+        List<OutpatientChargeConfirmExtensionOut> results) {
         if (results == null || results.isEmpty()) {
             return List.of();
         }
         List<PaymentYbSettlementItemCommand> items = new ArrayList<>();
-        for (OutpatientChargeConfirmResult row : results) {
+        for (OutpatientChargeConfirmExtensionOut row : results) {
             if (row == null || StringUtils.isBlank(row.getSettlementId())) {
                 continue;
             }
@@ -2301,9 +2560,9 @@ public class OutpatientChargeAppService {
     }
 
     /**
-     * 正式结算前逐组调 Extension 2207；部分失败时触发 {@link OutpatientInsuranceSettlementCompensation}。
+     * 正式结算前逐组调 Extension 2207；部分失败时触发 {@link OutpatientChargeInsuranceCompensationOrchestration}。
      */
-    private List<OutpatientChargeConfirmResult> collectInsuranceConfirmResults(
+    private List<OutpatientChargeConfirmExtensionOut> collectInsuranceConfirmResults(
         ConfirmOutpatientChargeSettlementRequest request) {
         if (!chargeInsuranceExtension.isEnabled()) {
             return List.of();
@@ -2312,23 +2571,23 @@ public class OutpatientChargeAppService {
         if (chrgBchnos.isEmpty()) {
             return List.of();
         }
-        List<OutpatientChargeConfirmResult> results = new ArrayList<>();
+        List<OutpatientChargeConfirmExtensionOut> results = new ArrayList<>();
         int succeededBatches = 0;
         try {
             for (String chrgBchno : chrgBchnos) {
-                OutpatientChargeConfirmCommand command = new OutpatientChargeConfirmCommand();
+                OutpatientChargeConfirmExtensionIn command = new OutpatientChargeConfirmExtensionIn();
                 command.setPaymentDraftId(request.getPaymentDraftId());
                 command.setChargeBatchNo(chrgBchno);
                 command.setEncounterId(request.getEncounterId());
                 // Cmd：每组 chrg_bchno 一次 2207
-                OutpatientChargeConfirmResult ybResult = chargeInsuranceExtension.confirmBeforeLocalSettle(command);
+                OutpatientChargeConfirmExtensionOut ybResult = chargeInsuranceExtension.confirmBeforeLocalSettle(command);
                 results.add(ybResult);
                 succeededBatches += 1;
             }
         } catch (RuntimeException ex) {
             // 补偿：已成功组 2208/2601 回滚，避免重复收费
             if (succeededBatches > 0) {
-                outpatientInsuranceSettlementCompensation.compensateSettlementsByPayment(request.getPaymentDraftId());
+                outpatientChargeInsuranceCompensationOrchestration.compensateSettlementsByPayment(request.getPaymentDraftId());
             }
             throw new BusinessException("INS-013", "部分医保结算失败，请勿重复收费，联系医保办处理");
         }
@@ -2340,7 +2599,7 @@ public class OutpatientChargeAppService {
      */
     private void mergeInsurancePaymentDetailsIntoSettleCommand(
         SettleOutpatientPaymentCommand settleCommand,
-        List<OutpatientChargeConfirmResult> ybConfirmResults,
+        List<OutpatientChargeConfirmExtensionOut> ybConfirmResults,
         List<PaymentRecDetailQueryModel> draftDetails,
         java.time.LocalDateTime billDate,
         String outcomeEnum) {
@@ -2354,7 +2613,7 @@ public class OutpatientChargeAppService {
             }
         }
         List<PaymentDetailItemCommand> insuranceLines = new ArrayList<>();
-        for (OutpatientChargeConfirmResult ybResult : ybConfirmResults) {
+        for (OutpatientChargeConfirmExtensionOut ybResult : ybConfirmResults) {
             if (ybResult == null) {
                 continue;
             }
@@ -2390,6 +2649,19 @@ public class OutpatientChargeAppService {
         settleCommand.setPayReceiptDetails(merged);
     }
 
+    /**
+     * 追加单条医保支付子明细至结算命令（金额≤0 或缺 accountId 时跳过/抛错）。
+     *
+     * @param target      目标列表
+     * @param payEnum     支付渠道
+     * @param amount      金额
+     * @param accountId   账户 id
+     * @param accountCode 账户 busNo
+     * @param setlId      setl_id
+     * @param billDate    交易时间
+     * @param outcomeEnum 结果状态 code
+     * @throws BusinessException 缺 accountId
+     */
     private void appendInsurancePaymentLine(
         List<PaymentDetailItemCommand> target,
         String payEnum,
@@ -2421,6 +2693,12 @@ public class OutpatientChargeAppService {
         target.add(line);
     }
 
+    /**
+     * 解析正式结算医保 chrg_bchno 列表：请求优先，否则 ACTIVE 预结算快照。
+     *
+     * @param request 结算请求
+     * @return chrg_bchno 列表
+     */
     private List<String> resolveYbChrgBchnos(ConfirmOutpatientChargeSettlementRequest request) {
         if (request.getYbChrgBchnos() != null && !request.getYbChrgBchnos().isEmpty()) {
             return request.getYbChrgBchnos();
@@ -2431,10 +2709,11 @@ public class OutpatientChargeAppService {
         if (!chargeInsuranceExtension.isEnabled() || request.getPaymentDraftId() == null) {
             return List.of();
         }
-        List<OutpatientChargePreSettleSnapshot> active =
-            chargeInsuranceExtension.listActivePreSettlesByPaymentDraft(request.getPaymentDraftId());
+        List<OutpatientChargePreSettleQueryExtensionOut> active =
+            chargeInsuranceExtension.listActivePreSettlesByPaymentDraft(
+                new OutpatientChargePreSettleListExtensionIn().setPaymentDraftId(request.getPaymentDraftId()));
         List<String> chrgBchnos = new ArrayList<>();
-        for (OutpatientChargePreSettleSnapshot row : active) {
+        for (OutpatientChargePreSettleQueryExtensionOut row : active) {
             if (StringUtils.isNotBlank(row.getChargeBatchNo())) {
                 chrgBchnos.add(row.getChargeBatchNo().trim());
             }
@@ -2442,25 +2721,45 @@ public class OutpatientChargeAppService {
         return chrgBchnos;
     }
 
+    /**
+     * 解析正式结算应付：工伤/医保预结算草稿 displayAmount 优先，否则 chargeItem 求和。
+     *
+     * @param payment     支付草稿读模型
+     * @param chargeItems 待结算行
+     * @return 应付金额
+     */
     private BigDecimal resolveExpectedPayableAmount(
         PaymentReconciliationQueryModel payment,
         List<ChargeItem> chargeItems) {
-        if (payment.getDisplayAmount() != null
-            && chargeInsuranceExtension.isEnabled()
-            && payment.getId() != null
-            && !chargeInsuranceExtension.listActivePreSettlesByPaymentDraft(payment.getId()).isEmpty()) {
-            return payment.getDisplayAmount();
+        if (payment.getDisplayAmount() != null && payment.getId() != null) {
+            if (workInjurySettleExtension.findActivePreSettleByPaymentDraft(
+                    new WorkInjuryPreSettleQueryExtensionIn().setPaymentDraftId(payment.getId())).isPresent()) {
+                return payment.getDisplayAmount();
+            }
+            if (chargeInsuranceExtension.isEnabled()
+                && !chargeInsuranceExtension.listActivePreSettlesByPaymentDraft(
+                    new OutpatientChargePreSettleListExtensionIn().setPaymentDraftId(payment.getId())).isEmpty()) {
+                return payment.getDisplayAmount();
+            }
         }
         return this.sumChargeItemAmount(chargeItems);
     }
 
+    /**
+     * 多账户 preSettleBatch 结果 → 按 account 聚合的 CASHIER 草稿支付明细。
+     *
+     * @param encounterId  就诊 id
+     * @param chargeLines  chargeItem 行
+     * @param batchResult  Extension batch 结果
+     * @return 草稿明细；空则回落单账户 buildPreSettlePaymentDetailDraftLines
+     */
     private List<PaymentDetailItemCommand> buildMixedPreSettlePaymentDetailDraftLines(
         Long encounterId,
         List<ChargeItem> chargeLines,
-        OutpatientChargePreSettleBatchResult batchResult) {
+        OutpatientChargePreSettleBatchExtensionOut batchResult) {
         Map<Long, BigDecimal> amountByAccountId = new LinkedHashMap<>();
         if (batchResult.getGroups() != null) {
-            for (OutpatientChargePreSettleGroupResult group : batchResult.getGroups()) {
+            for (OutpatientChargePreSettleGroupExtensionOut group : batchResult.getGroups()) {
                 if (group.getAccountId() == null) {
                     continue;
                 }
@@ -2505,8 +2804,15 @@ public class OutpatientChargeAppService {
         return draftLines;
     }
 
+    /**
+     * Extension 预结算分组 → 前端 OpInsurancePreSettleGroupDto。
+     *
+     * @param group      Extension 分组结果
+     * @param contractId 医保合同 id
+     * @return 分组 DTO
+     */
     private OpInsurancePreSettleGroupDto toInsuranceGroupDto(
-        OutpatientChargePreSettleGroupResult group,
+        OutpatientChargePreSettleGroupExtensionOut group,
         Long contractId) {
         OpInsurancePreSettleGroupDto dto = new OpInsurancePreSettleGroupDto();
         dto.setGroupIndex(group.getGroupIndex());
@@ -2531,6 +2837,13 @@ public class OutpatientChargeAppService {
         return dto;
     }
 
+    /**
+     * 判定预结算结算组成：MIXED / INSURANCE_ONLY / SELF_PAY_ONLY。
+     *
+     * @param insuranceGroups 医保分组
+     * @param selfPayRollup   自费 rollup
+     * @return settlementComposition code
+     */
     private String resolveSettlementComposition(
         List<OpInsurancePreSettleGroupDto> insuranceGroups,
         OpSelfPayRollupDto selfPayRollup) {
@@ -2550,6 +2863,13 @@ public class OutpatientChargeAppService {
         return "SELF_PAY_ONLY";
     }
 
+    /**
+     * BigDecimal 安全累加（null delta 忽略）。
+     *
+     * @param base  累加基数
+     * @param delta 增量
+     * @return 累加结果
+     */
     private BigDecimal addAmount(BigDecimal base, BigDecimal delta) {
         if (delta == null) {
             return base;

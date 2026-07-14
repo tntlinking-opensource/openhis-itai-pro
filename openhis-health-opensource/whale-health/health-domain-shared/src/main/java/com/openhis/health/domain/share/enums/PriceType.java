@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 import lombok.Getter;
@@ -26,10 +13,15 @@ import lombok.Getter;
  */
 @Getter
 public enum PriceType implements EnumInterface {
+/** 零售价（PriceType，编码 {@code SALE}）。 */
     SALE(0L, "SALE", "零售价", "", 1L),
+/** 采购进价（PriceType，编码 {@code PURCHASE}）。 */
     PURCHASE(0L, "PURCHASE", "采购进价", "", 2L),
+/** 限价（PriceType，编码 {@code LIMIT}）。 */
     LIMIT(0L, "LIMIT", "限价", "", 3L),
+/** 批号进价（PriceType，编码 {@code LOT_NUMBER_COST}）。 */
     LOT_NUMBER_COST(0L, "LOT_NUMBER_COST", "批号进价", "", 4L),
+/** 批号售价（PriceType，编码 {@code LOT_NUMBER_PRICE}）。 */
     LOT_NUMBER_PRICE(0L, "LOT_NUMBER_PRICE", "批号售价", "", 5L);
 
     private final Long codeSystemId;

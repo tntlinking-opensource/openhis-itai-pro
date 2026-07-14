@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 /**
@@ -24,7 +11,7 @@ package com.openhis.health.domain.share.constants;
  */
 public interface ProductDefinitionCatalogUnitBandConstants {
 
-    /** 采购单位槽。 */
+/** ProductDefinitionCatalogUnitBand 共享常量：purchase，值 {@code PURCHASE}。 */
     String BAND_PURCHASE = "PURCHASE";
 
     /** 拆零（最小包装）单位槽。 */
@@ -35,13 +22,12 @@ public interface ProductDefinitionCatalogUnitBandConstants {
      */
     String BAND_PACKAGE = "PACKAGE";
 
-    /** @deprecated 已由 {@link #BAND_PACKAGE} 替代。 */
-    @Deprecated
+/** ProductDefinitionCatalogUnitBand 共享常量：sales，值 {@code SALES}。 */
     String BAND_SALES = "SALES";
 
-    /** 库存单位槽。 */
+/** ProductDefinitionCatalogUnitBand 共享常量：stock，值 {@code STOCK}。 */
     String BAND_STOCK = "STOCK";
 
-    /** 剂量单位槽。 */
+/** ProductDefinitionCatalogUnitBand 共享常量：dose，值 {@code DOSE}。 */
     String BAND_DOSE = "DOSE";
 }

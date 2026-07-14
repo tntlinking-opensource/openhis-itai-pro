@@ -1,41 +1,26 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.request;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.experimental.Accessors;
 
 /**
- *
- * <p>按业务单号拉取同号全部供应请求行并装配为
- * {@link com.openhis.health.application.inventory.warehouse.inboundreceipt.response.GetInboundReceiptDetailResponse}。
- * 返回体中的 {@link com.openhis.health.application.inventory.warehouse.inboundreceipt.response.GetInboundReceiptDetailResponse#getRowVersion()}
- * 须在编辑前写入 {@link UpdateInboundReceiptRequest#setRowVersion(Long)}，以通过领域修订乐观锁门控。</p>
- *
- * <p>应用入口：
- * {@link com.openhis.health.application.inventory.warehouse.inboundreceipt.service.InventoryWarehouseInboundReceiptAppService#getInboundReceiptDetail(GetInboundReceiptDetailRequest)}。</p>
+ * 药库入库单详情请求（IF-WHS-IN-03）。
  */
 @Getter
 @Setter
+@Accessors(chain = true)
+@Schema(description = "药库入库单详情 IF-WHS-IN-03", requiredProperties = {"busNo"})
 public class GetInboundReceiptDetailRequest {
 
-    /**
-     * 进货业务单号；应用服务在门控阶段对首尾空白 {@code trim}。
-     */
+    /** 业务单号。 */
+    @NotBlank(message = "busNo 不能为空")
+    @Schema(description = "业务单号", requiredMode = Schema.RequiredMode.REQUIRED)
     private String busNo;
 }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.specimendefinition.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
@@ -33,7 +20,7 @@ import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -50,6 +37,7 @@ import java.util.List;
  *
  * <p>提供维护页分页、详情、关键字检索、按业务编码解析与批量装载；默认排除逻辑删除记录，
  * 关键字检索默认仅返回启用态（BR-SPDEF-005）。</p>
+ * <p>聚合边界：仅本聚合 {@link SpecimenDefinitionRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -76,11 +64,11 @@ public class SpecimenDefinitionQueryService {
         final String keywordTrim = trimToEmpty(safeQuery.getKeyword());
         final String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keywordTrim);
         String statusEnumFilter = null;
-        if (StringUtils.isNotBlank(safeQuery.getStatusEnum())) {
+        if (StringUtils.isNotEmpty(safeQuery.getStatusEnum())) {
             statusEnumFilter = safeQuery.getStatusEnum().trim();
         }
         String typeEnumFilter = null;
-        if (StringUtils.isNotBlank(safeQuery.getTypeEnum())) {
+        if (StringUtils.isNotEmpty(safeQuery.getTypeEnum())) {
             typeEnumFilter = safeQuery.getTypeEnum().trim();
         }
         final String statusEnumForSpec = statusEnumFilter;
@@ -95,7 +83,7 @@ public class SpecimenDefinitionQueryService {
             if (typeEnumForSpec != null) {
                 preds.add(cb.equal(root.get(FieldNameConstants.TYPE_ENUM), typeEnumForSpec));
             }
-            if (StringUtils.isNotBlank(keywordTrim)) {
+            if (StringUtils.isNotEmpty(keywordTrim)) {
                 preds.add(cb.or(
                     cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
                     cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc),
@@ -155,14 +143,14 @@ public class SpecimenDefinitionQueryService {
         }
         // 构建查询条件：默认仅 ACTIVE，调用方可显式放宽状态
         String statusEnumFilter = PublicationStatus.ACTIVE.getCode();
-        if (StringUtils.isNotBlank(safeQuery.getStatusEnum())) {
+        if (StringUtils.isNotEmpty(safeQuery.getStatusEnum())) {
             statusEnumFilter = safeQuery.getStatusEnum().trim();
         }
         final String statusEnumForSpec = statusEnumFilter;
         final String keywordTrim = trimToEmpty(safeQuery.getKeyword());
         final String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keywordTrim);
         String typeEnumFilter = null;
-        if (StringUtils.isNotBlank(safeQuery.getTypeEnum())) {
+        if (StringUtils.isNotEmpty(safeQuery.getTypeEnum())) {
             typeEnumFilter = safeQuery.getTypeEnum().trim();
         }
         final String typeEnumForSpec = typeEnumFilter;
@@ -173,7 +161,7 @@ public class SpecimenDefinitionQueryService {
             if (typeEnumForSpec != null) {
                 preds.add(cb.equal(root.get(FieldNameConstants.TYPE_ENUM), typeEnumForSpec));
             }
-            if (StringUtils.isNotBlank(keywordTrim)) {
+            if (StringUtils.isNotEmpty(keywordTrim)) {
                 preds.add(cb.or(
                     cb.like(cb.lower(root.get(FieldNameConstants.NAME)), likeIc),
                     cb.like(cb.lower(root.get(FieldNameConstants.BUS_NO)), likeIc),
@@ -201,7 +189,7 @@ public class SpecimenDefinitionQueryService {
      * @return 投影；不存在或已删时返回 {@code null}
      */
     public SpecimenDefinitionByBusNoQueryModel getByBusNo(String busNo) {
-        if (StringUtils.isBlank(busNo)) {
+        if (StringUtils.isEmpty(busNo)) {
             return null;
         }
         // 构建查询条件：业务编码 trim 后精确匹配
@@ -247,6 +235,12 @@ public class SpecimenDefinitionQueryService {
         return result;
     }
 
+    /**
+     * 标本定义实体 → 分页列表项读模型。
+     *
+     * @param entity JPA 实体
+     * @return 分页行 QueryModel
+     */
     private SpecimenDefinitionPageItemQueryModel toPageItem(SpecimenDefinition entity) {
         SpecimenDefinitionPageItemQueryModel model = new SpecimenDefinitionPageItemQueryModel();
         model.setId(entity.getId());
@@ -260,6 +254,12 @@ public class SpecimenDefinitionQueryService {
         return model;
     }
 
+    /**
+     * 标本定义实体 → 详情读模型。
+     *
+     * @param entity JPA 实体
+     * @return 详情 QueryModel
+     */
     private SpecimenDefinitionDetailQueryModel toDetail(SpecimenDefinition entity) {
         SpecimenDefinitionDetailQueryModel model = new SpecimenDefinitionDetailQueryModel();
         model.setId(entity.getId());
@@ -272,6 +272,12 @@ public class SpecimenDefinitionQueryService {
         return model;
     }
 
+    /**
+     * 标本定义实体 → 检索下拉项读模型。
+     *
+     * @param entity JPA 实体
+     * @return 搜索项 QueryModel
+     */
     private SpecimenDefinitionSearchItemQueryModel toSearchItem(SpecimenDefinition entity) {
         SpecimenDefinitionSearchItemQueryModel model = new SpecimenDefinitionSearchItemQueryModel();
         model.setId(entity.getId());

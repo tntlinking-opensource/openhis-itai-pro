@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.print.printbinding.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -30,7 +17,7 @@ import lombok.experimental.Accessors;
 @Schema(description = "保存业务场景模板绑定配置请求")
 public class SaveBindingConfigRequest {
 
-  /** 全量 bindingCode → busNo 映射；保存时覆盖租户全部 override。 */
+  /** 全量 bindingCode→busNo 映射。 */
   @Schema(description = "全量 bindingCode→busNo 映射", requiredMode = Schema.RequiredMode.REQUIRED)
   private Map<String, String> bindings;
 }

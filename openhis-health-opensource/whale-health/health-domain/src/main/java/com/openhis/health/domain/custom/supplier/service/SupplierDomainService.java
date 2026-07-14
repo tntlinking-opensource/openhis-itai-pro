@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.supplier.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
@@ -40,7 +27,11 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 供应商写侧领域服务。
+ * 供应商（{@code cus_supplier}）聚合写侧领域服务。
+ *
+ * <p>职责：注册、启停、废弃与基础信息维护；业务编号由领域层采番（B.10.9）。</p>
+ * <p>不变量：{@code bus_no} 与信用代码唯一；持久化先于供应商领域事件发布。</p>
+ * <p>仅注入本聚合 {@link SupplierRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -58,6 +49,7 @@ public class SupplierDomainService {
      * @return 供应商主键
      */
     public Long registerSupplier(RegisterSupplierCommand command) {
+        // 前置校验：名称、busNo 与信用代码唯一
         if (command == null || !StringUtils.hasText(command.getName())) {
             throw new BusinessException(ErrorCodeConstants.SUPPLIER_INVALID_ARGUMENT, "供应商名称不能为空");
         }
@@ -107,7 +99,9 @@ public class SupplierDomainService {
         supplier.initDraftStatus();
         supplier.assertRequiredFields();
 
+        // 持久化
         Supplier saved = repository.save(supplier);
+        // 发布事件：供应商已注册
         domainEventPublisher.publish(new SupplierRegisteredEvent(saved.getId(), saved.getBusNo(), saved.getName(), saved.getTypeEnum(), command.getOperatorId()));
         return saved.getId();
     }
@@ -130,7 +124,7 @@ public class SupplierDomainService {
             supplier.activate();
             toSave.add(supplier);
             activatedEvents.add(new SupplierActivatedEvent(supplier.getId(), supplier.getBusNo(), command.getOperatorId()));
-            // 业务分支处理。
+            // 原状态为停用时额外发布恢复启用事件，与首次启用区分。
             if (fromSuspended) {
                 reactivatedEvents.add(new SupplierReactivatedEvent(supplier.getId(), supplier.getBusNo(), command.getOperatorId()));
             }
@@ -195,51 +189,51 @@ public class SupplierDomainService {
     public void maintainSupplierInfo(MaintainSupplierInfoCommand command) {
         Supplier supplier = this.requireSupplier(command.getSupplierId());
         supplier.assertInfoMaintainable();
-        // 业务分支处理。
+        // 命令传入名称时覆盖供应商名称。
         if (command.getName() != null) {
             supplier.setName(command.getName());
         }
-        // 业务分支处理。
+        // 命令传入类型时覆盖供应商类别。
         if (command.getTypeEnum() != null) {
             supplier.setTypeEnum(command.getTypeEnum());
         }
-        // 业务分支处理。
+        // 命令传入法定代表人时覆盖登记信息。
         if (command.getLegalRepresentative() != null) {
             supplier.setLegalRepresentative(command.getLegalRepresentative());
         }
-        // 业务分支处理。
+        // 命令传入地址时覆盖联系地址。
         if (command.getAddress() != null) {
             supplier.setAddress(command.getAddress());
         }
-        // 业务分支处理。
+        // 命令传入拼音检索码时覆盖检索字段。
         if (command.getPyStr() != null) {
             supplier.setPyStr(command.getPyStr());
         }
-        // 业务分支处理。
+        // 命令传入五笔检索码时覆盖检索字段。
         if (command.getWbStr() != null) {
             supplier.setWbStr(command.getWbStr());
         }
-        // 业务分支处理。
+        // 命令传入电话时覆盖联系方式。
         if (command.getPhone() != null) {
             supplier.setPhone(command.getPhone());
         }
-        // 业务分支处理。
+        // 命令传入邮箱时覆盖联系方式。
         if (command.getEmail() != null) {
             supplier.setEmail(command.getEmail());
         }
-        // 业务分支处理。
+        // 命令传入开户行时覆盖结算信息。
         if (command.getBankName() != null) {
             supplier.setBankName(command.getBankName());
         }
-        // 业务分支处理。
+        // 命令传入银行账号时覆盖结算信息。
         if (command.getBankAccount() != null) {
             supplier.setBankAccount(command.getBankAccount());
         }
-        // 业务分支处理。
+        // 命令传入展示排序时覆盖列表顺序。
         if (command.getDisplayOrder() != null) {
             supplier.setDisplayOrder(command.getDisplayOrder());
         }
-        // 业务分支处理。
+        // 命令传入备注时覆盖说明信息。
         if (command.getNote() != null) {
             supplier.setNote(command.getNote());
         }

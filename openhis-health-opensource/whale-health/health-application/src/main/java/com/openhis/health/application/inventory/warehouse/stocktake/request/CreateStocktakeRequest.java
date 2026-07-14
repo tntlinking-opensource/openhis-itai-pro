@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.stocktake.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -23,32 +10,32 @@ import com.openhis.health.application.inventory.warehouse.stocktake.dto.Stocktak
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
-import io.swagger.v3.oas.annotations.media.Schema;
 
+/**
+ * 新建药库盘点单入参（IF-WHS-ST-04）。
+ */
 @Data
 @Accessors(chain = true)
+@Schema(description = "新建盘点单 IF-WHS-ST-04")
 public class CreateStocktakeRequest {
 
-    /** 盘点药库位置主键。 */
-    @JsonSerialize(using = ToStringSerializer.class)
     /** 盘点药库 purposeLocationId。 */
+    @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "盘点药库 purposeLocationId", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long purposeLocationId;
 
-    /** 经手人医务人员主键。 */
-    @JsonSerialize(using = ToStringSerializer.class)
     /** 经手人 practitionerId。 */
+    @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "经手人 practitionerId", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long practitionerId;
 
-    /** 供应类别；默认 STOCK_SUPPLY。 */
+    /** 供应类别 categoryEnum。 */
     @Schema(description = "供应类别 categoryEnum")
     private String categoryEnum;
 
-    /** 明细行。 */
+    /** 明细行 lines。 */
     @Schema(description = "明细行 lines", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<StocktakeLineDto> lines;
 }

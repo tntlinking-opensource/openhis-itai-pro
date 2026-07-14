@@ -1,44 +1,21 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 /**
  * 号源时段状态（FHIR Slot.status）。
  */
 public enum SlotStatus implements EnumInterface {
-    /**
-     * FREE。
-     */
+    /** 空闲，可接受新预约（SlotStatus，编码 {@code free}）。 */
     FREE(0L, "free", "空闲，可接受新预约", "", 1L),
-    /**
-     * BUSY。
-     */
+    /** 已占用，至少存在一条预约占用事实（SlotStatus，编码 {@code busy}）。 */
     BUSY(0L, "busy", "已占用，至少存在一条预约占用事实", "", 2L),
-    /**
-     * BUSY_UNAVAILABLE。
-     */
+    /** 封锁，不可用（停诊、设备检修等非预约原因）（SlotStatus，编码 {@code BUSY_UNAVAILABLE}）。 */
     BUSY_UNAVAILABLE(0L, "BUSY_UNAVAILABLE", "封锁，不可用（停诊、设备检修等非预约原因）", "", 3L),
-    /**
-     * BUSY_TENTATIVE。
-     */
+    /** 暂定占用，待确认（SlotStatus，编码 {@code BUSY_TENTATIVE}）。 */
     BUSY_TENTATIVE(0L, "BUSY_TENTATIVE", "暂定占用，待确认", "", 4L),
-    /**
-     * ENTERED_IN_ERROR。
-     */
+    /** 录入差错终态，仅用于审计纠错，不参与正常预约（SlotStatus，编码 {@code ENTERED_IN_ERROR}）。 */
     ENTERED_IN_ERROR(0L, "ENTERED_IN_ERROR", "录入差错终态，仅用于审计纠错，不参与正常预约", "", 9L);
 
     private final Long codeSystemId;
@@ -48,7 +25,7 @@ public enum SlotStatus implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * SlotStatus。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     SlotStatus(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

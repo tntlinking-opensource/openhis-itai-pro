@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 import lombok.Getter;
@@ -24,26 +11,18 @@ import lombok.Getter;
  */
 @Getter
 public enum LocationForm implements EnumInterface {
-    /**
-     * WARD。
-     */
+    /** 病区（LocationForm，编码 {@code WARD}）。 */
     WARD(0L, "WARD", "病区", "", 4L),
-    /**
-     * BED。
-     */
+    /** 床位（LocationForm，编码 {@code BED}）。 */
     BED(0L, "BED", "床位", "", 8L),
-    /**
-     * HOUSE（病房）。
-     */
+    /** 病房（LocationForm，编码 {@code HOUSE}）。 */
     HOUSE(0L, "HOUSE", "病房", "", 10L),
-    /**
-     * PHARMACY。
-     */
+    /** 药房（LocationForm，编码 {@code PHARMACY}）。 */
     PHARMACY(0L, "PHARMACY", "药房", "", 16L),
-    /**
-     * WAREHOUSE。
-     */
-    WAREHOUSE(0L, "WAREHOUSE", "仓库", "", 17L);
+    /** 仓库（LocationForm，编码 {@code WAREHOUSE}）。 */
+    WAREHOUSE(0L, "WAREHOUSE", "仓库", "", 17L),
+    /** 科室药房（LocationForm，编码 {@code DEPARTMENT_PHARMACY}）。 */
+    DEPARTMENT_PHARMACY(0L, "DEPARTMENT_PHARMACY", "科室药房", "", 18L);
 
     private final Long codeSystemId;
     private final String code;
@@ -52,7 +31,7 @@ public enum LocationForm implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * LocationForm。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     LocationForm(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

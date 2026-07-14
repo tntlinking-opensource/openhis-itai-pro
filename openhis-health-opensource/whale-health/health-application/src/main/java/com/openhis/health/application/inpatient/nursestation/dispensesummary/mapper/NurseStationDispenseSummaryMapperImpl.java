@@ -1,26 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.dispensesummary.mapper;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler.NurseStationDispenseSummaryListAssembler;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler.NurseStationDispenseSummaryWriteAssembler.SummaryMergeGroup;
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.dto.NurseStationDispenseSummaryPatientGroupDto;
@@ -54,7 +41,7 @@ import com.openhis.health.domain.workflow.supplyrequest.command.SubmitApprovalCo
 import com.openhis.health.domain.workflow.supplyrequest.queries.SupplyRequestDocumentListQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.MedicationSummarySlipQueryModel;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -106,7 +93,7 @@ public class NurseStationDispenseSummaryMapperImpl implements NurseStationDispen
     @Override
     public String resolveTherapyEnum(String therapyFilter) {
         String normalized = trimToEmpty(therapyFilter);
-        if (StringUtils.isBlank(normalized)
+        if (StringUtils.isEmpty(normalized)
             || InpatientNurseStationConstants.THERAPY_FILTER_ALL.equals(normalized)) {
             return null;
         }
@@ -287,11 +274,13 @@ public class NurseStationDispenseSummaryMapperImpl implements NurseStationDispen
     public SummarizeMedicationDispensesCommand toSummarizeMedicationDispensesCommand(
         Long locationId,
         List<Long> dispenseIds,
-        Long operatorId) {
+        Long operatorId,
+        String summaryNo) {
         SummarizeMedicationDispensesCommand command = new SummarizeMedicationDispensesCommand();
         command.setLocationId(locationId);
         command.setDispenseIds(dispenseIds);
         command.setOperatorId(operatorId);
+        command.setSummaryNo(summaryNo);
         return command;
     }
 
@@ -446,6 +435,12 @@ public class NurseStationDispenseSummaryMapperImpl implements NurseStationDispen
         return response;
     }
 
+    /**
+     * 按 id 批量加载 Location 实体 Map（缺失 id 跳过，不抛错）。
+     *
+     * @param locationIds 位置 id 集合
+     * @return id → Location
+     */
     private Map<Long, Location> loadLocationsById(Set<Long> locationIds) {
         Map<Long, Location> map = new HashMap<>();
         if (locationIds == null) {
@@ -460,6 +455,12 @@ public class NurseStationDispenseSummaryMapperImpl implements NurseStationDispen
         return map;
     }
 
+    /**
+     * 按 id 批量解析药师/practitioner 展示名 Map。
+     *
+     * @param practitionerIds 人员 id 集合
+     * @return id → 姓名；不存在则不含该键
+     */
     private Map<Long, String> loadPractitionerNames(Set<Long> practitionerIds) {
         Map<Long, String> map = new HashMap<>();
         if (practitionerIds == null) {

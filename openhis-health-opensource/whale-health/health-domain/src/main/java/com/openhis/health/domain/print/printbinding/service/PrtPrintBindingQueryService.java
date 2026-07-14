@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.print.printbinding.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
@@ -32,6 +19,8 @@ import org.springframework.stereotype.Service;
  * 业务场景模板绑定读侧查询服务（DM-PRT-003 · PrtPrintBinding）。
  *
  * <p>仅注入本聚合 {@link PrtPrintBindingRepository}；跨聚合读不在此类扩展（B.6.4）。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link PrtPrintBindingRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor

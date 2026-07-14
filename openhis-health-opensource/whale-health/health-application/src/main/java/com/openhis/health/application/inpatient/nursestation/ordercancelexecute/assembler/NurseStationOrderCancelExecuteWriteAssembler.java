@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.ordercancelexecute.assembler;
 
 import com.openhis.health.application.inpatient.nursestation.dispensesummary.assembler.NurseStationDispenseSummaryWriteAssembler;
@@ -22,9 +9,9 @@ import com.openhis.health.application.inpatient.nursestation.dispensesummary.ass
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.dto.CancelExecutionSummaryRebuildContext;
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.dto.SummaryRebuildHint;
 import com.openhis.health.application.inpatient.nursestation.ordercancelexecute.mapper.NurseStationOrderCancelExecuteMapper;
-import com.openhis.health.module.orchestration.nursestation.DeviceDispenseNurseWorkflowSupport;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.nursestation.DeviceDispenseNurseWorkflowOrchestrator;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemDomainService;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
@@ -41,6 +28,7 @@ import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.EventStatus;
 import com.openhis.health.domain.share.enums.SupplyStatus;
+import com.openhis.health.domain.share.enums.SupplyType;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.devicerequest.queries.model.DeviceRequestListModel;
@@ -54,7 +42,7 @@ import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDom
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -96,7 +84,7 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
     /** 耗材请求读侧：based_on 反查绑定 DeviceRequest。 */
     private final DeviceRequestQueryService deviceRequestQueryService;
     /** 绑定耗材发放对称回退与库存累计（BR-IP-CXL-014）。 */
-    private final DeviceDispenseNurseWorkflowSupport deviceDispenseNurseWorkflowSupport;
+    private final DeviceDispenseNurseWorkflowOrchestrator deviceDispenseNurseWorkflowOrchestrator;
     /** Supply 读侧：汇总单态乐观校验。 */
     private final SupplyRequestQueryService supplyRequestQueryService;
     /** Supply 写侧：撤单/驳回/重建建单。 */
@@ -104,7 +92,7 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
     /** 汇总过滤重建合并组（复用 AS-IP-NUR-010）。 */
     private final NurseStationDispenseSummaryWriteAssembler nurseStationDispenseSummaryWriteAssembler;
     /** 药品定义批量加载（重建分组展示校验）。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     /** Request/QueryModel → Command 字段映射。 */
     private final NurseStationOrderCancelExecuteMapper nurseStationOrderCancelExecuteMapper;
 
@@ -129,6 +117,8 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
     /**
      * 结算 Gate：任一 Charge 为 SETTLED/REFUNDING/REFUNDED 则整批拒绝。
      *
+     * <p>反结/半退再生链上源 {@code SETTLED} 终态行不参与 Gate（BR-REF-020 / BR-IP-RVS-011）。</p>
+     *
      * @param allCharges 主医嘱与绑定项关联的全部 Charge
      * @throws BusinessException EX-IP-CXL-203
      */
@@ -136,7 +126,9 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
         if (allCharges == null) {
             return;
         }
-        for (ChargeItem charge : allCharges) {
+        List<ChargeItem> gatedCharges =
+            chargeItemQueryService.filterOutSupersededSettledLinesGroupedByEncounter(allCharges);
+        for (ChargeItem charge : gatedCharges) {
             if (charge == null || charge.getStatusEnum() == null) {
                 continue;
             }
@@ -182,7 +174,7 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
      * @return 派生 ServiceRequest 列表
      */
     public List<ServiceRequest> loadBindingServiceRequests(String basedOnTable, Collection<Long> basedOnIds) {
-        if (StringUtils.isBlank(basedOnTable) || basedOnIds == null || basedOnIds.isEmpty()) {
+        if (StringUtils.isEmpty(basedOnTable) || basedOnIds == null || basedOnIds.isEmpty()) {
             return new ArrayList<>();
         }
         return serviceRequestQueryService.listServiceRequestsByBasedOnAnchors(basedOnTable, basedOnIds);
@@ -196,7 +188,7 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
      * @return 绑定耗材请求列表
      */
     public List<DeviceRequestListModel> loadBindingDeviceRequests(String basedOnTable, Collection<Long> basedOnIds) {
-        if (StringUtils.isBlank(basedOnTable) || basedOnIds == null || basedOnIds.isEmpty()) {
+        if (StringUtils.isEmpty(basedOnTable) || basedOnIds == null || basedOnIds.isEmpty()) {
             return new ArrayList<>();
         }
         return deviceRequestQueryService.listDeviceRequestsByBasedOnAnchors(basedOnTable, basedOnIds);
@@ -310,7 +302,7 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
         if (deviceReq == null || deviceReq.getId() == null) {
             return;
         }
-        deviceDispenseNurseWorkflowSupport.revertInpatientBindingDeviceDispenses(
+        deviceDispenseNurseWorkflowOrchestrator.revertInpatientBindingDeviceDispenses(
             deviceReq.getId(), operatorId, inventoryIncreaseAcc);
     }
 
@@ -405,7 +397,7 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
         for (Map.Entry<String, Set<Long>> entry : ctx.getExcludedDispenseIdsBySummaryNo().entrySet()) {
             String summaryNo = entry.getKey();
             Set<Long> excludedIds = entry.getValue();
-            if (StringUtils.isBlank(summaryNo)) {
+            if (StringUtils.isEmpty(summaryNo)) {
                 continue;
             }
             // 18a：乐观读 Supply 态快照
@@ -429,8 +421,8 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
                     anyCompletedDispense = true;
                 }
             }
-            // 18b：AGREE 或已核发发放 → 拒绝
-            if (SupplyStatus.AGREE.getCode().equals(snapshotStatus) || anyCompletedDispense) {
+            // 18b：发放表已 COMPLETED → 拒绝撤单重建
+            if (anyCompletedDispense) {
                 throw new BusinessException(
                     InpatientNurseStationConstants.EX_IP_CXL_204,
                     "汇总单状态已变更，请刷新后重试");
@@ -516,7 +508,7 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
                 lookups.add(lookup);
             }
             Map<String, ProductDefinitionDisplayDto> productByMedId =
-                productDefinitionBatchLoader.loadAsMap(lookups);
+                productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
             Map<Long, List<SummaryMergeGroup>> groupsByLocation =
                 nurseStationDispenseSummaryWriteAssembler.buildMergeGroupsByLocationAndPrice(
                     remainingDispenses, chargeByDispenseId, productByMedId);
@@ -535,9 +527,11 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
                         locationDispenseIds.addAll(group.getDispenseIds());
                     }
                 }
-                String newSummaryNo = medicationDispenseDomainService.summarizeMedicationDispenses(
+                String newSummaryNo = supplyRequestDomainService.allocateBusNoForType(
+                    SupplyType.MEDICATION_SUMMARY_ORDER.getCode());
+                medicationDispenseDomainService.summarizeMedicationDispenses(
                     nurseStationOrderCancelExecuteMapper.toSummarizeMedicationDispensesCommand(
-                        locationId, locationDispenseIds, operatorId));
+                        locationId, locationDispenseIds, operatorId, newSummaryNo));
                 supplyRequestDomainService.createSummarySupplyRequest(
                     nurseStationOrderCancelExecuteMapper.toCreateSummarySupplyRequestCommand(
                         newSummaryNo, locationGroups, applicantId, operatorId));
@@ -606,7 +600,7 @@ public class NurseStationOrderCancelExecuteWriteAssembler {
             return null;
         }
         for (SupplyRequestModel line : supplyLines) {
-            if (line != null && StringUtils.isNotBlank(line.getStatusEnum())) {
+            if (line != null && StringUtils.isNotEmpty(line.getStatusEnum())) {
                 return line.getStatusEnum().trim();
             }
         }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.frequency.service;
 
 import com.openhis.health.domain.share.constants.CustomConstants;
@@ -28,7 +15,7 @@ import com.openhis.health.domain.custom.frequency.queries.model.FrequencyPageIte
 import com.openhis.health.domain.custom.frequency.repository.FrequencyRepository;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -53,6 +40,7 @@ import java.util.Set;
  * <p>职责：维护页初始化选项、分页浏览频次主数据、按主键强加载及根据频次编码计算计划执行时刻（纯计算）。</p>
  *
  * <p>边界：只读；{@link #computeExecutionTimePoints} 对停用频次或「必要时」类频次返回空或抛错，与临床开立语义一致。</p>
+ * <p>聚合边界：仅本聚合 {@link FrequencyRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -284,11 +272,23 @@ public class FrequencyQueryService {
         throw new BusinessException(ErrorCodeConstants.FREQUENCY_INVALID_ARGUMENT, "短间隔频次 execution_period_unit 须为 min/h");
     }
 
+    /**
+     * 判定频次是否为分钟/小时级短间隔（execution_period_unit 为 min/h）。
+     *
+     * @param frequency 频次定义
+     * @return true 表示短间隔
+     */
     private boolean isShortTimeInterval(Frequency frequency) {
         String unit = this.normalizePeriodUnit(frequency.getExecutionPeriodUnit());
         return CustomConstants.PERIOD_UNIT_MINUTE.equals(unit) || CustomConstants.PERIOD_UNIT_HOUR.equals(unit);
     }
 
+    /**
+     * 判定频次是否按周循环（cycle_type、week_cycle_flag 或 period_unit=week）。
+     *
+     * @param frequency 频次定义
+     * @return true 表示周循环
+     */
     private boolean isWeeklyCycle(Frequency frequency) {
         if (FrequencyCycleType.WEEKLY.getCode().equals(frequency.getCycleType())) {
             return true;
@@ -347,7 +347,7 @@ public class FrequencyQueryService {
      */
     private List<LocalTime> parseDayTimes(String dayTimes, LocalDateTime anchor) {
         List<LocalTime> result = new ArrayList<>();
-        if (StringUtils.isBlank(dayTimes)) {
+        if (StringUtils.isEmpty(dayTimes)) {
             result.add(anchor.toLocalTime());
             return result;
         }

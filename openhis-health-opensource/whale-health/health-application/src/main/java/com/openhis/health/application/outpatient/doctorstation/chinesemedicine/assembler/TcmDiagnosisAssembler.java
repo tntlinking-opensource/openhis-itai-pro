@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.chinesemedicine.assembler;
 
 import com.openhis.health.application.outpatient.doctorstation.chinesemedicine.dto.TcmDiagnosisGroupRowDto;
-import com.openhis.health.module.shared.diagnosis.DiagnosisJsonSnapshotParser;
+import com.openhis.health.application.shared.diagnosis.DiagnosisJsonSnapshotParser;
 import com.openhis.health.domain.administration.encounter.queries.model.TcmEncounterDiagnosisAssociationQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DoctorStationConditionDefinitionRowModel;
@@ -26,7 +13,7 @@ import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionD
 import com.openhis.health.domain.share.constants.DoctorStationTcmConstants;
 import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -81,7 +68,7 @@ public class TcmDiagnosisAssembler {
         }
         Map<String, List<TcmEncounterDiagnosisAssociationQueryModel>> grouped = new LinkedHashMap<>();
         for (TcmEncounterDiagnosisAssociationQueryModel association : associations) {
-            if (StringUtils.isBlank(association.getTcmSyndromeGroup())) {
+            if (StringUtils.isEmpty(association.getTcmSyndromeGroup())) {
                 continue;
             }
             String groupKey = association.getTcmSyndromeGroup().trim();
@@ -136,9 +123,9 @@ public class TcmDiagnosisAssembler {
                 dto.setRank(member.getRank());
             }
             dto.setMedicalTypeCode(member.getMedType());
-            if (StringUtils.isNotBlank(member.getDescription())) {
+            if (StringUtils.isNotEmpty(member.getDescription())) {
                 dto.setDiagnosisDesc(member.getDescription());
-            } else if (StringUtils.isNotBlank(snapshotRow.getDiagnosisDesc())) {
+            } else if (StringUtils.isNotEmpty(snapshotRow.getDiagnosisDesc())) {
                 dto.setDiagnosisDesc(snapshotRow.getDiagnosisDesc());
             }
             if (DoctorStationTcmConstants.TCM_SOURCE_DISEASE.equals(definition.getSourceEnum())) {

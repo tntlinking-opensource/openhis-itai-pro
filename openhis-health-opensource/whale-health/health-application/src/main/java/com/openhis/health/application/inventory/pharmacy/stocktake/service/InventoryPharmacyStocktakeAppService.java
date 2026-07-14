@@ -1,33 +1,20 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.pharmacy.stocktake.service;
 
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogEditorHintsAssembler;
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
-import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.validator.PageWindowGate;
-import com.openhis.health.integration.support.insurance.inventory.InventoryMedicareUploadSupport;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogEditorHintsAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.PageWindowGate;
+import com.openhis.health.application.shared.tracenumber.TraceNumberStocktakeGainLossTraceOrchestrator;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.mapper.InventoryWarehouseInboundReceiptMapper;
 import com.openhis.health.application.inventory.pharmacy.stocktake.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.pharmacy.stocktake.dto.PharmacyStocktakeDetailLineDto;
@@ -41,14 +28,14 @@ import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.administration.practitioner.service.PractitionerQueryService;
-import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionSelectionTerminologySupport;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionSelectionTerminologyMaps;
+import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionSelectionTerminologyMaps;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
+import com.openhis.health.domain.share.constants.InventoryPharmacyConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -75,14 +62,14 @@ import com.openhis.health.domain.workflow.supplyrequest.queries.VerifyAbleEditQu
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestValidationModel;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService;
+import com.openhis.health.application.inventory.support.SupplyRequestPricedWriteOrchestrator;
 import com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.health.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
-import com.openhis.health.integration.insurance.inventory.command.InventoryUploadAfterStocktakeCommand;
+import com.openhis.health.infrastructure.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterStocktakeExtensionIn;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -103,9 +90,10 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * 药房盘点单（{@link SupplyType#PHARMACY_STOCKTAKE}）应用编排。
+ * 药房盘点单（{@link SupplyType#PHARMACY_STOCKTAKE}）应用编排（AS-INV-PHA-006）。
  *
- * <p>同意后按差异发放并在盘点药房做盈亏加减；盘盈建库存行复用 {@link InventoryWarehouseInboundReceiptMapper}。</p>
+ * <p>同意后按差异发放并在盘点药房做盈亏加减；盘盈建库存行复用 {@link InventoryWarehouseInboundReceiptMapper}。
+ * 详情槽价仅锚 {@code SupplyRequest} 落库行价（**BR-PRICE-SRC-001**）；选品页采购价读当前 ACTIVE 目录价。</p>
  */
 @Slf4j
 @Service
@@ -114,13 +102,11 @@ public class InventoryPharmacyStocktakeAppService {
 
     private final InventoryThirdPartyUploadExtension inventoryUploadExtension;
 
-    /** 列表筛选「全部药房」时 purposeLocationId 占位（0 非库位主键）。 */
-    private static final long ALL_PHARMACIES_LIST_FILTER_LOCATION_ID = 0L;
-
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     private final CurrentPractitionerResolver currentPractitionerResolver;
     private final PageWindowGate pageWindowGate;
     private final SupplyRequestDomainService supplyRequestDomainService;
+    private final SupplyRequestPricedWriteOrchestrator supplyRequestPricedWriteOrchestrator;
     private final SupplyRequestQueryService supplyRequestQueryService;
     private final SupplyDeliveryDomainService supplyDeliveryDomainService;
     private final SupplyDeliveryQueryService supplyDeliveryQueryService;
@@ -130,11 +116,12 @@ public class InventoryPharmacyStocktakeAppService {
     private final PractitionerQueryService practitionerQueryService;
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
-    private final ProductDefinitionSelectionTerminologySupport productDefinitionSelectionTerminologySupport;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final InventoryPharmacyStocktakeMapper stocktakeMapper;
     private final InventoryWarehouseInboundReceiptMapper inboundReceiptMapper;
     private final ChargeItemDefinitionQueryService chargeItemDefinitionQueryService;
+    /** IF-TRC-14 盘点/损益剩余码差分写追溯。 */
+    private final TraceNumberStocktakeGainLossTraceOrchestrator traceNumberStocktakeGainLossTraceOrchestrator;
 
     /**
      * 加载页主数据（库位、人员、状态等下拉）。
@@ -184,10 +171,12 @@ public class InventoryPharmacyStocktakeAppService {
         SupplyRequestDocumentListQuery listQuery = new SupplyRequestDocumentListQuery();
         listQuery.setTypeEnum(SupplyType.PHARMACY_STOCKTAKE.getCode());
         if (request.getPurposeLocationId() != null) {
-            if (Long.valueOf(ALL_PHARMACIES_LIST_FILTER_LOCATION_ID).equals(request.getPurposeLocationId())) {
+            if (Long.valueOf(InventoryPharmacyConstants.ALL_PHARMACIES_LIST_FILTER_LOCATION_ID)
+                .equals(request.getPurposeLocationId())) {
                 if (allowedPharmacies.isEmpty()) {
-                    // 无可见药房时用占位 id，避免误查全表。
-                    listQuery.setPurposeLocationIds(List.of(-1L));
+                    // 无可见药房时用占位 id，避免误查全表
+                    listQuery.setPurposeLocationIds(
+                        List.of(InventoryPharmacyConstants.LIST_FILTER_NO_VISIBLE_PHARMACY_PLACEHOLDER_ID));
                 } else {
                     listQuery.setPurposeLocationIds(new ArrayList<>(allowedPharmacies));
                 }
@@ -196,7 +185,7 @@ public class InventoryPharmacyStocktakeAppService {
                 listQuery.setPurposeLocationId(request.getPurposeLocationId());
             }
         }
-        if (StringUtils.isNotBlank(request.getStatusEnum())) {
+        if (StringUtils.isNotEmpty(request.getStatusEnum())) {
             SupplyStatus st = EnumUtil.fromCode(SupplyStatus.class, request.getStatusEnum().trim());
             if (st == null) {
                 throw new BusinessException(ErrorCodeConstants.PHA_ST_001, "statusEnum 非法");
@@ -240,7 +229,7 @@ public class InventoryPharmacyStocktakeAppService {
     public GetPharmacyStocktakeDetailResponse getPharmacyStocktakeDetail(GetPharmacyStocktakeDetailRequest request) {
         // Gate：busNo 不可为空
         // Pre：按单号回读供应请求行并批量预取产品展示信息
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PHA_ST_001, "busNo 不能为空");
         }
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
@@ -252,7 +241,7 @@ public class InventoryPharmacyStocktakeAppService {
         this.assertPharmacyStocktake(lines);
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         for (SupplyRequestModel line : lines) {
-            if (line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
                 continue;
             }
             ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
@@ -262,13 +251,13 @@ public class InventoryPharmacyStocktakeAppService {
         }
         Map<String, ProductDefinitionDisplayDto> products;
         try {
-            products = productDefinitionBatchLoader.loadAsMap(lookups);
+            products = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
         } catch (RuntimeException ex) {
             log.warn("batchGetProductByIds degraded for stocktake detail", ex);
             products = new HashMap<>();
         }
         ProductDefinitionSelectionTerminologyMaps terminologyMaps =
-            this.productDefinitionSelectionTerminologySupport.loadSelectionTerminologyMaps();
+            this.productDefinitionDisplayTerminologyAssembler.loadSelectionTerminologyMaps();
         Map<Long, ProductDefinitionCatalogEditorHintsDto> hints = new HashMap<>();
         for (SupplyRequestModel line : lines) {
             if (line == null || line.getId() == null) {
@@ -286,7 +275,7 @@ public class InventoryPharmacyStocktakeAppService {
         SupplyRequestModel head = lines.get(0);
         if (head.getPurposeLocationId() != null) {
             Optional<Location> locOpt = locationQueryService.findOptionalById(head.getPurposeLocationId());
-            if (locOpt.isPresent() && StringUtils.isNotBlank(locOpt.get().getName())) {
+            if (locOpt.isPresent() && StringUtils.isNotEmpty(locOpt.get().getName())) {
                 res.setPurposeLocationName(locOpt.get().getName().trim());
             }
         }
@@ -325,7 +314,7 @@ public class InventoryPharmacyStocktakeAppService {
             "用户未登录",
             "当前用户未绑定医务人员档案，无法制单");
         try {
-            String busNo = supplyRequestDomainService.createStocktake(
+            String busNo = supplyRequestPricedWriteOrchestrator.createStocktake(
                 stocktakeMapper.toCreateStocktakeCommand(request, operatorId, applicantId, null));
             return stocktakeMapper.toCreatePharmacyStocktakeResponse(busNo);
         } catch (IllegalArgumentException ex) {
@@ -344,7 +333,7 @@ public class InventoryPharmacyStocktakeAppService {
     public UpdatePharmacyStocktakeResponse updatePharmacyStocktake(UpdatePharmacyStocktakeRequest request) {
         // Gate：busNo 与明细、库位不可为空
         // Pre：回读现有单并校验可编辑态
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PHA_ST_001, "busNo 不能为空");
         }
         if (request.getLines() == null || request.getLines().isEmpty()) {
@@ -360,6 +349,10 @@ public class InventoryPharmacyStocktakeAppService {
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
         q.setBusNo(request.getBusNo().trim());
         List<SupplyRequestModel> existing = supplyRequestQueryService.getSupplyByBusNo(q);
+        if (existing.isEmpty()) {
+            throw new BusinessException(ErrorCodeConstants.PHA_ST_103, "盘点单不存在");
+        }
+        this.assertPharmacyStocktake(existing);
         SupplyRequestModel head = existing.get(0);
         editQuery.setItemId(head.getItemId());
         Boolean editable = supplyRequestQueryService.verifyAbleEdit(editQuery);
@@ -376,7 +369,7 @@ public class InventoryPharmacyStocktakeAppService {
             "用户未登录",
             "当前用户未绑定医务人员档案，无法制单");
         try {
-            String busNo = supplyRequestDomainService.createStocktake(
+            String busNo = supplyRequestPricedWriteOrchestrator.createStocktake(
                 stocktakeMapper.toCreateStocktakeCommand(request, operatorId, applicantId));
             return stocktakeMapper.toUpdatePharmacyStocktakeResponse(busNo);
         } catch (IllegalArgumentException ex) {
@@ -405,6 +398,7 @@ public class InventoryPharmacyStocktakeAppService {
             "用户未登录",
             "当前用户未绑定医务人员档案，无法提交审批");
         try {
+            // Cmd：领域提交审批，头行进入待审态
             supplyRequestDomainService.submitApproval(
                 stocktakeMapper.toSubmitApprovalCommand(request,
                     currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_ST_101, "用户未登录"),
@@ -413,6 +407,7 @@ public class InventoryPharmacyStocktakeAppService {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.PHA_ST_003);
         }
         SupplyStatus st = this.loadHeadSupplyStatus(request.getBusNo().trim());
+        // Asm：回读头状态并映射成功体
         return stocktakeMapper.toSubmitPharmacyStocktakeApprovalResponse(st);
     }
 
@@ -429,6 +424,7 @@ public class InventoryPharmacyStocktakeAppService {
         }
         this.gateBusNo(request.getBusNo());
         try {
+            // Cmd：领域撤回审批，单据回到可编辑态
             supplyRequestDomainService.withdrawApproval(
                 stocktakeMapper.toWithdrawApprovalCommand(request,
                     currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_ST_101, "用户未登录")));
@@ -436,6 +432,7 @@ public class InventoryPharmacyStocktakeAppService {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.PHA_ST_003);
         }
         SupplyStatus st = this.loadHeadSupplyStatus(request.getBusNo().trim());
+        // Asm：回读头状态并映射成功体
         return stocktakeMapper.toWithdrawPharmacyStocktakeApprovalResponse(st);
     }
 
@@ -448,7 +445,7 @@ public class InventoryPharmacyStocktakeAppService {
     public AgreePharmacyStocktakeResponse agreePharmacyStocktake(AgreePharmacyStocktakeRequest request) {
         // Gate：busNo 与操作人不可为空
         // Pre：回读单据并校验未重复同意
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PHA_ST_001, "busNo 不能为空");
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_ST_101, "用户未登录");
@@ -503,7 +500,7 @@ public class InventoryPharmacyStocktakeAppService {
         }
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         for (SupplyRequestModel line : agreedLines) {
-            if (line == null || line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+            if (line == null || line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
                 continue;
             }
             ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
@@ -514,7 +511,7 @@ public class InventoryPharmacyStocktakeAppService {
         Map<String, ProductDefinitionDisplayDto> productByKey = new HashMap<>();
         if (!lookups.isEmpty()) {
             try {
-                productByKey = productDefinitionBatchLoader.loadAsMap(lookups);
+                productByKey = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
             } catch (RuntimeException ex) {
                 log.warn("batchGetProductByIds failed during stocktake inventory assemble", ex);
             }
@@ -529,7 +526,9 @@ public class InventoryPharmacyStocktakeAppService {
                 continue;
             }
             Long purposeLocationId = line.getPurposeLocationId();
-            String resolvedLot = this.resolveLotNumberForPharmacyStocktakeInventory(line.getLotNumber());
+            String resolvedLot = StringUtils.isEmpty(line.getLotNumber())
+                ? GeneralSharedConstants.EMPTY_STRING
+                : line.getLotNumber().trim();
             InventoryMatchKey matchKey = new InventoryMatchKey();
             matchKey.setLotNumber(resolvedLot);
             matchKey.setLocationId(purposeLocationId);
@@ -578,11 +577,20 @@ public class InventoryPharmacyStocktakeAppService {
                 }
             }
         }
+        // Cmd：IF-TRC-14 剩余码与本库账差分写追溯主子表（库存入账成功后、同事务）
+        traceNumberStocktakeGainLossTraceOrchestrator.recordFromAgreedLines(
+            agreedLines, operatorId, productByKey, ErrorCodeConstants.PHA_ST_104);
         tryUploadMedicareInventoryAfterStocktakeAgree(request, agreedLines);
         return stocktakeMapper.toAgreePharmacyStocktakeResponse(
             request.getBusNo().trim(), SupplyStatus.AGREE.getCode());
     }
 
+    /**
+     * 盘点 agree 后可选触发医保进销存上报（Extension 开关控制）。
+     *
+     * @param request     agree 请求
+     * @param agreedLines 已同意供应行
+     */
     private void tryUploadMedicareInventoryAfterStocktakeAgree(
         AgreePharmacyStocktakeRequest request,
         List<SupplyRequestModel> agreedLines
@@ -596,8 +604,8 @@ public class InventoryPharmacyStocktakeAppService {
         if (lineIds.isEmpty()) {
             return;
         }
-        InventoryMedicareUploadSupport.uploadIfEnabled(inventoryUploadExtension, () -> {
-            InventoryUploadAfterStocktakeCommand command = new InventoryUploadAfterStocktakeCommand()
+        inventoryUploadExtension.runUploadIfEnabled(() -> {
+            InventoryUploadAfterStocktakeExtensionIn command = new InventoryUploadAfterStocktakeExtensionIn()
                 .setStocktakeBusNo(request.getBusNo())
                 .setSupplyRequestLineIds(lineIds)
                 .setSupplyTypeCode(SupplyType.PHARMACY_STOCKTAKE.getCode())
@@ -614,18 +622,20 @@ public class InventoryPharmacyStocktakeAppService {
      */
     public RejectPharmacyStocktakeResponse rejectPharmacyStocktake(RejectPharmacyStocktakeRequest request) {
         // Gate：busNo 与驳回原因不可为空
-        if (request == null || StringUtils.isBlank(request.getBusNo())) {
+        if (request == null || StringUtils.isEmpty(request.getBusNo())) {
             throw new BusinessException(ErrorCodeConstants.PHA_ST_001, "busNo 不能为空");
         }
-        if (StringUtils.isBlank(request.getChangeReason()) && StringUtils.isBlank(request.getChangeReasonCode())) {
+        if (StringUtils.isEmpty(request.getChangeReason()) && StringUtils.isEmpty(request.getChangeReasonCode())) {
             throw new BusinessException(ErrorCodeConstants.PHA_ST_001, "驳回原因不能为空");
         }
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_ST_101, "用户未登录");
         try {
+            // Cmd：领域驳回单据
             supplyRequestDomainService.rejectRequest(stocktakeMapper.toRejectRequestCommand(request, operatorId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.PHA_ST_003);
         }
+        // Asm：映射驳回成功标志
         return stocktakeMapper.toRejectPharmacyStocktakeResponse(true);
     }
 
@@ -643,10 +653,12 @@ public class InventoryPharmacyStocktakeAppService {
         this.gateBusNo(request.getBusNo());
         Long operatorId = currentPractitionerResolver.requireOperatorId(ErrorCodeConstants.PHA_ST_101, "用户未登录");
         try {
+            // Cmd：领域按 busNo 软删草稿单
             supplyRequestDomainService.removeByBusNo(stocktakeMapper.toRemoveByBusNoCommand(request, operatorId));
         } catch (BusinessException ex) {
             throw this.mapSupplyWorkflowException(ex, ErrorCodeConstants.PHA_ST_005);
         }
+        // Asm：映射删除成功标志
         return stocktakeMapper.toRemovePharmacyStocktakeResponse(true);
     }
 
@@ -677,7 +689,7 @@ public class InventoryPharmacyStocktakeAppService {
             Page<InventoryItemModel> page = inventoryItemQueryService.queryInventoryItemsByPage(invQuery, pageable);
             List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
             for (InventoryItemModel inv : page.getContent()) {
-                if (inv == null || inv.getItemId() == null || StringUtils.isBlank(inv.getItemTable())) {
+                if (inv == null || inv.getItemId() == null || StringUtils.isEmpty(inv.getItemTable())) {
                     continue;
                 }
                 ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
@@ -688,7 +700,7 @@ public class InventoryPharmacyStocktakeAppService {
             Map<String, ProductDefinitionDisplayDto> products = new HashMap<>();
             if (!lookups.isEmpty()) {
                 try {
-                    products = productDefinitionBatchLoader.loadAsMap(lookups);
+                    products = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
                 } catch (RuntimeException ex) {
                     log.warn("batchGetProductByIds failed for stocktake selection", ex);
                 }
@@ -719,7 +731,7 @@ public class InventoryPharmacyStocktakeAppService {
                 }
             }
             ProductDefinitionSelectionTerminologyMaps terminologyMaps =
-                this.productDefinitionSelectionTerminologySupport.loadSelectionTerminologyMaps();
+                this.productDefinitionDisplayTerminologyAssembler.loadSelectionTerminologyMaps();
             List<ProductDefinitionItemDto> records = new ArrayList<>();
             for (InventoryItemModel inv : page.getContent()) {
                 if (inv == null) {
@@ -743,7 +755,7 @@ public class InventoryPharmacyStocktakeAppService {
                     dto.setAvailableQuantity(BigDecimal.ZERO);
                 }
                 BigDecimal lotCostUnit = null;
-                if (StringUtils.isNotBlank(inv.getLotNumber())) {
+                if (StringUtils.isNotEmpty(inv.getLotNumber())) {
                     lotCostUnit = this.chargeItemDefinitionQueryService.resolveFirstLotNumberCostPriceValue(
                         inv.getItemTable(), inv.getItemId(), inv.getLotNumber().trim());
                 }
@@ -754,7 +766,7 @@ public class InventoryPharmacyStocktakeAppService {
                     List<ProductDefinitionCatalogUnitBandDto> bands = hints.getUnitBands();
                     dto.setUnitBands(bands);
                     BigDecimal packageAnchor = lotCostUnit;
-                    if (packageAnchor == null && StringUtils.isNotBlank(inv.getItemTable()) && inv.getItemId() != null) {
+                    if (packageAnchor == null && StringUtils.isNotEmpty(inv.getItemTable()) && inv.getItemId() != null) {
                         packageAnchor = this.chargeItemDefinitionQueryService.resolveFirstPurchasePriceValue(
                             inv.getItemTable().trim(), inv.getItemId());
                     }
@@ -770,6 +782,11 @@ public class InventoryPharmacyStocktakeAppService {
         }
     }
 
+    /**
+     * 列表行回填 purposeLocationName。
+     *
+     * @param rows 盘点列表行
+     */
     private void enrichPharmacyStocktakeListPurposeLocationNames(List<PharmacyStocktakeListRowDto> rows) {
         if (rows == null || rows.isEmpty()) {
             return;
@@ -787,7 +804,7 @@ public class InventoryPharmacyStocktakeAppService {
                 continue;
             }
             Location loc = locOpt.get();
-            if (StringUtils.isNotBlank(loc.getName())) {
+            if (StringUtils.isNotEmpty(loc.getName())) {
                 nameById.put(pid, loc.getName().trim());
             }
         }
@@ -799,12 +816,17 @@ public class InventoryPharmacyStocktakeAppService {
         }
     }
 
+    /**
+     * 列表行 statusEnum → statusEnumText 展示文案。
+     *
+     * @param rows 盘点列表行
+     */
     private void enrichPharmacyStocktakeListStatusEnumText(List<PharmacyStocktakeListRowDto> rows) {
         if (rows == null || rows.isEmpty()) {
             return;
         }
         for (PharmacyStocktakeListRowDto row : rows) {
-            if (row == null || StringUtils.isBlank(row.getStatusEnum())) {
+            if (row == null || StringUtils.isEmpty(row.getStatusEnum())) {
                 continue;
             }
             SupplyStatus st = EnumUtil.fromCode(SupplyStatus.class, row.getStatusEnum().trim());
@@ -814,6 +836,12 @@ public class InventoryPharmacyStocktakeAppService {
         }
     }
 
+    /**
+     * 列表行回填 applicantName/approverName（按 busNo 聚合单头）。
+     *
+     * @param rows        列表行
+     * @param detailLines 同页明细供应行
+     */
     private void enrichPharmacyStocktakeListDisplayNames(List<PharmacyStocktakeListRowDto> rows, List<SupplyRequestModel> detailLines) {
         if (rows == null || rows.isEmpty() || detailLines == null || detailLines.isEmpty()) {
             return;
@@ -822,7 +850,7 @@ public class InventoryPharmacyStocktakeAppService {
         Map<String, Long> busNoToApproverId = new HashMap<>();
         Map<String, SupplyRequestModel> headByBusNo = new LinkedHashMap<>();
         for (SupplyRequestModel line : detailLines) {
-            if (line == null || StringUtils.isBlank(line.getBusNo())) {
+            if (line == null || StringUtils.isEmpty(line.getBusNo())) {
                 continue;
             }
             String bn = line.getBusNo().trim();
@@ -861,12 +889,12 @@ public class InventoryPharmacyStocktakeAppService {
                 continue;
             }
             Practitioner pr = this.practitionerQueryService.findById(pid);
-            if (pr != null && StringUtils.isNotBlank(pr.getName())) {
+            if (pr != null && StringUtils.isNotEmpty(pr.getName())) {
                 practitionerNameById.put(pid, pr.getName());
             }
         }
         for (PharmacyStocktakeListRowDto row : rows) {
-            if (row == null || StringUtils.isBlank(row.getBusNo())) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
                 continue;
             }
             String bn = row.getBusNo().trim();
@@ -887,6 +915,13 @@ public class InventoryPharmacyStocktakeAppService {
         }
     }
 
+    /**
+     * 详情行 enrich 产品展示字段与账面数量 bookQuantity。
+     *
+     * @param detailLines 详情 DTO 行
+     * @param supplyLines 供应明细
+     * @param products    compositeKey → 产品读模型
+     */
     private void enrichPharmacyStocktakeDetailLines(
         List<PharmacyStocktakeDetailLineDto> detailLines,
         List<SupplyRequestModel> supplyLines,
@@ -923,7 +958,7 @@ public class InventoryPharmacyStocktakeAppService {
                 dto.setSpecification(pr.getTotalVolume());
                 dto.setManufacturer(pr.getManufacturer());
             }
-            if (purposeLocationId == null || StringUtils.isBlank(src.getItemTable()) || src.getItemId() == null) {
+            if (purposeLocationId == null || StringUtils.isEmpty(src.getItemTable()) || src.getItemId() == null) {
                 dto.setBookQuantity(BigDecimal.ZERO);
                 continue;
             }
@@ -953,6 +988,11 @@ public class InventoryPharmacyStocktakeAppService {
         }
     }
 
+    /**
+     * 详情行 catalog 单位带价格 enrich（持久化供应行价回填）。
+     *
+     * @param lines 详情 DTO 行
+     */
     private void enrichPharmacyStocktakeDetailLinesCatalogPricing(List<PharmacyStocktakeDetailLineDto> lines) {
         if (lines == null || lines.isEmpty()) {
             return;
@@ -970,16 +1010,34 @@ public class InventoryPharmacyStocktakeAppService {
         }
     }
 
+    /**
+     * 盘点目的药房 location 门禁校验。
+     *
+     * @param purposeLocationId 目的药房 location
+     * @throws BusinessException PHA_ST_002
+     */
     private void assertPharmacyStocktakePurposeLocationGate(Long purposeLocationId) {
         Set<Long> allowedPharmacies = this.resolveGatedPharmacyLocationIdsForPharmacyGate();
         this.assertPharmacyLocationAllowed(purposeLocationId, allowedPharmacies);
     }
 
+    /**
+     * 当前用户可操作的药房 location 门禁集合。
+     *
+     * @return gated 药房 location id 集合
+     */
     private Set<Long> resolveGatedPharmacyLocationIdsForPharmacyGate() {
         return this.managedLocationIdsResolver.gatedLocationIdsFromActive(
             this.locationQueryService.listAllActivePharmacies());
     }
 
+    /**
+     * 断言 location 在当前用户药房管辖且为启用药房形态。
+     *
+     * @param locationId 库位 id
+     * @param allowed    门禁集合
+     * @throws BusinessException PHA_ST_002
+     */
     private void assertPharmacyLocationAllowed(Long locationId, Set<Long> allowed) {
         this.managedLocationIdsResolver.assertLocationInManagedGate(
             locationId, allowed, ErrorCodeConstants.PHA_ST_002, "药房位置不在当前用户可选药房范围");
@@ -994,6 +1052,15 @@ public class InventoryPharmacyStocktakeAppService {
         }
     }
 
+    /**
+     * 解析当前登录用户对应医务人员 id（申请人 Gate）。
+     *
+     * @param notLoggedInErrorCode  未登录错误码
+     * @param notLoggedInMessage    未登录文案（保留签名兼容）
+     * @param noPractitionerMessage 无医务人员文案
+     * @return practitionerId
+     * @throws BusinessException 未登录或无医务人员
+     */
     private Long requirePharmacyStocktakeApplicantPractitionerId(
         String notLoggedInErrorCode,
         String notLoggedInMessage,
@@ -1001,6 +1068,12 @@ public class InventoryPharmacyStocktakeAppService {
         return this.currentPractitionerResolver.requirePractitionerId(notLoggedInErrorCode, noPractitionerMessage);
     }
 
+    /**
+     * 盘点明细字段完整性校验（物品/单位/盈亏/实盘/制单时间/表白名单）。
+     *
+     * @param lines 盘点明细
+     * @throws BusinessException PHA_ST_001
+     */
     private void assertPharmacyStocktakeLinesFields(List<PharmacyStocktakeLineDto> lines) {
         if (lines == null) {
             return;
@@ -1009,10 +1082,10 @@ public class InventoryPharmacyStocktakeAppService {
             if (line == null) {
                 continue;
             }
-            if (line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+            if (line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
                 throw new BusinessException(ErrorCodeConstants.PHA_ST_001, "盘点明细须包含有效物品表与主键");
             }
-            if (StringUtils.isBlank(line.getUnitCode())) {
+            if (StringUtils.isEmpty(line.getUnitCode())) {
                 throw new BusinessException(ErrorCodeConstants.PHA_ST_001, "盘点明细单位不能为空");
             }
             if (line.getProfitLossQuantity() == null) {
@@ -1032,22 +1105,24 @@ public class InventoryPharmacyStocktakeAppService {
         }
     }
 
+    /**
+     * busNo 非空 Gate。
+     *
+     * @param busNo 供应单号
+     * @throws BusinessException busNo 为空
+     */
     private void gateBusNo(String busNo) {
-        if (StringUtils.isBlank(busNo)) {
+        if (StringUtils.isEmpty(busNo)) {
             throw new BusinessException(ErrorCodeConstants.PHA_ST_001, "busNo 不能为空");
         }
     }
 
-    private void preAssertPharmacyStocktake(String busNo) {
-        SupplyByBusNoQuery q = new SupplyByBusNoQuery();
-        q.setBusNo(busNo.trim());
-        List<SupplyRequestModel> lines = supplyRequestQueryService.getSupplyByBusNo(q);
-        if (lines.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.PHA_ST_103, "盘点单不存在");
-        }
-        this.assertPharmacyStocktake(lines);
-    }
-
+    /**
+     * 断言供应行均为药房盘点单类型（PHARMACY_STOCKTAKE）。
+     *
+     * @param lines 供应行
+     * @throws BusinessException PHA_ST_103
+     */
     private void assertPharmacyStocktake(List<SupplyRequestModel> lines) {
         for (SupplyRequestModel line : lines) {
             if (line == null) {
@@ -1059,6 +1134,12 @@ public class InventoryPharmacyStocktakeAppService {
         }
     }
 
+    /**
+     * 按 busNo 加载单头供应状态枚举。
+     *
+     * @param busNo 供应单号
+     * @return SupplyStatus；不存在或无状态则 null
+     */
     private SupplyStatus loadHeadSupplyStatus(String busNo) {
         SupplyByBusNoQuery q = new SupplyByBusNoQuery();
         q.setBusNo(busNo);
@@ -1067,14 +1148,20 @@ public class InventoryPharmacyStocktakeAppService {
             return null;
         }
         String statusCode = lines.get(0).getStatusEnum();
-        if (StringUtils.isBlank(statusCode)) {
+        if (StringUtils.isEmpty(statusCode)) {
             return null;
         }
         return EnumUtil.fromCode(SupplyStatus.class, statusCode.trim());
     }
 
+    /**
+     * 选品 productTableName 白名单校验（药品/耗材定义表）。
+     *
+     * @param raw 请求 productTableName
+     * @throws BusinessException PHA_ST_001
+     */
     private void assertProductTableNameWhitelistForPharmacyStocktakeSelection(String raw) {
-        if (StringUtils.isBlank(raw)) {
+        if (StringUtils.isEmpty(raw)) {
             throw new BusinessException(ErrorCodeConstants.PHA_ST_001, "productTableName 不能为空");
         }
         String table = raw.trim();
@@ -1084,35 +1171,51 @@ public class InventoryPharmacyStocktakeAppService {
         }
     }
 
-    private String resolveLotNumberForPharmacyStocktakeInventory(String lotNumber) {
-        if (StringUtils.isBlank(lotNumber)) {
-            return GeneralSharedConstants.EMPTY_STRING;
-        }
-        return lotNumber.trim();
-    }
-
+    /**
+     * 从批量产品读模型解析供应行展示名称。
+     *
+     * @param line          供应行
+     * @param productByKey  compositeKey → 产品读模型
+     * @return 产品名称
+     * @throws BusinessException PHA_ST_104 产品缺失
+     */
     private String resolveProductName(SupplyRequestModel line, Map<String, ProductDefinitionDisplayDto> productByKey) {
-        if (line == null || StringUtils.isBlank(line.getItemTable()) || line.getItemId() == null) {
+        if (line == null || StringUtils.isEmpty(line.getItemTable()) || line.getItemId() == null) {
             return GeneralSharedConstants.EMPTY_STRING;
         }
         String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());
         ProductDefinitionDisplayDto pr = productByKey.get(key);
-        if (pr == null || StringUtils.isBlank(pr.getProductName())) {
+        if (pr == null || StringUtils.isEmpty(pr.getProductName())) {
             throw new BusinessException(ErrorCodeConstants.PHA_ST_104, "产品定义缺失，无法解析展示名称");
         }
         return pr.getProductName().trim();
     }
 
+    /**
+     * 解析盘点行拆零单位：行 unitCode 优先，否则产品 splitUnitCode。
+     *
+     * @param line    供应行
+     * @param product 产品读模型
+     * @return 拆零单位 code
+     * @throws BusinessException PHA_ST_104
+     */
     private String resolveSplitUnitCode(SupplyRequestModel line, ProductDefinitionDisplayDto product) {
-        if (product == null || StringUtils.isBlank(product.getSplitUnitCode())) {
+        if (product == null || StringUtils.isEmpty(product.getSplitUnitCode())) {
             throw new BusinessException(ErrorCodeConstants.PHA_ST_104, "产品定义缺失或缺少拆零单位编码");
         }
-        if (line != null && StringUtils.isNotBlank(line.getUnitCode())) {
+        if (line != null && StringUtils.isNotEmpty(line.getUnitCode())) {
             return line.getUnitCode().trim();
         }
         return product.getSplitUnitCode().trim();
     }
 
+    /**
+     * 供应工作流领域异常 → 本场景统一错误码（参数类映射 defaultCode）。
+     *
+     * @param ex          原异常
+     * @param defaultCode 目标错误码
+     * @return 映射后异常；其它原样返回
+     */
     private BusinessException mapSupplyWorkflowException(BusinessException ex, String defaultCode) {
         if (ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT.equals(ex.getErrorCode())) {
             return new BusinessException(defaultCode, ex.getMessage());
@@ -1120,6 +1223,12 @@ public class InventoryPharmacyStocktakeAppService {
         return ex;
     }
 
+    /**
+     * agree 阶段领域异常 → PHA_ST_104（重复 agree）或 PHA_ST_003。
+     *
+     * @param ex 原异常
+     * @return 映射后异常
+     */
     private BusinessException mapAgreeException(BusinessException ex) {
         if (ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT.equals(ex.getErrorCode())) {
             String msg = ex.getMessage();
@@ -1131,6 +1240,12 @@ public class InventoryPharmacyStocktakeAppService {
         return ex;
     }
 
+    /**
+     * 库位相关领域异常 → PHA_ST_002/001。
+     *
+     * @param ex 原异常
+     * @return 映射后异常
+     */
     private BusinessException mapPharmacyStocktakeLocationException(BusinessException ex) {
         if (ErrorCodeConstants.SUPPLY_REQUEST_INVALID_ARGUMENT.equals(ex.getErrorCode())) {
             String msg = ex.getMessage();

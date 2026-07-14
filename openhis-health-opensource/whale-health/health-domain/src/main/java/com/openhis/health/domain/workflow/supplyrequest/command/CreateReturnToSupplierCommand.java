@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.supplyrequest.command;
 
 import com.openhis.health.domain.share.command.BatchCommand;
@@ -42,19 +29,19 @@ public class CreateReturnToSupplierCommand extends BatchCommand<CreateReturnToSu
     @Getter
     @Setter
     public static class CreateReturnToSupplierItemCommand {
-        /** 业务单号；修订路径必填。 */
+        /** 业务单号；修订路径必填，新建路径可空。 */
         private String busNo;
-        /** 来源业务单号。 */
+        /** 来源进货单业务单号（{@code original_bus_no}），必填。 */
         private String originalBusNo;
-        /** 供应类型持久化码。 */
+        /** 供应类型持久化码（固定药库退供应商）。 */
         private String typeEnum;
-        /** 物品来源表。 */
+        /** 物品来源表（药品/耗材表名）。 */
         private String itemTable;
         /** 物品定义主键。 */
         private Long itemId;
-        /** 数量。 */
+        /** 退货数量（拆零量，须为正）。 */
         private BigDecimal itemQuantity;
-        /** 计量单位编码。 */
+        /** 计量单位编码（须与进货行一致）。 */
         private String unitCode;
         /** 供应类别持久化码。 */
         private String categoryEnum;
@@ -68,6 +55,8 @@ public class CreateReturnToSupplierCommand extends BatchCommand<CreateReturnToSu
         private Long purposeLocationId;
         /** 供应商主键。 */
         private Long supplierId;
+        /** 经手人医务人员主键（{@code practitioner_id}）；可空，由前端显式选择。 */
+        private Long practitionerId;
         /** 业务发生时间。 */
         private LocalDateTime occurrenceTime;
         /** 申请人主键。 */

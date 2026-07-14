@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.finance.priceadjustmentdetail.response;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -37,15 +24,15 @@ import java.util.Date;
 @Schema(description = "查看调价项目详情响应")
 public class GetPriceAdjustmentApprovedLineResponse {
 
-    /** 主行与子表明细（复用 PRC-001 DTO）。 */
+    /** 调价项目行详情。 */
     @Schema(description = "调价项目行详情")
     private PriceAdjustmentLineDto line;
 
-    /** 行级盈亏合计（与列表同口径，**BR-PRC-DTL-007**）。 */
+    /** 行级盈亏合计。 */
     @Schema(description = "行级盈亏合计")
     private BigDecimal totalImpact;
 
-    /** 生效时间 {@code approve_time}。 */
+    /** 生效时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "生效时间")
     private Date approveTime;

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.pharmacy.dispense.response;
 
 import com.openhis.health.application.inpatient.pharmacy.dispense.dto.PractitionerOptionDto;
@@ -31,13 +18,14 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 住院发药页初始化响应。 */
 @Schema(description = "住院发药页初始化响应")
 public class LoadInpatientPharmacyDispensePageInitResponse {
 
+    /** 当前用户管辖内启用药房下拉（{@code adm_location.id}；无岗位时为空列表）。 */
     @Schema(description = "可操作药房位置选项（adm_location.id）")
     private List<OptionDto> pharmacyOrganizationOptions;
 
+    /** 发放状态筛选项（{@link com.openhis.health.domain.share.enums.DispenseStatus} 码表）。 */
     @Schema(description = "发放状态筛选项")
     private List<OptionDto> dispenseStatusFilterOptions;
 
@@ -47,9 +35,15 @@ public class LoadInpatientPharmacyDispensePageInitResponse {
     @Schema(description = "未发药原因选项")
     private List<OptionDto> notPerformedReasonOptions;
 
+    /** 会话机构下病区候选（value=病区库位 id，供队列 Tab 收窄）。 */
     @Schema(description = "病区候选（value=病区库位 id）")
     private List<OptionDto> wardOptions;
 
+    /** 调配药师候选分页（药师岗 + 目标药房 {@code adm_pr_assign.location_id} 收窄）。 */
     @Schema(description = "调配药师候选分页")
     private Page<PractitionerOptionDto> preparerCandidatePage;
+
+    /** 领药人候选分页（住院护士岗；优先按病区库位收窄，无命中时回落全机构护士）。 */
+    @Schema(description = "领药人候选分页（护士岗）")
+    private Page<PractitionerOptionDto> receiverCandidatePage;
 }

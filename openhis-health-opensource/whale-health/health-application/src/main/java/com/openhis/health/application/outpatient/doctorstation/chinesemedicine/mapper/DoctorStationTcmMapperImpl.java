@@ -1,8 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.outpatient.doctorstation.chinesemedicine.mapper;
 
+import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
 import com.alibaba.fastjson2.JSONObject;
@@ -17,7 +19,6 @@ import com.openhis.health.domain.clinical.conditiondefinition.queries.model.Doct
 import com.openhis.health.domain.medication.medicationrequest.command.ChangeHerbalMedicationOrderDraftCommand;
 import com.openhis.health.domain.medication.medicationrequest.command.CreateHerbalMedicationOrderDraftCommand;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.TcmHerbalPrescriptionHistoryGroupQueryModel;
-import com.openhis.health.domain.share.constants.DoctorStationTcmConstants;
 import com.openhis.health.domain.share.constants.DoctorStationDiagnosisConstants;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
@@ -25,10 +26,10 @@ import com.openhis.health.domain.share.enums.GenerateSource;
 import com.openhis.health.domain.share.enums.IptPatientDiseaseDiagType;
 import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.share.utils.EnumUtil;
-import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
+import com.openhis.health.application.shared.validator.PatientEncounterConsistencyGate;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -36,7 +37,6 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -145,6 +145,12 @@ public class DoctorStationTcmMapperImpl implements DoctorStationTcmMapper {
         return item;
     }
 
+    /**
+     * 中医诊断组稳定键：diseaseDefinitionId:syndromeDefinitionId。
+     *
+     * @param group 组项请求
+     * @return 稳定键字符串
+     */
     private String stableGroupKey(TcmDiagnosisGroupItemRequest group) {
         return String.valueOf(group.getDiseaseDefinitionId()) + ":" + String.valueOf(group.getSyndromeDefinitionId());
     }
@@ -224,7 +230,7 @@ public class DoctorStationTcmMapperImpl implements DoctorStationTcmMapper {
     public List<String> diffRemovedTcmGroups(List<TcmDiagnosisGroupRowDto> existing, SaveTcmDiagnosisGroupsBatchRequest request) {
         Set<String> incoming = new HashSet<>();
         for (TcmDiagnosisGroupItemRequest group : request.getGroups()) {
-            if (StringUtils.isNotBlank(group.getTcmSyndromeGroup())) {
+            if (StringUtils.isNotEmpty(group.getTcmSyndromeGroup())) {
                 incoming.add(group.getTcmSyndromeGroup().trim());
             }
         }
@@ -334,6 +340,7 @@ public class DoctorStationTcmMapperImpl implements DoctorStationTcmMapper {
         cmd.setPerformLocation(line.getDispenseLocationId());
         cmd.setRecorderId(operatorId);
         cmd.setSortNumber(line.getSortNumber());
+        cmd.setDosageInstruction(trimToNull(line.getDosageInstructionCode()));
         cmd.setGenerateSourceEnum(GenerateSource.DOCTOR_PRESCRIPTION.getCode());
         return cmd;
     }
@@ -370,6 +377,9 @@ public class DoctorStationTcmMapperImpl implements DoctorStationTcmMapper {
         cmd.setPerformLocation(line.getDispenseLocationId());
         cmd.setPrescriptionNo(prescriptionNo);
         cmd.setRxTypeCode(rxTypeCode);
+        if (line.getDosageInstructionCode() != null) {
+            cmd.setDosageInstruction(trimToEmpty(line.getDosageInstructionCode()));
+        }
         return cmd;
     }
 

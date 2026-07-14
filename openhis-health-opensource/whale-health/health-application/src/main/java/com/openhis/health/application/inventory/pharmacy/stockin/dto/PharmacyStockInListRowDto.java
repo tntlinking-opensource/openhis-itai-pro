@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.pharmacy.stockin.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -23,10 +10,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 药房入库单列表聚合行（IF-PHA-IN-02：每 bus_no 一行，突出来源位置「从哪入」）。
@@ -36,14 +21,14 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Getter
 @Setter
 @Accessors(chain = true)
-/** 药房入库单列表聚合行。 */
 @Schema(description = "药房入库单列表聚合行")
 public class PharmacyStockInListRowDto {
 
+    /** 业务单号。 */
     @Schema(description = "业务单号")
     private String busNo;
 
-    /** 供应类型持久化码。 */
+    /** 供应类型持久化码，固定为 PHARMACY_STOCK_IN。 */
     @Schema(description = "供应类型持久化码，固定为 PHARMACY_STOCK_IN")
     private String typeEnum;
 
@@ -51,12 +36,16 @@ public class PharmacyStockInListRowDto {
     @Schema(description = "单据状态持久化码 SupplyStatus#getCode")
     private String statusEnum;
 
-    /** 单据状态中文展示。 */
+    /** 单据状态中文展示（SupplyStatus#getDisplay）。 */
     @Schema(description = "单据状态中文展示（SupplyStatus#getDisplay）")
     private String statusEnumText;
 
+    /** 驳回原因（status=REJECT 时取供应行 reason；其它态可空）。 */
+    @Schema(description = "驳回原因")
+    private String rejectReason;
+
     @JsonSerialize(using = ToStringSerializer.class)
-    /** 来源药库主键。 */
+    /** 来源药库主键（从哪入）。 */
     @Schema(description = "来源药库主键（从哪入）")
     private Long sourceLocationId;
 
@@ -87,7 +76,7 @@ public class PharmacyStockInListRowDto {
     @Schema(description = "审批人主键")
     private Long approverId;
 
-    /** 关联上游业务单号。 */
+    /** 关联上游业务单号（系统生成时展示出库单号）。 */
     @Schema(description = "关联上游业务单号（系统生成时展示出库单号）")
     private String originalBusNo;
 }

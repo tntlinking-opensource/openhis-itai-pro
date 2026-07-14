@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.organization.service;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -31,13 +18,16 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 
 /**
- * 机构写侧领域服务。
+ * 机构（{@code adm_organization}）聚合写侧领域服务。
+ *
+ * <p>职责：创建、发布、修改、调整上级、停用/启用与逻辑废弃；维护层级 {@code bus_no} 与子节点编码联动。</p>
+ * <p>不变量：同级名称唯一、组织树无环路、停用/废弃前无启用子节点；持久化先于机构领域事件发布（B.14）。</p>
+ * <p>仅注入本聚合 {@link OrganizationRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -48,14 +38,21 @@ public class OrganizationDomainService {
     private final BusinessSequenceService businessSequenceService;
 
     /**
-     * 创建机构。
+     * 批量创建机构并发布 {@link OrganizationCreatedEvent}。
+     *
+     * @param cmd 创建命令，含名称、类型、上级与医保扩展等
+     * @return 首条新建机构主键
+     * @throws BusinessException 同级重名或上级不存在时
      */
     public Long createOrganization(CreateOrganizationCommand cmd) {
+        // Pre：解析批量项并预加载父级，供层级 busNo 拼接。
         List<CreateOrganizationCommand.CreateOrganizationItemCommand> items = cmd.resolveItems();
         Map<Long, Organization> parentMap = this.loadParentMapForBusNo(items);
         List<Organization> toSave = new ArrayList<>();
         for (CreateOrganizationCommand.CreateOrganizationItemCommand item : items) {
+            // 前置校验：同级机构名称不得重复。
             this.assertNameUnique(item.getParentId(), item.getName(), null);
+            // 加载/组装：初始化有效态机构聚合根。
             Organization entity = new Organization();
             entity.setName(item.getName());
             entity.setParentId(item.getParentId());
@@ -72,7 +69,9 @@ public class OrganizationDomainService {
             entity.setBusNo(this.buildBusNo(item.getParentId(), parentMap));
             toSave.add(entity);
         }
+        // 持久化
         List<Organization> saved = organizationRepository.saveAll(toSave);
+        // 发布事件：机构已创建，供挂号/排班读模型同步
         for (Organization organization : saved) {
             domainEventPublisher.publish(new OrganizationCreatedEvent(
                 organization.getId(), organization.getName(), organization.getTypeEnum(), organization.getBusNo(), organization.getParentId()));
@@ -81,7 +80,10 @@ public class OrganizationDomainService {
     }
 
     /**
-     * 发布机构。
+     * 发布机构：草稿/未发布态迁移至 ACTIVE 并发布 {@link OrganizationPublishedEvent}。
+     *
+     * @param cmd 发布命令
+     * @throws BusinessException 机构不存在或当前状态不允许发布时
      */
     public void publishOrganization(PublishOrganizationCommand cmd) {
         List<PublishOrganizationCommand.PublishOrganizationItemCommand> items = cmd.resolveItems();
@@ -93,7 +95,9 @@ public class OrganizationDomainService {
             entity.transitToActive();
             toSave.add(entity);
         }
+        // 持久化
         organizationRepository.saveAll(toSave);
+        // 发布事件：机构已对外生效
         for (PublishOrganizationCommand.PublishOrganizationItemCommand item : items) {
             Organization entity = this.requireOrganization(map, item.getOrganizationId());
             domainEventPublisher.publish(new OrganizationPublishedEvent(
@@ -102,7 +106,10 @@ public class OrganizationDomainService {
     }
 
     /**
-     * 修改机构。
+     * 修改机构资料并发布 {@link OrganizationEditedEvent}。
+     *
+     * @param cmd 修改命令，含变更字段摘要
+     * @throws BusinessException 机构不存在、不可修改或重名冲突时
      */
     public void modifyOrganization(ModifyOrganizationCommand cmd) {
         List<ModifyOrganizationCommand.ModifyOrganizationItemCommand> items = cmd.resolveItems();
@@ -111,7 +118,7 @@ public class OrganizationDomainService {
         for (ModifyOrganizationCommand.ModifyOrganizationItemCommand item : items) {
             Organization entity = this.requireOrganization(map, item.getOrganizationId());
             entity.assertModifiable();
-            // 业务分支处理。
+            // 名称变更时须重新校验同级唯一，防止重名科室并存。
             if (!Objects.equals(entity.getName(), item.getName())) {
                 this.assertNameUnique(entity.getParentId(), item.getName(), entity.getId());
             }
@@ -124,14 +131,19 @@ public class OrganizationDomainService {
             this.fillInsurance(entity, item.getInsuranceInfo());
             toSave.add(entity);
         }
+        // 持久化
         organizationRepository.saveAll(toSave);
+        // 发布事件：机构资料已变更
         for (ModifyOrganizationCommand.ModifyOrganizationItemCommand item : items) {
             domainEventPublisher.publish(new OrganizationEditedEvent(item.getOrganizationId(), item.getChangedFields()));
         }
     }
 
     /**
-     * 调整机构上级。
+     * 调整机构上级并重算本节点及后代 {@code bus_no}，发布 {@link OrganizationHierarchyChangedEvent}。
+     *
+     * @param cmd 调整命令，含新上级主键
+     * @throws BusinessException 形成环路、新上级为自身或机构不存在时
      */
     public void relocateOrganization(RelocateOrganizationCommand cmd) {
         List<RelocateOrganizationCommand.RelocateOrganizationItemCommand> items = cmd.resolveItems();
@@ -142,7 +154,7 @@ public class OrganizationDomainService {
         for (RelocateOrganizationCommand.RelocateOrganizationItemCommand item : items) {
             Organization entity = this.requireOrganization(map, item.getOrganizationId());
             entity.assertRelocateAllowed();
-            // 业务分支处理。
+            // 新上级不可为自身，否则组织树出现自环。
             if (item.getOrganizationId().equals(item.getNewParentId())) {
                 throw new BusinessException(ErrorCodeConstants.ORGANIZATION_RULE_CONFLICT, "新上级不可为自身");
             }
@@ -172,14 +184,19 @@ public class OrganizationDomainService {
             hierarchyEvents.add(new OrganizationHierarchyChangedEvent(
                 entity.getId(), oldParentId, item.getNewParentId(), newBusNo));
         }
+        // 持久化：本节点与后代 busNo 须同事务更新
         organizationRepository.saveAll(new ArrayList<>(toSaveById.values()));
+        // 发布事件：组织层级已变更
         for (OrganizationHierarchyChangedEvent event : hierarchyEvents) {
             domainEventPublisher.publish(event);
         }
     }
 
     /**
-     * 停用机构。
+     * 停用机构并发布 {@link OrganizationRetiredEvent}；存在启用子节点时拒绝。
+     *
+     * @param cmd 停用命令
+     * @throws BusinessException 仍有启用子机构或状态不允许停用时
      */
     public void retireOrganization(RetireOrganizationCommand cmd) {
         List<RetireOrganizationCommand.RetireOrganizationItemCommand> items = cmd.resolveItems();
@@ -195,14 +212,19 @@ public class OrganizationDomainService {
             entity.transitToInactive();
             toSave.add(entity);
         }
+        // 持久化
         organizationRepository.saveAll(toSave);
+        // 发布事件：机构已停用
         for (RetireOrganizationCommand.RetireOrganizationItemCommand item : items) {
             domainEventPublisher.publish(new OrganizationRetiredEvent(item.getOrganizationId(), item.getRetireReason(), cmd.getOperatorId()));
         }
     }
 
     /**
-     * 重新启用机构。
+     * 重新启用已停用机构；上级须仍为启用态。
+     *
+     * @param cmd 启用命令
+     * @throws BusinessException 上级未启用或机构不存在时
      */
     public void reactivateOrganization(ReactivateOrganizationCommand cmd) {
         List<ReactivateOrganizationCommand.ReactivateOrganizationItemCommand> items = cmd.resolveItems();
@@ -215,14 +237,19 @@ public class OrganizationDomainService {
             entity.transitToActive();
             toSave.add(entity);
         }
+        // 持久化
         organizationRepository.saveAll(toSave);
+        // 发布事件：机构已重新启用
         for (ReactivateOrganizationCommand.ReactivateOrganizationItemCommand item : items) {
             domainEventPublisher.publish(new OrganizationReactivatedEvent(item.getOrganizationId(), cmd.getOperatorId()));
         }
     }
 
     /**
-     * 废弃机构。
+     * 逻辑废弃机构并发布 {@link OrganizationAbolishedEvent}；仍有启用子机构时拒绝。
+     *
+     * @param cmd 废弃命令
+     * @throws BusinessException 存在启用子节点或状态不允许废弃时
      */
     public void abolishOrganization(AbolishOrganizationCommand cmd) {
         List<AbolishOrganizationCommand.AbolishOrganizationItemCommand> items = cmd.resolveItems();
@@ -231,7 +258,7 @@ public class OrganizationDomainService {
         for (AbolishOrganizationCommand.AbolishOrganizationItemCommand item : items) {
             Organization entity = this.requireOrganization(map, item.getOrganizationId());
             entity.assertAbolishAllowed();
-            // 业务分支处理：仍存在启用子机构时禁止废弃（仅本聚合仓储判定）。
+            // 仍存在启用子机构时禁止废弃（仅本聚合仓储判定）。
             if (organizationRepository.existsByParentIdAndStatusEnum(
                 item.getOrganizationId(), PublicationStatus.ACTIVE.getCode())) {
                 throw new BusinessException(ErrorCodeConstants.ORGANIZATION_RULE_CONFLICT, "机构仍被活跃业务引用，禁止废弃");
@@ -239,17 +266,22 @@ public class OrganizationDomainService {
             entity.transitToDeleted(cmd.getOperatorId());
             toSave.add(entity);
         }
+        // 持久化
         organizationRepository.saveAll(toSave);
+        // 发布事件：机构已废弃
         for (AbolishOrganizationCommand.AbolishOrganizationItemCommand item : items) {
             domainEventPublisher.publish(new OrganizationAbolishedEvent(item.getOrganizationId(), item.getAbolishReason(), cmd.getOperatorId()));
         }
     }
 
     /**
-     * 私有方法：fillInputCode。
+     * 写入机构检索码（拼音/五笔）；命令未传时保持原值。
+     *
+     * @param entity    待更新机构
+     * @param inputCode 检索码命令，可为 null
      */
     private void fillInputCode(Organization entity, InputCodeCommand inputCode) {
-        // 业务分支处理。
+        // 未传检索码时保持实体原值，不覆盖既有拼音五笔。
         if (inputCode == null) {
             return;
         }
@@ -258,10 +290,13 @@ public class OrganizationDomainService {
     }
 
     /**
-     * 私有方法：fillInsurance。
+     * 写入机构医保定点扩展信息；命令未传时跳过。
+     *
+     * @param entity         待更新机构
+     * @param insuranceInfo 医保信息命令，可为 null
      */
     private void fillInsurance(Organization entity, MedicalInsuranceInfoCommand insuranceInfo) {
-        // 业务分支处理。
+        // 未传医保信息时跳过，避免清空已维护的定点编码。
         if (insuranceInfo == null) {
             return;
         }
@@ -274,27 +309,35 @@ public class OrganizationDomainService {
     }
 
     /**
-     * 私有方法：assertNameUnique。
+     * 断言同级机构名称唯一。
+     *
+     * @param parentId  父机构主键
+     * @param name      待校验名称
+     * @param excludeId 修改场景排除自身主键，新建时传 null
+     * @throws BusinessException 同级已存在同名机构时
      */
     private void assertNameUnique(Long parentId, String name, Long excludeId) {
         boolean exists;
-        // 业务分支处理。
+        // 新建场景：同级下不得存在同名机构。
         if (excludeId == null) {
             exists = organizationRepository.existsByParentIdAndName(parentId, name);
         } else {
             exists = organizationRepository.existsByParentIdAndNameAndIdNot(parentId, name, excludeId);
         }
-        // 业务分支处理。
+        // 同级名称冲突时拒绝，防止挂号/排班引用歧义。
         if (exists) {
             throw new BusinessException(ErrorCodeConstants.ORGANIZATION_NAME_CONFLICT, "同级机构名称不可重复");
         }
     }
 
     /**
-     * 私有方法：assertParentActive。
+     * 断言上级机构处于启用态，子机构方可重新启用。
+     *
+     * @param parentId 上级机构主键，根节点为 null
+     * @throws BusinessException 上级不存在或未启用时
      */
     private void assertParentActive(Long parentId) {
-        // 业务分支处理。
+        // 根机构无上级，启用时跳过父节点校验。
         if (parentId == null) {
             return;
         }
@@ -305,20 +348,24 @@ public class OrganizationDomainService {
     }
 
     /**
-     * 私有方法：assertNotCycle。
+     * 断言调整上级不会形成组织树环路。
+     *
+     * @param organizationId 本机构主键
+     * @param newParentId    拟挂接的新上级主键
+     * @throws BusinessException 新上级链路上出现本节点时
      */
     private void assertNotCycle(Long organizationId, Long newParentId) {
-        // 业务分支处理。
+        // 调整为根节点时无需环路检测。
         if (newParentId == null) {
             return;
         }
         Organization cursor = organizationRepository.findById(newParentId).orElse(null);
         while (cursor != null) {
-            // 业务分支处理。
+            // 新上级链路上出现本节点则形成环路，必须拒绝。
             if (organizationId.equals(cursor.getId())) {
                 throw new BusinessException(ErrorCodeConstants.ORGANIZATION_RULE_CONFLICT, "调整上级将导致组织树环路");
             }
-            // 业务分支处理。
+            // 遍历到根节点仍未命中本 id，说明无环路。
             if (cursor.getParentId() == null) {
                 break;
             }
@@ -415,7 +462,10 @@ public class OrganizationDomainService {
     }
 
     /**
-     * 私有方法：loadOrganizationMap。
+     * 按主键批量加载机构并构建内存映射。
+     *
+     * @param ids 机构主键列表
+     * @return 主键 → 机构实体
      */
     private Map<Long, Organization> loadOrganizationMap(List<Long> ids) {
         List<Organization> records = organizationRepository.findAllByIdIn(ids);
@@ -427,15 +477,19 @@ public class OrganizationDomainService {
     }
 
     /**
-     * 私有方法：requireOrganization。
+     * 从内存映射强制获取机构；不存在时终止写路径。
+     *
+     * @param map            已加载机构映射
+     * @param organizationId 目标主键
+     * @return 机构实体
+     * @throws BusinessException 机构不存在时
      */
     private Organization requireOrganization(Map<Long, Organization> map, Long organizationId) {
         Organization organization = map.get(organizationId);
-        // 业务分支处理。
+        // 批量加载结果中无此主键，说明机构不存在或已软删。
         if (organization == null) {
             throw new BusinessException(ErrorCodeConstants.ORGANIZATION_NOT_FOUND, "机构不存在");
         }
         return organization;
     }
 }
-

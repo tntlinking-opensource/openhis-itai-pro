@@ -1,10 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.concurrency;
 
-import com.openhis.health.application.inpatient.concurrency.support.ConcurrencyTestSupport;
+import com.openhis.health.application.inpatient.concurrency.support.ConcurrencyTestHelper;
 import com.openhis.whale.core.application.exception.BusinessException;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Tag;
@@ -51,7 +51,7 @@ class SysImp004AtdConcurrencyIntegrationTest {
         assertThat(encounterIdA).isNull();
         assertThat(encounterIdB).isNull();
 
-        ConcurrencyTestSupport.ConcurrentRun<Throwable> run = ConcurrencyTestSupport.startConcurrently(2, () -> {
+        ConcurrencyTestHelper.ConcurrentRun<Throwable> run = ConcurrencyTestHelper.startConcurrently(2, () -> {
             try {
                 // TODO: atdManagerAppService.executeBedOperation(assignRequest(encounterId, bedId));
                 return null;
@@ -59,7 +59,7 @@ class SysImp004AtdConcurrencyIntegrationTest {
                 return ex;
             }
         });
-        List<Throwable> outcomes = ConcurrencyTestSupport.releaseAndAwaitAll(run, 60, TimeUnit.SECONDS);
+        List<Throwable> outcomes = ConcurrencyTestHelper.releaseAndAwaitAll(run, 60, TimeUnit.SECONDS);
 
         long successCount = outcomes.stream().filter(t -> t == null).count();
         long atd201Count = outcomes.stream()
@@ -85,7 +85,7 @@ class SysImp004AtdConcurrencyIntegrationTest {
     @Test
     void gapAtd004_dualRegistration_oneReg003() throws Exception {
         // TODO Fixture: encounterId PLANNED
-        ConcurrencyTestSupport.ConcurrentRun<Throwable> run = ConcurrencyTestSupport.startConcurrently(2, () -> {
+        ConcurrencyTestHelper.ConcurrentRun<Throwable> run = ConcurrencyTestHelper.startConcurrently(2, () -> {
             try {
                 // TODO: registrationAppService.submitInpatientRegistration(...)
                 return null;
@@ -93,7 +93,7 @@ class SysImp004AtdConcurrencyIntegrationTest {
                 return ex;
             }
         });
-        List<Throwable> outcomes = ConcurrencyTestSupport.releaseAndAwaitAll(run, 60, TimeUnit.SECONDS);
+        List<Throwable> outcomes = ConcurrencyTestHelper.releaseAndAwaitAll(run, 60, TimeUnit.SECONDS);
         assertThat(outcomes).hasSize(2);
         // TODO: 断言一成功、一 EX-IP-REG-003；就诊 status REGISTERED
     }

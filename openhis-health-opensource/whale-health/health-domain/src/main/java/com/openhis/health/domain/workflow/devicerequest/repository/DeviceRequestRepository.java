@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.devicerequest.repository;
 
 import com.openhis.health.domain.workflow.devicerequest.entity.DeviceRequest;
@@ -98,4 +85,12 @@ public interface DeviceRequestRepository extends JpaRepository<DeviceRequest, Lo
      * @return 耗材请求列表
      */
     List<DeviceRequest> findByBasedOnTableAndBasedOnIdIn(String basedOnTable, Collection<Long> basedOnIds);
+
+    /**
+     * 判断指定器材定义是否已被有效耗材申请引用（目录编辑门控）。
+     *
+     * @param deviceDefId 器材定义主键 {@code device_def_id}
+     * @return 存在未软删申请时为 true
+     */
+    boolean existsByDeviceDefIdAndIsDeletedFalse(Long deviceDefId);
 }

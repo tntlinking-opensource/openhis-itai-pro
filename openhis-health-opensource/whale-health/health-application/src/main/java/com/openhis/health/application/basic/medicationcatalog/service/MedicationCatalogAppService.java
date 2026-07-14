@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
-/* (C)2026 */
 package com.openhis.health.application.basic.medicationcatalog.service;
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.enums.PriceType;
+import com.openhis.health.application.basic.catalog.support.CatalogEditWriteGate;
 import com.openhis.health.application.basic.medicationcatalog.dto.ImportMedicationCatalogResponse;
 import com.openhis.health.application.basic.medicationcatalog.dto.MedicationDetailDto;
 import com.openhis.health.application.basic.medicationcatalog.dto.MedicationDto;
@@ -32,17 +19,19 @@ import com.openhis.health.application.basic.medicationcatalog.request.QueryMedic
 import com.openhis.health.application.basic.medicationcatalog.request.UpdateMedicationCatalogRequest;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.utils.GatewayIdParseUtil;
-import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.assembler.option.OptionDtoAssembler;
-import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.common.assembler.pricing.ChargePricingCommandAssembler;
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogUnitBandDto;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.common.converter.TextValueConverter;
-import com.openhis.health.module.querysupport.pharmacy.MedicationDefinitionExternalReferenceGuard;
+import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.basic.catalog.support.CatalogEditabilityQueryModel;
+import com.openhis.health.application.basic.catalog.support.CatalogEditabilityResolver;
+import com.openhis.health.application.shared.option.OptionDtoAssembler;
+import com.openhis.health.application.shared.option.FrequencyOptionLoader;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.pricing.ChargePricingCommandAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogUnitBandDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.converter.TextValueConverter;
+import com.openhis.health.application.basic.medicationcatalog.support.MedicationDefinitionExternalReferenceGuard;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.RemovePricingByInstanceCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.command.SaveAllChargeItemDefinitionsCommand;
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
@@ -56,6 +45,7 @@ import com.openhis.health.domain.custom.supplier.service.SupplierQueryService;
 import com.openhis.health.domain.medication.medicationdefinition.command.ImportMedicationCatalogCommand;
 import com.openhis.health.domain.medication.medicationdefinition.command.ImportMedicationCatalogResult;
 import com.openhis.health.domain.medication.medicationdefinition.queries.model.MedicationDefinitionTemplateQueryModel;
+import com.openhis.health.domain.medication.medicationdefinition.entity.MedicationDefinition;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionDomainService;
 import com.openhis.health.domain.medication.medicationdefinition.service.MedicationDefinitionQueryService;
 import com.openhis.health.domain.medication.medicationdefinition.queries.MedicationDefinitionCatalogPageQuery;
@@ -70,7 +60,7 @@ import com.openhis.whale.core.application.exception.ValidationException;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -132,6 +122,10 @@ public class MedicationCatalogAppService {
     private final MedicationDefinitionExternalReferenceGuard medicationDefinitionExternalReferenceGuard;
     /** 写路径操作人门控（B.6.5）。 */
     private final CurrentPractitionerResolver currentPractitionerResolver;
+    /** 目录编辑业务码读侧编排。 */
+    private final CatalogEditabilityResolver catalogEditabilityResolver;
+    /** 目录写侧 immutable 字段门禁。 */
+    private final CatalogEditWriteGate catalogEditWriteGate;
 
     /**
      * 药品目录维护页初始化：返回各字典下拉项（术语编码系统）及供应商、库房等选项。
@@ -139,8 +133,9 @@ public class MedicationCatalogAppService {
      * @return 初始化 DTO，供前端表单渲染
      */
     public MedicationManageInitDto getMedicationInit() {
+        // Gate：只读页初始化，无写侧操作人
         MedicationManageInitDto dto = new MedicationManageInitDto();
-        // 药品分类、发布状态、领域标识等基础字典（术语编码体系名称见 TerminologyCodeSystemNameConstants。
+        // Pre：加载术语下拉、供应商、频次与库房选项
         dto.setMedicationCategoryCodeOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.MEDICATION_CATEGORY_CODE));
         dto.setStatusFlagOptions(
@@ -159,6 +154,8 @@ public class MedicationCatalogAppService {
         dto.setTempOrderSplitPropertyEnumOptions(orderCalcRuleOptions);
         dto.setChrgitmLvOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.CHRGITM_LV));
+        dto.setMrSettlementTypeCodeOptions(
+            terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.MR_SETTLEMENT_TYPE_CODE));
         dto.setSystemCategoriesOptions(
             terminologyOptionLoader.loadOptions(TerminologyCodeSystemNameConstants.SYSTEM_CATEGORIES));
         dto.setMedicinePropertiesOptions(
@@ -186,17 +183,21 @@ public class MedicationCatalogAppService {
         dto.setRateCodeOptions(frequencyOptionLoader.loadActiveRateOptions());
         // 库房/药房选项：依赖机构 id；未传入时返回空，避免误列全库点位。
         dto.setLocationOptions(this.loadLocationOptions(managedOrganizationIdsResolver.resolveOrganizationUnitIdForQuery()));
+        // Asm：映射维护页初始化 DTO
         return dto;
     }
 
     /**
      * 分页查询药品目录列表（读主表 {@code med_medication_definition}，定价行批量回填）。
      *
+     * <p>默认按 {@code busNo} 倒序；合法 {@code sortBy} 见白名单方法。</p>
+     *
      * @param query 分页与筛选条件
      * @return 分页结果
      */
     public PagedResult<MedicationDto> pageMedicationCatalog(QueryMedicationCatalogRequest query) {
-        Sort sort = Sort.by(Sort.Direction.DESC, FieldNameConstants.CREATED_AT);
+        // Gate：默认按业务号倒序，避免按创建/更新时间排序导致编辑后行位跳动；排序字段白名单见下方
+        Sort sort = Sort.by(Sort.Direction.DESC, FieldNameConstants.BUS_NO);
         if (query.getSortBy() != null && !query.getSortBy().isBlank()
             && this.isAllowedMedicationCatalogSortField(query.getSortBy())) {
             Sort.Direction direction = Sort.Direction.DESC;
@@ -210,12 +211,14 @@ public class MedicationCatalogAppService {
         pageQuery.setPageSize(query.getPageSize());
         pageQuery.setCategoryCode(query.getCategoryCode());
         pageQuery.setKeyword(query.getKeyword());
+        // Pre：读侧分页查询主表
         Page<MedicationDefinitionPageQueryModel> pageResult = medicationDefinitionQueryService.pageMedicationCatalog(
             pageQuery, PageRequest.of(pageQuery.springPageIndex(), pageQuery.getBoundedPageSize(), sort));
         List<MedicationDto> content = pageResult.getContent().stream()
             .map(medicationCatalogMapper::toMedicationDto)
             .collect(Collectors.toCollection(ArrayList::new));
         this.enrichMedicationCatalogPageRows(content);
+        // Asm：映射分页响应
         return PagedResult.fromPage(new PageImpl<>(content, pageResult.getPageable(), pageResult.getTotalElements()));
     }
 
@@ -230,10 +233,27 @@ public class MedicationCatalogAppService {
      * @throws ValidationException {@code id} 为空；聚合不存在时由领域查询抛出业务异常
      */
     public MedicationDetailDto getMedicationCatalog(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("查询药品详情失败：id 不能为空");
         }
+        // Pre/Asm：写模型组装详情并回填定价
         return this.getMedicationDetailFromWriteModel(id);
+    }
+
+    /**
+     * 编辑前校验：返回业务码及说明，供维护页锁定分类/单位/拆零倍数/价格等字段。
+     *
+     * @param id 药品定义主键
+     * @return 可编辑性模型
+     */
+    public CatalogEditabilityQueryModel validateMedicationCatalogEdit(Long id) {
+        // Gate：主键非空
+        if (id == null) {
+            throw new ValidationException("校验药品目录编辑失败：id 不能为空");
+        }
+        // Pre/Asm：读侧解析可编辑性业务码
+        return catalogEditabilityResolver.resolveMedicationEditability(id);
     }
 
     /**
@@ -244,10 +264,13 @@ public class MedicationCatalogAppService {
      * @throws ValidationException 必填项校验失败
      */
     public MedicationDetailDto createMedicationCatalog(CreateMedicationCatalogRequest request) {
+        // Gate：创建入参校验
         this.validateCreateRequest(request);
+        // Pre：未传 orgId 时绑定会话科室
         this.applyDefaultOrganizationIdForCreate(request);
-        // 先领域建档拿到主键，再刷新实例维度定价（与编辑共用 replacePriceLines）。
+        // Cmd：领域建档
         Long createdId = medicationDefinitionDomainService.createMedicationDefinition(medicationCatalogMapper.toCreateCommand(request));
+        // Cmd 续：实例维度定价行替换
         this.replacePriceLines(
             createdId,
             this.resolveMedicationFinTypeCodeForPricing(request.getTypeCode(), request.getCategoryCode()),
@@ -255,26 +278,37 @@ public class MedicationCatalogAppService {
             request.getPurchasePrice(),
             request.getRetailPrice(),
             request.getMaximumRetailPrice());
+        // Asm：回读新建详情
         return this.getMedicationCatalog(createdId);
     }
 
     /**
-     * 修改药品目录主数据并同步实例维度定价行。
+     * 修改药品目录主数据（编辑路径不维护定价行）。
+     *
+     * <p>定价仅在 {@link #createMedicationCatalog} 写入维护态 {@code PURCHASE}/{@code SALE}/{@code LIMIT}；
+     * 编辑若调用 {@link #replacePriceLines} 会误删进货入库写入的 {@code LOT_NUMBER_PRICE}，导致医生站无价。
+     * 批号售价须经入库同意或调价流程维护，不在目录编辑页改价。</p>
      *
      * @param request 药品目录信息（须含主键）
      * @return 最新详情（含定价回填）
      * @throws ValidationException 校验失败
      */
     public MedicationDetailDto editMedicationCatalog(UpdateMedicationCatalogRequest request) {
+        // Gate：更新入参校验
         this.validateUpdateRequest(request);
+        // Pre：加载现有实体与可编辑性
+        MedicationDefinition existing = medicationDefinitionQueryService.findOptionalMedicationDefinitionEntityById(request.getId())
+            .orElseThrow(() -> new ValidationException("更新药品目录失败：记录不存在或已删除"));
+        CatalogEditabilityQueryModel editability =
+            catalogEditabilityResolver.resolveMedicationEditability(request.getId());
+        catalogEditWriteGate.assertMedicationCatalogUpdateAllowed(
+            existing,
+            this.loadPriceLines(request.getId()),
+            request,
+            editability.getEditabilityCode());
+        // Cmd：领域更新主数据（编辑路径不维护定价行）
         medicationDefinitionDomainService.editMedicationDefinition(medicationCatalogMapper.toEditCommand(request));
-        this.replacePriceLines(
-            request.getId(),
-            this.resolveMedicationFinTypeCodeForPricing(request.getTypeCode(), request.getCategoryCode()),
-            request.getYbType(),
-            request.getPurchasePrice(),
-            request.getRetailPrice(),
-            request.getMaximumRetailPrice());
+        // Asm：回读最新详情
         return this.getMedicationCatalog(request.getId());
     }
 
@@ -285,7 +319,9 @@ public class MedicationCatalogAppService {
      * @throws ValidationException {@code ids} 为空
      */
     public void stopMedicationCatalog(List<Long> ids) {
+        // Gate：批量主键非空
         GatewayIdParseUtil.requireNonEmptyLongIds(ids, "停用药品目录失败：ids 不能为空");
+        // Cmd：领域批量停用
         medicationDefinitionDomainService.retireMedicationDefinitions(medicationCatalogMapper.toRetireCommand(ids));
     }
 
@@ -296,7 +332,9 @@ public class MedicationCatalogAppService {
      * @throws ValidationException {@code ids} 为空
      */
     public void startMedicationCatalog(List<Long> ids) {
+        // Gate：批量主键非空
         GatewayIdParseUtil.requireNonEmptyLongIds(ids, "启用药品目录失败：ids 不能为空");
+        // Cmd：领域批量启用
         medicationDefinitionDomainService.activateMedicationDefinitions(medicationCatalogMapper.toActivateCommand(ids));
     }
 
@@ -307,8 +345,11 @@ public class MedicationCatalogAppService {
      * @throws ValidationException {@code ids} 为空
      */
     public void deleteMedicationCatalog(List<Long> ids) {
+        // Gate：批量主键非空
         GatewayIdParseUtil.requireNonEmptyLongIds(ids, "删除药品目录失败：ids 不能为空");
+        // Gate 续：跨聚合引用守卫，有引用则阻断废弃
         medicationDefinitionExternalReferenceGuard.assertNoExternalReference(ids);
+        // Cmd：领域批量废弃
         medicationDefinitionDomainService.discardMedicationDefinition(medicationCatalogMapper.toDiscardCommand(ids));
     }
 
@@ -320,11 +361,14 @@ public class MedicationCatalogAppService {
      * @throws ValidationException 文件为空或解析失败
      */
     public ImportMedicationCatalogResponse importMedicationCatalog(MultipartFile file) {
+        // Gate：上传文件非空
         if (file == null || file.isEmpty()) {
             throw new ValidationException("导入药品目录失败：文件不能为空");
         }
+        // Gate 续：写路径操作人
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.MEDICATION_DEFINITION_INVALID_ARGUMENT, "请先登录后再导入药品目录");
+        // Pre：组装导入命令并解析 CSV 行
         ImportMedicationCatalogCommand command = new ImportMedicationCatalogCommand();
         command.setBatchNo("MED-IMPORT-" + UUID.randomUUID().toString().substring(0, 8));
         command.setOperatorId(operatorId);
@@ -337,6 +381,7 @@ public class MedicationCatalogAppService {
         ImportMedicationCatalogResult result = medicationDefinitionDomainService.importMedicationCatalog(command);
         log.info("药品目录导入完成 batchNo={}, success={}, fail={}",
             command.getBatchNo(), result.getSuccessCount(), result.getFailCount());
+        // Asm：映射导入统计响应
         ImportMedicationCatalogResponse response = new ImportMedicationCatalogResponse();
         response.setBatchNo(command.getBatchNo());
         response.setTotalCount(command.getRows().size());
@@ -352,7 +397,9 @@ public class MedicationCatalogAppService {
      * @throws ValidationException 模板查询或写出失败
      */
     public void downloadMedicationCatalog(HttpServletResponse response) {
+        // Pre：读侧加载 CSV 模板
         MedicationDefinitionTemplateQueryModel template = medicationDefinitionQueryService.downloadMedicationCatalog();
+        // Asm：流式写出附件响应
         response.setContentType("text/csv;charset=UTF-8");
         response.setCharacterEncoding("UTF-8");
         response.setHeader("Content-Disposition", "attachment; filename=\"" + template.getTemplateName() + ".csv\"");
@@ -375,6 +422,10 @@ public class MedicationCatalogAppService {
             medicationDefinitionQueryService.getMedicationCatalog(medicationDefinitionId));
         this.enrichPriceFields(dto, this.loadPriceLines(medicationDefinitionId));
         this.enrichFinTypeCodeDictText(dto);
+        CatalogEditabilityQueryModel editability =
+            catalogEditabilityResolver.resolveMedicationEditability(medicationDefinitionId);
+        dto.setEditabilityCode(editability.getEditabilityCode());
+        dto.setEditabilityMessage(editability.getEditabilityMessage());
         return dto;
     }
 
@@ -475,6 +526,13 @@ public class MedicationCatalogAppService {
         return row;
     }
 
+    /**
+     * 从单位术语 Map 解析单位码展示名。
+     *
+     * @param unitCodeMap 单位码 → 展示名
+     * @param unitCode    待解析单位码
+     * @return 展示名；入参缺失时 null
+     */
     private String resolveUnitLabel(Map<String, String> unitCodeMap, String unitCode) {
         if (unitCodeMap == null || unitCode == null || unitCode.isBlank()) {
             return null;
@@ -482,6 +540,12 @@ public class MedicationCatalogAppService {
         return unitCodeMap.get(unitCode.trim());
     }
 
+    /**
+     * 批量加载药品定价行并按 medicationId 分组，供列表/详情 enrich 回填。
+     *
+     * @param medicationIds 药品定义主键列表
+     * @return medicationId → 定价行列表
+     */
     private Map<Long, List<ChargeItemDefinition>> loadMedicationPriceMap(List<Long> medicationIds) {
         Map<Long, List<ChargeItemDefinition>> grouped = new HashMap<>();
         ChargeItemDefinitionQueryCommand cmd = new ChargeItemDefinitionQueryCommand();
@@ -770,12 +834,6 @@ public class MedicationCatalogAppService {
             throw new ValidationException("更新药品目录失败：包装单位不能为空");
         }
         this.assertMedicationUnitRatiosPositive(request, "更新药品目录失败");
-        this.assertFinTypeCodeWhenPricingPresent(
-            request.getTypeCode(),
-            request.getCategoryCode(),
-            request.getPurchasePrice(),
-            request.getRetailPrice(),
-            "更新药品目录失败");
     }
 
     /**
@@ -786,7 +844,7 @@ public class MedicationCatalogAppService {
      * @return fin_type_code；仍无法解析时为 {@code null}
      */
     private String resolveMedicationFinTypeCodeForPricing(String typeCode, String categoryCode) {
-        if (StringUtils.isNotBlank(typeCode)) {
+        if (StringUtils.isNotEmpty(typeCode)) {
             return typeCode.trim();
         }
         return FinTypeCodeMappingSupport.normalizeCategoryCodeToFinType(categoryCode);
@@ -811,7 +869,7 @@ public class MedicationCatalogAppService {
             return;
         }
         String finTypeCode = this.resolveMedicationFinTypeCodeForPricing(typeCode, categoryCode);
-        if (StringUtils.isBlank(finTypeCode)) {
+        if (StringUtils.isEmpty(finTypeCode)) {
             throw new ValidationException(messagePrefix + "：维护价格时财务类型不能为空");
         }
     }
@@ -826,6 +884,14 @@ public class MedicationCatalogAppService {
         MedicationCatalogAppService.assertPositiveUnitRatio(errPrefix, "剂量→拆零倍数", request.getDoseUnitRatio());
     }
 
+    /**
+     * 校验药品单位换算倍数：必填且须大于 0。
+     *
+     * @param errPrefix 错误前缀（含 IF 场景）
+     * @param fieldCn   字段中文名
+     * @param value     待校验倍数
+     * @throws ValidationException 为空或不大于 0
+     */
     private static void assertPositiveUnitRatio(String errPrefix, String fieldCn, BigDecimal value) {
         if (value == null) {
             throw new ValidationException(errPrefix + "：" + fieldCn + "不能为空");

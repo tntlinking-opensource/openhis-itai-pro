@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.servicelocationtemplate.service;
 
 import com.openhis.health.domain.custom.servicelocationtemplate.entity.ServiceLocationTemplate;
@@ -24,7 +11,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
 import org.springframework.stereotype.Service;
 
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -37,6 +24,8 @@ import lombok.RequiredArgsConstructor;
  * 取药/发药科室路由模板读侧查询服务。
  *
  * <p>职责：维护「开立/接诊科室 + 物品维度 + 时段」到默认发药库位的规则解析，供摆药与发药路径推荐及医生站目录与库存求交；仅查询不写库。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link ServiceLocationTemplateRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -99,7 +88,7 @@ public class ServiceLocationTemplateQueryService {
         String distributionCategoryCode,
         LocalTime atTime
     ) {
-        if (organizationId == null || StringUtils.isBlank(itemTable) || StringUtils.isBlank(distributionCategoryCode)) {
+        if (organizationId == null || StringUtils.isEmpty(itemTable) || StringUtils.isEmpty(distributionCategoryCode)) {
             return List.of();
         }
         LocalTime effectiveTime = this.resolveTemplateEffectiveTime(atTime);
@@ -130,7 +119,7 @@ public class ServiceLocationTemplateQueryService {
         String methodCode,
         LocalTime atTime
     ) {
-        if (organizationId == null || StringUtils.isBlank(itemTable) || StringUtils.isBlank(distributionCategoryCode)) {
+        if (organizationId == null || StringUtils.isEmpty(itemTable) || StringUtils.isEmpty(distributionCategoryCode)) {
             return List.of();
         }
         LocalTime effectiveTime = this.resolveTemplateEffectiveTime(atTime);
@@ -161,7 +150,7 @@ public class ServiceLocationTemplateQueryService {
         String distributionCategoryCode,
         LocalTime atTime
     ) {
-        if (organizationId == null || StringUtils.isBlank(itemTable) || StringUtils.isBlank(distributionCategoryCode)) {
+        if (organizationId == null || StringUtils.isEmpty(itemTable) || StringUtils.isEmpty(distributionCategoryCode)) {
             return List.of();
         }
         LocalTime effectiveTime = this.resolveTemplateEffectiveTime(atTime);
@@ -394,4 +383,3 @@ public class ServiceLocationTemplateQueryService {
         return row.getDisplayOrder();
     }
 }
-

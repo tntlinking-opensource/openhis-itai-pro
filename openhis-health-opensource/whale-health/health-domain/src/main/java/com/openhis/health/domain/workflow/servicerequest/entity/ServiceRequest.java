@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.servicerequest.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -28,7 +15,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -204,7 +191,7 @@ public class ServiceRequest extends BaseAuditedEntity {
         if (this.quantity == null || this.quantity.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "创建服务申请草稿时 quantity 必须大于 0");
         }
-        if (StringUtils.isBlank(this.unitCode)) {
+        if (StringUtils.isEmpty(this.unitCode)) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "创建服务申请草稿时 unitCode 不能为空");
         }
         this.assertLongTermRateCodePresent();
@@ -246,7 +233,7 @@ public class ServiceRequest extends BaseAuditedEntity {
      * 长期诊疗须指定频次（与住院校对/执行列表 BR-IP-EXE-003 一致）。
      */
     public void assertLongTermRateCodePresent() {
-        if (TherapyType.LONG_TERM.getCode().equals(this.therapyEnum) && StringUtils.isBlank(this.rateCode)) {
+        if (TherapyType.LONG_TERM.getCode().equals(this.therapyEnum) && StringUtils.isEmpty(this.rateCode)) {
             throw new BusinessException(
                 ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT,
                 "长期诊疗医嘱须指定频次");
@@ -356,7 +343,7 @@ public class ServiceRequest extends BaseAuditedEntity {
      * @throws BusinessException 参数非法
      */
     public void assertExecutionDerivedCreatable() {
-        if (StringUtils.isBlank(this.basedOnTable) || this.basedOnId == null) {
+        if (StringUtils.isEmpty(this.basedOnTable) || this.basedOnId == null) {
             throw new BusinessException(ErrorCodeConstants.SERVICE_REQUEST_INVALID_ARGUMENT, "执行派生创建需填写 basedOnTable/basedOnId");
         }
         if (this.generateSourceEnum == null) {
@@ -487,6 +474,25 @@ public class ServiceRequest extends BaseAuditedEntity {
      */
     public void toCancelled() {
         this.statusEnum = RequestStatus.CANCELLED.getCode();
+    }
+
+    /**
+     * 初始化退诊疗负向申请单：待退态（与药/耗负向单口径一致）。
+     */
+    public void initAsRefundNegativeOrder() {
+        this.statusEnum = RequestStatus.CANCELLED.getCode();
+    }
+
+    /**
+     * 退诊疗负向单处方号：在原处方号前加 {@code T} 前缀（与药/耗 BR-MRQ-013 / BR-DR-007 同构）。
+     *
+     * @param sourcePrescriptionNo 原正向诊疗申请处方号
+     */
+    public void markAsRefundFromPrescription(String sourcePrescriptionNo) {
+        if (StringUtils.isEmpty(sourcePrescriptionNo)) {
+            return;
+        }
+        this.prescriptionNo = "T" + sourcePrescriptionNo.trim();
     }
 
     /**

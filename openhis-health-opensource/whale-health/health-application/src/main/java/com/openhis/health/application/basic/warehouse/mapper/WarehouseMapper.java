@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.warehouse.mapper;
 
 import com.openhis.health.application.basic.warehouse.dto.WarehouseDto;
@@ -51,10 +38,11 @@ public interface WarehouseMapper {
     /**
      * 更新请求装配为编辑位置信息命令。
      *
-     * @param request 更新请求
+     * @param request        更新请求
+     * @param organizationId 挂靠机构主键（科室药房等）
      * @return 编辑命令
      */
-    EditLocationInfoCommand toUpdateCommand(UpdateWarehouseRequest request);
+    EditLocationInfoCommand toUpdateCommand(UpdateWarehouseRequest request, Long organizationId);
 
     /**
      * 装配启用位置命令（单 id）。

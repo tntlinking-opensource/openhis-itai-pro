@@ -1,23 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.encountermanage.mapper;
 
-import com.openhis.health.module.common.dto.nursestation.AdmissionVitalSignSubmitDto;
+import com.openhis.health.application.shared.inpatient.AdmissionVitalSignSubmitDto;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.NurseStationQueueDisplayEnrichment;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.NurseStationTaskCountBundle;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.ParticipantDto;
@@ -30,14 +17,14 @@ import com.openhis.health.application.inpatient.nursestation.encountermanage.res
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.PagePatientQueueResponse;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.SavePatientInfoResponse;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.application.shared.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.domain.administration.encounter.command.SaveNurseStationPatientCommand;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
+import com.openhis.whale.core.application.dto.OptionDto;
 import org.springframework.data.domain.Page;
 
-import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -59,13 +46,15 @@ public interface NurseStationEncounterManageMapper {
     /**
      * 住院医师与责任护士实体列表 → 分床下拉初始化响应。
      *
-     * @param doctors 住院医师候选
-     * @param nurses  责任护士候选
+     * @param doctors            住院医师候选
+     * @param nurses             责任护士候选
+     * @param admCondCodeOptions 患者病情术语下拉
      * @return 初始化响应
      */
     LoadAdmissionParticipantInitResponse toLoadAdmissionParticipantInitResponse(
         List<Practitioner> doctors,
-        List<Practitioner> nurses);
+        List<Practitioner> nurses,
+        List<OptionDto> admCondCodeOptions);
 
     /**
      * 列表分页请求 → 住院信息读模型分页入参。

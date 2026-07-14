@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.advice.query;
 
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceDraftBindItemDto;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceDraftLineRequest;
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.DoctorStationAdviceOrderBindRowDto;
@@ -26,8 +13,8 @@ import com.openhis.health.application.outpatient.doctorstation.advice.dto.SaveMe
 import com.openhis.health.application.outpatient.doctorstation.advice.dto.SaveServiceAdviceDraftLinePayload;
 import com.openhis.health.domain.custom.servicedevicetemplate.queries.model.ServiceDeviceTemplateQueryModel;
 import com.openhis.health.domain.custom.servicedevicetemplate.service.ServiceDeviceTemplateQueryService;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.activitydefinition.service.ActivityDefinitionQueryService;
@@ -39,7 +26,7 @@ import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.enums.ServiceDeviceTemplateRangeCode;
 import com.openhis.health.domain.share.enums.ServiceDeviceTemplateTypeCode;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -58,7 +45,7 @@ import java.util.Set;
  * {@code method_code} 术语 code；诊疗来源键为活动定义主键字符串。经
  * {@link ServiceDeviceTemplateQueryService} 查询全院启用态模板，批量解析展示名（A.9.1）。</p>
  *
- * <p>应用层读服务：跨聚合读经域 {@code *QueryService} 与 {@code ProductDefinitionBatchLoader}，
+ * <p>应用层读服务：跨聚合读经域 {@code *QueryService} 与 {@code ProductDefinitionDisplayTerminologyAssembler}，
  * 不直接注入 Repository（B.6.4）。</p>
  */
 @Service
@@ -66,7 +53,7 @@ import java.util.Set;
 public class DoctorStationAdviceOrderBindQueryService {
 
     private final ServiceDeviceTemplateQueryService serviceDeviceTemplateQueryService;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final ActivityDefinitionQueryService activityDefinitionQueryService;
     private final TerminologyOptionLoader terminologyOptionLoader;
 
@@ -107,7 +94,7 @@ public class DoctorStationAdviceOrderBindQueryService {
         Long organizationUnitId
     ) {
         List<DoctorStationAdviceOrderBindRowDto> rows = new ArrayList<>();
-        if (bindType == null || StringUtils.isBlank(sourceItemKey)) {
+        if (bindType == null || StringUtils.isEmpty(sourceItemKey)) {
             // 来源键缺失时不查模板
             return rows;
         }
@@ -140,7 +127,7 @@ public class DoctorStationAdviceOrderBindQueryService {
             if (line == null) {
                 continue;
             }
-            String lineOp = StringUtils.upperCase(StringUtils.trimToEmpty(line.getLineOp()));
+            String lineOp = StringUtils.trimToEmpty(line.getLineOp()).toUpperCase(java.util.Locale.ROOT);
             // DELETE 行不产生新的绑定解析结果
             if (DoctorStationAdviceConstants.LINE_OP_DELETE.equals(lineOp)) {
                 continue;
@@ -174,7 +161,7 @@ public class DoctorStationAdviceOrderBindQueryService {
         Long organizationUnitId
     ) {
         SaveMedicationAdviceDraftLinePayload payload = line.getMedicationPayload();
-        if (payload == null || StringUtils.isBlank(payload.getMethodCode())) {
+        if (payload == null || StringUtils.isEmpty(payload.getMethodCode())) {
             // 未选用法时不触发 USAGE 绑定
             return;
         }
@@ -300,7 +287,7 @@ public class DoctorStationAdviceOrderBindQueryService {
         Long organizationUnitId
     ) {
         List<BindAssemblyRow> rows = new ArrayList<>();
-        if (bindType == null || StringUtils.isBlank(sourceItemKey)) {
+        if (bindType == null || StringUtils.isEmpty(sourceItemKey)) {
             // 来源键缺失时不查模板，避免全表误匹配
             return rows;
         }
@@ -339,7 +326,7 @@ public class DoctorStationAdviceOrderBindQueryService {
         int priority = 1;
         for (int i = 0; i < bound; i++) {
             ServiceDeviceTemplateQueryModel binding = bindings.get(i);
-            if (binding.getDevActId() == null || StringUtils.isBlank(binding.getDevActTable())) {
+            if (binding.getDevActId() == null || StringUtils.isEmpty(binding.getDevActTable())) {
                 // 模板目标主键或表名缺失时跳过，避免返回不可落库行
                 continue;
             }
@@ -365,6 +352,12 @@ public class DoctorStationAdviceOrderBindQueryService {
         return rows;
     }
 
+    /**
+     * 绑定类型 → 模板 typeCode/itemTable 与来源是否用法 code。
+     *
+     * @param bindType 绑定类型业务码
+     * @return 查询上下文；未知类型 empty
+     */
     private Optional<BindQueryContext> resolveBindContext(String bindType) {
         if (DoctorStationAdviceConstants.BIND_TYPE_USAGE.equals(bindType)) {
             return Optional.of(new BindQueryContext(
@@ -384,23 +377,31 @@ public class DoctorStationAdviceOrderBindQueryService {
         return Optional.empty();
     }
 
+    /**
+     * 解析绑定来源项展示名：用法取术语 label，诊疗取活动定义名称。
+     *
+     * @param context           绑定上下文
+     * @param sourceItemKey     来源键
+     * @param methodLabelByCode 用法 code → 展示名
+     * @return 展示名；无法解析则 null
+     */
     private String resolveSourceItemName(
         BindQueryContext context,
         String sourceItemKey,
         Map<String, String> methodLabelByCode
     ) {
-        if (StringUtils.isBlank(sourceItemKey)) {
+        if (StringUtils.isEmpty(sourceItemKey)) {
             return null;
         }
         String key = sourceItemKey.trim();
         if (context.sourceIsMethodCode()) {
             String label = methodLabelByCode.get(key);
-            if (StringUtils.isNotBlank(label)) {
+            if (StringUtils.isNotEmpty(label)) {
                 return label;
             }
             return key;
         }
-        if (StringUtils.isNumeric(key)) {
+        if (StringUtils.isNotEmpty(key) && key.chars().allMatch(Character::isDigit)) {
             Long activityId = Long.valueOf(key);
             List<com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition> activityRows =
                 activityDefinitionQueryService.findAllByIds(List.of(activityId));
@@ -411,25 +412,38 @@ public class DoctorStationAdviceOrderBindQueryService {
         return null;
     }
 
+    /**
+     * 来源项 id 展示：用法绑定返回 null，诊疗绑定解析数字主键。
+     *
+     * @param context       绑定上下文
+     * @param sourceItemKey 来源键
+     * @return 展示用 Long id；用法或非法键则 null
+     */
     private Long resolveSourceItemIdForDisplay(BindQueryContext context, String sourceItemKey) {
         if (context.sourceIsMethodCode()) {
             return null;
         }
-        if (StringUtils.isBlank(sourceItemKey)) {
+        if (StringUtils.isEmpty(sourceItemKey)) {
             return null;
         }
         String key = sourceItemKey.trim();
-        if (StringUtils.isNumeric(key)) {
+        if (StringUtils.isNotEmpty(key) && key.chars().allMatch(Character::isDigit)) {
             return Long.valueOf(key);
         }
         return null;
     }
 
+    /**
+     * 批量加载绑定目标产品/诊疗展示 DTO（去重 table+id）。
+     *
+     * @param bindings 模板绑定行
+     * @return 复合键 → 产品展示 DTO
+     */
     private Map<String, ProductDefinitionDisplayDto> batchLoadTargetProducts(List<ServiceDeviceTemplateQueryModel> bindings) {
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         Set<String> dedupe = new LinkedHashSet<>();
         for (ServiceDeviceTemplateQueryModel binding : bindings) {
-            if (binding.getDevActId() == null || StringUtils.isBlank(binding.getDevActTable())) {
+            if (binding.getDevActId() == null || StringUtils.isEmpty(binding.getDevActTable())) {
                 continue;
             }
             String table = binding.getDevActTable().trim();
@@ -448,9 +462,15 @@ public class DoctorStationAdviceOrderBindQueryService {
         if (lookups.isEmpty()) {
             return new HashMap<>();
         }
-        return productDefinitionBatchLoader.loadAsMap(lookups);
+        return productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
     }
 
+    /**
+     * 绑定目标表是否为产品目录白名单（诊疗/耗材定义）。
+     *
+     * @param table 目标 itemTable
+     * @return 支持为 true
+     */
     private static boolean isSupportedTargetTable(String table) {
         if (TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(table)) {
             return true;
@@ -461,15 +481,29 @@ public class DoctorStationAdviceOrderBindQueryService {
         return false;
     }
 
+    /**
+     * 绑定目标去重键：table + 分隔符 + id。
+     *
+     * @param table    品项表
+     * @param devActId 目标 id
+     * @return table + 分隔符 + id
+     */
     private static String buildTargetDedupeKey(String table, Long devActId) {
         return table + GeneralSharedConstants.PRODUCT_DEFINITION_COMPOSITE_KEY_SEPARATOR + devActId;
     }
 
+    /**
+     * 解析绑定目标展示名称。
+     *
+     * @param binding             模板行
+     * @param targetProductByKey  预加载产品 Map
+     * @return 目标名称；无产品则 null
+     */
     private String resolveTargetItemName(
         ServiceDeviceTemplateQueryModel binding,
         Map<String, ProductDefinitionDisplayDto> targetProductByKey
     ) {
-        if (binding.getDevActId() == null || StringUtils.isBlank(binding.getDevActTable())) {
+        if (binding.getDevActId() == null || StringUtils.isEmpty(binding.getDevActTable())) {
             return null;
         }
         String table = binding.getDevActTable().trim();
@@ -481,11 +515,18 @@ public class DoctorStationAdviceOrderBindQueryService {
         return null;
     }
 
+    /**
+     * 解析绑定目标产品 DTO（供 IF-DOR-23 回填规格等）。
+     *
+     * @param binding             模板行
+     * @param targetProductByKey  预加载产品 Map
+     * @return 产品 DTO；键缺失则 null
+     */
     private ProductDefinitionDisplayDto resolveTargetProductForBind(
         ServiceDeviceTemplateQueryModel binding,
         Map<String, ProductDefinitionDisplayDto> targetProductByKey
     ) {
-        if (binding.getDevActId() == null || StringUtils.isBlank(binding.getDevActTable())) {
+        if (binding.getDevActId() == null || StringUtils.isEmpty(binding.getDevActTable())) {
             return null;
         }
         String table = binding.getDevActTable().trim();

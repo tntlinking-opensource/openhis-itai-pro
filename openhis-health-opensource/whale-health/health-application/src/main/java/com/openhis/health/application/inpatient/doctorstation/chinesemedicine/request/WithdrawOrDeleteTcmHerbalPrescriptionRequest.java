@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.request;
 
@@ -34,12 +35,12 @@ public class WithdrawOrDeleteTcmHerbalPrescriptionRequest {
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
-    /** 动作：WITHDRAW/DELETE。 */
+    /** 动作 WITHDRAW/DELETE。 */
     @NotBlank(message = "action 不能为空")
     @Schema(description = "动作 WITHDRAW/DELETE", requiredMode = Schema.RequiredMode.REQUIRED)
     private String action;
 
-    /** 范围：PRESCRIPTION/LINE。 */
+    /** 范围 PRESCRIPTION/LINE。 */
     @NotBlank(message = "scope 不能为空")
     @Schema(description = "范围 PRESCRIPTION/LINE", requiredMode = Schema.RequiredMode.REQUIRED)
     private String scope;

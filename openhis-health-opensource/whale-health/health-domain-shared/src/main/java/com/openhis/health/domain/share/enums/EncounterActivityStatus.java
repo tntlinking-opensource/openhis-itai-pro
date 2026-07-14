@@ -1,41 +1,20 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 就诊活动状态枚举。
  */
 public enum EncounterActivityStatus implements EnumInterface {
-    /**
-     * PLANNED。
-     */
+    /** 已安排（EncounterActivityStatus，编码 {@code PLANNED}）。 */
     PLANNED(0L, "PLANNED", "已安排", "", 1L),
-    /**
-     * ACTIVE。
-     */
+    /** 活动中（EncounterActivityStatus，编码 {@code ACTIVE}）。 */
     ACTIVE(0L, "ACTIVE", "活动中", "", 2L),
-    /**
-     * RESERVED。
-     */
+    /** 已保留（EncounterActivityStatus，编码 {@code RESERVED}）。 */
     RESERVED(0L, "RESERVED", "已保留", "", 3L),
-    /**
-     * COMPLETED。
-     */
+    /** 已完成（EncounterActivityStatus，编码 {@code COMPLETED}）。 */
     COMPLETED(0L, "COMPLETED", "已完成", "", 4L);
 
     private final Long codeSystemId;
@@ -44,9 +23,7 @@ public enum EncounterActivityStatus implements EnumInterface {
     private final String definition;
     private final Long sortOrder;
 
-    /**
-     * EncounterActivityStatus。
-     */
+    /** 枚举构造：绑定编码系统、持久化 code、展示名与排序。 */
     EncounterActivityStatus(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;
         this.code = code;

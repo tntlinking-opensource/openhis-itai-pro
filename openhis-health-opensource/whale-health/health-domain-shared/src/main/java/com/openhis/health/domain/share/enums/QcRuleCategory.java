@@ -1,45 +1,22 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 质控规则分类。
  */
 public enum QcRuleCategory implements EnumInterface {
-    /**
-     * 完整性。
-     */
+/** 完整性（QcRuleCategory，持久化编码 {@code completeness}）。 */
     COMPLETENESS(0L, "completeness", "完整性", "", 0L),
-    /**
-     * 及时性。
-     */
+/** 及时性（QcRuleCategory，持久化编码 {@code timeliness}）。 */
     TIMELINESS(0L, "timeliness", "及时性", "", 1L),
-    /**
-     * 一致性。
-     */
+/** 一致性（QcRuleCategory，持久化编码 {@code consistency}）。 */
     CONSISTENCY(0L, "consistency", "一致性", "", 2L),
-    /**
-     * 编码。
-     */
+/** 编码（QcRuleCategory，持久化编码 {@code coding}）。 */
     CODING(0L, "coding", "编码", "", 3L),
-    /**
-     * 文书。
-     */
+/** 文书（QcRuleCategory，持久化编码 {@code document}）。 */
     DOCUMENT(0L, "document", "文书", "", 4L);
 
     private final Long codeSystemId;

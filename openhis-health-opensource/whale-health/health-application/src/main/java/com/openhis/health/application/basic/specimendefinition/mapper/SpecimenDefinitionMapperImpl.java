@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.specimendefinition.mapper;
 
 import com.openhis.health.application.basic.specimendefinition.dto.SpecimenDefinitionDto;
@@ -41,6 +28,12 @@ public class SpecimenDefinitionMapperImpl implements SpecimenDefinitionMapper {
 
     private final CodeSystemQueryService codeSystemQueryService;
 
+    /**
+     * 分页列表读模型 → 列表行 DTO。
+     *
+     * @param model 分页行读模型
+     * @return 列表 DTO；model 为 null 时返回 null
+     */
     @Override
     public SpecimenDefinitionDto toDto(SpecimenDefinitionPageItemQueryModel model) {
         if (model == null) {
@@ -53,13 +46,19 @@ public class SpecimenDefinitionMapperImpl implements SpecimenDefinitionMapper {
         dto.setPyStr(model.getPyStr());
         dto.setWbStr(model.getWbStr());
         dto.setTypeEnum(model.getTypeEnum());
-        dto.setTypeEnumText(resolveTypeText(model.getTypeEnum()));
+        dto.setTypeEnumText(codeSystemQueryService.getDisplayByCode(SpecimenType.class, model.getTypeEnum()));
         dto.setStatusEnum(model.getStatusEnum());
-        dto.setStatusEnumText(resolveStatusText(model.getStatusEnum()));
+        dto.setStatusEnumText(codeSystemQueryService.getDisplayByCode(PublicationStatus.class, model.getStatusEnum()));
         dto.setUpdatedAt(model.getUpdatedAt());
         return dto;
     }
 
+    /**
+     * 详情读模型 → 详情 DTO。
+     *
+     * @param model 详情读模型
+     * @return 详情 DTO；model 为 null 时返回 null
+     */
     @Override
     public SpecimenDefinitionDto toDto(SpecimenDefinitionDetailQueryModel model) {
         if (model == null) {
@@ -72,12 +71,18 @@ public class SpecimenDefinitionMapperImpl implements SpecimenDefinitionMapper {
         dto.setPyStr(model.getPyStr());
         dto.setWbStr(model.getWbStr());
         dto.setTypeEnum(model.getTypeEnum());
-        dto.setTypeEnumText(resolveTypeText(model.getTypeEnum()));
+        dto.setTypeEnumText(codeSystemQueryService.getDisplayByCode(SpecimenType.class, model.getTypeEnum()));
         dto.setStatusEnum(model.getStatusEnum());
-        dto.setStatusEnumText(resolveStatusText(model.getStatusEnum()));
+        dto.setStatusEnumText(codeSystemQueryService.getDisplayByCode(PublicationStatus.class, model.getStatusEnum()));
         return dto;
     }
 
+    /**
+     * 关键字检索行 → 下拉 DTO。
+     *
+     * @param model 检索行读模型
+     * @return 检索 DTO；model 为 null 时返回 null
+     */
     @Override
     public SpecimenDefinitionDto toDto(SpecimenDefinitionSearchItemQueryModel model) {
         if (model == null) {
@@ -90,12 +95,19 @@ public class SpecimenDefinitionMapperImpl implements SpecimenDefinitionMapper {
         dto.setPyStr(model.getPyStr());
         dto.setWbStr(model.getWbStr());
         dto.setTypeEnum(model.getTypeEnum());
-        dto.setTypeEnumText(resolveTypeText(model.getTypeEnum()));
+        dto.setTypeEnumText(codeSystemQueryService.getDisplayByCode(SpecimenType.class, model.getTypeEnum()));
         dto.setStatusEnum(model.getStatusEnum());
-        dto.setStatusEnumText(resolveStatusText(model.getStatusEnum()));
+        dto.setStatusEnumText(codeSystemQueryService.getDisplayByCode(PublicationStatus.class, model.getStatusEnum()));
         return dto;
     }
 
+    /**
+     * 创建请求 → 领域新建命令。
+     *
+     * @param request HTTP 创建请求
+     * @return 新建命令
+     * @throws ValidationException 请求体为空时
+     */
     @Override
     public CreateSpecimenDefinitionCommand toCreateCommand(CreateSpecimenDefinitionRequest request) {
         if (request == null) {
@@ -110,6 +122,13 @@ public class SpecimenDefinitionMapperImpl implements SpecimenDefinitionMapper {
         return command;
     }
 
+    /**
+     * 更新请求 → 领域维护命令。
+     *
+     * @param request HTTP 更新请求
+     * @return 维护命令
+     * @throws ValidationException 请求体为空时
+     */
     @Override
     public UpdateSpecimenDefinitionCommand toUpdateCommand(UpdateSpecimenDefinitionRequest request) {
         if (request == null) {
@@ -123,13 +142,5 @@ public class SpecimenDefinitionMapperImpl implements SpecimenDefinitionMapper {
         command.setPyStr(request.getPyStr());
         command.setWbStr(request.getWbStr());
         return command;
-    }
-
-    private String resolveTypeText(String typeEnum) {
-        return codeSystemQueryService.getDisplayByCode(SpecimenType.class, typeEnum);
-    }
-
-    private String resolveStatusText(String statusEnum) {
-        return codeSystemQueryService.getDisplayByCode(PublicationStatus.class, statusEnum);
     }
 }

@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.pharmacy.stocktake.mapper;
 
-import com.openhis.health.module.common.dto.product.ProductDefinitionCatalogEditorHintsDto;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionCatalogEditorHintsDto;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inventory.pharmacy.stocktake.dto.ProductDefinitionItemDto;
 import com.openhis.health.application.inventory.pharmacy.stocktake.dto.PharmacyStocktakeDetailLineDto;
 import com.openhis.health.application.inventory.pharmacy.stocktake.dto.PharmacyStocktakeLineDto;
@@ -44,7 +31,7 @@ import com.openhis.health.application.inventory.pharmacy.stocktake.response.With
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.SupplyCategory;
@@ -64,7 +51,8 @@ import com.openhis.health.domain.workflow.supplyrequest.command.WithdrawApproval
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
@@ -81,14 +69,11 @@ import java.util.Objects;
  * 药房盘点单装配实现（AS-INV-PHA-006-SDD）。
  */
 @Component
+@RequiredArgsConstructor
 public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacyStocktakeMapper {
 
     /** 位置读服务：推导 {@code purposeTypeEnum} 与药房门控。 */
     private final LocationQueryService locationQueryService;
-
-    public InventoryPharmacyStocktakeMapperImpl(LocationQueryService locationQueryService) {
-        this.locationQueryService = locationQueryService;
-    }
 
     /**
      * 将位置实体列表装配为盘点页药房下拉（IF-PHA-ST-01）。
@@ -108,7 +93,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
             }
             Long id = location.getId();
             String label = location.getName();
-            if (StringUtils.isBlank(label)) {
+            if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
             list.add(new OptionDto(id, String.valueOf(id), label));
@@ -129,7 +114,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
             }
             Long id = p.getId();
             String label = p.getName();
-            if (StringUtils.isBlank(label)) {
+            if (StringUtils.isEmpty(label)) {
                 label = String.valueOf(id);
             }
             list.add(new OptionDto(id, String.valueOf(id), label));
@@ -190,14 +175,14 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         }
         LinkedHashMap<String, List<SupplyRequestModel>> byBusNo = new LinkedHashMap<>();
         for (SupplyRequestModel row : detailRows) {
-            if (row == null || StringUtils.isBlank(row.getBusNo())) {
+            if (row == null || StringUtils.isEmpty(row.getBusNo())) {
                 continue;
             }
             String bn = row.getBusNo().trim();
             byBusNo.computeIfAbsent(bn, k -> new ArrayList<>()).add(row);
         }
         for (String busNoRaw : busNoPageOrder) {
-            if (StringUtils.isBlank(busNoRaw)) {
+            if (StringUtils.isEmpty(busNoRaw)) {
                 continue;
             }
             String busNo = busNoRaw.trim();
@@ -260,6 +245,10 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
             PharmacyStocktakeListRowDto dto = new PharmacyStocktakeListRowDto();
             dto.setBusNo(busNo);
             dto.setStatusEnum(head.getStatusEnum());
+            // 驳回态：把供应行 reason 带到列表 rejectReason，供侧栏卡片展示
+            if (SupplyStatus.REJECT.getCode().equals(head.getStatusEnum())) {
+                dto.setRejectReason(head.getReason());
+            }
             dto.setPurposeLocationId(head.getPurposeLocationId());
             dto.setApplicantId(head.getApplicantId());
             dto.setApproverId(head.getApproverId());
@@ -340,6 +329,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         dto.setItemTable(line.getItemTable());
         dto.setItemId(line.getItemId());
         dto.setLotNumber(line.getLotNumber());
+        dto.setTraceNo(line.getTraceNo());
         dto.setExpirationDate(line.getEndTime());
         dto.setUnitCode(line.getUnitCode());
         dto.setProfitLossQuantity(line.getItemQuantity());
@@ -390,6 +380,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
                 item.setOccurrenceTime(line.getOccurrenceTime());
                 item.setReason(null);
                 item.setLotNumber(line.getLotNumber());
+                item.setTraceNo(line.getTraceNo());
                 item.setPrice(line.getPrice());
                 item.setTotalPrice(line.getActualAmount());
                 item.setProfitLossPrice(line.getProfitLossAmount());
@@ -582,7 +573,7 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         item.setApproverId(operatorId);
         item.setApprovalClock(null);
         String mergedReason;
-        if (StringUtils.isBlank(request.getChangeReason())) {
+        if (StringUtils.isEmpty(request.getChangeReason())) {
             mergedReason = request.getChangeReasonCode();
         } else {
             mergedReason = request.getChangeReason();
@@ -658,8 +649,15 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return dto;
     }
 
+    /**
+     * 解析供应类别请求码；未传时回落默认「库存供应」语义。
+     *
+     * @param categoryEnumCode 请求 categoryEnum，可 blank
+     * @return 持久化类别码
+     * @throws IllegalArgumentException 码不在枚举白名单
+     */
     private String resolveSupplyCategoryCode(String categoryEnumCode) {
-        if (StringUtils.isBlank(categoryEnumCode)) {
+        if (StringUtils.isEmpty(categoryEnumCode)) {
             return SupplyCategory.STOCK_SUPPLY.getCode();
         }
         SupplyCategory cat = EnumUtil.fromCode(SupplyCategory.class, categoryEnumCode.trim());
@@ -669,6 +667,13 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return cat.getCode();
     }
 
+    /**
+     * 供应请求行按申请时间降序比较器；申请时间为 null 的排后（列表/详情头选取）。
+     *
+     * @param a 左侧行
+     * @param b 右侧行
+     * @return 比较结果
+     */
     private int compareSupplyModelApplyTimeDescNullsLast(SupplyRequestModel a, SupplyRequestModel b) {
         if (a == null && b == null) {
             return 0;
@@ -697,6 +702,13 @@ public class InventoryPharmacyStocktakeMapperImpl implements InventoryPharmacySt
         return this.compareSupplyModelIdAscNullsLast(a, b);
     }
 
+    /**
+     * 供应请求行按主键升序比较器；主键为 null 的排后（审批时间选取时稳定次序）。
+     *
+     * @param a 左侧行
+     * @param b 右侧行
+     * @return 比较结果
+     */
     private int compareSupplyModelIdAscNullsLast(SupplyRequestModel a, SupplyRequestModel b) {
         if (a == null && b == null) {
             return 0;

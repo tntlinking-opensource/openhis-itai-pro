@@ -1,12 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.position.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -21,23 +16,33 @@ import java.util.List;
 @Data
 public class SaveStaffRequest {
 
+    /** 平台用户主键；新建时可为 null。 */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long userId;
 
+    /** 登录账号。 */
     private String userName;
+    /** 登录密码；新建必填，更新时为空表示不修改。 */
     private String password;
+    /** 用户显示姓名。 */
     private String name;
+    /** 联系邮箱。 */
     private String email;
+    /** 联系电话。 */
     private String phoneNumber;
+    /** 是否启用平台账号。 */
     private Boolean isActive;
 
     /** 平台角色主键列表。 */
     private List<Long> roleIds;
 
+    /** 医务人员主键；与平台用户一对一绑定。 */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long practitionerId;
 
+    /** 性别枚举 code（{@code AdministrativeGender}）。 */
     private String genderEnum;
+    /** 医务人员工号/业务编码。 */
     private String busNo;
 
     /** 出诊科室（{@code DOCTOR}）。 */
@@ -46,7 +51,7 @@ public class SaveStaffRequest {
     /** 可操作药库（{@code WAREHOUSE_ADMIN} → {@code adm_pr_assign.location_id}，{@code adm_location.form_enum=WAREHOUSE}）。 */
     private List<StaffOrgLocationItemDto> warehouseLocationList;
 
-    /** 可操作药房（{@code PHARMACIST} → {@code adm_pr_assign.location_id}，{@code adm_location.form_enum=PHARMACY}）。 */
+    /** 可操作药房/科室药房（{@code PHARMACIST} → {@code adm_pr_assign.location_id}，{@code adm_location.form_enum} 为 PHARMACY 或 DEPARTMENT_PHARMACY）。 */
     private List<StaffOrgLocationItemDto> pharmacyLocationList;
 
     /** 护士管理科室（{@code NURSE}，按 org）。 */

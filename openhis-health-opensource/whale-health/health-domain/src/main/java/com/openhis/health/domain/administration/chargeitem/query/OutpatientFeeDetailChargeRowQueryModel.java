@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.chargeitem.query;
 
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;

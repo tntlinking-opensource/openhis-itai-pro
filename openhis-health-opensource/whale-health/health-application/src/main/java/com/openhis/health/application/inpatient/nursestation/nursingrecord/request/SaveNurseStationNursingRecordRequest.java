@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.nursingrecord.request;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -25,19 +25,19 @@ import java.time.LocalDate;
 })
 public class SaveNurseStationNursingRecordRequest {
 
-    /** 当前选中就诊。 */
+    /** 就诊标识。 */
     @NotNull(message = "就诊标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long encounterId;
 
-    /** 左侧卡片患者 id。 */
+    /** 患者标识。 */
     @NotNull(message = "患者标识不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
-    /** 更新时携带已有主表 id。 */
+    /** 已有主表 id（更新）。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "已有主表 id（更新）")
     private Long vitalSignId;
@@ -48,7 +48,7 @@ public class SaveNurseStationNursingRecordRequest {
     @Schema(description = "记录日期", requiredMode = Schema.RequiredMode.REQUIRED)
     private LocalDate recordDate;
 
-    /** 记录时间（HH:mm 或 HH:mm:ss）。 */
+    /** 记录时间。 */
     @Schema(description = "记录时间", requiredMode = Schema.RequiredMode.REQUIRED)
     private String recordTime;
 
@@ -72,7 +72,7 @@ public class SaveNurseStationNursingRecordRequest {
     @Schema(description = "呼吸")
     private String respiratory;
 
-    /** 血压（如 128/76）。 */
+    /** 血压。 */
     @Schema(description = "血压")
     private String bloodPressure;
 

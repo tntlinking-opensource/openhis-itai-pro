@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.transferout.request;
 
 import com.openhis.health.application.inventory.warehouse.transferout.dto.TransferOutLineDto;
@@ -22,51 +9,56 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
+ * 修订药库调出单请求（IF-WHS-TR-05）。
  *
- * <p>语义上为「同号覆盖草稿」：{@link #busNo} 标识既有出库单；装配层塌缩为 {@link CreateTransferOutRequest} 后复用同一领域创建命令路径。</p>
+ * <p>语义上为「同号覆盖草稿」：{@link #busNo} 标识既有调出单；装配层塌缩为 {@link CreateTransferOutRequest} 后复用同一领域创建命令路径。</p>
  */
 @Getter
 @Setter
 @Accessors(chain = true)
 public class UpdateTransferOutRequest {
-
+    /** 业务单号。 */
     @Schema(description = "业务单号", requiredMode = Schema.RequiredMode.REQUIRED)
     private String busNo;
+
+    /** 源药库。 */
 
     @Schema(description = "源药库", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long sourceLocationId;
 
-    /** 修订后目的位置主键。 */
+    /** 目的位置。 */
     @Schema(description = "目的位置", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long purposeLocationId;
 
-    /** 源位置类型持久化身份；规则同 {@link CreateTransferOutRequest#getSourceTypeEnum()}。 */
+    /** 源位置类型。 */
     @Schema(description = "源位置类型", requiredMode = Schema.RequiredMode.REQUIRED)
     private String sourceTypeEnum;
 
-    /** 目的位置类型持久化身份；规则同 {@link CreateTransferOutRequest#getPurposeTypeEnum()}。 */
+    /** 目的位置类型。 */
     @Schema(description = "目的位置类型", requiredMode = Schema.RequiredMode.REQUIRED)
     private String purposeTypeEnum;
 
-    /** 供应类别持久化身份；规则同 {@link CreateTransferOutRequest#getCategoryEnum()}。 */
+    /** 供应类别。 */
     @Schema(description = "供应类别", requiredMode = Schema.RequiredMode.REQUIRED)
     private String categoryEnum;
 
-    /** 关联上游业务单号；可空。 */
-    @Schema(description = "关联上游单号")
+    /**
+     * 上游业务单号；本期调出单不支持手写关联药房请领（请领下游见药库出库 AS-INV-WHS-003）。
+     * 非空时改单将拒绝（WHS_TR_002）。
+     */
+    @Schema(description = "上游单号（本期勿填请领单号）")
+    /** 上游单号（本期勿填请领单号）。 */
     private String originalBusNo;
 
-    /** 经手人（医务人员主键）；修订与新建同口径。 */
+    /** 经手人 practitionerId。 */
     @Schema(description = "经手人 practitionerId", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long practitionerId;
 
-    /** 全量明细行（子表对齐策略由领域 SDD 约定）。 */
+    /** 明细行。 */
     @Schema(description = "明细行", requiredMode = Schema.RequiredMode.REQUIRED)
     private List<TransferOutLineDto> lines;
 }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
@@ -26,7 +13,7 @@ package com.openhis.health.domain.share.enums;
  */
 public enum ChargeItemEventType implements EnumInterface {
 
-    /** 挂号项目已创建。 */
+/** 挂号项目已创建（ChargeItemEventType，持久化编码 {@code 1}）。 */
     REGISTRATION_CREATED(0L, "1", "挂号项目已创建", "", 1L, false),
     /** 医嘱草稿项目已创建。 */
     ORDER_DRAFT_CREATED(0L, "2", "医嘱草稿项目已创建", "", 2L, false),
@@ -36,9 +23,9 @@ public enum ChargeItemEventType implements EnumInterface {
     ACTIVATED_BY_EXECUTION(0L, "4", "执行激活收费项目", "", 4L, false),
     /** 执行取消收费项目。 */
     EXECUTION_CANCELLED(0L, "5", "执行取消收费项目", "", 5L, false),
-    /** 收费项目已结算。 */
+/** 收费项目已结算（ChargeItemEventType，持久化编码 {@code 6}）。 */
     SETTLED(0L, "6", "收费项目已结算", "", 6L, false),
-    /** 挂号项目已退费。 */
+/** 挂号项目已退费（ChargeItemEventType，持久化编码 {@code 7}）。 */
     REGISTRATION_REFUNDED(0L, "7", "挂号项目已退费", "", 7L, false),
     /** 半退保留链再生收费行已创建（新行 PLANNED，链回源 SETTLED 行）。 */
     PRESERVED_LINE_REGENERATED_CHARGE_CREATED(0L, "8", "半退保留链再生收费行已创建", "", 8L, false),
@@ -119,7 +106,10 @@ public enum ChargeItemEventType implements EnumInterface {
      * @return 整型码值
      */
     public int getIntCode() {
-        return Integer.parseInt(this.code);
+        if (this.sortOrder == null) {
+            return 0;
+        }
+        return this.sortOrder.intValue();
     }
 
     /**
@@ -131,4 +121,3 @@ public enum ChargeItemEventType implements EnumInterface {
         return batchEvent;
     }
 }
-

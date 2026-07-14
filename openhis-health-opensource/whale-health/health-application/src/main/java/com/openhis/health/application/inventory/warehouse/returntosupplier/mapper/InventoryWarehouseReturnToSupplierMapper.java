@@ -1,9 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.returntosupplier.mapper;
 
+import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.LinkableGoodsReceiptListRowDto;
+import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.ReturnToSupplierListRowDto;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.SupplierOptionDto;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.dto.WarehouseOptionDto;
 import com.openhis.health.application.inventory.warehouse.returntosupplier.request.*;
@@ -18,10 +20,7 @@ import com.openhis.health.domain.workflow.supplyrequest.command.RemoveByBusNoCom
 import com.openhis.health.domain.workflow.supplyrequest.command.SubmitApprovalCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.WithdrawApprovalCommand;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.SupplyRequestModel;
-import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import org.springframework.data.domain.Page;
-
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import java.util.List;
 import java.util.Map;
 
@@ -60,20 +59,62 @@ public interface InventoryWarehouseReturnToSupplierMapper {
         List<SupplierOptionDto> supplierOptions);
 
     /**
-     * 将库房单据读模型分页装配为退供应商列表响应。
+     * 按 busNo 顺序聚合供应请求明细为退货列表行 DTO。
      *
-     * @param page 库房单据读模型分页
-     * @return 列表分页响应
+     * @param busNoPageOrder 分页单号顺序
+     * @param detailRows     同页全部明细
+     * @return 聚合列表行
      */
-    PageReturnToSuppliersResponse toPageReturnToSuppliersResponse(Page<WarehouseDocumentDetailQueryModel> page);
+    List<ReturnToSupplierListRowDto> toReturnToSupplierListAggregated(
+        List<String> busNoPageOrder,
+        List<SupplyRequestModel> detailRows);
 
     /**
-     * 将可关联进货单读模型分页装配为选单响应。
+     * 用聚合列表行构建退货单分页响应。
      *
-     * @param page 可关联进货单分页
-     * @return 可关联单据分页响应
+     * @param mergedTotal 去重后总单数
+     * @param pageNo      页码
+     * @param pageSize    页大小
+     * @param records     列表行
+     * @return 分页响应
      */
-    PageLinkableGoodsReceiptsResponse toPageLinkableGoodsReceiptsResponse(Page<WarehouseDocumentDetailQueryModel> page);
+    PageReturnToSuppliersResponse toPageReturnToSuppliersAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<ReturnToSupplierListRowDto> records);
+
+    /**
+     * 用可关联进货单聚合行构建分页响应。
+     *
+     * @param mergedTotal 去重后总单数
+     * @param pageNo      页码
+     * @param pageSize    页大小
+     * @param records     列表行
+     * @return 分页响应
+     */
+    PageLinkableGoodsReceiptsResponse toPageLinkableGoodsReceiptsAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<LinkableGoodsReceiptListRowDto> records);
+
+    /**
+     * 将已同意进货单与可退余量映射为退货预填响应。
+     *
+     * @param inboundLines      进货明细
+     * @param returnableByKey   行键 → 可退余量
+     * @param returnedByKey     行键 → 已退占用量
+     * @param availableByKey    行键 → 源库可用量
+     * @param productByKey      产品读模型
+     * @return 预填响应
+     */
+    GetLinkableGoodsReceiptDetailResponse toGetLinkableGoodsReceiptDetailResponse(
+        List<SupplyRequestModel> inboundLines,
+        Map<String, java.math.BigDecimal> returnableByKey,
+        Map<String, java.math.BigDecimal> returnedByKey,
+        Map<String, java.math.BigDecimal> availableByKey,
+        Map<String, ProductDefinitionDisplayDto> productByKey);
 
     /**
      * 将同号供应请求明细与产品读模型装配为退供应商详情响应。
@@ -231,13 +272,4 @@ public interface InventoryWarehouseReturnToSupplierMapper {
      * @return 删除响应
      */
     RemoveReturnToSupplierResponse toRemoveReturnToSupplierResponse(boolean ok);
-
-    /**
-     * 将产品定义读模型分页装配为退供应商选品分页响应。
-     *
-     * @param page 产品定义读模型分页
-     * @return 选品分页响应
-     */
-    PageProductsForReturnToSupplierResponse toPageProductsForReturnToSupplierResponse(
-        Page<ProductDefinitionDisplayDto> page);
 }

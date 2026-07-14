@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.diagnosis.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -30,11 +17,10 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
-/** 医生站-就诊诊断保存子项。 */
 @Schema(description = "医生站-就诊诊断保存子项")
 public class SaveEncounterDiagnosisChildRequest {
 
-    /** 诊断事实主键；空表示新增。 */
+    /** 诊断事实标识；空=新增。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "诊断事实标识；空=新增")
     private Long conditionId;
@@ -64,7 +50,7 @@ public class SaveEncounterDiagnosisChildRequest {
     @Schema(description = "诊断定义名称", requiredMode = Schema.RequiredMode.REQUIRED)
     private String conditionDefinitionName;
 
-    /** 验证状态；空则服务端默认已确认。 */
+    /** 验证状态整数码；空则按已确认处理。 */
     @Schema(description = "验证状态整数码；空则按已确认处理")
     private Integer verificationStatusEnum;
 
@@ -72,15 +58,15 @@ public class SaveEncounterDiagnosisChildRequest {
     @Schema(description = "医保编码")
     private String ybNo;
 
-    /** 主诊标记：1 主诊断，0 非主诊。 */
+    /** 主诊标记：1=主诊断，0=非主诊断。 */
     @Schema(description = "主诊标记：1=主诊断，0=非主诊断")
     private Integer mainDiagnosisFlag;
 
-    /** 排序号。 */
+    /** 诊断排序号。 */
     @Schema(description = "诊断排序号")
     private Integer diagnosisSortNo;
 
-    /** 医保医疗类别（YbMedType code）；空则服务端默认普通门诊（11）。 */
+    /** 医疗类型代码（YbMedType code；空=普通门诊）。 */
     @Schema(description = "医疗类型代码（YbMedType code；空=普通门诊）")
     private String medicalTypeCode;
 
@@ -88,7 +74,7 @@ public class SaveEncounterDiagnosisChildRequest {
     @Schema(description = "诊断描述")
     private String diagnosisDesc;
 
-    /** 患者疾病诊断类型代码（门诊忽略；服务端固定门诊诊断 code=2）。 */
+    /** 患者疾病诊断类型代码（门诊忽略，固定门诊诊断）。 */
     @Schema(description = "患者疾病诊断类型代码（门诊忽略，固定门诊诊断）")
     private String iptDiseaseTypeCode;
 

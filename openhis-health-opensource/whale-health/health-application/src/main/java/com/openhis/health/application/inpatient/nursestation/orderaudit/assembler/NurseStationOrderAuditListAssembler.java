@@ -1,31 +1,18 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.orderaudit.assembler;
 
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditPatientGroupDto;
 import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderAuditRowDto;
-import com.openhis.health.module.querysupport.nursestation.InpatientNurseStationTcmSupport;
-import com.openhis.health.module.querysupport.nursestation.NurseStationOrderViewListAssembler;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewDisplayContext;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewDisplayCore;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderViewListDetailIndex;
+import com.openhis.health.application.inpatient.nursestation.orderexecute.support.InpatientNurseStationTcmOrchestrator;
+import com.openhis.health.application.inpatient.nursestation.orderaudit.support.NurseStationOrderViewListAssembler;
+import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderViewDisplayContext;
+import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderViewDisplayCore;
+import com.openhis.health.application.inpatient.nursestation.orderaudit.dto.NurseStationOrderViewListDetailIndex;
 import com.openhis.health.domain.medication.medicationrequest.queries.model.MedicationRequestListQueryModel;
-import com.openhis.health.module.querysupport.order.dto.InpatientOrderListSkeleton;
+import com.openhis.health.application.shared.advice.InpatientOrderListSkeleton;
 import com.openhis.health.domain.share.constants.ReadModelOrderTypeConstants;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
 import lombok.RequiredArgsConstructor;
@@ -51,7 +38,7 @@ public class NurseStationOrderAuditListAssembler {
     private final NurseStationOrderViewListAssembler orderViewListAssembler;
 
     /** 中药 Tab 筛选与方级折叠。 */
-    private final InpatientNurseStationTcmSupport inpatientNurseStationTcmSupport;
+    private final InpatientNurseStationTcmOrchestrator inpatientNurseStationTcmOrchestrator;
 
     /**
      * OrderInfo 骨架 + 域明细 → 按就诊分组且组内已排序的列表。
@@ -92,12 +79,12 @@ public class NurseStationOrderAuditListAssembler {
         }
         List<NurseStationOrderAuditPatientGroupDto> groups = new ArrayList<>();
         Map<Long, MedicationRequestListQueryModel> medDetailById =
-            inpatientNurseStationTcmSupport.indexMedDetailById(medByEncounter);
+            inpatientNurseStationTcmOrchestrator.indexMedDetailById(medByEncounter);
         for (Map.Entry<Long, List<NurseStationOrderAuditRowDto>> entry : rowsByEncounter.entrySet()) {
             List<NurseStationOrderAuditRowDto> sorted = this.sortRows(entry.getValue());
             // Asm：中药 Tab 按 prescription_no 折叠为一方一行
             List<NurseStationOrderAuditRowDto> collapsed =
-                inpatientNurseStationTcmSupport.collapseTcmPrescriptionDisplayRows(
+                inpatientNurseStationTcmOrchestrator.collapseTcmPrescriptionDisplayRows(
                     sorted,
                     medDetailById,
                     medicineCategoryTab,
@@ -110,8 +97,8 @@ public class NurseStationOrderAuditListAssembler {
         return groups;
     }
 
-    private static final InpatientNurseStationTcmSupport.TcmPrescriptionRowAccessor<NurseStationOrderAuditRowDto>
-        AUDIT_TCM_ROW_ACCESSOR = new InpatientNurseStationTcmSupport.TcmPrescriptionRowAccessor<>() {
+    private static final InpatientNurseStationTcmOrchestrator.TcmPrescriptionRowAccessor<NurseStationOrderAuditRowDto>
+        AUDIT_TCM_ROW_ACCESSOR = new InpatientNurseStationTcmOrchestrator.TcmPrescriptionRowAccessor<>() {
         @Override
         public Long getRequestId(NurseStationOrderAuditRowDto row) {
             return row.getRequestId();
@@ -204,6 +191,7 @@ public class NurseStationOrderAuditListAssembler {
         line.setTherapyEnum(core.getTherapyEnum());
         line.setTherapyDisplay(core.getTherapyDisplay());
         line.setCategoryEnum(core.getCategoryEnum());
+        line.setOrderKindDisplay(core.getOrderKindDisplay());
         line.setAdviceDisplayName(core.getAdviceDisplayName());
         line.setSpecificationText(core.getSpecificationText());
         line.setDosageDisplay(core.getDosageDisplay());

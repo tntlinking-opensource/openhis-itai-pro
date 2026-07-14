@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.priceadjustment.service;
 
 import com.openhis.health.domain.custom.priceadjustment.command.ApprovePriceAdjustmentCommand;
@@ -55,7 +42,9 @@ import java.util.List;
  * 价格调整写侧领域服务（DM-CUS-011 v2 单据模型）。
  *
  * <p>聚合边界：仅 {@code cus_price_adjustment} 主行 + {@code cus_price_adjustment_detail} 子表。</p>
- * <p>药品耗材为批号多行子表；诊疗为一对一子表仅存调前售价。跨聚合读与锁由应用层编排。</p>
+ * <p>不变量：草稿可编辑、审批态迁移、子表全量对齐；持久化先于调价领域事件（B.14）。</p>
+ * <p>仅注入本聚合 {@link PriceAdjustmentRepository} 与 {@link PriceAdjustmentDetailRepository}；
+ * 跨聚合读价/写价由应用层 {@link com.openhis.health.domain.custom.priceadjustment.support.PriceAdjustmentItemTableSupport} 编排（B.6.4）。</p>
  */
 @Service
 @RequiredArgsConstructor

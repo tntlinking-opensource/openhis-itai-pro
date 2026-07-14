@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.outpatient.doctorstation.chinesemedicine.response;
 
@@ -16,11 +17,15 @@ import java.util.List;
 @Schema(description = "门诊医生站中医 Tab 初始化响应")
 public class InitDoctorStationTcmResponse {
 
-    /** 中药用法下拉（术语 {@code tcm_method_code}，不含西医 {@code method_code}）。 */
+    /** 中药用法下拉。 */
     @Schema(description = "中药用法下拉")
     private List<OptionDto> tcmMethodCodeOptions;
 
-    /** 用药频次下拉（与医嘱 Tab {@code medicationRateOptions} 同源）。 */
+    /** 用药频次下拉。 */
     @Schema(description = "用药频次下拉")
     private List<OptionDto> medicationRateOptions;
+
+    /** 单味特殊煎法下拉。 */
+    @Schema(description = "单味特殊煎法下拉")
+    private List<OptionDto> dosageInstructionOptions;
 }

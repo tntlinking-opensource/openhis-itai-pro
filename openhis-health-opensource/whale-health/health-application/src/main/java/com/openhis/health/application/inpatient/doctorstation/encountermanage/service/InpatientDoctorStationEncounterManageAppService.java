@@ -1,31 +1,17 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.encountermanage.service;
 
-import com.openhis.health.module.common.assembler.inpatient.AdmissionPrimaryDiagnosisAssembler;
-import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayDtoApplier;
-import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayAssembler;
-import com.openhis.health.module.common.assembler.inpatient.InpatientAccountBalanceDisplayResult;
-import com.openhis.health.module.common.assembler.inpatient.InpatientDisplayAccountBalanceAssembler;
-import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
-import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.application.shared.inpatient.AdmissionPrimaryDiagnosisAssembler;
+import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayAssembler;
+import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayDtoApplier;
+import com.openhis.health.application.shared.inpatient.InpatientAccountBalanceDisplayResult;
+import com.openhis.health.application.shared.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.dto.DoctorStationPatientQueueItemDto;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.dto.DoctorStationQueueDisplayEnrichment;
 import com.openhis.health.application.inpatient.doctorstation.encountermanage.mapper.InpatientDoctorStationEncounterManageMapper;
@@ -35,7 +21,7 @@ import com.openhis.health.domain.administration.account.entity.Account;
 import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.patient.queries.model.PatientDetailQueryModel;
@@ -45,15 +31,17 @@ import com.openhis.health.domain.administration.encounter.queries.model.Inpatien
 import com.openhis.health.domain.financial.paymentreconciliation.service.PaymentReconciliationQueryService;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.InpatientDoctorStationConstants;
-import com.openhis.health.domain.share.constants.InpatientNurseStationConstants;
+import com.openhis.health.application.inpatient.nursestation.ATDManager.support.InpatientPatientQueueNursingLevelEnrichAssembler;
+import com.openhis.health.application.inpatient.nursestation.ATDManager.support.dto.InpatientPatientQueueNursingLevelDisplayRow;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -77,7 +65,7 @@ public class InpatientDoctorStationEncounterManageAppService {
     private final CurrentManagedOrganizationIdsResolver managedOrganizationIdsResolver;
     /** 就诊读侧：在院队列分页与优先级批量回填。 */
     private final EncounterQueryService encounterQueryService;
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
     /** 就诊账户读侧：预交金账户批量加载。 */
     private final AccountQueryService accountQueryService;
     /** 收费明细读侧：待结算合计批量加载。 */
@@ -94,6 +82,8 @@ public class InpatientDoctorStationEncounterManageAppService {
     private final AdmissionPrimaryDiagnosisAssembler admissionPrimaryDiagnosisAssembler;
     /** 支付读侧：反结待再结展示模式判定。 */
     private final PaymentReconciliationQueryService paymentReconciliationQueryService;
+    /** 患者队列护理级别只读 enrich（BR-IP-DOR-009）。 */
+    private final InpatientPatientQueueNursingLevelEnrichAssembler inpatientPatientQueueNursingLevelEnrichAssembler;
 
     /**
      * 分页查询住院医生站在院患者队列（IF-IP-DOR-01）。
@@ -104,6 +94,7 @@ public class InpatientDoctorStationEncounterManageAppService {
      */
     public PagePatientQueueResponse pagePatientQueue(PagePatientQueueRequest request) {
         try {
+            // Gate：分页窗口合法且须已选当前科室
             pageWindowGate.requirePositivePageWindow(
                 request,
                 InpatientDoctorStationConstants.EX_IP_DOR_101,
@@ -117,8 +108,9 @@ public class InpatientDoctorStationEncounterManageAppService {
             InpatientEncounterPageQuery pageQuery =
                 inpatientDoctorStationEncounterManageMapper.toInpatientEncounterPageQuery(request);
             PageQueryBinder.bind(request, pageQuery);
+            // Pre：读侧分页拉取在院队列并批量预取账户/费用/护理级别等 enrich 数据
             Page<InpatientEncounterContextQueryModel> page =
-                encounterContextFacade.pageInpatientDoctorStationQueue(pageQuery);
+                EncounterContextReader.pageInpatientDoctorStationQueue(pageQuery);
             Set<Long> pageEncounterIds = new LinkedHashSet<>();
             for (InpatientEncounterContextQueryModel row : page.getContent()) {
                 if (row != null && row.getEncounterId() != null) {
@@ -127,10 +119,16 @@ public class InpatientDoctorStationEncounterManageAppService {
             }
             Map<Long, Account> accountByEncounterId =
                 accountQueryService.mapRegistrationAccountsByEncounterIds(pageEncounterIds);
+            Map<Long, String> contractNoByEncounterId = new HashMap<>();
+            for (Map.Entry<Long, Account> entry : accountByEncounterId.entrySet()) {
+                if (entry.getValue() != null && entry.getValue().getContractNo() != null) {
+                    contractNoByEncounterId.put(entry.getKey(), entry.getValue().getContractNo());
+                }
+            }
             Map<Long, String> priorityEnumByEncounterId =
                 encounterQueryService.mapPriorityEnumByEncounterIds(pageEncounterIds);
             Map<Long, InpatientInfoQueueDisplayAssembler.InpatientQueueDisplayOverlay> displayOverlay =
-                inpatientInfoQueueDisplayAssembler.buildOverlay(page.getContent());
+                inpatientInfoQueueDisplayAssembler.buildOverlay(page.getContent(), contractNoByEncounterId);
             Map<Long, DoctorStationQueueDisplayEnrichment> enrichmentByEncounterId =
                 this.buildDisplayEnrichment(page.getContent());
             Map<Long, BigDecimal> pendingByEncounterId =
@@ -139,6 +137,9 @@ public class InpatientDoctorStationEncounterManageAppService {
                 chargeItemQueryService.mapSettledTotalPriceByEncounterIds(pageEncounterIds);
             Set<Long> reversedPendingResettleEncounterIds =
                 paymentReconciliationQueryService.filterReversedPendingResettleEncounterIds(pageEncounterIds);
+            // Pre：当前页批量解析护理级别展示（BR-IP-DOR-009）
+            Map<Long, InpatientPatientQueueNursingLevelDisplayRow> nursingLevelByEncounterId =
+                inpatientPatientQueueNursingLevelEnrichAssembler.enrichByEncounterIds(pageEncounterIds, LocalDate.now());
             List<DoctorStationPatientQueueItemDto> content = new ArrayList<>();
             for (InpatientEncounterContextQueryModel row : page.getContent()) {
                 // 跳过空行，避免装配脏分页结果。
@@ -187,8 +188,10 @@ public class InpatientDoctorStationEncounterManageAppService {
                         diagnosisSummary,
                         enrichment);
                 InpatientAccountBalanceDisplayDtoApplier.apply(item, accountBalanceDisplay);
+                this.applyNursingLevelDisplay(item, nursingLevelByEncounterId.get(row.getEncounterId()));
                 content.add(item);
             }
+            // Asm：封装分页响应
             return inpatientDoctorStationEncounterManageMapper.toPagePatientQueueResponse(content, page);
         } catch (BusinessException ex) {
             // 业务异常原样上抛，保留 EX-IP-DOR-* 与 ErrorCode 口径。
@@ -200,6 +203,24 @@ public class InpatientDoctorStationEncounterManageAppService {
                 InpatientDoctorStationConstants.EX_IP_DOR_101,
                 "加载失败，请稍后重试");
         }
+    }
+
+    /**
+     * 回填护理级别展示字段至医生站患者列表行（BR-IP-DOR-009）。
+     *
+     * @param item    列表行 DTO
+     * @param nursing 护理级别 enrich 行；无护理时为 null
+     */
+    private void applyNursingLevelDisplay(
+        DoctorStationPatientQueueItemDto item,
+        InpatientPatientQueueNursingLevelDisplayRow nursing) {
+        if (item == null || nursing == null) {
+            return;
+        }
+        item.setNursingLevelServiceRequestId(nursing.getServiceRequestId());
+        item.setNursingLevelActivityId(nursing.getActivityId());
+        item.setNursingLevelName(nursing.getActivityName());
+        item.setNursingLevelStatusEnum(nursing.getStatusEnum());
     }
 
     /**
@@ -254,7 +275,7 @@ public class InpatientDoctorStationEncounterManageAppService {
             List<Location> houses = locationQueryService.listHousesUnderWard(wardId);
             for (Location house : houses) {
                 // 仅索引有业务号的病房，供床位 bus_no 前缀匹配。
-                if (house != null && StringUtils.isNotBlank(house.getBusNo())) {
+                if (house != null && StringUtils.isNotEmpty(house.getBusNo())) {
                     houseIndex.put(house.getBusNo().trim(), house.getName());
                 }
             }
@@ -291,7 +312,7 @@ public class InpatientDoctorStationEncounterManageAppService {
             return null;
         }
         Location bed = locationQueryService.findOptionalById(bedId).orElse(null);
-        if (bed == null || StringUtils.isBlank(bed.getBusNo())) {
+        if (bed == null || StringUtils.isEmpty(bed.getBusNo())) {
             return null;
         }
         String bedBusNo = bed.getBusNo().trim();
@@ -299,7 +320,7 @@ public class InpatientDoctorStationEncounterManageAppService {
         int matchedPrefixLen = 0;
         for (Map.Entry<String, String> entry : houseNameByBusNo.entrySet()) {
             String houseBusNo = entry.getKey();
-            if (StringUtils.isBlank(houseBusNo)) {
+            if (StringUtils.isEmpty(houseBusNo)) {
                 continue;
             }
             String prefix = houseBusNo.trim();

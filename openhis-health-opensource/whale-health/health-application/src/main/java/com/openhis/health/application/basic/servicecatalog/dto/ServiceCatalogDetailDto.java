@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.servicecatalog.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -34,6 +21,7 @@ public class ServiceCatalogDetailDto {
 
     @Schema(description = "主键ID")
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 分类编码。 */
     private Long id;
 
     @Schema(description = "分类编码")
@@ -122,7 +110,7 @@ public class ServiceCatalogDetailDto {
     @Schema(description = "规则ID")
     @JsonSerialize(using = ToStringSerializer.class)
     private Long ruleId;
-    /** 计费规则展示名（字典解析）。 */
+    /** 规则ID。 */
     private String ruleId_dictText;
 
     /** 删除标志。 */
@@ -147,13 +135,17 @@ public class ServiceCatalogDetailDto {
     @Schema(description = "收费项目医保等级")
     private Integer chrgitmLv;
 
+    /** 病案结算类型编码（术语 mr_settlement_type_code）。 */
+    @Schema(description = "病案结算类型编码")
+    private String mrSettlementTypeCode;
+
     /** 允许的角色枚举值。 */
     @Schema(description = "允许的角色枚举值")
     private Integer permittedRoleEnum;
 
-    /** 医保类别编码（med_chrgitm_type 等术语体系）。 */
+    /** 允许的角色枚举值。 */
     private String ybType;
-    /** 医保类别展示名。 */
+    /** 允许的角色枚举值。 */
     private String ybType_dictText;
 
     /** 财务类别编码。 */
@@ -175,4 +167,12 @@ public class ServiceCatalogDetailDto {
     /** 子项。 */
     @Schema(description = "子项")
     private List<ServiceCatalogChildDto> children;
+
+    /** 编辑业务码。 */
+    @Schema(description = "编辑业务码")
+    private String editabilityCode;
+
+    /** 编辑业务码说明。 */
+    @Schema(description = "编辑业务码说明")
+    private String editabilityMessage;
 }

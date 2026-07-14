@@ -1,24 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.orderexecute.dto;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
-import com.openhis.health.module.querysupport.nursestation.dto.NurseStationOrderExecuteBindItemDto;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
@@ -39,7 +25,6 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 医嘱执行写路径槽位。 */
 @Schema(description = "医嘱执行写路径槽位", requiredProperties = {"orderId", "orderType", "planTime", "accountId"})
 public class NurseStationOrderExecuteWriteSlotDto {
 
@@ -62,7 +47,7 @@ public class NurseStationOrderExecuteWriteSlotDto {
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime planTime;
 
-    /** 护士实际执行时刻（IF-IP-EXE-02 必填；不执行接口忽略）。 */
+    /** 护士实际执行时刻。 */
     @Schema(description = "护士实际执行时刻")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     private LocalDateTime actualTime;
@@ -73,9 +58,10 @@ public class NurseStationOrderExecuteWriteSlotDto {
     @NotNull(message = "就诊账户标识不能为空")
     @Schema(description = "就诊默认自费账户主键", required = true)
     @JsonSerialize(using = ToStringSerializer.class)
+    /** 就诊默认自费账户主键。 */
     private Long accountId;
 
-    /** 列表回传的绑定项（执行时按勾选派生写路径）。 */
+    /** 列表回传的绑定项。 */
     @Schema(description = "列表回传的绑定项")
     private List<NurseStationOrderExecuteBindItemDto> bindItems;
 
@@ -85,7 +71,7 @@ public class NurseStationOrderExecuteWriteSlotDto {
     @Schema(description = "中药方内全部药品申请主键（可选，列表 lineRequestIds 回传）")
     private List<Long> lineRequestIds;
 
-    /** 处方号（可选；列表 prescriptionNo 回传，代煎费按方刷新）。 */
+    /** 中药处方号（可选）。 */
     @Schema(description = "中药处方号（可选）")
     private String prescriptionNo;
 }

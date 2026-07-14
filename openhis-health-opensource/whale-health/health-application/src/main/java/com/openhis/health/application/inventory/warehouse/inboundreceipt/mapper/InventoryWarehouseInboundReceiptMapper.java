@@ -1,23 +1,12 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.inboundreceipt.mapper;
 
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.InboundReceiptListRowDto;
+import com.openhis.health.application.inventory.warehouse.inboundreceipt.dto.WarehouseDocumentDetailRowDto;
+import com.openhis.health.application.inventory.warehouse.purchaseorder.dto.PurchaseOrderListRowDto;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.request.AgreeInboundReceiptRequest;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.request.CreateInboundReceiptRequest;
 import com.openhis.health.application.inventory.warehouse.inboundreceipt.request.PageProductsForInboundReceiptRequest;
@@ -30,8 +19,8 @@ import com.openhis.health.application.inventory.warehouse.inboundreceipt.respons
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.health.domain.custom.supplier.queries.model.SupplierListItemQueryModel;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.WarehouseDocumentDetailQueryModel;
 import com.openhis.health.domain.workflow.supplydelivery.command.CreateSupplyDeliveryCommand;
 import com.openhis.health.domain.workflow.supplyrequest.command.AgreeRequestCommand;
@@ -401,4 +390,40 @@ public interface InventoryWarehouseInboundReceiptMapper {
      * @return 可关联单据分页响应
      */
     PageLinkablePurchaseOrdersResponse toPageLinkablePurchaseOrdersResponse(Page<WarehouseDocumentDetailQueryModel> page);
+
+    /**
+     * 将按 {@code busNo} 聚合的订货单列表行装配为可关联选单响应行。
+     *
+     * @param aggregatedRows 订货单聚合行（与 {@code detailLines} 同页）
+     * @param detailLines    同页供应请求明细
+     * @return 可关联订货单列表行（一行一单）
+     */
+    List<WarehouseDocumentDetailRowDto> toLinkablePurchaseOrderRows(
+        List<PurchaseOrderListRowDto> aggregatedRows,
+        List<SupplyRequestModel> detailLines);
+
+    /**
+     * 用按 {@code busNo} 去重后的聚合行构建可关联订货单分页响应（B.10.11）。
+     *
+     * @param mergedTotal 不重复 busNo 总数
+     * @param pageNo      1-based 页码
+     * @param pageSize    页大小
+     * @param records     当前页聚合行
+     * @return 可关联订货单分页响应
+     */
+    PageLinkablePurchaseOrdersResponse toPageLinkablePurchaseOrdersAggregatedResponse(
+        long mergedTotal,
+        int pageNo,
+        int pageSize,
+        List<WarehouseDocumentDetailRowDto> records);
+
+    /**
+     * 将已同意订货单供应请求行装配为进货草稿预填响应。
+     *
+     * @param purchaseOrderLines 订货单写模型行（已校验 AGREE）
+     * @return 进货新建表单预填数据
+     */
+    GetLinkablePurchaseOrderDetailResponse toGetLinkablePurchaseOrderDetailResponse(
+        List<SupplyRequestModel> purchaseOrderLines,
+        Map<String, ProductDefinitionDisplayDto> productByKey);
 }

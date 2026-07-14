@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationdispense.query;
 
 import com.openhis.health.domain.share.query.AbstractPageQuery;
@@ -55,17 +42,34 @@ public class MedicationDispenseSlipPageQuery extends AbstractPageQuery {
      */
     private List<Long> resolvedSupersededForwardMedReqIds;
 
+    /** 发药窗口/药房位置 {@code adm_location.id}（单库位精确匹配；与 {@link #locationIds} 互斥时优先本字段）。 */
     private Long locationId;
+
+    /**
+     * 发药库房库位主键集合（与 IF-OPP-02/IF-IPP-02 队列 {@code location_id IN} 同源）；
+     * 仅在 {@link #locationId} 为空时生效。
+     */
+    private List<Long> locationIds;
+    /** 就诊主键（单就诊 Tab 精确过滤）。 */
     private Long encounterId;
     /** 排除的就诊主键（与 {@code patientId} 联用，历史处方 Tab）。 */
     private Long excludeEncounterId;
+    /** 患者主键（跨就诊查发药记录）。 */
     private Long patientId;
+    /** 药品定义主键 {@code med_medication_definition.id}。 */
     private Long medicationId;
+    /** 发药单/发放状态单值筛选。 */
     private String statusEnum;
+    /** 发放状态多值 IN 筛选。 */
     private List<String> dispenseStatusEnumIn;
+    /** 关联药嘱状态多值 IN 筛选（由预解析 medReqId 收窄）。 */
     private List<String> requestStatusEnumIn;
+    /** true 时仅查门诊药嘱关联的发药行。 */
     private Boolean outpatientMedicationOnly;
+    /** true 时仅查住院药嘱关联的发药行。 */
     private Boolean inpatientMedicationOnly;
+    /** 批号精确匹配。 */
     private String lotNumber;
+    /** 汇总发药单号（住院汇总发药场景）。 */
     private String summaryNo;
 }

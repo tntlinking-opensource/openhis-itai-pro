@@ -1,24 +1,9 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.encounter.service;
 
-import com.openhis.health.domain.administration.account.entity.Account;
-import com.openhis.health.domain.administration.account.service.AccountQueryService;
 import com.openhis.health.domain.share.constants.EncounterConstants;
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.administration.encounter.entity.Encounter;
@@ -26,17 +11,8 @@ import com.openhis.health.domain.administration.encounter.entity.EncounterDiagno
 import com.openhis.health.domain.administration.encounter.entity.EncounterLocation;
 import com.openhis.health.domain.administration.encounter.entity.EncounterParticipant;
 import com.openhis.health.domain.administration.encounter.queries.EncounterProjectionQuery;
-import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.OutpatientDuplicateCheckQuery;
-import com.openhis.health.domain.administration.encounter.queries.ClinicRegisterPageQuery;
-import com.openhis.health.domain.administration.encounter.queries.OutpatientEncounterPageQuery;
-import com.openhis.health.domain.administration.encounter.queries.RegistrationSlipPageQuery;
-import com.openhis.health.domain.administration.encounter.queries.model.ClinicRegisterQueryModel;
-import com.openhis.health.domain.administration.encounter.queries.model.RegistrationSlipQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientAutoRollEncounterQueryModel;
-import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
-import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
-import com.openhis.health.domain.share.query.AbstractPageQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterCompletionCheckQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDetailQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterDiagnosisQueryModel;
@@ -47,6 +23,7 @@ import com.openhis.health.domain.administration.encounter.queries.model.Encounte
 import com.openhis.health.domain.administration.encounter.queries.model.EncounterSimpleQueryModel;
 import com.openhis.health.domain.administration.encounter.queries.model.OpenInpatientLineQuery;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientDuplicateCheckQueryModel;
+import com.openhis.health.domain.administration.encounter.queries.model.PractitionerWorkloadEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.repository.EncounterDiagnosisRepository;
 import com.openhis.health.domain.administration.encounter.repository.EncounterLocationRepository;
 import com.openhis.health.domain.administration.encounter.repository.EncounterParticipantRepository;
@@ -55,12 +32,13 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.share.enums.EncounterActivityStatus;
 import com.openhis.health.domain.share.enums.EncounterClass;
+import com.openhis.health.domain.share.enums.EncounterParticipantRole;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.enums.LocationForm;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -68,6 +46,11 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -76,10 +59,12 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 就诊读侧查询服务。
@@ -87,6 +72,7 @@ import java.util.Optional;
  * <p>职责：加载就诊主档与参与者/位置/诊断等子集查询模型，提供分页投影、完诊校验与门诊重复挂号校验等只读能力。</p>
  *
  * <p>边界：不写库；强一致详情以聚合仓储为准；投影列表中患者姓名等字段若与读模型不一致，以代码内 DOC-CONFLICT 为准。</p>
+ * <p>聚合边界：仅本聚合 {@link EncounterRepository} 及子表仓储。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -96,7 +82,7 @@ public class EncounterQueryService {
     private final EncounterParticipantRepository participantRepository;
     private final EncounterLocationRepository locationRepository;
     private final EncounterDiagnosisRepository diagnosisRepository;
-    private final AccountQueryService accountQueryService;
+    private final EntityManager entityManager;
 
     /**
      * 按主键加载就诊详情查询模型。
@@ -123,7 +109,7 @@ public class EncounterQueryService {
     }
 
     /**
-     * 按主键加载就诊实体（Port/bridge 读路径）；不存在或已软删时 empty。
+     * 按主键加载就诊实体（adapter 读路径）；不存在或已软删时 empty。
      *
      * @param encounterId 就诊标识
      * @return 就诊实体
@@ -217,7 +203,7 @@ public class EncounterQueryService {
      * @return 命中就诊主键列表
      */
     public List<Long> listEncounterIdsByBusNoKeyword(String keyword) {
-        if (StringUtils.isBlank(keyword)) {
+        if (StringUtils.isEmpty(keyword)) {
             return Collections.emptyList();
         }
         String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keyword.trim());
@@ -449,6 +435,12 @@ public class EncounterQueryService {
         return this.collectEncounterIds(this.encounterRepository.findAll(specification));
     }
 
+    /**
+     * 就诊实体集合 → 去重 id 列表；跳过 null 与已软删行。
+     *
+     * @param rows 查询结果
+     * @return 稳定顺序的 encounterId 列表
+     */
     private List<Long> collectEncounterIds(Collection<Encounter> rows) {
         LinkedHashSet<Long> ids = new LinkedHashSet<>();
         if (rows == null) {
@@ -696,10 +688,10 @@ public class EncounterQueryService {
     }
 
     /**
-     * 按业务单号加载就诊实体（Port 读路径）；不存在或已软删时 empty。
+     * 按业务单号加载就诊实体（adapter 读路径）；不存在或已软删时 empty。
      */
     public Optional<Encounter> findOptionalEncounterEntityByBusNo(String busNo) {
-        if (StringUtils.isBlank(busNo)) {
+        if (StringUtils.isEmpty(busNo)) {
             return Optional.empty();
         }
         return encounterRepository.findByBusNo(busNo.trim())
@@ -824,8 +816,8 @@ public class EncounterQueryService {
     /**
      * 校验门诊重复挂号。
      *
-     * <p>规则：同一自然日、同一患者、同一目标科室下，若已存在占用名额的门诊就诊（含诊毕 {@link EncounterStatus#DISCHARGED} 等终态），则视为重复；
-     * {@link EncounterStatus#PLANNED}（未交费）不占名额；{@link EncounterStatus#CANCELLED}（退号）释放名额。</p>
+     * <p>规则：同一自然日、同一患者、同一目标科室下，若已存在占用名额的门诊就诊（含待挂号 {@link EncounterStatus#PLANNED} 及诊毕 {@link EncounterStatus#DISCHARGED} 等），则视为重复；
+     * {@link EncounterStatus#CANCELLED}（退号或撤销待挂号）释放名额。</p>
      *
      * @param query 校验入参
      * @return 校验结果
@@ -840,14 +832,8 @@ public class EncounterQueryService {
         }
         LocalDateTime dayStart = registrationDay.atStartOfDay();
         LocalDateTime dayEndExclusive = registrationDay.plusDays(1).atStartOfDay();
-        List<String> blockingStatuses = Arrays.asList(
-            EncounterStatus.REGISTERED.getCode(),
-            EncounterStatus.TRIAGED.getCode(),
-            EncounterStatus.IN_PROGRESS.getCode(),
-            EncounterStatus.ON_HOLD.getCode(),
-            EncounterStatus.DISCHARGED.getCode(),
-            EncounterStatus.COMPLETED.getCode()
-        );
+        // 待挂号 PLANNED 与已挂号/诊毕等同样占名额，仅 CANCELLED 退号或撤销后释放。
+        List<String> blockingStatuses = EncounterStatus.outpatientDuplicateBlockingStatusCodes();
         List<String> outpatientClasses = Collections.singletonList(EncounterClass.AMB.getCode());
         boolean duplicated = existsPaidOutpatientEncounterForDepartmentOnCalendarDay(
             query.getPatientId(),
@@ -1059,6 +1045,25 @@ public class EncounterQueryService {
     }
 
     /**
+     * 批量解析就诊主键 → 就诊业务号（{@code bus_no}；门诊/住院不限 {@code class_enum}）。
+     *
+     * <p>护士工作量等跨 AMB/IMP 读侧 enrich 经本方法回填；住院-only 列表仍用 {@link #mapBusNoByEncounterIds}。</p>
+     *
+     * @param encounterIds 就诊主键集合；{@code null} 或空时返回空映射
+     * @return 就诊 ID → 就诊号
+     */
+    public Map<Long, String> mapEncounterBusNoByIds(Collection<Long> encounterIds) {
+        Map<Long, String> result = new HashMap<>();
+        List<Encounter> rows = this.listEncounterEntitiesByIds(encounterIds);
+        for (Encounter row : rows) {
+            if (row.getId() != null && StringUtils.isNotEmpty(row.getBusNo())) {
+                result.put(row.getId(), row.getBusNo());
+            }
+        }
+        return result;
+    }
+
+    /**
      * 批量解析住院就诊主键 → 住院业务号（{@code bus_no}）。
      *
      * <p>读模型 {@code encounter_bus_no} 未投影时，登记/预交金列表经本方法回填。</p>
@@ -1083,7 +1088,7 @@ public class EncounterQueryService {
         List<Encounter> rows =
             encounterRepository.findAllByIdInAndClassEnum(distinct, EncounterClass.IMP.getCode());
         for (Encounter row : rows) {
-            if (row.getId() != null && StringUtils.isNotBlank(row.getBusNo())) {
+            if (row.getId() != null && StringUtils.isNotEmpty(row.getBusNo())) {
                 result.put(row.getId(), row.getBusNo());
             }
         }
@@ -1147,7 +1152,7 @@ public class EncounterQueryService {
         List<Encounter> rows =
             encounterRepository.findAllByIdInAndClassEnum(distinct, EncounterClass.IMP.getCode());
         for (Encounter row : rows) {
-            if (row.getId() != null && StringUtils.isNotBlank(row.getPriorityEnum())) {
+            if (row.getId() != null && StringUtils.isNotEmpty(row.getPriorityEnum())) {
                 result.put(row.getId(), row.getPriorityEnum().trim());
             }
         }
@@ -1252,6 +1257,30 @@ public class EncounterQueryService {
     }
 
     /**
+     * 读侧 Criteria 按住院号去重计数（结算已结算队列分页 total 口径）。
+     *
+     * @param specification JPA 规约
+     * @return 不重复 {@code bus_no} 数量
+     */
+    public long countDistinctBusNoEncounterEntities(Specification<Encounter> specification) {
+        CriteriaBuilder cb = this.entityManager.getCriteriaBuilder();
+        CriteriaQuery<Long> cq = cb.createQuery(Long.class);
+        Root<Encounter> root = cq.from(Encounter.class);
+        cq.select(cb.countDistinct(root.get(FieldNameConstants.BUS_NO)));
+        if (specification != null) {
+            Predicate predicate = specification.toPredicate(root, cq, cb);
+            if (predicate != null) {
+                cq.where(predicate);
+            }
+        }
+        Long totalRow = this.entityManager.createQuery(cq).getSingleResult();
+        if (totalRow == null) {
+            return 0L;
+        }
+        return totalRow.longValue();
+    }
+
+    /**
      * 读侧 Criteria 列表（无分页）。
      *
      * @param specification JPA 规约
@@ -1347,7 +1376,10 @@ public class EncounterQueryService {
             return Optional.empty();
         }
         Long wardLocationId = this.mapLastCompletedWardLocationIdByEncounterIds(List.of(encounterId)).get(encounterId);
-        return wardLocationId == null ? Optional.empty() : Optional.of(wardLocationId);
+        if (wardLocationId == null) {
+            return Optional.empty();
+        }
+        return Optional.of(wardLocationId);
     }
 
     /**
@@ -1397,6 +1429,12 @@ public class EncounterQueryService {
         return wardLocationIdByEncounterId;
     }
 
+    /**
+     * 去重非 null 主键；保持输入迭代顺序。
+     *
+     * @param ids 原始 id 集合
+     * @return LinkedHashSet
+     */
     private LinkedHashSet<Long> distinctNonNullIds(Collection<Long> ids) {
         LinkedHashSet<Long> distinct = new LinkedHashSet<>();
         if (ids == null) {
@@ -1442,11 +1480,11 @@ public class EncounterQueryService {
      *
      * <p>状态含 {@link EncounterStatus#IN_PROGRESS}、{@link EncounterStatus#ON_HOLD}、
      * {@link EncounterStatus#COMPLETED}（已结算待清床）；排除 {@link EncounterStatus#DISCHARGED}。
-     * 须存在激活床位轨迹（{@code form_enum=BED}）。账户经 {@link AccountQueryService} 批量解析。</p>
+     * 须存在激活床位轨迹（{@code form_enum=BED}）。账户 id 由 querysupport 经 Account QS 补齐。</p>
      *
-     * @return 滚费候选就诊列表；无命中时空列表
+     * @return 滚费候选就诊列表（不含 accountId）；无命中时空列表
      */
-    public List<InpatientAutoRollEncounterQueryModel> listInpatientAutoRollEncounterContexts() {
+    public List<InpatientAutoRollEncounterQueryModel> listInpatientAutoRollEncounterBaseContexts() {
         // Pre：加载未清床 IMP 候选（含已结算待清床的 COMPLETED）。
         Specification<Encounter> specification = (root, criteriaQuery, cb) -> cb.and(
             cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
@@ -1482,17 +1520,34 @@ public class EncounterQueryService {
             if (!LocationForm.BED.getCode().equals(locationRow.getFormEnum())) {
                 continue;
             }
-            // 同一就诊仅保留首条床位轨迹，滚费落账不依赖具体床位切换次序。
             if (!bedLocationByEncounterId.containsKey(locationRow.getEncounterId())) {
                 bedLocationByEncounterId.put(locationRow.getEncounterId(), locationRow.getLocationId());
+            }
+        }
+        // Pre：首次分床时刻取全部 BED 轨迹最早 start_time（转床不改就诊 start_time，亦不替代本锚点）。
+        Map<Long, LocalDateTime> bedAssignedAtByEncounterId = new HashMap<>();
+        List<EncounterLocation> allLocations = this.locationRepository.findAllByEncounterIdIn(
+            bedLocationByEncounterId.keySet());
+        for (EncounterLocation locationRow : allLocations) {
+            if (locationRow == null || locationRow.getEncounterId() == null) {
+                continue;
+            }
+            if (!LocationForm.BED.getCode().equals(locationRow.getFormEnum())) {
+                continue;
+            }
+            LocalDateTime startTime = locationRow.getStartTime();
+            if (startTime == null) {
+                continue;
+            }
+            Long encounterId = locationRow.getEncounterId();
+            LocalDateTime existing = bedAssignedAtByEncounterId.get(encounterId);
+            if (existing == null || startTime.isBefore(existing)) {
+                bedAssignedAtByEncounterId.put(encounterId, startTime);
             }
         }
         if (bedLocationByEncounterId.isEmpty()) {
             return Collections.emptyList();
         }
-        // Pre：批量解析默认个人现金账户，供滚费 Charge 落账 accountId。
-        Map<Long, Account> accountByEncounterId =
-            this.accountQueryService.mapRegistrationAccountsByEncounterIds(bedLocationByEncounterId.keySet());
         List<InpatientAutoRollEncounterQueryModel> models = new ArrayList<>();
         for (Long encounterId : bedLocationByEncounterId.keySet()) {
             Encounter encounter = encounterById.get(encounterId);
@@ -1504,14 +1559,129 @@ public class EncounterQueryService {
             model.setPatientId(encounter.getPatientId());
             model.setOrganizationId(encounter.getOrganizationId());
             model.setStartTime(encounter.getStartTime());
+            model.setBedAssignedAt(bedAssignedAtByEncounterId.get(encounterId));
             model.setStatusEnum(encounter.getStatusEnum());
             model.setBedLocationId(bedLocationByEncounterId.get(encounterId));
-            Account account = accountByEncounterId.get(encounterId);
-            if (account != null) {
-                model.setAccountId(account.getId());
-            }
             models.add(model);
         }
         return models;
+    }
+
+    /**
+     * 工作量统计：按就诊类别与挂号科室集合解析候选就诊 id（DM-ADM-002 §6.2.30）。
+     *
+     * @param encounterClassCode 就诊类别存储码（AMB / IMP）
+     * @param organizationIds    挂号科室 id 集合
+     * @return 就诊主键列表；参数无效时返回空列表
+     */
+    public List<Long> listEncounterIdsForPractitionerWorkloadScope(
+        String encounterClassCode,
+        Collection<Long> organizationIds) {
+        if (StringUtils.isEmpty(encounterClassCode) || organizationIds == null || organizationIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Specification<Encounter> specification = (root, criteriaQuery, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(root.get(FieldNameConstants.CLASS_ENUM), encounterClassCode),
+            root.get(FieldNameConstants.ORGANIZATION_ID).in(organizationIds));
+        List<Long> encounterIds = new ArrayList<>();
+        for (Encounter encounter : encounterRepository.findAll(specification)) {
+            if (encounter != null && encounter.getId() != null) {
+                encounterIds.add(encounter.getId());
+            }
+        }
+        return encounterIds;
+    }
+
+    /**
+     * 护士工作量：按就诊类别解析该域全部就诊 id（无科室收窄；DM-ADM-002 §6.2.32；AS-RPT-002）。
+     *
+     * <p>全表扫描口径与 AS-RPT-001 科室医生工作量一致；数据量过大时由应用层或后续索引优化收口。</p>
+     *
+     * @param encounterClassCode 就诊类别存储码（AMB / IMP）
+     * @return 就诊主键列表；参数无效时返回空列表
+     */
+    public List<Long> listEncounterIdsForNurseWorkloadScope(String encounterClassCode) {
+        if (StringUtils.isEmpty(encounterClassCode)) {
+            return Collections.emptyList();
+        }
+        Specification<Encounter> specification = (root, criteriaQuery, cb) -> cb.and(
+            cb.isFalse(root.get(FieldNameConstants.IS_DELETED)),
+            cb.equal(root.get(FieldNameConstants.CLASS_ENUM), encounterClassCode));
+        List<Long> encounterIds = new ArrayList<>();
+        for (Encounter encounter : encounterRepository.findAll(specification)) {
+            if (encounter != null && encounter.getId() != null) {
+                encounterIds.add(encounter.getId());
+            }
+        }
+        return encounterIds;
+    }
+
+    /**
+     * 批量加载工作量挂号号源分组所需的就诊上下文（DM-ADM-002 §6.2.31）。
+     *
+     * @param encounterIds 就诊主键集合
+     * @return encounterId → 上下文；未命中 id 不包含在 map 中
+     */
+    public Map<Long, PractitionerWorkloadEncounterContextQueryModel> mapPractitionerWorkloadEncounterContextByIds(
+        Collection<Long> encounterIds) {
+        Map<Long, PractitionerWorkloadEncounterContextQueryModel> result = new HashMap<>();
+        if (encounterIds == null || encounterIds.isEmpty()) {
+            return result;
+        }
+        Set<Long> distinctIds = new LinkedHashSet<>();
+        for (Long encounterId : encounterIds) {
+            if (encounterId != null) {
+                distinctIds.add(encounterId);
+            }
+        }
+        if (distinctIds.isEmpty()) {
+            return result;
+        }
+        for (Encounter encounter : encounterRepository.findAllById(distinctIds)) {
+            if (encounter == null || encounter.getId() == null || Boolean.TRUE.equals(encounter.getIsDeleted())) {
+                continue;
+            }
+            PractitionerWorkloadEncounterContextQueryModel model = new PractitionerWorkloadEncounterContextQueryModel();
+            model.setEncounterId(encounter.getId());
+            model.setOrganizationId(encounter.getOrganizationId());
+            model.setServiceTypeId(encounter.getServiceTypeId());
+            model.setStatusEnum(encounter.getStatusEnum());
+            model.setClassEnum(encounter.getClassEnum());
+            result.put(encounter.getId(), model);
+        }
+        return result;
+    }
+
+    /**
+     * 在候选就诊中筛选活动 {@code REGISTRATION_DOCTOR} 为指定医师的就诊（AS-RPT-001 BR-RPT-WKL-005）。
+     *
+     * @param candidateEncounterIds 候选就诊
+     * @param practitionerId        医师主键
+     * @return 命中就诊 id 集合；{@code practitionerId} 为空时返回空集合
+     */
+    public Set<Long> filterEncounterIdsByActiveRegistrationDoctor(
+        Collection<Long> candidateEncounterIds,
+        Long practitionerId) {
+        if (practitionerId == null || candidateEncounterIds == null || candidateEncounterIds.isEmpty()) {
+            return Collections.emptySet();
+        }
+        List<EncounterParticipant> participants = participantRepository.findAllByEncounterIdInAndStatusEnum(
+            candidateEncounterIds, EncounterActivityStatus.ACTIVE.getCode());
+        Set<Long> matched = new HashSet<>();
+        String registrationDoctorRole = EncounterParticipantRole.REGISTRATION_DOCTOR.getCode();
+        for (EncounterParticipant participant : participants) {
+            if (participant == null || participant.getEncounterId() == null) {
+                continue;
+            }
+            // 仅 REGISTRATION_DOCTOR 角色参与挂号医生收窄
+            if (!registrationDoctorRole.equals(participant.getRoleCode())) {
+                continue;
+            }
+            if (practitionerId.equals(participant.getPractitionerId())) {
+                matched.add(participant.getEncounterId());
+            }
+        }
+        return matched;
     }
 }

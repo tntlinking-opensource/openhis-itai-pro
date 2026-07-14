@@ -1,25 +1,12 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.pharmacy.returnmedicine.service;
 
-import com.openhis.health.module.common.validator.CurrentManagedLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.validator.CurrentManagedLocationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.assembler.OutpatientReturnMedicinePatientQueueAssembler;
 import com.openhis.health.application.outpatient.pharmacy.returnmedicine.mapper.OutpatientPharmacyReturnMedicineMapper;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
@@ -35,11 +22,9 @@ import com.openhis.health.application.outpatient.pharmacy.returnmedicine.respons
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemQueryService;
-import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
-import com.openhis.health.domain.custom.tracenumberrecord.command.AppendTraceRecordsCommand;
-import com.openhis.health.domain.custom.tracenumberrecord.service.TraceNumberRecordDomainService;
+import com.openhis.health.application.shared.tracenumber.TraceNumberDispenseTraceOrchestrator;
 import com.openhis.health.domain.medication.medicationdispense.command.DeclinePendingRefundMedicationDispenseCommand;
 import com.openhis.health.domain.medication.medicationdispense.command.RefundDispensedMedicationCommand;
 import com.openhis.health.domain.medication.medicationdispense.entity.MedicationDispense;
@@ -49,35 +34,31 @@ import com.openhis.health.domain.medication.medicationdispense.service.Medicatio
 import com.openhis.health.domain.medication.medicationdispense.service.MedicationDispenseQueryService;
 import com.openhis.health.domain.medication.medicationrequest.service.MedicationRequestDomainService;
 import com.openhis.health.domain.administration.encounter.service.EncounterQueryService;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.module.querysupport.pharmacy.PharmacyEncounterQueueLoader;
-import com.openhis.health.module.querysupport.pharmacy.ReturnMedicineDetailLoader;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.outpatient.pharmacy.returnmedicine.support.PharmacyReturnEncounterQueueLoader;
+import com.openhis.health.application.outpatient.pharmacy.returnmedicine.support.ReturnMedicineDetailLoader;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.ReturnMedicineDetailReadRow;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.ReturnMedicinePatientQueueRow;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionDisplaySupport;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.administration.product.support.ProductDefinitionDisplaySupport;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
-import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.MedicationCommonConstants;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.ChargeItemStatus;
 import com.openhis.health.domain.share.enums.DispenseStatus;
-import com.openhis.health.domain.share.enums.LocationForm;
-import com.openhis.health.domain.share.enums.TraceDirection;
-import com.openhis.health.domain.share.enums.TraceNumberRecordOperationType;
 import com.openhis.health.domain.workflow.inventoryitem.command.IncreaseQuantityCommand;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemDomainService;
 import com.openhis.health.domain.workflow.inventoryitem.service.InventoryItemQueryService;
 import com.openhis.health.domain.workflow.inventoryitem.support.MedicationProductQuantityToSplitUnitConverter;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.health.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
-import com.openhis.health.integration.insurance.inventory.command.InventoryUploadAfterReturnCommand;
+import com.openhis.health.infrastructure.integration.insurance.inventory.InventoryThirdPartyUploadExtension;
+import com.openhis.health.infrastructure.integration.insurance.inventory.ExtensionIn.InventoryUploadAfterReturnExtensionIn;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -109,19 +90,18 @@ public class OutpatientPharmacyReturnMedicineAppService {
     private final CurrentPractitionerResolver currentPractitionerResolver;
     private final CurrentManagedLocationIdsResolver managedLocationIdsResolver;
     private final OrganizationQueryService organizationQueryService;
-    private final LocationQueryService locationQueryService;
     private final EncounterQueryService encounterQueryService;
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
     private final ChargeItemQueryService chargeItemQueryService;
     private final MedicationDispenseQueryService medicationDispenseQueryService;
     private final ReturnMedicineDetailLoader returnMedicineDetailLoader;
-    private final PharmacyEncounterQueueLoader pharmacyEncounterQueueLoader;
+    private final PharmacyReturnEncounterQueueLoader pharmacyReturnEncounterQueueLoader;
     private final MedicationDispenseDomainService medicationDispenseDomainService;
     private final MedicationRequestDomainService medicationRequestDomainService;
     private final InventoryItemDomainService inventoryItemDomainService;
     private final InventoryItemQueryService inventoryItemQueryService;
-    private final TraceNumberRecordDomainService traceNumberRecordDomainService;
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final TraceNumberDispenseTraceOrchestrator traceNumberDispenseTraceOrchestrator;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
     private final OutpatientPharmacyReturnMedicineMapper returnMedicineMapper;
     private final OutpatientReturnMedicinePatientQueueAssembler outpatientReturnMedicinePatientQueueAssembler;
 
@@ -172,10 +152,10 @@ public class OutpatientPharmacyReturnMedicineAppService {
                 query.setLocationIds(pharmacyLocationIds);
             }
             Page<Long> encounterIdPage =
-                this.pharmacyEncounterQueueLoader.pageEncounterIdsForOutpatientPharmacyReturn(query);
+                this.pharmacyReturnEncounterQueueLoader.pageEncounterIdsForOutpatientPharmacyReturn(query);
             List<Long> encounterIds = encounterIdPage.getContent();
             List<OutpatientEncounterContextQueryModel> infos =
-                this.encounterContextFacade.listOutpatientContextsByEncounterIdsOrdered(encounterIds);
+                this.EncounterContextReader.listOutpatientContextsByEncounterIdsOrdered(encounterIds);
             Map<Long, String> refundCodeByEncounter =
                 this.medicationDispenseQueryService.mapAggregatedRefundStatusCodeByEncounterIds(encounterIds);
             List<ReturnMedicinePatientQueueRow> rows =
@@ -205,9 +185,13 @@ public class OutpatientPharmacyReturnMedicineAppService {
             if (request == null || request.getEncounterId() == null) {
                 throw new BusinessException(ErrorCodeConstants.EX_PHA_002_101_LOAD_FAILED, "encounterId 不能为空");
             }
-            this.encounterContextFacade.mustGetOutpatientContextByEncounterId(request.getEncounterId());
+            this.EncounterContextReader.mustGetOutpatientContextByEncounterId(request.getEncounterId());
             // Pre：加载退药明细读模型行。
             ReturnMedicineDetailQuery query = this.returnMedicineMapper.toReturnMedicineDetailQuery(request);
+            List<Long> pharmacyLocationIds = this.managedLocationIdsResolver.listManagedLocationIdsOrEmpty();
+            if (!pharmacyLocationIds.isEmpty()) {
+                query.setLocationIds(pharmacyLocationIds);
+            }
             List<ReturnMedicineDetailReadRow> rows = this.returnMedicineDetailLoader.listReturnMedicineDetails(query);
             // Pre：按原药嘱 service_id 汇总应退金额。
             this.applyChargeTotalPriceByOriginRequestId(request.getEncounterId(), rows);
@@ -249,8 +233,9 @@ public class OutpatientPharmacyReturnMedicineAppService {
         List<RefundDispensedMedicationCommand.Item> medRefundItems = new ArrayList<>();
         List<DeclinePendingRefundMedicationDispenseCommand.Item> medDeclineItems = new ArrayList<>();
         LinkedHashSet<Long> medRequestIds = new LinkedHashSet<>();
-        List<AppendTraceRecordsCommand.AppendTraceRecordItemCommand> traceItems = new ArrayList<>();
+        List<MedicationDispense> confirmedDispenses = new ArrayList<>();
         Map<Long, BigDecimal> inventoryIncreaseMerged = new HashMap<>();
+        Map<Long, ProductDefinitionDisplayDto> productByMedicationId = new HashMap<>();
         List<Long> confirmedDispenseIds = new ArrayList<>();
         Long encounterIdForUpload = null;
 
@@ -278,7 +263,8 @@ public class OutpatientPharmacyReturnMedicineAppService {
                 it.setReasonText(request.getReason());
                 medRefundItems.add(it);
                 confirmedDispenseIds.add(md.getId());
-                this.collectMedicationTraceAndInventory(md, traceItems, inventoryIncreaseMerged);
+                confirmedDispenses.add(md);
+                this.collectMedicationInventory(md, inventoryIncreaseMerged, productByMedicationId);
             } else {
                 DeclinePendingRefundMedicationDispenseCommand.Item it = new DeclinePendingRefundMedicationDispenseCommand.Item();
                 it.setId(md.getId());
@@ -314,12 +300,8 @@ public class OutpatientPharmacyReturnMedicineAppService {
         }
 
         if (confirm) {
-            if (!traceItems.isEmpty()) {
-                AppendTraceRecordsCommand traceCmd = new AppendTraceRecordsCommand();
-                traceCmd.setOperatorId(operatorId);
-                traceCmd.setItems(traceItems);
-                this.traceNumberRecordDomainService.appendTraceRecords(traceCmd);
-            }
+            traceNumberDispenseTraceOrchestrator.recordReturnInLines(
+                confirmedDispenses, operatorId, productByMedicationId);
             if (!inventoryIncreaseMerged.isEmpty()) {
                 IncreaseQuantityCommand inc = new IncreaseQuantityCommand();
                 inc.setOperatorId(operatorId);
@@ -340,9 +322,11 @@ public class OutpatientPharmacyReturnMedicineAppService {
         resp.setFailedItems(new ArrayList<>());
         if (confirm) {
             resp.setMessage(MedicationCommonConstants.OUTPATIENT_PHARMACY_RETURN_CONFIRM_SUCCESS_MESSAGE);
-            mergeMedicareUploadWarning(
-                resp,
-                tryUploadMedicareInventoryAfterReturn(request, encounterIdForUpload, confirmedDispenseIds));
+            String medicareUploadWarning =
+                tryUploadMedicareInventoryAfterReturn(request, encounterIdForUpload, confirmedDispenseIds);
+            if (StringUtils.isNotEmpty(medicareUploadWarning)) {
+                resp.setMessage(medicareUploadWarning);
+            }
         } else {
             resp.setMessage(MedicationCommonConstants.OUTPATIENT_PHARMACY_RETURN_DECLINE_SUCCESS_MESSAGE);
         }
@@ -364,7 +348,7 @@ public class OutpatientPharmacyReturnMedicineAppService {
         }
         try {
             if (inventoryUploadExtension.isEnabled()) {
-                InventoryUploadAfterReturnCommand uploadCommand = new InventoryUploadAfterReturnCommand()
+                InventoryUploadAfterReturnExtensionIn uploadCommand = new InventoryUploadAfterReturnExtensionIn()
                     .setEncounterId(encounterId)
                     .setDispenseIds(dispenseIds);
                 inventoryUploadExtension.uploadAfterReturn(uploadCommand);
@@ -380,13 +364,12 @@ public class OutpatientPharmacyReturnMedicineAppService {
         return null;
     }
 
-    private static void mergeMedicareUploadWarning(ConfirmMedicineReturnResponse response, String warningMessage) {
-        if (response == null || StringUtils.isBlank(warningMessage)) {
-            return;
-        }
-        response.setMessage(warningMessage);
-    }
-
+    /**
+     * IF-PHA-002-01 退药患者队列分页入参 Gate：校正 pageNo/pageSize 合法区间。
+     *
+     * @param request 分页请求；pageSize 缺省 10、上限 100
+     * @throws BusinessException EX_PHA_002_101 pageNo/pageSize 非法
+     */
     private void validatePageReturnPatientRequest(PageReturnPatientRequest request) {
         if (request.getPageNo() == null || request.getPageNo() < 1) {
             throw new BusinessException(ErrorCodeConstants.EX_PHA_002_101_LOAD_FAILED, "pageNo 必须大于等于 1");
@@ -402,6 +385,12 @@ public class OutpatientPharmacyReturnMedicineAppService {
         }
     }
 
+    /**
+     * IF-PHA-002-03 确认/拒绝退药写路径 Pre：校验明细非空、confirmType 及拒绝原因。
+     *
+     * @param request 退药确认请求
+     * @throws BusinessException EX_PHA_002_301/302 请求或拒绝原因不合法
+     */
     private void validateConfirmMedicineReturnRequest(ConfirmMedicineReturnRequest request) {
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.EX_PHA_002_301_ITEMS_EMPTY, "请求不能为空");
@@ -409,17 +398,24 @@ public class OutpatientPharmacyReturnMedicineAppService {
         if (request.getItems() == null || request.getItems().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.EX_PHA_002_301_ITEMS_EMPTY, "请选择要退药的药品");
         }
-        if (StringUtils.isBlank(request.getConfirmType())) {
+        if (StringUtils.isEmpty(request.getConfirmType())) {
             throw new BusinessException(ErrorCodeConstants.EX_PHA_002_301_ITEMS_EMPTY, "confirmType 不能为空");
         }
         boolean decline =
             MedicationCommonConstants.OUTPATIENT_PHARMACY_RETURN_CONFIRM_TYPE_DECLINE.equalsIgnoreCase(
                 request.getConfirmType().trim());
-        if (decline && StringUtils.isBlank(request.getReason())) {
+        if (decline && StringUtils.isEmpty(request.getReason())) {
             throw new BusinessException(ErrorCodeConstants.EX_PHA_002_302_DECLINE_REASON_REQUIRED, "拒绝退药须填写原因");
         }
     }
 
+    /**
+     * 退药写路径 Gate：发放单须处于待退药态，已退/已拒绝/其它态均阻断。
+     *
+     * @param status     发放单 dispense_status 枚举
+     * @param dispenseId 发放单主键（异常消息回显）
+     * @throws BusinessException EX_PHA_002_201/202 状态不允许或已关闭
+     */
     private void assertPendingRefundDispense(DispenseStatus status, Long dispenseId) {
         if (status == null) {
             throw new BusinessException(ErrorCodeConstants.EX_PHA_002_201_STATUS_NOT_ALLOWED, "发放单状态缺失");
@@ -433,6 +429,12 @@ public class OutpatientPharmacyReturnMedicineAppService {
         }
     }
 
+    /**
+     * 解析退药应退数量：优先 dispense_quantity，回落 quantity，取绝对值。
+     *
+     * @param md 发放单
+     * @return 非负数量；两字段皆空时 0
+     */
     private BigDecimal resolveRefundQuantity(MedicationDispense md) {
         BigDecimal q = md.getDispenseQuantity();
         if (q == null) {
@@ -444,49 +446,23 @@ public class OutpatientPharmacyReturnMedicineAppService {
         return q.abs();
     }
 
-    private void collectMedicationTraceAndInventory(
+    /**
+     * 按批号汇总退药回补库存：换算拆零量并合并同一 inventory_item 增量。
+     *
+     * @param md                         待退发放单（须含 lot_number）
+     * @param inventoryIncreaseMerged    库存项 → 回补拆零量累加表（写路径就地变更）
+     * @param productByMedicationId      药品定义缓存，避免重复批量加载
+     * @throws BusinessException EX_PHA_002_203 定义缺失或退库数量非法
+     */
+    private void collectMedicationInventory(
         MedicationDispense md,
-        List<AppendTraceRecordsCommand.AppendTraceRecordItemCommand> traceItems,
-        Map<Long, BigDecimal> inventoryIncreaseMerged
+        Map<Long, BigDecimal> inventoryIncreaseMerged,
+        Map<Long, ProductDefinitionDisplayDto> productByMedicationId
     ) {
-        if (StringUtils.isNotBlank(md.getTraceNo())) {
-            for (String part : md.getTraceNo().split(GeneralSharedConstants.COMMA)) {
-                String traceNo = part.trim();
-                if (traceNo.isEmpty()) {
-                    continue;
-                }
-                AppendTraceRecordsCommand.AppendTraceRecordItemCommand it =
-                    new AppendTraceRecordsCommand.AppendTraceRecordItemCommand();
-                it.setItemTable(TableNameConstants.MED_MEDICATION_DEFINITION);
-                it.setItemId(md.getMedicationId());
-                it.setLocationTypeEnum(LocationForm.PHARMACY.getCode());
-                it.setLocationId(md.getLocationId());
-                it.setLocationStoreId(null);
-                it.setLotNumber(md.getLotNumber());
-                it.setTraceNo(traceNo);
-                it.setStatusEnum(TraceDirection.IN.getCode());
-                it.setUnitCode(md.getUnitCode());
-                it.setOperationType(TraceNumberRecordOperationType.MEDICATION_RETURN_IN.getCode());
-                it.setBusNo(md.getBusNo());
-                traceItems.add(it);
-            }
-        }
-        if (StringUtils.isBlank(md.getLotNumber())) {
+        if (StringUtils.isEmpty(md.getLotNumber())) {
             return;
         }
-        ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
-        lookup.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
-        lookup.setProductDefinitionId(md.getMedicationId());
-        List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
-        lookups.add(lookup);
-        Map<String, ProductDefinitionDisplayDto> productByKey =
-            this.productDefinitionBatchLoader.loadAsMap(lookups);
-        String key = ProductDefinitionKeyUtil.buildCompositeKey(
-            TableNameConstants.MED_MEDICATION_DEFINITION, md.getMedicationId());
-        ProductDefinitionDisplayDto product = null;
-        if (key != null) {
-            product = productByKey.get(key);
-        }
+        ProductDefinitionDisplayDto product = this.loadProductForMedication(md.getMedicationId(), productByMedicationId);
         if (product == null) {
             throw new BusinessException(ErrorCodeConstants.EX_PHA_002_203_INVENTORY_MISSING, "药品定义缺失，无法换算退库数量");
         }
@@ -506,6 +482,38 @@ public class OutpatientPharmacyReturnMedicineAppService {
         } else {
             inventoryIncreaseMerged.put(inventoryItemId, existed.add(splitQty));
         }
+    }
+
+    /**
+     * 按 medicationId 加载药品定义（带进程内 Map 缓存，供退库换算复用）。
+     *
+     * @param medicationId            药品定义主键
+     * @param productByMedicationId   调用方维护的缓存
+     * @return 目录展示 DTO；id 为空或未命中时 null
+     */
+    private ProductDefinitionDisplayDto loadProductForMedication(
+        Long medicationId,
+        Map<Long, ProductDefinitionDisplayDto> productByMedicationId
+    ) {
+        if (medicationId == null) {
+            return null;
+        }
+        ProductDefinitionDisplayDto cached = productByMedicationId.get(medicationId);
+        if (cached != null) {
+            return cached;
+        }
+        ProductDefinitionBatchLookup lookup = new ProductDefinitionBatchLookup();
+        lookup.setProductTableName(TableNameConstants.MED_MEDICATION_DEFINITION);
+        lookup.setProductDefinitionId(medicationId);
+        Map<String, ProductDefinitionDisplayDto> productByKey =
+            this.productDefinitionDisplayTerminologyAssembler.loadAsMap(List.of(lookup));
+        String key = ProductDefinitionKeyUtil.buildCompositeKey(
+            TableNameConstants.MED_MEDICATION_DEFINITION, medicationId);
+        ProductDefinitionDisplayDto product = productByKey.get(key);
+        if (product != null) {
+            productByMedicationId.put(medicationId, product);
+        }
+        return product;
     }
 
     /**

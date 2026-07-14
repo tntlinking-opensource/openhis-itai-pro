@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.advice.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -29,11 +16,10 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
-/** 医生站-医嘱开立-查询医嘱绑定信息请求。 */
 @Schema(description = "医生站-医嘱开立-查询医嘱绑定信息请求")
 public class GetDoctorStationAdviceOrderBindInfoRequest {
 
-    /** 绑定来源类型：{@code USAGE} / {@code ACTIVITY}，与模板 {@code type_code} 同码。 */
+    /** 绑定来源类型：USAGE（用法）/ ACTIVITY（诊疗）。 */
     @NotBlank(message = "绑定类型不能为空")
     @Schema(description = "绑定来源类型：USAGE（用法）/ ACTIVITY（诊疗）", requiredMode = Schema.RequiredMode.REQUIRED)
     private String bindType;

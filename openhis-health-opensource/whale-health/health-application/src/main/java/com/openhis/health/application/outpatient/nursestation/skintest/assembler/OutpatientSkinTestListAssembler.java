@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.nursestation.skintest.assembler;
 
 import com.openhis.health.application.outpatient.nursestation.skintest.dto.OutpatientSkinTestListAssemblyInput;
@@ -16,7 +16,7 @@ import com.openhis.health.domain.share.enums.ClinicalStatus;
 import com.openhis.health.domain.share.enums.EnumInterface;
 import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.workflow.servicerequest.queries.model.ServiceRequestListModel;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -118,12 +118,19 @@ public class OutpatientSkinTestListAssembler {
         return rows;
     }
 
+    /**
+     * 药品+执行库房复合键（批号库存分组用）。
+     *
+     * @param medicationId 药品 id
+     * @param locationId   库房 id
+     * @return medicationId|locationId
+     */
     private String buildMedLocationKey(Long medicationId, Long locationId) {
         return medicationId + "|" + locationId;
     }
 
     private <E extends Enum<E> & EnumInterface> String resolveEnumDisplay(Class<E> enumClass, String code) {
-        if (StringUtils.isBlank(code)) {
+        if (StringUtils.isEmpty(code)) {
             return null;
         }
         E enumValue = EnumUtil.fromCode(enumClass, code);

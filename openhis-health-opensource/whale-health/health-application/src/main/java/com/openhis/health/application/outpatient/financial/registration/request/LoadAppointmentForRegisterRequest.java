@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.registration.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -28,21 +15,18 @@ import java.time.LocalDate;
  */
 @Data
 @Accessors(chain = true)
-/** 挂号台加载有效预约请求。 */
 @Schema(description = "挂号台加载有效预约请求")
 public class LoadAppointmentForRegisterRequest {
 
-    @Schema(description = "患者ID")
     /** 患者ID（业务字段）。 */
+    @Schema(description = "患者ID")
     private Long patientId;
 
     /** 预约单号。 */
     @Schema(description = "预约单号")
-    /** 预约单号（业务字段）。 */
     private String appointmentBusNo;
 
     /** 挂号自然日；默认当日。 */
     @Schema(description = "挂号自然日")
-    /** 挂号自然日（业务字段）。 */
     private LocalDate registrationDate;
 }

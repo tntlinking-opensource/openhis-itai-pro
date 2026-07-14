@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.devicedefinition.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToEmpty;
@@ -36,7 +23,7 @@ import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -61,7 +48,7 @@ public class DeviceDefinitionDomainService {
      */
     public Long createDeviceDefinition(CreateDeviceDefinitionCommand cmd) {
         List<CreateDeviceDefinitionCommand.Item> items = cmd.resolveItems();
-        // 业务分支处理。
+        // Gate：批量创建入参不能为空，否则无法生成任何器材主数据。
         if (items.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_INVALID_ARGUMENT, "创建器材定义入参不能为空");
         }
@@ -88,6 +75,8 @@ public class DeviceDefinitionDomainService {
             row.setLocationId(item.getLocationId());
             row.setModelNumber(item.getModelNumber());
             row.setHvcmFlag(item.getHvcmFlag() != null && item.getHvcmFlag() == 1);
+            row.setChargeableFlag(item.getChargeableFlag() != null && item.getChargeableFlag() == 1);
+            row.setMrSettlementTypeCode(item.getMrSettlementTypeCode());
             row.setApprovalNumber(item.getApprovalNumber());
             row.setYbFlag(item.getYbFlag() != null && item.getYbFlag() == 1);
             row.setYbNo(item.getYbNo());
@@ -160,6 +149,8 @@ public class DeviceDefinitionDomainService {
             row.setPackageUnitRatio(item.getPackageUnitRatio());
             row.setModelNumber(item.getModelNumber());
             row.setHvcmFlag(item.getHvcmFlag() != null && item.getHvcmFlag() == 1);
+            row.setChargeableFlag(item.getChargeableFlag() != null && item.getChargeableFlag() == 1);
+            row.setMrSettlementTypeCode(item.getMrSettlementTypeCode());
             row.setApprovalNumber(item.getApprovalNumber());
             row.setOrgId(item.getOrgId());
             row.setLocationId(item.getLocationId());
@@ -291,13 +282,13 @@ public class DeviceDefinitionDomainService {
      */
     public ImportDeviceDefinitionCatalogResult importDeviceDefinitionCatalog(ImportDeviceDefinitionCatalogCommand cmd) {
         List<ImportDeviceDefinitionCatalogCommand.Item> items = cmd.resolveItems();
-        // 业务分支处理。
+        // Gate：导入目录行不能为空。
         if (items.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_INVALID_ARGUMENT, "导入器材目录入参不能为空");
         }
 
         Boolean overwrite = cmd.getOverwrite();
-        // 业务分支处理。
+        // 未传覆盖标志时默认不覆盖已存在记录。
         if (overwrite == null) {
             overwrite = Boolean.FALSE;
         }
@@ -308,17 +299,17 @@ public class DeviceDefinitionDomainService {
         for (int idx = 0; idx < items.size(); idx++) {
             ImportDeviceDefinitionCatalogCommand.Item item = items.get(idx);
             int lineNo = idx + 1;
-            // 业务分支处理。
+            // Gate：导入行对象不能为空。
             if (item == null) {
                 throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_INVALID_ARGUMENT, "导入器材目录时存在空行数据");
             }
-            // 业务分支处理。
+            // Gate：业务编码 busNo 为导入去重与匹配键，不能为空。
             if (item.getBusNo() == null || item.getBusNo().trim().isEmpty()) {
                 throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_INVALID_ARGUMENT, "导入器材目录时 busNo 不能为空");
             }
             String normalized = item.getBusNo().trim();
             Integer first = firstLineByBusNo.get(normalized);
-            // 业务分支处理。
+            // Gate：同一导入批次内 busNo 重复则整批拒绝。
             if (first != null) {
                 throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_INVALID_ARGUMENT,
                     "导入器材目录时 busNo 重复，重复值=" + normalized + "，首次行=" + first);
@@ -346,7 +337,7 @@ public class DeviceDefinitionDomainService {
                 String busNo = item.getBusNo().trim();
                 DeviceDefinition target = existedByBusNo.get(busNo);
 
-                // 业务分支处理。
+                // 库内不存在同 busNo 记录时走新增路径。
                 if (target == null) {
                     // 新增路径：初始化为启用；业务编码由领域层生成，忽略导入行 busNo（B.10.9）。
                     DeviceDefinition created = new DeviceDefinition();
@@ -411,12 +402,12 @@ public class DeviceDefinitionDomainService {
         List<DeviceDefinition> saved = repository.saveAll(toSave);
         for (DeviceDefinition row : saved) {
             String busNo = row.getBusNo();
-            // 业务分支处理。
+            // 本次导入新建的记录发布创建事件。
             if (createdBusNos.contains(busNo)) {
                 domainEventPublisher.publish(new DeviceDefinitionCreatedEvent(row.getId(), row.getBusNo(), row.getName(), row.getStatusEnum()));
                 continue;
             }
-            // 业务分支处理。
+            // 本次导入覆盖更新的记录发布更新事件。
             if (updatedBusNos.contains(busNo)) {
                 List<String> changed = new ArrayList<>();
                 changed.add(FieldNameConstants.NAME);
@@ -497,7 +488,7 @@ public class DeviceDefinitionDomainService {
      */
     private DeviceDefinition require(Map<Long, DeviceDefinition> map, Long id) {
         DeviceDefinition row = map.get(id);
-        // 业务分支处理。
+        // 预加载映射未命中则目标器材定义不存在。
         if (row == null) {
             throw new BusinessException(ErrorCodeConstants.DEVICE_DEFINITION_NOT_FOUND, "器材定义不存在");
         }
@@ -516,8 +507,8 @@ public class DeviceDefinitionDomainService {
      * 创建时写入名称检索码：请求未携带则按名称自动生成；仅携带其一则另一侧补全。
      */
     private static void applyCreateNameSearchCodes(DeviceDefinition row, String pyStr, String wbStr) {
-        boolean pyBlank = StringUtils.isBlank(pyStr);
-        boolean wbBlank = StringUtils.isBlank(wbStr);
+        boolean pyBlank = StringUtils.isEmpty(pyStr);
+        boolean wbBlank = StringUtils.isEmpty(wbStr);
         if (pyBlank && wbBlank) {
             row.refreshSearchCodeOnNameChanged();
             return;

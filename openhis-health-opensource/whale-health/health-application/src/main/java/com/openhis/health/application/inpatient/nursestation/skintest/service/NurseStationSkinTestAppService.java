@@ -1,12 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.skintest.service;
 
-import com.openhis.health.module.common.validator.CurrentManagedWardLocationIdsResolver;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.common.validator.PatientEncounterConsistencyGate;
+import com.openhis.health.application.shared.validator.CurrentManagedWardLocationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.InpatientPendingSettlementClinicalGate;
+import com.openhis.health.application.shared.validator.PatientEncounterConsistencyGate;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.assembler.NurseStationInpatientBillingCatalogAssembler;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.dto.NurseStationPricingWriteItemDto;
 import com.openhis.health.application.inpatient.nursestation.inpatientbilling.mapper.NurseStationInpatientBillingMapper;
@@ -24,10 +25,10 @@ import com.openhis.health.application.inpatient.nursestation.skintest.response.D
 import com.openhis.health.application.inpatient.nursestation.skintest.response.ListNurseStationSkinTestRowsResponse;
 import com.openhis.health.application.inpatient.nursestation.skintest.response.LoadNurseStationSkinTestInitResponse;
 import com.openhis.health.application.inpatient.nursestation.skintest.response.SaveNurseStationSkinTestRecordResponse;
-import com.openhis.health.module.querysupport.administration.PractitionerRoleScopeLoader;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.basic.administration.support.PractitionerRoleScopeLoader;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.chargeitem.entity.ChargeItem;
 import com.openhis.health.domain.administration.chargeitem.query.ChargeItemQueryCommand;
 import com.openhis.health.domain.administration.chargeitem.service.ChargeItemDomainService;
@@ -62,7 +63,7 @@ import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQ
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -104,7 +105,7 @@ public class NurseStationSkinTestAppService {
     private final NurseStationSkinTestMapper nurseStationSkinTestMapper;
 
     /** 住院就诊可见性 Gate（护士站队列 + 管辖病区）。 */
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
 
     /** 管辖病区解析（B.6.1.4）。 */
     private final CurrentManagedWardLocationIdsResolver managedWardLocationIdsResolver;
@@ -134,7 +135,7 @@ public class NurseStationSkinTestAppService {
     private final MedicationDispenseQueryService medicationDispenseQueryService;
 
     /** 药品名称批量加载。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /** 人员展示名。 */
     private final PractitionerQueryService practitionerQueryService;
@@ -156,6 +157,8 @@ public class NurseStationSkinTestAppService {
 
     /** 岗位分配 → 护士主键预解析。 */
     private final PractitionerRoleScopeLoader practitionerRoleScopeLoader;
+    /** 就诊出院结算轨禁止皮试划价写路径。 */
+    private final InpatientPendingSettlementClinicalGate inpatientPendingSettlementClinicalGate;
 
     /**
      * IF-IP-STK-01：加载皮试表单枚举下拉与护士候选。
@@ -292,9 +295,13 @@ public class NurseStationSkinTestAppService {
         } catch (BusinessException ex) {
             throw ex;
         } catch (RuntimeException ex) {
+            Long encounterId = null;
+            if (request != null) {
+                encounterId = request.getEncounterId();
+            }
             log.error(
                 "listNurseStationSkinTestRows failed encounterId={}",
-                request != null ? request.getEncounterId() : null,
+                encounterId,
                 ex);
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_STK_103,
@@ -326,6 +333,11 @@ public class NurseStationSkinTestAppService {
         // Gate：就诊可见 + 患者一致
         InpatientEncounterContextQueryModel encounterSnapshot =
             this.requireVisibleEncounterSnapshot(request.getEncounterId(), request.getPatientId());
+        // Gate：待结算/已结算/已离院禁止皮试划价（EX-IP-STK-208）
+        inpatientPendingSettlementClinicalGate.assertEncounterAllowsOrderClinicalMutation(
+            encounterSnapshot.getStatusEnum(),
+            InpatientNurseStationConstants.EX_IP_STK_208,
+            InpatientNurseStationConstants.MSG_ENCOUNTER_PENDING_SETTLEMENT_ORDER_FORBIDDEN);
         this.validateSaveRequestFields(request);
 
         Long skinTestActivityId = activityDefinitionQueryService.requireIdByExactName(
@@ -409,6 +421,7 @@ public class NurseStationSkinTestAppService {
                     pricingRow,
                     TableNameConstants.WKF_SERVICE_REQUEST,
                     skinTestServiceRequestId,
+                    null,
                     null,
                     null,
                     operatorId,
@@ -501,6 +514,8 @@ public class NurseStationSkinTestAppService {
         if (record.getRequestId() != null) {
             ChargeItemQueryCommand chargeQuery = new ChargeItemQueryCommand();
             chargeQuery.setServiceIds(Collections.singletonList(record.getRequestId()));
+            chargeQuery.setEncounterId(request.getEncounterId());
+            chargeQuery.setExcludeSupersededSettledLines(true);
             List<ChargeItem> chargeItems = chargeItemQueryService.listChargeItemsByServiceIds(chargeQuery);
             if (chargeItems != null && !chargeItems.isEmpty()) {
                 throw new BusinessException(
@@ -552,7 +567,7 @@ public class NurseStationSkinTestAppService {
             Collections.singletonList(encounterId),
             wardIds);
         List<InpatientEncounterContextQueryModel> visibleRows =
-            encounterContextFacade.listInpatientEncounterContexts(query);
+            EncounterContextReader.listInpatientEncounterContexts(query);
         InpatientEncounterContextQueryModel encounterSnapshot = null;
         for (InpatientEncounterContextQueryModel row : visibleRows) {
             if (row != null && encounterId.equals(row.getEncounterId())) {
@@ -587,8 +602,8 @@ public class NurseStationSkinTestAppService {
                 InpatientNurseStationConstants.EX_IP_STK_201,
                 "请填写皮试结果并选择执行护士与核对护士");
         }
-        if (StringUtils.isBlank(request.getClinicalStatusCode())
-            || StringUtils.isBlank(request.getVerificationStatusCode())) {
+        if (StringUtils.isEmpty(request.getClinicalStatusCode())
+            || StringUtils.isEmpty(request.getVerificationStatusCode())) {
             throw new BusinessException(
                 InpatientNurseStationConstants.EX_IP_STK_201,
                 "请填写皮试结果并选择执行护士与核对护士");
@@ -754,6 +769,7 @@ public class NurseStationSkinTestAppService {
         }
         ChargeItemQueryCommand chargeQuery = new ChargeItemQueryCommand();
         chargeQuery.setServiceIds(new ArrayList<>(skinTestServiceRequestIds));
+        chargeQuery.setExcludeSupersededSettledLines(true);
         List<ChargeItem> chargeItems = chargeItemQueryService.listChargeItemsByServiceIds(chargeQuery);
         for (Long serviceRequestId : skinTestServiceRequestIds) {
             pricedByServiceRequestId.put(serviceRequestId, Boolean.FALSE);
@@ -789,7 +805,7 @@ public class NurseStationSkinTestAppService {
             lookup.setProductDefinitionId(medicationId);
             lookups.add(lookup);
         }
-        Map<String, ProductDefinitionDisplayDto> productByKey = productDefinitionBatchLoader.loadAsMap(lookups);
+        Map<String, ProductDefinitionDisplayDto> productByKey = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
         for (Long medicationId : medicationIds) {
             if (medicationId == null) {
                 continue;
@@ -798,7 +814,7 @@ public class NurseStationSkinTestAppService {
                 TableNameConstants.MED_MEDICATION_DEFINITION,
                 medicationId);
             ProductDefinitionDisplayDto product = productByKey.get(key);
-            if (product != null && StringUtils.isNotBlank(product.getProductName())) {
+            if (product != null && StringUtils.isNotEmpty(product.getProductName())) {
                 medicationNameById.put(medicationId, product.getProductName().trim());
             }
         }
@@ -829,7 +845,7 @@ public class NurseStationSkinTestAppService {
         for (InventoryCatalogAvailabilityRowModel inventoryRow : inventoryRows) {
             if (inventoryRow == null || inventoryRow.getItemId() == null
                 || inventoryRow.getLocationId() == null
-                || StringUtils.isBlank(inventoryRow.getLotNumber())) {
+                || StringUtils.isEmpty(inventoryRow.getLotNumber())) {
                 continue;
             }
             String medLocationKey = inventoryRow.getItemId() + "|" + inventoryRow.getLocationId();
@@ -890,7 +906,7 @@ public class NurseStationSkinTestAppService {
         List<Practitioner> practitioners = practitionerQueryService.findAllByIds(practitionerIds);
         for (Practitioner practitioner : practitioners) {
             if (practitioner != null && practitioner.getId() != null
-                && StringUtils.isNotBlank(practitioner.getName())) {
+                && StringUtils.isNotEmpty(practitioner.getName())) {
                 practitionerNameById.put(practitioner.getId(), practitioner.getName().trim());
             }
         }

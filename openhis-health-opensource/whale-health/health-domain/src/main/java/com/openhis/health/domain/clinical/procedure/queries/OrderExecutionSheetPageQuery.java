@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.clinical.procedure.queries;
 
 import com.openhis.health.domain.share.query.AbstractPageQuery;
@@ -32,19 +19,27 @@ public class OrderExecutionSheetPageQuery extends AbstractPageQuery {
 
     private static final long serialVersionUID = 1L;
 
+    /** 执行记录主键 {@code cln_procedure.id}（精确查单条时）。 */
     private Long procedureId;
 
+    /** 来源医嘱/申请主键 {@code cln_procedure.request_id}。 */
     private Long requestId;
 
+    /** 就诊主键。 */
     private Long encounterId;
 
+    /** 执行状态持久化码。 */
     private String statusEnum;
 
+    /** 诊疗类目持久化码。 */
     private String categoryEnum;
 
+    /** 关联退费单主键（退药/退执行场景）。 */
     private Long refundId;
 
+    /** 执行时间窗下限（含）。 */
     private LocalDateTime startTime;
 
+    /** 执行时间窗上限（含）。 */
     private LocalDateTime endTime;
 }

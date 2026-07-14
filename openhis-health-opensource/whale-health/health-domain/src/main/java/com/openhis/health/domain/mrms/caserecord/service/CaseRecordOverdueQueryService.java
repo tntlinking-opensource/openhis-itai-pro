@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.mrms.caserecord.service;
 
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecord;
@@ -20,6 +20,8 @@ import java.util.List;
  * 病案逾期扫描读侧（定时任务/通知用）。
  *
  * <p>仅注入本聚合 {@link CaseRecordRepository}；按出院时间与状态条件下推 DB。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link CaseRecordRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor

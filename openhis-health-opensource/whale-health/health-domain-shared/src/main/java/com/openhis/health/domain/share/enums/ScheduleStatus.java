@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 import lombok.Getter;
@@ -24,21 +11,13 @@ import lombok.Getter;
  */
 @Getter
 public enum ScheduleStatus implements EnumInterface {
-    /**
-     * DRAFT。
-     */
+    /** 草稿（ScheduleStatus，编码 {@code draft}）。 */
     DRAFT(0L, "draft", "草稿", "", 1L),
-    /**
-     * ACTIVE。
-     */
+    /** 已启用（ScheduleStatus，编码 {@code active}）。 */
     ACTIVE(0L, "active", "已启用", "", 2L),
-    /**
-     * INACTIVE。
-     */
+    /** 已停用（ScheduleStatus，编码 {@code inactive}）。 */
     INACTIVE(0L, "inactive", "已停用", "", 3L),
-    /**
-     * RETIRED。
-     */
+    /** 已废弃（ScheduleStatus，编码 {@code retired}）。 */
     RETIRED(0L, "retired", "已废弃", "", 4L);
 
     private final Long codeSystemId;
@@ -48,7 +27,7 @@ public enum ScheduleStatus implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * ScheduleStatus。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     ScheduleStatus(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

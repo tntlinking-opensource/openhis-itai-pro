@@ -1,45 +1,22 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 /**
  * 价格调整审批状态枚举。
  */
 public enum PriceAdjustmentStatus implements EnumInterface {
-    /**
-     * DRAFT。
-     */
+    /** 草稿（PriceAdjustmentStatus，编码 {@code draft}）。 */
     DRAFT(0L, "draft", "草稿", "", 1L),
-    /**
-     * PENDING。
-     */
+    /** 待审批（PriceAdjustmentStatus，编码 {@code pending}）。 */
     PENDING(0L, "pending", "待审批", "", 2L),
-    /**
-     * APPROVED。
-     */
+    /** 已通过（PriceAdjustmentStatus，编码 {@code approved}）。 */
     APPROVED(0L, "approved", "已通过", "", 3L),
-    /**
-     * REJECTED。
-     */
+    /** 已驳回（PriceAdjustmentStatus，编码 {@code rejected}）。 */
     REJECTED(0L, "rejected", "已驳回", "", 4L),
-    /**
-     * DEPRECATED。
-     */
+    /** 已废弃（PriceAdjustmentStatus，编码 {@code deprecated}）。 */
     DEPRECATED(0L, "deprecated", "已废弃", "", 5L);
 
     private final Long codeSystemId;
@@ -49,7 +26,7 @@ public enum PriceAdjustmentStatus implements EnumInterface {
     private final Long sortOrder;
 
     /**
-     * PriceAdjustmentStatus。
+     * 枚举构造：绑定编码系统、持久化 code、展示名与排序。
      */
     PriceAdjustmentStatus(Long codeSystemId, String code, String display, String definition, Long sortOrder) {
         this.codeSystemId = codeSystemId;

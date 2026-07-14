@@ -1,34 +1,27 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.purchaseorder.response;
 
 import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 编辑订货单响应。
+ *
+ * <p>修订订货单成功响应（IF-WHS-PO-05）：同号全量对齐后返回 {@code busNo} 与待审批状态码。</p>
  */
 @Getter
 @Setter
 public class UpdatePurchaseOrderResponse {
 
-    /** 修订后订货单业务单号。 */
+    /**
+     * 修订后订货单业务单号（与请求 {@code busNo} 一致）。
+     */
     private String busNo;
-    /** 提交后展示用状态序列号（SupplyStatus.sortOrder）。 */
-    private Integer statusEnum;
+
+    /**
+     * 修订提交后展示用状态持久化码（{@link com.openhis.health.domain.share.enums.SupplyStatus#getCode()}）。
+     */
+    private String statusEnum;
 }

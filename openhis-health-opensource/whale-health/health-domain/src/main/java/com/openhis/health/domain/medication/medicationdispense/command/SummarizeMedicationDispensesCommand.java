@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.medication.medicationdispense.command;
 
 import lombok.Getter;
@@ -34,4 +21,6 @@ public class SummarizeMedicationDispensesCommand {
     private Long locationId;
     /** 待汇总发放单标识集合。 */
     private List<Long> dispenseIds;
+    /** 预分配汇总单号（MSO；与 Supply {@code bus_no} 同源，应用层 IF-IP-SUM-04 必填）。 */
+    private String summaryNo;
 }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.purchaseorder.request;
 
 import lombok.Getter;
@@ -23,14 +10,23 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * 提交审批请求。
+ *
+ * <p>提交订货单审批（IF-WHS-PO-06）：草稿/撤回态整单提交，写入申请时间 {@code apply_time}。</p>
+ *
+ * <p>应用入口：
+ * {@link com.openhis.health.application.inventory.warehouse.purchaseorder.service.InventoryWarehousePurchaseOrderAppService#submitPurchaseOrderApproval(SubmitPurchaseOrderApprovalRequest)}。</p>
  */
 @Getter
 @Setter
 public class SubmitPurchaseOrderApprovalRequest {
 
-    /** 订货单业务单号。 */
+    /**
+     * 订货单业务单号；应用服务门控非空。
+     */
     private String busNo;
-    /** 提交审批时的申请时间（缺省由服务端取当前时刻）。 */
+
+    /**
+     * 提交审批时的申请时间；可空时由服务端取当前时刻写入 {@code apply_time}。
+     */
     private LocalDateTime applyClock;
 }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.patient.service;
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
@@ -34,7 +21,7 @@ import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.share.enums.PatientStatus;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -51,6 +38,7 @@ import java.util.*;
  *
  * <p>边界：只读；强依赖场景通过 {@link #requirePatient(Long)} 抛 {@link BusinessException}；
  * 同人校验优先身份证精确路径以控制候选集规模（通用规范 B.2）。</p>
+ * <p>聚合边界：仅本聚合 {@link PatientRepository}、{@link PatientIdentifierRepository}、{@link PatientStudentRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -68,7 +56,7 @@ public class PatientQueryService {
      * @return 未删除且命中任一文本字段的患者主键列表
      */
     public List<Long> listPatientIdsByEncounterListKeyword(String keyword) {
-        if (StringUtils.isBlank(keyword)) {
+        if (StringUtils.isEmpty(keyword)) {
             return Collections.emptyList();
         }
         String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keyword.trim());
@@ -95,10 +83,15 @@ public class PatientQueryService {
      * 按姓名关键字模糊匹配患者主键（adapter 票据检索读路径）。
      */
     public List<Long> listPatientIdsByNameKeyword(String keyword, int limit) {
-        if (StringUtils.isBlank(keyword)) {
+        if (StringUtils.isEmpty(keyword)) {
             return Collections.emptyList();
         }
-        int pageSize = limit <= 0 ? 50 : limit;
+        int pageSize;
+        if (limit <= 0) {
+            pageSize = 50;
+        } else {
+            pageSize = limit;
+        }
         Specification<Patient> specification = (root, query, cb) -> cb.and(
             cb.like(root.get(FieldNameConstants.NAME), "%" + keyword.trim() + "%"),
             cb.or(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)), cb.isNull(root.get(FieldNameConstants.IS_DELETED))));
@@ -134,12 +127,12 @@ public class PatientQueryService {
             predicates.add(criteriaBuilder.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             // 关键字模糊：与门诊选患者、B.10.11 一致，优先 keyword，兼容历史 name 入参；OR 命中姓名/病历号/证件/拼音/五笔。
             String searchKey = null;
-            if (StringUtils.isNotBlank(query.getKeyword())) {
+            if (StringUtils.isNotEmpty(query.getKeyword())) {
                 searchKey = query.getKeyword().trim();
-            } else if (StringUtils.isNotBlank(query.getName())) {
+            } else if (StringUtils.isNotEmpty(query.getName())) {
                 searchKey = query.getName().trim();
             }
-            if (StringUtils.isNotBlank(searchKey)) {
+            if (StringUtils.isNotEmpty(searchKey)) {
                 String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(searchKey);
                 predicates.add(criteriaBuilder.or(
                     criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.NAME)), likeIc),
@@ -149,11 +142,11 @@ public class PatientQueryService {
                     criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.WB_STR)), likeIc)
                 ));
             }
-            if (StringUtils.isNotBlank(query.getIdCard())) {
+            if (StringUtils.isNotEmpty(query.getIdCard())) {
                 String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getIdCard().trim());
                 predicates.add(criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.ID_CARD)), likeIc));
             }
-            if (StringUtils.isNotBlank(query.getBusNo())) {
+            if (StringUtils.isNotEmpty(query.getBusNo())) {
                 String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(query.getBusNo().trim());
                 predicates.add(criteriaBuilder.like(criteriaBuilder.lower(root.get(FieldNameConstants.BUS_NO)), likeIc));
             }
@@ -236,7 +229,7 @@ public class PatientQueryService {
         StudentPublicExpenseEligibilityQueryModel model = new StudentPublicExpenseEligibilityQueryModel();
         model.setPatientId(patientId);
         model.setStudentId(studentId);
-        if (StringUtils.isBlank(patient.getIdCard()) || StringUtils.isBlank(student.getIdCard())) {
+        if (StringUtils.isEmpty(patient.getIdCard()) || StringUtils.isEmpty(student.getIdCard())) {
             model.setEligible(Boolean.FALSE);
             model.setReasonCode("PATIENT_STUDENT_NO_ID_CARD");
             model.setReasonMessage("缺少身份证信息");
@@ -279,11 +272,11 @@ public class PatientQueryService {
      * @return 校验结果
      */
     public DuplicatePatientCheckQueryModel checkRegistrationDuplicatePatient(DuplicatePatientCheckQuery query) {
-        if (StringUtils.isBlank(query.getName()) || query.getGenderEnum() == null) {
+        if (StringUtils.isEmpty(query.getName()) || query.getGenderEnum() == null) {
             throw new BusinessException(ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "姓名和性别为必填");
         }
         List<Patient> candidates;
-        if (StringUtils.isNotBlank(query.getIdCard())) {
+        if (StringUtils.isNotEmpty(query.getIdCard())) {
             candidates = patientRepository.findAllByIdCardOrderByCreatedAtDesc(query.getIdCard());
             List<Patient> filtered = new ArrayList<>();
             // Loop：身份证命中后仍须姓名性别一致，排除证件录入错误导致的假阳性
@@ -334,7 +327,7 @@ public class PatientQueryService {
      * @return 患者简要信息
      */
     public PatientSimpleQueryModel findPatientByIdCard(String idCard) {
-        if (StringUtils.isBlank(idCard)) {
+        if (StringUtils.isEmpty(idCard)) {
             return null;
         }
         List<String> terminalStatus = Arrays.asList(PatientStatus.MERGED.getCode(), PatientStatus.CANCELLED.getCode());
@@ -424,7 +417,7 @@ public class PatientQueryService {
             if (p == null || p.getId() == null || Boolean.TRUE.equals(p.getIsDeleted())) {
                 continue;
             }
-            if (StringUtils.isNotBlank(p.getName())) {
+            if (StringUtils.isNotEmpty(p.getName())) {
                 out.put(p.getId(), p.getName());
             }
         }
@@ -500,7 +493,7 @@ public class PatientQueryService {
                 snapshot.setBirthDate(birthLocal.atStartOfDay());
                 Date birthDate = Date.from(birthLocal.atStartOfDay(ZoneId.systemDefault()).toInstant());
                 String ageText = AgeCalculatorUtil.getAge(birthDate);
-                if (StringUtils.isNotBlank(ageText)) {
+                if (StringUtils.isNotEmpty(ageText)) {
                     snapshot.setAgeText(ageText);
                 }
             }
@@ -522,7 +515,7 @@ public class PatientQueryService {
     }
 
     /**
-     * 按主键加载患者实体（Port/bridge 读路径）；不存在或已软删时 empty。
+     * 按主键加载患者实体（adapter 读路径）；不存在或已软删时 empty。
      *
      * @param patientId 患者标识
      * @return 患者实体
@@ -731,10 +724,10 @@ public class PatientQueryService {
      * @return 匹配返回 true
      */
     private boolean matchIdCard(String queryIdCard, String actualIdCard) {
-        if (StringUtils.isBlank(queryIdCard)) {
+        if (StringUtils.isEmpty(queryIdCard)) {
             return true;
         }
-        if (StringUtils.isBlank(actualIdCard)) {
+        if (StringUtils.isEmpty(actualIdCard)) {
             return false;
         }
         return queryIdCard.equals(actualIdCard);

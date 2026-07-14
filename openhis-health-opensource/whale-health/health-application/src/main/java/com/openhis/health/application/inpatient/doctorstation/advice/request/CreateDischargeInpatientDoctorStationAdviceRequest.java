@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.advice.request;
 
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
@@ -35,11 +22,10 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
-/** 住院医生站-开立出院医嘱请求。 */
 @Schema(description = "住院医生站-开立出院医嘱请求")
 public class CreateDischargeInpatientDoctorStationAdviceRequest {
 
-    /** 当前住院就诊主键，须通过 {@code InpatientInfo} 在院门控。 */
+    /** 就诊标识。 */
     @NotNull(message = DoctorStationAdviceConstants.MSG_ENCOUNTER_ID_REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -64,7 +50,7 @@ public class CreateDischargeInpatientDoctorStationAdviceRequest {
     @Schema(description = "出院方式字典 code", requiredMode = Schema.RequiredMode.REQUIRED)
     private String outWayCode;
 
-    /** 出院原因自由文本，供病历与离院里程碑展示。 */
+    /** 出院原因。 */
     @Schema(description = "出院原因")
     private String reasonText;
 

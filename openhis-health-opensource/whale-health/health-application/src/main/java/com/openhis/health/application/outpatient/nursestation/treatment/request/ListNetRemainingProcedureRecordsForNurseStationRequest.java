@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.nursestation.treatment.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -29,7 +16,6 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
-/** 净剩可取消执行记录列表请求。 */
 @Schema(description = "净剩可取消执行记录列表请求")
 public class ListNetRemainingProcedureRecordsForNurseStationRequest {
 
@@ -39,6 +25,7 @@ public class ListNetRemainingProcedureRecordsForNurseStationRequest {
     @NotNull(message = "encounterId 不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "就诊主键", requiredMode = Schema.RequiredMode.REQUIRED)
+    /** 就诊主键。 */
     private Long encounterId;
 
     /**
@@ -46,6 +33,7 @@ public class ListNetRemainingProcedureRecordsForNurseStationRequest {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "来源请求主键（与 requestTable 成对使用）")
+    /** 来源请求主键（与 requestTable 成对使用）。 */
     private Long requestId;
 
     /**

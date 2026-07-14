@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.executelocation.service;
 
 import com.openhis.health.application.basic.executelocation.dto.ExecuteLocationDto;
@@ -25,14 +12,14 @@ import com.openhis.health.application.basic.executelocation.request.CreateExecut
 import com.openhis.health.application.basic.executelocation.request.QueryActivityDefinitionForExecuteLocationRequest;
 import com.openhis.health.application.basic.executelocation.request.QueryExecuteLocationRequest;
 import com.openhis.health.application.basic.executelocation.request.UpdateExecuteLocationRequest;
-import com.openhis.health.module.common.assembler.option.TerminologyOptionLoader;
-import com.openhis.health.module.common.assembler.order.OrderCatalogDisplayAssembler;
-import com.openhis.health.module.common.pagination.PageQueryBinder;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionCatalogPageLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.option.TerminologyOptionLoader;
+import com.openhis.health.application.shared.advice.OrderCatalogDisplayAssembler;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogPageLoader;
+import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.administration.location.service.LocationQueryService;
 import com.openhis.health.domain.administration.organization.entity.Organization;
 import com.openhis.health.domain.administration.organization.service.OrganizationQueryService;
@@ -52,7 +39,7 @@ import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -74,7 +61,7 @@ import java.util.Set;
  *   <li>{@link ActivityExecutionLocationQueryService}：按执行科室列出规则（配置读侧）</li>
  *   <li>{@link ActivityExecutionLocationDomainService}：单条/批量 CRUD</li>
  *   <li>{@link ProductDefinitionCatalogPageLoader}：挑选待绑定的诊疗活动（复用既有目录读能力，不新增查询 IF）</li>
- *   <li>{@link ProductDefinitionBatchLoader}：列表 enrich 诊疗项目名称</li>
+ *   <li>{@link ProductDefinitionDisplayTerminologyAssembler}：列表 enrich 诊疗项目名称</li>
  * </ul>
  *
  * <p>接入方式：由 {@code AppServiceControllerRegistrar} 注册为
@@ -102,7 +89,7 @@ public class ExecuteLocationAppService {
     /** 诊疗活动定义分页：挑选待绑定项目。 */
     private final ProductDefinitionCatalogPageLoader productDefinitionCatalogPageLoader;
     /** 诊疗活动定义批量展示加载。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /**
      * 返回执行科室配置页初始化选项：执行科室树、诊疗大类。
@@ -110,6 +97,9 @@ public class ExecuteLocationAppService {
      * @return 初始化 DTO
      */
     public ExecuteLocationInitDto init() {
+        // Gate：只读页初始化，不写库
+        // Pre：加载执行科室树与诊疗大类下拉
+        // Asm：映射页初始化响应
         ExecuteLocationInitDto dto = new ExecuteLocationInitDto();
         dto.setExecutionOrgOptions(this.buildOrganizationOptions());
         dto.setActivityCategoryOptions(
@@ -128,18 +118,21 @@ public class ExecuteLocationAppService {
     public PagedResult<OptionDto> pageActivityDefinitionsForExecution(
         QueryActivityDefinitionForExecuteLocationRequest request
     ) {
+        // Gate：执行科室与诊疗大类必填
         if (request == null || request.getExecutionOrgId() == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室ID不能为空");
         }
         if (request.getActivityCategoryCode() == null || request.getActivityCategoryCode().isBlank()) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "诊疗大类不能为空");
         }
+        // Pre：装配产品定义分页查询
         ProductDefinitionPageQuery query = new ProductDefinitionPageQuery();
         query.setProductTableName(TableNameConstants.WKF_ACTIVITY_DEFINITION);
         query.setCategoryCode(request.getActivityCategoryCode());
         PageQueryBinder.bind(request, query);
         query.setPageSize(request.getBoundedPageSize());
         Page<ProductDefinitionDisplayDto> page = productDefinitionCatalogPageLoader.pageProductDefinition(query);
+        // Asm：映射为分页选项
         Page<OptionDto> optionPage = page.map(item -> new OptionDto(
             item.getProductDefinitionId(),
             resolveProductDefinitionIdValue(item),
@@ -158,6 +151,7 @@ public class ExecuteLocationAppService {
      * @throws BusinessException 执行科室 id 缺失或不存在时
      */
     public PagedResult<ExecuteLocationDto> listByExecutionOrgId(QueryExecuteLocationRequest request) {
+        // Gate：执行科室 id 必填且须存在
         if (request == null || request.getExecutionOrgId() == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室ID不能为空");
         }
@@ -165,6 +159,7 @@ public class ExecuteLocationAppService {
         if (organization == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室不存在");
         }
+        // Pre：拉取该科室下全部规则并在内存分页
         List<ExecutionRuleListQueryModel> rows = activityExecutionLocationQueryService.listExecutionRulesByExecutionOrg(
             request.getExecutionOrgId(),
             request.getActivityCategoryCode()
@@ -175,6 +170,7 @@ public class ExecuteLocationAppService {
         }
         this.enrichDtoList(content, organization.getName());
 
+        // Asm：内存 subList 分页后返回
         int pageNum = 1;
         if (request.getPageNo() != null && request.getPageNo() > 0) {
             pageNum = request.getPageNo();
@@ -201,6 +197,7 @@ public class ExecuteLocationAppService {
      * @throws BusinessException 请求体非法或校验失败时
      */
     public Long create(CreateExecuteLocationRequest request) {
+        // Gate：请求体、诊疗大类与写路径公共校验
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "创建请求不能为空");
         }
@@ -211,6 +208,7 @@ public class ExecuteLocationAppService {
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
             "请先登录后再保存执行科室规则");
+        // Cmd：创建单条执行规则
         CreateExecutionRuleCommand command = new CreateExecutionRuleCommand();
         command.setExecutionOrgId(request.getExecutionOrgId());
         command.setActivityCategoryCode(request.getActivityCategoryCode());
@@ -219,6 +217,7 @@ public class ExecuteLocationAppService {
         items.add(executeLocationMapper.toCreateItem(request));
         command.setRules(items);
         List<Long> ids = activityExecutionLocationDomainService.createExecutionRule(command);
+        // Branch：领域返回空列表时无新建主键
         if (ids.isEmpty()) {
             return null;
         }
@@ -232,6 +231,7 @@ public class ExecuteLocationAppService {
      * @throws BusinessException id 缺失或校验失败时
      */
     public void update(UpdateExecuteLocationRequest request) {
+        // Gate：主键非空与写路径公共校验
         if (request == null || request.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "ID不能为空");
         }
@@ -241,6 +241,7 @@ public class ExecuteLocationAppService {
             "请先登录后再保存执行科室规则");
         UpdateExecutionRuleCommand command = executeLocationMapper.toUpdateCommand(request);
         command.setOperatorId(operatorId);
+        // Cmd：更新执行规则
         activityExecutionLocationDomainService.updateExecutionRule(command);
     }
 
@@ -251,6 +252,7 @@ public class ExecuteLocationAppService {
      * @throws BusinessException id 为空时
      */
     public void deleteById(Long id) {
+        // Gate：主键非空且须已登录操作人
         if (id == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "ID不能为空");
         }
@@ -261,6 +263,7 @@ public class ExecuteLocationAppService {
         command.setId(id);
         command.setOperatorId(operatorId);
         command.setDeleteReason("应用层删除执行规则");
+        // Cmd：逻辑删除执行规则
         activityExecutionLocationDomainService.deleteExecutionRule(command);
     }
 
@@ -271,6 +274,7 @@ public class ExecuteLocationAppService {
      * @throws BusinessException 科室、大类或诊疗定义列表不合法时
      */
     public void batchCreate(BatchCreateExecuteLocationRequest request) {
+        // Gate：科室、大类、诊疗定义列表与写路径公共校验
         if (request == null || request.getExecutionOrgId() == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室ID不能为空");
         }
@@ -284,6 +288,7 @@ public class ExecuteLocationAppService {
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT,
             "请先登录后再保存执行科室规则");
+        // Cmd：批量展开为子命令后一次性创建
         CreateExecutionRuleCommand command = new CreateExecutionRuleCommand();
         command.setExecutionOrgId(request.getExecutionOrgId());
         command.setActivityCategoryCode(request.getActivityCategoryCode());
@@ -328,7 +333,7 @@ public class ExecuteLocationAppService {
         if (organization == null) {
             throw new BusinessException(ErrorCodeConstants.ACTIVITY_EXECUTION_LOCATION_INVALID_ARGUMENT, "执行科室不存在");
         }
-        if (StringUtils.isNotBlank(startTime) && StringUtils.isNotBlank(endTime)) {
+        if (StringUtils.isNotEmpty(startTime) && StringUtils.isNotEmpty(endTime)) {
             java.time.LocalTime start = executeLocationMapper.parseTime(startTime);
             java.time.LocalTime end = executeLocationMapper.parseTime(endTime);
             if (start != null && end != null && !start.isBefore(end)) {
@@ -367,7 +372,7 @@ public class ExecuteLocationAppService {
             }
         }
         Map<Long, String> locationNameById = locationQueryService.mapNamesByIds(locationIds);
-        Map<String, ProductDefinitionDisplayDto> productByKey = productDefinitionBatchLoader.loadAsMap(productLookups);
+        Map<String, ProductDefinitionDisplayDto> productByKey = productDefinitionDisplayTerminologyAssembler.loadAsMap(productLookups);
         Map<String, String> activityCategoryLabels =
             terminologyOptionLoader.buildLabelMap(TerminologyCodeSystemNameConstants.ACTIVITY_CATEGORY_CODE);
         for (ExecuteLocationDto row : rows) {

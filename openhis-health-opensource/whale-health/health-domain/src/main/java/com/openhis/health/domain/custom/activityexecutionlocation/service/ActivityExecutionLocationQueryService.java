@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.custom.activityexecutionlocation.service;
 
 import com.openhis.health.domain.custom.activityexecutionlocation.entity.ActivityExecutionLocation;
@@ -40,6 +27,8 @@ import java.util.Map;
  * <p>职责：按诊疗定义解析「在什么时间由哪个科室/地点执行」的规则列表与单条命中，支持批量评核。</p>
  *
  * <p>边界：只读；锚点主键缺失或批量入参为空时抛 {@link BusinessException}；无规则覆盖查询时刻时返回 {@code null} 或空映射项由调用方处理。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link ActivityExecutionLocationRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor

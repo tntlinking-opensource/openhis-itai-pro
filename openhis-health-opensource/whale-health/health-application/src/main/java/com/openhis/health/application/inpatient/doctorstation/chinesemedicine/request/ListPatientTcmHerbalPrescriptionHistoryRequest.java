@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.request;
 
@@ -24,13 +25,13 @@ public class ListPatientTcmHerbalPrescriptionHistoryRequest {
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
-    /** 当前就诊标识（排除）。 */
+    /** 当前就诊标识。 */
     @NotNull(message = "currentEncounterId 不能为空")
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "当前就诊标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long currentEncounterId;
 
-    /** 关键字（药品名/处方号）。 */
+    /** 关键字。 */
     @Schema(description = "关键字")
     private String keyword;
 }

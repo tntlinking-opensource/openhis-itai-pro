@@ -1,26 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.devicedispense.repository;
 
 import com.openhis.health.domain.workflow.devicedispense.entity.DeviceDispense;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -95,4 +83,15 @@ public interface DeviceDispenseRepository extends JpaRepository<DeviceDispense, 
      * @return 查询结果
      */
     long countByDeviceReqIdAndStatusEnum(Long deviceReqId, String statusEnum);
+
+    /**
+     * 护士工作量：按就诊集合与发放状态批量查询（DM-WKF-007 §6.2.20；AS-RPT-002）。
+     *
+     * @param encounterIds  就诊主键集合
+     * @param statusEnums   发放状态 code 集合
+     * @return 发放行列表
+     */
+    List<DeviceDispense> findByEncounterIdInAndStatusEnumInAndIsDeletedFalse(
+        Collection<Long> encounterIds,
+        Collection<String> statusEnums);
 }

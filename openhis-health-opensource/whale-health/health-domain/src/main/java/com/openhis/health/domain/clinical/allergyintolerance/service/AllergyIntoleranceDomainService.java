@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.clinical.allergyintolerance.service;
 
 import com.openhis.health.domain.clinical.allergyintolerance.command.DeleteSkinTestRecordCommand;
@@ -30,7 +17,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 /**
- * 过敏记录写侧领域服务。
+ * 过敏/皮试记录（{@code cln_allergy_intolerance}）聚合写侧领域服务。
+ *
+ * <p>职责：皮试记录保存与逻辑删除；申请/就诊/患者引用与状态成对校验委托聚合根。</p>
+ * <p>不变量：BR-ALI-001～004；持久化先于 {@link AllergyIntoleranceRecordedEvent} 发布。</p>
+ * <p>仅注入本聚合 {@link AllergyIntoleranceRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -76,14 +67,15 @@ public class AllergyIntoleranceDomainService {
         entity.setPractitionerId(cmd.getPractitionerId());
         entity.setCheckPractitionerId(cmd.getCheckPractitionerId());
         entity.setNote(cmd.getNote());
-        // Assert：BR-ALI-001 保存记录必须绑定申请、就诊、患者。
+        // 前置校验：BR-ALI-001～004 引用与状态成对
         entity.assertRequiredReferences();
         // Assert：BR-ALI-002 临床状态与验证状态必须成对记录。
         entity.assertStatusPairPresent();
         // Assert：BR-ALI-004 人员引用填写时必须满足可追溯的有效标识约束。
         entity.assertPractitionerReference();
-        // 先落库再发布事件，避免“先发事件后失败”导致幽灵事件。
+        // 持久化
         AllergyIntolerance saved = repository.save(entity);
+        // 发布事件：皮试记录已保存
         domainEventPublisher.publish(new AllergyIntoleranceRecordedEvent(saved.getId(), saved.getEncounterId(), saved.getPatientId(),
             saved.getMedicationId(), saved.getClinicalStatusEnum(), saved.getVerificationStatusEnum()));
         return saved.getId();
@@ -96,7 +88,7 @@ public class AllergyIntoleranceDomainService {
      * @throws BusinessException 记录不存在或入参非法时抛出
      */
     public void deleteSkinTestRecord(DeleteSkinTestRecordCommand cmd) {
-        // Assert：BR-ALI-003 删除必须基于记录 ID。
+        // 前置校验：BR-ALI-003 删除必须基于记录 ID
         if (cmd.getRecordId() == null) {
             throw new BusinessException(ErrorCodeConstants.ALLERGY_INTOLERANCE_INVALID_ARGUMENT, "记录标识不能为空");
         }
@@ -104,8 +96,9 @@ public class AllergyIntoleranceDomainService {
             () -> new BusinessException(ErrorCodeConstants.ALLERGY_INTOLERANCE_NOT_FOUND, "过敏记录不存在"));
         entity.assertDeletable();
         entity.markDeleted(cmd.getOperatorId());
-        // 先保存逻辑删除，再发布“已删除”事件。
+        // 持久化
         repository.save(entity);
+        // 发布事件：记录已删除
         domainEventPublisher.publish(new AllergyIntoleranceRemovedEvent(entity.getId(), entity.getEncounterId(), entity.getPatientId()));
     }
 }

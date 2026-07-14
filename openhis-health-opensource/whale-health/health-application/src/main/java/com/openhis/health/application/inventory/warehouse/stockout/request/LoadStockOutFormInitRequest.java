@@ -1,37 +1,29 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.warehouse.stockout.request;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
+ * 药库出库页初始化请求（IF-WHS-SO-01）。
  *
- * <p>机构维度由应用层 {@link com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver} 解析，请求体不得承载机构主键作为权威来源（B.10.11 配套约定）。</p>
+ * <p>机构上下文由 {@code CurrentManagedOrganizationIdsResolver} 从会话解析，请求体可空。</p>
  */
 @Getter
 @Setter
 @Accessors(chain = true)
+@Schema(description = "药库出库页初始化请求 IF-WHS-SO-01")
 public class LoadStockOutFormInitRequest {
 
-    @Schema(description = "兼容字段，服务端忽略")
+    /** 机构主键，兼容字段，服务端忽略。 */
+    @JsonSerialize(using = ToStringSerializer.class)
+    @Schema(description = "机构主键，兼容字段，服务端忽略")
     private Long organizationId;
 }

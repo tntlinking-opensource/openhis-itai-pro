@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.mrms.upload.service;
 
 import com.alibaba.fastjson2.JSON;
@@ -16,7 +16,7 @@ import com.openhis.health.application.mrms.upload.request.QueryUploadPageRequest
 import com.openhis.health.application.mrms.upload.request.RetryUploadRequest;
 import com.openhis.health.application.mrms.upload.request.Upload4401Request;
 import com.openhis.health.application.mrms.upload.support.MrmsInsuranceEncounterContext;
-import com.openhis.health.application.mrms.upload.support.MrmsInsuranceEncounterSupport;
+import com.openhis.health.application.mrms.upload.support.MrmsInsuranceEncounterLoader;
 import com.openhis.health.application.mrms.upload.support.Upload4401Validator;
 import com.openhis.health.domain.financial.contract.service.ContractQueryService;
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecord;
@@ -30,13 +30,13 @@ import com.openhis.health.domain.mrms.upload.service.UploadLogDomainService;
 import com.openhis.health.domain.share.constants.MrmsErrorCodes;
 import com.openhis.health.domain.share.enums.CaseRecordStatus;
 import com.openhis.health.domain.share.enums.ChsUploadStatus;
-import com.openhis.health.integration.insurance.medcas.MedcasHomepageUploadExtension;
-import com.openhis.health.integration.insurance.medcas.MedcasInfCodes;
-import com.openhis.health.integration.insurance.medcas.command.MedcasHomepageUploadCommand;
-import com.openhis.health.integration.insurance.medcas.dto.MedcasHomepagePayload;
-import com.openhis.health.integration.insurance.medcas.result.MedcasUploadResult;
-import com.openhis.health.module.common.validator.MrmsOperatorResolver;
-import com.openhis.health.module.common.validator.PageWindowGate;
+import com.openhis.health.infrastructure.integration.insurance.medcas.MedcasHomepageUploadExtension;
+import com.openhis.health.infrastructure.integration.insurance.medcas.MedcasInfCodes;
+import com.openhis.health.infrastructure.integration.insurance.medcas.ExtensionIn.MedcasHomepageUploadExtensionIn;
+import com.openhis.health.infrastructure.integration.insurance.medcas.dto.MedcasHomepagePayload;
+import com.openhis.health.infrastructure.integration.insurance.medcas.ExtensionOut.MedcasUploadExtensionOut;
+import com.openhis.health.application.mrms.support.MrmsOperatorResolver;
+import com.openhis.health.application.shared.validator.PageWindowGate;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.ValidationException;
@@ -69,7 +69,7 @@ public class MrmsCaseRecordUploadAppService {
     private final CaseRecordQueryService caseRecordQueryService;
     private final CaseRecordHomepageDomainService caseRecordHomepageDomainService;
     private final UploadLogDomainService uploadLogDomainService;
-    private final MrmsInsuranceEncounterSupport insuranceEncounterSupport;
+    private final MrmsInsuranceEncounterLoader insuranceEncounterSupport;
     private final MedcasHomepageUploadExtension medcasHomepageUploadExtension;
     private final ContractQueryService contractQueryService;
     private final CaseRecord4401Mapper caseRecord4401Mapper;
@@ -178,6 +178,13 @@ public class MrmsCaseRecordUploadAppService {
         return PagedResult.of(items, page.getTotalElements(), pageNo, pageSize);
     }
 
+    /**
+     * 病案医保上传主流程：Gate 归档/冻结 → 非医保跳过 → 组装并调用上传扩展。
+     *
+     * @param caseRecordId  病案 id
+     * @param contractBusNo 合同业务号
+     * @return 上传结果 DTO
+     */
     private UploadResultDto doUpload(Long caseRecordId, String contractBusNo) {
         // Gate：病案须已归档且首页冻结
         CaseRecord record = caseRecordDomainService.requireById(caseRecordId);
@@ -206,14 +213,14 @@ public class MrmsCaseRecordUploadAppService {
 
         if (!medcasHomepageUploadExtension.isEnabled()) {
             // CHS starter 未装配，阻断实际上传
-            throw new BusinessException(MrmsErrorCodes.UPLOAD_PRECONDITION, "医保网关未装配，请启用 chs-jilin-starter");
+            throw new BusinessException(MrmsErrorCodes.UPLOAD_PRECONDITION, "医保网关未装配，请启用 module-chs-jilin-starter");
         }
         // Cmd：调用医保网关上传并落上传日志
-        MedcasHomepageUploadCommand uploadCommand = new MedcasHomepageUploadCommand();
+        MedcasHomepageUploadExtensionIn uploadCommand = new MedcasHomepageUploadExtensionIn();
         uploadCommand.setContractBusNo(contractBusNo);
         uploadCommand.setInputJson(inputJson);
         uploadCommand.setOperatorId(operatorId);
-        MedcasUploadResult platform = medcasHomepageUploadExtension.upload(uploadCommand);
+        MedcasUploadExtensionOut platform = medcasHomepageUploadExtension.upload(uploadCommand);
 
         Long contractId = contractQueryService.findOptionalContractEntityByBusNo(contractBusNo)
                 .map(contract -> contract.getId())

@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.mrms.caserecord.service;
 
 import com.openhis.health.domain.mrms.caserecord.entity.CaseRecord;
@@ -28,6 +28,8 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
  * 病案主档读侧查询服务（不写库）。
  *
  * <p>仅注入本聚合 {@link CaseRecordRepository}；条件下推 DB，禁止内存分页。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link CaseRecordRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -87,6 +89,12 @@ public class CaseRecordQueryService {
         return caseRecordRepository.findAll(spec, pageable).map(this::toListItemQueryModel);
     }
 
+    /**
+     * 病案实体 → 列表项读模型。
+     *
+     * @param record 病案聚合根
+     * @return 列表读模型
+     */
     private CaseRecordListItemQueryModel toListItemQueryModel(CaseRecord record) {
         CaseRecordListItemQueryModel model = new CaseRecordListItemQueryModel();
         model.setId(record.getId());

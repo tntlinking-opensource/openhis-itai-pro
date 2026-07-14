@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.supplydelivery.service;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -44,6 +31,8 @@ import java.util.Set;
  * <p>职责：按发放主键、按上游请求行主键批量查询发放记录，以及发放状态门控；只读不写库。</p>
  *
  * <p>读模型中 {@code statusEnum} 等与实体一致，为 {@link DispenseStatus#getCode()} 等持久化字符串（B.10.8.1）。</p>
+ *
+ * <p>聚合边界：仅本聚合 {@link SupplyDeliveryRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -92,6 +81,7 @@ public class SupplyDeliveryQueryService {
             model.setRequestId(entity.getRequestId());
             model.setDeliveryId(entity.getId());
             model.setQuantity(entity.getQuantity());
+            model.setTraceNo(entity.getTraceNo());
             result.add(model);
         }
         return result;

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 import lombok.Getter;
@@ -34,7 +21,7 @@ public enum GenerateSource implements EnumInterface {
     /** 医生在医生站等业务端开立医嘱。 */
     DOCTOR_PRESCRIPTION(0L, "doctor-prescription", "医生开立", "医生开立医嘱或处方。", 1L),
 
-    /** 护士站划价产生。 */
+/** 护士划价（GenerateSource，持久化编码 {@code nurse-pricing}）。 */
     NURSE_PRICING(0L, "nurse-pricing", "护士划价", "护士站划价录入产生。", 2L),
 
     /** 挂号登记时自动产生。 */

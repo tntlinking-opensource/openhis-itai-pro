@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.inpatientbilling.response;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -33,22 +20,23 @@ import java.util.List;
  */
 @Data
 @Accessors(chain = true)
-/** 直接划价确认响应。 */
 @Schema(description = "直接划价确认响应")
 public class ConfirmDirectNurseStationPricingResponse {
 
     @Schema(description = "整批成功")
+    /** 整批成功。 */
     private Boolean success;
 
     @Schema(description = "成功行数")
+    /** 成功行数。 */
     private Integer processedCount;
 
-    /** 本批新建的 wkf_service_request id（含套餐子项）。 */
+    /** 新建诊疗请求 id。 */
     @Schema(description = "新建诊疗请求 id")
     @JsonSerialize(contentUsing = ToStringSerializer.class)
     private List<Long> createdServiceRequestIds = new ArrayList<>();
 
-    /** 本批新建的 wkf_device_request id。 */
+    /** 新建耗材请求 id。 */
     @Schema(description = "新建耗材请求 id")
     @JsonSerialize(contentUsing = ToStringSerializer.class)
     private List<Long> createdDeviceRequestIds = new ArrayList<>();

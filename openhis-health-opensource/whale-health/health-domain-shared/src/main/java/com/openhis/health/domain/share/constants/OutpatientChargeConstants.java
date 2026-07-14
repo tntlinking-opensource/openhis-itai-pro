@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 /**
@@ -33,10 +20,12 @@ public interface OutpatientChargeConstants {
     String MESSAGE_CODE_SWITCH_ACCOUNT_NOT_FOUND = "EX-OPC-201";
     /** 门诊转账户失败：切换落库失败或无可切换明细。 */
     String MESSAGE_CODE_SWITCH_FAILED = "EX-OPC-202";
+    /** 门诊转账户失败：就诊仅单一记账账户（如纯自费挂号），不支持互转。 */
+    String MESSAGE_CODE_SWITCH_DUAL_ACCOUNT_REQUIRED = "EX-OPC-210";
 
     /** 初始化数据加载失败。 */
     String MESSAGE_CODE_INIT_LOAD_FAILED = "EX-OPC-101";
-    /** 队列查询失败。 */
+/** OutpatientCharge 共享常量：code queue query failed，值 {@code EX-OPC-102}。 */
     String MESSAGE_CODE_QUEUE_QUERY_FAILED = "EX-OPC-102";
     /** 待收费明细加载失败。 */
     String MESSAGE_CODE_PENDING_ITEMS_LOAD_FAILED = "EX-OPC-103";

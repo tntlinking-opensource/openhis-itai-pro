@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.advice.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -35,11 +22,10 @@ import java.time.LocalDateTime;
  */
 @Data
 @Accessors(chain = true)
-/** 住院医生站-长期医嘱停嘱行。 */
 @Schema(description = "住院医生站-长期医嘱停嘱行")
 public class StopLongTermAdviceLineRequest {
 
-    /** 药品/诊疗请求主键。 */
+    /** 医嘱请求主键。 */
     @NotNull(message = DoctorStationAdviceConstants.VALIDATION_REQUEST_ID_REQUIRED)
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "医嘱请求主键", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -51,7 +37,7 @@ public class StopLongTermAdviceLineRequest {
     @Schema(description = "产品定义表名", requiredMode = Schema.RequiredMode.REQUIRED)
     private String productTableName;
 
-    /** 停嘱时间；空则取当前时间。 */
+    /** 停嘱时间。 */
     @Schema(description = "停嘱时间")
     private LocalDateTime stopTime;
 }

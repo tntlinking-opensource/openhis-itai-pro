@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.servicerequest.command;
 
 import com.openhis.health.domain.share.command.BatchCommand;
@@ -31,22 +18,33 @@ import java.util.List;
 @Setter
 public class CreateServiceRequestDraftCommand extends BatchCommand<CreateServiceRequestDraftCommand.CreateServiceRequestDraftItemCommand> {
 
+    /** 当前操作人（开嘱人真源，持久化 {@code wkf_service_request.requester_id}）。 */
     private Long operatorId;
 
     @Getter
     @Setter
     public static class CreateServiceRequestDraftItemCommand {
+        /** 就诊主键 {@code adm_encounter.id}。 */
         private Long encounterId;
+        /** 患者主键 {@code adm_patient.id}，须与就诊归属一致。 */
         private Long patientId;
+        /** 诊疗项目/活动定义主键 {@code wkf_activity_definition.id}。 */
         private Long activityId;
+        /** 开立数量（与 {@link #unitCode} 成对）。 */
         private BigDecimal quantity;
+        /** 计量单位编码。 */
         private String unitCode;
         /** 计划执行次数（临嘱必填；长嘱可空，按频次执行）。 */
         private Integer executionCount;
+        /** 医嘱类别持久化码（长期/临时等）。 */
         private String categoryEnum;
+        /** 治疗类别持久化码（治疗/检查等）。 */
         private String therapyEnum;
+        /** 开嘱人 practitioner 主键（通常由外层 {@link #operatorId} 覆盖，兼容显式传入）。 */
         private Long requesterId;
+        /** 明细引用行（检查部位、附加耗材等）。 */
         private List<DetailItemCommand> detailItems;
+        /** 医嘱备注/嘱托（展示用）。 */
         private String note;
         /** 生成来源持久化码（医生站列表与药品/耗材对称过滤）。 */
         private String generateSourceEnum;

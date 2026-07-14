@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.chargeitemdefinition.service;
 
 import com.openhis.health.domain.administration.chargeitemdefinition.command.DeactivateActivePriceLinesCommand;
@@ -31,7 +18,7 @@ import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.domain.event.IDomainEventPublisher;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
@@ -44,6 +31,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 收费项定价（{@code adm_charge_item_definition}）聚合写侧领域服务。
+ *
+ * <p>职责：按实例维护零售价/采购价/限价/批号价行，批量停用、按实例移除及项目公共信息批量更新。</p>
+ * <p>不变量：新建行须落 {@code status_enum=ACTIVE} 与 {@code type_code}（BR-CHGDEF-WR-002）；持久化先于价格行领域事件发布。</p>
+ * <p>仅注入本聚合 {@link ChargeItemDefinitionRepository}。</p>
+ */
 @Service
 @RequiredArgsConstructor
 public class ChargeItemDefinitionDomainService {
@@ -93,9 +87,10 @@ public class ChargeItemDefinitionDomainService {
      * @param cmd 更新命令（实例表、实例主键、操作人等）
      */
     public void updatePricingItemInfo(UpdatePricingItemInfoCommand cmd) {
+        // 前置校验：按实例标识加载待更新行，空集则拒绝
         // Pre：先按实例标识加载价格定义，确保“更新项目公共信息”具备真实落库对象。
         List<ChargeItemDefinition> rows;
-        // 业务分支处理：优先按实例表+实例ID查询，否则仅按实例ID查询。
+        // 优先按实例表+实例ID查询，否则仅按实例ID查询。
         if (cmd.getInstanceTable() != null && !cmd.getInstanceTable().isBlank()) {
             rows = repository.findAllByInstanceTableAndInstanceId(cmd.getInstanceTable().trim(), cmd.getInstanceId());
         } else {
@@ -110,8 +105,9 @@ public class ChargeItemDefinitionDomainService {
             row.setUpdatedAt(LocalDateTime.now());
         }
 
+        // 持久化
         repository.saveAll(rows);
-        // Event：发布批量信息更新领域事件。
+        // 发布事件：批量信息更新
         String instanceTable = rows.get(0).getInstanceTable();
         domainEventPublisher.publish(new ChargeItemDefinitionDomainEvents.ChargeItemDefinitionInfoBatchUpdatedEvent(
             cmd.getInstanceId(), cmd.getInstanceId(), instanceTable));
@@ -146,7 +142,7 @@ public class ChargeItemDefinitionDomainService {
         Long operatorId = cmd.getOperatorId();
         List<ChargeItemDefinition> toSave = new ArrayList<>();
         for (DeactivateActivePriceLinesCommand.Item item : itemList) {
-            if (item == null || item.getInstanceId() == null || StringUtils.isBlank(item.getPriceTypeCode())) {
+            if (item == null || item.getInstanceId() == null || StringUtils.isEmpty(item.getPriceTypeCode())) {
                 continue;
             }
             // Pre：按匹配键加载当前 ACTIVE 行。
@@ -175,7 +171,7 @@ public class ChargeItemDefinitionDomainService {
     public void removePricingByInstance(RemovePricingByInstanceCommand cmd) {
         // Pre：按实例标识加载待移除的价格定义。
         List<ChargeItemDefinition> rows = new ArrayList<>();
-        // 业务分支处理：优先按实例表+实例ID查询，否则仅按实例ID查询。
+        // 优先按实例表+实例ID查询，否则仅按实例ID查询。
         if (cmd.getInstanceTable() != null) {
             rows.addAll(repository.findAllByInstanceTableAndInstanceId(cmd.getInstanceTable(), cmd.getInstanceId()));
         } else {
@@ -380,7 +376,7 @@ public class ChargeItemDefinitionDomainService {
         if (row == null) {
             return;
         }
-        if (StringUtils.isBlank(row.getTypeCode())) {
+        if (StringUtils.isEmpty(row.getTypeCode())) {
             throw new BusinessException(
                 ErrorCodeConstants.CHARGE_ITEM_DEFINITION_INVALID_ARGUMENT,
                 "新建定价行缺少财务类型 type_code，instanceTable="
@@ -398,7 +394,7 @@ public class ChargeItemDefinitionDomainService {
      * @return trim 后的 type_code；无命中时为 {@code null}
      */
     private String resolveSiblingTypeCode(String instanceTable, Long instanceId) {
-        if (StringUtils.isBlank(instanceTable) || instanceId == null) {
+        if (StringUtils.isEmpty(instanceTable) || instanceId == null) {
             return null;
         }
         List<ChargeItemDefinition> siblings =
@@ -425,11 +421,11 @@ public class ChargeItemDefinitionDomainService {
         if (row == null) {
             return;
         }
-        if (StringUtils.isNotBlank(explicitStatusEnum)) {
+        if (StringUtils.isNotEmpty(explicitStatusEnum)) {
             row.setStatusEnum(explicitStatusEnum.trim());
             return;
         }
-        if (StringUtils.isBlank(row.getStatusEnum())) {
+        if (StringUtils.isEmpty(row.getStatusEnum())) {
             row.setStatusEnum(PublicationStatus.ACTIVE.getCode());
         }
     }
@@ -451,7 +447,7 @@ public class ChargeItemDefinitionDomainService {
             predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), PublicationStatus.ACTIVE.getCode()));
             predicates.add(cb.equal(root.get(FieldNameConstants.PRICE_TYPE_CODE), priceTypeCode));
             predicates.add(cb.equal(root.get(FieldNameConstants.INSTANCE_ID), instanceId));
-            if (StringUtils.isNotBlank(instanceTable)) {
+            if (StringUtils.isNotEmpty(instanceTable)) {
                 predicates.add(cb.equal(root.get(FieldNameConstants.INSTANCE_TABLE), instanceTable.trim()));
             }
             if (lotTrimmed == null) {
@@ -474,7 +470,7 @@ public class ChargeItemDefinitionDomainService {
      * @return trim 后批号；空白时为 null
      */
     private static String trimLotNoOrNull(String lotNo) {
-        if (StringUtils.isBlank(lotNo)) {
+        if (StringUtils.isEmpty(lotNo)) {
             return null;
         }
         return lotNo.trim();

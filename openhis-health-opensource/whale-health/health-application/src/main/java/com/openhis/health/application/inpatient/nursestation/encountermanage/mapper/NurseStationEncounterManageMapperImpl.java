@@ -1,26 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.encountermanage.mapper;
 
 import static com.openhis.whale.core.application.util.StringUtils.firstNonBlank;
 
-import com.openhis.health.module.common.dto.nursestation.AdmissionVitalSignSubmitDto;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.inpatient.AdmissionVitalSignSubmitDto;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.dto.*;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.request.PagePatientQueueRequest;
 import com.openhis.health.application.inpatient.nursestation.encountermanage.request.SavePatientInfoRequest;
@@ -30,8 +17,8 @@ import com.openhis.health.application.inpatient.nursestation.encountermanage.res
 import com.openhis.health.application.inpatient.nursestation.encountermanage.response.SavePatientInfoResponse;
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
 import com.openhis.whale.core.application.dto.OptionDto;
-import com.openhis.health.module.common.assembler.inpatient.AdmissionPrimaryDiagnosisAssembler;
-import com.openhis.health.module.common.assembler.inpatient.InpatientInfoQueueDisplayAssembler;
+import com.openhis.health.application.shared.inpatient.AdmissionPrimaryDiagnosisAssembler;
+import com.openhis.health.application.shared.inpatient.InpatientInfoQueueDisplayAssembler;
 import com.openhis.health.domain.administration.encounter.command.SaveNurseStationPatientCommand;
 import com.openhis.health.domain.administration.location.entity.Location;
 import com.openhis.health.domain.administration.encounter.queries.InpatientEncounterPageQuery;
@@ -39,10 +26,10 @@ import com.openhis.health.domain.administration.encounter.queries.model.Inpatien
 import com.openhis.health.domain.share.enums.AdministrativeGender;
 import com.openhis.health.domain.share.enums.EncounterStatus;
 import com.openhis.health.domain.share.utils.EnumUtil;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Component;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -53,14 +40,10 @@ import java.util.Map;
  * {@link NurseStationEncounterManageMapper} 实现：字段映射与展示回落，不承载业务流程判断。
  */
 @Component
+@RequiredArgsConstructor
 public class NurseStationEncounterManageMapperImpl implements NurseStationEncounterManageMapper {
 
     private final AdmissionPrimaryDiagnosisAssembler admissionPrimaryDiagnosisAssembler;
-
-    public NurseStationEncounterManageMapperImpl(
-        AdmissionPrimaryDiagnosisAssembler admissionPrimaryDiagnosisAssembler) {
-        this.admissionPrimaryDiagnosisAssembler = admissionPrimaryDiagnosisAssembler;
-    }
 
     /**
      * 病区与病房列表 → 树响应。
@@ -114,17 +97,24 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
     /**
      * 住院医师与责任护士实体列表 → 分床下拉初始化响应。
      *
-     * @param doctors 住院医师候选
-     * @param nurses  责任护士候选
+     * @param doctors            住院医师候选
+     * @param nurses             责任护士候选
+     * @param admCondCodeOptions 患者病情术语下拉
      * @return 初始化响应
      */
     @Override
     public LoadAdmissionParticipantInitResponse toLoadAdmissionParticipantInitResponse(
         List<Practitioner> doctors,
-        List<Practitioner> nurses) {
+        List<Practitioner> nurses,
+        List<OptionDto> admCondCodeOptions) {
         LoadAdmissionParticipantInitResponse response = new LoadAdmissionParticipantInitResponse();
         response.setDoctorOptions(toPractitionerOptionList(doctors));
         response.setPrimaryNurseOptions(toPractitionerOptionList(nurses));
+        if (admCondCodeOptions == null) {
+            response.setAdmCondCodeOptions(Collections.emptyList());
+        } else {
+            response.setAdmCondCodeOptions(admCondCodeOptions);
+        }
         return response;
     }
 
@@ -235,8 +225,12 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         dto.setStatusEnumText(firstNonBlank(row.getStatusEnumText(), overlayStatusText));
         dto.setPatientId(row.getPatientId());
         dto.setPatientName(firstNonBlank(row.getPatientName(), overlayPatientName));
-        dto.setGenderEnum(row.getGenderEnum());
-        AdministrativeGender gender = EnumUtil.fromCode(AdministrativeGender.class, row.getGenderEnum());
+        String genderCode = row.getGenderEnum();
+        if (displayOverlay != null) {
+            genderCode = firstNonBlank(genderCode, displayOverlay.getGenderEnum());
+        }
+        dto.setGenderEnum(genderCode);
+        AdministrativeGender gender = EnumUtil.fromCode(AdministrativeGender.class, genderCode);
         if (gender != null) {
             dto.setGenderEnumText(gender.getDisplay());
         }
@@ -360,6 +354,10 @@ public class NurseStationEncounterManageMapperImpl implements NurseStationEncoun
         detail.setDiagnosisList(base.getDiagnosisList());
         detail.setPinyinCode(base.getPinyinCode());
         detail.setWubiCode(base.getWubiCode());
+        detail.setNursingLevelServiceRequestId(base.getNursingLevelServiceRequestId());
+        detail.setNursingLevelActivityId(base.getNursingLevelActivityId());
+        detail.setNursingLevelName(base.getNursingLevelName());
+        detail.setNursingLevelStatusEnum(base.getNursingLevelStatusEnum());
         detail.setPatientPhone(patientPhone);
         detail.setIdCardNo(idCardNo);
         detail.setParticipants(participants);

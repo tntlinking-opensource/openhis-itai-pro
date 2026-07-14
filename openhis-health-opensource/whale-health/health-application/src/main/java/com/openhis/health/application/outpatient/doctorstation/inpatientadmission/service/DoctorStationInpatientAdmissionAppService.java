@@ -1,24 +1,12 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.doctorstation.inpatientadmission.service;
 
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
-import com.openhis.health.module.orchestration.encounter.EncounterInpatientAdmissionWriteSupport;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.inpatient.AdmissionDiagnosisSubmitGate;
+import com.openhis.health.application.shared.inpatient.EncounterInpatientAdmissionOrchestrator;
 import com.openhis.health.application.outpatient.doctorstation.inpatientadmission.dto.AdmissionDiagnosisSubmitDto;
 import com.openhis.health.application.outpatient.doctorstation.inpatientadmission.mapper.DoctorStationInpatientAdmissionMapper;
 import com.openhis.health.application.outpatient.doctorstation.inpatientadmission.request.CheckInpatientAdmissionExistsRequest;
@@ -42,6 +30,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -55,7 +44,8 @@ public class DoctorStationInpatientAdmissionAppService {
 
     private final EncounterQueryService encounterQueryService;
     private final EncounterDomainService encounterDomainService;
-    private final EncounterInpatientAdmissionWriteSupport encounterInpatientAdmissionWriteSupport;
+    private final EncounterInpatientAdmissionOrchestrator encounterInpatientAdmissionOrchestrator;
+    private final AdmissionDiagnosisSubmitGate admissionDiagnosisSubmitGate;
     private final OrganizationQueryService organizationQueryService;
     private final LocationQueryService locationQueryService;
     private final DoctorStationInpatientAdmissionMapper doctorStationInpatientAdmissionMapper;
@@ -69,40 +59,42 @@ public class DoctorStationInpatientAdmissionAppService {
      * @throws BusinessException 参数缺失、源就诊不可转住院、重复申请、科室/病区无效或患者不一致
      */
     public RequestInpatientAdmissionResponse requestInpatientAdmission(RequestInpatientAdmissionRequest request) {
+        // Gate：住院申请请求体与入院诊断结构校验
         this.validateRequestInpatientAdmissionRequest(request);
         Long ambEncounterId = request.getAmbEncounterId();
-        // 加载源就诊并断言其为可转住院的门诊线（BR-IP-REQ-001）。
+        // Pre：加载源就诊并断言其为可转住院的门诊线（BR-IP-REQ-001）
         EncounterDetailQueryModel ambEncounter = encounterQueryService.mustGetEncounter(ambEncounterId);
         encounterQueryService.assertAmbForInpatientReq(ambEncounterId);
         Long resolvedPatientId = ambEncounter.getPatientId();
-        // 若前端传入患者主键，须与源就诊头表一致，防止跨患者误申请（BR 患者一致性）。
+        // Branch：若前端传入患者主键，须与源就诊头表一致（BR 患者一致性）
         if (request.getPatientId() != null) {
             if (!request.getPatientId().equals(resolvedPatientId)) {
                 throw new BusinessException(ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT, "患者与源就诊不一致，无法办理住院");
             }
         }
-        // 同一门诊锚点不得存在未取消住院线（BR-IP-REQ-002 / EX-IP-REQ-201）。
+        // Gate：同一门诊锚点不得存在未取消住院线（BR-IP-REQ-002）
         OpenInpatientLineQuery existingLine = encounterQueryService.findOpenInpatientLine(ambEncounterId);
         if (existingLine.isExists()) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT, "该门诊就诊已存在住院申请，请勿重复提交");
         }
-        // 意向住院科室须存在且可用于展示选点。
+        // Gate：意向住院科室须存在
         this.assertTargetDepartmentExists(request.getTargetDepartmentId());
-        // 若填写意向病区，须为启用中的 WARD 形态位置。
+        // Branch：若填写意向病区，须为启用中的 WARD 形态位置
         if (request.getWardId() != null) {
             this.assertWardValid(request.getWardId());
         }
         RequestInpatientAdmissionCommand command =
             doctorStationInpatientAdmissionMapper.toRequestInpatientAdmissionCommand(request, resolvedPatientId);
+        // Cmd：INSERT 新 IMP+PLANNED 住院线
         Long inpatientEncounterId = encounterDomainService.requestInpatientAdmission(command);
         RequestInpatientAdmissionCommand.RequestInpatientAdmissionItemCommand admissionItem =
             command.resolveItems().get(0);
-        encounterInpatientAdmissionWriteSupport.saveAdmissionDiagnoses(
+        encounterInpatientAdmissionOrchestrator.saveAdmissionDiagnoses(
             resolvedPatientId,
             inpatientEncounterId,
             admissionItem.getAdmissionDiagnoses(),
             command.getOperatorId());
-        // 回读新建住院线的业务号（BR-IP-REQ-009 独立住院前缀），供前端展示住院号。
+        // Pre：回读新建住院线的业务号（BR-IP-REQ-009）
         OpenInpatientLineQuery createdLine = encounterQueryService.findOpenInpatientLine(ambEncounterId);
         if (!createdLine.isExists() || createdLine.getBusNo() == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_RULE_CONFLICT, "住院申请已落库但无法回读住院业务号");
@@ -133,10 +125,11 @@ public class DoctorStationInpatientAdmissionAppService {
     public CheckInpatientAdmissionExistsResponse checkInpatientAdmissionExistsByAmbEncounter(
         CheckInpatientAdmissionExistsRequest request
     ) {
+        // Gate：门诊就诊标识非空
         this.validateCheckInpatientAdmissionExistsRequest(request);
-        // 只读查询未取消住院线，不写库。
+        // Pre：只读查询未取消住院线
         OpenInpatientLineQuery line = encounterQueryService.findOpenInpatientLine(request.getAmbEncounterId());
-        // 装配 exists / inpatientEncounterId / statusEnum。
+        // Asm：装配 exists / inpatientEncounterId / statusEnum
         return doctorStationInpatientAdmissionMapper.toCheckInpatientAdmissionExistsResponse(line);
     }
 
@@ -187,32 +180,14 @@ public class DoctorStationInpatientAdmissionAppService {
      * @throws BusinessException 列表为空或行内字段不合法
      */
     private void validateAdmissionDiagnoses(List<AdmissionDiagnosisSubmitDto> diagnoses) {
-        if (diagnoses == null || diagnoses.isEmpty()) {
-            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "入院诊断不能为空");
+        List<AdmissionDiagnosisSubmitGate.AdmissionDiagnosisRowView> rows = new ArrayList<>();
+        if (diagnoses != null) {
+            rows.addAll(diagnoses);
         }
-        boolean hasPrimary = false;
-        for (AdmissionDiagnosisSubmitDto row : diagnoses) {
-            if (row == null) {
-                throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "入院诊断行不能为空");
-            }
-            if (row.getPrimaryFlag() == null) {
-                throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "是否主诊断不能为空");
-            }
-            if (row.getPrimaryFlag()) {
-                hasPrimary = true;
-            }
-            if (row.getConditionId() == null) {
-                if (row.getConditionDefinitionId() == null) {
-                    throw new BusinessException(
-                        ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT,
-                        "新开入院诊断须指定诊断目录"
-                    );
-                }
-            }
-        }
-        if (!hasPrimary) {
-            throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "入院诊断须至少一条主诊断");
-        }
+        admissionDiagnosisSubmitGate.validateAdmissionDiagnosisRows(
+            rows,
+            "入院诊断不能为空",
+            ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT);
     }
 
     /**

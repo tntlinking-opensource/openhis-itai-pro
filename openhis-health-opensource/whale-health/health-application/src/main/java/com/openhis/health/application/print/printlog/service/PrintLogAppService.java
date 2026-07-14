@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.print.printlog.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
@@ -25,13 +12,13 @@ import com.openhis.health.application.print.printlog.mapper.PrintLogMapper;
 import com.openhis.health.application.print.printlog.request.QueryPrintDailySummaryRequest;
 import com.openhis.health.application.print.printlog.request.QueryPrintLogRequest;
 import com.openhis.health.application.print.printlog.response.QueryPrintLogPageResponse;
-import com.openhis.health.module.common.validator.PrintOperatorResolver;
+import com.openhis.health.application.shared.validator.PrintOperatorResolver;
 import com.openhis.health.domain.share.constants.PrintConstants;
 import com.openhis.health.domain.print.printlog.entity.PrtPrintEventLog;
 import com.openhis.health.domain.print.printlog.queries.PrtPrintEventLogPageQuery;
 import com.openhis.health.domain.print.printlog.service.PrtPrintEventLogQueryService;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -77,11 +64,17 @@ public class PrintLogAppService {
    */
   public QueryPrintLogPageResponse queryPage(QueryPrintLogRequest request) {
     // Gate：须已选租户，日志按租户隔离。
-    QueryPrintLogRequest safeRequest = normalizeLogQueryRequest(request);
+    QueryPrintLogRequest safeRequest = request;
+    if (safeRequest == null) {
+      safeRequest = new QueryPrintLogRequest();
+    }
     Long tenantId = printOperatorResolver.requireTenantId();
     // Pre：归一化筛选条件与分页窗口。
     String busNo = trimToNull(safeRequest.getBusNo());
-    String status = normalizeLogStatus(safeRequest.getStatus());
+    String status = trimToNull(safeRequest.getStatus());
+    if (status != null) {
+      status = status.toUpperCase(Locale.ROOT);
+    }
     LocalDate dateFrom = safeRequest.getDateFrom();
     LocalDate dateTo = safeRequest.getDateTo();
     int pageNo = resolvePageNo(safeRequest.getPageNo());
@@ -112,7 +105,10 @@ public class PrintLogAppService {
    * @return 汇总行列表，按日降序、busNo 升序
    */
   public List<PrintDailySummaryItemDto> queryDailySummary(QueryPrintDailySummaryRequest request) {
-    QueryPrintDailySummaryRequest safeRequest = normalizeSummaryRequest(request);
+    QueryPrintDailySummaryRequest safeRequest = request;
+    if (safeRequest == null) {
+      safeRequest = new QueryPrintDailySummaryRequest();
+    }
     // Gate：须已选租户。
     Long tenantId = printOperatorResolver.requireTenantId();
     LocalDate today = LocalDate.now();
@@ -143,29 +139,12 @@ public class PrintLogAppService {
     return printLogMapper.ConverterPrintDailySummaryList(page.getContent(), dateFrom);
   }
 
-  private QueryPrintLogRequest normalizeLogQueryRequest(QueryPrintLogRequest request) {
-    if (request == null) {
-      return new QueryPrintLogRequest();
-    }
-    return request;
-  }
-
-  private QueryPrintDailySummaryRequest normalizeSummaryRequest(
-      QueryPrintDailySummaryRequest request) {
-    if (request == null) {
-      return new QueryPrintDailySummaryRequest();
-    }
-    return request;
-  }
-
-  private String normalizeLogStatus(String status) {
-    String resolved = trimToNull(status);
-    if (resolved == null) {
-      return null;
-    }
-    return resolved.toUpperCase(Locale.ROOT);
-  }
-
+  /**
+   * 对外 pageNo 归一：null 或 &lt;1 则 1。
+   *
+   * @param pageNo 请求页码
+   * @return 1-based 页码
+   */
   private int resolvePageNo(Integer pageNo) {
     if (pageNo == null || pageNo < 1) {
       return 1;
@@ -173,6 +152,12 @@ public class PrintLogAppService {
     return pageNo;
   }
 
+  /**
+   * 对外 pageSize 归一：null 或 &lt;1 用默认，上限 {@link PrintConstants#PAGE_SIZE_MAX}。
+   *
+   * @param pageSize 请求页大小
+   * @return 合法页大小
+   */
   private int resolvePageSize(Integer pageSize) {
     if (pageSize == null || pageSize < 1) {
       return GeneralSharedConstants.DEFAULT_QUERY_PAGE_SIZE;

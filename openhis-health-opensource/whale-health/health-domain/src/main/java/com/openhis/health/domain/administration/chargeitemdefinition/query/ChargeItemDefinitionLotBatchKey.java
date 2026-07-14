@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.chargeitemdefinition.query;
 
 import lombok.Value;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 /**
  * 批号维定价批量查询键：实例表 + 实例主键 + 批号（与 {@code adm_charge_item_definition} 联合锚点一致）。
@@ -44,13 +31,13 @@ public class ChargeItemDefinitionLotBatchKey {
      * @return 键或 null
      */
     public static ChargeItemDefinitionLotBatchKey maybeOf(String itemTable, Long itemId, String lotNumber) {
-        if (StringUtils.isBlank(itemTable)) {
+        if (StringUtils.isEmpty(itemTable)) {
             return null;
         }
         if (itemId == null) {
             return null;
         }
-        if (StringUtils.isBlank(lotNumber)) {
+        if (StringUtils.isEmpty(lotNumber)) {
             return null;
         }
         return new ChargeItemDefinitionLotBatchKey(itemTable.trim(), itemId, lotNumber.trim());

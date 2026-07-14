@@ -1,30 +1,18 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.pharmacy.summarydispense.assembler;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
 
-import com.openhis.health.module.common.assembler.product.MedicationPackageSplitQuantityDisplaySupport;
-import com.openhis.health.module.common.assembler.product.ProductDefinitionCatalogUnitBandsAssembler;
+import com.openhis.health.application.shared.product.MedicationPackageSplitQuantityDisplayAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogUnitBandsAssembler;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.dto.InpatientPharmacySummaryDispenseItemDto;
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.dto.InpatientPharmacySummarySlipLineDto;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.health.domain.medication.medicationdispense.queries.model.MedicationDispenseSummaryItemQueryModel;
+import com.openhis.health.domain.medication.medicationdispense.queries.model.SummaryDispenseGateQueryModel;
 import com.openhis.health.domain.share.constants.TableNameConstants;
 import com.openhis.health.domain.share.enums.DispenseStatus;
 import com.openhis.health.domain.share.enums.SupplyStatus;
@@ -32,7 +20,7 @@ import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
 import com.openhis.health.domain.workflow.supplyrequest.queries.model.MedicationSummarySlipLineQueryModel;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -54,12 +42,14 @@ public class InpatientPharmacySummaryDispenseAssembler {
      * @param supplyLines          {@link com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestQueryService#listMedicationSummarySlipLinesByBusNo} 结果
      * @param productByKey         药品目录读模型索引
      * @param purposeLocationName  汇总单头发放药房展示名
+     * @param traceBySupplyRequestId  供应行 id → 追溯码（已核发读 SupplyDelivery）
      * @return 合并明细行列表
      */
     public List<InpatientPharmacySummarySlipLineDto> buildMergedLineDtos(
         List<MedicationSummarySlipLineQueryModel> supplyLines,
         Map<String, ProductDefinitionDisplayDto> productByKey,
-        String purposeLocationName) {
+        String purposeLocationName,
+        Map<Long, String> traceBySupplyRequestId) {
         List<InpatientPharmacySummarySlipLineDto> lines = new ArrayList<>();
         if (supplyLines == null) {
             return lines;
@@ -76,6 +66,9 @@ public class InpatientPharmacySummaryDispenseAssembler {
             dto.setUnitPrice(row.getUnitPrice());
             dto.setTotalPrice(row.getTotalPrice());
             dto.setPurposeLocationName(trimToNull(purposeLocationName));
+            if (traceBySupplyRequestId != null && row.getSupplyRequestId() != null) {
+                dto.setTraceNo(trimToNull(traceBySupplyRequestId.get(row.getSupplyRequestId())));
+            }
             String productKey = ProductDefinitionKeyUtil.buildCompositeKey(
                 TableNameConstants.MED_MEDICATION_DEFINITION, row.getItemId());
             ProductDefinitionDisplayDto product = productByKey.get(productKey);
@@ -85,7 +78,7 @@ public class InpatientPharmacySummaryDispenseAssembler {
                 dto.setUnitCodeText(ProductDefinitionCatalogUnitBandsAssembler.resolveUnitDisplayName(
                     null, row.getUnitCode(), product));
                 dto.setManufacturerName(trimToNull(product.getManufacturer()));
-                dto.setDisplayQuantityText(MedicationPackageSplitQuantityDisplaySupport.buildDisplayQuantityText(
+                dto.setDisplayQuantityText(MedicationPackageSplitQuantityDisplayAssembler.buildDisplayQuantityText(
                     row.getItemQuantity(), product));
             }
             lines.add(dto);
@@ -94,7 +87,7 @@ public class InpatientPharmacySummaryDispenseAssembler {
     }
 
     /**
-     * 域发放行 → 展示 DTO（含批号、追溯与患者/床号）。
+     * 域发放行 → 展示 DTO（含批号与患者/床号；汇总路径追溯码不落发放行）。
      *
      * @param dispenseRows             汇总单号下发放行 QueryModel
      * @param productByKey             药品目录读模型索引
@@ -130,7 +123,6 @@ public class InpatientPharmacySummaryDispenseAssembler {
             dto.setUnitCode(row.getUnitCode());
             dto.setEncounterId(row.getEncounterId());
             dto.setPatientId(row.getPatientId());
-            dto.setTraceNo(row.getTraceNo());
             if (row.getPatientId() != null && patientNameById != null) {
                 dto.setPatientName(patientNameById.get(row.getPatientId()));
             }
@@ -155,13 +147,33 @@ public class InpatientPharmacySummaryDispenseAssembler {
     }
 
     /**
+     * 汇总发药门控展示：已发药仅以发放表 COMPLETED 为准。
+     *
+     * @param gate 汇总单号门控读模型
+     * @return 待核对 / 已发药；态不一致时 null
+     */
+    public String resolveSummaryDispenseGateDisplayText(SummaryDispenseGateQueryModel gate) {
+        if (gate == null) {
+            return null;
+        }
+        if (gate.isAllCompleted()) {
+            return "已发药";
+        }
+        if (gate.isAllSummarized()) {
+            return "待核对";
+        }
+        // 同号发放行态不一致：不输出误导性文案
+        return null;
+    }
+
+    /**
      * 单头审批态展示（EnumUtil → getInfo）。
      *
      * @param supplyStatusEnum 持久化 code
      * @return 展示文案
      */
     public String resolveSupplyStatusText(String supplyStatusEnum) {
-        if (StringUtils.isBlank(supplyStatusEnum)) {
+        if (StringUtils.isEmpty(supplyStatusEnum)) {
             return null;
         }
         SupplyStatus status =
@@ -179,7 +191,7 @@ public class InpatientPharmacySummaryDispenseAssembler {
      * @return 展示文案
      */
     public String resolveDispenseStatusText(String statusEnum) {
-        if (StringUtils.isBlank(statusEnum)) {
+        if (StringUtils.isEmpty(statusEnum)) {
             return null;
         }
         DispenseStatus status = EnumUtil.fromCode(DispenseStatus.class, statusEnum.trim());

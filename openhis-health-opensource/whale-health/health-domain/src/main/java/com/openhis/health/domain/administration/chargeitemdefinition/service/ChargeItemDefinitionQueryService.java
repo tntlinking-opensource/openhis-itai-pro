@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.chargeitemdefinition.service;
 
 import com.openhis.health.domain.administration.chargeitemdefinition.entity.ChargeItemDefinition;
@@ -24,7 +11,7 @@ import com.openhis.health.domain.administration.chargeitemdefinition.repository.
 import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.PriceType;
 import com.openhis.health.domain.share.enums.PublicationStatus;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
@@ -47,6 +34,7 @@ import lombok.RequiredArgsConstructor;
  * <p>边界：只读；{@code instanceTable} 有值时走表+实例联合键，否则仅按实例标识查询。
  * 「当前价」读路径（**BR-PRICE-SRC-001** / **BR-CHGDEF-QRY-002**）仅返回 {@code status_enum=ACTIVE} 且未软删行；
  * {@link #findAllDefinitionsByIdIn} 按主键快照加载，供 {@code ChargeItem.definition_id} 历史锚点，不过滤 ACTIVE。</p>
+ * <p>聚合边界：仅本聚合 {@link ChargeItemDefinitionRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -175,7 +163,7 @@ public class ChargeItemDefinitionQueryService {
      * @return 每包装单位进价；参数不全或无命中时为 {@code null}
      */
     public BigDecimal resolveFirstPurchasePriceValue(String instanceTable, Long instanceId) {
-        if (StringUtils.isBlank(instanceTable) || instanceId == null) {
+        if (StringUtils.isEmpty(instanceTable) || instanceId == null) {
             return null;
         }
         ChargeItemDefinitionQueryCommand priceCmd = new ChargeItemDefinitionQueryCommand();
@@ -192,7 +180,7 @@ public class ChargeItemDefinitionQueryService {
      * @return 每包装单位售价；参数不全或无命中时为 {@code null}
      */
     public BigDecimal resolveFirstSalePriceValue(String instanceTable, Long instanceId) {
-        if (StringUtils.isBlank(instanceTable) || instanceId == null) {
+        if (StringUtils.isEmpty(instanceTable) || instanceId == null) {
             return null;
         }
         ChargeItemDefinitionQueryCommand priceCmd = new ChargeItemDefinitionQueryCommand();
@@ -212,7 +200,7 @@ public class ChargeItemDefinitionQueryService {
      * @return 首个非空批号进价；参数不全、批号空白或无命中时为 {@code null}
      */
     public BigDecimal resolveFirstLotNumberCostPriceValue(String instanceTable, Long instanceId, String lotNumber) {
-        if (StringUtils.isBlank(instanceTable) || instanceId == null || StringUtils.isBlank(lotNumber)) {
+        if (StringUtils.isEmpty(instanceTable) || instanceId == null || StringUtils.isEmpty(lotNumber)) {
             return null;
         }
         ChargeItemDefinitionQueryCommand priceCmd = new ChargeItemDefinitionQueryCommand();
@@ -241,7 +229,7 @@ public class ChargeItemDefinitionQueryService {
      * @return 已存在任一条 ACTIVE {@link PriceType#LOT_NUMBER_COST} 或 {@link PriceType#LOT_NUMBER_PRICE} 且批号一致时为 true
      */
     public boolean existsLotNumberCostOrLotNumberPriceForInstanceAndLot(ChargeItemDefinitionQueryCommand cmd) {
-        if (cmd == null || cmd.getInstanceId() == null || StringUtils.isBlank(cmd.getLotNo())) {
+        if (cmd == null || cmd.getInstanceId() == null || StringUtils.isEmpty(cmd.getLotNo())) {
             return false;
         }
         if (!this.findLotNumberCostByInstanceIdAndLot(cmd).isEmpty()) {
@@ -302,6 +290,35 @@ public class ChargeItemDefinitionQueryService {
             map.put(row.getId(), row);
         }
         return map;
+    }
+
+    /**
+     * 按实例加载全部历史定价行（含 INACTIVE；供工作量/日结 sibling 成本与 fin_type 回落）。
+     *
+     * @param instanceTable 实例表名，可空
+     * @param instanceId    实例主键
+     * @return 未软删定价行；无命中时返回空列表
+     */
+    public List<ChargeItemDefinition> listHistoricalDefinitionsByInstance(String instanceTable, Long instanceId) {
+        if (instanceId == null) {
+            return Collections.emptyList();
+        }
+        List<ChargeItemDefinition> rows;
+        if (StringUtils.isNotEmpty(instanceTable)) {
+            rows = repository.findAllByInstanceTableAndInstanceId(instanceTable.trim(), instanceId);
+        } else {
+            rows = repository.findAllByInstanceId(instanceId);
+        }
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<ChargeItemDefinition> result = new ArrayList<>(rows.size());
+        for (ChargeItemDefinition row : rows) {
+            if (row != null && !Boolean.TRUE.equals(row.getIsDeleted())) {
+                result.add(row);
+            }
+        }
+        return result;
     }
 
     /**
@@ -395,7 +412,7 @@ public class ChargeItemDefinitionQueryService {
     }
 
     /**
-     * 在 ACTIVE 定价行中按 priority 升序、同 priority 时 id 升序择优（与 {@code ClinicalCatalogPriceResolveSupport} 一致）。
+     * 在 ACTIVE 定价行中按 priority 升序、同 priority 时 id 升序择优（与 {@code ClinicalCatalogPriceResolver} 一致）。
      *
      * @param lines 已过滤或待过滤行
      * @return 择优行；无命中时 {@code null}
@@ -414,6 +431,13 @@ public class ChargeItemDefinitionQueryService {
         return best;
     }
 
+    /**
+     * 当前价行择优：priority 小者优先；同 priority 按 id 稳定择一。
+     *
+     * @param current   当前最优
+     * @param candidate 候选价行
+     * @return 更优价行
+     */
     private static ChargeItemDefinition betterCurrentPriceLine(ChargeItemDefinition current, ChargeItemDefinition candidate) {
         if (candidate == null) {
             return current;
@@ -455,7 +479,7 @@ public class ChargeItemDefinitionQueryService {
             return null;
         }
         List<ChargeItemDefinition> rows;
-        if (StringUtils.isNotBlank(cmd.getInstanceTable())) {
+        if (StringUtils.isNotEmpty(cmd.getInstanceTable())) {
             rows = repository.findAllByInstanceTableAndInstanceId(
                 cmd.getInstanceTable().trim(), cmd.getInstanceId());
         } else {
@@ -468,7 +492,7 @@ public class ChargeItemDefinitionQueryService {
             if (row == null || Boolean.TRUE.equals(row.getIsDeleted())) {
                 continue;
             }
-            if (StringUtils.isNotBlank(row.getTypeCode())) {
+            if (StringUtils.isNotEmpty(row.getTypeCode())) {
                 return row.getTypeCode().trim();
             }
         }
@@ -504,7 +528,7 @@ public class ChargeItemDefinitionQueryService {
             if (line == null) {
                 continue;
             }
-            if (StringUtils.isBlank(line.getInstanceTable()) || line.getInstanceId() == null || StringUtils.isBlank(line.getLotNo())) {
+            if (StringUtils.isEmpty(line.getInstanceTable()) || line.getInstanceId() == null || StringUtils.isEmpty(line.getLotNo())) {
                 continue;
             }
             ChargeItemDefinitionLotBatchKey key = new ChargeItemDefinitionLotBatchKey(

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.warehouse.dto;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -26,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 库房/药房列表与树节点 DTO（与 {@link com.openhis.health.domain.administration.location.entity.Location} 对齐字段）。
+ * 库房/药房/科室药房列表与详情 DTO（与 {@link com.openhis.health.domain.administration.location.entity.Location} 对齐字段）。
  */
 @Data
 public class WarehouseDto {
@@ -55,15 +42,17 @@ public class WarehouseDto {
     private String pyStr;
     /** 五笔码。 */
     private String wbStr;
-    /** 物理形态枚举 code（仓库/药房）。 */
+    /** 物理形态枚举 code（WAREHOUSE / PHARMACY / DEPARTMENT_PHARMACY）。 */
     private String formEnum;
     /** 物理形态展示文案。 */
     private String formEnumText;
     /** 所属机构主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long organizationId;
+    /** 上级科室展示名称（科室药房列表/详情回显）。 */
+    private String organizationName;
     /** 显示顺序。 */
     private Integer displayOrder;
-    /** 子节点（预留树结构，当前列表多为空子列表）。 */
+    /** 子节点（历史兼容字段，库房维护页为平铺列表，恒为空）。 */
     private List<WarehouseDto> children = new ArrayList<>();
 }

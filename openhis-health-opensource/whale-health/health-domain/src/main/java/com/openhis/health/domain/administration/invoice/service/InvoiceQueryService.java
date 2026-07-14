@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.invoice.service;
 
 import com.openhis.health.domain.administration.invoice.entity.Invoice;
@@ -36,6 +23,7 @@ import java.util.Optional;
  * <p>职责：提供票据的只读查询能力，包括按主键、支付流水等维度查询。</p>
  *
  * <p>边界：只读；多数方法在记录不存在时返回 {@code null}；{@link #getLatestIssuedInvoiceByPaymentId} 限定已开具状态，避免把草稿当作有效票据。</p>
+ * <p>聚合边界：仅本聚合 {@link InvoiceRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -76,6 +64,9 @@ public class InvoiceQueryService {
 
     /**
      * 按主键加载票据实体（Port/adapter 读路径）；不存在或已软删时 empty。
+     *
+     * @param invoiceId 票据主键
+     * @return 票据实体；主键为空或不存在时 empty
      */
     public Optional<Invoice> findOptionalInvoiceEntityById(Long invoiceId) {
         if (invoiceId == null) {
@@ -87,6 +78,9 @@ public class InvoiceQueryService {
 
     /**
      * 读侧 Criteria 列表（无分页）。
+     *
+     * @param specification 动态筛选条件
+     * @return 票据实体列表
      */
     public List<Invoice> listInvoiceEntities(Specification<Invoice> specification) {
         return repository.findAll(specification);
@@ -94,9 +88,12 @@ public class InvoiceQueryService {
 
     /**
      * 读侧 Criteria 分页。
+     *
+     * @param specification 动态筛选条件
+     * @param pageable      分页参数
+     * @return 票据实体分页
      */
     public Page<Invoice> pageInvoiceEntities(Specification<Invoice> specification, Pageable pageable) {
         return repository.findAll(specification, pageable);
     }
 }
-

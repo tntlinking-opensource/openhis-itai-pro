@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.registration.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -24,107 +11,117 @@ import lombok.experimental.Accessors;
 import java.math.BigDecimal;
 import java.util.List;
 
+/**
+ * 挂号单详情（列表/打印共用；含 op-reg-print 模板 PrintData 字段）。
+ */
 @Data
 @Accessors(chain = true)
-/** 挂号单详情。 */
 @Schema(description = "挂号单详情")
 public class RegistrationSlipDto {
 
-    /** 挂号单号。 */
+    /** 挂号业务单号（slip bus_no）。 */
     @Schema(description = "挂号单号")
-    /** 挂号单号（业务字段）。 */
     private String slipNo;
 
-    /** 就诊 ID。 */
+    /** 就诊主键 {@code adm_encounter.id}。 */
     @Schema(description = "就诊ID")
-    /** 就诊ID（业务字段）。 */
     private Long encounterId;
 
-    /** 患者姓名。 */
+    /** 患者姓名（读模型展示）。 */
     @Schema(description = "患者姓名")
-    /** 患者姓名（业务字段）。 */
     private String patientName;
 
-    /** 科室名称。 */
+    /** 挂号科室名称。 */
     @Schema(description = "科室名称")
-    /** 科室名称（业务字段）。 */
     private String organizationName;
 
-    /** 医生姓名。 */
+    /** 挂号医师姓名。 */
     @Schema(description = "医生姓名")
-    /** 医生姓名（业务字段）。 */
     private String doctorName;
 
-    /** 挂号类型名称。 */
+    /** 挂号类型/号别展示名。 */
     @Schema(description = "挂号类型")
-    /** 挂号类型（业务字段）。 */
     private String serviceTypeName;
 
-    /** 状态文本。 */
+    /** 就诊/挂号状态中文展示。 */
     @Schema(description = "状态文本")
-    /** 状态文本（业务字段）。 */
     private String statusText;
 
-    /** 金额。 */
+    /** 挂号应收金额合计。 */
     @Schema(description = "金额")
-    /** 金额（业务字段）。 */
     private BigDecimal amount;
 
-    /** 打印次数。 */
+    /** 小票累计打印次数。 */
     @Schema(description = "打印次数")
-    /** 打印次数（业务字段）。 */
     private Integer printCount;
 
     // ---------- 挂号小票 PrintData（与 op-reg-print 模板 field 一致） ----------
 
+    /** 机构全称（小票抬头 hospitalName）。 */
     @Schema(description = "机构名称")
     private String hospitalName;
 
+    /** 性别中文展示。 */
     @Schema(description = "性别展示")
     private String genderEnumText;
 
+    /** 年龄展示文案。 */
     @Schema(description = "年龄展示")
     private String ageText;
 
+    /** 费用性质/合同展示。 */
     @Schema(description = "费用性质")
     private String feeNatureText;
 
+    /** 挂号科室名称（小票 registerDepartmentName）。 */
     @Schema(description = "挂号科室")
     private String registerDepartmentName;
 
+    /** 挂号收费项目明细行。 */
     @Schema(description = "挂号收费项目行")
     private List<RegistrationReceiptChargeLineDto> chargeItemLines;
 
+    /** 合计金额格式化文案。 */
     @Schema(description = "合计金额展示")
     private String totalAmountText;
 
+    /** 统筹支付格式化文案（医保分解）。 */
     @Schema(description = "统筹支付展示")
     private String poolingPayText;
 
+    /** 基金支付格式化文案。 */
     @Schema(description = "基金支付展示")
     private String fundPayText;
 
+    /** 个人账户支付格式化文案。 */
     @Schema(description = "个人账户支付展示")
     private String accountPayText;
 
+    /** 起付线格式化文案。 */
     @Schema(description = "起付线展示")
     private String deductibleLineText;
 
+    /** 现金渠道支付格式化文案。 */
     @Schema(description = "现金支付展示")
     private String cashPayText;
 
+    /** 微信渠道支付格式化文案。 */
     @Schema(description = "微信支付展示")
     private String wechatPayText;
 
+    /** 支付宝渠道支付格式化文案。 */
     @Schema(description = "支付宝支付展示")
     private String alipayPayText;
 
+    /** 医保个人账户余额展示文案。 */
     @Schema(description = "账户余额展示")
     private String accountBalanceText;
 
+    /** 收费员展示名。 */
     @Schema(description = "收费员")
     private String cashierName;
 
+    /** 收费/挂号时间格式化文案。 */
     @Schema(description = "收费时间展示")
     private String chargeTimeText;
 }

@@ -1,7 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.financial.paymentreconciliation.entity;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
@@ -12,7 +12,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 /**
  * 支付流水关联的医保正式结算凭证（一行一个 {@code setl_id}）。
@@ -48,10 +48,10 @@ public class PaymentYbSettlement extends BaseAuditedEntity {
         if (this.reconciliationId == null) {
             throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "医保结算关联对账主键不能为空");
         }
-        if (StringUtils.isBlank(this.setlId)) {
+        if (StringUtils.isEmpty(this.setlId)) {
             throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "医保 setl_id 不能为空");
         }
-        if (StringUtils.isBlank(this.status)) {
+        if (StringUtils.isEmpty(this.status)) {
             throw new BusinessException(ErrorCodeConstants.PAYMENT_RECONCILIATION_INVALID_ARGUMENT, "医保结算关联状态不能为空");
         }
     }

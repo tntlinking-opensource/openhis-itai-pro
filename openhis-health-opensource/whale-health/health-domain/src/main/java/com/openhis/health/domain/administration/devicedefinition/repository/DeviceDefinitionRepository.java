@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.devicedefinition.repository;
 
 import com.openhis.health.domain.administration.devicedefinition.entity.DeviceDefinition;
@@ -27,8 +14,27 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * 器材定义聚合仓储（{@code adm_device_definition}）。
+ *
+ * <p>职责：业务编码唯一性校验、批量导入冲突判定与按状态分页加载。</p>
+ */
 public interface DeviceDefinitionRepository extends JpaRepository<DeviceDefinition, Long>, JpaSpecificationExecutor<DeviceDefinition> {
+
+    /**
+     * 按主键加载器材定义。
+     *
+     * @param id 主键
+     * @return 实体；不存在时 empty
+     */
     Optional<DeviceDefinition> findById(Long id);
+
+    /**
+     * 按主键集合批量加载器材定义。
+     *
+     * @param ids 主键集合
+     * @return 实体列表
+     */
     List<DeviceDefinition> findAllByIdIn(Collection<Long> ids);
     /**
      * 校验业务编码是否存在（BR-DEVDEF-001）。
@@ -48,7 +54,20 @@ public interface DeviceDefinitionRepository extends JpaRepository<DeviceDefiniti
      * @return 已存在的器材定义集合
      */
     List<DeviceDefinition> findByBusNoIn(Collection<String> busNos);
+
+    /**
+     * 按生命周期状态加载全部器材定义（主数据维护列表）。
+     *
+     * @param statusEnum 状态持久化码
+     * @return 匹配的器材定义列表
+     */
     List<DeviceDefinition> findAllByStatusEnum(String statusEnum);
+
+    /**
+     * 分页加载器材定义（无额外过滤，规模受 Pageable 约束）。
+     *
+     * @param pageable 分页参数
+     * @return 分页结果
+     */
     Page<DeviceDefinition> findAllBy(Pageable pageable);
 }
-

@@ -1,13 +1,13 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.nursestation.patient.service;
 
 import com.openhis.health.application.outpatient.nursestation.patient.mapper.OutpatientNurseStationPatientMapper;
 import com.openhis.health.application.outpatient.nursestation.patient.request.PageNurseStationPatientQueueRequest;
 import com.openhis.health.application.outpatient.nursestation.patient.response.PageNurseStationPatientQueueResponse;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
+import com.openhis.health.application.shared.encounter.EncounterContextReader;
 import com.openhis.health.domain.administration.encounter.queries.model.OutpatientEncounterContextQueryModel;
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
@@ -27,7 +27,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class OutpatientNurseStationPatientAppService {
 
-    private final EncounterContextFacade encounterContextFacade;
+    private final EncounterContextReader EncounterContextReader;
     private final OutpatientNurseStationPatientMapper outpatientNurseStationPatientMapper;
 
     /**
@@ -37,13 +37,14 @@ public class OutpatientNurseStationPatientAppService {
      * @return 当前页队列与总数
      */
     public PageNurseStationPatientQueueResponse pageNurseStationPatientQueue(PageNurseStationPatientQueueRequest request) {
+        // Gate：请求体非空
         if (request == null) {
             throw new BusinessException(ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, "请求体不能为空");
         }
+        // Pre：映射护士站门诊队列分页查询
         com.openhis.health.domain.share.query.AbstractPageQuery queueQuery =
             this.outpatientNurseStationPatientMapper.toNurseStationOutpatientQueueQuery(request);
         Page<OutpatientEncounterContextQueryModel> page =
-            this.encounterContextFacade.pageNurseStationOutpatientQueue(queueQuery);
-        return this.outpatientNurseStationPatientMapper.toPageNurseStationPatientQueueResponse(page);
+            this.EncounterContextReader.pageNurseStationOutpatientQueue(queueQuery);        return this.outpatientNurseStationPatientMapper.toPageNurseStationPatientQueueResponse(page);
     }
 }

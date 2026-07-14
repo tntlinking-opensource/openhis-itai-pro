@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.department.mapper;
 
 import com.openhis.health.application.basic.department.dto.DepartmentDetailDto;
@@ -30,7 +17,8 @@ import com.openhis.health.domain.share.enums.OrganizationClassification;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.share.enums.OrganizationType;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
@@ -40,14 +28,11 @@ import org.springframework.stereotype.Component;
  * 同时补齐旧版页面仍依赖的枚举显示字段与状态字段。</p>
  */
 @Component
+@RequiredArgsConstructor
 public class DepartmentMapperImpl implements DepartmentMapper {
 
     /** 术语查询：补齐科室类型、启用状态等字典展示文案。 */
     private final CodeSystemQueryService codeSystemQueryService;
-
-    public DepartmentMapperImpl(CodeSystemQueryService codeSystemQueryService) {
-        this.codeSystemQueryService = codeSystemQueryService;
-    }
 
     /**
      * 将组织实体映射为列表/树节点 DTO，并补齐旧版页面依赖的枚举展示字段。
@@ -320,7 +305,7 @@ public class DepartmentMapperImpl implements DepartmentMapper {
      * @return 分类枚举或 null
      */
     private OrganizationClassification resolveOrganizationClass(String classEnumRaw) {
-        if (StringUtils.isBlank(classEnumRaw)) {
+        if (StringUtils.isEmpty(classEnumRaw)) {
             return null;
         }
         String normalizedClass = classEnumRaw.trim();
@@ -351,7 +336,10 @@ public class DepartmentMapperImpl implements DepartmentMapper {
      */
     private String resolveOrganizationTypeCode(String typeEnumRaw) {
         OrganizationType type = resolveOrganizationType(typeEnumRaw);
-        return type == null ? null : type.getCode();
+        if (type == null) {
+            return null;
+        }
+        return type.getCode();
     }
 
     /**

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.finance.priceadjustmentdetail.service;
 
 import com.openhis.health.application.finance.priceadjustment.dto.PriceAdjustmentLineDto;
@@ -37,14 +24,14 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.PriceAdjustmentDetailConstants;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.share.utils.ProductDefinitionKeyUtil;
-import com.openhis.health.module.querysupport.priceadjustment.PriceAdjustmentDetailItemKeywordSupport;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.finance.priceadjustment.support.PriceAdjustmentDetailItemKeywordHelper;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.session.CurrentOperatorResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -65,8 +52,8 @@ import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
  * <ul>
  *   <li>只读查询已生效调价项目主行与子表批号明细；写侧制单/审批见 PRC-001。</li>
  *   <li>读侧委托 {@link PriceAdjustmentQueryService}；关键字预解析委托
- *       {@link PriceAdjustmentDetailItemKeywordSupport}。</li>
- *   <li>目录 enrich 委托 {@link ProductDefinitionBatchLoader}；详情行 DTO 复用 PRC-001 {@link PriceAdjustmentMapper}。</li>
+ *       {@link PriceAdjustmentDetailItemKeywordHelper}。</li>
+ *   <li>目录 enrich 委托 {@link ProductDefinitionDisplayTerminologyAssembler}；详情行 DTO 复用 PRC-001 {@link PriceAdjustmentMapper}。</li>
  * </ul>
  *
  * <p>接入说明：由 AppServiceControllerRegistrar 注册为
@@ -84,10 +71,10 @@ public class PriceAdjustmentDetailAppService {
     private final PriceAdjustmentQueryService priceAdjustmentQueryService;
 
     /** 项目关键字 → item_id 预解析。 */
-    private final PriceAdjustmentDetailItemKeywordSupport itemKeywordSupport;
+    private final PriceAdjustmentDetailItemKeywordHelper itemKeywordSupport;
 
     /** 产品定义批量 enrich。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /** 制单/审批人展示名 enrich。 */
     private final PractitionerQueryService practitionerQueryService;
@@ -349,7 +336,7 @@ public class PriceAdjustmentDetailAppService {
         Set<String> dedupe = new HashSet<>();
         // Pre：收集当前页去重后的 itemTable+itemId 批量 lookup
         for (PriceAdjustmentLineQueryModel line : lines) {
-            if (line == null || line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+            if (line == null || line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
                 // 缺锚点行在 assertLinesProductEnriched 阶段失败
                 continue;
             }
@@ -368,7 +355,7 @@ public class PriceAdjustmentDetailAppService {
             // 无有效 lookup 时不调用 BatchLoader
             return empty;
         }
-        return this.productDefinitionBatchLoader.loadAsMap(lookups);
+        return this.productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
     }
 
     /**
@@ -382,14 +369,14 @@ public class PriceAdjustmentDetailAppService {
         List<PriceAdjustmentLineQueryModel> lines,
         Map<String, ProductDefinitionDisplayDto> productByKey) {
         for (PriceAdjustmentLineQueryModel line : lines) {
-            if (line == null || line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+            if (line == null || line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
                 // 主行缺项目锚点视为目录不完整（BR-PRC-DTL-012）
                 throw new BusinessException(
                     PriceAdjustmentDetailConstants.EX_PRC_DTL_103,
                     "调价项目数据不完整，请联系管理员核对目录配置");
             }
             ProductDefinitionDisplayDto product = this.resolveProduct(line, productByKey);
-            if (product == null || StringUtils.isBlank(product.getProductName())) {
+            if (product == null || StringUtils.isEmpty(product.getProductName())) {
                 // enrich 失败整单拒绝，禁止静默空名展示
                 throw new BusinessException(
                     PriceAdjustmentDetailConstants.EX_PRC_DTL_103,
@@ -408,7 +395,7 @@ public class PriceAdjustmentDetailAppService {
     private ProductDefinitionDisplayDto resolveProduct(
         PriceAdjustmentLineQueryModel line,
         Map<String, ProductDefinitionDisplayDto> productByKey) {
-        if (line == null || productByKey == null || line.getItemId() == null || StringUtils.isBlank(line.getItemTable())) {
+        if (line == null || productByKey == null || line.getItemId() == null || StringUtils.isEmpty(line.getItemTable())) {
             return null;
         }
         String key = ProductDefinitionKeyUtil.buildCompositeKey(line.getItemTable(), line.getItemId());

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.doctorstation.advice.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -32,7 +19,6 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
-/** 医生站-医嘱开立-加载当前就诊医嘱统一列表请求。 */
 @Schema(description = "医生站-医嘱开立-加载当前就诊医嘱统一列表请求")
 public class ListInpatientDoctorStationAdviceRequest {
 
@@ -49,7 +35,7 @@ public class ListInpatientDoctorStationAdviceRequest {
     @Schema(description = "患者标识", requiredMode = Schema.RequiredMode.REQUIRED)
     private Long patientId;
 
-    /** 长临筛选：{@link com.openhis.health.domain.share.enums.TherapyType#getCode()}；空表示不过滤。 */
+    /** 长临医嘱筛选：LONG_TERM / TEMPORARY；空表示全部。 */
     @Schema(description = "长临医嘱筛选：LONG_TERM / TEMPORARY；空表示全部")
     private String therapyTypeCode;
 }

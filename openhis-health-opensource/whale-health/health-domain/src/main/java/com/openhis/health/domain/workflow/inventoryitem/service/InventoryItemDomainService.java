@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.inventoryitem.service;
 
 import com.openhis.health.domain.share.constants.FieldNameConstants;
@@ -35,7 +22,7 @@ import com.openhis.health.domain.workflow.inventoryitem.repository.InventoryItem
 import com.openhis.health.domain.workflow.inventoryitem.repository.InventoryLockRepository;
 import com.openhis.health.domain.workflow.inventoryitem.valueobject.BatchAllocationResult;
 import com.openhis.whale.core.application.exception.BusinessException;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -51,10 +38,12 @@ import java.util.Set;
 import lombok.RequiredArgsConstructor;
 
 /**
- * 库存项写侧领域服务（DM-WKF-008）。
+ * 库存项（{@code wkf_inventory_item}）聚合写侧领域服务（DM-WKF-008）。
  *
- * <p>DOC-CONFLICT：DM-WKF-008 §5 事件白名单标注"未发"，故本服务不发布任何领域事件；
- * 原代码中的 InventoryItemCreatedEvent 等事件发布已按文档移除。</p>
+ * <p>职责：新建库存行、增减数量、FEFO 分配扣减、锁定/解锁与停供恢复。</p>
+ * <p>不变量：四元组唯一、锁定中不可动账、FEFO 先过期先出；仅注入本聚合
+ * {@link InventoryItemRepository} 与锁子表 {@link InventoryLockRepository}。</p>
+ * <p>DOC-CONFLICT：DM-WKF-008 §5 事件白名单标注「未发」，故本服务不发布领域事件。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -72,7 +61,7 @@ public class InventoryItemDomainService {
      */
     public InventoryItem createInventoryItem(CreateInventoryItemCommand command) {
         List<CreateInventoryItemCommand.CreateInventoryItemItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "一次仅允许新建一条库存项");
         }
@@ -113,16 +102,16 @@ public class InventoryItemDomainService {
      */
     public InventoryItem increaseQuantity(IncreaseQuantityCommand command) {
         List<IncreaseQuantityCommand.IncreaseQuantityItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "一次仅允许增加一条库存项数量");
         }
         IncreaseQuantityCommand.IncreaseQuantityItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：库存项主键必填，否则无法定位扣减目标
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "id 不能为空");
         }
-        // 业务分支处理。
+        // 前置校验：增加量须为正数，零或负值会破坏库存守恒
         if (item.getIncreaseQty() == null || item.getIncreaseQty().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "increaseQty 必须大于 0");
         }
@@ -168,16 +157,16 @@ public class InventoryItemDomainService {
      */
     public InventoryItem decreaseQuantity(DecreaseQuantityCommand command) {
         List<DecreaseQuantityCommand.DecreaseQuantityItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "一次仅允许扣减一条库存项数量");
         }
         DecreaseQuantityCommand.DecreaseQuantityItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：库存项主键必填，否则无法定位扣减目标
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "id 不能为空");
         }
-        // 业务分支处理。
+        // 前置校验：扣减量须为正数，由聚合根校验可用量
         if (item.getDecreaseQty() == null || item.getDecreaseQty().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "decreaseQty 必须大于 0");
         }
@@ -241,39 +230,39 @@ public class InventoryItemDomainService {
      */
     public List<BatchAllocationResult> allocateAndDecrease(AllocateAndDecreaseCommand command) {
         List<AllocateAndDecreaseCommand.AllocateAndDecreaseItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "一次仅允许发起一组分配扣减请求");
         }
         AllocateAndDecreaseCommand.AllocateAndDecreaseItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：物品表名必填，FEFO 候选查询依赖四元组
         if (item.getItemTable() == null || item.getItemTable().trim().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "itemTable 不能为空");
         }
-        // 业务分支处理。
+        // 前置校验：物品主键必填，否则无法匹配库存行
         if (item.getItemId() == null) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "itemId 不能为空");
         }
-        // 业务分支处理。
+        // 前置校验：需求数量须为正，否则分配无业务含义
         if (item.getRequiredQty() == null || item.getRequiredQty().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "requiredQty 必须大于 0");
         }
 
         LocalDateTime now = LocalDateTime.now();
         List<InventoryItem> candidates = this.findAvailableCandidates(item.getItemTable(), item.getItemId(), item.getLocationId(), now);
-        // 业务分支处理。
+        // 无可用候选行时拒绝分配，避免超卖或空扣减
         if (candidates.isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "无可用库存候选");
         }
 
         BigDecimal total = BigDecimal.ZERO;
         for (InventoryItem row : candidates) {
-            // 业务分支处理。
+            // 汇总各候选行正可用量，供整批充足性门禁
             if (row.getQuantity() != null && row.getQuantity().compareTo(BigDecimal.ZERO) > 0) {
                 total = total.add(row.getQuantity());
             }
         }
-        // 业务分支处理。
+        // 汇总可用量不足时整批拒绝，防止部分满足导致账实不一致
         if (total.compareTo(item.getRequiredQty()) < 0) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "可用库存不足，无法分配");
         }
@@ -281,18 +270,18 @@ public class InventoryItemDomainService {
         BigDecimal remainingNeed = item.getRequiredQty();
         List<BatchAllocationResult> results = new ArrayList<>();
         for (InventoryItem row : candidates) {
-            // 业务分支处理。
+            // 需求已满足时提前结束 FEFO 遍历，避免无谓扣减
             if (remainingNeed.compareTo(BigDecimal.ZERO) <= 0) {
                 break;
             }
             BigDecimal available = row.getQuantity();
-            // 业务分支处理。
+            // 跳过零可用行，继续按效期寻找下一候选批次
             if (available == null || available.compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
             }
 
             BigDecimal allocate;
-            // 业务分支处理。
+            // 本批次可用量足够时只扣剩余需求，否则整批扣完
             if (available.compareTo(remainingNeed) >= 0) {
                 allocate = remainingNeed;
             } else {
@@ -327,22 +316,22 @@ public class InventoryItemDomainService {
      */
     public InventoryLock lockInventory(LockInventoryCommand command) {
         List<LockInventoryCommand.LockInventoryItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "一次仅允许锁定一个库存项");
         }
         LockInventoryCommand.LockInventoryItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：锁定目标库存项主键不能为空
         if (item.getInventoryId() == null) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "inventoryId 不能为空");
         }
-        // 业务分支处理。
+        // 前置校验：业务单号不能为空，否则无法关联锁定记录
         if (item.getBusNo() == null || item.getBusNo().trim().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "busNo 不能为空");
         }
 
         this.mustGetActiveRow(item.getInventoryId());
-        // 业务分支处理。
+        // 同一库存项不可重复加锁，防止并发发药/盘点冲突
         if (inventoryLockRepository.findByInventoryIdAndLockFlagTrue(item.getInventoryId()).isPresent()) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "库存项已锁定");
         }
@@ -368,18 +357,18 @@ public class InventoryItemDomainService {
      */
     public void unlockByBusNo(UnlockByBusNoCommand command) {
         List<UnlockByBusNoCommand.UnlockByBusNoItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "一次仅允许按一个单号解锁");
         }
         UnlockByBusNoCommand.UnlockByBusNoItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：业务单号不能为空，否则无法关联锁定记录
         if (item.getBusNo() == null || item.getBusNo().trim().isEmpty()) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "busNo 不能为空");
         }
 
         List<InventoryLock> locks = inventoryLockRepository.findByBusNoAndLockFlagTrueOrderByOrderFlagAsc(item.getBusNo().trim());
-        // 业务分支处理。
+        // 无锁定记录时幂等返回，供撤单/作废路径安全重试
         if (locks.isEmpty()) {
             return;
         }
@@ -398,12 +387,12 @@ public class InventoryItemDomainService {
      */
     public void forceUnlock(ForceUnlockCommand command) {
         List<ForceUnlockCommand.ForceUnlockItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "一次仅允许强制解锁一条记录");
         }
         ForceUnlockCommand.ForceUnlockItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：强制解锁须指定锁记录主键
         if (item.getLockId() == null) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "lockId 不能为空");
         }
@@ -472,12 +461,12 @@ public class InventoryItemDomainService {
      */
     public InventoryItem deleteInventoryOnZeroQuantity(DeleteInventoryOnZeroQuantityCommand command) {
         List<DeleteInventoryOnZeroQuantityCommand.DeleteInventoryOnZeroQuantityItemCommand> items = command.resolveItems();
-        // 业务分支处理。
+        // 前置校验：写命令一次仅处理一条，防止批量误写
         if (items.size() != 1) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "一次仅允许清零删除一条库存项");
         }
         DeleteInventoryOnZeroQuantityCommand.DeleteInventoryOnZeroQuantityItemCommand item = items.get(0);
-        // 业务分支处理。
+        // 前置校验：库存项主键必填，否则无法定位扣减目标
         if (item.getId() == null) {
             throw new BusinessException(ErrorCodeConstants.INVENTORY_ITEM_INVALID_ARGUMENT, "id 不能为空");
         }
@@ -537,7 +526,7 @@ public class InventoryItemDomainService {
             predicates.add(cb.equal(root.get(FieldNameConstants.ITEM_ID), itemId));
             predicates.add(cb.equal(root.get(FieldNameConstants.INVENTORY_STATUS_ENUM), 2));
             predicates.add(cb.greaterThan(root.get(FieldNameConstants.QUANTITY), BigDecimal.ZERO));
-            // 业务分支处理：指定库位时添加库位过滤。
+            // 指定库位时收窄候选范围，仅匹配该库位库存
             if (locationId != null) {
                 predicates.add(cb.equal(root.get(FieldNameConstants.LOCATION_ID), locationId));
             }
@@ -560,7 +549,7 @@ public class InventoryItemDomainService {
                 ids.add(row.getId());
             }
         }
-        // 业务分支处理：无候选行时直接返回。
+        // 候选行为空时直接返回，避免无谓查询锁定表
         if (ids.isEmpty()) {
             return rows;
         }
@@ -574,7 +563,7 @@ public class InventoryItemDomainService {
             }
         }
 
-        // 业务分支处理：无锁定记录时直接返回全部候选行。
+        // 无锁定项时全部候选可用，跳过过滤步骤
         if (lockedIds.isEmpty()) {
             return rows;
         }
@@ -582,11 +571,11 @@ public class InventoryItemDomainService {
         // Asm：过滤掉已锁定的候选行。
         List<InventoryItem> unlocked = new ArrayList<>();
         for (InventoryItem row : rows) {
-            // 业务分支处理：ID 为空的跳过。
+            // 主键缺失的候选行跳过，不参与分配结果
             if (row.getId() == null) {
                 continue;
             }
-            // 业务分支处理：未锁定的加入结果列表。
+            // 未锁定候选加入 FEFO 结果，已锁定行排除在外
             if (!lockedIds.contains(row.getId())) {
                 unlocked.add(row);
             }
@@ -598,7 +587,7 @@ public class InventoryItemDomainService {
      * 新建前：同四元组是否已有未逻辑删除的占用行（与读侧 {@code findFirstIdByInventoryMatchKey} 四元组口径一致）。
      */
     private boolean existsNonDeletedInventoryByQuadruple(String lotNumber, Long locationId, String itemTable, Long itemId) {
-        if (locationId == null || itemId == null || StringUtils.isBlank(itemTable)) {
+        if (locationId == null || itemId == null || StringUtils.isEmpty(itemTable)) {
             return false;
         }
         String lot;

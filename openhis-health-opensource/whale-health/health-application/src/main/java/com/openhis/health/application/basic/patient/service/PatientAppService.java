@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.patient.service;
 
 import com.openhis.health.application.basic.patient.dto.PatientDto;
@@ -39,7 +26,7 @@ import com.openhis.health.domain.administration.patient.service.PatientQueryServ
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.enums.*;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
-import com.openhis.health.module.common.validator.CurrentManagedOrganizationIdsResolver;
+import com.openhis.health.application.shared.validator.CurrentManagedOrganizationIdsResolver;
 import com.openhis.whale.core.application.dto.PagedResult;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.EntityNotFoundException;
@@ -48,7 +35,7 @@ import com.openhis.whale.setting.domain.SettingDefinitionEnum;
 import com.openhis.whale.setting.domain.service.SettingManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -87,6 +74,9 @@ public class PatientAppService {
      * @return 各类 OptionDto 列表，供前端表单/下拉使用
      */
     public PatientInitDto init() {
+        // Gate：只读页初始化，不写库
+        // Pre：加载人口学、学籍与业务开关下拉
+        // Asm：映射页初始化响应
         PatientInitDto dto = new PatientInitDto();
         // 人口学与健康相关枚举：婚姻、职业、性别、血型、亲属关系、证件类型、是否类。
         dto.setMaritalStatus(codeSystemQueryService.getOptionListByEnum(MaritalStatus.class));
@@ -120,7 +110,7 @@ public class PatientAppService {
      * @throws EntityNotFoundException 患者主档不存在或不可见
      */
     public PatientStudentDto savePatientStudent(SavePatientStudentRequest req) {
-        // 入参校验：学籍维护至少需要患者主键与学号。
+        // Gate：学籍维护至少需要患者主键与学号
         if (req == null) {
             throw new ValidationException("保存学籍失败：请求体不能为空");
         }
@@ -131,24 +121,24 @@ public class PatientAppService {
             throw new ValidationException("保存学籍失败：studentId（学号）不能为空");
         }
 
-        // 读取患者主档：姓名、性别、证件号、拼音码、五笔码以主档为权威输入，忽略请求体同名字段（若未来扩展）。
+        // Pre：读取患者主档作为姓名/证件号权威来源
         PatientDetailQueryModel detail = patientQueryService.loadPatientDetail(req.getPatientId());
         if (detail == null || detail.getPatient() == null) {
             throw new EntityNotFoundException("患者不存在或已删除");
         }
 
-        // 同一患者仅保留一条有效学籍：若已存在记录，则本次按更新语义传入 studentId；否则按新增语义传 null。
+        // Pre：同一患者仅保留一条有效学籍
         Long existedStudentId = this.resolveExistingStudentId(detail);
 
-        // 组装领域命令：写侧仍会再次加载患者实体并校验状态，本层仅负责把主档权威字段带入学籍维护。
+        // Cmd：组装并下发学籍 upsert 命令
         UpsertPatientStudentRecordCommand command =
             patientStudentMapper.toUpsertCommand(req, detail, existedStudentId);
 
-        // 当前接口未暴露操作人信息，updatedBy 允许为空；如后续接入登录态，应在此处补齐 operatorId。
         patientDomainService.upsertPatientStudentRecord(command);
 
-        // 回读最新学籍并合并主档字段，作为前端回显的单条学籍 DTO。
+        // Pre：回读最新学籍
         PatientDetailQueryModel refreshed = patientQueryService.loadPatientDetail(req.getPatientId());
+        // Asm：映射学籍 DTO
         return patientStudentMapper.toStudentDto(refreshed);
     }
 
@@ -161,11 +151,11 @@ public class PatientAppService {
      * @return 已存在返回学籍主键；不存在返回 null
      */
     private Long resolveExistingStudentId(PatientDetailQueryModel detail) {
-        // 业务分支处理：无学籍记录时按新增语义处理。
+        // 无学籍记录时按新增语义处理。
         if (detail == null || detail.getStudents() == null || detail.getStudents().isEmpty()) {
             return null;
         }
-        // 业务分支处理：按“一患者一学籍”约束取首条；若历史数据存在多条，应在数据治理中收敛。
+        // 按「一患者一学籍」约束取首条；若历史数据存在多条，应在数据治理中收敛。
         if (detail.getStudents().get(0) == null) {
             return null;
         }
@@ -183,18 +173,19 @@ public class PatientAppService {
      * @throws EntityNotFoundException 患者主档不存在或不可见
      */
     public void deletePatientStudent(Long patientId) {
+        // Gate：患者主键非空
         if (patientId == null) {
             throw new ValidationException("删除学籍失败：patientId 不能为空");
         }
 
         PatientDetailQueryModel detail = patientQueryService.loadPatientDetail(patientId);
-        // 业务分支处理：患者不存在时沿用其他接口风格，明确抛错（与“无学籍静默成功”区分）。
+        // Branch：患者不存在时明确抛错
         if (detail == null || detail.getPatient() == null) {
             throw new EntityNotFoundException("患者不存在或已删除");
         }
 
         Long studentId = this.resolveExistingStudentId(detail);
-        // 业务分支处理：无有效学籍时静默成功。
+        // Branch：无有效学籍时静默成功
         if (studentId == null) {
             return;
         }
@@ -209,9 +200,10 @@ public class PatientAppService {
         // 操作人由底层框架自动获取，本层不在命令中透传。
 
         try {
+            // Cmd：逻辑删除学籍
             patientDomainService.disablePatientStudentRecord(command);
         } catch (BusinessException ex) {
-            // 幂等：并发下可能已被其他请求停用，视为成功；其他业务异常继续抛出。
+            // Branch：并发下可能已被停用，视为幂等成功
             if (ErrorCodeConstants.PATIENT_INVALID_STATUS.equals(ex.getErrorCode())) {
                 return;
             }
@@ -226,19 +218,21 @@ public class PatientAppService {
      * @return 分页患者简要信息
      */
     public PagedResult<PatientDto> getPatientPage(PatientQueryRequest request) {
+        // Pre：装配分页查询入参
         PatientPagedQuery query = new PatientPagedQuery();
         // 分页与 keyword 装配与门诊选患者（pagePatientsForSelect）及 B.10.11 一致。
         if (request != null) {
             query.setPageNo(request.getPageNo());
             query.setPageSize(request.getPageSize());
-            if (StringUtils.isNotBlank(request.getKeyword())) {
+            if (StringUtils.isNotEmpty(request.getKeyword())) {
                 query.setKeyword(request.getKeyword().trim());
             }
         }
 
-        // 读侧分页：仅查询展示所需字段，写意图不在此接口体现。
+        // Pre：读侧分页查询
         Page<PatientPageItemQueryModel> page = patientQueryService.searchPatientsPaged(query);
         Page<PatientDto> dtoPage = page.map(patientMapper::toPageItemDto);
+        // Asm：映射分页响应
         return PagedResult.fromPage(dtoPage);
     }
 
@@ -251,15 +245,17 @@ public class PatientAppService {
      * @throws EntityNotFoundException 患者不存在或已删除
      */
     public PatientDto getPatient(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("查询患者详情失败：id 不能为空");
         }
 
         PatientDetailQueryModel detail;
         try {
-            // 详情加载失败时按错误码区分「不存在」与其它业务失败，向上转为统一的接入层异常语义。
+            // Pre：加载患者详情
             detail = patientQueryService.loadPatientDetail(id);
         } catch (BusinessException ex) {
+            // Branch：不存在时转为 EntityNotFoundException
             if (ErrorCodeConstants.PATIENT_NOT_FOUND.equals(ex.getErrorCode())) {
                 throw new EntityNotFoundException("患者不存在或已删除");
             }
@@ -270,6 +266,7 @@ public class PatientAppService {
         if (dto == null) {
             throw new EntityNotFoundException("患者不存在或已删除");
         }
+        // Asm：返回详情 DTO
         return dto;
     }
 
@@ -282,15 +279,16 @@ public class PatientAppService {
      * @throws EntityNotFoundException 建档成功后回读详情失败（极少见，通常表示并发删除）
      */
     public PatientDto createPatient(CreatePatientRequest request) {
+        // Gate：请求体非空
         if (request == null) {
             throw new ValidationException("新增患者失败：请求体不能为空");
         }
-        // 标准链：Request → RegisterPatientCommand → 领域建档 → 按新主键回读详情 DTO。
+        // Pre：Request → RegisterPatientCommand
         RegisterPatientCommand command = patientMapper.toRegisterCommand(request);
         if (command == null) {
             throw new ValidationException("新增患者失败：命令组装失败");
         }
-        // 建档机构归属当前登录机构，与门诊挂号新建患者主档一致，禁止由前端传入 organizationId。
+        // Gate：建档机构归属当前登录机构（B.6.5，禁止前端伪造 org_id）
         Long organizationId = managedOrganizationIdsResolver.requireSessionOrganizationUnitId(
             ErrorCodeConstants.PATIENT_INVALID_ARGUMENT, "新增患者失败：当前登录机构不能为空");
         if (command.getItem() != null) {
@@ -301,7 +299,9 @@ public class PatientAppService {
                 item.setOrganizationId(organizationId);
             }
         }
+        // Cmd：领域建档
         Long patientId = patientDomainService.registerPatient(command);
+        // Asm：回读详情 DTO
         return this.getPatient(patientId);
     }
 
@@ -314,6 +314,7 @@ public class PatientAppService {
      * @throws EntityNotFoundException 患者不存在或已删除
      */
     public PatientDto editPatient(UpdatePatientRequest request) {
+        // Gate：请求体与主键非空
         if (request == null) {
             throw new ValidationException("修改患者失败：请求体不能为空");
         }
@@ -324,7 +325,9 @@ public class PatientAppService {
         if (command == null) {
             throw new ValidationException("修改患者失败：命令组装失败");
         }
+        // Cmd：修改患者档案
         patientDomainService.modifyPatientProfile(command);
+        // Asm：回读最新详情 DTO
         return this.getPatient(request.getId());
     }
 
@@ -336,6 +339,7 @@ public class PatientAppService {
      * @throws ValidationException {@code id} 为空或命令映射失败
      */
     public void deletePatient(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("删除患者失败：id 不能为空");
         }
@@ -343,6 +347,7 @@ public class PatientAppService {
         if (command == null) {
             throw new ValidationException("删除患者失败：命令组装失败");
         }
+        // Cmd：逻辑删除患者
         patientDomainService.deletePatient(command);
     }
 }

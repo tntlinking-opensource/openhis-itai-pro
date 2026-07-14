@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.registration.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -26,21 +13,18 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
-/** 退号并退费响应。 */
 @Schema(description = "退号并退费响应")
 public class CancelWithRefundResponse {
 
-    @Schema(description = "就诊状态")
     /** 就诊状态（业务字段）。 */
+    @Schema(description = "就诊状态")
     private String encounterStatus;
 
     /** 退款状态。 */
     @Schema(description = "退款状态")
-    /** 退款状态（业务字段）。 */
     private String refundStatus;
 
     /** 红票 ID。 */
     @Schema(description = "红票ID")
-    /** 红票ID（业务字段）。 */
     private Long redInvoiceId;
 }

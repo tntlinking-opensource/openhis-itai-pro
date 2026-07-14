@@ -1,21 +1,12 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 import lombok.Getter;
 
@@ -24,16 +15,27 @@ import lombok.Getter;
  */
 @Getter
 public enum EncounterStatus implements EnumInterface {
+/** 待挂号（EncounterStatus，编码 {@code PLANNED}）。 */
     PLANNED(0L, "PLANNED", "待挂号", "", 1L),
+/** 已挂号（EncounterStatus，编码 {@code REGISTERED}）。 */
     REGISTERED(0L, "REGISTERED", "已挂号", "", 2L),
+/** 已分诊（EncounterStatus，编码 {@code TRIAGED}）。 */
     TRIAGED(0L, "TRIAGED", "已分诊", "", 3L),
+/** 预入院（EncounterStatus，编码 {@code PRE_ADMISSION}）。 */
     PRE_ADMISSION(0L, "PRE_ADMISSION", "预入院", "", 4L),
+/** 在诊（EncounterStatus，编码 {@code IN_PROGRESS}）。 */
     IN_PROGRESS(0L, "IN_PROGRESS", "在诊", "", 5L),
+/** 暂离（EncounterStatus，编码 {@code ON_HOLD}）。 */
     ON_HOLD(0L, "ON_HOLD", "暂离", "", 6L),
+/** 完诊（EncounterStatus，编码 {@code DISCHARGED}）。 */
     DISCHARGED(0L, "DISCHARGED", "完诊", "", 7L),
+/** 已完成（EncounterStatus，编码 {@code COMPLETED}）。 */
     COMPLETED(0L, "COMPLETED", "已完成", "", 8L),
+/** 已取消（EncounterStatus，编码 {@code CANCELLED}）。 */
     CANCELLED(0L, "CANCELLED", "已取消", "", 9L),
+/** 待出院结算（EncounterStatus，编码 {@code PENDING}）。 */
     PENDING(0L, "PENDING", "待出院结算", "", 10L),
+/** 错误录入（EncounterStatus，编码 {@code ENTERED_IN_ERROR}）。 */
     ENTERED_IN_ERROR(0L, "ENTERED_IN_ERROR", "错误录入", "", 11L);
 
     private final Long codeSystemId;
@@ -66,6 +68,26 @@ public enum EncounterStatus implements EnumInterface {
             return true;
         }
         return false;
+    }
+
+    /** 门诊防重占名额态（读 {@link #outpatientDuplicateBlockingStatusCodes()}）。 */
+    private static final List<String> OUTPATIENT_DUPLICATE_BLOCKING_STATUS_CODES = Collections.unmodifiableList(Arrays.asList(
+        PLANNED.getCode(),
+        REGISTERED.getCode(),
+        TRIAGED.getCode(),
+        IN_PROGRESS.getCode(),
+        ON_HOLD.getCode(),
+        DISCHARGED.getCode(),
+        COMPLETED.getCode()
+    ));
+
+    /**
+     * 门诊同日同科室防重：视为占用号源的状态 code 列表（含待挂号 {@link #PLANNED}；不含 {@link #CANCELLED}）。
+     *
+     * @return 不可变状态 code 列表，供读/写侧防重规约共用
+     */
+    public static List<String> outpatientDuplicateBlockingStatusCodes() {
+        return OUTPATIENT_DUPLICATE_BLOCKING_STATUS_CODES;
     }
 
 }

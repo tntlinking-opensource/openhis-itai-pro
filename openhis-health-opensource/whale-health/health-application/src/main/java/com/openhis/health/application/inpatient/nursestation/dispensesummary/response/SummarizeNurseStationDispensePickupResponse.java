@@ -1,16 +1,18 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.nursestation.dispensesummary.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
 
+/**
+ * 提交汇总领药响应（护士站勾选候选行后生成汇总单）。
+ */
 @Data
 @Accessors(chain = true)
-/** 提交汇总领药响应。 */
 @Schema(description = "提交汇总领药响应")
 public class SummarizeNurseStationDispensePickupResponse {
 

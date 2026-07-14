@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.enums;
 
 import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.whale.core.application.exception.BusinessException;
 
 /**
- * 供应请求单据类型：写表 {@code wkf_supply_request.type_enum} 的<strong>持久化身份白名单</strong>（当前 28 项）。
+ * 供应请求单据类型：写表 {@code wkf_supply_request.type_enum} 的<strong>持久化身份白名单</strong>（当前 30 项）。
  *
  * <p><strong>B.10.8.1</strong>：对外与落库身份一律为 {@link #getCode()} 字符串；{@link #getSortOrder()} 仅用于列表/下拉排序，
  * 禁止当作 type 身份或数字串与 code 互转。{@link #getBusNoSeqKey()} 供按日流水单号分桶（B.10.9），与 {@code code} 不同维。</p>
@@ -29,57 +16,64 @@ import com.openhis.whale.core.application.exception.BusinessException;
  * 药房请领 {@link #PHARMACY_REQUISITION}、药房入库 {@link #PHARMACY_STOCK_IN}（含壳单场景）等。</p>
  */
 public enum SupplyType implements EnumInterface {
+/** 药库订货单（SupplyType，编码 {@code CABINET_PURCHASE_ORDER}）。 */
     CABINET_PURCHASE_ORDER(0L, "CABINET_PURCHASE_ORDER", "药库订货单", "", 1L, "CPO"),
+/** 药库进货单（SupplyType，编码 {@code CABINET_INBOUND_RECEIPT}）。 */
     CABINET_INBOUND_RECEIPT(0L, "CABINET_INBOUND_RECEIPT", "药库进货单", "", 2L, "CIR"),
     /** 药库向供应商退货。 */
     CABINET_RETURN_TO_SUPPLIER(0L, "CABINET_RETURN_TO_SUPPLIER", "药库退货单", "", 3L, "CRT"),
     CABINET_STOCK_OUT(0L, "CABINET_STOCK_OUT", "药库出库单", "", 4L, "CSO"),
-    /** 药库接收下游退回。 */
-    CABINET_RETURN_FROM_DOWNSTREAM(0L, "CABINET_RETURN_FROM_DOWNSTREAM", "药库退库单", "", 5L, "CRD"),
-    /** 药库盘盈盘亏。 */
+    /** 药库侧退库入库壳单（药房/科室退库 agree 后系统生成，只读台账；库存已在退库 agree 落账）。 */
+    CABINET_RETURN_STOCK_IN(0L, "CABINET_RETURN_STOCK_IN", "退库入库单", "", 5L, "CRS"),
+/** 药库损益单（SupplyType）。 */
     CABINET_GAIN_LOSS(0L, "CABINET_GAIN_LOSS", "药库损益单", "", 6L, "CGL"),
-    /** 药库盘点。 */
+/** 药库盘点单（SupplyType）。 */
     CABINET_STOCKTAKE(0L, "CABINET_STOCKTAKE", "药库盘点单", "", 7L, "CST"),
     /** 药库自其它库位调入。 */
     CABINET_TRANSFER_IN(0L, "CABINET_TRANSFER_IN", "药库调入单", "", 8L, "CTI"),
     /** 药库调至其它库位。 */
     CABINET_TRANSFER_OUT(0L, "CABINET_TRANSFER_OUT", "药库调出单", "", 9L, "CTO"),
-    /** 药库调入申请。 */
+/** 药库调入申请单（SupplyType）。 */
     CABINET_TRANSFER_IN_REQUEST(0L, "CABINET_TRANSFER_IN_REQUEST", "药库调入申请单", "", 10L, "CTQ"),
     /** 药库进货验收子流程。 */
     CABINET_INBOUND_RECEIPT_INSPECTION(0L, "CABINET_INBOUND_RECEIPT_INSPECTION", "药库进货验收单", "", 11L, "CII"),
     PHARMACY_REQUISITION(0L, "PHARMACY_REQUISITION", "药房请领单", "", 12L, "PQR"),
+/** 药房入库单（SupplyType，编码 {@code PHARMACY_STOCK_IN}）。 */
     PHARMACY_STOCK_IN(0L, "PHARMACY_STOCK_IN", "药房入库单", "", 13L, "PSI"),
-    /** 药房向上游药库退库。 */
-    PHARMACY_RETURN_TO_UPSTREAM(0L, "PHARMACY_RETURN_TO_UPSTREAM", "药房退库单", "", 14L, "PRU"),
-    /** 药房盘盈盘亏。 */
+    /** 药房向药库退库（主动制单；{@code original_bus_no} 指向药房入库单）。 */
+    PHARMACY_RETURN_TO_WAREHOUSE(0L, "PHARMACY_RETURN_TO_WAREHOUSE", "药房退库单", "", 14L, "PRW"),
+/** 药房损益单（SupplyType）。 */
     PHARMACY_GAIN_LOSS(0L, "PHARMACY_GAIN_LOSS", "药房损益单", "", 15L, "PGL"),
-    /** 药房盘点。 */
+/** 药房盘点单（SupplyType）。 */
     PHARMACY_STOCKTAKE(0L, "PHARMACY_STOCKTAKE", "药房盘点单", "", 16L, "PST"),
-    /** 药房调入。 */
+/** 药房调入单（SupplyType）。 */
     PHARMACY_TRANSFER_IN(0L, "PHARMACY_TRANSFER_IN", "药房调入单", "", 17L, "PTI"),
-    /** 药房调出。 */
+/** 药房调出单（SupplyType）。 */
     PHARMACY_TRANSFER_OUT(0L, "PHARMACY_TRANSFER_OUT", "药房调出单", "", 18L, "PTO"),
-    /** 药房调入申请。 */
+/** 药房调入申请单（SupplyType）。 */
     PHARMACY_TRANSFER_IN_REQUEST(0L, "PHARMACY_TRANSFER_IN_REQUEST", "药房调入申请单", "", 19L, "PTQ"),
-    /** 科室请领。 */
+/** 科室请领单（SupplyType）。 */
     DEPT_REQUISITION(0L, "DEPT_REQUISITION", "科室请领单", "", 20L, "DQR"),
-    /** 科室入库。 */
+/** 科室入库单（SupplyType）。 */
     DEPT_STOCK_IN(0L, "DEPT_STOCK_IN", "科室入库单", "", 21L, "DSI"),
-    /** 科室退库。 */
+/** 科室退库单（SupplyType）。 */
     DEPT_RETURN(0L, "DEPT_RETURN", "科室退库单", "", 22L, "DRT"),
-    /** 科室损益。 */
+/** 科室损益单（SupplyType）。 */
     DEPT_GAIN_LOSS(0L, "DEPT_GAIN_LOSS", "科室损益单", "", 23L, "DGL"),
-    /** 科室盘点。 */
+/** 科室盘点单（SupplyType）。 */
     DEPT_STOCKTAKE(0L, "DEPT_STOCKTAKE", "科室盘点单", "", 24L, "DST"),
-    /** 科室调入。 */
+/** 科室调入单（SupplyType）。 */
     DEPT_TRANSFER_IN(0L, "DEPT_TRANSFER_IN", "科室调入单", "", 25L, "DTI"),
-    /** 科室调出。 */
+/** 科室调出单（SupplyType）。 */
     DEPT_TRANSFER_OUT(0L, "DEPT_TRANSFER_OUT", "科室调出单", "", 26L, "DTO"),
-    /** 药品汇总单。 */
+/** 药品汇总单（SupplyType）。 */
     MEDICATION_SUMMARY_ORDER(0L, "MEDICATION_SUMMARY_ORDER", "药品汇总单", "", 27L, "MSO"),
-    /** 科室耗材盘点。 */
-    DEPT_DEVICE_STOCKTAKE(0L, "DEPT_DEVICE_STOCKTAKE", "科室耗材盘点单", "", 28L, "DDT");
+/** 科室耗材盘点单（SupplyType）。 */
+    DEPT_DEVICE_STOCKTAKE(0L, "DEPT_DEVICE_STOCKTAKE", "科室耗材盘点单", "", 28L, "DDT"),
+    /** 科室药房领用（上级科室消耗；单库房扣减，与临床 DeviceDispense 无关）。 */
+    DEPT_ISSUE(0L, "DEPT_ISSUE", "科室领用单", "", 29L, "DEI"),
+    /** 科室药房退领（自 {@link #DEPT_ISSUE} 未用完退回；单库房加回）。 */
+    DEPT_ISSUE_RETURN(0L, "DEPT_ISSUE_RETURN", "科室退领单", "", 30L, "DTL");
 
     /** 编码体系占位；当前各常量恒为 {@code 0L}，与术语扩展预留一致。 */
     private final Long codeSystemId;
@@ -197,6 +191,31 @@ public enum SupplyType implements EnumInterface {
     }
 
     /**
+     * 是否为损益类供应单据（药库/药房/科室损益）。
+     *
+     * <p>损益行 {@code item_quantity} 存有符号盈亏量（报溢为正、报损为负），与盘点字段口径一致。</p>
+     *
+     * @param typeEnumCode 持久化 {@link #getCode()}；空白视为非损益
+     * @return 命中损益白名单时为 {@code true}
+     */
+    public static boolean isGainLossTypeCode(String typeEnumCode) {
+        if (typeEnumCode == null || typeEnumCode.isBlank()) {
+            return false;
+        }
+        String trimmed = typeEnumCode.trim();
+        if (CABINET_GAIN_LOSS.code.equals(trimmed)) {
+            return true;
+        }
+        if (PHARMACY_GAIN_LOSS.code.equals(trimmed)) {
+            return true;
+        }
+        if (DEPT_GAIN_LOSS.code.equals(trimmed)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * 单库房单据：仅写目的侧 {@code purpose_location_id} / {@code purpose_type_enum}（DM-WKF-006 §3.1.1）。
      *
      * <p>涵盖订货、盘点、损益、药品汇总、科室耗材盘点等；落库时 {@code source_*} 保持空，禁止双写。</p>
@@ -236,7 +255,43 @@ public enum SupplyType implements EnumInterface {
         if (DEPT_DEVICE_STOCKTAKE.code.equals(trimmed)) {
             return true;
         }
+        if (DEPT_ISSUE.code.equals(trimmed)) {
+            return true;
+        }
+        if (DEPT_ISSUE_RETURN.code.equals(trimmed)) {
+            return true;
+        }
         return false;
+    }
+
+    /**
+     * 是否为科室领用类供应单据（{@link #DEPT_ISSUE}）。
+     *
+     * <p>领用行 {@code item_quantity} 存正数领用量；单端点仅 {@code purpose_location_id}。</p>
+     *
+     * @param typeEnumCode 持久化 {@link #getCode()}；空白视为非领用
+     * @return 命中领用白名单时为 {@code true}
+     */
+    public static boolean isDeptIssueTypeCode(String typeEnumCode) {
+        if (typeEnumCode == null || typeEnumCode.isBlank()) {
+            return false;
+        }
+        return DEPT_ISSUE.code.equals(typeEnumCode.trim());
+    }
+
+    /**
+     * 是否为科室退领类供应单据（{@link #DEPT_ISSUE_RETURN}）。
+     *
+     * <p>退领行 {@code item_quantity} 存正数退回量；{@code original_bus_no} 指向源 {@link #DEPT_ISSUE}。</p>
+     *
+     * @param typeEnumCode 持久化 {@link #getCode()}；空白视为非退领
+     * @return 命中退领白名单时为 {@code true}
+     */
+    public static boolean isDeptIssueReturnTypeCode(String typeEnumCode) {
+        if (typeEnumCode == null || typeEnumCode.isBlank()) {
+            return false;
+        }
+        return DEPT_ISSUE_RETURN.code.equals(typeEnumCode.trim());
     }
 
     /**
@@ -261,7 +316,7 @@ public enum SupplyType implements EnumInterface {
         if (CABINET_RETURN_TO_SUPPLIER.code.equals(trimmed)) {
             return true;
         }
-        if (CABINET_RETURN_FROM_DOWNSTREAM.code.equals(trimmed)) {
+        if (CABINET_RETURN_STOCK_IN.code.equals(trimmed)) {
             return true;
         }
         if (CABINET_GAIN_LOSS.code.equals(trimmed)) {

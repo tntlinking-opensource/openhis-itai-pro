@@ -1,24 +1,11 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.organization.query;
 
 import lombok.Data;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 /**
  * 科室管理页机构列表查询条件。
@@ -46,9 +33,9 @@ public class OrganizationManagementListQuery {
      * @return 有筛选时为 true
      */
     public boolean hasAnyFilter() {
-        return StringUtils.isNotBlank(keyword)
-            || StringUtils.isNotBlank(typeEnum)
-            || StringUtils.isNotBlank(classEnum)
-            || StringUtils.isNotBlank(statusEnum);
+        return StringUtils.isNotEmpty(keyword)
+            || StringUtils.isNotEmpty(typeEnum)
+            || StringUtils.isNotEmpty(classEnum)
+            || StringUtils.isNotEmpty(statusEnum);
     }
 }

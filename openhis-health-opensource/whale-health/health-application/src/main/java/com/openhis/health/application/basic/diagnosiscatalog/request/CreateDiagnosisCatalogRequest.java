@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.diagnosiscatalog.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -28,16 +15,17 @@ import lombok.Data;
 public class CreateDiagnosisCatalogRequest {
 
     @Schema(description = "所属分类编码")
+    /** 疾病编码。 */
     private String sourceEnum;
 
     @Schema(description = "疾病编码")
     private String conditionCode;
 
-    /** 疾病名称（必填）。 */
+    /** 疾病名称。 */
     @Schema(description = "疾病名称")
     private String name;
 
-    /** 医保诊断类型码。 */
+    /** 诊断类型编码。 */
     @Schema(description = "诊断类型编码")
     private String typeCode;
 
@@ -45,7 +33,7 @@ public class CreateDiagnosisCatalogRequest {
     @Schema(description = "描述")
     private String description;
 
-    /** 医保标记：1 是，0 否。 */
+    /** 医保标记（0/1）。 */
     @Schema(description = "医保标记（0/1）")
     private Integer ybFlag;
 
@@ -53,19 +41,19 @@ public class CreateDiagnosisCatalogRequest {
     @Schema(description = "特慢病编码")
     private String diseaseCode;
 
-    /** 医保目录编码。 */
+    /** 医保编码。 */
     @Schema(description = "医保编码")
     private String ybNo;
 
-    /** 拼音助记。 */
+    /** 拼音助记码。 */
     @Schema(description = "拼音助记码")
     private String pyStr;
 
-    /** 五笔助记。 */
+    /** 五笔助记码。 */
     @Schema(description = "五笔助记码")
     private String wbStr;
 
-    /** 医保对码标记：1 已对照，0 未对照。 */
+    /** 医保对码标记（0/1）。 */
     @Schema(description = "医保对码标记（0/1）")
     private Integer ybMatchFlag;
 

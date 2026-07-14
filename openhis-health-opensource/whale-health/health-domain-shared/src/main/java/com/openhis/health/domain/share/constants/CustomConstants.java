@@ -1,24 +1,15 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.constants;
 
 import java.util.regex.Pattern;
 
+
+/**
+ * 跨领域通用常量：频次周期、执行周期单位、自动计费规则事件类型等（历史兼容与术语迁移锚点）。
+ */
 public interface CustomConstants {
     /**
      * 日时点格式正则（HH:mm）。
@@ -26,28 +17,26 @@ public interface CustomConstants {
     Pattern DAY_TIME_PATTERN = Pattern.compile("^([01]\\d|2[0-3]):[0-5]\\d$");
 
     /**
-     * 周期类型：日周期（历史 openhis 存值 1；展开步进读 day_interval / day_count，不在计算侧写死）。
+     * 周期类型：日周期（CustomConstants，值 {@code 1}）；历史 openhis 存值，展开步进读 day_interval / day_count。
+     *
      * @deprecated 使用 {@link com.openhis.health.domain.share.enums.FrequencyCycleType} code 字符串
      */
     @Deprecated
     Integer CYCLE_TYPE_DAILY = 1;
 
     /**
-     * @deprecated 使用 {@link com.openhis.health.domain.share.enums.FrequencyCycleType}
+     * 周期类型：隔日周期（CustomConstants，值 {@code 2}）。
      */
-    @Deprecated
     Integer CYCLE_TYPE_EVERY_OTHER_DAY = 2;
 
     /**
-     * @deprecated 使用 {@link com.openhis.health.domain.share.enums.FrequencyCycleType}
+     * 周期类型：周周期（CustomConstants，值 {@code 3}）。
      */
-    @Deprecated
     Integer CYCLE_TYPE_WEEKLY = 3;
 
     /**
-     * @deprecated 使用 {@link com.openhis.health.domain.share.enums.FrequencyCycleType}
+     * 周期类型：按需（CustomConstants，值 {@code 4}）。
      */
-    @Deprecated
     Integer CYCLE_TYPE_AS_NEEDED = 4;
 
     /**
@@ -79,9 +68,13 @@ public interface CustomConstants {
      * 自动计费规则事件操作类型常量。
      */
     public interface ChargeItemAutoGenOperation {
+        /** 自动计费规则事件：新建（CustomConstants，值 {@code OP_CREATE}）。 */
         String OP_CREATE = "OP_CREATE";
+        /** 自动计费规则事件：更新（CustomConstants，值 {@code OP_UPDATE}）。 */
         String OP_UPDATE = "OP_UPDATE";
+        /** 自动计费规则事件：删除（CustomConstants，值 {@code OP_DELETE}）。 */
         String OP_DELETE = "OP_DELETE";
+        /** 自动计费规则事件：状态变更（CustomConstants，值 {@code OP_STATUS_CHANGE}）。 */
         String OP_STATUS_CHANGE = "OP_STATUS_CHANGE";
     }
 
@@ -89,10 +82,15 @@ public interface CustomConstants {
      * 就诊里程碑类型名称常量。
      */
     public interface EncounterHistoryMilestoneName {
+        /** 就诊里程碑：转科（CustomConstants，值 {@code transfer}）。 */
         String TRANSFER = "transfer";
+        /** 就诊里程碑：出院（CustomConstants，值 {@code discharge}）。 */
         String DISCHARGE = "discharge";
+        /** 就诊里程碑：入科（CustomConstants，值 {@code admission_to_dept}）。 */
         String ADMISSION_TO_DEPT = "admission_to_dept";
+        /** 就诊里程碑：转床（CustomConstants，值 {@code bed_transfer}）。 */
         String BED_TRANSFER = "bed_transfer";
+        /** 就诊里程碑：床头卡打印（CustomConstants，值 {@code bed_card_print}）。 */
         String BED_CARD_PRINT = "bed_card_print";
     }
 
@@ -102,8 +100,11 @@ public interface CustomConstants {
      * 规则操作类型常量。
      */
     public interface OperationType {
+        /** 规则操作：新建（CustomConstants，值 {@code CREATE}）。 */
         String CREATE = "CREATE";
+        /** 规则操作：更新（CustomConstants，值 {@code UPDATE}）。 */
         String UPDATE = "UPDATE";
+        /** 规则操作：删除（CustomConstants，值 {@code DELETE}）。 */
         String DELETE = "DELETE";
     }
 
@@ -111,6 +112,7 @@ public interface CustomConstants {
      * 变更字段常量。
      */
     public interface ChangedField {
+        /** 默认变更字段：档案信息（CustomConstants，值 {@code profile}）。 */
         String DEFAULT_CHANGED_FIELDS = "profile";
     }
 

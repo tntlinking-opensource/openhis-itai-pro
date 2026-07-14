@@ -1,23 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.outpatient.financial.registration.request;
 
-import com.openhis.health.integration.payment.dto.ClientRefundResultDto;
+import com.openhis.health.infrastructure.integration.payment.dto.ClientRefundResultDto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
@@ -27,27 +14,23 @@ import lombok.experimental.Accessors;
  */
 @Data
 @Accessors(chain = true)
-/** 退号并退费请求。 */
 @Schema(description = "退号并退费请求")
 public class CancelWithRefundRequest {
 
-    @Schema(description = "就诊ID")
     /** 就诊ID（业务字段）。 */
+    @Schema(description = "就诊ID")
     private Long encounterId;
 
     /** 取消原因。 */
     @Schema(description = "取消原因")
-    /** 取消原因（业务字段）。 */
     private String cancelReason;
 
     /** 退费意图。 */
     @Schema(description = "退费意图")
-    /** 退费意图（业务字段）。 */
     private String refundIntent;
 
     /** 退费请求键。 */
     @Schema(description = "退费请求键")
-    /** 退费请求键（业务字段）。 */
     private String refundRequestId;
 
     /** 银联退货 Win 回传（原扫码段原路退时必填）。 */

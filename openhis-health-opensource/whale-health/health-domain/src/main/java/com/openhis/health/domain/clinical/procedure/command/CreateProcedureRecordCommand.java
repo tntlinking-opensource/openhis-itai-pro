@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.clinical.procedure.command;
 
 import lombok.Getter;
@@ -48,5 +35,10 @@ public class CreateProcedureRecordCommand {
      * <p>{@code null} 或 {@code false} 时保留开立侧幂等保护（BR-PRO-001）。</p>
      */
     private Boolean skipDuplicateRequestAnchorCheck;
-}
 
+    /**
+     * 为 {@code true} 时跳过同锚点 occurrence 占用校验。
+     * <p>取消执行 CANCEL 对冲建单时使用：被对冲 COMPLETED 行仍占用槽位，对冲完成后由 {@code refund_id} 释放。</p>
+     */
+    private Boolean skipOccurrenceSlotCheck;
+}

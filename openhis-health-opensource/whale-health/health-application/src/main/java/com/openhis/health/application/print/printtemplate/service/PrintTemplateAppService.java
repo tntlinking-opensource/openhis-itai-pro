@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.print.printtemplate.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
@@ -31,8 +18,8 @@ import com.openhis.health.application.print.printtemplate.request.PublishTemplat
 import com.openhis.health.application.print.printtemplate.request.SaveDraftRequest;
 import com.openhis.health.application.print.printtemplate.response.QueryPrtTemplatePageResponse;
 import com.openhis.health.application.print.printtemplate.support.PrintTemplateListAssembler;
-import com.openhis.health.application.print.printtemplate.support.PrintJsonSupport;
-import com.openhis.health.module.common.validator.PrintOperatorResolver;
+import com.openhis.health.application.print.printtemplate.support.PrintJsonHelper;
+import com.openhis.health.application.shared.validator.PrintOperatorResolver;
 import com.openhis.health.domain.print.printtemplate.command.ForkDraftFromPublishedCommand;
 import com.openhis.health.domain.print.printtemplate.command.PublishTemplateCommand;
 import com.openhis.health.domain.print.printtemplate.command.SaveDraftCommand;
@@ -43,7 +30,7 @@ import com.openhis.health.domain.share.constants.ErrorCodeConstants;
 import com.openhis.health.domain.share.constants.GeneralSharedConstants;
 import com.openhis.health.domain.share.constants.PrintConstants;
 import com.openhis.health.domain.share.enums.PrintTemplateStatus;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
 import com.openhis.whale.core.application.exception.BusinessException;
 import com.openhis.whale.core.application.exception.ValidationException;
 import java.util.List;
@@ -60,7 +47,7 @@ import org.springframework.stereotype.Service;
  *   <li>租户模板设计态 CRUD、发布与列表聚合视图；</li>
  *   <li>写路径经 {@link PrtTemplateDomainService}，读路径经 {@link PrtTemplateQueryService}；</li>
  *   <li>出参经 {@link PrintTemplateMapper} 与 {@link PrintTemplateListAssembler} 装配；</li>
- *   <li>会话租户与操作人经 {@link com.openhis.health.module.common.validator.PrintOperatorResolver} 解析。</li>
+ *   <li>会话租户与操作人经 {@link com.openhis.health.application.shared.validator.PrintOperatorResolver} 解析。</li>
  * </ul>
  *
  * <p>由 AppServiceControllerRegistrar 暴露 REST，本类不含 Controller。</p>
@@ -77,7 +64,7 @@ public class PrintTemplateAppService {
   private final PrtTemplateQueryService prtTemplateQueryService;
 
   /** PrintJson 序列化/反序列化、校验与 hash。 */
-  private final PrintJsonSupport printJsonSupport;
+  private final PrintJsonHelper printJsonHelper;
 
   /** 会话租户与操作人解析。 */
   private final PrintOperatorResolver printOperatorResolver;
@@ -130,7 +117,7 @@ public class PrintTemplateAppService {
     assertTenantCanEditDraft(tenantId);
     // Pre：生成 busNo 并校验默认空白版式合法。
     String busNo = prtTemplateDomainService.nextBusNo(tenantId);
-    printJsonSupport.validatePrintJson(PrintConstants.DEFAULT_BLANK_PRINT_JSON);
+    printJsonHelper.validatePrintJson(PrintConstants.DEFAULT_BLANK_PRINT_JSON);
     // Cmd：Mapper 装配 SaveDraftCommand 并持久化。
     SaveDraftCommand cmd =
         printTemplateMapper.ConverterBlankDraftCommand(
@@ -198,7 +185,7 @@ public class PrintTemplateAppService {
     if (draftId == null && busNo == null) {
       throw new ValidationException("id 与 busNo 须至少提供一个");
     }
-    String printJson = printJsonSupport.toJsonString(request.getPrintJson());
+    String printJson = printJsonHelper.toJsonString(request.getPrintJson());
     if (printJson == null) {
       throw new ValidationException("PrintJson 不能为空");
     }
@@ -206,7 +193,7 @@ public class PrintTemplateAppService {
     Long tenantId = printOperatorResolver.requireTenantId();
     assertTenantCanEditDraft(tenantId);
     // Pre：版式校验 + 定位已有草稿行。
-    printJsonSupport.validatePrintJson(printJson);
+    printJsonHelper.validatePrintJson(printJson);
     PrtTemplate existingDraft = resolveExistingDraft(draftId, busNo, tenantId);
     if (draftId != null && existingDraft == null) {
       throw new BusinessException(ErrorCodeConstants.PRT_NOT_FOUND, "未找到草稿模板");
@@ -223,7 +210,7 @@ public class PrintTemplateAppService {
             tenantId,
             busNo,
             printJson,
-            printJsonSupport.toJsonString(request.getSamplePrintData()),
+            printJsonHelper.toJsonString(request.getSamplePrintData()),
             existingDraftId);
     PrtTemplate saved = prtTemplateDomainService.saveDraft(cmd);
     return printTemplateMapper.ConverterPrtTemplateDto(saved);
@@ -247,7 +234,7 @@ public class PrintTemplateAppService {
     if (working == null) {
       throw new BusinessException(ErrorCodeConstants.PRT_INVALID, "无草稿可发布，请先设计并保存");
     }
-    printJsonSupport.validatePrintJson(working.getPrintJson());
+    printJsonHelper.validatePrintJson(working.getPrintJson());
     // Cmd：发布命令（旧 published 归档、源 draft 软删）。
     PublishTemplateCommand publishCmd =
         printTemplateMapper.ConverterPublishTemplateCommand(working.getId(), tenantId, busNo);
@@ -288,6 +275,12 @@ public class PrintTemplateAppService {
     prtTemplateDomainService.deleteByBusNo(busNo, tenantId);
   }
 
+  /**
+   * 列表请求 null 安全：缺省则新建空查询对象。
+   *
+   * @param request 原始请求
+   * @return 非 null 查询对象
+   */
   private PrtTemplateQueryRequest normalizeQueryRequest(PrtTemplateQueryRequest request) {
     if (request == null) {
       return new PrtTemplateQueryRequest();
@@ -295,6 +288,12 @@ public class PrintTemplateAppService {
     return request;
   }
 
+  /**
+   * 状态筛选是否为 archived（大小写不敏感）。
+   *
+   * @param statusFilter 聚合后 status 筛选
+   * @return archived 为 true
+   */
   private boolean isArchivedStatusFilter(String statusFilter) {
     if (statusFilter == null) {
       return false;
@@ -302,6 +301,13 @@ public class PrintTemplateAppService {
     return PrintTemplateStatus.ARCHIVED.sameAs(statusFilter.toLowerCase(Locale.ROOT));
   }
 
+  /**
+   * 空白草稿默认名称：请求 name 非空则用，否则回落 busNo。
+   *
+   * @param request 创建请求
+   * @param busNo   已生成业务号
+   * @return 草稿名称
+   */
   private String resolveDraftName(CreateBlankDraftRequest request, String busNo) {
     String name = null;
     if (request != null) {
@@ -313,6 +319,14 @@ public class PrintTemplateAppService {
     return name;
   }
 
+  /**
+   * 设计态草稿：已有 tenant draft 则返回，否则从 published fork。
+   *
+   * @param busNo    模板业务号
+   * @param tenantId 租户
+   * @return 可编辑草稿实体
+   * @throws BusinessException 无 published 可 fork
+   */
   private PrtTemplate resolveOrForkDesignDraft(String busNo, Long tenantId) {
     PrtTemplate draft = prtTemplateQueryService.findTenantDraft(busNo, tenantId);
     if (draft != null) {
@@ -324,6 +338,14 @@ public class PrintTemplateAppService {
     return prtTemplateDomainService.forkDraftFromPublished(cmd);
   }
 
+  /**
+   * 定位待保存草稿：优先 draftId，否则按 busNo 查 tenant draft。
+   *
+   * @param draftId  草稿主键（可空）
+   * @param busNo    业务号（可空）
+   * @param tenantId 租户
+   * @return 已有草稿；均未命中则 null
+   */
   private PrtTemplate resolveExistingDraft(Long draftId, String busNo, Long tenantId) {
     if (draftId != null) {
       return prtTemplateQueryService.findDraftById(draftId, tenantId);
@@ -331,6 +353,13 @@ public class PrintTemplateAppService {
     return prtTemplateQueryService.findTenantDraft(busNo, tenantId);
   }
 
+  /**
+   * 从 GetByBusNo 请求提取 busNo 并校验非空。
+   *
+   * @param request 查询请求
+   * @return 去空白后的 busNo
+   * @throws ValidationException busNo 为空
+   */
   private String extractBusNo(GetByBusNoRequest request) {
     String busNo = null;
     if (request != null) {
@@ -342,6 +371,13 @@ public class PrintTemplateAppService {
     return busNo;
   }
 
+  /**
+   * 从发布请求提取 busNo 并校验非空。
+   *
+   * @param request 发布请求
+   * @return 去空白后的 busNo
+   * @throws ValidationException busNo 为空
+   */
   private String extractBusNoFromPublishRequest(PublishTemplateRequest request) {
     String busNo = null;
     if (request != null) {
@@ -353,6 +389,13 @@ public class PrintTemplateAppService {
     return busNo;
   }
 
+  /**
+   * 从 fork 请求提取 busNo 并校验非空。
+   *
+   * @param request fork 请求
+   * @return 去空白后的 busNo
+   * @throws ValidationException busNo 为空
+   */
   private String extractBusNoFromForkRequest(ForkDraftRequest request) {
     String busNo = null;
     if (request != null) {
@@ -364,6 +407,13 @@ public class PrintTemplateAppService {
     return busNo;
   }
 
+  /**
+   * 从删除请求提取 busNo 并校验非空。
+   *
+   * @param request 删除请求
+   * @return 去空白后的 busNo
+   * @throws ValidationException busNo 为空
+   */
   private String extractBusNoFromDeleteRequest(DeleteTemplateRequest request) {
     String busNo = null;
     if (request != null) {
@@ -375,12 +425,24 @@ public class PrintTemplateAppService {
     return busNo;
   }
 
+  /**
+   * 平台租户（tenantId=0）禁止编辑/发布/删除租户草稿。
+   *
+   * @param tenantId 当前租户
+   * @throws ValidationException 平台租户
+   */
   private void assertTenantCanEditDraft(Long tenantId) {
     if (GeneralSharedConstants.PLATFORM_TENANT_ID == tenantId) {
       throw new ValidationException("平台租户不允许编辑草稿");
     }
   }
 
+  /**
+   * 对外 pageNo 归一：null 或 &lt;1 则 1。
+   *
+   * @param pageNo 请求页码
+   * @return 1-based 页码
+   */
   private int resolvePageNo(Integer pageNo) {
     if (pageNo == null || pageNo < 1) {
       return 1;
@@ -388,6 +450,12 @@ public class PrintTemplateAppService {
     return pageNo;
   }
 
+  /**
+   * 对外 pageSize 归一：null 或 &lt;1 用默认，上限 {@link PrintConstants#PAGE_SIZE_MAX}。
+   *
+   * @param pageSize 请求页大小
+   * @return 合法页大小
+   */
   private int resolvePageSize(Integer pageSize) {
     if (pageSize == null || pageSize < 1) {
       return GeneralSharedConstants.DEFAULT_QUERY_PAGE_SIZE;

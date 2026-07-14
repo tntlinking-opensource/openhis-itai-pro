@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.infrastructure.config;
 
 import org.flywaydb.core.Flyway;
@@ -37,11 +24,33 @@ public class ChainedFlywayMigrationInitializer extends FlywayMigrationInitialize
 
     private static final Logger log = LoggerFactory.getLogger("whale.startup");
 
+    /**
+     * 构造链式 Flyway 初始化器，委托父类在 Spring 容器启动时触发 {@link #migrateAll}。
+     *
+     * @param flyways 按迁移顺序排列的 Flyway 实例，至少一项
+     */
     public ChainedFlywayMigrationInitializer(List<Flyway> flyways) {
-        super(requireFirst(flyways), flyway -> migrateAll(flyways));
+        super(requireFirstFlyway(flyways), ignored -> migrateAll(flyways));
     }
 
+    /**
+     * 校验链非空并返回首项，供 {@code super(...)} 作为构造首语句调用。
+     *
+     * @param flyways 按迁移顺序排列的 Flyway 实例
+     * @return 链首 Flyway
+     */
+    private static Flyway requireFirstFlyway(List<Flyway> flyways) {
+        Assert.notEmpty(flyways, "flyway chain must not be empty");
+        return flyways.get(0);
+    }
+
+    /**
+     * 按注册顺序逐套执行 Flyway 迁移（各模块独立 history 表）。
+     *
+     * @param flyways 链式 Flyway 实例列表
+     */
     private static void migrateAll(List<Flyway> flyways) {
+        // 按注册顺序逐套迁移，各 Module 独立 history 表互不影响
         for (Flyway chain : flyways) {
             String historyTable = chain.getConfiguration().getTable();
             String locations = formatLocations(chain.getConfiguration().getLocations());
@@ -55,11 +64,12 @@ public class ChainedFlywayMigrationInitializer extends FlywayMigrationInitialize
         }
     }
 
-    private static Flyway requireFirst(List<Flyway> flyways) {
-        Assert.notEmpty(flyways, "flyway chain must not be empty");
-        return flyways.get(0);
-    }
-
+    /**
+     * 将 Flyway 配置 locations 格式化为日志可读串。
+     *
+     * @param locations 配置位置数组
+     * @return 逗号分隔描述符；空则 {@code "-"}
+     */
     private static String formatLocations(Location[] locations) {
         if (locations == null || locations.length == 0) {
             return "-";

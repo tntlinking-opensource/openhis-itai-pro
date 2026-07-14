@@ -1,21 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
-/* (C)2026 */
 package com.openhis.health.application.basic.servicecatalog.request;
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
@@ -45,6 +31,7 @@ public class CreateServiceCatalogRequest {
     @Schema(description = "目录类别编码", requiredMode = Schema.RequiredMode.REQUIRED, example = "ZY001", maxLength = 255)
     @NotBlank(message = "目录类别不能为空")
     @Size(max = 255, message = "目录类别编码长度不能超过255个字符")
+    /** 目录类别编码。 */
     private String categoryCode;
 
     /** 诊疗项目业务编码。 */
@@ -68,7 +55,7 @@ public class CreateServiceCatalogRequest {
     @Size(max = 255, message = "五笔简码长度不能超过255个字符")
     private String wbStr;
 
-    /** 诊疗类型枚举。 */
+    /** 诊疗类型枚举（1=检验，2=检查，3=护理，4=手术，5=其他）。 */
     @Schema(description = "诊疗类型枚举（1=检验，2=检查，3=护理，4=手术，5=其他）", example = "2", allowableValues = {"1", "2", "3", "4", "5"})
     @Min(value = 1, message = "诊疗类型枚举值必须≥1")
     @Max(value = 5, message = "诊疗类型枚举值必须≤5")
@@ -99,7 +86,7 @@ public class CreateServiceCatalogRequest {
     @Size(max = 255, message = "默认住院单位编码长度不能超过255个字符")
     private String defInhospitalUnitCode;
 
-    /** 医保标识。 */
+    /** 医保标识（0=非医保，1=医保）。 */
     @Schema(description = "医保标识（0=非医保，1=医保）", example = "1", allowableValues = {"0", "1"})
     @Min(value = 0, message = "医保标识只能是0或1")
     @Max(value = 1, message = "医保标识只能是0或1")
@@ -110,7 +97,7 @@ public class CreateServiceCatalogRequest {
     @Size(max = 255, message = "医保编号长度不能超过255个字符")
     private String ybNo;
 
-    /** 医保对码标记。 */
+    /** 医保对码标记（0=未匹配，1=已匹配）。 */
     @Schema(description = "医保对码标记（0=未匹配，1=已匹配）", example = "1", allowableValues = {"0", "1"})
     @Min(value = 0, message = "医保对码标记只能是0或1")
     @Max(value = 1, message = "医保对码标记只能是0或1")
@@ -140,7 +127,7 @@ public class CreateServiceCatalogRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long orgId;
 
-    /** 所属科室名称。 */
+    /** 所属科室名称（字典回显，无需传参）。 */
     @Schema(description = "所属科室名称（字典回显，无需传参）", accessMode = Schema.AccessMode.READ_ONLY, example = "检验科")
     private String orgId_dictText;
 
@@ -149,53 +136,58 @@ public class CreateServiceCatalogRequest {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long locationId;
 
-    /** 所在位置名称。 */
+    /** 所在位置名称（字典回显，无需传参）。 */
     @Schema(description = "所在位置名称（字典回显，无需传参）", accessMode = Schema.AccessMode.READ_ONLY, example = "门诊2楼检验室")
     private String locationId_dictText;
 
-    /** 财务类别编码。 */
+    /** 财务类别编码（关联字典fin_type_code）。 */
     @Schema(description = "财务类别编码（关联字典fin_type_code）", example = "CW001", maxLength = 255)
     @Size(max = 255, message = "财务类别编码长度不能超过255个字符")
     private String itemTypeCode;
 
-    /** 财务类别名称。 */
+    /** 财务类别名称（字典回显，无需传参）。 */
     @Schema(description = "财务类别名称（字典回显，无需传参）", accessMode = Schema.AccessMode.READ_ONLY, example = "检验费")
     private String itemTypeCode_dictText;
 
-    /** 医保类别编码。 */
+    /** 医保类别编码（关联字典med_chrgitm_type）。 */
     @Schema(description = "医保类别编码（关联字典med_chrgitm_type）", example = "YBLC001", maxLength = 255)
     @Size(max = 255, message = "医保类别编码长度不能超过255个字符")
     private String ybType;
 
-    /** 医保类别名称。 */
+    /** 医保类别名称（字典回显，无需传参）。 */
     @Schema(description = "医保类别名称（字典回显，无需传参）", accessMode = Schema.AccessMode.READ_ONLY, example = "甲类")
     private String ybType_dictText;
 
-    /** 项目购入价。 */
+    /** 项目购入价（精度：10位整数，2位小数）。 */
     @Schema(description = "项目购入价（精度：10位整数，2位小数）", example = "15.50")
     @Digits(integer = 10, fraction = 2, message = "购入价精度错误，最多10位整数，2位小数")
     @DecimalMin(value = "0.00", message = "购入价不能小于0")
     private BigDecimal purchasePrice;
 
-    /** 项目零售价。 */
+    /** 项目零售价（精度：10位整数，2位小数）。 */
     @Schema(description = "项目零售价（精度：10位整数，2位小数）", example = "20.00")
     @Digits(integer = 10, fraction = 2, message = "零售价精度错误，最多10位整数，2位小数")
     @DecimalMin(value = "0.00", message = "零售价不能小于0")
     private BigDecimal retailPrice;
 
-    /** 项目最高零售价。 */
+    /** 项目最高零售价（精度：10位整数，2位小数）。 */
     @Schema(description = "项目最高零售价（精度：10位整数，2位小数）", example = "25.00")
     @Digits(integer = 10, fraction = 2, message = "最高零售价精度错误，最多10位整数，2位小数")
     @DecimalMin(value = "0.00", message = "最高零售价不能小于0")
     private BigDecimal maximumRetailPrice;
 
-    /** 医保收费项目等级。 */
+    /** 医保收费项目等级（1=甲类，2=乙类，3=丙类）。 */
     @Schema(description = "医保收费项目等级（1=甲类，2=乙类，3=丙类）", example = "1", allowableValues = {"1", "2", "3"})
     @Min(value = 1, message = "医保收费项目等级只能是1、2、3")
     @Max(value = 3, message = "医保收费项目等级只能是1、2、3")
     private Integer chrgitmLv;
 
-    /** 划价标记。 */
+    /** 病案结算类型编码（术语 mr_settlement_type_code）。 */
+    @Schema(description = "病案结算类型编码", example = "6", maxLength = 255)
+    @Size(max = 255, message = "病案结算类型编码长度不能超过255个字符")
+    private String mrSettlementTypeCode;
+
+    /** 划价标记（0=未划价，1=已划价）。 */
     @Schema(description = "划价标记（0=未划价，1=已划价）", example = "1", allowableValues = {"0", "1"})
     @Min(value = 0, message = "划价标记只能是0或1")
     @Max(value = 1, message = "划价标记只能是0或1")

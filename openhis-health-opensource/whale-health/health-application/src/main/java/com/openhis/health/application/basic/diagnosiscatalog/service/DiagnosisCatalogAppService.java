@@ -1,23 +1,10 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.diagnosiscatalog.service;
 
-import com.openhis.health.module.common.pagination.PageQueryBinder;
+import com.openhis.health.application.shared.pagination.PageQueryBinder;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.application.basic.diagnosiscatalog.dto.DiagnosisCatalogDetailDto;
 import com.openhis.health.application.basic.diagnosiscatalog.dto.DiagnosisCatalogDto;
@@ -32,6 +19,7 @@ import com.openhis.health.domain.clinical.conditiondefinition.queries.DiseasePag
 import com.openhis.health.domain.clinical.conditiondefinition.queries.model.DiseasePageItemQueryModel;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionDomainService;
 import com.openhis.health.domain.clinical.conditiondefinition.service.ConditionDefinitionQueryService;
+import com.openhis.health.domain.share.constants.FieldNameConstants;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.whale.core.application.dto.PagedResult;
@@ -39,6 +27,7 @@ import com.openhis.whale.core.application.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -73,10 +62,13 @@ public class DiagnosisCatalogAppService {
      * @return 初始化 DTO，三项列表均由术语或枚举选项填充
      */
     public DiagnosisCatalogInitDto init() {
+        // Gate：只读页初始化，无写侧操作人
         DiagnosisCatalogInitDto dto = new DiagnosisCatalogInitDto();
+        // Pre：加载分类、发布状态与医保诊断类型下拉
         dto.setDiseaseCategoryList(codeSystemQueryService.getOptionListByCodeSystemName(CONDITION_SOURCE_CODE_SYSTEM));
         dto.setStatusFlagOptions(codeSystemQueryService.getOptionListByEnum(PublicationStatus.class));
         dto.setYbDiagTypes(codeSystemQueryService.getOptionListByCodeSystemName(DIAG_TYPE_CODE_SYSTEM));
+        // Asm：映射维护页初始化 DTO
         return dto;
     }
 
@@ -87,23 +79,27 @@ public class DiagnosisCatalogAppService {
      * @return 分页列表 DTO
      */
     public PagedResult<DiagnosisCatalogDto> pageDiagnosisCatalog(QueryDiagnosisCatalogRequest query) {
+        // Gate：请求体缺省时补默认分页窗口
         QueryDiagnosisCatalogRequest request = ensureQuery(query);
-        // 步骤一：将 HTTP 分页字段并入领域 DiseasePageQuery
+        // Pre：HTTP 分页字段并入领域 DiseasePageQuery
         DiseasePageQuery pageQuery = new DiseasePageQuery();
         PageQueryBinder.bind(request, pageQuery);
         pageQuery.setSourceEnum(request.getSourceEnum());
 
         int pageSize;
+        // 业务分支：页大小非法时回落默认 50
         if (request.getPageSize() != null && request.getPageSize() > 0) {
             pageSize = request.getPageSize();
         } else {
             pageSize = 50;
         }
 
-        // Spring Data 页下标 0-based：AbstractPageQuery#springPageIndex()
+        // Pre：领域分页查询（Spring Data 页下标 0-based）；按疾病编码倒序，避免无序/按更新时间导致编辑后行位跳动
+        Sort sort = Sort.by(Sort.Direction.DESC, FieldNameConstants.CONDITION_CODE);
         Page<DiseasePageItemQueryModel> page = conditionDefinitionQueryService.getDiseaseList(
             pageQuery,
-            PageRequest.of(request.springPageIndex(), pageSize));
+            PageRequest.of(request.springPageIndex(), pageSize, sort));
+        // Asm：映射分页 DTO
         return PagedResult.fromPage(page.map(diagnosisMapper::toDto));
     }
 
@@ -115,14 +111,17 @@ public class DiagnosisCatalogAppService {
      * @throws ValidationException 参数不合法时
      */
     public DiagnosisCatalogDto createDiagnosisCatalog(CreateDiagnosisCatalogRequest request) {
+        // Gate：创建入参校验（名称与来源必填）
         validateCreateRequest(request);
-        // 新建默认「生效」，与列表筛选及停用路径语义一致
+        // 业务分支：未传状态时默认 ACTIVE，与列表筛选一致
         if (request.getStatusEnum() == null || request.getStatusEnum().isBlank()) {
             request.setStatusEnum(PublicationStatus.ACTIVE.getCode());
         }
-        // 步骤一：领域落库；步骤二：回读详情形状供编辑页直接复用
+        // Cmd：领域新增疾病目录
         Long id = conditionDefinitionDomainService.addDisease(diagnosisMapper.toCreateCommand(request));
+        // Pre：回读详情查询模型
         var detail = conditionDefinitionQueryService.getDiseaseOne(id);
+        // Asm：映射详情 DTO 供编辑页复用
         return diagnosisMapper.toDetailDto(detail);
     }
 
@@ -134,9 +133,13 @@ public class DiagnosisCatalogAppService {
      * @throws ValidationException 参数不合法时
      */
     public DiagnosisCatalogDto editDiagnosisCatalog(UpdateDiagnosisCatalogRequest request) {
+        // Gate：更新入参校验
         validateUpdateRequest(request);
+        // Cmd：领域编辑疾病目录
         conditionDefinitionDomainService.editDisease(diagnosisMapper.toUpdateCommand(request));
+        // Pre：回读详情查询模型
         var detail = conditionDefinitionQueryService.getDiseaseOne(request.getId());
+        // Asm：映射详情 DTO
         return diagnosisMapper.toDetailDto(detail);
     }
 
@@ -148,9 +151,12 @@ public class DiagnosisCatalogAppService {
      * @throws ValidationException id 为空时
      */
     public DiagnosisCatalogDetailDto getDiagnosisCatalog(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("查询疾病目录失败：id 不能为空");
         }
+        // Pre：读侧加载详情
+        // Asm：映射详情 DTO
         return diagnosisMapper.toDetailDto(conditionDefinitionQueryService.getDiseaseOne(id));
     }
 
@@ -161,9 +167,11 @@ public class DiagnosisCatalogAppService {
      * @throws ValidationException id 为空时
      */
     public void deleteDiagnosisCatalog(Long id) {
+        // Gate：主键非空
         if (id == null) {
             throw new ValidationException("删除疾病目录失败：id 不能为空");
         }
+        // Cmd：领域单条停用（批量停用语义）
         EditDiseaseStopCommand command = new EditDiseaseStopCommand();
         command.setIds(List.of(id));
         conditionDefinitionDomainService.editDiseaseStop(command);
@@ -176,7 +184,9 @@ public class DiagnosisCatalogAppService {
      * @throws ValidationException ids 为空时
      */
     public void batchEnable(List<Long> ids) {
+        // Gate：批量主键列表非空
         requireIds(ids, "启用疾病目录失败：ids 不能为空");
+        // Cmd：领域批量启用
         EditDiseaseStartCommand command = new EditDiseaseStartCommand();
         command.setIds(ids);
         conditionDefinitionDomainService.editDiseaseStart(command);
@@ -189,7 +199,9 @@ public class DiagnosisCatalogAppService {
      * @throws ValidationException ids 为空时
      */
     public void batchDisable(List<Long> ids) {
+        // Gate：批量主键列表非空
         requireIds(ids, "停用疾病目录失败：ids 不能为空");
+        // Cmd：领域批量停用
         EditDiseaseStopCommand command = new EditDiseaseStopCommand();
         command.setIds(ids);
         conditionDefinitionDomainService.editDiseaseStop(command);

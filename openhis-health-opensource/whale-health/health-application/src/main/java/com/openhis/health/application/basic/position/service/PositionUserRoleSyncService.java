@@ -1,12 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.position.service;
 
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
@@ -56,6 +51,12 @@ public class PositionUserRoleSyncService {
         }
     }
 
+    /**
+     * 医务人员 id → 绑定用户 id；不存在或未绑定时 null。
+     *
+     * @param practitionerId 医务人员主键
+     * @return 用户 id 或 null
+     */
     private Long resolveUserId(Long practitionerId) {
         if (practitionerId == null) {
             return null;

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.activitydefinition.service;
 
 
@@ -37,7 +24,7 @@ import com.openhis.health.domain.workflow.activitydefinition.repository.Activity
 import com.openhis.health.domain.workflow.activitydefinition.repository.ActivityDefinitionRepository;
 import com.openhis.whale.core.application.dto.OptionDto;
 import com.openhis.whale.core.application.exception.BusinessException;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -50,12 +37,14 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 
 /**
  * 诊疗项目定义读侧查询服务。
  *
  * <p>约束：只读查询，不写库；过滤口径（含软删）必须下推到数据库侧完成。</p>
+ * <p>聚合边界：仅本聚合 {@link ActivityDefinitionRepository} / {@link ActivityDefinitionChildRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -68,6 +57,9 @@ public class ActivityDefinitionQueryService {
      * 页面初始化字典查询。
      *
      * <p>本方法只返回前端渲染所需的选项集合；字典来源由上层应用服务/字典服务注入，此处返回空集合占位。</p>
+     *
+     * @param organizationId 机构主键（预留，当前未参与筛选）
+     * @return 初始化读模型（选项集合为空占位）
      */
     public ActivityDefinitionInitQueryModel getDiseaseTreatmentInit(Long organizationId) {
         ActivityDefinitionInitQueryModel model = new ActivityDefinitionInitQueryModel();
@@ -82,7 +74,7 @@ public class ActivityDefinitionQueryService {
      * 分页查询目录。
      *
      * @param query 查询条件
-     * @param pageable 分页参数（默认排序由调用方决定；若未传排序，上层应使用 createdAt DESC）
+     * @param pageable 分页参数（默认排序由调用方决定；目录维护页上层应使用 busNo DESC）
      * @return 分页结果
      */
     public Page<ActivityDefinitionPageQueryModel> pageServiceCatalog(ActivityDefinitionPageQuery query, Pageable pageable) {
@@ -117,6 +109,20 @@ public class ActivityDefinitionQueryService {
     }
 
     /**
+     * 按主键加载诊疗定义实体（写侧门禁/编辑前校验用）。
+     *
+     * @param id 项目标识
+     * @return 未软删实体；不存在时 empty
+     */
+    public Optional<ActivityDefinition> findOptionalActivityDefinitionEntityById(Long id) {
+        if (id == null) {
+            return Optional.empty();
+        }
+        return activityDefinitionRepository.findById(id)
+            .filter(row -> !Boolean.TRUE.equals(row.getIsDeleted()));
+    }
+
+    /**
      * 按诊疗项目名称精确解析唯一主键。
      *
      * <p>用于皮试检查等固定名称场景（{@code GeneralSharedConstants.SKIN_TEST_INSPECTION_ACTIVITY_NAME}）。</p>
@@ -125,7 +131,7 @@ public class ActivityDefinitionQueryService {
      * @return 唯一主键
      */
     public Long requireIdByExactName(String name) {
-        if (StringUtils.isBlank(name)) {
+        if (StringUtils.isEmpty(name)) {
             throw new BusinessException(
                 ErrorCodeConstants.ACTIVITY_DEFINITION_INVALID_ARGUMENT,
                 "诊疗项目名称不能为空");
@@ -160,7 +166,7 @@ public class ActivityDefinitionQueryService {
      */
     public List<ActivityDefinitionSearchQueryModel> findBySearchKey(String keyword, Integer limit) {
         // 无关键字则不做全表扫描式检索，直接空结果
-        if (StringUtils.isBlank(keyword)) {
+        if (StringUtils.isEmpty(keyword)) {
             return new ArrayList<>();
         }
         // 未传上限时用默认 20 条，防止一次返回过大拖慢检索接口
@@ -355,6 +361,7 @@ public class ActivityDefinitionQueryService {
         model.setYbNo(definition.getYbNo());
         model.setYbMatchFlag(definition.getYbMatchFlag());
         model.setChrgitmLv(definition.getChrgitmLv());
+        model.setMrSettlementTypeCode(definition.getMrSettlementTypeCode());
         model.setChildrenJson(definition.getChildrenJson());
         model.setChildrenFlag(definition.getChildrenFlag());
         return model;
@@ -394,7 +401,7 @@ public class ActivityDefinitionQueryService {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             predicates.add(cb.isFalse(root.get(FieldNameConstants.IS_DELETED)));
             if (query != null) {
-                if (StringUtils.isNotBlank(query.getCategoryCode())) {
+                if (StringUtils.isNotEmpty(query.getCategoryCode())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.CATEGORY_CODE), query.getCategoryCode().trim()));
                 }
                 if (query.getStatusEnum() != null) {
@@ -404,7 +411,7 @@ public class ActivityDefinitionQueryService {
                     predicates.add(cb.equal(root.get(FieldNameConstants.TYPE_ENUM), query.getTypeEnum()));
                 }
                 // 关键字同时匹配名称、业务编号与检索码，提升临床检索命中率
-                if (StringUtils.isNotBlank(query.getKeyword())) {
+                if (StringUtils.isNotEmpty(query.getKeyword())) {
                     String trimmed = query.getKeyword().trim();
                     String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(trimmed);
                     predicates.add(cb.or(
@@ -462,6 +469,12 @@ public class ActivityDefinitionQueryService {
         return activityDefinitionRepository.findAll(this.buildCatalogOrderSpecification(query), pageable);
     }
 
+    /**
+     * 医嘱开立目录 Specification：已发布 + 可选类目/关键字/预选产品键 OR 组合。
+     *
+     * @param query 分页查询条件
+     * @return JPA Specification
+     */
     private Specification<ActivityDefinition> buildCatalogOrderSpecification(ProductDefinitionCatalogPageQuery query) {
         return (root, cq, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -469,7 +482,7 @@ public class ActivityDefinitionQueryService {
             // 医嘱开立目录仅暴露已发布项（PublicationStatus.ACTIVE code）。
             predicates.add(cb.equal(root.get(FieldNameConstants.STATUS_ENUM), PublicationStatus.ACTIVE.getCode()));
             if (query != null) {
-                if (StringUtils.isNotBlank(query.getCategoryCode())) {
+                if (StringUtils.isNotEmpty(query.getCategoryCode())) {
                     predicates.add(cb.equal(root.get(FieldNameConstants.CATEGORY_CODE), query.getCategoryCode().trim()));
                 }
                 Predicate keywordPred = this.buildCatalogKeywordPredicate(root, cb, query.getKeyword());
@@ -480,8 +493,16 @@ public class ActivityDefinitionQueryService {
         };
     }
 
+    /**
+     * 目录关键字谓词：名称/商品名/py/wb/业务号不区分大小写 LIKE（B.2.1）。
+     *
+     * @param root    活动定义根
+     * @param cb      CriteriaBuilder
+     * @param keyword 用户关键字；空则 null
+     * @return 关键字 OR 谓词；无关键字时 null
+     */
     private Predicate buildCatalogKeywordPredicate(Root<ActivityDefinition> root, CriteriaBuilder cb, String keyword) {
-        if (StringUtils.isBlank(keyword)) {
+        if (StringUtils.isEmpty(keyword)) {
             return null;
         }
         String likeIc = SearchCodeUtil.toCaseInsensitiveLikePattern(keyword.trim());
@@ -496,6 +517,14 @@ public class ActivityDefinitionQueryService {
         );
     }
 
+    /**
+     * 预选产品键谓词：非 wkf_activity_definition 表键忽略，其余按 id OR 匹配。
+     *
+     * @param root 活动定义根
+     * @param cb   CriteriaBuilder
+     * @param keys 批量 lookup 键
+     * @return id OR 谓词；无有效键时 null
+     */
     private Predicate buildActivityPrepickedPredicate(
         Root<ActivityDefinition> root,
         CriteriaBuilder cb,
@@ -509,7 +538,7 @@ public class ActivityDefinitionQueryService {
             if (lookup == null || lookup.getProductDefinitionId() == null) {
                 continue;
             }
-            if (StringUtils.isNotBlank(lookup.getProductTableName())
+            if (StringUtils.isNotEmpty(lookup.getProductTableName())
                 && !TableNameConstants.WKF_ACTIVITY_DEFINITION.equals(lookup.getProductTableName().trim())) {
                 continue;
             }
@@ -521,6 +550,14 @@ public class ActivityDefinitionQueryService {
         return cb.or(parts.toArray(Predicate[]::new));
     }
 
+    /**
+     * 关键字与预选键组合：两者均非空时 OR；否则追加非空的一方。
+     *
+     * @param predicates   主谓词列表（副作用追加）
+     * @param cb           CriteriaBuilder
+     * @param keywordPred  关键字谓词
+     * @param prepPred     预选键谓词
+     */
     private void appendKeywordOrPrepicked(
         List<Predicate> predicates,
         CriteriaBuilder cb,

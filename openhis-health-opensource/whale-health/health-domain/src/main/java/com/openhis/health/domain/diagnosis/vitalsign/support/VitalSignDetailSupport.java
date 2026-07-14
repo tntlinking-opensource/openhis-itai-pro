@@ -1,27 +1,14 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.diagnosis.vitalsign.support;
 
 import com.openhis.health.domain.diagnosis.vitalsign.command.SaveVitalSignDetailItemCommand;
 import com.openhis.health.domain.diagnosis.vitalsign.entity.VitalSignDetail;
 import com.openhis.health.domain.share.constants.TerminologyCodeSystemNameConstants;
 import com.openhis.health.domain.share.constants.VitalSignConstants;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 
 /**
  * 生命体征明细自然键与命令组装辅助（DM-DIA-002 v2.1）。
@@ -38,7 +25,7 @@ public final class VitalSignDetailSupport {
      * @return 归一化后的 code
      */
     public static String normalizeTermCode(String termCode) {
-        if (StringUtils.isBlank(termCode)) {
+        if (StringUtils.isEmpty(termCode)) {
             return TerminologyCodeSystemNameConstants.VITAL_SIGNS_CODE;
         }
         return termCode.trim();

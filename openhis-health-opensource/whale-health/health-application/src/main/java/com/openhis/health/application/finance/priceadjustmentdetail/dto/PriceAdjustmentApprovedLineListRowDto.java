@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.finance.priceadjustmentdetail.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -36,21 +23,21 @@ import java.util.Date;
 @Schema(description = "调价明细列表行")
 public class PriceAdjustmentApprovedLineListRowDto {
 
-    /** 主行主键 {@code cus_price_adjustment.id}。 */
+    /** 主行主键。 */
     @JsonSerialize(using = ToStringSerializer.class)
     @Schema(description = "主行主键")
     private Long id;
 
-    /** 调价单号 {@code bus_no}。 */
+    /** 调价单号。 */
     @Schema(description = "调价单号")
     private String busNo;
 
-    /** 生效时间 {@code approve_time}。 */
+    /** 生效时间。 */
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = GeneralSharedConstants.DATE_TIME_PATTERN)
     @Schema(description = "生效时间")
     private Date approveTime;
 
-    /** 项目物理表 code。 */
+    /** 项目物理表。 */
     @Schema(description = "项目物理表")
     private String itemTable;
 
@@ -63,15 +50,15 @@ public class PriceAdjustmentApprovedLineListRowDto {
     @Schema(description = "项目定义主键")
     private Long itemId;
 
-    /** 项目名称（目录 enrich）。 */
+    /** 项目名称。 */
     @Schema(description = "项目名称")
     private String itemName;
 
-    /** 院内编码（目录 enrich）。 */
+    /** 院内编码。 */
     @Schema(description = "院内编码")
     private String itemCode;
 
-    /** 展示口径 {@code logistics}/{@code clinical}。 */
+    /** 展示口径。 */
     @Schema(description = "展示口径")
     private String adjustmentStyle;
 
@@ -87,7 +74,7 @@ public class PriceAdjustmentApprovedLineListRowDto {
     @Schema(description = "调价原因展示名")
     private String adjustmentReasonText;
 
-    /** 盈亏合计（固化 impact 之和，**BR-PRC-DTL-007**）。 */
+    /** 盈亏合计。 */
     @Schema(description = "盈亏合计")
     private BigDecimal totalImpact;
 

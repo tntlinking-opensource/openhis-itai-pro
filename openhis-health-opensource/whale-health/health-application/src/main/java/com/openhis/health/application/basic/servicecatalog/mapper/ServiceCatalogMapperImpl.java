@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.basic.servicecatalog.mapper;
 
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogChildDto;
@@ -22,11 +9,15 @@ import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogDet
 import com.openhis.health.application.basic.servicecatalog.dto.ServiceCatalogInitDto;
 import com.openhis.health.application.basic.servicecatalog.request.CreateServiceCatalogRequest;
 import com.openhis.health.application.basic.servicecatalog.request.UpdateServiceCatalogRequest;
+import com.openhis.health.domain.share.enums.ActivityType;
+import com.openhis.health.domain.share.enums.PublicationStatus;
+import com.openhis.health.domain.share.utils.EnumUtil;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.domain.workflow.activitydefinition.command.CreateActivityDefinitionCommand;
 import com.openhis.health.domain.workflow.activitydefinition.command.UpdateActivityDefinitionCommand;
 import com.openhis.health.domain.workflow.activitydefinition.entity.ActivityDefinition;
 import com.openhis.whale.core.application.dto.OptionDto;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -36,14 +27,11 @@ import java.util.ArrayList;
  * {@link ServiceCatalogMapper} 默认实现：读模型/实体到 DTO 的字段拷贝与 0/1 标志、枚举字符串转整型。
  */
 @Component
+@RequiredArgsConstructor
 public class ServiceCatalogMapperImpl implements ServiceCatalogMapper {
 
     /** 术语读侧：初始化页医保等级等下拉。 */
     private final CodeSystemQueryService codeSystemQueryService;
-
-    public ServiceCatalogMapperImpl(CodeSystemQueryService codeSystemQueryService) {
-        this.codeSystemQueryService = codeSystemQueryService;
-    }
 
     /**
      * 将活动定义实体完整映射为详情 DTO，布尔域统一转为 0/1 整型便于前端表单绑定。
@@ -87,7 +75,8 @@ public class ServiceCatalogMapperImpl implements ServiceCatalogMapper {
         } else {
             detailDto.setYbMatchFlag(0);
         }
-        detailDto.setStatusEnum(parseInteger(activityDefinition.getStatusEnum()));
+        detailDto.setStatusEnum(
+            EnumUtil.toDisplayIntegerFromCodeOrNumber(PublicationStatus.class, activityDefinition.getStatusEnum()));
         detailDto.setBodySiteCode(activityDefinition.getBodySiteCode());
         detailDto.setSpecimenCode(activityDefinition.getSpecimenCode());
         detailDto.setDescriptionText(activityDefinition.getDescriptionText());
@@ -96,10 +85,12 @@ public class ServiceCatalogMapperImpl implements ServiceCatalogMapper {
         } else {
             detailDto.setRuleId(activityDefinition.getRuleId().longValue());
         }
-        detailDto.setTypeEnum(parseInteger(activityDefinition.getTypeEnum()));
+        detailDto.setTypeEnum(
+            EnumUtil.toDisplayIntegerFromCodeOrNumber(ActivityType.class, activityDefinition.getTypeEnum()));
         detailDto.setOrgId(activityDefinition.getOrgId());
         detailDto.setLocationId(activityDefinition.getLocationId());
         detailDto.setChrgitmLv(activityDefinition.getChrgitmLv());
+        detailDto.setMrSettlementTypeCode(activityDefinition.getMrSettlementTypeCode());
         return detailDto;
     }
 
@@ -145,6 +136,7 @@ public class ServiceCatalogMapperImpl implements ServiceCatalogMapper {
             item.setYbMatchFlag(request.getYbMatchFlag() == 1);
         }
         item.setChrgitmLv(request.getChrgitmLv());
+        item.setMrSettlementTypeCode(request.getMrSettlementTypeCode());
         List<CreateActivityDefinitionCommand.ActivityDefinitionChildItemCommand> children = new ArrayList<>();
         if (request.getChildren() != null) {
             // 子项逐条转为领域子命令，由领域决定是否落子表
@@ -205,6 +197,7 @@ public class ServiceCatalogMapperImpl implements ServiceCatalogMapper {
         item.setOrgId(request.getOrgId());
         item.setLocationId(request.getLocationId());
         item.setChrgitmLv(request.getChrgitmLv());
+        item.setMrSettlementTypeCode(request.getMrSettlementTypeCode());
         List<UpdateActivityDefinitionCommand.ActivityDefinitionChildItemCommand> children = new ArrayList<>();
         if (request.getChildren() != null) {
             for (ServiceCatalogChildDto child : request.getChildren()) {
@@ -235,20 +228,4 @@ public class ServiceCatalogMapperImpl implements ServiceCatalogMapper {
         return serviceCatalogInitDto;
     }
 
-    /**
-     * 将领域持久化的枚举/状态字符串安全解析为 {@link Integer}；非法格式返回 {@code null} 由上层决定是否校验。
-     *
-     * @param value 数字字符串
-     * @return 整型或 {@code null}
-     */
-    private Integer parseInteger(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        try {
-            return Integer.valueOf(value);
-        } catch (NumberFormatException ex) {
-            return null;
-        }
-    }
 }

@@ -1,39 +1,26 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.pharmacy.gainloss.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
- * 撤回盘点审批出参（IF-PHA-ST-07）。
+ * 撤回损益审批出参（IF-PHA-GL-07）。
  */
 @Data
 @Accessors(chain = true)
-/** 撤回盘点审批 IF-PHA-ST-07。 */
-@Schema(description = "撤回盘点审批 IF-PHA-ST-07")
+@Schema(description = "撤回损益审批 IF-PHA-GL-07")
 public class WithdrawPharmacyGainLossApprovalResponse {
 
+    /** 是否成功 success。 */
     @Schema(description = "是否成功 success")
     private Boolean success;
 
+    /** 状态 statusEnum。 */
     @Schema(description = "状态 statusEnum")
     private String statusEnum;
 }

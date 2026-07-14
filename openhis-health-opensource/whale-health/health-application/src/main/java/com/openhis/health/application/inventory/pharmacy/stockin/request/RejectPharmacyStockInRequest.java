@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inventory.pharmacy.stockin.request;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -22,7 +9,6 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 审批驳回药房入库请求（IF-PHA-IN-09）。
@@ -30,19 +16,19 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Getter
 @Setter
 @Accessors(chain = true)
-/** 审批驳回药房入库 IF-PHA-IN-09。 */
 @Schema(description = "审批驳回药房入库 IF-PHA-IN-09", requiredProperties = {"busNo"})
 public class RejectPharmacyStockInRequest {
 
     @NotBlank(message = "busNo 不能为空")
+    /** 业务单号。 */
     @Schema(description = "业务单号", requiredMode = Schema.RequiredMode.REQUIRED)
     private String busNo;
 
-    /** 驳回原因码。 */
+    /** 驳回原因码，可空。 */
     @Schema(description = "驳回原因码，可空")
     private String changeReasonCode;
 
-    /** 驳回原因说明。 */
+    /** 驳回原因说明，可空。 */
     @Schema(description = "驳回原因说明，可空")
     private String changeReason;
 }

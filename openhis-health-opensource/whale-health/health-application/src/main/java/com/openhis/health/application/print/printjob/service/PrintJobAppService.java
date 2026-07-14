@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.print.printjob.service;
 
 import static com.openhis.whale.core.application.util.StringUtils.trimToNull;
@@ -24,8 +11,8 @@ import com.openhis.health.application.print.printjob.dto.PreparePrintResultDto;
 import com.openhis.health.application.print.printjob.mapper.PrintJobMapper;
 import com.openhis.health.application.print.printjob.request.ConfirmPrintRequest;
 import com.openhis.health.application.print.printjob.request.PreparePrintRequest;
-import com.openhis.health.application.print.printtemplate.support.PrintJsonSupport;
-import com.openhis.health.module.common.validator.PrintOperatorResolver;
+import com.openhis.health.application.print.printtemplate.support.PrintJsonHelper;
+import com.openhis.health.application.shared.validator.PrintOperatorResolver;
 import com.openhis.health.domain.print.printlog.command.AppendPrintLogCommand;
 import com.openhis.health.domain.share.enums.PrintClientType;
 import com.openhis.health.domain.share.enums.PrintLogStatus;
@@ -68,7 +55,7 @@ public class PrintJobAppService {
   private final PrintOperatorResolver printOperatorResolver;
 
   /** PrintJson 序列化与 contentHash。 */
-  private final PrintJsonSupport printJsonSupport;
+  private final PrintJsonHelper printJsonHelper;
 
   /** prepare/confirm 出参与 Command 装配。 */
   private final PrintJobMapper printJobMapper;
@@ -148,8 +135,8 @@ public class PrintJobAppService {
       clientType = PrintClientType.OPENHIS_WIN.getCode();
     }
     request.setStatus(status);
-    String contentHash = printJsonSupport.sha256HexOrNull(request.getPrintData());
-    String bizRefJson = printJsonSupport.toJsonString(request.getBizRef());
+    String contentHash = printJsonHelper.sha256HexOrNull(request.getPrintData());
+    String bizRefJson = printJsonHelper.toJsonString(request.getBizRef());
     String bindingCode = resolveConfirmScenarioCode(request);
     // Cmd：Mapper 装配 append 命令并写库。
     AppendPrintLogCommand cmd =
@@ -167,6 +154,12 @@ public class PrintJobAppService {
     return new ConfirmPrintResultDto();
   }
 
+  /**
+   * 预打印：解析场景码；显式 scenarioCode 优先，否则回落 bindingCode。
+   *
+   * @param request 预打印请求
+   * @return 去空白后的场景码；均无则 null
+   */
   private String resolveScenarioCode(PreparePrintRequest request) {
     if (request == null) {
       return null;
@@ -178,6 +171,12 @@ public class PrintJobAppService {
     return trimToNull(request.getBindingCode());
   }
 
+  /**
+   * 确认打印：解析场景码；显式 scenarioCode 优先，否则回落 bindingCode。
+   *
+   * @param request 确认打印请求
+   * @return 去空白后的场景码；均无则 null
+   */
   private String resolveConfirmScenarioCode(ConfirmPrintRequest request) {
     if (request == null) {
       return null;

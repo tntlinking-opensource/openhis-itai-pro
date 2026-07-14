@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.workflow.supplyrequest.command;
 
 import com.openhis.health.domain.share.command.BatchCommand;
@@ -27,7 +14,8 @@ import java.time.LocalDateTime;
 /**
  * 创建调拨执行单命令（见 {@link com.openhis.health.domain.workflow.supplyrequest.service.SupplyRequestDomainService#createTransfer}）。
  *
- * <p>枚举语义字段均为持久化 {@code getCode()}（B.10.8.1）；源、目位置须满足领域不等式门控。</p>
+ * <p>枚举语义字段均为持久化 {@code getCode()}（B.10.8.1）；源、目位置须满足领域不等式门控。
+ * 可选 {@link #bootstrapFinalStatusCode} 用于调出 agree 后生成对侧调入壳单（DM §6.1.8）。</p>
  */
 @Getter
 @Setter
@@ -35,6 +23,12 @@ public class CreateTransferCommand extends BatchCommand<CreateTransferCommand.Cr
 
     /** 操作人主键。 */
     private Long operatorId;
+
+    /**
+     * 可选：建单后直接落指定终态（如调出 agree 后生成对侧调入壳单为 {@code AGREE}）。
+     * 须为合法 {@link com.openhis.health.domain.share.enums.SupplyStatus} 持久化 code。
+     */
+    private String bootstrapFinalStatusCode;
 
     /**
      * 调拨单行。
@@ -74,5 +68,17 @@ public class CreateTransferCommand extends BatchCommand<CreateTransferCommand.Cr
         private LocalDateTime applyTime;
         /** 原因。 */
         private String reason;
+        /** 批号（调拨行/壳单追溯）。 */
+        private String lotNumber;
+        /** 追溯码。 */
+        private String traceNo;
+        /** 供应商标识。 */
+        private Long supplierId;
+        /** 单价。 */
+        private BigDecimal price;
+        /** 行总价。 */
+        private BigDecimal totalPrice;
+        /** 经手人（医务人员主键）。 */
+        private Long practitionerId;
     }
 }

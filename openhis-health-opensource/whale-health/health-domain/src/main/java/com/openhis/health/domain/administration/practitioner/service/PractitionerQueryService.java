@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.practitioner.service;
 
 import com.openhis.health.domain.administration.practitioner.entity.Practitioner;
@@ -22,7 +9,7 @@ import com.openhis.health.domain.share.utils.SearchCodeUtil;
 import com.openhis.health.domain.administration.practitioner.repository.PractitionerRepository;
 import com.openhis.health.domain.share.enums.PublicationStatus;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -40,6 +27,7 @@ import java.util.Map;
  * <p>职责：为挂号、人员维护等提供在职人员列表、分页检索与按主键加载。</p>
  *
  * <p>边界：只读；列表默认过滤 {@link PublicationStatus#ACTIVE}；按岗位收窄须由应用层 {@code PractitionerRoleScopeLoader} 预解析主键后传入。</p>
+ * <p>聚合边界：仅本聚合 {@link PractitionerRepository}。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -96,7 +84,7 @@ public class PractitionerQueryService {
         boolean requireBoundSystemUser) {
         String status = PublicationStatus.ACTIVE.getCode();
         String searchPattern = null;
-        if (StringUtils.isNotBlank(searchKey)) {
+        if (StringUtils.isNotEmpty(searchKey)) {
             searchPattern = SearchCodeUtil.toCaseInsensitiveLikePattern(searchKey.trim());
         }
         Specification<Practitioner> specification =
@@ -151,7 +139,7 @@ public class PractitionerQueryService {
         java.util.List<Long> unresolved = new java.util.ArrayList<>();
         for (Long entererId : distinct) {
             Practitioner practitioner = practitionerRepository.findById(entererId).orElse(null);
-            if (practitioner != null && practitioner.getId() != null && StringUtils.isNotBlank(practitioner.getName())) {
+            if (practitioner != null && practitioner.getId() != null && StringUtils.isNotEmpty(practitioner.getName())) {
                 nameByEntererId.put(practitioner.getId(), practitioner.getName());
             } else {
                 unresolved.add(entererId);
@@ -164,7 +152,7 @@ public class PractitionerQueryService {
                 if (practitioner == null || practitioner.getUserId() == null) {
                     continue;
                 }
-                if (StringUtils.isNotBlank(practitioner.getName())) {
+                if (StringUtils.isNotEmpty(practitioner.getName())) {
                     nameByEntererId.put(practitioner.getUserId(), practitioner.getName());
                 }
             }

@@ -1,26 +1,18 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.administration.devicedefinition.command;
 
 import com.openhis.health.domain.share.command.BatchCommand;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * 同步器材定义医保对码命令（DM-ADM-008 医保映射维护）。
+ *
+ * <p>按 {@link Item#id} 批量更新 yb 相关字段，不改动非医保主数据属性。</p>
+ */
 @Getter
 @Setter
 public class SyncDeviceDefinitionYbMappingCommand extends BatchCommand<SyncDeviceDefinitionYbMappingCommand.Item> {

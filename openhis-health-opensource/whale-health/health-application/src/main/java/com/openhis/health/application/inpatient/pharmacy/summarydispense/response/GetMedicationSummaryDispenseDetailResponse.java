@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.application.inpatient.pharmacy.summarydispense.response;
 
 import com.openhis.health.application.inpatient.pharmacy.summarydispense.dto.InpatientPharmacySummaryDispenseItemDto;
@@ -33,14 +20,14 @@ import java.util.List;
 @Getter
 @Setter
 @Accessors(chain = true)
-/** 查询汇总单详情响应。 */
 @Schema(description = "查询汇总单详情响应")
 public class GetMedicationSummaryDispenseDetailResponse {
 
+    /** 汇总单业务号，与 {@code bus_no}、列表 {@code busNo} 一致。 */
     @Schema(description = "汇总单号")
     private String summaryNo;
 
-    /** 单头。 */
+    /** 单头展示（申请/核发时间、药房、申请人、发放门控态等）。 */
     @Schema(description = "单头")
     private InpatientPharmacySummarySlipHeaderDto header;
 
@@ -51,4 +38,8 @@ public class GetMedicationSummaryDispenseDetailResponse {
     /** 底层发放行（含批号/扣库字段）。 */
     @Schema(description = "发放行明细")
     private List<InpatientPharmacySummaryDispenseItemDto> dispenseItems;
+
+    /** 是否已发药：仅以发放表同号行全部为 COMPLETED 为准。 */
+    @Schema(description = "是否已发药（发放表终态）")
+    private Boolean summaryDispenseCompleted;
 }

@@ -1,20 +1,7 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
- *
- * This library is free software; you can redistribute it and/or
- * modify it under the terms of the GNU Lesser General Public
- * License as published by the Free Software Foundation; either
- * version 3 of the License, or (at your option) any later version.
- *
- * This library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public
- * License along with this library.  If not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
-
 package com.openhis.health.domain.share.events.administration.organization;
 
 import com.openhis.health.domain.share.constants.AggregateTypeConstants;
@@ -24,7 +11,12 @@ import lombok.Setter;
 
 @Getter
 @Setter
+
+/**
+ * OrganizationReactivatedEvent：health-domain-shared 跨领域共享模型。
+ */
 public class OrganizationReactivatedEvent extends DomainEvent {
+    /** 操作人主键（OrganizationReactivated 业务上下文）。 */
     private Long operatorId;
 
     /**

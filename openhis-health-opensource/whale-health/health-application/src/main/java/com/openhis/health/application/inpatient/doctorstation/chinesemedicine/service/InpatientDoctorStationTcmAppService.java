@@ -1,5 +1,6 @@
 /*
  * Copyright © 2026 OpenHIS Contributors
+ * SPDX-License-Identifier: LGPL-3.0-or-later
  */
 package com.openhis.health.application.inpatient.doctorstation.chinesemedicine.service;
 
@@ -16,9 +17,9 @@ import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.dt
 import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.mapper.InpatientDoctorStationTcmMapper;
 import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.request.*;
 import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.response.*;
-import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.support.InpatientTcmPrescriptionExpandSupport;
-import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.support.InpatientTcmRxHeaderValidationSupport;
-import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.support.InpatientTcmRxRevokeGateSupport;
+import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.support.InpatientTcmPrescriptionExpandAssembler;
+import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.support.InpatientTcmRxHeaderGate;
+import com.openhis.health.application.inpatient.doctorstation.chinesemedicine.support.InpatientTcmRxRevokeGate;
 import com.openhis.health.domain.administration.encounter.command.RemoveEncounterDiagnosisAssociationCommand;
 import com.openhis.health.domain.administration.encounter.queries.model.InpatientEncounterContextQueryModel;
 import com.openhis.health.domain.administration.encounter.service.EncounterDomainService;
@@ -40,21 +41,21 @@ import com.openhis.health.domain.share.enums.YbMedType;
 import com.openhis.health.domain.share.query.ProductDefinitionBatchLookup;
 import com.openhis.health.domain.terminology.service.CodeSystemQueryService;
 import com.openhis.health.domain.workflow.servicerequest.service.ServiceRequestQueryService;
-import com.openhis.health.module.common.assembler.option.FrequencyOptionLoader;
-import com.openhis.health.module.common.pagination.PagedResultBuilder;
-import com.openhis.health.module.common.validator.PageWindowGate;
-import com.openhis.health.module.querysupport.encounter.EncounterContextFacade;
-import com.openhis.health.module.querysupport.product.ProductDefinitionBatchLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionCatalogPageLoader;
-import com.openhis.health.module.querysupport.product.ProductDefinitionPageQuery;
-import com.openhis.health.module.querysupport.product.dto.ProductDefinitionDisplayDto;
-import com.openhis.health.module.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
+import com.openhis.health.application.shared.option.FrequencyOptionLoader;
+import com.openhis.health.application.shared.pagination.PagedResultBuilder;
+import com.openhis.health.application.shared.validator.PageWindowGate;
+import com.openhis.health.application.inpatient.doctorstation.encountermanage.support.InpatientDoctorStationEncounterVisibilityResolver;
+import com.openhis.health.application.shared.product.ProductDefinitionDisplayTerminologyAssembler;
+import com.openhis.health.application.shared.product.ProductDefinitionCatalogPageLoader;
+import com.openhis.health.application.shared.product.ProductDefinitionPageQuery;
+import com.openhis.health.domain.share.product.dto.ProductDefinitionDisplayDto;
+import com.openhis.health.application.shared.diagnosis.EncounterDiagnosisSnapshotAssembler;
 import com.openhis.whale.core.application.exception.BusinessException;
-import com.openhis.health.module.common.validator.CurrentPractitionerResolver;
+import com.openhis.health.application.shared.validator.CurrentPractitionerResolver;
 import com.openhis.whale.core.infrastructure.sequence.BusinessSequenceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.StringUtils;
+import com.openhis.whale.core.application.util.StringUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 
@@ -81,7 +82,7 @@ public class InpatientDoctorStationTcmAppService {
     private final CurrentPractitionerResolver currentPractitionerResolver;
 
     /** 住院就诊上下文 Facade。 */
-    private final EncounterContextFacade encounterContextFacade;
+    private final InpatientDoctorStationEncounterVisibilityResolver inpatientDoctorStationEncounterVisibilityResolver;
 
     /** 中医 Tab Request/Command/Response 映射。 */
     private final InpatientDoctorStationTcmMapper tcmMapper;
@@ -99,13 +100,13 @@ public class InpatientDoctorStationTcmAppService {
     private final InpatientTcmRxSignAssembler prescriptionSignAssembler;
 
     /** 方头长临/频次/一致性校验。 */
-    private final InpatientTcmRxHeaderValidationSupport headerValidationSupport;
+    private final InpatientTcmRxHeaderGate headerValidationSupport;
 
     /** 签退/删除执行/发药/费用门控。 */
-    private final InpatientTcmRxRevokeGateSupport revokeGateSupport;
+    private final InpatientTcmRxRevokeGate inpatientTcmRxRevokeGate;
 
     /** 按处方号整方扩行。 */
-    private final InpatientTcmPrescriptionExpandSupport prescriptionExpandSupport;
+    private final InpatientTcmPrescriptionExpandAssembler prescriptionExpandSupport;
 
     /** 就诊诊断快照 JSON 装配。 */
     private final EncounterDiagnosisSnapshotAssembler encounterDiagnosisSnapshotAssembler;
@@ -141,7 +142,7 @@ public class InpatientDoctorStationTcmAppService {
     private final ProductDefinitionCatalogPageLoader productDefinitionCatalogPageLoader;
 
     /** 产品定义批量加载。 */
-    private final ProductDefinitionBatchLoader productDefinitionBatchLoader;
+    private final ProductDefinitionDisplayTerminologyAssembler productDefinitionDisplayTerminologyAssembler;
 
     /** 分页窗口 Gate。 */
     private final PageWindowGate pageWindowGate;
@@ -162,15 +163,17 @@ public class InpatientDoctorStationTcmAppService {
     public InitInpatientDoctorStationTcmResponse initInpatientDoctorStationTcm(InitInpatientDoctorStationTcmRequest request) {
         // Pre：住院快照
         InpatientEncounterContextQueryModel snapshot =
-            encounterContextFacade.mustGetInpatientContextByEncounterId(request.getEncounterId());
-        // Gate：患者就诊一致
-        tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
+            this.inpatientDoctorStationEncounterVisibilityResolver.assertVisible(
+                request.getEncounterId(), request.getPatientId());
         // Pre：中药用法
         List<com.openhis.whale.core.application.dto.OptionDto> tcmOptions =
             codeSystemQueryService.getOptionListByCodeSystemName(TerminologyCodeSystemNameConstants.TCM_METHOD_CODE);
         // Asm：频次下拉
         List<com.openhis.whale.core.application.dto.OptionDto> rateOptions = frequencyOptionLoader.loadActiveRateOptions();
-        return tcmMapper.toInitInpatientDoctorStationTcmResponse(tcmOptions, rateOptions);
+        // Pre：单味特殊煎法走 dosage_instruction 术语
+        List<com.openhis.whale.core.application.dto.OptionDto> dosageInstructionOptions =
+            codeSystemQueryService.getOptionListByCodeSystemName(TerminologyCodeSystemNameConstants.DOSAGE_INSTRUCTION);
+        return tcmMapper.toInitInpatientDoctorStationTcmResponse(tcmOptions, rateOptions, dosageInstructionOptions);
     }
 
     /**
@@ -183,9 +186,8 @@ public class InpatientDoctorStationTcmAppService {
     public ListTcmDiagnosisGroupsResponse listTcmDiagnosisGroups(ListTcmDiagnosisGroupsRequest request) {
         // Pre：住院快照
         InpatientEncounterContextQueryModel snapshot =
-            encounterContextFacade.mustGetInpatientContextByEncounterId(request.getEncounterId());
-        // Gate：患者就诊一致
-        tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
+            this.inpatientDoctorStationEncounterVisibilityResolver.assertVisible(
+                request.getEncounterId(), request.getPatientId());
         String diagnosisJson = encounterDiagnosisSnapshotAssembler.buildSnapshot(request.getEncounterId()).diagnosisJson();
         // Asm：聚合病证组
         List<TcmDiagnosisGroupRowDto> groups = diagnosisAssembler.groupTcmDiagnosisRows(request.getEncounterId(), diagnosisJson);
@@ -238,8 +240,6 @@ public class InpatientDoctorStationTcmAppService {
     public SaveTcmDiagnosisGroupsBatchResponse saveTcmDiagnosisGroupsBatch(SaveTcmDiagnosisGroupsBatchRequest request) {
         // Pre：住院可写快照
         InpatientEncounterContextQueryModel snapshot = requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), true);
-        // Gate：患者就诊一致
-        tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, InpatientDoctorStationTcmConstants.MSG_ENCOUNTER_SNAPSHOT_FAILED);
         // Gate：批次校验
@@ -270,8 +270,6 @@ public class InpatientDoctorStationTcmAppService {
     public DeleteTcmDiagnosisGroupResponse deleteTcmDiagnosisGroup(DeleteTcmDiagnosisGroupRequest request) {
         // Pre：住院可写快照
         InpatientEncounterContextQueryModel snapshot = requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), true);
-        // Gate：患者就诊一致
-        tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, InpatientDoctorStationTcmConstants.MSG_ENCOUNTER_SNAPSHOT_FAILED);
         String diagnosisJson = encounterDiagnosisSnapshotAssembler.buildSnapshot(request.getEncounterId()).diagnosisJson();
@@ -291,9 +289,8 @@ public class InpatientDoctorStationTcmAppService {
     public ListTcmHerbalPrescriptionsResponse listTcmHerbalPrescriptions(ListTcmHerbalPrescriptionsRequest request) {
         // Pre：住院快照
         InpatientEncounterContextQueryModel snapshot =
-            encounterContextFacade.mustGetInpatientContextByEncounterId(request.getEncounterId());
-        // Gate：患者就诊一致
-        tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
+            this.inpatientDoctorStationEncounterVisibilityResolver.assertVisible(
+                request.getEncounterId(), request.getPatientId());
         // Gate：长临筛选
         String therapyEnum = headerValidationSupport.resolveTherapyFilterOrNull(request.getTherapyTypeCode());
         // Pre：领域按方聚合
@@ -339,8 +336,6 @@ public class InpatientDoctorStationTcmAppService {
         SaveTcmHerbalPrescriptionDraftBatchRequest request) {
         // Pre：住院可写快照
         InpatientEncounterContextQueryModel snapshot = requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), true);
-        // Gate：患者就诊一致
-        tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, InpatientDoctorStationTcmConstants.MSG_ENCOUNTER_SNAPSHOT_FAILED);
         Long orgId = snapshot.getOrganizationId();
@@ -359,7 +354,7 @@ public class InpatientDoctorStationTcmAppService {
             }
             String contentJson = tcmMapper.buildHerbalContentJson(header);
             for (TcmRxDraftLineRequest line : header.getLines()) {
-                String op = StringUtils.upperCase(trimToEmpty(line.getLineOp()));
+                String op = trimToEmpty(line.getLineOp()).toUpperCase(java.util.Locale.ROOT);
                 BigDecimal quantity = line.getDose().multiply(header.getChineseHerbsDoseQuantity());
                 // Cmd：按 lineOp 三选一
                 if (DoctorStationAdviceConstants.LINE_OP_CREATE.equals(op)) {
@@ -399,8 +394,6 @@ public class InpatientDoctorStationTcmAppService {
     public SignTcmHerbalPrescriptionBatchResponse signTcmHerbalPrescriptionBatch(SignTcmHerbalPrescriptionBatchRequest request) {
         // Pre：住院可写快照
         InpatientEncounterContextQueryModel snapshot = requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), true);
-        // Gate：患者就诊一致
-        tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, InpatientDoctorStationTcmConstants.MSG_ENCOUNTER_SNAPSHOT_FAILED);
         // Pre：加载草稿并分组
@@ -453,8 +446,6 @@ public class InpatientDoctorStationTcmAppService {
         WithdrawOrDeleteTcmHerbalPrescriptionRequest request) {
         // Pre：住院可写快照
         InpatientEncounterContextQueryModel snapshot = requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), true);
-        // Gate：患者就诊一致
-        tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, InpatientDoctorStationTcmConstants.MSG_ENCOUNTER_SNAPSHOT_FAILED);
         // Gate：整方扩行
@@ -471,7 +462,7 @@ public class InpatientDoctorStationTcmAppService {
             }
         }
         // Pre：签退门控
-        revokeGateSupport.assertNoNetExecutionOrCompletedDispenseOrLockedCharge(request.getEncounterId(), targetIds);
+        inpatientTcmRxRevokeGate.assertNoNetExecutionOrCompletedDispenseOrLockedCharge(request.getEncounterId(), targetIds);
         for (Long medReqId : targetIds) {
             MedicationRequestListQueryModel row = medicationRequestQueryService.getListModelById(medReqId);
             String status = row.getStatusEnum();
@@ -534,8 +525,6 @@ public class InpatientDoctorStationTcmAppService {
         }
         // Pre：住院可写快照
         InpatientEncounterContextQueryModel snapshot = requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), true);
-        // Gate：患者就诊一致
-        tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, InpatientDoctorStationTcmConstants.MSG_ENCOUNTER_SNAPSHOT_FAILED);
         // Pre：整方扩行
@@ -566,8 +555,6 @@ public class InpatientDoctorStationTcmAppService {
         InpatientEncounterContextQueryModel snapshot = requireInpatientSnapshot(request.getEncounterId(), request.getPatientId(), true);
         // Pre：出院/转科门禁
         assertCancelStopDischargeGate(request.getEncounterId(), snapshot);
-        // Gate：患者就诊一致
-        tcmMapper.validatePatientEncounter(snapshot, request.getPatientId());
         Long operatorId = currentPractitionerResolver.requireOperatorId(
             ErrorCodeConstants.ENCOUNTER_INVALID_ARGUMENT, InpatientDoctorStationTcmConstants.MSG_ENCOUNTER_SNAPSHOT_FAILED);
         // Pre：整方 STOPPED 长期行
@@ -592,8 +579,7 @@ public class InpatientDoctorStationTcmAppService {
      */
     private InpatientEncounterContextQueryModel requireInpatientSnapshot(Long encounterId, Long patientId, boolean writable) {
         InpatientEncounterContextQueryModel snapshot =
-            encounterContextFacade.mustGetInpatientContextByEncounterId(encounterId);
-        adviceMapper.validateInpatientEncounterPatientGate(snapshot, patientId);
+            this.inpatientDoctorStationEncounterVisibilityResolver.assertVisible(encounterId, patientId);
         adviceMapper.validateInpatientEncounterClassImp(snapshot);
         // 写路径须通过可写 Gate（在院、未结算等）
         if (writable) {
@@ -637,7 +623,7 @@ public class InpatientDoctorStationTcmAppService {
         int newCount = 0;
         for (TcmDiagnosisGroupItemRequest group : request.getGroups()) {
             // 统计需新分配组号的项
-            if (StringUtils.isBlank(group.getTcmSyndromeGroup())) {
+            if (StringUtils.isEmpty(group.getTcmSyndromeGroup())) {
                 newCount++;
             }
         }
@@ -652,7 +638,7 @@ public class InpatientDoctorStationTcmAppService {
             String stableKey = String.valueOf(group.getDiseaseDefinitionId()) + ":" + String.valueOf(group.getSyndromeDefinitionId());
             String key;
             // 已有组号沿用，否则分配新序列
-            if (StringUtils.isNotBlank(group.getTcmSyndromeGroup())) {
+            if (StringUtils.isNotEmpty(group.getTcmSyndromeGroup())) {
                 key = group.getTcmSyndromeGroup().trim();
             } else {
                 key = newKeys.get(idx++);
@@ -745,7 +731,7 @@ public class InpatientDoctorStationTcmAppService {
         List<ProductDefinitionBatchLookup> lookups = new ArrayList<>();
         for (TcmRxDraftHeaderRequest header : request.getPrescriptions()) {
             for (TcmRxDraftLineRequest line : header.getLines()) {
-                String op = StringUtils.upperCase(trimToEmpty(line.getLineOp()));
+                String op = trimToEmpty(line.getLineOp()).toUpperCase(java.util.Locale.ROOT);
                 // DELETE 行无需校验产品
                 if (DoctorStationAdviceConstants.LINE_OP_DELETE.equals(op)) {
                     continue;
@@ -762,7 +748,7 @@ public class InpatientDoctorStationTcmAppService {
         if (lookups.isEmpty()) {
             return;
         }
-        Map<String, ProductDefinitionDisplayDto> map = productDefinitionBatchLoader.loadAsMap(lookups);
+        Map<String, ProductDefinitionDisplayDto> map = productDefinitionDisplayTerminologyAssembler.loadAsMap(lookups);
         headerValidationSupport.assertHerbalCategoryOnly(new ArrayList<>(map.values()));
     }
 
@@ -777,7 +763,7 @@ public class InpatientDoctorStationTcmAppService {
         TcmRxDraftHeaderRequest header = new TcmRxDraftHeaderRequest();
         header.setPrescriptionGroupKey(groupKey);
         header.setTherapyEnum(row.getTherapyEnum());
-        header.setTcmSyndromeGroup(com.openhis.health.module.common.assembler.advice.TcmMethodCodeDisplaySupport.readContentJsonTextField(
+        header.setTcmSyndromeGroup(com.openhis.health.application.shared.advice.TcmMethodCodeDisplayAssembler.readContentJsonTextField(
             row.getContentJson(), "tcmSyndromeGroup"));
         header.setChineseHerbsDoseQuantity(row.getChineseHerbsDoseQuantity());
         header.setSufferingFlag(row.getSufferingFlag());
